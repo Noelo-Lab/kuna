@@ -189,6 +189,10 @@ outgoing call copies versus genuine local definitions, and the `namestyle
 ghidra` control. Its x86-64 instructions are independently
 assembled synthetic examples; it contains no bytes from the reported binary.
 
+`kuna-parameter-alias.xml` checks that a name/type assertion on a later EDX
+local preserves the incoming parameter, its entry comparisons, and the value
+passed to a callee across repeated decompilation. Its instructions are synthetic.
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

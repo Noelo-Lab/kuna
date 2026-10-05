@@ -243,7 +243,10 @@ pass with inference live.
    hard wall — nothing propagates over it). A Varnode covered by a type-locked
    symbol gets the exact byte-slice of the symbol's type
    (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
-   (build_localtype_seed)` → the factory's `get_exact_piece`). Everything else
+   (build_localtype_seed_at)` → the factory's `get_exact_piece`). The lookup uses
+   the Varnode's definition usepoint (entry-minus-one for inputs), so a locked
+   later register local cannot seed the type of an incoming parameter sharing
+   that register. The char-byte seeding guard uses the same query. Everything else
    asks its defining op and each reading op for a suggestion
    (`output_type_local` / `input_type_local`, same module) and keeps the most
    specific by `type_order`. The suggestions come from the per-opcode table

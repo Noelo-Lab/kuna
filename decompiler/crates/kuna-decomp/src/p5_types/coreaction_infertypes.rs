@@ -381,11 +381,12 @@ fn build_localtypes(data: &mut Funcdata) {
         // The seed is consulted only when the Varnode is itself not type-locked
         // (a type-locked Varnode already carries its own definitive type via the
         // getLocalType `isTypeLock` fast-path).
+        let usepoint = data.vn_use_point(vn);
         let seed = if !vn_type_lock {
             data.get_scope_local().and_then(|lm| {
                 data.get_arch()
                     .types()
-                    .and_then(|t| lm.build_localtype_seed(&vn_addr, vn_size, t))
+                    .and_then(|t| lm.build_localtype_seed_at(&vn_addr, vn_size, &usepoint, t))
             })
         } else {
             None
