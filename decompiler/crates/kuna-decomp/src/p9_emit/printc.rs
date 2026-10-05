@@ -3069,14 +3069,16 @@ impl PrintC {
             // C++ `emitLocalVarDecls` -> `emitScopeVarDecls(scope, no_category)`:
             // only `no_category` Symbols are declared in the body.  A high bound to
             // a `function_parameter` Symbol renders in the signature, never as a body
-            // local — skip it.  The high carries the parameter Symbol (C++
-            // `linkSymbol` binds the parameter entry to the high), so any member
-            // varnode whose storage covers a `function_parameter` Symbol marks the
-            // whole high as a parameter.
+            // local — skip it. Prefer the linked Symbol's own category; storage
+            // containment is a fallback only for highs without a linked Symbol.
             let scope = fd.get_scope_local();
             let is_param = scope
                 .map(|lm| {
                     let h = fd.high_bank().get(high);
+                    if let Some(sym) = h.and_then(|h| h.kuna_link_symbol()) {
+                        return lm.symbol_category(sym)
+                            == crate::database::symbol_category::FUNCTION_PARAMETER;
+                    }
                     let n = h.map(|h| h.num_instances()).unwrap_or(0);
                     // A high is a parameter (declared in the signature, not the body)
                     // only when a `function_parameter` Symbol *contains* a member's

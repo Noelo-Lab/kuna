@@ -1046,3 +1046,79 @@ fn cse_query_checks_identifiers_before_walking_empty_descendants() {
         assert_eq!(message, expected);
     }
 }
+
+#[test]
+fn isolated_local_type_lock_follows_its_definition_without_typing_register_reuse() {
+    let mut manage = build_manager();
+    for (index, name, kind) in [
+        (3, "register", spacetype::IPTR_PROCESSOR),
+        (4, "stack", spacetype::IPTR_SPACEBASE),
+    ] {
+        manage
+            .insert_space(Rc::new(AddrSpace::new(
+                kind,
+                name,
+                false,
+                8,
+                1,
+                index,
+                addrspace_flags::hasphysical,
+                1,
+                1,
+            )))
+            .unwrap();
+    }
+    let types = crate::dtype::TypeFactoryImpl::new();
+    types.set_default_alignment_map();
+    types.set_max_basetype_size(8);
+    let mut arch = ArchContext::new(manage);
+    arch.types = Some(Rc::new(types));
+    let ram = Rc::clone(arch.manage().get_space_by_name("ram").unwrap());
+    let reg = Rc::clone(arch.manage().get_space_by_name("register").unwrap());
+    let mut fd = Funcdata::new(
+        "func",
+        "func",
+        Rc::new(arch),
+        Address::new(Rc::clone(&ram), 0x1000),
+        0,
+        0x40,
+    )
+    .unwrap();
+    let storage = Address::new(reg, 0x10);
+    let point = Address::new(ram, 0x1010);
+    let scope = fd.get_scope_local_mut().unwrap();
+    let ct = Rc::new(Datatype::new_with_align(4, 4, type_metatype::TYPE_UINT));
+    let symbol = scope
+        .add_symbol("local", Rc::clone(&ct), &storage, &point)
+        .unwrap();
+    scope.set_attribute(symbol, crate::varnode::varnode_flags::typelock);
+    scope.set_symbol_isolated(symbol, true);
+
+    let input = fd.new_varnode(4, &storage, None);
+    let input = fd.set_input_varnode(input).unwrap();
+    assert!(!fd.vbank().get(input).unwrap().is_type_lock());
+
+    let op = mk_op(&mut fd, 1, 0x1010, OpCode::CPUI_COPY);
+    let local = fd.new_varnode_out(4, &storage, op).unwrap();
+    let local_vn = fd.vbank().get(local).unwrap();
+    assert!(local_vn.is_type_lock());
+    assert_eq!(local_vn.get_type().get_metatype(), type_metatype::TYPE_UINT);
+
+    let later = mk_op(&mut fd, 1, 0x1020, OpCode::CPUI_COPY);
+    let reused = fd.new_varnode_out(4, &storage, later).unwrap();
+    assert!(!fd.vbank().get(reused).unwrap().is_type_lock());
+    assert_eq!(
+        fd.vbank().get(reused).unwrap().get_type().get_metatype(),
+        type_metatype::TYPE_UNKNOWN
+    );
+    assert!(!fd.vbank().get(input).unwrap().is_type_lock());
+
+    let rewritten = mk_op(&mut fd, 1, 0x1030, OpCode::CPUI_COPY);
+    fd.op_move_output(rewritten, local).unwrap();
+    let moved = fd.obank().get(rewritten).unwrap().get_out().unwrap();
+    assert!(fd.vbank().get(moved).unwrap().is_type_lock());
+    assert_eq!(
+        fd.vbank().get(moved).unwrap().get_type().get_metatype(),
+        type_metatype::TYPE_UINT
+    );
+}
