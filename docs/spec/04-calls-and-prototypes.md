@@ -406,6 +406,8 @@ registers left are assigned as before. The Windows variadic exception is kept:
 Microsoft's ARM64 ABI lays out every argument of a variadic function as if on a
 stack whose first 64 bytes are x0–x7, so a `<varargs/>` join ahead of the
 no-spill rule still splits a composite between x7 and the stack there.
+These rules model the C ABI only: a Rust-ABI two-scalar pair, which rustc may
+split between x7 and the stack, is not modelled, as on x86-64.
 
 ### Recovery: trials → parameters
 
