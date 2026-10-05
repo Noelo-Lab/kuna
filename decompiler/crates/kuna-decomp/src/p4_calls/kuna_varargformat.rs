@@ -148,10 +148,9 @@ fn defined_bytes(
     vn: VarnodeId,
     offset: int4,
     width: int4,
-    depth: u32,
     budget: &mut u32,
 ) -> bool {
-    if depth >= 16 || *budget == 0 {
+    if *budget == 0 {
         return false;
     }
     *budget -= 1;
@@ -182,7 +181,7 @@ fn defined_bytes(
     };
     let mut input = |slot, off, len| {
         op.get_in(slot)
-            .is_some_and(|id| defined_bytes(data, id, off, len, depth + 1, budget))
+            .is_some_and(|id| defined_bytes(data, id, off, len, budget))
     };
     match op.code() {
         OpCode::CPUI_COPY | OpCode::CPUI_CAST => input(0, offset, width),
@@ -224,14 +223,38 @@ fn defined_bytes(
         OpCode::CPUI_INT_ADD
         | OpCode::CPUI_INT_SUB
         | OpCode::CPUI_INT_MULT
-        | OpCode::CPUI_INT_AND
+        | OpCode::CPUI_INT_2COMP => (0..op.num_input()).all(|slot| {
+            op.get_in(slot)
+                .and_then(|id| data.vbank().get(id))
+                .is_some_and(|v| input(slot, 0, (offset + width).min(v.get_size())))
+        }),
+        OpCode::CPUI_INT_XOR if op.get_in(0).is_some_and(|id| op.get_in(1) == Some(id)) => true,
+        OpCode::CPUI_INT_AND
         | OpCode::CPUI_INT_OR
         | OpCode::CPUI_INT_XOR
-        | OpCode::CPUI_INT_NEGATE
-        | OpCode::CPUI_INT_2COMP
-        | OpCode::CPUI_INT_LEFT
-        | OpCode::CPUI_INT_RIGHT
-        | OpCode::CPUI_INT_SRIGHT => (0..op.num_input()).all(|slot| {
+        | OpCode::CPUI_INT_NEGATE => (0..op.num_input()).all(|slot| input(slot, offset, width)),
+        OpCode::CPUI_INT_LEFT => {
+            input(0, 0, offset + width)
+                && op
+                    .get_in(1)
+                    .and_then(|id| data.vbank().get(id))
+                    .is_some_and(|v| input(1, 0, v.get_size()))
+        }
+        OpCode::CPUI_INT_RIGHT
+        | OpCode::CPUI_INT_SRIGHT
+        | OpCode::CPUI_INT_EQUAL
+        | OpCode::CPUI_INT_NOTEQUAL
+        | OpCode::CPUI_INT_LESS
+        | OpCode::CPUI_INT_LESSEQUAL
+        | OpCode::CPUI_INT_SLESS
+        | OpCode::CPUI_INT_SLESSEQUAL
+        | OpCode::CPUI_INT_CARRY
+        | OpCode::CPUI_INT_SCARRY
+        | OpCode::CPUI_INT_SBORROW
+        | OpCode::CPUI_BOOL_NEGATE
+        | OpCode::CPUI_BOOL_XOR
+        | OpCode::CPUI_BOOL_AND
+        | OpCode::CPUI_BOOL_OR => (0..op.num_input()).all(|slot| {
             op.get_in(slot)
                 .and_then(|id| data.vbank().get(id))
                 .is_some_and(|v| input(slot, 0, v.get_size()))
@@ -254,6 +277,12 @@ pub(crate) fn activate_trial(
     }
     let fc = data.get_call_specs(idx);
     let trial = fc.active_input().get_trial(i);
+    if trial.is_definitely_not_used()
+        || trial.is_unref()
+        || super::kuna_passthrough::claimed_range(data, trial.get_address(), trial.get_size())
+    {
+        return false;
+    }
     let (addr, size, slot, op) = (
         trial.get_address().clone(),
         trial.get_size(),
@@ -299,6 +328,12 @@ pub(crate) fn activate_trial(
         }
         let previous = fc.active_input().get_trial(index);
         if previous.is_definitely_not_used()
+            || previous.is_unref()
+            || super::kuna_passthrough::claimed_range(
+                data,
+                previous.get_address(),
+                previous.get_size(),
+            )
             || previous.get_address().justified_contain(
                 previous.get_size(),
                 &preceding.addr,
@@ -315,13 +350,13 @@ pub(crate) fn activate_trial(
         else {
             return false;
         };
-        if !defined_bytes(data, value, 0, preceding_width, 0, &mut 64) {
+        if !defined_bytes(data, value, 0, preceding_width, &mut 64) {
             return false;
         }
     }
     let (cond, killed) = (trial.has_cond_exe_effect(), trial.is_killed_by_call());
     let mut ancestry = None;
-    if !defined_bytes(data, vn, 0, width, 0, &mut 64) {
+    if !defined_bytes(data, vn, 0, width, &mut 64) {
         return false;
     }
     if !data.vbank().get(vn).is_some_and(|v| v.is_input()) && !declared_value(data, vn) {

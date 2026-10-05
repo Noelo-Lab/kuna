@@ -21,6 +21,18 @@ caller_stored_integer:
     addq $40,%rsp
     ret
 .size caller_stored_integer,.-caller_stored_integer
+.globl caller_imported_integer
+.type caller_imported_integer,@function
+caller_imported_integer:
+    subq $40,%rsp
+    movl (%rcx),%edx
+    addl $1,%edx
+    movl %edx,(%rcx)
+    leaq format_integer(%rip),%rcx
+    call *imported_renderer(%rip)
+    addq $40,%rsp
+    ret
+.size caller_imported_integer,.-caller_imported_integer
 .globl render_value
 .type render_value,@function
 render_value:
@@ -29,6 +41,8 @@ render_value:
 .size render_value,.-render_value
 .section .rodata
 format_integer: .asciz "%i"
+.balign 8
+imported_renderer: .quad render_value
 .section .note.GNU-stack,"",@progbits
 .text
 .globl caller_computed_integer
@@ -235,3 +249,56 @@ render_two:
     orq %rdx,%rax
     ret
 .size render_two,.-render_two
+
+.globl tag_value
+.type tag_value,@function
+tag_value:
+    movl (%rcx),%eax
+    ret
+.size tag_value,.-tag_value
+
+.globl caller_unknown_comparison
+.type caller_unknown_comparison,@function
+caller_unknown_comparison:
+    subq $40,%rsp
+    cmpl $1,%r8d
+    sete %dl
+    movzbl %dl,%edx
+    addl (%rcx),%edx
+    movl %edx,(%rcx)
+    leaq format_integer(%rip),%rcx
+    call render_value
+    addq $40,%rsp
+    ret
+.size caller_unknown_comparison,.-caller_unknown_comparison
+
+.globl caller_unknown_phi
+.type caller_unknown_phi,@function
+caller_unknown_phi:
+    subq $40,%rsp
+    testl %edx,%edx
+    jz .Lunknown_phi
+    movl (%rcx),%r8d
+    addl $1,%r8d
+.Lunknown_phi:
+    movl %r8d,(%rcx)
+    movl %r8d,%edx
+    leaq format_integer(%rip),%rcx
+    call render_value
+    addq $40,%rsp
+    ret
+.size caller_unknown_phi,.-caller_unknown_phi
+
+.globl caller_unknown_upper_shift
+.type caller_unknown_upper_shift,@function
+caller_unknown_upper_shift:
+    subq $40,%rsp
+    movq %rdx,%rax
+    shrq $32,%rax
+    movl %eax,%edx
+    movl %edx,(%rcx)
+    leaq format_integer(%rip),%rcx
+    call render_value
+    addq $40,%rsp
+    ret
+.size caller_unknown_upper_shift,.-caller_unknown_upper_shift

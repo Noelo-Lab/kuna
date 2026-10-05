@@ -2002,7 +2002,17 @@ when the models are compatible (same or aliased `ProtoModel`, `is_compatible`),
 varargs only while input recovery is still active, and — for locked callee
 prototypes — when the existing argument Varnodes can be re-mapped onto the
 locked storage (`transfer_locked_input`/`transfer_locked_output`). Success
-commits the new input/output lists directly; failure sets the restart-pending
+commits the new input/output lists directly. For a locked variadic prototype,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargtransfer.rs
+(pending_trials)` preserves existing trials outside the fixed parameters before
+`commit_new_inputs` rebuilds the fixed head. Their existing Varnodes, widths and
+scoring flags survive, with slots remapped and model-entry associations cleared
+for the new prototype. Unreferenced trials and the old stack placeholder are
+excluded. This preserves an already active variadic argument and leaves an
+inactive stored integer available for later format evidence; resolving an
+imported target must not erase its unfinalized variadic trials. Ordinary trial
+scoring still controls which preserved values become arguments.
+Failure sets the restart-pending
 flag — the P4 → Band B feedback edge of 00 §0.7, bounded and executed by the
 drive — (kuna) recording `ProtoDeindirect` in the restart log
 (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_restartlog.rs
@@ -4213,7 +4223,10 @@ another reader. `kuna_varargformat::arguments` requires a locked variadic callee
 whose last fixed parameter is a character pointer. A callee name containing
 `scanf` declines the proof because its conversions consume pointers. It resolves
 the constant pointer through the bounded constant-value walk above and checks
-read-only properties one byte at a time, including the NUL terminator. A
+memory-range read-only properties one byte at a time, including the NUL
+terminator. A covering array symbol inherits properties at its first address;
+its flags cannot establish that every byte is immutable. Named formats therefore
+use the range property map independently of symbol flags. A
 whole-range property query can fall back to properties at the starting address,
 so it cannot prove that a writable conversion or terminator is immutable. It
 accepts ordinary promoted integer conversions (`d/i/u/o/x/X/c`), `h/hh` integer lengths, star width and precision
@@ -4226,7 +4239,10 @@ register class.
 
 `kuna_varargformat::activate_trial` is a fallback after the existing declared-value
 and ancestor-use paths reject a trial. Arguments those paths already retain keep
-their original storage and scoring.
+their original storage and scoring. A later pass can retry a checked inactive
+trial when a variadic prototype or constant format becomes available after its
+initial scoring. Definitely unused, unreferenced and passthrough-claimed trials
+remain excluded; their inputs cannot supply new argument evidence.
 It matches only an existing processor-register trial containing the assigned
 argument. Its value must have realistic defined ancestry on every incoming path
 (the ancestor walk disallows a failing path) or be a declared incoming parameter/return on the terms above. The declaration
@@ -4234,21 +4250,35 @@ must cover the consumed source bytes at their incoming storage, even if the
 value now feeds a different argument register. Extensions can supply the other
 bytes of a promoted integer.
 A second bounded walk proves the consumed bytes through copies, concatenations,
-subpieces, extensions, integer arithmetic and all phi inputs. Constants, loads
-and declared call returns provide defined values; undeclared input bytes decline
-the proof. The walk stops after sixteen levels or sixty-four visited nodes.
+subpieces, extensions, integer arithmetic, comparisons, carry/overflow flags,
+boolean operations and all phi inputs. The consumed low bytes of addition,
+subtraction, multiplication and negation depend only on the same low operand
+bytes: unknown upper bytes of a wider temporary cannot change them. Bitwise
+operations require the matching slice. Left shifts require all shift-count bytes
+and the source bytes below the consumed end; right shifts and comparisons require
+complete operands because upper bits can affect the result. Boolean expressions
+require every consumed operand byte to be defined, just as arithmetic does.
+An integer XOR with identical SSA operands defines zero without depending on
+those operands' previous bits, including a register cleared after a call.
+This covers a stored integer selected from a tag comparison and then clamped;
+an undeclared comparison operand or an unknown phi arm still declines the proof.
+Constants, loads and declared call returns provide defined values; undeclared input bytes decline
+the proof. The walk stops after sixty-four visited nodes, which also bounds its
+recursion. Copies, slices and extensions can form more than sixteen ancestry
+levels before simplification; they share the node budget with the computations
+instead of imposing a separate shorter depth limit.
 A declared byte alone does not prove the other bytes of an integer. Assignments
 with hidden or indirect parameter pieces are declined. The ancestor flags and
 conditional execution recheck are preserved. The trial shrinks to the promoted
 integer width and is marked active, so a store of
 `*value + 1` does not hide the same value in EDX at `render_value("%i", ...)`.
 Before activating a later argument, the consumed bytes of every preceding
-format-assigned trial must also be defined. A missing or definitely unused
-predecessor declines the proof, including a trial replaced by a synthetic zero.
+format-assigned trial must also be defined. A missing, definitely unused,
+unreferenced or passthrough-claimed predecessor declines the proof, including a
+trial replaced by a synthetic zero.
 This prevents parameter hole filling from inventing an uninitialized earlier
 argument. No register past the format's argument list is supplied; an undeclared
-live-in
-or call clobber is not supplied either. Computed and loaded values do not need
+live-in or call clobber is not supplied either. Computed and loaded values do not need
 a declared caller prototype on this path. A dynamic, writable or unsupported
 format leaves the exclusive-reader rule unchanged. The dynamic-format upper
 register-half problem in issue 876 remains outside this proof. With

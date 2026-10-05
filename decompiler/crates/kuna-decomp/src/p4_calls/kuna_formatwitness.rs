@@ -81,7 +81,7 @@ pub(super) fn pointed_readonly_format(
         let at = Address::new(
             Rc::clone(addr.get_space()?), addr.get_offset().checked_add(offset as u64)?,
         );
-        let flags = data.get_arch().query_global_properties(&at, 1, point);
+        let flags = data.get_arch().query_global_range_properties(&at);
         if flags & crate::varnode::varnode_flags::readonly == 0 {
             return None;
         }

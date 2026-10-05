@@ -2051,6 +2051,12 @@ impl ArchContext {
         }
     }
 
+    /// Memory-range properties without a covering symbol's inherited flags.
+    pub(crate) fn query_global_range_properties(&self, addr: &Address) -> uint4 {
+        self.effective_global_query(addr)
+            .map_or(0, |gq| gq.get_property(addr))
+    }
+
     /// The global-scope snapshot local-name allocation checks identifiers
     /// against. In remote mode this is the merged cache accumulated while
     /// resolving the function; standalone mode reads the frozen per-function

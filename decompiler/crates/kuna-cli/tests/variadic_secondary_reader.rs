@@ -4,7 +4,7 @@ mod common;
 use common::process;
 use std::process::Command;
 
-const NAMES: [&str; 18] = [
+const NAMES: [&str; 25] = [
     "caller_integer",
     "caller_stored_integer",
     "caller_computed_integer",
@@ -23,6 +23,13 @@ const NAMES: [&str; 18] = [
     "caller_gap",
     "caller_gap_clobbered",
     "caller_stored_two",
+    "caller_clamped_integer",
+    "caller_clamped_call",
+    "caller_stored_comparison",
+    "caller_stored_boolean",
+    "caller_unknown_comparison",
+    "caller_unknown_phi",
+    "caller_unknown_upper_shift",
 ];
 
 fn function<'a>(text: &'a str, name: &str) -> &'a str {
@@ -57,6 +64,10 @@ fn decompile(binary: &std::path::Path, enabled: bool) -> String {
         "--assert",
         "prototype render_value unsigned long long MSABI render_value(const char *format,...)",
     ]);
+    cmd.args([
+        "--assert",
+        "prototype tag_value int MSABI tag_value(int *sender)",
+    ]);
     cmd.args(["--assert", "prototype clobber void MSABI clobber(void)"]);
     cmd.args([
         "--assert",
@@ -71,7 +82,18 @@ fn decompile(binary: &std::path::Path, enabled: bool) -> String {
         if name == "caller_undeclared_stored" {
             continue;
         }
-        let params = if name == "caller_moved_narrow" {
+        let params = if name == "caller_clamped_call" {
+            "int *value,int *sender"
+        } else if matches!(
+            name,
+            "caller_clamped_integer"
+                | "caller_stored_comparison"
+                | "caller_stored_boolean"
+                | "caller_unknown_phi"
+                | "caller_unknown_upper_shift"
+        ) {
+            "int *value,int tag"
+        } else if name == "caller_moved_narrow" {
             "char *value,unsigned char item,int unused"
         } else if name == "caller_narrow_stored" {
             "char *value,unsigned char item"
@@ -97,6 +119,45 @@ fn decompile(binary: &std::path::Path, enabled: bool) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 
+fn decompile_imported(binary: &std::path::Path, enabled: bool) -> String {
+    let output = Command::new(
+        std::env::var_os("KUNA_TEST_BIN").unwrap_or_else(|| env!("CARGO_BIN_EXE_kuna").into()),
+    )
+    .env("KUNA_SPECS", common::repo_root().join("specs"))
+    .arg("decompile-all")
+    .arg(binary)
+    .args([
+        "--addr",
+        "0x140001000",
+        "--mode",
+        "reliable",
+        "--assert-strict",
+        "--option",
+        "realtypes",
+        "on",
+        "--option",
+        "varargforward",
+        if enabled { "on" } else { "off" },
+        "--assert",
+        "function 0x140001000-0x14000101d=caller_imported_integer",
+        "--assert",
+        "prototype caller_imported_integer unsigned long long caller_imported_integer(int *value)",
+        "--assert",
+        "prototype 0x140002050 unsigned long long render_value(const char *format,...)",
+        "--assert",
+        "data 0x1400020a0 char integer_format[3]",
+    ])
+    .output()
+    .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap()
+}
+
 #[test]
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
@@ -106,8 +167,22 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
     }
     let fixture = common::repo_root().join("tests/cli/fixtures/variadic-secondary-reader");
     let binary = common::scratch_file("variadic-secondary-native", "exe");
+    let object = common::scratch_file("variadic-secondary-selected", "o");
+    let compiled = Command::new("gcc")
+        .args(["-O2", "-fno-optimize-sibling-calls", "-c"])
+        .arg(fixture.join("selected.c"))
+        .arg("-o")
+        .arg(&object)
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
     let output = Command::new("gcc")
         .args(["-O0", "-no-pie"])
+        .arg(&object)
         .arg(fixture.join("probe.S"))
         .arg(fixture.join("native.c"))
         .arg("-o")
@@ -122,15 +197,26 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
     assert!(Command::new(&binary).status().unwrap().success());
     let off = decompile(&binary, false);
     let on = decompile(&binary, true);
-    assert!(
-        function(&off, "caller_stored_integer").contains("render_value(\"%i\")"),
-        "{off}"
-    );
+    for name in [
+        "caller_stored_integer",
+        "caller_clamped_integer",
+        "caller_clamped_call",
+        "caller_stored_comparison",
+    ] {
+        assert!(
+            function(&off, name).contains("render_value(\"%i\")"),
+            "{name}:\n{off}"
+        );
+    }
     for name in [
         "caller_integer",
         "caller_stored_integer",
         "caller_computed_integer",
         "caller_stored_extra",
+        "caller_clamped_integer",
+        "caller_clamped_call",
+        "caller_stored_comparison",
+        "caller_stored_boolean",
     ] {
         assert!(
             function(&on, name).contains("render_value(\"%i\","),
@@ -158,6 +244,9 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
         "caller_moved_narrow",
         "caller_gap",
         "caller_gap_clobbered",
+        "caller_unknown_comparison",
+        "caller_unknown_phi",
+        "caller_unknown_upper_shift",
     ] {
         assert_eq!(
             function(&on, name),
@@ -175,22 +264,81 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
         .unwrap();
     assert_eq!(args.matches(',').count(), 1, "{extra}");
 
-    let printed: String = [
+    let imported = common::scratch_file("variadic-secondary-imported", "exe");
+    let generated = Command::new("python3")
+        .arg(fixture.join("imported.py"))
+        .arg(&imported)
+        .output()
+        .unwrap();
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let imported_off = decompile_imported(&imported, false);
+    let imported_on = decompile_imported(&imported, true);
+    assert!(
+        imported_off.contains("render_value(\"%i\")"),
+        "{imported_off}"
+    );
+    assert!(
+        imported_on.contains("render_value(\"%i\","),
+        "{imported_on}"
+    );
+    let image = std::fs::read(&imported).unwrap();
+    let mut writable = image.clone();
+    writable[0x1b0 + 36..0x1b0 + 40].copy_from_slice(&0xc0000040u32.to_le_bytes());
+    std::fs::write(&imported, writable).unwrap();
+    assert_eq!(
+        decompile_imported(&imported, false),
+        decompile_imported(&imported, true)
+    );
+    let mut unsupported = image.clone();
+    unsupported[0x4a1] = b'f';
+    std::fs::write(&imported, unsupported).unwrap();
+    assert_eq!(
+        decompile_imported(&imported, false),
+        decompile_imported(&imported, true)
+    );
+    let mut unknown = image.clone();
+    unknown[0x200 + 4..0x200 + 9].fill(0x90);
+    std::fs::write(&imported, unknown).unwrap();
+    assert_eq!(
+        decompile_imported(&imported, false),
+        decompile_imported(&imported, true)
+    );
+    let mut healthy = image;
+    healthy[0x200 + 9..0x200 + 11].copy_from_slice(&[0x90, 0x90]);
+    std::fs::write(&imported, healthy).unwrap();
+    let healthy_off = decompile_imported(&imported, false);
+    assert!(
+        healthy_off.contains("render_value(\"%i\","),
+        "{healthy_off}"
+    );
+    assert_eq!(healthy_off, decompile_imported(&imported, true));
+
+    let mut printed: String = [
         "caller_integer",
         "caller_stored_integer",
         "caller_computed_integer",
         "caller_stored_extra",
         "caller_stored_two",
+        "caller_clamped_integer",
+        "caller_clamped_call",
+        "caller_stored_comparison",
+        "caller_stored_boolean",
     ]
     .iter()
     .map(|name| function(&on, name))
     .collect();
+    printed.push_str(function(&imported_on, "caller_imported_integer"));
     let src = common::scratch_file("variadic-secondary-emitted", "c");
     let exe = common::scratch_file("variadic-secondary-emitted", "exe");
     std::fs::write(&src, format!(r#"
 #include <stdarg.h>
 #include <limits.h>
 #include <stdint.h>
+#include <stdbool.h>
 typedef int32_t int4;
 typedef uint32_t uint4;
 typedef uint64_t uint8;
@@ -209,6 +357,7 @@ unsigned long long render_two(const char *format,...) {{
     va_end(ap);
     return ((uint64_t)second << 32) | first;
 }}
+int tag_value(int *sender) {{ return *sender; }}
 {printed}
 int main(void) {{
     const int values[] = {{INT_MIN,-123,-1,0,1,99,INT_MAX-1}};
@@ -217,12 +366,31 @@ int main(void) {{
         if (caller_integer(x) != (unsigned)x) return 1;
         int stored = x;
         if (caller_stored_integer(&stored) != (unsigned)(x+1) || stored != x+1) return 2;
+        stored = x;
+        if (caller_imported_integer(&stored) != (unsigned)(x+1) || stored != x+1) return 10;
         if (caller_computed_integer(&x) != (unsigned)(x+1) || x != values[i]) return 3;
         int pair[2] = {{x,7}};
         if (caller_stored_extra(pair) != (unsigned)(x+1) || pair[0] != x+1 || pair[1] != 9) return 4;
         int two[2] = {{x,-123}};
         uint64_t packed = ((uint64_t)(uint32_t)-121 << 32) | (uint32_t)(x+1);
         if (caller_stored_two(two) != packed || two[0] != x+1 || two[1] != -121) return 5;
+    }}
+    const int selected[] = {{INT_MIN+1,-123,-1,0,1,5,6,7,11,12,13,99,INT_MAX-1}};
+    const int tags[] = {{INT_MIN,-1,0,1,2,INT_MAX}};
+    for (unsigned i = 0; i < sizeof(selected)/sizeof(selected[0]); ++i) {{
+        for (unsigned j = 0; j < sizeof(tags)/sizeof(tags[0]); ++j) {{
+            int value = selected[i], tag = tags[j];
+            int expected = value + (tag == 1 ? 1 : -1);
+            if (expected < 6) expected = 6;
+            if (expected > 12) expected = 12;
+            if (caller_clamped_integer(&value,tag) != (uint32_t)expected || value != expected) return 6;
+            value = selected[i];
+            if (caller_clamped_call(&value,&tag) != (uint32_t)expected || value != expected || tag != tags[j]) return 7;
+            value = selected[i]; expected = value + (tag == 1);
+            if (caller_stored_comparison(&value,tag) != (uint32_t)expected || value != expected) return 8;
+            value = selected[i]; expected = value + ((tag < 0) != (tag == 1));
+            if (caller_stored_boolean(&value,tag) != (uint32_t)expected || value != expected) return 9;
+        }}
     }}
     return 0;
 }}
@@ -249,7 +417,7 @@ int main(void) {{
             );
         }
     }
-    for path in [binary, src, exe] {
+    for path in [binary, object, imported, src, exe] {
         std::fs::remove_file(path).unwrap();
     }
 }
