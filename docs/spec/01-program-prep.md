@@ -4538,6 +4538,23 @@ through a data table has no CALL edge for any descent to follow, and without the
 gap-walk a `--to` query loses every call site that lives inside one — measured on a
 stripped i386 PE as 61 of one function's 174 callers.
 
+ARM runtime reference queries with `funcstart_patterns` enabled retain decoded
+fall-through, branch and switch successors to resolve caller ownership after all
+entries are known. Each entry owns only
+instructions it reaches without passing another entry; shared blocks prefer the
+greatest entry that reaches them. An unrelated function in a gap cannot absorb
+another caller's discontiguous block merely by preceding it in memory. A later
+direct call can still establish a separate callee in previously decoded code.
+Incoming owner labels, outgoing buckets, intra-function branch filtering and
+indirect-call flags all use these same body owners. This graph walk reuses the
+decoded instructions and does not invoke the decoder again.
+CLI call-graph ownership projects these reachable owners onto the canonical
+inventory too, so direct callers, callback references and graph edges agree with
+the reference index for discontiguous bodies. Where no reachable owner is
+available, bounded inventory extents still resolve undecoded import slots.
+Graph seeds are appended during discovery, then sorted and deduplicated once
+when the index is finalized, before any instruction-count query reads them.
+
 (kuna) A reference query also seeds the walk with **the address it was asked
 about**. The same structural gap applies to the query target itself: `--from <entry>`
 about a function no descent reaches answered `count: 0` about a function that plainly
