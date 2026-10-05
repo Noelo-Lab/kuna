@@ -4,6 +4,12 @@
   <global>
     <range space="ram"/>
   </global>
+  <data_organization>
+     <pointer_size value="4"/>
+     <integer_size value="4"/>
+     <long_size value="4"/>
+     <long_long_size value="8"/>
+  </data_organization>
   <stackpointer register="ESP" space="ram"/>
   <default_proto>
     <prototype name="__register" extrapop="unknown" stackshift="4">
