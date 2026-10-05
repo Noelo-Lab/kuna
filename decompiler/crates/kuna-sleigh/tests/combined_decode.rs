@@ -287,3 +287,103 @@ fn repeated_bytes_respect_changed_context_and_replaced_images() {
         .unwrap();
     assert!(got.0.unwrap().0.starts_with("mov"));
 }
+
+#[test]
+fn reusable_lifts_require_local_reads_and_no_context_commits() {
+    for (spec, bytes, context, reusable) in [
+        (
+            "ARM/data/languages/ARM7_le.sla",
+            vec![1, 0, 0xa0, 0xe3],
+            vec![("TMode", 0), ("LRset", 0)],
+            true,
+        ),
+        (
+            "ARM/data/languages/ARM7_le.sla",
+            vec![0, 0, 0, 0xfa],
+            vec![("TMode", 0), ("LRset", 0)],
+            false,
+        ),
+        (
+            "ARM/data/languages/ARM7_le.sla",
+            vec![8, 0xbf, 1, 0x20],
+            vec![("TMode", 1), ("LRset", 0)],
+            false,
+        ),
+        (
+            "Sparc/data/languages/SparcV9_32.sla",
+            vec![0x81, 0xc7, 0xe0, 8, 0x81, 0xe8, 0, 0],
+            vec![],
+            false,
+        ),
+        (
+            "Toy/data/languages/toy_le.sla",
+            vec![0, 0x80, 1, 0],
+            vec![],
+            false,
+        ),
+    ] {
+        let (old, _) = engine(spec, &bytes, &context);
+        let (new, _) = engine(spec, &bytes, &context);
+        let mut expected_ops = Ops::default();
+        let mut expected_text = Text::default();
+        let len = old
+            .one_instruction_with_assembly(&mut expected_ops, &mut expected_text, &addr(&old, 0))
+            .unwrap();
+        let mut ops = Ops::default();
+        let mut text = Text::default();
+        let mut key = Some(vec![u32::MAX]);
+        let actual = (&new as &dyn Translate)
+            .one_instruction_reusable(&mut ops, &mut text, &addr(&new, 0), &mut key)
+            .unwrap();
+        assert_eq!(actual, len);
+        assert_eq!(ops, expected_ops);
+        assert_eq!(text, expected_text);
+        assert_eq!(key.is_some(), reusable, "{spec}: {bytes:x?}");
+        if let Some(key) = key {
+            assert_eq!(
+                key,
+                new.with_context_db_mut(|db| db.get_context(&addr(&new, 0)).to_vec())
+            );
+        }
+    }
+}
+
+#[test]
+fn reuse_keys_track_effective_context_read_overrides() {
+    let (engine, _) = engine(
+        "ARM/data/languages/ARM7_le.sla",
+        &[1, 0, 0xa0, 0xe3],
+        &[("TMode", 0), ("LRset", 0)],
+    );
+    let at = addr(&engine, 0);
+    let (word, mask) = engine.with_context_db_mut(|db| {
+        let var = db.get_variable(b"TMode").unwrap();
+        (var.get_word() as usize, var.get_mask() << var.get_shift())
+    });
+    let decode = || {
+        let mut text = Text::default();
+        let mut key = None;
+        let len = engine.one_instruction_reusable(
+            &mut Ops::default(), &mut text, &at, &mut key,
+        ).unwrap();
+        (len, text.0.unwrap().0, key.unwrap())
+    };
+    let (len, mnemonic, arm_key) = decode();
+    assert_eq!((len, mnemonic.as_str()), (4, "mov"));
+    assert!(engine.matches_decode_context(&at, &arm_key));
+
+    engine.set_context_read_override(word, mask, mask);
+    let (len, mnemonic, thumb_key) = decode();
+    assert_eq!((len, mnemonic.as_str()), (2, "movs"));
+    assert!(!engine.matches_decode_context(&at, &arm_key));
+    assert_ne!(thumb_key, arm_key);
+    assert!(engine.matches_decode_context(&at, &thumb_key));
+
+    engine.with_context_db_mut(|db| db.set_variable_default(b"TMode", 1).unwrap());
+    engine.set_context_read_override(word, 0, 0);
+    assert!(engine.matches_decode_context(&at, &thumb_key));
+    engine.set_context_read_override(word, mask, 0);
+    assert!(engine.matches_decode_context(&at, &arm_key));
+    assert!(!engine.matches_decode_context(&at, &thumb_key));
+    assert_eq!(decode().2, arm_key);
+}

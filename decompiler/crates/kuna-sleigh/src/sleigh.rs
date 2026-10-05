@@ -1525,6 +1525,7 @@ pub struct Sleigh {
     constructor_matches: RefCell<Vec<ConstructorMatch>>,
     /// The context commits of the most recent `one_instruction`.
     last_commits: RefCell<Vec<ContextCommitRecord>>,
+    context_queries: std::cell::Cell<u64>,
 }
 
 /// A constructor decision reads only instruction bits (relative to the operand
@@ -1600,6 +1601,7 @@ impl Sleigh {
             assembly_buffers: RefCell::new((String::new(), String::new())),
             constructor_matches: RefCell::new(Vec::new()),
             last_commits: RefCell::new(Vec::new()),
+            context_queries: std::cell::Cell::new(0),
         }
     }
 
@@ -2020,6 +2022,7 @@ impl Sleigh {
         state: ParseState,
         reuse_matches: bool,
     ) -> KunaResult<ParserContextGuard> {
+        self.context_queries.set(self.context_queries.get().wrapping_add(1));
         let mut pos = self.checkout_context(addr);
         self.resolve(&mut pos, reuse_matches)?;
         if state == ParseState::Disassembly {
@@ -2428,7 +2431,7 @@ impl Sleigh {
         emit: &mut dyn PcodeEmit,
         baseaddr: &Address,
     ) -> KunaResult<i32> {
-        self.one_instruction_with_map(emit, baseaddr, None, None)
+        self.one_instruction_with_map(emit, baseaddr, None, None, None)
     }
 
     pub fn one_instruction_checked(
@@ -2437,7 +2440,7 @@ impl Sleigh {
         baseaddr: &Address,
         image: &dyn ImageBytes,
     ) -> KunaResult<i32> {
-        self.one_instruction_with_map(emit, baseaddr, Some(image), None)
+        self.one_instruction_with_map(emit, baseaddr, Some(image), None, None)
     }
 
     /// Reuse this instruction's parse only when lifting cannot change the
@@ -2448,7 +2451,7 @@ impl Sleigh {
         assembly: &mut dyn AssemblyEmit,
         baseaddr: &Address,
     ) -> KunaResult<i32> {
-        self.one_instruction_with_map(pcode, baseaddr, None, Some(assembly))
+        self.one_instruction_with_map(pcode, baseaddr, None, Some(assembly), None)
     }
 
     fn check_mapped_instruction(image: &dyn ImageBytes, addr: &Address, len: i32) -> KunaResult<()> {
@@ -2472,7 +2475,10 @@ impl Sleigh {
         baseaddr: &Address,
         image: Option<&dyn ImageBytes>,
         assembly: Option<&mut dyn AssemblyEmit>,
+        mut reusable: Option<&mut Option<Vec<u32>>>,
     ) -> KunaResult<i32> {
+        if let Some(key) = reusable.as_deref_mut() { *key = None; }
+        let queries = self.context_queries.get();
         let alignment = self.base.base.get_alignment();
         // C++ `(baseaddr.getOffset() % alignment) != 0`; clippy prefers the
         // is_multiple_of phrasing (alignment is a small positive int4).
@@ -2576,6 +2582,8 @@ impl Sleigh {
         cache.resolve_relatives()?;
         cache.emit(baseaddr, emit);
         *self.pcode_cacher.borrow_mut() = cache;
+        let context_free = contexts.len() == 1 && contexts[0].ctx.contextcommit.is_empty()
+            && contexts[0].ctx.get_delay_slot() == 0;
         let rendered = assembly.as_ref().and_then(|_| {
             let pos = &contexts[0].ctx;
             if !pos.contextcommit.is_empty() || pos.get_delay_slot() != 0 {
@@ -2596,6 +2604,12 @@ impl Sleigh {
                     *self.assembly_buffers.borrow_mut() = (mnemonic, body);
                 }
                 None => { let _ = self.print_assembly(assembly, baseaddr); }
+            }
+        }
+        if context_free && self.context_queries.get() == queries.wrapping_add(1) {
+            if let Some(key) = reusable {
+                *key = Some(self.cache.borrow()
+                    .effective_context(self.context_db.borrow().get_context(baseaddr)).collect());
             }
         }
         Ok(fall_offset)
@@ -2640,6 +2654,9 @@ impl Translate for Sleigh {
     }
     fn allow_context_set(&self, val: bool) {
         self.cache.borrow_mut().allow_set(val);
+    }
+    fn context_scope(&self) -> Option<crate::kuna_contextscope::ContextScope<'_>> {
+        Some(crate::kuna_contextscope::ContextScope::new(&self.context_db, &self.cache))
     }
     fn set_context_write_mask(&self, word: usize, mask: u32) -> u32 {
         self.cache.borrow_mut().set_write_mask(word, mask)
@@ -2690,6 +2707,18 @@ impl Translate for Sleigh {
     ) -> KunaResult<i32> {
         Sleigh::one_instruction_with_assembly(self, pcode, assembly, baseaddr)
     }
+    fn one_instruction_reusable(
+        &self, pcode: &mut dyn PcodeEmit, assembly: &mut dyn AssemblyEmit,
+        baseaddr: &Address, context: &mut Option<Vec<u32>>,
+    ) -> KunaResult<i32> {
+        self.one_instruction_with_map(pcode, baseaddr, None, Some(assembly), Some(context))
+    }
+
+    fn matches_decode_context(&self, addr: &Address, context: &[u32]) -> bool {
+        self.cache.borrow().effective_context(self.context_db.borrow().get_context(addr))
+            .eq(context.iter().copied())
+    }
+
     fn print_assembly_into(
         &self,
         baseaddr: &Address,
