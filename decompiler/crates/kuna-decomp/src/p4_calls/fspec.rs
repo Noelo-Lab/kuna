@@ -7963,6 +7963,7 @@ impl FuncCallSpecs {
         if !self.is_input_locked() {
             return Ok(());
         }
+        let variadic = crate::p4_calls::kuna_varargtransfer::pending_trials(data, self);
         let stackref = self.get_spacebase_relative(data);
         let mut placeholder = if self.stack_placeholder_slot >= 0 {
             data.obank()
@@ -8003,6 +8004,15 @@ impl FuncCallSpecs {
                 noplacehold = false;
                 placeholder = None; // with a locked stack param, no placeholder needed
             }
+        }
+        for (mut trial, vn) in variadic {
+            trial.set_slot(newinput.len() as int4);
+            trial.set_entry(None, -1);
+            trial.set_fixed_position(-1);
+            newinput.push(Some(vn));
+            let index = self.activeinput.get_num_trials();
+            self.activeinput.register_trial(trial.get_address(), trial.get_size());
+            *self.activeinput.get_trial_mut(index) = trial;
         }
         if let Some(ph) = placeholder {
             // Still need a placeholder: add it at the end of the parameters.

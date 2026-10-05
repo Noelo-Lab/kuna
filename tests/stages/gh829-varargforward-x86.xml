@@ -23,6 +23,14 @@
     parameter at that storage and the call is the only reader of it.  d3 also
     compares `a`, so it has another reader and is left alone in both passes.
 
+    The authored MSABI `stored` probe at 0x100200 loads/increments EDX,
+    stores the value through RCX, then passes the immutable "%i" format in
+    RCX. The store is another reader. With the option off its return call
+    omits EDX; with it on the format proves the promoted integer slot and
+    the same value is passed. Assertions 2 and 3 each require two distinct
+    return-call lines: their original forwarded call and the stored case
+    (on and off respectively).
+
     Pass 1 (`option varargforward off`) reproduces the bug: `pr(f)` in d2 and
     d5.  Pass 2 (default, on) prints `pr(f,a)` and `pr(f,a,b,c)`.
 -->
@@ -37,6 +45,17 @@ f30f1efa31c0e9c5000000
 <bytechunk space="ram" offset="0x100100">
 c3
 </bytechunk>
+<bytechunk space="ram" offset="0x100200">
+4883ec288b1183c2018911488d0dee010000e8e90000004883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100300">
+4889d0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100400" readonly="true">
+256900
+</bytechunk>
+<symbol space="ram" offset="0x100200" name="stored"/>
+<symbol space="ram" offset="0x100300" name="render_value"/>
 <symbol space="ram" offset="0x100000" name="d2"/>
 <symbol space="ram" offset="0x100010" name="d3"/>
 <symbol space="ram" offset="0x100030" name="d5"/>
@@ -47,6 +66,8 @@ c3
   <com>parse line extern int4 d2(char *f, int4 a);</com>
   <com>parse line extern int4 d3(char *f, int4 a);</com>
   <com>parse line extern int4 d5(char *f, int4 a, int4 b, int4 c);</com>
+  <com>parse line extern uint8 MSABI stored(int4 *value);</com>
+  <com>parse line extern uint8 MSABI render_value(char *format, ...);</com>
   <com>option varargforward off</com>
   <com>lo fu d2</com>
   <com>decompile</com>
@@ -54,8 +75,14 @@ c3
   <com>lo fu d5</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu stored</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option varargforward on</com>
   <com>lo fu d2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stored</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu d5</com>
@@ -67,7 +94,7 @@ c3
   <com>quit</com>
 </script>
 <stringmatch name="GH829 x86 #1: varargforward off drops every forwarded argument in d2 and d5 (bug reproduced), and d3 keeps pr(f) with it on" min="3" max="3">return pr\(f\);</stringmatch>
-<stringmatch name="GH829 x86 #2: varargforward on keeps the int forwarded in esi" min="1" max="1">return pr\(f,a\);</stringmatch>
-<stringmatch name="GH829 x86 #3: varargforward on keeps esi, edx and ecx" min="1" max="1">return pr\(f,a,b,c\);</stringmatch>
+<stringmatch name="GH829 x86 #2: varargforward on keeps the int forwarded in esi" min="2" max="2">return pr\(f,a\);|return render_value\("%i",[^;]+\);</stringmatch>
+<stringmatch name="GH829 x86 #3: varargforward on keeps esi, edx and ecx" min="2" max="2">return render_value\("%i"\);|return pr\(f,a,b,c\);</stringmatch>
 <stringmatch name="GH829 x86 #4: d3 also compares its parameter, so its call is left as it was" min="1" max="1">if \(6 &lt;= a\)</stringmatch>
 </decompilertest>
