@@ -154,6 +154,8 @@ pub struct XrefIndex {
     decoded: HashSet<u64>,
     /// Every function entry the walk seeded or discovered, in address order.
     funcs: BTreeSet<u64>,
+    /// Reachable instruction owners for ARM runtime queries.
+    body_owners: Option<BTreeMap<u64, u64>>,
     /// Function entries whose decoded body contains a `CALLIND`
     /// ([`XrefIndex::has_indirect_calls`]).
     indirect_callers: BTreeSet<u64>,
@@ -184,6 +186,39 @@ struct FlowGraph {
 }
 
 impl FlowGraph {
+    /// Attribute only reachable instructions, stopping at every other entry.
+    /// Shared tails prefer the greatest entry that actually reaches them.
+    fn body_owners(&self, entries: &BTreeSet<u64>) -> BTreeMap<u64, u64> {
+        let mut owners = vec![None; self.insns.len()];
+        let mut stack = Vec::new();
+        for &entry in entries.iter().rev() {
+            stack.push(entry);
+            while let Some(vma) = stack.pop() {
+                if vma != entry && entries.contains(&vma) {
+                    continue;
+                }
+                let Ok(at) = self.insns.binary_search_by_key(&vma, |&(a, _, _)| a) else {
+                    continue;
+                };
+                if owners[at].is_some() {
+                    continue;
+                }
+                owners[at] = Some(entry);
+                let (_, len, falls) = self.insns[at];
+                if falls {
+                    stack.push(vma.wrapping_add(u64::from(len)));
+                }
+                let lo = self.jumps.partition_point(|&(from, _)| from < vma);
+                stack.extend(
+                    self.jumps[lo..].iter().take_while(|&&(from, _)| from == vma).map(|&(_, to)| to),
+                );
+            }
+        }
+        self.insns.iter().zip(owners)
+            .filter_map(|(&(vma, _, _), owner)| owner.map(|entry| (vma, entry)))
+            .collect()
+    }
+
     fn count_from(
         &self,
         entry: u64,
@@ -347,8 +382,9 @@ impl XrefIndex {
             })
     }
 
-    /// The function containing `vma`: the greatest known entry `<= vma`, the
-    /// ordered containment Ghidra's `FunctionManager` answers with.
+    /// The function containing `vma`. ARM runtime queries with
+    /// `funcstart_patterns` use reachable bodies; other walks use the greatest
+    /// known entry `<= vma`.
     ///
     /// `None` unless the walk actually decoded `vma`, so a data address never
     /// gets attributed to whichever function happens to precede it in memory.
@@ -356,7 +392,17 @@ impl XrefIndex {
         if !self.decoded.contains(&vma) {
             return None;
         }
-        self.funcs.range(..=vma).next_back().copied()
+        self.body_owners.as_ref().map_or_else(
+            || self.funcs.range(..=vma).next_back().copied(),
+            |owners| owners.get(&vma).copied(),
+        )
+    }
+
+    /// The decoded instruction's owner established by reachable-body analysis.
+    /// Returns `None` for walks without retained body owners or instructions
+    /// outside those bodies; never estimates ownership from address order.
+    pub fn reachable_function_containing(&self, vma: u64) -> Option<u64> {
+        self.body_owners.as_ref()?.get(&vma).copied()
     }
 
     /// Did the walk treat `vma` as a function entry (seeded or CALL-discovered)?
@@ -404,7 +450,7 @@ impl XrefIndex {
     /// `CALLIND` only. An indirect *branch* is not one: a jump table and a
     /// forwarding veneer's `jmp [slot]` both lift to `BRANCHIND`, and the
     /// veneer's target is recoverable anyway ([`Self::veneer_slot`]). The call
-    /// site is attributed by the same ordered containment
+    /// site is attributed by the same ownership rule
     /// [`Self::refs_from_function`] buckets that instruction's references by, so
     /// the two can never name different functions.
     pub fn has_indirect_calls(&self, entry: u64) -> bool {
@@ -643,13 +689,16 @@ fn descend(
         n => n as usize,
     };
 
+    let preserve_bodies = sections_are_runtime
+        && arch.analysis_funcstart_patterns
+        && file.architecture() == object::Architecture::Arm;
     let mut st = State {
         by_target: BTreeMap::new(),
         by_source: BTreeMap::new(),
         decoded: HashSet::new(),
         funcs: seed_set.clone(),
         indirect_call_sites: BTreeSet::new(),
-        flow: measure.then(|| FlowGraph {
+        flow: (measure || preserve_bodies).then(|| FlowGraph {
             seeds: seed_set.iter().copied().collect(),
             ..FlowGraph::default()
         }),
@@ -957,7 +1006,11 @@ fn descend(
         }
     }
 
-    st.finish(veneers)
+    let mut index = st.finish(veneers, preserve_bodies);
+    if !measure {
+        index.flow = None;
+    }
+    index
 }
 
 /// Ghidra's `MINIMUM_FUNCTION_COUNT`, mirrored here so the partition is not even
@@ -1137,15 +1190,23 @@ impl State {
         self.by_source.entry(from).or_default().push(r);
     }
 
-    /// Close the index: the per-function bucket is grouped by ordered
-    /// containment (not by which entry's descent happened to reach the
-    /// instruction first), so a row's `from_function` and the `--from` bucket it
-    /// lands in can never disagree. The computed-call set is folded the same
-    /// way, for the same reason.
-    fn finish(mut self, veneers: BTreeMap<u64, Veneer>) -> XrefIndex {
+    /// Use the same owners for incoming rows, outgoing buckets and computed calls.
+    fn finish(mut self, veneers: BTreeMap<u64, Veneer>, preserve_bodies: bool) -> XrefIndex {
+        if let Some(flow) = self.flow.as_mut() {
+            flow.seeds.sort_unstable();
+            flow.seeds.dedup();
+            flow.insns.sort_unstable_by_key(|&(vma, _, _)| vma);
+            flow.jumps.sort_unstable();
+        }
+        let body_owners = self.flow.as_ref().filter(|_| preserve_bodies)
+            .map(|flow| flow.body_owners(&self.funcs));
+        let owner = |vma| body_owners.as_ref().map_or_else(
+            || self.funcs.range(..=vma).next_back().copied(),
+            |owners| owners.get(&vma).copied(),
+        );
         let mut by_source_function: BTreeMap<u64, Vec<Xref>> = BTreeMap::new();
         for (&from, refs) in &self.by_source {
-            let Some(&entry) = self.funcs.range(..=from).next_back() else {
+            let Some(entry) = owner(from) else {
                 continue;
             };
             by_source_function.entry(entry).or_default().extend(refs.iter().cloned());
@@ -1153,7 +1214,7 @@ impl State {
         let indirect_callers: BTreeSet<u64> = self
             .indirect_call_sites
             .iter()
-            .filter_map(|from| self.funcs.range(..=*from).next_back().copied())
+            .filter_map(|from| owner(*from))
             .collect();
         for refs in self.by_target.values_mut() {
             sort_dedup(refs, /* by_source = */ true);
@@ -1175,15 +1236,12 @@ impl State {
             by_source_function,
             decoded: self.decoded,
             funcs: self.funcs,
+            body_owners,
             indirect_callers,
             veneers,
             veneers_of_slot,
             insns,
-            flow: self.flow.map(|mut flow| {
-                flow.insns.sort_unstable_by_key(|&(vma, _, _)| vma);
-                flow.jumps.sort_unstable();
-                flow
-            }),
+            flow: self.flow,
             switches: self.switches,
         }
     }
@@ -1208,6 +1266,7 @@ fn empty() -> XrefIndex {
         by_source_function: BTreeMap::new(),
         decoded: HashSet::new(),
         funcs: BTreeSet::new(),
+        body_owners: None,
         indirect_callers: BTreeSet::new(),
         veneers: BTreeMap::new(),
         veneers_of_slot: BTreeMap::new(),
@@ -1807,7 +1866,7 @@ mod tests {
             st.file(e.from, e.to, e.kind, "");
         }
         // The veneer is the single 6-byte `jmp [0x4008]` at 0x1030.
-        st.finish(BTreeMap::from([(0x1030, Veneer { slot: 0x4008, end: 0x1036 })]))
+        st.finish(BTreeMap::from([(0x1030, Veneer { slot: 0x4008, end: 0x1036 })]), false)
     }
 
     /// The alias class is the veneer plus its slot, and it is symmetric: asking
@@ -1861,7 +1920,7 @@ mod tests {
             switches: Vec::new(),
         };
         st.file(0x1188, 0x4008, XrefKind::Read, "");
-        let index = st.finish(BTreeMap::new());
+        let index = st.finish(BTreeMap::new(), false);
         assert!(index.has_indirect_calls(0x1180), "the call site lost its own function");
         assert!(!index.has_indirect_calls(0x1030), "attributed to the preceding entry");
         // And it lands in the same bucket the instruction's references do.
@@ -1891,11 +1950,14 @@ mod tests {
             flow: Some(FlowGraph {
                 insns,
                 jumps: vec![(0x2006, 0x3000), (0x1001, 0x2004)],
-                seeds: vec![0x1000, 0x2000, 0x3000],
+                seeds: vec![0x3000, 0x1000, 0x3000, 0x2000],
             }),
             switches: Vec::new(),
         };
-        let index = st.finish(BTreeMap::new());
+        let index = st.finish(BTreeMap::new(), true);
+        assert_eq!(index.function_containing(0x1001), Some(0x1000));
+        assert_eq!(index.function_containing(0x2004), Some(0x2000));
+        assert_eq!(index.function_containing(0x3000), Some(0x3000));
         assert_eq!(index.function_instruction_counts(&[0x2000, 0x1000, 0x3000], usize::MAX), [5, 5, 1]);
         assert_eq!(index.function_instruction_counts(&[0x2000], 3), [3]);
         assert_eq!(index.function_instruction_counts(&[0x4000], usize::MAX), [0]);

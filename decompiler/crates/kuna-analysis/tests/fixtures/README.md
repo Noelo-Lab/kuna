@@ -1285,3 +1285,12 @@ Ghidra because its stack-variable model cannot span entry SP=0.
 `partial_global_load_x86_64.c` is compiled by the CLI round-trip test with GCC and Clang at `-O0` and `-O2` (`-fno-pie -no-pie -fno-strict-aliasing`). It covers partial global stores followed by an aliasing pointer read and a whole-object clear, including high/low halves, mixed byte/short offsets, branches, affine offsets, pointer phis, calls, repeated reads, volatile storage, disjoint pointers, and register/stack-passed pointer arguments alongside unrelated local spills. Printed C is rebuilt under both compilers and levels; return values and final global memory must match the native executable.
 
 `partial_global_excluded_x86_64.c` covers repeated reads through pointers fetched from memory or returned by a call, including a memory-only pointer phi cycle and unrelated spilled local pointers. The CLI test links a separate callback stub and builds with GCC/Clang at `-O0`/`-O2`. These controls retain the existing global-store sequence with `indexaliasguard` off: only the whole-object clear, pending separate pointer provenance recovery. A machine spacebase input used by the local spill cannot establish incoming-pointer provenance.
+
+### Discontiguous ARM xref caller
+
+`arm_xref_bodies.py` generates little- or big-endian ARM ELF executables from
+authored instruction words under Apache-2.0, without compiler or binary inputs.
+The entry calls functions at `0x1500` and `0x1600`; the first branches past the
+second to a direct call and an indirect call at `0x1750`. Both functions are
+established by ordinary calls, independently of frame recovery. Tests generate
+the images in Cargo scratch directories; no generated binary is retained.
