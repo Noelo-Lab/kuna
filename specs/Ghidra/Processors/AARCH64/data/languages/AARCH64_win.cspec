@@ -176,6 +176,20 @@
           <convert_to_ptr/>
         </rule>
         <rule>
+          <datatype name="any" minsize="9"/>
+          <varargs/>
+          <join align="true"/>          <!-- Variadic functions may split between x7 and the stack -->
+        </rule>
+        <rule>
+          <datatype name="any" minsize="9"/>
+          <join align="true" stackspill="false"/>
+        </rule>
+        <rule>
+          <datatype name="any" minsize="9"/>
+          <goto_stack/>                 <!-- Never split between x7 and the stack -->
+          <consume_remaining storage="general"/>
+        </rule>
+        <rule>
           <datatype name="any"/>
           <join align="true"/>          <!-- Chunk from general purpose registers -->
         </rule>

@@ -391,6 +391,24 @@ variants cover the modern cspec vocabulary: `GotoStack`, `ConvertToPointer`,
 storage classes), `ConsumeAs`, `HiddenReturnAssign`, and the resource-burning
 side-effects `ConsumeExtra`, `ExtraStack`, `ConsumeRemaining`.
 
+The bundled AArch64 cspecs (`AARCH64.cspec`, `AARCH64_apple.cspec` and
+`AARCH64_win.cspec`) never split an argument wider than one general register
+between x7 and the stack. AAPCS64 passes such an argument wholly in registers
+when enough are left; otherwise it goes wholly on the stack and no later
+argument uses a general register. Two rules ahead of the general
+`<join align="true"/>` fallback say so for arguments of 9 bytes and up: a join
+with `stackspill="false"`, then `<goto_stack/>` with
+`<consume_remaining storage="general"/>`. With only x7 left, a 16-byte struct
+therefore occupies the first two stack doublewords and a later `long` the
+third, at the call site as in the callee. Arguments of 8 bytes or less, float
+and homogeneous-float-aggregate arguments, and arguments that fit in the
+registers left are assigned as before. The Windows variadic exception is kept:
+Microsoft's ARM64 ABI lays out every argument of a variadic function as if on a
+stack whose first 64 bytes are x0–x7, so a `<varargs/>` join ahead of the
+no-spill rule still splits a composite between x7 and the stack there.
+These rules model the C ABI only: a Rust-ABI two-scalar pair, which rustc may
+split between x7 and the stack, is not modelled, as on x86-64.
+
 ### Recovery: trials → parameters
 
 The recovery direction runs on `ParamTrial`/`ParamActive`
