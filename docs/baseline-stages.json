@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1912,
-    1912
+    1918,
+    1918
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -238,6 +238,12 @@
     "data:EXPLICIT-DOUBLE-SCORE #1: option off exposes the unassigned refined high return cell",
     "data:EXPLICIT-DOUBLE-SCORE #2: option on returns the complete double division",
     "data:EXPLICIT-DOUBLE-SCORE #3: an unlocked inferred output does not gain the unjustified cell",
+    "data:EXTENT-DIRECT #1: the in-range case body and return survive with tailcalljump enabled and disabled",
+    "data:EXTENT-DIRECT #2: the other in-range return survives both passes",
+    "data:EXTENT-DIRECT #3: a direct transfer beyond the asserted extent remains a tail call",
+    "data:EXTENT-DIRECT #4: an in-range recovered indirect target remains local",
+    "data:EXTENT-DIRECT #5: the stated interior indirect entry is not inferred as a callee",
+    "data:EXTENT-FALLTHROUGH #1: both passes decode the body inside the asserted outer extent",
     "data:FAST-FUNCDISC #1: loader-known entry is present in both inventories",
     "data:FAST-FUNCDISC #2: direct callee is absent off and present on",
     "data:FAST-FUNCDISC #3: the newly inventoried callee has a real decompiled body",

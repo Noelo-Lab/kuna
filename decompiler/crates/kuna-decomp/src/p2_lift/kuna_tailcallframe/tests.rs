@@ -210,7 +210,7 @@ fn explicit_branch_precedence_suppresses_a_positive_frame_teardown() {
     assert!(frame_matches, "control must positively trigger tailcallframe");
 
     assert_eq!(
-        crate::flow::select_inferred_tail_call(false, || false, || frame_matches),
+        crate::flow::select_inferred_tail_call(false, false, || false, || frame_matches),
         Some("tailcallframe"),
         "without an applied assertion, classification must be unchanged"
     );
@@ -219,6 +219,7 @@ fn explicit_branch_precedence_suppresses_a_positive_frame_teardown() {
     assert_eq!(
         crate::flow::select_inferred_tail_call(
             true,
+            false,
             || {
                 jump_consulted.set(true);
                 true
@@ -230,6 +231,30 @@ fn explicit_branch_precedence_suppresses_a_positive_frame_teardown() {
         ),
         None,
         "an applied branch assertion owns precedence over both inference rules"
+    );
+    assert!(!jump_consulted.get(), "tailcalljump was still consulted");
+    assert!(!frame_consulted.get(), "tailcallframe was still consulted");
+}
+
+#[test]
+fn declared_extent_suppresses_both_inferred_tail_call_rules() {
+    let jump_consulted = Cell::new(false);
+    let frame_consulted = Cell::new(false);
+    assert_eq!(
+        crate::flow::select_inferred_tail_call(
+            false,
+            true,
+            || {
+                jump_consulted.set(true);
+                true
+            },
+            || {
+                frame_consulted.set(true);
+                true
+            },
+        ),
+        None,
+        "a caller-declared extent makes an interior destination local"
     );
     assert!(!jump_consulted.get(), "tailcalljump was still consulted");
     assert!(!frame_consulted.get(), "tailcallframe was still consulted");
