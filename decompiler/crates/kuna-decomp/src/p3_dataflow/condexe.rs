@@ -154,6 +154,10 @@ impl ConditionalExecution {
         if !ce.test_iblock(fd) || !ce.find_init_pre(fd) || !ce.verify_same_condition(fd) {
             return None;
         }
+        let init = fd.bblocks_ref().block(ce.initblock?);
+        if init.get_out(0) == init.get_out(1) {
+            return None;
+        }
         let camethruposta_slot = if ce.init2a_true { 1 - ce.prea_inslot } else { ce.prea_inslot };
         Some(fd.bblocks_ref().block(iblock).get_out(if inslot == camethruposta_slot { 0 } else { 1 }))
     }

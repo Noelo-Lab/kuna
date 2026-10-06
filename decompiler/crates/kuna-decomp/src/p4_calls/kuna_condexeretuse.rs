@@ -118,20 +118,35 @@ pub fn cannot_arrive(data: &Funcdata, f: Forced, op: OpId, reach: &mut Reach) ->
     set.as_ref().is_some_and(|s| !s.contains(&bl))
 }
 
-/// Every block reachable from `from`, itself included; `None` past [`MAX_VISIT`].
+/// Every block reachable from `from`, itself included, where an execution that
+/// arrives at another re-testing merge block through one in-edge follows only
+/// the out-edge that merge forces; `None` past [`MAX_VISIT`].
 fn reachable_from(data: &Funcdata, from: BlockId) -> Option<HashSet<BlockId>> {
     let graph = data.bblocks_ref();
-    let mut seen: HashSet<BlockId> = HashSet::new();
-    let mut stack = vec![from];
-    while let Some(bl) = stack.pop() {
-        if !seen.insert(bl) {
+    let mut blocks: HashSet<BlockId> = HashSet::new();
+    let mut seen: HashSet<(BlockId, i32)> = HashSet::new();
+    let mut stack = vec![(from, -1)];
+    while let Some((bl, inslot)) = stack.pop() {
+        if !seen.insert((bl, inslot)) {
             continue;
         }
+        blocks.insert(bl);
         if seen.len() > MAX_VISIT {
             return None;
         }
         let b = graph.block(bl);
-        stack.extend((0..b.size_out()).map(|i| b.get_out(i)));
+        let forced = (inslot >= 0)
+            .then(|| ConditionalExecution::forced_out_block(data, bl, inslot))
+            .flatten();
+        for i in 0..b.size_out() {
+            let next = b.get_out(i);
+            if forced.is_some_and(|f| f != next) {
+                continue;
+            }
+            let nb = graph.block(next);
+            let slot = if nb.size_in() == 2 && nb.size_out() == 2 { b.get_out_rev_index(i) } else { -1 };
+            stack.push((next, slot));
+        }
     }
-    Some(seen)
+    Some(blocks)
 }
