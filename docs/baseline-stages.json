@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2142,
-    2142
+    2152,
+    2152
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1588,6 +1588,16 @@
     "data:condexeret #7: merges on different conditions keep sfp void in both passes",
     "data:condexeret #8: off, nested loses its return value",
     "data:condexeret #9: on, nested returns 1 when only the second test holds",
+    "data:condexeretuse #10: a 7 passed to a call that does not return keeps nrexit and tnrexit void in both passes",
+    "data:condexeretuse #1: off, pick pair popr and tpick lose their return value",
+    "data:condexeretuse #2: on, pick pair and tpick return 7 on the path that writes it",
+    "data:condexeretuse #3: on, pair returns both halves",
+    "data:condexeretuse #4: on, popr returns 3 through popeq",
+    "data:condexeretuse #5: on, the tail calls return their result",
+    "data:condexeretuse #6: a possible call path keeps differ void in both passes",
+    "data:condexeretuse #7: a store on the returning path keeps stores void in both passes",
+    "data:condexeretuse #8: a 7 that only reaches the call keeps compl void in both passes",
+    "data:condexeretuse #9: a 7 forced into a spin loop keeps spin void in both passes",
     "data:condfold #1: OFF, the fold is declined and the sibling's test becomes a crossing goto (pass 1 only)",
     "data:condfold #2: OFF, the crossing goto needs a label on the shared continuation (pass 1 only)",
     "data:condfold #3: ON, the two conditions fold into one short-circuit OR whose right operand carries the sibling prefix as a comma expression (pass 2 only)",
