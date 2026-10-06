@@ -361,12 +361,18 @@ fn read_only_on_the_way(data: &Funcdata, vn: VarnodeId, pieces: bool) -> bool {
                 || space == Some(spacetype::IPTR_INTERNAL)
             {
                 work.push(out);
-            } else if space != Some(spacetype::IPTR_PROCESSOR) || o.get_size() > 1 {
+            } else if !is_register(o.get_addr()) || o.get_size() > 1 {
                 return false;
             }
         }
     }
     true
+}
+
+/// Is `addr` in the processor's register space? A one-byte global in RAM is
+/// in a processor space too, but it is no flag.
+fn is_register(addr: &Address) -> bool {
+    addr.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR && s.get_name() == "register")
 }
 
 /// Did the function produce `vn`: a constant, a call's result, or the output
@@ -525,15 +531,20 @@ fn accept_pieced(data: &Funcdata, active: &mut ParamActive, rets: &[OpId]) -> bo
 }
 
 /// Is `vn`, read by the RETURN `ret`, a PIECE whose parts are each a call's
-/// untouched result (or a byte range of it) or a value the function computed
-/// on purpose and reads only on its way to a RETURN, at least one of them the
-/// latter?
+/// untouched result (or a byte range of it) or a value the function computed,
+/// with at least one of each?
+///
+/// A computed part is a constant or the output of an arithmetic or logical
+/// operation ([`computes`]), produced on purpose ([`computed_within`]) and read
+/// only on its way to a RETURN. A part the function only moved there (an
+/// unwritten input register, a global it copies or loads, a byte range of
+/// another value) is not computed.
 fn pieced_call_result(data: &Funcdata, vn: VarnodeId, ret: OpId) -> bool {
     let def = |v: VarnodeId| data.vbank().get(v).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d));
     let Some(whole) = data.vbank().get(vn).filter(|_| def(vn).is_some_and(|o| o.code() == OpCode::CPUI_PIECE)) else {
         return false;
     };
-    let mut computed = false;
+    let (mut computed, mut untouched) = (false, false);
     let mut work = vec![vn];
     let mut steps = 0;
     while let Some(cur) = work.pop() {
@@ -542,23 +553,43 @@ fn pieced_call_result(data: &Funcdata, vn: VarnodeId, ret: OpId) -> bool {
             return false;
         }
         let op = def(cur);
+        let constant = data.vbank().get(cur).is_some_and(|v| v.is_constant());
         match op.map(|o| o.code()) {
             Some(OpCode::CPUI_PIECE) => work.extend(op.into_iter().flat_map(|o| [o.get_in(0), o.get_in(1)]).flatten()),
-            Some(OpCode::CPUI_SUBPIECE) if op.and_then(|o| o.get_in(0)).is_some_and(|i| is_call_result(data, i, MAX_DEPTH)) => {}
-            _ if is_call_result(data, cur, MAX_DEPTH) => {}
-            _ => {
-                let constant = data.vbank().get(cur).is_some_and(|v| v.is_constant());
-                if !constant
-                    && (!computed_within(data, cur, ret, MAX_DEPTH, (whole.get_addr(), whole.get_size()))
-                        || !read_only_on_the_way(data, cur, true))
-                {
-                    return false;
-                }
-                computed = true;
+            Some(OpCode::CPUI_SUBPIECE) if op.and_then(|o| o.get_in(0)).is_some_and(|i| is_call_result(data, i, MAX_DEPTH)) => {
+                untouched = true
             }
+            _ if is_call_result(data, cur, MAX_DEPTH) => untouched = true,
+            _ if constant => computed = true,
+            Some(_) if op.is_some_and(|o| computes(data, o))
+                && computed_within(data, cur, ret, MAX_DEPTH, (whole.get_addr(), whole.get_size()))
+                && read_only_on_the_way(data, cur, true) =>
+            {
+                computed = true
+            }
+            _ => return false,
         }
     }
-    computed
+    computed && untouched
+}
+
+/// Does `op` compute a value: an arithmetic or logical operation, or a copy of
+/// a constant? A move, a load, a byte range of another value and the ops
+/// heritage and calls create are not computations.
+fn computes(data: &Funcdata, op: &crate::op::PcodeOp) -> bool {
+    match op.code() {
+        OpCode::CPUI_COPY => op.get_in(0).and_then(|i| data.vbank().get(i)).is_some_and(|i| i.is_constant()),
+        OpCode::CPUI_LOAD
+        | OpCode::CPUI_SUBPIECE
+        | OpCode::CPUI_PIECE
+        | OpCode::CPUI_INDIRECT
+        | OpCode::CPUI_MULTIEQUAL
+        | OpCode::CPUI_CALL
+        | OpCode::CPUI_CALLIND
+        | OpCode::CPUI_CALLOTHER
+        | OpCode::CPUI_NEW => false,
+        _ => true,
+    }
 }
 
 /// Does the output model return anything from the trials as they stand?
@@ -820,23 +851,33 @@ pub fn plant(data: &mut Funcdata) {
 }
 
 /// The register pairs the output model joins into one value, as `(first,
-/// second)`: the two pieces of a general join entry, low piece first. A
-/// big-endian pair is left out, as everywhere in this module, and so is a pair
-/// the model forms by rule from two register entries (x86-64 `RAX`, `RDX`).
+/// second)`: the two pieces of a general join entry whose low piece is a
+/// register the model also returns on its own and whose high piece is not.
+/// A big-endian pair is left out, as everywhere in this module, and so is a
+/// pair the model forms by rule from two register entries (x86-64 `RAX`,
+/// `RDX`; ARM `r0`, `r1`). The check on the lone entries also keeps out a cspec
+/// that lists the low register as the join's first piece (`piece1="a0"
+/// piece2="a1"` beside a lone `a0`).
 fn join_pairs(data: &Funcdata) -> Vec<((Address, i32), (Address, i32))> {
     let Some(list) = data.get_func_proto().model().output_list() else { return Vec::new() };
+    let general = |e: &crate::fspec::ParamEntry| e.get_type() == crate::dtype::type_class::TYPECLASS_GENERAL;
+    let alone = |(addr, size): &(Address, i32)| {
+        list.get_entry().iter().any(|e| {
+            general(e)
+                && e.get_join_record().is_none()
+                && e.get_size() == *size
+                && Address::new(e.get_space().clone(), e.get_base()) == *addr
+        })
+    };
     let mut pairs = Vec::new();
-    for e in list.get_entry() {
-        if e.get_type() != crate::dtype::type_class::TYPECLASS_GENERAL {
-            continue;
-        }
+    for e in list.get_entry().iter().filter(|e| general(e)) {
         let Some(jr) = e.get_join_record().filter(|jr| jr.num_pieces() == 2) else { continue };
         let piece = |i| {
             let p = jr.get_piece(i);
             (p.get_addr(), p.size as i32)
         };
         let pair = (piece(1), piece(0));
-        if !pair.0 .0.is_big_endian() && !pairs.contains(&pair) {
+        if !pair.0 .0.is_big_endian() && alone(&pair.0) && !alone(&pair.1) && !pairs.contains(&pair) {
             pairs.push(pair);
         }
     }
@@ -846,10 +887,13 @@ fn join_pairs(data: &Funcdata) -> Vec<((Address, i32), (Address, i32))> {
 /// Which of `pairs` the last instruction before `ret` that writes a byte of
 /// one of them writes the second register of and not the first, on the path
 /// back to the direct CALL before it. `None` when the walk meets a CALLIND, a
-/// CALLOTHER or a merge first, or when that instruction also moves the stack
-/// pointer (gcc's `pop %edx` releasing an argument slot).
+/// CALLOTHER or a merge first, when that instruction also moves the stack
+/// pointer (gcc's `pop %edx` releasing an argument slot), or when a later
+/// instruction reads a byte it wrote: `mov gc1,%dl; mov %dl,gc2` copies a
+/// global through the register.
 fn tail_pair(data: &Funcdata, pairs: &[((Address, i32), (Address, i32))], ret: OpId) -> Option<usize> {
     let mut found = None;
+    let mut reads: Vec<(Address, i32, Address)> = Vec::new();
     let mut bl = data.obank().get(ret)?.get_parent()?;
     let mut cur = data.op_previous_op(ret);
     for _ in 0..TAIL_BLOCKS {
@@ -860,16 +904,21 @@ fn tail_pair(data: &Funcdata, pairs: &[((Address, i32), (Address, i32))], ret: O
                 OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER => return None,
                 _ => {}
             }
-            let out = o.get_out().and_then(|v| data.vbank().get(v));
-            if let Some(out) = out.filter(|_| found.is_none()) {
-                let hits = |(a, s): &(Address, i32)| {
-                    a.overlap(0, out.get_addr(), out.get_size()) >= 0 || out.get_addr().overlap(0, a, *s) >= 0
+            if found.is_none() {
+                let out = o.get_out().and_then(|v| data.vbank().get(v));
+                let hit = |a: &Address, s: i32| {
+                    out.is_some_and(|out| a.overlap(0, out.get_addr(), out.get_size()) >= 0 || out.get_addr().overlap(0, a, s) >= 0)
                 };
-                if let Some(k) = pairs.iter().position(|(first, second)| hits(second) && !hits(first)) {
-                    if crate::kuna_retinputhalf::writes_stack_pointer(data, o.get_addr()) {
+                if let Some(k) = pairs.iter().position(|(first, second)| hit(&second.0, second.1) && !hit(&first.0, first.1)) {
+                    if crate::kuna_retinputhalf::writes_stack_pointer(data, o.get_addr())
+                        || reads.iter().any(|(a, s, pc)| pc != o.get_addr() && hit(a, *s))
+                    {
                         return None;
                     }
                     found = Some(k);
+                } else {
+                    let read = (0..o.num_input()).filter_map(|i| o.get_in(i)).filter_map(|i| data.vbank().get(i));
+                    reads.extend(read.filter(|v| !v.is_constant()).map(|v| (v.get_addr().clone(), v.get_size(), o.get_addr().clone())));
                 }
             }
             cur = data.op_previous_op(op);

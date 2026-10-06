@@ -271,6 +271,56 @@ fn i386_pushed_image() -> Vec<u8> {
     })
 }
 
+/// Functions that return a call's `int` or pointer result, or nothing kuna can
+/// see, and then use `%dl` for something else; none returns `%edx`. `b4` is gcc -Os `gc2 = gc1;`
+/// (`mov gc1,%dl; mov %dl,gc2`), `b3` clang's MSVC-target `gflag = gflag2 &&
+/// gi1;` (`setne %dl; and %cl,%dl; mov %dl,gflag`), and `newp` gcc -Os
+/// findutils' `get_new_pred` shape, which stores a byte through `%dl` into
+/// the block it allocated. The globals sit at 0x500000.
+fn i386_dl_scratch_image() -> Vec<u8> {
+    let funcs = [
+        hex("g32", "8b 44 24 04 6b c0 07 c3", None),
+        hex("xmalloc", "b8 00 00 60 00 c3", None),
+        hex("b4", "55 89 e5 83 ec 14 ff 75 08 e8 00 00 00 00 8a 15 00 00 50 00 88 15 01 00 50 00 c9 c3", Some((9, "g32"))),
+        hex(
+            "b3",
+            "ff 74 24 04 e8 00 00 00 00 83 c4 04 80 3d 02 00 50 00 00 0f 95 c1 83 3d 04 00 50 00 00 0f 95 c2 \
+             20 ca 88 15 08 00 50 00 c3",
+            Some((4, "g32")),
+        ),
+        hex(
+            "newp",
+            "55 89 e5 83 ec 14 6a 08 e8 00 00 00 00 83 c4 10 83 3d 10 00 50 00 00 74 0a 8b 15 14 00 50 00 \
+             89 02 eb 05 a3 10 00 50 00 8a 15 18 00 50 00 a3 14 00 50 00 88 50 04 c9 c3",
+            Some((8, "xmalloc")),
+        ),
+    ];
+    object(Architecture::I386, 0, &funcs, |from, to| {
+        let mut bytes = vec![0xe8];
+        bytes.extend_from_slice(&((to as i64 - from as i64 - 5) as i32).to_le_bytes());
+        bytes
+    })
+}
+
+#[test]
+fn a_byte_moved_through_dl_after_the_call_is_not_a_high_word() {
+    let image = i386_dl_scratch_image();
+    let path = common::scratch_file("call-result-pair-i386-dl-scratch", "o");
+    std::fs::write(&path, &image).unwrap();
+    let text = decompile("call-result-pair-i386-dl-scratch", &image);
+    let narrow = |decl: &str| decl.starts_with("int ") || decl.starts_with("void ");
+    for name in ["b4", "b3", "newp"] {
+        assert!(narrow(declaration("i386", &text, name)), "decompile-all: {name} returns %edx:\n{text}");
+        let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(["decompile", path.to_str().unwrap(), name])
+            .output()
+            .unwrap();
+        let single = String::from_utf8(output.stdout).unwrap();
+        assert!(output.status.success(), "{single}\n{}", String::from_utf8_lossy(&output.stderr));
+        assert!(narrow(declaration("i386", &single, name)), "decompile: {name} returns %edx:\n{single}");
+    }
+}
+
 #[test]
 fn a_pushed_argument_caller_returns_the_whole_pair_in_both_modes() {
     let image = i386_pushed_image();
