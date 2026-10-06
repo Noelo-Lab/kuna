@@ -1023,7 +1023,7 @@ pub fn plant(data: &mut Funcdata) {
     }
 }
 
-fn plant_piece(data: &mut Funcdata, addr: Address, size: int4) {
+pub(crate) fn plant_piece(data: &mut Funcdata, addr: Address, size: int4) {
     if crate::p4_calls::kuna_passthrough::suppresses_return_trial(data, &addr, size) || touched_beyond(data, &addr, size) {
         return;
     }

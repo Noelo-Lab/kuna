@@ -62,6 +62,26 @@
 //! second register feeds the first (`asr r1,r0,#2; add r0,r1,r0,lsr #31` is
 //! an `int` division by a constant). And a big-endian pair is left alone,
 //! because a pair is still joined in little-endian order there.
+//!
+//! # A pair the function names only in part
+//!
+//! gcc's i386 code pushes a call's argument, so `u64 f(unsigned a) { return
+//! full(a) | 0x1234500000000ULL; }` is `push 12(%esp); call full; add
+//! $12,%esp; or $0x12345,%edx; ret`, which names `%eax` nowhere. Heritage
+//! registers a return trial only for a range some op reads or writes, so there
+//! was no first register to accept and the function printed `void`. A byte
+//! write is narrower still: `or $0xff,%dl` makes a one-byte `DL` trial that the
+//! model joined with `EAX` into five bytes, and the `DH` of `or $0xff,%dh` is a
+//! byte the join cannot place at all. Before heritage, [`plant`] gives every
+//! RETURN a read of the pair register the function leaves unnamed or names in
+//! part, when the last write before each RETURN, back to a direct call, is to
+//! the second register of a join entry and the first is named nowhere.
+//!
+//! Upstream's scoring follows a PIECE through its low part only, so a byte
+//! above the low one leaves the second register's trial looking at the call's
+//! untouched low byte. [`accept_pieced`] takes such a pair when the second
+//! register is a call's result with some bytes replaced by values computed on
+//! purpose and the first is the call's untouched result.
 
 use std::rc::Rc;
 
@@ -98,7 +118,9 @@ enum First {
 /// Mark active the inactive return trial that, beside a register the function
 /// computes, completes the pair the output model returns: a call's untouched
 /// result, the function's own argument left in place, or a value the function
-/// computes and also turns into the second register.
+/// computes and also turns into the second register. A pair whose second
+/// register is a call's result with some bytes rewritten is taken first, both
+/// trials at once ([`accept_pieced`]).
 ///
 /// Runs once `ActionReturnRecovery` has scored every trial for the last time,
 /// before the output map is derived. Returns the first register's storage when
@@ -107,12 +129,15 @@ enum First {
 /// ([`crate::kuna_retinputhalf::is_moved_back`]).
 pub fn accept(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId]) -> Option<(Address, i32)> {
     let active_trials: Vec<i32> = (0..active.get_num_trials()).filter(|&i| active.get_trial(i).is_active()).collect();
-    let [second] = active_trials[..] else { return None };
     let rets: Vec<OpId> = return_ops
         .iter()
         .copied()
         .filter(|&r| data.obank().get(r).is_some_and(|o| !o.is_dead() && o.get_halt_type() == 0))
         .collect();
+    if accept_pieced(data, active, &rets) {
+        return None;
+    }
+    let [second] = active_trials[..] else { return None };
     let value_at = |r: OpId, slot: i32| data.obank().get(r).and_then(|o| o.get_in(slot));
     let (second_addr, second_size, second_slot) = {
         let t = active.get_trial(second);
@@ -304,6 +329,12 @@ fn set_by_function(data: &Funcdata, vn: VarnodeId, addr: &Address, size: i32) ->
 /// `vmsr fpscr` or `msr cpsr_c`, a store or another register, was set for that
 /// use, so its presence at the RETURN is no sign of a returned high word.
 fn read_only_by_returns(data: &Funcdata, vn: VarnodeId) -> bool {
+    read_only_on_the_way(data, vn, false)
+}
+
+/// [`read_only_by_returns`], also following a PIECE that joins the value with
+/// other bytes of its register when `pieces` is set.
+fn read_only_on_the_way(data: &Funcdata, vn: VarnodeId, pieces: bool) -> bool {
     let Some(roots) = roots(data, vn) else { return false };
     let mut seen = std::collections::BTreeSet::new();
     let mut work = roots;
@@ -325,6 +356,7 @@ fn read_only_by_returns(data: &Funcdata, vn: VarnodeId) -> bool {
             let Some(o) = data.vbank().get(out) else { return false };
             let space = o.get_addr().get_space().map(|sp| sp.get_type());
             if matches!(op.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT)
+                || pieces && op.code() == OpCode::CPUI_PIECE
                 || crate::kuna_passthrough::is_injected_noop(data, reader)
                 || space == Some(spacetype::IPTR_INTERNAL)
             {
@@ -443,6 +475,92 @@ fn only_read_as_zero(data: &Funcdata, addr: &Address, size: i32, values: &[(OpId
     })
 }
 
+/// Mark active a pair whose second register is, at every live RETURN, a
+/// call's result with some of its bytes replaced ([`pieced_call_result`]) and
+/// whose first register is a call's untouched result there, when the model
+/// returns exactly those two registers together.
+///
+/// Upstream's `ancestorOpUse` follows a PIECE only through its low part, so
+/// gcc's `call full; or $0xff,%dh; ret` leaves the `EDX` trial inactive: its
+/// low byte is `full`'s, untouched.
+fn accept_pieced(data: &Funcdata, active: &mut ParamActive, rets: &[OpId]) -> bool {
+    if rets.is_empty() {
+        return false;
+    }
+    let value_at = |r: OpId, slot: i32| data.obank().get(r).and_then(|o| o.get_in(slot));
+    let trial_at = |active: &ParamActive, (addr, size): &(Address, i32)| {
+        (0..active.get_num_trials()).find(|&i| {
+            let t = active.get_trial(i);
+            t.get_address() == addr && t.get_size() == *size && !t.is_definitely_not_used()
+        })
+    };
+    let manager = data.get_arch().manage.clone();
+    for (first, second) in join_pairs(data) {
+        let (Some(f), Some(s)) = (trial_at(active, &first), trial_at(active, &second)) else { continue };
+        let (fslot, sslot) = (active.get_trial(f).get_slot(), active.get_trial(s).get_slot());
+        if active.get_trial(s).is_active()
+            || !rets.iter().all(|&r| value_at(r, sslot).is_some_and(|vn| pieced_call_result(data, vn, r)))
+            || !rets.iter().all(|&r| value_at(r, fslot).is_some_and(|vn| is_call_result(data, vn, MAX_DEPTH)))
+        {
+            continue;
+        }
+        let mut probe = active.clone();
+        probe.get_trial_mut(f).mark_active();
+        probe.get_trial_mut(s).mark_active();
+        if data.get_func_proto().derive_output_map(&mut probe, &manager).is_err() {
+            continue;
+        }
+        let used: Vec<Address> = (0..probe.get_num_trials())
+            .map(|k| probe.get_trial(k))
+            .filter(|t| t.is_used())
+            .map(|t| t.get_address().clone())
+            .collect();
+        if used == [first.0, second.0] {
+            active.get_trial_mut(f).mark_active();
+            active.get_trial_mut(s).mark_active();
+            return true;
+        }
+    }
+    false
+}
+
+/// Is `vn`, read by the RETURN `ret`, a PIECE whose parts are each a call's
+/// untouched result (or a byte range of it) or a value the function computed
+/// on purpose and reads only on its way to a RETURN, at least one of them the
+/// latter?
+fn pieced_call_result(data: &Funcdata, vn: VarnodeId, ret: OpId) -> bool {
+    let def = |v: VarnodeId| data.vbank().get(v).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d));
+    let Some(whole) = data.vbank().get(vn).filter(|_| def(vn).is_some_and(|o| o.code() == OpCode::CPUI_PIECE)) else {
+        return false;
+    };
+    let mut computed = false;
+    let mut work = vec![vn];
+    let mut steps = 0;
+    while let Some(cur) = work.pop() {
+        steps += 1;
+        if steps > 16 {
+            return false;
+        }
+        let op = def(cur);
+        match op.map(|o| o.code()) {
+            Some(OpCode::CPUI_PIECE) => work.extend(op.into_iter().flat_map(|o| [o.get_in(0), o.get_in(1)]).flatten()),
+            Some(OpCode::CPUI_SUBPIECE) if op.and_then(|o| o.get_in(0)).is_some_and(|i| is_call_result(data, i, MAX_DEPTH)) => {}
+            _ if is_call_result(data, cur, MAX_DEPTH) => {}
+            _ => {
+                let constant = data.vbank().get(cur).is_some_and(|v| v.is_constant());
+                if !constant
+                    && (!computed_within(data, cur, ret, MAX_DEPTH, (whole.get_addr(), whole.get_size()))
+                        || !read_only_on_the_way(data, cur, true))
+                {
+                    return false;
+                }
+                computed = true;
+            }
+        }
+    }
+    computed
+}
+
 /// Does the output model return anything from the trials as they stand?
 fn derives_any(data: &Funcdata, active: &ParamActive) -> bool {
     let mut probe = active.clone();
@@ -490,6 +608,14 @@ fn created_by_call(data: &Funcdata, op: &crate::op::PcodeOp) -> bool {
 /// on one path is a value too. An unwritten Varnode counts only when it is not
 /// a frame slot.
 fn computed_on_purpose(data: &Funcdata, vn: VarnodeId, ret: OpId, depth: u32) -> bool {
+    let Some(v) = data.vbank().get(vn) else { return false };
+    computed_within(data, vn, ret, depth, (v.get_addr(), v.get_size()))
+}
+
+/// [`computed_on_purpose`], where a producing instruction may write anywhere
+/// in the register `within`, not just the bytes `vn` holds: the write of `DH`
+/// that heritage splits out of, and joins back into, `EDX`.
+fn computed_within(data: &Funcdata, vn: VarnodeId, ret: OpId, depth: u32, within: (&Address, i32)) -> bool {
     if depth == 0 {
         return false;
     }
@@ -507,7 +633,7 @@ fn computed_on_purpose(data: &Funcdata, vn: VarnodeId, ret: OpId, depth: u32) ->
         }),
         OpCode::CPUI_INDIRECT if op.is_indirect_creation() => false,
         OpCode::CPUI_INDIRECT => op.get_in(0).is_some_and(|i| computed_on_purpose(data, i, ret, depth - 1)),
-        _ if writes_elsewhere(data, op.get_addr(), v.get_addr(), v.get_size()) => false,
+        _ if writes_elsewhere(data, op.get_addr(), within.0, within.1) => false,
         _ if crate::kuna_retinputhalf::call_between(data, def, ret) => false,
         OpCode::CPUI_COPY => op.get_in(0).and_then(|i| data.vbank().get(i)).is_some_and(|i| !in_frame(i.get_addr())),
         OpCode::CPUI_LOAD => op.get_in(1).is_some_and(|p| !frame_pointer(data, p, MAX_DEPTH)),
@@ -638,4 +764,158 @@ fn same_value(data: &Funcdata, a: Option<VarnodeId>, b: Option<VarnodeId>) -> bo
         && y.code() == OpCode::CPUI_SUBPIECE
         && x.get_in(0) == y.get_in(0)
         && offset(x) == offset(y)
+}
+
+/// How many single-predecessor blocks [`plant`] walks back from a RETURN, as
+/// far as the `passthrough` tail-call walk goes.
+const TAIL_BLOCKS: usize = 4;
+
+/// Give every live RETURN a read of each register of a returned pair that the
+/// function names only in part or not at all, so heritage gives the function
+/// a return trial for the whole register: the first register when nothing
+/// names it, the second when nothing names all of it.
+///
+/// Runs at the end of `ActionFuncLink`, before the first heritage. Every live
+/// RETURN must be reached from a direct call along single-predecessor blocks,
+/// with an instruction in between that writes a byte of the same join entry's
+/// second register and not its first ([`tail_pair`]), and the first register
+/// may be read only by a RETURN another rule planted.
+pub fn plant(data: &mut Funcdata) {
+    if data.num_calls() == 0
+        || data.get_active_output().is_none()
+        || !data.get_func_proto().has_model()
+        || data.get_func_proto().is_output_locked()
+    {
+        return;
+    }
+    let rets: Vec<OpId> = data
+        .obank()
+        .iter_code(OpCode::CPUI_RETURN)
+        .filter(|&r| data.obank().get(r).is_some_and(|o| !o.is_dead() && o.get_halt_type() == 0))
+        .collect();
+    let pairs = join_pairs(data);
+    if rets.is_empty() || pairs.is_empty() {
+        return;
+    }
+    let mut pair: Option<usize> = None;
+    for &r in &rets {
+        let Some(found) = tail_pair(data, &pairs, r) else { return };
+        if pair.is_some_and(|p| p != found) {
+            return;
+        }
+        pair = Some(found);
+    }
+    let Some(((first_addr, first_size), (second_addr, second_size))) = pair.map(|p| pairs[p].clone()) else { return };
+    if first_size != second_size || !only_returns_read(data, &first_addr, first_size) {
+        return;
+    }
+    let plant_first = !crate::p4_calls::kuna_passthrough::touched(data, &first_addr, first_size);
+    let plant_second = !named_whole(data, &second_addr, second_size);
+    if plant_first {
+        crate::p4_calls::kuna_voidret::plant_piece(data, first_addr, first_size);
+    }
+    if plant_second {
+        crate::p4_calls::kuna_voidret::plant_piece(data, second_addr, second_size);
+    }
+}
+
+/// The register pairs the output model joins into one value, as `(first,
+/// second)`: the two pieces of a general join entry, low piece first. A
+/// big-endian pair is left out, as everywhere in this module, and so is a pair
+/// the model forms by rule from two register entries (x86-64 `RAX`, `RDX`).
+fn join_pairs(data: &Funcdata) -> Vec<((Address, i32), (Address, i32))> {
+    let Some(list) = data.get_func_proto().model().output_list() else { return Vec::new() };
+    let mut pairs = Vec::new();
+    for e in list.get_entry() {
+        if e.get_type() != crate::dtype::type_class::TYPECLASS_GENERAL {
+            continue;
+        }
+        let Some(jr) = e.get_join_record().filter(|jr| jr.num_pieces() == 2) else { continue };
+        let piece = |i| {
+            let p = jr.get_piece(i);
+            (p.get_addr(), p.size as i32)
+        };
+        let pair = (piece(1), piece(0));
+        if !pair.0 .0.is_big_endian() && !pairs.contains(&pair) {
+            pairs.push(pair);
+        }
+    }
+    pairs
+}
+
+/// Which of `pairs` the last instruction before `ret` that writes a byte of
+/// one of them writes the second register of and not the first, on the path
+/// back to the direct CALL before it. `None` when the walk meets a CALLIND, a
+/// CALLOTHER or a merge first, or when that instruction also moves the stack
+/// pointer (gcc's `pop %edx` releasing an argument slot).
+fn tail_pair(data: &Funcdata, pairs: &[((Address, i32), (Address, i32))], ret: OpId) -> Option<usize> {
+    let mut found = None;
+    let mut bl = data.obank().get(ret)?.get_parent()?;
+    let mut cur = data.op_previous_op(ret);
+    for _ in 0..TAIL_BLOCKS {
+        while let Some(op) = cur {
+            let o = data.obank().get(op)?;
+            match o.code() {
+                OpCode::CPUI_CALL => return found,
+                OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER => return None,
+                _ => {}
+            }
+            let out = o.get_out().and_then(|v| data.vbank().get(v));
+            if let Some(out) = out.filter(|_| found.is_none()) {
+                let hits = |(a, s): &(Address, i32)| {
+                    a.overlap(0, out.get_addr(), out.get_size()) >= 0 || out.get_addr().overlap(0, a, *s) >= 0
+                };
+                if let Some(k) = pairs.iter().position(|(first, second)| hits(second) && !hits(first)) {
+                    if crate::kuna_retinputhalf::writes_stack_pointer(data, o.get_addr()) {
+                        return None;
+                    }
+                    found = Some(k);
+                }
+            }
+            cur = data.op_previous_op(op);
+        }
+        let b = data.bblocks_ref().block(bl);
+        if b.size_in() != 1 {
+            return None;
+        }
+        bl = b.get_in(0);
+        cur = data.bb_op_tail(bl);
+    }
+    None
+}
+
+/// Is every Varnode at `addr`/`size` an unwritten read by a RETURN alone: none
+/// at all, or the read another rule planted there?
+fn only_returns_read(data: &Funcdata, addr: &Address, size: i32) -> bool {
+    overlapping(data, addr, size).into_iter().all(|id| {
+        data.vbank().get(id).is_some_and(|v| {
+            v.get_def().is_none()
+                && v.descend_iter().all(|r| data.obank().get(r).is_some_and(|o| o.code() == OpCode::CPUI_RETURN))
+        })
+    })
+}
+
+/// Does some Varnode name all of `addr`/`size`?
+fn named_whole(data: &Funcdata, addr: &Address, size: i32) -> bool {
+    let (off, end) = (addr.get_offset(), addr.get_offset().wrapping_add(size as u64));
+    overlapping(data, addr, size).into_iter().any(|id| {
+        data.vbank()
+            .get(id)
+            .is_some_and(|v| v.get_offset() <= off && v.get_offset().wrapping_add(v.get_size() as u64) >= end)
+    })
+}
+
+/// The Varnodes sharing a byte with `addr`/`size`.
+fn overlapping(data: &Funcdata, addr: &Address, size: i32) -> Vec<VarnodeId> {
+    let Some(space) = addr.get_space() else { return Vec::new() };
+    let off = addr.get_offset();
+    let end = off.wrapping_add(size as u64);
+    let lo = Address::new(Rc::clone(space), off.saturating_sub(64));
+    let hi = addr + size as i64;
+    data.vbank()
+        .iter_loc_addr_range(&lo, &hi)
+        .filter(|&id| {
+            data.vbank().get(id).is_some_and(|v| v.get_offset() < end && off < v.get_offset().wrapping_add(v.get_size() as u64))
+        })
+        .collect()
 }

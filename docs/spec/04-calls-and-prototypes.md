@@ -3047,14 +3047,12 @@ call-used register a function does not return in, seen through the `PIECE` and
 x86-64 `long f(long a) { return g(a); }` built that way by gcc at `-O0` would
 otherwise come back sixteen bytes wide. The equal-width rule keeps out
 `or $0xff,%dl`, whose one-byte trial would join `RAX` into a nine-byte value with
-the upper bytes of `RDX` missing; that write still prints as before (GH-852).
+the upper bytes of `RDX` missing; on x86-64 that write still prints as before,
+and on i386 the plant below makes the trial the whole of `EDX` first (GH-852).
 
-Three shapes stay as they were. A function that changes the low word and leaves
+Two shapes stay as they were. A function that changes the low word and leaves
 the high one untouched (`bl g; orr r0,r0,#255`) is byte for byte `int f(void) {
-return (int)g() | 255; }` as well, and keeps upstream's answer. A first register
-no instruction names gets no return trial at all, so i386 code that pushes its
-arguments (`call g; or $0x12345,%edx; ret`) still prints `void` when the callee's
-result is not known (GH-853). And on a big-endian target the pair is still joined
+return (int)g() | 255; }` as well, and keeps upstream's answer. And on a big-endian target the pair is still joined
 in little-endian order, so the rule refuses it there rather than return the
 halves swapped. gcc's `-fipa-ra`, which can set `$3` in a `jal`'s delay slot
 because it knows the callee leaves it alone, is outside what any per-function
@@ -3068,6 +3066,71 @@ an uninitialized local (GH-851).
 single-function mode, and `kuna-cli/tests/call_result_pair_returns.rs` compiles
 the ARM, MIPS and i386 output of `decompile-all` back with gcc and clang and runs
 it against the source.
+
+#### (kuna) A pair the function names only in part
+
+gcc's i386 code pushes a call's argument, so a caller that changes the high word
+of a callee's 64-bit result names `%eax` nowhere: `u64 f(unsigned a) { return
+full(a) | 0x1234500000000ULL; }` is `sub $8,%esp; push 12(%esp); call full; add
+$12,%esp; or $0x12345,%edx; ret`. Heritage registers a return trial only for a
+range some op reads or writes, so `EAX` had no trial to accept and the function
+printed `void` in single-function mode (GH-853). `decompile-all` was right only
+when the callee's stated `int` let the `passthrough` tail claim plant `EAX`; a
+callee recovered as `unsigned long long`, whose stated pair the function touches,
+left it `void` there too. A byte write is narrower still. `or $0xff,%dl` names
+only `DL`, so the trial was one byte and the output model joined it with a
+planted `EAX` into `undefined5 f(int a0) { return CONCAT14(0xff,full(a0)); }`,
+losing bytes 1 to 3 of the high word (GH-852); the `DH` of `or $0xff,%dh` or
+`xor %dh,%dh` is a byte the join cannot place, and the change was dropped.
+
+`kuna_retcallhalf::plant` runs at the end of `ActionFuncLink`, after `voidret`'s
+plant and before the first heritage. From each live RETURN it walks back along
+single-predecessor blocks, at most four, to the nearest direct CALL; a CALLIND, a
+CALLOTHER or a merge on the way ends the rule. The last instruction on that path
+that writes a byte of a pair must write the second register of one of the output
+model's two-piece join entries (`EDX` of `EDX:EAX`, ARM `r1`, MIPS `$3`) and not
+its first, and every RETURN must find the same entry
+(`kuna_retcallhalf.rs (tail_pair)`). An instruction that also moves the stack
+pointer ends the rule: gcc releases an argument slot with `pop %edx`. The first
+register may be read by nothing but a RETURN input another rule planted, and
+written by nothing. Then, when no Varnode names the first register, each live
+RETURN gets a read of it, and when no Varnode covers the whole second register,
+each gets a read of all of it, with a return trial for each, through `voidret`'s
+`plant_piece`; heritage's `guardReturns` leaves the planted ranges alone.
+
+Heritage then gives the call an `EAX` result for the planted read and builds the
+planted `EDX` from the call's `EDX` and the function's byte, `PIECE(SUBPIECE(EDX,1),
+DL | 0xff)`. With the computed byte at offset 0 upstream's scoring accepts `EDX`,
+and the rule above takes `EAX` beside it as the call's untouched result. Upstream's
+`ancestorOpUse` follows a PIECE only through its low part, though, so a computed
+byte above offset 0 (`DH`) leaves the `EDX` trial inactive: its low byte is the
+call's. `kuna_retcallhalf::accept` first takes such a pair
+(`kuna_retcallhalf.rs (accept_pieced)`) when, for the two registers of a join
+entry, the second register's value at every live RETURN is a PIECE whose parts
+are each a call's untouched result, a SUBPIECE of one, or a value computed on
+purpose and read only on its way to the RETURN (through the PIECE), at least one
+part being computed; the first register's value is a call's untouched result at
+every live RETURN; and the model returns exactly the two registers. "Computed on
+purpose" judges the byte's instruction against the whole second register, since
+heritage splits `EDX` around `DH` at that instruction's address
+(`kuna_retcallhalf.rs (computed_within)`).
+
+Only two-piece join entries take part. x86-64 returns `RDX` beside `RAX` through
+two register entries and the `join_dual_class` rule, and there the call does not
+yet get a sixteen-byte result, so a planted `RDX` printed its upper bytes as
+locals nothing assigns; those callers stay `void`. A write of the first register
+keeps its narrow answer: `or $0xff,%al` after the call is also `char f(void) {
+return g() | 0xff; }`, and `sete %al` stays a byte. The value printed for a byte
+change is the heritage join, `CONCAT44(CONCAT31((undefined3)(v1 >> 0x28),0xff),
+(int)v1)`, where clang's full-width `or $0xff,%edx` prints `full(a0) |
+0xff00000000`; both compute the binary's value. `full` itself (`mov 4(%esp),%edx;
+lea (%edx,%edx,2),%eax; ret`) still prints `int`, because the `lea` also reads
+`EDX`; its callers in `decompile-all` now read all eight bytes of its result.
+
+`kuna-cli/tests/call_result_pair_returns.rs` builds gcc's `-O2`, `-Os` and `-O0`
+shapes of these callers, checks that each returns eight bytes in `decompile` and
+in `decompile-all`, that `or $0xff,%al` and `sete %al` stay narrow, and compiles
+the `decompile-all` output back with gcc and clang and runs it against the source.
 
 #### (kuna) The argument left in place, or a low word that also makes the high word
 
@@ -3133,7 +3196,8 @@ tracked-register values `ActionConstbase` copies in at the function's entry (ARM
 `spsr`, at the address of a leaf function's first instruction). These no longer
 make the second register another instruction's by-product.
 
-Not fixed here. A first register no instruction names gets no return trial, so
+Not fixed here. A first register no instruction names gets no return trial unless
+a call's result reaches the RETURN (the plant above), so
 RISC-V's `li a1,0; ret` still prints `void`; ARM's `bx lr` and `pop {...,pc}`
 name `r0` through their injected no-op. A loaded high word beside the argument
 (`ldr r1,[r1]; bx lr` for `((u64)*p << 32) | a`) stays `void`. A high register
