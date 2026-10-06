@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2208,
-    2208
+    2211,
+    2211
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1671,6 +1671,9 @@
     "data:condfold-ruleb #4: OFF, the declined cascade nests the last two guards inside the first one's arm (pass 1 only)",
     "data:condfold-ruleb #5: the failure arm consumes the escaping call result in both renderings, which is what keeps that result non-implied and printed (off plus on = 2)",
     "data:condfold-ruleb #6: the guarded body is untouched by the fold (off plus on = 2)",
+    "data:condstmts #1: the default declines the fold, so the outer test is the two plain comparisons (pass 1 only)",
+    "data:condstmts #2: the default prints the loads as statements of their own (pass 1 only)",
+    "data:condstmts #3: off, the loads fold into a comma chain inside the condition (pass 2 only)",
     "data:constspaceload #1: the non-zero immediate vmov.i32 q8,#1 folds to all four of its 32-bit lanes, default pass only",
     "data:constspaceload #2: the zero immediate vmov.i32 q9,#0 becomes two whole 8-byte zero slots, default pass only",
     "data:constspaceload #3: only the option-off pass reads near-null memory for the lanes that need an offset",

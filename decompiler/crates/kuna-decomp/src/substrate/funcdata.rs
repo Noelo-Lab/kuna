@@ -242,6 +242,12 @@ pub struct Funcdata {
     /// (kuna `stackstoreguard`) Set when the final layout spoiled what the
     /// guard needs; the drive then analyzes the function again without it.
     stack_store_guard_spoiled: std::cell::Cell<bool>,
+    /// (kuna `condstmts`) Block start addresses structured as complex from the
+    /// first structuring on; set by the drive and kept across `clear()`.
+    kuna_condstmts_seed: std::collections::BTreeSet<Address>,
+    /// (kuna `condstmts`) Block start addresses the final structure folded into a
+    /// condition operand over the cap.
+    kuna_condstmts_hits: std::collections::BTreeSet<Address>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -636,6 +642,8 @@ impl Funcdata {
             store_reach_checks: std::cell::RefCell::new(Default::default()),
             stack_store_guard_withdrawn: std::cell::Cell::new(false),
             stack_store_guard_spoiled: std::cell::Cell::new(false),
+            kuna_condstmts_seed: std::collections::BTreeSet::new(),
+            kuna_condstmts_hits: std::collections::BTreeSet::new(),
             jumpvec: Vec::new(),
             vbank,
             kuna_storage_sources: std::collections::HashMap::new(),
@@ -1994,6 +2002,26 @@ impl Funcdata {
     /// (kuna `stackstoreguard`) What the latest pass recorded.
     pub(crate) fn store_reach_checks(&self) -> crate::p6_variables::kuna_storereach::ReachChecks {
         self.store_reach_checks.borrow().clone()
+    }
+
+    /// (kuna `condstmts`) Block starts to structure as complex.
+    pub fn condstmts_seed(&self) -> &std::collections::BTreeSet<Address> {
+        &self.kuna_condstmts_seed
+    }
+
+    /// (kuna `condstmts`) Install the block starts to structure as complex.
+    pub fn set_condstmts_seed(&mut self, seed: std::collections::BTreeSet<Address>) {
+        self.kuna_condstmts_seed = seed;
+    }
+
+    /// (kuna `condstmts`) Block starts the final structure folded over the cap.
+    pub fn condstmts_hits(&self) -> &std::collections::BTreeSet<Address> {
+        &self.kuna_condstmts_hits
+    }
+
+    /// (kuna `condstmts`) Record a block start folded over the cap.
+    pub fn add_condstmts_hit(&mut self, addr: Address) {
+        self.kuna_condstmts_hits.insert(addr);
     }
 
     /// (kuna `stackstoreguard`) Turn the guard off for the rest of this
@@ -3613,6 +3641,7 @@ impl Funcdata {
         self.cast_phase_index = 0;
         self.min_laned_size = self.glb.get_minimum_laned_register_size();
         self.kuna_hiddenret_vetoed.clear();
+        self.kuna_condstmts_hits.clear();
 
         // localmap->clearUnlocked(); localmap->resetLocalWindow();  -- STUB(W4)
         // clearActiveOutput() (funcdata.cc): drop the output-trial state.

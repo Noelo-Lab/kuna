@@ -3962,6 +3962,25 @@ tier = "transform"
 symptoms = "crossing goto from the else arm back into the then arm's shared clause|goto plus label into the shared body of a guard cascade whose arms reconverge|nested if where angr emits one compound short-circuit condition|second condition block assigns one value or calls something before its test and the fold is declined"
 
 [[settable]]
+option = "condstmts"
+values = "off|0|1|2|3|<n>"
+default = "3"
+destructive = false
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P8"
+issue = "kuna-condstmts"
+summary = "The most statements a basic block may print in front of its test when it is folded into a condition operand -- the right side of a short-circuit `&&`/`||`, or the header of a `while (...)`, where the statements print as a C comma expression. ruleBlockOr and ruleBlockWhileDo only fold a block BlockBasic::isComplex calls simple, but that verdict is a calc_explicit approximation taken when the function is structured inside the main loop, before variables are merged; values that later become explicit (a load kept in a callee-saved register across a call, a copy into a merged variable) then print as extra comma elements, so a block of four byte loads feeding one compare renders as `(a0[6] == 10 && (v1 = *a2, v2 = a2[1], v3 = a2[2], v4 = a2[3], sub_4012f9(a0) == ...))`. With a cap N, the final ActionBlockStructure measures every block in a comma-printed position with the printer's own skip rules (condfold's printed_shape: not-printed ops, markers, implied outputs and the bare BRANCH are free; the terminal CBRANCH is the condition) and records each one printing more than N statements before its test; the decompile drive then analyzes that function again with those block starts treated as complex from the first structuring on, so the fold is declined and the statements print on their own lines inside the enclosing `if` (a loop head takes the `while (true) { ...; if (c) break; }` form). It also bounds condfold: its printed-width budget becomes min(condfold budget, N+1). Default 3 (the cap only removes folds, never adds one): 0/675 datatest assertions change, and over 3,293 functions in six x86-64 binaries (a small ELF server, grep, sort, libselinux, ssh-sk-helper, ssh-pkcs11-helper) it changes two functions -- the server's keypad check and one grep matcher whose two 4-statement operands become two gotos -- at +1.0% wall time on grep and none elsewhere. Only those functions are analyzed twice; `off` is byte-identical to the uncapped output."
+use_when = "Lower it when a condition reads as a long comma chain of assignments (`if (a && (v1 = x, v2 = y, v3 = z, f(v1) == v2))`) and you would rather see the assignments as statements; raise it, or set `off`, when the cap trades a compact condition for a goto you do not want. On by default at 3, which keeps every operand with up to three statements in front of its test. 2 splits more operands (measured over the same six binaries: 8 functions change and gotos rise by 4), but it costs a second analysis of each affected function, which is +8% wall time on grep and +26% on libselinux because the affected functions there are large -- that is why the default is 3, not 2. Turning on condfold does not lift the cap: set `condstmts off` (or a larger N) to let condfold's `on`/`wide` budgets apply in full."
+example = "option condstmts 2"
+source_decompiler = "kuna"
+inspiration = "A user report from the web front end: a 300-column `if` whose last operand carried four comma-separated loads and a call (`kuna decompile server 0x401435`), the same shape in every mode and with condfold off"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "a condition holds a long comma chain of assignments before its test|if ((a) && (v1 = x, v2 = y, v3 = z, call(..) == v1)) on one very long line|a while header carries several comma-separated assignments|want a cap on how many statements a short-circuit operand may print"
+
+[[settable]]
 option = "gotoreduce"
 values = "on|off"
 default = "on"

@@ -1152,7 +1152,10 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     let staged_name_recs = std::mem::take(&mut arch.kuna_pending_name_recs);
     let staged_dyn_recs = std::mem::take(&mut arch.kuna_pending_dyn_recs);
     let staged_proto_model = arch.kuna_pending_proto_model.take();
-    let mut attempt = |prefollowed: Option<Funcdata>, unguarded: bool| -> KunaResult<Funcdata> {
+    let mut attempt = |prefollowed: Option<Funcdata>,
+                       unguarded: bool,
+                       condstmts_seed: &std::collections::BTreeSet<Address>|
+     -> KunaResult<Funcdata> {
         // Kept for the parked-prototype lookup below (the flow build consumes the
         // address).
         let entry_addr = funcaddr.clone();
@@ -1170,6 +1173,7 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         if unguarded {
             fd.withdraw_stack_store_guard();
         }
+        fd.set_condstmts_seed(condstmts_seed.clone());
         // The prototype the function is decompiled *against*. Two sources, in
         // precedence order:
         //
@@ -1290,10 +1294,26 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     };
     // (kuna `stackstoreguard`) A function whose final layout spoiled what the
     // guard needs is analyzed again from scratch, as `stackstoreguard off` would.
-    let result = match attempt(prefollowed, false) {
-        Ok(fd) if fd.stack_store_guard_spoiled() => attempt(None, true),
+    let mut seed = std::collections::BTreeSet::new();
+    let mut unguarded = false;
+    let mut result = match attempt(prefollowed, false, &seed) {
+        Ok(fd) if fd.stack_store_guard_spoiled() => {
+            unguarded = true;
+            attempt(None, true, &seed)
+        }
         other => other,
     };
+    // (kuna `condstmts`) A function whose final structure folded a block over the
+    // cap is analyzed again with that block complex from the first structuring on.
+    for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
+        let Ok(fd) = &result else { break };
+        let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
+        seed = next;
+        match attempt(None, unguarded, &seed) {
+            Ok(fd) => result = Ok(fd),
+            Err(_) => break,
+        }
+    }
     // (kuna decompile-all watchdog) Disarm the deadline once the drive is over so
     // no later, non-drive pipeline run (console sub-queries) consults a stale one.
     arch.kuna_fn_deadline = None;
