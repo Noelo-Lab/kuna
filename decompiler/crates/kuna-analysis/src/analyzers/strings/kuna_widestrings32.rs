@@ -227,12 +227,66 @@ mod tests {
 
     #[test]
     fn narrow_and_utf16_text_is_never_a_utf32_run() {
-        assert!(scan_utf32_runs(b"NtQueryInformationProcess\0\0\0\0\0\0\0", 0x2000, true, 1).is_empty());
+        let narrow = b"NtQueryInformationProcess\0\0\0\0\0\0\0";
+        assert!(scan_utf32_runs(narrow, 0x2000, true, MIN_UNITS).is_empty());
+        assert_eq!(scan_utf32_runs(narrow, 0x2000, true, 1), vec![Run32 { addr: 0x2018, units: 1, distinct: 1 }]);
         let mut utf16 = Vec::new();
         for ch in "ntdll.dll\0".bytes() {
             utf16.extend_from_slice(&[ch, 0]);
         }
         assert!(scan_utf32_runs(&utf16, 0x2000, true, 1).is_empty());
+    }
+
+    fn fixture_facts(name: &str, targets: &[u64]) -> Vec<(u64, u32)> {
+        let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(path).expect("read widestr32 fixture");
+        let raw = object::File::parse(bytes.as_slice()).expect("parse widestr32 fixture");
+        let view = crate::loader::kuna_relocrebase::rebased_view(&raw, &bytes);
+        let (file, _) = crate::loader::kuna_relocrebase::select(raw, &bytes, &view);
+        let mut facts: Vec<(u64, u32)> = wide_string32_facts(&file, targets).iter().map(|f| (f.addr, f.len)).collect();
+        facts.sort_unstable();
+        facts
+    }
+
+    /// `widestr32.c`: `L"hellow"`, `L"(NULL)"`, `L"xbind"` (whose tail `L"bind"`
+    /// is passed too) and `U"char32-text"`, beside `codes` (`int {72, 101, 108,
+    /// 108, 111, 0}`, which spells "Hello") and `weeks` (`int {52, 53, ..}`, two
+    /// characters). With the symbol table the literals are planted and both
+    /// tables keep their names; stripped, only an operand target is planted,
+    /// `codes` with them and `weeks` never.
+    #[test]
+    fn widestr32_builds_plant_the_literals() {
+        let literals = vec![(0x402004, 28), (0x402020, 28), (0x40203c, 24), (0x402058, 48)];
+        assert_eq!(fixture_facts("widestr32_gcc_O2_x86_64", &[]), literals);
+        assert!(fixture_facts("widestr32_gcc_O2_stripped_x86_64", &[]).is_empty());
+        let targets = [0x402004, 0x402020, 0x40203c, 0x402040, 0x402058, 0x4020a0, 0x4020c0];
+        let mut stripped = literals.clone();
+        stripped.push((0x4020c0, 24));
+        assert_eq!(fixture_facts("widestr32_gcc_O2_stripped_x86_64", &targets), stripped);
+        assert_eq!(
+            fixture_facts("widestr32_clang_O2_x86_64", &[]),
+            vec![(0x2050, 28), (0x206c, 48), (0x209c, 28), (0x20b8, 24)]
+        );
+        assert_eq!(
+            fixture_facts("widestr32_mips32_be_O2", &[]),
+            vec![(0x4003a0, 28), (0x4003bc, 48), (0x4003ec, 28), (0x400408, 24)]
+        );
+    }
+
+    /// A relocatable object's `.rodata.str4.4` holds only literals, so every run
+    /// there is planted, while `codes` and `weeks` in `.rodata` keep their names.
+    #[test]
+    fn a_four_byte_string_section_backs_its_runs() {
+        for name in ["widestr32_aarch64_O2.o", "widestr32_arm32_O2.o"] {
+            let lens: Vec<u32> = fixture_facts(name, &[]).iter().map(|&(_, len)| len).collect();
+            assert_eq!(lens.len(), 5, "{name}: {lens:?}");
+            assert!([28, 48, 28, 24, 20].iter().all(|l| lens.contains(l)), "{name}: {lens:?}");
+        }
+    }
+
+    #[test]
+    fn a_pe_image_is_not_scanned() {
+        assert!(fixture_facts("widestrings_x86_64.exe", &[]).is_empty());
     }
 
     #[test]

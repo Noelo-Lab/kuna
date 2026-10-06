@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-845: a 4-byte wide string literal (wchar_t on Linux, char32_t) passed
+    to the image's own function printed as its address.
+
+    Read 1 or 2 bytes at a time, L"hellow" (68 00 00 00 65 00 00 00 ..) is a
+    one-character string, so no string fact is planted there: operand_refs
+    declines its one-character read (#870), and the call prints the address,
+    hashw(0x402004). The widestrings32 option (stage P1, code/data
+    partition) adds the 4-byte width of the string markup and plants a
+    wchar4[7] at the literal, which the printer renders as L"hellow".
+
+    Pass 1 (option widestrings32 off): the address (#1).
+    Pass 2 (option widestrings32 on): the literal (#2) and the L"(NULL)"
+    default of ornull (#3), while the int tables keep their names (#4).
+
+    operand_refs is on in both passes, as in the aggressive preset that small
+    images default to.
+
+    Source: decompiler/crates/kuna-analysis/tests/fixtures/widestr32.c
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/widestr32_gcc_O2_x86_64</com>
+  <com>option operand_refs on</com>
+  <com>option widestrings32 off</com>
+  <com>read symbols</com>
+  <com>lo fu wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/widestr32_gcc_O2_x86_64</com>
+  <com>option operand_refs on</com>
+  <com>option widestrings32 on</com>
+  <com>read symbols</com>
+  <com>lo fu wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ornull</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu table</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu weekly</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-WIDESTRINGS32 #1: off, the literal prints as its address" min="1" max="1">hashw\(0x402004\);</stringmatch>
+<stringmatch name="KUNA-WIDESTRINGS32 #2: on, the literal prints as L&quot;hellow&quot;" min="1" max="1">hashw\(L"hellow"\);</stringmatch>
+<stringmatch name="KUNA-WIDESTRINGS32 #3: on, the NULL default prints as a literal" min="1" max="1">= L"\(NULL\)";</stringmatch>
+<stringmatch name="KUNA-WIDESTRINGS32 #4: int tables of character codes keep their names" min="2" max="2">sum\((codes|weeks),</stringmatch>
+</decompilertest>

@@ -2033,7 +2033,9 @@ mod tests {
         // long or int array past four elements stay elements of the array
         // and kuna-syscallregs-mips-a3 + -ppc-cr0 / the MIPS a3 and PowerPC
         // cr0 error flag a system call leaves (GH-857)
-        assert_eq!(count, 461, "corpus file count drifted");
+        // and kuna-widestrings32 / a 4-byte wide literal argument prints as
+        // L"..." (GH-845)
+        assert_eq!(count, 462, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

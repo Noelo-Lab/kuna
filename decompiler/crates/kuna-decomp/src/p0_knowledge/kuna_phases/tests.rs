@@ -293,6 +293,9 @@ fn option_values_live_value_present_for_110() {
         // analysis-pass gate read at the commit boundary (console-side via
         // kuna_live_value), same as `strings` above. Default-ON (DIV-110).
         "widestrings",
+        // (kuna) The 4-byte width of the string-literal markup -- read at the
+        // commit boundary like `widestrings`. Default-off (aggressive on).
+        "widestrings32",
         "entry_disc",
         // (kuna) `.eh_frame` LSDA landing-pad discovery sub-feature of entry_disc
         // (GccExceptionAnalyzer), default-off; analysis-tier, no codegen live reader.

@@ -451,6 +451,10 @@ Three tiers:
 | kuna strings --encoding utf16 reports a literal the decompiled C truncates to its first character | [`widestrings`](#widestrings) |
 | a UTF-16 string address carries no data symbol while the ascii ones do | [`widestrings`](#widestrings) |
 | an anti-debugging check names no DLL or window class | [`widestrings`](#widestrings) |
+| a wchar_t or char32_t string literal argument renders as an address such as &dat_2004 | [`widestrings32`](#widestrings32) |
+| a wide literal renders as its first character in a narrow string | [`widestrings32`](#widestrings32) |
+| L"..." appears only where a libc wide-string prototype types the argument | [`widestrings32`](#widestrings32) |
+| kuna strings shows a UTF-32 literal the decompiled C does not | [`widestrings32`](#widestrings32) |
 | a stripped binary yields almost no functions (symbol stream only) | [`entry_disc`](#entry_disc) |
 | functions discovered via e_entry/init_array/.eh_frame/prologues missing from the list | [`entry_disc`](#entry_disc) |
 | c++ catch/cleanup landing pads missing from a stripped binary's function list | [`eh_frame_full`](#eh_frame_full) |
@@ -2004,6 +2008,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default. A wide (UTF-16) string argument renders as a one-character literal -- LoadLibraryW("n") where the binary says L"ntdll.dll", FindWindowW("O",0) where it says L"OllyDbg - [CPU]" -- which is most of what a Windows anti-debugging or anti-VM check contains. `kuna strings --encoding utf16` already reported those literals in full while the decompiled C did not, and the difference between the two surfaces is the tell. Flip OFF to restore markup that is exactly the 1-byte pass's -- e.g. on an image whose 16-bit data tables read as plausible wide text, or to ablate this width's contribution.
 - **Where / provenance:** P1/code-data-partition · ghidra-upstream · analysis-enablement · re-wide-api-string-args
 - **Example:** `option widestrings off`
+
+### `widestrings32` -- on | off, default `off`
+
+- **Symptoms:** a wchar_t or char32_t string literal argument renders as an address such as &dat_2004; a wide literal renders as its first character in a narrow string; L"..." appears only where a libc wide-string prototype types the argument; kuna strings shows a UTF-32 literal the decompiled C does not.
+- **What it does:** Plant a typelocked wchar4[N] data symbol at each 4-byte wide string literal (a wchar_t literal of an ELF or Mach-O target, or a char32_t one), so the printer renders L"hellow" where it printed the literal's address (lenw(&dat_2004)). The matcher is the 1-byte one widened to 4-byte code units read in the image's byte order on 4-aligned addresses of read-only data: each unit a printable-ASCII (or tab/CR/LF) value, closed by a zero unit. An int table of character codes is byte for byte such a literal, so a run is planted only when the image backs it as a string: no sized data object of the symbol tables overlaps it (a declared array keeps its name), and either it lies in a mergeable string section of 4-byte entries (a relocatable object's .rodata.str4.4), or it holds at least five units of at least three distinct characters and either the symbol table names the image's data objects or something points at its start (an operand the operand_refs scan found, a pointer slot, a dynamic relocation). PE and COFF images, whose wchar_t is 2 bytes, are not scanned. The facts are committed before the 2- and 1-byte ones, so they win the address against operand_refs' one-character read of the same bytes.
+- **When to flip:** Off by default; the aggressive preset (the auto mode below 500 KiB) turns it on. A wide literal passed to the image's own function prints as its address (lenw(&dat_2004)) or as its first character, while a libc callee with a wchar_t prototype already shows L"...". Flip ON to see those literals. Flip OFF if a stripped image's NUL-terminated int table of character codes prints as a wide literal, or to ablate this width.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · GH-845
+- **Example:** `option widestrings32 on`
 
 ### `entry_disc` -- on | off, default `on`
 
