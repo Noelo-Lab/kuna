@@ -950,6 +950,9 @@ pub struct ArchContext {
     /// [`crate::p4_calls::kuna_passthrough`]; it needs a prototype `protoorder`
     /// parked, which no fixture has, so the seam carries the shipped default.
     pub pass_through: bool,
+    /// (kuna) `mixedtailret`: a value returned beside a claimed tail-call
+    /// result is returned too.  Read by [`crate::p4_calls::kuna_mixedtailret`].
+    pub mixed_tail_ret: bool,
     /// (kuna) `armfloatreturn` is on and the image states the ARM VFP calling
     /// convention.  Read by [`crate::p4_calls::kuna_armfloatreturn`].
     pub arm_float_return: bool,
@@ -1722,6 +1725,7 @@ impl ArchContext {
             vararg_floats: Default::default(),
             narrow_ext: crate::kuna_narrowext::Rules::default(),
             pass_through: true, // (kuna) option passthrough (default on)
+            mixed_tail_ret: false, // (kuna) option mixedtailret (default off)
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,
