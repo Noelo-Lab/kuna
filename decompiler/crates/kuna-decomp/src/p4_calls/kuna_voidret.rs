@@ -74,25 +74,29 @@ fn held(data: &Funcdata, outvn: crate::context::VarnodeId) -> Option<Held> {
         pointer: meta == crate::dtype::type_metatype::TYPE_PTR,
         float: meta == crate::dtype::type_metatype::TYPE_FLOAT,
         arithmetic,
-        signed: signed_use(data, outvn),
+        signed: signed_use(data, outvn, false),
     })
 }
 
 /// Does `data` use the call result `outvn` where its sign or width decides the
 /// value: an extension, an ordering, a right shift, a division or remainder, a
-/// conversion to a float, or a comparison with a constant whose sign bit is
-/// set, after copies, joins, pieces and arithmetic that keeps the low bits?
-/// Printed against a callee declared narrower than a redo makes it, such a use
-/// computes something else.
-fn signed_use(data: &Funcdata, outvn: crate::context::VarnodeId) -> bool {
+/// conversion to a float, or an equality with a variable or with a constant
+/// whose sign bit is set, after copies, joins and pieces? After arithmetic,
+/// which C would carry past the narrow value, any equality does. With
+/// `inline`, only within the expression the result is printed in: a value
+/// assigned to a variable is converted by the assignment.
+fn signed_use(data: &Funcdata, outvn: crate::context::VarnodeId, inline: bool) -> bool {
     use kuna_num::opcodes::OpCode::*;
-    let mut work = vec![outvn];
+    let mut work = vec![(outvn, false)];
     let mut seen = BTreeSet::new();
-    while let Some(v) = work.pop() {
-        if !seen.insert(v) || seen.len() > 64 {
+    while let Some((v, carried)) = work.pop() {
+        if !seen.insert((v, carried)) || seen.len() > 64 {
             continue;
         }
         let Some(node) = data.vbank().get(v) else { continue };
+        if inline && v != outvn && !node.is_implied() {
+            continue;
+        }
         let sign = 1u64 << (node.get_size().clamp(1, 8) * 8 - 1);
         for r in node.descend_iter() {
             let Some(o) = data.obank().get(r).filter(|o| !o.is_dead()) else { continue };
@@ -101,18 +105,20 @@ fn signed_use(data: &Funcdata, outvn: crate::context::VarnodeId) -> bool {
                 | CPUI_INT_RIGHT | CPUI_INT_SRIGHT | CPUI_INT_DIV | CPUI_INT_SDIV | CPUI_INT_REM | CPUI_INT_SREM
                 | CPUI_FLOAT_INT2FLOAT => return true,
                 CPUI_INT_EQUAL | CPUI_INT_NOTEQUAL => {
-                    let constant = (0..2)
+                    let widened = (0..2)
                         .filter_map(|k| o.get_in(k))
                         .filter(|&k| k != v)
                         .filter_map(|k| data.vbank().get(k))
-                        .any(|k| k.is_constant() && k.get_offset() & sign != 0);
-                    if constant {
+                        .any(|k| carried || !k.is_constant() || k.get_offset() & sign != 0);
+                    if widened {
                         return true;
                     }
                 }
-                CPUI_COPY | CPUI_MULTIEQUAL | CPUI_INDIRECT | CPUI_CAST | CPUI_SUBPIECE | CPUI_PIECE | CPUI_INT_ADD
-                | CPUI_INT_SUB | CPUI_INT_MULT | CPUI_INT_AND | CPUI_INT_OR | CPUI_INT_XOR | CPUI_INT_NEGATE
-                | CPUI_INT_2COMP | CPUI_INT_LEFT => work.extend(o.get_out()),
+                CPUI_COPY | CPUI_MULTIEQUAL | CPUI_INDIRECT | CPUI_CAST | CPUI_SUBPIECE | CPUI_PIECE => {
+                    work.extend(o.get_out().map(|n| (n, carried)))
+                }
+                CPUI_INT_ADD | CPUI_INT_SUB | CPUI_INT_MULT | CPUI_INT_AND | CPUI_INT_OR | CPUI_INT_XOR
+                | CPUI_INT_NEGATE | CPUI_INT_2COMP | CPUI_INT_LEFT => work.extend(o.get_out().map(|n| (n, true))),
                 _ => {}
             }
         }
@@ -871,6 +877,46 @@ pub fn stale_readers(
         }
     }
     out
+}
+
+/// The type the callee of the call `op` was last recovered to return, when it
+/// returns more of the register than the call's output holds and the output is
+/// printed in place. C computes `f(..)` at the callee's declared width, so the
+/// narrow value needs its truncation spelled where the expression it is printed
+/// in uses its sign or width ([`signed_use`]). Beside `unsigned long z32m(..)`,
+/// `a1 == z32m(a0)` compares a sign-extended `a1` with the zero-extended
+/// result where the binary compares `eax`. A value tested for zero, or assigned
+/// to a variable, which the assignment converts, keeps the call as it is.
+pub fn narrowed_call_result(data: &Funcdata, op: crate::context::OpId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+    let o = data.obank().get(op)?;
+    if !matches!(o.code(), kuna_num::opcodes::OpCode::CPUI_CALL | kuna_num::opcodes::OpCode::CPUI_CALLIND) {
+        return None;
+    }
+    let out = data.vbank().get(o.get_out()?)?;
+    if !out.is_implied() || out.is_type_lock() {
+        return None;
+    }
+    let fc = data.get_call_specs(data.get_call_specs_index(op)?);
+    if fc.proto().is_output_locked() {
+        return None;
+    }
+    let k = key(fc.get_entry_address())?;
+    if data.kuna_callee_returns(k) != Some(Returns::Other) {
+        return None;
+    }
+    let (addr, size) = data.kuna_callee_return_storage(k)?.clone();
+    let register = addr.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR);
+    if !register || size > 8 || !crate::kuna_zextreturn::wider_over(&addr, size, out.get_addr(), out.get_size()) {
+        return None;
+    }
+    if !signed_use(data, o.get_out()?, true) {
+        return None;
+    }
+    let stated = data.kuna_callret_stated(k).filter(|s| s.size == size && s.ct.get_size() == size);
+    match stated {
+        Some(s) => Some(std::rc::Rc::clone(&s.ct)),
+        None => data.get_arch().types()?.get_base(size, crate::dtype::type_metatype::TYPE_UINT).ok(),
+    }
 }
 
 /// What the function keyed `k` was last recovered to return, for [`restore`].

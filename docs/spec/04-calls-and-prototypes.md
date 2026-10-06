@@ -5744,15 +5744,23 @@ before it decompiled again (`stale_readers`): a reader that took the result as
 the narrow value prints `z32m(..) < 0` of an `int`, which the new `unsigned
 long` declaration makes false. A reader over `AUDIT_MAX_OPS` is redone only
 where it uses the result's sign or width (`kuna_voidret.rs (signed_use)`: an
-extension, an ordering, a right shift, a division, a conversion to a float, or
-a comparison with a negative constant, after copies and arithmetic that keeps
-the low bits); e2fsck's `main`, which tests such a result for zero and passes
-it on, spent three seconds on a redo that renamed one variable. A convention that extends a narrow return
+extension, an ordering, a right shift, a division, a conversion to a float, an
+equality with a variable or a negative constant, or any equality after
+arithmetic); e2fsck's `main`, which tests such a result for zero and passes it
+on, spent three seconds on a redo that renamed one variable. A reader of the
+widened callee that keeps only the low word prints the call truncated where
+its expression uses the word's sign or width (`narrowed_call_result`, chapter
+[09](09-emission.md)): `int eqv(..) { return (int)z32m(x) == v; }` would
+otherwise print `a1 == z32m(a0)`, which C compares at 64 bits after
+sign-extending `a1`. A convention that extends a narrow return
 by its type's sign (PowerPC64's `inttype`) is left alone: there a caller may read
 the whole register of an `unsigned int`, which `kuna_zextreturn` already types.
 The single-function `kuna decompile` has no callers to ask and keeps the trim.
 Over 30 decbench x86-64 binaries and 190 AArch64 objects built from their
-sources, it changes 19 functions, each toward its source type. A zero-extended
+sources, 19 functions move toward their source types, and 83 more print a
+truncating cast at a comparison of a narrow result of a callee recovered
+returning 8 bytes (chapter [09](09-emission.md)), most of them
+`(int)f(..) == -1`. A zero-extended
 byte its callers compare as an `int` goes from `char` to `unsigned char`: kmod's
 `kmod_module_dependency_symbol_get_bind` at three levels, ssh-agent's
 `recv_msg`, and dash's AArch64 `arith_prec`. A 64-bit return computed in 32 bits
