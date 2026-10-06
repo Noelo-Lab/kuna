@@ -591,8 +591,11 @@ pub fn return_storage(arch: &Architecture, k: (int4, uintb)) -> Option<(Address,
 }
 
 /// Put back what the function keyed `k` returned, and in what storage, before
-/// a decompile the run then discarded.
+/// a decompile the run then discarded. A forced decompile that displaced its
+/// return is over either way, so a float return its callers refuse is withdrawn
+/// as before.
 pub fn restore(arch: &mut Architecture, k: (int4, uintb), returns: Option<Returns>, storage: Option<(Address, int4)>) {
+    arch.kuna_voidret.displacing.remove(&k);
     match returns {
         Some(r) => {
             arch.kuna_voidret.returns.insert(k, r);
@@ -1348,3 +1351,6 @@ pub fn returned_use(data: &Funcdata, op: crate::context::OpId, vn: crate::contex
         _ => false,
     })
 }
+
+#[cfg(test)]
+mod tests;
