@@ -2011,7 +2011,9 @@ mod tests {
         // caller also tests is kept when the callee reads it (GH-881)
         // and kuna-retsysreg + -a64 + -mips / a register set for a system
         // register is not the high word of the return (GH-885)
-        assert_eq!(count, 447, "corpus file count drifted");
+        // and gh831-riscv-fpmove + gh831-riscv32-fpmove / RISC-V fmv.x.* and
+        // fcvt.w* read and write the real registers (GH-831)
+        assert_eq!(count, 449, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
