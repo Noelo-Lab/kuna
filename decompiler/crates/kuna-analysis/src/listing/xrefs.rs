@@ -705,6 +705,7 @@ fn descend(
     let mut fingerprint_contexts = (prologues && gapwalk)
         .then(super::kuna_fingerprintcontext::FingerprintContexts::default);
     let mut prologues_done = false;
+    let mut decode_reuse = None;
     let mut pending_prologues: VecDeque<u64> = VecDeque::new();
     let mut frame_candidates = Vec::new();
     let mut frame_cache = crate::aif::ArmFrames::default();
@@ -740,6 +741,7 @@ fn descend(
             Some(entry) => entry,
             None if prologues && !prologues_done => {
                 prologues_done = true;
+                decode_reuse = translate.decode_reuse_scope(32 * 1024 * 1024);
                 let mut listing = partition_listing(&partition, &st.funcs, &exec);
                 if gapwalk {
                     render_fingerprints(
@@ -1185,6 +1187,7 @@ fn descend(
         }
     }
 
+    drop(decode_reuse);
     let mut index = st.finish(veneers, preserve_bodies);
     if !measure {
         index.flow = None;

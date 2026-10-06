@@ -786,9 +786,12 @@ pub fn run_listing_consumers(
     }
     let mut frame_aif: Option<crate::aif::kuna_entrychecks::CheckedAif> = None;
     let mut frame_pointers = None;
+    let mut decode_reuse = None;
     // Recover validated LR-saving ARM/Thumb frames in gaps before fingerprinting.
     if arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes {
         if let Some(code_space) = arch.manage().get_default_code_space() {
+            decode_reuse = (file.architecture() == object::Architecture::Arm)
+                .then(|| translate.decode_reuse_scope(32 * 1024 * 1024)).flatten();
             let mut frame_cache = crate::aif::raw_arm_frames(
                 &file,
                 &listing,
@@ -1084,6 +1087,7 @@ pub fn run_listing_consumers(
         mode_out.context_paints = mode_paints;
         out.push(("flowmode", mode_out));
     }
+    drop(decode_reuse);
     sanitize_all_names(&mut out);
     out
 }

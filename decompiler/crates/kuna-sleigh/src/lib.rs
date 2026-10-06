@@ -19,6 +19,7 @@ pub mod slaformat;
 pub mod loadimage;
 pub mod kuna_ctxsnapshot;
 pub mod kuna_contextscope;
+pub mod kuna_decodereuse;
 pub mod kuna_sharedbytes;
 pub mod loadimage_xml;
 pub mod memstate;

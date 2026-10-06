@@ -5396,3 +5396,17 @@ plays the leaf role itself — it resolves the language from the object header
 the default code space to the loader (the `postSpecFile` contract), and hands the
 loader to the engine as the byte source every subsequent instruction decode reads
 through.
+
+ARM frame recovery shares a decode cache for each inventory or xref query over
+an immutable image, beginning after the initial seed walk. Assembly-only probes
+retain text when requested and acquire p-code only after a successful semantic
+decode. The key includes instruction address and all effective
+context words. Only successful translations with one context lookup, no context
+commits, and no delay slots may be reused; errors and mode-changing instructions
+are decoded normally. P-code, assembly, and lengths are retained under a 32 MiB
+FIFO payload cap and released at query end. Rebuild and prefix reconciliation
+order remain unchanged, and `armframes off` does not enable the cache.
+Xref result formatting also reuses the query's canonical inventory for names
+and fallback ownership. ARM address normalization and discovered-entry naming
+retain their existing precedence; formatting does not rebuild the inventory
+for each endpoint of every result row.

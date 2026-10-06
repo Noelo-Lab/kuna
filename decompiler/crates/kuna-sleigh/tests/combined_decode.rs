@@ -387,3 +387,195 @@ fn reuse_keys_track_effective_context_read_overrides() {
     assert!(!engine.matches_decode_context(&at, &thumb_key));
     assert_eq!(decode().2, arm_key);
 }
+
+#[test]
+fn query_reuse_retains_assembly_only_probes_and_promotes_them_to_pcode() {
+    let (engine, reads) = engine("ARM/data/languages/ARM7_le.sla",
+        &[1, 0, 0xa0, 0xe3], &[("TMode", 0)]);
+    let at = addr(&engine, 0);
+    let mut expected_ops = Ops::default();
+    let mut expected_text = Text::default();
+    engine.one_instruction_with_assembly(&mut expected_ops, &mut expected_text, &at).unwrap();
+    let _scope = engine.decode_reuse_scope(32 * 1024 * 1024).unwrap();
+    engine.print_assembly(&mut Text::default(), &at).unwrap();
+    let warm = reads.get();
+    let mut text = Text::default();
+    engine.print_assembly(&mut text, &at).unwrap();
+    assert_eq!(text, expected_text);
+    assert_eq!(reads.get(), warm);
+    let mut ops = Ops::default();
+    engine.one_instruction(&mut ops, &at).unwrap();
+    assert_eq!(ops, expected_ops);
+    assert!(reads.get() > warm);
+    let promoted = reads.get();
+    let mut ops = Ops::default();
+    engine.one_instruction_with_assembly(&mut ops, &mut Text::default(), &at).unwrap();
+    assert_eq!(ops, expected_ops);
+    assert_eq!(reads.get(), promoted);
+}
+
+#[test]
+fn query_reuse_renders_a_pcode_only_hit_without_a_nested_cache_borrow() {
+    let (engine, _) = engine("ARM/data/languages/ARM7_le.sla",
+        &[1, 0, 0xa0, 0xe3], &[("TMode", 0)]);
+    let at = addr(&engine, 0);
+    let mut expected = Text::default();
+    engine.print_assembly(&mut expected, &at).unwrap();
+    let _scope = engine.decode_reuse_scope(32 * 1024 * 1024).unwrap();
+    engine.one_instruction(&mut Ops::default(), &at).unwrap();
+    let mut text = Text::default();
+    engine.one_instruction_with_assembly(&mut Ops::default(), &mut text, &at).unwrap();
+    assert_eq!(text, expected);
+}
+
+#[test]
+fn query_reuse_preserves_pcode_text_context_and_lifetime() {
+    let (engine, reads) = engine("ARM/data/languages/ARM7_le.sla",
+        &[1, 0, 0xa0, 0xe3, 0, 0, 0, 0xfa], &[("TMode", 0), ("LRset", 0)]);
+    let at = addr(&engine, 0);
+    let decode = || {
+        let mut ops = Ops::default();
+        let len = engine.one_instruction(&mut ops, &at).unwrap();
+        let mut text = Text::default();
+        engine.print_assembly(&mut text, &at).unwrap();
+        (len, ops, text)
+    };
+    let expected = decode();
+    let scope = engine.decode_reuse_scope(32 * 1024 * 1024).unwrap();
+    assert_eq!(decode(), expected);
+    let warm_reads = reads.get();
+    assert_eq!(decode(), expected);
+    assert_eq!(reads.get(), warm_reads);
+    let (word, mask) = engine.with_context_db_mut(|db| {
+        let var = db.get_variable(b"TMode").unwrap();
+        (var.get_word() as usize, var.get_mask() << var.get_shift())
+    });
+    engine.set_context_read_override(word, mask, mask);
+    assert_eq!(decode().0, 2);
+    assert!(reads.get() > warm_reads);
+    engine.set_context_read_override(word, 0, 0);
+    let thumb_reads = reads.get();
+    assert_eq!(decode(), expected);
+    assert_eq!(reads.get(), thumb_reads);
+    engine.one_instruction(&mut Ops::default(), &addr(&engine, 4)).unwrap();
+    assert!(!engine.last_context_commits().is_empty());
+    assert_eq!(decode(), expected);
+    assert!(engine.last_context_commits().is_empty());
+    drop(scope);
+    let before = reads.get();
+    assert_eq!(decode(), expected);
+    assert!(reads.get() > before);
+}
+
+#[test]
+fn query_reuse_does_not_cache_context_writes_or_delayed_decodes() {
+    for (spec, bytes, context) in [
+        ("ARM/data/languages/ARM7_le.sla", vec![0,0,0,0xfa], vec![("TMode",0),("LRset",0)]),
+        ("ARM/data/languages/ARM7_le.sla", vec![8,0xbf,1,0x20], vec![("TMode",1),("LRset",0)]),
+        ("Sparc/data/languages/SparcV9_32.sla",vec![0x81,0xc7,0xe0,8,0x81,0xe8,0,0],vec![]),
+    ] {
+        let (engine, reads) = engine(spec,&bytes,&context);
+        let _scope = engine.decode_reuse_scope(32 * 1024 * 1024).unwrap();
+        engine.allow_context_set(false);
+        for _ in 0..2 {
+            let before = reads.get();
+            engine.one_instruction(&mut Ops::default(), &addr(&engine,0)).unwrap();
+            assert!(reads.get() > before, "{spec}: {bytes:x?}");
+            let before = reads.get();
+            engine.print_assembly(&mut Text::default(), &addr(&engine,0)).unwrap();
+            engine.print_assembly(&mut Text::default(), &addr(&engine,0)).unwrap();
+            assert!(reads.get() >= before + 2, "assembly {spec}: {bytes:x?}");
+        }
+    }
+}
+
+#[test]
+fn query_reuse_keys_include_address_and_every_context_word() {
+    let (engine, reads) = engine("ARM/data/languages/ARM7_le.sla",
+        &[1,0,0xa0,0xe3,1,0,0xa0,0xe3], &[("TMode",0),("LRset",0)]);
+    let _scope = engine.decode_reuse_scope(32 * 1024 * 1024).unwrap();
+    engine.one_instruction(&mut Ops::default(), &addr(&engine,0)).unwrap();
+    let before = reads.get();
+    engine.one_instruction(&mut Ops::default(), &addr(&engine,4)).unwrap();
+    assert!(reads.get() > before);
+    let before = reads.get();
+    engine.with_context_db_mut(|db| db.set_variable_default(b"LRset",1).unwrap());
+    engine.one_instruction(&mut Ops::default(), &addr(&engine,0)).unwrap();
+    assert!(reads.get() > before);
+}
+
+#[test]
+fn too_small_query_cache_does_not_retain_a_decode() {
+    let (engine, reads) = engine("ARM/data/languages/ARM7_le.sla",
+        &[1,0,0xa0,0xe3], &[("TMode",0),("LRset",0)]);
+    let _scope = engine.decode_reuse_scope(1).unwrap();
+    for _ in 0..2 {
+        let before = reads.get();
+        engine.one_instruction(&mut Ops::default(), &addr(&engine,0)).unwrap();
+        assert!(reads.get() > before);
+    }
+}
+
+#[test]
+fn query_reuse_does_not_retain_failed_decodes() {
+    let (mut engine, reads) = engine("ARM/data/languages/ARM7_le.sla", &[], &[("TMode",0)]);
+    engine.set_loader(Box::new(Bytes { data: Vec::new(), reads: reads.clone(), fail: true }));
+    let _scope = engine.decode_reuse_scope(32 * 1024 * 1024).unwrap();
+    for expected in 1..=2 {
+        let mut ops = Ops::default();
+        let mut text = Text::default();
+        assert!(engine.one_instruction_with_assembly(&mut ops, &mut text, &addr(&engine,0)).is_err());
+        assert_eq!(ops, Ops::default());
+        assert_eq!(text, Text::default());
+        assert_eq!(reads.get(), expected);
+    }
+}
+
+#[test]
+fn cached_decode_still_checks_the_entire_mapped_instruction() {
+    #[derive(Debug)]
+    struct Mapped(u64);
+    impl kuna_sleigh::loadimage::ImageBytes for Mapped {
+        fn fill_span(&self, _: &mut [u8], _: u64) -> usize { unreachable!() }
+        fn mapped_covers(&self, lo: u64, hi: u64) -> bool { lo >= BASE && hi <= BASE + self.0 }
+    }
+    let (engine, reads) = engine("ARM/data/languages/ARM7_le.sla",
+        &[1,0,0xa0,0xe3], &[("TMode",0),("LRset",0)]);
+    let _scope = engine.decode_reuse_scope(32 * 1024 * 1024).unwrap();
+    engine.one_instruction(&mut Ops::default(), &addr(&engine,0)).unwrap();
+    let before = reads.get();
+    let mut ops = Ops::default();
+    assert!(engine.one_instruction_checked(&mut ops, &addr(&engine,0), &Mapped(2)).is_err());
+    assert_eq!(ops, Ops::default());
+    assert!(engine.one_instruction_checked(&mut ops, &addr(&engine,0), &Mapped(4)).is_ok());
+    assert_eq!(reads.get(), before);
+}
+
+#[test]
+fn cached_decode_retains_stateful_loaders_failure_behavior() {
+    struct Windowed { bytes: Bytes, window: Rc<Cell<u64>> }
+    impl LoadImage for Windowed {
+        fn get_file_name(&self) -> &str { "synthetic-windowed-decode" }
+        fn get_arch_type(&self) -> Vec<u8> { Vec::new() }
+        fn adjust_vma(&mut self, _: i64) {}
+        fn read_window(&self) -> Option<u64> { Some(self.window.get()) }
+        fn load_fill(&mut self, out: &mut [u8], at: &Address) -> KunaResult<()> {
+            if self.window.get() != BASE { return Err(KunaError::data_unavail("unmapped window")); }
+            self.bytes.load_fill(out, at)
+        }
+    }
+    let (mut engine, reads) = engine("ARM/data/languages/ARM7_le.sla", &[], &[("TMode",0),("LRset",0)]);
+    let window = Rc::new(Cell::new(BASE));
+    engine.set_loader(Box::new(Windowed {
+        bytes: Bytes { data: vec![1,0,0xa0,0xe3], reads, fail: false }, window: window.clone(),
+    }));
+    let _scope = engine.decode_reuse_scope(32 * 1024 * 1024).unwrap();
+    engine.one_instruction(&mut Ops::default(), &addr(&engine,0)).unwrap();
+    window.set(0x2000);
+    let mut ops = Ops::default();
+    assert!(engine.one_instruction(&mut ops, &addr(&engine,0)).is_err());
+    assert_eq!(ops, Ops::default());
+    let mut text = Text::default();
+    assert!(engine.print_assembly(&mut text, &addr(&engine,0)).is_err());
+    assert_eq!(text, Text::default());
+}
