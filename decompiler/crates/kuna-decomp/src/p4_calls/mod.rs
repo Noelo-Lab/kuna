@@ -23,6 +23,7 @@ pub mod kuna_noreturnretuse;
 pub mod kuna_returnpair;
 pub mod kuna_retinputhalf;
 pub mod kuna_retcallhalf; // (kuna) a call's result handed back beside a computed second return register
+pub mod kuna_retsysreg; // (kuna) a register set for a system register is not the high word of the return
 pub mod kuna_retpushedhalf;
 pub mod kuna_returnuncomputed;
 pub mod kuna_spillargtrial;

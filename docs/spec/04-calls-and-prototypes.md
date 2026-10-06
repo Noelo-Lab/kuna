@@ -3258,6 +3258,112 @@ copies of a `tbb` jump table decoded as code in betaflight. Lua 5.4 built for AR
 Thumb, i386, MIPS and RISC-V 32 by clang and gcc at O0 and O2 (12,503 functions)
 changes none.
 
+#### (kuna) A register set for a system register is not a high word (`retsysreg`)
+
+`int f(void) { int r = g(); __asm volatile("vmsr fpscr, %0" :: "r"(0x3000000));
+return r; }` is, on 32-bit ARM, `bl g; mov r1,#0x3000000; vmsr fpscr,r1; pop
+{r11,pc}`, and printed `unsigned long long f(void) { return
+CONCAT44(0x3000000,g()); }` (GH-885). The call's result is the low word through
+the rule above; the high word is the `fpscr` operand. The rule above is not the
+whole story: `r1` is scored as returned by upstream's own scoring, because
+`onlyOpUse` takes a COPY into a register other than a temporary, and any
+CALLOTHER, for an alternate path rather than a competing use. So `int f(int a) {
+r = a * 3; vmsr fpscr,K; return r; }` printed `CONCAT44(0x3000000,a0 * 3)`
+without any call, FreeRTOS's `ulPortRaiseBASEPRI` (Thumb `mrs r0,basepri; mov.w
+r1,#0x50; msr basepri,r1; isb; dsb; bx lr`) returned `CONCAT44(0x50,v1)`, and the
+same happened to MIPS `mtc0 $3`/`ctc1 $3`, PowerPC `mtmsr r4` and an AArch64
+`msr fpcr,x1` beside the value in `x0`, printed `undefined16`.
+
+`kuna_retsysreg::drop_set_aside`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_retsysreg.rs`) runs after the
+last scoring pass, before `kuna_retcallhalf::accept` and the output map, and makes
+an active trial inactive when all of these hold:
+
+* at every live RETURN, every value the trial's register merges (walked back
+  through phis, value-preserving INDIRECTs and the injected no-op) is written
+  to a processor-state or system register (`kuna_retsysreg.rs (sinks)`):
+  followed forward through phis, INDIRECTs and temporaries, but not through a
+  load or another user op, it reaches either a user op that sets processor
+  state from its operands, or a write to a register the prototype model names
+  nowhere, neither as parameter or return storage nor as unaffected or killed
+  by a call, whose value the function then only turns into flags (`vmsr fpscr`,
+  PowerPC `mtmsr`/`mtspr`; Thumb `msr cpsr_c` writes `cpsr` and unpacks it
+  into the flags) (`kuna_retsysreg.rs (only_flags)`);
+* the user ops that set processor state are named
+  (`kuna_retsysreg.rs (STATE_USEROP_NAMES)`, resolved to ids when the
+  function's architecture handle is built, `kuna_retsysreg.rs (sets_state)`):
+  ARM's interrupt enables (`msr primask`, `cpsie`), `setBasePriority` (`msr
+  basepri`), `writeCPSRControl`, the banked stack pointers and stack limits,
+  the CP15 control-register writes (`mcr p15,0,r,c1,c0,0` and the access,
+  domain, translation-control and context-ID registers), PowerPC's `wrtee`,
+  and AArch64's `UnkSytemRegWrite` (`msr` to a system register the language
+  has no name for); MIPS `setCopReg`/`setCopRegH`/`setCopControlWord` count
+  only for coprocessor 0 (`mtc0`) and 1 (`ctc1`), as coprocessor 2 takes data;
+  and a volatile write of a register the model names nowhere counts too
+  (AArch64 `msr fpcr`, `msr daif`, which the AArch64 pspec marks volatile).
+  Every other user op is no such write. A preload, prefetch, cache, TLB or
+  barrier op (`pld`, `pli`, `prfm`, MIPS `pref`/`cache`/`synci`, AArch64 `dc
+  civac`/`dc cvau`/`tlbi`/`ic ivau`, CP15 cache maintenance, PowerPC
+  `dcbf`/`icbi`, x86 `clflush`) takes an address, and a returned high word can
+  be one: `long b = p[n]; __builtin_prefetch((void*)b); return (struct
+  pr){p[0], b};` keeps its pair;
+* none of those writes reads, directly or through temporaries, another value a
+  RETURN reads (`kuna_retsysreg.rs (alone)`): a 64-bit system register takes
+  both words in one write, as x86's `wrmsr` reads `edx:eax` and ARM's `mcrr`
+  reads `r0` and `r1`, and that function returns the 64-bit value it wrote;
+* no other value a RETURN reads is itself handed to the machine, as a 64-bit
+  value written in halves would be;
+* the value is not computed from a call's result in that same register or from
+  a call result wider than it (`kuna_retsysreg.rs (from_call_result)`): `bl g64;
+  orr r1,r1,#255; vmsr fpscr,r1` still returns `g64() | 0xff00000000`;
+* the model, given that trial alone, returns nothing
+  (`kuna_retsysreg.rs (returned_alone)`): the trial is the second register of a
+  pair, never a return value of its own.
+
+The first register then stands alone: `int f(int a0) { return a0 * 3; }`,
+`unsigned int ulPortRaiseBASEPRI(void)`. When it was refused too, as a call's
+untouched result is, nothing is left to return, and `bl g; mov r1,#K; vmsr
+fpscr,r1; pop {r11,pc}` is what `bl g; pop {r11,pc}` is: `void` in
+single-function mode, and in `decompile-all` the call's result once `g`'s
+prototype is recovered (`passthrough`) or a caller reads it (`kuna_voidret`).
+A first register handed to a system register by itself (`mov r0,#0x20; msr
+basepri,r0; bx lr`) is upstream's single-register question and still prints
+`return 0x20;`.
+
+The register test leans on the prototype model's lists to tell a system
+register from a data register, so where a cspec leaves a data register out of
+them, a write to it that nothing reads counts as well: MIPS o32 names no `$t`
+register and no `$f2`-`$f11`, so an inline-asm `mtc1 $3,$f2` that nothing
+reads drops `$3` as `vmsr fpscr` does. MIPS `hi`/`lo` (`mthi`, `mtlo`) and
+PowerPC `CTR`/`XER` (`mtctr`, `mtxer`, and `mtspr 272` for `SPRG0`) are named
+nowhere either, so a write of the second return register to one of them that
+nothing reads afterwards drops it the same way. Compiled code does not leave
+such a dead write.
+
+The rule is option `retsysreg`, on by default. Bytes cannot settle it: `add
+r1,r1,r0; add r0,r0,r0,lsl #1; vmsr fpscr,r1; bx lr` is an `int` function that
+used `r1` as the scratch for the write, and also a 64-bit function that writes
+its own high word to `fpscr`. The first is what clang emits whenever `r0` holds
+the result, so the default reads it that way; `option retsysreg off` gives the
+pair back. Over 46 stripped decbench binaries (ARM firmware at O0, O2 and
+O2-noinline, x86-64, i386 and PE) and 204 Lua, zlib and SQLite objects built for
+ARM, Thumb, Cortex-M4, AArch64, MIPS, PowerPC, PowerPC64 and i386 (59,478
+functions) one function changes, ChibiOS's `chEvtGetAndClearEvents` (`movs
+r1,#0; msr basepri,r1` before the return), to the 32-bit result it has, and its
+four callers' result variables follow.
+
+`tests/stages/kuna-retsysreg.xml` pins ARM `vmsr fpscr`, `msr cpsr_c` and an
+SCTLR write beside a call's result and a computed `r0`, Thumb
+`ulPortRaiseBASEPRI` and `msr primask`, the `g64` high word and `mcrr` controls,
+`pld`, `pli` and CP15 cache-line controls that keep their pair, and the pair
+again with the option off, in single-function mode;
+`tests/stages/kuna-retsysreg-a64.xml` does the same for AArch64 `msr
+ICC_PMR_EL1`, `msr fpcr` and `msr daif` against `prfm`, `dc cvau`, `dc civac`,
+`tlbi` and `ic ivau` controls (a 16-byte struct and an `__int128`), and
+`tests/stages/kuna-retsysreg-mips.xml` for MIPS `mtc0` against `pref`, `cache`,
+`synci` and `mtc2` controls. `kuna-cli/tests/sysreg_return_halves.rs`
+decompiles the ARM and Thumb issue shape whole-binary.
+
 #### (kuna) The register that was only ever pushed (`retpushedhalf`)
 
 The placement test asks whether the terminal arrived from a *different* address

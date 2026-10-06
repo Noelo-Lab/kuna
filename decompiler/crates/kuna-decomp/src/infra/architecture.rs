@@ -627,6 +627,10 @@ pub struct Architecture {
     /// build and read by [`crate::kuna_retpushedhalf`] through the `ArchContext`
     /// handle.
     pub ret_pushed_half: bool,
+    /// (kuna) `option retsysreg`: a register the function sets for a system
+    /// register is not the high word of its return.  Read by
+    /// [`crate::kuna_retsysreg`] through the `ArchContext` handle.
+    pub ret_sys_reg: bool,
     /// (kuna) `option noreturnretuse`: a CALL on a block that ends in a no-return
     /// halt does not veto the RETURN's output trial.  Read by
     /// [`crate::p4_calls::kuna_noreturnretuse`] through the `ArchContext` handle.
@@ -2536,6 +2540,7 @@ impl Architecture {
             input_varnode_adjust: false,
             ret_input_half: false, // (kuna) option retinputhalf; reset_defaults sets the shipped default
             ret_pushed_half: false, // (kuna) option retpushedhalf; reset_defaults sets the shipped default
+            ret_sys_reg: false, // (kuna) option retsysreg; reset_defaults sets the shipped default
             noreturn_ret_use: false, // (kuna) option noreturnretuse; reset_defaults sets the shipped default
             zero_idiom_use: false, // (kuna) option zeroidiomuse; reset_defaults sets the shipped default
             stack_addr_arg_trial: false,
@@ -2860,6 +2865,7 @@ impl Architecture {
         self.input_varnode_adjust = true; // (kuna) DIV-3 default-on (GH-9218)
         self.ret_input_half = true; // (kuna) DIV-85 default-on: a returned register half whose value is an input parameter the function MOVED into the return register is a real return, not leftover; keeping it also keeps the parameter it came from in the recovered signature. 0/675 byte-identical; an untouched return register is still dropped (the GH-6990 SPARC pass-through), restore the strict rule with `option retinputhalf off`
         self.ret_pushed_half = true; // (kuna) DIV-156 default-on: a register the function only ever PUSHED is stack maintenance, not a value it placed in a return register, so the alignment `push %r8` / `pop %rdx` idiom no longer invents a fifth argument and a 128-bit return. Narrows `retinputhalf` only; 0/675 byte-identical on the datatest corpus. Restore the address-only placement test with `option retpushedhalf off`
+        self.ret_sys_reg = true; // (kuna) GH-885 default-on: the second register of a returned pair whose value only goes to a system register (vmsr fpscr, msr basepri, mtc0) is that write's operand, not a high word. 0/675 byte-identical on the datatest corpus; restore the pair with `option retsysreg off`
         self.noreturn_ret_use = true; // (kuna) DIV-118 default-on: a status value handed to a no-return failure call at the end of its block cannot compete with the same value at the function's RETURN, so it no longer forces the prototype to void. 0/675 byte-identical on the datatest corpus and 0 changed lines across 23 linked binaries; restore the upstream blanket rejection with `option noreturnretuse off`
         self.zero_idiom_use = true; // (kuna) DIV-PENDING default-on: `INT_XOR(v,v)` is 0 whatever v is, so the x86 register-clearing idiom is not a competing use of the value it consumes and no longer sinks a call's input trials. An identity, one-directional (it can only decline a veto); 0/675 byte-identical on the datatest corpus. Restore the upstream walk with `option zeroidiomuse off`
         self.stack_addr_arg_trial = false;
@@ -3546,6 +3552,15 @@ impl Architecture {
         // reaches `option retinputhalf` via `glb`.
         ctx.ret_input_half = self.ret_input_half;
         ctx.ret_pushed_half = self.ret_pushed_half;
+        ctx.ret_sys_reg = self.ret_sys_reg;
+        let ids = |names: &[&[u8]]| -> Vec<kuna_base::types::uint4> {
+            names
+                .iter()
+                .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
+                .collect()
+        };
+        ctx.retsysreg_userops = ids(crate::kuna_retsysreg::STATE_USEROP_NAMES);
+        ctx.retsysreg_cop_userops = ids(crate::kuna_retsysreg::COP_USEROP_NAMES);
         // (kuna) carry the terminal-no-return trial gate so `only_op_use` reaches
         // `option noreturnretuse` via `glb`.
         ctx.noreturn_ret_use = self.noreturn_ret_use;

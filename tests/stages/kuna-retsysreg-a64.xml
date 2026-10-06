@@ -1,0 +1,92 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    kuna: a register an AArch64 function sets for a system register is not
+    the high word of its return; a prefetch or cache op on it is no such
+    write.
+
+    Stage / sub-stage: P4 return recovery, the output trials of the
+    function's own RETURN (ActionReturnRecovery, p4_calls/kuna_retsysreg.rs).
+    P0 assertion: option retsysreg on|off (default on).
+
+    Source (clang -target aarch64-linux-gnu -O2 at 0x100000, bytes verbatim):
+
+        long pmr(long a) { long r = a * 3; register long v asm("x1") = 0xf0;
+          __asm volatile("msr s3_0_c4_c6_0, %0" :: "r"(v)); return r; }
+        fpcr, daif: the same with msr fpcr (0x3000000) and msr daif (0x3c0)
+        struct pr { long a, b; };
+        struct pr two(long *p, long n) { long b = p[n];
+          __builtin_prefetch((void*)b); return (struct pr){p[0], b}; }
+        __int128 i128(long *p) { long hi = p[1];
+          __builtin_prefetch((void*)hi, 1, 3);
+          return ((__int128)hi << 64) | (unsigned long)p[0]; }
+        cvau, civac, tlbi, ic: two with dc cvau, dc civac, tlbi vae1 and
+          ic ivau on b
+
+    pmr is add x0,x0,x0,lsl #1; mov w1,#0xf0; msr ICC_PMR_EL1,x1; ret.
+
+    The bug: x1 joined x0 as a 16-byte return whose high word is the
+    system register's operand.  The fix returns the 64-bit value from pmr,
+    fpcr and daif.  two, i128, cvau, civac, tlbi and ic keep the pair: a
+    prefetch, cache or TLB op takes an address, which the high word can be,
+    and sets no processor state.  The last pass sets option retsysreg off
+    and prints pmr and fpcr with the pair again.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+0004008b011e8052014618d5c0035fd60004008b0160a05201441bd5c0035fd6
+0004008b0178805221421bd5c0035fd6017861f8200080f9000040f9c0035fd6
+000440a9300080f9c0035fd6017861f8217b0bd5000040f9c0035fd6017861f8
+217e0bd5000040f9c0035fd6017861f8218708d5000040f9c0035fd6017861f8
+21750bd5000040f9c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="pmr"/>
+<symbol space="ram" offset="0x100010" name="fpcr"/>
+<symbol space="ram" offset="0x100020" name="daif"/>
+<symbol space="ram" offset="0x100030" name="two"/>
+<symbol space="ram" offset="0x100040" name="i128"/>
+<symbol space="ram" offset="0x10004c" name="cvau"/>
+<symbol space="ram" offset="0x10005c" name="civac"/>
+<symbol space="ram" offset="0x10006c" name="tlbi"/>
+<symbol space="ram" offset="0x10007c" name="ic"/>
+</binaryimage>
+<script>
+  <com>lo fu pmr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fpcr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu daif</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu i128</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cvau</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu civac</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tlbi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ic</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option retsysreg off</com>
+  <com>lo fu pmr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fpcr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RETSYSREG A64 #1: a system register write keeps the 64-bit return" min="3" max="3">(int8|long) (pmr|fpcr|daif)\((int8|long) a0\)</stringmatch>
+<stringmatch name="RETSYSREG A64 #2: a prefetch, cache or TLB op on the high word keeps the pair" min="6" max="6">undefined16 (two|i128|cvau|civac|tlbi|ic)\(</stringmatch>
+<stringmatch name="RETSYSREG A64 #3: with retsysreg off pmr and fpcr return the pair again" min="2" max="2">undefined16 (pmr|fpcr)\(</stringmatch>
+</decompilertest>
