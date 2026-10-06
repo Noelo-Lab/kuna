@@ -993,6 +993,10 @@ pub struct ArchContext {
     /// through (`hiddenretarg`).  Read by
     /// [`crate::p4_calls::kuna_hiddenretarg::trial_is_not_hidden_return`].
     pub hidden_ret_arg: bool,
+    /// (kuna) give a call the register arguments `onlyOpUse` refused when the
+    /// callee's own body reads them (`calleereadarg`).  Read by
+    /// [`crate::p4_calls::kuna_calleereadarg::capture`].
+    pub callee_read_arg: bool,
     /// (kuna) narrow a call's `killedbycall` set to the registers a bounded
     /// decode of the callee's own body proves it writes (`calleepreserves`).
     /// Read by `Heritage::guard_calls` through
@@ -1730,6 +1734,7 @@ impl ArchContext {
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,
             hidden_ret_arg: true,
+            callee_read_arg: true,       // calleereadarg (default-on)
             callee_preserves: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)

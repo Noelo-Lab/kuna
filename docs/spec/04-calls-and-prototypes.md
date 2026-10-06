@@ -1519,6 +1519,82 @@ classified:
   vetoed: not SPARC's `[sp+64]` stack slot, and not one that shares storage
   with an ordinary input entry, as tricore's `a4` does. `off` restores the
   upstream scoring.
+- **Callee-read argument** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleereadarg.rs (extend_pending)`):
+  the same summary also answers the opposite question. `onlyOpUse` refuses a
+  trial whose value the caller also branches on, stores, dereferences or
+  returns, and with nothing active behind it the trial ends the argument list.
+  gcc -O2 computes `x = *p + 2` straight into `edi`, tests it there and calls
+  `ext`, so `if (x) return ext(x) + 1;` printed `ext() + 1`; its `int fwd(int
+  *p) { int x = *p; if (x > 5) return x; return getk(x); }` loads `x` into
+  `edi`, compares it, returns it on one path and tail-calls `getk` on the
+  other, and printed `getk()`. `calleereadarg` (default-on) keeps such an
+  argument when the callee's body is seen consuming the register: the walk
+  shows some path reading the register's low byte before writing it, for a
+  value that can reach something.
+
+  That read is narrower than the one `calleearitybody` takes, in five ways.
+  The low byte matters because the walk records a read whole when any byte of
+  it is unwritten, and a clang -Os callee that loads a byte into `cl` and then
+  computes `lea -0x4(%rcx),%edx` reads the upper bytes of `rcx` without taking
+  an argument there. A register compared with itself is no read: x86 `sbb
+  %ecx,%ecx` computes its flags from `ecx < ecx` and `sborrow(ecx,ecx)`. A
+  register stored by an instruction that stores several is no read either: gcc
+  reserves stack with dead registers (`push {r0, r1, r4, lr}`), and a callee
+  that takes `r0` also reads it some other way (`mov r4, r0`). Where the
+  convention returns in no register that carries no argument, as on ARM and
+  AArch64, a register the callee only stores is no read either: callers there
+  mark no variadic call, and gcc bounds a variadic callee's save to the
+  `va_arg` it can reach, so `openish(const char *, int, ...)` stores `x2` alone
+  (a real third argument it only stores stays out with it). On x86-64 the
+  caller's `xor %eax,%eax` marks those calls, and a store counts. And a walk
+  that met an undecodable instruction proves no read at all, because a body
+  decoded in the wrong instruction set (an ARM function decoded as Thumb) reads
+  registers at random before it breaks.
+
+  It applies only to a general-purpose register trial the ancestor analysis
+  accepted as a value the caller wrote, at a direct `CALL` to a known entry
+  whose prototype is neither locked nor variadic. Three things decline it. The
+  callee reads the last general-purpose argument register (`r9` on x86-64
+  SysV, `x7` on AArch64, `r3` on ARM): a variadic register-save prologue reads
+  every one through the last, and an LLVM `-Oz` prologue that reserves stack by
+  pushing dead registers (`push {r2, r3, r4, lr}`) takes them downward from
+  the first saved register, so it reaches `r3` first. The caller set the call
+  up as variadic (SysV's `xor %eax,%eax`, recorded before heritage): gcc saves
+  only the registers `va_arg` can reach when it can bound them, and gnulib
+  `open_safer` reads `rdx` alone. The calling function is or may be variadic
+  itself, which is a read of `al` before it is written in its entry block other
+  than by a store (clang's alignment `push %rax` is a store, `test %al,%al` is
+  not), or its own entry reading its last argument register: an argument
+  supplied there can be the `va_list`, and once the register-save area escapes
+  through it the function's own recovery takes every saved register as a
+  parameter (`cliPrintf(fmt, ...)` handing `cliPrintfva` its saved `r1`-`r3`).
+  Floating-point registers are left alone, because a callee that only moves
+  its `double` (`lua_pushnumber` stores `xmm0`) is recovered with an integer
+  parameter, and handing it a `floor()` result made the caller read that result
+  as an integer, which turned `floor` itself `void`.
+
+  The trial is not re-scored. `forceInactiveChain` reads a run of inactive
+  trials as the end of a list, so a trial turned active there can unblock a
+  spurious later one and drag it in with every hole before it: on Cortex-M a
+  `movs r3,#128` the caller feeds to `msr basepri`, and the slot its own `push`
+  wrote, made a one-argument call five arguments long. Instead
+  `buildInputFromTrials` records each general-purpose register trial with the
+  value the CALL carried there, and the extension runs at the end of
+  `ActionActiveParam`, after the sibling and body rules have settled every list,
+  and before `passthrough`. A final list whose general-purpose registers are a
+  leading run of the model's gains the entries after it up to the last one the
+  callee reads, each as wide as the callee reads it (`edx`, not `rdx`). An
+  entry in between is a parameter of the callee too, because the callee reads a
+  later one, but its value must be one the caller wrote, or the caller's own
+  incoming register where the callee reads it: clang drops an argument its
+  callee never reads (`g3(1, 0, x)` leaves `esi` holding the caller's own
+  second parameter), so that register is a leftover, and the call keeps the list
+  it had. No more than two such entries may stand in a row, the chain upstream's
+  positional rule tolerates. The function's own incoming register is
+  otherwise `passthrough`'s; a callee with no decodable body (an undefined
+  extern in a relocatable object, a PLT import with no library prototype) gives
+  no evidence and changes nothing. `off` leaves every list as the other rules
+  settle it.
 - A definitely-unused trial has its dataflow **freed immediately** — the CALL
   input is replaced with constant 0 so dead-code elimination can reap the
   producer. This is why P4 must iterate with DCE inside mainloop.

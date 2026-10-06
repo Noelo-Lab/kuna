@@ -65,6 +65,11 @@
     gets.  Pass 1 (`option calleearitylive off`) reproduces the BUG in both.
     Pass 2 (`option calleearitylive on`) fixes `caller` and leaves `caller2`
     exactly as it was.
+
+    `calleereadarg` is off in pass 1: both callees read ecx on entry, so that
+    rule keeps the branched-on 4th argument by itself and would hide the bug.
+    Pass 2 is the shipped default, with both rules on, and there caller2's
+    short site gets ecx from calleereadarg.
 -->
 <bytechunk space="ram" offset="0x100000">
 4889f801f001d001c8c3660f1f4400004889f801f001d001c84401c0c30f1f00
@@ -79,6 +84,7 @@ ffffc349c1eb10418d8b00800000be040000004c89d2e875ffffffc3
 <symbol space="ram" offset="0x100060" name="caller2"/>
 </binaryimage>
 <script>
+  <com>option calleereadarg off</com>
   <com>option calleearitylive off</com>
   <com>lo fu caller</com>
   <com>decompile</com>
@@ -86,6 +92,7 @@ ffffc349c1eb10418d8b00800000be040000004c89d2e875ffffffc3
   <com>lo fu caller2</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option calleereadarg on</com>
   <com>option calleearitylive on</com>
   <com>lo fu caller</com>
   <com>decompile</com>
@@ -95,8 +102,9 @@ ffffc349c1eb10418d8b00800000be040000004c89d2e875ffffffc3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="calleearitylive #1: option off drops the branched-on 4th argument at both callees (bug reproduced)" min="3" max="3">callee2?\(a[0-9]+,4,a[0-9]+\);</stringmatch>
+<stringmatch name="calleearitylive #1: with both rules off the branched-on 4th argument is dropped at both callees (bug reproduced)" min="2" max="2">callee2?\(a[0-9]+,4,a[0-9]+\);</stringmatch>
 <stringmatch name="calleearitylive #2: option on extends the short site to the sibling call's four arguments" min="1" max="1">callee\(a[0-9]+,4,a[0-9]+,v[0-9]+\);</stringmatch>
-<stringmatch name="calleearitylive #3: the callee that also reads r8d contradicts a four-argument witness, so its short site is left alone in BOTH passes" min="2" max="2">callee2\(a[0-9]+,4,a[0-9]+\);</stringmatch>
+<stringmatch name="calleearitylive #3: the callee that also reads r8d contradicts a four-argument witness, so calleearitylive leaves its short site alone" min="1" max="1">callee2\(a[0-9]+,4,a[0-9]+\);</stringmatch>
+<stringmatch name="calleearitylive #5: at the shipped default callee2's short site gets the ecx it reads from calleereadarg" min="1" max="1">callee2\(a[0-9]+,4,a[0-9]+,v[0-9]+\);</stringmatch>
 <stringmatch name="calleearitylive #4: the witness site keeps exactly four arguments in all four decompilations" min="4" max="4">callee2?\(a[0-9]+,4,a[0-9]+,[^;]*0x8000\);</stringmatch>
 </decompilertest>

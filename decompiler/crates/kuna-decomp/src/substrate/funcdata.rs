@@ -484,6 +484,9 @@ pub struct Funcdata {
     /// writes the return register, which carries no argument, just before them
     /// (`xor %eax,%eax` is SysV's vector-register count).
     kuna_passthrough_vararg_calls: Vec<crate::context::OpId>,
+    /// (kuna `calleereadarg`) The CALL ops set up as variadic calls, recorded
+    /// before heritage whatever `passthrough` decides.
+    kuna_readarg_vararg_calls: Vec<crate::context::OpId>,
     /// (kuna `passthrough`) Is this function itself variadic -- does its entry
     /// block read the return register, which carries no argument, before it
     /// writes it (`test %al,%al` in a SysV register-save prologue)?
@@ -682,6 +685,7 @@ impl Funcdata {
             kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
+            kuna_readarg_vararg_calls: Vec::new(),
             kuna_passthrough_variadic: false,
             kuna_moved_back_returns: Vec::new(),
             kuna_pairs_first_low: false,
@@ -1379,6 +1383,16 @@ impl Funcdata {
     /// (kuna `passthrough`) The CALL ops set up as variadic calls.
     pub fn kuna_passthrough_vararg_calls(&self) -> &[crate::context::OpId] {
         &self.kuna_passthrough_vararg_calls
+    }
+
+    /// (kuna `calleereadarg`) Record the CALL ops set up as variadic calls.
+    pub fn kuna_set_readarg_vararg_calls(&mut self, ops: Vec<crate::context::OpId>) {
+        self.kuna_readarg_vararg_calls = ops;
+    }
+
+    /// (kuna `calleereadarg`) The CALL ops set up as variadic calls.
+    pub fn kuna_readarg_vararg_calls(&self) -> &[crate::context::OpId] {
+        &self.kuna_readarg_vararg_calls
     }
 
     /// (kuna `passthrough`) Record whether this function is itself variadic.
@@ -3638,6 +3652,7 @@ impl Funcdata {
         self.slot_evidence.borrow_mut().clear();
         self.kuna_passthrough_claims.clear();
         self.kuna_passthrough_vararg_calls.clear();
+        self.kuna_readarg_vararg_calls.clear();
         self.kuna_passthrough_variadic = false;
         self.kuna_moved_back_returns.clear();
         self.store_reach_committed.set(false);

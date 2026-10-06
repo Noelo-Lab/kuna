@@ -607,7 +607,14 @@ const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 0, 0];
 // round trip only because ghidra mode has no p-code cache.  The gate short-
 // circuits before any decode, so `calltrampoline off` is the 1862 this pin held
 // before the option existed.
-const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 2121;
+// (kuna `calleereadarg`) RAISED the total 2121 -> 2142 and left the DISTINCT
+// count at 1044, unmoved, with every rendered pin above it unchanged. The option
+// asks the bounded entry walk of each function's OWN body (one with a call to
+// extend), to tell a variadic caller by its register-save prologue, and the
+// walk is a cache miss for an entry no earlier caller probed. No new
+// instruction address is read. Measured both arms on this tree: the option off
+// by default gives 2121.
+const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 2142;
 const PIN_FAILLOG_DECODED_INSTS: usize = 1044;
 // Whole-session getMappedSymbols traffic: Phase 2 pinned this at 0 (the
 // providers did not exist); Phase 3 pins the real query-through traffic —
