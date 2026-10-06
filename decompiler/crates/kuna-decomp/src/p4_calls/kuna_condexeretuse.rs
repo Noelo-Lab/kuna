@@ -43,10 +43,14 @@
 //! `moveq r0,#7; moveq r1,#0; bxeq lr`, whose `r0` passes two merges that
 //! re-test Z, is covered. Everything else keeps the upstream treatment.
 //!
-//! The repeated walk gives up (keeps the upstream rejection) when a value is
-//! reached both through such a merge and along another route, because the uses
-//! it skipped are then real for the other route. Call-site input trials are left
-//! alone.
+//! The repeated walk passes only if it also reaches the RETURN slot being
+//! matched through a use it did not skip. A value whose forced branch leads away
+//! from the RETURN (into a spin loop, or into a call that does not return) never
+//! gets there, and skipping every use it cannot reach would otherwise pass the
+//! walk with nothing checked. It also gives up (keeps the upstream rejection)
+//! when a value is reached both through such a merge and along another route,
+//! because the uses it skipped are then real for the other route. Call-site
+//! input trials are left alone.
 
 use std::collections::{HashMap, HashSet};
 
@@ -159,3 +163,7 @@ fn reachable_from(data: &Funcdata, from: BlockId) -> Option<HashSet<BlockId>> {
     }
     Some(blocks)
 }
+
+#[cfg(test)]
+#[path = "kuna_condexeretuse/tests.rs"]
+mod tests;

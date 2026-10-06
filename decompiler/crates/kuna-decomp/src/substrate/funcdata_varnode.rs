@@ -2184,7 +2184,8 @@ impl Funcdata {
 
     /// One `only_op_use` walk. `entered` collects the two-input MULTIEQUALs the
     /// walk passes through, with the Varnode it reached each by; `by_merge`
-    /// skips the uses a merge block that re-tests its condition rules out
+    /// skips the uses a merge block that re-tests its condition rules out, and
+    /// then passes only if the walk still reached `opmatch`'s trial slot
     /// (`condexeretuse`, see [`crate::p4_calls::kuna_condexeretuse`]).
     fn only_op_use_walk(
         &mut self,
@@ -2207,6 +2208,7 @@ impl Funcdata {
         varlist.push((invn, main_flags, None));
         let active_output = self.get_active_output().is_some();
         let forced_return = crate::p4_calls::kuna_voidret::scoring_return(self, opmatch);
+        let mut reached_match = false;
         let mut i = 0;
         while i < varlist.len() {
             let (vn, base_flags, forced) = varlist[i];
@@ -2238,6 +2240,7 @@ impl Funcdata {
                 let code = o.code();
                 if op == opmatch {
                     if o.get_in(trial.get_slot()) == Some(vn) {
+                        reached_match = true;
                         continue;
                     }
                 }
@@ -2412,7 +2415,7 @@ impl Funcdata {
                 v.clear_mark();
             }
         }
-        res
+        res && (!by_merge || reached_match)
     }
 
     /// Test whether a Varnode's data-flow ancestry makes it a realistic

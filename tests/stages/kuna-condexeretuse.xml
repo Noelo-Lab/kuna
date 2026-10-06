@@ -4,16 +4,19 @@
     GH-874: an ARM function that returns a constant through a conditional
     return and otherwise tail-calls printed void.
 
-      pick:   cmp r0,#0; moveq r0,#7; bxeq lr; b getv
-      pair:   the same with a 64-bit 7 (moveq r0,#7; moveq r1,#0), so the
-              value written first passes two merges that re-test Z
-      popr:   push {r11,lr}; bl getv; cmp r0,#0; moveq r0,#3;
-              popeq {r11,pc}; pop {r11,lr}; b getv
-      tpick:  pick in Thumb (itt eq; moveq r0,#7; bxeq lr; b.w getvt)
-      differ: the return tests r1, not r0 (cmp r1,#0; bxeq lr), so the 7
-              reaches getv when a0 == 0 and a1 != 0
-      stores: streq r0,[r1] stores the 7 on the path that returns it
-      compl:  the return is inverted (bxne lr), so the 7 only reaches getv
+      pick:    cmp r0,#0; moveq r0,#7; bxeq lr; b getv
+      pair:    the same with a 64-bit 7 (moveq r0,#7; moveq r1,#0), so the
+               value written first passes two merges that re-test Z
+      popr:    push {r11,lr}; bl getv; cmp r0,#0; moveq r0,#3;
+               popeq {r11,pc}; pop {r11,lr}; b getv
+      tpick:   pick in Thumb (itt eq; moveq r0,#7; bxeq lr; b.w getvt)
+      differ:  the return tests r1, not r0 (cmp r1,#0; bxeq lr), so the 7
+               reaches getv when a0 == 0 and a1 != 0
+      stores:  streq r0,[r1] stores the 7 on the path that returns it
+      compl:   the return is inverted (bxne lr), so the 7 only reaches getv
+      spin:    cmp r0,#0; moveq r0,#7; beq 1f; str r0,[r1]; bx lr; 1: b 1b
+      nrexit:  cmp r0,#0; moveq r0,#7; bleq exit; str r0,[r1]; bx lr
+      tnrexit: nrexit in Thumb (itt eq; moveq r0,#7; bleq abort)
 
     Conditional execution leaves a merge block that branches on Z again, so
     in the graph the 7 reaches both the RETURN and the tail call, though
@@ -23,7 +26,11 @@
     condexeretuse on, a use the merge rules out is skipped.  In differ the
     7 can reach getv, in stores the STORE is on the path that returns, and
     in compl the call is the only use the 7 can reach, so all three keep
-    the upstream void in both passes.
+    the upstream void in both passes.  In spin, nrexit and tnrexit the 7
+    is forced away from the RETURN (into a spin loop or a call that does
+    not return), so it never reaches it: skipping the STORE and the RETURN
+    there would pass the walk with nothing checked, and all three must
+    keep void too.
 
     Stage / sub-stage: P4 "output-prototype", option condexeretuse.  Pass 1
     pins off (the bug), pass 2 the default.
@@ -34,7 +41,9 @@
 000050e30700a003000051e31eff2f01080000ea000050e30700a00300008105
 1eff2f01030000ea000050e30700a0031eff2f11ffffffea000002e3100040e3
 000090e5800080e01eff2fe1002804bf0720704700f000b842f20000c0f21000
-006800eb40007047
+006800eb40007047000050e30700a0030100000a000081e51eff2fe1feffffea
+000050e30700a0030100000b000081e51eff2fe1feffffea002804bf072000f0
+02f808607047fee7
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="pick"/>
 <symbol space="ram" offset="0x100010" name="pair"/>
@@ -45,9 +54,15 @@
 <symbol space="ram" offset="0x100078" name="getv"/>
 <symbol space="ram" offset="0x10008c" name="tpick"/>
 <symbol space="ram" offset="0x100098" name="getvt"/>
+<symbol space="ram" offset="0x1000a8" name="spin"/>
+<symbol space="ram" offset="0x1000c0" name="nrexit"/>
+<symbol space="ram" offset="0x1000d4" name="exit"/>
+<symbol space="ram" offset="0x1000d8" name="tnrexit"/>
+<symbol space="ram" offset="0x1000e6" name="abort"/>
 </binaryimage>
 <script>
-  <com>set context TMode 1 [ram,0x10008c] [ram,0x1000a8]</com>
+  <com>set context TMode 1 [ram,0x10008c] [ram,0x1000a7]</com>
+  <com>set context TMode 1 [ram,0x1000d8] [ram,0x1000e7]</com>
   <com>option condexeretuse off</com>
   <com>lo fu pick</com>
   <com>decompile</com>
@@ -68,6 +83,15 @@
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu tpick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu spin</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nrexit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tnrexit</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option condexeretuse on</com>
@@ -92,6 +116,15 @@
   <com>lo fu tpick</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu spin</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nrexit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tnrexit</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="condexeretuse #1: off, pick pair popr and tpick lose their return value" min="4" max="4">void (pick|pair|popr|tpick)\(</stringmatch>
@@ -102,4 +135,6 @@
 <stringmatch name="condexeretuse #6: a possible call path keeps differ void in both passes" min="2" max="2">void differ\(</stringmatch>
 <stringmatch name="condexeretuse #7: a store on the returning path keeps stores void in both passes" min="2" max="2">void stores\(</stringmatch>
 <stringmatch name="condexeretuse #8: a 7 that only reaches the call keeps compl void in both passes" min="2" max="2">void compl\(</stringmatch>
+<stringmatch name="condexeretuse #9: a 7 forced into a spin loop keeps spin void in both passes" min="2" max="2">void spin\(</stringmatch>
+<stringmatch name="condexeretuse #10: a 7 passed to a call that does not return keeps nrexit and tnrexit void in both passes" min="4" max="4">void t?nrexit\(</stringmatch>
 </decompilertest>

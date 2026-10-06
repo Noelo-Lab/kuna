@@ -2672,10 +2672,20 @@ enters through one in-edge, so a 64-bit `moveq r0,#7; moveq r1,#0; bxeq lr`,
 whose first value passes two merges that re-test Z, is handled too. Past 4096
 visited (block, in-edge) states every block counts as reachable.
 
-Every skipped use sits on a path that the value being scored cannot take, so
-the repeated walk answers upstream's question for the executions that exist.
-It keeps the upstream rejection when a value is reached both through such a
-merge and along another route, since the uses it skipped would then be real.
+A skipped use is one the value being scored cannot reach. Skipping uses is
+only half of the argument, though: the repeated walk passes only if it also
+reaches the RETURN slot being matched through a use it did not skip
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs
+(Funcdata::only_op_use_walk)`). Without that, a value whose forced branch
+leads away from the RETURN would pass with nothing checked: in
+`cmp r0,#0; moveq r0,#7; beq 1f; str r0,[r1]; bx lr; 1: b 1b` the 7 goes
+into the spin loop, the STORE and the RETURN are both out of its reach, and
+the function must stay void; the same holds when the 7 is passed to a call
+that does not return (`bleq exit`). With both conditions, the repeated walk
+answers upstream's question for the executions that exist: the value reaches
+the RETURN, and every use it can reach on the way was checked. It keeps the
+upstream rejection when a value is reached both through such a merge and
+along another route, since the uses it skipped would then be real.
 Uses the scored value can reach still reject the trial: in `differ`
 (`cmp r0,#0; moveq r0,#7; cmp r1,#0; bxeq lr; b getv`) the second test is on
 r1, the 7 reaches `getv` when `a1 != 0`, and the function stays void. A STORE
