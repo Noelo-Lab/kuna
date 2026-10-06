@@ -432,6 +432,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "condexeret" => on_off!(cond_exe_ret, "return-trial retry after conditional-execution removal"),
+    "condexeretuse" => on_off!(cond_exe_ret_use, "return-value uses ruled out by a re-tested condition"),
     "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
     "stackstoreguard" => on_off!(stack_store_guard, "Stack-derived store heritage guards"),
     "indexaliasguard" => {

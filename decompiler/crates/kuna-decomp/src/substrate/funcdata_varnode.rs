@@ -2171,24 +2171,53 @@ impl Funcdata {
         trial: &crate::fspec::ParamTrial,
         main_flags: kuna_base::types::uint4,
     ) -> bool {
+        let retest = crate::p4_calls::kuna_condexeretuse::applies(self, opmatch);
+        let mut merged = false;
+        if self.only_op_use_walk(invn, opmatch, trial, main_flags, retest, false, &mut merged) {
+            return true;
+        }
+        merged && self.only_op_use_walk(invn, opmatch, trial, main_flags, false, true, &mut merged)
+    }
+
+    /// One `only_op_use` walk. `note_merges` records in `merged` whether the walk
+    /// entered a merge block that re-tests its condition; `by_merge` repeats it
+    /// skipping the uses such a merge rules out (`condexeretuse`, see
+    /// [`crate::p4_calls::kuna_condexeretuse`]).
+    #[allow(clippy::too_many_arguments)]
+    fn only_op_use_walk(
+        &mut self,
+        invn: VarnodeId,
+        opmatch: OpId,
+        trial: &crate::fspec::ParamTrial,
+        main_flags: kuna_base::types::uint4,
+        note_merges: bool,
+        by_merge: bool,
+        merged: &mut bool,
+    ) -> bool {
         use crate::expression::{traverse_flags, TraverseNode};
         use crate::context::OpId as OId;
+        use crate::p4_calls::kuna_condexeretuse as retest;
         let mut res = true;
-        // varlist holds (vn, flags); invn marked to prevent infinite loops.
-        let mut varlist: Vec<(VarnodeId, kuna_base::types::uint4)> = Vec::with_capacity(64);
+        // varlist holds (vn, flags, forced); invn marked to prevent infinite loops.
+        let mut varlist: Vec<(VarnodeId, kuna_base::types::uint4, Option<retest::Forced>)> =
+            Vec::with_capacity(64);
+        let mut reach = retest::Reach::default();
         self.vbank_mut().get_mut(invn).expect("onlyOpUse: stale invn").set_mark();
-        varlist.push((invn, main_flags));
+        varlist.push((invn, main_flags, None));
         let active_output = self.get_active_output().is_some();
         let forced_return = crate::p4_calls::kuna_voidret::scoring_return(self, opmatch);
         let mut i = 0;
         while i < varlist.len() {
-            let (vn, base_flags) = varlist[i];
+            let (vn, base_flags, forced) = varlist[i];
             // Snapshot the descend list (we mutate marks while iterating).
             let descend: Vec<OId> = match self.vbank().get(vn) {
                 Some(v) => v.descend_iter().collect(),
                 None => Vec::new(),
             };
             for op in descend {
+                if forced.is_some_and(|f| retest::cannot_arrive(self, f, op, &mut reach)) {
+                    continue;
+                }
                 // (kuna) `zeroidiomuse` — an `INT_XOR`/`INT_SUB` of a value with
                 // itself is `0` whatever the value is, so it neither observes the
                 // Varnode nor carries it onward.  See
@@ -2357,9 +2386,18 @@ impl Funcdata {
                         res = false;
                         break;
                     }
+                    if note_merges && !*merged {
+                        *merged = retest::carried(self, op, vn, None).is_some();
+                    }
+                    let carry = if by_merge { retest::carried(self, op, vn, forced) } else { None };
                     if !self.vbank().get(subvn).map(|v| v.is_mark()).unwrap_or(true) {
-                        varlist.push((subvn, cur_flags));
+                        varlist.push((subvn, cur_flags, carry));
                         self.vbank_mut().get_mut(subvn).expect("onlyOpUse: subvn").set_mark();
+                    } else if by_merge
+                        && varlist.iter().any(|&(v, _, f)| v == subvn && f.is_some() && f != carry)
+                    {
+                        res = false;
+                        break;
                     }
                 }
             }
@@ -2368,7 +2406,7 @@ impl Funcdata {
             }
             i += 1;
         }
-        for (vn, _) in &varlist {
+        for (vn, _, _) in &varlist {
             if let Some(v) = self.vbank_mut().get_mut(*vn) {
                 v.clear_mark();
             }
