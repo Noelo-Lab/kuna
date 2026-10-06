@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2017,
-    2017
+    2032,
+    2032
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1884,6 +1884,21 @@
     "data:spacebase-unnamed #4: positive frame offset renders as its storage",
     "data:spacebase-unnamed #5: zero frame offset renders as its storage",
     "data:spacebase-unnamed #6: negative frame offset wraps in the space address size",
+    "data:sparc-callreturn #1: f1 returns atoi's result plus one",
+    "data:sparc-callreturn #2: f5 returns atoi's result",
+    "data:sparc-callreturn #3: f4 and g0 keep atoi's result",
+    "data:sparc-callreturn #4: f4 returns three times atoi's result, g0 passes it to use",
+    "data:sparc-callreturn #5: f6 reads atoll's o0:o1 result, not a second argument",
+    "data:sparc-callreturn #6: fl stores ff's fs0 result",
+    "data:sparc-callreturn #7: no call result is dropped",
+    "data:sparc-callreturn #8: widen still returns a long long",
+    "data:sparc-callreturn #9: widen does not lose its low word",
+    "data:sparc64-callreturn #1: f1 returns atoi's result plus one (O2 and O0)",
+    "data:sparc64-callreturn #2: f2 tests getenv's result (O2 and O0)",
+    "data:sparc64-callreturn #3: f3 keeps the first atoi result (O2 and O0)",
+    "data:sparc64-callreturn #4: f3 subtracts the second atoi result (O2 and O0)",
+    "data:sparc64-callreturn #5: fd stores dd's fd0 result (O2 and O0)",
+    "data:sparc64-callreturn #6: no call result is dropped",
     "data:stackarggap #1: option off invents a fourth and fifth argument to reach a stack slot (bug reproduced)",
     "data:stackarggap #2: option on ends the argument list at the register the caller never wrote",
     "data:stalejumptable #1: the real jump-table switch survives on BOTH passes (0 before the fix: pass 1 panicked)",
