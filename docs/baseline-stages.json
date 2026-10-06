@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2094,
-    2094
+    2116,
+    2116
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1708,6 +1708,28 @@
     "data:globalvalue #7: the conversion reads the value",
     "data:globalvalue #8: the conversion does not read the global",
     "data:globalvalue #9: the strtoul result is stored where the binary stores it",
+    "data:hiddenretarg #10: a callee whose svc reads the caller's x8 keeps the syscall number",
+    "data:hiddenretarg #11: a callee that reads x8 keeps a null-page constant there",
+    "data:hiddenretarg #12: a frame address dropped at one call keeps its place as a later call's result buffer",
+    "data:hiddenretarg #1: option off passes a constant left in x8 as foo's first argument (bug reproduced)",
+    "data:hiddenretarg #2: option off passes a computed value left in x8 as foo's first argument (bug reproduced)",
+    "data:hiddenretarg #3: option on drops x8 at both calls to the leaf foo",
+    "data:hiddenretarg #4: option off passes the syscall number to a callee whose body proves nothing (bug reproduced)",
+    "data:hiddenretarg #5: option on drops the null-page constant from the call to lib",
+    "data:hiddenretarg #6: option off passes g2's x1 through x8 to cancel (bug reproduced)",
+    "data:hiddenretarg #7: a callee that stores through x8 keeps its result buffer in both passes",
+    "data:hiddenretarg #8: a tail call into a body that stores through x8 keeps its result buffer in both passes",
+    "data:hiddenretarg #9: a value vetoed from one call does not become another call's argument",
+    "data:hiddenretarg-apple #1: option off passes a constant left in x8 as foo's first argument (bug reproduced)",
+    "data:hiddenretarg-apple #2: option on drops x8 at the call to the leaf foo",
+    "data:hiddenretarg-apple #3: option off passes the syscall number to a callee whose body proves nothing (bug reproduced)",
+    "data:hiddenretarg-apple #4: option on drops the null-page constant from the call to lib",
+    "data:hiddenretarg-apple #5: a callee that stores through x8 keeps its result buffer in both passes",
+    "data:hiddenretarg-win #1: option off passes a constant left in x8 as foo's first argument (bug reproduced)",
+    "data:hiddenretarg-win #2: option on drops x8 at the call to the leaf foo",
+    "data:hiddenretarg-win #3: option off passes the syscall number to a callee whose body proves nothing (bug reproduced)",
+    "data:hiddenretarg-win #4: option on drops the null-page constant from the call to lib",
+    "data:hiddenretarg-win #5: a callee that stores through x8 keeps its result buffer in both passes",
     "data:hideshadow #1: the same value is copied into the variable twice (only pass 1, off)",
     "data:hideshadow #2: the redundant copy is consolidated away (only pass 2, on)",
     "data:hideshadow #3: two copies on exclusive branches are left alone (pass 3, on)",

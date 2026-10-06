@@ -1459,6 +1459,66 @@ classified:
   architecture handle the pipeline runs against carries the load image but no
   translator — and cached per callee entry, so each distinct body is decoded
   once per run. `off` restores the pre-option rendering.
+- **Hidden-return register** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_hiddenretarg.rs`):
+  every AArch64 cspec (Linux, Apple, Windows) lists `x8`, the indirect-result
+  register, as the `hiddenret` input entry, and trial scoring treats it like
+  any argument register. A value the caller wrote to `x8` and did not read
+  again is active, and because the entry is its own resource section it sorts
+  ahead of `x0` and prints as the call's first argument. `x8` is also an
+  ordinary scratch register, so `mov x8,#0x38; mov x0,#3; bl foo` printed
+  `foo(0x38,3)` for a one-argument `foo`, and every glibc syscall wrapper
+  passed its syscall number to the helper it calls after the `svc`.
+
+  `hiddenretarg` (default-on) rescores that trial no-use once scoring has
+  made it active. A trial scoring left inactive keeps that answer, because
+  freeing its dataflow as well would only reshape the caller's variables: a
+  zlib loop flag kept in `w8` across a `memset` call changed its storage
+  comment that way.
+
+  The callee's own body decides first, read through the entry walk
+  `calleedeadarg` caches. The callee never *takes* `x8` when no path reads it
+  before writing it and no path leaves for code the walk did not read (a call,
+  a `CALLOTHER` such as `svc`, an indirect branch, an undecodable instruction)
+  with it still unwritten, and then the trial is vetoed. Unlike
+  `calleedeadarg`, a `RETURN` needs no write first. That rule exists so that a
+  stub's ignored source-level argument survives, and `x8` is no source-level
+  argument. A callee whose walk shows it reading `x8` keeps the argument
+  whatever the value: a struct return storing through it (`mov x8,sp; bl mk`),
+  a tail call into one, or a hand-written helper that loops on it. So does a
+  callee whose walk reaches a system call with `x8` still holding the caller's
+  value (`helper: svc #0; ret`, or dietlibc's `__unified_syscall`), because
+  the kernel reads it as the syscall number. The walk records those system
+  calls by the user op the language's `svc` lowers to, the one `syscallregs`
+  names.
+
+  Where the body does not settle it, two facts about the value do. First, a
+  value already vetoed from another call is vetoed here too. clang -O0
+  computes a comparison into `w8` ahead of two calls on different paths
+  (`if (pg < 1) return corrupt(4321); if (pagecount(bt) == 0) ...`). The value
+  reaches both calls, so the double-use rule in trial scoring keeps it off
+  each. Once the veto frees it at `pagecount`, `corrupt` becomes its only
+  reader and would print `corrupt(0xffffffff,0x10e1)`. The vetoed value is
+  recorded on the function as its leaves, through copies, zero extensions,
+  phis and non-creation `INDIRECT`s, and a later trial whose value shares a
+  leaf is vetoed as well. A leaf that is an address in the caller's frame is
+  not recorded: a hoisted `add x8,sp,#16` can be a leftover at one call and the
+  real result buffer at a later one it reaches through a phi. The record is
+  cleared with the Varnodes on a restart. Second, a value whose every leaf is a constant below `0x1000` is in
+  a page no operating system maps for a program, so it cannot be a result
+  buffer. That answers for callees the walk cannot cover, such as an import or
+  a glibc helper that reaches an `ldaxr`/`stxr` pair before it writes `x8`. It
+  is also what keeps glibc `getcwd`'s syscall number off `__assert_fail`, whose
+  body the walk cannot cover. A larger constant, such as the address of a
+  global that a C++ static initializer constructs in place with
+  `adrp x8,g; add x8,x8,:lo12:g; b make`, is left to the body evidence. The
+  null-page rule cannot see a callee that takes a small number in `x8` by its
+  own convention behind an import, such as the OCaml runtime's `caml_allocN`
+  reached through a PLT stub. That number is dropped (`caml_allocN()`).
+
+  Dropping the entry leaves no hole in `x0..x7`. Only a register entry is
+  vetoed: not SPARC's `[sp+64]` stack slot, and not one that shares storage
+  with an ordinary input entry, as tricore's `a4` does. `off` restores the
+  upstream scoring.
 - A definitely-unused trial has its dataflow **freed immediately** — the CALL
   input is replaced with constant 0 so dead-code elimination can reap the
   producer. This is why P4 must iterate with DCE inside mainloop.

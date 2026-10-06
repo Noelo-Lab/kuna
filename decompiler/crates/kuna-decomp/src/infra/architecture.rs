@@ -811,6 +811,9 @@ pub struct Architecture {
     /// (kuna) Let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (option `calleedeadarg`).
     pub callee_dead_arg: bool,
+    /// (kuna) Veto a hidden-return register trial no callee could be returning
+    /// through (option `hiddenretarg`).
+    pub hidden_ret_arg: bool,
     /// (kuna) Narrow a call's `killedbycall` set to the registers a bounded
     /// decode of the callee's own body proves it writes (option
     /// `calleepreserves`).  See [`crate::p4_calls::kuna_calleepreserves`].
@@ -2563,6 +2566,7 @@ impl Architecture {
             narrow_ext: crate::kuna_narrowext::NarrowExtMode::Off, // (kuna) option narrowext; reset_defaults sets the shipped default
             pass_through: true, // (kuna) option passthrough; reset_defaults sets the shipped default
             callee_dead_arg: true,
+            hidden_ret_arg: true,
             callee_preserves: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,
@@ -2874,6 +2878,7 @@ impl Architecture {
         self.callee_proto_stack = true; // (kuna) default-on (0/675 ablation): a locked callee prototype states how much it pops and how much of the caller's stack it can reach
         self.callee_pop = true; // (kuna) default-on (0/675 ablation): an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
         self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
+        self.hidden_ret_arg = true; // (kuna) default-on (0/675 ablation): a hidden-return register trial the callee never takes, or a null-page constant, is no argument
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
         self.callee_ret_preserves = true; // (kuna) DIV-PENDING default-on: a fully decoded callee body that never writes the call's return register also answers for that register, so an MSVC /GS `main` returns the zero it set instead of the cookie check's invented result (0/675 ablation)
         self.callee_scratch_body = true; // (kuna) DIV-149 default-on: a decoded callee that clobbers only SCRATCH registers still counts as a body for calleepreserves, so the value a caller sets before MSVC's out-of-line stack probe survives it (0/675 ablation)
@@ -3616,6 +3621,7 @@ impl Architecture {
         ctx.arg_clobber = self.arg_clobber; // argclobber
         ctx.pass_through = self.pass_through; // passthrough
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
+        ctx.hidden_ret_arg = self.hidden_ret_arg; // hiddenretarg
         ctx.callee_preserves = self.callee_preserves; // calleepreserves
         ctx.callee_ret_preserves = self.callee_ret_preserves; // calleeretpreserves
         ctx.callee_scratch_body = self.callee_scratch_body; // calleescratchbody
