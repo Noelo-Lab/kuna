@@ -40,6 +40,15 @@
 //! a call site ([`reads_as_argument`]), so that argument is not also a returned
 //! half.
 //!
+//! MIPS and PowerPC kernels also report a failure outside the result: MIPS sets
+//! `a3` to 0 or 1, PowerPC the summary-overflow bit of `cr0`, and the C library
+//! tests it right after the instruction. A new op after the call defines that
+//! register with the opaque `syscall_error()` ([`define_error_flag`]), so the
+//! test reads the kernel's flag instead of the function's entry `a3`, which
+//! otherwise becomes a phantom parameter. It is an ordinary write, so heritage
+//! treats it as any other, and dead-code removal drops it where nothing reads
+//! the register.
+//!
 //! # When it acts
 //!
 //! Not every handler returns a result. A bare-metal RTOS uses the same
@@ -55,10 +64,8 @@
 //! A wrapper that hands its own incoming arguments to the kernel untouched
 //! shows only the leading registers it sets: nothing says how many of them the
 //! kernel reads, and taking all of them would give a zero-argument call phantom
-//! parameters. The other registers a kernel writes -- the MIPS `a3` error flag
-//! and `v1`, the PowerPC `cr0` error bit -- are not modelled either: an
-//! INDIRECT placed before heritage reads as an earlier heritage pass, which
-//! turns off the call and return guards for that register's whole range.
+//! parameters. The MIPS `v1` a few calls return a second value in is not
+//! modelled.
 //!
 //! A `CALLOTHER` a compiler spec has specialized with its own
 //! `<callotherfixup>` is left alone.
@@ -73,6 +80,8 @@ use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyRes
 use crate::context::{BlockId, OpId};
 use crate::funcdata::Funcdata;
 use crate::kuna_x64syscall::overlaps;
+use crate::op::pcodeop_flags;
+use crate::userop::BUILTIN_SYSCALL_ERROR;
 
 /// How many basic blocks one register's walk may visit before it gives up and
 /// leaves the register unread.
@@ -180,6 +189,16 @@ impl SyscallFamily {
         }
     }
 
+    /// The register the kernel flags a failure in besides the result: `a3` is 0
+    /// or 1 on MIPS, and the summary-overflow bit of `cr0` is set on PowerPC.
+    pub fn error_flag(self) -> Option<&'static str> {
+        match self {
+            SyscallFamily::Mips => Some("a3"),
+            SyscallFamily::PowerPc => Some("cr0"),
+            _ => None,
+        }
+    }
+
     /// The registers the call may read, number register first. `wide` selects
     /// the 64-bit MIPS ABIs, whose fifth and sixth arguments are `t0`/`t1`.
     pub fn inputs(self, wide: bool) -> &'static [&'static str] {
@@ -198,6 +217,7 @@ impl SyscallFamily {
 struct SyscallStorage {
     result: (Address, int4),
     inputs: Vec<(Address, int4)>,
+    error: Option<(Address, int4)>,
 }
 
 /// Resolve every register `family` names, or `None` when one is missing.
@@ -214,7 +234,8 @@ fn resolve(data: &Funcdata, family: SyscallFamily) -> Option<SyscallStorage> {
         .iter()
         .map(|nm| reg(nm))
         .collect::<Option<Vec<_>>>()?;
-    Some(SyscallStorage { result, inputs })
+    let error = family.error_flag().and_then(reg);
+    Some(SyscallStorage { result, inputs, error })
 }
 
 /// Is `op` a `CALLOTHER` of the family's system-call user-op?
@@ -236,6 +257,16 @@ fn is_syscall(data: &Funcdata, op: OpId) -> bool {
     u32::try_from(index).is_ok_and(|i| data.get_arch().syscall_regs_userops.contains(&i))
 }
 
+/// Is `op` the `syscall_error()` this pass placed after a system call?
+pub fn is_error_flag(data: &Funcdata, op: OpId) -> bool {
+    data.obank().get(op).is_some_and(|o| {
+        o.code() == OpCode::CPUI_CALLOTHER
+            && o.get_in(0)
+                .and_then(|v| data.vbank().get(v))
+                .is_some_and(|v| v.is_constant() && v.get_offset() == BUILTIN_SYSCALL_ERROR as u64)
+    })
+}
+
 /// Is `op` a system call this pass has not rewritten: the user-op index, at
 /// most the instruction's immediate, and no output?
 fn is_bare_syscall(data: &Funcdata, op: OpId) -> bool {
@@ -255,13 +286,14 @@ enum Scan {
 
 /// Scan `ops` backward for the last write of `reg`, stopping at a call, whose
 /// effect on the register is not visible here. Another system call writes the
-/// result register and nothing else, whether or not it has been rewritten yet.
+/// result register, and its error flag as a value the function did not set,
+/// whether or not it has been rewritten yet.
 fn scan_back(
     data: &Funcdata,
     ops: &[OpId],
     reg: &Address,
     size: int4,
-    result: &(Address, int4),
+    regs: &SyscallStorage,
 ) -> Scan {
     for &op in ops.iter().rev() {
         let Some(o) = data.obank().get(op) else {
@@ -271,9 +303,15 @@ fn scan_back(
             return Scan::Clobbered;
         }
         if is_syscall(data, op) {
-            if overlaps(&result.0, result.1, reg, size) {
+            if overlaps(&regs.result.0, regs.result.1, reg, size) {
                 return Scan::Written;
             }
+            if regs.error.as_ref().is_some_and(|(a, s)| overlaps(a, *s, reg, size)) {
+                return Scan::Clobbered;
+            }
+            continue;
+        }
+        if is_error_flag(data, op) {
             continue;
         }
         let written = o
@@ -300,14 +338,14 @@ fn written_on_every_path(
     op: OpId,
     reg: &Address,
     size: int4,
-    result: &(Address, int4),
+    regs: &SyscallStorage,
 ) -> bool {
     let Some(start) = data.obank().get(op).and_then(|o| o.get_parent()) else {
         return false;
     };
     let ops = data.bb_ops(start);
     let at = ops.iter().position(|&o| o == op).unwrap_or(ops.len());
-    match scan_back(data, &ops[..at], reg, size, result) {
+    match scan_back(data, &ops[..at], reg, size, regs) {
         Scan::Written => return true,
         Scan::Clobbered => return false,
         Scan::Reached => {}
@@ -333,7 +371,7 @@ fn written_on_every_path(
     }
     let local: Vec<Scan> = blocks
         .iter()
-        .map(|&b| scan_back(data, &data.bb_ops(b), reg, size, result))
+        .map(|&b| scan_back(data, &data.bb_ops(b), reg, size, regs))
         .collect();
     let mut out = vec![true; blocks.len()];
     let mut changed = true;
@@ -364,9 +402,8 @@ fn written_on_every_path(
 /// argument register in order up to the first one the function does not write
 /// on every path to it. Nothing when the number register is not written so.
 fn read_set(data: &Funcdata, op: OpId, regs: &SyscallStorage) -> Vec<(Address, int4)> {
-    let written = |(addr, size): &&(Address, int4)| {
-        written_on_every_path(data, op, addr, *size, &regs.result)
-    };
+    let written =
+        |(addr, size): &&(Address, int4)| written_on_every_path(data, op, addr, *size, regs);
     let Some((number, args)) = regs.inputs.split_first() else {
         return Vec::new();
     };
@@ -388,6 +425,30 @@ fn rewrite(data: &mut Funcdata, op: OpId, regs: &SyscallStorage) -> KunaResult<(
         data.op_insert_input(op, vn, base + i as int4)?;
     }
     data.new_varnode_out(regs.result.1, &regs.result.0, op)?;
+    if let Some((addr, size)) = &regs.error {
+        define_error_flag(data, op, addr, *size)?;
+    }
+    Ok(())
+}
+
+/// Write the error-flag register right after the system call at `op` with an
+/// opaque `syscall_error()`. Without the call flag the op has no side effect,
+/// so it dies with its last reader.
+fn define_error_flag(data: &mut Funcdata, op: OpId, addr: &Address, size: int4) -> KunaResult<()> {
+    let pc = data
+        .obank()
+        .get(op)
+        .map(|o| o.get_addr().clone())
+        .ok_or_else(|| KunaError::lowlevel("syscallregs: stale system call"))?;
+    let flag = data.new_op(1, pc);
+    data.op_set_opcode_code(flag, OpCode::CPUI_CALLOTHER);
+    if let Some(o) = data.obank_mut().get_mut(flag) {
+        o.clear_flag(pcodeop_flags::call);
+    }
+    let id = data.new_constant(4, BUILTIN_SYSCALL_ERROR as u64);
+    data.op_set_input(flag, id, 0)?;
+    data.new_varnode_out(size, addr, flag)?;
+    data.op_insert_after(flag, op);
     Ok(())
 }
 
