@@ -51,7 +51,8 @@
 //! Wherever the pair rests on anything but a call's untouched result, the
 //! second register's value must also be read by nothing but the RETURN
 //! ([`read_only_by_returns`]): `mov r1,#0x3000000; vmsr fpscr,r1; bx lr` sets
-//! `r1` for the system register and returns nothing.
+//! `r1` for the system register and returns nothing. A one-byte register it
+//! also reaches is a flag; a one-byte global is a store.
 //!
 //! The rest stays as upstream decides it. The model must return nothing
 //! without the first register and exactly the two registers with it, so a
@@ -75,13 +76,14 @@
 //! byte the join cannot place at all. Before heritage, [`plant`] gives every
 //! RETURN a read of the pair register the function leaves unnamed or names in
 //! part, when the last write before each RETURN, back to a direct call, is to
-//! the second register of a join entry and the first is named nowhere.
+//! the second register of a join entry, nothing after it reads what it wrote,
+//! and the first is named nowhere.
 //!
 //! Upstream's scoring follows a PIECE through its low part only, so a byte
 //! above the low one leaves the second register's trial looking at the call's
 //! untouched low byte. [`accept_pieced`] takes such a pair when the second
-//! register is a call's result with some bytes replaced by values computed on
-//! purpose and the first is the call's untouched result.
+//! register is a call's result with some bytes replaced by values the function
+//! computed, and the first is the call's untouched result.
 
 use std::rc::Rc;
 

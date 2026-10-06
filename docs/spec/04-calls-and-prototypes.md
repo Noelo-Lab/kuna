@@ -3084,19 +3084,31 @@ losing bytes 1 to 3 of the high word (GH-852); the `DH` of `or $0xff,%dh` or
 `xor %dh,%dh` is a byte the join cannot place, and the change was dropped.
 
 `kuna_retcallhalf::plant` runs at the end of `ActionFuncLink`, after `voidret`'s
-plant and before the first heritage. From each live RETURN it walks back along
-single-predecessor blocks, at most four, to the nearest direct CALL; a CALLIND, a
-CALLOTHER or a merge on the way ends the rule. The last instruction on that path
-that writes a byte of a pair must write the second register of one of the output
-model's two-piece join entries (`EDX` of `EDX:EAX`, ARM `r1`, MIPS `$3`) and not
-its first, and every RETURN must find the same entry
-(`kuna_retcallhalf.rs (tail_pair)`). An instruction that also moves the stack
-pointer ends the rule: gcc releases an argument slot with `pop %edx`. The first
-register may be read by nothing but a RETURN input another rule planted, and
-written by nothing. Then, when no Varnode names the first register, each live
-RETURN gets a read of it, and when no Varnode covers the whole second register,
-each gets a read of all of it, with a return trial for each, through `voidret`'s
-`plant_piece`; heritage's `guardReturns` leaves the planted ranges alone.
+plant and before the first heritage. The pairs it considers are the output model's
+two-piece join entries whose low piece the model also returns on its own and whose
+high piece it does not (`kuna_retcallhalf.rs (join_pairs)`): `EDX:EAX` beside the
+lone `EAX` entry of the i386 cspecs. ARM and MIPS o32 return a pair through a
+`<join/>` rule over two register entries, as x86-64 does, so they take no part;
+the lone-entry test also keeps out a cspec that names the low register as the
+join's first piece (LoongArch `piece1="a0" piece2="a1"` beside a lone `a0`,
+likewise V850, PIC24 and the MIPS `fp64` and `mips64_32` specs), which would
+otherwise read as `a1` low and `a0` high.
+
+From each live RETURN the plant walks back along single-predecessor blocks, at
+most four, to the nearest direct CALL; a CALLIND, a CALLOTHER or a merge on the
+way ends the rule. The last instruction on that path that writes a byte of a pair
+must write its second register and not its first, and every RETURN must find the
+same pair (`kuna_retcallhalf.rs (tail_pair)`). That instruction must not also
+move the stack pointer (gcc releases an argument slot with `pop %edx`), and no
+later instruction on the path may read a byte it wrote: `mov gc1,%dl; mov
+%dl,gc2` copies a global through the register, and the value left in `%dl` is
+not returned. The first register may be read by nothing but a RETURN input
+another rule planted, and written by nothing; `push %eax` of a `regparm` argument
+names it and ends the rule. Then, when no Varnode names the first register, each
+live RETURN gets a read of it, and when no Varnode covers the whole second
+register, each gets a read of all of it, with a return trial for each, through
+`voidret`'s `plant_piece`; heritage's `guardReturns` leaves the planted ranges
+alone.
 
 Heritage then gives the call an `EAX` result for the planted read and builds the
 planted `EDX` from the call's `EDX` and the function's byte, `PIECE(SUBPIECE(EDX,1),
@@ -3105,32 +3117,48 @@ and the rule above takes `EAX` beside it as the call's untouched result. Upstrea
 `ancestorOpUse` follows a PIECE only through its low part, though, so a computed
 byte above offset 0 (`DH`) leaves the `EDX` trial inactive: its low byte is the
 call's. `kuna_retcallhalf::accept` first takes such a pair
-(`kuna_retcallhalf.rs (accept_pieced)`) when, for the two registers of a join
-entry, the second register's value at every live RETURN is a PIECE whose parts
-are each a call's untouched result, a SUBPIECE of one, or a value computed on
-purpose and read only on its way to the RETURN (through the PIECE), at least one
-part being computed; the first register's value is a call's untouched result at
-every live RETURN; and the model returns exactly the two registers. "Computed on
-purpose" judges the byte's instruction against the whole second register, since
-heritage splits `EDX` around `DH` at that instruction's address
-(`kuna_retcallhalf.rs (computed_within)`).
+(`kuna_retcallhalf.rs (accept_pieced)`) when, for one of those pairs, the second
+register's value at every live RETURN is a PIECE of parts that are each a call's
+untouched result (or a SUBPIECE of one) or a computed value, with at least one of
+each (`kuna_retcallhalf.rs (pieced_call_result)`); the first register's value is
+a call's untouched result at every live RETURN; and the model returns exactly the
+two registers. A computed part is a constant or the output of an arithmetic or
+logical operation (`kuna_retcallhalf.rs (computes)`): an input register, a global
+the function copies or loads and a byte range of another value are only moved
+there. It must also be computed on purpose, judged against the whole second
+register since heritage splits `EDX` around `DH` at the instruction's address
+(`kuna_retcallhalf.rs (computed_within)`), and read only on its way to a RETURN,
+through the PIECE.
 
-Only two-piece join entries take part. x86-64 returns `RDX` beside `RAX` through
-two register entries and the `join_dual_class` rule, and there the call does not
-yet get a sixteen-byte result, so a planted `RDX` printed its upper bytes as
-locals nothing assigns; those callers stay `void`. A write of the first register
-keeps its narrow answer: `or $0xff,%al` after the call is also `char f(void) {
-return g() | 0xff; }`, and `sete %al` stays a byte. The value printed for a byte
-change is the heritage join, `CONCAT44(CONCAT31((undefined3)(v1 >> 0x28),0xff),
-(int)v1)`, where clang's full-width `or $0xff,%edx` prints `full(a0) |
-0xff00000000`; both compute the binary's value. `full` itself (`mov 4(%esp),%edx;
-lea (%edx,%edx,2),%eax; ret`) still prints `int`, because the `lea` also reads
-`EDX`; its callers in `decompile-all` now read all eight bytes of its result.
+Both this rule and the read-only test of the rule above let a value also reach a
+flag, which a one-byte register is; a one-byte global in RAM is not one
+(`kuna_retcallhalf.rs (is_register)`). gcc `-Os` findutils' `get_new_pred` stores
+a byte through `%dl` into the block it allocated, and clang's MSVC-target
+`gflag = gflag2 && gi1` makes it in `%dl` and stores it; both returned
+`unsigned long long` before these limits.
+
+x86-64's `RDX` beside `RAX` stays out on purpose: there the call does not yet get
+a sixteen-byte result, so a planted `RDX` printed its upper bytes as locals nothing
+assigns, and those callers stay `void`. A write of the first register keeps its
+narrow answer: `or $0xff,%al` after the call is also `char f(void) { return g() |
+0xff; }`, and `sete %al` stays a byte. The value printed for a byte change is the
+heritage join, `CONCAT44(CONCAT31((undefined3)(v1 >> 0x28),0xff),(int)v1)`, where
+clang's full-width `or $0xff,%edx` prints `full(a0) | 0xff00000000`; both compute
+the binary's value, and folding the join back into the `|` is left for later. A
+high word loaded from a global beside a call's result (`mov gi,%ebx; call g32;
+mov %ebx,%edx`) now reads `unsigned int` with the call's word, where it printed
+`void`: the late pair repair drops a loaded high word, as it does for the clang,
+ARM and MIPS builds of the same function. `full` itself (`mov 4(%esp),%edx; lea
+(%edx,%edx,2),%eax; ret`) still prints `int`, because the `lea` also reads `EDX`;
+its callers in `decompile-all` now read all eight bytes of its result.
 
 `kuna-cli/tests/call_result_pair_returns.rs` builds gcc's `-O2`, `-Os` and `-O0`
 shapes of these callers, checks that each returns eight bytes in `decompile` and
 in `decompile-all`, that `or $0xff,%al` and `sete %al` stay narrow, and compiles
 the `decompile-all` output back with gcc and clang and runs it against the source.
+It also checks that `gc2 = gc1;`, the MSVC-target `gflag = gflag2 && gi1;` and
+the `get_new_pred` shape keep returning the call's `int` (or nothing kuna sees)
+rather than `%edx`.
 
 #### (kuna) The argument left in place, or a low word that also makes the high word
 
