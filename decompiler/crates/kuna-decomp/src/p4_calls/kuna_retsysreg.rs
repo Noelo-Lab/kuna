@@ -100,7 +100,7 @@ pub fn drop_set_aside(data: &Funcdata, active: &mut ParamActive, return_ops: &[O
 fn set_aside(data: &Funcdata, vn: VarnodeId, addr: &Address, size: i32) -> bool {
     let Some(roots) = crate::kuna_retcallhalf::roots(data, vn) else { return false };
     roots.into_iter().all(|root| {
-        sinks(data, root).is_some_and(|s| !s.is_empty()) && !from_call_result(data, root, addr, size, MAX_DEPTH)
+        sinks(data, root).is_some_and(|s| !s.is_empty()) && !from_call_result(data, root, addr, size)
     })
 }
 
@@ -233,20 +233,32 @@ fn reads_any(data: &Funcdata, op: OpId, others: &[VarnodeId]) -> bool {
 
 /// Is `vn` computed from a call's result in `addr`/`size`: the call's clobber
 /// of that register, or a result wider than it?
-fn from_call_result(data: &Funcdata, vn: VarnodeId, addr: &Address, size: i32, depth: u32) -> bool {
-    let Some(v) = data.vbank().get(vn) else { return false };
-    let Some(op) = v.get_def().and_then(|d| data.obank().get(d)) else { return false };
-    match op.code() {
-        OpCode::CPUI_INDIRECT if op.is_indirect_creation() => {
-            crate::kuna_retcallhalf::created_by_call(data, op)
-                && (v.get_addr().overlap(0, addr, size) >= 0 || addr.overlap(0, v.get_addr(), v.get_size()) >= 0)
+fn from_call_result(data: &Funcdata, vn: VarnodeId, addr: &Address, size: i32) -> bool {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut work = vec![(vn, MAX_DEPTH)];
+    while let Some((cur, depth)) = work.pop() {
+        if !seen.insert(cur) {
+            continue;
         }
-        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => v.get_size() > size,
-        _ if depth == 0 => false,
-        _ => (0..op.num_input())
-            .filter_map(|k| op.get_in(k))
-            .any(|i| i != vn && from_call_result(data, i, addr, size, depth - 1)),
+        if seen.len() > MAX_WALK {
+            return true;
+        }
+        let Some(v) = data.vbank().get(cur) else { continue };
+        let Some(op) = v.get_def().and_then(|d| data.obank().get(d)) else { continue };
+        match op.code() {
+            OpCode::CPUI_INDIRECT if op.is_indirect_creation() => {
+                let overlaps = v.get_addr().overlap(0, addr, size) >= 0 || addr.overlap(0, v.get_addr(), v.get_size()) >= 0;
+                if overlaps && crate::kuna_retcallhalf::created_by_call(data, op) {
+                    return true;
+                }
+            }
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND if v.get_size() > size => return true,
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {}
+            _ if depth > 0 => work.extend((0..op.num_input()).filter_map(|k| op.get_in(k)).map(|i| (i, depth - 1))),
+            _ => {}
+        }
     }
+    false
 }
 
 /// Does the output model return trial `i` with no other trial active, so that
