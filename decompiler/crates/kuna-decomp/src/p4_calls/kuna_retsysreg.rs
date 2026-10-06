@@ -30,6 +30,10 @@
 //! value written in halves is. A value computed from a call's result in that
 //! same register, the high word of the call's 64-bit result, keeps it too
 //! ([`from_call_result`]).
+//!
+//! The bytes cannot settle the rest: a 64-bit function that writes its own high
+//! word to `fpscr` is byte for byte the `int` function that used `r1` as the
+//! scratch for that write. The rule is option `retsysreg`, on by default.
 
 use kuna_base::address::Address;
 use kuna_base::space::spacetype;
