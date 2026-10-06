@@ -36,8 +36,10 @@
 //!    jump table, a function-pointer table or a word map ([`IndexedBases`]),
 //! 5. emit a [`crate::pass::StringFact`] (a typed `char[N]`) when the target is a
 //!    NUL-terminated printable run that is not a pointer-aligned slot holding an
-//!    address of the image ([`crate::strings::kuna_ptrslot`]), plus a `readonly`
-//!    range over it — reusing the
+//!    address of the image ([`crate::strings::kuna_ptrslot`]) nor the head of a
+//!    wider array: a sized data object of another size ([`DataObjects`]), or
+//!    an array of 2- or 4-byte character codes ([`wide_element_neighbour`]),
+//!    plus a `readonly` range over it — reusing the
 //!    **existing** strings/readonly commit arms, so the printer's
 //!    pointer-to-readonly-char-array literal route (Increment 12) renders the
 //!    reference as the string literal.
@@ -118,6 +120,7 @@
 //! (`!isElf`); `ElfScalarOperandAnalyzer.addReference()` (the `.got`/`.plt`
 //! exclusion).
 
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -125,8 +128,8 @@ use kuna_base::space::{spacetype, AddrSpace};
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::translate::{PcodeEmit, Translate};
-use object::read::{Object, ObjectSection};
-use object::SectionKind;
+use object::read::{Object, ObjectSection, ObjectSymbol};
+use object::{BinaryFormat, ObjectKind, SectionKind, SymbolKind};
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, StringFact};
 
@@ -401,40 +404,165 @@ fn looks_like_address(value: u64) -> bool {
     value >= MIN_ADDRESS_VALUE && !MASK_VALUES.contains(&value)
 }
 
-/// If `addr` is the start of a NUL-terminated printable run in `file`'s data,
-/// return the byte length **including** the NUL (`char[N]` length), else `None`.
-/// Reuses the [`crate::strings`] printable-char recognizer so a planted symbol
-/// is shaped identically. Used to emit a [`StringFact`] for the residual short /
-/// `strings`-missed strings this pass is the value-add for.
-fn readonly_string_at(file: &object::File, addr: u64) -> Option<u32> {
-    for sec in file.sections() {
+/// The bytes of the section holding `addr`, from `addr` to the section's end.
+fn bytes_at<'d>(file: &object::File<'d>, addr: u64) -> Option<&'d [u8]> {
+    let sec = file.sections().find(|sec| {
         let lo = sec.address();
-        let sz = sec.size();
-        if sz == 0 || addr < lo || addr >= lo.saturating_add(sz) {
-            continue;
+        sec.size() != 0 && addr >= lo && addr < lo.saturating_add(sec.size())
+    })?;
+    sec.data().ok()?.get(usize::try_from(addr - sec.address()).ok()?..)
+}
+
+/// If `bytes` open a NUL-terminated printable run of at least
+/// [`STRING_MIN_LEN`] visible characters, its byte length **including** the NUL
+/// (the `char[N]` length). Reuses the [`crate::strings`] printable-char
+/// recognizer so a planted symbol is shaped identically.
+fn string_len(bytes: &[u8]) -> Option<u32> {
+    let len = bytes.iter().position(|&b| !is_printable_string_byte(b))?;
+    (bytes[len] == 0 && len >= STRING_MIN_LEN).then_some((len + 1) as u32)
+}
+
+/// (kuna) If `bytes`, at `addr`, read as the head of an array of 2- or 4-byte
+/// elements that hold character codes (a `wchar_t`, `char32_t` or `char16_t`
+/// string, or an `int` or `short` table such as `{65, 66, 67, 68}`) rather than
+/// as a one-character string, the address of its second element. The first two
+/// elements, at an address aligned to their width, are each one printable byte
+/// followed by zeros. At width 2 a third element, another character or the zero
+/// terminator, is required too, because `c 00 c 00` is also two adjacent
+/// literals of a merged string section.
+fn wide_element_neighbour(bytes: &[u8], addr: u64) -> Option<u64> {
+    let unit_is = |width: usize, k: usize, nul_ok: bool| {
+        bytes.get(k * width..(k + 1) * width).is_some_and(|unit| {
+            let char_code = is_printable_string_byte(unit[0]);
+            (char_code || (nul_ok && unit[0] == 0)) && unit[1..].iter().all(|&b| b == 0)
+        })
+    };
+    [(4u64, 2usize), (2, 3)]
+        .into_iter()
+        .find(|&(width, units)| {
+            addr.is_multiple_of(width) && (0..units).all(|k| unit_is(width as usize, k, k == 2))
+        })
+        .map(|(width, _)| addr + width)
+}
+
+/// (kuna) The most entries [`relative_string_table`] reads from one table.
+const RELATIVE_TABLE_ENTRIES: usize = 256;
+
+/// (kuna) Which of `wanted` (sorted) the image holds as a pointer: the value of a
+/// pointer-aligned slot of an allocated section, read in the image's byte order,
+/// or the addend of a dynamic relocation, where a position-independent image
+/// keeps the pointers its loader writes.
+fn held_pointers(file: &object::File, wanted: &[u64]) -> Vec<u64> {
+    let width: usize = if file.is_64() { 8 } else { 4 };
+    let little_endian = file.is_little_endian();
+    let mut held: Vec<u64> = Vec::new();
+    let mut note = |value: u64| {
+        if wanted.binary_search(&value).is_ok() && !held.contains(&value) {
+            held.push(value);
         }
-        let data = sec.data().ok()?;
-        let off = (addr - lo) as usize;
-        let mut len = 0usize;
-        let mut i = off;
-        while i < data.len() {
-            let b = data[i];
-            if b == 0 {
-                // NUL terminator: a string iff at least one visible char preceded.
-                if len >= STRING_MIN_LEN {
-                    return Some((len + 1) as u32); // + the trailing NUL
-                }
-                return None;
-            }
-            if !is_printable_string_byte(b) {
-                return None; // a non-printable, non-NUL byte: not a string
-            }
-            len += 1;
-            i += 1;
+    };
+    if let Some(relocs) = file.dynamic_relocations() {
+        for (_, reloc) in relocs {
+            note(reloc.addend() as u64);
         }
-        return None; // ran off the section without a NUL
     }
-    None
+    for sec in file.sections() {
+        let allocated = match sec.flags() {
+            object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_ALLOC != 0,
+            _ => true,
+        };
+        let Some(data) = sec.data().ok().filter(|_| allocated) else {
+            continue;
+        };
+        let skip = (width - (sec.address() % width as u64) as usize) % width;
+        for word in data.get(skip..).unwrap_or_default().chunks_exact(width) {
+            let mut buf = [0u8; 8];
+            let value = if little_endian {
+                buf[..width].copy_from_slice(word);
+                u64::from_le_bytes(buf)
+            } else {
+                buf[8 - width..].copy_from_slice(word);
+                u64::from_be_bytes(buf)
+            };
+            note(value);
+        }
+    }
+    held
+}
+
+/// (kuna) The strings a table of 32-bit offsets from its own start at `table`
+/// addresses (clang's position-independent lookup table, `.long .str - table`),
+/// or none if `table` holds no such table. It must be 4-aligned and not itself
+/// open a string. Its entries are read up to the first that is zero, a small
+/// positive character code (9..=0x7e, the first unit of a wide string or a code
+/// table the read has run into), points back into the entries read, or lands on
+/// no string, and at least two must remain.
+fn relative_string_table(file: &object::File, table: u64, little_endian: bool) -> Vec<u64> {
+    let Some(bytes) = bytes_at(file, table).filter(|b| table.is_multiple_of(4) && string_len(b).is_none())
+    else {
+        return Vec::new();
+    };
+    let mut strings: Vec<u64> = Vec::new();
+    for (k, entry) in bytes.chunks_exact(4).take(RELATIVE_TABLE_ENTRIES).enumerate() {
+        let raw = [entry[0], entry[1], entry[2], entry[3]];
+        let offset = if little_endian { i32::from_le_bytes(raw) } else { i32::from_be_bytes(raw) };
+        let value = table.wrapping_add_signed(i64::from(offset));
+        let in_entries = value >= table && value < table + 4 * (k as u64 + 1);
+        if offset == 0
+            || (9..=0x7e).contains(&offset)
+            || in_entries
+            || bytes_at(file, value).and_then(string_len).is_none()
+        {
+            break;
+        }
+        strings.push(value);
+    }
+    if strings.len() < 2 {
+        strings.clear();
+    }
+    strings
+}
+
+/// (kuna) The start and size of every sized data object the image's symbol
+/// tables declare, sorted. A relocatable object has no image addresses yet and
+/// lists none.
+struct DataObjects(Vec<(u64, u64)>);
+
+impl DataObjects {
+    fn new(file: &object::File) -> Self {
+        if file.kind() == ObjectKind::Relocatable {
+            return DataObjects(Vec::new());
+        }
+        DataObjects::from_spans(
+            file.symbols()
+                .chain(file.dynamic_symbols())
+                .filter(|s| s.kind() == SymbolKind::Data && !s.is_undefined() && s.size() != 0)
+                .map(|s| (s.address(), s.size()))
+                .collect(),
+        )
+    }
+
+    fn from_spans(mut spans: Vec<(u64, u64)>) -> Self {
+        spans.sort_unstable();
+        spans.dedup();
+        DataObjects(spans)
+    }
+
+    /// Does a declared object start at `addr`?
+    fn starts_at(&self, addr: u64) -> bool {
+        let from = self.0.partition_point(|&(lo, _)| lo < addr);
+        self.0.get(from).is_some_and(|&(lo, _)| lo == addr)
+    }
+
+    /// Does a declared object start at `addr` with a size other than `len`? The
+    /// image then says the bytes there are something else: an array whose first
+    /// element happens to read as a string, or a larger buffer, and the reference
+    /// prints as the object's name. An object that only contains `addr`, such as
+    /// a table of `char` rows, says nothing against the string it holds there.
+    fn contradicts(&self, addr: u64, len: u64) -> bool {
+        let from = self.0.partition_point(|&(lo, _)| lo < addr);
+        self.0[from..].iter().take_while(|&&(lo, _)| lo == addr).any(|&(_, size)| size != len)
+    }
 }
 
 /// Mirror of `strings::is_string_char` (`AsciiCharSetRecognizer.contains`):
@@ -508,20 +636,72 @@ pub fn scan_scalar_refs(
 /// literal. Targets that are not printable runs are skipped (no type to plant),
 /// and so is a target whose pointer-sized slot holds an address of the image
 /// ([`crate::strings::kuna_ptrslot`]): an entry of a vtable or of a pointer table.
+/// (kuna) So is a run where a sized data object of another size starts
+/// ([`DataObjects`]), and a one-character run that opens an array of wider
+/// character codes ([`wide_element_neighbour`]) whose second element is no
+/// declared object's start and nothing points at: neither an operand nor a
+/// pointer the image holds ([`held_pointers`]), nor, beside a 2-byte run of an
+/// ELF image, an entry of a relative lookup table at an operand target
+/// ([`relative_string_table`]). A reference to the neighbour is what tells two
+/// one-character literals laid out side by side from the elements of one array;
+/// a literal whose neighbour has none is refused with the array.
 /// Pure — the unit tests assert it directly.
 fn emit_facts(file: &object::File, refs: &[ScalarRef]) -> AnalysisOutput {
-    let mut out = AnalysisOutput::default();
-    let mut planted: Vec<u64> = Vec::new();
     let slots = crate::strings::kuna_ptrslot::PointerSlots::new(file);
+    let objects = DataObjects::new(file);
+    let mut targets: Vec<u64> = refs.iter().map(|r| r.to).collect();
+    targets.sort_unstable();
+    targets.dedup();
+    let mut seen: BTreeSet<u64> = BTreeSet::new();
+    let mut runs: Vec<(u64, u32, Option<(u64, u64)>)> = Vec::new();
     for r in refs {
-        if planted.contains(&r.to) || slots.holds_address(r.to) {
+        if !seen.insert(r.to) || slots.holds_address(r.to) {
             continue;
         }
-        if let Some(len) = readonly_string_at(file, r.to) {
-            out.strings.push(StringFact { addr: r.to, len });
-            out.readonly.push((r.to, r.to + len as u64));
-            planted.push(r.to);
+        let Some(bytes) = bytes_at(file, r.to) else {
+            continue;
+        };
+        let Some(len) = string_len(bytes) else {
+            continue;
+        };
+        if objects.contradicts(r.to, len as u64) {
+            continue;
         }
+        let neighbour = wide_element_neighbour(bytes, r.to)
+            .filter(|n| targets.binary_search(n).is_err() && !objects.starts_at(*n))
+            .map(|n| (n, n - r.to));
+        runs.push((r.to, len, neighbour));
+    }
+    let mut unreferenced: Vec<u64> = runs.iter().filter_map(|&(_, _, n)| n.map(|n| n.0)).collect();
+    if !unreferenced.is_empty() {
+        unreferenced.sort_unstable();
+        unreferenced.dedup();
+        let held = held_pointers(file, &unreferenced);
+        unreferenced.retain(|n| !held.contains(n));
+    }
+    let mut narrow: Vec<u64> = runs
+        .iter()
+        .filter_map(|&(_, _, n)| n.filter(|&(n, width)| width == 2 && unreferenced.binary_search(&n).is_ok()))
+        .map(|(n, _)| n)
+        .collect();
+    if !narrow.is_empty() && file.format() == BinaryFormat::Elf {
+        narrow.sort_unstable();
+        narrow.dedup();
+        let little_endian = file.is_little_endian();
+        let tabled: Vec<u64> = targets
+            .iter()
+            .flat_map(|&t| relative_string_table(file, t, little_endian))
+            .filter(|v| narrow.binary_search(v).is_ok())
+            .collect();
+        unreferenced.retain(|n| !tabled.contains(n));
+    }
+    let mut out = AnalysisOutput::default();
+    for (addr, len, neighbour) in runs {
+        if neighbour.is_some_and(|(n, _)| unreferenced.binary_search(&n).is_ok()) {
+            continue;
+        }
+        out.strings.push(StringFact { addr, len });
+        out.readonly.push((addr, addr + len as u64));
     }
     out
 }
@@ -744,9 +924,181 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ptrslot_gcc_O1_x86_64");
         let bytes = std::fs::read(path).expect("read ptrslot fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse ptrslot");
-        assert_eq!(readonly_string_at(&file, 0x405020), Some(4));
+        assert_eq!(bytes_at(&file, 0x405020).and_then(string_len), Some(4));
         let out = emit_facts(&file, &[ScalarRef { from: 0x404280, to: 0x405020 }]);
         assert!(out.strings.is_empty() && out.readonly.is_empty());
+    }
+
+    /// The run at `addr` is planted unless something says it is an array: the
+    /// next element of a character-code array nothing points at.
+    fn heads_wide_array(bytes: &[u8], addr: u64, pointed_at: &[u64]) -> bool {
+        wide_element_neighbour(bytes, addr).is_some_and(|n| !pointed_at.contains(&n))
+    }
+
+    #[test]
+    fn wide_element_arrays_are_not_one_character_strings() {
+        let ints = b"A\0\0\0B\0\0\0C\0\0\0D\0\0\0";
+        assert_eq!(wide_element_neighbour(ints, 0x402010), Some(0x402014));
+        assert!(heads_wide_array(ints, 0x402010, &[0x402010]));
+        assert!(!heads_wide_array(ints, 0x402010, &[0x402010, 0x402014]));
+        assert_eq!(wide_element_neighbour(ints, 0x402012), None);
+        assert_eq!(wide_element_neighbour(b"h\0\0\0e\0\0\0l\0\0\0", 0x2004), Some(0x2008));
+        assert_eq!(wide_element_neighbour(b"h\0\0\0\0\0\0\0", 0x2000), None);
+        assert_eq!(wide_element_neighbour(b"h\0\0\0%s\n\0", 0x2000), None);
+        assert_eq!(wide_element_neighbour(b"hi\0\0j\0\0\0", 0x2000), None);
+        assert_eq!(wide_element_neighbour(b"h\0i\0\0\0", 0x2000), Some(0x2002));
+        assert_eq!(wide_element_neighbour(b"h\0i\0j\0", 0x2000), Some(0x2002));
+        assert_eq!(wide_element_neighbour(b"h\0i\0\0\0", 0x2001), None);
+        assert_eq!(wide_element_neighbour(b"r\0w\0ab\0", 0x2000), None);
+        assert_eq!(wide_element_neighbour(b"r\0w\0", 0x2000), None);
+        assert!(!heads_wide_array(b"r\0w\0a\0", 0x2000, &[0x2002]));
+    }
+
+    /// The builds of `widecodes.c`: `codes` (`int {65, 66, 67, 68}`), `halves`
+    /// (`short {104, 105, 106, 0}`), `mixed` (`int {65, 1000}`), `L"hellow"`, and
+    /// the literals "x" and "y", laid out beside "w" and "a", which only the
+    /// pointer table `modes` reaches (gcc: `78 00 79 00 77 00 61 00`, clang:
+    /// `78 00 77 00 61 00`). Only the literals are planted, and `mixed` where no
+    /// symbol says what it is.
+    #[test]
+    fn character_code_arrays_are_not_planted() {
+        let gcc = [0x402060, 0x402050, 0x402048, 0x402010, 0x402004, 0x402006];
+        let clang = [0x2010, 0x2020, 0x2028, 0x203c, 0x2030, 0x2039];
+        for (fixture, targets, want) in [
+            ("widecodes_gcc_O1_x86_64", gcc, vec![(0x402004, 2), (0x402006, 2)]),
+            (
+                "widecodes_gcc_O1_stripped_x86_64",
+                gcc,
+                vec![(0x402048, 2), (0x402004, 2), (0x402006, 2)],
+            ),
+            ("widecodes_clang_O2_x86_64", clang, vec![(0x2030, 2), (0x2039, 2)]),
+            (
+                "widecodes_clang_O2_stripped_x86_64",
+                clang,
+                vec![(0x2028, 2), (0x2030, 2), (0x2039, 2)],
+            ),
+        ] {
+            let path = format!("{}/tests/fixtures/{fixture}", env!("CARGO_MANIFEST_DIR"));
+            let bytes = std::fs::read(path).expect("read widecodes fixture");
+            let file = object::File::parse(bytes.as_slice()).expect("parse widecodes");
+            let refs: Vec<ScalarRef> =
+                targets.into_iter().map(|to| ScalarRef { from: 0x401106, to }).collect();
+            let out = emit_facts(&file, &refs);
+            let planted: Vec<(u64, u32)> = out.strings.iter().map(|f| (f.addr, f.len)).collect();
+            assert_eq!(planted, want, "{fixture}");
+        }
+    }
+
+    /// `modes` holds "w", "a" and "ab": in gcc's non-PIE build as plain
+    /// pointers in `.rodata`, in clang's PIE as relocated slots of
+    /// `.data.rel.ro`. The first character of `L"hellow"` is held by no slot.
+    #[test]
+    fn pointers_the_image_holds() {
+        for (fixture, held, not_held) in [
+            ("widecodes_gcc_O1_stripped_x86_64", [0x402008, 0x40200a, 0x40200c], 0x402010),
+            ("widecodes_clang_O2_stripped_x86_64", [0x2032, 0x2034, 0x2036], 0x203c),
+        ] {
+            let path = format!("{}/tests/fixtures/{fixture}", env!("CARGO_MANIFEST_DIR"));
+            let bytes = std::fs::read(path).expect("read widecodes fixture");
+            let file = object::File::parse(bytes.as_slice()).expect("parse widecodes");
+            let mut wanted = held.to_vec();
+            wanted.push(not_held);
+            let mut found = held_pointers(&file, &wanted);
+            found.sort_unstable();
+            assert_eq!(found, held, "{fixture}");
+        }
+    }
+
+    fn fixture_bytes(name: &str) -> Vec<u8> {
+        let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+        std::fs::read(path).expect("read fixture")
+    }
+
+    /// clang's lookup table for `name` in `widecodes_switch.c` holds "a" to "f"
+    /// (0x2004..0x200c) as offsets from its start at 0x2010 (`f4 ff ff ff` is
+    /// "a"); "e" (0x200e), the default case's own `lea`, is not in it. No slot
+    /// holds "b", but the table does, so `usea`'s "a" keeps its literal though
+    /// "b" opens the `61 00 62 00 63 00` run beside it.
+    #[test]
+    fn a_relative_lookup_table_holds_its_strings() {
+        let bytes = fixture_bytes("widecodes_switch_clang_O2_x86_64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse widecodes_switch");
+        assert!(held_pointers(&file, &[0x2006]).is_empty());
+        assert_eq!(relative_string_table(&file, 0x2010, true), [0x2004, 0x2006, 0x2008, 0x200a, 0x200c]);
+        assert!(relative_string_table(&file, 0x2004, true).is_empty());
+        let refs: Vec<ScalarRef> = [0x2010, 0x2004, 0x200e]
+            .into_iter()
+            .map(|to| ScalarRef { from: 0x1148, to })
+            .collect();
+        let planted: Vec<(u64, u32)> =
+            emit_facts(&file, &refs).strings.iter().map(|f| (f.addr, f.len)).collect();
+        assert_eq!(planted, [(0x2004, 2), (0x200e, 2)]);
+    }
+
+    /// What is not a relative table: wide strings and code tables
+    /// (`widecodes.c`), a struct whose leading ints 8 and 12 would point at
+    /// "h" and "e" of its `L"hellow"` (`widecodes_rec.c`), and the end of a real
+    /// table (`widecodes_overread_*.c`, seven entries at 0x2014), past which
+    /// `L"Pest"`'s 'P' would read as an offset onto `L"word"[1]`. A wide run
+    /// never consults a table, so none of them keeps a one-character literal.
+    #[test]
+    fn character_codes_are_not_read_as_a_relative_table() {
+        let codes = fixture_bytes("widecodes_gcc_O1_stripped_x86_64");
+        let codes = object::File::parse(codes.as_slice()).expect("parse widecodes");
+        for not_a_table in [0x402010, 0x402048, 0x402050, 0x402060] {
+            assert!(relative_string_table(&codes, not_a_table, true).is_empty(), "{not_a_table:#x}");
+        }
+        let rec = fixture_bytes("widecodes_rec_gcc_O2_x86_64");
+        let rec = object::File::parse(rec.as_slice()).expect("parse widecodes_rec");
+        assert!(relative_string_table(&rec, 0x2020, true).is_empty());
+        let refs = [0x2020, 0x2028].map(|to| ScalarRef { from: 0x1164, to });
+        assert!(emit_facts(&rec, &refs).strings.is_empty());
+        let over = fixture_bytes("widecodes_overread_clang_O2_stripped_x86_64");
+        let over = object::File::parse(over.as_slice()).expect("parse widecodes_overread");
+        let entries: Vec<u64> = (0..7).map(|k| 0x2004 + 2 * k).collect();
+        assert_eq!(relative_string_table(&over, 0x2014, true), entries);
+        let refs = [0x2014, 0x2012, 0x2030, 0x2050, 0x2060].map(|to| ScalarRef { from: 0x1148, to });
+        let planted: Vec<(u64, u32)> =
+            emit_facts(&over, &refs).strings.iter().map(|f| (f.addr, f.len)).collect();
+        assert_eq!(planted, [(0x2012, 2)]);
+    }
+
+    /// In `widecodes_tail.c` gcc ends the merged string block with "A" at
+    /// 0x402004 and starts `int t[3] = {66, 67, 68}` at 0x402008, so the bytes
+    /// read `41 00 00 00 42 00 00 00`. The symbol at the would-be second element
+    /// says it is an object of its own.
+    #[test]
+    fn an_object_at_the_neighbour_is_not_the_second_element() {
+        let bytes = fixture_bytes("widecodes_tail_gcc_O2_x86_64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse widecodes_tail");
+        let refs = [ScalarRef { from: 0x401126, to: 0x402004 }];
+        let planted: Vec<(u64, u32)> =
+            emit_facts(&file, &refs).strings.iter().map(|f| (f.addr, f.len)).collect();
+        assert_eq!(planted, [(0x402004, 2)]);
+    }
+
+    #[test]
+    fn an_object_declared_at_the_run_bounds_it() {
+        let objects = DataObjects::from_spans(vec![
+            (0x3000, 3),
+            (0x1000, 0x10),
+            (0x2000, 0x100),
+            (0x2010, 3),
+            (0x4000, 2),
+            (0x4000, 0x10),
+        ]);
+        assert!(objects.contradicts(0x1000, 2));
+        assert!(!objects.contradicts(0x1004, 2));
+        assert!(!objects.contradicts(0x1010, 2));
+        assert!(!objects.contradicts(0x0fff, 1));
+        assert!(!objects.contradicts(0x3000, 3));
+        assert!(objects.contradicts(0x3000, 2));
+        assert!(!objects.contradicts(0x2010, 3));
+        assert!(!objects.contradicts(0x2050, 2));
+        assert!(objects.contradicts(0x4000, 2));
+        assert!(!DataObjects::from_spans(Vec::new()).contradicts(0x1000, 2));
+        assert!(objects.starts_at(0x2010) && objects.starts_at(0x4000));
+        assert!(!objects.starts_at(0x1004) && !objects.starts_at(0x0fff));
     }
 
     #[test]
