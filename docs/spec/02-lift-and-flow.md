@@ -2234,3 +2234,23 @@ does not change the host process interrupt state. An execution adapter must
 provide processor-version and privilege-appropriate reads and masked writes.
 Register and immediate MSR update NZCVQ only when the flag byte is selected,
 preserving arithmetic flags across control-only writes.
+
+### RISC-V moves and conversions from FP to integer registers (GH-831)
+
+`fmv.x.d` copies the 64-bit pattern of its FP source into the integer
+destination. `fmv.x.w` copies the low 32 bits of the FP register and, on RV64,
+sign-extends them to the register width. `fcvt.w.d`, `fcvt.wu.d`, `fcvt.w.s`
+and `fcvt.wu.s` write their 32-bit result the same way. The unsigned forms
+convert to a 64-bit integer and keep its low 32 bits, so a source in
+[2^31, 2^32) gets its unsigned value, which a 32-bit signed conversion cannot
+represent.
+The FP operand is read as a value. Reading it through a register-space pointer
+to the operand's address would read the temporary that the operand table
+exports, at register offset 0x900, which prints as `dat_900`. The result is
+written to `rd` with `assignW`. A destination table that exports a temporary
+copy of the register would drop the write, which made these conversions
+produce no value at all. The fix is in the RISC-V SLEIGH sources, so
+`riscv.lp64d.sla`, `riscv.ilp32d.sla` and `andestar_v5.sla` must be rebuilt.
+Exercised by `tests/stages/gh831-riscv-fpmove.xml` (RV64: a call result moved
+by `fmv.x.d` and `fmv.x.w`, and all four conversions) and
+`tests/stages/gh831-riscv32-fpmove.xml` (the RV32 forms).
