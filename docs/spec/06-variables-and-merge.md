@@ -947,17 +947,21 @@ fixed hint inside the array runs past it; every hint starting in it is an
 unlocked fixed hint exactly one element wide whose type keeps the array's
 (`kuna_arrayextent.rs (joinable)`: unknown, an integer beside an integer or
 unknown element, or the element type behind the same pointers); no open hint
-starts there, so a second array or an escaping address stops it; and no op
-reads the slot directly (`kuna_storereach.rs (is_read)` over every stack Varnode
-that overlaps it). A slot the function writes and never reads except through a
-pointer is only observable through the index, so it belongs to the array; a
-scalar that is read on its own stops the growth. The slots it takes then join
-the array through the ordinary `attempt_join`, since they now sit within
-`highind`. Merging slots never changes what the C computes, only how many
-declarations it has. At `-O0`, where a parameter's home slot is written and its
-reads are propagated to the register, an array declared next to the home slots
-grows over them, which matches the gap-filled layout upstream already gives a
-locked guard there. `off` is upstream.
+starts there, so a second array or an escaping address stops it; and the
+function cannot observe the slot except through a pointer
+(`kuna_arrayextent.rs (observed)`): no op reads a stack Varnode that overlaps it
+(`kuna_storereach.rs (is_read)`), and no value copied into it is used by
+anything but copies into stack slots outside the array. The second half matters
+at `-O0`, where a scalar's reads are propagated to the register it was stored
+from (`fmt = f(); if (fmt == 2)` reads the call's result, not the slot), and
+where a value is copied into the array's own elements as well (`float t = ...;
+float a[3] = {t, t, u};`); a parameter that is spilled to its home slot and
+copied into the array still counts as an element, and its home slot, whose value
+is also in the array, does not. A slot the function writes and observes only
+through a pointer belongs to the array; a scalar it observes on its own stops
+the growth. The slots it takes then join the array through the ordinary
+`attempt_join`, since they now sit within `highind`. Merging slots never changes
+what the C computes, only how many declarations it has. `off` is upstream.
 
 **Terminator absorption** (`option nulterminator`, **opt-in, default off**). An
 open hint that `attempt_join` cannot extend ends where the next hint starts, so
