@@ -1089,6 +1089,11 @@ pub struct ArchContext {
     /// [`ActionReturnRecovery`](crate::p4_calls::coreaction_protos::ActionReturnRecovery)
     /// through [`crate::p4_calls::kuna_condexeret`].
     pub cond_exe_ret: bool,
+    /// (kuna) a use of a returned value on the branch a merge block's re-test of
+    /// the same condition rules out does not compete with the RETURN
+    /// (`condexeretuse`).  Read by `Funcdata::only_op_use` through
+    /// [`crate::p4_calls::kuna_condexeretuse`].
+    pub cond_exe_ret_use: bool,
     /// (kuna) `option loadguardrange`: run the upstream ValueSet solver over
     /// new indexed-stack LOAD/STORE guard pointers at the end of each heritage
     /// pass (`Heritage::analyzeNewLoadGuards`, heritage.cc:834), refining each
@@ -1738,6 +1743,7 @@ impl ArchContext {
             call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             cond_exe_ret: true,          // condexeret (default-on)
+            cond_exe_ret_use: true,      // condexeretuse (default-on)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)

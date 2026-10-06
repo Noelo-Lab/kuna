@@ -2959,6 +2959,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "condexeretuse"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "output-prototype"
+strength = "HARD"
+rewind = "P4"
+issue = "GH-874"
+summary = "Do not count a use of a returned value that sits on the branch a re-tested condition rules out. Funcdata::onlyOpUse (funcdata_varnode.cc:1851) rejects an output trial when the value reaching the RETURN has another use such as a CALL. ARM conditional execution (`cmp r0,#0; moveq r0,#7; bxeq lr; b getv`) leaves a merge block that branches on the condition its predecessor already branched on, so the 7 written on one arm reaches both the RETURN and the tail call's argument slot in the graph, although the execution that wrote it always returns. ActionConditionalExe threads that block only later in the same mainloop iteration, after ActionReturnRecovery has scored output trials once, so `int pick(int a) { if (a) return getv(); return 7; }` printed `void pick(int a0)`. When on, a RETURN match whose walk fails and entered such a merge (two in-edges leading back through straight-line blocks to one CBRANCH block, two out-edges, a CBRANCH on the same condition or its complement) is walked once more: a value entering the merge's MULTIEQUAL through exactly one in-edge, and anything computed from it inside the merge block, carries the out block that execution must take, and a use outside the merge block that out block cannot reach is skipped. The repeated walk passes only if it still reaches the RETURN through a use it did not skip, so a 7 forced into a spin loop or a call that does not return (`moveq r0,#7; beq spin` / `bleq exit`) keeps the function void, and it keeps the rejection when a value is reached both through such a merge and along another route. Call-site input trials are untouched."
+use_when = "On by default: the repeated walk only skips uses no execution carrying the scored value can reach, and 0/675 datatest assertions move. Set it off to diff against upstream, or to check whether a recovered return value on an ARM function with conditional returns (`bxeq lr`, `popeq {...,pc}`) came from this rule."
+example = "option condexeretuse off"
+source_decompiler = "kuna"
+inspiration = "GH-874: an ARM function returning a constant through a conditional `bxeq lr` and otherwise tail-calling printed void; upstream Ghidra scores output trials before ActionConditionalExe too"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "an ARM function that returns a constant through bxeq lr and otherwise tail-calls prints void|a return value set by a conditional mov just before a conditional return disappears|declaring the prototype brings the return value back while the recovered one is void"
+live_field = "cond_exe_ret_use"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "rustabi"
 values = "off|auto|always"
 default = "off"

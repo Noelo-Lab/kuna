@@ -2171,24 +2171,56 @@ impl Funcdata {
         trial: &crate::fspec::ParamTrial,
         main_flags: kuna_base::types::uint4,
     ) -> bool {
+        use crate::p4_calls::kuna_condexeretuse as retest;
+        let mut entered = Vec::new();
+        let noting = retest::applies(self, opmatch);
+        if self.only_op_use_walk(invn, opmatch, trial, main_flags, noting.then_some(&mut entered), false) {
+            return true;
+        }
+        noting
+            && retest::any_retest_merge(self, &entered)
+            && self.only_op_use_walk(invn, opmatch, trial, main_flags, None, true)
+    }
+
+    /// One `only_op_use` walk. `entered` collects the two-input MULTIEQUALs the
+    /// walk passes through, with the Varnode it reached each by; `by_merge`
+    /// skips the uses a merge block that re-tests its condition rules out, and
+    /// then passes only if the walk still reached `opmatch`'s trial slot
+    /// (`condexeretuse`, see [`crate::p4_calls::kuna_condexeretuse`]).
+    fn only_op_use_walk(
+        &mut self,
+        invn: VarnodeId,
+        opmatch: OpId,
+        trial: &crate::fspec::ParamTrial,
+        main_flags: kuna_base::types::uint4,
+        mut entered: Option<&mut Vec<(OpId, VarnodeId)>>,
+        by_merge: bool,
+    ) -> bool {
         use crate::expression::{traverse_flags, TraverseNode};
         use crate::context::OpId as OId;
+        use crate::p4_calls::kuna_condexeretuse as retest;
         let mut res = true;
-        // varlist holds (vn, flags); invn marked to prevent infinite loops.
-        let mut varlist: Vec<(VarnodeId, kuna_base::types::uint4)> = Vec::with_capacity(64);
+        // varlist holds (vn, flags, forced); invn marked to prevent infinite loops.
+        let mut varlist: Vec<(VarnodeId, kuna_base::types::uint4, Option<retest::Forced>)> =
+            Vec::with_capacity(64);
+        let mut reach = retest::Reach::default();
         self.vbank_mut().get_mut(invn).expect("onlyOpUse: stale invn").set_mark();
-        varlist.push((invn, main_flags));
+        varlist.push((invn, main_flags, None));
         let active_output = self.get_active_output().is_some();
         let forced_return = crate::p4_calls::kuna_voidret::scoring_return(self, opmatch);
+        let mut reached_match = false;
         let mut i = 0;
         while i < varlist.len() {
-            let (vn, base_flags) = varlist[i];
+            let (vn, base_flags, forced) = varlist[i];
             // Snapshot the descend list (we mutate marks while iterating).
             let descend: Vec<OId> = match self.vbank().get(vn) {
                 Some(v) => v.descend_iter().collect(),
                 None => Vec::new(),
             };
             for op in descend {
+                if forced.is_some_and(|f| retest::cannot_arrive(self, f, op, &mut reach)) {
+                    continue;
+                }
                 // (kuna) `zeroidiomuse` — an `INT_XOR`/`INT_SUB` of a value with
                 // itself is `0` whatever the value is, so it neither observes the
                 // Varnode nor carries it onward.  See
@@ -2208,6 +2240,7 @@ impl Funcdata {
                 let code = o.code();
                 if op == opmatch {
                     if o.get_in(trial.get_slot()) == Some(vn) {
+                        reached_match = true;
                         continue;
                     }
                 }
@@ -2357,9 +2390,18 @@ impl Funcdata {
                         res = false;
                         break;
                     }
+                    if let Some(e) = entered.as_deref_mut().filter(|_| code == OpCode::CPUI_MULTIEQUAL) {
+                        e.push((op, vn));
+                    }
+                    let carry = if by_merge { retest::carried(self, op, vn, forced) } else { None };
                     if !self.vbank().get(subvn).map(|v| v.is_mark()).unwrap_or(true) {
-                        varlist.push((subvn, cur_flags));
+                        varlist.push((subvn, cur_flags, carry));
                         self.vbank_mut().get_mut(subvn).expect("onlyOpUse: subvn").set_mark();
+                    } else if by_merge
+                        && varlist.iter().any(|&(v, _, f)| v == subvn && f.is_some() && f != carry)
+                    {
+                        res = false;
+                        break;
                     }
                 }
             }
@@ -2368,12 +2410,12 @@ impl Funcdata {
             }
             i += 1;
         }
-        for (vn, _) in &varlist {
+        for (vn, _, _) in &varlist {
             if let Some(v) = self.vbank_mut().get_mut(*vn) {
                 v.clear_mark();
             }
         }
-        res
+        res && (!by_merge || reached_match)
     }
 
     /// Test whether a Varnode's data-flow ancestry makes it a realistic

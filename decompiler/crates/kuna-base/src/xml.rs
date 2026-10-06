@@ -2003,7 +2003,9 @@ mod tests {
         // and kuna-constptrdeclared-{riscv,x86,msp430} / a constant in a
         // declared non-pointer return or argument is not inferred as a pointer
         // (GH-846)
-        assert_eq!(count, 438, "corpus file count drifted");
+        // and kuna-condexeretuse / a use a re-tested condition rules out does
+        // not reject an ARM return value (GH-874)
+        assert_eq!(count, 439, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
