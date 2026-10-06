@@ -52,6 +52,9 @@ const MAX_DEPTH: u32 = 8;
 /// Runs once `ActionReturnRecovery` has scored every trial for the last time,
 /// before [`crate::kuna_retcallhalf::accept`] and the output map.
 pub fn drop_set_aside(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId]) {
+    if !data.get_arch().ret_sys_reg {
+        return;
+    }
     let rets: Vec<OpId> = return_ops
         .iter()
         .copied()

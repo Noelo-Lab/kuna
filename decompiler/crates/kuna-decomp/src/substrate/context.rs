@@ -695,6 +695,10 @@ pub struct ArchContext {
     /// for a returned half (`option retpushedhalf`); read by
     /// [`crate::kuna_retpushedhalf`].
     pub ret_pushed_half: bool,
+    /// (kuna) A register the function sets for a system register is not the
+    /// high word of its return (`option retsysreg`); read by
+    /// [`crate::kuna_retsysreg`].
+    pub ret_sys_reg: bool,
     /// (kuna) Let a CALL on a block that ends in a no-return halt coexist with the
     /// RETURN's output trial (`option noreturnretuse`); read by
     /// [`crate::p4_calls::kuna_noreturnretuse`].
@@ -1619,6 +1623,9 @@ impl ArchContext {
             // (kuna) `option retpushedhalf` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             ret_pushed_half: true,
+            // (kuna) `option retsysreg` default-on; the real value is copied
+            // from the engine Architecture in `build_arch_handle`.
+            ret_sys_reg: true,
             // (kuna) `option noreturnretuse` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             noreturn_ret_use: true,

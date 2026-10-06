@@ -6,7 +6,7 @@
 
     Stage / sub-stage: P4 return recovery, the output trials of the
     function's own RETURN (ActionReturnRecovery, p4_calls/kuna_retsysreg.rs).
-    A strict fix: no option.
+    P0 assertion: option retsysreg on|off (default on).
 
     Source (clang -target armv7a-linux-gnueabihf -marm -O2 -fno-inline at
     0x1000, clang -target thumbv7em-none-eabihf -mcpu=cortex-m4 -O2
@@ -43,7 +43,8 @@
     the 32-bit value; keepc and keepc_t return nothing, as a bare
     bl g; pop {r11,pc} does until a caller reads the result.  callhi (the
     high word of g64's own result) and mcrr_ret (both words written to one
-    64-bit register) keep the pair.
+    64-bit register) keep the pair.  The last pass sets option retsysreg
+    off and prints comp and raise_bp with the pair again.
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">
 0c009fe500009fe7000090e5800080e01eff2fe1080000000c009fe500009fe7
@@ -95,9 +96,17 @@
   <com>lo fu lock_prim</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option retsysreg off</com>
+  <com>lo fu comp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu raise_bp</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="RETSYSREG #1: no system register operand is a returned high word" min="0" max="0">CONCAT44\((0x3000000|0x13|0x50|1),</stringmatch>
+<stringmatch name="RETSYSREG #1: a system register operand is a returned high word only with retsysreg off" min="2" max="2">CONCAT44\((0x3000000|0x13|0x50|1),</stringmatch>
+<stringmatch name="RETSYSREG #7: with retsysreg off comp and raise_bp return the pair again" min="2" max="2">return CONCAT44\((0x3000000,a0 \* 3|0x50,v1)\);</stringmatch>
 <stringmatch name="RETSYSREG #2: a value computed in r0 is returned alone" min="2" max="2">(int4|int) (comp|compm)\((int4|int) a0\)</stringmatch>
 <stringmatch name="RETSYSREG #3: the old BASEPRI and PRIMASK are returned alone" min="2" max="2">(uint4|unsigned int) (raise_bp|lock_prim)\(void\)</stringmatch>
 <stringmatch name="RETSYSREG #4: a call's untouched result beside an fpscr write is not returned" min="2" max="2">void (keepc|keepc_t)\(void\)</stringmatch>

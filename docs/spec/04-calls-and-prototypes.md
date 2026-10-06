@@ -3258,7 +3258,7 @@ copies of a `tbb` jump table decoded as code in betaflight. Lua 5.4 built for AR
 Thumb, i386, MIPS and RISC-V 32 by clang and gcc at O0 and O2 (12,503 functions)
 changes none.
 
-#### (kuna) A register set for a system register is not a high word
+#### (kuna) A register set for a system register is not a high word (`retsysreg`)
 
 `int f(void) { int r = g(); __asm volatile("vmsr fpscr, %0" :: "r"(0x3000000));
 return r; }` is, on 32-bit ARM, `bl g; mov r1,#0x3000000; vmsr fpscr,r1; pop
@@ -3311,9 +3311,20 @@ A first register handed to a system register by itself (`mov r0,#0x20; msr
 basepri,r0; bx lr`) is upstream's single-register question and still prints
 `return 0x20;`.
 
+The rule is option `retsysreg`, on by default. Bytes cannot settle it: `add
+r1,r1,r0; add r0,r0,r0,lsl #1; vmsr fpscr,r1; bx lr` is an `int` function that
+used `r1` as the scratch for the write, and also a 64-bit function that writes
+its own high word to `fpscr`. The first is what clang emits whenever `r0` holds
+the result, so the default reads it that way; `option retsysreg off` gives the
+pair back. Over 19 stripped ARM firmware images at O0, O2 and O2-noinline and 90
+Lua and x86 builds (24,363 functions) one function changes, ChibiOS's
+`chEvtGetAndClearEvents` (`movs r1,#0; msr basepri,r1` before the return), to
+the 32-bit result it has, and its four callers' result variables follow.
+
 `tests/stages/kuna-retsysreg.xml` pins ARM `vmsr fpscr` and `msr cpsr_c` beside a
 call's result and a computed `r0`, Thumb `ulPortRaiseBASEPRI` and `msr primask`,
-and the `g64` high word and `mcrr` controls in single-function mode, and
+the `g64` high word and `mcrr` controls, and the pair again with the option off,
+in single-function mode, and
 `kuna-cli/tests/sysreg_return_halves.rs` decompiles the ARM and Thumb issue
 shape whole-binary.
 

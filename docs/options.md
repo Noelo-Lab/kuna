@@ -762,6 +762,10 @@ Three tiers:
 | the returned pair survives when the half is arithmetic but not when it is a plain copy of a parameter | [`retinputhalf`](#retinputhalf) |
 | an argument kept in a callee-saved register across a call and moved back into its own register is dropped from the return and the signature | [`retinputhalf`](#retinputhalf) |
 | a 32-bit function returning its argument as the low word of a 64-bit value prints void, or returns the high word alone | [`retinputhalf`](#retinputhalf) |
+| an int function prints as unsigned long long returning CONCAT44 of a constant and its real result | [`retsysreg`](#retsysreg) |
+| the high word of a returned pair is the operand of a vmsr fpscr, msr cpsr_c, msr basepri or mtc0 | [`retsysreg`](#retsysreg) |
+| a FreeRTOS-style ulPortRaiseBASEPRI returns CONCAT44(0x50,v1) | [`retsysreg`](#retsysreg) |
+| a function that sets a system register through r1 and returns a computed r0 prints unsigned long long | [`retsysreg`](#retsysreg) |
 | a function grows one more argument than the disassembly passes, used only as the high half of the return | [`retpushedhalf`](#retpushedhalf) |
 | an alignment push/pop around the body turns a pointer return into undefined16 | [`retpushedhalf`](#retpushedhalf) |
 | the recovered signature ends in an extra argument whose only appearance is `v._8_8_ = aN;` | [`retpushedhalf`](#retpushedhalf) |
@@ -2675,6 +2679,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: a value the function was handed and deliberately moved into the return register is a real return, and dropping it also deletes the parameter it came from, so the recovered signature loses an argument the disassembly plainly passes. Byte-identical (0/675) on the datatest corpus; 1 of 7307 functions changes across grep/sort/faillog/libselinux/betaflight and 31 of 1577 on a static-PIE Rust binary, every one recovering a return half or a parameter. Set off to restore the strict `unwritten means leftover` terminal rule.
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · kuna-returned-input-half
 - **Example:** `option retinputhalf off`
+
+### `retsysreg` -- on | off, default `on`
+
+- **Symptoms:** an int function prints as unsigned long long returning CONCAT44 of a constant and its real result; the high word of a returned pair is the operand of a vmsr fpscr, msr cpsr_c, msr basepri or mtc0; a FreeRTOS-style ulPortRaiseBASEPRI returns CONCAT44(0x50,v1); a function that sets a system register through r1 and returns a computed r0 prints unsigned long long.
+- **What it does:** Do not return a register the function sets for a system register as the high word of a register pair. Upstream's `onlyOpUse` takes a COPY into a register other than a temporary, and any CALLOTHER, for an alternate path rather than a competing use, so a 32-bit function that leaves a system register's operand in the second return register printed as a 64-bit return whose high word is that operand: ARM `bl g; mov r1,#0x3000000; vmsr fpscr,r1; pop {r11,pc}` as `CONCAT44(0x3000000,g())`, FreeRTOS's `ulPortRaiseBASEPRI` (`msr basepri,r1`) as `CONCAT44(0x50,v1)`, and the same for `msr cpsr_c`, `msr primask`, MIPS `mtc0 $3`, PowerPC `mtmsr r4` and AArch64 `msr fpcr,x1` beside `x0`. With this on, after the last scoring pass, an active trial the output model returns only beside another register is dropped when, at every live RETURN, every value it merges is read by a CALLOTHER that produces nothing or written to a register the prototype model names nowhere whose value then only becomes flags. The pair stays when such a write also reads another value the RETURN reads (a 64-bit system register written from both words: x86 `wrmsr`, ARM `mcrr`), when another value the RETURN reads goes to a system register too, and when the value is computed from a call's own result in that register. The first register then stands alone; when it was refused too (a call's untouched result) the function returns nothing until `passthrough` or a caller that reads the result settles it, as for a bare `bl g; pop {r11,pc}`.
+- **When to flip:** On by default: a function whose second return register only feeds a system register is byte for byte an `int` function that used that register as the scratch for the write, which is what clang does with `r1` whenever `r0` holds the result. Byte-identical (0/675) on the datatest corpus; over 19 ARM firmware images and 90 Lua and x86 builds (24,363 functions) one function changes, ChibiOS's `chEvtGetAndClearEvents`, to the 32-bit result it has. Set off to get the pair back for a function that really returns a 64-bit value and also writes its high word, alone, to a system register.
+- **Where / provenance:** P4/output-prototype · kuna · correctness-fix · GH-885
+- **Example:** `option retsysreg off`
 
 ### `retpushedhalf` -- on | off, default `on`
 
