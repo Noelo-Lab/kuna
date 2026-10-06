@@ -549,6 +549,9 @@ pub fn build_output_from_trials(
     data: &mut Funcdata,
     trialvn: &[Option<VarnodeId>],
 ) {
+    if crate::p4_calls::kuna_callretpair::build_partial_pair(fc, data, trialvn) {
+        return;
+    }
     let op = fc.get_op();
     let mut finalvn: Vec<VarnodeId> = Vec::new();
     let num_trials = fc.get_active_output().get_num_trials();

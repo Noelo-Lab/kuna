@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2116,
-    2116
+    2127,
+    2127
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -124,6 +124,17 @@
     "data:CALLRETPAIR #4: the unassigned rdx local survives in three of the four renderings, and is gone only where the pair formed",
     "data:CALLRETPAIR #5: the control keeps its bare call in BOTH passes, because the bounded callee decode proves no_payload never writes rdx",
     "data:CALLRETPAIR #6: on, the recovered return stops being the garbage pointer the discarded half left behind",
+    "data:CALLRETPAIRHALF #10: a callee whose decoded body never writes r1 keeps a bare call in both passes",
+    "data:CALLRETPAIRHALF #11: an indirect call has no callee body to show the write, so it keeps a bare call in both passes",
+    "data:CALLRETPAIRHALF #1: off, the calls that hand back r1 are bare statements",
+    "data:CALLRETPAIRHALF #2: off, r1 (or r1:1) renders as a local nothing assigns",
+    "data:CALLRETPAIRHALF #3: on, the high byte is a SUBPIECE of the pair the call returns",
+    "data:CALLRETPAIRHALF #4: on, the high word plus a constant",
+    "data:CALLRETPAIRHALF #5: on, the high word moved into r0",
+    "data:CALLRETPAIRHALF #6: on, Thumb: the high byte through uxtb r0,r1",
+    "data:CALLRETPAIRHALF #7: on, Thumb: r0 and the byte r1:1 are both pieces of the call result",
+    "data:CALLRETPAIRHALF #8: off, Thumb: r1:1 was concatenated unassigned",
+    "data:CALLRETPAIRHALF #9: the low-word control prints the same in both passes",
     "data:CALLTARGETTYPE #10: the two calls are unchanged",
     "data:CALLTARGETTYPE #11: a local holding a function address keeps void *",
     "data:CALLTARGETTYPE #12: the address is still stored into it",

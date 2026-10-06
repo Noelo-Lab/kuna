@@ -1998,7 +1998,9 @@ mod tests {
         // float of its width (GH-888)
         // and gh854-hiddenretarg-a64 + -a64apple + -a64win / a value left in
         // the AArch64 hidden-return register x8 is no call argument (GH-854)
-        assert_eq!(count, 434, "corpus file count drifted");
+        // and kuna-callretpairhalf / a caller that reads only the high word of
+        // a callee's 64-bit result gets the pair from the call (#851)
+        assert_eq!(count, 435, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
