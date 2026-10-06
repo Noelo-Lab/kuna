@@ -114,6 +114,23 @@ pub struct Ledger {
     /// return recovered in other storage, not yet decompiled again: a float
     /// return they refuse is withdrawn only if the forced decompile keeps it.
     pub displacing: BTreeSet<(int4, uintb)>,
+    /// Per called function, the storage of its result each call computes with
+    /// ([`used_storage`]), or computes with once a function returning it hands
+    /// it back.
+    pub used: BTreeMap<(int4, uintb), Vec<(Address, int4)>>,
+    /// Per function, the callees whose result it returns as it is ([`hands_on`]).
+    pub handed: BTreeMap<(int4, uintb), BTreeSet<(int4, uintb)>>,
+    /// Per function whose last decompile returned a zero-extended word trimmed
+    /// out of a wider register, the word's storage, and whether the unsigned
+    /// vote could change its type: its sign bit may be set and it is typed a
+    /// signed or unknown integer.
+    pub words: BTreeMap<(int4, uintb), (Address, int4, bool)>,
+    /// Per function decompiled again keeping that register whole, the storage
+    /// its callers compute with.
+    pub wide: BTreeMap<(int4, uintb), (Address, int4)>,
+    /// The functions in `words` a caller computed with wider than the word
+    /// since [`due`] last ran.
+    pub wide_due: BTreeSet<(int4, uintb)>,
 }
 
 fn key(entry: &Address) -> Option<(int4, uintb)> {
@@ -146,6 +163,13 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
         .then(|| proto.get_output())
         .filter(|out| !out.get_address().is_invalid() && out.get_size() > 0)
         .map(|out| (out.get_address(), out.get_size()));
+    let word = stored.as_ref().and_then(|(addr, size)| {
+        let &(ref noted, width, sign) = data.kuna_zext_word()?;
+        let signed = proto.get_output_type().is_some_and(|t| {
+            matches!(t.get_metatype(), crate::dtype::type_metatype::TYPE_INT | crate::dtype::type_metatype::TYPE_UNKNOWN)
+        });
+        (noted == addr && width == *size).then(|| (addr.clone(), *size, sign && signed))
+    });
     match stored {
         Some(s) => {
             arch.kuna_voidret.storage.insert(own, s);
@@ -154,6 +178,7 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
             arch.kuna_voidret.storage.remove(&own);
         }
     }
+    file_word(arch, own, word);
     if declared || !proto.has_store() || proto.is_input_locked() {
         arch.kuna_voidret.params.remove(&own);
     } else {
@@ -186,6 +211,7 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
     if !data.kuna_forced_return().is_empty() && returns_a_call_clobber(data) {
         arch.kuna_voidret.unset.insert(own);
     }
+    let mut handed = BTreeSet::new();
     for i in 0..data.num_calls() {
         let fc = data.get_call_specs(i);
         let Some(callee) = key(fc.get_entry_address()) else { continue };
@@ -196,6 +222,9 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
             continue;
         };
         let result = holder(data, outvn);
+        if hands_on(data, result) {
+            handed.insert(callee);
+        }
         if arch.kuna_voidret.returns.get(&callee) == Some(&Returns::Float) && !held_as_float(data, outvn, result) {
             arch.kuna_voidret.float_refused.entry(callee).or_default().insert(own);
         }
@@ -203,12 +232,32 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
             arch.kuna_voidret.held.insert((own, callee), h);
         }
         arch.kuna_voidret.readers.entry(callee).or_default().insert(own);
+        if let Some(used) = used_storage(data, result) {
+            file_use(arch, callee, used);
+        }
         let Some(storage) = data.vbank().get(result).and_then(read_storage) else { continue };
         file_claim(arch, own, callee, storage);
     }
     for (callee, storage) in data.kuna_forced_claims().to_vec() {
         file_claim(arch, own, callee, storage);
     }
+    file_handed(arch, own, handed);
+}
+
+/// File the callees whose result the function keyed `own` returns as it is,
+/// and hand them what its callers already compute with.
+fn file_handed(arch: &mut Architecture, own: (int4, uintb), handed: BTreeSet<(int4, uintb)>) {
+    if handed.is_empty() {
+        arch.kuna_voidret.handed.remove(&own);
+        return;
+    }
+    let uses = arch.kuna_voidret.used.get(&own).cloned().unwrap_or_default();
+    for &callee in &handed {
+        for storage in &uses {
+            file_use(arch, callee, storage.clone());
+        }
+    }
+    arch.kuna_voidret.handed.insert(own, handed);
 }
 
 /// The Varnode holding the call result `outvn` in the caller's storage: the
@@ -440,6 +489,176 @@ fn file_claim(arch: &mut Architecture, reader: (int4, uintb), callee: (int4, uin
     arch.kuna_voidret.readers.entry(callee).or_default().insert(reader);
 }
 
+/// File that a call to `callee` computes with `storage` of its result, and so
+/// with the result of each callee whose result `callee` returns as it is,
+/// making each due when that is wider than a zero-extended word it returns.
+fn file_use(arch: &mut Architecture, callee: (int4, uintb), storage: (Address, int4)) {
+    let ledger = &mut arch.kuna_voidret;
+    let mut work = vec![callee];
+    while let Some(k) = work.pop() {
+        let uses = ledger.used.entry(k).or_default();
+        if uses.contains(&storage) {
+            continue;
+        }
+        uses.push(storage.clone());
+        if ledger.words.get(&k).is_some_and(|w| widens(&storage, w)) {
+            ledger.wide_due.insert(k);
+        }
+        work.extend(ledger.handed.get(&k).into_iter().flatten().copied());
+    }
+}
+
+/// Does the call result `out` reach a live RETURN of `data` as it is, through
+/// copies and joins only?
+fn hands_on(data: &Funcdata, out: crate::context::VarnodeId) -> bool {
+    use kuna_num::opcodes::OpCode::*;
+    let mut work = vec![out];
+    let mut seen = BTreeSet::new();
+    while let Some(v) = work.pop() {
+        if !seen.insert(v) || seen.len() > 64 {
+            continue;
+        }
+        let Some(node) = data.vbank().get(v) else { continue };
+        for r in node.descend_iter() {
+            let Some(o) = data.obank().get(r).filter(|o| !o.is_dead()) else { continue };
+            match o.code() {
+                CPUI_RETURN if o.get_halt_type() == 0 && o.get_in(0) != Some(v) => return true,
+                CPUI_COPY | CPUI_MULTIEQUAL | CPUI_INDIRECT | CPUI_CAST => work.extend(o.get_out()),
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
+/// File the zero-extended word the function keyed `own` returns, if its last
+/// decompile trimmed one out of a wider register, making the function due when
+/// a caller already computes with more of the register.
+fn file_word(arch: &mut Architecture, own: (int4, uintb), word: Option<(Address, int4, bool)>) {
+    let ledger = &mut arch.kuna_voidret;
+    let Some(word) = word else {
+        ledger.words.remove(&own);
+        return;
+    };
+    if ledger.used.get(&own).is_some_and(|uses| uses.iter().any(|u| widens(u, &word))) {
+        ledger.wide_due.insert(own);
+    }
+    ledger.words.insert(own, word);
+}
+
+/// Would a caller computing with `storage` change what returning `word` is
+/// recovered as? It must take the register holding the word and more of it:
+/// more than four bytes, which keeps the register whole, or up to four of a
+/// word the unsigned vote retypes.
+fn widens(storage: &(Address, int4), word: &(Address, int4, bool)) -> bool {
+    crate::kuna_zextreturn::wider_over(&storage.0, storage.1, &word.0, word.1) && (storage.1 > 4 || word.2)
+}
+
+/// The storage of the call result `out` that an operation of `data` computes
+/// with: the bytes, from the register's least significant end, holding the
+/// bits its ops use. A RETURN, a call's argument, and a copy, join or piece
+/// of the value on its way to one only hand the register on, and count for
+/// nothing: `call f; sete %al; ret` leaves `f`'s upper bits in a return the
+/// function was not narrowed to, but computes only with `eax`.
+fn used_storage(data: &Funcdata, out: crate::context::VarnodeId) -> Option<(Address, int4)> {
+    let node = data.vbank().get(out)?;
+    let addr = node.get_addr();
+    let size = node.get_size();
+    if addr.get_space()?.get_type() != spacetype::IPTR_PROCESSOR || !(1..=8).contains(&size) {
+        return None;
+    }
+    let bits = operated_bits(data, out, size);
+    if bits == 0 {
+        return None;
+    }
+    let bytes = (64 - bits.leading_zeros() as int4 + 7) / 8;
+    let width = (bytes as u32).next_power_of_two().min(size as u32) as int4;
+    let low = if addr.is_big_endian() { addr + ((size - width) as i64) } else { addr.clone() };
+    Some((low, width))
+}
+
+/// The bits of the `size`-byte call result `out` the ops of `data` compute
+/// with, following the value through copies, joins, pieces, extensions, shifts
+/// and masks by constants, which move bits without computing with them (each
+/// Varnode with the shift from its bits to the result's, and the mask of its
+/// bits that are the result's).
+fn operated_bits(data: &Funcdata, out: crate::context::VarnodeId, size: int4) -> u64 {
+    use kuna_base::address::calc_mask;
+    use kuna_num::opcodes::OpCode::*;
+    let covering = |x: u64| if x == 0 { 0 } else { u64::MAX >> x.leading_zeros() };
+    let to_result = |bits: u64, shift: i32| match shift {
+        0..=63 => bits << shift,
+        -63..=-1 => bits >> -shift,
+        _ => 0,
+    };
+    let mut bits = 0u64;
+    let mut work = vec![(out, 0i32, calc_mask(size))];
+    let mut seen = BTreeSet::new();
+    while let Some((v, shift, valid)) = work.pop() {
+        if valid == 0 || !seen.insert((v, shift)) || seen.len() > 64 {
+            continue;
+        }
+        let Some(node) = data.vbank().get(v) else { continue };
+        for r in node.descend_iter() {
+            let Some(o) = data.obank().get(r).filter(|o| !o.is_dead()) else { continue };
+            let Some(next) = o.get_out() else {
+                if !matches!(o.code(), CPUI_RETURN | CPUI_CALL | CPUI_CALLIND | CPUI_CALLOTHER) {
+                    bits |= to_result(valid, shift);
+                }
+                continue;
+            };
+            let out_size = data.vbank().get(next).map_or(0, |n| n.get_size());
+            let constant = |k: int4| {
+                o.get_in(k).filter(|&i| i != v).and_then(|i| data.vbank().get(i)).filter(|i| i.is_constant()).map(|i| i.get_offset())
+            };
+            let used = match o.code() {
+                CPUI_CALL | CPUI_CALLIND | CPUI_CALLOTHER => continue,
+                CPUI_COPY | CPUI_MULTIEQUAL | CPUI_INDIRECT | CPUI_CAST | CPUI_INT_ZEXT => {
+                    work.push((next, shift, valid));
+                    continue;
+                }
+                CPUI_SUBPIECE => {
+                    let c = o.get_in(1).and_then(|c| data.vbank().get(c)).map_or(0, |c| c.get_offset() as i32 * 8);
+                    work.push((next, shift + c, to_result(valid, -c) & calc_mask(out_size)));
+                    continue;
+                }
+                CPUI_PIECE => {
+                    let lo = o.get_in(1).and_then(|l| data.vbank().get(l)).map_or(0, |l| l.get_size() * 8);
+                    if o.get_in(1) == Some(v) {
+                        work.push((next, shift, valid));
+                    } else {
+                        work.push((next, shift - lo, to_result(valid, lo)));
+                    }
+                    continue;
+                }
+                CPUI_INT_LEFT | CPUI_INT_RIGHT | CPUI_INT_SRIGHT if constant(1).is_some() => {
+                    let c = constant(1).unwrap_or(0).min(64) as i32;
+                    let c = if o.code() == CPUI_INT_LEFT { -c } else { c };
+                    work.push((next, shift + c, to_result(valid, -c) & calc_mask(out_size)));
+                    continue;
+                }
+                CPUI_INT_AND | CPUI_INT_OR | CPUI_INT_XOR if constant(0).or(constant(1)).is_some() => {
+                    let c = constant(0).or(constant(1)).unwrap_or(0);
+                    let kept = match o.code() {
+                        CPUI_INT_AND => c,
+                        CPUI_INT_OR => !c,
+                        _ => u64::MAX,
+                    };
+                    work.push((next, shift, valid & kept));
+                    continue;
+                }
+                CPUI_INT_ADD | CPUI_INT_SUB | CPUI_INT_MULT | CPUI_INT_AND | CPUI_INT_OR | CPUI_INT_XOR
+                | CPUI_INT_NEGATE | CPUI_INT_2COMP | CPUI_INT_LEFT => {
+                    covering(data.vbank().get(next).map_or(0, |n| n.get_consume()))
+                }
+                _ => u64::MAX,
+            };
+            bits |= to_result(used & valid, shift);
+        }
+    }
+    bits & calc_mask(size)
+}
+
 /// The storage a caller reads of the call result `out`: the bytes its uses
 /// consume (a `movss` of an `xmm0` result reads four), at the least
 /// significant end of the register.
@@ -468,7 +687,9 @@ fn read_storage(out: &crate::varnode::Varnode) -> Option<(Address, int4)> {
 /// read, and forced ones a caller decompiled since reads wider (the first
 /// reader decided the width, and the driver settles after every function). Callers that
 /// disagree on the register refuse the function, and one already forced is
-/// withdrawn: it returns nothing again, as before the redo.
+/// withdrawn: it returns nothing again, as before the redo. Also each function
+/// returning a zero-extended word a caller reads wider, kept whole at the
+/// widest such read ([`crate::kuna_zextreturn::zero_extended_word`]).
 pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
     let ledger = &mut arch.kuna_voidret;
     let mut force: Vec<((int4, uintb), (Address, int4))> = Vec::new();
@@ -499,6 +720,16 @@ pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
     }
     for callee in withdraw {
         ledger.withdrawn.insert(callee);
+        out.insert(callee);
+    }
+    for callee in std::mem::take(&mut ledger.wide_due) {
+        let Some(word) = ledger.words.get(&callee) else { continue };
+        let widest = ledger.used.get(&callee).and_then(|u| u.iter().filter(|u| widens(u, word)).max_by_key(|u| u.1));
+        let Some(read) = widest.cloned() else { continue };
+        if ledger.wide.get(&callee).is_some_and(|w| w.1 >= read.1) {
+            continue;
+        }
+        ledger.wide.insert(callee, read);
         out.insert(callee);
     }
     out
@@ -533,6 +764,11 @@ fn displaced(ledger: &Ledger, callee: &(int4, uintb), read: &(Address, int4)) ->
 /// reader still waiting on it (a wrapper forced to return what it returns,
 /// recovered `void` until it did) is decompiled again.
 ///
+/// A function whose zero-extended return a redo widened has every such reader
+/// decompiled again, whatever it states and however large the reader: one
+/// that took the result as the narrow value (`z32m(..) < 0` of an `int`) tests
+/// a sign the callee's new declaration no longer has.
+///
 /// A reader over [`crate::kuna_callrettype::AUDIT_MAX_OPS`] live ops is decompiled
 /// again only where its text computes a wrong value: an offset from a result the
 /// callee now declares a pointer to something wider than a byte (which C
@@ -550,6 +786,7 @@ pub fn stale_readers(
     for (callee, &at) in changed {
         let float = arch.kuna_voidret.returns.get(callee) == Some(&Returns::Float);
         let withdrawn = arch.kuna_voidret.withdrawn.contains(callee);
+        let widened = arch.kuna_voidret.wide.contains_key(callee);
         let states = float || withdrawn || arch.kuna_callret_types.contains_key(callee);
         let scaled = arch.kuna_callret_types.get(callee).is_some_and(|s| {
             s.ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
@@ -563,7 +800,7 @@ pub fn stale_readers(
             }
             let waiting = arch.kuna_voidret.forced.contains_key(reader)
                 && arch.kuna_voidret.returns.get(reader) == Some(&Returns::Void);
-            if !states && !waiting {
+            if !states && !waiting && !widened {
                 continue;
             }
             let large = arch.kuna_voidret.ops.get(reader).is_some_and(|&n| n > crate::kuna_callrettype::AUDIT_MAX_OPS);
@@ -572,7 +809,7 @@ pub fn stale_readers(
                 .held
                 .get(&(*reader, *callee))
                 .is_some_and(|h| (scaled && !h.pointer && h.arithmetic) || (float && !h.float) || (withdrawn && h.float));
-            if !large || wrong {
+            if !large || wrong || widened {
                 out.insert(*reader);
             }
         }
@@ -583,6 +820,12 @@ pub fn stale_readers(
 /// What the function keyed `k` was last recovered to return, for [`restore`].
 pub fn returns(arch: &Architecture, k: (int4, uintb)) -> Option<Returns> {
     arch.kuna_voidret.returns.get(&k).copied()
+}
+
+/// Was the function keyed `k` decompiled again for a caller computing with
+/// more of its register than the zero-extended value it returned?
+pub fn widened(arch: &Architecture, k: (int4, uintb)) -> bool {
+    arch.kuna_voidret.wide.contains_key(&k)
 }
 
 /// The storage the function keyed `k` last returned a value in, for [`restore`].
@@ -634,6 +877,7 @@ pub fn seed(arch: &Architecture, data: &mut Funcdata) {
         .collect();
     data.kuna_set_callee_return_storage(storage);
     let own = key(data.get_address());
+    data.kuna_set_wide_return(own.and_then(|k| arch.kuna_voidret.wide.get(&k).cloned()));
     let withdrawn = own.is_some_and(|k| arch.kuna_voidret.withdrawn.contains(&k));
     data.kuna_set_float_return_withdrawn(withdrawn);
     let Some((addr, size)) = own.filter(|_| !withdrawn).and_then(|k| arch.kuna_voidret.forced.get(&k).cloned()) else {

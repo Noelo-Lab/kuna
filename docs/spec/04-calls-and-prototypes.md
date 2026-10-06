@@ -5700,3 +5700,56 @@ is also compared, indexed or passed on before it is returned (coreutils
 tests against `NULL`): upstream's sole-use rule, which this redo keeps, refuses
 them, and relaxing it to accept a tested value brought the scratch-register
 merges back.
+
+The same ledger settles a narrow return the function zero-extends (GH-865). On
+x86-64 and AArch64, writing `eax` or `w0` clears the rest of the register, and
+sub-variable flow trims such a return to the narrow value
+(`kuna_zextreturn`, chapter [05](05-types.md)); the conventions leave the bits
+above it unspecified, so the function alone cannot tell `int z32m(..)` from
+`unsigned long z32m(..) { return (x * 3) & 0xffffffff; }`. A caller that
+computes with the register above the narrow value relies on the zero-extension:
+gcc's `call z32m; add $1,%rax` printed `z32m(..) + 1` beside `int z32m(int a0)`,
+which C sign-extends, and returned `0xffffffff80000002` where the binary returns
+`0x80000002`. The RETURN pull notes each trim of a zero-extended value, and
+whether its sign bit may be set (`Funcdata::kuna_note_zext_word`), and `record`
+files the narrow storage when the final return is that trim
+(`kuna_voidret.rs (file_word)`). For every call it files, besides the storage
+its uses consume, the storage its operations compute with
+(`kuna_voidret.rs (used_storage)`): the result is followed through copies,
+joins, pieces, extensions, and shifts and masks by constants, which move bits
+without computing with them, and a RETURN or a call's argument only hands the
+register on. Consumption alone was no evidence: a `bool` function that tests a
+comparator's result with `sete %al` and returns `rax` whole, its upper bytes
+still the comparator's, consumed all of the comparator's register (grep's
+`string_compare_ci` over `mbscasecmp`), as did every wrapper that returns an
+`int` call's result. Where a function returns a callee's result as it is
+(`kuna_voidret.rs (hands_on)`), what its own callers compute with is filed for
+that callee too (`kuna_voidret.rs (file_use)`), so `unsigned long w(x) { return
+z32m(x + 7); }` widens `z32m` once `w`'s caller adds to `w`'s result in 64 bits.
+`due` then names each function whose noted value a caller computes with wider,
+where that can change it (`kuna_voidret.rs (widens)`): with more than four
+bytes, or with up to four of a value whose sign bit may be set and which is
+typed a signed or unknown integer, since a `bool` or an `unsigned char` is
+already promoted as the binary extends it. It is named with the widest such
+storage, and `seed` hands that to its next decompile
+(`Funcdata::kuna_wide_return`), where the pull keeps the whole register for a
+caller computing with eight bytes and otherwise makes the narrow value unsigned
+(chapters [03](03-ssa-and-simplification.md) and [05](05-types.md)). A
+function whose return storage such a redo widened has every reader decompiled
+before it decompiled again (`stale_readers`), however large: a reader that took
+the result as the narrow value prints `z32m(..) < 0` of an `int`, which the new
+`unsigned long` declaration makes false. A convention that extends a narrow return
+by its type's sign (PowerPC64's `inttype`) is left alone: there a caller may read
+the whole register of an `unsigned int`, which `kuna_zextreturn` already types.
+The single-function `kuna decompile` has no callers to ask and keeps the trim.
+Over 24 decbench x86-64 binaries and 190 AArch64 objects built from their
+sources, it changes 15 functions, each toward its source type: kmod's
+`kmod_module_dependency_symbol_get_bind` at three levels and dash's AArch64
+`arith_prec`, a zero-extended byte their callers compare as an `int`, from
+`char` to `unsigned char`; gnulib's `default_block_size`, a `uintmax_t` of 512 or
+1024, from `int` to `unsigned long` in du, ls and find, with its reader
+`humblock`'s `uintmax_t *` from `long *` to `unsigned long *` and du's `main`
+passing it a typed global; find's `get_format_specifer_length`, a `size_t`,
+from `char` to `unsigned long`, with its reader renumbered; and dash's
+`hashvar`, which computes a pointer in 32 bits, from `int` to `unsigned long` on
+both architectures.

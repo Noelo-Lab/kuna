@@ -452,6 +452,12 @@ pub struct Funcdata {
     kuna_float_return_withdrawn: bool,
     /// (kuna `voidret`) The `void` callees' results this function's return would be.
     kuna_forced_claims: Vec<((int4, kuna_base::types::uintb), (Address, int4))>,
+    /// (kuna `voidret`) The storage this function's callers read of the word it
+    /// returns zero-extended, wider than the word.
+    kuna_wide_return: Option<(Address, int4)>,
+    /// (kuna `voidret`) The zero-extended word the RETURN pull trimmed the return
+    /// to, and whether its sign bit may be set.
+    kuna_zext_word: Option<(Address, int4, bool)>,
     /// (kuna `voidret`) What each callee's last decompile recovered it returns.
     kuna_callee_returns: std::collections::BTreeMap<(int4, kuna_base::types::uintb), crate::kuna_voidret::Returns>,
     /// (kuna `voidret`) Per callee, whether each parameter its last decompile
@@ -669,6 +675,8 @@ impl Funcdata {
             kuna_callee_params: std::collections::BTreeMap::new(),
             kuna_callee_return_storage: std::collections::BTreeMap::new(),
             kuna_forced_claims: Vec::new(),
+            kuna_wide_return: None,
+            kuna_zext_word: None,
             kuna_float_pair_halves: std::collections::BTreeSet::new(),
             kuna_forced_scoring: false,
             kuna_callret_returned: Vec::new(),
@@ -1039,6 +1047,31 @@ impl Funcdata {
     /// (kuna `voidret`) The `void` callees' results this function's return would be.
     pub fn kuna_forced_claims(&self) -> &[((int4, kuna_base::types::uintb), (Address, int4))] {
         &self.kuna_forced_claims
+    }
+
+    /// (kuna `voidret`) Record the storage this function's callers read of the
+    /// word it returns zero-extended.
+    pub fn kuna_set_wide_return(&mut self, wide: Option<(Address, int4)>) {
+        self.kuna_wide_return = wide;
+    }
+
+    /// (kuna `voidret`) The storage this function's callers read of the word it
+    /// returns zero-extended, wider than the word.
+    pub fn kuna_wide_return(&self) -> Option<&(Address, int4)> {
+        self.kuna_wide_return.as_ref()
+    }
+
+    /// (kuna `voidret`) Note the zero-extended word the RETURN pull trims the
+    /// return to, and whether its sign bit may be set at any RETURN.
+    pub fn kuna_note_zext_word(&mut self, addr: Address, size: int4, sign: bool) {
+        let before = self.kuna_zext_word.as_ref().is_some_and(|(a, s, b)| *a == addr && *s == size && *b);
+        self.kuna_zext_word = Some((addr, size, sign || before));
+    }
+
+    /// (kuna `voidret`) The zero-extended word the RETURN pull trimmed the return
+    /// to, and whether its sign bit may be set.
+    pub fn kuna_zext_word(&self) -> Option<&(Address, int4, bool)> {
+        self.kuna_zext_word.as_ref()
     }
 
     /// (kuna `voidret`) What the callee at `key` was last recovered to return.
@@ -3612,6 +3645,7 @@ impl Funcdata {
         self.kuna_forced_return_planted.clear();
         self.kuna_float_pair_halves.clear();
         self.kuna_forced_claims.clear();
+        self.kuna_zext_word = None;
         self.kuna_pairs_first_low = false;
     }
 

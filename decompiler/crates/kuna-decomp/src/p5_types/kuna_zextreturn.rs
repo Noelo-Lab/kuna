@@ -23,7 +23,11 @@
 //! nothing about its sign, and keep the fold's type. Where the rule
 //! sign-extends a 32-bit return whatever its sign (RISC-V and LoongArch LP64), a
 //! zero-extended word whose sign bit may be set is no 32-bit value at all, and
-//! [`zero_extended_word`] makes the trim keep the whole register.
+//! [`zero_extended_word`] makes the trim keep the whole register. Under the
+//! other conventions only the callers can tell: one that computes with more of
+//! the register relies on the zero-extension, and `voidret` has the function
+//! decompiled again, keeping the whole register for a caller computing in 64
+//! bits and otherwise typing the narrow value unsigned.
 
 use std::rc::Rc;
 
@@ -37,31 +41,68 @@ use crate::funcdata::Funcdata;
 use crate::op::pcodeop_addlflags::kuna_zextreturn;
 
 /// Did trimming the RETURN input `vn` to the `size`-byte value under `mask`
-/// drop only known-zero bits, where the convention extends that value by sign?
-/// `storage` is a non-constant input of a RETURN, which names the register.
+/// drop only known-zero bits, where the convention extends that value by sign,
+/// or where the function's callers compute with up to four bytes of the
+/// register ([`read_width`])? `storage` is a non-constant input of a RETURN,
+/// which names the register.
 pub(crate) fn unsigned_trim(data: &Funcdata, vn: VarnodeId, storage: VarnodeId, mask: u64, size: i32) -> bool {
     if !crate::kuna_truncarg::drops_only_zero_bits(data, vn, mask) {
         return false;
     }
     let Some((narrow, list)) = narrow_output(data, storage, size) else { return false };
     crate::kuna_narrowext::extends_by_sign(data.get_arch().narrow_ext.output, list, &narrow, size)
+        || read_width(data, &narrow, size).is_some_and(|w| w <= 4)
 }
 
 /// Would trimming the RETURN input `vn` to the `size`-byte value under `mask`
-/// drop the zero-extension of a value whose sign bit may be set, where the
+/// drop a zero-extension no narrow type extends as the binary does? Where the
 /// `narrowext` rule sign-extends a return of that width whatever its type (a
-/// 32-bit value on RISC-V and LoongArch LP64)? No narrow type then extends as the
-/// binary does, so the RETURN must keep the whole register.
-pub(crate) fn zero_extended_word(data: &Funcdata, vn: VarnodeId, storage: VarnodeId, mask: u64, size: i32) -> bool {
+/// 32-bit value on RISC-V and LoongArch LP64), one whose sign bit may be set.
+/// Where the convention extends it neither so nor by its type's sign (x86-64,
+/// AArch64), one whose callers compute with more than four bytes of the
+/// register ([`read_width`]), whatever its sign: C would compute with the
+/// narrow type where the binary computes in 64 bits. The RETURN must then keep
+/// the whole register. Such a trim that no caller has yet computed with wider
+/// is noted on `data`, so that `voidret` can ask the callers.
+pub(crate) fn zero_extended_word(data: &mut Funcdata, vn: VarnodeId, storage: VarnodeId, mask: u64, size: i32) -> bool {
+    if !(1..8).contains(&size) || !crate::kuna_truncarg::drops_only_zero_bits(data, vn, mask) {
+        return false;
+    }
+    let sign = data.vbank().get(vn).is_some_and(|v| v.get_nz_mask() >> (size * 8 - 1) & 1 != 0);
     let rule = data.get_arch().narrow_ext.output;
-    if rule.is_none() || !(1..8).contains(&size) || !crate::kuna_truncarg::drops_only_zero_bits(data, vn, mask) {
+    let Some((narrow, any, by_type)) = narrow_output(data, storage, size).map(|(narrow, list)| {
+        let any = crate::kuna_narrowext::sign_extends_any(rule, list, &narrow, size);
+        let by_type = crate::kuna_narrowext::extends_by_sign(rule, list, &narrow, size);
+        (narrow, any, by_type)
+    }) else {
         return false;
+    };
+    if any || by_type {
+        return any && sign;
     }
-    if data.vbank().get(vn).is_none_or(|v| v.get_nz_mask() >> (size * 8 - 1) & 1 == 0) {
-        return false;
+    if read_width(data, &narrow, size).is_some_and(|w| w > 4) {
+        return true;
     }
-    let Some((narrow, list)) = narrow_output(data, storage, size) else { return false };
-    crate::kuna_narrowext::sign_extends_any(rule, list, &narrow, size)
+    data.kuna_note_zext_word(narrow, size, sign);
+    false
+}
+
+/// How many bytes of the register holding the `size`-byte value at `narrow`
+/// the function's callers compute with, when more than the value
+/// ([`Funcdata::kuna_wide_return`]). Up to four, C's promotion of an unsigned
+/// narrow type to `int` extends it as the binary does; beyond, only a 64-bit
+/// type does.
+fn read_width(data: &Funcdata, narrow: &Address, size: i32) -> Option<i32> {
+    data.kuna_wide_return().filter(|(addr, width)| wider_over(addr, *width, narrow, size)).map(|(_, width)| *width)
+}
+
+/// Does `[addr, addr+width)` hold `[narrow, narrow+size)` and more?
+pub(crate) fn wider_over(addr: &Address, width: i32, narrow: &Address, size: i32) -> bool {
+    let (Some(a), Some(n)) = (addr.get_space(), narrow.get_space()) else { return false };
+    a.get_index() == n.get_index()
+        && width > size
+        && addr.get_offset() <= narrow.get_offset()
+        && narrow.get_offset() + size as u64 <= addr.get_offset() + width as u64
 }
 
 /// The low `size` bytes of the non-constant RETURN input `storage`, and the
@@ -95,22 +136,29 @@ pub(crate) fn note_trimmed_return(data: &mut Funcdata, op: OpId, unsigned: bool)
 
 /// The unsigned integer `vn` is, when every RETURN hands it back as an
 /// [`unsigned_trim`] and `ct`, the fold's type, is a signed or unknown integer.
+/// Also when the function keeps the whole register for callers that compute
+/// with it ([`zero_extended_word`]) and `vn`, returned in it, is a word its
+/// upper half leaves zero.
 pub(crate) fn unsigned_return_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<Rc<Datatype>> {
     let v = data.vbank().get(vn)?;
     let size = v.get_size();
     if !matches!(ct.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UNKNOWN) {
         return None;
     }
-    if v.is_type_lock() || !(1..8).contains(&size) || v.get_nz_mask() >> (size * 8 - 1) & 1 == 0 {
-        return None;
-    }
-    if data.get_func_proto().is_output_locked() {
+    if v.is_type_lock() || data.get_func_proto().is_output_locked() {
         return None;
     }
     let returned = v.descend_iter().any(|op| {
         data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_RETURN && o.get_in(1) == Some(vn))
     });
     if !returned {
+        return None;
+    }
+    let whole = data.kuna_wide_return().is_some_and(|(addr, width)| *width == size && addr == v.get_addr());
+    if whole && size > 4 && v.get_nz_mask() >> 32 == 0 {
+        return data.get_arch().types()?.get_base(size, type_metatype::TYPE_UINT).ok();
+    }
+    if !(1..8).contains(&size) || v.get_nz_mask() >> (size * 8 - 1) & 1 == 0 {
         return None;
     }
     let mut any = false;

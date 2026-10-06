@@ -7276,7 +7276,8 @@ int main(void) {
 /// record walked by a stride, and one pointer read at two widths. A second line
 /// reads tables whose elements have the top bit set: a `unsigned short` and an
 /// `unsigned int` element returned to a caller that widens them (declared
-/// signed, the callers would sign-extend), one shifted and one only compared,
+/// signed, the callers would sign-extend; they add to the whole register, so
+/// the functions return `unsigned long`, as declared), one shifted and one only compared,
 /// and a byte table one function zero-extends and another sign-extends (the
 /// header can declare it at one sign only, so neither indexes it). At -O2, gcc's
 /// `w_rev` returns the `malloc` result it never copies out of `rax`, and kuna
@@ -7328,8 +7329,8 @@ fn check_elemptr_round_trip(run_native: bool) {
         "long w_ubytes(unsigned char *a0,int a1)",
         "long w_sidx(char *a0,int a1,int *a2)",
         "long w_mixed(char *a0,int a1)",
-        "unsigned short w_wu(unsigned int a0)",
-        "unsigned int w_iu(unsigned int a0)",
+        "unsigned long w_wu(unsigned int a0)",
+        "unsigned long w_iu(unsigned int a0)",
         "w_put(char *a0,unsigned long a1,char *a2)",
         "w_ctr(unsigned int *a0,",
         "long w_hsum(char *a0,long a1)",

@@ -2800,6 +2800,27 @@ the RETURN pull does not trim a zero-extended word whose sign bit may be set
 (`kuna_zextreturn.rs (zero_extended_word)`, chapter
 [03](03-ssa-and-simplification.md)), and the function returns the register.
 
+Under those conventions the function's callers can still say it, in
+`decompile-all` and `decompile-project` (`voidret`, chapter
+[04](04-calls-and-prototypes.md)). A caller that computes with the register
+above the trimmed value relies on the zero-extension, since no convention lets a
+caller read bits a narrow return leaves unspecified: x86-64 gcc and clang extend
+a returned `char` or `unsigned` themselves (`movzbl %al,%eax`, `mov %eax,%eax`)
+before they use more of the register. The function is then decompiled again with
+the width its callers compute with (`Funcdata::kuna_wide_return`,
+`kuna_zextreturn.rs (read_width)`). Where that is at most four bytes, the value
+keeps its trim and takes the record as above (`kuna_zextreturn.rs
+(unsigned_trim)`), so it returns `unsigned char` or `unsigned short`, which C
+promotes to `int` as the binary extends: kmod's `int get_bind(..) { return
+sym->bind; }` over a `uint8_t` printed as `char`, and the caller's `bind ==
+'W'` read a negative `char` for a bind of 0x80 or more. Where a caller computes
+with all eight bytes, the RETURN keeps the whole register, since no promotion
+reaches 64 bits: the caller adds in 64 bits (`call z32m; add $1,%rax`), and its
+printed `z32m(..) + 1` would add in 32 over an `unsigned int`, or in `int` over
+an `unsigned char` multiplied by `0x1000001`. So `int z32m(int a0) { return a0
+* 3; }` beside a caller that sign-extended it now reads `unsigned long
+z32m(int a0) { return (unsigned int)(a0 * 3); }`.
+
 ## 5.3 Ranges & consume bits
 
 The rest of the S5 fact fabric (the framing derives from the study in
