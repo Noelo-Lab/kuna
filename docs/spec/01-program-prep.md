@@ -1464,10 +1464,13 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   literals, does not count -- and either it lies in a mergeable string section of
   4-byte entries (a relocatable object's `.rodata.str4.4`, where every
   NUL-terminated run is a literal), or it holds at least five units, at least
-  three of them distinct, and the image backs it: its symbol table names its data
-  objects, which leaves only literals unnamed, or something points at its start
-  (an operand target of the `operand_refs` scan, a pointer-aligned slot, a
-  dynamic relocation). An anonymous table of a stripped image that passes all of
+  three of them distinct, and the image backs it: it kept its local symbols (the
+  symbol table names a source file), so every array it declares, `static` ones
+  included, is a named object and only literals are left unnamed, or something
+  points at its start (an operand target of the `operand_refs` scan, a
+  pointer-aligned slot, a dynamic relocation). A relocatable object is read
+  through the laid-out view the loader builds, never its raw sections, which
+  all sit at address 0. An anonymous table of a stripped image that passes all of
   that, terminator included, still prints as the literal its bytes spell, with
   the same values. A run that a tail-merged suffix shares (`L"bind"` inside
   `L"xbind"`) is planted whole from its first unit, and the printer reads the

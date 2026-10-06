@@ -26,17 +26,21 @@
 //!   nothing the source declared); and
 //! - it lies in a mergeable string section of 4-byte entries (a relocatable
 //!   object's `.rodata.str4.4`), or it holds at least [`MIN_UNITS`] units of at
-//!   least three distinct characters and either the image's symbol table names
-//!   its data objects, which leaves only literals unnamed, or something points at
-//!   its start: an operand the scalar scan found, a pointer-aligned slot, a
-//!   dynamic relocation.
+//!   least three distinct characters and either the image kept its local
+//!   symbols (its symbol table names a source file), so every array it declares,
+//!   `static` ones included, is a named object and only literals are left
+//!   unnamed, or something points at its start: an operand the scalar scan
+//!   found, a pointer-aligned slot, a dynamic relocation.
+//!
+//! A relocatable object is read only through the laid-out view the loader
+//! builds; its raw sections all sit at address 0.
 //!
 //! A stripped image's anonymous `int` table that passes all of that, NUL unit
 //! included, still prints as the literal its bytes spell; the values are the
 //! same either way.
 
 use object::read::{Object, ObjectSection, ObjectSymbol};
-use object::{BinaryFormat, SectionKind, SymbolKind};
+use object::{BinaryFormat, ObjectKind, SectionKind, SymbolKind};
 
 use crate::operand_refs::{held_pointers, DataObjects};
 use crate::pass::StringFact;
@@ -139,9 +143,10 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64]) -> Vec<StringFa
         return Vec::new();
     }
     let little_endian = file.is_little_endian();
+    let relocatable = file.kind() == ObjectKind::Relocatable;
     let mut runs: Vec<(Run32, bool)> = Vec::new();
     for sec in file.sections() {
-        let Some(strings4) = readonly_data(file, &sec) else {
+        let Some(strings4) = readonly_data(file, &sec).filter(|_| !relocatable || sec.address() != 0) else {
             continue;
         };
         let Ok(data) = sec.data() else {
@@ -159,7 +164,7 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64]) -> Vec<StringFa
             && s.size() != 0
             && !s.name().is_ok_and(|n| n.starts_with(".L"))
     };
-    let named = file.symbols().any(|s| declared(&s));
+    let named = file.symbols().any(|s| s.kind() == SymbolKind::File);
     let objects = DataObjects::from_spans(
         file.symbols()
             .chain(file.dynamic_symbols())
