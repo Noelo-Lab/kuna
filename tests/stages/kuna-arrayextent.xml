@@ -1,0 +1,184 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-867: a local array indexed up to a clamped bound is declared with four
+    elements and its last elements split into scalars.
+
+    Stage: P6 stack-frame-layout.  P0 assertion: option arrayextent off|bound|on.
+
+    MapState::gatherOpen gives an indexed stack base room for four elements and
+    RangeHint::attempt_join refuses a fixed hint past them, so unless the
+    value-set refinement locks the guard's range, element 4 onward is laid out
+    as its own scalar and the printed subscript runs off the declared array.
+    `arrayextent bound` sizes a base from the known bits of its index
+    (`v[n & 7]`); `on` (the default) also lets an unbounded indexed base take
+    the contiguous same-width slots after it that are never read except
+    through a pointer.
+
+    Source, x86-64, clang -O1 at 0x100000 and gcc -O2 at 0x200000 (both with
+    -fno-stack-protector -fcf-protection=none -fno-inline; sink in its own
+    file so neither compiler sees its body), linked with ld -Ttext:
+
+      int h(int a, int b, int c, int d, int e, int f, int n) {
+        int v[6] = {a, b, c, d, e, f};
+        int t = 0;
+        for (int i = 0; i < n && i < 6; i++) t += v[i] * (i + 1);
+        return t;
+      }
+      int m(int a, int b, int c, int d, int e, int f, int g, int h, int n) {
+        int v[8] = {a, b, c, d, e, f, g, h};
+        return v[n & 7] * 3 + v[(n >> 3) & 7];
+      }
+      struct Q { int arr[4]; int s; int t; };
+      void sink(struct Q *p);
+      int q(int a, int b, int c, int d, int e, int f, int n) {
+        struct Q x;
+        x.arr[0] = a; x.arr[1] = b; x.arr[2] = c; x.arr[3] = d; x.s = e; x.t = f;
+        sink(&x);
+        int r = 0;
+        for (int i = 0; i < n; i++) r += x.arr[i];
+        return r + x.s * x.t;
+      }
+      int w(int a, int b, int c, int d, int e, int f, int g, int h, int n, int k) {
+        int u[4] = {a, b, c, d};
+        int z[4] = {e, f, g, h};
+        int r = 0;
+        for (int i = 0; i < n; i++) r += u[i] * z[(i + k) & 3];
+        for (int i = 0; i < k; i++) r ^= z[i];
+        return r;
+      }
+
+    Passes: default (on), `option arrayextent bound`, `option arrayextent off`.
+    #1, #2, #4 and #6 prove the fix; #3, #5 and #7 reproduce the split in the
+    passes that do not cover the case.  #8 and #9 are the negative cases: struct
+    fields read on their own after the array stay scalars, and two adjacent
+    indexed arrays stay two arrays, in every pass.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+8b442408897c24e8897424ec895424f0894c24f444894424f844894c24fc85c0
+7e3483c0ff83f805b9050000000f42c883c10131d231c0660f1f840000000000
+8b7494e8488d7a010faff701f04889fa4839f975ebc331c0c30f1f8000000000
+448b542418448b5c24108b442408897c24d8897424dc895424e0894c24e44489
+4424e844894c24ec894424f044895c24f44489d083e0078b4484d88d044041c1
+ea034183e20742034494d8c30f1f4000534883ec208b5c2430897c2408897424
+0c89542410894c2414448944241844894c241c488d7c2408e8d300000085db7e
+1e89d831d231c9660f1f840000000000034c94084883c2014839d075f3eb0231
+c98b44241c0faf44241801c84883c4205bc3662e0f1f8400000000000f1f4000
+53448b5424288b442420448b5c24188b5c2410897c24f0897424f4895424f889
+4c24fc44894424e044894c24e4895c24e844895c24ec4489d185c07e3489c231
+f631c0662e0f1f8400000000000f1f008d3c3183e7038b7cbce00faf7cb4f001
+f84883c6014839f275e64585d27f09eb1c31c04585d27e1531d2660f1f440000
+334494e04883c2014839d175f35bc390c3
+</bytechunk>
+<bytechunk space="ram" offset="0x200000" readonly="true">
+4189d28b542408897424dc44895424e0894c24e444894424e844894c24ec85d2
+7e2eb8010000004531c0eb110f1f400083f8057f128b7c84d84883c0010faff8
+4101f839c27fe94489c0c30f1f4400004531c04489c0c3660f1f840000000000
+8b4424084189d28b542418897c24d8897424dc894424f08b44241044895424e0
+894424f489d0c1fa0383e007894c24e483e20744894424e844894c24ec8b4484
+d88d0440034494d8c30f1f800000000055534883ec288b6c24404889e3893c24
+4889df8974240489542408894c240c448944241044894c2414e8e200000085ed
+7e2e8d55ff4889d8488d4c940431d203104883c0044839c875f58b4424100faf
+4424144883c4285b5d01d0c30f1f400031d2ebe666662e0f1f84000000000090
+895424e08b54240889f88b7c2418897424dc895424f08b542410894c24e4448b
+54242044894424e844894c24ec895424f485ff7e2b4489d2488d4c24d84401d7
+4531c989d683c2014883c10483e6030faf44b4e84101c139fa74088b01ebe490
+4531c94585d27e25488d4424e8418d52ff4531c1488d14904839c27410448b40
+044883c0044531c14839c275f04489c8c3662e0f1f8400000000000f1f440000
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="h_clang"/>
+<symbol space="ram" offset="0x100060" name="m_clang"/>
+<symbol space="ram" offset="0x1000b0" name="q_clang"/>
+<symbol space="ram" offset="0x100120" name="w_clang"/>
+<symbol space="ram" offset="0x1001b0" name="sink"/>
+<symbol space="ram" offset="0x200000" name="h_gcc"/>
+<symbol space="ram" offset="0x200060" name="m_gcc"/>
+<symbol space="ram" offset="0x2000b0" name="q_gcc"/>
+<symbol space="ram" offset="0x200120" name="w_gcc"/>
+<symbol space="ram" offset="0x2001c0" name="sink2"/>
+</binaryimage>
+<script>
+  <com>parse line extern void sink(void *p);</com>
+  <com>parse line extern void sink2(void *p);</com>
+  <com>lo fu h_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h_gcc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m_gcc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu q_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu q_gcc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arrayextent bound</com>
+  <com>lo fu h_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h_gcc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m_gcc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu q_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu q_gcc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arrayextent off</com>
+  <com>lo fu h_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h_gcc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m_gcc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu q_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu q_gcc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ARRAYEXTENT #1: by default the clang -O1 loop array is one int4 [6]" min="1" max="1">int4 v5 \[6\]; // ecx \| edi \| edx \| esi \| r8d \| r9d \|</stringmatch>
+<stringmatch name="ARRAYEXTENT #2: by default its last element is written through the array" min="1" max="1">v5\[5\] = a5;</stringmatch>
+<stringmatch name="ARRAYEXTENT #3: bound and off keep the four-element array and the split scalar v[5]" min="2" max="2">int4 v5 \[4\]; // ecx \| edi \| edx \| esi \| stack - 0x10 \| stack - 0x14 \| stack - 0x18 \| stack - 0xc
+unsigned int v6; // r8d \| stack - 0x8
+unsigned int v7; // r9d \| stack - 0x4</stringmatch>
+<stringmatch name="ARRAYEXTENT #4: by default the gcc -O2 loop (guard hint) writes v[5] through the array" min="1" max="1">v3\[5\] = a5;</stringmatch>
+<stringmatch name="ARRAYEXTENT #5: bound and off split the gcc -O2 v[5] into a scalar" min="2" max="2">int4 v3 \[5\]; // ecx \| edx \| esi \| r10d \| r8d \| stack - 0x18</stringmatch>
+<stringmatch name="ARRAYEXTENT #6: on and bound size the masked index's array to eight elements, both compilers" min="4" max="4">v1\[7\] = a7;</stringmatch>
+<stringmatch name="ARRAYEXTENT #7: off splits the masked array's last four elements, both compilers" min="2" max="2">int4 v1 \[4\]; // ecx \| edi \| edx \| esi \| (r10d \| )?stack - 0x1c</stringmatch>
+<stringmatch name="ARRAYEXTENT #8: struct fields read after the array escapes stay scalars, both compilers, every pass" min="12" max="12">int4 v[45]; // (r8d \| stack - 0x10|eax \| r9d \| stack - 0xc|eax \| r8d \| stack - 0x28|r9d \| stack - 0x24)$</stringmatch>
+<stringmatch name="ARRAYEXTENT #9: two adjacent indexed arrays stay two arrays in every pass" min="3" max="3">uint4 v2 \[4\]; // ebx \| 
+int4 v3 \[4\]; // ecx \| edi \| edx \| esi \| stack - 0x10 \| stack - 0x14 \| stack - 0x18 \| stack - 0xc</stringmatch>
+<stringmatch name="ARRAYEXTENT #10: the clang -O1 loop reads through the array in every pass" min="3" max="3">v1 = &amp;v5\[v4\];</stringmatch>
+</decompilertest>

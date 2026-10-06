@@ -1146,6 +1146,10 @@ pub struct ArchContext {
     /// Levels in [`crate::p3_dataflow::kuna_indexaliasguard`]; read by
     /// [`Heritage::guard`](crate::p3_dataflow::heritage::Heritage).
     pub index_alias_guard: int4,
+    /// (kuna) `option arrayextent off|bound|on`: how far the open range at an
+    /// indexed stack base reaches past upstream's four elements. Levels in
+    /// [`crate::p6_variables::kuna_arrayextent`]; read by `gather_open`.
+    pub array_extent: int4,
     /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
     /// `RulePropagateCopy` marker propagation that would leave an address-tied
     /// `COPY` output holding a call's return value with no readers, so a
@@ -1789,6 +1793,7 @@ impl ArchContext {
             cond_exe_ret_use: true,      // condexeretuse (default-on)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
+            array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)

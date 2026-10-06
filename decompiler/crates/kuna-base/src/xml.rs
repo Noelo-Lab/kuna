@@ -2019,7 +2019,9 @@ mod tests {
         // AArch64 vector lane is no part of the value (GH-873)
         // and kuna-floatglobals / a float parameter stored into a global the
         // program only moves through float registers is a float (GH-888)
-        assert_eq!(count, 452, "corpus file count drifted");
+        // and kuna-arrayextent / an indexed stack array covers the slots its
+        // index reaches past four elements (GH-867)
+        assert_eq!(count, 453, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

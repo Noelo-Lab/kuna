@@ -938,6 +938,11 @@ pub struct Architecture {
     /// (`Heritage::guardStores`), i.e. upstream.  See
     /// [`crate::p3_dataflow::kuna_indexaliasguard`] (option `indexaliasguard`).
     pub index_alias_guard: int4,
+    /// (kuna) How far the open range at an indexed stack base reaches past
+    /// upstream's four elements: `0` = upstream, `1` = to the known-bits bound
+    /// of its indices, `2` = also over contiguous write-only slots. See
+    /// [`crate::p6_variables::kuna_arrayextent`] (option `arrayextent`).
+    pub array_extent: int4,
     /// (kuna) Refuse the `RulePropagateCopy` marker propagation that would
     /// orphan an address-tied `COPY` output holding a call's return value,
     /// keeping a `local = f();` frame store in the emitted C (option
@@ -2628,6 +2633,7 @@ impl Architecture {
             cond_exe_ret_use: false, // (kuna) option condexeretuse; reset_defaults sets the shipped default
             load_guard_range: false, // (kuna) option loadguardrange; reset_defaults sets the shipped default
             index_alias_guard: 0, // (kuna) option indexaliasguard; reset_defaults sets the shipped default
+            array_extent: 0, // (kuna) option arrayextent; reset_defaults sets the shipped default
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
@@ -2944,6 +2950,7 @@ impl Architecture {
         self.cond_exe_ret_use = true; // (kuna) option condexeretuse default-on: a use of a returned value on the branch a merge block's re-test of the same condition rules out no longer rejects the output trial; 0/675 datatest assertions moved
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
         self.index_alias_guard = crate::p3_dataflow::kuna_indexaliasguard::LEVEL_GLOBAL; // (kuna) DIV-147 restored upstream Heritage::guardLoads (heritage.cc:1570), which kuna shipped behind a hard-coded highPtrPossible == false; default `global` adds guardStores' INDIRECT on a global at each STORE into its space and a LOAD guard COPY of a global at each LOAD that may read it (0/675 datatest); `load` drops both, `off` drops all, `full` adds upstream guardStores
+        self.array_extent = crate::p6_variables::kuna_arrayextent::LEVEL_ON; // (kuna) GH-867 default-on: an indexed stack array covers the slots its known-bits bound reaches and, unbounded, the contiguous write-only slots after it (0/675 datatest)
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation
@@ -3708,6 +3715,7 @@ impl Architecture {
         ctx.cond_exe_ret_use = self.cond_exe_ret_use; // condexeretuse
         ctx.load_guard_range = self.load_guard_range; // loadguardrange
         ctx.index_alias_guard = self.index_alias_guard; // indexaliasguard
+        ctx.array_extent = self.array_extent; // arrayextent
         ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim

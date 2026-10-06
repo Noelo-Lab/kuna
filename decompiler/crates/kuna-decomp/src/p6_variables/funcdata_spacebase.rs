@@ -578,13 +578,14 @@ impl Funcdata {
         // gatherVarnodes(*fd): a data-type hint per live (stack, off) Varnode.
         self.gather_varnodes(&space, &mut state);
         // gatherOpen(*fd): the open/array references the alias checker finds.
-        self.gather_open(&space, &mut state, bounds.as_ref());
+        let unbounded = self.gather_open(&space, &mut state, bounds.as_ref());
         // gatherSymbols(maptable[space->getIndex()]): the already-mapped Symbols.
         let hints = match self.get_scope_local() {
             Some(lm) => lm.gather_symbol_hints(),
             None => Vec::new(),
         };
         state.gather_symbols(&hints);
+        crate::p6_variables::kuna_arrayextent::extend_unbounded(self, &mut state, &space, &unbounded);
 
         let reach_checks = match self.get_arch().types_rc() {
             Some(t) => crate::p6_variables::kuna_storereach::prepare_hints(self, &mut state, &space, t.as_ref()),
@@ -1062,7 +1063,9 @@ impl Funcdata {
         space: &Rc<kuna_base::space::AddrSpace>,
         state: &mut crate::varmap::MapState,
         bounds: Option<&crate::varmap::ProtoBoundaries>,
-    ) {
+    ) -> Vec<super::kuna_arrayextent::OpenBase> {
+        let extent = self.get_arch().array_extent;
+        let mut unbounded = Vec::new();
         // checker.gather(&fd, spaceid, false): build the alias base/offset lists.
         let mut access = FuncdataAliasAccess { fd: self, exempt_scramble: false };
         state.checker_mut().gather(Rc::clone(space), bounds, false, &mut access);
@@ -1078,6 +1081,7 @@ impl Funcdata {
                 .map(|(i, ab)| (alias[i], ab.index, ab.base))
                 .collect()
         };
+        let base_offsets: Vec<uintb> = addbase.iter().map(|&(offset, _, _)| offset).collect();
         for (offset, index, base) in addbase {
             // ct = base->getType(); if PTR -> getPtrTo, strip arrays; else None.
             let mut ct: Option<Rc<crate::dtype::Datatype>> =
@@ -1099,7 +1103,18 @@ impl Funcdata {
             }
             super::kuna_wrappedstackaggregate::map(self, space, offset, index.is_some(), ct.as_ref());
             // If there is an index Varnode, assume at least the 4 values [0,3].
-            let min_items = if index.is_some() { 3 } else { -1 };
+            let mut min_items = if index.is_some() { 3 } else { -1 };
+            if index.is_some() && extent >= super::kuna_arrayextent::LEVEL_BOUND {
+                let elem = ct.as_ref().map(|c| c.get_align_size()).filter(|&s| s > 0).unwrap_or(1);
+                let next = super::kuna_arrayextent::next_base(space, &base_offsets, offset);
+                match super::kuna_arrayextent::bounded_items(self, space, base, offset, next, elem) {
+                    Some(items) => min_items = min_items.max(items - 1),
+                    None if extent >= super::kuna_arrayextent::LEVEL_ON => {
+                        unbounded.push(super::kuna_arrayextent::OpenBase { start: offset, elem });
+                    }
+                    None => {}
+                }
+            }
             state.add_range_pub(offset, ct, 0, crate::varmap::RangeType::Open, min_items);
         }
         // The LoadGuard/StoreGuard hint loops (C++ varmap.cc:1241-1248): each
@@ -1107,47 +1122,54 @@ impl Funcdata {
         // A guard only carries a bound once `option loadguardrange` has run the
         // ValueSet refinement (`addGuard` bails on `step == 0`), so with the
         // option off these loops add nothing.
+        let follow = extent >= super::kuna_arrayextent::LEVEL_ON;
         let load_guards: Vec<crate::heritage::LoadGuard> = self.get_load_guards().to_vec();
         for guard in &load_guards {
-            self.add_guard(state, guard, OpCode::CPUI_LOAD);
+            if let Some(base) = self.add_guard(state, guard, OpCode::CPUI_LOAD) {
+                unbounded.extend(follow.then_some(base));
+            }
         }
         let store_guards: Vec<crate::heritage::LoadGuard> = self.get_store_guards().to_vec();
         for guard in &store_guards {
-            self.add_guard(state, guard, OpCode::CPUI_STORE);
+            if let Some(base) = self.add_guard(state, guard, OpCode::CPUI_STORE) {
+                unbounded.extend(follow.then_some(base));
+            }
         }
+        unbounded
     }
 
     /// Convert a LoadGuard into an open RangeHint, attempting to make use of
     /// any data-type or index information (C++ `MapState::addGuard`,
     /// `varmap.cc:1003`).  `opc` is the expected op-code (CPUI_LOAD or
     /// CPUI_STORE); the guard is ignored if its op died or its range was never
-    /// refined (`step == 0`).
+    /// refined (`step == 0`).  Returns the open hint's base when the guard has a
+    /// step but no locked range (kuna `arrayextent`).
     fn add_guard(
         &self,
         state: &mut crate::varmap::MapState,
         guard: &crate::heritage::LoadGuard,
         opc: OpCode,
-    ) {
+    ) -> Option<super::kuna_arrayextent::OpenBase> {
         if !guard.is_valid(self, opc) {
-            return;
+            return None;
         }
         let mut step = guard.get_step();
         if step == 0 {
-            return; // No definitive sign of array access
+            return None; // No definitive sign of array access
         }
         let op = guard.op;
         let in1 = match self.obank().get(op).and_then(|o| o.get_in(1)) {
             Some(v) => v,
-            None => return,
+            None => return None,
         };
         let mut ct: Rc<crate::dtype::Datatype> = match self.vbank().get(in1) {
             Some(v) => Rc::clone(v.get_type_read_facing(op)),
-            None => return,
+            None => return None,
         };
         if ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR {
             let mut inner = match ct.get_ptr_to() {
                 Some(i) => i,
-                None => return,
+                None => return None,
             };
             while inner.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
                 inner = match inner.get_array_base() {
@@ -1167,7 +1189,7 @@ impl Funcdata {
                 .map(|v| v.get_size())
             {
                 Some(s) => s,
-                None => return,
+                None => return None,
             }
         } else {
             // The Varnode being loaded.
@@ -1179,14 +1201,14 @@ impl Funcdata {
                 .map(|v| v.get_size())
             {
                 Some(s) => s,
-                None => return,
+                None => return None,
             }
         };
         if out_size != step {
             // LOAD size doesn't match step: a field in an array of structures
             // or something more unusual.
             if out_size > step || (step % out_size) != 0 {
-                return;
+                return None;
             }
             // Since the LOAD size divides the step and we want to preserve the
             // arrayness, we pretend we have an array of the LOAD's size.
@@ -1195,15 +1217,15 @@ impl Funcdata {
         if ct.get_align_size() != step {
             // Make sure the data-type matches our step size.
             if step > 8 {
-                return; // Don't manufacture primitives bigger than 8-bytes
+                return None; // Don't manufacture primitives bigger than 8-bytes
             }
             let types = match self.get_arch().types() {
                 Some(t) => t,
-                None => return,
+                None => return None,
             };
             ct = match types.get_base(step, crate::dtype::type_metatype::TYPE_UNKNOWN) {
                 Ok(t) => t,
-                Err(_) => return,
+                Err(_) => return None,
             };
         }
         if guard.is_range_locked() {
@@ -1217,8 +1239,11 @@ impl Funcdata {
                 crate::varmap::RangeType::Open,
                 min_items - 1,
             );
+            None
         } else {
+            let elem = ct.get_align_size();
             state.add_range_pub(guard.get_minimum(), Some(ct), 0, crate::varmap::RangeType::Open, 3);
+            Some(super::kuna_arrayextent::OpenBase { start: guard.get_minimum(), elem })
         }
     }
 

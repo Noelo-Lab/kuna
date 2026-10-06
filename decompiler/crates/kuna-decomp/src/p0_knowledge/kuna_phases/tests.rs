@@ -636,6 +636,10 @@ fn option_values_live_value_present_for_110() {
                             | "indirectanchor"
                             | "calloverlap"
                             | "indexaliasguard"
+                            // (kuna) `arrayextent` takes a MODE
+                            // (`off|bound|on`) over an int field; its live
+                            // value is `Architecture::array_extent`.
+                            | "arrayextent"
                             | "spillargtrial"
                             | "paramcopyhoist"
                             | "guardarm"
