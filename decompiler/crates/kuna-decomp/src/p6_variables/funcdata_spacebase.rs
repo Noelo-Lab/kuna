@@ -1158,19 +1158,10 @@ impl Funcdata {
             return None; // No definitive sign of array access
         }
         let op = guard.op;
-        let in1 = match self.obank().get(op).and_then(|o| o.get_in(1)) {
-            Some(v) => v,
-            None => return None,
-        };
-        let mut ct: Rc<crate::dtype::Datatype> = match self.vbank().get(in1) {
-            Some(v) => Rc::clone(v.get_type_read_facing(op)),
-            None => return None,
-        };
+        let in1 = self.obank().get(op).and_then(|o| o.get_in(1))?;
+        let mut ct: Rc<crate::dtype::Datatype> = Rc::clone(self.vbank().get(in1)?.get_type_read_facing(op));
         if ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR {
-            let mut inner = match ct.get_ptr_to() {
-                Some(i) => i,
-                None => return None,
-            };
+            let mut inner = ct.get_ptr_to()?;
             while inner.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
                 inner = match inner.get_array_base() {
                     Some(b) => b,
@@ -1181,28 +1172,10 @@ impl Funcdata {
         }
         let out_size = if opc == OpCode::CPUI_STORE {
             // The Varnode being stored.
-            match self
-                .obank()
-                .get(op)
-                .and_then(|o| o.get_in(2))
-                .and_then(|v| self.vbank().get(v))
-                .map(|v| v.get_size())
-            {
-                Some(s) => s,
-                None => return None,
-            }
+            self.obank().get(op).and_then(|o| o.get_in(2)).and_then(|v| self.vbank().get(v)).map(|v| v.get_size())?
         } else {
             // The Varnode being loaded.
-            match self
-                .obank()
-                .get(op)
-                .and_then(|o| o.get_out())
-                .and_then(|v| self.vbank().get(v))
-                .map(|v| v.get_size())
-            {
-                Some(s) => s,
-                None => return None,
-            }
+            self.obank().get(op).and_then(|o| o.get_out()).and_then(|v| self.vbank().get(v)).map(|v| v.get_size())?
         };
         if out_size != step {
             // LOAD size doesn't match step: a field in an array of structures
@@ -1219,14 +1192,7 @@ impl Funcdata {
             if step > 8 {
                 return None; // Don't manufacture primitives bigger than 8-bytes
             }
-            let types = match self.get_arch().types() {
-                Some(t) => t,
-                None => return None,
-            };
-            ct = match types.get_base(step, crate::dtype::type_metatype::TYPE_UNKNOWN) {
-                Ok(t) => t,
-                Err(_) => return None,
-            };
+            ct = self.get_arch().types()?.get_base(step, crate::dtype::type_metatype::TYPE_UNKNOWN).ok()?;
         }
         if guard.is_range_locked() {
             // C++ uintb arithmetic (wraps); a locked range keeps max >= min.
