@@ -402,6 +402,11 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
     >,
+    /// (kuna `hiddenretarg`) The values a veto removed from a call's
+    /// hidden-return register, as the leaves
+    /// [`crate::kuna_hiddenretarg::value_leaves`] finds. Cleared with the
+    /// Varnodes on a restart.
+    kuna_hiddenret_vetoed: std::collections::HashSet<VarnodeId>,
     /// (kuna `armfloatargs`) The same probe of this function's own body, read by
     /// its own input recovery ([`crate::kuna_armfloatargs::mark_own_reads`]).
     kuna_own_entry_dead: Option<std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>>,
@@ -649,6 +654,7 @@ impl Funcdata {
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
             kuna_callee_entry_dead: std::collections::HashMap::new(),
+            kuna_hiddenret_vetoed: std::collections::HashSet::new(),
             kuna_own_entry_dead: None,
             kuna_callee_entry_through: std::collections::HashMap::new(),
             kuna_callee_forward: std::collections::HashMap::new(),
@@ -893,6 +899,16 @@ impl Funcdata {
     ) -> Option<&crate::kuna_calleedeadarg::CalleeEntryDead> {
         let sp = entry.get_space()?;
         self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `hiddenretarg`) Remember the leaves of a value vetoed from a call.
+    pub fn kuna_note_hiddenret_vetoed(&mut self, leaves: &[VarnodeId]) {
+        self.kuna_hiddenret_vetoed.extend(leaves.iter().copied());
+    }
+
+    /// (kuna `hiddenretarg`) Was `vn` part of a value vetoed from a call?
+    pub fn kuna_hiddenret_vetoed(&self, vn: VarnodeId) -> bool {
+        self.kuna_hiddenret_vetoed.contains(&vn)
     }
 
     /// (kuna `armfloatargs`) Record the entry-liveness probe of this function's
@@ -3549,6 +3565,7 @@ impl Funcdata {
         self.high_level_index = 0;
         self.cast_phase_index = 0;
         self.min_laned_size = self.glb.get_minimum_laned_register_size();
+        self.kuna_hiddenret_vetoed.clear();
 
         // localmap->clearUnlocked(); localmap->resetLocalWindow();  -- STUB(W4)
         // clearActiveOutput() (funcdata.cc): drop the output-trial state.

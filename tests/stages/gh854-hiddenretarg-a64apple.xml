@@ -1,0 +1,81 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:AppleSilicon:default">
+<!--
+    GH-854 (kuna), the Apple arm64 convention: AARCH64_apple.cspec lists x8 as its
+    `hiddenret` input entry exactly as the Linux AARCH64.cspec does, so a value a
+    caller leaves in x8 is printed as the next call's first argument there too.
+    gh854-hiddenretarg-a64.xml carries the full fixture and the reasoning; this
+    test runs three of its functions under this compiler spec.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring", P0 assertion
+    `option hiddenretarg on|off`.
+
+      f     mov x8,#0x38; mov x0,#3; bl foo   foo is `add x0,x0,#1; ret`
+      g     mov x8,#0x38; svc #0; bl lib      lib's body proves nothing: the
+                                              null-page constant alone
+      use   mov x8,sp; mov w0,#7; bl mk       the control: mk stores through
+                                              x8, a real hidden return
+
+    Pass 1 (`option hiddenretarg off`) reproduces the BUG: `foo(0x38,3)` and
+    `lib(0x38)`.
+    Pass 2 (`option hiddenretarg on`, the shipped default) is the FIX, and mk
+    keeps its result buffer in both passes.
+-->
+<bytechunk space="ram" offset="0x100000">
+fd7bbfa9080780d2600080d203000094
+fd7bc1a8c0035fd600040091c0035fd6
+fd7bbfa928040091600080d2fbffff97
+fd7bc1a8c0035fd6fd7bbfa9080780d2
+010000d403000094fd7bc1a8c0035fd6
+fd7bbfa9f1ffff97fd7bc1a8c0035fd6
+fd7bbfa9e80301aa010000d403000094
+fd7bc1a8c0035fd660000837480c80d2
+010000d4c0035fd6ffc300d1fd7b02a9
+fd830091e8030091e000805205000094
+e00740f9fd7b42a9ffc30091c0035fd6
+007c4093000100f9000500f9c0035fd6
+ffc300d1fd7b02a9fd830091e8030091
+2001805205000094e00740f9fd7b42a9
+ffc30091c0035fd6f2ffff17
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+<symbol space="ram" offset="0x100018" name="foo"/>
+<symbol space="ram" offset="0x100020" name="f2"/>
+<symbol space="ram" offset="0x100038" name="g"/>
+<symbol space="ram" offset="0x100050" name="lib"/>
+<symbol space="ram" offset="0x100060" name="g2"/>
+<symbol space="ram" offset="0x100078" name="cancel"/>
+<symbol space="ram" offset="0x100088" name="use"/>
+<symbol space="ram" offset="0x1000b0" name="mk"/>
+<symbol space="ram" offset="0x1000c0" name="use2"/>
+<symbol space="ram" offset="0x1000e8" name="mkthunk"/>
+</binaryimage>
+<script>
+  <com>option hiddenretarg off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option hiddenretarg on</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="hiddenretarg-apple #1: option off passes a constant left in x8 as foo's first argument (bug reproduced)" min="1" max="1">foo\(0x38,3\);</stringmatch>
+<stringmatch name="hiddenretarg-apple #2: option on drops x8 at the call to the leaf foo" min="1" max="1">foo\(3\);</stringmatch>
+<stringmatch name="hiddenretarg-apple #3: option off passes the syscall number to a callee whose body proves nothing (bug reproduced)" min="1" max="1">lib\(0x38\)</stringmatch>
+<stringmatch name="hiddenretarg-apple #4: option on drops the null-page constant from the call to lib" min="1" max="1">lib\((a0)?\)</stringmatch>
+<stringmatch name="hiddenretarg-apple #5: a callee that stores through x8 keeps its result buffer in both passes" min="2" max="2">mk\([a-z][a-z0-9]*,7\);</stringmatch>
+</decompilertest>

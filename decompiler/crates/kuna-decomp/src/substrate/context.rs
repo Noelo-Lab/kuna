@@ -986,6 +986,10 @@ pub struct ArchContext {
     /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
     /// through [`crate::p4_calls::kuna_calleedeadarg::trial_is_dead_in_callee`].
     pub callee_dead_arg: bool,
+    /// (kuna) veto a hidden-return register trial no callee could be returning
+    /// through (`hiddenretarg`).  Read by
+    /// [`crate::p4_calls::kuna_hiddenretarg::trial_is_not_hidden_return`].
+    pub hidden_ret_arg: bool,
     /// (kuna) narrow a call's `killedbycall` set to the registers a bounded
     /// decode of the callee's own body proves it writes (`calleepreserves`).
     /// Read by `Heritage::guard_calls` through
@@ -1716,6 +1720,7 @@ impl ArchContext {
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,
+            hidden_ret_arg: true,
             callee_preserves: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)

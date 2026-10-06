@@ -306,6 +306,12 @@ kuna_options! { self, p1;
         self.callee_dead_arg = val;
         Ok(msg)
     },
+    "hiddenretarg" => {
+        let (val, msg) =
+            crate::p4_calls::kuna_hiddenretarg::OptionHiddenRetArg.apply(p1)?;
+        self.hidden_ret_arg = val;
+        Ok(msg)
+    },
     "argclobber" => {
         let (val, msg) = crate::p4_calls::kuna_argclobber::OptionArgClobber.apply(p1)?;
         self.arg_clobber = val;

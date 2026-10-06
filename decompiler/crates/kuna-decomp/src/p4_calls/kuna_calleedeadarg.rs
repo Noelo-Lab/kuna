@@ -122,7 +122,7 @@ use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
-use kuna_base::types::int4;
+use kuna_base::types::{int4, uint4};
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
@@ -222,6 +222,11 @@ pub struct CalleeEntryDead {
     /// bytes written before its branch when the probe was asked to follow them.
     /// Read only by [`Self::returns_untouched`].
     skipped: Option<Box<CalleeEntryDead>>,
+    /// The bytes written where a path reached a system-call user op (`svc`),
+    /// whose kernel reads registers no p-code input names. Kept when the walk
+    /// is abandoned, since each one is positive evidence. Read by
+    /// [`Self::traps_unwritten`].
+    trap_cuts: Vec<ByteSet>,
     /// Did the walk cover every path with nothing abandoned?
     complete: bool,
 }
@@ -395,6 +400,49 @@ impl CalleeEntryDead {
             && self.leaves_untouched(idx, off, end)
     }
 
+    /// Does no path read `[addr, addr+size)` before writing it, or leave for
+    /// code the walk did not read with any of those bytes still unwritten? A
+    /// RETURN hands the register back unread, so it needs no write first.
+    pub fn never_takes(&self, addr: &Address, size: int4) -> bool {
+        let Some(sp) = addr.get_space() else { return false };
+        let (idx, off) = (self.reg_idx, addr.get_offset());
+        let end = off.wrapping_add(size.max(0) as u64);
+        size > 0
+            && end > off
+            && !self.cuts.is_empty()
+            && sp.get_index() == idx
+            && self.takes_none(idx, off, end)
+    }
+
+    /// Does some path reach a system call with a byte of `[addr, addr+size)`
+    /// still holding the caller's value, so the kernel may read it?
+    pub fn traps_unwritten(&self, addr: &Address, size: int4) -> bool {
+        let Some(sp) = addr.get_space() else { return false };
+        let (idx, off) = (self.reg_idx, addr.get_offset());
+        let end = off.wrapping_add(size.max(0) as u64);
+        sp.get_index() == idx
+            && self.trap_cuts.iter().any(|c| (off..end).any(|b| !c.contains(&(idx, b))))
+    }
+
+    /// [`Self::never_takes`] over register bytes `[off, end)`, including the
+    /// paths past a conditional return handed to [`Self::skipped`].
+    fn takes_none(&self, idx: int4, off: u64, end: u64) -> bool {
+        let overlaps = |reads: &[(int4, u64, int4)]| {
+            reads
+                .iter()
+                .any(|&(ridx, roff, rsz)| ridx == idx && roff < end && off < roff + rsz as u64)
+        };
+        let written = |c: &ByteSet| (off..end).all(|b| c.contains(&(idx, b)));
+        self.complete
+            && !self.lost
+            && !overlaps(&self.reads)
+            && !overlaps(&self.return_reads)
+            && !(off..end).any(|b| self.cond_written.contains(&(idx, b)))
+            && self.opaque_cuts.iter().all(written)
+            && self.named_cuts.iter().all(|(_, c)| written(c))
+            && self.skipped.as_deref().map_or(true, |s| s.takes_none(idx, off, end))
+    }
+
     /// Does every path this walk covered, and every path past a conditional
     /// return it handed to [`Self::skipped`], end at a return without reading
     /// or conditionally writing register bytes `[off, end)`?
@@ -419,6 +467,16 @@ impl CalleeEntryDead {
     #[cfg(test)]
     pub(crate) fn with_opaque_cut(mut self, written: Vec<(int4, u64)>) -> Self {
         self.opaque_cuts.push(written.into_iter().collect());
+        self
+    }
+
+    /// Record one system-call terminator, for the same reason.
+    #[cfg(test)]
+    pub(crate) fn with_trap_cut(mut self, written: Vec<(int4, u64)>) -> Self {
+        let cut: ByteSet = written.into_iter().collect();
+        self.opaque_cuts.push(cut.clone());
+        self.cuts.push(cut.clone());
+        self.trap_cuts.push(cut);
         self
     }
 
@@ -450,6 +508,7 @@ impl CalleeEntryDead {
             cond_written: ByteSet::new(),
             lost: false,
             skipped: None,
+            trap_cuts: Vec::new(),
             complete,
         }
     }
@@ -719,7 +778,7 @@ fn takes(stated: &crate::kuna_protoorder::RecoveredTypes, &(ridx, off, sz): &Reg
 }
 
 /// The entry-liveness probe of `entry`, from the run's cache or taken now.
-fn probe_cached(
+pub(crate) fn probe_cached(
     arch: &mut crate::architecture::Architecture,
     entry: &Address,
     reg_idx: int4,
@@ -728,7 +787,11 @@ fn probe_cached(
     let key = (sp.get_index(), entry.get_offset());
     if !arch.kuna_callee_dead_cache.contains_key(&key) {
         let follow = crate::kuna_armfloatargs::applies(arch);
-        let probed = probe_entry(arch.translate(), entry, reg_idx, follow);
+        let traps = crate::kuna_syscallregs::userop_ids(
+            &arch.userops,
+            crate::kuna_syscallregs::SyscallFamily::from_archid(&arch.archid),
+        );
+        let probed = probe_entry_with(arch.translate(), entry, reg_idx, follow, &traps);
         arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
     }
     arch.kuna_callee_dead_cache.get(&key).cloned()
@@ -835,6 +898,18 @@ pub fn probe_entry<T: kuna_sleigh::translate::Translate + ?Sized>(
     reg_idx: int4,
     follow: bool,
 ) -> CalleeEntryDead {
+    probe_entry_with(tr, entry, reg_idx, follow, &[])
+}
+
+/// [`probe_entry`], recording where a path reaches one of the system-call user
+/// ops `traps` ([`CalleeEntryDead::traps_unwritten`]).
+pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
+    tr: &T,
+    entry: &Address,
+    reg_idx: int4,
+    follow: bool,
+    traps: &[uint4],
+) -> CalleeEntryDead {
     let mut res = CalleeEntryDead { reg_idx, complete: true, ..CalleeEntryDead::default() };
     let Some(entry_space) = entry.get_space() else {
         res.complete = false;
@@ -846,10 +921,10 @@ pub fn probe_entry<T: kuna_sleigh::translate::Translate + ?Sized>(
     }
     let start = vec![Frame { at: entry.clone(), written: ByteSet::new() }];
     let mut skips = Vec::new();
-    walk(tr, &mut res, start, if follow { Skips::Aside(&mut skips) } else { Skips::Dropped });
+    walk(tr, &mut res, start, if follow { Skips::Aside(&mut skips) } else { Skips::Dropped }, traps);
     if res.complete && !skips.is_empty() {
         let mut late = CalleeEntryDead { reg_idx, complete: true, ..CalleeEntryDead::default() };
-        walk(tr, &mut late, skips, Skips::Walked);
+        walk(tr, &mut late, skips, Skips::Walked, traps);
         res.skipped = Some(Box::new(late));
     }
     if !res.complete {
@@ -882,6 +957,7 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
     res: &mut CalleeEntryDead,
     mut todo: Vec<Frame>,
     mut skips: Skips<'_>,
+    traps: &[uint4],
 ) {
     let mut visited: HashMap<(int4, u64), ByteSet> = HashMap::new();
     let mut budget = MAX_PROBE_INSTRUCTIONS;
@@ -918,7 +994,7 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
             }
         };
         let skip = if follow { Some(&mut found) } else { None };
-        match step_instruction(res, &emit, frame.written, &frame.at, len, skip) {
+        match step_instruction(res, &emit, frame.written, &frame.at, len, skip, traps) {
             Some(next) => todo.extend(next),
             None => break,
         }
@@ -1028,6 +1104,7 @@ fn step_instruction(
     at: &Address,
     len: i32,
     skip: Option<&mut Vec<Frame>>,
+    traps: &[uint4],
 ) -> Option<Vec<Frame>> {
     let incoming = written.clone();
     let mut cur = written;
@@ -1074,6 +1151,11 @@ fn step_instruction(
                 return Some(Vec::new());
             }
             OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCHIND => {
+                if op.opc == OpCode::CPUI_CALLOTHER
+                    && op.ins.first().is_some_and(|v| traps.contains(&(v.offset as uint4)))
+                {
+                    res.trap_cuts.push(cur.clone());
+                }
                 let returns = op.opc == OpCode::CPUI_CALLOTHER
                     && !emit.internal_flow
                     && note_returning_user_op(res, &emit.ops[k + 1..]);
@@ -1195,11 +1277,22 @@ pub fn seed_callee_entry_dead(
     // consult it and the decode is pure cost.
     let clobber_veto = arch.arg_clobber && !arch.kuna_protoorder_types.is_empty();
     let pass_through = arch.pass_through && !arch.kuna_protoorder_types.is_empty();
+    let reg_idx =
+        arch.manage().get_space_by_name("register").map(|s| s.get_index()).unwrap_or(-1);
+    if reg_idx < 0 {
+        return;
+    }
+    let hidden_ret = arch.hidden_ret_arg && {
+        let proto = data.get_func_proto();
+        proto.has_model()
+            && crate::p4_calls::kuna_hiddenretarg::has_register_hidden_return(proto.model(), reg_idx)
+    };
     if !arch.callee_dead_arg
         && !clobber_veto
         && !(arch.callee_arity && arch.callee_arity_live)
         && !body_arity
         && !pass_through
+        && !hidden_ret
     {
         return;
     }
@@ -1207,13 +1300,9 @@ pub fn seed_callee_entry_dead(
     // a function with fewer than two calls can never produce one — and probing
     // its callees would be pure cost.  This matters most in ghidra mode, where a
     // decode is a round trip to the host.  `calleearitybody` is the exception:
-    // its whole subject is the callee that is called ONCE.
-    if data.num_calls() < 2 && !body_arity && !pass_through {
-        return;
-    }
-    let reg_idx =
-        arch.manage().get_space_by_name("register").map(|s| s.get_index()).unwrap_or(-1);
-    if reg_idx < 0 {
+    // its whole subject is the callee that is called ONCE, and so is a model
+    // with a hidden-return register, whose veto needs no earlier call.
+    if data.num_calls() < 2 && !body_arity && !pass_through && !hidden_ret {
         return;
     }
     let mut through_memo = ThroughMemo::new();
