@@ -70,3 +70,47 @@ export function localCallees(fnData, fnByAddr) {
   }
   return out;
 }
+
+const SETS = (sym) => new RegExp(`(?:\\b${sym}\\b(?:\\s*\\[[^\\]]*\\])*\\s*(?:[-+*/%&|^]|<<|>>)?=(?!=))|(?:\\+\\+|--)\\s*\\b${sym}\\b|\\b${sym}\\b\\s*(?:\\+\\+|--)`);
+
+/** How line `text` uses `sym`: `declares`, `sets` (an assignment or ++/--) or `reads`. */
+export function useKind(text, sym, { decl = false } = {}) {
+  if (decl) return 'declares';
+  if (!/^\w+$/.test(sym)) return 'reads';
+  return SETS(sym).test(text) ? 'sets' : 'reads';
+}
+
+const USE_WORDS = { declares: 'declared', sets: 'set', reads: 'read', input: 'input' };
+
+function lineRow(r) {
+  return `<li class="xr-row" tabindex="-1" data-line="${r.line}" title="Go to line ${r.line}">` +
+    `<span class="xr-at">${r.line}</span><span class="xr-how ${r.how}">${USE_WORDS[r.how] || ''}</span>` +
+    `<code class="xr-code">${escapeHtml(r.text)}</code></li>`;
+}
+
+function siteRow(r) {
+  const how = r.kind === 'call' ? 'calls' : HOW[r.kind] || r.kind || '';
+  return `<li class="xr-row" tabindex="-1" data-fn="${escapeHtml(r.fn)}" data-site="${escapeHtml(r.site)}" title="${escapeHtml(r.instruction || '')}">` +
+    `<span class="xr-at">${escapeHtml(r.siteLabel)}</span><span class="xr-how">${escapeHtml(how)}</span>` +
+    `<span class="xr-name">${escapeHtml(r.name)}</span><code class="xr-code">${escapeHtml(r.instruction || '')}</code></li>`;
+}
+
+/**
+ * The cross-references dialog: `{title, sections: [{heading, rows, kind:
+ * 'lines'|'sites', loading, empty, note}]}`. Line rows: `{line, how, text}`;
+ * site rows: `{fn, site, siteLabel, name, kind, instruction}` (`fn` is the
+ * function to open, `site` the instruction to show in it).
+ */
+export function renderRefsDialog(model) {
+  const sections = model.sections.map((s) => {
+    const head = `<h3>${escapeHtml(s.heading)}${s.rows?.length ? ` <span class="x-count">(${s.rows.length})</span>` : ''}</h3>`;
+    if (s.loading) return head + `<p class="xr-empty">${escapeHtml(s.loading)}</p>`;
+    const body = s.rows?.length
+      ? `<ul class="xr-list">${s.rows.map(s.kind === 'lines' ? lineRow : siteRow).join('')}</ul>`
+      : `<p class="xr-empty">${escapeHtml(s.empty || 'None.')}</p>`;
+    return head + body + (s.note ? `<p class="xr-empty">${escapeHtml(s.note)}</p>` : '');
+  }).join('');
+  return `<div class="hh"><h2 id="xrefstitle">${escapeHtml(model.title)}</h2>` +
+    '<button class="d2-iconbtn small" data-act="xrefs-close" aria-label="Close" title="Close (Esc)">×</button></div>' +
+    `<div class="hb2">${model.sub ? `<p class="xr-sub">${escapeHtml(model.sub)}</p>` : ''}${sections}</div>`;
+}

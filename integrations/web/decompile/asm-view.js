@@ -236,35 +236,166 @@ function isPrologueInsn(insn, family) {
 }
 
 const JUMP = /^(JMP|B|B\.AL)$/i;
+const RET = /^(RET[NFQ]?|IRET[DQ]?|RETI|ERET|BX\s+LR|JR\s+\$?RA|BLR)$/i;
+const SAVED = /^[RE]?(BX|BP|SI|DI)$|^R1[2-5][DWB]?$/i;
+
+/** Does `insn` belong to the frame teardown before a return (x86 / AArch64)? */
+function isEpilogueInsn(insn, family) {
+  const m = (insn.mnemonic || '').toUpperCase();
+  const ops = (insn.operands || '').replace(/\s+/g, '');
+  if (family === 'x86') {
+    if (m === 'LEAVE' || m === 'POP' || m === 'NOP') return true;
+    if ((m === 'ADD' || m === 'LEA') && /^[RE]SP,/i.test(ops)) return true;
+    return m === 'MOV' && /^[RE]SP,[RE]BP$/i.test(ops);
+  }
+  if (family === 'aarch64') {
+    const lm = m.toLowerCase();
+    if (lm === 'autiasp' || lm === 'nop') return true;
+    if ((lm === 'ldp' || lm === 'ldr') && FRAME_MEM.test(ops)) return true;
+    return lm === 'add' && /^sp,(sp|x29)/i.test(ops);
+  }
+  return false;
+}
+
+/** Does this instruction only copy an incoming argument into a callee-saved register (x86 `MOV RBX,RDI`)? */
+function isArgSave(insn, family) {
+  if (family !== 'x86' || (insn.mnemonic || '').toUpperCase() !== 'MOV') return false;
+  const [dst, src] = (insn.operands || '').replace(/\s+/g, '').split(',');
+  return SAVED.test(dst || '') && ARG_REG.test(src || '') && !/^[RE]?(SI|DI)$/i.test(dst || '');
+}
 
 /**
- * Attribute the instructions the engine left unmapped (`lines: []`) to a C
- * line, the way objdump -S reads them: an instruction between a mapped A (line
- * a) and the next mapped B (line b) belongs to b when b >= a (it sets up B),
- * else to a (it finishes A); an unconditional jump in that gap, and anything
- * before it, finishes A. Before the first mapped instruction the frame setup is
- * `prologue` and the rest sets up the first line; after the last one is
- * `epilogue`. Returns one `{lines, inferred, role}` per instruction.
+ * How each instruction passes control on: the engine's `flow` and
+ * `targets_hex` when it sent them, else read from the mnemonic. Returns
+ * `{kind, targets}` per instruction (`kind` null for straight-line code).
  */
-export function inferLines(instructions, family = 'x86') {
+function flowOf(instructions) {
+  const insnIndex = new Map(instructions.map((insn, i) => [insn.address_hex, i]));
+  const engine = instructions.some((insn) => insn.flow !== undefined);
+  return instructions.map((insn) => {
+    if (engine) {
+      const targets = (insn.targets_hex || []).map((h) => insnIndex.get('0x' + BigInt(h).toString(16))).filter((j) => j !== undefined);
+      return { kind: insn.flow || null, targets };
+    }
+    const m = (insn.mnemonic || '').toUpperCase();
+    if (RET.test(m) || RET.test(`${m} ${(insn.operands || '').toUpperCase()}`)) return { kind: 'return', targets: [] };
+    if (!isBranch(m)) return { kind: null, targets: [] };
+    const j = branchTarget(insn, insnIndex);
+    const kind = j === null ? 'jumpind' : JUMP.test(m) ? 'jump' : 'cjump';
+    return { kind, targets: j === null ? [] : [j] };
+  });
+}
+
+/** The basic blocks of a listing: `[{start, end, succ}]` (`end` exclusive, `succ` block indices). */
+function basicBlocks(instructions, flows) {
+  const leader = new Set([0]);
+  flows.forEach((f, i) => {
+    if (f.kind && f.kind !== 'call' && f.kind !== 'callind') leader.add(i + 1);
+    for (const j of f.targets) if (f.kind !== 'call') leader.add(j);
+  });
+  const starts = [...leader].filter((i) => i < instructions.length).sort((a, b) => a - b);
+  const blockAt = new Map(starts.map((s, b) => [s, b]));
+  return starts.map((start, b) => {
+    const end = b + 1 < starts.length ? starts[b + 1] : instructions.length;
+    const f = flows[end - 1];
+    const succ = [];
+    if (f.kind === 'jump' || f.kind === 'cjump') for (const j of f.targets) succ.push(blockAt.get(j));
+    if (f.kind !== 'jump' && f.kind !== 'return' && f.kind !== 'jumpind' && end < instructions.length) succ.push(b + 1);
+    return { start, end, succ: succ.filter((x) => x !== undefined), last: f.kind };
+  });
+}
+
+/**
+ * Give every instruction the engine left unmapped (`lines: []`) a C line,
+ * block by block. Inside a block an instruction belongs to the next mapped
+ * one when that line comes later (it sets it up), else to the one before (it
+ * finishes it); what trails a block's last mapped instruction finishes its
+ * line, except where the block leads into a shared tail (one epilogue serving
+ * several `return`s), where it belongs to the first of that tail's lines that
+ * comes after it. A block with no mapped instruction takes its line the same
+ * way from the block that falls or jumps into it. The frame setup at the
+ * entry is `prologue`, on the signature line (`sigLine`); the cleanup before a
+ * return is `epilogue`. Nothing is inferred when the engine mapped nothing.
+ * Returns one `{lines, inferred, role}` per instruction.
+ */
+export function inferLines(instructions, family = 'x86', { sigLine = 1, endLine = null } = {}) {
+  const n = instructions.length;
   const out = instructions.map((insn) => ({ lines: insn.lines || [], inferred: false, role: null }));
-  const mapped = [];
-  instructions.forEach((insn, i) => { if ((insn.lines || []).length) mapped.push(i); });
-  if (!mapped.length) return out;
-  const lo = (i) => Math.min(...instructions[i].lines);
-  const hi = (i) => Math.max(...instructions[i].lines);
-  const infer = (i, line) => { out[i] = { lines: [line], inferred: true, role: null }; };
+  const own = (i) => (instructions[i].lines || []).length > 0;
+  if (!instructions.some((_, i) => own(i))) return out;
+  const set = (i, lines, role = null) => {
+    if (!own(i)) out[i] = { lines: [...lines], inferred: true, role };
+    else if (role) out[i].role = role;
+  };
+  const flows = flowOf(instructions);
+  const blocks = basicBlocks(instructions, flows);
+  const preds = blocks.map(() => []);
+  blocks.forEach((b, k) => b.succ.forEach((s) => preds[s].push(k)));
+
   let p = 0;
-  while (p < mapped[0] && isPrologueInsn(instructions[p], family)) out[p++].role = 'prologue';
-  for (let i = p; i < mapped[0]; i++) infer(i, lo(mapped[0]));
-  for (let k = 0; k + 1 < mapped.length; k++) {
-    const a = mapped[k], b = mapped[k + 1];
-    const la = hi(a), lb = lo(b);
-    let cut = a;
-    for (let i = a + 1; i < b; i++) if (JUMP.test(instructions[i].mnemonic || '')) cut = i;
-    for (let i = a + 1; i < b; i++) infer(i, i <= cut || lb < la ? la : lb);
+  while (p < n && !own(p) && !flows[p].kind && (isPrologueInsn(instructions[p], family) || isArgSave(instructions[p], family))) {
+    set(p, [sigLine], 'prologue');
+    p++;
   }
-  for (let i = mapped[mapped.length - 1] + 1; i < instructions.length; i++) out[i].role = 'epilogue';
+
+  const has = (i) => out[i].lines.length > 0;
+  const firstLines = (k, seen = new Set()) => {
+    if (k === undefined || seen.has(k)) return null;
+    seen.add(k);
+    const b = blocks[k];
+    for (let i = b.start; i < b.end; i++) if (has(i)) return out[i].lines;
+    return b.succ.length === 1 ? firstLines(b.succ[0], seen) : null;
+  };
+  const after = (lines, line) => {
+    if (!lines || lines.length < 2) return null;
+    const later = lines.filter((l) => l >= line);
+    return later.length ? Math.min(...later) : null;
+  };
+  const tailLine = (b, line) => (b.last === 'cjump' || b.succ.length !== 1 ? null : after(firstLines(b.succ[0]), line));
+
+  for (let pass = 0; pass < 3; pass++) {
+    for (const [k, b] of blocks.entries()) {
+      const mapped = [];
+      for (let i = b.start; i < b.end; i++) if (has(i)) mapped.push(i);
+      if (!mapped.length) {
+        const from = preds[k].map((q) => blocks[q]).map((q) => {
+          for (let i = q.end - 1; i >= q.start; i--) if (has(i)) return Math.max(...out[i].lines);
+          return null;
+        }).filter((x) => x !== null);
+        const ctx = from.length ? Math.max(...from) : null;
+        const next = firstLines(k);
+        const line = ctx !== null ? tailLine(b, ctx) ?? (next && next.length === 1 ? next[0] : ctx) : next ? Math.min(...next) : null;
+        if (line !== null) for (let i = b.start; i < b.end; i++) set(i, [line]);
+        continue;
+      }
+      for (let i = b.start; i < mapped[0]; i++) set(i, out[mapped[0]].lines);
+      for (let m = 0; m + 1 < mapped.length; m++) {
+        const a = mapped[m], c = mapped[m + 1];
+        const la = Math.max(...out[a].lines), lc = Math.min(...out[c].lines);
+        for (let i = a + 1; i < c; i++) set(i, lc >= la ? out[c].lines : [la]);
+      }
+      const last = mapped[mapped.length - 1];
+      if (last + 1 < b.end) {
+        const la = Math.max(...out[last].lines);
+        const line = tailLine(b, la) ?? la;
+        for (let i = last + 1; i < b.end; i++) set(i, [line]);
+      }
+    }
+  }
+
+  for (const b of blocks) {
+    if (b.last !== 'return') continue;
+    for (let i = b.end - 2; i >= b.start && !own(i) && !flows[i].kind && isEpilogueInsn(instructions[i], family); i--) out[i].role = 'epilogue';
+    if (own(b.end - 1) || !endLine) continue;
+    let i = b.end - 1;
+    while (i > b.start && !own(i - 1)) i--;
+    for (; i < b.end; i++) set(i, [endLine], out[i].role);
+  }
+  let prev = sigLine;
+  for (let i = 0; i < n; i++) {
+    if (has(i)) prev = Math.max(...out[i].lines);
+    else set(i, [prev], out[i].role);
+  }
   return out;
 }
 
@@ -315,7 +446,7 @@ export function renderAsm(fnData, ctx = {}) {
   let row = 0;
   for (const run of runs) {
     const lineText = run.line ? codeLines[run.line - 1] : null;
-    if (headings && run.line) {
+    if (headings && run.line && inferred?.[run.start]?.role !== 'prologue') {
       out += `<div class="d2-as" data-line="${run.line}"><span class="asn">${run.lines.join(', ')}</span>` +
         `<span class="ast">${escapeHtml(clip(lineText, 160))}</span></div>`;
     }
@@ -329,7 +460,7 @@ export function renderAsm(fnData, ctx = {}) {
         out += `<div class="d2-as role" data-role="${inf.role}">${inf.role === 'prologue' ? 'Function setup' : 'Function cleanup'}</div>`;
       }
       const role = roleStart && !headings ? `; ${inf.role}` : '';
-      const comment = i === run.start && run.line && !headings
+      const comment = i === run.start && run.line && !headings && inf?.role !== 'prologue'
         ? `; L${run.lines.join(',')}: ${clip(lineText)}` : role;
       const hint = hints.get(insn.address_hex);
       const cls = ['d2-ar', run.line ? '' : 'nomap', patched.has(insn.address_hex) ? 'pa' : ''].filter(Boolean).join(' ');

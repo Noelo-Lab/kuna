@@ -1,4 +1,4 @@
-// decompile2-learn.mjs — the study view's teaching aids, from the source tree
+// decompile-learn.mjs — the study view's teaching aids, from the source tree
 // with no build: mnemonic explanations (every mnemonic in the fixtures is
 // covered), compiler idioms, the stack-frame model and its callouts, stack
 // operands, references and the help text.
@@ -152,9 +152,9 @@ const help = helpHtml();
 for (const term of ['v1, v2', 'dat_4010', 'struct_0', 'field_0x8', 'sub_401000', 'LAB_', 'undefined4', '// rax', '// stack - 0x14', 'CONCAT44', 'SEXT48', '._4_8_']) {
   assert.ok(help.includes(term), `glossary covers ${term}`);
 }
-for (const k of ['/', 'Space', 'n', 'y', ';', 'g', 'x', '?', 'Esc']) assert.ok(HELP_KEYS.some(([key]) => key.split(/ · | /).includes(k)), `key ${k} documented`);
+for (const k of ['/', 'Space', 'n', 'y', ';', 'g', 'x', 'e', '?', 'Esc']) assert.ok(HELP_KEYS.some(([key]) => key.split(/ · | /).includes(k)), `key ${k} documented`);
 assert.ok(HELP_GLOSSARY.length >= 12);
 assert.match(help, /id="helptitle"/);
 checks.push('help glossary + keys');
 
-console.log(`DECOMPILE2 LEARN OK — ${checks.join('; ')}`);
+console.log(`DECOMPILE LEARN OK — ${checks.join('; ')}`);

@@ -1,4 +1,4 @@
-// decompile2-collab-browser.mjs — live sessions in the real /decompile/ page,
+// decompile-collab-browser.mjs — live sessions in the real /decompile/ page,
 // in tabs of one headless Chrome: Ana makes an invite link; Ben opens it in
 // another tab (the tabs meet over BroadcastChannel), receives the program and
 // sees it open by itself; a rename on one page shows on the other; a rename
@@ -13,7 +13,7 @@
 // leaving shows on the others' pages. Any uncaught page exception fails the run.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
-//   integrations/web/build.sh && node integrations/web/test/decompile2-collab-browser.mjs [--shots DIR]
+//   integrations/web/build.sh && node integrations/web/test/decompile-collab-browser.mjs [--shots DIR]
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -23,7 +23,7 @@ import { decodeCode } from '../decompile/collab/wire.js';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
-  console.log(`DECOMPILE2 COLLAB BROWSER SKIPPED — ${chromePath ? 'this Node has no global WebSocket (need 22+)' : 'no Chrome found (set CHROME=...)'}`);
+  console.log(`DECOMPILE COLLAB BROWSER SKIPPED — ${chromePath ? 'this Node has no global WebSocket (need 22+)' : 'no Chrome found (set CHROME=...)'}`);
   process.exit(0);
 }
 requireDist();
@@ -37,7 +37,7 @@ const flags = ['--disable-features=WebRtcHideLocalIpsWithMdns'];
 const chrome = await launchChrome(chromePath, { flags });
 let chrome2 = null;
 const guard = setTimeout(() => {
-  console.error(`DECOMPILE2 COLLAB BROWSER FAIL — timed out after: ${done.join('; ')}`);
+  console.error(`DECOMPILE COLLAB BROWSER FAIL — timed out after: ${done.join('; ')}`);
   chrome.close();
   chrome2?.close();
   process.exit(1);
@@ -464,7 +464,7 @@ try {
   assert.match(await code(cy), /summation/, 'and keeps the session\'s changes');
   await ok('leaving shows on the other pages; the one who left keeps the changes');
 
-  console.log(`DECOMPILE2 COLLAB BROWSER OK — ${done.join('; ')}`);
+  console.log(`DECOMPILE COLLAB BROWSER OK — ${done.join('; ')}`);
 } catch (e) {
   for (const p of pages) {
     await shot(p, `fail-${p.label.replace(/\W+/g, '-')}`).catch(() => {});
@@ -473,7 +473,7 @@ try {
     if (process.env.COLLAB_TRACE) console.error(`  links: ${JSON.stringify(await p.evaluate('window.__linkLog || []').catch(() => '?'))}`);
     console.error(`  dialog: ${JSON.stringify(await p.evaluate(`document.getElementById('d2collab')?.open ? document.getElementById('d2collab').textContent.slice(0, 300) : null`).catch(() => '?'))}`);
   }
-  console.error(`DECOMPILE2 COLLAB BROWSER FAIL after: ${done.join('; ')}`);
+  console.error(`DECOMPILE COLLAB BROWSER FAIL after: ${done.join('; ')}`);
   throw e;
 } finally {
   clearTimeout(guard);

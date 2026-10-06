@@ -1,9 +1,9 @@
-// decompile2-browser.mjs — drive the real /decompile/ page in headless Chrome
+// decompile-browser.mjs — drive the real /decompile/ page in headless Chrome
 // over the DevTools protocol: the start screen, hints off by default and on
 // with ?student=true (hover cards with them), load the fixture through the
 // file input, open main, hover a line, switch to Assembly, rename a variable,
 // patch a byte, reload to see the session restored, the Collaborate button,
-// the /decompile2/ redirect, opening pasted base64 text (button and Ctrl+V),
+// opening pasted base64 text (button and Ctrl+V),
 // the layout at 1024 and 820 px, and the Strings
 // list taking a search for "flag" to the code that uses it, and the type
 // definitions shown above a function. Any uncaught page exception fails the run.
@@ -12,7 +12,7 @@
 // Steps that need the engine's `inspect`/`--assert` surface assert the page's
 // honest fallback instead when the built wasm predates it, and say so.
 //
-// Usage:  integrations/web/build.sh && node integrations/web/test/decompile2-browser.mjs
+// Usage:  integrations/web/build.sh && node integrations/web/test/decompile-browser.mjs
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -21,7 +21,7 @@ import { requireDist, serveStatic, fixture, openSample } from './worker-harness.
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
-  console.log(`DECOMPILE2 BROWSER SKIPPED — ${chromePath ? 'this Node has no global WebSocket (need 22+)' : 'no Chrome found (set CHROME=...)'}`);
+  console.log(`DECOMPILE BROWSER SKIPPED — ${chromePath ? 'this Node has no global WebSocket (need 22+)' : 'no Chrome found (set CHROME=...)'}`);
   process.exit(0);
 }
 requireDist();
@@ -29,7 +29,7 @@ requireDist();
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const server = await serveStatic();
 const chrome = await launchChrome(chromePath);
-const guard = setTimeout(() => { console.error('DECOMPILE2 BROWSER FAIL — timed out'); chrome.close(); process.exit(1); }, 240000);
+const guard = setTimeout(() => { console.error('DECOMPILE BROWSER FAIL — timed out'); chrome.close(); process.exit(1); }, 240000);
 const done = [];
 const skipped = [];
 let page;
@@ -195,11 +195,33 @@ try {
     assert.deepEqual(rows.filter((r) => /Note at/.test(r)), ['applied Note at 11e1: prints the sum'], 'editing a note from the panel keeps one typed, applied record');
     await noExceptions('edit a comment from the rail');
 
+    await page.key('Escape');
     await page.key('x');
-    await page.waitFor(`/Called by/.test(document.getElementById('railrefsbody')?.textContent || '')`, { what: 'references', timeout: 60000 });
-    assert.match(await text('#railrefsbody'), /Calls add, sum_to and printf/, 'what main calls');
-    assert.match(await text('#railrefsbody'), /Called by _start \(uses its address\)/, 'main is referenced from _start');
-    await noExceptions('references from the engine');
+    await page.waitFor(`document.getElementById('xrefs').open && /_start/.test(document.getElementById('xrefs').textContent)`, { what: 'references', timeout: 60000 });
+    assert.match(await text('#xrefstitle'), /^References to main$/, 'x with nothing selected asks about the open function');
+    assert.deepEqual(await page.call(() => [...document.querySelectorAll('#xrefs .xr-name')].map((e) => e.textContent)), ['_start', 'add', 'sum_to', 'printf', 's_2004'],
+      'who calls main, what it calls, the data it uses');
+    await page.key('Escape');
+    await page.waitFor(`!document.getElementById('xrefs').open`, { what: 'x dialog closed' });
+    const sym = await page.call(() => document.querySelector('#ccode .t[data-kind="variable"][data-sym]').dataset.sym);
+    await page.click(`#ccode .t[data-sym="${sym}"]`);
+    await page.key('x');
+    await page.waitFor(`document.getElementById('xrefs').open && document.querySelectorAll('#xrefs .xr-row').length > 0`, { what: 'variable uses' });
+    assert.equal(await text('#xrefstitle'), `Uses of ${sym}`);
+    const useLines = await page.call(() => [...document.querySelectorAll('#xrefs .xr-row')].map((e) => Number(e.dataset.line)));
+    assert.ok(useLines.length >= 2 && useLines.every((n) => n > 0), 'one row per line that uses it');
+    await page.key('ArrowDown');
+    await page.key('Enter');
+    await page.waitFor(`!document.getElementById('xrefs').open`, { what: 'x row opened' });
+    assert.equal(await count(`#c-L${useLines[1]}.hl-sel`), 1, 'Enter on a row selects that line');
+    await noExceptions('x: references of the function and the lines a variable is on');
+
+    const railShown = () => page.call(() => !document.getElementById('rail').hidden);
+    const before = await railShown();
+    await page.key('e');
+    assert.equal(await railShown(), !before, 'e toggles the Explain panel');
+    await page.key('e');
+    assert.equal(await railShown(), before);
 
     await page.key('s');
     await sleep(200);
@@ -333,14 +355,6 @@ try {
   assert.equal(await page.call(() => document.documentElement.dataset.hints), 'off', 'and turning them off is remembered too');
   await noExceptions('an explicit toggle is remembered across reloads; ?student=true wins for its load');
 
-  await page.navigate(`${server.base}/decompile2/?student=true#join=kept-as-is`);
-  await page.waitFor(`location.pathname === '/decompile/'`, { what: 'the redirect', timeout: 20000 });
-  assert.deepEqual(await page.call(() => [location.pathname, location.search, location.hash]), ['/decompile/', '?student=true', '#join=kept-as-is'],
-    '/decompile2/ redirects to /decompile/ with the query and the invite fragment intact');
-  const moved = await (await fetch(`${server.base}/decompile2/`)).text();
-  assert.match(moved, /http-equiv="refresh" content="0; url=\.\.\/decompile\/"/, 'with a meta refresh for pages without scripts');
-  await noExceptions('/decompile2/ redirects, keeping #join=');
-
   await page.navigate(`${server.base}/decompile/`);
   await ready('#pick enabled before pasting');
   const b64 = readFileSync(fixture('sample.elf')).toString('base64');
@@ -370,10 +384,9 @@ try {
   for (const path of ['/', '/dev-viz/']) {
     const html = await (await fetch(`${server.base}${path}`)).text();
     assert.ok(/href="\.\.?\/decompile\/"/.test(html), `${path} links to /decompile/`);
-    assert.ok(!/decompile2\//.test(html), `${path} does not link to /decompile2/`);
   }
-  assert.ok(!/decompile2\//.test(await (await fetch(`${server.base}/decompile/`)).text()), '/decompile/ does not link to /decompile2/ either');
-  done.push('the nav links to /decompile/, and nothing to /decompile2/');
+  assert.equal((await fetch(`${server.base}/decompile2/`)).status, 404, 'the old /decompile2/ address is gone');
+  done.push('the nav links to /decompile/; /decompile2/ is gone');
 
   await page.navigate(`${server.base}/decompile/`);
   await ready('before the crackme');
@@ -455,7 +468,7 @@ try {
   assert.notEqual(await page.call(() => getComputedStyle(document.getElementById('c-L1')).display), 'none', 'and unfolds them');
   await noExceptions('the struct the decompiler worked out is defined above the function, in a block that folds');
 
-  console.log(`DECOMPILE2 BROWSER OK — ${done.join('; ')}` + (skipped.length ? `; SKIPPED: ${skipped.join('; ')}` : ''));
+  console.log(`DECOMPILE BROWSER OK — ${done.join('; ')}` + (skipped.length ? `; SKIPPED: ${skipped.join('; ')}` : ''));
 } finally {
   clearTimeout(guard);
   page?.close();
