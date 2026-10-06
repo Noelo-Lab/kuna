@@ -2179,6 +2179,7 @@ impl Funcdata {
         self.vbank_mut().get_mut(invn).expect("onlyOpUse: stale invn").set_mark();
         varlist.push((invn, main_flags));
         let active_output = self.get_active_output().is_some();
+        let forced_return = crate::p4_calls::kuna_voidret::scoring_return(self, opmatch);
         let mut i = 0;
         while i < varlist.len() {
             let (vn, base_flags) = varlist[i];
@@ -2193,6 +2194,11 @@ impl Funcdata {
                 // Varnode nor carries it onward.  See
                 // [`crate::p4_calls::kuna_zeroidiomuse`].
                 if crate::p4_calls::kuna_zeroidiomuse::op_discards_operand(self, op) {
+                    continue;
+                }
+                // (kuna) `voidret` — a forced return value may also be stored
+                // and branched on.  See [`crate::p4_calls::kuna_voidret::returned_use`].
+                if forced_return && crate::p4_calls::kuna_voidret::returned_use(self, op, vn) {
                     continue;
                 }
                 let o = match self.obank().get(op) {
@@ -2345,6 +2351,9 @@ impl Funcdata {
                 let subvn = self.obank().get(op).and_then(|o| o.get_out());
                 if let Some(subvn) = subvn {
                     if self.vbank().get(subvn).map(|v| v.is_persist()).unwrap_or(false) {
+                        if forced_return {
+                            continue;
+                        }
                         res = false;
                         break;
                     }

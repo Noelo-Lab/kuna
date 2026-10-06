@@ -3011,29 +3011,44 @@ fn a_float_return_beside_a_global_read_stays_an_integer() {
 
 /// The entry hands `f`'s `eax` to `ExitProcess`, so `f` is decompiled again to
 /// return it, and that decompile restarts once its second indirect call
-/// resolves to `ExitProcess`. The pass before the restart returned `eax`, the
-/// pass after it refused, and the first pass's output survived: `int
-/// sub_401020(..)` around a bare `return;`. No function that declares a return
-/// type prints one.
+/// resolves to `ExitProcess`. On its one returning path `f` returns the handle
+/// the comparison also reads: `return -1;`. Patched to also load through the
+/// handle on that path (`je` to a `mov ecx,[eax]` the `ExitProcess` path jumps
+/// over), the pass before the restart returned `eax`, joined with what the
+/// unresolved call left, and the pass after it refused the handle; the first
+/// pass's output survived as `int sub_401020(..)` around a bare `return;`, and
+/// the function must be `void` again. No function that declares a return type
+/// prints a bare `return;`.
 #[test]
 fn a_return_refused_after_a_restart_leaves_the_function_void() {
-    let bin = repo_root()
-        .join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_restart_pe_i386.exe")
-        .to_str()
-        .unwrap()
-        .to_string();
+    let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_restart_pe_i386.exe");
     let sp = specs();
-    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
-    assert!(ok, "kuna decompile-all failed: {stderr}");
-    let printed = printed_functions(&stdout, &["sub_401020 "]);
-    assert!(printed.contains("void sub_401020(unsigned int a0)"), "{printed}");
-    for chunk in stdout.split("// Function: ") {
-        let mut lines = chunk.lines().skip(1);
-        let Some(sig) = lines.next() else { continue };
-        if !sig.starts_with("void ") {
-            assert!(!lines.any(|l| l.trim() == "return;"), "`{sig}` returns nothing:\n{stdout}");
+    let decompile = |bin: &str| {
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        for chunk in stdout.split("// Function: ") {
+            let mut lines = chunk.lines().skip(1);
+            let Some(sig) = lines.next() else { continue };
+            if !sig.starts_with("void ") {
+                assert!(!lines.any(|l| l.trim() == "return;"), "`{sig}` returns nothing:\n{stdout}");
+            }
         }
-    }
+        printed_functions(&stdout, &["sub_401020 "])
+    };
+    let printed = decompile(fixture.to_str().unwrap());
+    assert!(printed.contains("int sub_401020(unsigned int a0)") && printed.contains("return -1;"), "{printed}");
+
+    let mut image = std::fs::read(&fixture).unwrap();
+    let at = |image: &[u8], pattern: &[u8]| image.windows(pattern.len()).position(|w| w == pattern).unwrap();
+    let je = at(&image, &[0x74, 0x0e, 0xc7, 0x04, 0x24]);
+    image[je + 1] = 0x10;
+    let leave = at(&image, &[0xff, 0xd0, 0xc9, 0xc3]) + 2;
+    image[leave..leave + 12]
+        .copy_from_slice(&[0xeb, 0x08, 0x8b, 0x08, 0x89, 0x0d, 0x00, 0x21, 0x40, 0x00, 0xc9, 0xc3]);
+    let patched = common::scratch_file("floatret-restart-load", "exe");
+    std::fs::write(&patched, &image).unwrap();
+    let printed = decompile(patched.to_str().unwrap());
+    assert!(printed.contains("void sub_401020(unsigned int a0)"), "{printed}");
 }
 
 /// `floatret_handon_gcc_O1`: `key_ssh_name` passes `key_type_plain`'s `int` to

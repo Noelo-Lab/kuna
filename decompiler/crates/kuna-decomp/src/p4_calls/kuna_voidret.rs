@@ -110,6 +110,10 @@ pub struct Ledger {
     /// last decompile recovered is a float (`Some(true)`) or an integer or
     /// pointer (`Some(false)`): the type a listing prints for it.
     pub params: BTreeMap<(int4, uintb), Vec<Option<bool>>>,
+    /// The functions [`due`] forced to the storage their callers read over a
+    /// return recovered in other storage, not yet decompiled again: a float
+    /// return they refuse is withdrawn only if the forced decompile keeps it.
+    pub displacing: BTreeSet<(int4, uintb)>,
 }
 
 fn key(entry: &Address) -> Option<(int4, uintb)> {
@@ -168,6 +172,7 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
     for refused in arch.kuna_voidret.float_refused.values_mut() {
         refused.remove(&own);
     }
+    arch.kuna_voidret.displacing.remove(&own);
     arch.kuna_voidret.ops.insert(own, data.obank().iter_alive().count());
     if returns == Some(Returns::Float) && converts_its_return(data) {
         arch.kuna_voidret.float_refused.entry(own).or_default().insert(own);
@@ -358,8 +363,12 @@ fn float_call_result(data: &Funcdata, node: &crate::varnode::Varnode) -> bool {
 pub fn withdrawals(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
     let ledger = &mut arch.kuna_voidret;
     let float = |k: &(int4, uintb)| ledger.returns.get(k) == Some(&Returns::Float);
-    let refused: Vec<(int4, uintb)> =
-        ledger.float_refused.iter().filter(|(k, readers)| !readers.is_empty() && float(k)).map(|(k, _)| *k).collect();
+    let refused: Vec<(int4, uintb)> = ledger
+        .float_refused
+        .iter()
+        .filter(|(k, readers)| !readers.is_empty() && float(k) && !ledger.displacing.contains(k))
+        .map(|(k, _)| *k)
+        .collect();
     let mut out: BTreeSet<(int4, uintb)> =
         refused.iter().chain(ledger.unset.iter()).copied().filter(|k| !ledger.withdrawn.contains(k)).collect();
     let mut work = refused;
@@ -454,15 +463,17 @@ fn read_storage(out: &crate::varnode::Varnode) -> Option<(Address, int4)> {
 }
 
 /// The functions to decompile again: `void` ones some caller reads a result
-/// from, each forced to return in the widest storage its callers read, and
-/// forced ones a caller decompiled since reads wider (the first reader decided
-/// the width, and the driver settles after every function). Callers that
+/// from, and ones returning in storage their callers do not read
+/// ([`displaced`]), each forced to return in the widest storage its callers
+/// read, and forced ones a caller decompiled since reads wider (the first
+/// reader decided the width, and the driver settles after every function). Callers that
 /// disagree on the register refuse the function, and one already forced is
 /// withdrawn: it returns nothing again, as before the redo.
 pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
     let ledger = &mut arch.kuna_voidret;
     let mut force: Vec<((int4, uintb), (Address, int4))> = Vec::new();
     let mut withdraw: Vec<(int4, uintb)> = Vec::new();
+    let mut displace: Vec<(int4, uintb)> = Vec::new();
     for (callee, claims) in &ledger.read {
         let Some(first) = claims.first() else { continue };
         let space = |a: &Address| a.get_space().map(|s| s.get_index());
@@ -470,12 +481,17 @@ pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
         let widest = claims.iter().max_by_key(|(_, s)| *s).cloned().unwrap_or_else(|| first.clone());
         match ledger.forced.get(callee) {
             None if agree && ledger.returns.get(callee) == Some(&Returns::Void) => force.push((*callee, widest)),
+            None if agree && displaced(ledger, callee, &widest) => {
+                displace.push(*callee);
+                force.push((*callee, widest));
+            }
             Some(_) if ledger.withdrawn.contains(callee) => {}
             Some(_) if !agree => withdraw.push(*callee),
             Some((_, size)) if widest.1 > *size => force.push((*callee, widest)),
             _ => {}
         }
     }
+    ledger.displacing.extend(displace);
     let mut out = BTreeSet::new();
     for (callee, storage) in force {
         ledger.forced.insert(callee, storage);
@@ -486,6 +502,22 @@ pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
         out.insert(callee);
     }
     out
+}
+
+/// Does `callee` return a value in storage that shares no byte with `read`,
+/// what its callers read after the call?  gcc's `-fzero-call-used-regs` ends a
+/// function `int put(..)` by zeroing every call-clobbered register but `eax`,
+/// so `pxor %xmm0,%xmm0` made `put` return the constant `0.0` its callers never
+/// read; to them it returns nothing, and it is forced like a `void` one.
+fn displaced(ledger: &Ledger, callee: &(int4, uintb), read: &(Address, int4)) -> bool {
+    let register = |a: &Address| a.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR);
+    !ledger.withdrawn.contains(callee)
+        && register(&read.0)
+        && matches!(ledger.returns.get(callee), Some(Returns::Float | Returns::Other))
+        && ledger
+            .storage
+            .get(callee)
+            .is_some_and(|(addr, size)| register(addr) && !overlaps(addr, *size, &read.0, read.1))
 }
 
 /// The functions that read a function whose return a redo changed after they
@@ -559,8 +591,11 @@ pub fn return_storage(arch: &Architecture, k: (int4, uintb)) -> Option<(Address,
 }
 
 /// Put back what the function keyed `k` returned, and in what storage, before
-/// a decompile the run then discarded.
+/// a decompile the run then discarded. A forced decompile that displaced its
+/// return is over either way, so a float return its callers refuse is withdrawn
+/// as before.
 pub fn restore(arch: &mut Architecture, k: (int4, uintb), returns: Option<Returns>, storage: Option<(Address, int4)>) {
+    arch.kuna_voidret.displacing.remove(&k);
     match returns {
         Some(r) => {
             arch.kuna_voidret.returns.insert(k, r);
@@ -1289,3 +1324,33 @@ fn narrow(
 pub fn forced(data: &Funcdata, addr: &Address, size: int4) -> bool {
     data.kuna_forced_return().iter().any(|(faddr, fsize)| overlaps(addr, size, faddr, *fsize))
 }
+
+/// Is `opmatch` a RETURN whose forced return trial [`score_forced`] is scoring?
+/// A caller reads the register after the call, so the value there is the
+/// function's result whatever else the function does with it, and
+/// `only_op_use` lets it be stored and branched on as well ([`returned_use`]).
+pub fn scoring_return(data: &Funcdata, opmatch: crate::context::OpId) -> bool {
+    data.kuna_forced_scoring()
+        && data.obank().get(opmatch).is_some_and(|o| o.code() == kuna_num::opcodes::OpCode::CPUI_RETURN)
+}
+
+/// Is `op`'s use of `vn` one a returned value may also have: a branch on it
+/// (`if (r > 7) gj++; return r;`), a store of it as the stored value (`*p = r;
+/// return r;`; a copy into a global, `gi = r`, is the same store), or a RETURN
+/// handing it back in another register (`lea 1(%rax),%edx` leaves `x + 1` in
+/// `edx`, which the callers do not read)?  Upstream's `onlyOpUse` refuses all
+/// three, to tell a value passed in a register from a variable that happens to
+/// sit there. A load or store through the value, and a call reading it (the
+/// stream pointer of a `getc` loop, the message of an `error` call), still
+/// refuse it.
+pub fn returned_use(data: &Funcdata, op: crate::context::OpId, vn: crate::context::VarnodeId) -> bool {
+    use kuna_num::opcodes::OpCode;
+    data.obank().get(op).is_some_and(|o| match o.code() {
+        OpCode::CPUI_CBRANCH | OpCode::CPUI_RETURN => true,
+        OpCode::CPUI_STORE => o.get_in(2) == Some(vn) && o.get_in(1) != Some(vn),
+        _ => false,
+    })
+}
+
+#[cfg(test)]
+mod tests;
