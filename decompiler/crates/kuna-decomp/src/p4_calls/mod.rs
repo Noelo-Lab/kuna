@@ -9,6 +9,7 @@ pub mod modelrules;
 pub mod coreaction_protos;
 pub mod kuna_calleedeadarg;
 pub mod kuna_hiddenretarg; // (kuna) a value left in the hidden-return register is no argument a callee cannot take
+pub mod kuna_calleereadarg; // (kuna) keep a refused argument the callee's own body reads
 pub mod kuna_calleepreserves; // (kuna) the decoded callee's writes narrow the cspec killedbycall set
 pub mod kuna_callretpair; // (kuna) complete the two-register CALL output arm on any image, not just a Rust one
 pub mod kuna_calleeprotostack; // (kuna) a declared callee's prototype states its stack contract

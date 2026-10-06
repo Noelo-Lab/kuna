@@ -1,0 +1,53 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    GH-881 part B, AArch64 control for option calleereadarg: a register a
+    callee only stores is no evidence of an argument where the convention has
+    no caller-side variadic marker.
+
+        int openish(const char *p, int flags, ...);
+
+    gcc bounds a variadic callee's register save to the va_arg it can reach,
+    so openish only stores x2 to its frame (str x2, [sp, #24]) and reads it
+    back when flags has bit 6.  x86-64 callers mark a variadic call with
+    xor %eax,%eax; AArch64 callers mark nothing, so a value a caller happens
+    to hold in w2 looks like a third argument.
+
+      caller   tests z = *q in w2 and tail-calls openish(p, 0): openish(a0,0)
+               in both passes, where the store would have added w2.
+      caller2  is openish(p, 0x40, m) with m tested in w2: the third argument
+               is real but only stored, so it stays out in both passes too.
+               The rule gives up this case to refuse the first.
+
+    Stage / sub-stage: P4 active input-trial scoring, option calleereadarg
+    off|on.  Both passes print the same calls.
+-->
+<bytechunk space="ram" offset="0x100000">
+ff8300d1e20f00f90300805241003036e31b40b9000040390000030bff830091
+c0035fd6220040b95f1400716c00005401008052f3ffff17e003022ac0035fd6
+220040b96200f83701088052edffff17e003022ac0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="openish"/>
+<symbol space="ram" offset="0x100024" name="caller"/>
+<symbol space="ram" offset="0x100040" name="caller2"/>
+</binaryimage>
+<script>
+  <com>option calleereadarg off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu caller2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleereadarg on</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu caller2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleereadarg-a64 #1: a register a variadic callee only stores is no evidence, so openish(p, 0) keeps two arguments in BOTH passes" min="2" max="2">return openish\(a0,0\); // tail-call</stringmatch>
+<stringmatch name="calleereadarg-a64 #2: a real third argument the callee only stores stays out in BOTH passes" min="2" max="2">return openish\(a0,0x40\); // tail-call</stringmatch>
+</decompilertest>

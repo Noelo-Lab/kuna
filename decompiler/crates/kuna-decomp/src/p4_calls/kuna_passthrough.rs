@@ -248,7 +248,7 @@ fn return_only(proto: &crate::fspec::FuncProto, addr: &Address, size: int4) -> b
 /// overwrite. A variadic callee's recovered list can stop on a tail
 /// register its body saves (gnulib `open_safer(char const *,int,...)` saves only
 /// `rdx`), so the caller's side is what says the tail is optional.
-fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
+pub(crate) fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
     let fc = data.get_call_specs(idx);
     let proto = fc.proto();
     let mut cur = data.op_previous_op(fc.get_op());
@@ -298,6 +298,19 @@ fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
 /// `version_etc(FILE *,char const *,char const *,char const *,...)` would come
 /// out with fourteen parameters.
 fn reads_the_vararg_count(data: &Funcdata) -> bool {
+    vararg_count_read(data, true)
+}
+
+/// [`reads_the_vararg_count`] without a read that only stores the register:
+/// clang's `push %rax` reserves an aligned stack slot, and is no
+/// `test %al,%al`. Read by [`crate::p4_calls::kuna_calleereadarg`].
+pub(crate) fn tests_the_vararg_count(data: &Funcdata) -> bool {
+    vararg_count_read(data, false)
+}
+
+/// Does the entry block read the return-only register before writing it,
+/// counting a read by a `STORE` of its value only with `stores`?
+fn vararg_count_read(data: &Funcdata, stores: bool) -> bool {
     if data.bblocks_get_size() == 0 {
         return false;
     }
@@ -310,6 +323,9 @@ fn reads_the_vararg_count(data: &Funcdata) -> bool {
             return false;
         }
         for i in 0..o.num_input() {
+            if !stores && i == 2 && o.code() == OpCode::CPUI_STORE {
+                continue;
+            }
             let Some(v) = o.get_in(i).and_then(|v| data.vbank().get(v)) else { continue };
             if !return_only(proto, v.get_addr(), v.get_size()) {
                 continue;
@@ -1113,7 +1129,7 @@ pub fn extension(have: &[Address], stated: &[Address], offered: &[Address]) -> V
 
 /// The low `width` bytes of `vn`, as a `SUBPIECE` inserted before `op`: what
 /// `buildInputFromTrials` does for a trial narrower than its Varnode.
-fn truncate_before(data: &mut Funcdata, vn: VarnodeId, width: int4, op: OpId) -> Option<VarnodeId> {
+pub(crate) fn truncate_before(data: &mut Funcdata, vn: VarnodeId, width: int4, op: OpId) -> Option<VarnodeId> {
     let (vaddr, vsize) = data.vbank().get(vn).map(|v| (v.get_addr().clone(), v.get_size()))?;
     let big_endian = data.get_arch().manage().get_default_code_space().map(|s| s.is_big_endian()).unwrap_or(false);
     let outaddr = if big_endian { &vaddr + ((vsize - width) as i64) } else { vaddr };

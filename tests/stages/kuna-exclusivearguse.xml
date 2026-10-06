@@ -39,6 +39,11 @@
     Phase: P4 active input-trial scoring, option exclusivearguse off|on.  Pass 1
     (off) pins the bug: append_slow() with no arguments.  Pass 2 (on, the
     shipped default) pins all three.  Nothing else moves.
+
+    `calleereadarg` is off in pass 1: append_slow reads rdi, rsi and rdx on
+    entry, so that rule passes all three at both calls by itself and would
+    hide the bug.  Pass 2 is the shipped default, with both rules on, and
+    there the loop control gets all three from calleereadarg.
 -->
 <bytechunk space="ram" offset="0x401000">
 488b0748897708440fb6124488104889c2c366662e0f1f8400000000000f1f00400fb6c6488d15d50f00004801c2488b7708483b7710740c0fb60288064883470801eb05e8b7ffffffc3660f1f44000053554889fb4889f54889df4889ea488b7308483b7310740c0fb60288064883430801eb05e887ffffff836b180175d95d5bc3
@@ -52,6 +57,7 @@
 <symbol space="ram" offset="0x402000" name="table"/>
 </binaryimage>
 <script>
+  <com>option calleereadarg off</com>
   <com>option exclusivearguse off</com>
   <com>lo fu append</com>
   <com>decompile</com>
@@ -59,6 +65,7 @@
   <com>lo fu append_loop</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option calleereadarg on</com>
   <com>option exclusivearguse on</com>
   <com>lo fu append</com>
   <com>decompile</com>
@@ -70,7 +77,8 @@
 </script>
 <stringmatch name="EXCLUSIVEARGUSE #1: off, the slow-path call has an empty argument list" min="1" max="1">append_slow\(\)</stringmatch>
 <stringmatch name="EXCLUSIVEARGUSE #2: on, the write cursor and the source byte both reach the call" min="1" max="1">append_slow\(a0,v[0-9]+,&amp;table\[a1\]\)</stringmatch>
-<stringmatch name="EXCLUSIVEARGUSE #3: the loop control keeps its one argument in BOTH passes, so a back edge still counts the dereference as competing" min="2" max="2">append_slow\(a0\)</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #3: with both rules off the loop control keeps its one argument, so a back edge still counts the dereference as competing" min="1" max="1">append_slow\(a0\)</stringmatch>
 <stringmatch name="EXCLUSIVEARGUSE #4: append's fast path still writes the byte it read in BOTH passes, so only the argument list moved" min="2" max="2">= table\[a1\];</stringmatch>
-<stringmatch name="EXCLUSIVEARGUSE #5: the loop control's fast path is untouched in BOTH passes" min="2" max="2">\*\(\(char \*\*\)a0\)\[1\] = \*a1;</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #5: the loop control's fast path still stores the byte it reads in BOTH passes" min="2" max="2">= \*a1;</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #6: at the shipped default the loop control passes the cursor and the source byte too, because append_slow reads rdi, rsi and rdx (calleereadarg)" min="1" max="1">append_slow\(a0,v[0-9]+,a1\)</stringmatch>
 </decompilertest>

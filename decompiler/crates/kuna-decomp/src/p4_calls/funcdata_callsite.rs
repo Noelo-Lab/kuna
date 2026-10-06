@@ -53,6 +53,8 @@ pub struct PendingCallFixup {
     pub body: Option<crate::p4_calls::kuna_calleearitybody::PendingBodyArgs>,
     /// The forwarded-register extension candidate (`passthrough`).
     pub pass_through: Option<crate::p4_calls::kuna_passthrough::PendingPassThrough>,
+    /// The callee-read extension candidate (`calleereadarg`).
+    pub read_arg: Option<crate::p4_calls::kuna_calleereadarg::PendingReadArg>,
 }
 
 /// C++ `FuncCallSpecs::checkInputTrialUse` (`fspec.cc:5592`).
@@ -446,12 +448,14 @@ pub fn build_input_from_trials(
     }
     // (kuna) `calleearityfwd` / `calleearitylive`: capture the retry candidate
     // while the trials and the CALL's pre-rewrite inputs are both still there.
+    let read_arg = crate::p4_calls::kuna_calleereadarg::capture(fc, data);
     let pending = if newparam.len() < 2 {
         PendingCallFixup {
             rescue: crate::p4_calls::kuna_calleearityfwd::capture_empty_call(fc, data),
             extend: None,
             body: crate::p4_calls::kuna_calleearitybody::capture_lone_call(fc, data),
             pass_through,
+            read_arg,
         }
     } else {
         PendingCallFixup {
@@ -459,6 +463,7 @@ pub fn build_input_from_trials(
             extend: crate::p4_calls::kuna_calleearitylive::capture_partial_call(fc, data),
             body: None,
             pass_through,
+            read_arg,
         }
     };
     let _ = data.op_set_all_input(op, &newparam);
