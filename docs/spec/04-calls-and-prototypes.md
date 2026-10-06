@@ -3342,10 +3342,12 @@ r1,r1,r0; add r0,r0,r0,lsl #1; vmsr fpscr,r1; bx lr` is an `int` function that
 used `r1` as the scratch for the write, and also a 64-bit function that writes
 its own high word to `fpscr`. The first is what clang emits whenever `r0` holds
 the result, so the default reads it that way; `option retsysreg off` gives the
-pair back. Over 19 stripped ARM firmware images at O0, O2 and O2-noinline and 90
-Lua and x86 builds (24,363 functions) one function changes, ChibiOS's
-`chEvtGetAndClearEvents` (`movs r1,#0; msr basepri,r1` before the return), to
-the 32-bit result it has, and its four callers' result variables follow.
+pair back. Over 46 stripped decbench binaries (ARM firmware at O0, O2 and
+O2-noinline, x86-64, i386 and PE) and 204 Lua, zlib and SQLite objects built for
+ARM, Thumb, Cortex-M4, AArch64, MIPS, PowerPC, PowerPC64 and i386 (59,478
+functions) one function changes, ChibiOS's `chEvtGetAndClearEvents` (`movs
+r1,#0; msr basepri,r1` before the return), to the 32-bit result it has, and its
+four callers' result variables follow.
 
 `tests/stages/kuna-retsysreg.xml` pins ARM `vmsr fpscr`, `msr cpsr_c` and an
 SCTLR write beside a call's result and a computed `r0`, Thumb
