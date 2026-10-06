@@ -31,6 +31,16 @@
         isb; dsb; bx lr); lock_prim is mrs r0,primask; movs r1,#1;
         msr primask,r1; bx lr.
 
+    At 0x1100 and 0x1200 (armv7a -marm -O2) and 0x1900 (Thumb), hint and
+    cache-op controls and a CP15 control-register write:
+
+        u64 pk(u32 *p) { u32 q = p[1]; __builtin_prefetch((void*)q);
+          return ((u64)q << 32) | p[0]; }     (pld [r1]; pk_t is Thumb)
+        cln, inv, pli: the same with mcr p15,0,r1,c7,c10,1 (clean data
+          cache line), mcr p15,0,r1,c7,c6,1 (invalidate it) and pli [r1]
+        int ctlk(int a) { int r = a * 3; register int v asm("r1") = 0x1005;
+          __asm volatile("mcr p15, 0, %0, c1, c0, 0" :: "r"(v)); return r; }
+
     keepc is bl g; mov r1,#0x3000000; vmsr fpscr,r1; pop {r11,pc}.
 
     The bug: return recovery takes a register copied into fpscr or cpsr, or
@@ -43,8 +53,11 @@
     the 32-bit value; keepc and keepc_t return nothing, as a bare
     bl g; pop {r11,pc} does until a caller reads the result.  callhi (the
     high word of g64's own result) and mcrr_ret (both words written to one
-    64-bit register) keep the pair.  The last pass sets option retsysreg
-    off and prints comp and raise_bp with the pair again.
+    64-bit register) keep the pair, and so do pk, pk_t, cln, inv and pli: a
+    preload or a cache op takes an address, which the high word can be, and
+    sets no processor state.  ctlk, an SCTLR write, returns the 32-bit
+    value.  The last pass sets option retsysreg off and prints comp and
+    raise_bp with the pair again.
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">
 0c009fe500009fe7000090e5800080e01eff2fe1080000000c009fe500009fe7
@@ -52,6 +65,17 @@
 0088bde8800080e00314a0e3101ae1ee1eff2fe1800080e01310a0e301f021e1
 1eff2fe100482de9eaffffebff1081e3101ae1ee0088bde80720a0e3811161e0
 902280e0013080e00200a0e1022f43ec0310a0e11eff2fe1
+</bytechunk>
+<bytechunk space="ram" offset="0x1100" readonly="true">
+041090e500f0d1f5000090e51eff2fe1
+</bytechunk>
+<bytechunk space="ram" offset="0x1200" readonly="true">
+041090e53a1f07ee000090e51eff2fe1041090e5361f07ee000090e51eff2fe1
+041090e500f0d1f4000090e51eff2fe1041090e5101f01ee000090e51eff2fe1
+800080e0051001e3101f01ee1eff2fe1
+</bytechunk>
+<bytechunk space="ram" offset="0x1900" readonly="true">
+416891f800f000687047
 </bytechunk>
 <bytechunk space="ram" offset="0x1800" readonly="true">
 40f20000c0f20000006800eb4000704780b56f46fff7f4ff4ff04071e1ee101a
@@ -65,6 +89,12 @@
 <symbol space="ram" offset="0x1054" name="compm"/>
 <symbol space="ram" offset="0x1064" name="callhi"/>
 <symbol space="ram" offset="0x1078" name="mcrr_ret"/>
+<symbol space="ram" offset="0x1100" name="pk"/>
+<symbol space="ram" offset="0x1200" name="cln"/>
+<symbol space="ram" offset="0x1210" name="inv"/>
+<symbol space="ram" offset="0x1220" name="pli"/>
+<symbol space="ram" offset="0x1240" name="ctlk"/>
+<symbol space="ram" offset="0x1900" name="pk_t"/>
 <symbol space="ram" offset="0x1800" name="gt"/>
 <symbol space="ram" offset="0x1810" name="keepc_t"/>
 <symbol space="ram" offset="0x1822" name="raise_bp"/>
@@ -72,6 +102,7 @@
 </binaryimage>
 <script>
   <com>set context TMode 1 [ram,0x1800] [ram,0x1844]</com>
+  <com>set context TMode 1 [ram,0x1900] [ram,0x190a]</com>
   <com>lo fu keepc</com>
   <com>decompile</com>
   <com>print C</com>
@@ -96,6 +127,24 @@
   <com>lo fu lock_prim</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu pk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pk_t</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cln</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu inv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pli</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ctlk</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option retsysreg off</com>
   <com>lo fu comp</com>
   <com>decompile</com>
@@ -112,4 +161,6 @@
 <stringmatch name="RETSYSREG #4: a call's untouched result beside an fpscr write is not returned" min="2" max="2">void (keepc|keepc_t)\(void\)</stringmatch>
 <stringmatch name="RETSYSREG #5: the high word of a call's own result keeps the pair" min="1" max="1">return g64\(\) \| 0xff00000000;</stringmatch>
 <stringmatch name="RETSYSREG #6: both words written to one 64-bit register keep the pair" min="1" max="1">(uint8|unsigned long long) mcrr_ret\(</stringmatch>
+<stringmatch name="RETSYSREG #8: a preload or cache op on the high word keeps the pair" min="5" max="5">(uint8|unsigned long long) (pk|pk_t|cln|inv|pli)\(</stringmatch>
+<stringmatch name="RETSYSREG #9: an SCTLR write through r1 beside a computed r0 is not returned" min="1" max="1">(int4|int) ctlk\((int4|int) a0\)</stringmatch>
 </decompilertest>

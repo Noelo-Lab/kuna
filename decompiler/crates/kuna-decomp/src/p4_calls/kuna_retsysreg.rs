@@ -13,14 +13,16 @@
 //!
 //! [`drop_set_aside`] makes such a trial inactive when it is a register the
 //! model returns only beside another one, and when at every live RETURN each
-//! value it merges is handed to the machine ([`sinks`]): read, alone or
-//! through temporaries, by a CALLOTHER that produces nothing (`msr basepri`,
-//! `msr cpsr_c`, MIPS `mtc0`), or written to a register the prototype model
-//! names nowhere whose value the function then only turns into flags (`vmsr
-//! fpscr`, Thumb's `msr cpsr_c`, which unpacks `cpsr` into the flags). The
-//! first register then stands alone. When it was refused too, as a call's
-//! untouched result is, the function returns nothing, as `bl g; pop {r11,pc}`
-//! does until a caller reads the result (`kuna_voidret`).
+//! value it merges is written to a system register ([`sinks`]): read, alone or
+//! through temporaries, by a user op that sets processor state (`msr
+//! basepri`, `msr primask`, MIPS `mtc0`, AArch64 `msr fpcr`), or written to a
+//! register the prototype model names nowhere whose value the function then
+//! only turns into flags (`vmsr fpscr`, Thumb's `msr cpsr_c`, which unpacks
+//! `cpsr` into the flags). A prefetch, cache or barrier op is no such write:
+//! it takes an address, and a returned word can be one. The first register
+//! then stands alone. When it was refused too, as a call's untouched result
+//! is, the function returns nothing, as `bl g; pop {r11,pc}` does until a
+//! caller reads the result (`kuna_voidret`).
 //!
 //! The pair stays where the second register may still be the high word of a
 //! 64-bit value. A 64-bit system register takes both words in one write (x86's
