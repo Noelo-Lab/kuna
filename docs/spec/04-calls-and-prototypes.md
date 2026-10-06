@@ -4539,23 +4539,29 @@ getv`) returns its value, and AArch64 `fwd`, whose `getk` takes `w0`, stays
 
 The claim then runs as the tail claim does, with one difference in
 `keep_tail_return_whole`: a claim that covers an own RETURN
-(`claimed_beside_own`) does not yield to a value of another storage class
-(`returns_own_value`). gcc's `-fzero-call-used-regs=all` zeroes `xmm0` before
-`keep`'s `ret` and `getv` leaves it untouched on the tail path, so that test saw
-a non-zero `xmm0` and returned it; with the option off `keep` returns that
-`xmm0` too, and with it on it returns `eax`.
+(`claimed_beside_own`, recorded on the claim as `beside_own`) does not yield to
+a value of another storage class (`returns_own_value`). gcc's
+`-fzero-call-used-regs=all` zeroes `xmm0` before `keep`'s `ret`, and `getv`
+leaves it untouched on the tail path, where it is not zero; yielding to it
+returned `xmm0`. With the option off `keep` returns that `xmm0` still, the only
+value upstream accepts there, and with it on it returns `eax`.
 
 Nothing changes where `passthrough` is inert (no callee decompiled first,
 `--option passthrough off`), so a single-function `kuna decompile` of `keep`
 still prints `void`, and a declared callee's locked output is not taken, as for
-the tail claim. MEASUREMENT_PLACEHOLDER The witness is
+the tail claim. Over 54 decbench x86-64 binaries (O2, O2-noinline and O0;
+39,323 functions), 10 ARM firmware images of the same corpus (17,332) and 813
+objects built with `clang -O2 -g` for AArch64, ARM, RISC-V 64, MIPS32, i386 and
+PPC64LE from its sources, `decompile-all` changes no function with the option
+on; the shape does not occur there. The witness is
 `decompiler/crates/kuna-cli/tests/mixed_tail_returns.rs`: gcc and clang -O2
 `keep`, clang `fwd`, a `long` variant and the `-fzero-call-used-regs` build
 return their value in `decompile-all` with no caller, and the printed C,
 compiled against the fixture at -O0 and -O2, returns what the binary returns;
 a function whose tail callee is `void` and one that leaves `eax` unwritten on
-its other path stay `void`, and so does every case with the option off. An
-AArch64 object built in the test covers `keep` and `fwd` there.
+its other path stay `void`, and with the option off so do the others but the
+scrubbed build, which returns its `xmm0`. An AArch64 object built in the test
+covers `keep` and `fwd` there.
 
 ### (kuna) `varargforward` — a declared value forwarded in its own register to a variadic call
 
