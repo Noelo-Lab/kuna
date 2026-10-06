@@ -62,3 +62,14 @@ fn aarch64_adrp_addressed_floats_are_found() {
 fn arm_hard_float_literal_pool_addressed_floats_are_found() {
     expect("floatglobal_armhf_O2", &[("gd", 8), ("gd2", 8), ("gf", 4), ("gf2", 4)]);
 }
+
+/// `floatglobal_pun.c`: `fy` reads `gd`'s bits as an integer in a case of a
+/// jump table bounded only by a mask, and through a pointer spilled among more
+/// stack slots than the walk keeps. The scan reads the masked table and records
+/// the spilled address as an escape, so `gd` is not a float.
+#[test]
+fn integer_reads_behind_a_masked_switch_or_a_spill_refuse() {
+    expect("floatglobal_pun_sw_x86_64_gcc_O2", &[]);
+    expect("floatglobal_pun_sw_x86_64_clang_O2", &[]);
+    expect("floatglobal_pun_spill_x86_64_gcc_O0", &[]);
+}

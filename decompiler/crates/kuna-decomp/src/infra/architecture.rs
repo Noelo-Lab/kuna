@@ -379,6 +379,9 @@ pub struct Architecture {
     pub kuna_float_scan: Option<Rc<crate::kuna_floatglobals::FloatScan>>,
     /// (kuna `floatglobals`) The scan's answer, once a function asked for it.
     pub kuna_float_globals: Option<Rc<crate::kuna_floatglobals::FloatGlobals>>,
+    /// (kuna `floatglobals`) The run decompiles more than one function, so the
+    /// whole-program scan is paid for whatever the image's size.
+    pub kuna_float_scan_batch: bool,
     /// (kuna `boolbyte`) Offer `bool` as a `getLocalType` candidate for a byte
     /// whose every read is a truth test.  Implementation:
     /// [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
@@ -2501,6 +2504,7 @@ impl Architecture {
             float_globals: true, // (kuna) option floatglobals; reset_defaults sets the shipped default
             kuna_float_scan: None,
             kuna_float_globals: None,
+            kuna_float_scan_batch: false,
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             partial_concat: true,
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default

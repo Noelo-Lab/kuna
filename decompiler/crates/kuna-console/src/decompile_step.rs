@@ -253,26 +253,33 @@ pub fn decompile_one_prefollowed(
         prefollowed,
     );
     // (kuna `floatglobals`) A float vote asked about a global before the
-    // whole-program scan ran: take it once for the run, and drive again.
+    // whole-program scan ran: take it once for the run, and drive again. One
+    // function of a large image does not pay for it, and refuses the global.
     if arch.kuna_float_globals.is_none()
         && result.as_ref().is_ok_and(|fd| fd.get_arch().float_globals_wanted.get())
     {
-        if let Some(input) = arch.kuna_float_scan.clone() {
-            let found = kuna_analysis::listing::kuna_floatglobals::scan(arch, &input);
-            arch.kuna_float_globals = Some(Rc::new(found));
-            result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
-                arch,
-                name,
-                entry.clone(),
-                size,
-                seed.mapped_symbols,
-                seed.usepoint_symbols,
-                seed.dynamic_symbols,
-                seed.pending_proto,
-                &flow_overrides,
-                proto_overrides,
-                seed.mapped_params,
-            );
+        let input = arch.kuna_float_scan.clone().filter(|input| {
+            arch.kuna_float_scan_batch || input.code_bytes() <= kuna_decomp::kuna_floatglobals::SINGLE_FUNCTION_SCAN_BYTES
+        });
+        match input {
+            None => arch.kuna_float_globals = Some(Rc::new(kuna_decomp::kuna_floatglobals::FloatGlobals::new())),
+            Some(input) => {
+                let found = kuna_analysis::listing::kuna_floatglobals::scan(arch, &input);
+                arch.kuna_float_globals = Some(Rc::new(found));
+                result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
+                    arch,
+                    name,
+                    entry.clone(),
+                    size,
+                    seed.mapped_symbols,
+                    seed.usepoint_symbols,
+                    seed.dynamic_symbols,
+                    seed.pending_proto,
+                    &flow_overrides,
+                    proto_overrides,
+                    seed.mapped_params,
+                );
+            }
         }
     }
     // A parked override the drive contradicts is withdrawn, and the function is

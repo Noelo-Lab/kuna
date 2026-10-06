@@ -45,6 +45,22 @@ pub struct FloatScan {
     pub seeds: Vec<u64>,
 }
 
+/// The most code a run that decompiles one function scans: the scan decodes
+/// all of it (about 0.65 s per MiB), so past this a single function refuses
+/// every global as it did without the scan.
+pub const SINGLE_FUNCTION_SCAN_BYTES: u64 = 256 * 1024;
+
+impl FloatScan {
+    /// The bytes of executable code the scan would decode.
+    pub fn code_bytes(&self) -> u64 {
+        self.sections
+            .iter()
+            .filter(|&&(_, _, flags)| flags & kuna_sleigh::loadimage::section_flags::CODE != 0)
+            .map(|&(_, size, _)| size)
+            .sum()
+    }
+}
+
 /// Does the program only move the `size`-byte global at `addr` through float
 /// registers?  `false` while the answer is not known yet, and the function is
 /// marked so the console takes the scan and decides it again.
@@ -55,6 +71,9 @@ pub(crate) fn float_only(data: &Funcdata, addr: &Address, size: int4) -> bool {
     }
     let data_space = glb.manage().get_default_data_space();
     if !addr.get_space().zip(data_space).is_some_and(|(s, d)| Rc::ptr_eq(s, d)) {
+        return false;
+    }
+    if !crate::kuna_floatreg::moved_as_a_float_here(data, addr, size) {
         return false;
     }
     match &glb.float_globals {

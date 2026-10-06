@@ -15,6 +15,13 @@
     zeroes the double gz with an integer store: both globals refuse, and
     set_gpun and setz keep their integer parameters. Hard-float ARM drops fy's
     d0 parameter (armfloatargs off), so only ff is asked there.
+
+    floatglobal_pun.c's fy stores its double into gd and also reads gd's bits
+    as an integer where the whole-program scan cannot see it: in a case of a
+    jump table no range check bounds, or through a pointer spilled among more
+    stack slots than the scan follows. The function's own code refuses the
+    global, so the parameter keeps its integer type and the read prints no
+    conversion of gd.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -82,6 +89,30 @@ c3
   <com>load function set_gpun</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatglobal_pun_sw_x86_64_gcc_O2</com>
+  <com>read symbols</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatglobal_pun_sw_x86_64_clang_O2</com>
+  <com>read symbols</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatglobal_pun_spill_x86_64_gcc_O0</com>
+  <com>read symbols</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatglobal_pun_sw_a64_O2.o</com>
+  <com>read symbols</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="FLOATGLOBALS #1: with the option off a double copied into a global prints as an integer" min="2" max="2">void fy\(unsigned long a0,unsigned int \*a1\)</stringmatch>
@@ -90,4 +121,6 @@ c3
 <stringmatch name="FLOATGLOBALS #4: a float copied into a float-only global is a float" min="3" max="3">void ff\(float4 a0,unsigned int \*a1\)</stringmatch>
 <stringmatch name="FLOATGLOBALS #5: a float memcpy'd into a global read as an integer keeps its integer type" min="3" max="3">void set_gpun\(unsigned int a0\)</stringmatch>
 <stringmatch name="FLOATGLOBALS #6: a double stored into a global an integer store zeroes keeps its integer type" min="2" max="2">void setz\(unsigned long a0\)</stringmatch>
+<stringmatch name="FLOATGLOBALS #7: a double stored into a global the same function reads as an integer keeps its integer type" min="4" max="4">void fy\(unsigned long a0(,uint4 a1)?\)</stringmatch>
+<stringmatch name="FLOATGLOBALS #8: no integer read of such a global prints as a value conversion or a reinterpretation" min="0" max="0">\(long\)gd|\(long long\)|union \{ double from</stringmatch>
 </decompilertest>

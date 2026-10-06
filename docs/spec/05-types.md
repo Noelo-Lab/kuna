@@ -2766,13 +2766,31 @@ vote asks only once everything else it checks has held, so the question is put
 only where its answer decides the vote: a global -- a data-space Varnode, or a
 load or store through a constant address -- is then the one objection left.
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_floatglobals.rs (float_only)`
-answers no while the program has not been scanned and marks the function. The
-console's decompile step (`kuna-console/src/decompile_step.rs`) then scans the
-program once and decompiles that function again; every later function of the
-run reads the answer from its `ArchContext`. An integer program rarely asks at
-all (gzip, grep, ls, bash and od never do), and when one does the scan costs
-about one percent of a whole-program decompile. A front-end without a loaded
-image (the XML datatest corpus) never scans, so every global refuses as before.
+first asks the function's own code, which the whole-program scan below can miss
+but the decompiler cannot (`kuna_floatreg.rs (moved_as_a_float_here)`): every
+Varnode of the global's storage must be the whole global, every value written
+there must come from a float operation, a float-class register (an input, or a
+call's result), memory or a constant that spells, every value read there must
+reach, through copies and joins, only float operations, stores of its bits and
+float-class registers of calls and returns, and every constant of the
+global's address must only be loaded and stored through at the global's width
+or indexed from (`used_as_an_address`): handed to a call or stored, it can read
+the global as anything. The constants are found through the function's own
+index of them, so the check costs nothing where nothing names the global. A function that adds to the bits in one case of a switch
+(`g7 = *(long *)&gd + 1` beside `gd = b`) refuses: a float there would print
+`(long)gd`, a conversion where the machine moves the bits. Only then is the scan
+asked, which answers no while the program has not been scanned and marks the
+function. The console's decompile step (`kuna-console/src/decompile_step.rs`)
+then scans the program once and decompiles that function again; every later
+function of the run reads the answer from its `ArchContext`. An integer program
+rarely asks at all (gzip, grep, ls, bash and od never do), and when one does the
+scan costs about one percent of a whole-program decompile. A run that decompiles
+one function (`kuna decompile`, the console's `decompile`) does not scan an
+image with more than 256 KiB of code (`SINGLE_FUNCTION_SCAN_BYTES`, about 0.17
+s): it refuses the global as before, and a whole-program run
+(`project::decompile_pulled`, more than one target) always scans. A front-end
+without a loaded image (the XML datatest corpus) never scans, so every global
+refuses as before.
 
 The scan
 (`decompiler/crates/kuna-analysis/src/listing/kuna_floatglobals.rs (scan)`)
@@ -2782,7 +2800,8 @@ no fall-through past a call to a no-return function, and the cases of a switch.
 A switch's table is read by `kuna_switchtable` where it can, and otherwise the
 jump is evaluated (`emulated_switch`) at every index the range check just ahead
 of it admits (the comparison feeding the conditional branch around the
-dispatch names the index register and its bound): Thumb's `tbb [pc, r3]`,
+dispatch names the index register and its bound, or, with no check, a mask of
+`2^n - 1` the index is anded with, as `switch (k & 7)` compiles): Thumb's `tbb [pc, r3]`,
 `adr r2, table; ldr pc, [r2, r3, lsl #2]` (case addresses lose the Thumb bit),
 gcc's `movslq (%rbp,%rax,4),%rax; add %rbp,%rax; jmp *%rax`. A table base set
 up before a loop that dispatches on every iteration is known only from the
@@ -2814,14 +2833,17 @@ through the integer unit), a soft-float helper's argument (a Cortex-M4F
 through the stack pointer lands in a tracked slot and comes back on the reload;
 one stored through an unknown pointer after the walk has lost the stack pointer
 (an aligned or `alloca`'d frame) may be a spill that comes back unseen, so every
-global within 256 bytes of it stays undecided.
+global within 256 bytes of it stays undecided; so does an address a register or
+slot cannot hold because the walk already tracks 64 values there (an -O0 frame
+of many locals).
 
 A global in writable data is a float of width `w` when it has an access, every
 access to it is a float access of exactly `w` bytes (4 or 8), no access of
 another address overlaps it, and no escape covers it. i386 and SPARC, whose
 position-independent code reaches its globals through a register a thunk call
 sets, are not scanned; RISC-V globals addressed through `gp` are not resolved
-here or by the decompiler, and stay pointer stores.
+here or by the decompiler, and stay pointer stores, while RISC-V globals
+addressed with `auipc` or `lui` are scanned like any other.
 
 Three votes accept such a global. The parameter vote's family may store into or
 load from it (`kuna_floatreg.rs (only_moved_as_a_float)`, a data-space Varnode
@@ -2840,11 +2862,13 @@ count such a global in a value's family as a refusal (`kuna_protoorder.rs
 (family_refuses)`).
 
 The answer is evidence for those votes, never a declaration: the global keeps
-its type, so a function that reads it is typed by its own code. A type-locked
-float global that some function reads as an integer prints a conversion
-(`return gf + 1;` for an `add` of its bits), and a misread of the program here
-must not be able to cause that. With `floatglobals off` every global refuses a
-float vote, as before the option existed.
+its type, so a function that does not ask is typed by its own code alone, and a
+function that asks is refused by its own code first. A type-locked float global
+that some function reads as an integer prints a conversion (`return gf + 1;`
+for an `add` of its bits). A misread of the program by the scan can make two
+functions disagree about what a global holds, but a function takes the float
+only after its own reads and writes of the global have passed. With `floatglobals off` every global refuses a float vote, as
+before the option existed.
 
 ### A narrow value returned zero-extended is unsigned (`kuna_zextreturn.rs`)
 

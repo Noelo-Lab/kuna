@@ -514,35 +514,9 @@ fn emulated_switch(ctx: &Ctx<'_>, vma: u64, ops: &[FullOp], body: &Body, at: Opt
         lead.push(prev);
         cur = prev.vma;
     }
-    let Some(k) = lead.iter().position(|i| i.ops.iter().any(|o| o.opcode == OpCode::CPUI_CBRANCH)) else {
+    let Some((k, reg, limit)) = range_check(ctx, &lead).or_else(|| index_mask(ctx, &lead)) else {
         return Vec::new();
     };
-    let mut guard: Option<(u64, u64)> = None;
-    'find: for prev in lead[k..].iter().take(3) {
-        for op in &prev.ops {
-            if !matches!(
-                op.opcode,
-                OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_LESSEQUAL | OpCode::CPUI_INT_SLESS | OpCode::CPUI_INT_SLESSEQUAL
-            ) {
-                continue;
-            }
-            let (Some(a), Some(b)) = (op.ins.first(), op.ins.get(1)) else { continue };
-            let (reg, limit) = if is_constant(b) && !is_constant(a) {
-                (a, b.offset)
-            } else if is_constant(a) && !is_constant(b) {
-                (b, a.offset)
-            } else {
-                continue;
-            };
-            let register =
-                reg.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR && !Rc::ptr_eq(s, ctx.data));
-            if register && limit > 0 {
-                guard = Some((reg.offset, limit));
-                break 'find;
-            }
-        }
-    }
-    let Some((reg, limit)) = guard else { return Vec::new() };
     let Some(count) = usize::try_from(limit).ok().and_then(|l| l.checked_add(1)).filter(|&c| c <= ctx.max_entries) else {
         return Vec::new();
     };
@@ -562,11 +536,10 @@ fn emulated_switch(ctx: &Ctx<'_>, vma: u64, ops: &[FullOp], body: &Body, at: Opt
         .max();
     let Some(width) = width else { return Vec::new() };
     let Some(&section) = ctx.image.exec.iter().find(|&&(lo, hi)| vma >= lo && vma < hi) else { return Vec::new() };
-    let big = ctx.image.big_endian;
     let mut out = Vec::new();
     for i in 0..count as u64 {
         let mut state = known.clone();
-        state.set_reg(reg, width, Some(Val::Const(i)), big);
+        state.set_reg(reg, width, Some(Val::Const(i)));
         for insn in &after {
             state = step(ctx, insn, state, None);
         }
@@ -580,6 +553,68 @@ fn emulated_switch(ctx: &Ctx<'_>, vma: u64, ops: &[FullOp], body: &Body, at: Opt
     out.sort_unstable();
     out.dedup();
     out
+}
+
+/// The range check ahead of a dispatch: the comparison of a register with a
+/// constant that feeds the nearest conditional branch in `lead` (nearest
+/// first), as `(the branch's position in lead, register offset, bound)`.
+fn range_check(ctx: &Ctx<'_>, lead: &[&Insn]) -> Option<(usize, u64, u64)> {
+    let k = lead.iter().position(|i| i.ops.iter().any(|o| o.opcode == OpCode::CPUI_CBRANCH))?;
+    for prev in lead[k..].iter().take(3) {
+        for op in &prev.ops {
+            if !matches!(
+                op.opcode,
+                OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_LESSEQUAL | OpCode::CPUI_INT_SLESS | OpCode::CPUI_INT_SLESSEQUAL
+            ) {
+                continue;
+            }
+            let (Some(a), Some(b)) = (op.ins.first(), op.ins.get(1)) else { continue };
+            let (reg, limit) = if is_constant(b) && !is_constant(a) {
+                (a, b.offset)
+            } else if is_constant(a) && !is_constant(b) {
+                (b, a.offset)
+            } else {
+                continue;
+            };
+            let register =
+                reg.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR && !Rc::ptr_eq(s, ctx.data));
+            if register && limit > 0 {
+                return Some((k, reg.offset, limit));
+            }
+        }
+    }
+    None
+}
+
+/// A dispatch index bounded by a mask instead of a check (`switch (k & 7)`):
+/// the nearest instruction in `lead` that ands a register with `2^n - 1`, as
+/// `(its position in lead, the register it writes, the mask)`.
+fn index_mask(ctx: &Ctx<'_>, lead: &[&Insn]) -> Option<(usize, u64, u64)> {
+    for (k, insn) in lead.iter().enumerate() {
+        for (j, op) in insn.ops.iter().enumerate() {
+            if op.opcode != OpCode::CPUI_INT_AND {
+                continue;
+            }
+            let Some(mask) = op.ins.iter().find(|i| is_constant(i)).map(|c| c.offset) else { continue };
+            if mask == 0 || mask.checked_add(1).is_none_or(|m| !m.is_power_of_two() || m as usize > ctx.max_entries) {
+                continue;
+            }
+            let mut value = op.out.clone();
+            for later in &insn.ops[j + 1..] {
+                let Some(v) = value.as_ref() else { break };
+                if matches!(later.opcode, OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT) && later.ins.first() == Some(v) {
+                    value = later.out.clone();
+                }
+            }
+            let register = value.as_ref().filter(|v| {
+                v.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR && !Rc::ptr_eq(s, ctx.data))
+            });
+            if let Some(v) = register {
+                return Some((k, v.offset, mask));
+            }
+        }
+    }
+    None
 }
 
 /// Where the computed jump among `ops` goes from `state`, when that is known.
@@ -614,7 +649,7 @@ fn jump_target(ctx: &Ctx<'_>, ops: &[FullOp], state: State) -> Option<u64> {
             temps.retain(|t| !(t.0 == out.offset && t.1 == out.size));
             temps.push((out.offset, out.size, result));
         } else if space.get_type() == spacetype::IPTR_PROCESSOR && !Rc::ptr_eq(space, ctx.code) {
-            state.set_reg(out.offset, out.size, result, ctx.image.big_endian);
+            state.set_reg(out.offset, out.size, result);
         }
     }
     None
@@ -626,11 +661,11 @@ fn entry_state(ctx: &Ctx<'_>, entry: u64) -> State {
     let at = Address::new(Rc::clone(ctx.code), entry);
     let mut state = State::default();
     if let Some((off, size)) = ctx.sp {
-        state.set_reg(off, size, Some(Val::Stack(0)), false);
+        state.set_reg(off, size, Some(Val::Stack(0)));
     }
     let mut seed = |loc: &VarnodeData, val: u64| {
         if loc.space.as_ref().is_some_and(|s| !Rc::ptr_eq(s, ctx.data) && s.get_type() == spacetype::IPTR_PROCESSOR) {
-            state.set_reg(loc.offset, loc.size, Some(Val::Const(val)), false);
+            state.set_reg(loc.offset, loc.size, Some(Val::Const(val)));
         }
     };
     let tracked = ctx.arch.with_context_db_mut(|db| db.get_tracked_set(&at).clone());
@@ -677,17 +712,21 @@ impl State {
         })
     }
 
-    fn set_reg(&mut self, off: u64, size: u32, val: Option<Val>, _big_endian: bool) {
+    /// Set the register at `off`, answering the constant the state could not
+    /// keep: past [`MAX_TRACKED`] values, or wider than eight bytes.
+    fn set_reg(&mut self, off: u64, size: u32, val: Option<Val>) -> Option<u64> {
         let end = off + u64::from(size);
         self.regs.retain(|&(o, s, _)| o + u64::from(s) <= off || end <= o);
-        if let Some(v) = val.filter(|_| self.regs.len() < MAX_TRACKED && size <= 8) {
-            let v = match v {
-                Val::Const(c) => Val::Const(mask(c, size)),
-                stack => stack,
-            };
-            let at = self.regs.partition_point(|&(o, _, _)| o < off);
-            self.regs.insert(at, (off, size, v));
+        let v = match val? {
+            Val::Const(c) => Val::Const(mask(c, size)),
+            stack => stack,
+        };
+        if self.regs.len() >= MAX_TRACKED || size > 8 {
+            return if let Val::Const(c) = v { Some(c) } else { None };
         }
+        let at = self.regs.partition_point(|&(o, _, _)| o < off);
+        self.regs.insert(at, (off, size, v));
+        None
     }
 
     fn get_slot(&self, off: i64, size: u32, big_endian: bool) -> Option<Val> {
@@ -704,13 +743,18 @@ impl State {
         })
     }
 
-    fn set_slot(&mut self, off: i64, size: u32, val: Option<Val>) {
+    /// Set the stack slot at `off`, answering the constant the state could not
+    /// keep, as [`State::set_reg`] does.
+    fn set_slot(&mut self, off: i64, size: u32, val: Option<Val>) -> Option<u64> {
         let end = off + i64::from(size);
         self.slots.retain(|&(o, s, _)| o + i64::from(s) <= off || end <= o);
-        if let Some(v) = val.filter(|_| self.slots.len() < MAX_TRACKED && size <= 8) {
-            let at = self.slots.partition_point(|&(o, _, _)| o < off);
-            self.slots.insert(at, (off, size, v));
+        let v = val?;
+        if self.slots.len() >= MAX_TRACKED || size > 8 {
+            return if let Val::Const(c) = v { Some(c) } else { None };
         }
+        let at = self.slots.partition_point(|&(o, _, _)| o < off);
+        self.slots.insert(at, (off, size, v));
+        None
     }
 
     fn kill(&mut self, ranges: &[(u64, u64)]) {
@@ -805,7 +849,11 @@ fn step(ctx: &Ctx<'_>, insn: &Insn, mut state: State, mut evidence: Option<&mut 
                         }
                         Some(Val::Stack(o)) => {
                             let kept = stored.filter(|&x| !conditional || state.get_slot(o, v.size, big) == Some(x));
-                            state.set_slot(o, v.size, kept);
+                            if let Some(x) = state.set_slot(o, v.size, kept).filter(|&x| ctx.image.is_data(x)) {
+                                if let Some(ev) = evidence.as_deref_mut() {
+                                    ev.escapes.insert(x);
+                                }
+                            }
                         }
                         None => {
                             let lost = ctx.sp.is_some_and(|(off, size)| {
@@ -842,14 +890,18 @@ fn step(ctx: &Ctx<'_>, insn: &Insn, mut state: State, mut evidence: Option<&mut 
             temps.push((out.offset, out.size, result));
         } else if space.get_type() == spacetype::IPTR_PROCESSOR && !Rc::ptr_eq(space, ctx.code) {
             let kept = result.filter(|&x| !conditional || state.get_reg(out.offset, out.size, big) == Some(x));
-            state.set_reg(out.offset, out.size, kept, big);
+            if let Some(x) = state.set_reg(out.offset, out.size, kept).filter(|&x| ctx.image.is_data(x)) {
+                if let Some(ev) = evidence.as_deref_mut() {
+                    ev.escapes.insert(x);
+                }
+            }
         }
     }
     if insn.is_call {
         state.kill(&ctx.clobbered);
         if let (Some((off, size)), Some(pop)) = (ctx.sp, ctx.extrapop) {
             if let Some(Val::Stack(o)) = state.get_reg(off, size, big) {
-                state.set_reg(off, size, Some(Val::Stack(o + pop)), big);
+                state.set_reg(off, size, Some(Val::Stack(o + pop)));
             }
         }
     }

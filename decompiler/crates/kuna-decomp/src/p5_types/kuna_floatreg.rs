@@ -247,6 +247,175 @@ fn global_read(data: &Funcdata, vn: VarnodeId) -> Option<(Address, int4)> {
     None
 }
 
+/// The most Varnodes the walk over one global's values in one function visits:
+/// every call the function makes carries the global across it in an INDIRECT.
+const MAX_GLOBAL_FAMILY: usize = 4096;
+
+/// Does this function move the `size`-byte global at `addr` only as a float:
+/// every access of it is a whole one of that width, every value written there
+/// comes from a float operation, a float register, memory or a constant that
+/// spells, and every value read there reaches only copies, float operations,
+/// stores of its bits and float registers of calls and returns?  The function's
+/// own code is the one view the whole-program scan cannot miss, and a float
+/// taken against it prints a conversion where the machine moves the bits
+/// (`v1 = (long)gd` for a case body that adds to them).
+pub(crate) fn moved_as_a_float_here(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    let Some(space) = addr.get_space() else { return false };
+    let (lo, hi) = (addr.get_offset(), addr.get_offset() + size as u64);
+    let start = Address::new(Rc::clone(space), lo.saturating_sub(16));
+    let end = Address::new(Rc::clone(space), hi);
+    for id in data.vbank().iter_loc_addr_range(&start, &end) {
+        let Some(node) = data.vbank().get(id) else { continue };
+        let (off, end) = (node.get_offset(), node.get_offset() + node.get_size() as u64);
+        if end <= lo || off >= hi || (node.get_def().is_none() && !node.is_input() && node.descend_iter().next().is_none()) {
+            continue;
+        }
+        if off != lo || node.get_size() != size || !written_as_a_float(data, id) || !read_as_a_float(data, id) {
+            return false;
+        }
+    }
+    let Some(cspace) = data.get_arch().manage().get_constant_space().map(Rc::clone) else { return false };
+    let Some(ptr) = data.get_arch().types().map(|t| t.get_size_of_pointer()) else { return false };
+    let first = Address::new(Rc::clone(&cspace), lo);
+    let last = Address::new(cspace, hi);
+    for c in data.vbank().iter_loc_addr_range(&first, &last) {
+        let Some(node) = data.vbank().get(c).filter(|n| n.is_constant() && n.get_size() == ptr) else { continue };
+        if !used_as_an_address(data, c, node.get_offset() == lo, size, 0) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Is the address `vn` (the global's own when `exact`, else one inside it)
+/// only loaded and stored through, or indexed from: every load or store
+/// through it the global's whole width, of a value moved as a float?  Handed
+/// to a call or stored, it can read the global as anything, and a float there
+/// would print the address as a bare number of another pointer type.
+fn used_as_an_address(data: &Funcdata, vn: VarnodeId, exact: bool, size: int4, depth: u32) -> bool {
+    let Some(node) = data.vbank().get(vn) else { return false };
+    node.descend_iter().all(|r| {
+        let Some(o) = data.obank().get(r).filter(|o| !o.is_dead()) else { return true };
+        let indexed = (0..o.num_input()).any(|j| o.get_in(j).and_then(|i| data.vbank().get(i)).is_some_and(|i| !i.is_constant()));
+        match o.code() {
+            OpCode::CPUI_LOAD | OpCode::CPUI_STORE if o.get_in(1) == Some(vn) => {
+                let value = if o.code() == OpCode::CPUI_LOAD { o.get_out() } else { o.get_in(2) };
+                let Some(value) = value else { return false };
+                let width = data.vbank().get(value).map_or(0, |v| v.get_size());
+                let moved = if o.code() == OpCode::CPUI_LOAD { read_as_a_float(data, value) } else { written_as_a_float(data, value) };
+                exact && width == size && moved
+            }
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB if indexed => true,
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_PTRSUB if depth < 4 => {
+                o.get_out().is_some_and(|out| used_as_an_address(data, out, exact, size, depth + 1))
+            }
+            _ => false,
+        }
+    })
+}
+
+/// Is every value `vn` takes, through copies and joins, made the way a float
+/// is: by a float operation, in a float register, out of memory, or as a
+/// constant that spells?
+fn written_as_a_float(data: &Funcdata, vn: VarnodeId) -> bool {
+    let proto = data.get_func_proto();
+    let mut work = vec![vn];
+    let mut seen: std::collections::HashSet<VarnodeId> = std::collections::HashSet::new();
+    while let Some(v) = work.pop() {
+        if !seen.insert(v) {
+            continue;
+        }
+        if seen.len() > MAX_GLOBAL_FAMILY {
+            return false;
+        }
+        let Some(node) = data.vbank().get(v) else { return false };
+        if node.is_constant() {
+            if !spells(data, v) {
+                return false;
+            }
+            continue;
+        }
+        let Some((d, o)) = node.get_def().and_then(|d| data.obank().get(d).map(|o| (d, o))) else {
+            let register = node.get_addr().get_space().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR)
+                && !node.is_persist();
+            if register && !(proto.has_model() && in_a_float_entry(proto.model().input_opt(), node)) {
+                return false;
+            }
+            continue;
+        };
+        match o.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST => work.extend(o.get_in(0)),
+            OpCode::CPUI_MULTIEQUAL => work.extend((0..o.num_input()).filter_map(|k| o.get_in(k))),
+            OpCode::CPUI_INDIRECT => work.extend(o.get_in(0)),
+            OpCode::CPUI_LOAD => {}
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                let model = data.get_call_specs_index(d).map(|i| data.get_call_specs(i)).filter(|fc| fc.proto().has_model());
+                if !model.is_some_and(|fc| in_a_float_entry(fc.proto().model().output_list(), node)) {
+                    return false;
+                }
+            }
+            code if makes_a_float(code) => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// Does every value read out of `vn` reach, through copies and joins, only
+/// float operations, stores of its bits, and float registers of calls and
+/// returns?
+fn read_as_a_float(data: &Funcdata, vn: VarnodeId) -> bool {
+    let proto = data.get_func_proto();
+    let mut work = vec![vn];
+    let mut seen: std::collections::HashSet<VarnodeId> = std::collections::HashSet::new();
+    while let Some(v) = work.pop() {
+        if !seen.insert(v) {
+            continue;
+        }
+        if seen.len() > MAX_GLOBAL_FAMILY {
+            return false;
+        }
+        let Some(node) = data.vbank().get(v) else { return false };
+        for r in node.descend_iter() {
+            let Some(o) = data.obank().get(r) else { continue };
+            match o.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT => {
+                    if o.code() == OpCode::CPUI_INDIRECT && o.get_in(0) != Some(v) {
+                        continue;
+                    }
+                    work.extend(o.get_out());
+                }
+                OpCode::CPUI_STORE => {
+                    if o.get_in(2) != Some(v) || o.get_in(1) == Some(v) {
+                        return false;
+                    }
+                }
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                    if o.get_in(0) == Some(v)
+                        || !(1..o.num_input()).filter(|&s| o.get_in(s) == Some(v)).all(|s| passed_in_a_float_register(data, r, s))
+                    {
+                        return false;
+                    }
+                }
+                OpCode::CPUI_RETURN => {
+                    if !(proto.has_model() && in_a_float_entry(proto.model().output_list(), node)) {
+                        return false;
+                    }
+                }
+                code if reads_a_float(code) => {}
+                _ => return false,
+            }
+        }
+    }
+    true
+}
+
+/// Is `node` in a float-class entry of `list`, whole or a half of one?
+fn in_a_float_entry(list: Option<&ParamListStandard>, node: &Varnode) -> bool {
+    list.and_then(|l| l.find_entry(node.get_addr(), node.get_size(), true).map(|i| l.get_entry()[i].get_type()))
+        == Some(type_class::TYPECLASS_FLOAT)
+}
+
 /// The float a call argument read straight out of read-only memory takes from
 /// the parameter it is passed to: the callee's unlocked parameter there prints
 /// as a float, the call passes it in a float register, and every other use of
