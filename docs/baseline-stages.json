@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2088,
-    2088
+    2094,
+    2094
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -323,6 +323,12 @@
     "data:FLOATGROUPING #2: exactly one of the two products prints as a flat chain",
     "data:FLOATGROUPING #3: the right-grouped sum keeps its grouping",
     "data:FLOATGROUPING #4: exactly one of the two sums prints as a flat chain",
+    "data:FLOATPARAM #1: a double stored through a pointer is a double, and so is the pointee",
+    "data:FLOATPARAM #2: a float stored through a pointer is a float",
+    "data:FLOATPARAM #3: a double stored into a field is a double",
+    "data:FLOATPARAM #4: two floats stored into an array are floats",
+    "data:FLOATPARAM #5: a double copied into a global keeps its integer type",
+    "data:FLOATPARAM #6: bits handed back in an integer register stay an integer",
     "data:FLOATRET #10: a float handed on to an integer parameter keeps its bits",
     "data:FLOATRET #1: a NaN returned in s0 is a float",
     "data:FLOATRET #2: and prints as NAN, not its bits",

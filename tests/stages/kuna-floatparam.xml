@@ -1,0 +1,96 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A parameter the calling convention passes in a floating-point register is
+    a float of that register's width (kuna_floatreg.rs, float_input_vote).
+    A strict correction: there is no option, and the one pass is the fix.
+
+    The XML wrapper only provides the harness architecture. The script loads
+    three in-tree fixtures built from floatparam.c (source beside them): gcc
+    -O0 and clang -O2 for x86-64, and clang -O2 for AArch64.
+
+    fs and ff store a double and a float through a pointer, fr into a field,
+    and sink two floats into an array. Nothing computes with the value, so the
+    fold typed it raw bytes and the prototype printed an integer, which the
+    convention passes in a general register: fs(unsigned long a0, ..) moved
+    the double from xmm0 (d0) to rdi (x0). The register makes it a float.
+
+    The refusals: fy copies its double into a global, which another function
+    may read as an integer, and bits hands the double back in rax (x0). Both
+    keep their integer type.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatparam_x86_64_O0.o</com>
+  <com>read symbols</com>
+  <com>load function fs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function bits</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sink</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatparam_x86_64.o</com>
+  <com>read symbols</com>
+  <com>load function fs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sink</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatparam_a64.o</com>
+  <com>read symbols</com>
+  <com>load function fs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function bits</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sink</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FLOATPARAM #1: a double stored through a pointer is a double, and so is the pointee" min="3" max="3">void fs\(float8 a0,unsigned int \*a1,float8 \*a2\)</stringmatch>
+<stringmatch name="FLOATPARAM #2: a float stored through a pointer is a float" min="3" max="3">void ff\(float4 a0,unsigned int \*a1,float4 \*a2\)</stringmatch>
+<stringmatch name="FLOATPARAM #3: a double stored into a field is a double" min="3" max="3">void fr\(float8 a0,</stringmatch>
+<stringmatch name="FLOATPARAM #4: two floats stored into an array are floats" min="3" max="3">void sink\(float4 a0,float4 a1,float4 \*a2\)</stringmatch>
+<stringmatch name="FLOATPARAM #5: a double copied into a global keeps its integer type" min="3" max="3">void fy\(unsigned long a0,</stringmatch>
+<stringmatch name="FLOATPARAM #6: bits handed back in an integer register stay an integer" min="2" max="2">unsigned long bits\(unsigned long a0\)</stringmatch>
+</decompilertest>

@@ -58,9 +58,16 @@ pub fn argument_requirement(
 ) -> Option<Rc<Datatype>> {
     let ct = argument_vote(data, fc, op, slot)?;
     let vn = data.obank().get(op)?.get_in(slot)?;
+    integer_bits(data, op, vn).then_some(ct)
+}
+
+/// Is the argument `vn` of the call `op` an integer whose bits a cast to a
+/// float would reinterpret?  An implied `CAST` folded into the argument counts
+/// only when its own source is integer bits or already a float.
+pub(crate) fn integer_bits(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
     let decl = data.get_arch().decl_high_type;
     let bits = |v| crate::kuna_bitcast::reinterprets_to_float(data, decl, v);
-    let node = data.vbank().get(vn)?;
+    let Some(node) = data.vbank().get(vn) else { return false };
     let folded = node
         .get_def()
         .and_then(|d| data.obank().get(d))
@@ -70,7 +77,7 @@ pub fn argument_requirement(
         bits(src)
             || data.vbank().get(src).is_some_and(|s| s.get_type().get_metatype() == type_metatype::TYPE_FLOAT)
     });
-    (bits(vn) && source_ok).then_some(ct)
+    bits(vn) && source_ok
 }
 
 fn spells_as_a_float(data: &Funcdata, vn: VarnodeId) -> bool {

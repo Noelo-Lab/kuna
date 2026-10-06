@@ -263,10 +263,14 @@ fn call_input_type_local(
     if vararg.is_some() {
         return vararg;
     }
-    if !recovered || proto.is_input_locked() {
+    if !recovered {
+        return crate::kuna_floatreg::argument_requirement(data, fc, op, slot);
+    }
+    if proto.is_input_locked() {
         return None;
     }
     crate::kuna_protoorder::call_argument_vote(data, op, fc, slot, arg_size)
+        .or_else(|| crate::kuna_floatreg::argument_vote(data, fc, op, slot))
 }
 
 /// The locked-output arm of `TypeOpCall::getOutputLocal` (typeop.cc:722-738) /
@@ -487,7 +491,9 @@ fn build_localtypes(data: &mut Funcdata) {
         let ct = if from_seed {
             ct
         } else {
-            crate::kuna_floatreg::float_register_vote(data, vn, &ct).unwrap_or(ct)
+            crate::kuna_floatreg::float_register_vote(data, vn, &ct)
+                .or_else(|| crate::kuna_floatreg::float_input_vote(data, vn, &ct))
+                .unwrap_or(ct)
         };
         let ct = if from_seed {
             ct

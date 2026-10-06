@@ -1994,7 +1994,9 @@ mod tests {
         // function-pointer type the call states (GH-869)
         // and kuna-ilp32long-mips + kuna-ilp32long-ppc / long is 4 bytes on
         // the ILP32 MIPS and PowerPC compiler specs
-        assert_eq!(count, 430, "corpus file count drifted");
+        // and kuna-floatparam / a parameter passed in a float register is a
+        // float of its width (GH-888)
+        assert_eq!(count, 431, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

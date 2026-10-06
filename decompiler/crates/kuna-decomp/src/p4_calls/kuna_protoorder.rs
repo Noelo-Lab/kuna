@@ -1106,6 +1106,20 @@ fn printed_reader_class(data: &Funcdata, call: OpId, slot: int4) -> Option<Class
     data.kuna_callee_param_float(key, index).map(|f| if f { Class::Float } else { Class::Integer })
 }
 
+/// The width of the float the call `call` reads at argument `slot`: a declared
+/// parameter's, or the type the callee's own decompile stated for its parameter
+/// at that position.  `None` where neither is a float, or no width is known.
+pub(crate) fn float_read_width(data: &Funcdata, call: OpId, slot: int4) -> Option<int4> {
+    let float = |t: &Datatype| (t.get_metatype() == type_metatype::TYPE_FLOAT).then(|| t.get_size());
+    let fc = data.get_call_specs(data.get_call_specs_index(call)?);
+    if let Some(param) = fc.proto().get_param(slot - 1).filter(|p| p.is_type_locked()) {
+        return param.get_type().and_then(|t| float(t));
+    }
+    let index = (slot - 1) as usize;
+    data.kuna_protoorder_types(fc.get_entry_address())
+        .and_then(|s| s.inputs.get(index).and_then(|(_, _, t)| float(t)))
+}
+
 /// Does the call `call` read its argument `slot` as an integer or a pointer, by
 /// its declaration or the type the callee's own decompile stated?
 pub(crate) fn reads_other_than_a_float(data: &Funcdata, call: OpId, slot: int4) -> bool {

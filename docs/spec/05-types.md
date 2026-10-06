@@ -567,7 +567,8 @@ answers the declared-type query the cast pass reads with `double` when the
 vote exists and the argument's printed type is an integer the emitter
 reinterprets
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_bitcast.rs (reinterprets_to_float)`:
-a signed, unsigned or undefined integer, but not an untyped call's result).
+a signed, unsigned or undefined integer, but not the result of a call whose
+callee declares nothing it returns).
 The inserted `CAST` prints as the union bit reinterpretation of chapter 09,
 never as a numeric `(double)u`. A value that is already a `double` needs no
 cast, and a struct or pointer in that register keeps no requirement, since the
@@ -2628,6 +2629,106 @@ none new, and go from 15 to 18 on the cast corpus: find's
 declaration shows the body multiplying it), and the three callers that never
 set that register pass one argument too few, which the counter reads
 positionally.
+
+### A parameter passed in a float register is a float (`kuna_floatreg.rs`)
+
+The register declares a parameter the same way: one the convention passes in a
+float-class register is a float of that register's width. `void fs(int *p,
+double b, double *q) { *q = b; *p = 1; }` only stores `b`, so the fold left it
+raw bytes, `ActionInputPrototype` copied `unknown8` into the prototype, and the
+printer spelled it `unsigned long`: `void fs(unsigned long a0,unsigned int
+*a1,unsigned long *a2)` declares an integer the convention passes in `rdi`
+where the machine reads `xmm0` (`d0` on AArch64, `fa0` on RISC-V), and a
+`float` parameter printed `unsigned int` the same way. Only arithmetic made one
+a float: `*q = b + 1.0` printed `double`.
+
+This is a correction, not an option.
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_floatreg.rs (float_input_vote)`
+supplies the candidate in `build_localtypes`, beside the return vote, for a 4-
+or 8-byte input Varnode that is not type-locked, of a function whose inputs are
+not locked, whose fold is raw bytes (an integer fold is evidence and stands),
+and whose storage is a float-class entry of the function's own model's input
+list, under the whole-pair test above for an ARM `s` register. The type is
+`double` for 8 bytes and `float` for 4, and `ActionInputPrototype` carries it
+into the prototype.
+
+The candidate stands only where every Varnode of the value's family is made and
+used the way a float is (`kuna_floatreg.rs (only_moved_as_a_float)`): copied,
+joined or cast; stored or loaded through a pointer, unless the function also
+moves integers through it at that width (`kuna_protoorder.rs
+(moves_integers_beside)`); computed with by a float op; the result of a call
+that returns a float; another input in a float register; or handed to a call
+that reads a float there -- by declaration or the type the callee's decompile
+stated -- or that passes the argument in a float-class register and reads it as
+nothing else. The register asked is where the call passes the argument (the
+recovered `final_input_storage`, else the declared parameter's), not where the
+value lives: copy propagation leaves a Cortex-M4F `putf2(float x, ...)` handing
+`s0` itself to `put3(u32, ...)`, which receives it in `r0`, and a float there
+printed `put3(a0,..)` of a `float a0`, storing 1 where the machine stores
+0x3fc00000. Anything else refuses: an integer op on the bits (`movq
+%xmm0,%rax; sar $63`), a use as an address, a call that takes the value in a
+general register or as an integer. That code reinterprets the bits, and a float
+vote would carry the float into its integer side; the parameter keeps its
+integer type there.
+
+Three more uses refuse, each for a reason the return vote above gives. A return,
+in any register: what a function hands back of what it received is its
+callers' to type (`float pass(float x) { return x; }` stays `unsigned int`),
+and a float there would become the function's return type, which `voidret`
+withdraws, with any return its callers forced, as soon as one caller keeps the
+result as an integer. A global, unless a symbol declares it a float of the
+value's width: a Varnode of the default data space, or a load or store through
+a pointer built from a data-space constant (`kuna_floatreg.rs
+(addresses_a_global)`, an element of a global array included). A global has one
+declaration for every function, and `void set_gi_bits(float f) { memcpy(&gi,
+&f, 4); }` beside `int use_gi(void) { return gi + 1; }` has none under which
+`gi = a0` of a `float a0` stores what the machine stores. So `void fy(int *p,
+double b) { gd = b; *p = 1; }` still prints `fy(unsigned long a0, ..)`: deciding
+that a global is a float takes evidence from the whole binary, not from one
+function that writes it.
+
+The type is the register's, not the source's: an SSE-class `struct { float x, y;
+}` that x86-64 passes in `xmm0` prints as one `double`, in the register the
+machine uses, where `unsigned long` moved it to `rdi`; AArch64 and RISC-V pass
+the pair as two floats and it prints as two `float`s. A declared prototype
+(DWARF, a signature) locks its inputs, which the candidate leaves alone. The
+parameter order is unchanged: the trial order is the compiler spec's `pentry`
+order, which lists `xmm0`..`xmm7` before `rdi`, so `fs` prints `void fs(double
+a0,unsigned int *a1,double *a2)`, and since SysV assigns the two classes
+independently, either order passes the same registers.
+
+A recovered parameter is a vote, not a declaration, so the cast pass measured
+nothing against it, and a caller that hands such a parameter what is not a
+float printed it as it was, which C converts by value. Two rules keep the
+callers in step. An untyped read of read-only memory passed in a float register
+to a parameter that prints as a float of the read's width takes the float type
+(`kuna_floatreg.rs (argument_vote)`, a vote of `call_input_type_local` after
+`protoorder`'s): x86-64 loads a `double` literal from `.rodata`
+(`movsd dat_2018(%rip),%xmm0`), and `fa(dat_2018,&gi)` reads it as the double
+the source passed. The vote holds only where every other use of the read, and
+of the INDIRECTs that carry it across calls, is one a float has. Any other
+argument that prints as an integer -- integer evidence, or raw bytes no vote
+settled, a word read out of a packed frame or a writable global -- gets a cast
+requirement instead (`kuna_floatreg.rs
+(argument_requirement)`, from `declared_input_type_local`, after the variadic
+one, `kuna_varargfloat.rs (argument_requirement)`): when the callee's parameter
+at that position is not type-locked but prints as a float -- the type the
+callee's own decompile stated, of the argument's own width
+(`kuna_protoorder.rs (float_read_width)`) -- and the call passes the argument in
+a float-class register, a 4- or 8-byte argument whose printed type is an
+integer (`kuna_varargfloat.rs (integer_bits)`, the test the variadic
+requirement makes), or that is the result of a call whose callee returns no
+float (`kuna_floatreg.rs (result_of_a_non_float_call)`: a getter of a raw global
+prints `unsigned int iget3(void)`, and `use(iget3(),..)` into a `float`
+parameter converted the bits), requires the float of its width, and the cast
+prints as a
+reinterpretation of the bits (`kuna_bitcast.rs`): `fmov s0,w8` after an `eor`
+prints `sink(((union { unsigned int from; float to; }){ .from = ((unsigned int
+*)a0)[1] ^ 0x80000000 }).to,2.0,a1)`. A NaN constant no literal spells gets no
+requirement. The requirement holds as well for a parameter arithmetic already
+made a float, whose callers converted the same way: crazyflie's newlib `sinf`
+hands `sub_8004afc` the reduced argument out of a stack slot it types `unsigned
+int` (`vldr s0, [sp]`), and printed it converted.
 
 ### A narrow value returned zero-extended is unsigned (`kuna_zextreturn.rs`)
 
