@@ -3232,6 +3232,67 @@ standing for "the callee wrote something here" — with two `SUBPIECE`s of a val
 the CALL now produces, so no statement is removed that was not a read of an
 undefined local, and no call can lose an argument. Set it off to restore the stub.
 
+**A caller that reads only the second register.** `unsigned hib(unsigned a) {
+return (unsigned char)(full(a) >> 32); }` compiles on 32-bit ARM to `bl full;
+uxtb r0,r1`: `r0` is overwritten unread, so its output trial finds no Varnode,
+and only the `r1` trial is active. No output rule returns the second register of
+a pair without the first, so the model used nothing, the call kept no output, and
+`r1` printed as a local nothing assigns. i386 reads `DL` (`movzbl %dl,%eax`),
+which heritage plants as a killed INDIRECT creation with no trial at all because
+it is narrower than the `EDX:EAX` entry's minimum; a Cortex-M `uxtb r1,r1` beside
+a read of `r0` leaves the model returning `r0` alone and `r1:1` unassigned.
+
+`build_partial_pair` (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callretpair.rs`)
+runs first in `build_output_from_trials`, while the unused trials are still
+present. A read register value the model left unused (an unused trial, or such a
+killed creation) that lies in a general-purpose register the model never returns
+a value in alone — `r1`, `EDX`, `$v1`, `RDX`, big-endian `r4` — names a pair: the
+two pieces of the join entry holding it, or the first-in-class register entry of
+its class beside it. A probe `ParamActive` holding just those two full registers
+is run through the model's own `derive_output_map`; the pair is taken only when
+the model uses exactly both, and the probe's join order says which is the high
+half. A shift by 32 names the half it reads, so the pair is formed only when the
+call's join order is the ABI's: on a big-endian ABI (`r3:r4`, `$v0:$v1`) that
+takes `option bejoin on`, because the shipped first-register-low join (GH-904)
+would print a read of the low word `r4` as the high one. The CALL then
+gains the pair as a `join` output, each read becomes a `SUBPIECE` of it at its
+own byte offset (`DL` is byte 4, `r1:1` byte 4, `r0` byte 0), and the INDIRECT
+creations are destroyed. When one trial was already used, as in the Cortex-M
+case, the pair replaces that single-register output.
+
+The evidence here is stricter than the two-trial arm's, because a value the
+callee leaves alone reads the same way: gcc's `-fipa-ra` keeps a caller's pointer
+in `$v1` or `r1` across a static callee it knows never touches that register,
+including through the `lw $t9,%got(f)($gp); jalr $t9` a MIPS PIC call to a static
+function is. The callee-body decode cannot prove the absence on ARM or MIPS, where
+it never completes (every return runs `setISAMode`, and MIPS returns through
+`jr ra`), so the pair is formed only when that decode *recorded* a write to the
+register the caller reads (the piece holding the read, whichever piece of the
+join entry it is). An indirect call has no decoded callee and keeps the old
+rendering. A write is still not a return value: a `void` helper's scratch
+register, a get-PC thunk's `EDX`, the remainder an `idiv` leaves in `EDX` beside an
+`int` result. So where the run holds the callee's own recovery — `decompile-all`
+files it callee-first in `voidret`'s ledger (`kuna_callee_returns`,
+`kuna_callee_return_storage`) — the callee must be recovered returning a value
+whose storage, or a piece of whose join, holds that register; a callee recovered
+`void` or returning only its first register declines. Every surface without
+the callee-first pass has no such recovery and relies on the decode alone:
+`kuna decompile`, `decompile-all --jobs N`, a run narrowed by `--filter`,
+`--functions`, `--addr` or `--limit`, `--option protoorder off`,
+`decompile-project --stream` and `decompile-graph`. There a get-PC thunk's `EDX`
+or an `idiv` remainder read after the call still takes the pair: `decompile-all
+--jobs 4` of a gcc `-m32 -fPIC` image prints `(int)((unsigned long long)
+sub_10d3() >> 0x20)` for its get-PC thunk, beside `void sub_10d3(void)`. And an
+op of the function itself must read the register — not a CALL or CALLIND, which may be a later call's phantom
+argument, and not a RETURN or the PIECE return recovery joins a returned pair
+with, which are the function's own unsettled return trial; phis, INDIRECTs and a
+return's injected no-op copy are looked through. A caller whose second-register
+read stays unexplained keeps the old rendering: the uninitialized local. The
+shape is pinned by `tests/stages/kuna-callretpairhalf.xml` (ARM and Thumb, with
+controls for a callee that never writes `r1` and for an indirect call) and by the
+compiled round trip in `kuna-cli/tests/call_result_high_word_reads.rs` (ARM,
+MIPS, i386, with a `void` callee and an `idiv` remainder as controls).
+
 ### (kuna) A resolved format call's open tail (`formatstring`)
 
 **(kuna)** When the format string of a printf/scanf-family call is resolved

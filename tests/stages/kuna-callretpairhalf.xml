@@ -1,0 +1,132 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    kuna GH-851: a caller that reads only the high word of a callee's 64-bit
+    result printed it as a local nothing assigns, next to a bare call.
+
+    Stage / sub-stage: P4 call output prototype (FuncCallSpecs::
+    buildOutputFromTrials, p4_calls/kuna_callretpair.rs build_partial_pair).
+    P0 assertion: option callretpair off|on (on is the shipped default).
+
+    hib is `bl full; uxtb r0,r1`: r0 is overwritten unread, so only the r1
+    output trial is active, and no output rule returns r1 without r0. The
+    call kept no output and r1 rendered as an unassigned local. With the fix
+    the call returns the r1:r0 pair the model joins, and r1 is a SUBPIECE of
+    it. hiplus (`add r0,r1,#7`) and hiw (`mov r0,r1`) are the same shape.
+
+    The Thumb functions at 0x1100 are the Cortex-M forms: hibt reads r1
+    through `uxtb r0,r1`, and lo40t reads r0 and the byte r1:1 (`uxtb r1,r1;
+    eor r0,r0,#1`), which left the pair five bytes wide and r1:1 unassigned.
+
+    Controls: lob reads only r0 and prints the same in both passes. hig32
+    reads r1 after calling g32, whose decoded body never writes r1 (a value
+    gcc -fipa-ra could keep there across the call), so its call keeps no
+    output in both passes. hip reads r1 after an indirect call: there is no
+    callee body to show a write (a MIPS PIC call to a static function is
+    indirect too, and gcc keeps values in $v1 across it), so it also keeps
+    its bare call.
+
+    Source of the bytes (clang -target armv7a / thumbv7m assembler):
+        full:  add r1,r0,#1; add r0,r0,r0,lsl #1; bx lr
+        g32:   rsb r0,r0,r0,lsl #3; sub r0,r0,#100; bx lr
+        hib:   push {r11,lr}; bl full; uxtb r0,r1;        pop {r11,pc}
+        hiplus:push {r11,lr}; bl full; add r0,r1,#7;      pop {r11,pc}
+        hiw:   push {r11,lr}; bl full; mov r0,r1;         pop {r11,pc}
+        lo40:  push {r11,lr}; bl full; uxtb r1,r1; eor r0,r0,#1; pop {r11,pc}
+        lob:   push {r11,lr}; bl full; add r0,r0,#1;      pop {r11,pc}
+        hig32: push {r11,lr}; bl g32;  add r0,r1,#7;      pop {r11,pc}
+        hip:   push {r11,lr}; blx r0;   mov r0,r1;         pop {r11,pc}
+        fullt: adds r1,r0,#1; add.w r0,r0,r0,lsl #1; bx lr          (Thumb)
+        lo40t: push {r7,lr}; bl fullt; uxtb r1,r1; eor r0,r0,#1; pop {r7,pc}
+        hibt:  push {r7,lr}; bl fullt; uxtb r0,r1; pop {r7,pc}
+
+    Pass 1 (off) pins the bug: bare calls and unassigned r1 locals. Pass 2
+    (on) pins the pair output and its SUBPIECEs. The controls do not move.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+011080e2800080e01eff2fe1800160e0640040e21eff2fe100482de9f7ffffeb7100efe60088bde800482de9f3ffffeb070081e20088bde800482de9
+efffffeb0100a0e10088bde800482de9ebffffeb7110efe6010020e20088bde800482de9e6ffffeb010080e20088bde800482de9e5ffffeb070081e2
+0088bde800482de930ff2fe10100a0e10088bde8
+</bytechunk>
+<bytechunk space="ram" offset="0x1100" readonly="true">
+411c00eb4000704780b5fff7f9ffc9b280f0010080bd80b5fff7f2ffc8b280bd
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="full"/>
+<symbol space="ram" offset="0x100c" name="g32"/>
+<symbol space="ram" offset="0x1018" name="hib"/>
+<symbol space="ram" offset="0x1028" name="hiplus"/>
+<symbol space="ram" offset="0x1038" name="hiw"/>
+<symbol space="ram" offset="0x1048" name="lo40"/>
+<symbol space="ram" offset="0x105c" name="lob"/>
+<symbol space="ram" offset="0x106c" name="hig32"/>
+<symbol space="ram" offset="0x107c" name="hip"/>
+<symbol space="ram" offset="0x1100" name="fullt"/>
+<symbol space="ram" offset="0x1108" name="lo40t"/>
+<symbol space="ram" offset="0x1116" name="hibt"/>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x1100] [ram,0x111f]</com>
+  <com>option callretpair off</com>
+  <com>lo fu hib</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hiplus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hiw</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lob</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hig32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hip</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lo40t</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hibt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callretpair on</com>
+  <com>lo fu hib</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hiplus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hiw</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lob</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hig32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hip</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lo40t</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hibt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLRETPAIRHALF #1: off, the calls that hand back r1 are bare statements" min="3" max="3">^  full\(a0\);$</stringmatch>
+<stringmatch name="CALLRETPAIRHALF #2: off, r1 (or r1:1) renders as a local nothing assigns" min="5" max="5">; // r1$</stringmatch>
+<stringmatch name="CALLRETPAIRHALF #3: on, the high byte is a SUBPIECE of the pair the call returns" min="1" max="1">return \(uint4\)\(\(uint8\)full\(a0\) >> 0x20\) &amp; 0xff;</stringmatch>
+<stringmatch name="CALLRETPAIRHALF #4: on, the high word plus a constant" min="1" max="1">return \(int4\)\(\(uint8\)full\(a0\) >> 0x20\) \+ 7;</stringmatch>
+<stringmatch name="CALLRETPAIRHALF #5: on, the high word moved into r0" min="1" max="1">return \(int4\)\(\(uint8\)full\(a0\) >> 0x20\);</stringmatch>
+<stringmatch name="CALLRETPAIRHALF #6: on, Thumb: the high byte through uxtb r0,r1" min="1" max="1">return \(uint1\)\(\(uint8\)fullt\(a0\) >> 0x20\);</stringmatch>
+<stringmatch name="CALLRETPAIRHALF #7: on, Thumb: r0 and the byte r1:1 are both pieces of the call result" min="1" max="1">return fullt\(a0\) &amp; 0xffffffffff \^ 1;</stringmatch>
+<stringmatch name="CALLRETPAIRHALF #8: off, Thumb: r1:1 was concatenated unassigned" min="1" max="1">CONCAT14\(v1,fullt\(a0\)\)</stringmatch>
+<stringmatch name="CALLRETPAIRHALF #9: the low-word control prints the same in both passes" min="2" max="2">return full\(a0\) \+ 1;</stringmatch>
+<stringmatch name="CALLRETPAIRHALF #10: a callee whose decoded body never writes r1 keeps a bare call in both passes" min="2" max="2">^  g32\(a0\);$</stringmatch>
+<stringmatch name="CALLRETPAIRHALF #11: an indirect call has no callee body to show the write, so it keeps a bare call in both passes" min="2" max="2">^  \(\*a0\)\(\);$</stringmatch>
+</decompilertest>
