@@ -486,6 +486,7 @@ long s_wss(short c) { return c * 3L; }
 int s_wb(_Bool b) { return b + 5; }
 int rd1(unsigned char *b, int v) { b[0] = v; return 1; }
 int s_getc1(int v) { unsigned char b[1]; rd1(b, v); return b[0]; }
+int s_seq(signed char c) { return c == -56; }
 "#;
 
 /// Each round-tripped function of `charsign.c` and the parameter type it takes.
@@ -499,6 +500,7 @@ const CHARSIGN_VALUES: &[(&str, &str)] = &[
     ("wss", "short"),
     ("wb", "_Bool"),
     ("getc1", "int"),
+    ("seq", "signed char"),
 ];
 
 /// Compiles the printed `checked` functions of `charsign.c` beside its source
@@ -555,6 +557,11 @@ fn a_dwarf_char_parameter_keeps_its_declared_sign() {
 
     let gcc = run("charsign_x86_64_gcc_O2", &[]);
     charsign_round_trip("charsign-gcc", &gcc, &all, &compilers).unwrap_or_else(|e| panic!("gcc -O2: {e}\n{gcc}"));
+    assert!(function(&gcc, "seq").contains("c == -0x38"), "a signed char byte above 0x7f is a number:\n{gcc}");
+    let rust = run("charsign_x86_64_gcc_O2", &["--language", "rust", "--functions", "wid,wids"]);
+    for want in ["fn wid(mut c: u8) -> i64", "fn wids(mut c: i8) -> i64", "c as i64"] {
+        assert!(rust.contains(want), "Rust output has no `{want}`:\n{rust}");
+    }
 
     let clang = run("charsign_x86_64_clang_O2", &[]);
     let all: Vec<&str> = all.into_iter().filter(|n| *n != "getc1").collect();
