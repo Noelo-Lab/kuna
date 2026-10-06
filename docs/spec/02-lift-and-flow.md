@@ -29,6 +29,19 @@ bytes and its PC write preserves interworking. Other PC loads retain their
 existing branch behavior; an explicitly prepared LR retains the indirect-call
 form. This is a SLEIGH correctness repair, without an inference option.
 
+Ordinary ARM flow establishes a `TMode` write boundary at the function entry.
+A backward interworking call may publish the callee's mode up to that boundary,
+but cannot repaint the caller. After a successful instruction, a mode commit
+that reached the instruction's own address is bounded by restoring its original
+mode there, preserving the call's fall-through. Other context fields, including
+Thumb IT state, retain their normal effects. Direct and indirect branches retain
+their existing target-mode selection. This strict correctness repair applies
+without Listing or frame discovery and adds no option.
+
+ARM return-dispatch probes preceding flow run in a private context scope with
+`TMode` writes masked. Rejected probe chains cannot change the entry mode before
+the real walk establishes its boundary; local IT state remains active in a probe.
+
 Option defaults and flip guidance for every option named below live in the
 generated catalog ([docs/options.md](../options.md)); the rows are defined in
 `decompiler/crates/kuna-decomp/phases.toml` and the intentional

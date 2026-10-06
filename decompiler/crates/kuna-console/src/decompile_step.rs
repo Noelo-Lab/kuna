@@ -182,6 +182,11 @@ pub fn decompile_one_prefollowed(
     // RETURN, which distinguishes it from the incoming return address and from
     // ordinary RET/RET-immediate instructions. Seed the derived CALLs first so
     // an explicit flow assertion at the same address remains authoritative.
+    let probe = if arch.get_description().starts_with("ARM:") {
+        let scope = arch.translate().context_scope();
+        if let Some(scope) = &scope { let _ = scope.protect_variable(b"TMode"); }
+        scope
+    } else { None };
     let entry_chain = if arch.entry_ret_dispatch {
         crate::kuna_retcallchain::kuna_entry_chain_sites(
             arch.translate(),
@@ -201,6 +206,7 @@ pub fn decompile_one_prefollowed(
     } else {
         None
     };
+    drop(probe);
     let has_derived_flow = !entry_chain.is_empty() || push_immediate_ret.is_some();
     let mut flow_overrides = entry_chain
         .iter()
