@@ -1,0 +1,79 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default:default">
+<!--
+    A PowerPC kernel reports a failed system call by setting the
+    summary-overflow bit of cr0, and the C library tests it right after the
+    sc instruction (bns, or mfcr and a mask).  Unless the call is modelled as
+    writing cr0, that test reads a cr0 nothing set, printed as an
+    uninitialized local.
+
+    Stage / sub-stage: P2 flow-classification.
+    P0 assertion:      option syscallregs off|auto|on  (default auto).
+
+    Source (clang -O2 -target powerpc-linux-gnu -c, the .text bytes verbatim below):
+
+        long rdp(long fd, long n) {
+          register long r0 asm("r0") = 3; register long r3 asm("r3") = fd + 1;
+          register long r4 asm("r4") = n; register long r5 asm("r5") = 16;
+          long err;
+          asm volatile("sc; mfcr %1" : "+r"(r3), "=r"(err) : "r"(r0), "r"(r4), "r"(r5) : "memory","cr0");
+          return (err & 0x10000000) ? -r3 : r3;
+        }
+        long rdp2(long fd) {
+          register long r0 asm("r0") = 3; register long r3 asm("r3") = fd + 1;
+          asm volatile("sc; bns+ 1f; neg %0,%0; 1:" : "+r"(r3) : "r"(r0) : "memory","cr0");
+          return r3;
+        }
+        long cmp(long fd) {
+          register long r0 asm("r0") = 6; register long r3 asm("r3") = fd + 1;
+          asm volatile("sc" : "+r"(r3) : "r"(r0) : "memory","cr0");
+          return r3 == 0 ? 5 : r3;
+        }
+
+    Pass 1 (option syscallregs on) defines cr0 after each sc with
+    syscall_error(): rdp (the mfcr form) and rdp2 (the bns form) test its
+    summary-overflow bit.  cmp is the control: its cr0 is a compare the
+    function makes after the sc, so it does not read the flag.  Pass 2
+    (option syscallregs off) is the vendored model: rdp and rdp2 test an
+    uninitialized cr0.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+386300013800000338a00010440000027c800026748410007c8300d04d820020
+608300004e80002038630001380000034400000240e300087c6300d04e800020
+3863000138000006440000023880000528030000418200084e80002038640000
+4e800020
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="rdp"/>
+<symbol space="ram" offset="0x100028" name="rdp2"/>
+<symbol space="ram" offset="0x100040" name="cmp"/>
+</binaryimage>
+<script>
+  <com>option syscallregs on</com>
+  <com>lo fu rdp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rdp2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cmp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs off</com>
+  <com>lo fu rdp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rdp2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cmp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SYSCALLREGS-PPC-CR0 #1: with option syscallregs on rdp and rdp2 read the sc result" min="2" max="2">v1 = syscall\(3,a0 \+ 1\);</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC-CR0 #2: rdp tests the summary-overflow bit it copied out with mfcr" min="1" max="1">if \(!\(syscall_error\(\) &amp; 1\)\)</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC-CR0 #3: rdp2 tests the summary-overflow bit with bns" min="1" max="1">if \(\(bool\)\(syscall_error\(\) &amp; 1\)\)</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC-CR0 #4: cmp compares the sc result" min="1" max="1">v1 = syscall\(6,a0 \+ 1\);</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC-CR0 #5: only rdp and rdp2 read the flag" min="2" max="2">syscall_error</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC-CR0 #6: with option syscallregs off rdp and rdp2 test an uninitialized cr0" min="2" max="2">uint1 v1; // cr0</stringmatch>
+</decompilertest>

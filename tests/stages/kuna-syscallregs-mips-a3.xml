@@ -1,0 +1,75 @@
+<decompilertest>
+<binaryimage arch="MIPS:LE:32:default:default">
+<!--
+    A MIPS kernel reports a failed system call by setting a3 to 1 (0 on
+    success), and the C library tests a3 right after the syscall instruction.
+    Unless the call is modelled as writing a3, that test reads the a3 the
+    function had on entry, which then becomes a fourth parameter the function
+    does not have.
+
+    Stage / sub-stage: P2 flow-classification.
+    P0 assertion:      option syscallregs off|auto|on  (default auto).
+
+    Source (rd: clang -O2 -target mipsel-linux-gnu -fno-pic -mno-abicalls;
+    fail and wr: mipsel-linux-gnu-gcc -O2 -fno-pic -mno-abicalls; linked with
+    -Ttext=0x100000, the .text bytes verbatim below):
+
+        long rd(long fd, long n) {
+          register long a0 asm("$4") = fd + 1; register long a1 asm("$5") = n;
+          register long a2 asm("$6") = 16;     register long v0 asm("$2") = 4003;
+          register long a3 asm("$7");
+          asm volatile("syscall" : "+r"(v0), "=r"(a3) : "r"(a0), "r"(a1), "r"(a2) : "memory");
+          return a3 ? -v0 : v0;
+        }
+        __attribute__((noinline)) long fail(long e) { return -e - 1000; }
+        long wr(long fd, long buf) {
+          register long a0 asm("$4") = fd + 1; register long a1 asm("$5") = buf + 4;
+          register long a2 asm("$6") = 16;     register long v0 asm("$2") = 4004;
+          register long a3 asm("$7");
+          asm volatile("syscall" : "+r"(v0), "=r"(a3) : "r"(a0), "r"(a1), "r"(a2) : "memory");
+          if (a3) return fail(v0) * 3;
+          return v0;
+        }
+
+    rd is the clang form (movz on a3), wr the gcc form (a branch on a3) with a
+    call after the syscall while a3 still holds the flag.  Pass 1 (option
+    syscallregs on) defines a3 after each syscall with syscall_error(): rd
+    takes one parameter and wr two, both test the flag, and the flag is not
+    handed to fail as an argument.  Pass 2 (option syscallregs off) is the
+    vendored model: both read the entry a3 and grow a fourth parameter.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+0100842410000624a30f02240c000000230802000a0847000800e00325102000
+18fc02240800e00323104400010084240400a52410000624a40f02240c000000
+0300e014000000000800e00300000000e8ffbd271400bfaf0800040c25204000
+1400bf8f401802001800bd270800e00321106200
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="rd"/>
+<symbol space="ram" offset="0x100020" name="fail"/>
+<symbol space="ram" offset="0x10002c" name="wr"/>
+</binaryimage>
+<script>
+  <com>option syscallregs on</com>
+  <com>lo fu rd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs off</com>
+  <com>lo fu rd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #1: with option syscallregs on rd takes one parameter" min="1" max="1">int4 rd\(int4 a0\)</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #2: with option syscallregs on wr takes two parameters" min="1" max="1">int4 wr\(int4 a0,int4 a1\)</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #3: rd and wr test the kernel's error flag" min="2" max="2">if \(!syscall_error\(\)\)</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #4: rd negates the syscall result" min="1" max="1">v2 = syscall\(0,0xfa3,a0 \+ 1\);</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #5: wr hands fail the syscall result" min="1" max="1">return fail\(v1,</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #6: the error flag is not an argument of fail" min="0" max="0">fail\([^)]*syscall_error</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #7: with option syscallregs off both read the entry a3 as a fourth parameter" min="2" max="2">,int4 a3\)</stringmatch>
+</decompilertest>
