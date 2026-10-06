@@ -133,7 +133,7 @@ fn is_apple_arm64(arch: &Architecture) -> bool {
 }
 
 /// Whether `ty` is an integer whose sign is known; plain `char` is not, since
-/// its sign is the platform's and DWARF folds every character type into it.
+/// its sign is the platform's and kuna's `char` is signed on every target.
 fn signed(ty: &Datatype) -> Option<bool> {
     if ty.is_char_print() {
         return None;
