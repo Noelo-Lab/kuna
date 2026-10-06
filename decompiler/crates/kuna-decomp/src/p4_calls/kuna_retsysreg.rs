@@ -120,10 +120,11 @@ fn alone(data: &Funcdata, vn: VarnodeId, others: &[VarnodeId]) -> bool {
         .all(|root| sinks(data, root).is_some_and(|s| s.iter().all(|&op| !reads_any(data, op, others))))
 }
 
-/// The ops that hand `root`, followed forward through phis, INDIRECTs and
-/// temporaries, to the machine: a CALLOTHER that produces nothing, or a write
-/// to a register the prototype model names nowhere and that only becomes
-/// flags after ([`only_flags`]). `None` when the walk gives up.
+/// The ops that write `root`, followed forward through phis, INDIRECTs and
+/// temporaries but not through a load, to a system register: a CALLOTHER that
+/// sets processor state ([`sets_state`]), or a write to a register the
+/// prototype model names nowhere and that only becomes flags after
+/// ([`only_flags`]). `None` when the walk gives up.
 fn sinks(data: &Funcdata, root: VarnodeId) -> Option<Vec<OpId>> {
     let mut seen = std::collections::BTreeSet::new();
     let mut work = vec![root];
@@ -137,12 +138,14 @@ fn sinks(data: &Funcdata, root: VarnodeId) -> Option<Vec<OpId>> {
         }
         for reader in data.vbank().get(cur)?.descend_iter() {
             let op = data.obank().get(reader)?;
-            let Some(out) = op.get_out() else {
-                if op.code() == OpCode::CPUI_CALLOTHER {
-                    found.push(reader);
-                }
+            if sets_state(data, reader) {
+                found.push(reader);
                 continue;
-            };
+            }
+            if matches!(op.code(), OpCode::CPUI_LOAD | OpCode::CPUI_CALLOTHER) {
+                continue;
+            }
+            let Some(out) = op.get_out() else { continue };
             let o = data.vbank().get(out)?;
             let space = o.get_addr().get_space().map(|sp| sp.get_type());
             if matches!(op.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT)
@@ -150,8 +153,7 @@ fn sinks(data: &Funcdata, root: VarnodeId) -> Option<Vec<OpId>> {
                 || space == Some(spacetype::IPTR_INTERNAL)
             {
                 work.push(out);
-            } else if op.code() != OpCode::CPUI_CALLOTHER
-                && space == Some(spacetype::IPTR_PROCESSOR)
+            } else if space == Some(spacetype::IPTR_PROCESSOR)
                 && o.get_size() > 1
                 && unnamed(data, o.get_addr(), o.get_size())
                 && only_flags(data, out)
@@ -161,6 +163,60 @@ fn sinks(data: &Funcdata, root: VarnodeId) -> Option<Vec<OpId>> {
         }
     }
     Some(found)
+}
+
+/// The user ops that set processor state from their operands: interrupt
+/// masks and priorities, mode and control bits, the banked stack pointers,
+/// the CP15 control registers, PowerPC's `wrtee` and AArch64's `msr` to a
+/// system register the language has no name for. A hint or a cache, TLB or
+/// barrier op takes an address, which a returned word can be, so none of them
+/// is here.
+pub const STATE_USEROP_NAMES: &[&[u8]] = &[
+    b"setBasePriority",
+    b"enableIRQinterrupts",
+    b"disableIRQinterrupts",
+    b"enableFIQinterrupts",
+    b"disableFIQinterrupts",
+    b"enableDataAbortInterrupts",
+    b"disableDataAbortInterrupts",
+    b"writeCPSRControl",
+    b"setThreadModePrivileged",
+    b"setStackMode",
+    b"setMainStackPointer",
+    b"setProcessStackPointer",
+    b"setMainStackPointerLimit",
+    b"setProcStackPointerLimit",
+    b"coproc_moveto_Control",
+    b"coproc_moveto_Auxiliary_Control",
+    b"coproc_moveto_Coprocessor_Access_Control",
+    b"coproc_moveto_Domain_Access_Control",
+    b"coproc_moveto_Translation_table_control",
+    b"coproc_moveto_Context_ID",
+    b"WriteExternalEnable",
+    b"UnkSytemRegWrite",
+];
+
+/// The MIPS coprocessor writes, which set processor state only for
+/// coprocessor 0 (`mtc0`) and the FPU's control words (`ctc1`); coprocessor 2
+/// takes data.
+pub const COP_USEROP_NAMES: &[&[u8]] = &[b"setCopReg", b"setCopRegH", b"setCopControlWord"];
+
+/// Is `op` a CALLOTHER that sets processor state: a [`STATE_USEROP_NAMES`] op,
+/// a [`COP_USEROP_NAMES`] write to coprocessor 0 or 1, or the volatile write
+/// of a register the prototype model names nowhere (AArch64's `msr fpcr`)?
+fn sets_state(data: &Funcdata, op: OpId) -> bool {
+    let Some(o) = data.obank().get(op).filter(|o| o.code() == OpCode::CPUI_CALLOTHER) else { return false };
+    let input = |k: i32| o.get_in(k).and_then(|v| data.vbank().get(v));
+    let constant = |k: i32| input(k).filter(|v| v.is_constant()).map(|v| v.get_offset());
+    let Some(id) = constant(0) else { return false };
+    let arch = data.get_arch();
+    if id == crate::userop::BUILTIN_VOLATILE_WRITE as u64 {
+        let (Some(dest), Some(value)) = (input(1), input(2)) else { return false };
+        let register = dest.get_addr().get_space().is_some_and(|sp| sp.get_type() == spacetype::IPTR_PROCESSOR);
+        return register && unnamed(data, dest.get_addr(), value.get_size());
+    }
+    arch.retsysreg_userops.contains(&(id as u32))
+        || arch.retsysreg_cop_userops.contains(&(id as u32)) && constant(1).is_some_and(|c| c <= 1)
 }
 
 /// Does the prototype model name `addr`/`size` nowhere: no parameter or return
@@ -175,7 +231,7 @@ fn unnamed(data: &Funcdata, addr: &Address, size: i32) -> bool {
 
 /// Is `vn`, followed forward through phis, INDIRECTs, temporaries and other
 /// registers the prototype model names nowhere, read only by CALLOTHERs that
-/// produce nothing and by what writes a flag?
+/// set processor state and by what writes a flag?
 fn only_flags(data: &Funcdata, vn: VarnodeId) -> bool {
     let mut seen = std::collections::BTreeSet::new();
     let mut work = vec![vn];
@@ -189,12 +245,10 @@ fn only_flags(data: &Funcdata, vn: VarnodeId) -> bool {
         let Some(v) = data.vbank().get(cur) else { return false };
         for reader in v.descend_iter() {
             let Some(op) = data.obank().get(reader) else { return false };
-            let Some(out) = op.get_out() else {
-                if op.code() == OpCode::CPUI_CALLOTHER {
-                    continue;
-                }
-                return false;
-            };
+            if sets_state(data, reader) {
+                continue;
+            }
+            let Some(out) = op.get_out() else { return false };
             let Some(o) = data.vbank().get(out) else { return false };
             let space = o.get_addr().get_space().map(|sp| sp.get_type());
             if space == Some(spacetype::IPTR_PROCESSOR) && o.get_size() <= 1 {
@@ -202,7 +256,7 @@ fn only_flags(data: &Funcdata, vn: VarnodeId) -> bool {
             }
             let follow = space == Some(spacetype::IPTR_INTERNAL)
                 || space == Some(spacetype::IPTR_PROCESSOR) && unnamed(data, o.get_addr(), o.get_size());
-            if !follow || op.code() == OpCode::CPUI_CALLOTHER {
+            if !follow || matches!(op.code(), OpCode::CPUI_CALLOTHER | OpCode::CPUI_LOAD) {
                 return false;
             }
             work.push(out);

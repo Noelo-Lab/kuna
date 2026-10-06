@@ -3553,6 +3553,14 @@ impl Architecture {
         ctx.ret_input_half = self.ret_input_half;
         ctx.ret_pushed_half = self.ret_pushed_half;
         ctx.ret_sys_reg = self.ret_sys_reg;
+        let ids = |names: &[&[u8]]| -> Vec<kuna_base::types::uint4> {
+            names
+                .iter()
+                .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
+                .collect()
+        };
+        ctx.retsysreg_userops = ids(crate::kuna_retsysreg::STATE_USEROP_NAMES);
+        ctx.retsysreg_cop_userops = ids(crate::kuna_retsysreg::COP_USEROP_NAMES);
         // (kuna) carry the terminal-no-return trial gate so `only_op_use` reaches
         // `option noreturnretuse` via `glb`.
         ctx.noreturn_ret_use = self.noreturn_ret_use;
