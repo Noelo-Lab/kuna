@@ -65,7 +65,18 @@ emits `f32::from_bits`/`f64::from_bits`, converting the operand with `as
 u32`/`as u64` unless its declared type already is that word, or `to_bits()`. A
 floating constant read as an integer prints its stored bits, preserving NaN
 payloads. An untyped call result does not establish an integer return contract
-and keeps its existing conversion. These operations stay visible under cosmetic
+and keeps its existing conversion, unless the callee declares what it returns
+(`kuna_bitcast.rs (states_a_return)`): a locked output, the return its own
+decompile stated to `callrettype`, or a value other than a float its last
+decompile returned (`voidret`'s record; raw bytes print as `unsigned int`), each
+of which the listing prints as its prototype. A statement counts only in the
+storage and width the caller reads the result from (through the temporary the
+cast pass gives the call): a callee recovered returning `rax` says nothing of
+the `xmm0` its caller reads.
+crazyflie's `fabsf` clears the sign bit in a core register and hands the word
+back in `s0`; its readers printed `(float)sub_80043b8(a0)` beside `unsigned int
+sub_80043b8(unsigned int a0)`, a conversion of the bits, and now reinterpret
+them. These operations stay visible under cosmetic
 cast suppression. `FLOAT_INT2FLOAT`, `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` keep
 their numeric conversion behavior. The representation uses the target's
 ordinary 32-/64-bit integer and IEEE float storage widths.

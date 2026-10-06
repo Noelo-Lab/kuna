@@ -27,6 +27,25 @@
 //! in `d0`). The function returns one type in the register, so a refusal for
 //! any value a RETURN hands back there refuses them all: `if (k) return g.f;
 //! return 0.0f;`, with a `ret` on each path, reads a global on one of them.
+//!
+//! [`float_input_vote`] is the same declaration on the way in: a parameter the
+//! convention passes in a float register is a float of the register's width.
+//! `void fs(int *p, double b, double *q) { *q = b; *p = 1; }` only stores `b`,
+//! so the fold left it raw bytes and the prototype printed `fs(unsigned long
+//! a0, ..)`, an integer the convention would pass in `rdi`. The vote speaks
+//! only where the fold says nothing and every use of the value is one a float
+//! has: it is copied, stored, loaded, computed with as a float, or handed to a
+//! call in a float register. An integer op on its bits, a use as an address, a
+//! call that takes it in a general register or as an integer, and a store
+//! through a pointer the function also moves integers through each refuse it.
+//! So does a return, and a global not declared a float of the value's width:
+//! what a function hands back of its input is its callers' to type, and a
+//! global has one declaration for every function, as for the return vote.
+//!
+//! [`argument_requirement`] and [`argument_vote`] keep the callers in step.  An
+//! argument with integer evidence passed to a parameter that prints as a float
+//! is cast, which prints as a reinterpretation of its bits; an untyped read of
+//! read-only memory passed there takes the float type.
 
 use std::rc::Rc;
 
@@ -45,6 +64,303 @@ use crate::varnode::Varnode;
 /// for it.
 pub(crate) fn float_register_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<Rc<Datatype>> {
     vote(data, vn, ct, None)
+}
+
+/// The float the function's input `vn` is, when it arrives in a float-class
+/// register of the function's own model, the fold says nothing of it (`ct` is
+/// raw bytes), and [`only_moved_as_a_float`] holds for its value.
+pub(crate) fn float_input_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<Rc<Datatype>> {
+    if ct.get_metatype() != type_metatype::TYPE_UNKNOWN {
+        return None;
+    }
+    let node = data.vbank().get(vn)?;
+    let size = node.get_size();
+    if !node.is_input() || !matches!(size, 4 | 8) || node.is_type_lock() {
+        return None;
+    }
+    let proto = data.get_func_proto();
+    if !proto.has_model() || proto.is_input_locked() || !float_class(data, proto.model().input_opt(), node) {
+        return None;
+    }
+    if !only_moved_as_a_float(data, vn) || !spells_exactly(data, vn) {
+        return None;
+    }
+    data.get_arch().types()?.get_base(size, type_metatype::TYPE_FLOAT).ok()
+}
+
+/// Is every varnode of `vn`'s value family made and used only the way a float
+/// is: copied and joined, stored, loaded, computed with by float ops, returned
+/// by a call that returns a float, handed to a call in a float register, or
+/// another input in one?  Anything else -- an integer op on the bits, an
+/// address, a call that takes it in a general register or as an integer, a
+/// return, a store through a pointer the function also moves integers through,
+/// a global that is not declared a float of its width -- is evidence the vote
+/// loses to.
+fn only_moved_as_a_float(data: &Funcdata, vn: VarnodeId) -> bool {
+    let family = crate::kuna_protoorder::value_family(data, vn);
+    if family.len() >= 128 {
+        return false;
+    }
+    let proto = data.get_func_proto();
+    let data_space = data.get_arch().manage().get_default_data_space().map(Rc::clone);
+    family.iter().all(|&v| {
+        let Some(node) = data.vbank().get(v) else { return false };
+        let declared_float = node.is_type_lock() && node.get_type().get_metatype() == type_metatype::TYPE_FLOAT;
+        if node.is_type_lock() && !declared_float {
+            return false;
+        }
+        let global = node.is_persist()
+            || data_space.as_ref().is_some_and(|d| node.get_addr().get_space().is_some_and(|s| Rc::ptr_eq(s, d)));
+        if global && !declared_float {
+            return false;
+        }
+        let made = match node.get_def().and_then(|d| data.obank().get(d).map(|o| (d, o))) {
+            None => v == vn || (node.is_input() && float_class(data, proto.model().input_opt(), node)),
+            Some((d, o)) => match o.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => true,
+                OpCode::CPUI_INDIRECT => !o.is_indirect_creation(),
+                OpCode::CPUI_LOAD => {
+                    !crate::kuna_protoorder::moves_integers_beside(data, d, node.get_size())
+                        && o.get_in(1).is_some_and(|p| !addresses_a_global(data, p))
+                }
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => call_returns_a_float(data, d),
+                code => makes_a_float(code),
+            },
+        };
+        made && node.descend_iter().all(|r| {
+            let Some(o) = data.obank().get(r) else { return true };
+            match o.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT => true,
+                OpCode::CPUI_STORE => {
+                    o.get_in(1) != Some(v)
+                        && o.get_in(0) != Some(v)
+                        && !crate::kuna_protoorder::moves_integers_beside(data, r, node.get_size())
+                        && o.get_in(1).is_some_and(|p| !addresses_a_global(data, p))
+                }
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                    o.get_in(0) != Some(v)
+                        && (1..o.num_input()).filter(|&s| o.get_in(s) == Some(v)).all(|s| {
+                            crate::kuna_protoorder::float_read_width(data, r, s) == Some(node.get_size())
+                                || (!crate::kuna_protoorder::reads_a_float(data, r, s)
+                                    && !crate::kuna_protoorder::reads_other_than_a_float(data, r, s)
+                                    && passed_in_a_float_register(data, r, s))
+                        })
+                }
+                code => reads_a_float(code),
+            }
+        })
+    })
+}
+
+/// Is the pointer `ptr` the address of a global, or of an element or field of
+/// one: a constant in the data space, or such a constant added to an index?
+/// A global has one declaration for every function, and another function may
+/// read it as an integer.
+fn addresses_a_global(data: &Funcdata, ptr: VarnodeId) -> bool {
+    let mut work = vec![(ptr, 0)];
+    while let Some((v, depth)) = work.pop() {
+        let Some(node) = data.vbank().get(v) else { continue };
+        if node.is_constant() {
+            if node.get_offset() != 0 {
+                return true;
+            }
+            continue;
+        }
+        let Some((d, o)) = node.get_def().and_then(|d| data.obank().get(d).map(|o| (d, o))) else { continue };
+        if depth >= 6 {
+            continue;
+        }
+        match o.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB => {
+                work.extend(o.get_in(0).map(|i| (i, depth + 1)));
+            }
+            OpCode::CPUI_INT_ADD => {
+                for i in (0..2).filter_map(|k| o.get_in(k)) {
+                    if data.vbank().get(i).is_some_and(|n| n.is_constant()) {
+                        if crate::kuna_ptrfromuse::constant_may_be_global_base(data, d, i) {
+                            return true;
+                        }
+                    } else {
+                        work.push((i, depth + 1));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// The float a call argument read straight out of read-only memory takes from
+/// the parameter it is passed to: the callee's unlocked parameter there prints
+/// as a float, the call passes it in a float register, and every other use of
+/// the read is one a float has.  A literal-pool `movsd dat_2010(%rip),%xmm0`
+/// before `call fy` is the `2.5` the source passed, and an untyped read there
+/// printed as an integer the parameter converts.
+pub(crate) fn argument_vote(
+    data: &Funcdata,
+    fc: &crate::fspec::FuncCallSpecs,
+    op: crate::context::OpId,
+    slot: int4,
+) -> Option<Rc<Datatype>> {
+    if fc.proto().get_param(slot - 1).is_some_and(|p| p.is_type_locked()) {
+        return None;
+    }
+    let vn = data.obank().get(op)?.get_in(slot)?;
+    let node = data.vbank().get(vn)?;
+    let size = node.get_size();
+    if !matches!(size, 4 | 8)
+        || node.is_constant()
+        || node.is_type_lock()
+        || !node.is_read_only()
+        || node.get_type().get_metatype() != type_metatype::TYPE_UNKNOWN
+    {
+        return None;
+    }
+    let float_argument = |call: crate::context::OpId, s: int4| {
+        passed_in_a_float_register(data, call, s) && crate::kuna_protoorder::float_read_width(data, call, s) == Some(size)
+    };
+    let family = crate::kuna_protoorder::value_family(data, vn);
+    if family.len() >= 128 {
+        return None;
+    }
+    let floats = family.iter().all(|&v| {
+        let Some(member) = data.vbank().get(v) else { return false };
+        let made = member.get_def().and_then(|d| data.obank().get(d)).is_none_or(|o| {
+            matches!(o.code(), OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL)
+                || (o.code() == OpCode::CPUI_INDIRECT && !o.is_indirect_creation())
+        });
+        made && !member.is_type_lock()
+            && member.descend_iter().all(|r| {
+                data.obank().get(r).is_some_and(|o| match o.code() {
+                    OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT => true,
+                    OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                        o.get_in(0) != Some(v)
+                            && (1..o.num_input()).filter(|&s| o.get_in(s) == Some(v)).all(|s| float_argument(r, s))
+                    }
+                    code => reads_a_float(code),
+                })
+            })
+    });
+    if !floats {
+        return None;
+    }
+    data.get_arch().types()?.get_base(size, type_metatype::TYPE_FLOAT).ok()
+}
+
+/// The float C requires of argument `slot` of the call `op`: the callee's
+/// unlocked parameter there prints as a float of the argument's width, the call
+/// passes it in a float register, and the value is an integer or the result of
+/// a call that does not return a float.  No integer travels in a float
+/// register, so its bits got there by a reinterpretation, and the cast this
+/// requirement adds prints as one: `vmov s0,r3` hands the bits of an
+/// `unsigned int` to a `float` parameter, which C would convert by value.  A
+/// NaN constant no literal spells gets none.
+pub(crate) fn argument_requirement(
+    data: &Funcdata,
+    fc: &crate::fspec::FuncCallSpecs,
+    op: crate::context::OpId,
+    slot: int4,
+) -> Option<Rc<Datatype>> {
+    if fc.proto().get_param(slot - 1).is_some_and(|p| p.is_type_locked()) {
+        return None;
+    }
+    let vn = data.obank().get(op)?.get_in(slot)?;
+    let size = data.vbank().get(vn)?.get_size();
+    if !matches!(size, 4 | 8)
+        || !passed_in_a_float_register(data, op, slot)
+        || crate::kuna_protoorder::float_read_width(data, op, slot) != Some(size)
+        || !(crate::kuna_varargfloat::integer_bits(data, op, vn) || result_of_a_non_float_call(data, vn))
+        || !spells(data, vn)
+    {
+        return None;
+    }
+    data.get_arch().types()?.get_base(size, type_metatype::TYPE_FLOAT).ok()
+}
+
+/// Is `vn`, through copies, casts and truncations, the result of a call whose
+/// callee no declaration, statement or vote makes return a float?  Its printed
+/// declaration returns an integer (`unsigned int` for raw bytes), so the
+/// call's value is the integer the printer spells.
+fn result_of_a_non_float_call(data: &Funcdata, vn: VarnodeId) -> bool {
+    let mut cur = vn;
+    for _ in 0..16 {
+        let Some((d, o)) = data.vbank().get(cur).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d).map(|o| (d, o)))
+        else {
+            return false;
+        };
+        match o.code() {
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => return !call_returns_a_float(data, d),
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_SUBPIECE => {
+                let Some(i) = o.get_in(0) else { return false };
+                cur = i;
+            }
+            _ => return false,
+        }
+    }
+    false
+}
+
+/// Does the call `call` pass its argument `slot` in a float-class register of
+/// its model?  Asked of where the argument lives, not of the value handed in:
+/// copy propagation leaves `vmov r0,s0; bl put3` reading `s0`.
+fn passed_in_a_float_register(data: &Funcdata, call: crate::context::OpId, slot: int4) -> bool {
+    let Some(fc) = data.get_call_specs_index(call).map(|i| data.get_call_specs(i)) else { return false };
+    let proto = fc.proto();
+    let storage = fc
+        .final_input_storage()
+        .get((slot - 1) as usize)
+        .cloned()
+        .or_else(|| proto.get_param(slot - 1).map(|p| (p.get_address(), p.get_size())));
+    let Some((addr, size)) = storage.filter(|_| proto.has_model()) else { return false };
+    proto
+        .model()
+        .input_opt()
+        .and_then(|l| l.find_entry(&addr, size, true).map(|i| l.get_entry()[i].get_type()))
+        == Some(type_class::TYPECLASS_FLOAT)
+}
+
+/// Does the op `code` produce a float from its inputs?
+fn makes_a_float(code: OpCode) -> bool {
+    matches!(
+        code,
+        OpCode::CPUI_FLOAT_ADD
+            | OpCode::CPUI_FLOAT_SUB
+            | OpCode::CPUI_FLOAT_MULT
+            | OpCode::CPUI_FLOAT_DIV
+            | OpCode::CPUI_FLOAT_NEG
+            | OpCode::CPUI_FLOAT_ABS
+            | OpCode::CPUI_FLOAT_SQRT
+            | OpCode::CPUI_FLOAT_INT2FLOAT
+            | OpCode::CPUI_FLOAT_FLOAT2FLOAT
+            | OpCode::CPUI_FLOAT_CEIL
+            | OpCode::CPUI_FLOAT_FLOOR
+            | OpCode::CPUI_FLOAT_ROUND
+    )
+}
+
+/// Does the op `code` read its inputs as floats?
+fn reads_a_float(code: OpCode) -> bool {
+    matches!(
+        code,
+        OpCode::CPUI_FLOAT_ADD
+            | OpCode::CPUI_FLOAT_SUB
+            | OpCode::CPUI_FLOAT_MULT
+            | OpCode::CPUI_FLOAT_DIV
+            | OpCode::CPUI_FLOAT_NEG
+            | OpCode::CPUI_FLOAT_ABS
+            | OpCode::CPUI_FLOAT_SQRT
+            | OpCode::CPUI_FLOAT_FLOAT2FLOAT
+            | OpCode::CPUI_FLOAT_CEIL
+            | OpCode::CPUI_FLOAT_FLOOR
+            | OpCode::CPUI_FLOAT_ROUND
+            | OpCode::CPUI_FLOAT_EQUAL
+            | OpCode::CPUI_FLOAT_NOTEQUAL
+            | OpCode::CPUI_FLOAT_LESS
+            | OpCode::CPUI_FLOAT_LESSEQUAL
+            | OpCode::CPUI_FLOAT_NAN
+            | OpCode::CPUI_FLOAT_TRUNC
+    )
 }
 
 /// [`float_register_vote`], taking the result of the call `jump` for whatever

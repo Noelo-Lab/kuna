@@ -2829,6 +2829,137 @@ fn a_float_crossing_an_integer_call_round_trips() {
     }
 }
 
+/// Compile `lib` and `main` as two translation units with each of
+/// [`round_trip_compilers`], run the program, and return each compiler's stdout.
+fn compile_pair_and_run_each(tag: &str, lib: &str, main: &str) -> Vec<(String, String)> {
+    let dir = std::env::temp_dir().join(format!("kuna-{tag}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (lib_file, main_file) = (dir.join("lib.c"), dir.join("main.c"));
+    std::fs::write(&lib_file, lib).unwrap();
+    std::fs::write(&main_file, main).unwrap();
+    let mut out = Vec::new();
+    for cc in round_trip_compilers() {
+        let exe = dir.join(format!("rt-{cc}"));
+        let built = Command::new(cc)
+            .args(["-std=gnu11", "-w", "-Werror=int-conversion", "-Werror=implicit-function-declaration", "-o"])
+            .arg(&exe)
+            .arg(&main_file)
+            .arg(&lib_file)
+            .output()
+            .expect("spawn the compiler");
+        assert!(built.status.success(), "{cc} rejected the printed C:\n{}\n{lib}", String::from_utf8_lossy(&built.stderr));
+        let run = Command::new(&exe).output().expect("run the round trip");
+        out.push((cc.to_string(), String::from_utf8_lossy(&run.stdout).trim().to_string()));
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    out
+}
+
+/// `floatparam_x86_64{_O0,}.o` (gcc -O0, clang -O2): `fs`, `ff` and `sink`
+/// receive a `double` or `float`s in `xmm0`/`xmm1` and only store them through
+/// a pointer, and each parameter printed as an integer, which the convention
+/// passes in a general register: `fs(unsigned long a0,unsigned int *a1,..)`
+/// read the pointer from `rsi`. The printed functions, compiled on the host
+/// beside a caller that declares the source prototypes, must store what the
+/// source stores. `fy` copies its double into a global another function may
+/// read as an integer, and keeps its integer type. `floatparam_a64.o` (AArch64,
+/// clang -O2) and `floatparam_x86_64_clang_O0.o`: `negsink` hands `sink` the
+/// bits of an integer in `s0`/`xmm0`, and `k3b` hands `use` the bits `iget3`
+/// returns in an integer register, beside an `iget3` printed returning
+/// `unsigned int`; each is a reinterpretation the printed call must spell as
+/// one, not as the conversion C applies to an integer argument of a `float`
+/// parameter. `twicetrunc` reads the float `trunc16` computes on its bits and
+/// returns in `s0`, beside a `trunc16` printed returning `unsigned int`:
+/// `(float)trunc16(a0)` converted.
+#[test]
+fn a_float_register_parameter_round_trips() {
+    let sp = specs();
+    let fixture = |name: &str| repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+    let callers = "#include <stdio.h>\nvoid fs(int *p, double b, double *q);\nvoid ff(int *p, float b, float *q);\n\
+                   void sink(float *o, float a, float b);\n\
+                   int main(void) {\n  int k1 = 0, k2 = 0;\n  double q = 0;\n  float f = 0, o[2] = {0};\n  \
+                   fs(&k1, 2.5, &q);\n  ff(&k2, 1.25f, &f);\n  sink(o, -1.5f, 2.0f);\n  \
+                   printf(\"%d %d %g %g %g %g\\n\", k1, k2, q, f, o[0], o[1]);\n  return 0;\n}\n";
+    for (tag, name) in [
+        ("gcc-O0", "floatparam_x86_64_O0.o"),
+        ("clang-O0", "floatparam_x86_64_clang_O0.o"),
+        ("clang-O2", "floatparam_x86_64.o"),
+    ] {
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture(name), "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        for want in [
+            "void fs(double a0,unsigned int *a1,double *a2)",
+            "void ff(float a0,unsigned int *a1,float *a2)",
+            "void fr(double a0,",
+            "void sink(float a0,float a1,float *a2)",
+            "void fy(unsigned long a0,unsigned int *a1)",
+        ] {
+            assert!(stdout.contains(want), "{tag}: missing `{want}`:\n{stdout}");
+        }
+        let lib = format!("#include <string.h>\n{}", printed_functions(&stdout, &["fs ", "ff ", "sink "]));
+        for (cc, got) in compile_pair_and_run_each(&format!("floatparam-{tag}"), &lib, callers) {
+            assert_eq!(got, "1 1 2.5 1.25 -1.5 2", "{tag} {cc}: the printed C stores something else:\n{lib}");
+        }
+    }
+
+    for (tag, name) in [("a64", "floatparam_a64.o"), ("x86-clang-O0", "floatparam_x86_64_clang_O0.o")] {
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture(name), "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        for want in ["void sink(float a0,float a1,float *a2)", "void use(float a0,unsigned int *a1,float *a2)"] {
+            assert!(stdout.contains(want), "{tag}: missing `{want}`:\n{stdout}");
+        }
+        let printed = printed_functions(&stdout, &["sink ", "negsink ", "iget3 ", "use ", "k3b "]);
+        let global = printed
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("return ").and_then(|r| r.strip_suffix(';')).filter(|g| g.starts_with("dat_")))
+            .unwrap_or_else(|| panic!("{tag}: iget3 returns no global:\n{printed}"));
+        let constants: String = printed
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .filter(|w| w.starts_with("dat_") && *w != global)
+            .map(|w| format!("const float {w} = 2.0f;\n"))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let src = format!(
+            "#include <stdio.h>\n#include <string.h>\n{BITS}unsigned int {global} = 0x40490fdbu;\n{constants}{printed}\n\
+             int main(void) {{\n  unsigned p[2] = {{0, 0x3fc00000u}};\n  float o[2] = {{0}}, q = 0;\n  int k = 0;\n  \
+             negsink((void *)p, o);\n  k3b((void *)&k, &q);\n  \
+             printf(\"%llx %llx %d %llx\\n\", BITS(o[0]), BITS(o[1]), k, BITS(q));\n  return 0;\n}}\n"
+        );
+        for (cc, got) in compile_and_run_each(&format!("floatparam-{tag}"), &src) {
+            assert_eq!(got, "bfc00000 40000000 1 40490fdb", "{tag} {cc}: the printed C computes something else:\n{printed}");
+        }
+    }
+
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture("floatparam_a64.o"), "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    assert!(!stdout.contains("(float)trunc16("), "trunc16's bits are converted:\n{stdout}");
+    let printed = printed_functions(&stdout, &["trunc16 ", "twicetrunc "]);
+    let src = format!(
+        "#include <stdio.h>\n#include <string.h>\n{BITS}{printed}\n\
+         int main(void) {{\n  printf(\"%llx\\n\", BITS(twicetrunc({})));\n  return 0;\n}}\n",
+        arg_of_bits(&printed, "twicetrunc", 0, 0x4049_0fd0)
+    );
+    for (cc, got) in compile_and_run_each("floatparam-trunc-a64", &src) {
+        assert_eq!(got, "40c90000", "{cc}: the printed C computes something else:\n{printed}");
+    }
+}
+
+/// `floatparam_retreg_clang_O2` (clang -O2, stripped): `v1` (`sub_11c0`) returns
+/// `(float)geti()` in `xmm0`, but its recovery returns `rax`, and `main` reads
+/// the call's `xmm0`. The return a callee states in another register says
+/// nothing of what the caller reads, so the read is not printed as a
+/// reinterpretation of `sub_11c0`'s integer.
+#[test]
+fn a_return_stated_in_another_register_is_not_reinterpreted() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatparam_retreg_clang_O2").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    assert!(stdout.contains("unsigned long sub_11c0("), "sub_11c0 no longer returns rax; re-pick the case:\n{stdout}");
+    assert!(!stdout.contains(".from = sub_11c0("), "a return in rax reinterpreted as xmm0's float:\n{stdout}");
+}
+
 /// `floatret_put_{cm4,a64}.o` (Cortex-M4F and AArch64, clang -O2): `putf2` moves
 /// its floats from `s0`..`s2` into `r0`..`r2` / `w0`..`w2` and tail-calls
 /// `put3`, which stores them as `u32`. A float vote on the parameters printed

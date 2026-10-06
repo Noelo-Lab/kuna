@@ -74,6 +74,9 @@ pub(crate) fn reinterprets_to_float(fd: &Funcdata, decl_high_type: bool, input: 
 
 /// An untyped call has no integer C return contract. Its ABI storage alone
 /// cannot establish the type of the call expression that the printer emits.
+/// A callee whose prototype is locked, whose own decompile stated what it
+/// returns, or whose last decompile returned a value other than a float, prints
+/// a declaration that gives the call that type.
 fn untyped_call_value(fd: &Funcdata, vn: VarnodeId, depth: usize) -> bool {
     if depth == 16 {
         return true;
@@ -84,14 +87,51 @@ fn untyped_call_value(fd: &Funcdata, vn: VarnodeId, depth: usize) -> bool {
     if v.get_type().get_metatype() != type_metatype::TYPE_UNKNOWN {
         return false;
     }
-    let Some(op) = v.get_def().and_then(|op| fd.obank().get(op)) else {
+    let Some((id, op)) = v.get_def().and_then(|id| fd.obank().get(id).map(|op| (id, op))) else {
         return false;
     };
     match op.code() {
-        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => true,
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => !states_a_return(fd, id),
         OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_SUBPIECE => op
             .get_in(0)
             .is_none_or(|input| untyped_call_value(fd, input, depth + 1)),
         _ => false,
     }
+}
+
+/// Does the callee of the call `op` declare what it returns: a locked output, a
+/// return its own decompile stated, or a non-float value its last decompile
+/// returned (raw bytes print as `unsigned int`)?  A statement counts only in
+/// the storage and width the call's result is read from: a callee that returns
+/// in `rax` says nothing of the `xmm0` its caller reads.
+fn states_a_return(fd: &Funcdata, op: OpId) -> bool {
+    let Some(fc) = fd.get_call_specs_index(op).map(|i| fd.get_call_specs(i)) else { return false };
+    let proto = fc.proto();
+    if proto.is_output_locked() {
+        return proto.get_output_type().is_some_and(|t| t.get_metatype() != type_metatype::TYPE_VOID);
+    }
+    let Some(out) = read_storage(fd, op) else { return false };
+    let read_as = |addr: &kuna_base::address::Address, size: i32| out.get_addr() == addr && out.get_size() == size;
+    let entry = fc.get_entry_address();
+    entry.get_space().map(|s| (s.get_index(), entry.get_offset())).is_some_and(|k| {
+        fd.kuna_callret_stated(k).is_some_and(|s| read_as(&s.addr, s.size))
+            || (fd.kuna_callee_returns(k) == Some(crate::kuna_voidret::Returns::Other)
+                && fd.kuna_callee_return_storage(k).is_some_and(|(a, n)| read_as(a, *n)))
+    })
+}
+
+/// The Varnode the call `op`'s result is read from: its output, or, where the
+/// cast pass gave the call a temporary, the storage the temporary is cast into.
+fn read_storage(fd: &Funcdata, op: OpId) -> Option<&crate::varnode::Varnode> {
+    let out = fd.vbank().get(fd.obank().get(op)?.get_out()?)?;
+    let temporary = out.get_addr().get_space().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_INTERNAL);
+    if !temporary {
+        return Some(out);
+    }
+    let mut readers = out.descend_iter();
+    let cast = fd.obank().get(readers.next()?).filter(|o| o.code() == OpCode::CPUI_CAST)?;
+    if readers.next().is_some() {
+        return None;
+    }
+    fd.vbank().get(cast.get_out()?)
 }
