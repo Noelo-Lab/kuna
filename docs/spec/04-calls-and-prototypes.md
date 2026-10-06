@@ -3147,8 +3147,8 @@ clang's full-width `or $0xff,%edx` prints `full(a0) | 0xff00000000`; both comput
 the binary's value, and folding the join back into the `|` is left for later. A
 high word loaded from a global beside a call's result (`mov gi,%ebx; call g32;
 mov %ebx,%edx`) now reads `unsigned int` with the call's word, where it printed
-`void`: the late pair repair drops a loaded high word, as it does for the clang,
-ARM and MIPS builds of the same function. `full` itself (`mov 4(%esp),%edx; lea
+`void`: the loaded high word is dropped after return recovery, as it is for the
+clang, ARM and MIPS builds of the same function. `full` itself (`mov 4(%esp),%edx; lea
 (%edx,%edx,2),%eax; ret`) still prints `int`, because the `lea` also reads `EDX`;
 its callers in `decompile-all` now read all eight bytes of its result.
 
