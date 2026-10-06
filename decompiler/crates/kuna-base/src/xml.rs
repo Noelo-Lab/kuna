@@ -2013,7 +2013,7 @@ mod tests {
         // register is not the high word of the return (GH-885)
         // and gh831-riscv-fpmove + gh831-riscv32-fpmove / RISC-V fmv.x.* and
         // fcvt.w* read and write the real registers (GH-831)
-        assert_eq!(count, 447, "corpus file count drifted");
+        assert_eq!(count, 449, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

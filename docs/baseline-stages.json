@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2195,
-    2195
+    2208,
+    2208
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -527,6 +527,19 @@
     "data:GH829 x86 #2: varargforward on keeps the int forwarded in esi",
     "data:GH829 x86 #3: varargforward on keeps esi, edx and ecx",
     "data:GH829 x86 #4: d3 also compares its parameter, so its call is left as it was",
+    "data:GH831 rv32 #1: fmv.x.w of a parameter is its bits",
+    "data:GH831 rv32 #2: fmv.x.w moves the call result's bits",
+    "data:GH831 rv32 #3: fcvt.w.d converts the call result",
+    "data:GH831 rv32 #4: fcvt.w.s writes a0",
+    "data:GH831 rv32 #5: fcvt.wu.d and fcvt.wu.s write a0",
+    "data:GH831 rv32 #6: no conversion function lost its result",
+    "data:GH831 rv64 #1: fmv.x.d passes the call result's bits to ui",
+    "data:GH831 rv64 #2: fmv.x.d of a parameter is its bits",
+    "data:GH831 rv64 #3: fmv.x.w moves the call result's bits",
+    "data:GH831 rv64 #4: fcvt.w.d and fcvt.w.s write a0",
+    "data:GH831 rv64 #5: fcvt.wu.d and fcvt.wu.s write a0",
+    "data:GH831 rv64 #6: no read of register offset 0x900",
+    "data:GH831 rv64 #7: no conversion function lost its result",
     "data:GH8391 #1: Thumb mrrc2 decodes under v8-m (CDE)",
     "data:GH8391 #2: bytes no longer fail to decode",
     "data:GH840 a64 #1: the long passed in d0 is reinterpreted as a double (-O2, -O0)",
