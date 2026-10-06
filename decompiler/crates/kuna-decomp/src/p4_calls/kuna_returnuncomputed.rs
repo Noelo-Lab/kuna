@@ -334,13 +334,15 @@ pub(crate) fn slot_storage(data: &Funcdata, whole: VarnodeId, lsb: i32, width: i
 ///
 /// A pair joined with its first register as the high half is left alone:
 /// return recovery joins that way only a pair whose low word the function
-/// returns on purpose ([`crate::kuna_bejoin`]).
+/// returns on purpose ([`crate::kuna_bejoin`]). The second register of an i386
+/// `EDX:EAX` join is never kept on its own; that RETURN returns nothing.
 ///
 /// Returns `true` when a RETURN was rewritten.
 pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
     // Collect first: the rewrite mutates the op bank.
     let mut fixes: Vec<(OpId, VarnodeId, OpId)> = Vec::new();
     let mut own_pairs: Vec<(OpId, VarnodeId, OpId)> = Vec::new();
+    let mut drops: Vec<(OpId, OpId)> = Vec::new();
     for retop in data.obank().iter_code(OpCode::CPUI_RETURN).collect::<Vec<_>>() {
         let Some(o) = data.obank().get(retop) else { continue };
         if o.is_dead() || o.get_halt_type() != 0 || o.num_input() < 2 {
@@ -399,6 +401,12 @@ pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
                 own_pairs.push((retop, lo, def));
                 continue;
             }
+            // The high register of an i386 `EDX:EAX` join is never a return
+            // value alone: the RETURN returns nothing.
+            (true, false) if crate::kuna_retcallhalf::in_pair_second(data, &hi_slot, hi_size) => {
+                drops.push((retop, def));
+                continue;
+            }
             (true, false) => hi,
             // Only the low half is real — the common case, a callee-saved restore
             // in the high register.
@@ -414,11 +422,17 @@ pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
         fixes.push((retop, keep, def));
     }
 
-    if fixes.is_empty() {
+    if fixes.is_empty() && drops.is_empty() {
         return false;
     }
     fixes.extend(own_pairs);
     let mut scratch: Vec<OpId> = Vec::new();
+    for (retop, piece) in drops {
+        data.op_remove_input(retop, 1);
+        if data.obank().get(piece).and_then(|o| o.get_out()).and_then(|v| data.vbank().get(v)).is_some_and(|v| v.has_no_descend()) {
+            data.op_destroy_recursive(piece, &mut scratch);
+        }
+    }
     for (retop, keep, piece) in fixes {
         if data.op_set_input(retop, keep, 1).is_err() {
             continue;

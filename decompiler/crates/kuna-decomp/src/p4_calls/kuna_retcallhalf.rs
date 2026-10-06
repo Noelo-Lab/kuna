@@ -852,6 +852,15 @@ pub fn plant(data: &mut Funcdata) {
     }
 }
 
+/// Is `addr`/`size` in the second register of one of the model's join pairs
+/// ([`join_pairs`]): `EDX` beside `EAX` on i386, which the model never returns
+/// on its own?
+pub fn in_pair_second(data: &Funcdata, addr: &Address, size: i32) -> bool {
+    join_pairs(data)
+        .iter()
+        .any(|(_, (a, s))| a.overlap(0, addr, size) >= 0 || addr.overlap(0, a, *s) >= 0)
+}
+
 /// The register pairs the output model joins into one value, as `(first,
 /// second)`: the two pieces of a general join entry whose low piece is a
 /// register the model also returns on its own and whose high piece is not.

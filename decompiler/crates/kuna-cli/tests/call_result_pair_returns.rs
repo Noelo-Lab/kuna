@@ -276,7 +276,9 @@ fn i386_pushed_image() -> Vec<u8> {
 /// (`mov gc1,%dl; mov %dl,gc2`), `b3` clang's MSVC-target `gflag = gflag2 &&
 /// gi1;` (`setne %dl; and %cl,%dl; mov %dl,gflag`), and `newp` gcc -Os
 /// findutils' `get_new_pred` shape, which stores a byte through `%dl` into
-/// the block it allocated. The globals sit at 0x500000.
+/// the block it allocated. `f2` (`movb gc1,%dl; xorb $0,%dl`) and `f4`
+/// (`setne %dl`) are hand-written dead byte writes after the call. The globals
+/// sit at 0x500000.
 fn i386_dl_scratch_image() -> Vec<u8> {
     let funcs = [
         hex("g32", "8b 44 24 04 6b c0 07 c3", None),
@@ -294,6 +296,8 @@ fn i386_dl_scratch_image() -> Vec<u8> {
              89 02 eb 05 a3 10 00 50 00 8a 15 18 00 50 00 a3 14 00 50 00 88 50 04 c9 c3",
             Some((8, "xmalloc")),
         ),
+        hex("f2", "8b 54 24 04 52 e8 00 00 00 00 83 c4 04 8a 15 00 00 50 00 80 f2 00 c3", Some((5, "g32"))),
+        hex("f4", "ff 74 24 04 e8 00 00 00 00 83 c4 04 0f 95 c2 c3", Some((4, "g32"))),
     ];
     object(Architecture::I386, 0, &funcs, |from, to| {
         let mut bytes = vec![0xe8];
@@ -309,7 +313,7 @@ fn a_byte_moved_through_dl_after_the_call_is_not_a_high_word() {
     std::fs::write(&path, &image).unwrap();
     let text = decompile("call-result-pair-i386-dl-scratch", &image);
     let narrow = |decl: &str| decl.starts_with("int ") || decl.starts_with("void ");
-    for name in ["b4", "b3", "newp"] {
+    for name in ["b4", "b3", "newp", "f2", "f4"] {
         assert!(narrow(declaration("i386", &text, name)), "decompile-all: {name} returns %edx:\n{text}");
         let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
             .args(["decompile", path.to_str().unwrap(), name])

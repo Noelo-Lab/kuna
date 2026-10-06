@@ -2812,6 +2812,13 @@ one that way only when its low word is part of the value (see the join order
 above; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
 (first_register_holds_high)`).
 
+When only the high half carries a value and it is the second register of an
+i386 `EDX:EAX` join (`kuna_retcallhalf.rs (in_pair_second)`), the RETURN keeps
+neither half: the model never returns `EDX` on its own, and keeping it printed a
+dead byte write after a call (`movb gc1,%dl; xorb $0,%dl; ret`, or `setne %dl;
+ret`) as `unsigned int f(...)` returning the call's leftover `EDX`. The function
+then returns `void`, as it does when no pair forms.
+
 A high register the function set to zero is computed too, so the pair of a
 zero-extended 64-bit return survives this repair. The earlier trim that narrowed
 it to its low register, and printed `unsigned long long` as `int`, refuses a pair
