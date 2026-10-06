@@ -363,7 +363,8 @@ killing `$v1` at that call made the read the high word of a 64-bit result and
 lost the parameter it came from (GH-878). That answer needs a recorded write to
 the call's return storage, not a possible `STORE` into its space, and it is
 given only for a register the model never passes an argument in
-(`kuna_rustabi.rs (passes_arguments_in)`): MIPS `$v1`, but not ARM's `r1` or
+(`kuna_rustabi.rs (passes_arguments_in)`): MIPS `$v1`, or x86-64's `RAX` across
+a callee that returns only in `XMM0`, but not ARM's `r1` or
 x86-64's `RDX`, where a value kept across one call reaches the
 next as a value the caller wrote, which the caller-side argument recovery reads
 as one more argument than that callee takes. A locked non-void declaration, such
@@ -393,8 +394,10 @@ that reads it. On ARM those are the scratch registers `r0`-`r3`, and keeping
 them across every leaf that leaves them alone put an extra argument at 101
 calls over gcc-built ARM firmware (decbench chibios, crazyflie, nuttx,
 betaflight, u-boot), each beyond what the callee's own recovered prototype
-takes (`strlen(s,a1)` after a `strlcpy` that never writes `r1`). Walks that
-needed no mode switch keep their answer for every register, as before.
+takes (`strlen(s,a1)` after a `strlcpy` that never writes `r1`). A register no
+argument travels in is still answered: ARM's `r12` survives a leaf that never
+writes it. Walks that needed no mode switch keep their answer for every
+register, as before.
 
 The walk itself gained one fact to reach this callee at all. The checker's
 failure path leaves by a direct `JMP` into a `__fastfail` stub, and x86 SLEIGH
