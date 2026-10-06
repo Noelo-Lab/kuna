@@ -1,0 +1,38 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Always-on wide-slice SSA reduction. The witness is clang -O3 x86-64:
+    eight input bytes are widened through SSE unpack operations, accumulated
+    in four dword lanes, folded horizontally, then followed by a scalar tail.
+
+    Ordinary SSA construction represents partial vector values as PIECE trees
+    with widths 9 through 15. Slicing those trees late produces artificial
+    13-byte locals and SUB13* expressions. The reducer pushes demanded byte
+    ranges through PIECE, byte-aligned shifts, and bitwise operations. It does
+    not inspect the function prototype, recognize a loop, or replace C output.
+
+    This self-contained byte_sum regression embeds 143 bytes of x86-64 code
+    loaded at 0x1000.
+-->
+<bytechunk space="ram" offset="0x1000">
+85f6740d89f183fe08730931d231c0eb6f31c0c389ca83e2f8660fefc931c0
+660fefd2660fefc0660f1f840000000000660f6e1c07660f6e640704660f60
+d9660f61d9660ffed3660f60e1660f61e1660ffec44883c0084839c275d466
+0ffec2660f70c8ee660ffec8660f70c155660ffec1660f7ec039ca7414660f
+1f4400000fb6341701f048ffc24839d175f2c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="byte_sum"/>
+</binaryimage>
+<script>
+  <com>parse line extern unsigned int byte_sum(unsigned char *bytes, unsigned int length);</com>
+  <com>lo fu byte_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="wide-slice #1: no artificial 13-byte aggregate local survives" min="0" max="0">char v[0-9]+ \[13\];</stringmatch>
+<stringmatch name="wide-slice #2: no 13-byte SUBPIECE expression survives" min="0" max="0">SUB13[0-9]+\(</stringmatch>
+<stringmatch name="wide-slice #3: both low byte lanes are direct masked additions" min="2" max="2">v[0-9]+ \+= v[0-9]+ &amp; 0xff;</stringmatch>
+<stringmatch name="wide-slice #4: all four middle byte lanes are direct shifted masked additions" min="4" max="4">v[0-9]+ \+= v[0-9]+ &gt;&gt; (8|0x10) &amp; 0xff;</stringmatch>
+<stringmatch name="wide-slice #5: both top byte lanes are direct shifted additions" min="2" max="2">v[0-9]+ \+= v[0-9]+ &gt;&gt; 0x18;</stringmatch>
+</decompilertest>

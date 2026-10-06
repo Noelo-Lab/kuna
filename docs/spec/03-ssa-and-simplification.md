@@ -1748,6 +1748,25 @@ value and every lane byte is provably zero — the broadcast mask, and the only
 wide constant mask the engine constructs. Settable `simdlane`, shipped default
 **on**.
 
+**Wide-slice SSA reduction** —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_wideslice.rs` registers
+`RuleWideSlice` in the repeated analysis pool. Optimized vector lowering often
+builds wide `PIECE` trees, shifts them, and then asks for a narrower
+`SUBPIECE`. Keeping the intermediate whole creates artificial aggregate locals.
+The rule pushes the demanded byte range through
+`PIECE`, byte-aligned logical shifts, and `INT_AND`/`INT_OR`/`INT_XOR` before
+high-variable merging.
+
+The rule applies to synthetic, non-power-of-two widths greater than eight bytes,
+rather than matching a function signature, loop, source type, or vector
+instruction. Power-of-two SIMD widths remain with their architecture-specific
+lane rules. Free inputs, type locks, precision marks, invalid ranges, non-byte
+shifts, and arithmetic shifts are refused. Each accepted rewrite is a bitvector
+identity, so this is an always-on correctness fix with no option and no custom C
+emitter.
+`tests/stages/kuna-wideslice.xml` pins clang `-O3` SSE byte-unpacking;
+`gh275-spillargtrial.xml` independently exercises a 12-byte packed-double tree.
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space

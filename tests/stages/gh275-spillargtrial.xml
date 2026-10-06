@@ -37,12 +37,11 @@
     CHECKED so it is never re-scored, and the argument dies to dead-code
     elimination.  `option spillargtrial` narrows that STORE arm.
 
-    Pass 1 (default, `spillargtrial off`): assertion #1 reproduces the bug - the
-    first call keeps only its first argument, and the second call's argument is
-    parked in a spurious 4-byte stack local.
-    Pass 2 (`option spillargtrial reload`): assertions #2 and #3 prove both call
-    sites recover their second argument, and that the spurious stack local is
-    gone.  `reload` is the conservative level: it fires only because the slot is
+    Pass 1 (default, `spillargtrial off`): assertion #1 reproduces the first-call
+    bug. The always-on wide-slice reducer independently removes the spurious
+    12-byte reconstruction from the second call in both passes. Pass 2
+    (`option spillargtrial reload`) proves the remaining argument is recovered.
+    `reload` is the conservative level: it fires only because the slot is
     genuinely read back.
 -->
 <bytechunk space="ram" offset="0x100000">
@@ -74,5 +73,5 @@ c3
 </script>
 <stringmatch name="GH275 #1: default (spillargtrial off) drops the first call's second argument to the caller-save spill" min="1" max="1">atan2\(SUB168\(v[0-9]+\._0_16_,0\)\);</stringmatch>
 <stringmatch name="GH275 #2: spillargtrial reload recovers the first call's second argument" min="1" max="1">atan2\(SUB168\(v[0-9]+\._0_16_,0\),SUB164\(v[0-9]+\._0_16_,8\)\);</stringmatch>
-<stringmatch name="GH275 #3: spillargtrial reload binds the second call's argument to the register, not a spurious stack local" min="1" max="1">atan2\(v[0-9]+,SUB164\(v[0-9]+\._0_16_,8\)\)</stringmatch>
+<stringmatch name="GH275 #3: wide-slice reduction binds the second call's argument directly in both passes" min="2" max="2">atan2\(v[0-9]+,SUB164\(v[0-9]+\._0_16_,8\)\)</stringmatch>
 </decompilertest>

@@ -361,6 +361,7 @@ pub fn universal_sched(
         rrow!("andzext", "analysis", crate::ruleaction_2::RuleAndZext),
         rrow!("andcompare", "analysis", crate::ruleaction_2::RuleAndCompare),
         rrow!("doublesub", "analysis", crate::ruleaction_2::RuleDoubleSub),
+        rrow!("wideslice", "analysis", crate::kuna_wideslice::RuleWideSlice::new("analysis")),
         rrow!("doubleshift", "analysis", crate::ruleaction_2::RuleDoubleShift),
         rrow!("doublearithshift", "analysis", crate::ruleaction_2::RuleDoubleArithShift),
         rrow!("concatshift", "analysis", crate::ruleaction_2::RuleConcatShift),
