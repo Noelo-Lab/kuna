@@ -754,7 +754,8 @@ fn option_values_live_value_present_for_110() {
     // 108 -> 109: +1 for `stackstoreguard` (live_field = stack_store_guard, default-on).
     // 110 -> 111: +1 for `bejoin` (live_field = be_join).
     // 111 -> 112: +1 for `calltargettype` (live_field = call_target_type).
-    assert_eq!(with_live, 112);
+    // 112 -> 113: +1 for `condexeretuse` (live_field = cond_exe_ret_use).
+    assert_eq!(with_live, 113);
 }
 
 #[test]

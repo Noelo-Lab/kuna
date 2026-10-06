@@ -38,7 +38,10 @@
 //! block. A use of such a value outside the merge block that the forced out block
 //! cannot reach is skipped: on any execution that reaches it, the merge was
 //! entered through the other in-edge and the value there is not the one being
-//! scored. Everything else keeps the upstream treatment.
+//! scored. Reachability follows only the forced out-edge of any other such
+//! merge it enters through one in-edge, so a 64-bit
+//! `moveq r0,#7; moveq r1,#0; bxeq lr`, whose `r0` passes two merges that
+//! re-test Z, is covered. Everything else keeps the upstream treatment.
 //!
 //! The repeated walk gives up (keeps the upstream rejection) when a value is
 //! reached both through such a merge and along another route, because the uses
