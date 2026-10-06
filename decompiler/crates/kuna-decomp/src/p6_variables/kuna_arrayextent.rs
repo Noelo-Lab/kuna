@@ -189,7 +189,7 @@ pub(crate) fn extend_unbounded(
             let slot = sstart + (reach as intb + 1) * elem;
             if slot + elem > end
                 || crosses(hints, &order, sstart, slot)
-                || !takes_slot(fd, space, hints, &order, slot, elem, &ty)
+                || !takes_slot(fd, space, hints, &order, sstart, slot, elem, &ty)
             {
                 break;
             }
@@ -235,12 +235,15 @@ fn crosses(hints: &[RangeHint], order: &[(intb, usize)], from: intb, slot: intb)
         .any(|h| h.range_type == RangeType::Fixed && h.sstart + h.size as intb > slot)
 }
 
-/// May an open range of element type `ty` take the `elem`-byte slot at `slot`?
+/// May an open range of element type `ty` starting at `start` take the
+/// `elem`-byte slot at `slot`?
+#[allow(clippy::too_many_arguments)]
 fn takes_slot(
     fd: &Funcdata,
     space: &Rc<AddrSpace>,
     hints: &[RangeHint],
     order: &[(intb, usize)],
+    start: intb,
     slot: intb,
     elem: intb,
     ty: &Rc<Datatype>,
@@ -260,7 +263,7 @@ fn takes_slot(
             && !h.is_type_lock()
             && h.size as intb == elem
             && joinable(ty, &h.type_)
-    }) && !read_directly(fd, space, slot, elem)
+    }) && !observed(fd, space, start, slot, elem)
 }
 
 /// Would `RangeHint::attempt_join` keep an element of type `a` across a hint
@@ -286,17 +289,59 @@ fn joinable(a: &Rc<Datatype>, b: &Rc<Datatype>) -> bool {
     Rc::ptr_eq(&a, &b)
 }
 
-/// Does an op other than a guard INDIRECT or MULTIEQUAL read a stack varnode
-/// overlapping `[slot, slot + elem)`?
-fn read_directly(fd: &Funcdata, space: &Rc<AddrSpace>, slot: intb, elem: intb) -> bool {
+/// Can the function observe the value in `[slot, slot + elem)` other than
+/// through a pointer? A stack varnode there is read by an op other than a guard
+/// INDIRECT or MULTIEQUAL, or a value copied into it is also used by anything
+/// but copies into stack slots outside the array's `[start, slot + elem)`.
+/// The second covers a scalar whose reads were propagated to the register it
+/// was stored from (`fmt = f(); if (fmt == 2)` at -O0), and a value copied
+/// into the array's own elements as well (`float t = ...; float a[3] = {t, t,
+/// u};`); a parameter spilled to its home slot and copied into the array is
+/// still an element.
+fn observed(fd: &Funcdata, space: &Rc<AddrSpace>, start: intb, slot: intb, elem: intb) -> bool {
     let bits = space.get_addr_size() as int4 * 8 - 1;
+    let frame_slot = |vn: VarnodeId| {
+        fd.vbank()
+            .get(vn)
+            .filter(|v| v.get_space().get_index() == space.get_index())
+            .map(|v| {
+                let off = sign_extend(v.get_addr().get_offset() as intb, bits);
+                (off, off + v.get_size() as intb)
+            })
+    };
     let lo = Address::new(Rc::clone(space), space.wrap_offset((slot - 16) as uintb));
     let hi = Address::new(Rc::clone(space), space.wrap_offset((slot + elem) as uintb));
+    let end = slot + elem;
     fd.vbank().iter_loc_addr_range(&lo, &hi).any(|vn| {
-        fd.vbank().get(vn).is_some_and(|v| {
-            let off = sign_extend(v.get_addr().get_offset() as intb, bits);
-            off < slot + elem && slot < off + v.get_size() as intb
-        }) && super::kuna_storereach::is_read(fd, vn)
+        if !frame_slot(vn).is_some_and(|(s, e)| s < end && slot < e) {
+            return false;
+        }
+        if super::kuna_storereach::is_read(fd, vn) {
+            return true;
+        }
+        let Some(def) = fd.vbank().get(vn).and_then(|v| v.get_def()) else {
+            return false;
+        };
+        let Some(src) = fd
+            .obank()
+            .get(def)
+            .filter(|op| op.code() == OpCode::CPUI_COPY)
+            .and_then(|op| op.get_in(0))
+            .and_then(|v| fd.vbank().get(v))
+            .filter(|v| !v.is_constant())
+        else {
+            return false;
+        };
+        src.descend_iter().any(|use_op| {
+            use_op != def
+                && !fd
+                    .obank()
+                    .get(use_op)
+                    .filter(|op| op.code() == OpCode::CPUI_COPY)
+                    .and_then(|op| op.get_out())
+                    .and_then(frame_slot)
+                    .is_some_and(|(s, e)| e <= start || end <= s)
+        })
     })
 }
 
