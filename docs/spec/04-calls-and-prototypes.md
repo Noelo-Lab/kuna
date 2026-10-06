@@ -3258,6 +3258,65 @@ copies of a `tbb` jump table decoded as code in betaflight. Lua 5.4 built for AR
 Thumb, i386, MIPS and RISC-V 32 by clang and gcc at O0 and O2 (12,503 functions)
 changes none.
 
+#### (kuna) A register set for a system register is not a high word
+
+`int f(void) { int r = g(); __asm volatile("vmsr fpscr, %0" :: "r"(0x3000000));
+return r; }` is, on 32-bit ARM, `bl g; mov r1,#0x3000000; vmsr fpscr,r1; pop
+{r11,pc}`, and printed `unsigned long long f(void) { return
+CONCAT44(0x3000000,g()); }` (GH-885). The call's result is the low word through
+the rule above; the high word is the `fpscr` operand. The rule above is not the
+whole story: `r1` is scored as returned by upstream's own scoring, because
+`onlyOpUse` takes a COPY into a register other than a temporary, and any
+CALLOTHER, for an alternate path rather than a competing use. So `int f(int a) {
+r = a * 3; vmsr fpscr,K; return r; }` printed `CONCAT44(0x3000000,a0 * 3)`
+without any call, FreeRTOS's `ulPortRaiseBASEPRI` (Thumb `mrs r0,basepri; mov.w
+r1,#0x50; msr basepri,r1; isb; dsb; bx lr`) returned `CONCAT44(0x50,v1)`, and the
+same happened to MIPS `mtc0 $3`/`ctc1 $3`, PowerPC `mtmsr r4` and an AArch64
+`msr fpcr,x1` beside the value in `x0`, printed `undefined16`.
+
+`kuna_retsysreg::drop_set_aside`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_retsysreg.rs`) runs after the
+last scoring pass, before `kuna_retcallhalf::accept` and the output map, and makes
+an active trial inactive when all of these hold:
+
+* at every live RETURN, every value the trial's register merges (walked back
+  through phis, value-preserving INDIRECTs and the injected no-op) is handed to
+  the machine (`kuna_retsysreg.rs (sinks)`): followed forward through phis,
+  INDIRECTs and temporaries, it reaches a CALLOTHER that produces nothing (`msr
+  basepri`, ARM `msr cpsr_c`, MIPS `mtc0`), or a write to a register the
+  prototype model names nowhere, neither as parameter or return storage nor as
+  unaffected or killed by a call, whose value the function then only turns into
+  flags (`vmsr fpscr`; Thumb `msr cpsr_c` writes `cpsr` and unpacks it into the
+  flags) (`kuna_retsysreg.rs (only_flags)`);
+* none of those writes reads, directly or through temporaries, another value a
+  RETURN reads (`kuna_retsysreg.rs (alone)`): a 64-bit system register takes
+  both words in one write, as x86's `wrmsr` reads `edx:eax` and ARM's `mcrr`
+  reads `r0` and `r1`, and that function returns the 64-bit value it wrote;
+* no other value a RETURN reads is itself handed to the machine, as a 64-bit
+  value written in halves would be;
+* the value is not computed from a call's result in that same register or from
+  a call result wider than it (`kuna_retsysreg.rs (from_call_result)`): `bl g64;
+  orr r1,r1,#255; vmsr fpscr,r1` still returns `g64() | 0xff00000000`;
+* the model, given that trial alone, returns nothing
+  (`kuna_retsysreg.rs (returned_alone)`): the trial is the second register of a
+  pair, never a return value of its own.
+
+The first register then stands alone: `int f(int a0) { return a0 * 3; }`,
+`unsigned int ulPortRaiseBASEPRI(void)`. When it was refused too, as a call's
+untouched result is, nothing is left to return, and `bl g; mov r1,#K; vmsr
+fpscr,r1; pop {r11,pc}` is what `bl g; pop {r11,pc}` is: `void` in
+single-function mode, and in `decompile-all` the call's result once `g`'s
+prototype is recovered (`passthrough`) or a caller reads it (`kuna_voidret`).
+A first register handed to a system register by itself (`mov r0,#0x20; msr
+basepri,r0; bx lr`) is upstream's single-register question and still prints
+`return 0x20;`.
+
+`tests/stages/kuna-retsysreg.xml` pins ARM `vmsr fpscr` and `msr cpsr_c` beside a
+call's result and a computed `r0`, Thumb `ulPortRaiseBASEPRI` and `msr primask`,
+and the `g64` high word and `mcrr` controls in single-function mode, and
+`kuna-cli/tests/sysreg_return_halves.rs` decompiles the ARM and Thumb issue
+shape whole-binary.
+
 #### (kuna) The register that was only ever pushed (`retpushedhalf`)
 
 The placement test asks whether the terminal arrived from a *different* address
