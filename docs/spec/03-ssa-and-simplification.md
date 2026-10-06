@@ -1489,14 +1489,23 @@ constant returned zero-extended, such as `0xfffffff0` beside such a value, no
 longer reads as `-0x10`. A word whose sign bit is known clear keeps the trim,
 since its zero and sign extensions agree, as do a word the function sign-extends
 (`addw`) and a narrower value, which the rule extends by its type's sign
-(`kuna_zextreturn`, chapter [05](05-types.md)). Every function under
-`narrowext off` keeps the trim. So does every x86-64 and AArch64 function, and
-there it is not settled: those conventions leave the bits above a 32-bit return
-unspecified, so the printed `int` callee compiles to the same instructions, but
-a caller that reads the whole register (`add rax,1` after the call) relies on
-the zero-extension the callee performs, and its printed C sign-extends the
-`int` result. Telling such a return from a genuine `int` takes evidence from
-the callers, which the RETURN pull does not have.
+(`kuna_zextreturn`, chapter [05](05-types.md)). Under `narrowext off`, and on
+x86 (32- and 64-bit) and AArch64, the function alone keeps the trim: those
+conventions leave the bits above a narrow return unspecified, so the printed
+`int` callee compiles to the same instructions. Its callers settle it. A caller that computes with the
+whole register (`add $1,%rax` after the call) relies on the zero-extension the
+callee performs, and its printed C sign-extended the `int` result. In
+`decompile-all` such a function is decompiled again with the width its callers
+compute with (`Funcdata::kuna_wide_return`, `voidret` in chapter
+[04](04-calls-and-prototypes.md)). Where a caller computes with all eight bytes
+the pull refuses the trim the same way (`zero_extended_word`); where callers
+compute with at most four, a narrower value keeps its trim and is unsigned
+instead (chapter [05](05-types.md)).
+A convention that extends the value by its type's sign (`inttype`) leaves the
+trim alone, since there a caller may read the whole register of an `unsigned
+int`. Each trim the pull makes of a zero-extended value is noted on the
+function, with whether its sign bit may be set (`Funcdata::kuna_note_zext_word`),
+which is what `voidret` asks its callers about.
 
 Three sibling engines share the file. `subflow.rs (SplitFlow)` (trigger
 `RuleSplitFlow`, oppool1) splits a double-sized value into hi/lo lanes through

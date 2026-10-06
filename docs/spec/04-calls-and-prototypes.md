@@ -5700,3 +5700,75 @@ is also compared, indexed or passed on before it is returned (coreutils
 tests against `NULL`): upstream's sole-use rule, which this redo keeps, refuses
 them, and relaxing it to accept a tested value brought the scratch-register
 merges back.
+
+The same ledger settles a narrow return the function zero-extends (GH-865). On
+x86 (32- and 64-bit) and AArch64, `movzbl` or writing `eax` or `w0` clears the
+rest of the register, and sub-variable flow trims such a return to the narrow
+value
+(`kuna_zextreturn`, chapter [05](05-types.md)); the conventions leave the bits
+above it unspecified, so the function alone cannot tell `int z32m(..)` from
+`unsigned long z32m(..) { return (x * 3) & 0xffffffff; }`. A caller that
+computes with the register above the narrow value relies on the zero-extension:
+gcc's `call z32m; add $1,%rax` printed `z32m(..) + 1` beside `int z32m(int a0)`,
+which C sign-extends, and returned `0xffffffff80000002` where the binary returns
+`0x80000002`. The RETURN pull notes each trim of a zero-extended value, and
+whether its sign bit may be set (`Funcdata::kuna_note_zext_word`), and `record`
+files the narrow storage when the final return is that trim
+(`kuna_voidret.rs (file_word)`). For every call it files, besides the storage
+its uses consume, the storage its operations compute with
+(`kuna_voidret.rs (used_storage)`): the result is followed through copies,
+joins, pieces, extensions, and shifts and masks by constants, which move bits
+without computing with them, and a RETURN or a call's argument only hands the
+register on, unless a shift on the way moved the upper bits where it takes them
+(`return (long)z6(x) >> 1`, `sink((long)z8(x) >> 2)`). An unshifted 64-bit
+result handed straight to a call (`sink(z9(x))` with a `long` parameter) stays
+unread, so `z9` keeps its `int`. Consumption alone was no evidence: a `bool` function that tests a
+comparator's result with `sete %al` and returns `rax` whole, its upper bytes
+still the comparator's, consumed all of the comparator's register (grep's
+`string_compare_ci` over `mbscasecmp`), as did every wrapper that returns an
+`int` call's result. Where a function returns a callee's result as it is
+(`kuna_voidret.rs (hands_on)`), what its own callers compute with is filed for
+that callee too (`kuna_voidret.rs (file_use)`), so `unsigned long w(x) { return
+z32m(x + 7); }` widens `z32m` once `w`'s caller adds to `w`'s result in 64 bits.
+`due` then names each function whose noted value a caller computes with wider,
+where that can change it (`kuna_voidret.rs (widens)`): with more than four
+bytes, or with up to four of a value whose sign bit may be set and which is
+typed a signed or unknown integer, since a `bool` or an `unsigned char` is
+already promoted as the binary extends it. It is named with the widest such
+storage, and `seed` hands that to its next decompile
+(`Funcdata::kuna_wide_return`), where the pull keeps the whole register for a
+caller computing with eight bytes and otherwise makes the narrow value unsigned
+(chapters [03](03-ssa-and-simplification.md) and [05](05-types.md)). A
+function whose return storage such a redo widened has every reader decompiled
+before it decompiled again (`stale_readers`): a reader that took the result as
+the narrow value prints `z32m(..) < 0` of an `int`, which the new `unsigned
+long` declaration makes false. A reader over `AUDIT_MAX_OPS` is redone only
+where it uses the result's sign or width (`kuna_voidret.rs (signed_use)`: an
+extension, an ordering, a right shift, a division, a conversion to a float, an
+equality with a variable or a negative constant, or any equality or
+zero-extension after arithmetic); e2fsck's `main`, which tests such a result for zero and passes it
+on, spent three seconds on a redo that renamed one variable. A reader of the
+widened callee that keeps only the low word prints the call truncated where
+its expression uses the word's sign or width (`narrowed_call_result`, chapter
+[09](09-emission.md)): `int eqv(..) { return (int)z32m(x) == v; }` would
+otherwise print `a1 == z32m(a0)`, which C compares at 64 bits after
+sign-extending `a1`. A convention that extends a narrow return
+by its type's sign (PowerPC64's `inttype`) is left alone: there a caller may read
+the whole register of an `unsigned int`, which `kuna_zextreturn` already types.
+The single-function `kuna decompile` has no callers to ask and keeps the trim.
+Over 30 decbench x86-64 binaries and 190 AArch64 objects built from their
+sources, 19 functions move toward their source types, and 84 more print a
+truncating cast at a comparison of a narrow result of a callee recovered
+returning 8 bytes (chapter [09](09-emission.md)), most of them
+`(int)f(..) == -1`. A zero-extended
+byte its callers compare as an `int` goes from `char` to `unsigned char`: kmod's
+`kmod_module_dependency_symbol_get_bind` at three levels, ssh-agent's
+`recv_msg`, and dash's AArch64 `arith_prec`. A 64-bit return computed in 32 bits
+gets its width: gnulib's `default_block_size` (`uintmax_t`) goes from `int` to
+`unsigned long` in du, ls and find, with its reader `humblock`'s `uintmax_t *`
+going from `long *` to `unsigned long *` and du's `main` passing it a typed
+global; e2fsck's `ext2fs_iblk_set` and `set_undo_io_backup_file`
+(`errcode_t`) go to `uint8`; find's `get_format_specifer_length` (`size_t`)
+goes from `char` to `unsigned long`, its reader only renumbered; and dash's
+`hashvar` and bash -O0's `pshash_getbucket`, which compute a pointer in 32 bits,
+return 64-bit values (a `char *` for bash).

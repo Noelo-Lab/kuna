@@ -589,6 +589,23 @@ beside a pointer, or holds a float statement's result as a float or raw bytes
 return, so the caller prints the conversion (`v1 = (long)sub_eecc(a0,v3)`)
 instead of an assignment C rejects or pointer arithmetic it would scale, and
 stores a float through a `float *`.
+An unlocked callee recovered returning more of the register than the call's
+output holds (`kuna_voidret.rs (narrowed_call_result)`, chapter 04: a 64-bit
+`unsigned long` whose caller compares only `eax`) gets its truncation
+spelled where the expression the output is printed in uses its sign or width:
+an extension, an ordering, a right shift, a division, a conversion to a float,
+an equality with a variable or a negative constant, or any equality or
+zero-extension after arithmetic that C would carry past the narrow value; a
+zero-extension casts to the unsigned word, so `(unsigned int)z32m(a0) + 1 ==
+a1` wraps the sum at 32 bits as the binary's `add $1,%eax` does.
+`coreaction_casts.rs (Funcdata::cast_narrowed_call)` makes the call write the
+callee's whole return, typed as the callee states it, into a fresh implied
+unique, and the output a CAST of it, so `(int)z32m(a0) == a1` prints where
+`a1 == z32m(a0)` compared a sign-extended `a1` with the zero-extended result
+that the binary compares in 32 bits. A result tested for zero, or assigned to a
+variable that the assignment converts, keeps the plain call. Over the decbench
+binaries most of these are `(int)f(..) == -1` beside a callee recovered
+returning 8 bytes.
 
 **Union edges.** A value whose data-type still `needs_resolution()` (a union,
 or a pointer to one) is resolved per read/write edge: `coreaction_casts.rs

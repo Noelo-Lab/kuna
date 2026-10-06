@@ -7043,8 +7043,8 @@ fn callrettype_calls(listing: &str) -> std::collections::BTreeMap<String, Vec<(S
 /// 18446744073709551613), and two that keep an `int` result in an `unsigned
 /// int` and hand it back as `unsigned long` through a reload or a move from
 /// the register it was kept in across another call (`keep_widened`,
-/// `keep_across`, read whole and shifted, where `int` would print
-/// 9223372036854775806), and one that passes such a result to an `unsigned
+/// `keep_across`, read whole and shifted, which prints them `unsigned long` as
+/// declared, where `int` would print 9223372036854775806), and one that passes such a result to an `unsigned
 /// long` parameter (`pass_widened`, where an `int` argument would hand `halve`
 /// a sign-extended value and print 9223372036854775807).  Every fixture is
 /// decompiled with the option
@@ -7129,8 +7129,8 @@ int main(void) {
                 "    v1 = lookup((long *)*a0,a1);",
                 "unsigned short use_s16_as_u(",
                 "unsigned int use_neg_as_unsigned(",
-                "unsigned int keep_widened(",
-                "unsigned int keep_across(",
+                "unsigned long keep_widened(",
+                "unsigned long keep_across(",
             ],
         ),
         (
@@ -7152,8 +7152,8 @@ int main(void) {
                 "  mark(a0);\n",
                 "unsigned short use_s16_as_u(",
                 "unsigned int use_neg_as_unsigned(",
-                "unsigned int keep_widened(",
-                "unsigned int keep_across(",
+                "unsigned long keep_widened(",
+                "unsigned long keep_across(",
             ],
         ),
         (
@@ -7172,8 +7172,8 @@ int main(void) {
                 "return (unsigned long)signed_delta(a0,a1) >> 0x3f;",
                 "unsigned short use_s16_as_u(short a0)",
                 "unsigned int use_neg_as_unsigned(int a0)",
-                "unsigned int keep_widened(",
-                "unsigned int keep_across(",
+                "unsigned long keep_widened(",
+                "unsigned long keep_across(",
             ],
         ),
     ];
@@ -7276,7 +7276,8 @@ int main(void) {
 /// record walked by a stride, and one pointer read at two widths. A second line
 /// reads tables whose elements have the top bit set: a `unsigned short` and an
 /// `unsigned int` element returned to a caller that widens them (declared
-/// signed, the callers would sign-extend), one shifted and one only compared,
+/// signed, the callers would sign-extend; they add to the whole register, so
+/// the functions return `unsigned long`, as declared), one shifted and one only compared,
 /// and a byte table one function zero-extends and another sign-extends (the
 /// header can declare it at one sign only, so neither indexes it). At -O2, gcc's
 /// `w_rev` returns the `malloc` result it never copies out of `rax`, and kuna
@@ -7328,8 +7329,8 @@ fn check_elemptr_round_trip(run_native: bool) {
         "long w_ubytes(unsigned char *a0,int a1)",
         "long w_sidx(char *a0,int a1,int *a2)",
         "long w_mixed(char *a0,int a1)",
-        "unsigned short w_wu(unsigned int a0)",
-        "unsigned int w_iu(unsigned int a0)",
+        "unsigned long w_wu(unsigned int a0)",
+        "unsigned long w_iu(unsigned int a0)",
         "w_put(char *a0,unsigned long a1,char *a2)",
         "w_ctr(unsigned int *a0,",
         "long w_hsum(char *a0,long a1)",

@@ -178,10 +178,12 @@ impl VoidReads {
                 slots[index] = Some(again);
             } else {
                 kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), k, stated.clone());
-                kuna_decomp::kuna_voidret::restore(prog.arch_mut(), k, returns, storage);
+                kuna_decomp::kuna_voidret::restore(prog.arch_mut(), k, returns, storage.clone());
             }
             self.decompiled(k);
             if kuna_decomp::kuna_voidret::returns(prog.arch(), k) != returns
+                || (kuna_decomp::kuna_voidret::widened(prog.arch(), k)
+                    && kuna_decomp::kuna_voidret::return_storage(prog.arch(), k) != storage)
                 || !kuna_decomp::kuna_callrettype::same_statement(
                     stated.as_deref(),
                     kuna_decomp::kuna_callrettype::statement(prog.arch(), k).as_deref(),
