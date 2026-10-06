@@ -4492,10 +4492,10 @@ is not also a call argument (clang's `fwd`, which hands `x` to `getk` on the
 other path, stays `void` even then), and a function nothing calls has nothing
 to force it.
 
-**Why it is opt-in.** The same bytes are a `void` guard. clang's ARM and
-PPC64LE builds of `void thr(int *p) { if (*p > 5) return; work(); }` and of
-`int keep` above are identical (`ldr r0,[r0]; cmp r0,#5; bxgt lr; b work`),
-and on x86-64 lazy initializers, reference-count puts, once-guards and range
+**Why it is opt-in.** The same bytes are a `void` guard. clang's ARM builds
+of `void thr(int *p) { if (*p > 5) return; work(); }` and of `int keep` above
+are identical (`ldr r0,[r0]; cmp r0,#5; bxgt lr; b work`; on PPC64LE `keep`
+only adds an `extsw`), and on x86-64 lazy initializers, reference-count puts, once-guards and range
 checks that return early on a value they loaded in `eax` take the shape too:
 in gcc and clang -O1 to -Os builds of a file of 18 such `void` guards (`if
 (__sync_lock_test_and_set(&flag, 1)) return; work();`, `if (q > 5) return;`
@@ -4530,16 +4530,17 @@ the storage is a single register and every own RETURN passes
   must not be on the side where that test found the value equal to a constant
   (`returns_the_constant`): `if (!flag) return; ...; clear();` leaves the `0`
   it tested in `eax`, and a `void` function does that as readily as one that
-  returns `0`. The test is read as an equality only through what
-  `equality_test` and `pins` follow: negations, copies and extensions of the
-  condition, `x & x`, a comparison of a truth value with 0 or 1 (`sete %dl;
-  test %dl,%dl`), and on the compared side the value itself or any part of its
-  register, its copies and zero- and sign-extensions (`mov %eax,%ecx` lifts to
-  `rcx = zext(eax)`), it plus, minus or exclusive-or a constant held in the op
-  or in a temporary set just before (AArch64 `cmp w0,#7`), `x & x` and `x &
-  -1`. That covers x86 `test`/`cmp` with `je`/`jne` and through `sete`/`setne`,
-  AArch64 `cbz`/`cbnz` and `cmp`/`b.eq`/`b.ne`; a test it cannot read that way
-  (a bit test, a `ccmp` chain, a range) is not taken for one;
+  returns `0`. `equality_test` and `pins` read these forms as an equality: x86
+  `test %eax,%eax`, `test $-1,%eax` and `cmp $K,%eax` (also on a 32-bit copy,
+  `mov %eax,%ecx`, which lifts to `rcx = zext(eax)`) with `je`/`jne`, a
+  `sete`/`setne` byte tested with `test %dl,%dl`, and AArch64 `cbz`/`cbnz` and
+  `cmp w0,#K` (the `K` in a temporary set just before) with `b.eq`/`b.ne`.
+  Other equality tests are not read, and with the option on a `void` guard
+  using one gets `return 7;` or `return 0;`, as part of the misfire class
+  above: a truth byte compared with `cmp` (`sete %dl; cmpb $1,%dl; je`), a
+  value tested after `movzbl`/`movsbl`, a constant held in a register (`movl
+  $7,%ecx; cmpl %ecx,%eax`), and PowerPC condition-register tests. A test
+  that is no equality (a bit test, a `ccmp` chain, a range) is not refused;
 * from the op that computed it, the value only decides branches, moves between
   registers and reaches the claimed tail calls (`only_decides`): anything
   computed from it may only reach a CBRANCH, and a load or store through it or
