@@ -2171,28 +2171,29 @@ impl Funcdata {
         trial: &crate::fspec::ParamTrial,
         main_flags: kuna_base::types::uint4,
     ) -> bool {
-        let retest = crate::p4_calls::kuna_condexeretuse::applies(self, opmatch);
-        let mut merged = false;
-        if self.only_op_use_walk(invn, opmatch, trial, main_flags, retest, false, &mut merged) {
+        use crate::p4_calls::kuna_condexeretuse as retest;
+        let mut entered = Vec::new();
+        let noting = retest::applies(self, opmatch);
+        if self.only_op_use_walk(invn, opmatch, trial, main_flags, noting.then_some(&mut entered), false) {
             return true;
         }
-        merged && self.only_op_use_walk(invn, opmatch, trial, main_flags, false, true, &mut merged)
+        noting
+            && retest::any_retest_merge(self, &entered)
+            && self.only_op_use_walk(invn, opmatch, trial, main_flags, None, true)
     }
 
-    /// One `only_op_use` walk. `note_merges` records in `merged` whether the walk
-    /// entered a merge block that re-tests its condition; `by_merge` repeats it
-    /// skipping the uses such a merge rules out (`condexeretuse`, see
-    /// [`crate::p4_calls::kuna_condexeretuse`]).
-    #[allow(clippy::too_many_arguments)]
+    /// One `only_op_use` walk. `entered` collects the two-input MULTIEQUALs the
+    /// walk passes through, with the Varnode it reached each by; `by_merge`
+    /// skips the uses a merge block that re-tests its condition rules out
+    /// (`condexeretuse`, see [`crate::p4_calls::kuna_condexeretuse`]).
     fn only_op_use_walk(
         &mut self,
         invn: VarnodeId,
         opmatch: OpId,
         trial: &crate::fspec::ParamTrial,
         main_flags: kuna_base::types::uint4,
-        note_merges: bool,
+        mut entered: Option<&mut Vec<(OpId, VarnodeId)>>,
         by_merge: bool,
-        merged: &mut bool,
     ) -> bool {
         use crate::expression::{traverse_flags, TraverseNode};
         use crate::context::OpId as OId;
@@ -2386,8 +2387,8 @@ impl Funcdata {
                         res = false;
                         break;
                     }
-                    if note_merges && !*merged {
-                        *merged = retest::carried(self, op, vn, None).is_some();
+                    if let Some(e) = entered.as_deref_mut().filter(|_| code == OpCode::CPUI_MULTIEQUAL) {
+                        e.push((op, vn));
                     }
                     let carry = if by_merge { retest::carried(self, op, vn, forced) } else { None };
                     if !self.vbank().get(subvn).map(|v| v.is_mark()).unwrap_or(true) {

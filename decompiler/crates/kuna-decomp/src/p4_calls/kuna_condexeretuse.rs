@@ -72,6 +72,12 @@ pub fn applies(data: &Funcdata, opmatch: OpId) -> bool {
         && data.obank().get(opmatch).map(|o| o.code()) == Some(OpCode::CPUI_RETURN)
 }
 
+/// Whether any MULTIEQUAL `op` a walk reached through `vn` sits in a merge
+/// block that re-tests its condition and was entered through one in-edge.
+pub fn any_retest_merge(data: &Funcdata, entered: &[(OpId, VarnodeId)]) -> bool {
+    entered.iter().any(|&(op, vn)| carried(data, op, vn, None).is_some())
+}
+
 /// The [`Forced`] pair the output of `op` carries when the walk reaches it
 /// through `vn`, which already carries `from`: a fresh pair for a MULTIEQUAL in a
 /// re-testing merge block entered through exactly one in-edge, `from` for an op

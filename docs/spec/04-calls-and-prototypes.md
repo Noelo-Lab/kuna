@@ -1921,6 +1921,10 @@ needs the return register and the first argument register to be the same storage
 so it is an ARM/AArch64 finding in practice; with the gate off the check is
 upstream's, rejecting on every competing call use.
 
+A second exception, (kuna) `condexeretuse`, covers uses that sit on a branch
+no execution carrying the scored value can take. It is described with
+`condexeret` in §4.4, because both come from the same merge blocks.
+
 The output container normally gets a single pass (its budget is 0 unless the
 model has a delayed heritage space), and that pass runs before
 `ActionConditionalExe` in the same mainloop iteration. The (kuna) `condexeret`
@@ -2626,6 +2630,60 @@ and skips the walk for that trial, so a claimed trial never reaches the
 remember step; in the extra pass only remembered (trial, RETURN) pairs are
 looked at, and `keep_tail_return_whole` still runs once, just before
 `derive_output_map`, which with a pending retry happens after the extra pass.
+
+### (kuna) `condexeretuse` — a use the re-test rules out
+
+`condexeret` covers a return trial whose ancestor walk fails at an input. The
+same merge blocks also fail return trials through the sole-use check. ARM
+conditional execution writes the return value and returns under one
+condition, and tail-calls under the other:
+
+```text
+pick:   cmp r0,#0; moveq r0,#7; bxeq lr; b getv
+```
+
+The `moveq` becomes a block that writes 7, the `bxeq` a merge block that
+branches on Z again. In the graph the 7 flows through the merge's MULTIEQUAL
+into both the RETURN and the tail call's `r0` argument slot, though the
+execution that wrote it always takes the return. `ActionReturnRecovery`
+scores output trials before `ActionConditionalExe` removes the merge, the
+CALL counts as a competing use, and `int pick(int a) { if (a) return getv();
+return 7; }` printed `void pick(int a0)`.
+
+With `condexeretuse on` (the default), a sole-use walk matched at a RETURN
+that fails, and that passed through a MULTIEQUAL in a merge block of the shape
+`condexeret` uses, is walked once more
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs
+(Funcdata::only_op_use)`). In the repeated walk, a value that enters such a
+MULTIEQUAL through exactly one in-edge fixes the merge's branch for that
+execution: the edge leads back through straight-line blocks to one out-edge of
+the init block, and the merge tests the same condition or its complement.
+`ConditionalExecution::forced_out_block`
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/condexe.rs
+(ConditionalExecution::forced_out_block)`) names the out block, using the
+control-flow tests of `ConditionalExecution::verify` without its
+op-removability test. The MULTIEQUAL's output carries the merge and that out
+block, and so does every value computed from it inside the merge block
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_condexeretuse.rs (carried)`).
+A use of such a value outside the merge block is skipped when the forced out
+block cannot reach it (`kuna_condexeretuse.rs (cannot_arrive)`). The
+reachability walk follows only the forced out-edge at any other such merge it
+enters through one in-edge, so a 64-bit `moveq r0,#7; moveq r1,#0; bxeq lr`,
+whose first value passes two merges that re-test Z, is handled too. Past 4096
+visited (block, in-edge) states every block counts as reachable.
+
+Every skipped use sits on a path that the value being scored cannot take, so
+the repeated walk answers upstream's question for the executions that exist.
+It keeps the upstream rejection when a value is reached both through such a
+merge and along another route, since the uses it skipped would then be real.
+Uses the scored value can reach still reject the trial: in `differ`
+(`cmp r0,#0; moveq r0,#7; cmp r1,#0; bxeq lr; b getv`) the second test is on
+r1, the 7 reaches `getv` when `a1 != 0`, and the function stays void. A STORE
+of the value on the returning path (`streq r0,[r1]`) still rejects too. The
+repeated walk runs only when the first walk fails after entering such a merge.
+Call-site input trials are untouched, so the tail call still shows the phantom
+`getv(a0)` argument the infeasible path gives its `r0` trial. With the gate off
+the check is upstream's.
 
 ### (ida) The uncomputed half of a recovered return pair
 

@@ -770,6 +770,9 @@ Three tiers:
 | a return value set under a condition disappears when the next branch tests the same condition | [`condexeret`](#condexeret) |
 | declaring the prototype brings the return value back while the recovered one is void | [`condexeret`](#condexeret) |
 | a conditional-execution core (META SUBLS/BLS) loses return 0 / return 1 paths | [`condexeret`](#condexeret) |
+| an ARM function that returns a constant through bxeq lr and otherwise tail-calls prints void | [`condexeretuse`](#condexeretuse) |
+| a return value set by a conditional mov just before a conditional return disappears | [`condexeretuse`](#condexeretuse) |
+| declaring the prototype brings the return value back while the recovered one is void | [`condexeretuse`](#condexeretuse) |
 | a Rust Result or Option producer recovers as bool and the payload register is missing from the return | [`rustabi`](#rustabi) |
 | a local commented with a register name is declared and read but never assigned anywhere in the function | [`rustabi`](#rustabi) |
 | a call to a Rust function that returns Result renders with no output at all | [`rustabi`](#rustabi) |
@@ -2679,6 +2682,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: the extra pass can only find a trial realistic once the merge block that failed it is gone from the graph, and 0/675 datatest assertions move. Set it off to diff against upstream, or when a function whose return register is written under a condition and then tested on the same condition again should keep upstream's `void` reading. It matters most on cores with conditional execution (a META `SUBLS D0Re0,D0Re0,D0Re0; BLS end`), where the shape is common; on x86-64 compilers rarely emit it.
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · GH-747
 - **Example:** `option condexeret off`
+
+### `condexeretuse` -- on | off, default `on`
+
+- **Symptoms:** an ARM function that returns a constant through bxeq lr and otherwise tail-calls prints void; a return value set by a conditional mov just before a conditional return disappears; declaring the prototype brings the return value back while the recovered one is void.
+- **What it does:** Do not count a use of a returned value that sits on the branch a re-tested condition rules out. Funcdata::onlyOpUse (funcdata_varnode.cc:1851) rejects an output trial when the value reaching the RETURN has another use such as a CALL. ARM conditional execution (`cmp r0,#0; moveq r0,#7; bxeq lr; b getv`) leaves a merge block that branches on the condition its predecessor already branched on, so the 7 written on one arm reaches both the RETURN and the tail call's argument slot in the graph, although the execution that wrote it always returns. ActionConditionalExe threads that block only later in the same mainloop iteration, after ActionReturnRecovery has scored output trials once, so `int pick(int a) { if (a) return getv(); return 7; }` printed `void pick(int a0)`. When on, a RETURN match whose walk fails and entered such a merge (two in-edges leading back through straight-line blocks to one CBRANCH block, two out-edges, a CBRANCH on the same condition or its complement) is walked once more: a value entering the merge's MULTIEQUAL through exactly one in-edge, and anything computed from it inside the merge block, carries the out block that execution must take, and a use outside the merge block that out block cannot reach is skipped. The repeated walk keeps the rejection when a value is reached both through such a merge and along another route. Call-site input trials are untouched.
+- **When to flip:** On by default: the repeated walk only skips uses no execution carrying the scored value can reach, and 0/675 datatest assertions move. Set it off to diff against upstream, or to check whether a recovered return value on an ARM function with conditional returns (`bxeq lr`, `popeq {...,pc}`) came from this rule.
+- **Where / provenance:** P4/output-prototype · kuna · correctness-fix · GH-874
+- **Example:** `option condexeretuse off`
 
 ### `rustabi` -- off | auto | always, default `off`
 
