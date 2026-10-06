@@ -132,10 +132,12 @@ fn is_apple_arm64(arch: &Architecture) -> bool {
                 .is_ok_and(|loader| loader.callee_extends_returns() == Some(true)))
 }
 
-/// Whether `ty` is an integer whose sign is known; plain `char` is not, since
-/// its sign is the platform's and kuna's `char` is signed on every target.
+/// Whether `ty` is an integer whose sign is known. The target's own character
+/// types (core `char` and the wide ones) are not: their sign is the platform's,
+/// and kuna's `char` is signed on every target. `signed char` and `unsigned
+/// char` are character types too, but they state their sign.
 fn signed(ty: &Datatype) -> Option<bool> {
-    if ty.is_char_print() {
+    if ty.is_char_print() && (ty.is_core_type() || ty.get_size() != 1) {
         return None;
     }
     match ty.get_metatype() {

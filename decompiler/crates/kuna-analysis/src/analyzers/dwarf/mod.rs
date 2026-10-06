@@ -762,8 +762,10 @@ fn aggregate_name<'a>(die: &'a DieSnap, alias: Option<&'a str>, fallback: &'a st
 }
 
 /// A DWARF character base type. `signed char` and `unsigned char` are distinct C
-/// types whose sign is stated, so they become integers of that sign; plain
-/// `char` (and any other spelling, such as Fortran's `character`) keeps the core
+/// types whose sign is stated, so they become character types of that sign
+/// (Ghidra's `schar`/`uchar`): they still print as characters and copy as
+/// strings, but extend, compare and convert by their own sign. Plain `char`
+/// (and any other spelling, such as Fortran's `character`) keeps the core
 /// `char` type, whose sign is the target's whatever the encoding says.
 fn char_datatype(
     types: &dyn TypeFactory,
@@ -771,9 +773,13 @@ fn char_datatype(
     name: &str,
     signed: Option<bool>,
 ) -> Option<Rc<Datatype>> {
-    match (name, signed) {
-        ("signed char", Some(true)) => types.get_base_no_char(size, type_metatype::TYPE_INT).ok(),
-        ("unsigned char", Some(false)) => types.get_base(size, type_metatype::TYPE_UINT).ok(),
+    let meta = match (name, signed) {
+        ("signed char", Some(true)) => Some(type_metatype::TYPE_INT),
+        ("unsigned char", Some(false)) => Some(type_metatype::TYPE_UINT),
+        _ => None,
+    };
+    match meta {
+        Some(m) if size == 1 => types.get_type_char_signed(name, m).ok(),
         _ => types.get_type_char(size).ok(),
     }
 }
@@ -1320,9 +1326,9 @@ mod tests {
     }
 
 
-    /// `signed char` and `unsigned char` are integers of the sign DWARF states;
-    /// plain `char` stays the core `char` whatever its encoding (AArch64 and ARM
-    /// state it `DW_ATE_unsigned_char`), so a string stays `char *`.
+    /// `signed char` and `unsigned char` are character types of the sign DWARF
+    /// states; plain `char` stays the core `char` whatever its encoding (AArch64
+    /// and ARM state it `DW_ATE_unsigned_char`), so a string stays `char *`.
     #[test]
     fn a_character_type_keeps_its_stated_sign_and_plain_char_stays_char() {
         let types = factory();
@@ -1352,13 +1358,14 @@ mod tests {
         let built = |off: usize| {
             let mut walk = TypeWalk::with_gate(true);
             let t = build_datatype(Some(off), &dies, &types, 1, &mut walk, false).expect("builds");
-            (t.get_metatype(), t.is_char_print())
+            (t.get_metatype(), t.is_char_print(), t.is_core_type(), t.get_name().to_string())
         };
-        assert_eq!(built(0), (type_metatype::TYPE_INT, true), "x86 plain char");
-        assert_eq!(built(1), (type_metatype::TYPE_INT, true), "ARM plain char");
-        assert_eq!(built(2), (type_metatype::TYPE_INT, false), "signed char");
-        assert_eq!(built(3), (type_metatype::TYPE_UINT, false), "unsigned char");
-        assert_eq!(built(4), (type_metatype::TYPE_INT, true), "Fortran character");
+        let plain = (type_metatype::TYPE_INT, true, true, "char".to_string());
+        assert_eq!(built(0), plain, "x86 plain char");
+        assert_eq!(built(1), plain, "ARM plain char");
+        assert_eq!(built(2), (type_metatype::TYPE_INT, true, false, "signed char".into()), "signed char");
+        assert_eq!(built(3), (type_metatype::TYPE_UINT, true, false, "unsigned char".into()), "unsigned char");
+        assert_eq!(built(4), plain, "Fortran character");
     }
 
     /// Parse the DWARF snapshot of a fixture and return the subprogram DIEs that

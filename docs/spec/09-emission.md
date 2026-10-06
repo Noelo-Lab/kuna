@@ -971,6 +971,17 @@ walk that renders `name.field`, `name[index]`, a `(int4)name` truncation cast,
 or the artificial `name._8_4_` member when a Varnode covers only part of its
 mapped symbol (`printc.rs (PrintC::push_partial_symbol_ir)`).
 
+(kuna) The character formatter prints a byte above 0x7f of a `signed char` or
+`unsigned char` type (a character type that is not the target's own `char`,
+chapter 01's DWARF reader makes them) as a number of the type's sign, not as
+`'\xc8'`: that literal is -56 or 200 by the sign of the compiling target's
+`char`, so `c == '\xc8'` with `unsigned char c` is never true on x86. Plain
+`char` keeps upstream's escape, which is that type's value. An extension
+whose input is a one-element array read whole (`unsigned char b[1]` loaded as
+one byte) asks the cast question of the element, so it prints `(int)b[0]`
+where it printed the functional `ZEXT14(b[0])`
+(`printc.rs (sext_zext_facing_types)`).
+
 **Which symbols enter the partial walk.** Upstream routes *every* partial cover
 of a mapped Symbol through that walk — the walk itself decides, per type, what
 token describes the access — and kuna does the same: STRUCT, UNION and ARRAY

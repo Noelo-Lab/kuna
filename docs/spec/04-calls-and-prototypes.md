@@ -2295,9 +2295,11 @@ rule a value narrower than 32 bits takes it to the low 32 bits only, and the
 rest of the register is left as the call or the entry leaves it. Plain `char`
 keeps the spec's extension, since its sign is the platform's (unsigned on Arm,
 AArch64 and RISC-V) while kuna's `char` is one signed type everywhere, and so
-do an undefined type, a pointer, a float, a structure, and every value on any
-other processor. `signed char` and `unsigned char` state their sign, and the
-DWARF reader keeps them apart from plain `char` (01). A typed
+do the wide character types, an undefined type, a pointer, a float, a
+structure, and every value on any other processor. `signed char` and
+`unsigned char` are character types too, but not the target's own (core) one:
+they state their sign, and the DWARF reader keeps them apart from plain `char`
+(01). A typed
 indirect call whose return value the rule extends is forced as declared (§4.3).
 The rule is only as right as the sign the type states, so the type sources give
 a narrow type the sign its source declared (01, DWARF and `cppsig`): `char16_t`
@@ -4788,13 +4790,11 @@ type when every call passes the argument in exactly the storage the callee
 recovered it in and every call passes the SAME committed pointer: a pointer to
 a named record or union that carries its layout (a synthesized `struct_N` the
 layout ledger shares, a record a program declares), a `char *` or a `char **`.
-A `signed char *` or `unsigned char *` (or a pointer to one) commits only where
-the caller declared the value's type, its HighVariable being type-locked (a
-DWARF parameter, local or global): a recovery reads that sign off the width of a
-load (`elemptr`), which says nothing a callee should take, so `record` files
-such an argument as unread. Before the DWARF reader kept those two types apart
-from `char`, bzip2's `UChar *block` reached `mainGtU` as `char *`; filing it as
-unread would have left the parameter a `long`.
+A `signed char *` or `unsigned char *` is a character pointer too (chapter 01
+gives DWARF's those character types). Callers that disagree only in the sign of
+that character, one passing a `char *` and another the same value cast to
+`unsigned char *`, agree on `char *` (`same_but_character_sign`); with no
+`char *` among them they state nothing.
 A name with no layout behind it is not a commitment: the `FILE` shell
 `libctypes` interns says no more about the object than `void *` does, and the
 refusals below that read the pointee's members have nothing to read, so a

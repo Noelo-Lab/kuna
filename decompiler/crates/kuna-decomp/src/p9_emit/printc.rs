@@ -6744,6 +6744,12 @@ impl PrintC {
         let invn = fd.obank().get(op)?.get_in(0)?;
         let outtype = fd.vbank().get(outvn)?.get_type_def_facing().clone();
         let intype = fd.vbank().get(invn)?.get_type_read_facing(op).clone();
+        // (kuna) A one-element array read whole is its element (`b[0]`), which
+        // extends as the element's type does.
+        let intype = match intype.get_array_base() {
+            Some(elem) if elem.get_size() == intype.get_size() => elem,
+            _ => intype,
+        };
         Some((outtype, intype))
     }
 
@@ -9330,6 +9336,12 @@ impl PrintC {
         // `caresAboutCharRepresentation` returns false), prints as an integer.
         if display_fmt != display_format::NONE && display_fmt != display_format::FORCE_CHAR {
             self.push_constant_ir_fmt_sign(val, ct.get_size(), op, display_fmt, is_signed);
+            return;
+        }
+        // (kuna) `'\xc8'` is -56 or 200 by the sign of the target's `char`, so a
+        // `signed char` or `unsigned char` byte above 0x7f prints as a number.
+        if ct.get_size() == 1 && !ct.is_core_type() && val >= 0x80 && display_fmt == display_format::NONE {
+            self.push_constant_ir_fmt_sign(val, 1, op, display_format::NONE, is_signed);
             return;
         }
         // printc.cc:1699-1723: emit the `'a'` / `L'...'` / hex-escape literal.

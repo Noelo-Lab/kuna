@@ -484,6 +484,8 @@ long s_wids(signed char c) { return c; }
 long s_wus(unsigned short c) { return c; }
 long s_wss(short c) { return c * 3L; }
 int s_wb(_Bool b) { return b + 5; }
+int rd1(unsigned char *b, int v) { b[0] = v; return 1; }
+int s_getc1(int v) { unsigned char b[1]; rd1(b, v); return b[0]; }
 "#;
 
 /// Each round-tripped function of `charsign.c` and the parameter type it takes.
@@ -496,6 +498,7 @@ const CHARSIGN_VALUES: &[(&str, &str)] = &[
     ("wus", "unsigned short"),
     ("wss", "short"),
     ("wb", "_Bool"),
+    ("getc1", "int"),
 ];
 
 /// Compiles the printed `checked` functions of `charsign.c` beside its source
@@ -528,10 +531,13 @@ fn charsign_round_trip(stem: &str, text: &str, checked: &[&str], compilers: &[&s
 
 /// A DWARF `unsigned char` or `signed char` parameter keeps the sign it was
 /// declared with; it used to read as plain `char`, so `sprintf(b,f,c)` with
-/// `char c` printed 202 as -54 when compiled. clang -O2 also reads a narrow
-/// parameter as the 32-bit value its caller extended it to, which only
-/// `narrowext compiler` states on x86-64: by default (and with it off) that
-/// prints `CONCAT31(v1,c)` with an unassigned `v1`.
+/// `char c` printed 202 as -54 when compiled. A one-element `unsigned char`
+/// array read whole extends as its element (`(int)b[0]`, not `ZEXT14(b[0])`).
+/// clang -O2 also reads a narrow parameter as the 32-bit value its caller
+/// extended it to, which only `narrowext compiler` states on x86-64: by default
+/// (and with it off) that prints `CONCAT31(v1,c)` with an unassigned `v1`.
+/// clang's `getc1` keeps its buffer in the slot of an alignment push, which
+/// kuna reads wrongly on main too, so only gcc's is checked.
 #[test]
 fn a_dwarf_char_parameter_keeps_its_declared_sign() {
     let compilers = host_compilers();
@@ -551,6 +557,7 @@ fn a_dwarf_char_parameter_keeps_its_declared_sign() {
     charsign_round_trip("charsign-gcc", &gcc, &all, &compilers).unwrap_or_else(|e| panic!("gcc -O2: {e}\n{gcc}"));
 
     let clang = run("charsign_x86_64_clang_O2", &[]);
+    let all: Vec<&str> = all.into_iter().filter(|n| *n != "getc1").collect();
     let by_default: Vec<&str> = all.iter().copied().filter(|n| !widened.contains(n)).collect();
     charsign_round_trip("charsign-clang", &clang, &by_default, &compilers)
         .unwrap_or_else(|e| panic!("clang -O2: {e}\n{clang}"));

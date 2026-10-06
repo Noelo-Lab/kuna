@@ -3860,6 +3860,13 @@ pub trait TypeFactory {
     fn get_base_named(&self, s: int4, m: type_metatype, n: &str) -> KunaResult<Rc<Datatype>>;
     /// Get a character data-type by size (C++ `getTypeChar(int4)`).
     fn get_type_char(&self, s: int4) -> KunaResult<Rc<Datatype>>;
+    /// (kuna) A named 1-byte character data-type of the sign `m` states
+    /// (`TYPE_INT` or `TYPE_UINT`): Ghidra's `schar`/`uchar`, which print as
+    /// characters but extend, compare and convert by their own sign. The
+    /// default body errs; the concrete `TypeFactoryImpl` overrides it.
+    fn get_type_char_signed(&self, _name: &str, _m: type_metatype) -> KunaResult<Rc<Datatype>> {
+        Err(KunaError::lowlevel("signed character types are not supported by this factory"))
+    }
     /// Get an "anonymous" function data-type (C++ `getTypeCode(void)`).
     fn get_type_code(&self) -> KunaResult<Rc<Datatype>>;
     /// Create a `TypeCode` carrying a specific function prototype (C++
@@ -7113,6 +7120,20 @@ impl TypeFactory for TypeFactoryImpl {
     }
     fn get_type_char(&self, s: int4) -> KunaResult<Rc<Datatype>> {
         self.get_type_char_sized(s)
+    }
+    fn get_type_char_signed(&self, name: &str, m: type_metatype) -> KunaResult<Rc<Datatype>> {
+        let submeta = match m {
+            type_metatype::TYPE_INT => sub_metatype::SUB_INT_CHAR,
+            type_metatype::TYPE_UINT => sub_metatype::SUB_UINT_CHAR,
+            _ => return Err(KunaError::lowlevel("a character type is signed or unsigned")),
+        };
+        let mut tc = Datatype::new(1, m);
+        tc.name = name.to_string();
+        tc.display_name = name.to_string();
+        tc.flags |= flags::chartype;
+        tc.submeta = submeta;
+        tc.id = Datatype::hash_name(name);
+        self.find_add(tc)
     }
     fn get_type_code(&self) -> KunaResult<Rc<Datatype>> {
         self.get_type_code_impl()

@@ -107,10 +107,7 @@ pub struct Typed {
 }
 
 /// One direct call: the caller, the call instruction, and what each argument
-/// slot carried (`None` where the storage or the type could not be read, or
-/// the value is a `signed char *` or `unsigned char *` its caller did not
-/// declare: a recovery reads that sign off the width of a load, which commits
-/// to nothing).
+/// slot carried (`None` where the storage or the type could not be read).
 #[derive(Debug, Clone)]
 pub struct CallSite {
     pub caller: uintb,
@@ -228,11 +225,9 @@ fn key_of(a: &Address) -> Option<(int4, uintb)> {
 }
 
 /// Is `ct` a pointer a caller commits to: a named record or union that carries
-/// its layout, a character (`char`, `signed char`, `unsigned char`), or a
-/// pointer to a character pointer? An incomplete shell -- `FILE` as
-/// `libctypes` interns it without `glibc` layouts -- is a name and nothing
-/// else, so it is not a commitment. [`record`] keeps a `signed char *` or
-/// `unsigned char *` only where the caller declared it.
+/// its layout, a character, or a pointer to a character pointer? An incomplete
+/// shell -- `FILE` as `libctypes` interns it without `glibc` layouts -- is a
+/// name and nothing else, so it is not a commitment.
 pub fn committed(ct: &Datatype) -> bool {
     if ct.get_metatype() != type_metatype::TYPE_PTR {
         return false;
@@ -242,29 +237,10 @@ pub fn committed(ct: &Datatype) -> bool {
         type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION => {
             !pt.get_name().is_empty() && !pt.is_incomplete()
         }
-        type_metatype::TYPE_INT | type_metatype::TYPE_UINT => is_character(&pt),
-        type_metatype::TYPE_PTR => pt.get_ptr_to().is_some_and(|c| is_character(&c)),
+        type_metatype::TYPE_INT | type_metatype::TYPE_UINT => pt.get_size() == 1 && pt.is_char_print(),
+        type_metatype::TYPE_PTR => pt.get_ptr_to().is_some_and(|c| c.get_size() == 1 && c.is_char_print()),
         _ => false,
     }
-}
-
-fn is_character(ct: &Datatype) -> bool {
-    ct.get_size() == 1 && matches!(ct.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT)
-}
-
-/// Is `ct` a pointer, or a pointer to a pointer, to a `signed char` or an
-/// `unsigned char` rather than a plain `char`?
-fn points_at_a_signed_byte(ct: &Datatype) -> bool {
-    let Some(pt) = ct.get_ptr_to() else { return false };
-    let pt = if pt.get_metatype() == type_metatype::TYPE_PTR { pt.get_ptr_to() } else { Some(pt) };
-    pt.is_some_and(|c| is_character(&c) && !c.is_char_print())
-}
-
-/// Is the value `vn` carries one the function declared the type of: a
-/// parameter, local or global whose variable is type-locked?
-fn declared(fd: &mut Funcdata, vn: VarnodeId) -> bool {
-    let Some(high) = fd.vbank().get(vn).and_then(|v| v.get_high()) else { return false };
-    crate::merge::MergeContext::high_is_type_lock(fd, high)
 }
 
 /// Does `ct` say no more about a pointer-width value than that it is one: a
@@ -309,6 +285,29 @@ pub(crate) fn same_type(a: &Datatype, b: &Datatype) -> bool {
     }
 }
 
+/// Are `a` and `b` the same pointer chain down to a one-byte character, the
+/// sign of that character alone differing (`char *`, `unsigned char *`)?
+/// Callers that disagree only there agree on plain `char`.
+fn same_but_character_sign(a: &Datatype, b: &Datatype) -> bool {
+    match (a.get_ptr_to(), b.get_ptr_to()) {
+        (Some(pa), Some(pb)) => a.get_size() == b.get_size() && same_but_character_sign(&pa, &pb),
+        (None, None) => [a, b].iter().all(|t| {
+            t.get_size() == 1
+                && t.is_char_print()
+                && matches!(t.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT)
+        }),
+        _ => false,
+    }
+}
+
+/// Does the pointer chain `ct` end at the target's own `char`?
+fn points_at_plain_char(ct: &Datatype) -> bool {
+    match ct.get_ptr_to() {
+        Some(p) => points_at_plain_char(&p),
+        None => ct.get_size() == 1 && ct.is_char_print() && ct.is_core_type(),
+    }
+}
+
 /// Is `ct`, the type the function input `vn` carries, the one its callers
 /// stated for it?
 pub fn took_stated_type(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
@@ -348,10 +347,6 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &mut Funcdata) {
                 continue;
             };
             let ct = fd.high_get_type(vn).or_else(|| fd.vbank().get(vn).map(|v| Rc::clone(v.get_type())));
-            if ct.as_deref().is_some_and(points_at_a_signed_byte) && !declared(fd, vn) {
-                args.push(None);
-                continue;
-            }
             args.push(ct.map(|ct| {
                 let frame = points_at_a_pointer(&ct) && crate::kuna_protoorder::addresses_a_frame_object(fd, vn);
                 Typed { addr, size, ct, frame }
@@ -474,20 +469,30 @@ pub fn decide_ledger_under(
             }
             let mut agreed: Option<Rc<Datatype>> = None;
             let mut frame = false;
+            let mut mixed = false;
             let all = sites.iter().all(|s| {
                 let Some(Some(a)) = s.args.get(j) else { return false };
                 if a.addr != p.addr || a.size != p.size || !committed(&a.ct) {
                     return false;
                 }
                 frame |= a.frame;
-                match &agreed {
-                    None => {
-                        agreed = Some(Rc::clone(&a.ct));
-                        true
+                let take = match &agreed {
+                    None => Some(true),
+                    Some(t) if same_type(t, &a.ct) => Some(false),
+                    Some(t) if same_but_character_sign(t, &a.ct) => {
+                        mixed = true;
+                        Some(points_at_plain_char(&a.ct))
                     }
-                    Some(t) => same_type(t, &a.ct),
+                    Some(_) => None,
+                };
+                match take {
+                    Some(true) => agreed = Some(Rc::clone(&a.ct)),
+                    Some(false) => {}
+                    None => return false,
                 }
+                true
             });
+            let all = all && !(mixed && !agreed.as_deref().is_some_and(points_at_plain_char));
             if trace {
                 let seen: Vec<String> = sites.iter().map(|s| match s.args.get(j) {
                     Some(Some(a)) => {

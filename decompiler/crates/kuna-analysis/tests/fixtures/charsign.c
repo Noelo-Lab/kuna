@@ -17,10 +17,12 @@ KEEP long wus(unsigned short c) { return c; }
 KEEP long wss(short c) { return c * 3L; }
 KEEP int wb(_Bool b) { return b + 5; }
 KEEP unsigned long ulen(const char *s) { unsigned long n = 0; while (s[n]) n++; return n; }
+KEEP int rd1(unsigned char *b, int v) { b[0] = v; return 1; }
+KEEP int getc1(int v) { unsigned char b[1]; rd1(b, v); return b[0]; }
 
 int main(int argc, char **argv)
 {
     char b[16];
     return fmt(b, argv[0], argc) + fmts(b, argv[0], argc) + fmt8(b, argv[0], argc) + fmtc(b, argv[0], argc) + is_hi(argc) + (int)wid(argc)
-        + (int)wids(argc) + (int)wus(argc) + (int)wss(argc) + wb(argc) + (int)ulen(argv[0]);
+        + (int)wids(argc) + (int)wus(argc) + (int)wss(argc) + wb(argc) + (int)ulen(argv[0]) + getc1(argc);
 }
