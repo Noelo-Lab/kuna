@@ -88,6 +88,8 @@
 //! * **An explicitly overridden prototype wins.** A call whose `FuncProto`
 //!   carries its own effect list (a decoded `<unaffected>`/`<killedbycall>`
 //!   override) has had a deliberate statement made about it and is left alone.
+//! * **No argument register on a walk through an ARM or MIPS mode switch.**
+//!   See [`CalleeReturnWrites::proves_untouched_for`](crate::kuna_rustabi::CalleeReturnWrites::proves_untouched_for).
 //!
 //! Default-**on**: it fires only against a decoded body that contradicts the
 //! convention, and only in the direction of keeping a value the caller computed.
@@ -176,7 +178,7 @@ pub fn callee_preserves_range(
         return false;
     }
     let Some(w) = data.kuna_callee_ret_writes(entry) else { return false };
-    if !w.proves_untouched(addr, size) {
+    if !w.proves_untouched_for(crate::kuna_rustabi::call_model(fc.proto()), addr, size) {
         return false;
     }
     body_departs_from_convention(data, fc, w)

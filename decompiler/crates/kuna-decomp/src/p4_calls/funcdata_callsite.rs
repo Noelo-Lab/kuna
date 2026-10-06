@@ -589,7 +589,14 @@ pub fn build_output_from_trials(
         // that render as locals the function never assigns.
         let entry = fc.get_entry_address().clone();
         let order = crate::kuna_bejoin::call_join_order(data, fc.get_active_output());
-        if crate::kuna_rustabi::build_call_output_pair(op, data, &finalvn, Some(&entry), order) {
+        if crate::kuna_rustabi::build_call_output_pair(
+            op,
+            data,
+            crate::kuna_rustabi::call_model(fc.proto()),
+            &finalvn,
+            Some(&entry),
+            order,
+        ) {
             return;
         }
         // STUB(W4 translate-on-handle): leave the trials in place rather than

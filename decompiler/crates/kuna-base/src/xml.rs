@@ -2005,7 +2005,9 @@ mod tests {
         // (GH-846)
         // and kuna-condexeretuse / a use a re-tested condition rules out does
         // not reject an ARM return value (GH-874)
-        assert_eq!(count, 439, "corpus file count drifted");
+        // and kuna-calleeretpreserves-mips + -mipsbe / a pointer gcc keeps in
+        // $v1 across a callee that never writes it survives the call (GH-878)
+        assert_eq!(count, 441, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

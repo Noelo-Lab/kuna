@@ -78,11 +78,14 @@
 //!   exactly where `calleepreserves` left it. A containing XMM range is split so
 //!   its output slice survives and its overlapping upper scratch lane is still
 //!   killed by the call.
-//! * **A callee that returns nothing at all.** If the body writes ANY part of
-//!   the return storage -- `RAX` while leaving `RDX` alone, on a model whose
-//!   return list is both -- it is a value-returning function whose second
-//!   register is merely dead, and the convention keeps its answer for every
-//!   register of that call.
+//! * **A value-returning callee answers one register at a time.** A body that
+//!   writes part of the return storage returns a value there, and it keeps the
+//!   caller's value only in a return register it never writes and the model
+//!   never passes an argument in: MIPS `$v1` beside a `$v0` result, which gcc's
+//!   `-fipa-ra` keeps a caller's pointer in (GH-878). ARM's `r1` and x86-64's
+//!   `RDX` carry arguments too, and a value kept there across one call would
+//!   reach the next call as an argument it does not take. The answer needs a
+//!   recorded write to the return storage, not a possible `STORE` into it.
 //! * **A complete decode for absence claims.** The probe declares itself
 //!   incomplete at an unknown or returning nested `CALL`, an unresolved `BRANCHIND`, an undecodable
 //!   instruction, or its instruction budget, and an incomplete summary answers
@@ -325,11 +328,12 @@ pub(crate) fn callee_never_writes(
         return false;
     }
     let Some(w) = data.kuna_callee_ret_writes(entry) else { return false };
-    if !w.proves_untouched(addr, size) {
+    if !w.proves_untouched_for(crate::kuna_rustabi::call_model(fc.proto()), addr, size) {
         return false;
     }
     if writes_some_return_storage(data, fc, w) {
-        return writes_return_register(data, fc, w);
+        return !crate::kuna_rustabi::passes_arguments_in(crate::kuna_rustabi::call_model(fc.proto()), addr, size)
+            && writes_return_register(data, fc, w);
     }
     body_is_a_body(data, fc, w)
 }
@@ -337,16 +341,11 @@ pub(crate) fn callee_never_writes(
 /// Does the decoded body write, or possibly STORE through, ANY of the call's
 /// return storage?
 ///
-/// The claim this rule makes is that the callee returns nothing -- not that it
-/// returns something in a different register than the one being asked about. A
-/// callee that writes `RAX` and leaves `RDX` alone is a scalar-returning
-/// function whose second return register happens to be dead, and the convention
-/// is still the best answer for that register: the caller's pre-call `RDX` is
-/// not the callee's business either way. Restricting the rule to a body that
-/// touches NONE of the return storage is what keeps it on the void helper it
-/// exists for. An indexed STORE cannot name its destination range, so a STORE
-/// into a processor space used by an ABI output entry counts as touching every
-/// return location in that space.
+/// Such a body returns a value, so it is not the void helper the body-is-a-body
+/// test admits, and only [`writes_return_register`] can speak for it. An
+/// indexed STORE cannot name its destination range, so a STORE into a
+/// processor space used by an ABI output entry counts as touching every return
+/// location in that space.
 fn writes_some_return_storage(
     data: &Funcdata,
     fc: &FuncCallSpecs,
@@ -380,7 +379,9 @@ fn writes_some_return_storage(
 }
 
 /// Did the decoded body record a write to a register of the call's return
-/// storage?
+/// storage?  That write is the positive evidence the value-returning arm of
+/// [`callee_never_writes`] stands on, as a convention-named write is for a void
+/// body.
 fn writes_return_register(
     data: &Funcdata,
     fc: &FuncCallSpecs,

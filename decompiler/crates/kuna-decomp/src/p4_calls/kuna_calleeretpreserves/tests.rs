@@ -1,10 +1,10 @@
 //! Tests for the callee-body answer about a call's RETURN register.
 //!
-//! These pin the ways the predicate must fail closed on hand-built summaries.
-//! The gates that consult the prototype MODEL -- the range being the call's
-//! output, the body writing no part of the return storage, the evidence write
-//! being a register the convention names -- need a built resource list, which
-//! the reduced fixture here cannot supply; they are pinned end to end, against a
+//! These pin the ways the predicate must fail closed on hand-built summaries,
+//! and, on a reduced two-register model, the per-register answer for a
+//! value-returning body (GH-878). The remaining gates that consult the
+//! prototype MODEL -- the evidence write being a register the convention names
+//! among them -- are pinned end to end, against a
 //! real architecture and with an `endbr64; ret` negative control, by
 //! `tests/stages/kuna-calleeretpreserves.xml`. The end-to-end witness -- an MSVC `/GS` `main` returning its cookie
 //! check instead of the zero it set -- lives in
@@ -398,4 +398,124 @@ fn the_option_parses_on_and_off() {
     assert!(OptionCalleeRetPreserves.apply("on").unwrap().0);
     assert!(!OptionCalleeRetPreserves.apply("off").unwrap().0);
     assert!(OptionCalleeRetPreserves.apply("maybe").is_err());
+}
+
+/// The convention of [`with_convention`] with a second return register beside
+/// RAX at `second`: 0x08 is no argument register (MIPS `$v1`), 0x20 is the
+/// first argument register (ARM `r1` is both).
+fn with_two_return_registers(fd: &Funcdata, fc: &mut FuncCallSpecs, second: u64) {
+    let ram = space(fd, "ram");
+    let entry = |base: u64, grp: int4, prev: &[ParamEntry]| {
+        ParamEntry::seed(
+            grp,
+            type_class::TYPECLASS_GENERAL,
+            Rc::clone(&ram),
+            base,
+            8,
+            1,
+            0,
+            0,
+            true,
+            false,
+            prev,
+            fd.get_arch().manage(),
+        )
+        .unwrap()
+    };
+    let mut model = ProtoModel::new(fd.get_arch().manage());
+    model.build_param_list("standard").unwrap();
+    model.input_mut().push_entry(entry(0x20, 0, &[]));
+    model.input_mut().finish_decode();
+    let first = entry(0x00, 0, &[]);
+    let pair = entry(second, 1, std::slice::from_ref(&first));
+    model.output_mut().push_entry(first);
+    model.output_mut().push_entry(pair);
+    model.output_mut().finish_decode();
+    for (off, ty) in [
+        (0x00u64, effect_type::KILLEDBYCALL),
+        (0x08, effect_type::KILLEDBYCALL),
+        (0x20, effect_type::KILLEDBYCALL),
+        (0x10, effect_type::UNAFFECTED),
+    ] {
+        let mut vd = kuna_num::pcoderaw::VarnodeData::default();
+        vd.space = Some(Rc::clone(&ram));
+        vd.offset = off;
+        vd.size = 8;
+        model.push_effect(EffectRecord::from_varnode(vd, ty));
+    }
+    fc.proto_mut().set_model(Some(Rc::new(model)));
+}
+
+/// GH-878: a callee that returns its value in the first register and never
+/// touches the second leaves the caller's own value there, as gcc's
+/// `-fipa-ra` relies on with `$v1`; the register it does write stays killed.
+#[test]
+fn a_second_return_register_the_body_never_writes_keeps_the_callers_value() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    with_two_return_registers(&fd, &mut fc, 0x08);
+    let ram = space(&fd, "ram").get_index();
+    fd.kuna_set_callee_ret_writes(
+        &entry,
+        Rc::new(CalleeReturnWrites::from_parts(vec![(ram, 0x00, 8), (ram, 0x80, 8)], Vec::new(), true)),
+    );
+    let second = Address::new(space(&fd, "ram"), 0x08);
+    let first = Address::new(space(&fd, "ram"), 0x00);
+    assert!(callee_preserves_return_storage(&fd, &fc, &second, 8));
+    assert!(!callee_preserves_return_storage(&fd, &fc, &first, 8));
+}
+
+/// The same body answers nothing for a second return register the convention
+/// also passes arguments in: kept across the call, a value placed for an
+/// earlier call would reach the next one as an extra argument.
+#[test]
+fn a_second_return_register_that_carries_arguments_stays_killed() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    with_two_return_registers(&fd, &mut fc, 0x20);
+    let ram = space(&fd, "ram").get_index();
+    fd.kuna_set_callee_ret_writes(
+        &entry,
+        Rc::new(CalleeReturnWrites::from_parts(vec![(ram, 0x00, 8), (ram, 0x80, 8)], Vec::new(), true)),
+    );
+    let second = Address::new(space(&fd, "ram"), 0x20);
+    assert!(!callee_preserves_return_storage(&fd, &fc, &second, 8));
+}
+
+/// The written return register is itself the evidence that the body did work,
+/// so the one-instruction body a MIPS `jr ra` with its delay slot decodes to
+/// (`jr ra; addiu v0,a0,1`) still answers for `$v1`.
+#[test]
+fn a_one_instruction_value_returning_body_still_answers_for_the_second_register() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    with_two_return_registers(&fd, &mut fc, 0x08);
+    let ram = space(&fd, "ram");
+    fd.kuna_set_callee_ret_writes(
+        &entry,
+        Rc::new(
+            CalleeReturnWrites::from_parts_sized(vec![(ram.get_index(), 0x00, 8)], Vec::new(), true, 1)
+                .through_a_mode_switch(),
+        ),
+    );
+    assert!(callee_preserves_return_storage(&fd, &fc, &Address::new(Rc::clone(&ram), 0x08), 8));
+}
+
+/// A walk that only finished by reading through an ARM or MIPS `setISAMode`
+/// keeps a void helper's answer for return storage no argument travels in, and
+/// gives none for a register that is both.
+#[test]
+fn a_mode_switched_void_body_answers_only_for_non_argument_return_storage() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    with_two_return_registers(&fd, &mut fc, 0x20);
+    let ram = space(&fd, "ram");
+    let body = || CalleeReturnWrites::from_parts(vec![(ram.get_index(), 0x10, 8)], Vec::new(), true);
+    let argument = Address::new(Rc::clone(&ram), 0x20);
+    let first = Address::new(Rc::clone(&ram), 0x00);
+    fd.kuna_set_callee_ret_writes(&entry, Rc::new(body()));
+    assert!(callee_preserves_return_storage(&fd, &fc, &argument, 8), "a walk that needed no switch");
+    fd.kuna_set_callee_ret_writes(&entry, Rc::new(body().through_a_mode_switch()));
+    assert!(!callee_preserves_return_storage(&fd, &fc, &argument, 8));
+    assert!(callee_preserves_return_storage(&fd, &fc, &first, 8));
 }

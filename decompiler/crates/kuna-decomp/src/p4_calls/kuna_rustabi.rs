@@ -394,9 +394,12 @@ pub struct CalleeReturnWrites {
     /// How many machine instructions the walk decoded.  One is a bare `ret`.
     instructions: u32,
     call_facts: Vec<(Address, bool)>,
-    /// The processor registers a decoded `RETURN` transferred through, as
-    /// `(space index, offset, size)`: the program counter every return writes.
+    /// The registers a decoded return instruction wrote and then transferred
+    /// through, as `(space index, offset, size)`: the program counter.
     return_targets: Vec<(int4, u64, int4)>,
+    /// Did the walk read through a `setISAMode` user op?  See
+    /// [`Self::proves_untouched_for`].
+    through_mode_switch: bool,
 }
 
 impl CalleeReturnWrites {
@@ -418,6 +421,19 @@ impl CalleeReturnWrites {
             .writes
             .iter()
             .any(|&(widx, woff, wsz)| widx == idx && woff < end && off < woff + wsz as u64)
+    }
+
+    /// [`Self::proves_untouched`] for a call whose convention is `model`.
+    ///
+    /// A walk that completed only by reading through an ARM or MIPS `setISAMode`
+    /// does not answer for a register `model` passes arguments in. Every ARM
+    /// return switches the instruction set, so on ARM such a walk is the only
+    /// kind there is, and there the return and argument registers are the same
+    /// ones: a value an earlier call's argument left in `r1` that survives a
+    /// leaf reaches the next call as a value the caller wrote, and the caller-side
+    /// argument recovery reads it as one more argument than the callee takes.
+    pub fn proves_untouched_for(&self, model: Option<&crate::fspec::ProtoModel>, addr: &Address, size: int4) -> bool {
+        self.proves_untouched(addr, size) && !(self.through_mode_switch && passes_arguments_in(model, addr, size))
     }
 
     /// The processor-space ranges the walk recorded before it stopped, as
@@ -446,10 +462,11 @@ impl CalleeReturnWrites {
         self.instructions
     }
 
-    /// Does `[off, off+sz)` in space `idx` overlap a register some decoded
-    /// `RETURN` transferred through?  That is the program counter (ARM's `pc`,
-    /// x86's `RIP`), which every return writes, so a write to it says nothing
-    /// about the body, even where a compiler spec lists it as preserved.
+    /// Does `[off, off+sz)` in space `idx` overlap a register a decoded return
+    /// instruction wrote and transferred through?  That is the program counter
+    /// (ARM's `pc`, x86's `RIP`), which every return writes, so a write to it
+    /// says nothing about the body, even where a compiler spec lists it as
+    /// preserved.
     pub fn is_return_target(&self, idx: int4, off: u64, sz: int4) -> bool {
         self.return_targets
             .iter()
@@ -471,7 +488,23 @@ impl CalleeReturnWrites {
             instructions: 2,
             call_facts: Vec::new(),
             return_targets: Vec::new(),
+            through_mode_switch: false,
         }
+    }
+
+    /// This summary, as a walk that read through a `setISAMode` would leave it.
+    #[cfg(test)]
+    pub fn through_a_mode_switch(mut self) -> Self {
+        self.through_mode_switch = true;
+        self
+    }
+
+    /// This summary, with a return instruction that wrote `(idx, off, size)` and
+    /// transferred through it.
+    #[cfg(test)]
+    pub fn returning_through(mut self, idx: int4, off: u64, size: int4) -> Self {
+        self.return_targets.push((idx, off, size));
+        self
     }
 
     /// As [`from_parts`](Self::from_parts), with the decoded instruction count
@@ -490,8 +523,25 @@ impl CalleeReturnWrites {
             instructions,
             call_facts: Vec::new(),
             return_targets: Vec::new(),
+            through_mode_switch: false,
         }
     }
+}
+
+/// Does the convention `model` pass an argument in any byte of
+/// `[addr, addr+size)`?  Asked of the model, not of one prototype: the reader
+/// at risk is the NEXT call, whose own prototype is not known here.  No model,
+/// or one with no input list, answers yes.
+pub fn passes_arguments_in(model: Option<&crate::fspec::ProtoModel>, addr: &Address, size: int4) -> bool {
+    match model.and_then(|m| m.input_opt()) {
+        Some(input) => input.characterize_as_param(addr, size) != crate::fspec::Containment::NoContainment,
+        None => true,
+    }
+}
+
+/// The convention `proto` was built from, when it has one.
+pub fn call_model(proto: &crate::fspec::FuncProto) -> Option<&crate::fspec::ProtoModel> {
+    proto.has_model().then(|| proto.model().as_ref())
 }
 
 /// How many machine instructions the callee probe decodes before giving up.
@@ -533,6 +583,7 @@ struct ProbeEmit {
     fastfail_swi: Option<u32>,
     /// The `setISAMode` user-op id (ARM, MIPS), which writes nothing.
     mode_switch: Option<u32>,
+    mode_switched: bool,
     /// Constants a `COPY` placed into an internal temp inside this instruction,
     /// as `(offset, size, value)`.  `INT imm8` lifts the vector through one.
     temp_consts: Vec<(u64, int4, u64)>,
@@ -635,7 +686,9 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
                 let mode_switch = outvar.is_none()
                     && self.mode_switch.is_some()
                     && vars.first().map(|v| v.offset) == self.mode_switch.map(u64::from);
-                if !mode_switch && !self.note_fastfail_swi(outvar, vars) {
+                if mode_switch {
+                    self.mode_switched = true;
+                } else if !self.note_fastfail_swi(outvar, vars) {
                     self.unresolved = true;
                 }
             }
@@ -668,7 +721,10 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
                 self.ends_flow = true;
                 if let Some(v) = vars.first() {
                     if let Some(sp) = v.space.as_ref().filter(|sp| sp.get_type() == spacetype::IPTR_PROCESSOR) {
-                        self.return_targets.push((sp.get_index(), v.offset, v.size as int4));
+                        let target = (sp.get_index(), v.offset, v.size as int4);
+                        if self.writes.contains(&target) {
+                            self.return_targets.push(target);
+                        }
                     }
                 }
             }
@@ -730,6 +786,7 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
         instructions: 0,
         call_facts: Vec::new(),
         return_targets: Vec::new(),
+        through_mode_switch: false,
     };
     let Some(entry_space) = entry.get_space() else {
         res.complete = false;
@@ -770,6 +827,7 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
         res.call_facts.extend(emit.resolve_calls(&no_return));
         res.instructions += 1;
         res.writes.append(&mut emit.writes);
+        res.through_mode_switch |= emit.mode_switched;
         for t in emit.return_targets.drain(..) {
             if !res.return_targets.contains(&t) {
                 res.return_targets.push(t);
@@ -828,6 +886,7 @@ pub enum CallPairRepr {
 /// header.
 pub fn classify_call_output_pair(
     data: &Funcdata,
+    model: Option<&crate::fspec::ProtoModel>,
     finalvn: &[VarnodeId],
     callee_entry: Option<&Address>,
 ) -> CallPairRepr {
@@ -860,7 +919,7 @@ pub fn classify_call_output_pair(
     // the callee body that proves the second register is never written.
     if let Some(entry) = callee_entry {
         if let Some(w) = data.kuna_callee_ret_writes(entry) {
-            if w.proves_untouched(&second_addr, second_size) {
+            if w.proves_untouched_for(model, &second_addr, second_size) {
                 return CallPairRepr::CalleeScalar;
             }
         }
@@ -980,6 +1039,7 @@ fn fastfail_swi_userop(arch: &crate::architecture::Architecture) -> Option<u32> 
 pub fn build_call_output_pair(
     callop: OpId,
     data: &mut Funcdata,
+    model: Option<&crate::fspec::ProtoModel>,
     finalvn: &[VarnodeId],
     callee_entry: Option<&Address>,
     order: (int4, int4),
@@ -987,7 +1047,7 @@ pub fn build_call_output_pair(
     if !live(data) && !crate::p4_calls::kuna_callretpair::live(data) {
         return false;
     }
-    if classify_call_output_pair(data, finalvn, callee_entry) != CallPairRepr::ScalarPair {
+    if classify_call_output_pair(data, model, finalvn, callee_entry) != CallPairRepr::ScalarPair {
         return false;
     }
     let (lo, hi) = (finalvn[order.0 as usize], finalvn[order.1 as usize]);
