@@ -777,6 +777,11 @@ pub fn universal_sched(
             act!(ActionMapGlobals::boxed("fixateglobals")),
             act!(ActionDynamicSymbols::boxed("dynamic")),
             act!(ActionNameVars::boxed("merge")),
+            // (kuna) calltargettype (option `calltargettype`, default-OFF): every
+            // high is final here, so an indirect call's target takes the
+            // function-pointer type its arguments and output state, just before
+            // ActionSetCasts checks every use against it.
+            act!(crate::kuna_calltargettype::ActionCallTargetType::boxed("typerecovery")),
             act!(ActionSetCasts::boxed("casts")),
             act!(ActionFinalStructure::boxed("blockrecovery")),
             // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`,

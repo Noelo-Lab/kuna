@@ -185,6 +185,11 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // -0.12% on a 1,027-function binary whose output is byte-identical on both
     // arms, +5.3% on the witness binary where 1 of 144 functions changes.
     ("ptrdepthcap", "on"),
+    // (kuna, GH-869) Give an indirect call's target the function-pointer type
+    // the call states. Shipped default OFF because the XML datatest corpus pins
+    // the upstream `code *` spellings and applies no mode; preset membership is
+    // what makes a call through a table entry or a local compile as C by default.
+    ("calltargettype", "on"),
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),

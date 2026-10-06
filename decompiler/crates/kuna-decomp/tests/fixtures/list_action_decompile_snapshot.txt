@@ -273,15 +273,16 @@
 0266        !         mapglobals
 0267        !         dynamicsymbols
 0268        !         namevars
-0269        !         setcasts
-0270                  finalstructure
-0271                  gotoreduce
-0272                  taildup
-0273                  ifelseflatten
-0274                  crossjumprevert
-0275                  dedupitetail
-0276                  iteregion
-0277                  iteboolean
-0278                  paramcopyhoist
-0279        !         prototypewarnings
-0280                  stop
+0269                  calltargettype
+0270        !         setcasts
+0271                  finalstructure
+0272                  gotoreduce
+0273                  taildup
+0274                  ifelseflatten
+0275                  crossjumprevert
+0276                  dedupitetail
+0277                  iteregion
+0278                  iteboolean
+0279                  paramcopyhoist
+0280        !         prototypewarnings
+0281                  stop

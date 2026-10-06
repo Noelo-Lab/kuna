@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7:default">
+<!--
+    calltargettype (GH-869) on ARMv7 hard-float: the function-pointer type built for an
+    indirect call agrees with where the call passes its values, or the call
+    keeps void *.
+
+    Stage: P5 type recovery, after every variable has its final type and just
+    before casts are decided. P0 assertion: option calltargettype on|off.
+
+    Source (clang 14 -target armv7-linux-gnueabihf -O2 -fno-pic, the object's .text at 0x10000, its
+    relocations left unapplied so the tables read from the image):
+
+        typedef float (*f1)(float);
+        typedef int (*i2)(int, int);
+        extern f1 ftab[];
+        extern i2 itab[];
+        void fstore(unsigned i, float *p) { p[0] = ftab[i & 1](p[1]); }
+        float fmul(unsigned i, float x) { return ftab[i & 1](x * 2.0f) + 1.0f; }
+        int icall(unsigned i, int a, int b) { return itab[i & 1](a, b) + 3; }
+
+    Pass 1 (ctypes on, calltargettype off) is the bug: every target prints
+    void *. Pass 2 (calltargettype on) types fmul's target float (*)(float),
+    the float passed and returned in s0 (asserts 1, 2), and icall's int one
+    (assert 3). fstore passes the float it loaded, which recovery holds as an
+    unsigned int in s0; a type built from that unsigned int would pass it in
+    r0/w0, so the call keeps void * in both passes (asserts 4 to 6).
+
+    Assertions span the combined output of both passes.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+10402de90140a0e1010a91ed001000e3010000e2001040e3000191e730ff2fe1
+000a84ed1080bde800482de9000a30ee001000e3010000e2001040e3000191e7
+30ff2fe1001ab7ee010a30ee0088bde800482de9003000e3010000e2003040e3
+003193e70100a0e10210a0e133ff2fe1030080e20088bde8
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="fstore"/>
+<symbol space="ram" offset="0x10028" name="fmul"/>
+<symbol space="ram" offset="0x10050" name="icall"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>option calltargettype off</com>
+<com>lo fu fstore</com><com>decompile</com><com>print C</com>
+<com>lo fu fmul</com><com>decompile</com><com>print C</com>
+<com>lo fu icall</com><com>decompile</com><com>print C</com>
+<com>option ctypes on</com>
+<com>option calltargettype on</com>
+<com>lo fu fstore</com><com>decompile</com><com>print C</com>
+<com>lo fu fmul</com><com>decompile</com><com>print C</com>
+<com>lo fu icall</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="CALLTARGETTYPE-ARMHF #1: on types a float call float (*)(float)" min="1" max="1">float \(\*v1\)\(float\); // pc \| r0</stringmatch>
+<stringmatch name="CALLTARGETTYPE-ARMHF #2: the float call itself prints as it did" min="2" max="2">return \(float\)\(\*v1\)\(a0 \+ a0\) \+ 1\.0;</stringmatch>
+<stringmatch name="CALLTARGETTYPE-ARMHF #3: on types an integer call" min="1" max="1">int \(\*v1\)\(unsigned int,unsigned int\); // pc \| r3</stringmatch>
+<stringmatch name="CALLTARGETTYPE-ARMHF #4: a float held as an integer in s0 keeps the call untyped" min="2" max="2">unsigned int v2; // s0</stringmatch>
+<stringmatch name="CALLTARGETTYPE-ARMHF #5: that call prints as it did" min="2" max="2">a1\->field_0x0 = \(\*v1\)\(v2\);</stringmatch>
+<stringmatch name="CALLTARGETTYPE-ARMHF #6: no integer function type is built over s0" min="0" max="0">unsigned int \(\*v1\)\(unsigned int\)</stringmatch>
+</decompilertest>

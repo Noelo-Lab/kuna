@@ -368,6 +368,9 @@ pub struct Architecture {
     /// upstream `TypeFactory::getTypePointerNoDepth`'s rule (`type.cc:1509`)
     /// applied at the propagation funnel rather than only at LOAD/STORE.
     pub ptrdepthcap: bool,
+    /// (kuna `calltargettype`) Give an indirect call's target the
+    /// function-pointer type the call states (`kuna_calltargettype`).
+    pub call_target_type: bool,
     /// (kuna `boolbyte`) Offer `bool` as a `getLocalType` candidate for a byte
     /// whose every read is a truth test.  Implementation:
     /// [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
@@ -2461,6 +2464,7 @@ impl Architecture {
             memset_recover: false,
             rodata_string: false, // (kuna) option rodatastring; reset_defaults sets the shipped default
             ptrdepthcap: false, // (kuna) option ptrdepthcap; reset_defaults sets the shipped default
+            call_target_type: false, // (kuna) option calltargettype; reset_defaults sets the shipped default
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             partial_concat: true,
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
@@ -2937,6 +2941,7 @@ impl Architecture {
         self.call_ret_type = true; // (kuna) option callrettype default-on: a call's result takes the return type its callee stated earlier in a callee-first run; 0/675 datatest assertions and 0 stage assertions moved (single-function surfaces state nothing), one test-cli probe moved to the intended form, the 444-slice typesweep +6 perfect and 0 lost, casts 35,588 -> 34,808 on the census corpus (393 functions fewer, 25 more); docs/features/callrettype/default-on-evaluation.md
         self.cast_widen = crate::kuna_castwiden::CastWidenMode::Literal; // (kuna) option castwiden default `literal`: a 64-bit widening C's usual arithmetic or assignment conversion performs prints no cast, and an 8-byte literal beside one prints its L/UL suffix; 5/675 datatest assertions (upstream's pinned form) opt out per test, 18 stage assertions of other options moved to the new form, 444-slice typesweep identical, casts 35,588 -> 34,062 on the castbench shared set with 0 functions more; docs/features/castwiden/default-on-evaluation.md
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
+        self.call_target_type = false; // (kuna) option calltargettype: default-OFF in the catalog because the XML datatest corpus pins the upstream `code *` spellings and applies no mode; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for every real binary
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.partial_concat = true;
@@ -3578,6 +3583,7 @@ impl Architecture {
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         ctx.rodata_string = self.rodata_string; // (kuna) rodatastring
         ctx.ptrdepthcap = self.ptrdepthcap; // (kuna) ptrdepthcap
+        ctx.call_target_type = self.call_target_type && self.ctypes; // (kuna) calltargettype: only C's own spelling needs it
         ctx.codescalar = self.codescalar; // (kuna) codescalar
         ctx.bool_byte = self.bool_byte; // (kuna) boolbyte
         ctx.unknown_byte_is_char =

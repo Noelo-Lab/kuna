@@ -816,6 +816,11 @@ pub struct ArchContext {
     /// `ActionInferTypes::propagateTypeEdge` (`coreaction_infertypes`); the
     /// mechanism lives in `kuna_ptrdepth`.
     pub ptrdepthcap: bool,
+    /// (kuna `calltargettype`) Give an indirect call's target the
+    /// function-pointer type the call states; set only when `ctypes` is on too.
+    /// Read by
+    /// [`ActionCallTargetType`](crate::kuna_calltargettype::ActionCallTargetType).
+    pub call_target_type: bool,
     /// (kuna `codescalar`) Refuse a `code` pointee as the data-type of a
     /// dereferenced value; mirrors
     /// [`Architecture::codescalar`](crate::architecture::Architecture).
@@ -1645,6 +1650,7 @@ impl ArchContext {
             memset_recover: false,       // GH-9230/1537 memsetrecover
             rodata_string: false,        // (kuna) rodatastring
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
+            call_target_type: false,     // (kuna) option calltargettype
             struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode::Locals, // (kuna) option structsynth, default `locals`; the real value is copied from the engine Architecture in `build_arch_handle`
             struct_synth_shard: None,
             struct_merge: crate::p5_types::kuna_structmerge::StructMergeMode::Off, // (kuna) option structmerge, default `off`; the real value is copied from the engine Architecture in `build_arch_handle`

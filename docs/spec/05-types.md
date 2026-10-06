@@ -1355,6 +1355,96 @@ reconciles it — the disagreement survives to
 (chapter 09). So the symptom of a lost propagation is a spurious `(int *)`
 cast in the output, never wrong data-flow.
 
+**(kuna) The type an indirect call states (`calltargettype`).** Inference
+types the target of a `CALLIND` `code *`: `TypeOpCallind`'s slot-0 local type
+is a pointer to the prototype-less `code`, and a call that never reached a
+declared function-pointer type keeps it. C has no spelling for that type. The
+C back-end prints it `void *` under `ctypes` (chapter 09), so every call through
+it reads as a call of a `void *` -- `(**(void **)&tbl[i])()`,
+`void *v1; ... (*v1)(a1,7)` -- which no compiler accepts. The call itself
+states the signature its target must have, and when `calltargettype` is on,
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_calltargettype.rs
+(ActionCallTargetType)` gives the target that type once every variable has its
+final one: it runs once, in the one-shot tail, after `ActionNameVars` and
+directly before `ActionSetCasts`, and never feeds the inference lattice or
+`ActionDeindirect`'s forced prototypes. For each indirect call whose prototype
+is neither locked nor variadic it builds `R (*)(A1,..,An)` with
+`TypeFactory::getTypeCode(PrototypePieces)`: `R` is the high type of the call's
+output, or `void` when it has none, and each `Ai` the high type of the argument
+in that slot as it is read there -- except an argument printed inline as an
+address computed from a base (`&v4`, `&a1[2]`, a `PTRSUB` or `PTRADD`), whose C
+type is the base's rather than its own, which takes `void *`. A call any of
+whose types has no C spelling (a partial or union-resolving type, an array, a
+`TYPE_SPACEBASE`, a scalar of a width C has no type for) is skipped.
+
+The type must also be one a C compiler would pass the same way. Laid out under
+the default model, each parameter of the built prototype has to fall inside the
+storage the call recorded for that argument (`FuncCallSpecs::final_input_storage`)
+and its result inside the call's output varnode; otherwise the call is skipped.
+That is what keeps the register class: recovery can hold a `float` it only
+moved as an `unsigned int` in `xmm0` or `s0`, or a `double`'s bits in `rdi`, and
+a type built from those would pass the value in `edi`/`r0` or `xmm0` and read
+the result from `eax`, so the C compiles and computes something else. A record
+returned through memory fails the same test. So does a call after which a value
+it overwrites is still read -- an indirect-creation `INDIRECT` of the call whose
+output has readers, a result left in `xmm0` that the call's recovered output
+does not hold. What receives the type then depends on the target:
+
+- A target of any other type -- an integer word loaded from a record, a
+  pointer to data -- is already cast at the call, to `code *`. The call's type
+  is recorded per op on the `Funcdata`, and `TypeOpCallind`'s slot-0 input type
+  returns it, so `ActionSetCasts` casts to `int (*)(unsigned int)` where it cast
+  to `void *`. The number of casts does not change.
+- A target whose type is `code *` or `void *` takes the call's type itself when
+  every indirect call made through it states the same type -- calls that
+  disagree on arity or on any type leave it alone rather than pick one -- and
+  nothing it meets fixes another type. It must not be a parameter, a global, a
+  variable whose address is taken, type-locked, returned, dereferenced or used
+  in pointer arithmetic; nothing may write an address formed from constants
+  into it (a function's address prints as the function, whose own recovered
+  prototype C requires to match) or a non-zero constant, nor may it be compared
+  with one; and no argument slot, store target, copy or call result it meets
+  may carry a different function-pointer type. An argument slot declared as a
+  pointer to code, or a library callback slot (`qsort`'s comparator,
+  `signal`'s handler, the table `kuna_callbacktype` keeps), counts as one: its
+  header type is its own. Two such values copied into each other with
+  different types both keep theirs.
+- When it takes the type, so do the implied values it is loaded through, one
+  pointer level per `LOAD`, back over `COPY`, `PTRADD` and a zero `PTRSUB`
+  while each has the type that pointed at the old one. The casts
+  `ActionSetCasts` already prints on that path then name the function pointer:
+  `(**(void (**)(void))&tbl[i])()`,
+  `(*((void (**)(unsigned long,long))a0)[9])(...)`.
+
+Everything else keeps the spelling it had, which for a `code *` that is never
+called directly, and for a parameter, a global, a record field or a variable
+whose calls disagree, is the `void *` above. The option takes effect only with
+`ctypes` on (`ArchContext::call_target_type` is set from both): without C's own
+spelling the target prints the upstream `code *`, which the option leaves
+alone. Shipped OFF in the catalog, because the XML datatest corpus pins the
+upstream `code *` spellings and applies no mode; ON in the `aggressive` preset,
+which `auto` selects under 500 KiB, so it is the default rendering of every real
+binary. The Ghidra front-end, which otherwise applies that preset, leaves it off
+(`decompiler/crates/kuna-ghidra/src/process.rs
+(apply_ghidra_mode_defaults)`): Java's
+`PcodeDataTypeManager` reads an anonymous code type back as `undefined1`, so a
+retyped local would reach the program database as `undefined1 *`. Over the
+decompile-project export of 26 binaries (x86-64 decbench binaries at -O0, -O2
+and -O2-noinline, and ARM Cortex-M firmware), compared with the option off on
+the same build, the `called object is not a function` errors fall from 1,634 to
+762 under gcc 11 and gcc 15 (gnu17 and gnu23) and from 1,902 to 1,025 under
+clang 14, and the number of casts does not change (77,147). Keyed by statement,
+no statement gains an error; under gcc 15, 15 statements whose call no longer
+fails report the pre-existing assignment type error gcc 15 stopped at the call
+before. Exercised by `tests/stages/kuna-calltargettype.xml` (gcc -O1 and clang
+-O2 builds of a table dispatch, a local holding a table entry, a record's
+callback, a local called with two arities, a local that receives a function's
+address, a local handed to `qsort`, a float held in `xmm0` as an integer, and a
+`ctypes off` pass), and by `kuna-calltargettype-a64.xml` and
+`kuna-calltargettype-armhf.xml` (a float call typed `float (*)(float)` in `s0`,
+an integer call, and a float held in `s0` as an integer, on AArch64 and ARMv7
+hard-float).
+
 **Constant pointers.** The other typerecovery action in `mainloop`,
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionConstantPtr)`, turns bare constants into symbol references. Decision

@@ -4744,7 +4744,7 @@ int main(void) {
         ("v2 = strlen((char *)a0->field_0x10);", "v2 = strlen(a0->field_0x10);"),
         ("    long field_0x10;\n    long field_0x18;", "    long *field_0x10;\n    long *field_0x18;"),
         ("a0->field_0x0 = a0->field_0x0 + 8;", "a0->field_0x0 = &a0->field_0x0[1];"),
-        ("v1 = (*(void *)a0->field_0x8)(a0->field_0x10);", "v1 = (*a0->field_0x8)(a0->field_0x10);"),
+        ("v1 = (*(long (*)(unsigned long))a0->field_0x8)(a0->field_0x10);", "v1 = (*a0->field_0x8)(a0->field_0x10);"),
     ];
     let index_stays_a_number = "    int field_0x0;\n    char field_0x4[4];\n    long field_0x8;";
     let number_stays_a_number = "    long field_0x0;\n    char *field_0x8;\n    unsigned int field_0x10;";

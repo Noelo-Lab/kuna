@@ -490,6 +490,11 @@ fn entry_for(name: &str) -> Option<&'static Entry> {
     SLOTS.iter().find(|e| e.name == name)
 }
 
+/// Does the library entry point `name` declare parameter `index` a callback.
+pub fn is_callback_slot(name: &str, index: usize) -> bool {
+    entry_for(name).is_some_and(|e| e.slots.iter().any(|(i, _)| *i == index))
+}
+
 /// Build the kuna [`Datatype`] for a [`Ty`].
 fn build_ty(t: Ty, arch: &Architecture) -> Option<Rc<Datatype>> {
     let types = arch.types();

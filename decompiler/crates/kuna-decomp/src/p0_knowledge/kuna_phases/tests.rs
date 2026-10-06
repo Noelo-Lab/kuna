@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_260() {
-    assert_eq!(kuna_num_settables(), 260);
-    assert_eq!(SETTABLE_TABLE.len(), 260);
+fn settable_count_is_261() {
+    assert_eq!(kuna_num_settables(), 261);
+    assert_eq!(SETTABLE_TABLE.len(), 261);
 }
 
 #[test]
-fn tier_counts_are_86_core_106_transform_68_analysis() {
+fn tier_counts_are_86_core_107_transform_68_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_86_core_106_transform_68_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (86, 106, 68));
+    assert_eq!((core, transform, analysis), (86, 107, 68));
 }
 
 #[test]
@@ -752,7 +752,8 @@ fn option_values_live_value_present_for_110() {
     // 107 -> 108: +1 for `armfloatargs` (live_field = arm_float_args).
     // 108 -> 109: +1 for `stackstoreguard` (live_field = stack_store_guard, default-on).
     // 110 -> 111: +1 for `bejoin` (live_field = be_join).
-    assert_eq!(with_live, 111);
+    // 111 -> 112: +1 for `calltargettype` (live_field = call_target_type).
+    assert_eq!(with_live, 112);
 }
 
 #[test]
@@ -943,7 +944,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 252 -> 253: +1 for `stackstoreguard`.
     // 253 -> 254: +1 for `protoranges`; its P6 row sits mid-table.
     // 257 -> 258: +1 for `bejoin`.
-    assert_eq!(json.matches("},\n").count(), 259);
+    assert_eq!(json.matches("},\n").count(), 260);
 }
 
 #[test]
