@@ -2015,7 +2015,9 @@ mod tests {
         // fcvt.w* read and write the real registers (GH-831)
         // and kuna-condstmts / a folded condition operand prints at most the
         // capped number of statements before its test
-        assert_eq!(count, 450, "corpus file count drifted");
+        // and gh873-zerofillreturn-a64 / the zero fill above a returned
+        // AArch64 vector lane is no part of the value (GH-873)
+        assert_eq!(count, 451, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

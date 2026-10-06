@@ -5765,6 +5765,77 @@ and `--option protoorder off`. A single-function decompile therefore still
 prints the conversion that the whole-binary listing leaves out, the same
 property `protoorder`'s argument types have.
 
+### (kuna) `zerofillreturn` — the zero fill above a returned vector lane
+
+AAPCS64 returns a `float` in `s0` and a `double` in `d0`, the low bytes of the
+16-byte vector register `q0`, and the AArch64 compiler specs (`AARCH64.cspec`,
+`AARCH64_apple.cspec`, `AARCH64_win.cspec`) make `q0`-`q3` the floating output
+entries. The SLEIGH spec lifts a scalar or 64-bit vector write (`scvtf d0,w0`,
+`fmul d0,..`, `fadd v0.2s,..`, `ldr s2,[..]`) as the write of its low lane plus
+a COPY of zero into each higher lane of the register (`zext_zd`, `zext_zs` in
+`AARCH64instructions.sinc`). Heritage then gives each RETURN a second trial in
+`q0` holding a literal 0, `ancestorOpUse` accepts a constant as returned, and the
+fill-in joins the two: `double scale(int a)` printed as
+`undefined16 scale(int a0)` with `v1._8_8_ = 0; return v1._0_16_;`, and
+`return 0.0` as `return ZEXT816(0)`. The zero need not come from the
+instruction that wrote the returned value: this SLEIGH spec gives `fmadd` no
+fill, so in `scvtf d0,w0; ..; fmadd d0,..` the returned zero is `scvtf`'s.
+A `float` in `s0` was already narrowed by the dead-code trim of a zero-extended
+return, but its masks are 64 bits wide and cannot narrow 16 bytes to 8.
+
+`zerofillreturn` (default on;
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_zerofillreturn.rs`) works in
+two steps. Right after flow, before heritage, the driver
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs`) calls `seed`,
+which marks the COPYs of zero into the upper doubleword of a floating output
+entry wider than 8 bytes that are such a fill. Each instruction's p-code is
+then still what SLEIGH emitted, so the instruction is read off the ops at its
+address. Its lane is its write at the entry's least significant byte plus the
+writes that continue it without a gap, other than COPYs of zero. The lane must
+end within 8 bytes, nothing may straddle its end, only COPYs of zero may follow
+it in the low doubleword, and the upper doubleword must be one 8-byte COPY of
+zero (one on each path of a conditional instruction such as `fcsel`): the shape
+of `zext_zd` and `zext_zs`. That COPY gets the `kuna_zerofill` op flag. A
+128-bit write whose upper half is zero (`movi v0.2d,#0`, which goes through a
+temporary; `movi v0.4s,#0`, four 4-byte lanes; `mov v0.d[1],v2.d[0]`;
+`ldr q0`) is not a fill. After heritage it could no longer be told apart:
+heritage splits it into the same lanes, and constant folding leaves a COPY of
+zero at the same instruction.
+
+In `ActionReturnRecovery`, once the trials are fully checked and before the
+output fill-in, `drop_zero_fill` marks inactive each active trial in the upper
+doubleword of such an entry whose value at every normal RETURN is a marked COPY
+of zero, directly or through MULTIEQUALs. The low lane is then the return
+value: `double scale(int a0)`, `return 0.0`, and a caller in a `decompile-all`
+reads a `double` without a cast. A complex double or an aggregate of two doubles
+returned in `d0` and `d1` now matches the `homogeneous-float-aggregate` rule and
+joins the two registers, where it printed `q0` with an upper half of 0 in place
+of the imaginary part.
+
+An active fill fails every output rule, so the fill-in falls back to the best
+single register; retiring fills lets the rules join whatever else is active.
+So nothing is retired while a trial outside the floating entries is active:
+`x0` and a leftover `x1` (the zero a stack-protector check leaves) would join as
+a pair. Nothing is retired unless every register with an active low lane
+returns a whole doubleword there: a `float` in `s0` and the fill above it are
+left to the trim, which already narrows them, and a 64-bit vector built lane by
+lane is left as it was; the aggregate rule also joins one trial per register
+without comparing widths, and would join a `float` in `s0` with a 64-bit vector
+left in `d1` (glibc's `cprojf`). And a later entry's fill stays unless its low
+lane is written, on every path, by an op whose value only goes on to the
+RETURN: glibc's `math_force_eval` leaves an `fmul d1,d0,d0` no op reads on one
+path beside a `fabs d1,d0` the next compare reads. A declared or DWARF output is
+never touched, and a trial whose value is anything but a marked fill on some
+path keeps its score.
+
+The binary cannot tell everything apart. A 128-bit vector whose upper half a
+scalar operation zeroed, such as gcc's `fmov d0,d0` for `(float64x2_t){x, 0}`,
+has the same p-code as a returned `double`, and now returns 8 bytes. No
+other compiler spec has a floating output entry that a narrow write fills, so
+the option changes nothing elsewhere. The stage test
+`tests/stages/gh873-zerofillreturn-a64.xml` runs clang and gcc AArch64 code
+with the option off and on.
+
 ### ARM scalar VFP contracts
 
 The ARM default model (`ARM.cspec`) lists the VFP registers only as the 4-byte
@@ -6059,7 +6130,31 @@ come from `protoorder`'s statement or, where it states nothing, from the
 parameter classes `record` files for every function without a declared
 prototype, handed to each caller by `seed` (`Funcdata::kuna_callee_param_float`).
 A function whose own return converts the value it hands back from another type
-(`return (float)a0[3];` of an `int *`) files itself. The function is then
+(`return (float)a0[3];` of an `int *`) files itself.
+
+A move between register classes converts nothing, and the C prints a
+same-width cast between a float and an integer as a reinterpretation of the
+bits (chapter 09). So a RETURN fed by a cast of a bit pattern does not file the
+function (`kuna_voidret.rs (float_bits)`). The value counts as a bit pattern
+when the bit operations behind it (and, or, xor, add, shifts, pieces, phis)
+start from a float's own bits or from constants alone. Examples are glibc's
+`copysign` `x ^ (x ^ y) & sign`, `nextafter`'s `bits + 1`, `scalbn`'s exponent
+field beside the mantissa, and a sign chosen between two constants, each moved
+back by `fmov d0,x0`. An untyped call result left in a floating register does
+not file it either (`kuna_voidret.rs (float_register_call_result)`): `pick`
+tail-calling a complex-double `cboth`, recovered as a 16-byte join, returns
+`cboth`'s `d0`, and was withdrawn to `void` beside a reader that casts its
+`double`. On the reader side, a same-width cast of the result to an integer (an
+`fmov x0,d0`) holds the float's bits, an untyped copy that is only cast to a
+float holds a float, and a call that writes more of the register than its
+callee returns says nothing (`kuna_voidret.rs (wider_than_return)`): `q0`, read
+whole after a call that returns a `double` in `d0`, is the caller keeping the
+register. Each of these filed a function whose redo printed the same float
+again. On AArch64 glibc libm, 19 such redos, one of them the 1-second
+`__kernel_standard`, made `decompile-all` 10 to 17% slower once doubles stopped
+returning `q0` (`zerofillreturn`).
+
+The function is then
 decompiled once more without the float-register vote on its return
 (`Funcdata::kuna_float_return_withdrawn`, chapter 05) and without a forced
 return, so it declares what it did before this redo and the float vote (an

@@ -6775,6 +6775,25 @@ tier = "core"
 symptoms = "a double return becomes SUB84 or zero|an ARM hard-float function loses its d0 parameter|a caller reads an undefined floating result"
 
 [[settable]]
+option = "zerofillreturn"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "output-prototype"
+strength = "HARD"
+rewind = "P4"
+issue = "gh-873"
+summary = "Leave the zero fill out of a returned vector register. AAPCS64 returns a double in d0, the low doubleword of q0, and the AArch64 compiler specs' floating output entries are the whole 16-byte q0..q3. SLEIGH lifts a scalar or 64-bit vector write (`scvtf d0,w0`, `fmul d0,..`, `fmov d0,#1.5`) as the low lane plus a COPY of zero into every higher lane of the register (`zext_zd`), so heritage hands the RETURN a second q0 trial holding a literal 0; ActionReturnRecovery's ancestorOpUse accepts a constant as returned and the output fill-in joins the two into `undefined16 f(..)` with `v1._8_8_ = 0`, and every caller in a decompile-all reads an undefined16 result. A float in s0 is already narrowed by the dead-code trim, whose masks are 64 bits wide and cannot narrow 16 bytes to 8. Right after flow, while each instruction's p-code is still what SLEIGH emitted, a COPY of zero is marked when it is the whole upper doubleword of the register and the same instruction writes a low lane of at most 8 bytes and only zeros between (the zext_zd/zext_zs shape; `movi v0.4s,#0`, `movi v0.2d,#0`, `mov v0.d[1],..` and `ldr q0` are 128-bit writes, not fills). Before the output fill-in, an active trial in the upper doubleword of a floating entry whose value at every RETURN is a marked COPY, directly or through MULTIEQUALs, is retired. The low lane is then the return value (`double scale(int)`, `return 0.0`), and a complex double or an aggregate of two doubles joins d0 and d1 instead of returning q0 with a zero imaginary half. An active fill fails every output rule and so forces the single-register fallback, so nothing is retired while a trial outside the floating entries is active (x0 and a leftover x1 would join), or unless every register with an active low lane returns a whole doubleword there (s0 and its fill are left to the trim; the aggregate rule would join s0 with a 64-bit d1), and a later entry keeps its fill unless its low lane is written on every path by an op that only feeds the RETURN (glibc's math_force_eval leaves an unread `fmul d1,d0,d0`). A declared or DWARF output is never touched."
+use_when = "On by default. Flip OFF to restore upstream Ghidra's 16-byte q0 return (`undefined16`, `v1._8_8_ = 0`, `return ZEXT816(0)`) on AArch64, or to bisect a return width. What it cannot tell apart: a 128-bit vector whose upper half a scalar operation zeroed, such as gcc's `fmov d0,d0` for `(float64x2_t){x, 0}`, has the same p-code as a returned double and now returns 8 bytes; the binary does not say which it is. Inert on every other processor (no other compiler spec has a floating output entry that a narrow write fills)."
+example = "option zerofillreturn off"
+source_decompiler = "kuna"
+inspiration = "GH-873: clang/gcc AArch64 `double scale(int a) { return g * 1.5 + a; }` printed `undefined16 scale(int)`; SLEIGH AARCH64instructions.sinc zext_zd/zext_zs and Ghidra's own `undefined1 [16]` AArch64 returns"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "an AArch64 function returning a double prints as undefined16|v1._8_8_ = 0 before return v1._0_16_|return ZEXT816(0) where the source returns 0.0|a caller casts an AArch64 call result to double: (double)f(x)|a struct of two doubles or a complex double returned in d0 and d1 prints as q0 with an upper half of zero"
+
+[[settable]]
 option = "armfloatargs"
 values = "on|off"
 default = "off"

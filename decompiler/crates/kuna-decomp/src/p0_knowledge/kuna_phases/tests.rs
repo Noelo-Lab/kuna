@@ -629,6 +629,7 @@ fn option_values_live_value_present_for_110() {
                             | "hiddenretarg"
                             | "mixedtailret"
                             | "calleereadarg"
+                            | "zerofillreturn"
                             | "calleepreserves"
                             | "calleeretpreserves"
                             | "calleescratchbody"
