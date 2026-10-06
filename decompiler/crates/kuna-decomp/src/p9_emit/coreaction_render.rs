@@ -113,7 +113,7 @@ use kuna_base::space::AddrSpace;
 use kuna_base::types::uintb;
 
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
-use crate::dtype::type_metatype;
+use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::context::GlobalContainer;
 use crate::subflow::LaneDivide;
@@ -941,14 +941,58 @@ fn select_infer_space(data: &Funcdata, vn: VarnodeId, op: OpId) -> Option<Rc<Add
     res_space
 }
 
-/// C++ `ActionConstantPtr::checkCopy` (coreaction.cc:1056): for a COPY feeding a
-/// RETURN of a non-pointer locked output, do not infer; otherwise honor
-/// `glb->infer_pointers`.  The output-lock surface is the proto recovery stub; the
-/// merged `FuncProto::is_output_locked` reports the un-recovered default
-/// (`false`), so this reduces to `glb->infer_pointers` (the un-locked branch).
-fn check_copy(data: &Funcdata, _op: OpId) -> bool {
-    // C++: if the COPY feeds a RETURN and the output is locked to a non-pointer,
-    // return false.  With no locked output (the merged proto default), fall through.
+/// Whether a constant flowing into a slot declared with type `dt` may be inferred
+/// as a pointer: `Some(true)` for a pointer or unknown (regardless of
+/// `infer_pointers`), `Some(false)` for a scalar that cannot hold a data pointer
+/// (a float, bool, enum, or an integer narrower than a pointer), `None` (defer to
+/// `infer_pointers`) otherwise.  Upstream refuses every non-pointer type; kuna
+/// keeps the pointer-wide integer (`(long)&table`) and the aggregate passed by
+/// value (`(S)msg`).
+fn declared_slot_infers(data: &Funcdata, dt: &Datatype) -> Option<bool> {
+    if dt.is_enum_type() {
+        return Some(false);
+    }
+    match dt.get_metatype() {
+        type_metatype::TYPE_PTR | type_metatype::TYPE_UNKNOWN => Some(true),
+        type_metatype::TYPE_INT | type_metatype::TYPE_UINT => {
+            let ptr_size = data.get_arch().types().map(|t| t.get_size_of_pointer())?;
+            (dt.get_size() < ptr_size).then_some(false)
+        }
+        type_metatype::TYPE_FLOAT | type_metatype::TYPE_BOOL => Some(false),
+        _ => None,
+    }
+}
+
+/// C++ `ActionConstantPtr::checkCopy` (coreaction.cc:1042): a COPY whose lone
+/// reader is the RETURN of a function with a locked output is judged by that
+/// output's type ([`declared_slot_infers`]); every other COPY honors
+/// `glb->infer_pointers`.
+fn check_copy(data: &Funcdata, op: OpId) -> bool {
+    let ret_op = data.obank().get(op).and_then(|o| o.get_out()).and_then(|out| data.lone_descend(out));
+    let feeds_return =
+        ret_op.and_then(|r| data.obank().get(r)).is_some_and(|r| r.code() == OpCode::CPUI_RETURN);
+    let proto = data.get_func_proto();
+    if feeds_return && proto.is_output_locked() {
+        if let Some(verdict) = proto.get_output().get_type().and_then(|t| declared_slot_infers(data, t)) {
+            return verdict;
+        }
+    }
+    data.get_arch().infer_pointers()
+}
+
+/// The CALL/CALLIND arm of C++ `ActionConstantPtr::isPointer` (coreaction.cc:1089):
+/// a constant passed in a parameter slot the callee's locked input list declares
+/// is judged by that parameter's type ([`declared_slot_infers`]); any other call
+/// input honors `glb->infer_pointers`.
+fn check_call_input(data: &Funcdata, op: OpId, slot: int4) -> bool {
+    let fc = data.get_call_specs_index(op).map(|i| data.get_call_specs(i));
+    if let Some(fc) = fc.filter(|fc| fc.is_input_locked() && fc.proto().num_params() > slot - 1) {
+        if let Some(verdict) =
+            fc.proto().get_param(slot - 1).and_then(|p| p.get_type()).and_then(|t| declared_slot_infers(data, t))
+        {
+            return verdict;
+        }
+    }
     data.get_arch().infer_pointers()
 }
 
@@ -988,18 +1032,8 @@ fn is_pointer(
                 if slot == 0 {
                     return None;
                 }
-                // A constant parameter could be a pointer.  The input-lock check
-                // (fc->isInputLocked + getParam metatype) is the call-spec stub; with
-                // no locked input we fall through to the infer_pointers gate.
-                if !glb.infer_pointers() {
-                    return None;
-                }
             }
-            OpCode::CPUI_COPY => {
-                if !check_copy(data, op) {
-                    return None;
-                }
-            }
+            OpCode::CPUI_COPY => {}
             // Pointers get concatenated in structures; comparisons against a
             // constant could be a pointer.
             OpCode::CPUI_PIECE
@@ -1052,6 +1086,16 @@ fn is_pointer(
                 numeric.contains(&vn_offset),
             ) && kuna_const_is_function_entry(data, spc, vn_offset, vn_size, &op_addr))
         {
+            return None;
+        }
+        // The declared-slot checks run after the cheap range filters: the
+        // call-input one scans the call specs.
+        let declared_ok = match opc {
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => check_call_input(data, op, slot),
+            OpCode::CPUI_COPY => check_copy(data, op),
+            _ => true,
+        };
+        if !declared_ok {
             return None;
         }
         rampoint = glb.resolve_constant(spc, vn_offset, vn_size, &op_addr, full_encoding).ok()?;

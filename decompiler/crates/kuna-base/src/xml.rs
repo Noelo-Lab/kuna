@@ -2000,7 +2000,10 @@ mod tests {
         // the AArch64 hidden-return register x8 is no call argument (GH-854)
         // and kuna-callretpairhalf / a caller that reads only the high word of
         // a callee's 64-bit result gets the pair from the call (#851)
-        assert_eq!(count, 435, "corpus file count drifted");
+        // and kuna-constptrdeclared-{riscv,x86,msp430} / a constant in a
+        // declared non-pointer return or argument is not inferred as a pointer
+        // (GH-846)
+        assert_eq!(count, 438, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

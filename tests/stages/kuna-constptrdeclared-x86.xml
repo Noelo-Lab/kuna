@@ -1,0 +1,114 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna: a constant flowing into a return value or call argument whose
+    declared type cannot hold a data pointer is not inferred as a pointer.
+    dret and cd move the bits of &table into a double (0x404040, the
+    denormal 2.08038790635732e-317); they printed (double)table, a
+    conversion of an address to a floating value, not the bits.  ebig
+    returns the address of msg in a pointer-wide enum and printed it as
+    (big)"hello world".
+
+    Stage / sub-stage: P5 const-pointer (p9_emit/coreaction_render.rs,
+    ActionConstantPtr check_copy for returns, check_call_input for call
+    arguments).  No option.  The rest are controls that must not move: a
+    long slot is as wide as a pointer and still prints (long)table; a
+    structure passed by value whose member is a pointer still names the
+    string; a declared int * return prints table, also with inferconstptr
+    off.
+
+    Source (gcc -O2 -fno-pie -no-pie -fcf-protection=none, bytes verbatim):
+
+        int table[64] = {1, 2, 3};
+        const char msg[] = "hello world";
+        struct S { const char *p; };
+        enum big { BSMALL = 1, BHUGE = 0x100000000L };
+        double td(double v) { return v * 2; }
+        double cd(void) { double d; long v = (long)&table[0]; memcpy(&d, &v, 8); return td(d); }
+        double dret(void) { double d; long v = (long)&table[0]; memcpy(&d, &v, 8); return d; }
+        long tl(long v) { return v + 1; }
+        long cl(void) { return tl((long)&table[0]); }
+        long laddr(void) { return (long)&table[0]; }
+        int *pret(void) { return &table[0]; }
+        int takes(struct S s) { return s.p[0]; }
+        int cs(void) { struct S s = { msg }; return takes(s); }
+        enum big ebig(void) { return (enum big)(uintptr_t)msg; }
+-->
+<bytechunk space="ram" offset="0x401150" readonly="true">
+f20f58c0c366662e0f1f840000000000b84040400066480f6ec0ebe40f1f4000
+b84040400066480f6ec0c30f1f440000488d4701c366662e0f1f840000000000
+bf40404000ebe9660f1f840000000000b840404000c3662e0f1f840000000000
+b840404000c3662e0f1f8400000000000fbe07c366662e0f1f84000000000090
+bf08204000ebe9660f1f840000000000b808204000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x402008" readonly="true">68656c6c6f20776f726c6400</bytechunk>
+<bytechunk space="ram" offset="0x404040">
+0100000002000000030000000000000000000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x401150" name="td"/>
+<symbol space="ram" offset="0x401160" name="cd"/>
+<symbol space="ram" offset="0x401170" name="dret"/>
+<symbol space="ram" offset="0x401180" name="tl"/>
+<symbol space="ram" offset="0x401190" name="cl"/>
+<symbol space="ram" offset="0x4011a0" name="laddr"/>
+<symbol space="ram" offset="0x4011b0" name="pret"/>
+<symbol space="ram" offset="0x4011c0" name="takes"/>
+<symbol space="ram" offset="0x4011d0" name="cs"/>
+<symbol space="ram" offset="0x4011e0" name="ebig"/>
+</binaryimage>
+<script>
+  <com>map address r0x404040 int4 table[64]</com>
+  <com>map address r0x402008 char msg[12]</com>
+  <com>parse line struct S { char *p; };</com>
+  <com>parse line enum big { BSMALL = 1, BHUGE = 0x100000000 };</com>
+  <com>parse line extern float8 td(float8 v);</com>
+  <com>parse line extern float8 cd(void);</com>
+  <com>parse line extern float8 dret(void);</com>
+  <com>parse line extern int8 tl(int8 v);</com>
+  <com>parse line extern int8 cl(void);</com>
+  <com>parse line extern int8 laddr(void);</com>
+  <com>parse line extern int4 *pret(void);</com>
+  <com>parse line extern int4 takes(S s);</com>
+  <com>parse line extern int4 cs(void);</com>
+  <com>parse line extern big ebig(void);</com>
+  <com>lo fu cd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu dret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu laddr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ebig</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option inferconstptr off</com>
+  <com>lo fu laddr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CONSTPTRDECLARED-X86 #1: no double is converted from an address" min="0" max="0">\(float8\)table</stringmatch>
+<stringmatch name="CONSTPTRDECLARED-X86 #2: a declared double argument keeps its bits" min="1" max="1">td\(2\.08038790635732e-317\)</stringmatch>
+<stringmatch name="CONSTPTRDECLARED-X86 #3: a declared double return keeps its bits" min="1" max="1">return 2\.08038790635732e-317;</stringmatch>
+<stringmatch name="CONSTPTRDECLARED-X86 #4: a pointer-sized long argument still names the symbol" min="1" max="1">tl\(\(int8\)table\)</stringmatch>
+<stringmatch name="CONSTPTRDECLARED-X86 #5: a pointer-sized long return still names the symbol, then honors inferconstptr off" min="1" max="1">return \(int8\)table;</stringmatch>
+<stringmatch name="CONSTPTRDECLARED-X86 #6: a declared pointer return names the symbol in both passes" min="2" max="2">return table;</stringmatch>
+<stringmatch name="CONSTPTRDECLARED-X86 #7: inferconstptr off leaves the long return a number" min="1" max="1">return 0x404040;</stringmatch>
+<stringmatch name="CONSTPTRDECLARED-X86 #8: a structure passed by value still names its pointer member" min="1" max="1">takes\(\(S\)"hello world"\)</stringmatch>
+<stringmatch name="CONSTPTRDECLARED-X86 #9: a pointer-wide enum return is not an address" min="0" max="0">\(big\)</stringmatch>
+<stringmatch name="CONSTPTRDECLARED-X86 #10: the enum return keeps its value" min="1" max="1">return 0x402008;</stringmatch>
+</decompilertest>

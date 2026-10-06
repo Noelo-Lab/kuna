@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2127,
-    2127
+    2142,
+    2142
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -200,6 +200,21 @@
     "data:CNORM-WARNSTYLE #3: banner WARNINGs appear only in the banner pass (indirect-jump + read-only)",
     "data:CNORM-WARNSTYLE #4: a condition-block warning rides to the header flush point after the brace",
     "data:CNORM-WARNSTYLE #5: the slug never fires inside the comma-separated header parens",
+    "data:CONSTPTRDECLARED-MSP430 #1: the enum return is not a register address",
+    "data:CONSTPTRDECLARED-MSP430 #2: the enum return prints its enumerator",
+    "data:CONSTPTRDECLARED-RV #1: no constant becomes a CSR address",
+    "data:CONSTPTRDECLARED-RV #2: the short, unsigned short and long returns print 1000",
+    "data:CONSTPTRDECLARED-RV #3: the other arms are unchanged",
+    "data:CONSTPTRDECLARED-X86 #10: the enum return keeps its value",
+    "data:CONSTPTRDECLARED-X86 #1: no double is converted from an address",
+    "data:CONSTPTRDECLARED-X86 #2: a declared double argument keeps its bits",
+    "data:CONSTPTRDECLARED-X86 #3: a declared double return keeps its bits",
+    "data:CONSTPTRDECLARED-X86 #4: a pointer-sized long argument still names the symbol",
+    "data:CONSTPTRDECLARED-X86 #5: a pointer-sized long return still names the symbol, then honors inferconstptr off",
+    "data:CONSTPTRDECLARED-X86 #6: a declared pointer return names the symbol in both passes",
+    "data:CONSTPTRDECLARED-X86 #7: inferconstptr off leaves the long return a number",
+    "data:CONSTPTRDECLARED-X86 #8: a structure passed by value still names its pointer member",
+    "data:CONSTPTRDECLARED-X86 #9: a pointer-wide enum return is not an address",
     "data:CONSTSELECTJUMP #1: the selected destination renders as a computed call (bug reproduced)",
     "data:CONSTSELECTJUMP #2: constselectjump on recovers the constant destination set as a switch",
     "data:CONSTSELECTJUMP #3: both arms behind the branch are decoded",

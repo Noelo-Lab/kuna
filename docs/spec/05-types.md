@@ -1483,6 +1483,33 @@ into a pointer corrupts every function that uses it as a bit. On acceptance
 the symbol lookup requires an exact hit unless the target is a character
 array (string constants may point mid-string).
 
+A declared type outranks the `inferconstptr` gate in two of those arms. A
+constant COPYed straight into the RETURN of a function whose output is locked,
+and a constant passed in a parameter slot of a call whose callee's inputs are
+locked, are judged by the declared type of that slot
+(`p9_emit/coreaction_render.rs (declared_slot_infers)`, called from
+`check_copy` and `check_call_input`). A declared pointer is tried even with
+`inferconstptr` off. So is an undefined type: it does not rule a pointer out,
+and upstream tries it too. That shows in kuna's synthesized system-call
+prototypes, whose parameters are undefined: an i386 `int 0x80` write prints
+`sys_write(1,"hello syscall\n",0xe)` even with `inferconstptr` off. A
+scalar that cannot hold a data pointer rules the constant out: a float, a bool,
+an enum (recognized by its enum flag, since an enum's metatype is the integer
+one), or an integer narrower than a pointer. Anything else defers to
+`inferconstptr` as an undeclared slot does: an integer at least as wide as a
+pointer, so `long laddr(void) { return (long)&table; }` keeps printing
+`(long)table`, and a structure or union passed by value, whose bytes may be a
+pointer member. Upstream refuses every non-pointer type here; kuna keeps those
+two because what the source wrote there is an address. The cost is on 16-bit
+targets, where `int` is pointer-wide: an MSP430 function declared to return
+`int` that returns 0x128 still prints `return (short)&FCTL1;`, as before. The
+rule matters most on targets whose cspec offers a narrow non-RAM space for
+inference: RISC-V lists the 2-byte `csreg` space, so
+`short f(int k) { return k > 0 ? 1000 : -1000; }` printed
+`return (short)&pmpaddr56;` (CSR `0x3e8`) once its return type was declared.
+It also keeps the bits of a `double` slot from printing as `(double)table`, and
+an MSP430 enum return of 296 from printing as `(State)&FCTL1` instead of `BUSY`.
+
 An explicit global data declaration is authoritative at an exact address.
 Both `--assert 'data …'` surfaces — the in-process assertion plane and its
 `map address` console lowering — route through
