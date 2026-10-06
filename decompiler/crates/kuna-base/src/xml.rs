@@ -2009,7 +2009,9 @@ mod tests {
         // $v1 across a callee that never writes it survives the call (GH-878)
         // and kuna-calleereadarg + -arm + -a64 / a call argument the
         // caller also tests is kept when the callee reads it (GH-881)
-        assert_eq!(count, 444, "corpus file count drifted");
+        // and kuna-retsysreg / a register set for a system register is not
+        // the high word of the return (GH-885)
+        assert_eq!(count, 445, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

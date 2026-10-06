@@ -258,7 +258,7 @@ fn below_noops(data: &Funcdata, vn: VarnodeId) -> VarnodeId {
 
 /// The values `vn` merges: walk back through phis, value-preserving INDIRECTs
 /// and the injected no-op of a return's mode switch.
-fn roots(data: &Funcdata, vn: VarnodeId) -> Option<Vec<VarnodeId>> {
+pub(crate) fn roots(data: &Funcdata, vn: VarnodeId) -> Option<Vec<VarnodeId>> {
     let mut out = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     let mut work = vec![vn];
@@ -625,7 +625,7 @@ fn is_call_result(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
 }
 
 /// Is the INDIRECT creation `op` a call's clobber of its output?
-fn created_by_call(data: &Funcdata, op: &crate::op::PcodeOp) -> bool {
+pub(crate) fn created_by_call(data: &Funcdata, op: &crate::op::PcodeOp) -> bool {
     let Some(iop) = op.get_in(1).and_then(|i| data.vbank().get(i)) else { return false };
     let call = OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()));
     data.obank().get(call).is_some_and(|c| matches!(c.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))
