@@ -4473,7 +4473,7 @@ compare against `0xffffffff` because `getopt_common` is recovered as returning
 
 ### (kuna) `mixedtailret` — a value returned beside a tail call
 
-(kuna) `mixedtailret` (default on,
+(kuna) `mixedtailret` (default **off**,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_mixedtailret.rs`) extends
 `passthrough`'s tail claim to a function that returns a value of its own on one
 path and tail-calls on another:
@@ -4484,20 +4484,36 @@ int keep(int *p) { int x = *p; if (x > 5) return x; return getv(); }
 mov (%rdi),%eax; cmp $5,%eax; jle L; ret; L: jmp getv        (clang -O2)
 ```
 
-printed `void keep(int *a0) { if (6 <= *a0) return; getv(); }`. The `ret`
+prints `void keep(int *a0) { if (6 <= *a0) return; getv(); }`. The `ret`
 path's `eax` is also compared, so `ancestorOpUse` refuses it as a return value,
 and the tail claim above requires every live RETURN to be a tail call. A
 caller that reads the result lets `voidret` force it, but only when the value
 is not also a call argument (clang's `fwd`, which hands `x` to `getk` on the
-other path, stayed `void` even then), and a function nothing calls had nothing
+other path, stays `void` even then), and a function nothing calls has nothing
 to force it.
 
-`stated_tail_return` now sorts the live RETURNs: one reached from a direct call
-is a tail return on the same terms as before (any refusal there still refuses
-the whole claim), and one reached from no call is the function's own. When
-there is at least one of each, the claim is made only if the storage is a
-single register and every own RETURN passes `returns_decided_value`, which
-reads the raw p-code before the first heritage:
+**Why it is opt-in.** The same bytes are a `void` guard. clang's ARM and
+PPC64LE builds of `void thr(int *p) { if (*p > 5) return; work(); }` and of
+`int keep` above are identical (`ldr r0,[r0]; cmp r0,#5; bxgt lr; b work`),
+and on x86-64 lazy initializers, reference-count puts, once-guards and range
+checks that return early on a value they loaded in `eax` take the shape too:
+in gcc and clang -O1 to -Os builds of a file of 18 such `void` guards (`if
+(__sync_lock_test_and_set(&flag, 1)) return; work();`, `if (q > 5) return;`
+after a division, `if (st - 3 < 10) return;`), 9 gain a return with the option
+on, 37 times over their eight builds. No rule local to the function separates
+them; its callers do. The value printed is always the one the register holds,
+so nothing printed is wrong but the return type. Set the option on when the
+function's callers read the return register after calling it, or when the
+source or another build says it returns a value; with it off, and wherever
+`passthrough` is inert, `stated_tail_return` refuses a RETURN reached from no
+call at once, exactly as before.
+
+With the option on, `stated_tail_return` sorts the live RETURNs: one reached
+from a direct call is a tail return on the same terms as before (any refusal
+there still refuses the whole claim), and one reached from no call is the
+function's own. When there is at least one of each, the claim is made only if
+the storage is a single register and every own RETURN passes
+`returns_decided_value`, which reads the raw p-code before the first heritage:
 
 * the function itself writes the register last on every path into the RETURN
   (`last_write_is_own`): walking back over every predecessor, the first write
@@ -4512,10 +4528,18 @@ reads the raw p-code before the first heritage:
   %edi,%eax; ret` tests the `edi` it returns, and the branch's condition is
   traced to its flag computations by storage (`condition_feeders`). The RETURN
   must not be on the side where that test found the value equal to a constant
-  (`returns_the_constant`, which reads `test %eax,%eax; jne`, `cmp $-1,%eax;
-  je`, `cbz w0` and the like): `if (!flag) return; ...; clear();` leaves the
-  `0` it tested in `eax`, and a `void` function does that as readily as one
-  that returns `0`;
+  (`returns_the_constant`): `if (!flag) return; ...; clear();` leaves the `0`
+  it tested in `eax`, and a `void` function does that as readily as one that
+  returns `0`. The test is read as an equality only through what
+  `equality_test` and `pins` follow: negations, copies and extensions of the
+  condition, `x & x`, a comparison of a truth value with 0 or 1 (`sete %dl;
+  test %dl,%dl`), and on the compared side the value itself or any part of its
+  register, its copies and zero- and sign-extensions (`mov %eax,%ecx` lifts to
+  `rcx = zext(eax)`), it plus, minus or exclusive-or a constant held in the op
+  or in a temporary set just before (AArch64 `cmp w0,#7`), `x & x` and `x &
+  -1`. That covers x86 `test`/`cmp` with `je`/`jne` and through `sete`/`setne`,
+  AArch64 `cbz`/`cbnz` and `cmp`/`b.eq`/`b.ne`; a test it cannot read that way
+  (a bit test, a `ccmp` chain, a range) is not taken for one;
 * from the op that computed it, the value only decides branches, moves between
   registers and reaches the claimed tail calls (`only_decides`): anything
   computed from it may only reach a CBRANCH, and a load or store through it or
@@ -4523,10 +4547,10 @@ reads the raw p-code before the first heritage:
   counts as one), a CALLOTHER or BRANCHIND reading it, or another call while
   it sits in an argument register refuses.
 
-The last two are what a value left in the return register of a `void`
-function fails. A first version of the rule had only the first condition and
-gave 29 functions of 40 decbench x86-64 binaries a return, 28 of them DWARF
-`void`. In 21 the stack-protector check `mov 0x48(%rsp),%rax; sub
+The last two turn away some of what a `void` function leaves in its return
+register, not all of it. A first version of the rule had only the first
+condition and gave 29 functions of 40 decbench x86-64 binaries a return, 28 of
+them DWARF `void`. In 21 the stack-protector check `mov 0x48(%rsp),%rax; sub
 %fs:0x28,%rax; jne fail` leaves `0` in `rax` before every `ret` of an iproute2
 printer; its branch leads to `__stack_chk_fail`, not to a tail call. iproute2's
 `print_flag` tests the pointer `tb[i]` and then loads through it, dpkg's
@@ -4536,9 +4560,7 @@ through. Letting a value narrower than the callee's return through (an `int`
 returned by a `long` function) brought in a second shape, 11 functions of
 bash, rsyslog and iproute2, all DWARF `void` and all `if (!flag) return;`
 beside a tail call, which the equal-side refusal removes; `return x;` under
-`x == -1` goes with them. The bytes cannot separate a `void` function that
-tests a value it computed only for the test and leaves it in the return
-register from a function that returns it; the rule accepts that.
+`x == -1` goes with them.
 
 Where the return register is also the first argument register (ARM, AArch64,
 RISC-V, PowerPC), the claim also needs every claimed tail callee's stated
@@ -4564,17 +4586,18 @@ the tail claim. Over 54 decbench x86-64 binaries (O2, O2-noinline and O0;
 39,323 functions), 10 ARM firmware images of the same corpus (17,332) and 813
 objects built with `clang -O2 -g` for AArch64, ARM, RISC-V 64, MIPS32, i386 and
 PPC64LE from its sources, `decompile-all` changes no function with the option
-on; the shape does not occur there. The witness is
-`decompiler/crates/kuna-cli/tests/mixed_tail_returns.rs`: gcc and clang -O2
+on. The witness is `decompiler/crates/kuna-cli/tests/mixed_tail_returns.rs`,
+run with `--option mixedtailret on` against the default: gcc and clang -O2
 `keep`, clang `fwd`, two `long` variants (a `long` load and a sign-extended
 `int`) and the `-fzero-call-used-regs` build return their value in
 `decompile-all` with no caller, and the printed C, compiled against the
 fixture at -O0 and -O2, returns what the binary returns; a function whose tail
-callee is `void`, one that loads through the pointer it tests, one that
-returns only where it found `eax` zero and one that leaves `eax` unwritten on
-its other path stay `void`, and with the option off
-so do the others but the scrubbed build, which returns its `xmm0`. An AArch64 object built in the test
-covers `keep` and `fwd` there.
+callee is `void`, one that loads through the pointer it tests, three that
+return only where they found `eax` zero or equal to a constant (directly,
+through `sete`, and through a copy) and one that leaves `eax` unwritten on its
+other path stay `void`. The default run prints them all as before: `void`, and
+the scrubbed build's `xmm0`. An AArch64 object built in the test covers `keep`,
+`fwd` and a `cmp w0,#7; b.eq` return there.
 
 ### (kuna) `varargforward` — a declared value forwarded in its own register to a variadic call
 

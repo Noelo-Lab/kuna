@@ -24,8 +24,8 @@
 //! ([`returns_decided_value`]):
 //!
 //! * the function itself wrote the register last on every path into the
-//!   RETURN, no wider than the callee states it: no call in between, no path from
-//!   the entry that leaves the incoming register there;
+//!   RETURN, no wider than the callee states it: no call in between, no path
+//!   from the entry that leaves the incoming register there;
 //! * walking up the single-predecessor chain from the RETURN, the nearest
 //!   conditional branch whose other side reaches a claimed tail call tests that
 //!   value, in the register or in the one it was copied from on the way (gcc's
@@ -37,9 +37,10 @@
 //!
 //! A value the function only computed and handed to the RETURN is one upstream
 //! already returns; the test that chooses between the two returns is the use
-//! upstream refuses. The other two conditions are what a scratch value in a
-//! `void` function fails: the stack-protector check `sub %fs:0x28,%rax; jne
-//! fail` leaves `0` in `rax` before every `ret` of a `void` function, but its
+//! upstream refuses. The other conditions turn away some of the scratch
+//! values a `void` function leaves there, not all of them: the stack-protector
+//! check `sub %fs:0x28,%rax; jne fail` leaves `0` in `rax` before every `ret`
+//! of a `void` function, but its
 //! branch leads to `__stack_chk_fail`, not to the tail call; `if (!flag)
 //! return;` returns the `0` it found; `if (!tb[i]) return;` tests the pointer
 //! it then loads through; `if (guard++) return;` counts the value it tests.
@@ -49,11 +50,15 @@
 //! `x0` and tail-calls `release(x0)`; there the claim also needs every claimed
 //! tail callee to take no parameter in it ([`feeds_tail_call`]).
 //!
-//! The claim is a judgment: a `void` function may also branch on a value it
-//! leaves in the return register before tail-calling a value-returning one.
-//! It is inert wherever `passthrough` is (no callee decompiled first,
-//! `--option passthrough off`). Default-**on**; `off` keeps a RETURN that is
-//! not a tail call out of the claim.
+//! The claim is a judgment the bytes cannot settle: a `void` guard that
+//! tests a value it leaves in the return register and tail-calls a
+//! value-returning function compiles to the same bytes as the function that
+//! returns that value (clang's ARM `ldr r0,[r0]; cmp r0,#5; bxgt lr; b work` is
+//! both `void thr(int *p) { if (*p > 5) return; work(); }` and `int keep(..)`),
+//! and lazy initializers, reference-count puts and once-guards take that
+//! shape. Default-**off**: set it on when the callers, or the user, know the
+//! function returns a value. It is inert wherever `passthrough` is (no callee
+//! decompiled first, `--option passthrough off`).
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -435,25 +440,43 @@ const TEST_DEPTH: u32 = 8;
 
 /// Is `cond`, read at `at`, true exactly where `value` equals a constant
 /// (`Some(true)`), exactly where it does not (`Some(false)`), or neither?
+///
+/// `cond` is read as a truth value: a negation, copy or extension of one, and
+/// `x & x`, keep its truth, so a flag `sete %dl` copies into a byte register
+/// and `test %dl,%dl` tests again is followed back to the comparison; and so
+/// is a comparison of such a truth value with `0` or `1`.
 fn equality_test(data: &Funcdata, at: OpId, cond: VarnodeId, value: &(Address, int4), depth: u32) -> Option<bool> {
     let c = data.vbank().get(cond)?;
     if depth == 0 || c.is_constant() {
         return None;
     }
-    let def = def_before(data, at, c.get_addr(), c.get_size())?;
+    let (def, exact) = writer_before(data, at, c.get_addr(), c.get_size())?;
     let o = data.obank().get(def)?;
+    let inner = |k: int4| equality_test(data, def, o.get_in(k)?, value, depth - 1);
+    if !exact {
+        return (o.code() == OpCode::CPUI_INT_ZEXT && low_part(o.get_out(), cond, data)).then(|| inner(0)).flatten();
+    }
     match o.code() {
-        OpCode::CPUI_BOOL_NEGATE => equality_test(data, def, o.get_in(0)?, value, depth - 1).map(|e| !e),
-        OpCode::CPUI_COPY => equality_test(data, def, o.get_in(0)?, value, depth - 1),
+        OpCode::CPUI_BOOL_NEGATE => inner(0).map(|e| !e),
+        OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => inner(0),
+        OpCode::CPUI_INT_AND | OpCode::CPUI_INT_OR if same_storage(data, o.get_in(0)?, o.get_in(1)?) => inner(0),
         OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => {
-            let konst = |v: VarnodeId| data.vbank().get(v).is_some_and(|v| v.is_constant());
             let (a, b) = (o.get_in(0)?, o.get_in(1)?);
-            let e = match (konst(a), konst(b)) {
-                (false, true) => a,
-                (true, false) => b,
+            let (e, k) = match (constant_at(data, def, a), constant_at(data, def, b)) {
+                (None, Some(k)) => (a, k),
+                (Some(k), None) => (b, k),
                 _ => return None,
             };
-            pins(data, def, e, value, depth - 1).then_some(o.code() == OpCode::CPUI_INT_EQUAL)
+            let equal = o.code() == OpCode::CPUI_INT_EQUAL;
+            if pins(data, def, e, value, depth - 1) {
+                return Some(equal);
+            }
+            let boolean = k == 0 || (k == 1 && data.vbank().get(e).is_some_and(|v| v.get_size() == 1));
+            if !boolean {
+                return None;
+            }
+            let truth = equality_test(data, def, e, value, depth - 1)?;
+            Some(if equal == (k == 0) { !truth } else { truth })
         }
         _ => None,
     }
@@ -461,9 +484,12 @@ fn equality_test(data: &Funcdata, at: OpId, cond: VarnodeId, value: &(Address, i
 
 /// Is `e`, read at `at`, a one-to-one function of `value`, so that comparing
 /// it with a constant compares `value` with one: the value itself, a copy or
-/// extension of it, it plus, minus or exclusive-or a constant, or `x & x` (the
-/// `test %eax,%eax` of a zero test)? Any part of the register counts as the
-/// value: the `eax` tested before `rax = zext(eax)` is returned.
+/// extension of it, it plus, minus or exclusive-or a constant (AArch64's
+/// `cmp w0,#7` puts the `7` in a temporary first), `x & x` or `x & -1` (the
+/// `test %eax,%eax` and `test $-1,%eax` of a zero test)? Any part of the
+/// register counts as the value: the `eax` tested before `rax = zext(eax)` is
+/// returned. So does the low half of a register a 32-bit copy of the value
+/// wrote (`mov %eax,%ecx` lifts to `rcx = zext(eax)`).
 fn pins(data: &Funcdata, at: OpId, e: VarnodeId, value: &(Address, int4), depth: u32) -> bool {
     let Some(v) = data.vbank().get(e) else { return false };
     if overlaps(v.get_addr(), v.get_size(), &value.0, value.1) {
@@ -472,39 +498,78 @@ fn pins(data: &Funcdata, at: OpId, e: VarnodeId, value: &(Address, int4), depth:
     if depth == 0 || v.is_constant() {
         return false;
     }
-    let Some(def) = def_before(data, at, v.get_addr(), v.get_size()) else { return false };
+    let Some((def, exact)) = writer_before(data, at, v.get_addr(), v.get_size()) else { return false };
     let Some(o) = data.obank().get(def) else { return false };
-    let input = |k: int4| o.get_in(k).and_then(|x| data.vbank().get(x).map(|v| (x, v)));
-    let (Some((i0, v0)), second) = (input(0), input(1)) else { return false };
-    let follow = |x: VarnodeId| pins(data, def, x, value, depth - 1);
+    let follow = |k: int4| o.get_in(k).is_some_and(|x| pins(data, def, x, value, depth - 1));
+    if !exact {
+        return o.code() == OpCode::CPUI_INT_ZEXT && low_part(o.get_out(), e, data) && follow(0);
+    }
+    let konst = |k: int4| o.get_in(k).and_then(|x| constant_at(data, def, x));
     match o.code() {
         OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT | OpCode::CPUI_INT_2COMP | OpCode::CPUI_INT_NEGATE => {
-            follow(i0)
+            follow(0)
         }
-        OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_XOR => match second {
-            Some((_, v1)) if v1.is_constant() => follow(i0),
-            Some((i1, _)) if v0.is_constant() => follow(i1),
-            _ => false,
-        },
-        OpCode::CPUI_INT_AND | OpCode::CPUI_INT_OR => match second {
-            Some((_, v1)) if !v0.is_constant() && v0.get_addr() == v1.get_addr() && v0.get_size() == v1.get_size() => {
-                follow(i0)
-            }
-            _ => false,
-        },
+        OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_XOR => {
+            (konst(1).is_some() && follow(0)) || (konst(0).is_some() && follow(1))
+        }
+        OpCode::CPUI_INT_AND | OpCode::CPUI_INT_OR => {
+            let all_ones = |k: int4| {
+                let bits = (v.get_size().clamp(1, 8) * 8) as u32;
+                let mask = if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };
+                konst(k).is_some_and(|c| c & mask == mask)
+            };
+            let same = match (o.get_in(0), o.get_in(1)) {
+                (Some(x), Some(y)) => same_storage(data, x, y),
+                _ => false,
+            };
+            (same && follow(0))
+                || (o.code() == OpCode::CPUI_INT_AND && ((all_ones(1) && follow(0)) || (all_ones(0) && follow(1))))
+        }
         _ => false,
     }
 }
 
-/// The op before `at` in its block that writes `[addr, addr+size)`, when the
-/// nearest write of any of those bytes writes exactly them.
-fn def_before(data: &Funcdata, at: OpId, addr: &Address, size: int4) -> Option<OpId> {
+/// The constant `vn` holds at `at`: a constant Varnode, or a register or
+/// temporary the op before it in the block set to one.
+fn constant_at(data: &Funcdata, at: OpId, vn: VarnodeId) -> Option<u64> {
+    let v = data.vbank().get(vn)?;
+    if v.is_constant() {
+        return Some(v.get_offset());
+    }
+    let (def, exact) = writer_before(data, at, v.get_addr(), v.get_size())?;
+    let o = data.obank().get(def).filter(|o| exact && o.code() == OpCode::CPUI_COPY)?;
+    data.vbank().get(o.get_in(0)?).filter(|c| c.is_constant()).map(|c| c.get_offset())
+}
+
+/// Do `a` and `b` name the same storage, neither a constant?
+fn same_storage(data: &Funcdata, a: VarnodeId, b: VarnodeId) -> bool {
+    match (data.vbank().get(a), data.vbank().get(b)) {
+        (Some(x), Some(y)) => !x.is_constant() && x.get_addr() == y.get_addr() && x.get_size() == y.get_size(),
+        _ => false,
+    }
+}
+
+/// Is `part` the least significant bytes of the wider `whole` an extension
+/// wrote, as wide as the extension's input?
+fn low_part(whole: Option<VarnodeId>, part: VarnodeId, data: &Funcdata) -> bool {
+    let (Some(w), Some(p)) = (whole.and_then(|w| data.vbank().get(w)), data.vbank().get(part)) else { return false };
+    let low = if w.get_addr().is_big_endian() {
+        w.get_offset().wrapping_add((w.get_size() - p.get_size()).max(0) as u64)
+    } else {
+        w.get_offset()
+    };
+    p.get_offset() == low && p.get_size() < w.get_size()
+}
+
+/// The op before `at` in its block that last wrote any byte of `[addr,
+/// addr+size)`, and whether it wrote exactly those bytes.
+fn writer_before(data: &Funcdata, at: OpId, addr: &Address, size: int4) -> Option<(OpId, bool)> {
     let mut cur = data.op_previous_op(at);
     while let Some(op) = cur {
         let o = data.obank().get(op)?;
         if let Some(v) = o.get_out().and_then(|v| data.vbank().get(v)) {
             if overlaps(v.get_addr(), v.get_size(), addr, size) {
-                return (v.get_addr() == addr && v.get_size() == size).then_some(op);
+                return Some((op, v.get_addr() == addr && v.get_size() == size));
             }
         }
         cur = data.op_previous_op(op);

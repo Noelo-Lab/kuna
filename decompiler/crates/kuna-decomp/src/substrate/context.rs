@@ -1725,7 +1725,7 @@ impl ArchContext {
             vararg_floats: Default::default(),
             narrow_ext: crate::kuna_narrowext::Rules::default(),
             pass_through: true, // (kuna) option passthrough (default on)
-            mixed_tail_ret: true, // (kuna) option mixedtailret (default on)
+            mixed_tail_ret: false, // (kuna) option mixedtailret (default off)
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,

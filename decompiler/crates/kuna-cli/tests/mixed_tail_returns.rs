@@ -1,13 +1,15 @@
-//! `mixedtailret`: a function that returns a value it also compares on one
-//! path and tail-calls a value-returning function on the other returns that
-//! value on both paths in `decompile-all`, with no caller reading it. The x86-64
+//! `mixedtailret` (opt-in): a function that returns a value it also compares
+//! on one path and tail-calls a value-returning function on the other returns
+//! that value on both paths in `decompile-all --option mixedtailret on`, with
+//! no caller reading it; the default run prints it as it did before. The x86-64
 //! fixture holds gcc and clang -O2 builds, one with gcc's
 //! `-fzero-call-used-regs` scrub; the printed C is compiled against it and
 //! compared with it. A function whose tail callee returns nothing, one that
 //! loads through the pointer it tests, one that returns only where it found the
-//! value zero, and one that leaves the return register unwritten on its other
-//! path stay `void`; so does an AArch64 function whose tail callee takes its
-//! value in `w0`.
+//! value zero or equal to a constant (through `sete` and a copy as well), and
+//! one that leaves the return register unwritten on its other path stay
+//! `void`; so do an AArch64 function whose tail callee takes its value in `w0`
+//! and one that returns where `cmp w0,#7` found it equal.
 mod common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
@@ -61,8 +63,8 @@ fn decompile_all(path: &std::path::Path, mixed: bool) -> Vec<(String, String)> {
     let binary = std::env::var_os("KUNA_TEST_BIN").unwrap_or_else(|| env!("CARGO_BIN_EXE_kuna").into());
     let mut command = Command::new(binary);
     command.args(["decompile-all", path.to_str().unwrap(), "--json"]);
-    if !mixed {
-        command.args(["--option", "mixedtailret", "off"]);
+    if mixed {
+        command.args(["--option", "mixedtailret", "on"]);
     }
     let output = process::required_output(&mut command);
     let doc: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -110,7 +112,7 @@ fn a_value_returned_beside_a_tail_call_is_returned() {
         emitted.push_str(&text.replace(&format!(" {name}("), &format!(" emitted_{name}(")));
         emitted.push('\n');
     }
-    for name in ["vkeep_gcc", "vptr", "zflag", "vin"] {
+    for name in ["vkeep_gcc", "vptr", "zflag", "zsete", "zcopy", "vin"] {
         let text = code(&functions, name);
         assert!(text.contains(&format!("void {name}(")), "{text}");
     }
@@ -135,18 +137,21 @@ fn words(code: &[u32]) -> Vec<u8> {
     code.iter().flat_map(|w| w.to_le_bytes()).collect()
 }
 
-/// `getv`, `getk`, and `keep`/`fwd` as clang -O2 builds them for AArch64, each
-/// ending `b <callee>` at offset 16.
+/// `getv`, `getk`, and `keep`/`fwd` as clang -O2 builds them for AArch64, and
+/// `eq7`, which returns only where `cmp w0,#7` found `w0` equal to 7, each with
+/// its `b <callee>` at the offset given.
 fn aarch64_object() -> Vec<u8> {
-    let funcs: [(&str, Vec<u8>, Option<&str>); 4] = [
+    let funcs: [(&str, Vec<u8>, Option<(&str, u64)>); 5] = [
         // adrp x8,0; ldr w8,[x8]; add w0,w8,w8,lsl #1; ret
         ("getv", words(&[0x90000008, 0xb9400108, 0x0b080500, 0xd65f03c0]), None),
         // add w0,w0,w0,lsl #1; ret
         ("getk", words(&[0x0b000400, 0xd65f03c0]), None),
         // ldr w0,[x0]; cmp w0,#5; b.le +8; ret; b getv
-        ("keep", words(&[0xb9400000, 0x7100141f, 0x5400004d, 0xd65f03c0, 0x14000000]), Some("getv")),
+        ("keep", words(&[0xb9400000, 0x7100141f, 0x5400004d, 0xd65f03c0, 0x14000000]), Some(("getv", 16))),
         // ldr w0,[x0]; cmp w0,#5; b.le +8; ret; b getk
-        ("fwd", words(&[0xb9400000, 0x7100141f, 0x5400004d, 0xd65f03c0, 0x14000000]), Some("getk")),
+        ("fwd", words(&[0xb9400000, 0x7100141f, 0x5400004d, 0xd65f03c0, 0x14000000]), Some(("getk", 16))),
+        // ldr w0,[x0]; cmp w0,#7; b.eq +8; b getv; ret
+        ("eq7", words(&[0xb9400000, 0x71001c1f, 0x54000040, 0x14000000, 0xd65f03c0]), Some(("getv", 12))),
     ];
     let mut text = Vec::new();
     let mut at = Vec::new();
@@ -155,9 +160,9 @@ fn aarch64_object() -> Vec<u8> {
         text.extend_from_slice(code);
     }
     for (k, (_, _, target)) in funcs.iter().enumerate() {
-        let Some(target) = target else { continue };
+        let Some((target, off)) = target else { continue };
         let to = at[funcs.iter().position(|(n, _, _)| n == target).unwrap()];
-        let from = at[k] + 16;
+        let from = at[k] + off;
         let word = 0x14000000u32 | (((to as i64 - from as i64) >> 2) as u32 & 0x3ffffff);
         text[from as usize..from as usize + 4].copy_from_slice(&word.to_le_bytes());
     }
@@ -189,6 +194,8 @@ fn an_aarch64_value_returned_beside_a_tail_call_is_returned_unless_the_callee_re
     assert!(keep.matches("return ").count() == 2, "{keep}");
     let fwd = code(&functions, "fwd");
     assert!(fwd.contains("void fwd("), "{fwd}");
+    let eq7 = code(&functions, "eq7");
+    assert!(eq7.contains("void eq7("), "{eq7}");
     let off = decompile_all(&path, false);
     assert!(code(&off, "keep").contains("void keep("), "{off:?}");
 }

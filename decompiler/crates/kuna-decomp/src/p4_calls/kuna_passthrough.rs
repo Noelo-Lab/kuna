@@ -604,8 +604,12 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     let mut producers: Vec<OpId> = Vec::new();
     let mut paths: Vec<(OpId, OpId)> = Vec::new();
     let mut own: Vec<OpId> = Vec::new();
+    let beside_own = data.get_arch().mixed_tail_ret;
     for &r in &rets {
         let Some(call) = producing_call(data, r) else {
+            if !beside_own {
+                return None;
+            }
             own.push(r);
             continue;
         };

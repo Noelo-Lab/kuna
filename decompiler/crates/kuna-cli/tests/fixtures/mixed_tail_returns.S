@@ -1,10 +1,11 @@
 # gcc 11 -O2 -fcf-protection=none and clang 14 -O2 builds of functions that
 # return a value they also compare on one path and tail-call a value-returning
 # function on the other (keep_zc with gcc's -fzero-call-used-regs=all scrub,
-# cut to six registers), with four that stay void: one tail-calls a void
-# function, one loads through the pointer it tests, one returns only where it
-# found eax zero (`if (!g) return;`, which `if (!g) return 0;` also compiles
-# to), and one leaves eax unwritten on its other path.
+# cut to six registers), with six that stay void: one tail-calls a void
+# function, one loads through the pointer it tests, three return only where
+# they found eax zero or 7 (`if (!g) return;`, which `if (!g) return 0;` also
+# compiles to; through `sete %dl; test %dl,%dl` and `mov %eax,%ecx`), and one
+# leaves eax unwritten on its other path.
 .text
 .globl getv
 .type getv,@function
@@ -145,6 +146,31 @@ zflag:
 .Lzflag_tail:
     jmp getv
 .size zflag, .-zflag
+
+.globl zsete
+.type zsete,@function
+zsete:
+    movl (%rdi), %eax
+    cmpl $7, %eax
+    sete %dl
+    testb %dl, %dl
+    jne .Lzsete_ret
+    jmp getv
+.Lzsete_ret:
+    ret
+.size zsete, .-zsete
+
+.globl zcopy
+.type zcopy,@function
+zcopy:
+    movl (%rdi), %eax
+    movl %eax, %ecx
+    testl %ecx, %ecx
+    je .Lzcopy_ret
+    jmp getv
+.Lzcopy_ret:
+    ret
+.size zcopy, .-zcopy
 
 .globl vin
 .type vin,@function
