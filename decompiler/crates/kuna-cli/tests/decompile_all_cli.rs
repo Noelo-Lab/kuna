@@ -50,6 +50,22 @@ fn arm_thumb() -> String {
         .to_string()
 }
 
+#[test]
+fn explicit_isa_does_not_pin_uniform_recovery_spans() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_stubs_o0_le32");
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all", bin.to_str().unwrap(), "--json", "--isa", "arm",
+        "--mode", "reliable", "--option", "funcstart_patterns", "on",
+        "--option", "armframes", "on", "--option", "aif", "on",
+    ]);
+    assert!(ok, "{stderr}");
+    let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let function = doc["functions"].as_array().unwrap().iter()
+        .find(|function| function["address"].as_u64() == Some(0x48a)).unwrap();
+    let code = function["code"].as_str().unwrap();
+    assert!(code.contains("dat_2010") && !code.contains("halt_baddata"), "{code}");
+}
+
 fn arm_thumb_pe() -> String {
     repo_root()
         .join("decompiler/crates/kuna-analysis/tests/fixtures/armv4t_thumb_pe.exe")

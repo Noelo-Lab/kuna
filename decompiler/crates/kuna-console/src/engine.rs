@@ -2741,6 +2741,7 @@ fn suppress_pdb_interior_entries(
 /// enabled (a new pass with no registered gate still runs — fail-open, additive).
 fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
     match pass_id {
+        "armframes" => arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes,
         "noreturn_known" => arch.analysis_noreturn_known,
         // (kuna) PE/Mach-O import-slot call binding — typed-slot `externref`
         // paint plus PE-only Win32 no-return names, committed only when enabled.
@@ -4771,6 +4772,8 @@ fn commit_analysis_output(
     //    ELF decompile would regress. The producing pass already gates on the
     //    object being ARM (so on a non-ARM binary `out.context_paints` is empty),
     //    and this swallow is the belt-and-suspenders second guard.
+    prog.arch_mut().arm_inventory_modes = out.inventory_context_paints.iter()
+        .filter_map(|paint| Some((paint.addr, paint.end?, paint.value))).collect();
     for paint in &out.context_paints {
         let begin = Address::new(Rc::clone(code_space), paint.addr);
         // Drop the Result: an unregistered context variable (non-ARM language) is
