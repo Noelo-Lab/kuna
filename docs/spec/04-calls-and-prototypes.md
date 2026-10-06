@@ -2293,9 +2293,13 @@ narrower than 32 bits takes that extension to the whole register, and a 32-bit
 value in a 64-bit register is sign-extended whatever its sign. Under Apple's
 rule a value narrower than 32 bits takes it to the low 32 bits only, and the
 rest of the register is left as the call or the entry leaves it. Plain `char`
-keeps the spec's extension, since its sign is the platform's and the DWARF
-reader gives every character type that one type; so do an undefined type, a
-pointer, a float, a structure, and every value on any other processor. A typed
+keeps the spec's extension, since its sign is the platform's (unsigned on Arm,
+AArch64 and RISC-V) while kuna's `char` is one signed type everywhere, and so
+do the wide character types, an undefined type, a pointer, a float, a
+structure, and every value on any other processor. `signed char` and
+`unsigned char` are character types too, but not the target's own (core) one:
+they state their sign, and the DWARF reader keeps them apart from plain `char`
+(01). A typed
 indirect call whose return value the rule extends is forced as declared (§4.3).
 The rule is only as right as the sign the type states, so the type sources give
 a narrow type the sign its source declared (01, DWARF and `cppsig`): `char16_t`
@@ -2318,7 +2322,17 @@ callees widen a return value like an argument and their callers read it as
 it is, and Apple's clang callee extends a return value narrower than 32 bits
 to 32 bits. A MIPS caller that reads such a result as a whole register printed
 `CONCAT31(v1,fc(k)) * 3` with `v1` unassigned, and an Apple arm64 one
-`(unsigned int)(unsigned char)esc(k) * 3`. `off` keeps every spec's extension.
+`(unsigned int)(unsigned char)esc(k) * 3`. `compiler` also gives the x86-64
+System V arguments (compiler id `gcc`, which clang images load as) Apple's
+argument rule. The psABI says nothing about the bits above a narrow argument,
+but GCC and clang callers extend it to 32 bits by the sign of its type, and
+clang callees rely on it: `long widen(unsigned char c) { return c; }` is
+`mov eax,edi; ret`, which printed `(unsigned long)CONCAT31(v1,c)` with `v1`
+unassigned and prints `(unsigned long)c` under `compiler`. A GCC callee extends
+the value itself, so there the stated extension is almost always dead.
+x86-64 return values, the Windows and Go conventions, and i386, whose arguments
+travel on the stack, keep the spec's extension. `off` keeps every spec's
+extension.
 
 An extension the rule supplies is marked on its op. The spec's zero extension
 was trimmed where an unprototyped call or the function's own return read it,
@@ -4776,6 +4790,11 @@ type when every call passes the argument in exactly the storage the callee
 recovered it in and every call passes the SAME committed pointer: a pointer to
 a named record or union that carries its layout (a synthesized `struct_N` the
 layout ledger shares, a record a program declares), a `char *` or a `char **`.
+A `signed char *` or `unsigned char *` is a character pointer too (chapter 01
+gives DWARF's those character types). Callers that disagree only in the sign of
+that character, one passing a `char *` and another the same value cast to
+`unsigned char *`, agree on `char *` (`same_but_character_sign`); with no
+`char *` among them they state nothing.
 A name with no layout behind it is not a commitment: the `FILE` shell
 `libctypes` interns says no more about the object than `void *` does, and the
 refusals below that read the pointee's members have nothing to read, so a

@@ -470,3 +470,120 @@ fn a_zero_extended_word_return_round_trips_through_the_printed_c() {
         );
     }
 }
+
+/// `charsign.c`'s functions, renamed so the printed ones can sit beside them.
+const CHARSIGN_SOURCE: &str = r#"
+typedef unsigned char u8;
+int s_fmt(char *b, const char *f, unsigned char c) { return sprintf(b, f, c); }
+int s_fmts(char *b, const char *f, signed char c) { return sprintf(b, f, c); }
+int s_fmt8(char *b, const char *f, u8 c) { return sprintf(b, f, c); }
+int s_fmtc(char *b, const char *f, char c) { return sprintf(b, f, c); }
+int s_is_hi(unsigned char c) { return c >= 0x80; }
+long s_wid(unsigned char c) { return c; }
+long s_wids(signed char c) { return c; }
+long s_wus(unsigned short c) { return c; }
+long s_wss(short c) { return c * 3L; }
+int s_wb(_Bool b) { return b + 5; }
+int rd1(unsigned char *b, int v) { b[0] = v; return 1; }
+int s_getc1(int v) { unsigned char b[1]; rd1(b, v); return b[0]; }
+int s_seq(signed char c) { return c == -56; }
+"#;
+
+/// Each round-tripped function of `charsign.c` and the parameter type it takes.
+const CHARSIGN_FORMATS: &[(&str, &str)] =
+    &[("fmt", "unsigned char"), ("fmts", "signed char"), ("fmt8", "u8"), ("fmtc", "char")];
+const CHARSIGN_VALUES: &[(&str, &str)] = &[
+    ("is_hi", "unsigned char"),
+    ("wid", "unsigned char"),
+    ("wids", "signed char"),
+    ("wus", "unsigned short"),
+    ("wss", "short"),
+    ("wb", "_Bool"),
+    ("getc1", "int"),
+    ("seq", "signed char"),
+];
+
+/// Compiles the printed `checked` functions of `charsign.c` beside its source
+/// and runs each against its source over a range of inputs.
+fn charsign_round_trip(stem: &str, text: &str, checked: &[&str], compilers: &[&str]) -> Result<(), String> {
+    let mut printed = String::new();
+    let mut checks = String::new();
+    for (n, ty) in CHARSIGN_FORMATS.iter().filter(|c| checked.contains(&c.0)) {
+        printed.push_str(function(text, n));
+        checks.push_str(&format!(
+            "    {n}(x, \"%d\", ({ty})v); s_{n}(y, \"%d\", ({ty})v);\n    \
+             if (strcmp(x, y)) {{ printf(\"{n} v=%#x: %s, want %s\\n\", v, x, y); bad++; }}\n"
+        ));
+    }
+    for (n, ty) in CHARSIGN_VALUES.iter().filter(|c| checked.contains(&c.0)) {
+        printed.push_str(function(text, n));
+        checks.push_str(&format!("    CHECK({n}(({ty})v), s_{n}(({ty})v));\n"));
+    }
+    let program = format!(
+        "#include <stdio.h>\n#include <string.h>\n#include <stdbool.h>\n{CHARSIGN_SOURCE}\n{printed}\n\
+         static const int V[] = {{0, 1, -1, 5, 99, 127, 128, 200, 202, 255, 256, 0x7fff, 0x8000, 0xffff, -200}};\n\
+         #define CHECK(got, want) do {{ long long g = (got), w = (want); if (g != w) {{ \\\n\
+         printf(\"%s v=%#x: %llx, want %llx\\n\", #got, v, g, w); bad++; }} }} while (0)\n\
+         int main(void) {{\n  int bad = 0;\n  char x[32], y[32];\n\
+         for (unsigned i = 0; i < sizeof V / sizeof V[0]; i++) {{\n    int v = V[i];\n{checks}  }}\n\
+         return bad != 0;\n}}\n"
+    );
+    compile_and_run(stem, &program, compilers)
+}
+
+/// A DWARF `unsigned char` or `signed char` parameter keeps the sign it was
+/// declared with; it used to read as plain `char`, so `sprintf(b,f,c)` with
+/// `char c` printed 202 as -54 when compiled. A one-element `unsigned char`
+/// array read whole extends as its element (`(int)b[0]`, not `ZEXT14(b[0])`).
+/// clang -O2 also reads a narrow parameter as the 32-bit value its caller
+/// extended it to, which only `narrowext compiler` states on x86-64: by default
+/// (and with it off) that prints `CONCAT31(v1,c)` with an unassigned `v1`.
+/// clang's `getc1` keeps its buffer in the slot of an alignment push, which
+/// kuna reads wrongly on main too, so only gcc's is checked.
+#[test]
+fn a_dwarf_char_parameter_keeps_its_declared_sign() {
+    let compilers = host_compilers();
+    let formats: Vec<&str> = CHARSIGN_FORMATS.iter().map(|c| c.0).collect();
+    let all: Vec<&str> = formats.iter().copied().chain(CHARSIGN_VALUES.iter().map(|c| c.0)).collect();
+    let widened = ["wid", "wids", "wus", "wss", "wb"];
+    let run = |fixture: &str, extra: &[&str]| {
+        let path = common::fixture(fixture);
+        let mut args = vec!["decompile-all", path.as_str()];
+        args.extend_from_slice(extra);
+        let (text, err, rc) = common::run_kuna(&args);
+        assert_eq!(rc, 0, "{fixture}: {err}");
+        text
+    };
+
+    let gcc = run("charsign_x86_64_gcc_O2", &[]);
+    charsign_round_trip("charsign-gcc", &gcc, &all, &compilers).unwrap_or_else(|e| panic!("gcc -O2: {e}\n{gcc}"));
+    assert!(function(&gcc, "seq").contains("c == -0x38"), "a signed char byte above 0x7f is a number:\n{gcc}");
+    let rust = run("charsign_x86_64_gcc_O2", &["--language", "rust", "--functions", "wid,wids"]);
+    for want in ["fn wid(mut c: u8) -> i64", "fn wids(mut c: i8) -> i64", "c as i64"] {
+        assert!(rust.contains(want), "Rust output has no `{want}`:\n{rust}");
+    }
+
+    let clang = run("charsign_x86_64_clang_O2", &[]);
+    let all: Vec<&str> = all.into_iter().filter(|n| *n != "getc1").collect();
+    let by_default: Vec<&str> = all.iter().copied().filter(|n| !widened.contains(n)).collect();
+    charsign_round_trip("charsign-clang", &clang, &by_default, &compilers)
+        .unwrap_or_else(|e| panic!("clang -O2: {e}\n{clang}"));
+    let compiler = run("charsign_x86_64_clang_O2", &["--option", "narrowext", "compiler"]);
+    charsign_round_trip("charsign-clang-compiler", &compiler, &all, &compilers)
+        .unwrap_or_else(|e| panic!("clang -O2 under compiler: {e}\n{compiler}"));
+    let off = run("charsign_x86_64_clang_O2", &["--option", "narrowext", "off"]);
+    for n in widened {
+        assert!(function(&off, n).contains("CONCAT"), "{n} under off:\n{off}");
+    }
+
+    let arm = run("charsign_aarch64_O2.o", &[]);
+    for want in [
+        "int fmt(char *b,char *f,unsigned char c)",
+        "int fmts(char *b,char *f,signed char c)",
+        "int fmt8(char *b,char *f,unsigned char c)",
+        "int fmtc(char *b,char *f,char c)",
+        "unsigned long ulen(char *s)",
+    ] {
+        assert!(arm.contains(want), "AArch64 has no `{want}`:\n{arm}");
+    }
+}

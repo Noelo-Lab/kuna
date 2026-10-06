@@ -9,7 +9,10 @@
 //! large positive one, or the rest of its register as an unassigned piece.
 //! MIPS and Apple arm64 extend the same way (to 32 bits only on Apple), but
 //! their ABI documents state it for arguments alone, so their return values
-//! take the rule only under `compiler`, as their compilers implement it.
+//! take the rule only under `compiler`, as their compilers implement it. The
+//! x86-64 System V document states no extension at all, yet GCC and clang
+//! callers extend a narrow argument to 32 bits and clang callees rely on it, so
+//! its arguments take Apple's rule under `compiler`.
 use crate::{
     context::{OpId, VarnodeId},
     dtype::{type_class, type_metatype, Datatype},
@@ -29,7 +32,7 @@ pub enum NarrowExtMode {
     /// The rule wherever an ABI document states it.
     #[default]
     Abi,
-    /// `Abi`, and the rule MIPS and Apple arm64 compilers follow.
+    /// `Abi`, and the rule MIPS, Apple arm64 and x86-64 compilers follow.
     Compiler,
 }
 
@@ -99,6 +102,10 @@ pub fn rules(arch: &Architecture) -> Rules {
             input: Some(Widen::Word),
             output: gated(Widen::Word, false),
         },
+        _ if id.starts_with("x86:LE:64:") && id.ends_with(":gcc") => Rules {
+            input: gated(Widen::Word, false),
+            output: None,
+        },
         _ => Rules::default(),
     }
 }
@@ -125,10 +132,12 @@ fn is_apple_arm64(arch: &Architecture) -> bool {
                 .is_ok_and(|loader| loader.callee_extends_returns() == Some(true)))
 }
 
-/// Whether `ty` is an integer whose sign is known; plain `char` is not, since
-/// its sign is the platform's and DWARF folds every character type into it.
+/// Whether `ty` is an integer whose sign is known. The target's own character
+/// types (core `char` and the wide ones) are not: their sign is the platform's,
+/// and kuna's `char` is signed on every target. `signed char` and `unsigned
+/// char` are character types too, but they state their sign.
 fn signed(ty: &Datatype) -> Option<bool> {
-    if ty.is_char_print() {
+    if ty.is_char_print() && (ty.is_core_type() || ty.get_size() != 1) {
         return None;
     }
     match ty.get_metatype() {

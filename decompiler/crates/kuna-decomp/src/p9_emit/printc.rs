@@ -912,6 +912,32 @@ pub fn format_integer_token(
     t
 }
 
+/// (kuna) The sign of the `signed char` or `unsigned char` operand the byte
+/// constant `vn` is compared with by `op`, when that operand prints without a
+/// cast: C promotes it by that sign, so the constant must be its value.
+fn compared_byte_sign(fd: &Funcdata, op: OpId, vn: VarnodeId) -> Option<bool> {
+    use crate::dtype::type_metatype::TYPE_INT;
+    let o = fd.obank().get(op)?;
+    if !matches!(
+        o.code(),
+        OpCode::CPUI_INT_EQUAL
+            | OpCode::CPUI_INT_NOTEQUAL
+            | OpCode::CPUI_INT_LESS
+            | OpCode::CPUI_INT_LESSEQUAL
+            | OpCode::CPUI_INT_SLESS
+            | OpCode::CPUI_INT_SLESSEQUAL
+    ) {
+        return None;
+    }
+    let other = if o.get_in(0)? == vn { o.get_in(1)? } else { o.get_in(0)? };
+    let v = fd.vbank().get(other)?;
+    if v.get_def().and_then(|d| fd.obank().get(d)).is_some_and(|d| d.code() == OpCode::CPUI_CAST) {
+        return None;
+    }
+    let t = v.get_type_read_facing(op);
+    (t.get_size() == 1 && t.is_char_print() && !t.is_core_type()).then(|| t.get_metatype() == TYPE_INT)
+}
+
 /// Whether `val` at `sz` bytes has a Rust byte-literal spelling.
 ///
 /// Rust byte literals are one byte, and `format_integer_token`'s escape set
@@ -6744,6 +6770,12 @@ impl PrintC {
         let invn = fd.obank().get(op)?.get_in(0)?;
         let outtype = fd.vbank().get(outvn)?.get_type_def_facing().clone();
         let intype = fd.vbank().get(invn)?.get_type_read_facing(op).clone();
+        // (kuna) A one-element array read whole is its element (`b[0]`), which
+        // extends as the element's type does.
+        let intype = match intype.get_array_base() {
+            Some(elem) if elem.get_size() == intype.get_size() => elem,
+            _ => intype,
+        };
         Some((outtype, intype))
     }
 
@@ -9331,6 +9363,18 @@ impl PrintC {
         if display_fmt != display_format::NONE && display_fmt != display_format::FORCE_CHAR {
             self.push_constant_ir_fmt_sign(val, ct.get_size(), op, display_fmt, is_signed);
             return;
+        }
+        // (kuna) `'\xc8'` is -56 or 200 by the sign of the target's `char`, so a
+        // `signed char` or `unsigned char` byte above 0x7f prints as a number, as
+        // does a byte compared with one. Rust's `b'a'` is a `u8`, so a `signed
+        // char` (`i8`) byte prints as a number there too.
+        if ct.get_size() == 1 && display_fmt == display_format::NONE {
+            let stated = if ct.is_core_type() { compared_byte_sign(fd, op, vn) } else { Some(is_signed) };
+            let rust = self.lang().forms.char_lit == crate::kuna_lang::CharForm::RustByte;
+            if let Some(sign) = stated.filter(|&sign| val >= 0x80 || (sign && rust)) {
+                self.push_constant_ir_fmt_sign(val, 1, op, display_format::NONE, sign);
+                return;
+            }
         }
         // printc.cc:1699-1723: emit the `'a'` / `L'...'` / hex-escape literal.
         // `push_constant_ir_fmt_sign` -> `format_integer_token` reproduces the

@@ -2042,7 +2042,18 @@ moves.
   assumed. Base types
   map by encoding; `DW_ATE_UTF` (`char8_t`, `char16_t`, `char32_t`, unsigned in
   C++), the Fortran character encodings and `DW_ATE_unsigned_fixed` are unsigned
-  integers, where they used to fall through to a signed one;
+  integers, where they used to fall through to a signed one. The two character
+  encodings map by name as well (`char_datatype`): `unsigned char` (and so
+  `uint8_t`) and `signed char` become character types of that sign
+  (`TypeFactory::get_type_char_signed`, Ghidra's `uchar`/`schar`), which print
+  as characters and still collapse to `builtin_memset`/`builtin_memcpy`, but
+  extend, compare and convert by their own sign. Plain `char`, and any other
+  name, keeps the core `char` type whatever its encoding, since its sign is
+  the target's (AArch64 and Arm state it `DW_ATE_unsigned_char`) and a string
+  stays a `char *`. Both used to read
+  as `char`, so a clang `int fwd(char *b, const char *f, unsigned char c)
+  { return sprintf(b, f, c); }` printed `sprintf(b,f,c)` with `char c`, which
+  compiles to a sign extension (202 prints as -54);
   (3) stack locals — direct `DW_OP_fbreg` children become typelock|namelock stack
   symbols at `call_frame_cfa + fbreg`, re-seeded per decompile (§1.1); nested
   lexical-block locals and composite locations are a documented loss. (ida) The

@@ -971,6 +971,20 @@ walk that renders `name.field`, `name[index]`, a `(int4)name` truncation cast,
 or the artificial `name._8_4_` member when a Varnode covers only part of its
 mapped symbol (`printc.rs (PrintC::push_partial_symbol_ir)`).
 
+(kuna) The character formatter prints a byte above 0x7f of a `signed char` or
+`unsigned char` type (a character type that is not the target's own `char`,
+chapter 01's DWARF reader makes them) as a number of the type's sign, not as
+`'\xc8'`: that literal is -56 or 200 by the sign of the compiling target's
+`char`, so `c == '\xc8'` with `unsigned char c` is never true on x86. So does a
+plain `char` constant that a comparison sets against such a value printed
+without a cast (`compared_byte_sign`): C promotes that value by its own sign,
+and the constant prints as `-0x38` or `200` to match. Otherwise plain `char`
+keeps upstream's escape, which is that type's value. An extension
+whose input is a one-element array read whole (`unsigned char b[1]` loaded as
+one byte) asks the cast question of the element, so it prints `(int)b[0]`
+where it printed the functional `ZEXT14(b[0])`
+(`printc.rs (sext_zext_facing_types)`).
+
 **Which symbols enter the partial walk.** Upstream routes *every* partial cover
 of a mapped Symbol through that walk — the walk itself decides, per type, what
 token describes the access — and kuna does the same: STRUCT, UNION and ARRAY
@@ -2169,7 +2183,9 @@ What differs, and why each is a language fact rather than a preference:
 - **Types** `i8`..`i128` / `u8`..`u128` / `f32` / `f64` / `bool` / `*mut T` /
   `[T; N]` / `()`. A recovered text byte spells `u8`, never `char` — a Rust `char`
   is a 4-byte Unicode scalar with a validity invariant that a decompiled byte does
-  not carry. A width Rust cannot name (3/5/6/7, x87's 10) spells `[u8; N]`, which
+  not carry. A declared `signed char` (chapter 01) is not the target's text type
+  and spells `i8`, so `c as i64` sign-extends; its byte constants print as
+  numbers, since `b'a'` is a `u8`. A width Rust cannot name (3/5/6/7, x87's 10) spells `[u8; N]`, which
   is *more* faithful than C's `undefined3`: it names the storage exactly and does
   not claim to be a scalar.
 - **Recovered composite names** are spelled in *type* position rather than

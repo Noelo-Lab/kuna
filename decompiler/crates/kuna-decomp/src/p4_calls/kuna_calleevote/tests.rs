@@ -82,6 +82,30 @@ fn char1() -> Rc<Datatype> {
     Rc::new(t)
 }
 
+/// A one-byte character type: the target's own `char` when `core`, else a
+/// DWARF `signed char` (`TYPE_INT`) or `unsigned char` (`TYPE_UINT`).
+fn character(name: &str, meta: type_metatype, core: bool) -> Rc<Datatype> {
+    let mut t = Datatype::new(1, meta);
+    t.name = name.to_string();
+    t.flags |= flags::chartype;
+    if core {
+        t.flags |= flags::coretype;
+    }
+    Rc::new(t)
+}
+
+fn plain_char() -> Rc<Datatype> {
+    character("char", type_metatype::TYPE_INT, true)
+}
+
+fn uchar() -> Rc<Datatype> {
+    character("unsigned char", type_metatype::TYPE_UINT, false)
+}
+
+fn schar() -> Rc<Datatype> {
+    character("signed char", type_metatype::TYPE_INT, false)
+}
+
 fn voidt() -> Rc<Datatype> {
     Rc::new(Datatype::new(0, type_metatype::TYPE_VOID))
 }
@@ -385,4 +409,48 @@ fn a_callers_synthesized_record_does_not_replace_a_headless_record() {
     assert_eq!(decide_ledger_under(&l, 8, true, &all_calls(&l)).len(), 1);
     l.own.insert(CALLEE, vec![typed(&r, 0x38, &ptr_to(headless("struct_19")))]);
     assert!(decide_ledger_under(&l, 8, true, &all_calls(&l)).is_empty());
+}
+
+/// A declared `unsigned char *` is a character pointer like `char *`, and
+/// callers that all pass it state it.
+#[test]
+fn every_caller_passing_an_unsigned_char_pointer_states_it() {
+    assert!(committed(&ptr_to(uchar())));
+    assert!(committed(&ptr_to(ptr_to(schar()))));
+    let p = ptr_to(uchar());
+    let l = ledger(&[(0x6600, Rc::clone(&p)), (0x6800, ptr_to(uchar()))]);
+    let got = decide_ledger(&l, 8, &all_calls(&l));
+    assert_eq!(got.len(), 1);
+    let ct = &got[0].1.at(&at(&reg(), 0x38), 8).expect("stated for rdi").ct;
+    assert!(same_type(ct, &p));
+}
+
+/// Callers that pass `char *` and `unsigned char *` for the same value (one
+/// casts it at the call) agree on `char *`, whichever comes first; a
+/// `char **` and an `unsigned char **` likewise.
+#[test]
+fn callers_differing_only_in_the_sign_of_a_character_agree_on_char() {
+    for (first, second) in [(ptr_to(plain_char()), ptr_to(uchar())), (ptr_to(uchar()), ptr_to(plain_char()))] {
+        let l = ledger(&[(0x6600, first), (0x6800, second), (0x6a00, ptr_to(schar()))]);
+        let got = decide_ledger(&l, 8, &all_calls(&l));
+        assert_eq!(got.len(), 1);
+        let ct = &got[0].1.at(&at(&reg(), 0x38), 8).expect("stated for rdi").ct;
+        assert!(same_type(ct, &ptr_to(plain_char())));
+    }
+    let l = ledger(&[(0x6600, ptr_to(ptr_to(uchar()))), (0x6800, ptr_to(ptr_to(plain_char())))]);
+    let got = decide_ledger(&l, 8, &all_calls(&l));
+    let ct = &got[0].1.at(&at(&reg(), 0x38), 8).expect("stated for rdi").ct;
+    assert!(same_type(ct, &ptr_to(ptr_to(plain_char()))));
+}
+
+/// With no caller passing plain `char *` there is no type to agree on, and a
+/// character pointer still disagrees with any other pointer.
+#[test]
+fn callers_mixing_signed_and_unsigned_characters_state_nothing() {
+    let l = ledger(&[(0x6600, ptr_to(uchar())), (0x6800, ptr_to(schar()))]);
+    assert!(decide_ledger(&l, 8, &all_calls(&l)).is_empty());
+    let l = ledger(&[(0x6600, ptr_to(plain_char())), (0x6800, ptr_to(ptr_to(uchar())))]);
+    assert!(decide_ledger(&l, 8, &all_calls(&l)).is_empty());
+    let l = ledger(&[(0x6600, ptr_to(uchar())), (0x6800, ptr_to(record("struct_2")))]);
+    assert!(decide_ledger(&l, 8, &all_calls(&l)).is_empty());
 }
