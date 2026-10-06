@@ -5751,14 +5751,16 @@ it on, spent three seconds on a redo that renamed one variable. A convention tha
 by its type's sign (PowerPC64's `inttype`) is left alone: there a caller may read
 the whole register of an `unsigned int`, which `kuna_zextreturn` already types.
 The single-function `kuna decompile` has no callers to ask and keeps the trim.
-Over 24 decbench x86-64 binaries and 190 AArch64 objects built from their
-sources, it changes 15 functions, each toward its source type: kmod's
-`kmod_module_dependency_symbol_get_bind` at three levels and dash's AArch64
-`arith_prec`, a zero-extended byte their callers compare as an `int`, from
-`char` to `unsigned char`; gnulib's `default_block_size`, a `uintmax_t` of 512 or
-1024, from `int` to `unsigned long` in du, ls and find, with its reader
-`humblock`'s `uintmax_t *` from `long *` to `unsigned long *` and du's `main`
-passing it a typed global; find's `get_format_specifer_length`, a `size_t`,
-from `char` to `unsigned long`, with its reader renumbered; and dash's
-`hashvar`, which computes a pointer in 32 bits, from `int` to `unsigned long` on
-both architectures.
+Over 30 decbench x86-64 binaries and 190 AArch64 objects built from their
+sources, it changes 19 functions, each toward its source type. A zero-extended
+byte its callers compare as an `int` goes from `char` to `unsigned char`: kmod's
+`kmod_module_dependency_symbol_get_bind` at three levels, ssh-agent's
+`recv_msg`, and dash's AArch64 `arith_prec`. A 64-bit return computed in 32 bits
+gets its width: gnulib's `default_block_size` (`uintmax_t`) goes from `int` to
+`unsigned long` in du, ls and find, with its reader `humblock`'s `uintmax_t *`
+going from `long *` to `unsigned long *` and du's `main` passing it a typed
+global; e2fsck's `ext2fs_iblk_set` and `set_undo_io_backup_file`
+(`errcode_t`) go to `uint8`; find's `get_format_specifer_length` (`size_t`)
+goes from `char` to `unsigned long`, its reader only renumbered; and dash's
+`hashvar` and bash -O0's `pshash_getbucket`, which compute a pointer in 32 bits,
+return 64-bit values (a `char *` for bash).
