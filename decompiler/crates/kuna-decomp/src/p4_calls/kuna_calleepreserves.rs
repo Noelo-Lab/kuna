@@ -194,8 +194,8 @@ pub fn callee_preserves_range(
 /// have written a callee-saved register is the signature of the hand-rolled
 /// helper this rule exists for: a get-PC thunk loads the GOT base into `EBX`,
 /// which `x86gcc.cspec` lists as `<unaffected>`, so the convention is already
-/// not a description of it. The stack pointer does not count -- every `RET`
-/// writes it.
+/// not a description of it. The stack pointer and the program counter do not
+/// count -- every `RET` writes them, and `ARM.cspec` lists `pc` as preserved.
 ///
 /// A helper that clobbers only scratch registers is invisible to this reading
 /// and is admitted by
@@ -215,6 +215,9 @@ fn body_departs_from_convention(
             if idx == sidx && off < soff + ssz && soff < off + sz as u64 {
                 continue;
             }
+        }
+        if w.is_return_target(idx, off, sz) {
+            continue;
         }
         let Some(space) = manage.get_space(idx) else { continue };
         let waddr = Address::new(std::rc::Rc::clone(space), off);

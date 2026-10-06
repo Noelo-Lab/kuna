@@ -329,7 +329,7 @@ pub(crate) fn callee_never_writes(
         return false;
     }
     if writes_some_return_storage(data, fc, w) {
-        return false;
+        return writes_return_register(data, fc, w);
     }
     body_is_a_body(data, fc, w)
 }
@@ -376,6 +376,16 @@ fn writes_some_return_storage(
     }) {
         return true;
     }
+    writes_return_register(data, fc, w)
+}
+
+/// Did the decoded body record a write to a register of the call's return
+/// storage?
+fn writes_return_register(
+    data: &Funcdata,
+    fc: &FuncCallSpecs,
+    w: &crate::kuna_rustabi::CalleeReturnWrites,
+) -> bool {
     let manage = data.get_arch().manage();
     w.written_ranges().iter().any(|&(idx, off, sz)| {
         let Some(space) = manage.get_space(idx) else { return false };
@@ -426,6 +436,9 @@ fn body_is_a_body(
             if idx == sidx && off < soff + ssz && soff < off + sz as u64 {
                 return false;
             }
+        }
+        if w.is_return_target(idx, off, sz) {
+            return false;
         }
         let Some(space) = manage.get_space(idx) else { return false };
         let waddr = Address::new(std::rc::Rc::clone(space), off);
