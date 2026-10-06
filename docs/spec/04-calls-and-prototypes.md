@@ -5702,8 +5702,9 @@ them, and relaxing it to accept a tested value brought the scratch-register
 merges back.
 
 The same ledger settles a narrow return the function zero-extends (GH-865). On
-x86-64 and AArch64, writing `eax` or `w0` clears the rest of the register, and
-sub-variable flow trims such a return to the narrow value
+x86 (32- and 64-bit) and AArch64, `movzbl` or writing `eax` or `w0` clears the
+rest of the register, and sub-variable flow trims such a return to the narrow
+value
 (`kuna_zextreturn`, chapter [05](05-types.md)); the conventions leave the bits
 above it unspecified, so the function alone cannot tell `int z32m(..)` from
 `unsigned long z32m(..) { return (x * 3) & 0xffffffff; }`. A caller that
@@ -5718,7 +5719,10 @@ its uses consume, the storage its operations compute with
 (`kuna_voidret.rs (used_storage)`): the result is followed through copies,
 joins, pieces, extensions, and shifts and masks by constants, which move bits
 without computing with them, and a RETURN or a call's argument only hands the
-register on. Consumption alone was no evidence: a `bool` function that tests a
+register on, unless a shift on the way moved the upper bits where it takes them
+(`return (long)z6(x) >> 1`, `sink((long)z8(x) >> 2)`). An unshifted 64-bit
+result handed straight to a call (`sink(z9(x))` with a `long` parameter) stays
+unread, so `z9` keeps its `int`. Consumption alone was no evidence: a `bool` function that tests a
 comparator's result with `sete %al` and returns `rax` whole, its upper bytes
 still the comparator's, consumed all of the comparator's register (grep's
 `string_compare_ci` over `mbscasecmp`), as did every wrapper that returns an
@@ -5736,9 +5740,14 @@ storage, and `seed` hands that to its next decompile
 caller computing with eight bytes and otherwise makes the narrow value unsigned
 (chapters [03](03-ssa-and-simplification.md) and [05](05-types.md)). A
 function whose return storage such a redo widened has every reader decompiled
-before it decompiled again (`stale_readers`), however large: a reader that took
-the result as the narrow value prints `z32m(..) < 0` of an `int`, which the new
-`unsigned long` declaration makes false. A convention that extends a narrow return
+before it decompiled again (`stale_readers`): a reader that took the result as
+the narrow value prints `z32m(..) < 0` of an `int`, which the new `unsigned
+long` declaration makes false. A reader over `AUDIT_MAX_OPS` is redone only
+where it uses the result's sign or width (`kuna_voidret.rs (signed_use)`: an
+extension, an ordering, a right shift, a division, a conversion to a float, or
+a comparison with a negative constant, after copies and arithmetic that keeps
+the low bits); e2fsck's `main`, which tests such a result for zero and passes
+it on, spent three seconds on a redo that renamed one variable. A convention that extends a narrow return
 by its type's sign (PowerPC64's `inttype`) is left alone: there a caller may read
 the whole register of an `unsigned int`, which `kuna_zextreturn` already types.
 The single-function `kuna decompile` has no callers to ask and keeps the trim.

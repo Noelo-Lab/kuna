@@ -55,6 +55,8 @@ pub struct Held {
     pub float: bool,
     /// Added to, subtracted from or indexed.
     pub arithmetic: bool,
+    /// Used where its sign or width decides the value ([`signed_use`]).
+    pub signed: bool,
 }
 
 /// How `data` holds the call result `outvn`.
@@ -72,7 +74,50 @@ fn held(data: &Funcdata, outvn: crate::context::VarnodeId) -> Option<Held> {
         pointer: meta == crate::dtype::type_metatype::TYPE_PTR,
         float: meta == crate::dtype::type_metatype::TYPE_FLOAT,
         arithmetic,
+        signed: signed_use(data, outvn),
     })
+}
+
+/// Does `data` use the call result `outvn` where its sign or width decides the
+/// value: an extension, an ordering, a right shift, a division or remainder, a
+/// conversion to a float, or a comparison with a constant whose sign bit is
+/// set, after copies, joins, pieces and arithmetic that keeps the low bits?
+/// Printed against a callee declared narrower than a redo makes it, such a use
+/// computes something else.
+fn signed_use(data: &Funcdata, outvn: crate::context::VarnodeId) -> bool {
+    use kuna_num::opcodes::OpCode::*;
+    let mut work = vec![outvn];
+    let mut seen = BTreeSet::new();
+    while let Some(v) = work.pop() {
+        if !seen.insert(v) || seen.len() > 64 {
+            continue;
+        }
+        let Some(node) = data.vbank().get(v) else { continue };
+        let sign = 1u64 << (node.get_size().clamp(1, 8) * 8 - 1);
+        for r in node.descend_iter() {
+            let Some(o) = data.obank().get(r).filter(|o| !o.is_dead()) else { continue };
+            match o.code() {
+                CPUI_INT_SEXT | CPUI_INT_LESS | CPUI_INT_LESSEQUAL | CPUI_INT_SLESS | CPUI_INT_SLESSEQUAL
+                | CPUI_INT_RIGHT | CPUI_INT_SRIGHT | CPUI_INT_DIV | CPUI_INT_SDIV | CPUI_INT_REM | CPUI_INT_SREM
+                | CPUI_FLOAT_INT2FLOAT => return true,
+                CPUI_INT_EQUAL | CPUI_INT_NOTEQUAL => {
+                    let constant = (0..2)
+                        .filter_map(|k| o.get_in(k))
+                        .filter(|&k| k != v)
+                        .filter_map(|k| data.vbank().get(k))
+                        .any(|k| k.is_constant() && k.get_offset() & sign != 0);
+                    if constant {
+                        return true;
+                    }
+                }
+                CPUI_COPY | CPUI_MULTIEQUAL | CPUI_INDIRECT | CPUI_CAST | CPUI_SUBPIECE | CPUI_PIECE | CPUI_INT_ADD
+                | CPUI_INT_SUB | CPUI_INT_MULT | CPUI_INT_AND | CPUI_INT_OR | CPUI_INT_XOR | CPUI_INT_NEGATE
+                | CPUI_INT_2COMP | CPUI_INT_LEFT => work.extend(o.get_out()),
+                _ => {}
+            }
+        }
+    }
+    false
 }
 
 /// The run's record.
@@ -559,7 +604,9 @@ fn widens(storage: &(Address, int4), word: &(Address, int4, bool)) -> bool {
 /// bits its ops use. A RETURN, a call's argument, and a copy, join or piece
 /// of the value on its way to one only hand the register on, and count for
 /// nothing: `call f; sete %al; ret` leaves `f`'s upper bits in a return the
-/// function was not narrowed to, but computes only with `eax`.
+/// function was not narrowed to, but computes only with `eax`. A shift on the
+/// way moves the upper bits where the RETURN or the argument takes them:
+/// `return (long)z6(x) >> 1` hands on bit 32 of the result.
 fn used_storage(data: &Funcdata, out: crate::context::VarnodeId) -> Option<(Address, int4)> {
     let node = data.vbank().get(out)?;
     let addr = node.get_addr();
@@ -602,7 +649,7 @@ fn operated_bits(data: &Funcdata, out: crate::context::VarnodeId, size: int4) ->
         for r in node.descend_iter() {
             let Some(o) = data.obank().get(r).filter(|o| !o.is_dead()) else { continue };
             let Some(next) = o.get_out() else {
-                if !matches!(o.code(), CPUI_RETURN | CPUI_CALL | CPUI_CALLIND | CPUI_CALLOTHER) {
+                if shift != 0 || !matches!(o.code(), CPUI_RETURN | CPUI_CALL | CPUI_CALLIND | CPUI_CALLOTHER) {
                     bits |= to_result(valid, shift);
                 }
                 continue;
@@ -612,7 +659,8 @@ fn operated_bits(data: &Funcdata, out: crate::context::VarnodeId, size: int4) ->
                 o.get_in(k).filter(|&i| i != v).and_then(|i| data.vbank().get(i)).filter(|i| i.is_constant()).map(|i| i.get_offset())
             };
             let used = match o.code() {
-                CPUI_CALL | CPUI_CALLIND | CPUI_CALLOTHER => continue,
+                CPUI_CALL | CPUI_CALLIND | CPUI_CALLOTHER if shift == 0 => continue,
+                CPUI_CALL | CPUI_CALLIND | CPUI_CALLOTHER => valid,
                 CPUI_COPY | CPUI_MULTIEQUAL | CPUI_INDIRECT | CPUI_CAST | CPUI_INT_ZEXT => {
                     work.push((next, shift, valid));
                     continue;
@@ -765,9 +813,12 @@ fn displaced(ledger: &Ledger, callee: &(int4, uintb), read: &(Address, int4)) ->
 /// recovered `void` until it did) is decompiled again.
 ///
 /// A function whose zero-extended return a redo widened has every such reader
-/// decompiled again, whatever it states and however large the reader: one
-/// that took the result as the narrow value (`z32m(..) < 0` of an `int`) tests
-/// a sign the callee's new declaration no longer has.
+/// decompiled again, whatever it states: one that took the result as the
+/// narrow value (`z32m(..) < 0` of an `int`) tests a sign the callee's new
+/// declaration no longer has. A reader over the size cap is redone only where
+/// it uses the result's sign or width ([`signed_use`]); e2fsck's `main`, which
+/// tests one such result for zero and passes it on, cost a 3-second redo for
+/// a renamed variable.
 ///
 /// A reader over [`crate::kuna_callrettype::AUDIT_MAX_OPS`] live ops is decompiled
 /// again only where its text computes a wrong value: an offset from a result the
@@ -808,8 +859,13 @@ pub fn stale_readers(
                 .kuna_voidret
                 .held
                 .get(&(*reader, *callee))
-                .is_some_and(|h| (scaled && !h.pointer && h.arithmetic) || (float && !h.float) || (withdrawn && h.float));
-            if !large || wrong || widened {
+                .is_some_and(|h| {
+                    (scaled && !h.pointer && h.arithmetic)
+                        || (float && !h.float)
+                        || (withdrawn && h.float)
+                        || (widened && h.signed)
+                });
+            if !large || wrong {
                 out.insert(*reader);
             }
         }

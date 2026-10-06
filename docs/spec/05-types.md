@@ -2804,9 +2804,10 @@ Under those conventions the function's callers can still say it, in
 `decompile-all` and `decompile-project` (`voidret`, chapter
 [04](04-calls-and-prototypes.md)). A caller that computes with the register
 above the trimmed value relies on the zero-extension, since no convention lets a
-caller read bits a narrow return leaves unspecified: x86-64 gcc and clang extend
-a returned `char` or `unsigned` themselves (`movzbl %al,%eax`, `mov %eax,%eax`)
-before they use more of the register. The function is then decompiled again with
+caller read bits a narrow return leaves unspecified: x86 gcc and clang extend a
+returned `char` or `unsigned` themselves (`movzbl %al,%eax`, `mov %eax,%eax`)
+before they use more of the register, and so do AArch64's. On i386 only a value
+narrower than the register's four bytes can be read wider. The function is then decompiled again with
 the width its callers compute with (`Funcdata::kuna_wide_return`,
 `kuna_zextreturn.rs (read_width)`). Where that is at most four bytes, the value
 keeps its trim and takes the record as above (`kuna_zextreturn.rs

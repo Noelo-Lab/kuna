@@ -32,6 +32,13 @@ long s_cs(int x) { return s_si(x + 1) + 1L; }
 long s_cb(unsigned x) { return s_lb(x + 1) - 0x80L; }
 long s_cq(unsigned x) { return s_lq(x + 1) * 0x10000001L; }
 long s_cw(unsigned long x) { return s_w(x ^ 5) + 1; }
+NI unsigned long s_z6(unsigned long x) { return (x * 11) & 0xffffffffUL; }
+NI unsigned long s_z7(unsigned long x) { return (x * 13) & 0xffffffffUL; }
+NI unsigned long s_z8(unsigned long x) { return (x * 17) & 0xffffffffUL; }
+NI long s_sink(long v) { return v - 0x7fffffffL; }
+long s_rsh(unsigned long x) { return (long)s_z6(x ^ 1) >> 1; }
+unsigned long s_lsh(unsigned long x) { return s_z7(x ^ 1) << 3; }
+long s_arg(unsigned long x) { return s_sink((long)s_z8(x ^ 1) >> 2) * 2; }
 "#;
 
 /// Each checked function with the argument it takes.
@@ -48,6 +55,12 @@ const ARGS: &[(&str, &str)] = &[
     ("lq", "(unsigned)v"),
     ("cq", "(unsigned)v"),
     ("cw", "(unsigned long)v"),
+    ("z6", "(unsigned long)v"),
+    ("z7", "(unsigned long)v"),
+    ("z8", "(unsigned long)v"),
+    ("rsh", "(unsigned long)v"),
+    ("lsh", "(unsigned long)v"),
+    ("arg", "(unsigned long)v"),
 ];
 
 struct Image {
@@ -59,7 +72,8 @@ struct Image {
     checked: &'static [&'static str],
 }
 
-const ALL: &[&str] = &["z32m", "zn", "lb", "cz", "ci", "cp", "cru", "cs", "cb", "lq", "cq", "cw"];
+const ALL: &[&str] =
+    &["z32m", "zn", "lb", "cz", "ci", "cp", "cru", "cs", "cb", "lq", "cq", "cw", "z6", "z7", "z8", "rsh", "lsh", "arg"];
 
 /// gcc -O2 and clang -O0 for x86-64, clang -O2 and -O0 for AArch64. AArch64
 /// `mov w8,w0; sub x0,x8,#0x80` after a call prints as `(f(..) & 0xffffffff) -
@@ -75,7 +89,10 @@ const IMAGES: &[Image] = &[
                0f1f8400000000004883f705e877ffffff4883c001c366904883f701e867ffffffc1e81fc30f1f00\
                83c702e868ffffff480500100000c39083c701e878ffffff89c04883c001c39083c701e878ffffff\
                48984883c001c39083c701e878ffffff48984883c080c39083c701e878ffffff4889c248c1e21c48\
-               01d0c366662e0f1f84000000000066904883f705e867ffffff4883c001c3",
+               01d0c366662e0f1f84000000000066904883f705e867ffffff4883c001c36690488d04bf8d0447c3\
+               0f1f840000000000488d047f8d0487c30f1f8400000000004889f848c1e00401f889c0c30f1f4000\
+               488d8701000080c30f1f8400000000004883f701e8b7ffffff48d1f8c30f1f004883f701e8b7ffff\
+               ff48c1e003c366904883f701e8b7ffffff48c1f8024889c7e8bbffffff4801c0c3",
         functions: &[
             ("z32m", 0x0, 0x4),
             ("zn", 0x10, 0x4),
@@ -93,6 +110,13 @@ const IMAGES: &[Image] = &[
             ("cb", 0xd0, 0xf),
             ("cq", 0xe0, 0x13),
             ("cw", 0x100, 0xe),
+            ("z6", 0x110, 0x8),
+            ("z7", 0x120, 0x8),
+            ("z8", 0x130, 0xc),
+            ("sink", 0x140, 0x8),
+            ("rsh", 0x150, 0xd),
+            ("lsh", 0x160, 0xe),
+            ("arg", 0x170, 0x19),
         ],
         checked: ALL,
     },
@@ -112,7 +136,14 @@ const IMAGES: &[Image] = &[
                5dc3662e0f1f8400000000000f1f4000554889e54883ec10897dfc8b7dfc83c701e8bafeffff4898\
                482d800000004883c4105dc3662e0f1f8400000000006690554889e54883ec10897dfc8b7dfc83c7\
                01e89afeffff4869c0010000104883c4105dc3662e0f1f8400000000000f1f00554889e54883ec10\
-               48897df8488b7df84883f705e877feffff4883c0014883c4105dc3",
+               48897df8488b7df84883f705e877feffff4883c0014883c4105dc3662e0f1f8400000000000f1f00\
+               554889e548897df8486b45f80b48b9ffffffff000000004821c85dc30f1f4000554889e548897df8\
+               486b45f80d48b9ffffffff000000004821c85dc30f1f4000554889e548897df8486b45f81148b9ff\
+               ffffff000000004821c85dc30f1f4000554889e548897df8488b45f8482dffffff7f5dc3662e0f1f\
+               8400000000006690554889e54883ec1048897df8488b7df84883f701e867ffffff48c1f8014883c4\
+               105dc3662e0f1f8400000000000f1f00554889e54883ec1048897df8488b7df84883f701e857ffff\
+               ff48c1e0034883c4105dc3662e0f1f8400000000000f1f00554889e54883ec1048897df8488b7df8\
+               4883f701e847ffffff4889c748c1ff02e85bffffff48c1e0014883c4105dc3",
         functions: &[
             ("z32m", 0x0, 0x1c),
             ("zn", 0x20, 0xf),
@@ -130,6 +161,13 @@ const IMAGES: &[Image] = &[
             ("cb", 0x1a0, 0x24),
             ("cq", 0x1d0, 0x23),
             ("cw", 0x200, 0x23),
+            ("z6", 0x230, 0x1c),
+            ("z7", 0x250, 0x1c),
+            ("z8", 0x270, 0x1c),
+            ("sink", 0x290, 0x14),
+            ("rsh", 0x2b0, 0x23),
+            ("lsh", 0x2e0, 0x23),
+            ("arg", 0x310, 0x2f),
         ],
         checked: ALL,
     },
@@ -144,7 +182,10 @@ const IMAGES: &[Image] = &[
                fd7bbfa9fd03009100040011d4ffff97087c409300050091fd7bc1a8c0035fd6fd7bbfa9fd030091\
                00040011cfffff97e803002a000102d1fd7bc1a8c0035fd6fd7bbfa9fd03009100040011caffff97\
                0070008bfd7bc1a8c0035fd6fd7bbfa9fd030091a8008052000008cac5ffff9700040091fd7bc1a8\
-               c0035fd6",
+               c0035fd668018052007c081bc0035fd6a8018052007c081bc0035fd60010000bc0035fd6e88761b2\
+               0000088bc0035fd6fd7bbfa9fd030091000040d2f2ffff9700fc4193fd7bc1a8c0035fd6fd7bbfa9\
+               fd030091000040d2eeffff9700f07dd3fd7bc1a8c0035fd6fd7bbfa9fd030091000040d2eaffff97\
+               00fc4293eaffff9700f87fd3fd7bc1a8c0035fd6",
         functions: &[
             ("z32m", 0x0, 0x8),
             ("zn", 0x8, 0x8),
@@ -162,8 +203,15 @@ const IMAGES: &[Image] = &[
             ("cb", 0xe8, 0x20),
             ("cq", 0x108, 0x1c),
             ("cw", 0x124, 0x20),
+            ("z6", 0x144, 0xc),
+            ("z7", 0x150, 0xc),
+            ("z8", 0x15c, 0x8),
+            ("sink", 0x164, 0xc),
+            ("rsh", 0x170, 0x1c),
+            ("lsh", 0x18c, 0x1c),
+            ("arg", 0x1a8, 0x24),
         ],
-        checked: &["z32m", "zn", "lb", "cz", "ci", "cp", "cs", "lq", "cq", "cw"],
+        checked: &["z32m", "zn", "lb", "cz", "ci", "cp", "cs", "lq", "cq", "cw", "z6", "z7", "z8", "rsh", "lsh", "arg"],
     },
     Image {
         name: "aarch64-clang-O0",
@@ -184,7 +232,14 @@ const IMAGES: &[Image] = &[
                fd7b01a9fd430091a0c31fb8a8c35fb8000500119fffff97e803002a087d4093000102f1fd7b41a9\
                ff830091c0035fd6ff8300d1fd7b01a9fd430091a0c31fb8a8c35fb8000500119affff97280080d2\
                0800a2f2007c089bfd7b41a9ff830091c0035fd6ff8300d1fd7b01a9fd430091e00700f9e80740f9\
-               a90080d2000109ca95ffff9700040091fd7b41a9ff830091c0035fd6",
+               a90080d2000109ca95ffff9700040091fd7b41a9ff830091c0035fd6ff4300d1e00700f9e80740f9\
+               690180d2087d099b007d4092ff430091c0035fd6ff4300d1e00700f9e80740f9a90180d2087d099b\
+               007d4092ff430091c0035fd6ff4300d1e00700f9e80740f9290280d2087d099b007d4092ff430091\
+               c0035fd6ff4300d1e00700f9e80740f9e97b40b2000109ebff430091c0035fd6ff8300d1fd7b01a9\
+               fd430091e00700f9e80740f9000140d2dbffff9700fc4193fd7b41a9ff830091c0035fd6ff8300d1\
+               fd7b01a9fd430091e00700f9e80740f9000140d2d8ffff9700f07dd3fd7b41a9ff830091c0035fd6\
+               ff8300d1fd7b01a9fd430091e00700f9e80740f9000140d2d5ffff9700fc4293dbffff9700f87fd3\
+               fd7b41a9ff830091c0035fd6",
         functions: &[
             ("z32m", 0x0, 0x20),
             ("zn", 0x20, 0x20),
@@ -202,8 +257,15 @@ const IMAGES: &[Image] = &[
             ("cb", 0x204, 0x34),
             ("cq", 0x238, 0x34),
             ("cw", 0x26c, 0x30),
+            ("z6", 0x29c, 0x20),
+            ("z7", 0x2bc, 0x20),
+            ("z8", 0x2dc, 0x20),
+            ("sink", 0x2fc, 0x1c),
+            ("rsh", 0x318, 0x2c),
+            ("lsh", 0x344, 0x2c),
+            ("arg", 0x370, 0x34),
         ],
-        checked: &["z32m", "zn", "lb", "cz", "ci", "cp", "cs", "lq", "cq", "cw"],
+        checked: &["z32m", "zn", "lb", "cz", "ci", "cp", "cs", "lq", "cq", "cw", "z6", "z7", "z8", "rsh", "lsh", "arg"],
     },
 ];
 
@@ -294,8 +356,10 @@ fn round_trip(image: &Image, text: &str) -> Result<(), String> {
 }
 
 /// The printed callers compute what the binary does, and so do the callees a
-/// caller computes with wider: `z32m`, `zn`, `lq` and `zw` (through the
-/// wrapper `w`, which returns its result as it is) return the whole register,
+/// caller computes with wider: `z32m`, `zn`, `lq`, `zw` (through the wrapper
+/// `w`, which returns its result as it is), and `z6`, `z7` and `z8`, whose
+/// callers shift the result before returning it or passing it on, return the
+/// whole register,
 /// `lb` an `unsigned char`, while `ru` and `si`, whose callers extend the
 /// result themselves, still return 32 bits.
 #[test]
@@ -305,6 +369,9 @@ fn a_caller_that_computes_with_the_whole_register_keeps_the_zero_extension() {
         ("zn", "unsigned long zn("),
         ("zw", "unsigned long zw("),
         ("lq", "unsigned long lq("),
+        ("z6", "unsigned long z6("),
+        ("z7", "unsigned long z7("),
+        ("z8", "unsigned long z8("),
         ("lb", "unsigned char lb("),
     ];
     for image in IMAGES {

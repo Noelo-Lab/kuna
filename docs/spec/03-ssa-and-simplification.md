@@ -1490,9 +1490,9 @@ longer reads as `-0x10`. A word whose sign bit is known clear keeps the trim,
 since its zero and sign extensions agree, as do a word the function sign-extends
 (`addw`) and a narrower value, which the rule extends by its type's sign
 (`kuna_zextreturn`, chapter [05](05-types.md)). Under `narrowext off`, and on
-x86-64 and AArch64, the function alone keeps the trim: those conventions leave
-the bits above a 32-bit return unspecified, so the printed `int` callee compiles
-to the same instructions. Its callers settle it. A caller that computes with the
+x86 (32- and 64-bit) and AArch64, the function alone keeps the trim: those
+conventions leave the bits above a narrow return unspecified, so the printed
+`int` callee compiles to the same instructions. Its callers settle it. A caller that computes with the
 whole register (`add $1,%rax` after the call) relies on the zero-extension the
 callee performs, and its printed C sign-extended the `int` result. In
 `decompile-all` such a function is decompiled again with the width its callers
