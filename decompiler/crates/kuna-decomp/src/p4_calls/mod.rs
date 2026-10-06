@@ -30,6 +30,7 @@ pub mod kuna_zeroidiomuse; // (kuna) a self-cancelling `xor r,r` is not a compet
 pub mod kuna_varargstackargs; // (kuna) the variadic call's stack tail is its own fillinMap section
 pub mod kuna_argclobber; // (kuna) drop a trailing register argument a previous call's clobber put there
 pub mod kuna_passthrough; // (kuna) a register forwarded untouched to a callee that reads it is a parameter
+pub mod kuna_mixedtailret; // (kuna) a value returned beside a claimed tail-call result is returned too
 pub mod kuna_varargtail; // (kuna) a recovered parameter that only feeds a variadic tail is not one a caller may gain
 pub mod kuna_calleearity; // (kuna) one callee, one argument list across its call sites
 pub mod kuna_calleearityfwd; // (kuna) reconcile against a sibling call that finalizes later

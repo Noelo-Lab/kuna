@@ -571,6 +571,12 @@ pub(crate) fn producing_call(data: &Funcdata, ret: OpId) -> Option<OpId> {
 /// (%rdi),%rax; ...; jmp g` returns what `g` does. An argument register is not
 /// relaxed: ARM `mov r0,#5; b g` is how a `void` function calls `g(5)` as often
 /// as how an `int` one returns it.
+///
+/// Under `mixedtailret`, a RETURN reached from no call is no refusal when at
+/// least one RETURN is such a tail call: the function's own write of the
+/// storage on every path into it ([`crate::p4_calls::kuna_mixedtailret`]) is
+/// that RETURN's value, and the storage may then be touched anywhere. An
+/// argument register is taken only when no claimed callee reads it.
 fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId>)> {
     if data.get_func_proto().is_output_locked() || data.get_active_output().is_none() {
         return None;
@@ -586,8 +592,12 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     let mut storage: Option<(Address, int4)> = None;
     let mut producers: Vec<OpId> = Vec::new();
     let mut paths: Vec<(OpId, OpId)> = Vec::new();
+    let mut own: Vec<OpId> = Vec::new();
     for &r in &rets {
-        let call = producing_call(data, r)?;
+        let Some(call) = producing_call(data, r) else {
+            own.push(r);
+            continue;
+        };
         let idx = (0..data.num_calls()).find(|&i| data.get_call_specs(i).get_op() == call)?;
         let fc = data.get_call_specs(idx);
         if fc.proto().is_output_locked() || !fc.is_output_active() {
@@ -606,12 +616,21 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     let (addr, size) = storage?;
     let pieces = register_pieces(data, &addr, size)?;
     let proto = data.get_func_proto();
+    let mixed = !own.is_empty();
     let free = |(a, s): &(Address, int4)| {
         proto.characterize_as_output(a, *s) != crate::fspec::Containment::NoContainment
-            && (!touched_by(data, a, *s, true) || return_only(proto, a, *s))
+            && (mixed || !touched_by(data, a, *s, true) || return_only(proto, a, *s))
     };
     if !pieces.iter().all(free) || paths.iter().any(|&(call, ret)| touched_after(data, call, ret, &pieces)) {
         return None;
+    }
+    if mixed {
+        let argument = pieces.iter().any(|(a, s)| !return_only(proto, a, *s));
+        if (argument && crate::p4_calls::kuna_mixedtailret::feeds_tail_call(data, &producers, &pieces))
+            || !own.iter().all(|&r| crate::p4_calls::kuna_mixedtailret::writes_own_value(data, r, &pieces))
+        {
+            return None;
+        }
     }
     Some((pieces, producers))
 }

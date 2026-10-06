@@ -797,6 +797,10 @@ pub struct Architecture {
     /// prototype reads it becomes a parameter (option `passthrough`).  See
     /// [`crate::p4_calls::kuna_passthrough`].
     pub pass_through: bool,
+    /// (kuna) A value a function returns beside a claimed tail-call result is
+    /// its return value too (option `mixedtailret`).  See
+    /// [`crate::p4_calls::kuna_mixedtailret`].
+    pub mixed_tail_ret: bool,
     /// (kuna) Recover whole scalar VFP returns and double arguments on an ARM
     /// image that states the VFP calling convention (option `armfloatreturn`).
     /// See [`crate::p4_calls::kuna_armfloatreturn`].
@@ -2569,6 +2573,7 @@ impl Architecture {
             arm_float_return: false, // (kuna) option armfloatreturn
             narrow_ext: crate::kuna_narrowext::NarrowExtMode::Off, // (kuna) option narrowext; reset_defaults sets the shipped default
             pass_through: true, // (kuna) option passthrough; reset_defaults sets the shipped default
+            mixed_tail_ret: true, // (kuna) option mixedtailret; reset_defaults sets the shipped default
             callee_dead_arg: true,
             hidden_ret_arg: true,
             callee_preserves: true,
@@ -2960,6 +2965,7 @@ impl Architecture {
         self.narrow_ext = crate::kuna_narrowext::NarrowExtMode::Abi; // (kuna) option narrowext default `abi`: a narrow integer argument or return value is extended as the RISC-V and LoongArch procedure-call standards state
         self.arm_float_return = false; // (kuna) option armfloatreturn default-off: the float/double width guess on a partial d0 write and the widened model are unmeasured beyond the feature's own corpus
         self.pass_through = true; // (kuna) option passthrough default-on: over 574 slices in 25 projects (the 444-slice decbench corpus plus 130 slices of 17 disjoint projects) 4,107 of 4,346 gained parameters are DWARF-confirmed, NONE contradicted, 239 thunks DWARF does not describe, 0 parameters and 0 call arguments lost; the return arm is 5,458 of 5,615 confirmed, its 157 misses all the undecidable `void` tail-call wrapper; docs/features/passthrough/dwarf-confirmation.md
+        self.mixed_tail_ret = true; // (kuna) option mixedtailret default-on: see the phases.toml row and docs/spec/04-calls-and-prototypes.md
         self.arg_clobber = true; // (kuna) option argclobber default-on: the drop now needs the callee's own RECOVERED prototype to say the register is free (`protoorder` parks it), so it is inert wherever no callee was decompiled first; 0/675 datatest assertions, PARITY OK on stages, no scored type_match change, measured in docs/features/argclobber/record.json
         self.char_byte = true; // (kuna) option charbyte default-on: a byte read through a `char *` whose only unsigned vote is the zero-extension is seeded `char`; 0/675 datatests, PARITY OK on stages, measured in docs/features/charbyte/record.json
         self.cast_arith = true; // (kuna) option castarith default-on: a pointer plus whole elements prints as ((T *)p)[k] instead of *(T *)((long)p + K); 0/675 datatest assertions moved, 16 stage assertions moved to the new form, 444-slice typesweep identical, speed within budget; docs/features/castarith/record.json
@@ -3626,6 +3632,7 @@ impl Architecture {
         ctx.callee_proto_stack = self.callee_proto_stack; // calleeprotostack
         ctx.arg_clobber = self.arg_clobber; // argclobber
         ctx.pass_through = self.pass_through; // passthrough
+        ctx.mixed_tail_ret = self.mixed_tail_ret; // mixedtailret
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
         ctx.hidden_ret_arg = self.hidden_ret_arg; // hiddenretarg
         ctx.callee_preserves = self.callee_preserves; // calleepreserves
