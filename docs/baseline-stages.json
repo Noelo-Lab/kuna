@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2152,
-    2152
+    2163,
+    2163
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -103,6 +103,17 @@
     "data:CALLEERETPRESERVES #7: a tailcallee RAX write never preserves the caller's seven",
     "data:CALLEERETPRESERVES #8: both direct- and tailcallee RAX writers keep the call in both passes",
     "data:CALLEERETPRESERVES #9: only a known terminal failure call preserves j's five",
+    "data:CALLEERETPRESERVES-MIPS #1: off, $v1 is a pointer local nothing assigns",
+    "data:CALLEERETPRESERVES-MIPS #2: off, the store reads through it",
+    "data:CALLEERETPRESERVES-MIPS #3: off, the callers lose the parameter",
+    "data:CALLEERETPRESERVES-MIPS #4: on, the store reads p, also with hk declared int",
+    "data:CALLEERETPRESERVES-MIPS #5: on, the callers take p, also with hk declared int",
+    "data:CALLEERETPRESERVES-MIPS #6: on, a void leaf keeps $v1 too",
+    "data:CALLEERETPRESERVES-MIPS #7: a callee that writes $v1 still returns it, in both passes",
+    "data:CALLEERETPRESERVES-MIPSBE #1: off, $v1 is a pointer local nothing assigns",
+    "data:CALLEERETPRESERVES-MIPSBE #2: off, the callers lose the parameter",
+    "data:CALLEERETPRESERVES-MIPSBE #3: on, the store reads p",
+    "data:CALLEERETPRESERVES-MIPSBE #4: on, the callers take p",
     "data:CALLEESCRATCHBODY #1: off, the whole frame is indexed off the value __chkstk supposedly returns",
     "data:CALLEESCRATCHBODY #2: on, the probe is called for its side effect and the frame slot is a fixed offset",
     "data:CALLEESCRATCHBODY #3: on, the slot written and read back at that offset is the argument",

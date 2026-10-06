@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default:default">
+<!--
+    kuna GH-878, big-endian: the same source as kuna-calleeretpreserves-mips.xml
+    built with -EB, the same defects and the same fix (see that file).
+
+    Source (mipsel-linux-gnu-gcc 10.3 -EB -O2, linked -nostdlib -static):
+        long G[4];
+        int hk(int x)    { return (int)G[2] + x; }      lui v0; lw v0; jr ra; addu v0,a0,v0
+        int pick(int x)  { if (x > 3) return (int)G[2] + x; return (int)G[1] - x; }
+                                                         two returns, both write only v0
+        void setg(int x) { G[1] = x; }                  lui v0; jr ra; sw a0,(v0)
+        long long wide(int x) { return (long long)G[3] * x; }   mult; mflo v0; jr ra; mfhi v1
+        int afterstore2(long *p) { int r = hk(5);   G[0] = p[0]; return r; }
+        int afterbranch(long *p) { int r = pick(5); G[0] = p[0]; return r; }
+        int aftervoid(long *p, int q) { setg(q); G[0] = p[0]; return q; }
+        int hiword(void) { return (int)(wide(3) >> 32); }
+    Each after* caller is `move v1,a0; jal f; ...; lw a0,0(v1)`: gcc -fipa-ra
+    knows f never writes $v1 and keeps p there across the call.
+
+    Pass 1 (both options off) pins the bug, pass 2 (on) the fix.
+-->
+<bytechunk space="ram" offset="0x400150" readonly="true">
+3c0200418c42028803e00008008210212882000410400005000000003c0200418c42028403e00008004410233c0200418c42028803e0000800821021
+3c02004103e00008ac4402843c0200418c42028c008200180000181203e000080000101027bdffe000801825afbf001c0c100054240400058c640000
+3c0300418fbf001c27bd002003e00008ac64028027bdffe000801825afbf001c0c100058240400058c6400003c0300418fbf001c27bd002003e00008
+ac64028027bdffe000801825afbf001c0c10006300a02025008010258c6500003c0300418fbf001c27bd002003e00008ac65028027bdffe000802825
+afbf001c0c100066240400033c0400418ca500008fbf001c27bd002003e00008ac85028027bdffe0afbf001c0c100066240400038fbf001c03e00008
+27bd00204743433a20285562
+</bytechunk>
+<symbol space="ram" offset="0x400150" name="hk"/>
+<symbol space="ram" offset="0x400160" name="pick"/>
+<symbol space="ram" offset="0x40018c" name="setg"/>
+<symbol space="ram" offset="0x400198" name="wide"/>
+<symbol space="ram" offset="0x4001b0" name="afterstore2"/>
+<symbol space="ram" offset="0x4001dc" name="afterbranch"/>
+<symbol space="ram" offset="0x400208" name="aftervoid"/>
+<symbol space="ram" offset="0x400238" name="afterwide"/>
+<symbol space="ram" offset="0x400264" name="hiword"/>
+</binaryimage>
+<script>
+  <com>option calleeretpreserves off</com>
+  <com>option calleepreserves off</com>
+  <com>lo fu afterstore2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu afterbranch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu aftervoid</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleeretpreserves on</com>
+  <com>option calleepreserves on</com>
+  <com>lo fu afterstore2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu afterbranch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu aftervoid</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLEERETPRESERVES-MIPSBE #1: off, $v1 is a pointer local nothing assigns" min="3" max="3">^  unsigned int \*v1; // v1$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPSBE #2: off, the callers lose the parameter" min="2" max="2">^void after(store2|branch)\(void\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPSBE #3: on, the store reads p" min="3" max="3">dat_410280 = \*a0;</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPSBE #4: on, the callers take p" min="2" max="2">^void after(store2|branch)\(unsigned int \*a0\)$</stringmatch>
+</decompilertest>

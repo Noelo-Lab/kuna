@@ -3196,9 +3196,11 @@ different predicate over the three pieces of evidence a call site actually has:
    shared with flow construction (`kuna_calleenoreturn.rs (is_no_return)`), so
    explicit marks, loader facts and enabled name rules have the same meaning.
    The probe stops at that call without decoding its callee or fall-through.
-   A returning or unknown nested call, an unresolved indirect branch, an
-   undecodable instruction or the instruction budget makes the summary
-   *incomplete*, which proves nothing. A p-code-relative branch in the call
+   A returning or unknown nested call, an unresolved indirect branch, a user op
+   other than the `setISAMode` an ARM or MIPS return runs, an undecodable
+   instruction or the instruction budget makes the summary *incomplete*, which
+   proves nothing. A summary completed only by reading through `setISAMode`
+   proves nothing about a register the call's model passes arguments in. A p-code-relative branch in the call
    instruction also makes the summary incomplete: a predicated call may be
    skipped and does not establish terminal machine-level flow. On a complete
    summary that never touches the payload register, the caller's read is a clobber and the pair is **vetoed**.
@@ -3332,9 +3334,12 @@ The evidence here is stricter than the two-trial arm's, because a value the
 callee leaves alone reads the same way: gcc's `-fipa-ra` keeps a caller's pointer
 in `$v1` or `r1` across a static callee it knows never touches that register,
 including through the `lw $t9,%got(f)($gp); jalr $t9` a MIPS PIC call to a static
-function is. The callee-body decode cannot prove the absence on ARM or MIPS, where
-it never completes (every return runs `setISAMode`, and MIPS returns through
-`jr ra`), so the pair is formed only when that decode *recorded* a write to the
+function is. The callee-body decode does not prove that absence for ARM's `r1`:
+a walk on ARM or MIPS completes only by reading through the `setISAMode` every
+return runs, and such a walk answers for no argument register. MIPS `$v1` is no
+argument register, so there the call guard keeps the caller's value
+(`calleeretpreserves`, chapter 03) and no `$v1` trial reaches this arm. The pair
+is therefore formed only when that decode *recorded* a write to the
 register the caller reads (the piece holding the read, whichever piece of the
 join entry it is). An indirect call has no decoded callee and keeps the old
 rendering. A write is still not a return value: a `void` helper's scratch

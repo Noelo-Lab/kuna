@@ -270,8 +270,8 @@ takes for the call-output seam (`decompiler/crates/kuna-decomp/src/p4_calls/kuna
 and resolved machine branch targets, ends a path at a `RETURN` or an
 unconditional direct call with the same known no-return contract used by flow
 construction, and declares itself *incomplete* — proving nothing — at a
-returning or unknown nested call, an unresolved `BRANCHIND`, an undecodable
-instruction, or its instruction budget. A complete
+returning or unknown nested call, an unresolved `BRANCHIND`, a user op (`CALLOTHER`),
+an undecodable instruction, or its instruction budget. A complete
 walk that records no write to the range downgrades *killed by call* to
 *unaffected* for that one call, so no INDIRECT is planted and the caller's value
 flows across (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepreserves.rs
@@ -286,7 +286,9 @@ summary with no writes at all is the maximal claim — *every* register survives
 this call — drawn from the weakest possible reading, and a one-byte `ret` is
 what a stub, a placeholder and a misidentified entry all decode to. So the
 callee must also have written a register the model itself marks `<unaffected>`,
-excluding the stack pointer, which every `RET` writes
+excluding the stack pointer, which every `RET` writes, and the program counter a
+return instruction writes and then transfers through, which `ARM.cspec` lists as
+`<unaffected>` and every `bx lr` writes
 (`kuna_calleepreserves.rs (body_departs_from_convention)`). That is the
 signature of the hand-rolled helper the rule exists for — the get-PC thunk's
 `EBX` is callee-saved, so the convention is already not a description of it —
@@ -353,17 +355,49 @@ range is extracted from the reaching pre-call value, while killed INDIRECT
 creations supply the flanking bytes before a post-call PIECE rejoins the range.
 The upper `XMM0_Qb` scratch lane is therefore not preserved by a whole-range
 `unaffected` downgrade. Every other killed range stays where the paragraph above
-left it. The body
-must write **no** part of the return storage: a callee that writes `RAX` and
-leaves `RDX` alone is a scalar-returning function whose second return register is
-merely dead, and the convention is still the better answer for the whole call.
-And the body must be a body — more than one decoded instruction, and a write to a
+left it. A body that writes part of the return storage returns a value there,
+and it answers only for a return register it never writes, one register at a
+time: gcc's `-fipa-ra` keeps a caller's pointer in MIPS `$v1` across a callee
+it knows writes only `$v0` (`move v1,a0; jal hk; ...; lw a0,0(v1)`), and
+killing `$v1` at that call made the read the high word of a 64-bit result and
+lost the parameter it came from (GH-878). That answer needs a recorded write to
+the call's return storage, not a possible `STORE` into its space, and it is
+given only for a register the model never passes an argument in
+(`kuna_rustabi.rs (passes_arguments_in)`): MIPS `$v1`, or x86-64's `RAX` across
+a callee that returns only in `XMM0`, but not ARM's `r1` or
+x86-64's `RDX`, where a value kept across one call reaches the
+next as a value the caller wrote, which the caller-side argument recovery reads
+as one more argument than that callee takes. A locked non-void declaration, such
+as DWARF's `int hk(int)`, names only `$v0` as the call's output; `$v1`, a register
+the model returns values in that the declaration leaves out, gets the same
+per-register answer (`kuna_calleeretpreserves.rs (undeclared_model_output)`) and
+never the void helper's. A body that writes no return
+storage at all is the void helper above,
+and the body must be a body — more than one decoded instruction, and a write to a
 register the convention itself names, either an argument register or one its
 `<unaffected>`/`<killedbycall>` lists mention (`kuna_calleeretpreserves.rs
 (body_is_a_body)`). `ret` and `endbr64; ret` are what a stub, a placeholder and
 an entry decoded at the wrong address all decode to, and they write nothing but
 the stack pointer and the program counter; reading one as a promise about `RAX`
 deletes the call results the rest of a function is built on.
+
+Every ARM return and every MIPS `jr ra` runs the `setISAMode` user op, the
+marker of the instruction-set bit of the PC write the same instruction then
+transfers through (`bx lr`, `pop {...,pc}`, `jr ra`), and the walk used to stop
+at it like any other user op, so it completed no ARM or MIPS body at all. It now
+reads through that user op, which has no output and writes nothing
+(`kuna_rustabi.rs (ProbeEmit)`); the compiler specs replace it with a no-op for
+the decompiler itself. A walk that only completed that way answers for no
+register the call's model passes arguments in
+(`kuna_rustabi.rs (CalleeReturnWrites::proves_untouched_for)`), in every rule
+that reads it. On ARM those are the scratch registers `r0`-`r3`, and keeping
+them across every leaf that leaves them alone put an extra argument at 101
+calls over gcc-built ARM firmware (decbench chibios, crazyflie, nuttx,
+betaflight, u-boot), each beyond what the callee's own recovered prototype
+takes (`strlen(s,a1)` after a `strlcpy` that never writes `r1`). A register no
+argument travels in is still answered: ARM's `r12` survives a leaf that never
+writes it. Walks that needed no mode switch keep their answer for every
+register, as before.
 
 The walk itself gained one fact to reach this callee at all. The checker's
 failure path leaves by a direct `JMP` into a `__fastfail` stub, and x86 SLEIGH
