@@ -1062,6 +1062,7 @@ impl Action for ActionFuncLink {
             crate::kuna_armfloatargs::link_call_inputs(data, i);
         }
         crate::p4_calls::kuna_voidret::plant(data);
+        crate::kuna_retcallhalf::plant(data);
         crate::kuna_floatreg::note_float_pairs(data);
         0
     }
