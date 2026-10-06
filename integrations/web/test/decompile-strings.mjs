@@ -1,4 +1,4 @@
-// decompile2-strings.mjs — the sidebar's Strings list, from the source tree
+// decompile-strings.mjs — the sidebar's Strings list, from the source tree
 // with no build: which group a string lands in, how its text and its users
 // are shown, that every engine string is escaped, and how a search narrows
 // the list and opens the groups it matches in.
@@ -88,4 +88,4 @@ assert.equal(capped.matches, ROW_CAP + 5);
 assert.ok(!renderStringList(many, { query: compileQuery('number 7') }).html.includes('Showing'), 'a search under the cap draws them all');
 checks.push('list: groups, search, cap');
 
-console.log(`DECOMPILE2 STRINGS OK — ${checks.join(' · ')}`);
+console.log(`DECOMPILE STRINGS OK — ${checks.join(' · ')}`);

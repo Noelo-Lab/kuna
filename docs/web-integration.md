@@ -233,7 +233,11 @@ branch targets start rows, literal pools fold to `.word`, undecodable bytes are 
 at most 4096 rows (`instructions_truncated`); `bytes` is lowercase hex and honours `bytes`
 overlays, `offset` is `address − entry`, `file_offset` is where the instruction sits in the
 input file (`null` outside file-backed sections), and `lines` (always present, `[]` when
-none) are the `code` lines whose `line_mappings` name the instruction. The line mappings
+none) are the `code` lines whose `line_mappings` name the instruction. `flow` says how the
+instruction passes control on, read from its own p-code (`ConsoleProgram::insn_flow`):
+`return`, `jumpind`, `jump`, `cjump`, `call` or `callind` (the strongest op it holds), or
+`null` for straight-line code; `targets_hex` lists the code addresses its direct jumps
+and calls name (`[]` when none). A branch within the instruction's own p-code is not flow. The line mappings
 are sparse — a line maps to the instructions whose p-code its tokens were printed from, so
 argument set-up that was folded away maps to nothing.
 
@@ -368,8 +372,6 @@ the `specs-small.json` preload bundle. Serve `dist/` with any static file server
 /dev-viz/             dev-viz/index.html development record: cadence, phases, provenance, evidence
 /decompile/           decompile/           the decompiler: linked code, assembly, bytes and stack, edits,
                                            live sessions (loads the wasm; §4.2)
-/decompile2/          decompile2/index.html its old address: a redirect to /decompile/ that keeps the
-                                           ?query and the #fragment, so links and invites made there work
 /assets/              css/site.css · fonts/ · img/ · js/highlight-c.js · js/fnfilter.js
 /compare-samples.js   the compare section's data (samples + rival outputs)
 /CNAME                kuna.noelo.org — the custom domain, copied into the bundle
@@ -447,15 +449,13 @@ Chrome on the committed fixtures).
 The site's decompiler page: one function as **its code, assembly, bytes and stack frame,
 linked**, with renames, retypes, prototypes, comments and byte patches that the engine
 applies, and live sessions with other people. It began as a second page for students at
-`/decompile2/` and replaced the first `/decompile/` page; `/decompile2/` is now a redirect
-to `/decompile/` that keeps the query and the `#fragment`, so bookmarks and invite links
-made before the move still open. The module names, the `kuna.d2.*` storage keys and the
-BroadcastChannel names are unchanged, so saved sessions carry over and tabs on either
-address can join each other. The landing page and `/dev-viz/` link to it from their nav;
+`/decompile2/` and replaced the first `/decompile/` page; the old address is gone. The
+`kuna.d2.*` storage keys and the BroadcastChannel names are unchanged, so saved sessions
+carry over. The landing page and `/dev-viz/` link to it from their nav;
 it asks search engines not to index it (`<meta name="robots" content="noindex">`).
 
 It is written for someone who has never used a decompiler, so it is laid out like an
-app: full screen, with its own stylesheet (`decompile/decompile2.css`). The colours are
+app: full screen, with its own stylesheet (`decompile/decompile.css`). The colours are
 the Noelo palette of the rest of the site, dark by default — Noelo's dark footer (warm
 near-black ink, warm greys, the mark's red for the accent and the primary button, flat
 1px rules, near-square corners) stretched to a whole app — and the toggle switches to
@@ -559,7 +559,9 @@ draws, so nothing flashes.
 which input it is, where it lives in words — "the stack, 28 bytes below the return
 address" —, the lines that use it, *Rename* and *Change type*), an instruction ("5 bytes
 at 11b5, 29 bytes into main", what the mnemonic does, its C line, *Replace with NOP*,
-*Edit bytes*, *Add a note*), a C line or a stack slot. *This function*: its inputs and
+*Edit bytes*, *Add a note*), a C line (its instructions, and each note kuna left at its
+end — `// branch-flip`, `// no-return`, `// early-return x10` — in words, which the hover
+card shows too) or a stack slot. `e` opens and closes the panel. *This function*: its inputs and
 return type in words, *Calls and callers*, *Variables*, and behind disclosures the
 variables only the debug info has and the types. *Your changes*: one plain line per edit
 ("Renamed v1 → total", "Patched 1 byte at 11af"; the directive is its tooltip) with a
@@ -580,7 +582,8 @@ source tree):
 | `dialogs.js` / `rail.js` | popovers and toasts; the Explain panel |
 | `groups.js` | the function list's three groups and the function to open first |
 | `bytes-view.js` / `arch.js` | the hex dump and the patched file; no-op fills |
-| `mnemonics.js` / `stack-frame.js` / `xrefs-view.js` / `help.js` | instruction notes and idioms; the frame diagram; calls and callers in words; the help dialog |
+| `mnemonics.js` / `stack-frame.js` / `xrefs-view.js` / `help.js` | instruction notes and idioms; the frame diagram; calls and callers in words and the `x` cross-references dialog; the help dialog |
+| `wrap-c.js` / `tags.js` | where a long C line breaks; kuna's end-of-line notes (`// branch-flip`, `// early-return x10`) in words for the Explain panel and the hover card |
 | `strings-view.js` | the sidebar's Strings list: its three groups, the users of each string, the search and the row cap |
 | `prefs.js` / `addr.js` | view settings (`kuna.d2.prefs`, v3 with the v1 and v2 migrations) and `hintsOn`; addresses as hex strings and BigInt |
 | `collab/` | *Working together* (below), loaded with a dynamic `import()` only when a session starts or an invite or reply link is opened: `collab.js` (dialogs, the roster, following), `sync.js` (the page's side: the Session ⇄ register sync, joining and leaving, where a session is stored), `group.js` (the protocol: hello, snapshots, relayed introductions, file transfer, digests, limits), `link.js` (WebRTC and BroadcastChannel links), `replica.js` (registers, `validOp`, digests, the register-based undo), `wire.js` (messages and their checks, invite and reply codes), `sdp.js`, `presence.js` (pointers and pings), `collab.css`; all but `collab.js`, `link.js` and `presence.js` are DOM-free (SHA-256 is `../sha256.js`, shared with the page) |
@@ -600,19 +603,39 @@ C line and a note on its mnemonic and any idiom, a stack operand's slot.
 
 **Inferred attribution.** The engine maps a line only to the instructions whose p-code
 reached the printed statement, so `v1 = sum_to(add(argc,3));` maps to its two CALLs and
-the MOVs that set up their arguments to nothing. `asm-view.js` `inferLines` fills the gaps
-the way `objdump -S` reads them: an unmapped instruction between a mapped one on line a
-and the next on line b belongs to b when b ≥ a (it sets b up), else to a (it finishes a);
-an unconditional jump in the gap, and what precedes it, finishes a. Before the first
-mapped instruction the frame set-up (x86/AArch64: `endbr64`, pushes, `mov rbp,rsp`,
-`sub rsp`, argument-register spills, the canary load) is the prologue and the rest sets
-up the first line; after the last one is the epilogue. Inferred rows are marked, not
+the MOVs that set up their arguments to nothing, and a jump, a shared epilogue or a
+`mov eax,1` folded into `return 1;` to nothing either. `asm-view.js` `inferLines` gives
+every one of them a line, basic block by basic block (the blocks come from each row's
+`flow` and `targets_hex`; an engine that sends neither falls back to reading jumps from
+the mnemonic). Inside a block an unmapped instruction between a mapped one on line a and
+the next on line b belongs to b when b ≥ a (it sets b up), else to a (it finishes a).
+What trails a block's last mapped instruction finishes its line, except where the block
+leads into a shared tail — one epilogue and `ret` serving several `return` lines — where
+it takes the first of that tail's lines at or after its own (`mov eax,1; jmp epilogue`
+after line 51's call is line 52's `return 1;`). A block with no mapped instruction takes
+its line the same way from the block that reaches it. The frame set-up at the entry
+(x86/AArch64: `endbr64`, pushes, `mov rbp,rsp`, `sub rsp`, argument-register spills and
+copies into callee-saved registers, the canary load) is the prologue, on the signature
+line; the cleanup in front of a `return` is the epilogue, on the lines of that return, or
+on the closing `}` when the engine mapped the return to nothing. Anything still left
+takes the line before it, so no instruction is unmapped. Inferred rows are marked, not
 passed off as the engine's: a dashed band, `data-inferred="1"`, and the card reads
 `Line 5 → 2 instructions` then `+6 that set it up` with those rows dimmed. View options'
 "Group setup instructions with their line" (pref `asmInfer`, default on) turns it off.
 The heading mode draws the same runs as blocks: one heading per C line, and "Function
-setup" only over the frame set-up itself (the argument moves before the first mapped
-instruction join line 5's block).
+setup" over the frame set-up.
+
+**Long lines.** The C pane wraps a line wider than the pane (`wrap-c.js`, pref `cWrap`,
+View options' "Wrap long lines to fit", default on). The line is read as nested bracket
+groups; a group that does not fit breaks at its loosest operators first (`;`, then `,`,
+`?:`, `||`, `&&`, `|` … `*`), all of that kind at once, and its continuation rows line up
+after its opening bracket; only then are the pieces and the groups inside them broken,
+a piece's own continuation four columns in from it. An assignment's `=` breaks only when
+breaking inside its right-hand side cannot make the line fit; strings and comments never
+break. The breaks are a newline and spaces inside the row's `.ct`, so a wrapped line is
+still one `.d2-cl` row with one line number, and selection, hover and the line index are
+unchanged. The width is measured from the pane, and a `ResizeObserver` re-wraps only the
+rows that change when the pane is resized.
 
 In side by side every operand cell carries its full text as a `title`, and `b` toggles
 the bytes column for the current layout (each layout keeps its own setting).
@@ -620,10 +643,16 @@ the bytes column for the current layout (each layout keeps its own setting).
 **Keys** (none fire while typing in a field): `/` search · `Space` C ⇄ assembly · `1-4`
 C code, Assembly, Bytes, Stack · `s` side by side · `o` address format · `b` bytes column
 · `↑↓` lines/rows · `←→` names on a line · `Enter` open the callee · `n` rename · `y`
-retype (on a function name: signature) · `;` note · `g` go to · `x` find who calls it ·
+retype (on a function name: signature) · `;` note · `g` go to · `x` cross-references ·
+`e` the Explain panel ·
 `u`/Ctrl+Z undo · Ctrl+Shift+Z redo · Alt+←/→ history · `?` help · `Esc` closes the
 card, then a dialog, then the selection · in a live session, `p` (or Alt+click) points the
-others to what is under the mouse. The help dialog lists the eight worth knowing
+others to what is under the mouse. `x` opens a list to jump from: on a
+function name (or with nothing selected, the open function) who calls it and what it
+calls, from the engine's `xrefs`; on a variable the lines of this function that use it,
+each marked declared, set, read or input, and for a global also the functions that refer
+to it; on an instruction that names an address, the references to that address. `↑↓`
+move through it, `Enter` or a click jumps there. The help dialog lists the ten worth knowing
 first and the rest under *All shortcuts*, then a glossary of the names a decompiler
 invents and what the colours mean.
 
@@ -717,7 +746,7 @@ reaches, a leaf without `SUB RSP` the red-zone note (x86 only). Instruction hint
 prologues, epilogues, canary loads and checks, `xor r,r`, `test r,r`, `cdqe`, `endbr64`
 and the variadic `mov eax,0`. *Calls and callers* reads as sentences. The callees come
 from the function's own CALL rows at once ("Calls add, sum_to and printf"); who calls it
-comes from the engine's `xrefs` on request (*Find who calls it*, or `x`), each caller
+comes from the engine's `xrefs` on request (*Find who calls it*), each caller
 linked to the calling instruction and saying how it refers ("Called by _start (uses its
 address)"), plus "Uses data at …". If the request fails, the panel keeps the callees and
 says why.
@@ -767,7 +796,7 @@ fallback. A one-step join is not possible without a server: something has to car
 guest's reply back to the inviter, and with no relay the people do. The guest's answer is
 passive (`a=setup:passive`, the inviter starts the DTLS handshake), so a reply opened
 minutes later still connects (measured to 30 minutes; the analysis is in
-`docs/features/decompile2-collab/analysis.md`). A pair that cannot connect directly is
+`docs/features/decompile-collab/analysis.md`). A pair that cannot connect directly is
 told "Could not connect directly." with what to try: on a session within one network, a
 new link with *Connect across the internet* ticked; on one across the internet, another
 network (some campus and office Wi-Fi block direct connections).
@@ -1046,30 +1075,33 @@ skips it as too costly):
    same wasm under a new ETag, then another wasm), a restarted Worker downloads neither the
    wasm nor a spec file, still decompiles, and keeps the id; a Worker that cannot hand its
    module over makes the id unknown.
-4. **The decompiler page.** Six build-free suites import the page's modules from the source
-   tree: **`test/decompile2-render.mjs`** (the shared highlighter's `scan` — `highlight*`
+4. **The decompiler page.** Seven build-free suites import the page's modules from the source
+   tree: **`test/decompile-render.mjs`** (the shared highlighter's `scan` — `highlight*`
    output pinned byte for byte — token-stream rendering and the per-line fallback,
    escaping, the index, the diff, assembly rows as comments and as headings, the easy
    spelling and the exact one, branch arrows, hover placement, the settings and their
-   version-1 migration, the type definitions above a function), **`test/decompile2-groups.mjs`** (which group a function lands
+   version-1 migration, the type definitions above a function), **`test/decompile-wrap.mjs`**
+   (where long C lines break and that only spaces are replaced, kuna's end-of-line notes in
+   words, the `x` dialog's helpers, instruction grouping by basic block from `flow`),
+   **`test/decompile-groups.mjs`** (which group a function lands
    in, `main` first, the function opened first),
-   **`test/decompile2-session.mjs`** (directive merging and pinning, unqualified vs
+   **`test/decompile-session.mjs`** (directive merging and pinning, unqualified vs
    qualified output after a function rename, parameters via `prototype`, byte runs, the
    `.kuna` and JSON round trips, the CLI's `#`-comment rule, outcomes, undo/redo, the
-   store's LRU and quota handling (a session's copies evicted before the student's own), the hash vectors, the old FNV key worked out only when one is stored), **`test/decompile2-bytes.mjs`**
+   store's LRU and quota handling (a session's copies evicted before the student's own), the hash vectors, the old FNV key worked out only when one is stored), **`test/decompile-bytes.mjs`**
    (every instruction's file offset and bytes against `sample.elf`, the patched file, the
-   `.data`/`.bss` boundary, every no-op fill) and **`test/decompile2-learn.mjs`** (a note
+   `.data`/`.bss` boundary, every no-op fill) and **`test/decompile-learn.mjs`** (a note
    for every fixture mnemonic, idioms, the `sum_to` frame and its rows, the overflow
    callout, calls and callers in words, the glossary). They read contract fixtures generated from the native CLI
    by `test/make-inspect-fixtures.mjs` (`test/fixtures/inspect-{main,sum_to,add}.json`,
-   `list-sample.json`). **`test/decompile2-strings.mjs`** (build-free) covers the
+   `list-sample.json`). **`test/decompile-strings.mjs`** (build-free) covers the
    Strings list: groups, one-line text, users with their pointers, escaping, search and
-   the row cap. **`test/decompile2-base64.mjs`** (build-free) pins which pasted texts
-   decode, to which bytes, and the name a pasted program gets. **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
+   the row cap. **`test/decompile-base64.mjs`** (build-free) pins which pasted texts
+   decode, to which bytes, and the name a pasted program gets. **`test/decompile-worker.mjs`** drives `inspect`, `read`,
    `xrefs`, `strings` and `--assert` through the real Worker (`strings` on
    `fixtures/crackme.elf`), and pins the refusal error the page
    relies on (exit code plus the quoted directive); it skips with a message on a wasm
-   without `inspect`. **`test/decompile2-collab.mjs`** (build-free) covers live sessions:
+   without `inspect`. **`test/decompile-collab.mjs`** (build-free) covers live sessions:
    2000 random rounds of registers over the full key set, the mode included, converge to
    one map (birth clocks too) and, in birth order, one directive list; 27 hostile ops are
    refused; a session reads back as registers and the registers as the same directives;
@@ -1078,7 +1110,7 @@ skips it as too costly):
    the cut-down SDP refuse what is not theirs; the STUN/TURN setting is off by default;
    and whole groups over in-memory links introduce newcomers, send the program,
    converge, stop at 8, refuse another build and converge through a third page when two
-   cannot link. **`test/decompile2-collab-cases.mjs`** (build-free) holds one case per
+   cannot link. **`test/decompile-collab-cases.mjs`** (build-free) holds one case per
    defect a review found in the protocol and the registers, each failing on the code
    before its fix: a joiner's own registers reaching the group, undo two deep, a
    deliberate revert keeping the step before it, a global's halves, per-field apply, a
@@ -1091,8 +1123,8 @@ skips it as too costly):
    on every page; and, from a third review, a message over the channel's limit in UTF-8
    bytes (under it in characters) not sent, a directive added after the registers gave
    the page's own back, and registers applied without clearing the outcome of a record
-   they do not change. **`test/decompile2-collab-sync.mjs`** and
-   **`test/decompile2-collab-fuzz.mjs`** (build-free) drive the page's real glue
+   they do not change. **`test/decompile-collab-sync.mjs`** and
+   **`test/decompile-collab-fuzz.mjs`** (build-free) drive the page's real glue
    (`collab/sync.js` with `group.js` and a real `Session` per page) through
    `test/collab-sim.mjs`: in-memory links with latency, links that fail with edits in
    flight, pairs that cannot link, and a virtual clock that runs every timer the protocol
@@ -1114,11 +1146,11 @@ skips it as too costly):
    adding a directive always adds one, that applying the others' changes never clears the
    outcome of a record they did not change, and that a page out of any session neither
    saves into the shared slot nor orders by a session's births.
-   **`test/decompile2-replay.mjs`** exports sessions (made alone, and shared with the
+   **`test/decompile-replay.mjs`** exports sessions (made alone, and shared with the
    birth order) and replays each file through the native CLI (`kuna decompile … --assert
    @file`): a type used by a later type, two prototypes of one function (the later
    wins) and a rename chain all apply; it skips without `decompiler/target/release/kuna`.
-5. **`test/decompile2-browser.mjs`** — the real page in headless Chrome over the DevTools
+5. **`test/decompile-browser.mjs`** — the real page in headless Chrome over the DevTools
    protocol (Node's built-in `WebSocket`, no `puppeteer`; skips when there is no Chrome or
    the Node has no `WebSocket`): it checks the welcome screen (its two lines of text, the
    drop zone, no example), that hints start off, that *Collaborate* is in the top bar and
@@ -1139,12 +1171,11 @@ skips it as too costly):
    engine cannot parse (the binary still opens, the directive is marked), and checks that
    *Show hints* hides the teaching notes and brings them back, that ticking or unticking
    it is remembered across reloads without the parameter (and `?student=true` still wins
-   for its load), that `/decompile2/?student=true#join=…` lands on `/decompile/` with the
-   query and the fragment intact (and serves a meta refresh), and that `/` and
-   `/dev-viz/` link to `/decompile/` while nothing links to `/decompile2/`. Any uncaught page
+   for its load), that `/` and `/dev-viz/` link to `/decompile/`, and that the old
+   `/decompile2/` address is gone. Any uncaught page
    exception fails it; steps an older engine cannot serve assert the page's fallback and
    are listed as skipped.
-   **`test/decompile2-collab-browser.mjs`** drives live sessions in tabs of one headless
+   **`test/decompile-collab-browser.mjs`** drives live sessions in tabs of one headless
    Chrome: an invite opened in another tab (the pages meet over `BroadcastChannel`), the
    program received and opened by itself, a rename shown on the other page, a rename and a
    retype at the same moment both kept, a new decompiler effort re-decompiling the other
@@ -1157,7 +1188,7 @@ skips it as too costly):
    malformed and hostile messages from a same-origin tab dropped, and leaving
    (`--shots DIR` saves screenshots; on a failure it prints every toast and dialog of each page,
    and with `COLLAB_TRACE=1` each link's handshake, data channels and Web Locks).
-   **`test/decompile2-collab-page.mjs`** drives the page's side of a session through the
+   **`test/decompile-collab-page.mjs`** drives the page's side of a session through the
    same defects, one case each in fresh tabs (a second Chrome stands in for another
    computer; the Worker's answers can be delayed so a request is caught in flight): a
    cancelled or superseded edit keeping everyone's changes, a join after a re-index, a
@@ -1179,7 +1210,7 @@ skips it as too costly):
    a cached function replaced, a join whose build id cannot be worked out after connecting,
    the back/forward cache, and a session's saved copy offered when its program is opened
    again.
-   **`test/decompile2-collab-rtc.mjs`** runs two Chrome processes over real WebRTC with
+   **`test/decompile-collab-rtc.mjs`** runs two Chrome processes over real WebRTC with
    the links carried by the script and raw host candidates
    (`--disable-features=WebRtcHideLocalIpsWithMdns`, since runners lack the multicast
    `.local` names need). It first connects two peer connections inside one page, and
@@ -1190,11 +1221,11 @@ skips it as too costly):
 
    ```bash
    integrations/web/build.sh
-   node integrations/web/test/decompile2-browser.mjs
-   node integrations/web/test/decompile2-collab-browser.mjs
-   node integrations/web/test/decompile2-collab-page.mjs
-   node integrations/web/test/decompile2-collab-rtc.mjs
-   node integrations/web/test/decompile2-collab-rtc.mjs --late 60
+   node integrations/web/test/decompile-browser.mjs
+   node integrations/web/test/decompile-collab-browser.mjs
+   node integrations/web/test/decompile-collab-page.mjs
+   node integrations/web/test/decompile-collab-rtc.mjs
+   node integrations/web/test/decompile-collab-rtc.mjs --late 60
    ```
    The filter's DOM half was verified the same way during development (raw CDP): 16
    checks on `sample.elf` — row hiding is `display:none` and not the `.fn` flex rule,
@@ -1284,9 +1315,8 @@ benign PE is committed because this environment has no PE linker.
 
 - Harness & commands: `integrations/web/README.md`
 - Browser worker boundary: `integrations/web/{kuna-worker.js,kuna-worker-client.js}`
-- The decompiler page: `integrations/web/decompile/` (module table in §4.2), and the
-  redirect at `integrations/web/decompile2/index.html`; its tests
-  `integrations/web/test/decompile2-*.mjs` (named for the page's first address), the CDP
+- The decompiler page: `integrations/web/decompile/` (module table in §4.2); its tests
+  `integrations/web/test/decompile-*.mjs`, the CDP
   driver `test/cdp-client.mjs`, the
   fixture generator `test/make-inspect-fixtures.mjs`
 - The crate: `decompiler/crates/kuna-wasm/{Cargo.toml, src/lib.rs, src/main.rs}`

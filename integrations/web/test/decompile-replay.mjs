@@ -1,4 +1,4 @@
-// decompile2-replay.mjs — the study view's exported .kuna file, replayed by the
+// decompile-replay.mjs — the study view's exported .kuna file, replayed by the
 // native CLI (`kuna decompile <binary> <function> --assert @<file>`), in the
 // cases where the order of directives decides the outcome: a struct defined
 // before the struct and the global that use it; the later of two raw
@@ -7,7 +7,7 @@
 // in a live session exports (its directives in the registers' birth order,
 // built here from registers applied in the opposite order); no directive may
 // be rejected. Skips (exit 0) without a built `kuna` (make binaries).
-//   make binaries && node integrations/web/test/decompile2-replay.mjs
+//   make binaries && node integrations/web/test/decompile-replay.mjs
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -20,7 +20,7 @@ import * as R from '../decompile/collab/replica.js';
 const root = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const kuna = join(root, 'decompiler/target/release/kuna');
 if (!existsSync(kuna)) {
-  console.log('DECOMPILE2 REPLAY SKIPPED — no decompiler/target/release/kuna (make binaries)');
+  console.log('DECOMPILE REPLAY SKIPPED — no decompiler/target/release/kuna (make binaries)');
   process.exit(0);
 }
 const sample = join(root, 'integrations/web/test/fixtures/sample.elf');
@@ -80,4 +80,4 @@ try {
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
-console.log(`DECOMPILE2 REPLAY OK — the exported .kuna replays in the native CLI, alone and in a live session: ${done.join('; ')}`);
+console.log(`DECOMPILE REPLAY OK — the exported .kuna replays in the native CLI, alone and in a live session: ${done.join('; ')}`);

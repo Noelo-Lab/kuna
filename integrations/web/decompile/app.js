@@ -1,4 +1,4 @@
-// app.js — the /decompile2 study view: loads a program into the decompiler
+// app.js — the /decompile study view: loads a program into the decompiler
 // Worker, lists its functions (and, on request, its strings) in plain groups, and shows one function as
 // linked views (C code, side by side, assembly, bytes, stack) with an Explain
 // panel. Every engine string is escaped by the pure renderers this module
@@ -16,12 +16,14 @@ import {
   lineSegments,
   buildIndex,
   renderC,
+  lineHtml,
   localDecls,
   changedLines,
   preambleTypes,
 } from './render-c.js';
 import { loadPrefs, savePrefs, cycle, hintsOn, DEFAULT_PREFS } from './prefs.js';
 import { groupFunctions, groupOf, firstFunction } from './groups.js';
+import { wrapBreaks } from './wrap-c.js';
 import { renderAsm, renderInsnRows, formatAddr, spacedBytes, inferLines, spellInsn } from './asm-view.js';
 import { createHover } from './hover.js';
 import { createSync } from './sync.js';
@@ -39,7 +41,8 @@ import {
 import { archFrom, nopFill } from './arch.js';
 import { explain, idioms } from './mnemonics.js';
 import { frameModel, renderFrame, slotIndex } from './stack-frame.js';
-import { renderXrefs, renderLocalCalls, localCallees } from './xrefs-view.js';
+import { lineTags, commentStart } from './tags.js';
+import { renderXrefs, renderLocalCalls, localCallees, renderRefsDialog, useKind } from './xrefs-view.js';
 import { renderStringList } from './strings-view.js';
 import { helpHtml } from './help.js';
 import { decodeBase64, pastedName } from './base64.js';
@@ -63,7 +66,7 @@ const els = {
   panes: $('panes'), ccode: $('ccode'), asmcode: $('asmcode'), bytesbar: $('bytesbar'),
   hexdump: $('hexdump'), stackframe: $('stackframe'), hint: $('hint'),
   rail: $('rail'), railBody: $('railbody'), railBtn: $('railbtn'),
-  card: $('d2card'), pop: $('d2pop'), toasts: $('d2toasts'), helpDialog: $('help'),
+  card: $('d2card'), pop: $('d2pop'), toasts: $('d2toasts'), helpDialog: $('help'), xrefsDialog: $('xrefs'),
 };
 
 const storage = (() => {
@@ -96,6 +99,8 @@ const state = {
   strings: null,
   stringsOpen: {},
   strSel: null,
+  wrapCols: 0,
+  charWidth: 0,
 };
 const CACHE_MAX = 32;
 
@@ -1029,7 +1034,11 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
 function showFunction(fn, data, { focusAddr = null, keep = false, key = null } = {}) {
   const { segs, preamble } = lineSegments(data);
   const arch = archFrom(data.target || state.inventory?.target, data.instructions);
-  const inferred = state.prefs.asmInfer && data.hasInstructions ? inferLines(data.instructions, arch.family || 'x86') : null;
+  const codeLines = data.code.split('\n');
+  let endLine = codeLines.length;
+  while (endLine > 1 && codeLines[endLine - 1].trim() !== '}') endLine--;
+  const inferred = state.prefs.asmInfer && data.hasInstructions
+    ? inferLines(data.instructions, arch.family || 'x86', { sigLine: preamble + 1, endLine }) : null;
   const index = buildIndex(data, segs, { inferred });
   const frame = data.hasInstructions ? frameModel(data, arch) : null;
   if (frame?.supported) Object.assign(index, slotIndex(frame));
@@ -1038,7 +1047,7 @@ function showFunction(fn, data, { focusAddr = null, keep = false, key = null } =
     decls: localDecls(data.code),
     preamble,
     preambleTypes: preambleTypes(data.code, preamble),
-    codeLines: data.code.split('\n'),
+    codeLines,
     rust: /rust/i.test(data.language || ''),
     hints: idioms(data.instructions, arch.family || 'x86', { nameAt: (hex) => state.byAddr.get(hex)?.name || null }),
   };
@@ -1101,18 +1110,16 @@ function needsInspect(what) {
 
 const RENDER = {
   c() {
-    const { data, segs, index, preamble } = state.current;
-    els.ccode.innerHTML = renderC(data, {
-      index,
-      segs,
-      preamble,
-      fnByName: state.byName,
-      globalsByName: new Map((data.globals || []).map((g) => [g.name, g.address_hex])),
-    });
+    const cur = state.current;
+    const { data, segs, index, preamble } = cur;
+    cur.wrapCols = state.prefs.cWrap ? state.wrapCols : 0;
+    cur.wrapped = new Set();
+    els.ccode.innerHTML = renderC(data, { ...cContext(), index, segs, preamble, breaksOf: (i) => lineBreaks(cur, i) });
     els.ccode.classList.toggle('no-addrs', index.lineToInsns.size === 0);
     applyTypesOpen();
     applyPaneClasses();
     sync.refresh('c');
+    rewrapC();
   },
   asm() {
     const { data } = state.current;
@@ -1145,10 +1152,76 @@ const RENDER = {
   },
 };
 
+function cContext() {
+  return {
+    fnByName: state.byName,
+    globalsByName: new Map((state.current.data.globals || []).map((g) => [g.name, g.address_hex])),
+  };
+}
+
+/** Where line `i` (0-based) of the current function wraps at its `wrapCols`; records it as wrapped. */
+function lineBreaks(cur, i) {
+  if (!cur.wrapCols || i < cur.preamble) return [];
+  const text = cur.codeLines[i] || '';
+  if (text.length <= cur.wrapCols) return [];
+  const breaks = wrapBreaks(cur.segs[i].map((s) => s.text).join(''), cur.wrapCols);
+  if (breaks.length) cur.wrapped.add(i);
+  return breaks;
+}
+
+/** How many characters of code fit across the C pane (0 when it is not on screen). */
+function measureCols() {
+  const ct = els.ccode.querySelector('.d2-cl:not(.d2-ty) .ct');
+  if (!ct || !els.ccode.clientWidth) return 0;
+  if (!state.charWidth) {
+    const probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre';
+    probe.textContent = 'x'.repeat(100);
+    ct.append(probe);
+    state.charWidth = probe.getBoundingClientRect().width / 100;
+    probe.remove();
+  }
+  if (!state.charWidth) return 0;
+  const cs = getComputedStyle(ct);
+  const left = ct.getBoundingClientRect().left - els.ccode.getBoundingClientRect().left - els.ccode.clientLeft;
+  const room = els.ccode.clientWidth - left - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  return Math.max(24, Math.floor(room / state.charWidth) - 1);
+}
+
+/** Re-wrap the C pane's long lines to the pane's width, touching only the rows that change. */
+function rewrapC() {
+  const cur = state.current;
+  if (!cur || !state.rendered.has('c')) return;
+  const cols = state.prefs.cWrap ? measureCols() : 0;
+  if (state.prefs.cWrap && !cols) return;
+  if (cols) state.wrapCols = cols;
+  if (cols === cur.wrapCols) return;
+  cur.wrapCols = cols;
+  const rows = new Set(cur.wrapped);
+  if (cols) cur.codeLines.forEach((text, i) => { if (text.length > cols) rows.add(i); });
+  cur.wrapped = new Set();
+  if (!rows.size) return;
+  const ctx = cContext();
+  for (const i of rows) {
+    const ct = document.getElementById(`c-L${i + 1}`)?.querySelector('.ct');
+    if (ct) ct.innerHTML = lineHtml(cur.segs[i], ctx, lineBreaks(cur, i));
+  }
+  if (state.cursor && !state.cursor.isConnected) setCursor(null);
+  sync.refresh('c');
+  collab?.redraw();
+}
+
+let rewrapTimer = 0;
+new ResizeObserver(() => {
+  clearTimeout(rewrapTimer);
+  rewrapTimer = setTimeout(rewrapC, 80);
+}).observe(els.ccode);
+
 function applyPaneClasses() {
   const p = state.prefs;
   els.ccode.classList.toggle('no-ln', !p.cLineNumbers);
   els.ccode.classList.toggle('no-la', !p.cLineAddrs);
+  els.ccode.classList.toggle('wrap', !!p.cWrap);
   els.asmcode.classList.toggle('addr-rel', p.asmAddr === 'rel');
   els.asmcode.classList.toggle('addr-both', p.asmAddr === 'both');
   els.asmcode.classList.toggle('no-bytes', inSplit() ? !p.asmBytesSplit : !p.asmBytes);
@@ -1405,16 +1478,22 @@ function lineCard(n, varTok) {
     let why;
     if (typeNote) why = typeNote;
     else if (decl) why = `This line declares ${decl.name}. Declarations do not become instructions; the name is one the decompiler chose.`;
-    else if (data.proto && text.trim().replace(/;$/, '') === data.proto) why = `This is the signature: what ${displayName(state.current.fn)} takes and returns.`;
+    else if (data.proto && withoutComment(text).replace(/;$/, '') === data.proto) why = `This is the signature: what ${displayName(state.current.fn)} takes and returns.`;
     else if (/^\s*#\[/.test(text)) why = 'This is a Rust attribute the decompiler adds; no instruction belongs to it.';
     else if (/^\s*[{}]?\s*$/.test(text)) why = 'This line is only punctuation; no instruction belongs to it.';
     else if (!data.hasInstructions && !data.line_mappings.length) why = 'This version of the decompiler cannot link lines to instructions.';
     else why = 'This line has no instructions of its own: its work was merged into a neighbouring line.';
     html = `<div class="ch">Line ${n}</div><div class="cx">${escapeHtml(why)}</div>`;
   }
+  html += tagNotes(text, 'cx');
   if (varTok) html += `<div class="cx"><b>${escapeHtml(varSummary(varTok.textContent))}</b></div>`;
   return html;
 }
+
+const withoutComment = (text) => {
+  const at = commentStart(text);
+  return (at < 0 ? text : text.slice(0, at)).trim();
+};
 
 function calleeCard(addrHex) {
   const fn = state.byAddr.get(addrHex);
@@ -1527,16 +1606,34 @@ function insnSelectedCard(addrHex) {
   return html;
 }
 
+/** The notes kuna left at the end of a line (`// branch-flip`), each in words. */
+function tagNotes(text, cls = 'x-note') {
+  return lineTags(text).map((t) => `<p class="${cls} x-tag"><code>// ${escapeHtml(t.tag)}</code> ${escapeHtml(t.words)}</p>`).join('');
+}
+
+/** "Line 5 turns into 3 instructions …", or what the function's setup or cleanup on line n does. */
+function lineInsnWords(n, exact, inferred, all) {
+  const roles = new Set([...inferred].map((a) => state.current.inferred?.[state.current.index.insnIndex.get(a)]?.role || null));
+  const count = `${all.length} instruction${all.length === 1 ? '' : 's'}`;
+  if (!exact.length && roles.size === 1 && roles.has('prologue')) {
+    return `Line ${n} is where the function starts: ${count} of setup (the prologue) save registers and make room on the stack.`;
+  }
+  if (!exact.length && roles.has('epilogue')) {
+    return `Line ${n} is where the function ends: ${count} undo the setup (the epilogue) and return.`;
+  }
+  const how = inferred.size ? ` (${exact.length} linked by the decompiler, ${inferred.size} the page grouped with it)` : '';
+  return `Line ${n} turns into ${count}${how}.`;
+}
+
 function lineSelectedCard(n) {
   const { index, codeLines } = state.current;
   const { exact, inferred, all } = lineInsns(n);
   const text = (codeLines[n - 1] || '').trim();
-  let html = `<div class="x-card"><div class="x-code">${escapeHtml(text || '(empty line)')}</div>`;
+  let html = `<div class="x-card"><div class="x-code">${escapeHtml(text || '(empty line)')}</div>` + tagNotes(text);
   const typeNote = typeLineNote(n);
   if (typeNote) return html + `<p class="x-note">${escapeHtml(typeNote)}</p></div>`;
   if (!all.length) return html + `<p class="x-note">Line ${n} has no instructions of its own.</p></div>`;
-  html += `<p class="x-note" style="color:var(--text)">Line ${n} turns into ${all.length} instruction${all.length === 1 ? '' : 's'}` +
-    `${inferred.size ? ` (${exact.length} linked by the decompiler, ${inferred.size} that set it up)` : ''}.</p><ul class="x-insns">`;
+  html += `<p class="x-note" style="color:var(--text)">${escapeHtml(lineInsnWords(n, exact, inferred, all))}</p><ul class="x-insns">`;
   for (const a of all) {
     const insn = index.addrToInsn.get(a);
     if (!insn) continue;
@@ -1864,7 +1961,8 @@ function renderViewMenu() {
     check('asmArrows', 'Show jump arrows', p.asmArrows) + '</div></fieldset>' +
     `<fieldset><legend>C code</legend><div class="opts" style="flex-direction:column;align-items:flex-start">` +
     check('cLineNumbers', 'Show line numbers', p.cLineNumbers) +
-    check('cLineAddrs', 'Show addresses next to C lines', p.cLineAddrs) + '</div></fieldset>' +
+    check('cLineAddrs', 'Show addresses next to C lines', p.cLineAddrs) +
+    check('cWrap', 'Wrap long lines to fit', p.cWrap) + '</div></fieldset>' +
     '<div class="d2-vorow"><span>Hover delay</span><select name="hoverDelay">' +
     DELAY_WORDS.map(([v, l]) => `<option value="${v}"${p.hoverDelay === v ? ' selected' : ''}>${l}</option>`).join('') + '</select></div>' +
     '<button class="d2-link reset" data-act="reset">Reset to defaults</button></div>';
@@ -1892,6 +1990,7 @@ els.viewMenu.addEventListener('change', (e) => {
   applyPaneClasses();
   if (key === 'asmInfer' && state.current) showFunction(state.current.fn, state.current.data, { keep: true, key: state.current.key });
   else if (['asmCMode', 'asmArrows', 'cLineAddrs'].includes(key)) rerender('asm', 'c');
+  else if (key === 'cWrap') rewrapC();
   else if (key === 'asmSpelling') {
     rerender('asm');
     rail.setSelected(selectedCard());
@@ -1983,6 +2082,10 @@ function syncLayout() {
   els.fnsBtn.hidden = !state.inventory || !narrowView.matches;
 }
 
+function railOpen() {
+  return mediumView.matches ? els.work.classList.contains('drawer') : state.prefs.rail;
+}
+
 function setRail(open) {
   if (mediumView.matches) els.work.classList.toggle('drawer', open);
   else updatePrefs({ rail: open });
@@ -2018,6 +2121,7 @@ const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA
 
 document.addEventListener('keydown', (e) => {
   if (e.defaultPrevented) return;
+  if (els.xrefsDialog.open) return;
   if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     e.preventDefault();
     if (e.key === 'ArrowLeft' && !els.back.disabled) history.back();
@@ -2113,7 +2217,11 @@ document.addEventListener('keydown', (e) => {
       break;
     case 'x':
       e.preventDefault();
-      openRefs();
+      openXrefs();
+      break;
+    case 'e':
+      e.preventDefault();
+      setRail(!railOpen());
       break;
     case 'p':
       if (!collab?.active) return;
@@ -3186,13 +3294,161 @@ function loadRefs() {
   });
 }
 
-function openRefs() {
-  if (!state.current) return;
-  setRail(true);
-  state.refsOpen = true;
-  loadRefs();
-  $('railrefsbody')?.scrollIntoView({ block: 'nearest' });
+// ── cross-references (x) ───────────────────────────────────────────────────
+
+state.xrefRaw = new Map();
+
+/** The engine's `xrefs` document for `addr` under the session's global changes (cached). */
+function fetchXrefs(addr) {
+  const key = refsKey(addr);
+  if (state.xrefRaw.has(key)) return state.xrefRaw.get(key);
+  const p = new Promise((resolve, reject) => whenIdle(async () => {
+    const op = beginOperation('xrefs');
+    try {
+      const res = await withDirectives(
+        (list) => state.kuna.xrefs(addr, { assertions: list }),
+        state.caps.assert ? session.prepare({ func: null }) : NO_DIRECTIVES,
+      );
+      if (!state.xrefs.has(key) && state.byAddr.has(addr)) state.xrefs.set(key, renderXrefs(res, { nameOf: refsNameOf }));
+      resolve(res);
+    } catch (e) {
+      state.xrefRaw.delete(key);
+      reject(e);
+    } finally {
+      finishOperation(op);
+    }
+  }));
+  state.xrefRaw.set(key, p);
+  return p;
 }
+
+/** What `x` asks about: the name under the cursor or selected, an address the selected instruction names, else the open function. */
+function xrefsSubject() {
+  const cur = state.current;
+  const tok = state.cursor?.isConnected ? state.cursor : null;
+  if (tok?.dataset.kind === 'funcname') {
+    const fn = state.byAddr.get(tok.dataset.callee) || state.byName.get(tok.textContent);
+    if (fn) return { fn: fn.address_hex };
+  }
+  const sym = state.sel?.sym || tok?.dataset.sym || null;
+  if (sym) {
+    const symTok = tok?.dataset.sym === sym ? tok : els.ccode.querySelector(`.t[data-sym="${CSS.escape(sym)}"][data-gaddr]`);
+    return { sym, gaddr: symTok?.dataset.gaddr || null };
+  }
+  if (state.sel?.addr) {
+    const insn = cur.index.addrToInsn.get(state.sel.addr);
+    const m = /\b0x([0-9a-f]{4,})\b/i.exec(insn?.operands || '');
+    if (m) {
+      const hex = '0x' + BigInt('0x' + m[1]).toString(16);
+      return state.byAddr.has(hex) ? { fn: hex } : { data: hex };
+    }
+  }
+  return { fn: cur.data.address_hex };
+}
+
+const siteRows = (rows, { fnOf, siteOf }) => rows.map((r) => ({
+  fn: fnOf(r), site: siteOf(r) || '', siteLabel: bare(siteOf(r) || fnOf(r)),
+  name: refsNameOf(r.address_hex, r.name), kind: r.kind, instruction: r.instruction,
+}));
+const callerRows = (rows) => siteRows(rows, { fnOf: (r) => r.address_hex, siteOf: (r) => r.from_hex });
+const calleeRows = (rows) => siteRows(rows, { fnOf: (r) => r.address_hex, siteOf: (r) => r.at_hex }).map((r) => ({ ...r, site: '' }));
+
+/** The lines of the open function that use `sym`, with how each uses it. */
+function symLineRows(sym) {
+  const { index, codeLines, decls } = state.current;
+  const declLines = new Set(decls.filter((d) => d.name === sym).map((d) => d.line));
+  const sig = state.current.preamble + 1;
+  return [...(index.symToLines.get(sym) || [])].sort((a, b) => a - b).map((n) => ({
+    line: n,
+    how: n === sig ? 'input' : useKind(codeLines[n - 1] || '', sym, { decl: declLines.has(n) }),
+    text: (codeLines[n - 1] || '').trim(),
+  }));
+}
+
+/** The dialog's sections for a subject; `res` is the engine's answer once it is in. */
+function xrefsModel(subject, res, err) {
+  const cur = state.current;
+  const engine = (heading, rows, empty) => ({
+    heading, kind: 'sites', rows: res ? rows : [], empty,
+    loading: !res && !err ? 'Looking through the program…' : '',
+    note: err ? `Could not look through the program: ${err}` : '',
+  });
+  if (subject.sym) {
+    const sections = [{ heading: `In ${displayName(cur.fn)}`, kind: 'lines', rows: symLineRows(subject.sym), empty: 'No line uses it.' }];
+    if (subject.gaddr) sections.push(engine('Used by', callerRows(res?.callers || []), 'Nothing else in the program refers to it.'));
+    return { title: `Uses of ${subject.sym}`, sub: subject.gaddr ? `a global at ${bare(subject.gaddr)}` : 'a variable of this function', sections };
+  }
+  if (subject.data) {
+    return { title: `References to ${bare(subject.data)}`, sections: [engine('Used by', callerRows(res?.callers || []), 'Nothing in the program refers to it.')] };
+  }
+  const fn = state.byAddr.get(subject.fn);
+  const own = subject.fn === cur.data.address_hex;
+  const calls = res ? calleeRows(res.callees || []) : own ? calleeRows(localCallees(cur.data, state.byAddr)) : [];
+  const sections = [
+    engine('Called by', callerRows(res?.callers || []), 'Nothing in this program calls it directly.'),
+    { heading: 'Calls', kind: 'sites', rows: calls, empty: 'It calls no other functions.', loading: !res && !own && !err ? 'Looking through the program…' : '' },
+  ];
+  if (res?.data_refs?.length) sections.push({ heading: 'Uses data at', kind: 'sites', rows: siteRows(res.data_refs, { fnOf: (r) => r.address_hex, siteOf: (r) => r.at_hex }).map((r) => ({ ...r, site: '' })) });
+  return { title: `References to ${fn ? displayName(fn) : bare(subject.fn)}`, sub: own ? 'the function you are reading' : '', sections };
+}
+
+function showXrefs(subject, res = null, err = null) {
+  const dlg = els.xrefsDialog;
+  const focusedAt = [...dlg.querySelectorAll('.xr-row')].indexOf(document.activeElement);
+  dlg.innerHTML = renderRefsDialog(xrefsModel(subject, res, err));
+  const rows = dlg.querySelectorAll('.xr-row');
+  (rows[Math.max(focusedAt, 0)] || dlg.querySelector('[data-act=xrefs-close]'))?.focus();
+}
+
+/** `x`: who uses the selected thing and what it uses, in a list to jump from. */
+function openXrefs() {
+  if (!state.current) return;
+  hover.hide();
+  closeMenus();
+  const subject = xrefsSubject();
+  const fnAddr = state.current.data.address_hex;
+  const target = subject.fn || subject.data || subject.gaddr;
+  if (!els.xrefsDialog.open) els.xrefsDialog.showModal();
+  showXrefs(subject);
+  if (!target || !state.caps.inspect) return;
+  fetchXrefs(target).then(
+    (res) => { if (els.xrefsDialog.open && state.current?.data.address_hex === fnAddr) showXrefs(subject, res); },
+    (e) => { if (els.xrefsDialog.open && !(e instanceof KunaWorkerCancelledError)) showXrefs(subject, null, errorLine(e)); },
+  );
+}
+
+function activateXref(row) {
+  els.xrefsDialog.close();
+  if (row.dataset.line) {
+    ensureShown('c');
+    selectTarget({ line: Number(row.dataset.line) }, null);
+    return;
+  }
+  const { fn: fnHex, site } = row.dataset;
+  const fn = state.byAddr.get(fnHex);
+  if (fn && fn.address_hex !== state.current.data.address_hex) openFunction(fn, { focusAddr: site || null });
+  else if (site || fnHex) gotoAddr(site || fnHex);
+}
+
+els.xrefsDialog.addEventListener('click', (e) => {
+  if (e.target === els.xrefsDialog || e.target.closest('[data-act=xrefs-close]')) { els.xrefsDialog.close(); return; }
+  const row = e.target.closest('.xr-row');
+  if (row) activateXref(row);
+});
+els.xrefsDialog.addEventListener('keydown', (e) => {
+  const rows = [...els.xrefsDialog.querySelectorAll('.xr-row')];
+  const at = rows.indexOf(document.activeElement);
+  if (e.key === 'Enter' && at >= 0) {
+    e.preventDefault();
+    activateXref(rows[at]);
+  } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && rows.length) {
+    e.preventDefault();
+    rows[Math.min(Math.max(at + (e.key === 'ArrowDown' ? 1 : -1), 0), rows.length - 1)].focus();
+  } else if (e.key === 'x') {
+    e.preventDefault();
+    els.xrefsDialog.close();
+  }
+});
 
 els.railBody.addEventListener('click', (e) => {
   const a = e.target.closest('a.xt[data-goto]');

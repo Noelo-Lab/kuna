@@ -1,4 +1,4 @@
-// decompile2-collab-rtc.mjs — a live session between two separate Chrome
+// decompile-collab-rtc.mjs — a live session between two separate Chrome
 // processes (two profiles: two people on two machines), over real WebRTC
 // with no server: this script carries the invite link to Ben's browser and
 // his reply link back to Ana's, the way the two people would, and checks that
@@ -11,14 +11,14 @@
 // SKIPPED and exits 0. After that, any failure, a page that could not connect
 // included, exits 1. `--late N` applies the reply N seconds after Ben made it
 // (a measurement to run by hand, not in CI).
-//   integrations/web/build.sh && node integrations/web/test/decompile2-collab-rtc.mjs [--late 60]
+//   integrations/web/build.sh && node integrations/web/test/decompile-collab-rtc.mjs [--late 60]
 import assert from 'node:assert/strict';
 import { findChrome, launchChrome, openPage } from './cdp-client.mjs';
 import { requireDist, serveStatic, openSample } from './worker-harness.mjs';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
-  console.log(`DECOMPILE2 COLLAB RTC SKIPPED — ${chromePath ? 'this Node has no global WebSocket (need 22+)' : 'no Chrome found (set CHROME=...)'}`);
+  console.log(`DECOMPILE COLLAB RTC SKIPPED — ${chromePath ? 'this Node has no global WebSocket (need 22+)' : 'no Chrome found (set CHROME=...)'}`);
   process.exit(0);
 }
 requireDist();
@@ -30,7 +30,7 @@ const server = await serveStatic();
 const flags = ['--disable-features=WebRtcHideLocalIpsWithMdns'];
 const chromes = [await launchChrome(chromePath, { flags }), await launchChrome(chromePath, { flags })];
 const guard = setTimeout(() => {
-  console.error('DECOMPILE2 COLLAB RTC FAIL — timed out');
+  console.error('DECOMPILE COLLAB RTC FAIL — timed out');
   for (const c of chromes) c.close();
   process.exit(1);
 }, 300000 + late * 1000);
@@ -132,7 +132,7 @@ try {
     await ana.waitFor(`/summation\\(add/.test(document.getElementById('ccode').textContent)`, { what: 'Ben\'s rename on Ana\'s page', timeout: 30000 });
     for (const p of [ana, ben]) assert.deepEqual(p.exceptions, [], 'no page exception');
     const lateText = late ? `, reply applied ${Math.round((applied - t0) / 1000)} s after it was made` : '';
-    console.log(`DECOMPILE2 COLLAB RTC OK — two Chrome processes over WebRTC, links carried by hand${lateText}: Ben received the program ${openMs} ms after the reply was applied; renames went both ways`);
+    console.log(`DECOMPILE COLLAB RTC OK — two Chrome processes over WebRTC, links carried by hand${lateText}: Ben received the program ${openMs} ms after the reply was applied; renames went both ways`);
   }
 } catch (e) {
   if (!e.skip) throw e;
@@ -141,4 +141,4 @@ try {
   for (const c of chromes) c.close();
   await server.close();
 }
-if (skipped) console.log(`DECOMPILE2 COLLAB RTC SKIPPED — ${skipped}`);
+if (skipped) console.log(`DECOMPILE COLLAB RTC SKIPPED — ${skipped}`);

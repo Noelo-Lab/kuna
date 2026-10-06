@@ -1,4 +1,4 @@
-// decompile2-bytes.mjs — the study view's bytes pane and patching, from the
+// decompile-bytes.mjs — the study view's bytes pane and patching, from the
 // source tree with no build: file offsets from the section table, the patched
 // file (and what cannot be written), hex rows, no-op fills per architecture,
 // hex parsing and the patched file's name.
@@ -110,4 +110,4 @@ assert.equal(patchedName('.hidden'), '.hidden.patched');
 assert.equal(patchedName('v1.2.exe'), 'v1.2.patched.exe');
 checks.push('parseHex/patchedName');
 
-console.log(`DECOMPILE2 BYTES OK — ${checks.join('; ')}`);
+console.log(`DECOMPILE BYTES OK — ${checks.join('; ')}`);

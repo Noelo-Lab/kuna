@@ -1,4 +1,4 @@
-// decompile2-collab-page.mjs — live-session cases in the real /decompile/
+// decompile-collab-page.mjs — live-session cases in the real /decompile/
 // page, one per defect a review found in how the page drives a session (the
 // number is the review's): a cancelled or superseded edit keeps the others'
 // changes; a language switch before a guest joins; a guest's own stored
@@ -35,7 +35,7 @@
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 // `--only TEXT` runs the cases whose name contains TEXT.
-//   integrations/web/build.sh && node integrations/web/test/decompile2-collab-page.mjs
+//   integrations/web/build.sh && node integrations/web/test/decompile-collab-page.mjs
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -47,7 +47,7 @@ import { crossesNetworks } from '../decompile/collab/sdp.js';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
-  console.log(`DECOMPILE2 COLLAB PAGE SKIPPED — ${chromePath ? 'this Node has no global WebSocket (need 22+)' : 'no Chrome found (set CHROME=...)'}`);
+  console.log(`DECOMPILE COLLAB PAGE SKIPPED — ${chromePath ? 'this Node has no global WebSocket (need 22+)' : 'no Chrome found (set CHROME=...)'}`);
   process.exit(0);
 }
 requireDist();
@@ -62,7 +62,7 @@ const server = await serveStatic(undefined, 0, {
 const flags = ['--disable-features=WebRtcHideLocalIpsWithMdns'];
 const chrome = await launchChrome(chromePath, { flags });
 const chrome2 = await launchChrome(chromePath, { flags });
-const guard = setTimeout(() => { console.error('DECOMPILE2 COLLAB PAGE FAIL — timed out'); chrome.close(); chrome2.close(); process.exit(1); }, 2400000);
+const guard = setTimeout(() => { console.error('DECOMPILE COLLAB PAGE FAIL — timed out'); chrome.close(); chrome2.close(); process.exit(1); }, 2400000);
 const SAMPLE_HASH = 'sha256:' + createHash('sha256').update(readFileSync(fixture('sample.elf'))).digest('hex');
 
 /** Every RTCPeerConnection's ICE servers, in `window.__ice`. */
@@ -1176,8 +1176,8 @@ try {
 
 const failed = results.filter(([ok]) => !ok);
 if (failed.length) {
-  console.log(`DECOMPILE2 COLLAB PAGE FAIL — ${failed.length} of ${results.length}`);
+  console.log(`DECOMPILE COLLAB PAGE FAIL — ${failed.length} of ${results.length}`);
   process.exit(1);
 }
-console.log(`DECOMPILE2 COLLAB PAGE OK — ${results.length} cases`);
+console.log(`DECOMPILE COLLAB PAGE OK — ${results.length} cases`);
 process.exit(0);

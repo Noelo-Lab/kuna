@@ -1,4 +1,4 @@
-// decompile2-groups.mjs — which sidebar group a function lands in, from the
+// decompile-groups.mjs — which sidebar group a function lands in, from the
 // source tree with no build: the student's program first (with main on top),
 // the startup and runtime helpers every compiler adds, and imported functions.
 import assert from 'node:assert/strict';
@@ -43,4 +43,4 @@ assert.equal(firstFunction(groupFunctions([fn('_start', '0x10')])).name, '_start
 assert.equal(firstFunction(groupFunctions([])), null);
 checks.push('ordering, main variants, fallbacks');
 
-console.log(`DECOMPILE2 GROUPS OK — ${checks.join('; ')}`);
+console.log(`DECOMPILE GROUPS OK — ${checks.join('; ')}`);

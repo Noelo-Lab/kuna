@@ -1,10 +1,10 @@
-// decompile2-worker.mjs — the study view's RPC surface through the real module
+// decompile-worker.mjs — the study view's RPC surface through the real module
 // Worker: `inspect`, `read`, `xrefs`, `strings` and per-call `--assert` directives.
 //
 // Skips (exit 0, with a message) while the built wasm predates those commands,
 // so it is green before the engine side lands and meaningful after it.
 //
-// Usage:  integrations/web/build.sh && node integrations/web/test/decompile2-worker.mjs
+// Usage:  integrations/web/build.sh && node integrations/web/test/decompile-worker.mjs
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { requireDist, serveStatic, workerClient, fixture } from './worker-harness.mjs';
@@ -47,7 +47,7 @@ try {
     main = await client.inspect('main');
   } catch (error) {
     if (unknownCommand(error, 'inspect')) {
-      console.log('DECOMPILE2 WORKER SKIPPED — this wasm has no `inspect` command yet; ' +
+      console.log('DECOMPILE WORKER SKIPPED — this wasm has no `inspect` command yet; ' +
         'rebuild integrations/web/build.sh on an engine with inspect/read/--assert and rerun');
       process.exit(0);
     }
@@ -85,7 +85,12 @@ try {
   const sumTo = (await client.inspect('sum_to')).function;
   if (sumTo.tokens.length) assertTokensRebuild(sumTo);
   assert.ok(sumTo.instructions.some((i) => i.mnemonic === 'RET'), 'sum_to ends in RET');
-  checks.push('inspect sum_to');
+  const flowOf = (m) => sumTo.instructions.find((i) => i.mnemonic === m);
+  assert.equal(flowOf('RET').flow, 'return', 'each row says how it passes control on');
+  assert.equal(flowOf('JLE').flow, 'cjump');
+  assert.deepEqual(flowOf('JLE').targets_hex, [flowOf('JLE').operands.trim()], 'a jump names its target');
+  assert.ok(sumTo.instructions.filter((i) => !/^J|^RET|^CALL/.test(i.mnemonic)).every((i) => i.flow === null && i.targets_hex.length === 0));
+  checks.push('inspect sum_to (flow)');
 
   // Directives: a rename applies, a bad symbol is a rejected row with a body.
   const local = /\b(v\d+)\b/.exec(fn.code)?.[1];
@@ -174,7 +179,7 @@ try {
   );
   checks.push('refusal error contract');
 
-  console.log(`DECOMPILE2 WORKER OK — ${checks.join('; ')}`);
+  console.log(`DECOMPILE WORKER OK — ${checks.join('; ')}`);
 } finally {
   client.close();
   await server.close();

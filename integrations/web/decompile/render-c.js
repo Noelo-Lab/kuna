@@ -337,10 +337,8 @@ export function buildIndex(fnData, segs = lineSegments(fnData).segs, { inferred 
   (inferred || []).forEach((row, i) => {
     const insn = fnData.instructions[i];
     if (!row?.inferred || !insn) return;
-    for (const line of row.lines) {
-      addToMap(lineToInferred, line, insn.address_hex);
-      inferredLine.set(insn.address_hex, line);
-    }
+    for (const line of row.lines) addToMap(lineToInferred, line, insn.address_hex);
+    inferredLine.set(insn.address_hex, row.lines);
   });
   const sorted = new Map();
   for (const [line, set] of lineToInsns) sorted.set(line, order(set));
@@ -403,11 +401,51 @@ function tokenHtml(t, ctx) {
     `${t.fallback ? ' data-fb="1"' : ''}>${escapeHtml(t.text)}</span>`;
 }
 
+const plainHtml = (s, text) => (s.cls ? `<span class="${s.cls}">${escapeHtml(text)}</span>` : escapeHtml(text));
+
+/**
+ * One line's segments as HTML, with `breaks` (wrap-c.js `wrapBreaks` of the
+ * line's text) turned into a newline and the continuation's indent. A break
+ * that would fall inside a token is left out.
+ */
+export function lineHtml(line, ctx = {}, breaks = []) {
+  let out = '';
+  let off = 0;
+  let b = 0;
+  let eat = 0;
+  for (const s of line) {
+    const start = off;
+    off += s.text.length;
+    while (b < breaks.length && breaks[b].at < start) b++;
+    if (s.tok) {
+      if (b < breaks.length && breaks[b].at === start && !eat) out += `\n${' '.repeat(breaks[b++].indent)}`;
+      eat = 0;
+      out += tokenHtml(s.tok, ctx);
+      continue;
+    }
+    let at = 0;
+    let piece = '';
+    while (at < s.text.length) {
+      if (eat) { at++; eat--; continue; }
+      if (b < breaks.length && breaks[b].at === start + at) {
+        out += plainHtml(s, piece) + `\n${' '.repeat(breaks[b].indent)}`;
+        piece = '';
+        eat = breaks[b++].eat;
+        continue;
+      }
+      piece += s.text[at++];
+    }
+    if (piece) out += plainHtml(s, piece);
+  }
+  return out;
+}
+
 /**
  * The C pane's HTML: one `.d2-cl#c-L<n>` row per line with a line-number and
  * address gutter, tokens as `.t` spans carrying their kind, symbol, address,
  * callee, global address and type. The preamble's rows are `.d2-ty`, under a
- * heading that folds them. `ctx`: `{index, segs, preamble, fnByName, globalsByName}`.
+ * heading that folds them. `ctx`: `{index, segs, preamble, fnByName, globalsByName,
+ * breaksOf}` (`breaksOf(i)`: where line i wraps).
  */
 export function renderC(fnData, ctx = {}) {
   const segs = ctx.segs || lineSegments(fnData).segs;
@@ -429,12 +467,8 @@ export function renderC(fnData, ctx = {}) {
     const band = addrs.length ? bandOf(n) : null;
     out += `<div class="d2-cl${i < preamble ? ' d2-ty' : ''}" id="c-L${n}" role="option" data-line="${n}"` +
       `${attr('data-addrs', addrs.join(' '))}${attr('data-band', band)}>` +
-      `<span class="ln">${n}</span><span class="la">${escapeHtml(bare(addrs[0]))}</span><span class="ct">`;
-    for (const s of line) {
-      if (s.tok) out += tokenHtml(s.tok, ctx);
-      else out += s.cls ? `<span class="${s.cls}">${escapeHtml(s.text)}</span>` : escapeHtml(s.text);
-    }
-    out += '</span></div>';
+      `<span class="ln">${n}</span><span class="la">${escapeHtml(bare(addrs[0]))}</span><span class="ct">` +
+      `${lineHtml(line, ctx, i < preamble ? [] : ctx.breaksOf?.(i) || [])}</span></div>`;
   });
   return out + '</div>';
 }

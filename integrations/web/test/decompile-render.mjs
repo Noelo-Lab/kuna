@@ -1,4 +1,4 @@
-// decompile2-render.mjs — the study view's pure renderers, from the source
+// decompile-render.mjs — the study view's pure renderers, from the source
 // tree with no build: the shared highlighter's scan, the C pane (token stream
 // and regex fallback, the type definitions above a function), the
 // line/instruction/symbol index, and the diff that flashes edited lines.
@@ -274,12 +274,12 @@ assert.deepEqual(at(inspectMain, mainInf), {
   '0x1198': 'prologue', '0x119c': 'prologue', '0x119d': 'prologue', '0x11a0': 'prologue', '0x11a4': 'prologue', '0x11a7': 'prologue',
   '0x11ab': '~5', '0x11ae': '~5', '0x11b3': '~5', '0x11b5': '5', '0x11ba': '~5', '0x11bd': '~5', '0x11c0': '~5', '0x11c2': '5',
   '0x11c7': '~6', '0x11cb': '~6', '0x11cf': '~6', '0x11d2': '~6', '0x11d9': '~6', '0x11dc': '~6', '0x11e1': '6',
-  '0x11e6': '~7', '0x11ea': '~7', '0x11eb': '7',
+  '0x11e6': '~7', '0x11ea': 'epilogue', '0x11eb': '7',
 }, 'main: the argument set-up belongs to the call it precedes; the frame set-up and argument spills are the prologue');
 assert.deepEqual(at(sumTo, inferLines(sumTo.instructions)), {
   '0x1161': 'prologue', '0x1165': 'prologue', '0x1166': 'prologue', '0x1169': 'prologue', '0x116c': '6', '0x1174': '7',
   '0x117b': '~7', '0x117d': '~8', '0x1180': '8', '0x1182': '8', '0x1186': '7', '0x118a': '~7', '0x118d': '~7', '0x1190': '7',
-  '0x1192': '10', '0x1196': '~10', '0x1197': '10',
+  '0x1192': '10', '0x1196': 'epilogue', '0x1197': '10',
 }, 'sum_to: the loop\'s jump to its test finishes the init, the load after it sets up the body, the test belongs to the for line');
 const tail = inferLines([
   { address_hex: '0x0', mnemonic: 'PUSH', operands: 'RBP', lines: [] },
@@ -291,13 +291,13 @@ const tail = inferLines([
   { address_hex: '0xf', mnemonic: 'POP', operands: 'RBP', lines: [] },
   { address_hex: '0x10', mnemonic: 'RET', operands: '', lines: [] },
 ]);
-assert.deepEqual(tail.map((r) => r.role || (r.inferred ? `~${r.lines}` : String(r.lines))), ['prologue', '3', '2', '~2', '2', 'epilogue', 'epilogue', 'epilogue'],
-  'a gap between two instructions of one line is that line; after the last mapped one is the epilogue');
+assert.deepEqual(tail.map((r) => r.role || (r.inferred ? `~${r.lines}` : String(r.lines))), ['prologue', '3', '2', '~2', '2', '~2', 'epilogue', '~2'],
+  'a gap between two instructions of one line is that line; what trails the last mapped one finishes it, the frame teardown is the epilogue');
 assert.deepEqual(inferLines([{ address_hex: '0x0', mnemonic: 'RET', operands: '', lines: [] }]), [{ lines: [], inferred: false, role: null }], 'nothing mapped: nothing inferred');
 const inferredIndex = buildIndex(inspectMain, mainSeg.segs, { inferred: mainInf });
 assert.deepEqual(inferredIndex.lineToInsns.get(5), ['0x11b5', '0x11c2'], 'the exact map is unchanged');
 assert.deepEqual(inferredIndex.lineToInferred.get(5), ['0x11ab', '0x11ae', '0x11b3', '0x11ba', '0x11bd', '0x11c0']);
-assert.equal(inferredIndex.inferredLine.get('0x11ae'), 5);
+assert.deepEqual(inferredIndex.inferredLine.get('0x11ae'), [5]);
 assert.deepEqual([...expand({ line: 5 }, inferredIndex).addrs].length, 8, 'selecting a line marks its inferred rows too');
 assert.ok(expand({ addr: '0x11ae' }, inferredIndex).lines.has(5));
 const inferredHtml = renderAsm(inspectMain, { prefs: { asmCMode: 'comment' }, inferred: mainInf });
@@ -401,4 +401,4 @@ const itemIndex = buildIndex(item, itemSegs.segs);
 assert.ok([...itemIndex.lineToInsns.keys()].every((l) => l > sigAt + 1), 'instructions link to the body, below the definitions');
 checks.push('type definitions above the function');
 
-console.log(`DECOMPILE2 RENDER OK — ${checks.join('; ')}`);
+console.log(`DECOMPILE RENDER OK — ${checks.join('; ')}`);

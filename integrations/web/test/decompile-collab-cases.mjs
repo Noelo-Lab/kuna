@@ -1,4 +1,4 @@
-// decompile2-collab-cases.mjs — live-session cases that need no browser, one
+// decompile-collab-cases.mjs — live-session cases that need no browser, one
 // per defect a review found (the number is the review's): the order the
 // engine gets directives in, alone and shared; a page that joins again
 // sending what it changed meanwhile; Undo through several edits of a field;
@@ -11,7 +11,7 @@
 // inviter's first hello; a connection that cannot be set up; a page whose
 // clock races ahead; moving about quickly, a session larger than the
 // channel's send queue, registers that stay different. Every case runs and is reported; any failure exits 1.
-//   node integrations/web/test/decompile2-collab-cases.mjs
+//   node integrations/web/test/decompile-collab-cases.mjs
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import * as S from '../decompile/session.js';
@@ -777,8 +777,8 @@ await test('fifth review #11 two pages whose registers stay different swap them 
 const failed = results.filter(([ok]) => !ok);
 for (const [ok, name, why] of results) console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : ` — ${why}`}`);
 if (failed.length) {
-  console.log(`DECOMPILE2 COLLAB CASES FAIL — ${failed.length} of ${results.length}`);
+  console.log(`DECOMPILE COLLAB CASES FAIL — ${failed.length} of ${results.length}`);
   process.exit(1);
 }
-console.log(`DECOMPILE2 COLLAB CASES OK — ${results.length} cases`);
+console.log(`DECOMPILE COLLAB CASES OK — ${results.length} cases`);
 process.exit(0);

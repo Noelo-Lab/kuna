@@ -1,4 +1,4 @@
-// decompile2-collab.mjs — live sessions in the study view, from the source
+// decompile-collab.mjs — live sessions in the study view, from the source
 // tree with no build and no browser: the replicated registers converge under
 // any delivery order and refuse ops that would make the engine read a file;
 // a session reads back as registers and the registers as the same directives,
@@ -331,8 +331,8 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
   assert.equal((await decodeCode(invite, 'reply')).ok, false, 'an invite is not a reply');
   const reply = await encodeCode('reply', { id: 'abcdefghij', n: 'Ben', d });
   assert.equal((await decodeCode(reply, 'reply')).n, 'Ben');
-  assert.equal(codeFrom(`https://kuna.noelo.org/decompile2/#join=${invite}`, 'invite'), invite);
-  assert.equal(codeFrom(`  https://x/decompile2/#reply=${reply}\n`, 'reply'), reply);
+  assert.equal(codeFrom(`https://kuna.noelo.org/decompile/#join=${invite}`, 'invite'), invite);
+  assert.equal(codeFrom(`  https://x/decompile/#reply=${reply}\n`, 'reply'), reply);
   assert.equal(codeFrom('hello there', 'reply'), null);
   await assert.rejects(() => encodeCode('invite', { id: 'abcdefghij', n: 'Ana\n', f: 'x', z: 1, d }), 'the page never makes a bad code');
   const enc = async (obj) => Buffer.from(new Uint8Array(await new Response(new Blob([JSON.stringify(obj)]).stream()
@@ -614,5 +614,5 @@ const same = (...ms) => ms.every((m) => JSON.stringify([...m.replica.regs].sort(
   for (const m of [ana, ben, cy, other]) m.g.leave();
 }
 
-console.log(`DECOMPILE2 COLLAB OK — ${checks.join('; ')}`);
+console.log(`DECOMPILE COLLAB OK — ${checks.join('; ')}`);
 process.exit(0);

@@ -1,4 +1,4 @@
-// decompile2-collab-sync.mjs — the page's glue in a live session
+// decompile-collab-sync.mjs — the page's glue in a live session
 // (collab/sync.js), case by case, through the same simulated pages as the fuzz
 // test (collab-sim.mjs: a real Session, Sync and Group per page, in-memory
 // links, a virtual clock). One case per defect a second review found in how a
@@ -14,7 +14,7 @@
 // while another person's change arrives. Each
 // case also checks that no page sent a change its student did not make, and
 // that the pages agree once settled. Needs no build.
-//   node integrations/web/test/decompile2-collab-sync.mjs
+//   node integrations/web/test/decompile-collab-sync.mjs
 import assert from 'node:assert/strict';
 import { Sim, FN, PROGRAM } from './collab-sim.mjs';
 import { birthOrder, recordKeyOf } from '../decompile/collab/replica.js';
@@ -424,7 +424,7 @@ await test('fifth review #3 bytes typed while another person\'s change arrives g
 const failed = results.filter(([ok]) => !ok);
 for (const [ok, name, why] of results) console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : ` — ${why}`}`);
 if (failed.length) {
-  console.log(`DECOMPILE2 COLLAB SYNC FAIL — ${failed.length} of ${results.length}`);
+  console.log(`DECOMPILE COLLAB SYNC FAIL — ${failed.length} of ${results.length}`);
   process.exit(1);
 }
-console.log(`DECOMPILE2 COLLAB SYNC OK — ${results.length} cases`);
+console.log(`DECOMPILE COLLAB SYNC OK — ${results.length} cases`);

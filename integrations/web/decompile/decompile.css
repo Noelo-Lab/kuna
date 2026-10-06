@@ -1,5 +1,5 @@
 /* =========================================================================
-   /decompile2 — Kuna's study view. A full-screen app in the Noelo palette
+   /decompile — Kuna's study view. A full-screen app in the Noelo palette
    (noelo.org, BSD-2-Clause; see ../assets/css/site.css): warm near-black
    ink, warm greys, flat 1px rules, and the red out of the mark. Dark is the
    default (Noelo's dark footer palette, stretched to a whole app); the
@@ -212,6 +212,7 @@ code{font-family:var(--font-code);font-size:.92em;}
 .d2-cl .la:empty{cursor:default;}
 .d2-cl .la:not(:empty):hover{color:var(--accent);text-decoration:underline;}
 .d2-cl .ct{flex:1 1 auto;padding:0 32px 0 12px;}
+#ccode.wrap .d2-cl .ct{white-space:pre-wrap;overflow-wrap:anywhere;min-width:0;}
 #ccode .d2-cl .ct{padding-left:12px;}
 #ccode.no-ln .ln,#ccode.no-la .la,#ccode.no-addrs .la{display:none;}
 #ccode.no-ln .d2-cl .ct,#ccode.no-ln .d2-tyhead .ct{padding-left:20px;}
@@ -481,13 +482,25 @@ a.xt:hover{color:var(--accent);text-decoration:underline;}
 .d2-toast .tx{flex:none;border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:16px;line-height:1;padding:0 2px;}
 .d2-toast .tx:hover{color:var(--text);}
 
-#help{width:min(720px,94vw);max-height:88vh;padding:0;border:1px solid var(--border);border-radius:var(--radius-lg);
+#help,#xrefs{width:min(720px,94vw);max-height:88vh;padding:0;border:1px solid var(--border);border-radius:var(--radius-lg);
   background:var(--bg);color:var(--text);box-shadow:var(--shadow);font:400 var(--fs-ui)/1.5 var(--font-ui);}
-#help::backdrop{background:var(--lift);}
-#help .hh{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;padding:16px 20px 10px;background:var(--bg);}
-#help .hh h2{font-size:18px;font-weight:600;}
-#help .hb2{padding:0 20px 20px;}
-#help h3{font-size:14px;font-weight:600;margin:14px 0 8px;}
+#xrefs{width:min(860px,94vw);}
+#help::backdrop,#xrefs::backdrop{background:var(--lift);}
+#help .hh,#xrefs .hh{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;padding:16px 20px 10px;background:var(--bg);}
+#help .hh h2,#xrefs .hh h2{font-size:18px;font-weight:600;overflow-wrap:anywhere;}
+#help .hb2,#xrefs .hb2{padding:0 20px 20px;}
+#help h3,#xrefs h3{font-size:14px;font-weight:600;margin:14px 0 8px;}
+#xrefs .xr-sub{margin:0;color:var(--text-muted);}
+#xrefs .xr-empty{margin:4px 0;color:var(--text-muted);}
+#xrefs .xr-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--border-subtle);}
+#xrefs .xr-row{display:flex;align-items:baseline;gap:12px;padding:5px 8px;border-bottom:1px solid var(--border-subtle);cursor:pointer;outline:none;}
+#xrefs .xr-row:hover{background:var(--hover-bg,var(--accent-bg));}
+#xrefs .xr-row:focus{background:var(--accent-bg);box-shadow:inset 3px 0 0 var(--accent);}
+#xrefs .xr-at{flex:none;min-width:5ch;color:var(--text-faint);font:12.5px/1.5 var(--font-code);text-align:right;}
+#xrefs .xr-how{flex:none;min-width:7ch;white-space:nowrap;color:var(--text-muted);font-size:var(--fs-small);}
+#xrefs .xr-how.sets{color:var(--accent);}
+#xrefs .xr-name{flex:none;font-weight:500;}
+#xrefs .xr-code{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--text);}
 #help table{border-collapse:collapse;width:100%;table-layout:fixed;}
 #help td{padding:5px 0;border-bottom:1px solid var(--border-subtle);vertical-align:top;}
 #help td:first-child{width:120px;padding-right:12px;white-space:nowrap;}

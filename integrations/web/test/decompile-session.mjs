@@ -1,4 +1,4 @@
-// decompile2-session.mjs — the study view's edit session, from the source tree
+// decompile-session.mjs — the study view's edit session, from the source tree
 // with no build: how edits become `--assert` directives (merging, pinning,
 // scoping, qualification after a function rename, parameters through
 // `prototype`), byte runs, the `.kuna` file round trip, outcomes, undo, the
@@ -485,4 +485,4 @@ assert.match(legacyKey(new TextEncoder().encode('abc')), /^fnv:[0-9a-f]{16}-3$/,
   checks.push('own sessions before a session\'s copies; the old key worked out only when one is stored');
 }
 
-console.log(`DECOMPILE2 SESSION OK — ${checks.join('; ')}`);
+console.log(`DECOMPILE SESSION OK — ${checks.join('; ')}`);

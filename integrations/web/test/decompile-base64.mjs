@@ -1,7 +1,7 @@
-// decompile2-base64.mjs — opening a program pasted as base64 text: which texts
+// decompile-base64.mjs — opening a program pasted as base64 text: which texts
 // decode, to which bytes, and the name the page gives them.
 //
-//   node integrations/web/test/decompile2-base64.mjs
+//   node integrations/web/test/decompile-base64.mjs
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

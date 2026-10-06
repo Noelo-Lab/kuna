@@ -1,4 +1,4 @@
-// decompile2-collab-fuzz.mjs — random live sessions through the page's real
+// decompile-collab-fuzz.mjs — random live sessions through the page's real
 // glue (collab/sync.js with group.js and a real Session per page, see
 // collab-sim.mjs), on a virtual clock: 3 to 5 pages, some with the program
 // open and changes of their own, some that must receive it; random edits of
@@ -29,7 +29,7 @@
 //     keeps saving into the shared slot or ordering by a session's births.
 // Seeded; `--runs N` (default 400) and `--seed S` (default 1) pick the runs,
 // `--verbose` prints each failing run's problems. Needs no build.
-//   node integrations/web/test/decompile2-collab-fuzz.mjs [--runs 2000] [--seed 1]
+//   node integrations/web/test/decompile-collab-fuzz.mjs [--runs 2000] [--seed 1]
 import { Sim, FN } from './collab-sim.mjs';
 
 const arg = (name, fallback) => {
@@ -177,7 +177,7 @@ for (let i = 0; i < RUNS; i++) {
 const secs = ((Date.now() - t0) / 1000).toFixed(1);
 if (VERBOSE) console.log('totals', JSON.stringify(totals));
 if (failed) {
-  console.log(`DECOMPILE2 COLLAB FUZZ FAIL — ${failed} failing run(s) of seeds ${SEED}..${SEED + RUNS - 1} (${secs} s)`);
+  console.log(`DECOMPILE COLLAB FUZZ FAIL — ${failed} failing run(s) of seeds ${SEED}..${SEED + RUNS - 1} (${secs} s)`);
   process.exit(1);
 }
-console.log(`DECOMPILE2 COLLAB FUZZ OK — ${RUNS} runs, seeds ${SEED}..${SEED + RUNS - 1}, 3-5 pages each: registers, directives and Sessions agree, and no page sent a change its student did not make (${secs} s)`);
+console.log(`DECOMPILE COLLAB FUZZ OK — ${RUNS} runs, seeds ${SEED}..${SEED + RUNS - 1}, 3-5 pages each: registers, directives and Sessions agree, and no page sent a change its student did not make (${secs} s)`);
