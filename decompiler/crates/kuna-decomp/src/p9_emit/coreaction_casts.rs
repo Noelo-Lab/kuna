@@ -1488,8 +1488,8 @@ impl Funcdata {
 
     /// `ActionSetCasts::castOutput` (coreaction.cc:2624-2704).
     fn cast_output(&mut self, op: OpId, strat: &CastStrategyC) -> int4 {
-        if let Some(wide) = crate::p4_calls::kuna_voidret::narrowed_call_result(self, op) {
-            return self.cast_narrowed_call(op, wide);
+        if let Some((wide, unsigned)) = crate::p4_calls::kuna_voidret::narrowed_call_result(self, op) {
+            return self.cast_narrowed_call(op, wide, unsigned);
         }
         let tokenct = get_output_token(self, strat, op);
         self.cast_output_token(op, strat, tokenct)
@@ -1497,11 +1497,18 @@ impl Funcdata {
 
     /// (kuna `voidret`) Make the call `op` write its callee's whole result,
     /// typed `wide`, into a temporary its output then truncates with a CAST,
-    /// which prints the conversion ([`crate::p4_calls::kuna_voidret::narrowed_call_result`]).
-    fn cast_narrowed_call(&mut self, op: OpId, wide: Rc<Datatype>) -> int4 {
+    /// which prints the conversion, to an unsigned word where `unsigned` asks
+    /// ([`crate::p4_calls::kuna_voidret::narrowed_call_result`]).
+    fn cast_narrowed_call(&mut self, op: OpId, wide: Rc<Datatype>, unsigned: bool) -> int4 {
         let Some((outvn, addr)) = self.obank().get(op).and_then(|o| Some((o.get_out()?, o.get_addr().clone()))) else {
             return 0;
         };
+        if unsigned {
+            let size = self.vbank().get(outvn).map_or(0, |v| v.get_size());
+            if let Some(word) = self.get_arch().types().and_then(|t| t.get_base(size, type_metatype::TYPE_UINT).ok()) {
+                let _ = self.vn_update_type(outvn, word);
+            }
+        }
         let vn = self.new_unique(wide.get_size(), None);
         let _ = self.vn_update_type(vn, wide);
         if let Some(v) = self.vbank_mut().get_mut(vn) {

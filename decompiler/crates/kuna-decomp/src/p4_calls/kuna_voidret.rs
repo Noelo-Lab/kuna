@@ -74,7 +74,7 @@ fn held(data: &Funcdata, outvn: crate::context::VarnodeId) -> Option<Held> {
         pointer: meta == crate::dtype::type_metatype::TYPE_PTR,
         float: meta == crate::dtype::type_metatype::TYPE_FLOAT,
         arithmetic,
-        signed: signed_use(data, outvn, false),
+        signed: signed_use(data, outvn, false).is_some(),
     })
 }
 
@@ -82,10 +82,12 @@ fn held(data: &Funcdata, outvn: crate::context::VarnodeId) -> Option<Held> {
 /// value: an extension, an ordering, a right shift, a division or remainder, a
 /// conversion to a float, or an equality with a variable or with a constant
 /// whose sign bit is set, after copies, joins and pieces? After arithmetic,
-/// which C would carry past the narrow value, any equality does. With
+/// which C would carry past the narrow value, any equality or zero-extension
+/// does. With
 /// `inline`, only within the expression the result is printed in: a value
-/// assigned to a variable is converted by the assignment.
-fn signed_use(data: &Funcdata, outvn: crate::context::VarnodeId, inline: bool) -> bool {
+/// assigned to a variable is converted by the assignment. The answer says
+/// whether the use is a zero-extension, which wants the word unsigned.
+fn signed_use(data: &Funcdata, outvn: crate::context::VarnodeId, inline: bool) -> Option<bool> {
     use kuna_num::opcodes::OpCode::*;
     let mut work = vec![(outvn, false)];
     let mut seen = BTreeSet::new();
@@ -103,7 +105,8 @@ fn signed_use(data: &Funcdata, outvn: crate::context::VarnodeId, inline: bool) -
             match o.code() {
                 CPUI_INT_SEXT | CPUI_INT_LESS | CPUI_INT_LESSEQUAL | CPUI_INT_SLESS | CPUI_INT_SLESSEQUAL
                 | CPUI_INT_RIGHT | CPUI_INT_SRIGHT | CPUI_INT_DIV | CPUI_INT_SDIV | CPUI_INT_REM | CPUI_INT_SREM
-                | CPUI_FLOAT_INT2FLOAT => return true,
+                | CPUI_FLOAT_INT2FLOAT => return Some(false),
+                CPUI_INT_ZEXT if carried => return Some(true),
                 CPUI_INT_EQUAL | CPUI_INT_NOTEQUAL => {
                     let widened = (0..2)
                         .filter_map(|k| o.get_in(k))
@@ -111,7 +114,7 @@ fn signed_use(data: &Funcdata, outvn: crate::context::VarnodeId, inline: bool) -
                         .filter_map(|k| data.vbank().get(k))
                         .any(|k| carried || !k.is_constant() || k.get_offset() & sign != 0);
                     if widened {
-                        return true;
+                        return Some(false);
                     }
                 }
                 CPUI_COPY | CPUI_MULTIEQUAL | CPUI_INDIRECT | CPUI_CAST | CPUI_SUBPIECE | CPUI_PIECE => {
@@ -123,7 +126,7 @@ fn signed_use(data: &Funcdata, outvn: crate::context::VarnodeId, inline: bool) -
             }
         }
     }
-    false
+    None
 }
 
 /// The run's record.
@@ -886,8 +889,13 @@ pub fn stale_readers(
 /// in uses its sign or width ([`signed_use`]). Beside `unsigned long z32m(..)`,
 /// `a1 == z32m(a0)` compares a sign-extended `a1` with the zero-extended
 /// result where the binary compares `eax`. A value tested for zero, or assigned
-/// to a variable, which the assignment converts, keeps the call as it is.
-pub fn narrowed_call_result(data: &Funcdata, op: crate::context::OpId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+/// to a variable, which the assignment converts, keeps the call as it is. The
+/// flag asks for the word unsigned: a sum C must wrap at 32 bits before it is
+/// zero-extended, `(unsigned int)z32m(a0) + 1 == a1`.
+pub fn narrowed_call_result(
+    data: &Funcdata,
+    op: crate::context::OpId,
+) -> Option<(std::rc::Rc<crate::dtype::Datatype>, bool)> {
     let o = data.obank().get(op)?;
     if !matches!(o.code(), kuna_num::opcodes::OpCode::CPUI_CALL | kuna_num::opcodes::OpCode::CPUI_CALLIND) {
         return None;
@@ -909,14 +917,13 @@ pub fn narrowed_call_result(data: &Funcdata, op: crate::context::OpId) -> Option
     if !register || size > 8 || !crate::kuna_zextreturn::wider_over(&addr, size, out.get_addr(), out.get_size()) {
         return None;
     }
-    if !signed_use(data, o.get_out()?, true) {
-        return None;
-    }
+    let unsigned = signed_use(data, o.get_out()?, true)?;
     let stated = data.kuna_callret_stated(k).filter(|s| s.size == size && s.ct.get_size() == size);
-    match stated {
-        Some(s) => Some(std::rc::Rc::clone(&s.ct)),
-        None => data.get_arch().types()?.get_base(size, crate::dtype::type_metatype::TYPE_UINT).ok(),
-    }
+    let wide = match stated {
+        Some(s) => std::rc::Rc::clone(&s.ct),
+        None => data.get_arch().types()?.get_base(size, crate::dtype::type_metatype::TYPE_UINT).ok()?,
+    };
+    Some((wide, unsigned))
 }
 
 /// What the function keyed `k` was last recovered to return, for [`restore`].

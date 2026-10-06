@@ -5745,8 +5745,8 @@ the narrow value prints `z32m(..) < 0` of an `int`, which the new `unsigned
 long` declaration makes false. A reader over `AUDIT_MAX_OPS` is redone only
 where it uses the result's sign or width (`kuna_voidret.rs (signed_use)`: an
 extension, an ordering, a right shift, a division, a conversion to a float, an
-equality with a variable or a negative constant, or any equality after
-arithmetic); e2fsck's `main`, which tests such a result for zero and passes it
+equality with a variable or a negative constant, or any equality or
+zero-extension after arithmetic); e2fsck's `main`, which tests such a result for zero and passes it
 on, spent three seconds on a redo that renamed one variable. A reader of the
 widened callee that keeps only the low word prints the call truncated where
 its expression uses the word's sign or width (`narrowed_call_result`, chapter
@@ -5757,7 +5757,7 @@ by its type's sign (PowerPC64's `inttype`) is left alone: there a caller may rea
 the whole register of an `unsigned int`, which `kuna_zextreturn` already types.
 The single-function `kuna decompile` has no callers to ask and keeps the trim.
 Over 30 decbench x86-64 binaries and 190 AArch64 objects built from their
-sources, 19 functions move toward their source types, and 83 more print a
+sources, 19 functions move toward their source types, and 84 more print a
 truncating cast at a comparison of a narrow result of a callee recovered
 returning 8 bytes (chapter [09](09-emission.md)), most of them
 `(int)f(..) == -1`. A zero-extended

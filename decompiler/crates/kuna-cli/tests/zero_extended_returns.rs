@@ -43,6 +43,7 @@ int s_eqv(unsigned long x, int v) { return (int)s_z32m(x ^ 9) == v; }
 long s_ar(unsigned long x, int v) { return (long)((int)s_z32m(x ^ 11) + v); }
 NI unsigned long s_w64(unsigned long x) { return x * 0x100000003UL; }
 int s_eqw(unsigned long x, int v) { return (int)s_w64(x ^ 13) == v; }
+int s_eqz(unsigned long x, unsigned long y) { return (unsigned long)((unsigned)s_z32m(x ^ 15) + 1u) == y; }
 "#;
 
 /// Each checked function with the argument it takes.
@@ -68,6 +69,7 @@ const ARGS: &[(&str, &str)] = &[
     ("eqv", "(unsigned long)v, (int)(((unsigned long)v ^ 9) * 3)"),
     ("ar", "(unsigned long)v, v"),
     ("eqw", "(unsigned long)v, (int)(((unsigned long)v ^ 13) * 0x100000003UL)"),
+    ("eqz", "(unsigned long)v, (unsigned long)(unsigned)((((unsigned long)v ^ 15) * 3) + 1)"),
 ];
 
 struct Image {
@@ -81,7 +83,7 @@ struct Image {
 
 const ALL: &[&str] = &[
     "z32m", "zn", "lb", "cz", "ci", "cp", "cru", "cs", "cb", "lq", "cq", "cw", "z6", "z7", "z8", "rsh", "lsh", "arg", "eqv",
-    "ar", "eqw",
+    "ar", "eqw", "eqz",
 ];
 
 /// gcc -O2 and clang -O0 for x86-64, clang -O2 and -O0 for AArch64. AArch64
@@ -104,7 +106,7 @@ const IMAGES: &[Image] = &[
                ff48c1e003c366904883f701e8b7ffffff48c1f8024889c7e8bbffffff4801c0c30f1f8000000000\
                4883f709e867feffff39c60f94c00fb6c0c366662e0f1f8400000000000f1f004883f70be847feff\
                ff01c64863c6c3904889f848c1e01f4801f8488d0447c3904883f70de8e7ffffff39c60f94c00fb6\
-               c0c3",
+               c0c366662e0f1f8400000000000f1f004883f70fe807feffff83c0014839f00f94c00fb6c0c3",
         functions: &[
             ("z32m", 0x0, 0x4),
             ("zn", 0x10, 0x4),
@@ -133,6 +135,7 @@ const IMAGES: &[Image] = &[
             ("ar", 0x1b0, 0xf),
             ("w64", 0x1c0, 0xf),
             ("eqw", 0x1d0, 0x12),
+            ("eqz", 0x1f0, 0x16),
         ],
         checked: ALL,
     },
@@ -164,7 +167,8 @@ const IMAGES: &[Image] = &[
                554889e54883ec1048897df88975f4488b7df84883f70be874fcffff0345f448984883c4105dc366\
                0f1f840000000000554889e548897df848b80300000001000000480faf45f85dc30f1f8000000000\
                554889e54883ec1048897df88975f4488b7df84883f70de8c4ffffff3b45f40f94c024010fb6c048\
-               83c4105dc3",
+               83c4105dc30f1f00554889e54883ec1048897df8488975f0488b7df84883f70fe8f3fbffff83c001\
+               89c0483b45f00f94c024010fb6c04883c4105dc3",
         functions: &[
             ("z32m", 0x0, 0x1c),
             ("zn", 0x20, 0xf),
@@ -193,6 +197,7 @@ const IMAGES: &[Image] = &[
             ("ar", 0x370, 0x27),
             ("w64", 0x3a0, 0x19),
             ("eqw", 0x3c0, 0x2d),
+            ("eqz", 0x3f0, 0x34),
         ],
         checked: ALL,
     },
@@ -214,7 +219,8 @@ const IMAGES: &[Image] = &[
                000008ca87ffff971f00136bf30b40f9e0179f1afd7bc2a8c0035fd6fd7bbea9f30b00f9fd030091\
                68018052f303012a000008ca7bffff970800130bf30b40f9007d4093fd7bc2a8c0035fd6680080d2\
                2800c0f2007c089bc0035fd6fd7bbea9f30b00f9fd030091a8018052f303012a000008caf6ffff97\
-               1f00136bf30b40f9e0179f1afd7bc2a8c0035fd6",
+               1f00136bf30b40f9e0179f1afd7bc2a8c0035fd6fd7bbea9f30b00f9fd030091000c40d2f30301aa\
+               60ffff97080400111f0113ebf30b40f9e0179f1afd7bc2a8c0035fd6",
         functions: &[
             ("z32m", 0x0, 0x8),
             ("zn", 0x8, 0x8),
@@ -243,10 +249,11 @@ const IMAGES: &[Image] = &[
             ("ar", 0x1fc, 0x30),
             ("w64", 0x22c, 0x10),
             ("eqw", 0x23c, 0x30),
+            ("eqz", 0x26c, 0x30),
         ],
         checked: &[
             "z32m", "zn", "lb", "cz", "ci", "cp", "cs", "lq", "cq", "cw", "z6", "z7", "z8", "rsh", "lsh", "arg", "eqv",
-            "ar", "eqw",
+            "ar", "eqw", "eqz",
         ],
     },
     Image {
@@ -281,7 +288,8 @@ const IMAGES: &[Image] = &[
                e90740b90901090be803092a007d4093fd7b41a9ff830091c0035fd6ff4300d1e00700f9e80740f9\
                690080d22900c0f2007d099bff430091c0035fd6ff8300d1fd7b01a9fd430091e00700f9e10700b9\
                e80740f9a90180d2000109caf0ffff97e803002ae90740b90801096be8179f1a00010012fd7b41a9\
-               ff830091c0035fd6",
+               ff830091c0035fd6ff8300d1fd7b01a9fd430091e00700f9e10300f9e80740f9000d40d2d5feff97\
+               e803002a08050011e90340f9080109ebe8179f1a00010012fd7b41a9ff830091c0035fd6",
         functions: &[
             ("z32m", 0x0, 0x20),
             ("zn", 0x20, 0x20),
@@ -310,10 +318,11 @@ const IMAGES: &[Image] = &[
             ("ar", 0x3e8, 0x44),
             ("w64", 0x42c, 0x20),
             ("eqw", 0x44c, 0x44),
+            ("eqz", 0x490, 0x44),
         ],
         checked: &[
             "z32m", "zn", "lb", "cz", "ci", "cp", "cs", "lq", "cq", "cw", "z6", "z7", "z8", "rsh", "lsh", "arg", "eqv",
-            "ar", "eqw",
+            "ar", "eqw", "eqz",
         ],
     },
 ];
@@ -412,7 +421,8 @@ fn round_trip(image: &Image, text: &str) -> Result<(), String> {
 /// `lb` an `unsigned char`, while `ru` and `si`, whose callers extend the
 /// result themselves, still return 32 bits. A caller that compares or adds the
 /// low word of a result its callee returns whole (`eqv`, `ar`, and `eqw` over
-/// the 64-bit `w64`) truncates the call explicitly.
+/// the 64-bit `w64`) truncates the call explicitly, to an unsigned word where
+/// it zero-extends a sum (`eqz`).
 #[test]
 fn a_caller_that_computes_with_the_whole_register_keeps_the_zero_extension() {
     let widened = [
