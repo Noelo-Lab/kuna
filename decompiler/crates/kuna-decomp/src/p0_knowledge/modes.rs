@@ -468,10 +468,16 @@ mod tests {
         /// On a stripped 400,556-byte BusyBox it grows the reachable walk from
         /// 2,271 instructions to about 74,000 and raises query time from 0.78 s
         /// to 2.05 s. This cost keeps recovery opt-in in every mode.
+        ///
+        /// `mixedtailret` returns a value a function tested beside a tail call,
+        /// and a `void` guard that leaves the tested value in the return
+        /// register compiles to the same bytes (clang's ARM `thr`/`keep`), so
+        /// in the preset it would give such guards a return they do not have.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
-              "structdefs", "indirectonly", "protoorder", "bejoin", "armframes"];
+              "structdefs", "indirectonly", "protoorder", "bejoin", "armframes",
+              "mixedtailret"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open
