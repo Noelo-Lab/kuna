@@ -1631,7 +1631,7 @@ impl Action for ActionReturnRecovery {
                 Some(o) => o,
                 None => continue,
             };
-            if o.is_dead() || o.get_halt_type() != 0 {
+            if o.is_dead() || o.get_halt_type() != 0 || crate::kuna_bejoin::never_reached(data, op) {
                 continue;
             }
             for i in 0..active.get_num_trials() {

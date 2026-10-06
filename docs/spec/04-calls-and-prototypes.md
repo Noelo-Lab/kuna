@@ -1520,6 +1520,15 @@ output sits at the constructed join address (falling back to the first piece
 if no join can be built); more pieces chain PIECEs over contiguous trials.
 The (kuna) `returnpair` gate intercepts this join — §4.4.
 
+A RETURN reached only along branch edges whose conditions literals already
+decide the other way is not scored
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (never_reached)`).
+SPARC's `call` pcode keeps one for a `restore` in its delay slot
+(`didrestore = 0; call; if (didrestore == 0) goto next; return`), and return
+recovery runs before the rule pool folds it away. What it reads in `%o1` is the
+call's clobber, so scoring it would fail the `%o1` trial of a function that
+returns a `long long`. It is still rewritten with the other RETURNs.
+
 Which of the two pieces is the high half is the ABI's answer, not the trial
 order's. The trials sort in storage order, first register first, and the output
 rule that matched them records whether it consumes the most significant piece
@@ -1943,6 +1952,19 @@ value across the call, so anything the callee might touch through a pointer
 keeps a call-crossing cover. The wrong-list failure mode is structural: a
 missing `<unaffected>` stack-pointer record makes every call guard the stack
 pointer, skewing the entire frame layout.
+
+The mirror failure is an output register missing from the killed set. A model
+whose `<output>` carries no `<rule>` kills its output registers on its own
+(`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+(ParamListStandard::initialize)`); one with rules relies on its `<killedbycall>`
+list. The vendored SPARC specs have output rules (the `%o0:%o1` and float joins)
+and listed no killed registers, so `%o0` crossed every call as an unknown
+effect: no output trial was seeded, every call's result was dropped, and the
+caller read the argument it had passed in its place. `SparcV9_32.cspec` now
+kills `o0`, `o1` and `fd0` and `SparcV9_64.cspec` kills `o0`, `fd0` and `fd2`,
+the registers each output list returns in. The other `%o` and float registers
+are scratch too, but nothing reads them after a call expecting a value, and
+they stay unknown effects.
 
 (ida) One record kuna adds that the vendored specs leave implicit: the **x86
 direction flag** (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_dfunaffected.rs`).

@@ -125,6 +125,11 @@
         <register name="sp"/>
         <register name="didrestore"/>
       </unaffected>
+      <killedbycall>
+        <register name="o0"/>
+        <register name="o1"/>
+        <register name="fd0"/>
+      </killedbycall>
       <localrange>
         <range space="stack" first="0xfff0bdc1" last="0xffffffff"/>
         <range space="stack" first="0x0" last="0x5b"/>   <!-- Stack storage for register window -->

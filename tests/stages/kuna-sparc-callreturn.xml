@@ -1,0 +1,95 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default">
+<!--
+    Issue #862 (and part A of #815): on SPARC a call's return value was
+    dropped and the argument register printed in its place.
+
+        f1:  atoi(a0); return a0 + 1;
+        f6:  atoll(a0); return CONCAT44(a1 + 1,...);   (o0:o1 read as the arguments)
+
+    SparcV9_32.cspec lists no killedbycall registers, and its output rules
+    switch off the automatic kill of the output registers, so %o0 crossed
+    every call as an unknown effect (the value before the call) and never
+    became the call's output.  The cspec now kills o0, o1 and fd0 (the
+    output registers) at every call.  That alone turned a function's own
+    long long into an int (widen printed return a0 >> 0x1f): SPARC's call
+    p-code keeps a RETURN for a restore in the delay slot behind
+    if (didrestore == 0), never taken, and that RETURN read %o1 as the
+    call's clobber.  Return recovery now skips such a RETURN.
+
+    Stage: P4 calls and prototypes (call output trials, return recovery).
+    No option: a strict fix (cspec + never-reached RETURN skip).
+    Source (clang 14 -fintegrated-as -fno-pic, sparc-linux-gnu; the calls are
+    relocated to undefined stubs at 0x80000+):
+        at 0x10000 (-O2):
+        int f1(const char *s) { return atoi(s) + 1; }
+        int f4(const char *s) { int r = atoi(s); use(r); return r * 3; }
+        int f5(const char *s) { return atoi(s); }
+        long long f6(const char *s) { return atoll(s) + 1; }
+        void fl(float x, float *p) { *p = ff(x); }
+        long long widen(int x) { ext(); return x; }
+        at 0x20000 (-O0):
+        int g0(const char *s) { int r = atoi(s); if (r > 5) use(r); return r; }
+    Asserts #1-#6: each call's result is used where the code uses it.
+    Assert #7: no call prints as a bare statement with its result dropped.
+    Asserts #8-#9: widen keeps its long long return (o0:o1).
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+9de3bfa04001bfff9010001881c7e00891ea20019de3bfa04001bffa90100018
+4001c038b0100008b05e200381c7e00881e800009de3bfa04001bff290100018
+81c7e00891e800089de3bfa04001c06d90100018b2826001b0c2200081c7e008
+81e800009de3bfa04001c0a690100018c126400081c7e00881e800009de3bfa0
+4001c0e0b2100018b13e201f81c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="f1"/>
+<symbol space="ram" offset="0x10014" name="f4"/>
+<symbol space="ram" offset="0x10034" name="f5"/>
+<symbol space="ram" offset="0x10048" name="f6"/>
+<symbol space="ram" offset="0x10064" name="fl"/>
+<symbol space="ram" offset="0x1007c" name="widen"/>
+<bytechunk space="ram" offset="0x20000" readonly="true">
+9de3bf98f027bffc40017ffed007bffcd027bff8f007bff880a6200606800008
+01000000108000020100000040018035d007bff81080000201000000f007bff8
+81c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x20000" name="g0"/>
+<symbol space="ram" offset="0x80000" name="atoi"/>
+<symbol space="ram" offset="0x80100" name="use"/>
+<symbol space="ram" offset="0x80200" name="atoll"/>
+<symbol space="ram" offset="0x80300" name="ff"/>
+<symbol space="ram" offset="0x80400" name="ext"/>
+</binaryimage>
+<script>
+  <com>lo fu f1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu widen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="sparc-callreturn #1: f1 returns atoi's result plus one" min="1" max="1">return atoi\(a0\) \+ 1;</stringmatch>
+<stringmatch name="sparc-callreturn #2: f5 returns atoi's result" min="1" max="1">return atoi\(a0\);</stringmatch>
+<stringmatch name="sparc-callreturn #3: f4 and g0 keep atoi's result" min="2" max="2">v1 = atoi\(a0\);</stringmatch>
+<stringmatch name="sparc-callreturn #4: f4 returns three times atoi's result, g0 passes it to use" min="2" max="2">(return v1 \* 3;|use\(v1\);)</stringmatch>
+<stringmatch name="sparc-callreturn #5: f6 reads atoll's o0:o1 result, not a second argument" min="1" max="1">= atoll\(a0\);</stringmatch>
+<stringmatch name="sparc-callreturn #6: fl stores ff's fs0 result" min="1" max="1">\*a1 = ff\(a0\);</stringmatch>
+<stringmatch name="sparc-callreturn #7: no call result is dropped" min="0" max="0">^\s*(atoi|atoll|ff)\(</stringmatch>
+<stringmatch name="sparc-callreturn #8: widen still returns a long long" min="1" max="1">unsigned long long widen\(int4 a0\)</stringmatch>
+<stringmatch name="sparc-callreturn #9: widen does not lose its low word" min="0" max="0">return a0 >> 0x1f;</stringmatch>
+</decompilertest>

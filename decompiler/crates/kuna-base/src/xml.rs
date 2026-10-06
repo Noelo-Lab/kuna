@@ -1987,7 +1987,9 @@ mod tests {
         // variadic call drops the undeclared upper half (GH-876)
         // and kuna-zextword / a zero-extended word return keeps its register
         // where every 32-bit return is sign-extended (GH-865)
-        assert_eq!(count, 423, "corpus file count drifted");
+        // and kuna-sparc-callreturn + kuna-sparc64-callreturn / a SPARC call's
+        // result is its output, not the argument register (#862)
+        assert_eq!(count, 425, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
