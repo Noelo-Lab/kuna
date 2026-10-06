@@ -2327,7 +2327,7 @@ but GCC and clang callers extend it to 32 bits by the sign of its type, and
 clang callees rely on it: `long widen(unsigned char c) { return c; }` is
 `mov eax,edi; ret`, which printed `(unsigned long)CONCAT31(v1,c)` with `v1`
 unassigned and prints `(unsigned long)c` under `compiler`. A GCC callee extends
-the value itself, so the stated extension is dead there and nothing changes.
+the value itself, so there the stated extension is almost always dead.
 x86-64 return values, the Windows and Go conventions, and i386, whose arguments
 travel on the stack, keep the spec's extension. `off` keeps every spec's
 extension.
