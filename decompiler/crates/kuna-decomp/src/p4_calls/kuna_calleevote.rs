@@ -107,7 +107,10 @@ pub struct Typed {
 }
 
 /// One direct call: the caller, the call instruction, and what each argument
-/// slot carried (`None` where the storage or the type could not be read).
+/// slot carried (`None` where the storage or the type could not be read, or
+/// the value is a `signed char *` or `unsigned char *` its caller did not
+/// declare: a recovery reads that sign off the width of a load, which commits
+/// to nothing).
 #[derive(Debug, Clone)]
 pub struct CallSite {
     pub caller: uintb,
@@ -225,9 +228,11 @@ fn key_of(a: &Address) -> Option<(int4, uintb)> {
 }
 
 /// Is `ct` a pointer a caller commits to: a named record or union that carries
-/// its layout, a character, or a pointer to a character pointer? An incomplete
-/// shell -- `FILE` as `libctypes` interns it without `glibc` layouts -- is a
-/// name and nothing else, so it is not a commitment.
+/// its layout, a character (`char`, `signed char`, `unsigned char`), or a
+/// pointer to a character pointer? An incomplete shell -- `FILE` as
+/// `libctypes` interns it without `glibc` layouts -- is a name and nothing
+/// else, so it is not a commitment. [`record`] keeps a `signed char *` or
+/// `unsigned char *` only where the caller declared it.
 pub fn committed(ct: &Datatype) -> bool {
     if ct.get_metatype() != type_metatype::TYPE_PTR {
         return false;
@@ -237,10 +242,29 @@ pub fn committed(ct: &Datatype) -> bool {
         type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION => {
             !pt.get_name().is_empty() && !pt.is_incomplete()
         }
-        type_metatype::TYPE_INT | type_metatype::TYPE_UINT => pt.get_size() == 1 && pt.is_char_print(),
-        type_metatype::TYPE_PTR => pt.get_ptr_to().is_some_and(|c| c.get_size() == 1 && c.is_char_print()),
+        type_metatype::TYPE_INT | type_metatype::TYPE_UINT => is_character(&pt),
+        type_metatype::TYPE_PTR => pt.get_ptr_to().is_some_and(|c| is_character(&c)),
         _ => false,
     }
+}
+
+fn is_character(ct: &Datatype) -> bool {
+    ct.get_size() == 1 && matches!(ct.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT)
+}
+
+/// Is `ct` a pointer, or a pointer to a pointer, to a `signed char` or an
+/// `unsigned char` rather than a plain `char`?
+fn points_at_a_signed_byte(ct: &Datatype) -> bool {
+    let Some(pt) = ct.get_ptr_to() else { return false };
+    let pt = if pt.get_metatype() == type_metatype::TYPE_PTR { pt.get_ptr_to() } else { Some(pt) };
+    pt.is_some_and(|c| is_character(&c) && !c.is_char_print())
+}
+
+/// Is the value `vn` carries one the function declared the type of: a
+/// parameter, local or global whose variable is type-locked?
+fn declared(fd: &mut Funcdata, vn: VarnodeId) -> bool {
+    let Some(high) = fd.vbank().get(vn).and_then(|v| v.get_high()) else { return false };
+    crate::merge::MergeContext::high_is_type_lock(fd, high)
 }
 
 /// Does `ct` say no more about a pointer-width value than that it is one: a
@@ -324,6 +348,10 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &mut Funcdata) {
                 continue;
             };
             let ct = fd.high_get_type(vn).or_else(|| fd.vbank().get(vn).map(|v| Rc::clone(v.get_type())));
+            if ct.as_deref().is_some_and(points_at_a_signed_byte) && !declared(fd, vn) {
+                args.push(None);
+                continue;
+            }
             args.push(ct.map(|ct| {
                 let frame = points_at_a_pointer(&ct) && crate::kuna_protoorder::addresses_a_frame_object(fd, vn);
                 Typed { addr, size, ct, frame }

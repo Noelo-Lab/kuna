@@ -1320,6 +1320,47 @@ mod tests {
     }
 
 
+    /// `signed char` and `unsigned char` are integers of the sign DWARF states;
+    /// plain `char` stays the core `char` whatever its encoding (AArch64 and ARM
+    /// state it `DW_ATE_unsigned_char`), so a string stays `char *`.
+    #[test]
+    fn a_character_type_keeps_its_stated_sign_and_plain_char_stays_char() {
+        let types = factory();
+        for (name, size, meta, ch) in [
+            ("uint1", 1, type_metatype::TYPE_UINT, false),
+            ("int1", 1, type_metatype::TYPE_INT, false),
+            ("char", 1, type_metatype::TYPE_INT, true),
+        ] {
+            types.set_core_type(name, size, meta, ch).unwrap();
+        }
+        types.cache_core_types().unwrap();
+        let mut dies: BTreeMap<usize, DieSnap> = BTreeMap::new();
+        let cases = [
+            ("char", gimli::DW_ATE_signed_char),
+            ("char", gimli::DW_ATE_unsigned_char),
+            ("signed char", gimli::DW_ATE_signed_char),
+            ("unsigned char", gimli::DW_ATE_unsigned_char),
+            ("character(kind=1)", gimli::DW_ATE_unsigned_char),
+        ];
+        for (off, (name, encoding)) in cases.iter().enumerate() {
+            let mut d = DieSnap::new(gimli::DW_TAG_base_type, 1);
+            d.name = (*name).into();
+            d.byte_size = Some(1);
+            d.encoding = Some(*encoding);
+            dies.insert(off, d);
+        }
+        let built = |off: usize| {
+            let mut walk = TypeWalk::with_gate(true);
+            let t = build_datatype(Some(off), &dies, &types, 1, &mut walk, false).expect("builds");
+            (t.get_metatype(), t.is_char_print())
+        };
+        assert_eq!(built(0), (type_metatype::TYPE_INT, true), "x86 plain char");
+        assert_eq!(built(1), (type_metatype::TYPE_INT, true), "ARM plain char");
+        assert_eq!(built(2), (type_metatype::TYPE_INT, false), "signed char");
+        assert_eq!(built(3), (type_metatype::TYPE_UINT, false), "unsigned char");
+        assert_eq!(built(4), (type_metatype::TYPE_INT, true), "Fortran character");
+    }
+
     /// Parse the DWARF snapshot of a fixture and return the subprogram DIEs that
     /// are *defined* (low_pc + not a declaration), as (name, low_pc).
     fn defined_subprograms(path: &str) -> Vec<(String, u64)> {
