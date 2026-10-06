@@ -24,12 +24,13 @@
 //! ([`returns_decided_value`]):
 //!
 //! * the function itself wrote the register last on every path into the
-//!   RETURN, as wide as the callee states it: no call in between, no path from
+//!   RETURN, no wider than the callee states it: no call in between, no path from
 //!   the entry that leaves the incoming register there;
 //! * walking up the single-predecessor chain from the RETURN, the nearest
 //!   conditional branch whose other side reaches a claimed tail call tests that
 //!   value, in the register or in the one it was copied from on the way (gcc's
-//!   `cmp $5,%edi; jg L; jmp getk; L: mov %edi,%eax; ret`);
+//!   `cmp $5,%edi; jg L; jmp getk; L: mov %edi,%eax; ret`), and the RETURN is
+//!   not on the side where the test found the value equal to a constant;
 //! * from where it is computed, the value only decides branches, moves between
 //!   registers and reaches the claimed tail calls: it is not loaded or stored
 //!   through, stored, counted or passed to another call.
@@ -39,9 +40,9 @@
 //! upstream refuses. The other two conditions are what a scratch value in a
 //! `void` function fails: the stack-protector check `sub %fs:0x28,%rax; jne
 //! fail` leaves `0` in `rax` before every `ret` of a `void` function, but its
-//! branch leads to `__stack_chk_fail`, not to the tail call; `if (!tb[i])
-//! return;` tests the pointer it then loads through; `if (guard++) return;`
-//! counts the value it tests.
+//! branch leads to `__stack_chk_fail`, not to the tail call; `if (!flag)
+//! return;` returns the `0` it found; `if (!tb[i]) return;` tests the pointer
+//! it then loads through; `if (guard++) return;` counts the value it tests.
 //!
 //! The return register is an argument register on ARM, AArch64, RISC-V and
 //! PowerPC, where a `void` function null-checks the pointer it loaded into
@@ -161,7 +162,7 @@ fn write_of(data: &Funcdata, op: OpId, addr: &Address, size: int4) -> Write {
     }
     let (off, end) = (out.get_offset(), out.get_offset().wrapping_add(out.get_size().max(0) as u64));
     let covers = off <= addr.get_offset() && addr.get_offset().wrapping_add(size.max(0) as u64) <= end;
-    if covers && o.code() != OpCode::CPUI_CALLOTHER && value_width(data, op) == Some(size) {
+    if covers && o.code() != OpCode::CPUI_CALLOTHER && value_width(data, op).is_some_and(|w| w <= size) {
         Write::Own
     } else {
         Write::Refuse
@@ -183,8 +184,8 @@ fn value_width(data: &Funcdata, op: OpId) -> Option<int4> {
 /// `ret`?
 ///
 /// Walking back from `ret` over every predecessor, the first op whose output
-/// shares a byte with the register must cover all of it with a value as wide
-/// as `size` ([`value_width`]) and be an ordinary op of the function; a CALL or
+/// shares a byte with the register must cover all of it with a value no wider
+/// than `size` ([`value_width`]) and be an ordinary op of the function; a CALL or
 /// CALLIND met first (its result or clobber is what the RETURN would read), a
 /// CALLOTHER output, a partial write, the function's entry (the incoming
 /// register) and a walk past [`OWN_WALK_BLOCKS`] all refuse. The `r0 = r0`
@@ -237,8 +238,9 @@ fn last_write_is_own(data: &Funcdata, ret: OpId, addr: &Address, size: int4) -> 
 /// read (`mov %edi,%eax`). The first block on the chain ending in a CBRANCH
 /// whose other side reaches the block of a RETURN in `tail_rets`
 /// ([`reaches_tail`]) must compute its condition from that value
-/// ([`condition_feeders`]); the climb then goes on to the op that wrote the
-/// value other than by copying it. Any other write of the value before the
+/// ([`condition_feeders`]), and not be the side where that test found the value
+/// equal to a constant ([`returns_the_constant`]); the climb then goes on to
+/// the op that wrote the value other than by copying it. Any other write of the value before the
 /// test, a join, the entry, a call or [`CHAIN_BLOCKS`] blocks first refuse.
 fn decided_origin(data: &Funcdata, ret: OpId, addr: &Address, size: int4, tail_rets: &[OpId]) -> Option<OpId> {
     let tail_blocks: Vec<BlockId> =
@@ -248,6 +250,7 @@ fn decided_origin(data: &Funcdata, ret: OpId, addr: &Address, size: int4, tail_r
     let mut cur = data.op_previous_op(ret);
     let mut feeders: Option<Vec<OpId>> = None;
     let mut decided = false;
+    let mut side: Option<(BlockId, BlockId)> = None;
     for _ in 0..CHAIN_BLOCKS {
         while let Some(op) = cur {
             let o = data.obank().get(op)?;
@@ -259,6 +262,9 @@ fn decided_origin(data: &Funcdata, ret: OpId, addr: &Address, size: int4, tail_r
                     .filter_map(|i| o.get_in(i))
                     .filter_map(|v| data.vbank().get(v))
                     .any(|v| overlaps(v.get_addr(), v.get_size(), &tracked.0, tracked.1));
+                if decided && side.is_some_and(|(p, s)| returns_the_constant(data, p, s, &tracked)) {
+                    return None;
+                }
             }
             let out = o.get_out().and_then(|v| data.vbank().get(v));
             if out.is_some_and(|v| overlaps(v.get_addr(), v.get_size(), &tracked.0, tracked.1))
@@ -283,6 +289,7 @@ fn decided_origin(data: &Funcdata, ret: OpId, addr: &Address, size: int4, tail_r
             let p = data.bblocks_ref().block(pred);
             let other = (0..p.size_out()).map(|k| p.get_out(k)).find(|&s| s != bl);
             feeders = other.filter(|&o| reaches_tail(data, o, &tail_blocks)).map(|_| condition_feeders(data, pred));
+            side = Some((pred, bl));
         }
         bl = pred;
         cur = data.bb_op_tail(pred);
@@ -291,14 +298,26 @@ fn decided_origin(data: &Funcdata, ret: OpId, addr: &Address, size: int4, tail_r
 }
 
 /// The register a COPY or extension `op` reads, when it moves one register's
-/// value into another.
+/// value into another register or a temporary.
 fn register_copy_source(data: &Funcdata, op: OpId) -> Option<(Address, int4)> {
     let o = data.obank().get(op)?;
     if !matches!(o.code(), OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT) {
         return None;
     }
     let v = data.vbank().get(o.get_in(0)?)?;
-    (v.get_space().get_type() == spacetype::IPTR_PROCESSOR).then(|| (v.get_addr().clone(), v.get_size()))
+    let out = data.vbank().get(o.get_out()?)?;
+    (is_register(v.get_addr()) && held(out.get_addr())).then(|| (v.get_addr().clone(), v.get_size()))
+}
+
+/// Is `addr` in the register space?
+fn is_register(addr: &Address) -> bool {
+    addr.get_space().is_some_and(|s| s.get_name() == "register")
+}
+
+/// Is `addr` a register or a p-code temporary, rather than memory: a COPY to
+/// `r0x4001c0`, which is what `mov %eax,g(%rip)` lifts to, is a store?
+fn held(addr: &Address) -> bool {
+    is_register(addr) || addr.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_INTERNAL)
 }
 
 /// How many blocks [`only_decides`] follows the value through.
@@ -311,7 +330,9 @@ const USE_WALK_BLOCKS: usize = 32;
 /// copy or extension of it is the value again; any other op reading it, or
 /// reading what was computed from it, computes a derived value, and a derived
 /// value may only reach a CBRANCH (the flags of `cmp $5,%eax`, MIPS `slti`). A
-/// LOAD or STORE through or of either, a CALLOTHER or BRANCHIND reading either,
+/// LOAD or STORE through or of either, a write of either to memory (`mov
+/// %eax,g(%rip)` lifts to a COPY into `r0x4001c0`), a CALLOTHER or BRANCHIND
+/// reading either,
 /// and a call other than one of `tail_calls` while either sits in a register
 /// the function's model passes arguments in all refuse: the value is used as a
 /// pointer, stored, counted (`lea 1(%rax),%edx` of a recursion guard), or
@@ -360,6 +381,9 @@ fn only_decides(data: &Funcdata, origin: OpId, tail_calls: &[OpId]) -> bool {
                 _ => {}
             }
             let Some(out) = out else { continue };
+            if (reads_value || reads_derived) && !held(&out.0) {
+                return false;
+            }
             value.retain(|r| !overlaps(&r.0, r.1, &out.0, out.1));
             derived.retain(|r| !overlaps(&r.0, r.1, &out.0, out.1));
             if reads_value && !reads_derived && register_copy_source(data, op).is_some() {
@@ -385,6 +409,107 @@ fn only_decides(data: &Funcdata, origin: OpId, tail_calls: &[OpId]) -> bool {
         }
     }
     true
+}
+
+/// Is `side`, a successor of the CBRANCH ending `bl`, the one where the branch
+/// has tested `value` equal to a constant?
+///
+/// Then the RETURN there hands back a value it knows, not one the test let
+/// through: `if (!flag) return; ...; clear();` loads `flag` into `eax` and
+/// leaves the `0` there, and `void` functions do that as readily as ones
+/// returning `0`. The condition is read by storage before heritage
+/// ([`equality_test`]); the true edge is the branch taken.
+fn returns_the_constant(data: &Funcdata, bl: BlockId, side: BlockId, value: &(Address, int4)) -> bool {
+    let Some(cb) = data.bb_op_tail(bl) else { return false };
+    let Some(o) = data.obank().get(cb).filter(|o| o.code() == OpCode::CPUI_CBRANCH) else { return false };
+    let b = data.bblocks_ref().block(bl);
+    if b.size_out() != 2 || b.get_true_out() == b.get_false_out() {
+        return false;
+    }
+    let Some(eq) = o.get_in(1).and_then(|c| equality_test(data, cb, c, value, TEST_DEPTH)) else { return false };
+    (eq != o.is_boolean_flip()) == (b.get_true_out() == side)
+}
+
+/// How many defining ops [`equality_test`] and [`pins`] follow.
+const TEST_DEPTH: u32 = 8;
+
+/// Is `cond`, read at `at`, true exactly where `value` equals a constant
+/// (`Some(true)`), exactly where it does not (`Some(false)`), or neither?
+fn equality_test(data: &Funcdata, at: OpId, cond: VarnodeId, value: &(Address, int4), depth: u32) -> Option<bool> {
+    let c = data.vbank().get(cond)?;
+    if depth == 0 || c.is_constant() {
+        return None;
+    }
+    let def = def_before(data, at, c.get_addr(), c.get_size())?;
+    let o = data.obank().get(def)?;
+    match o.code() {
+        OpCode::CPUI_BOOL_NEGATE => equality_test(data, def, o.get_in(0)?, value, depth - 1).map(|e| !e),
+        OpCode::CPUI_COPY => equality_test(data, def, o.get_in(0)?, value, depth - 1),
+        OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => {
+            let konst = |v: VarnodeId| data.vbank().get(v).is_some_and(|v| v.is_constant());
+            let (a, b) = (o.get_in(0)?, o.get_in(1)?);
+            let e = match (konst(a), konst(b)) {
+                (false, true) => a,
+                (true, false) => b,
+                _ => return None,
+            };
+            pins(data, def, e, value, depth - 1).then_some(o.code() == OpCode::CPUI_INT_EQUAL)
+        }
+        _ => None,
+    }
+}
+
+/// Is `e`, read at `at`, a one-to-one function of `value`, so that comparing
+/// it with a constant compares `value` with one: the value itself, a copy or
+/// extension of it, it plus, minus or exclusive-or a constant, or `x & x` (the
+/// `test %eax,%eax` of a zero test)? Any part of the register counts as the
+/// value: the `eax` tested before `rax = zext(eax)` is returned.
+fn pins(data: &Funcdata, at: OpId, e: VarnodeId, value: &(Address, int4), depth: u32) -> bool {
+    let Some(v) = data.vbank().get(e) else { return false };
+    if overlaps(v.get_addr(), v.get_size(), &value.0, value.1) {
+        return true;
+    }
+    if depth == 0 || v.is_constant() {
+        return false;
+    }
+    let Some(def) = def_before(data, at, v.get_addr(), v.get_size()) else { return false };
+    let Some(o) = data.obank().get(def) else { return false };
+    let input = |k: int4| o.get_in(k).and_then(|x| data.vbank().get(x).map(|v| (x, v)));
+    let (Some((i0, v0)), second) = (input(0), input(1)) else { return false };
+    let follow = |x: VarnodeId| pins(data, def, x, value, depth - 1);
+    match o.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT | OpCode::CPUI_INT_2COMP | OpCode::CPUI_INT_NEGATE => {
+            follow(i0)
+        }
+        OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_XOR => match second {
+            Some((_, v1)) if v1.is_constant() => follow(i0),
+            Some((i1, _)) if v0.is_constant() => follow(i1),
+            _ => false,
+        },
+        OpCode::CPUI_INT_AND | OpCode::CPUI_INT_OR => match second {
+            Some((_, v1)) if !v0.is_constant() && v0.get_addr() == v1.get_addr() && v0.get_size() == v1.get_size() => {
+                follow(i0)
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// The op before `at` in its block that writes `[addr, addr+size)`, when the
+/// nearest write of any of those bytes writes exactly them.
+fn def_before(data: &Funcdata, at: OpId, addr: &Address, size: int4) -> Option<OpId> {
+    let mut cur = data.op_previous_op(at);
+    while let Some(op) = cur {
+        let o = data.obank().get(op)?;
+        if let Some(v) = o.get_out().and_then(|v| data.vbank().get(v)) {
+            if overlaps(v.get_addr(), v.get_size(), addr, size) {
+                return (v.get_addr() == addr && v.get_size() == size).then_some(op);
+            }
+        }
+        cur = data.op_previous_op(op);
+    }
+    None
 }
 
 /// Does a block within [`REACH_BLOCKS`] forward of `from` hold one of `tails`?

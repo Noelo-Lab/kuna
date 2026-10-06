@@ -1,8 +1,10 @@
 # gcc 11 -O2 -fcf-protection=none and clang 14 -O2 builds of functions that
 # return a value they also compare on one path and tail-call a value-returning
 # function on the other (keep_zc with gcc's -fzero-call-used-regs=all scrub,
-# cut to six registers), with two that stay void: one tail-calls a void
-# function, one leaves eax unwritten on its other path.
+# cut to six registers), with four that stay void: one tail-calls a void
+# function, one loads through the pointer it tests, one returns only where it
+# found eax zero (`if (!g) return;`, which `if (!g) return 0;` also compiles
+# to), and one leaves eax unwritten on its other path.
 .text
 .globl getv
 .type getv,@function
@@ -81,6 +83,17 @@ keepl_gcc:
     ret
 .size keepl_gcc, .-keepl_gcc
 
+.globl keeps_gcc
+.type keeps_gcc,@function
+keeps_gcc:
+    movslq (%rdi), %rax
+    cmpq $5, %rax
+    jg .Lkeeps_gcc_ret
+    jmp getl
+.Lkeeps_gcc_ret:
+    ret
+.size keeps_gcc, .-keeps_gcc
+
 .globl keep_zc
 .type keep_zc,@function
 keep_zc:
@@ -109,6 +122,29 @@ vkeep_gcc:
 .Lvkeep_gcc_tail:
     jmp vsink
 .size vkeep_gcc, .-vkeep_gcc
+
+.globl vptr
+.type vptr,@function
+vptr:
+    movq (%rdi), %rax
+    testq %rax, %rax
+    je .Lvptr_ret
+    movsbl 4(%rax), %edi
+    jmp getk
+.Lvptr_ret:
+    ret
+.size vptr, .-vptr
+
+.globl zflag
+.type zflag,@function
+zflag:
+    movl g(%rip), %eax
+    testl %eax, %eax
+    jne .Lzflag_tail
+    ret
+.Lzflag_tail:
+    jmp getv
+.size zflag, .-zflag
 
 .globl vin
 .type vin,@function

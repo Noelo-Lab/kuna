@@ -1,10 +1,13 @@
 //! `mixedtailret`: a function that returns a value it also compares on one
 //! path and tail-calls a value-returning function on the other returns that
 //! value on both paths in `decompile-all`, with no caller reading it. The x86-64
-//! fixture holds gcc and clang -O2 builds, one with gcc's `-fzero-call-used-regs`
-//! scrub; the printed C is compiled against it and compared with it. A function whose tail callee returns nothing, and one
-//! that leaves the return register unwritten on its other path, stay `void`;
-//! so does an AArch64 function whose tail callee takes its value in `w0`.
+//! fixture holds gcc and clang -O2 builds, one with gcc's
+//! `-fzero-call-used-regs` scrub; the printed C is compiled against it and
+//! compared with it. A function whose tail callee returns nothing, one that
+//! loads through the pointer it tests, one that returns only where it found the
+//! value zero, and one that leaves the return register unwritten on its other
+//! path stay `void`; so does an AArch64 function whose tail callee takes its
+//! value in `w0`.
 mod common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
@@ -18,6 +21,7 @@ const RETURNING: &[(&str, &str)] = &[
     ("keep_clang", "int"),
     ("fwd_clang", "int"),
     ("keepl_gcc", "long"),
+    ("keeps_gcc", "long"),
     ("keep_zc", "int"),
 ];
 
@@ -28,11 +32,13 @@ int keep_gcc(int *);
 int keep_clang(int *);
 int fwd_clang(int *);
 long keepl_gcc(long *);
+long keeps_gcc(int *);
 int keep_zc(int *);
 int emitted_keep_gcc(int *);
 int emitted_keep_clang(int *);
 int emitted_fwd_clang(int *);
 long emitted_keepl_gcc(long *);
+long emitted_keeps_gcc(int *);
 int emitted_keep_zc(int *);
 int main(void) {
     for (int a = -20; a < 20; a++) {
@@ -45,6 +51,7 @@ int main(void) {
         if (fwd_clang(&x) != emitted_fwd_clang(&x)) return 3;
         if (keepl_gcc(&y) != emitted_keepl_gcc(&y)) return 4;
         if (keep_zc(&x) != emitted_keep_zc(&x)) return 5;
+        if (keeps_gcc(&x) != emitted_keeps_gcc(&x)) return 6;
     }
     return 0;
 }
@@ -103,7 +110,7 @@ fn a_value_returned_beside_a_tail_call_is_returned() {
         emitted.push_str(&text.replace(&format!(" {name}("), &format!(" emitted_{name}(")));
         emitted.push('\n');
     }
-    for name in ["vkeep_gcc", "vin"] {
+    for name in ["vkeep_gcc", "vptr", "zflag", "vin"] {
         let text = code(&functions, name);
         assert!(text.contains(&format!("void {name}(")), "{text}");
     }

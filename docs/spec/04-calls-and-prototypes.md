@@ -4501,20 +4501,27 @@ reads the raw p-code before the first heritage:
 
 * the function itself writes the register last on every path into the RETURN
   (`last_write_is_own`): walking back over every predecessor, the first write
-  must cover the register with a value as wide as the callee states (one
-  extension deep, so `RAX = zext(EAX)` is four bytes), and a call, a CALLOTHER,
-  a partial write or the function's entry met first refuses;
+  must cover the register with a value no wider than the callee states (one
+  extension deep, so `RAX = zext(EAX)` is four bytes and an `int` extended to
+  a `long` callee's `rax` qualifies), and a call, a CALLOTHER, a partial write
+  or the function's entry met first refuses;
 * the nearest conditional branch on the RETURN's single-predecessor chain whose
   other side reaches a claimed tail call within 16 blocks tests that value
   (`decided_origin`): the returned value is followed back through register
   copies and extensions, so gcc's `cmp $5,%edi; jg L; jmp getk; L: mov
   %edi,%eax; ret` tests the `edi` it returns, and the branch's condition is
-  traced to its flag computations by storage (`condition_feeders`);
+  traced to its flag computations by storage (`condition_feeders`). The RETURN
+  must not be on the side where that test found the value equal to a constant
+  (`returns_the_constant`, which reads `test %eax,%eax; jne`, `cmp $-1,%eax;
+  je`, `cbz w0` and the like): `if (!flag) return; ...; clear();` leaves the
+  `0` it tested in `eax`, and a `void` function does that as readily as one
+  that returns `0`;
 * from the op that computed it, the value only decides branches, moves between
   registers and reaches the claimed tail calls (`only_decides`): anything
   computed from it may only reach a CBRANCH, and a load or store through it or
-  of it, a CALLOTHER or BRANCHIND reading it, or another call while it sits in
-  an argument register refuses.
+  of it (a `mov %eax,g(%rip)` lifts to a COPY into the global's varnode and
+  counts as one), a CALLOTHER or BRANCHIND reading it, or another call while
+  it sits in an argument register refuses.
 
 The last two are what a value left in the return register of a `void`
 function fails. A first version of the rule had only the first condition and
@@ -4525,9 +4532,13 @@ printer; its branch leads to `__stack_chk_fail`, not to a tail call. iproute2's
 `print_flag` tests the pointer `tb[i]` and then loads through it, dpkg's
 `cu_postrmupgrade` counts the recursion guard it tests (`if (guard++)
 return;`), and tar's `arg` keeps its first argument in `rax` to address
-through. The bytes cannot separate a `void` function that tests a value it
-computed only for the test and leaves it in the return register from a
-function that returns it; the rule accepts that.
+through. Letting a value narrower than the callee's return through (an `int`
+returned by a `long` function) brought in a second shape, 11 functions of
+bash, rsyslog and iproute2, all DWARF `void` and all `if (!flag) return;`
+beside a tail call, which the equal-side refusal removes; `return x;` under
+`x == -1` goes with them. The bytes cannot separate a `void` function that
+tests a value it computed only for the test and leaves it in the return
+register from a function that returns it; the rule accepts that.
 
 Where the return register is also the first argument register (ARM, AArch64,
 RISC-V, PowerPC), the claim also needs every claimed tail callee's stated
@@ -4555,12 +4566,14 @@ objects built with `clang -O2 -g` for AArch64, ARM, RISC-V 64, MIPS32, i386 and
 PPC64LE from its sources, `decompile-all` changes no function with the option
 on; the shape does not occur there. The witness is
 `decompiler/crates/kuna-cli/tests/mixed_tail_returns.rs`: gcc and clang -O2
-`keep`, clang `fwd`, a `long` variant and the `-fzero-call-used-regs` build
-return their value in `decompile-all` with no caller, and the printed C,
-compiled against the fixture at -O0 and -O2, returns what the binary returns;
-a function whose tail callee is `void` and one that leaves `eax` unwritten on
-its other path stay `void`, and with the option off so do the others but the
-scrubbed build, which returns its `xmm0`. An AArch64 object built in the test
+`keep`, clang `fwd`, two `long` variants (a `long` load and a sign-extended
+`int`) and the `-fzero-call-used-regs` build return their value in
+`decompile-all` with no caller, and the printed C, compiled against the
+fixture at -O0 and -O2, returns what the binary returns; a function whose tail
+callee is `void`, one that loads through the pointer it tests, one that
+returns only where it found `eax` zero and one that leaves `eax` unwritten on
+its other path stay `void`, and with the option off
+so do the others but the scrubbed build, which returns its `xmm0`. An AArch64 object built in the test
 covers `keep` and `fwd` there.
 
 ### (kuna) `varargforward` — a declared value forwarded in its own register to a variadic call
