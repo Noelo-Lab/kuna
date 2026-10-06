@@ -519,3 +519,33 @@ fn a_mode_switched_void_body_answers_only_for_non_argument_return_storage() {
     assert!(!callee_preserves_return_storage(&fd, &fc, &argument, 8));
     assert!(callee_preserves_return_storage(&fd, &fc, &first, 8));
 }
+
+/// A locked `int` declaration (DWARF's `int hk(int)`) names only the first
+/// return register. The second is scratch for that call, and the value-returning
+/// arm still answers for it; a body that writes no return register at all does
+/// not get the void helper's answer for it.
+#[test]
+fn a_locked_int_declaration_leaves_the_second_register_to_the_value_arm() {
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    with_two_return_registers(&fd, &mut fc, 0x08);
+    let ram = space(&fd, "ram");
+    fc.proto_mut().set_output(&crate::fspec::ParameterPieces {
+        addr: Address::new(Rc::clone(&ram), 0x00),
+        type_: Some(Rc::new(Datatype::new(8, type_metatype::TYPE_INT))),
+        flags: 0,
+    });
+    fc.proto_mut().set_output_lock(true);
+    let second = Address::new(Rc::clone(&ram), 0x08);
+    assert_eq!(characterize_preserved_output(&fc, &second, 8), Containment::NoContainment);
+    fd.kuna_set_callee_ret_writes(
+        &entry,
+        Rc::new(CalleeReturnWrites::from_parts(vec![(ram.get_index(), 0x00, 8)], Vec::new(), true)),
+    );
+    assert!(callee_preserves_return_storage(&fd, &fc, &second, 8));
+    fd.kuna_set_callee_ret_writes(
+        &entry,
+        Rc::new(CalleeReturnWrites::from_parts(vec![(ram.get_index(), 0x10, 8)], Vec::new(), true)),
+    );
+    assert!(!callee_preserves_return_storage(&fd, &fc, &second, 8));
+}

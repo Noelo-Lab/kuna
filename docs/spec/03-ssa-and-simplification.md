@@ -366,7 +366,11 @@ given only for a register the model never passes an argument in
 (`kuna_rustabi.rs (passes_arguments_in)`): MIPS `$v1`, but not ARM's `r1` or
 x86-64's `RDX`, where a value kept across one call reaches the
 next as a value the caller wrote, which the caller-side argument recovery reads
-as one more argument than that callee takes. A body that writes no return
+as one more argument than that callee takes. A locked non-void declaration, such
+as DWARF's `int hk(int)`, names only `$v0` as the call's output; `$v1`, a register
+the model returns values in that the declaration leaves out, gets the same
+per-register answer (`kuna_calleeretpreserves.rs (undeclared_model_output)`) and
+never the void helper's. A body that writes no return
 storage at all is the void helper above,
 and the body must be a body — more than one decoded instruction, and a write to a
 register the convention itself names, either an argument register or one its

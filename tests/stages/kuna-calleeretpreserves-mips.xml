@@ -37,7 +37,9 @@
     parameter is gone. Pass 2 (on) reads p through a0. aftervoid is kept by
     calleepreserves (setg stores and writes only $v0), the other two by
     calleeretpreserves. hiword is the control: wide writes $v1, so the read of
-    $v1 stays the high word of its result in both passes.
+    $v1 stays the high word of its result in both passes. Pass 3 declares
+    hk as returning int, as DWARF does: the declaration leaves $v1 out of the
+    call's output, and afterstore2 still reads p.
 -->
 <bytechunk space="ram" offset="0x400150" readonly="true">
 4100023c9802428c0800e003211082000400822805004010000000004100023c9402428c0800e003231044004100023c9802428c0800e00321108200
@@ -86,13 +88,17 @@
   <com>lo fu hiword</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>parse line extern int4 hk(int4 x);</com>
+  <com>lo fu afterstore2</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="CALLEERETPRESERVES-MIPS #1: off, $v1 is a pointer local nothing assigns" min="3" max="3">^  unsigned int \*v1; // v1$</stringmatch>
 <stringmatch name="CALLEERETPRESERVES-MIPS #2: off, the store reads through it" min="3" max="3">dat_410290 = \*v1;</stringmatch>
 <stringmatch name="CALLEERETPRESERVES-MIPS #3: off, the callers lose the parameter" min="2" max="2">^void after(store2|branch)\(void\)$</stringmatch>
-<stringmatch name="CALLEERETPRESERVES-MIPS #4: on, the store reads p" min="3" max="3">dat_410290 = \*a0;</stringmatch>
-<stringmatch name="CALLEERETPRESERVES-MIPS #5: on, the callers take p" min="2" max="2">^void after(store2|branch)\(unsigned int \*a0\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPS #4: on, the store reads p, also with hk declared int" min="4" max="4">dat_410290 = \*a0;</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPS #5: on, the callers take p, also with hk declared int" min="3" max="3">^void after(store2|branch)\(unsigned int \*a0\)$</stringmatch>
 <stringmatch name="CALLEERETPRESERVES-MIPS #6: on, a void leaf keeps $v1 too" min="1" max="1">^unsigned int aftervoid\(unsigned int \*a0,unsigned int a1\)$</stringmatch>
 <stringmatch name="CALLEERETPRESERVES-MIPS #7: a callee that writes $v1 still returns it, in both passes" min="2" max="2">return \(int4\)\(\(uint8\)wide\(3\) &gt;&gt; 0x20\);</stringmatch>
 </decompilertest>
