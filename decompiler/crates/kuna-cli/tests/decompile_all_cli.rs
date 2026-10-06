@@ -7043,8 +7043,8 @@ fn callrettype_calls(listing: &str) -> std::collections::BTreeMap<String, Vec<(S
 /// 18446744073709551613), and two that keep an `int` result in an `unsigned
 /// int` and hand it back as `unsigned long` through a reload or a move from
 /// the register it was kept in across another call (`keep_widened`,
-/// `keep_across`, read whole and shifted, where `int` would print
-/// 9223372036854775806), and one that passes such a result to an `unsigned
+/// `keep_across`, read whole and shifted, which prints them `unsigned long` as
+/// declared, where `int` would print 9223372036854775806), and one that passes such a result to an `unsigned
 /// long` parameter (`pass_widened`, where an `int` argument would hand `halve`
 /// a sign-extended value and print 9223372036854775807).  Every fixture is
 /// decompiled with the option
@@ -7129,8 +7129,8 @@ int main(void) {
                 "    v1 = lookup((long *)*a0,a1);",
                 "unsigned short use_s16_as_u(",
                 "unsigned int use_neg_as_unsigned(",
-                "unsigned int keep_widened(",
-                "unsigned int keep_across(",
+                "unsigned long keep_widened(",
+                "unsigned long keep_across(",
             ],
         ),
         (
@@ -7152,8 +7152,8 @@ int main(void) {
                 "  mark(a0);\n",
                 "unsigned short use_s16_as_u(",
                 "unsigned int use_neg_as_unsigned(",
-                "unsigned int keep_widened(",
-                "unsigned int keep_across(",
+                "unsigned long keep_widened(",
+                "unsigned long keep_across(",
             ],
         ),
         (
@@ -7172,8 +7172,8 @@ int main(void) {
                 "return (unsigned long)signed_delta(a0,a1) >> 0x3f;",
                 "unsigned short use_s16_as_u(short a0)",
                 "unsigned int use_neg_as_unsigned(int a0)",
-                "unsigned int keep_widened(",
-                "unsigned int keep_across(",
+                "unsigned long keep_widened(",
+                "unsigned long keep_across(",
             ],
         ),
     ];
