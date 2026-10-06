@@ -831,6 +831,14 @@ pub struct ArchContext {
     /// Read by
     /// [`ActionCallTargetType`](crate::kuna_calltargettype::ActionCallTargetType).
     pub call_target_type: bool,
+    /// (kuna `floatglobals`) The globals the program only moves through float
+    /// registers, once the scan has run; read by
+    /// [`float_only`](crate::kuna_floatglobals::float_only).
+    pub float_globals: Option<Rc<crate::kuna_floatglobals::FloatGlobals>>,
+    /// (kuna `floatglobals`) The option is on and the scan can run but has not.
+    pub float_globals_pending: bool,
+    /// (kuna `floatglobals`) A vote asked while the scan was pending.
+    pub float_globals_wanted: std::cell::Cell<bool>,
     /// (kuna `codescalar`) Refuse a `code` pointee as the data-type of a
     /// dereferenced value; mirrors
     /// [`Architecture::codescalar`](crate::architecture::Architecture).
@@ -1689,6 +1697,9 @@ impl ArchContext {
             rodata_string: false,        // (kuna) rodatastring
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
             call_target_type: false,     // (kuna) option calltargettype
+            float_globals: None,         // (kuna) option floatglobals
+            float_globals_pending: false,
+            float_globals_wanted: std::cell::Cell::new(false),
             struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode::Locals, // (kuna) option structsynth, default `locals`; the real value is copied from the engine Architecture in `build_arch_handle`
             struct_synth_shard: None,
             struct_merge: crate::p5_types::kuna_structmerge::StructMergeMode::Off, // (kuna) option structmerge, default `off`; the real value is copied from the engine Architecture in `build_arch_handle`

@@ -2017,7 +2017,9 @@ mod tests {
         // capped number of statements before its test
         // and gh873-zerofillreturn-a64 / the zero fill above a returned
         // AArch64 vector lane is no part of the value (GH-873)
-        assert_eq!(count, 451, "corpus file count drifted");
+        // and kuna-floatglobals / a float parameter stored into a global the
+        // program only moves through float registers is a float (GH-888)
+        assert_eq!(count, 452, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

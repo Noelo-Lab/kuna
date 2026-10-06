@@ -1,0 +1,93 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A global the program only moves through floating-point registers is a
+    float (option floatglobals, kuna_floatglobals.rs). The script loads three
+    in-tree linked images of floatglobal.c (source beside them): gcc -O2 for
+    x86-64, gcc -O2 for AArch64 and for hard-float ARM.
+
+    fy copies its double parameter into gd and ff its float into gf, and no
+    other code touches either but through a float register. With the option
+    off every global refuses the parameter vote and the parameter prints as an
+    integer the convention passes in a general register; on, the whole-program
+    scan finds gd and gf float-only and the parameters are floats. set_gpun
+    memcpys a float into gpun, which use_gpun adds to as an integer, and clearz
+    zeroes the double gz with an integer store: both globals refuse, and
+    set_gpun and setz keep their integer parameters. Hard-float ARM drops fy's
+    d0 parameter (armfloatargs off), so only ff is asked there.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatglobal_x86_64_gcc_O2</com>
+  <com>read symbols</com>
+  <com>option floatglobals off</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option floatglobals on</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function set_gpun</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function setz</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatglobal_a64_O2</com>
+  <com>read symbols</com>
+  <com>option floatglobals off</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option floatglobals on</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function set_gpun</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function setz</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatglobal_armhf_O2</com>
+  <com>read symbols</com>
+  <com>option floatglobals off</com>
+  <com>load function ff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option floatglobals on</com>
+  <com>load function ff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function set_gpun</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FLOATGLOBALS #1: with the option off a double copied into a global prints as an integer" min="2" max="2">void fy\(unsigned long a0,unsigned int \*a1\)</stringmatch>
+<stringmatch name="FLOATGLOBALS #2: with the option off a float copied into a global prints as an integer" min="3" max="3">void ff\(unsigned int a0,unsigned int \*a1\)</stringmatch>
+<stringmatch name="FLOATGLOBALS #3: a double copied into a float-only global is a double" min="2" max="2">void fy\(float8 a0,unsigned int \*a1\)</stringmatch>
+<stringmatch name="FLOATGLOBALS #4: a float copied into a float-only global is a float" min="3" max="3">void ff\(float4 a0,unsigned int \*a1\)</stringmatch>
+<stringmatch name="FLOATGLOBALS #5: a float memcpy'd into a global read as an integer keeps its integer type" min="3" max="3">void set_gpun\(unsigned int a0\)</stringmatch>
+<stringmatch name="FLOATGLOBALS #6: a double stored into a global an integer store zeroes keeps its integer type" min="2" max="2">void setz\(unsigned long a0\)</stringmatch>
+</decompilertest>

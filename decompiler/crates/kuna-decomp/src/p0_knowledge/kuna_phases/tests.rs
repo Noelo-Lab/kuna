@@ -762,7 +762,8 @@ fn option_values_live_value_present_for_110() {
     // 111 -> 112: +1 for `calltargettype` (live_field = call_target_type).
     // 112 -> 113: +1 for `condexeretuse` (live_field = cond_exe_ret_use).
     // 113 -> 114: +1 for `retsysreg` (live_field = ret_sys_reg).
-    assert_eq!(with_live, 114);
+    // 114 -> 115: +1 for `floatglobals` (live_field = float_globals, default-on).
+    assert_eq!(with_live, 115);
 }
 
 #[test]

@@ -581,14 +581,19 @@ fn family_refuses(data: &Funcdata, vn: VarnodeId, reading: Reading, ct: &Datatyp
     let mut regions: Option<Vec<(i64, Option<i64>)>> = None;
     let family = value_family(data, vn);
     let members: std::collections::HashSet<VarnodeId> = family.iter().copied().collect();
+    let mut globals: Vec<(Address, int4)> = Vec::new();
     for &v in &family {
         let Some(node) = data.vbank().get(v) else { continue };
+        let float_global = float_vote && node.is_persist() && node.get_size() == ct.get_size();
         if node.is_type_lock()
-            || node.is_persist()
+            || (node.is_persist() && !float_global)
             || inside_a_frame_aggregate(data, node, &mut regions)
             || (v != vn && addresses_a_frame_object(data, v))
         {
             return true;
+        }
+        if float_global {
+            globals.push((node.get_addr().clone(), node.get_size()));
         }
         if float_vote && node.is_input() && !a_float_can_arrive_in(data, node) {
             return true;
@@ -652,7 +657,13 @@ fn family_refuses(data: &Funcdata, vn: VarnodeId, reading: Reading, ct: &Datatyp
         }
     }
     match class {
-        Some(Class::Float) => integer_seen || bits_seen || handed_on || (loaded_elsewhere && !float_seen),
+        Some(Class::Float) => {
+            integer_seen
+                || bits_seen
+                || handed_on
+                || (loaded_elsewhere && !float_seen)
+                || globals.iter().any(|(at, size)| !crate::kuna_floatglobals::float_only(data, at, *size))
+        }
         Some(Class::Pointer) => float_seen || integer_seen || pointee_refuses(data, &family, ct, 0),
         _ => float_seen,
     }

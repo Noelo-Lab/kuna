@@ -2710,9 +2710,10 @@ a pointer built from a data-space constant (`kuna_floatreg.rs
 declaration for every function, and `void set_gi_bits(float f) { memcpy(&gi,
 &f, 4); }` beside `int use_gi(void) { return gi + 1; }` has none under which
 `gi = a0` of a `float a0` stores what the machine stores. So `void fy(int *p,
-double b) { gd = b; *p = 1; }` still prints `fy(unsigned long a0, ..)`: deciding
-that a global is a float takes evidence from the whole binary, not from one
-function that writes it.
+double b) { gd = b; *p = 1; }` printed `fy(unsigned long a0, ..)` from this
+function alone: deciding that a global is a float takes evidence from the whole
+binary, not from one function that writes it. That evidence is what
+`floatglobals` gathers (the next section); a global it finds is accepted here.
 
 The type is the register's, not the source's: an SSE-class `struct { float x, y;
 }` that x86-64 passes in `xmm0` prints as one `double`, in the register the
@@ -2756,6 +2757,94 @@ requirement. The requirement holds as well for a parameter arithmetic already
 made a float, whose callers converted the same way: crazyflie's newlib `sinf`
 hands `sub_8004afc` the reduced argument out of a stack slot it types `unsigned
 int` (`vldr s0, [sp]`), and printed it converted.
+
+### A global the program only moves through float registers holds a float (`kuna_floatglobals.rs`)
+
+The float votes above refuse a global because one function cannot see how the
+others use it. Option `floatglobals` (default on) asks the whole program. A
+vote asks only once everything else it checks has held, so the question is put
+only where its answer decides the vote: a global -- a data-space Varnode, or a
+load or store through a constant address -- is then the one objection left.
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_floatglobals.rs (float_only)`
+answers no while the program has not been scanned and marks the function. The
+console's decompile step (`kuna-console/src/decompile_step.rs`) then scans the
+program once and decompiles that function again; every later function of the
+run reads the answer from its `ArchContext`. An integer program rarely asks at
+all (gzip, grep, ls, bash and od never do), and when one does the scan costs
+about one percent of a whole-program decompile. A front-end without a loaded
+image (the XML datatest corpus) never scans, so every global refuses as before.
+
+The scan
+(`decompiler/crates/kuna-analysis/src/listing/kuna_floatglobals.rs (scan)`)
+walks every function of the inventory the console stashed at the commit
+boundary, and every function they call, from its entry: fall-through, branches,
+no fall-through past a call to a no-return function, and the cases of a switch.
+A switch's table is read by `kuna_switchtable` where it can, and otherwise the
+jump is evaluated (`emulated_switch`) at every index the range check just ahead
+of it admits (the comparison feeding the conditional branch around the
+dispatch names the index register and its bound): Thumb's `tbb [pc, r3]`,
+`adr r2, table; ldr pc, [r2, r3, lsl #2]` (case addresses lose the Thumb bit),
+gcc's `movslq (%rbp,%rax,4),%rax; add %rbp,%rax; jmp *%rax`. A table base set
+up before a loop that dispatches on every iteration is known only from the
+function's solved constants, so a jump left unread is evaluated again with
+them, the cases found are walked, and the function is solved again. Within a
+function, registers and stack slots
+are followed as constants to a fixed point over the control flow, a value
+surviving a join only where every incoming path agrees, as the decompiler's own
+constant propagation does: the entry holds the stack pointer and the tracked
+registers the loader and specification seed (`t9` on MIPS); integer
+operations on constants fold; a load from read-only or executable memory folds
+to the word there, and a pointer-sized load from writable memory folds when the
+word is a data address (a GOT slot); a call clobbers the registers the default
+convention passes and returns values in, and pops its extra bytes. So the
+address of every load and store the decompiler resolves to a global is known
+here too, however it is formed -- `movsd %xmm0,gd(%rip)`, `ldr r3,=gd; vstr
+d0,[r3]`, `adrp x1,gd; str d0,[x1,#:lo12:gd]`, `movw`/`movt`.
+
+Each such access is filed with its width and class. It is a float access when
+the loaded value is read by a float operation or moved, through copies,
+extensions and pieces, into a floating-point register, and when the stored
+value comes from a float operation or a floating-point register; the registers
+are named per processor family (`XMM`/`ST` on x86, `s`/`d`/`q` on ARM, the
+SIMD views on AArch64, `f`/`fa`/`ft`/`fs` on RISC-V, `f` on MIPS, `f`/`vs` on
+PowerPC). Anything else is an integer access: a general-register move, an
+integer operation, an immediate stored there (`movl $0, gz` zeroes a `double`
+through the integer unit), a soft-float helper's argument (a Cortex-M4F
+`(double)gf` loads `gf` into `r0` for `__aeabi_f2d`). A data address stored
+through the stack pointer lands in a tracked slot and comes back on the reload;
+one stored through an unknown pointer after the walk has lost the stack pointer
+(an aligned or `alloca`'d frame) may be a spill that comes back unseen, so every
+global within 256 bytes of it stays undecided.
+
+A global in writable data is a float of width `w` when it has an access, every
+access to it is a float access of exactly `w` bytes (4 or 8), no access of
+another address overlaps it, and no escape covers it. i386 and SPARC, whose
+position-independent code reaches its globals through a register a thunk call
+sets, are not scanned; RISC-V globals addressed through `gp` are not resolved
+here or by the decompiler, and stay pointer stores.
+
+Three votes accept such a global. The parameter vote's family may store into or
+load from it (`kuna_floatreg.rs (only_moved_as_a_float)`, a data-space Varnode
+or a LOAD/STORE through its constant address, `float_only_through`), so `fy`
+prints `void fy(double a0,unsigned int *a1)`. The argument vote takes a read of
+it the way it takes a read of read-only memory (`kuna_floatreg.rs
+(argument_vote)`, the read found through its copies by `global_read`), and a
+call that passes it in a float register to a parameter no recovery types is
+not evidence against the float, so `pass` prints `sink(gd2)` instead of
+`sink(((union { unsigned long long from; double to; }){ .from = gd2 }).to)`:
+Cortex-M firmware loses most of the union reinterpretations it printed for
+float globals handed to float helpers. The vote also holds when the read
+already carries the float, so a pass that sees its own earlier answer does not
+withdraw it and the lattice settles. And `protoorder`'s float votes no longer
+count such a global in a value's family as a refusal (`kuna_protoorder.rs
+(family_refuses)`).
+
+The answer is evidence for those votes, never a declaration: the global keeps
+its type, so a function that reads it is typed by its own code. A type-locked
+float global that some function reads as an integer prints a conversion
+(`return gf + 1;` for an `add` of its bits), and a misread of the program here
+must not be able to cause that. With `floatglobals off` every global refuses a
+float vote, as before the option existed.
 
 ### A narrow value returned zero-extended is unsigned (`kuna_zextreturn.rs`)
 

@@ -2861,8 +2861,9 @@ fn compile_pair_and_run_each(tag: &str, lib: &str, main: &str) -> Vec<(String, S
 /// passes in a general register: `fs(unsigned long a0,unsigned int *a1,..)`
 /// read the pointer from `rsi`. The printed functions, compiled on the host
 /// beside a caller that declares the source prototypes, must store what the
-/// source stores. `fy` copies its double into a global another function may
-/// read as an integer, and keeps its integer type. `floatparam_a64.o` (AArch64,
+/// source stores. `fy` copies its double into a global nothing else in the
+/// object touches, which `floatglobals` finds is only ever a float.
+/// `floatparam_a64.o` (AArch64,
 /// clang -O2) and `floatparam_x86_64_clang_O0.o`: `negsink` hands `sink` the
 /// bits of an integer in `s0`/`xmm0`, and `k3b` hands `use` the bits `iget3`
 /// returns in an integer register, beside an `iget3` printed returning
@@ -2892,7 +2893,7 @@ fn a_float_register_parameter_round_trips() {
             "void ff(float a0,unsigned int *a1,float *a2)",
             "void fr(double a0,",
             "void sink(float a0,float a1,float *a2)",
-            "void fy(unsigned long a0,unsigned int *a1)",
+            "void fy(double a0,unsigned int *a1)",
         ] {
             assert!(stdout.contains(want), "{tag}: missing `{want}`:\n{stdout}");
         }
@@ -2942,6 +2943,56 @@ fn a_float_register_parameter_round_trips() {
     );
     for (cc, got) in compile_and_run_each("floatparam-trunc-a64", &src) {
         assert_eq!(got, "40c90000", "{cc}: the printed C computes something else:\n{printed}");
+    }
+}
+
+/// `floatglobal_{x86_64_gcc_O2,x86_64_clang_O0,a64_O2,armhf_O2}` (linked,
+/// `floatglobal.c`): `fy`, `fw` and `ff` copy a float parameter into a global
+/// the program only moves through float registers, and `pass`/`passf` hand one
+/// to a float parameter. Each parameter printed as an integer the convention
+/// passes in a general register (`fy(unsigned long a0,unsigned int *a1)` read
+/// the pointer from `rsi`), and each argument as a union reinterpretation of an
+/// integer. `gpun` takes a float's bits and is added to as an integer, so
+/// `set_gpun` keeps its integer parameter; `gz` is zeroed by an integer store at
+/// -O2 (`setz` keeps `unsigned long`) and through `xmm0` at clang -O0 (`setz`
+/// takes the `double`). The printed functions, compiled on the host beside a
+/// caller that declares the source prototypes, must store what the source
+/// stores. Hard-float ARM drops `fy`'s and `fw`'s `d0` parameter
+/// (`armfloatargs` off), so only `ff` is compiled there.
+#[test]
+fn a_global_only_moved_through_float_registers_round_trips() {
+    let sp = specs();
+    let fixture = |name: &str| repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+    for (tag, name, doubles, setz) in [
+        ("x86-gcc-O2", "floatglobal_x86_64_gcc_O2", true, "void setz(unsigned long a0)"),
+        ("x86-clang-O0", "floatglobal_x86_64_clang_O0", true, "void setz(double a0)"),
+        ("a64-O2", "floatglobal_a64_O2", true, "void setz(unsigned long a0)"),
+        ("armhf-O2", "floatglobal_armhf_O2", false, "void ff(float a0,unsigned int *a1)"),
+    ] {
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture(name), "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        let mut want = vec!["void ff(float a0,unsigned int *a1)", "sinkf(gf2)", "void set_gpun(unsigned int a0)", setz];
+        if doubles {
+            want.extend(["void fy(double a0,unsigned int *a1)", "void fw(double a0,unsigned int a1)", "sink(gd2)"]);
+        }
+        for w in want {
+            assert!(stdout.contains(w), "{tag}: missing `{w}`:\n{stdout}");
+        }
+        assert!(!stdout.contains(".from = gf2") && !stdout.contains(".from = gd2"), "{tag}: a float global reinterpreted:\n{stdout}");
+        let (names, calls, expect): (&[&str], &str, &str) = if doubles {
+            (&["fy ", "fw ", "ff "], "fy(&k1, 2.5);\n  fw(3, 4.5);\n  ff(&k2, 1.25f);", "1 2 4.5 1.25 3")
+        } else {
+            (&["ff "], "k1 = 1;\n  gd = 4.5;\n  gi = 3;\n  ff(&k2, 1.25f);", "1 2 4.5 1.25 3")
+        };
+        let lib = format!("double gd;\nfloat gf;\nunsigned int gi;\n{}", printed_functions(&stdout, names));
+        let callers = format!(
+            "#include <stdio.h>\nvoid fy(int *p, double b);\nvoid fw(int a, double b);\nvoid ff(int *p, float b);\n\
+             extern double gd;\nextern float gf;\nextern unsigned int gi;\n\
+             int main(void) {{\n  int k1 = 0, k2 = 0;\n  {calls}\n  printf(\"%d %d %g %g %u\\n\", k1, k2, gd, gf, gi);\n  return 0;\n}}\n"
+        );
+        for (cc, got) in compile_pair_and_run_each(&format!("floatglobal-{tag}"), &lib, &callers) {
+            assert_eq!(got, expect, "{tag} {cc}: the printed C stores something else:\n{lib}");
+        }
     }
 }
 

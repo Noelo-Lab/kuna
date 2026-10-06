@@ -252,6 +252,29 @@ pub fn decompile_one_prefollowed(
         seed.mapped_params,
         prefollowed,
     );
+    // (kuna `floatglobals`) A float vote asked about a global before the
+    // whole-program scan ran: take it once for the run, and drive again.
+    if arch.kuna_float_globals.is_none()
+        && result.as_ref().is_ok_and(|fd| fd.get_arch().float_globals_wanted.get())
+    {
+        if let Some(input) = arch.kuna_float_scan.clone() {
+            let found = kuna_analysis::listing::kuna_floatglobals::scan(arch, &input);
+            arch.kuna_float_globals = Some(Rc::new(found));
+            result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
+                arch,
+                name,
+                entry.clone(),
+                size,
+                seed.mapped_symbols,
+                seed.usepoint_symbols,
+                seed.dynamic_symbols,
+                seed.pending_proto,
+                &flow_overrides,
+                proto_overrides,
+                seed.mapped_params,
+            );
+        }
+    }
     // A parked override the drive contradicts is withdrawn, and the function is
     // driven again without it. See [`audit_parked_format_sites`].
     let dropped: Vec<u64> = match &result {
