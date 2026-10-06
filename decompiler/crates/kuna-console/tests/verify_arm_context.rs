@@ -34,6 +34,39 @@ fn fixture(name: &str, generator: &str, args: &[&str]) -> PathBuf {
 }
 
 #[test]
+fn ordinary_aif_does_not_publish_unreachable_interworking_modes() {
+    use kuna_console::engine::ArmIsa;
+    let specs = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../specs");
+    for (endian, target) in [("little", "ARM:LE:32:v8"), ("big", "ARM:BE:32:v8")] {
+        let path = fixture("ordinary-aif", "arm_xref_roots.py", &["thumb", endian, "staleprefix", "backwardblx"]);
+        for frames in ["off", "on"] {
+            let mut prog = bootstrap_from_object_with_isa(
+                path.to_str().unwrap(), target, &[specs.to_str().unwrap().into()], Some(ArmIsa::Thumb),
+            ).unwrap();
+            for (name, value) in [("listing", "off"), ("funcstart_patterns", "off"), ("armframes", frames), ("aif", "on")] {
+                prog.arch_mut().set_kuna_option(name, value).unwrap();
+            }
+            prog.commit_pending_analysis().unwrap();
+            let space = prog.arch().manage().get_default_code_space().unwrap().clone();
+            let bytes = std::fs::read(&path).unwrap();
+            let file = object::File::parse(&*bytes).unwrap();
+            for _ in 0..2 {
+                let index = xrefs::build_with_focus(&file, prog.arch(), prog.arch().translate(), &[0x1000], &[0x1700]);
+                let calls: Vec<_> = index.refs_from_function(0x1700).into_iter()
+                    .filter(|r| r.kind == XrefKind::Call).map(|r| (r.from, r.to)).collect();
+                assert_eq!(calls, vec![(0x1704, 0x1100)]);
+                for at in [0x14f0, 0x1500, 0x1600, 0x1700] {
+                    assert_eq!(prog.arch().with_context_db_mut(|db| {
+                        db.get_variable_value(b"TMode", &Address::new(space.clone(), at)).unwrap()
+                    }), 1, "{endian}/frames={frames} at {at:x}");
+                }
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
 fn recovered_xrefs_leave_unclaimed_modes_and_later_c_unchanged() {
     let specs = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../specs");
     for (endian, target) in [("little", "ARM:LE:32:v8"), ("big", "ARM:BE:32:v8")] {
