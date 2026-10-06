@@ -4531,6 +4531,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "calltargettype"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P5"
+subphase = "type-propagation"
+strength = "HARD"
+rewind = "P5"
+issue = "GH-869"
+summary = "Give the target of an indirect call the function-pointer type the call itself states. Type recovery types a call target `code *`, a pointer to a function of unknown signature, which C cannot spell: under `ctypes` kuna prints it `void *`, so every call through one -- a dispatch table entry, a callback held in a local, an `ops->fn` word read into a temporary -- is a call of a `void *` that no C compiler accepts (`(**(void **)&tbl[a0 * 8UL])();`). With `on` (and `ctypes` on; without it the upstream `code *` spelling is left alone), `kuna_calltargettype` runs once every variable has its final type, just before casts are decided: for each indirect call it builds `R (*)(A1,..,An)` from the type of the call's output (`void` when it has none) and the type of each argument it passes (`void *` for an argument printed as an address computed from a base, `&v4` or `&a1[2]`), and keeps it only when the default model lays every parameter and the result out in the storage the call uses -- a `float` held as an `unsigned int` in `xmm0` or `s0`, or a `double`'s bits in `rdi`, would compile to a call that passes something else -- and no value the call overwrites is read after it. A target of another type is then cast to it at the call where it was cast to `void *`; a `code *` or `void *` target takes it, with the implied pointers it is loaded through, so the cast already printed on the way names the function pointer, when every call through it states the same type and nothing it meets fixes another type. A parameter, a global, a variable whose address is taken, a type-locked, returned, dereferenced or pointer-arithmetic one, one that receives or is compared with a function's address or a non-zero constant, one handed to a library callback slot (`qsort`, `signal`) or to a parameter declared as a pointer to code, and one feeding calls that disagree keep the spelling they had. No cast is added: over 26 binaries (x86-64 and ARM Cortex-M) the `called object is not a function` errors of the decompile-project export fall from 1,634 to 762 (gcc 11 and 15) and from 1,902 to 1,025 (clang 14), no statement gains an error, and the cast count is unchanged."
+use_when = "Default OFF in the catalog (the XML datatest corpus pins the upstream `code *` spellings and applies no mode) but ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering of `kuna decompile`, `decompile-all`, `decompile-project` and the web front-end. Set it off to get the upstream spelling of every call target back, for example when diffing against Ghidra."
+example = "option calltargettype on"
+source_decompiler = "kuna"
+inspiration = "GH-869: an indirect call through a table entry prints `(**(void **)p)()`, which no C compiler accepts; the call already states the signature the pointer must have"
+change_kind = "type-inference"
+tier = "transform"
+symptoms = "an indirect call through a table entry prints (**(void **)p)(), which does not compile|a local holding a function pointer is declared void * and called as (*v1)(a1,7)|called object is not a function or function pointer when the output is compiled"
+live_field = "call_target_type"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "codescalar"
 values = "on|off"
 default = "on"

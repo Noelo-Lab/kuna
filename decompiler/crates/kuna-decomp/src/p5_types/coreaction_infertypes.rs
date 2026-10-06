@@ -140,6 +140,11 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
     // types the indirect-call target Varnode `code *v1` (and lets the printer render
     // `(*v1)(...)` rather than treating the funcptr as a plain integer).
     if opcode == OpCode::CPUI_CALLIND && slot == 0 {
+        // (kuna `calltargettype`) A target cast at the call is cast to the
+        // function-pointer type the call itself states.
+        if let Some(ct) = data.kuna_call_target_type(op) {
+            return ct;
+        }
         if let Some(tlst) = arch.types() {
             let code = tlst.get_type_code().unwrap_or_else(|_| {
                 Rc::new(Datatype::new(0, type_metatype::TYPE_CODE))

@@ -646,6 +646,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
+    "calltargettype" => on_off!(call_target_type, "indirect-call target types"),
     "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
     "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
     "charbyte" => on_off!(char_byte, "char-pointer byte typing"),

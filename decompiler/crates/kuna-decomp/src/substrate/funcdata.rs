@@ -343,6 +343,9 @@ pub struct Funcdata {
     /// up to seven passes.  A pass that wants a decided pointer picture reads
     /// this instead.
     kuna_infertypes_settled: bool,
+    /// (kuna `calltargettype`) The function-pointer type each indirect call
+    /// states, for a call whose target is cast at the call: the cast names it.
+    kuna_call_target_types: std::collections::HashMap<OpId, std::rc::Rc<crate::dtype::Datatype>>,
     /// (kuna) Why the decompile pipeline aborted for this function, when it did.
     ///
     /// A caught per-function abort (`LOSS-131`) unwinds and discards the
@@ -637,6 +640,7 @@ impl Funcdata {
             union_map: std::collections::BTreeMap::new(),
             pending_comments: Vec::new(),
             kuna_infertypes_settled: false,
+            kuna_call_target_types: std::collections::HashMap::new(),
             kuna_pipeline_failure: None,
             kuna_rejected_flow: Vec::new(),
             kuna_directive_symbols: Vec::new(),
@@ -2507,6 +2511,18 @@ impl Funcdata {
     pub fn kuna_infertypes_settled(&self) -> bool {
         self.kuna_infertypes_settled
     }
+    /// (kuna `calltargettype`) Forget every recorded call target type.
+    pub fn kuna_clear_call_target_types(&mut self) {
+        self.kuna_call_target_types.clear();
+    }
+    /// (kuna `calltargettype`) Record the type the indirect call `op` states.
+    pub fn kuna_set_call_target_type(&mut self, op: OpId, ty: std::rc::Rc<crate::dtype::Datatype>) {
+        self.kuna_call_target_types.insert(op, ty);
+    }
+    /// (kuna `calltargettype`) The type the indirect call `op` states, if recorded.
+    pub fn kuna_call_target_type(&self, op: OpId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+        self.kuna_call_target_types.get(&op).cloned()
+    }
     /// Toggle whether normalization transforms will be performed
     /// (C++ `setNormalization`).
     pub fn set_normalization(&mut self, val: bool) {
@@ -3548,6 +3564,7 @@ impl Funcdata {
         self.kuna_call_transport_projections.clear();
         self.kuna_denied_storage_writes.clear();
         self.kuna_meaningful_storage_writes.clear();
+        self.kuna_call_target_types.clear();
         // clearCallSpecs() (funcdata.cc:104): drop the call-spec list so a restart
         // (which re-follows flow and rebuilds qlst) does not keep stale ops.
         self.clear_call_specs();
