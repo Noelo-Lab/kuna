@@ -9,7 +9,10 @@
 //! large positive one, or the rest of its register as an unassigned piece.
 //! MIPS and Apple arm64 extend the same way (to 32 bits only on Apple), but
 //! their ABI documents state it for arguments alone, so their return values
-//! take the rule only under `compiler`, as their compilers implement it.
+//! take the rule only under `compiler`, as their compilers implement it. The
+//! x86-64 System V document states no extension at all, yet GCC and clang
+//! callers extend a narrow argument to 32 bits and clang callees rely on it, so
+//! its arguments take Apple's rule under `compiler`.
 use crate::{
     context::{OpId, VarnodeId},
     dtype::{type_class, type_metatype, Datatype},
@@ -29,7 +32,7 @@ pub enum NarrowExtMode {
     /// The rule wherever an ABI document states it.
     #[default]
     Abi,
-    /// `Abi`, and the rule MIPS and Apple arm64 compilers follow.
+    /// `Abi`, and the rule MIPS, Apple arm64 and x86-64 compilers follow.
     Compiler,
 }
 
@@ -98,6 +101,10 @@ pub fn rules(arch: &Architecture) -> Rules {
         _ if is_apple_arm64(arch) => Rules {
             input: Some(Widen::Word),
             output: gated(Widen::Word, false),
+        },
+        _ if id.starts_with("x86:LE:64:") && id.ends_with(":gcc") => Rules {
+            input: gated(Widen::Word, false),
+            output: None,
         },
         _ => Rules::default(),
     }

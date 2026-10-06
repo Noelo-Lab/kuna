@@ -576,7 +576,7 @@ fn build_datatype_at(
             }
             match die.encoding {
                 Some(gimli::DW_ATE_signed_char) | Some(gimli::DW_ATE_unsigned_char) => {
-                    types.get_type_char(size).ok()
+                    char_datatype(types, size, &die.name, encoding_signed(die.encoding))
                 }
                 Some(gimli::DW_ATE_boolean) => types.get_base(size, type_metatype::TYPE_BOOL).ok(),
                 Some(gimli::DW_ATE_float) => types.get_base(size, type_metatype::TYPE_FLOAT).ok(),
@@ -758,6 +758,23 @@ fn aggregate_name<'a>(die: &'a DieSnap, alias: Option<&'a str>, fallback: &'a st
         &die.name
     } else {
         alias.unwrap_or(fallback)
+    }
+}
+
+/// A DWARF character base type. `signed char` and `unsigned char` are distinct C
+/// types whose sign is stated, so they become integers of that sign; plain
+/// `char` (and any other spelling, such as Fortran's `character`) keeps the core
+/// `char` type, whose sign is the target's whatever the encoding says.
+fn char_datatype(
+    types: &dyn TypeFactory,
+    size: i32,
+    name: &str,
+    signed: Option<bool>,
+) -> Option<Rc<Datatype>> {
+    match (name, signed) {
+        ("signed char", Some(true)) => types.get_base_no_char(size, type_metatype::TYPE_INT).ok(),
+        ("unsigned char", Some(false)) => types.get_base(size, type_metatype::TYPE_UINT).ok(),
+        _ => types.get_type_char(size).ok(),
     }
 }
 
