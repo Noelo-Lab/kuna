@@ -13,6 +13,13 @@ using the C++ lift console at `d37b50e2` (Ghidra `cef869af` plus the lift comman
 Two consecutive captures agree. Only unique-space temporary offsets changed;
 instruction bytes, decoded operations and all other fixtures are unchanged.
 
+`gh9203-condexe-loopcopy.txt` was refreshed the same way for the RISC-V
+`fmv.x.*`/`fcvt.w*` register correction (#831), with the same lift console
+reading `.sla` files compiled by `sleigh_opt` at Ghidra `cef869af`. Two
+consecutive captures agree, and a capture against the unpatched specs
+reproduces the previous fixture byte-for-byte. Only unique-space temporary
+offsets changed.
+
 ## Regeneration
 
 ```bash
