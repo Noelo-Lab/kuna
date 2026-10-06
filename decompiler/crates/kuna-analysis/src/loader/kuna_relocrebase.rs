@@ -429,6 +429,7 @@ pub fn retain_in_image(out: &mut AnalysisOutput, view: &RebasedView) {
     out.readonly.retain(keep_range);
     out.externref.retain(keep_range);
     out.strings.retain(|s| keep(s.addr));
+    out.wide_strings32.retain(|s| keep(s.addr));
     out.context_paints.retain(|p| keep(p.addr));
     out.tracked_regs.retain(|t| keep(t.func_addr));
     out.locals.retain(|l| keep(l.func_addr));

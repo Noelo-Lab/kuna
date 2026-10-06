@@ -761,6 +761,9 @@ kuna_options! { self, p1;
     "widestrings" => {
         on_off!(analysis_widestrings, "UTF-16LE width of the string-literal pass")
     },
+    "widestrings32" => {
+        on_off!(analysis_widestrings32, "UTF-32 width of the string-literal pass")
+    },
     "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
     "unmappedentry" => {
         on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")

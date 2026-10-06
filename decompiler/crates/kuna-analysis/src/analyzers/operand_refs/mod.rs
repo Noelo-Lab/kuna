@@ -452,7 +452,7 @@ const RELATIVE_TABLE_ENTRIES: usize = 256;
 /// pointer-aligned slot of an allocated section, read in the image's byte order,
 /// or the addend of a dynamic relocation, where a position-independent image
 /// keeps the pointers its loader writes.
-fn held_pointers(file: &object::File, wanted: &[u64]) -> Vec<u64> {
+pub(crate) fn held_pointers(file: &object::File, wanted: &[u64]) -> Vec<u64> {
     let width: usize = if file.is_64() { 8 } else { 4 };
     let little_endian = file.is_little_endian();
     let mut held: Vec<u64> = Vec::new();
@@ -526,10 +526,10 @@ fn relative_string_table(file: &object::File, table: u64, little_endian: bool) -
 /// (kuna) The start and size of every sized data object the image's symbol
 /// tables declare, sorted. A relocatable object has no image addresses yet and
 /// lists none.
-struct DataObjects(Vec<(u64, u64)>);
+pub(crate) struct DataObjects(Vec<(u64, u64)>);
 
 impl DataObjects {
-    fn new(file: &object::File) -> Self {
+    pub(crate) fn new(file: &object::File) -> Self {
         if file.kind() == ObjectKind::Relocatable {
             return DataObjects(Vec::new());
         }
@@ -542,7 +542,7 @@ impl DataObjects {
         )
     }
 
-    fn from_spans(mut spans: Vec<(u64, u64)>) -> Self {
+    pub(crate) fn from_spans(mut spans: Vec<(u64, u64)>) -> Self {
         spans.sort_unstable();
         spans.dedup();
         DataObjects(spans)
@@ -562,6 +562,25 @@ impl DataObjects {
     fn contradicts(&self, addr: u64, len: u64) -> bool {
         let from = self.0.partition_point(|&(lo, _)| lo < addr);
         self.0[from..].iter().take_while(|&&(lo, _)| lo == addr).any(|&(_, size)| size != len)
+    }
+
+    /// The furthest end of the objects up to each one, for [`Self::overlaps`].
+    pub(crate) fn reach(&self) -> Vec<u64> {
+        self.0
+            .iter()
+            .scan(0u64, |end, &(lo, size)| {
+                *end = (*end).max(lo.saturating_add(size));
+                Some(*end)
+            })
+            .collect()
+    }
+
+    /// Does a declared object overlap `[addr, addr + len)`? `reach` is
+    /// [`Self::reach`].
+    pub(crate) fn overlaps(&self, reach: &[u64], addr: u64, len: u64) -> bool {
+        let end = addr.saturating_add(len);
+        let upto = self.0.partition_point(|&(lo, _)| lo < end);
+        (0..upto).rev().take_while(|&k| reach[k] > addr).any(|k| self.0[k].0.saturating_add(self.0[k].1) > addr)
     }
 }
 
@@ -730,7 +749,14 @@ impl AnalysisPass for OperandRefsPass {
             None => return AnalysisOutput::default(),
         };
         let refs = scan_scalar_refs(ctx.file, ctx.arch.translate(), &code_space);
-        emit_facts(ctx.file, &refs)
+        let mut out = emit_facts(ctx.file, &refs);
+        if ctx.arch.analysis_widestrings32 {
+            let mut targets: Vec<u64> = refs.iter().map(|r| r.to).collect();
+            targets.sort_unstable();
+            targets.dedup();
+            out.wide_strings32 = crate::strings::kuna_widestrings32::wide_string32_facts(ctx.file, &targets);
+        }
+        out
     }
 }
 

@@ -198,6 +198,11 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("funcstart_patterns", "on"),
     ("addrtable", "on"),
     ("operand_refs", "on"),
+    // (kuna) The 4-byte string width: an int table of character codes is
+    // byte-for-byte a wide literal, so it ships off and plants only what the image
+    // backs as a string (an operand or pointer at the start, a symbol table that
+    // names every other object, a 4-byte mergeable string section).
+    ("widestrings32", "on"),
     ("fid", "on"),
     ("rtti", "on"),          // PE-only; no-op off-PE
     ("itaniumrtti", "on"),   // ELF-only, and inert without __cxxabiv1 typeinfo relocs

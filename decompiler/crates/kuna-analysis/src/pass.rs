@@ -375,6 +375,11 @@ pub struct AnalysisOutput {
     /// `wchar2[N]`, whose element count is `len / 2`) and gates them separately.
     /// Produced by [`crate::strings::kuna_widestrings`].
     pub wide_strings: Vec<StringFact>,
+    /// (kuna `widestrings32`) Detected NUL-terminated 4-byte (`wchar_t` on ELF,
+    /// `char32_t`) string literals, each committed as a `wchar4[N]` (element
+    /// count `len / 4`). Produced by [`crate::strings::kuna_widestrings32`] at the
+    /// deferred scalar-operand commit, where the operand targets it weighs are known.
+    pub wide_strings32: Vec<StringFact>,
     /// Library-function prototypes to seed onto matching FunctionSymbols (the kuna
     /// analog of Ghidra's `ApplyDataArchiveAnalyzer` / `.gdt` archives). Each is
     /// parked on its named callee via `set_function_prototype_pieces`, so a caller
@@ -591,6 +596,7 @@ impl AnalysisOutput {
         self.externref.extend(other.externref);
         self.strings.extend(other.strings);
         self.wide_strings.extend(other.wide_strings);
+        self.wide_strings32.extend(other.wide_strings32);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
         self.context_paints.extend(other.context_paints);

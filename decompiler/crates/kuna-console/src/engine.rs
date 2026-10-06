@@ -2609,12 +2609,17 @@ impl ConsoleProgram {
         let want_listing = self.arch().analysis_listing;
         let want_fast_funcdisc = self.arch().analysis_fast_funcdisc;
         let want_operand_refs = self.arch().analysis_operand_refs;
+        let want_wide32_alone = self.arch().analysis_widestrings32 && !want_operand_refs;
         // (kuna) The full byte-pattern entry sweep is deferred here too — not
         // because it decodes, but because its gate is only known now. Registered at
         // load it swept the whole image on every binary and was discarded whenever
         // the gate was off (the default). See `passes::run_deferred_entry_passes`.
         let want_funcstart_patterns = self.arch().analysis_funcstart_patterns;
-        if (want_listing || want_fast_funcdisc || want_operand_refs || want_funcstart_patterns)
+        if (want_listing
+            || want_fast_funcdisc
+            || want_operand_refs
+            || want_wide32_alone
+            || want_funcstart_patterns)
             && self.analysis_image.is_some()
         {
             let analysis_target = self.arch.arch_id().to_string();
@@ -2697,6 +2702,8 @@ impl ConsoleProgram {
                             self.arch(),
                         );
                         merged.merge(out);
+                    } else if want_wide32_alone {
+                        merged.merge(kuna_analysis::passes::run_wide_strings32(&bytes));
                     }
                 }
             }
@@ -4623,10 +4630,17 @@ fn commit_analysis_output(
     //    `LoadLibraryW("n")` defect. Whichever fact is planted first wins the
     //    `occupied` guard below, so the width that read the whole literal has to go
     //    first. The stream is dropped entirely when the gate is off — `off` is
-    //    byte-identical to the 1-byte markup alone.
+    //    byte-identical to the 1-byte markup alone. (kuna `widestrings32`) The
+    //    4-byte width (`wchar4[N]`, element count `len / 4`) goes before both on
+    //    the same grounds, under its own gate.
     let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
-    for (fact, char_size) in
-        wide.iter().map(|f| (f, 2u32)).chain(out.strings.iter().map(|f| (f, 1u32)))
+    let wide32 =
+        if prog.arch().analysis_widestrings32 { out.wide_strings32.as_slice() } else { &[] };
+    for (fact, char_size) in wide32
+        .iter()
+        .map(|f| (f, 4u32))
+        .chain(wide.iter().map(|f| (f, 2u32)))
+        .chain(out.strings.iter().map(|f| (f, 1u32)))
     {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         // Conservative guard: skip an address that already carries a symbol (an
@@ -4656,10 +4670,10 @@ fn commit_analysis_output(
         let ch = if char_size == 1 {
             prog.arch().types().get_type_char(prog.arch().types().get_size_of_char())?
         } else {
-            // A language whose <coretypes> declares no 2-byte character type has no
-            // `wchar2` to plant. Skip the wide fact rather than fail the whole
-            // commit — the 1-byte arm keeps its original hard failure.
-            match prog.arch().types().get_type_char(2) {
+            // A language whose <coretypes> declares no 2- or 4-byte character type
+            // has no `wchar2`/`wchar4` to plant. Skip the wide fact rather than fail
+            // the whole commit — the 1-byte arm keeps its original hard failure.
+            match prog.arch().types().get_type_char(char_size as int4) {
                 Ok(ch) => ch,
                 Err(_) => continue,
             }
