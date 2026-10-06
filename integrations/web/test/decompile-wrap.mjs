@@ -62,7 +62,7 @@ const segs = [
   { text: ' ', tok: null }, { text: 'b', tok: { kind: 'variable', text: 'b' } }, { text: ',', tok: { kind: 'syntax', text: ',' } },
   { text: 'c', tok: { kind: 'variable', text: 'c' } }, { text: ');', tok: { kind: 'syntax', text: ');' } },
 ];
-const plain = (h) => h.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
+const plain = (h) => h.split('<').map((part, i) => (i ? part.slice(part.indexOf('>') + 1) : part)).join('').split('&amp;').join('&');
 const html = lineHtml(segs, {}, [{ at: 8, eat: 1, indent: 4 }, { at: 11, eat: 0, indent: 4 }]);
 assert.equal(plain(html), '  f(a &&\n    b,\n    c);', 'breaks become a newline and the indent, tokens stay whole');
 assert.equal((html.match(/data-sym="a"/g) || []).length, 1);
