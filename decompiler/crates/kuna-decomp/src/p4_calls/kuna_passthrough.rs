@@ -573,10 +573,11 @@ pub(crate) fn producing_call(data: &Funcdata, ret: OpId) -> Option<OpId> {
 /// as how an `int` one returns it.
 ///
 /// Under `mixedtailret`, a RETURN reached from no call is no refusal when at
-/// least one RETURN is such a tail call: the function's own write of the
-/// storage on every path into it ([`crate::p4_calls::kuna_mixedtailret`]) is
-/// that RETURN's value, and the storage may then be touched anywhere. An
-/// argument register is taken only when no claimed callee reads it.
+/// least one RETURN is such a tail call and the value it returns in that one
+/// register is the one the function wrote and branched on to choose between
+/// them ([`crate::p4_calls::kuna_mixedtailret::returns_decided_value`]); the
+/// register may then be touched anywhere. An argument register is taken only
+/// when no claimed callee reads it.
 fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId>)> {
     if data.get_func_proto().is_output_locked() || data.get_active_output().is_none() {
         return None;
@@ -626,8 +627,9 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     }
     if mixed {
         let argument = pieces.iter().any(|(a, s)| !return_only(proto, a, *s));
+        let tails: Vec<OpId> = paths.iter().map(|&(_, r)| r).collect();
         if (argument && crate::p4_calls::kuna_mixedtailret::feeds_tail_call(data, &producers, &pieces))
-            || !own.iter().all(|&r| crate::p4_calls::kuna_mixedtailret::writes_own_value(data, r, &pieces))
+            || !own.iter().all(|&r| crate::p4_calls::kuna_mixedtailret::returns_decided_value(data, r, &pieces, &tails))
         {
             return None;
         }
@@ -824,7 +826,10 @@ pub fn keep_tail_return_whole(data: &Funcdata, active: &mut crate::fspec::ParamA
 /// class (the `r1` of `bl f; mov r1,#0`), which can be the rest of the claimed
 /// value; and a value that is zero at every RETURN ([`is_zero`]), which is also
 /// what `-fzero-call-used-regs` leaves in every call-used register the function
-/// does not return in (openssh's `call f; ...; pxor %xmm0,%xmm0; ret`).
+/// does not return in (openssh's `call f; ...; pxor %xmm0,%xmm0; ret`). Under
+/// `mixedtailret`, a claimed tail callee's leftover at its own RETURN is not a
+/// value of the function's either
+/// ([`crate::p4_calls::kuna_mixedtailret::is_tail_leftover`]).
 fn returns_own_value(data: &Funcdata, active: &crate::fspec::ParamActive, claimed: &[int4]) -> bool {
     let proto = data.get_func_proto();
     let Some(out) = proto.has_model().then(|| proto.model().output_list()).flatten() else { return false };
@@ -852,7 +857,7 @@ fn returns_own_value(data: &Funcdata, active: &crate::fspec::ParamActive, claime
         (0..own.get_num_trials()).map(|i| own.get_trial(i)).filter(|t| t.is_used()).collect();
     let nonzero = used.iter().any(|t| {
         rets.iter().any(|&r| match data.obank().get(r).and_then(|o| o.get_in(t.get_slot())) {
-            Some(vn) => !is_zero(data, vn, ZERO_DEPTH),
+            Some(vn) => !is_zero(data, vn, ZERO_DEPTH) && !crate::p4_calls::kuna_mixedtailret::is_tail_leftover(data, vn),
             None => false,
         })
     });
