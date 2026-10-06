@@ -1,0 +1,91 @@
+<decompilertest>
+<binaryimage arch="RISCV:LE:64:default">
+<!--
+    GH-831: RISC-V fmv.x.d of a call result prints as dat_900.
+
+    fmv.x.d read its source through *[register] at the address of the frs1D
+    operand, but frs1D exports a temporary copy, so the read was register
+    offset 0x900 (no RISC-V register) instead of the FP register.  fmv.x.w
+    had the same read, and it and fcvt.w.d / fcvt.wu.d / fcvt.w.s / fcvt.wu.s
+    wrote their result through rdW, which also exports a temporary: the
+    integer destination was never written, so these instructions had no
+    effect at all.
+
+    Stage / sub-stage: P2 p-code lift (RISC-V SLEIGH spec fix, no option).
+    The RISC-V .sla files must be rebuilt from the edited .sinc files.
+
+    Source (clang -O2 -mno-relax -fno-optimize-sibling-calls
+    -target riscv64-linux-gnu -c, the .text bytes verbatim below):
+
+        static double gd(int k) { return k; }            (noinline)
+        static float gf(int k) { return k; }             (noinline)
+        static long ui(long a, long b) { return a ^ b; } (noinline)
+        long e13(long k) { double t = gd(k); long b;
+                           memcpy(&b, &t, 8); return ui(k, b); }
+        long dbits(double d) { long l; memcpy(&l, &d, 8); return l; }
+        int fwplus(int k) { float t = gf(k); int b;
+                            memcpy(&b, &t, 4); return b + 1; }
+        int cvtw(double d) { return (int)d; }
+        unsigned cvtwu(double d) { return (unsigned)d; }
+        int cvtws(float f) { return (int)f; }
+        unsigned cvtwus(float f) { return (unsigned)f; }
+
+    #1-#3: the fmv.x.d / fmv.x.w results are the FP register's bits (the
+    call result in e13 and fwplus).  #4-#5: the fcvt.w* results reach a0
+    (the unsigned forms convert through a 64-bit integer, so values in
+    [2^31, 2^32) keep their bits).  #6-#7: neither the 0x900 read nor a
+    void conversion function remains.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+411106e422e02a84012597000000e780e001d30505e2228597000000e7806001
+a260026441018280530505d282802d8d8280530505e28280411106e497000000
+e7804001530505e00525a26041018280537505d08280531505c28280531515c2
+8280531505c08280531515c08280
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="e13"/>
+<symbol space="ram" offset="0x10028" name="gd"/>
+<symbol space="ram" offset="0x1002e" name="ui"/>
+<symbol space="ram" offset="0x10032" name="dbits"/>
+<symbol space="ram" offset="0x10038" name="fwplus"/>
+<symbol space="ram" offset="0x10050" name="gf"/>
+<symbol space="ram" offset="0x10056" name="cvtw"/>
+<symbol space="ram" offset="0x1005c" name="cvtwu"/>
+<symbol space="ram" offset="0x10062" name="cvtws"/>
+<symbol space="ram" offset="0x10068" name="cvtwus"/>
+</binaryimage>
+<script>
+  <com>parse line extern float8 gd(int4 k);</com>
+  <com>parse line extern float4 gf(int4 k);</com>
+  <com>parse line extern int8 ui(int8 a, int8 b);</com>
+  <com>parse line extern int8 e13(int8 k);</com>
+  <com>parse line extern int8 dbits(float8 d);</com>
+  <com>lo fu e13</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu dbits</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fwplus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cvtw</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cvtwu</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cvtws</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cvtwus</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="GH831 rv64 #1: fmv.x.d passes the call result's bits to ui" min="1" max="1">return ui\(k,.*\.from = b \}\)\.to\);</stringmatch>
+<stringmatch name="GH831 rv64 #2: fmv.x.d of a parameter is its bits" min="1" max="1">return .*\{ \.from = d \}\)\.to;</stringmatch>
+<stringmatch name="GH831 rv64 #3: fmv.x.w moves the call result's bits" min="1" max="1">return .*\{ \.from = gf\(a0\) \}\)\.to \+ 1;</stringmatch>
+<stringmatch name="GH831 rv64 #4: fcvt.w.d and fcvt.w.s write a0" min="2" max="2">return \(int4\)a0;</stringmatch>
+<stringmatch name="GH831 rv64 #5: fcvt.wu.d and fcvt.wu.s write a0" min="2" max="2">return \(int4\)\(int8\)a0;</stringmatch>
+<stringmatch name="GH831 rv64 #6: no read of register offset 0x900" min="0" max="0">dat_900</stringmatch>
+<stringmatch name="GH831 rv64 #7: no conversion function lost its result" min="0" max="0">^void cvtw</stringmatch>
+</decompilertest>
