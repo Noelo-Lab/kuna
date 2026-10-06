@@ -3334,8 +3334,11 @@ The register test leans on the prototype model's lists to tell a system
 register from a data register, so where a cspec leaves a data register out of
 them, a write to it that nothing reads counts as well: MIPS o32 names no `$t`
 register and no `$f2`-`$f11`, so an inline-asm `mtc1 $3,$f2` that nothing
-reads drops `$3` as `vmsr fpscr` does. Compiled code does not leave such a
-dead write.
+reads drops `$3` as `vmsr fpscr` does. MIPS `hi`/`lo` (`mthi`, `mtlo`) and
+PowerPC `CTR`/`XER` (`mtctr`, `mtxer`, and `mtspr 272` for `SPRG0`) are named
+nowhere either, so a write of the second return register to one of them that
+nothing reads afterwards drops it the same way. Compiled code does not leave
+such a dead write.
 
 The rule is option `retsysreg`, on by default. Bytes cannot settle it: `add
 r1,r1,r0; add r0,r0,r0,lsl #1; vmsr fpscr,r1; bx lr` is an `int` function that
