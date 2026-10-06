@@ -20,8 +20,8 @@
 //! When some RETURN hands back the result of a call whose callee's recovered
 //! prototype returns a value in one register (what `passthrough` claims), a
 //! RETURN reached from no call is taken as returning that register too when
-//! the value there is the one the function branched on to choose between the
-//! two ([`returns_decided_value`]):
+//! the value there is one the function computed only to test it and return it
+//! ([`returns_decided_value`]):
 //!
 //! * the function itself wrote the register last on every path into the
 //!   RETURN, as wide as the callee states it: no call in between, no path from
@@ -29,14 +29,19 @@
 //! * walking up the single-predecessor chain from the RETURN, the nearest
 //!   conditional branch whose other side reaches a claimed tail call tests that
 //!   value, in the register or in the one it was copied from on the way (gcc's
-//!   `cmp $5,%edi; jg L; jmp getk; L: mov %edi,%eax; ret`).
+//!   `cmp $5,%edi; jg L; jmp getk; L: mov %edi,%eax; ret`);
+//! * from where it is computed, the value only decides branches, moves between
+//!   registers and reaches the claimed tail calls: it is not loaded or stored
+//!   through, stored, counted or passed to another call.
 //!
 //! A value the function only computed and handed to the RETURN is one upstream
-//! already returns. What the branch test adds is that the value decides which
-//! of the two returns is taken, which a scratch value does not: the
-//! stack-protector check `sub %fs:0x28,%rax; jne fail` leaves `0` in `rax`
-//! before every `ret` of a `void` function, and its branch leads to
-//! `__stack_chk_fail`, not to the tail call.
+//! already returns; the test that chooses between the two returns is the use
+//! upstream refuses. The other two conditions are what a scratch value in a
+//! `void` function fails: the stack-protector check `sub %fs:0x28,%rax; jne
+//! fail` leaves `0` in `rax` before every `ret` of a `void` function, but its
+//! branch leads to `__stack_chk_fail`, not to the tail call; `if (!tb[i])
+//! return;` tests the pointer it then loads through; `if (guard++) return;`
+//! counts the value it tests.
 //!
 //! The return register is an argument register on ARM, AArch64, RISC-V and
 //! PowerPC, where a `void` function null-checks the pointer it loaded into
@@ -51,6 +56,7 @@
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
+use kuna_base::space::spacetype;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
@@ -77,22 +83,27 @@ impl OptionMixedTailRet {
 /// How many blocks [`last_write_is_own`] visits for one RETURN.
 const OWN_WALK_BLOCKS: usize = 32;
 
-/// How many single-predecessor blocks [`decided_by_value`] climbs.
+/// How many single-predecessor blocks [`decided_origin`] climbs.
 const CHAIN_BLOCKS: usize = 8;
 
 /// How many blocks the other side of a branch is searched for a tail call.
 const REACH_BLOCKS: usize = 16;
 
 /// Does `ret`, a RETURN reached from no call, return the value in `pieces` the
-/// function branched on, beside the claimed tail calls ending at `tail_rets`?
+/// function branched on, beside the claimed tail calls `tails` (each a CALL
+/// and the RETURN after it)?
 ///
 /// Asked of the raw p-code before the first heritage, for a claim of one
-/// register ([`last_write_is_own`], [`decided_by_value`]).
-pub fn returns_decided_value(data: &Funcdata, ret: OpId, pieces: &[(Address, int4)], tail_rets: &[OpId]) -> bool {
+/// register: the function wrote it on every path ([`last_write_is_own`]), the
+/// branch between the two tests it ([`decided_origin`]), and it is put to no
+/// other use ([`only_decides`]).
+pub fn returns_decided_value(data: &Funcdata, ret: OpId, pieces: &[(Address, int4)], tails: &[(OpId, OpId)]) -> bool {
     let [(addr, size)] = pieces else { return false };
-    data.get_arch().mixed_tail_ret
-        && last_write_is_own(data, ret, addr, *size)
-        && decided_by_value(data, ret, addr, *size, tail_rets)
+    if !data.get_arch().mixed_tail_ret || !last_write_is_own(data, ret, addr, *size) {
+        return false;
+    }
+    let (calls, rets): (Vec<OpId>, Vec<OpId>) = tails.iter().copied().unzip();
+    decided_origin(data, ret, addr, *size, &rets).is_some_and(|origin| only_decides(data, origin, &calls))
 }
 
 /// Does any claimed tail callee take a parameter in a byte of `pieces`?
@@ -110,35 +121,16 @@ pub fn feeds_tail_call(data: &Funcdata, producers: &[OpId], pieces: &[(Address, 
     })
 }
 
-/// Is `vn`, read by a RETURN, what a claimed tail call leaves in a register it
-/// does not return in: the INDIRECT creation the call's clobber planted, read
-/// directly or through a low SUBPIECE or an injected no-op?
+/// Was the function's tail claim made beside a value it returns itself?
 ///
-/// `returns_own_value` asks it of the trials outside the claim: the `xmm0`
-/// `jmp xstrdup` leaves beside the `pxor %xmm0,%xmm0` that
-/// `-fzero-call-used-regs` puts before the function's other `ret` is neither
-/// path's value.
-pub fn is_tail_leftover(data: &Funcdata, vn: VarnodeId) -> bool {
-    if !data.get_arch().mixed_tail_ret {
-        return false;
-    }
-    let mut def = data.vbank().get(vn).and_then(|v| v.get_def());
-    for _ in 0..4 {
-        let Some(o) = def.and_then(|d| data.obank().get(d)) else { return false };
-        let low = o.code() == OpCode::CPUI_SUBPIECE
-            && o.get_in(1).and_then(|c| data.vbank().get(c)).is_some_and(|c| c.is_constant() && c.get_offset() == 0);
-        if !low && !def.is_some_and(|d| crate::p4_calls::kuna_passthrough::is_injected_noop(data, d)) {
-            break;
-        }
-        def = o.get_in(0).and_then(|i| data.vbank().get(i)).and_then(|i| i.get_def());
-    }
-    let Some(o) = def.and_then(|d| data.obank().get(d)) else { return false };
-    if !o.is_indirect_creation() {
-        return false;
-    }
-    let Some(iop) = o.get_in(1).and_then(|i| data.vbank().get(i)) else { return false };
-    let call = OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()));
-    data.kuna_passthrough_claims().iter().any(|c| c.ret_owners.contains(&call))
+/// `keep_tail_return_whole` then keeps the claim whole without asking
+/// `returns_own_value`, whose evidence is a value of another storage class the
+/// function computed itself: beside a value the function branched on in the
+/// claimed register, the `xmm0` that `-fzero-call-used-regs` zeroes before one
+/// `ret` and a tail callee leaves alone before the other is no such value, and
+/// yielding to it returned `xmm0` where the function returns `eax`.
+pub fn claimed_beside_own(data: &Funcdata) -> bool {
+    data.get_arch().mixed_tail_ret && data.kuna_passthrough_claims().iter().any(|c| c.beside_own)
 }
 
 fn overlaps(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
@@ -236,65 +228,163 @@ fn last_write_is_own(data: &Funcdata, ret: OpId, addr: &Address, size: int4) -> 
     true
 }
 
-/// Is the value `ret` returns in `[addr, addr+size)` the one the nearest
-/// branch above it that can lead to a claimed tail call tests?
+/// The op that computed the value `ret` returns in `[addr, addr+size)`, when
+/// the nearest branch above `ret` that can lead to a claimed tail call tests
+/// that value.
 ///
 /// Climbs the single-predecessor chain from `ret` op by op, following the
 /// returned value back through copies and extensions into the register they
-/// read (`mov %edi,%eax`), and stops at any other write of it. The first block
-/// on the chain ending in a CBRANCH whose other side reaches the block of a
-/// RETURN in `tail_rets` ([`reaches_tail`]) must compute its condition from that
-/// value ([`condition_feeders`]); a join, the entry, a call or [`CHAIN_BLOCKS`]
-/// blocks first refuse.
-fn decided_by_value(data: &Funcdata, ret: OpId, addr: &Address, size: int4, tail_rets: &[OpId]) -> bool {
+/// read (`mov %edi,%eax`). The first block on the chain ending in a CBRANCH
+/// whose other side reaches the block of a RETURN in `tail_rets`
+/// ([`reaches_tail`]) must compute its condition from that value
+/// ([`condition_feeders`]); the climb then goes on to the op that wrote the
+/// value other than by copying it. Any other write of the value before the
+/// test, a join, the entry, a call or [`CHAIN_BLOCKS`] blocks first refuse.
+fn decided_origin(data: &Funcdata, ret: OpId, addr: &Address, size: int4, tail_rets: &[OpId]) -> Option<OpId> {
     let tail_blocks: Vec<BlockId> =
         tail_rets.iter().filter_map(|&r| data.obank().get(r).and_then(|o| o.get_parent())).collect();
-    let Some(mut bl) = data.obank().get(ret).and_then(|o| o.get_parent()) else { return false };
+    let mut bl = data.obank().get(ret)?.get_parent()?;
     let mut tracked = (addr.clone(), size);
     let mut cur = data.op_previous_op(ret);
     let mut feeders: Option<Vec<OpId>> = None;
+    let mut decided = false;
     for _ in 0..CHAIN_BLOCKS {
         while let Some(op) = cur {
-            let Some(o) = data.obank().get(op) else { return false };
+            let o = data.obank().get(op)?;
             if matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
-                return false;
+                return None;
             }
-            let reads = |(a, s): &(Address, int4)| {
-                (0..o.num_input()).filter_map(|i| o.get_in(i)).filter_map(|v| data.vbank().get(v)).any(|v| overlaps(v.get_addr(), v.get_size(), a, *s))
-            };
-            if feeders.as_ref().is_some_and(|f| f.contains(&op)) && reads(&tracked) {
-                return true;
+            if !decided && feeders.as_ref().is_some_and(|f| f.contains(&op)) {
+                decided = (0..o.num_input())
+                    .filter_map(|i| o.get_in(i))
+                    .filter_map(|v| data.vbank().get(v))
+                    .any(|v| overlaps(v.get_addr(), v.get_size(), &tracked.0, tracked.1));
             }
             let out = o.get_out().and_then(|v| data.vbank().get(v));
             if out.is_some_and(|v| overlaps(v.get_addr(), v.get_size(), &tracked.0, tracked.1))
                 && !crate::p4_calls::kuna_passthrough::is_injected_noop(data, op)
             {
-                let source = matches!(o.code(), OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT)
-                    .then(|| o.get_in(0).and_then(|v| data.vbank().get(v)))
-                    .flatten()
-                    .filter(|v| v.get_space().get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR);
-                match source {
-                    Some(v) => tracked = (v.get_addr().clone(), v.get_size()),
-                    None => return false,
+                match register_copy_source(data, op) {
+                    Some(source) => tracked = source,
+                    None => return decided.then_some(op),
                 }
             }
             cur = data.op_previous_op(op);
         }
-        if feeders.is_some() {
-            return false;
+        if feeders.is_some() && !decided {
+            return None;
         }
         let b = data.bblocks_ref().block(bl);
         if bl == data.bblocks_get_block(0) || b.size_in() != 1 {
-            return false;
+            return None;
         }
         let pred = b.get_in(0);
-        let p = data.bblocks_ref().block(pred);
-        let other = (0..p.size_out()).map(|k| p.get_out(k)).find(|&s| s != bl);
-        feeders = other.filter(|&o| reaches_tail(data, o, &tail_blocks)).map(|_| condition_feeders(data, pred));
+        if !decided {
+            let p = data.bblocks_ref().block(pred);
+            let other = (0..p.size_out()).map(|k| p.get_out(k)).find(|&s| s != bl);
+            feeders = other.filter(|&o| reaches_tail(data, o, &tail_blocks)).map(|_| condition_feeders(data, pred));
+        }
         bl = pred;
         cur = data.bb_op_tail(pred);
     }
-    false
+    None
+}
+
+/// The register a COPY or extension `op` reads, when it moves one register's
+/// value into another.
+fn register_copy_source(data: &Funcdata, op: OpId) -> Option<(Address, int4)> {
+    let o = data.obank().get(op)?;
+    if !matches!(o.code(), OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT) {
+        return None;
+    }
+    let v = data.vbank().get(o.get_in(0)?)?;
+    (v.get_space().get_type() == spacetype::IPTR_PROCESSOR).then(|| (v.get_addr().clone(), v.get_size()))
+}
+
+/// How many blocks [`only_decides`] follows the value through.
+const USE_WALK_BLOCKS: usize = 32;
+
+/// Does the value `origin` computes do nothing but decide branches, move into
+/// other registers, and reach `tail_calls`?
+///
+/// Followed forward from `origin` over every path, before heritage: a register
+/// copy or extension of it is the value again; any other op reading it, or
+/// reading what was computed from it, computes a derived value, and a derived
+/// value may only reach a CBRANCH (the flags of `cmp $5,%eax`, MIPS `slti`). A
+/// LOAD or STORE through or of either, a CALLOTHER or BRANCHIND reading either,
+/// and a call other than one of `tail_calls` while either sits in a register
+/// the function's model passes arguments in all refuse: the value is used as a
+/// pointer, stored, counted (`lea 1(%rax),%edx` of a recursion guard), or
+/// handed to a call, which a returned value the function only tested is not.
+/// A write of a register forgets what it held; a call forgets the registers it
+/// may return or take arguments in.
+fn only_decides(data: &Funcdata, origin: OpId, tail_calls: &[OpId]) -> bool {
+    let proto = data.get_func_proto();
+    let Some(o) = data.obank().get(origin) else { return false };
+    let Some(out) = o.get_out().and_then(|v| data.vbank().get(v)) else { return false };
+    let Some(start) = o.get_parent() else { return false };
+    type Set = Vec<(Address, int4)>;
+    let storage = |v: VarnodeId| data.vbank().get(v).filter(|v| !v.is_constant()).map(|v| (v.get_addr().clone(), v.get_size()));
+    let hits = |set: &Set, a: &(Address, int4)| set.iter().any(|(b, t)| overlaps(&a.0, a.1, b, *t));
+    let mut seen = vec![start];
+    let mut work: Vec<(BlockId, Option<OpId>, Set, Set)> =
+        vec![(start, o.basic_neighbours().1, vec![(out.get_addr().clone(), out.get_size())], Vec::new())];
+    while let Some((bl, mut cur, mut value, mut derived)) = work.pop() {
+        while let Some(op) = cur {
+            let Some(o) = data.obank().get(op) else { return false };
+            cur = o.basic_neighbours().1;
+            let ins: Set = (0..o.num_input()).filter_map(|i| o.get_in(i)).filter_map(storage).collect();
+            let reads_value = ins.iter().any(|i| hits(&value, i));
+            let reads_derived = ins.iter().any(|i| hits(&derived, i));
+            let out = o.get_out().and_then(storage);
+            match o.code() {
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                    let passes = |(a, s): &(Address, int4)| proto.possible_input_param(a, *s);
+                    if !tail_calls.contains(&op) && (value.iter().any(passes) || derived.iter().any(passes)) {
+                        return false;
+                    }
+                    let clobbered = |(a, s): &(Address, int4)| {
+                        proto.possible_input_param(a, *s)
+                            || proto.characterize_as_output(a, *s) != crate::fspec::Containment::NoContainment
+                    };
+                    value.retain(|r| !clobbered(r));
+                    derived.retain(|r| !clobbered(r));
+                    continue;
+                }
+                OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCH | OpCode::CPUI_RETURN => continue,
+                OpCode::CPUI_LOAD | OpCode::CPUI_STORE | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCHIND
+                    if reads_value || reads_derived =>
+                {
+                    return false;
+                }
+                _ => {}
+            }
+            let Some(out) = out else { continue };
+            value.retain(|r| !overlaps(&r.0, r.1, &out.0, out.1));
+            derived.retain(|r| !overlaps(&r.0, r.1, &out.0, out.1));
+            if reads_value && !reads_derived && register_copy_source(data, op).is_some() {
+                value.push(out);
+            } else if reads_value || reads_derived {
+                derived.push(out);
+            }
+        }
+        if value.is_empty() && derived.is_empty() {
+            continue;
+        }
+        let b = data.bblocks_ref().block(bl);
+        for k in 0..b.size_out() {
+            let next = b.get_out(k);
+            if seen.contains(&next) {
+                continue;
+            }
+            if seen.len() >= USE_WALK_BLOCKS {
+                return false;
+            }
+            seen.push(next);
+            work.push((next, data.bb_op_head(next), value.clone(), derived.clone()));
+        }
+    }
+    true
 }
 
 /// Does a block within [`REACH_BLOCKS`] forward of `from` hold one of `tails`?

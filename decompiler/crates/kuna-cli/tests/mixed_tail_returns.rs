@@ -1,8 +1,8 @@
 //! `mixedtailret`: a function that returns a value it also compares on one
 //! path and tail-calls a value-returning function on the other returns that
 //! value on both paths in `decompile-all`, with no caller reading it. The x86-64
-//! fixture holds gcc and clang -O2 builds; the printed C is compiled against it
-//! and compared with it. A function whose tail callee returns nothing, and one
+//! fixture holds gcc and clang -O2 builds, one with gcc's `-fzero-call-used-regs`
+//! scrub; the printed C is compiled against it and compared with it. A function whose tail callee returns nothing, and one
 //! that leaves the return register unwritten on its other path, stay `void`;
 //! so does an AArch64 function whose tail callee takes its value in `w0`.
 mod common;
@@ -13,8 +13,13 @@ use std::process::Command;
 
 const ASM: &str = include_str!("fixtures/mixed_tail_returns.S");
 
-const RETURNING: &[(&str, &str)] =
-    &[("keep_gcc", "int"), ("keep_clang", "int"), ("fwd_clang", "int"), ("keepl_gcc", "long")];
+const RETURNING: &[(&str, &str)] = &[
+    ("keep_gcc", "int"),
+    ("keep_clang", "int"),
+    ("fwd_clang", "int"),
+    ("keepl_gcc", "long"),
+    ("keep_zc", "int"),
+];
 
 const DRIVER: &str = r#"
 extern int g;
@@ -23,10 +28,12 @@ int keep_gcc(int *);
 int keep_clang(int *);
 int fwd_clang(int *);
 long keepl_gcc(long *);
+int keep_zc(int *);
 int emitted_keep_gcc(int *);
 int emitted_keep_clang(int *);
 int emitted_fwd_clang(int *);
 long emitted_keepl_gcc(long *);
+int emitted_keep_zc(int *);
 int main(void) {
     for (int a = -20; a < 20; a++) {
         int x = a;
@@ -37,6 +44,7 @@ int main(void) {
         if (keep_clang(&x) != emitted_keep_clang(&x)) return 2;
         if (fwd_clang(&x) != emitted_fwd_clang(&x)) return 3;
         if (keepl_gcc(&y) != emitted_keepl_gcc(&y)) return 4;
+        if (keep_zc(&x) != emitted_keep_zc(&x)) return 5;
     }
     return 0;
 }
@@ -100,7 +108,7 @@ fn a_value_returned_beside_a_tail_call_is_returned() {
         assert!(text.contains(&format!("void {name}(")), "{text}");
     }
     let off = decompile_all(&elf, false);
-    for (name, _) in RETURNING {
+    for (name, _) in RETURNING.iter().filter(|(n, _)| *n != "keep_zc") {
         let text = code(&off, name);
         assert!(text.contains(&format!("void {name}(")), "{text}");
     }

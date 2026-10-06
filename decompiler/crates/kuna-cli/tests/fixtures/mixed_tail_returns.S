@@ -1,6 +1,7 @@
 # gcc 11 -O2 -fcf-protection=none and clang 14 -O2 builds of functions that
 # return a value they also compare on one path and tail-call a value-returning
-# function on the other, with two that stay void: one tail-calls a void
+# function on the other (keep_zc with gcc's -fzero-call-used-regs=all scrub,
+# cut to six registers), with two that stay void: one tail-calls a void
 # function, one leaves eax unwritten on its other path.
 .text
 .globl getv
@@ -79,6 +80,23 @@ keepl_gcc:
 .Lkeepl_gcc_ret:
     ret
 .size keepl_gcc, .-keepl_gcc
+
+.globl keep_zc
+.type keep_zc,@function
+keep_zc:
+    movl (%rdi), %eax
+    cmpl $5, %eax
+    jg .Lkeep_zc_ret
+    jmp getv
+.Lkeep_zc_ret:
+    xorl %edx, %edx
+    xorl %ecx, %ecx
+    xorl %esi, %esi
+    xorl %edi, %edi
+    pxor %xmm0, %xmm0
+    pxor %xmm1, %xmm1
+    ret
+.size keep_zc, .-keep_zc
 
 .globl vkeep_gcc
 .type vkeep_gcc,@function

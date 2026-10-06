@@ -178,6 +178,9 @@ pub struct PassThroughClaim {
     /// Some op of the function reads or writes the range itself, so heritage
     /// visits it with the option off too.
     pub body_touches: bool,
+    /// A RETURN reached from no call hands back the function's own value in the
+    /// range beside the tail calls (`mixedtailret`).
+    pub beside_own: bool,
 }
 
 /// How many bytes of `[addr, addr+size)` the callee of `fc` takes as a
@@ -443,9 +446,9 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
     if variadic {
         return;
     }
-    let returned_call_result = stated_tail_return(data).map(|(pieces, producers)| {
+    let returned_call_result = stated_tail_return(data).map(|(pieces, producers, beside_own)| {
         let pieces: Vec<_> = pieces.into_iter().map(|(a, s)| (touched(data, &a, s), a, s)).collect();
-        (pieces, producers)
+        (pieces, producers, beside_own)
     });
     let vararg: Vec<OpId> = (0..data.num_calls())
         .filter(|&i| set_up_as_variadic(data, i))
@@ -488,7 +491,14 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
             match claims.iter_mut().find(|c| c.addr == addr && c.size == size) {
                 Some(c) => c.arg_owners.push(op),
                 None => {
-                    claims.push(PassThroughClaim { addr, size, arg_owners: vec![op], ret_owners: Vec::new(), body_touches: false })
+                    claims.push(PassThroughClaim {
+                        addr,
+                        size,
+                        arg_owners: vec![op],
+                        ret_owners: Vec::new(),
+                        body_touches: false,
+                        beside_own: false,
+                    })
                 }
             }
         }
@@ -578,7 +588,7 @@ pub(crate) fn producing_call(data: &Funcdata, ret: OpId) -> Option<OpId> {
 /// them ([`crate::p4_calls::kuna_mixedtailret::returns_decided_value`]); the
 /// register may then be touched anywhere. An argument register is taken only
 /// when no claimed callee reads it.
-fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId>)> {
+fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId>, bool)> {
     if data.get_func_proto().is_output_locked() || data.get_active_output().is_none() {
         return None;
     }
@@ -627,14 +637,13 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     }
     if mixed {
         let argument = pieces.iter().any(|(a, s)| !return_only(proto, a, *s));
-        let tails: Vec<OpId> = paths.iter().map(|&(_, r)| r).collect();
         if (argument && crate::p4_calls::kuna_mixedtailret::feeds_tail_call(data, &producers, &pieces))
-            || !own.iter().all(|&r| crate::p4_calls::kuna_mixedtailret::returns_decided_value(data, r, &pieces, &tails))
+            || !own.iter().all(|&r| crate::p4_calls::kuna_mixedtailret::returns_decided_value(data, r, &pieces, &paths))
         {
             return None;
         }
     }
-    Some((pieces, producers))
+    Some((pieces, producers, mixed))
 }
 
 /// Does an op between `call` and `ret`, on the path [`producing_call`] walks,
@@ -704,9 +713,9 @@ fn register_pieces(data: &Funcdata, addr: &Address, size: int4) -> Option<Vec<(A
 fn claim_tail_return(
     data: &mut Funcdata,
     claims: &mut Vec<PassThroughClaim>,
-    ret: (Vec<(bool, Address, int4)>, Vec<OpId>),
+    ret: (Vec<(bool, Address, int4)>, Vec<OpId>, bool),
 ) {
-    let (pieces, producers) = ret;
+    let (pieces, producers, beside_own) = ret;
     let rets: Vec<OpId> = data
         .obank()
         .iter_code(OpCode::CPUI_RETURN)
@@ -730,13 +739,17 @@ fn claim_tail_return(
             active.get_trial_mut(t).set_slot(slot);
         }
         match claims.iter_mut().find(|c| c.addr == addr && c.size == size) {
-            Some(c) => c.ret_owners.extend(producers.iter().copied()),
+            Some(c) => {
+                c.ret_owners.extend(producers.iter().copied());
+                c.beside_own |= beside_own;
+            }
             None => claims.push(PassThroughClaim {
                 addr,
                 size,
                 arg_owners: Vec::new(),
                 ret_owners: producers.clone(),
                 body_touches,
+                beside_own,
             }),
         }
     }
@@ -798,7 +811,10 @@ fn is_tail_return_piece(data: &Funcdata, addr: &Address, size: int4) -> bool {
 /// the RETURN through an ordinary INDIRECT instead, and keeping the other
 /// register alone would return half the callee's value as the whole of the
 /// function's. And the claim yields to a value the function computes itself in
-/// another storage class ([`returns_own_value`]). Inert with the option off.
+/// another storage class ([`returns_own_value`]), unless the claim also
+/// covers a value the function returns itself
+/// ([`crate::p4_calls::kuna_mixedtailret::claimed_beside_own`]). Inert with the
+/// option off.
 pub fn keep_tail_return_whole(data: &Funcdata, active: &mut crate::fspec::ParamActive) {
     if !data.get_arch().pass_through {
         return;
@@ -806,7 +822,8 @@ pub fn keep_tail_return_whole(data: &Funcdata, active: &mut crate::fspec::ParamA
     let claimed: Vec<int4> = (0..active.get_num_trials())
         .filter(|&i| is_tail_return_piece(data, active.get_trial(i).get_address(), active.get_trial(i).get_size()))
         .collect();
-    if claimed.iter().any(|&i| !active.get_trial(i).is_active()) || returns_own_value(data, active, &claimed) {
+    let own = !crate::p4_calls::kuna_mixedtailret::claimed_beside_own(data) && returns_own_value(data, active, &claimed);
+    if claimed.iter().any(|&i| !active.get_trial(i).is_active()) || own {
         for i in claimed {
             active.get_trial_mut(i).mark_inactive();
         }
@@ -826,10 +843,7 @@ pub fn keep_tail_return_whole(data: &Funcdata, active: &mut crate::fspec::ParamA
 /// class (the `r1` of `bl f; mov r1,#0`), which can be the rest of the claimed
 /// value; and a value that is zero at every RETURN ([`is_zero`]), which is also
 /// what `-fzero-call-used-regs` leaves in every call-used register the function
-/// does not return in (openssh's `call f; ...; pxor %xmm0,%xmm0; ret`). Under
-/// `mixedtailret`, a claimed tail callee's leftover at its own RETURN is not a
-/// value of the function's either
-/// ([`crate::p4_calls::kuna_mixedtailret::is_tail_leftover`]).
+/// does not return in (openssh's `call f; ...; pxor %xmm0,%xmm0; ret`).
 fn returns_own_value(data: &Funcdata, active: &crate::fspec::ParamActive, claimed: &[int4]) -> bool {
     let proto = data.get_func_proto();
     let Some(out) = proto.has_model().then(|| proto.model().output_list()).flatten() else { return false };
@@ -857,7 +871,7 @@ fn returns_own_value(data: &Funcdata, active: &crate::fspec::ParamActive, claime
         (0..own.get_num_trials()).map(|i| own.get_trial(i)).filter(|t| t.is_used()).collect();
     let nonzero = used.iter().any(|t| {
         rets.iter().any(|&r| match data.obank().get(r).and_then(|o| o.get_in(t.get_slot())) {
-            Some(vn) => !is_zero(data, vn, ZERO_DEPTH) && !crate::p4_calls::kuna_mixedtailret::is_tail_leftover(data, vn),
+            Some(vn) => !is_zero(data, vn, ZERO_DEPTH),
             None => false,
         })
     });
