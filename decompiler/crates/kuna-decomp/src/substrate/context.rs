@@ -1272,6 +1272,9 @@ pub struct ArchContext {
     /// selector. Checked during [`lowered-switch detection`](crate::kuna_loweredswitch::ActionLowerSwitchDetect::detect).
     pub switch_selector_guard: bool,
     pub cond_fold: int4,
+    /// (kuna) `condstmts`: most statements a folded condition operand may print
+    /// before its test; negative = off.  See [`crate::p8_structure::kuna_condstmts`].
+    pub cond_stmts: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
@@ -1794,6 +1797,7 @@ impl ArchContext {
             peb_names: false,
             switch_selector_guard: false, // switchselector (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
+            cond_stmts: -1,              // condstmts (-1 = off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)

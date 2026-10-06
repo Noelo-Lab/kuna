@@ -504,6 +504,12 @@ kuna_options! { self, p1;
         self.cond_fold = val;
         Ok(msg)
     },
+    "condstmts" => {
+        let (val, msg) =
+            crate::p8_structure::kuna_condstmts::OptionCondStmts.apply(p1)?;
+        self.cond_stmts = val;
+        Ok(msg)
+    },
     "gotoreduce" => {
         let (val, msg) =
             crate::p8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
