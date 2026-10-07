@@ -336,8 +336,9 @@ fn produced_here(data: &Funcdata, vn: VarnodeId, entry: &ParamEntry, steps: &mut
 /// renamed, so `-O0`'s spill and reload of a value (`str d0,[sp,#8]` ..
 /// `ldr d1,[sp,#8]`) is matched by hand: same incoming base register, same
 /// constant offset, same width. A store that overlaps the slot any other way,
-/// or none at all, refuses; a store through an address not computed from that
-/// register is taken not to reach the frame.
+/// or none at all, refuses, and so does a store through an address that is
+/// not an incoming register plus a constant: gcc `-O0` writes `*pr = get(p)`
+/// through a pointer to the slot it reloads from the frame.
 fn reloads_produced(data: &Funcdata, op: &crate::op::PcodeOp, entry: &ParamEntry, steps: &mut usize) -> bool {
     let Some(size) = op.get_out().and_then(|o| data.vbank().get(o)).map(|o| i64::from(o.get_size())) else {
         return false;
@@ -348,7 +349,7 @@ fn reloads_produced(data: &Funcdata, op: &crate::op::PcodeOp, entry: &ParamEntry
     let mut stored = false;
     for id in data.obank().iter_code(OpCode::CPUI_STORE) {
         let Some(store) = data.obank().get(id).filter(|s| !s.is_dead()) else { continue };
-        let Some((b, o)) = store.get_in(1).and_then(|a| frame_slot(data, a)) else { continue };
+        let Some((b, o)) = store.get_in(1).and_then(|a| frame_slot(data, a)) else { return false };
         let Some(value) = store.get_in(2) else { return false };
         let width = data.vbank().get(value).map_or(0, |v| i64::from(v.get_size()));
         if b != base || o.wrapping_add(width) <= off || off.wrapping_add(size) <= o {

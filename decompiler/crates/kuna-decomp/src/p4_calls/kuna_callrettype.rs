@@ -556,19 +556,41 @@ pub fn float_held_as_bits(data: &mut Funcdata, op: OpId) -> Option<Rc<Datatype>>
     (bits && held.get_size() == ct.get_size()).then_some(ct)
 }
 
-/// Is `vn` a global, or only written to memory: stored, which takes a float
-/// token as the type it stores ([`refused_token`]), or copied to a global?
-/// Raw bytes in memory are printed with no declaration that would convert them.
-fn kept_in_memory(data: &Funcdata, vn: VarnodeId) -> bool {
+/// Is `vn` a global, or only written to memory: stored through an address that
+/// is no pointer to an integer, nor a variable pointing to raw bytes, which
+/// takes a float token as the type it stores ([`refused_token`]), or copied to
+/// a global? Raw bytes in memory are printed with no declaration that would
+/// convert them; a store through a variable declared `unsigned long *` is
+/// (`*a2 = getd(..)`), where an address computed in place is cast to `float *`.
+fn kept_in_memory(data: &mut Funcdata, vn: VarnodeId) -> bool {
     let Some(node) = data.vbank().get(vn) else { return false };
-    node.is_persist()
-        || node.descend_iter().all(|r| {
-            data.obank().get(r).is_some_and(|o| match o.code() {
-                OpCode::CPUI_STORE => o.get_in(2) == Some(vn) && o.get_in(1) != Some(vn),
-                OpCode::CPUI_COPY => o.get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_persist()),
-                _ => false,
-            })
+    if node.is_persist() {
+        return true;
+    }
+    let mut pointers: Vec<VarnodeId> = Vec::new();
+    for r in node.descend_iter() {
+        let Some(o) = data.obank().get(r) else { return false };
+        let kept = match o.code() {
+            OpCode::CPUI_STORE => {
+                let ptr = o.get_in(1).filter(|&p| p != vn && o.get_in(2) == Some(vn));
+                pointers.extend(ptr);
+                ptr.is_some()
+            }
+            OpCode::CPUI_COPY => o.get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_persist()),
+            _ => false,
+        };
+        if !kept {
+            return false;
+        }
+    }
+    pointers.into_iter().all(|p| {
+        let named = data.vbank().get(p).is_some_and(|v| !v.is_implied());
+        !data.high_get_type(p).and_then(|t| t.get_ptr_to()).is_some_and(|to| match to.get_metatype() {
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT => true,
+            type_metatype::TYPE_UNKNOWN => named,
+            _ => false,
         })
+    })
 }
 
 /// Does something the caller declares about the result outrank the statement

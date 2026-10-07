@@ -9020,7 +9020,10 @@ fn an_int_worked_out_from_the_high_half_of_a_temporary_keeps_it() {
 /// `floor_add` casting the 16-byte result, `(double)scale(a0,a1)`. The fill is
 /// no part of the value: every function returns its `double`, the tail call
 /// hands it on, and the printed functions compiled on the host compute what
-/// the source does.
+/// the source does. `zerofillfwd_a64.o` (gcc -O0): `mk` reloads both members
+/// of a two-double struct from its frame and joins them in `d1:d0`; `fa`
+/// writes its callee's complex result through a pointer reloaded from the frame,
+/// so the `d1` it reloads may be what the call left, and keeps `q0` as before.
 #[test]
 fn an_aarch64_double_return_leaves_out_the_zero_fill() {
     let sp = specs();
@@ -9045,6 +9048,13 @@ fn an_aarch64_double_return_leaves_out_the_zero_fill() {
     for (cc, got) in compile_and_run_each("zerofillreturn-a64", &src) {
         assert_eq!(got, "4.875 5.875 0.25 5 0", "{cc}: the printed C computes something else:\n{printed}");
     }
+    let fwd = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/zerofillfwd_a64.o");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", fwd.to_str().unwrap(), "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let fa = printed_functions(&stdout, &["fa "]);
+    let mk = printed_functions(&stdout, &["mk "]);
+    assert!(mk.contains("// d1:d0") && mk.contains("._8_8_ = a0 * a0;"), "mk's reloaded pair is not joined:\n{mk}");
+    assert!(!fa.contains("d1:d0") && fa.contains("._8_8_ = 0;"), "fa joins a d1 its callee may have left:\n{fa}");
 }
 
 /// `voidret_complexpick_a64.o` (clang -O2, AArch64): `pick` tail-calls `cpart`,
@@ -9073,11 +9083,12 @@ fn a_tail_call_wrapper_keeps_the_float_its_readers_read() {
 
 /// `floatbits_a64.o` (clang -O2, AArch64): `to_bits` and `exponent` move the
 /// bits of `getd`'s `double` to an integer register (`fmov x0,d0`), `to_fbits`
-/// those of `getf`'s `float` (`fmov w0,s0`). The listing declares `double
-/// getd(..)` and `float getf(..)`, and the readers printed `return getf(a0,a1);`
-/// from an `unsigned int` function and `(unsigned long)getd(a0,a1) >> 0x34`,
-/// which C converts by value. The printed functions, compiled on the host,
-/// hand back the bits.
+/// those of `getf`'s `float` (`fmov w0,s0`), and `store_bits` stores them
+/// through an `unsigned long *`. The listing declares `double getd(..)` and
+/// `float getf(..)`, and the readers printed `return getf(a0,a1);` from an
+/// `unsigned int` function, `(unsigned long)getd(a0,a1) >> 0x34` and `*a2 =
+/// getd(a0,a1);`, which C converts by value. The printed functions, compiled
+/// on the host, hand back the bits.
 #[test]
 fn a_float_result_held_as_bits_round_trips() {
     let sp = specs();
@@ -9088,20 +9099,21 @@ fn a_float_result_held_as_bits_round_trips() {
     for want in ["double getd(int a0,double *a1)", "float getf(int a0,float *a1)"] {
         assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
     }
-    for bad in ["return getd(", "return getf(", ")getd(", ")getf("] {
+    for bad in ["return getd(", "return getf(", ")getd(", ")getf(", "*a2 = getd("] {
         assert!(!stdout.contains(bad), "a reader converts the float by value (`{bad}`):\n{stdout}");
     }
-    let printed = printed_functions(&stdout, &["getd ", "getf ", "to_bits ", "to_fbits ", "exponent "]);
+    let printed = printed_functions(&stdout, &["getd ", "getf ", "to_bits ", "to_fbits ", "exponent ", "store_bits "]);
     let src = format!(
         "#include <stdio.h>\n{printed}\n\
-         int main(void) {{\n  double g = 1.25;\n  float f = 1.25f;\n  \
-         printf(\"%lx %lx %x %x %d %d\\n\", (unsigned long)to_bits(3, &g), (unsigned long)to_bits(-3, &g), \
-         (unsigned int)to_fbits(3, &f), (unsigned int)to_fbits(-3, &f), (int)exponent(3, &g), (int)exponent(-3, &g));\n  \
+         int main(void) {{\n  double g = 1.25;\n  float f = 1.25f;\n  unsigned long s = 0;\n  \
+         store_bits(-3, &g, (void *)&s);\n  \
+         printf(\"%lx %lx %x %x %d %d %lx\\n\", (unsigned long)to_bits(3, &g), (unsigned long)to_bits(-3, &g), \
+         (unsigned int)to_fbits(3, &f), (unsigned int)to_fbits(-3, &f), (int)exponent(3, &g), (int)exponent(-3, &g), s);\n  \
          return 0;\n}}\n"
     );
     for (cc, got) in compile_and_run_each("floatbits-a64", &src) {
         assert_eq!(
-            got, "4011000000000000 c00a000000000000 40880000 c0500000 1025 1024",
+            got, "4011000000000000 c00a000000000000 40880000 c0500000 1025 1024 c00a000000000000",
             "{cc}: the printed C computes something else:\n{printed}"
         );
     }

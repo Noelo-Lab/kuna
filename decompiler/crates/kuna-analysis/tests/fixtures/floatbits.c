@@ -4,3 +4,4 @@ __attribute__((noinline)) float getf(int a, const float *g) { return *g * a + 0.
 __attribute__((noinline)) unsigned long to_bits(int a, const double *g) { double d = getd(a, g); unsigned long u; __builtin_memcpy(&u, &d, 8); return u; }
 __attribute__((noinline)) unsigned int to_fbits(int a, const float *g) { float f = getf(a, g); unsigned int u; __builtin_memcpy(&u, &f, 4); return u; }
 __attribute__((noinline)) int exponent(int a, const double *g) { double d = getd(a, g); unsigned long u; __builtin_memcpy(&u, &d, 8); return (int)(u >> 52 & 0x7ff); }
+__attribute__((noinline)) void store_bits(int a, const double *g, unsigned long *p) { double d = getd(a, g); __builtin_memcpy(p, &d, 8); }
