@@ -4673,6 +4673,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "floatglobals"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P5"
+subphase = "type-propagation"
+strength = "HARD"
+rewind = "P5"
+issue = "GH-888"
+summary = "Let a float vote accept a global the whole program only moves through floating-point registers. A global has one declaration for every function, so the float votes refuse one: `void fy(int *p, double b) { gd = b; *p = 1; }` printed `fy(unsigned long a0, ..)`, an integer the convention passes in `rdi` where the machine reads `xmm0`, and a caller handing `gd` to a `double` parameter printed `sink(((union { unsigned long long from; double to; }){ .from = gd }).to)`. With `on`, the first float vote of a run whose only objection is a global has the analysis tier scan the whole program once (`kuna_analysis::listing::kuna_floatglobals`): every function of the inventory and every function it calls is walked, switch tables included, with its registers and stack slots followed as constants through its control flow, so a load or store the decompiler resolves to a global is seen however the address is formed (RIP-relative, literal pool, `adrp`, `movw`/`movt`, a GOT slot, a register the loader seeds at the entry). Each access is filed with its width and whether the value goes to or comes from a floating-point register or a float operation; an immediate stored there, a general-register move and a soft-float helper's argument are integer accesses. A writable global every access of which is a float access of one width, 4 or 8 bytes, that no other access overlaps and whose address is never stored where the walk lost the stack pointer, is a float. The function that asked is decompiled again with the answer, and every later function reads it: the parameter-input vote accepts a store of the parameter into such a global (`void fy(double a0,unsigned int *a1)`), a read of one passed in a float register takes the float type (`sink(gd)`), and `protoorder`'s float votes no longer count one as evidence against a float. Before the scan is asked, the function's own code must move the global only as a float -- every access of it whole, no value written there or read from it by an integer operation, its address not handed on, and every load and store through a pointer indexed from it a whole float move (a global its Symbol declares a scalar refuses any index) -- so a function that also adds to the bits (`g7 = *(long *)&gd + 1` in one case of a switch) refuses. The answer never declares the global: a type-locked float global that some code reads as an integer prints a conversion, so the global keeps its type and only the votes hear the evidence. A run that decompiles one function does not scan an image with more than 256 KiB of code and refuses the global instead. i386 and SPARC, whose position-independent code reaches globals through a register a thunk call sets, are not scanned."
+use_when = "On by default: a float parameter stored into a global, and a global handed to a float parameter, print as the floats they are on x86-64, AArch64 and ARM hard-float (Cortex-M firmware's union reinterpretations of float globals fall away), and a global some code moves through a general register -- a `memcpy` pun, a `movl $0, g` that zeroes a double, a Cortex-M4F double helper fed a float in `r0` -- keeps the integer reading. Turn it off to get the per-function refusal back (every global refuses a float vote), or when a run must not pay the one whole-program decode a float function's first vote triggers."
+example = "option floatglobals off"
+source_decompiler = "ida"
+inspiration = "GH-888: `fy(int *p, double b) { gd = b; }` prints `fy(unsigned long a0, ..)`; IDA types a global from the float operand that accesses it (`movsd cs:qword_4040, xmm0` makes it a `double`), and this asks the same question of every access in the program before a vote may take it"
+change_kind = "type-inference"
+tier = "core"
+symptoms = "a double parameter stored into a global prints as unsigned long and moves ahead of the integer parameters|a float parameter copied into a global prints as unsigned int|a global passed to a float parameter prints as a union reinterpretation ((union { unsigned int from; float to; }){ .from = dat_10001d78 }).to|firmware calls of float helpers wrap every global argument in a union"
+live_field = "float_globals"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "codescalar"
 values = "on|off"
 default = "on"

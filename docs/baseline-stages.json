@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2222,
-    2222
+    2235,
+    2235
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -357,6 +357,18 @@
     "data:FASTFAILNORETURN #1: the parameter is returned directly once the interrupt ends the flow (default pass only)",
     "data:FASTFAILNORETURN #2: the unbalanced stack pointer becomes a tracked variable only in the fastfailnoreturn-off pass",
     "data:FASTFAILNORETURN #3: the parameter's own stack slot degenerates into an offset off that variable only in the fastfailnoreturn-off pass",
+    "data:FLOATGLOBALS #10: a double stored into a scalar global the same function writes through an index from its address keeps its integer type",
+    "data:FLOATGLOBALS #11: a double stored into a struct or array the same function reads through an index as an integer keeps its integer type",
+    "data:FLOATGLOBALS #12: a double stored into an array the function indexes only as doubles is a double",
+    "data:FLOATGLOBALS #1: with the option off a double copied into a global prints as an integer",
+    "data:FLOATGLOBALS #2: with the option off a float copied into a global prints as an integer",
+    "data:FLOATGLOBALS #3: a double copied into a float-only global is a double",
+    "data:FLOATGLOBALS #4: a float copied into a float-only global is a float",
+    "data:FLOATGLOBALS #5: a float memcpy'd into a global read as an integer keeps its integer type",
+    "data:FLOATGLOBALS #6: a double stored into a global an integer store zeroes keeps its integer type",
+    "data:FLOATGLOBALS #7: a double stored into a global the same function reads as an integer keeps its integer type",
+    "data:FLOATGLOBALS #8: no integer read of such a global prints as a value conversion or a reinterpretation",
+    "data:FLOATGLOBALS #9: a double stored into a scalar global the same function reads through an index from its address keeps its integer type",
     "data:FLOATGROUPING #1: the right-grouped product keeps its grouping",
     "data:FLOATGROUPING #2: exactly one of the two products prints as a flat chain",
     "data:FLOATGROUPING #3: the right-grouped sum keeps its grouping",
@@ -367,6 +379,7 @@
     "data:FLOATPARAM #4: two floats stored into an array are floats",
     "data:FLOATPARAM #5: a double copied into a global keeps its integer type",
     "data:FLOATPARAM #6: bits handed back in an integer register stay an integer",
+    "data:FLOATPARAM #7: a double copied into a global nothing else reads as an integer is a double",
     "data:FLOATRET #10: a float handed on to an integer parameter keeps its bits",
     "data:FLOATRET #1: a NaN returned in s0 is a float",
     "data:FLOATRET #2: and prints as NAN, not its bits",

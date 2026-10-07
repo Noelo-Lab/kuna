@@ -2722,7 +2722,32 @@ impl ConsoleProgram {
         // terms: see `suppress_pdb_interior_entries`.
         suppress_pdb_interior_entries(self.arch(), &code_space, &mut merged);
         merged.context_paints.extend(input_context_paints);
-        commit_analysis_output(self, &code_space, merged)
+        let committed = commit_analysis_output(self, &code_space, merged);
+        self.stash_float_scan();
+        committed
+    }
+
+    /// (kuna `floatglobals`) Hand the engine what the whole-program float-global
+    /// scan reads -- the image's sections and every function entry -- so the
+    /// first function that asks can take it (`decompile_step`).
+    fn stash_float_scan(&mut self) {
+        let mut sections = self.sections();
+        if sections.is_empty() {
+            sections = self.segments();
+        }
+        if sections.is_empty() {
+            return;
+        }
+        let mut seeds: Vec<u64> = self
+            .symbols
+            .iter()
+            .filter(|s| s.addr.get_space().is_some())
+            .map(|s| self.thumb_normalized(s.addr.get_offset()))
+            .collect();
+        seeds.sort_unstable();
+        seeds.dedup();
+        self.arch_mut().kuna_float_scan =
+            Some(Rc::new(kuna_decomp::kuna_floatglobals::FloatScan { sections, seeds }));
     }
 }
 
