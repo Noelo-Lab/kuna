@@ -18,7 +18,7 @@
 //! An `int` table of character codes is byte for byte a wide literal:
 //! `{72, 101, 108, 108, 111, 0}` is `L"Hello"`, a table of the weeks in each
 //! year, `{52, 53, 52, ..}`, reads as `L"4544.."`, and a switch lookup table of
-//! character codes with a zero case can run on past its "terminator", so code
+//! character codes with a zero case runs on past its "terminator", so code
 //! indexing it would read past the literal. [`wide_string32_facts`] reads only
 //! read-only data, and plants a run only when
 //!
@@ -29,14 +29,21 @@
 //! - it lies in a mergeable string section of 4-byte entries (a relocatable
 //!   object's `.rodata.str4.4`), where every NUL-terminated run is a literal, or
 //!   it holds at least [`MIN_UNITS`] units, three of them distinct, no code
-//!   indexes it as a table ([`crate::operand_refs`]' table uses: `lea rcx,t`
-//!   then `mov eax,[rcx+rax*4]`), and something points at its start: an operand
-//!   the scalar scan found, a pointer-aligned slot of a data section, or a
-//!   dynamic relocation.
+//!   adds a computed index to its address ([`crate::operand_refs`]' table uses:
+//!   `lea rcx,t` then `mov eax,[rcx+rax*4]`), and something points at its start:
+//!   an operand the scalar scan found, a pointer-aligned slot of a data section,
+//!   or a dynamic relocation. A literal laid out right after another object's
+//!   last printable unit (a switch table ending in `'q'`) is the tail of a
+//!   longer run; when nothing points at that run's start, an operand at one of
+//!   its units starts the run there instead.
 //!
-//! An anonymous table that passes all of that, a stripped image's `int` array
-//! whose address is passed to a function, still prints as the literal its bytes
-//! spell, with the same values up to its first zero.
+//! An ARM literal pool slot backs nothing, since the scan cannot see code index
+//! the address it loads (a switch table's sits in one too), and an address code
+//! builds in two instructions (AArch64 `adrp`/`add`, MIPS `lui`/`addiu`) is no
+//! operand, so a linked image of those targets plants only what a data slot
+//! holds. An anonymous table that passes all of that, a stripped image's `int`
+//! array whose address is passed to a function, still prints as the literal its
+//! bytes spell, with the same values up to its first zero.
 //!
 //! A relocatable object is read only through the laid-out view the loader
 //! builds; its raw sections all sit at address 0.
@@ -139,15 +146,15 @@ fn elf_entsize(file: &object::File, index: object::SectionIndex) -> Option<u64> 
 /// The `wchar4[N]` facts of `file`: every 4-byte run [`scan_utf32_runs`] finds in
 /// its read-only data that the image backs as a string (see the module docs).
 /// `targets` (sorted) are the read-only addresses the scalar scan found operands
-/// pointing at and `tables` (sorted) the ones it saw code index as tables of
-/// wider elements; both are empty when it did not run.
+/// pointing at and `tables` (sorted) the ones it saw code index as arrays; both
+/// are empty when it did not run.
 pub fn wide_string32_facts(file: &object::File, targets: &[u64], tables: &[u64]) -> Vec<StringFact> {
     if matches!(file.format(), BinaryFormat::Pe | BinaryFormat::Coff) {
         return Vec::new();
     }
     let little_endian = file.is_little_endian();
     let relocatable = file.kind() == ObjectKind::Relocatable;
-    let mut runs: Vec<(Run32, bool)> = Vec::new();
+    let mut runs: Vec<(Run32, bool, &[u8], u64)> = Vec::new();
     for sec in file.sections() {
         let Some(strings4) = readonly_data(file, &sec).filter(|_| !relocatable || sec.address() != 0) else {
             continue;
@@ -156,11 +163,36 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64], tables: &[u64])
             continue;
         };
         let min_units = if strings4 { 1 } else { MIN_UNITS };
-        runs.extend(scan_utf32_runs(data, sec.address(), little_endian, min_units).into_iter().map(|r| (r, strings4)));
+        let vma = sec.address();
+        runs.extend(scan_utf32_runs(data, vma, little_endian, min_units).into_iter().map(|r| (r, strings4, data, vma)));
     }
     if runs.is_empty() {
         return Vec::new();
     }
+    let mut unpointed: Vec<u64> = runs
+        .iter()
+        .filter(|(r, strings4, ..)| !strings4 && targets.binary_search(&r.addr).is_err())
+        .map(|(r, ..)| r.addr)
+        .collect();
+    if !unpointed.is_empty() {
+        unpointed.sort_unstable();
+        let held = held_pointers(file, &unpointed, false);
+        unpointed.retain(|a| !held.contains(a));
+    }
+    let runs = runs.into_iter().filter_map(|(r, strings4, data, vma)| {
+        if unpointed.binary_search(&r.addr).is_err() {
+            return Some((r, strings4));
+        }
+        let end = r.addr + 4 * r.units as u64;
+        let at = *targets.get(targets.partition_point(|&t| t <= r.addr))?;
+        if at >= end || (at - r.addr) % 4 != 0 {
+            return None;
+        }
+        let from = usize::try_from(at - vma).ok()?;
+        let to = usize::try_from(end + 4 - vma).ok()?;
+        let tail = scan_utf32_runs(data.get(from..to)?, at, little_endian, MIN_UNITS);
+        tail.into_iter().next().filter(|t| t.addr == at).map(|t| (t, false))
+    });
     let (labels, objects): (Vec<_>, Vec<_>) = file
         .symbols()
         .chain(file.dynamic_symbols())
@@ -170,26 +202,14 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64], tables: &[u64])
     let objects = DataObjects::from_spans(objects.into_iter().map(|(_, span)| span).collect());
     let labels = DataObjects::from_spans(labels.into_iter().map(|(_, span)| span).collect());
     let (reach, label_reach) = (objects.reach(), labels.reach());
-    runs.retain(|(r, strings4)| {
+    runs.filter(|(r, strings4)| {
         let len = u64::from(r.len());
         !objects.overlaps(&reach, r.addr, len)
             && !labels.overlaps_other(&label_reach, r.addr, len)
             && (*strings4 || (r.distinct >= 3 && tables.binary_search(&r.addr).is_err()))
-    });
-    let mut unbacked: Vec<u64> = runs
-        .iter()
-        .filter(|(r, strings4)| !strings4 && targets.binary_search(&r.addr).is_err())
-        .map(|(r, _)| r.addr)
-        .collect();
-    if !unbacked.is_empty() {
-        unbacked.sort_unstable();
-        let held = held_pointers(file, &unbacked, false);
-        unbacked.retain(|a| !held.contains(a));
-    }
-    runs.into_iter()
-        .filter(|(r, _)| unbacked.binary_search(&r.addr).is_err())
-        .map(|(r, _)| StringFact { addr: r.addr, len: r.len() })
-        .collect()
+    })
+    .map(|(r, _)| StringFact { addr: r.addr, len: r.len() })
+    .collect()
 }
 
 #[cfg(test)]
@@ -242,56 +262,80 @@ mod tests {
         assert!(scan_utf32_runs(&utf16, 0x2000, true, 1).is_empty());
     }
 
-    fn fixture_facts(name: &str, targets: &[u64]) -> Vec<(u64, u32)> {
+    fn fixture_facts(name: &str, targets: &[u64], tables: &[u64]) -> Vec<(u64, u32)> {
         let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
         let bytes = std::fs::read(path).expect("read widestr32 fixture");
         let raw = object::File::parse(bytes.as_slice()).expect("parse widestr32 fixture");
         let view = crate::loader::kuna_relocrebase::rebased_view(&raw, &bytes);
         let (file, _) = crate::loader::kuna_relocrebase::select(raw, &bytes, &view);
-        let mut facts: Vec<(u64, u32)> = wide_string32_facts(&file, targets, &[]).iter().map(|f| (f.addr, f.len)).collect();
+        let mut facts: Vec<(u64, u32)> =
+            wide_string32_facts(&file, targets, tables).iter().map(|f| (f.addr, f.len)).collect();
         facts.sort_unstable();
         facts
     }
 
-    /// `widestr32.c`: `L"hellow"`, `L"(NULL)"`, `L"xbind"` (whose tail `L"bind"`
-    /// is passed too) and `U"char32-text"`, beside `codes` (`int {72, 101, 108,
-    /// 108, 111, 0}`, which spells "Hello") and `weeks` (`int {52, 53, ..}`, two
-    /// characters). With the symbol table the literals are planted and both
-    /// tables keep their names; stripped, only an operand target is planted,
-    /// `codes` with them and `weeks` never.
+    /// `widestr32_gcc_O2_x86_64`: the literals `L"hellow"` (0x402004),
+    /// `L"(NULL)"`, `L"xbind"` (whose tail is passed too), `U"char32-text"`,
+    /// `L"first-msg"` and `L"second-msg"` (both held by the pointer table `msgs`),
+    /// beside the switch table `CSWTCH.19` (`L"helpz"` and then `'q'`), `rows`
+    /// (`L"alpha"`, `L"bravo"`), `weeks` (two characters) and `codes`
+    /// (`L"Hello"`). With no operand only the pointer table backs a literal;
+    /// with the operands the literals are planted and every declared table keeps
+    /// its name; stripped, the operand at `codes` plants it, while the indexed
+    /// switch table and `rows` and the two-character `weeks` never are.
     #[test]
-    fn widestr32_builds_plant_the_literals() {
-        let literals = vec![(0x402004, 28), (0x402020, 28), (0x40203c, 24), (0x402058, 48)];
-        assert_eq!(fixture_facts("widestr32_gcc_O2_x86_64", &[]), literals);
-        assert!(fixture_facts("widestr32_gcc_O2_stripped_x86_64", &[]).is_empty());
-        let targets = [0x402004, 0x402020, 0x40203c, 0x402040, 0x402058, 0x4020a0, 0x4020c0];
+    fn gcc_builds_plant_what_points_at_a_literal() {
+        let held = vec![(0x402088, 40), (0x4020b0, 44)];
+        assert_eq!(fixture_facts("widestr32_gcc_O2_x86_64", &[], &[]), held);
+        let targets = [0x402004, 0x402020, 0x40203c, 0x402040, 0x402058, 0x402088, 0x4020e0, 0x402100, 0x402160, 0x402180];
+        let tables = [0x4020e0, 0x402100];
+        let literals = vec![(0x402004, 28), (0x402020, 28), (0x40203c, 24), (0x402058, 48), (0x402088, 40), (0x4020b0, 44)];
+        assert_eq!(fixture_facts("widestr32_gcc_O2_x86_64", &targets, &tables), literals);
         let mut stripped = literals.clone();
-        stripped.push((0x4020c0, 24));
-        assert_eq!(fixture_facts("widestr32_gcc_O2_stripped_x86_64", &targets), stripped);
-        assert_eq!(
-            fixture_facts("widestr32_clang_O2_x86_64", &[]),
-            vec![(0x2050, 28), (0x206c, 48), (0x209c, 28), (0x20b8, 24)]
-        );
-        assert_eq!(
-            fixture_facts("widestr32_mips32_be_O2", &[]),
-            vec![(0x4003a0, 28), (0x4003bc, 48), (0x4003ec, 28), (0x400408, 24)]
-        );
+        stripped.push((0x402180, 24));
+        assert_eq!(fixture_facts("widestr32_gcc_O2_stripped_x86_64", &targets, &tables), stripped);
+        let mut untabled = stripped.clone();
+        untabled.extend([(0x4020e0, 24), (0x402100, 24)]);
+        untabled.sort_unstable();
+        assert_eq!(fixture_facts("widestr32_gcc_O2_stripped_x86_64", &targets, &[]), untabled);
+    }
+
+    /// `widestr32_clang_O2_x86_64` keeps no symbol for its switch table
+    /// (`L"helpz"` at 0x20a0, then `'q'`), so `L"hellow"` right after it is the
+    /// tail of the run `L"qhellow"`: the operand at 0x20bc plants the literal
+    /// from there. The table is planted only when nothing says code indexes it.
+    #[test]
+    fn an_operand_inside_a_run_plants_the_literal_it_points_at() {
+        assert!(fixture_facts("widestr32_clang_O2_x86_64", &[], &[]).is_empty());
+        let targets = [0x20a0, 0x20bc, 0x20d8, 0x2108, 0x2124, 0x2128, 0x213c];
+        let literals = vec![(0x20bc, 28), (0x20d8, 48), (0x2108, 28), (0x2124, 24), (0x213c, 40)];
+        assert_eq!(fixture_facts("widestr32_clang_O2_x86_64", &targets, &[0x2060, 0x20a0]), literals);
+        let mut untabled = literals.clone();
+        untabled.insert(0, (0x20a0, 24));
+        assert_eq!(fixture_facts("widestr32_clang_O2_x86_64", &targets, &[]), untabled);
     }
 
     /// A relocatable object's `.rodata.str4.4` holds only literals, so every run
-    /// there is planted, while `codes` and `weeks` in `.rodata` keep their names.
+    /// there is planted, while the tables in `.rodata` are not, nothing pointing
+    /// at them.
     #[test]
     fn a_four_byte_string_section_backs_its_runs() {
         for name in ["widestr32_aarch64_O2.o", "widestr32_arm32_O2.o"] {
-            let lens: Vec<u32> = fixture_facts(name, &[]).iter().map(|&(_, len)| len).collect();
-            assert_eq!(lens.len(), 5, "{name}: {lens:?}");
-            assert!([28, 48, 28, 24, 20].iter().all(|l| lens.contains(l)), "{name}: {lens:?}");
+            let lens: Vec<u32> = fixture_facts(name, &[], &[]).iter().map(|&(_, len)| len).collect();
+            assert_eq!(lens, [28, 48, 28, 24, 20, 40, 44], "{name}");
         }
+    }
+
+    /// The big-endian MIPS image reaches its literals through `lui`/`addiu`
+    /// pairs, which no operand names, so only the two `msgs` holds are planted.
+    #[test]
+    fn a_big_endian_image_reads_its_units_in_its_byte_order() {
+        assert_eq!(fixture_facts("widestr32_mips32_be_O2", &[], &[]), [(0x400520, 40), (0x400548, 44)]);
     }
 
     #[test]
     fn a_pe_image_is_not_scanned() {
-        assert!(fixture_facts("widestrings_x86_64.exe", &[]).is_empty());
+        assert!(fixture_facts("widestrings_x86_64.exe", &[], &[]).is_empty());
     }
 
     #[test]

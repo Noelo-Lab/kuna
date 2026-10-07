@@ -339,20 +339,26 @@ impl PcodeEmit for ScalarCapture {
 const TABLE_WINDOW: u8 = 4;
 
 /// (kuna) The addresses code puts in a register and, within [`TABLE_WINDOW`]
-/// instructions and no control flow, uses as the base of an indexed load wider
-/// than a byte (`lea rcx,table` then `mov eax,[rcx+rax*4]`): a table of numbers,
-/// whatever its bytes spell. [`IndexedBases`] sees the same use inside one
-/// instruction.
+/// instructions and no control flow, adds a computed index to (`lea rcx,table`
+/// then `mov eax,[rcx+rax*4]`, or `lea rdi,[rax+table]`): the base of an array,
+/// whatever its bytes spell.
 #[derive(Default)]
 struct TableUses {
-    held: Vec<(Operand, u64, bool, u8)>,
+    held: Vec<(Operand, u64, u8)>,
     bases: Vec<u64>,
 }
 
 impl TableUses {
-    /// The address `v` holds and whether an index was added to it.
-    fn base_of(&self, v: &Operand) -> Option<(u64, bool)> {
-        self.held.iter().find(|(loc, ..)| loc == v).map(|&(_, base, indexed, _)| (base, indexed))
+    /// The address `v` holds.
+    fn base_of(&self, v: &Operand) -> Option<u64> {
+        self.held.iter().find(|(loc, ..)| loc == v).map(|&(_, base, _)| base)
+    }
+
+    fn indexed(&mut self, base: u64) -> Option<u64> {
+        if !self.bases.contains(&base) {
+            self.bases.push(base);
+        }
+        Some(base)
     }
 
     /// Follow one decoded instruction's ops; `None` for an undecodable address.
@@ -363,31 +369,22 @@ impl TableUses {
         };
         let mut flow = false;
         for &(opc, out, ins, n) in steps {
-            let indexed_by = |v: &Operand| !matches!(v, Operand::Const(_));
             let from = match (opc, &ins[..n]) {
                 (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, &[Operand::Const(c), ..]) => {
-                    looks_like_address(c).then_some((c, false))
+                    looks_like_address(c).then_some(c)
                 }
                 (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, &[v, ..]) => self.base_of(&v),
                 (OpCode::CPUI_INT_ADD, &[a, b]) => match (self.base_of(&a), self.base_of(&b), a, b) {
-                    (Some((base, ix)), None, _, other) | (None, Some((base, ix)), other, _) => {
-                        Some((base, ix || indexed_by(&other)))
-                    }
-                    (None, None, Operand::Const(c), other) | (None, None, other, Operand::Const(c))
-                        if looks_like_address(c) && indexed_by(&other) =>
+                    (Some(base), None, _, Operand::Const(_)) | (None, Some(base), Operand::Const(_), _) => Some(base),
+                    (Some(base), None, ..) | (None, Some(base), ..) => self.indexed(base),
+                    (None, None, Operand::Const(c), Operand::Loc(..))
+                    | (None, None, Operand::Loc(..), Operand::Const(c))
+                        if looks_like_address(c) =>
                     {
-                        Some((c, true))
+                        self.indexed(c)
                     }
                     _ => None,
                 },
-                (OpCode::CPUI_LOAD, &[_, addr]) => {
-                    if let Some((base, true)) = self.base_of(&addr) {
-                        if out.is_some_and(|(_, size)| size >= 2) && !self.bases.contains(&base) {
-                            self.bases.push(base);
-                        }
-                    }
-                    None
-                }
                 (
                     OpCode::CPUI_BRANCH
                     | OpCode::CPUI_CBRANCH
@@ -404,8 +401,8 @@ impl TableUses {
             };
             if let Some((loc, _)) = out {
                 self.held.retain(|(l, ..)| *l != loc);
-                if let Some((base, indexed)) = from {
-                    self.held.push((loc, base, indexed, TABLE_WINDOW));
+                if let Some(base) = from {
+                    self.held.push((loc, base, TABLE_WINDOW));
                 }
             }
         }
@@ -413,8 +410,8 @@ impl TableUses {
             self.held.clear();
         }
         self.held.retain_mut(|h| {
-            h.3 -= 1;
-            h.3 > 0
+            h.2 -= 1;
+            h.2 > 0
         });
     }
 }
@@ -1074,6 +1071,55 @@ mod tests {
             (OpCode::CPUI_LOAD, Some((unique(0x180), 8)), vec![space, unique(0x100)]),
         ];
         assert!(bases(killed).is_empty());
+    }
+
+    #[test]
+    fn computed_indexes_mark_a_table() {
+        let tables = |insns: Vec<Vec<(OpCode, Option<(Operand, u32)>, Vec<Operand>)>>| {
+            let mut uses = TableUses::default();
+            for insn in insns {
+                let steps: Vec<Step> = insn
+                    .into_iter()
+                    .map(|(opc, out, ins)| {
+                        let mut two = [Operand::Const(0); 2];
+                        for (slot, v) in two.iter_mut().zip(&ins) {
+                            *slot = *v;
+                        }
+                        (opc, out, two, ins.len().min(2))
+                    })
+                    .collect();
+                uses.instruction(Some(&steps));
+            }
+            uses.bases
+        };
+        let unique = |off: u64| Operand::Loc(3, off);
+        let at = Operand::Const;
+        let space = at(0x1234_5678);
+        let (rax, rcx, rdi) = (Operand::Loc(2, 0), Operand::Loc(2, 8), Operand::Loc(2, 0x38));
+        let lea = |reg, addr| vec![(OpCode::CPUI_COPY, Some((reg, 8)), vec![at(addr)])];
+        // lea rcx,[rip+table]; mov eax,[rcx+rax*4]
+        let load = vec![
+            (OpCode::CPUI_INT_MULT, Some((unique(0x100), 8)), vec![rax, at(4)]),
+            (OpCode::CPUI_INT_ADD, Some((unique(0x180), 8)), vec![rcx, unique(0x100)]),
+            (OpCode::CPUI_LOAD, Some((rax, 4)), vec![space, unique(0x180)]),
+        ];
+        assert_eq!(tables(vec![lea(rcx, 0x20a0), load.clone()]), [0x20a0]);
+        // lea rdi,[rip+rows]; add rdi,rax: a row of a table, passed on.
+        let add = vec![(OpCode::CPUI_INT_ADD, Some((rdi, 8)), vec![rdi, rax])];
+        assert_eq!(tables(vec![lea(rdi, 0x2060), add.clone()]), [0x2060]);
+        // lea rdi,[rax+0x402100] in one instruction.
+        assert_eq!(tables(vec![vec![(OpCode::CPUI_INT_ADD, Some((rdi, 8)), vec![rax, at(0x402100)])]]), [0x402100]);
+        // lea rdi,[rip+lit]; add rdi,4; call: a literal and its tail.
+        let tail = vec![(OpCode::CPUI_INT_ADD, Some((rdi, 8)), vec![rdi, at(4)])];
+        let call = vec![(OpCode::CPUI_CALL, None, vec![at(0x1130)])];
+        assert!(tables(vec![lea(rdi, 0x20bc), tail, call.clone()]).is_empty());
+        // Control flow, an overwrite or a window of instructions forgets the address.
+        assert!(tables(vec![lea(rcx, 0x20a0), call, load.clone()]).is_empty());
+        let other = vec![(OpCode::CPUI_COPY, Some((rcx, 8)), vec![rax])];
+        assert!(tables(vec![lea(rcx, 0x20a0), other, load.clone()]).is_empty());
+        let nop = vec![(OpCode::CPUI_COPY, Some((unique(0x400), 8)), vec![rax])];
+        let far = vec![lea(rcx, 0x20a0), nop.clone(), nop.clone(), nop, load.clone()];
+        assert!(tables(far).is_empty());
     }
 
     /// `tbl` in `ptrslot_gcc_O1_x86_64` starts with `26 42 40 00 ..`, a run the
