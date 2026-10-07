@@ -1610,6 +1610,7 @@ pub(crate) fn load_program(
     if !args.assertions.is_empty() {
         kuna_console::assertions::apply_program_scoped(&mut prog);
     }
+    crate::kuna_allocrelease::after_analysis();
     Ok(prog)
 }
 

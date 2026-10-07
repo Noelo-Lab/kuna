@@ -27,12 +27,13 @@ use super::context::ContextPainter;
 use super::decode::decode_one;
 use super::model::{DiscoveredFunction, Insn, InsnLite, Reference, RefKind};
 use super::ListingDetail;
+use super::kuna_insnstore::InstructionStore;
 
 /// The accumulating maps the walk fills. Lifted into [`super::Listing`] by
 /// [`super::Listing::build`].
 pub(super) struct WalkState {
     /// Instruction model, keyed by VMA.
-    pub insns: BTreeMap<u64, Insn>,
+    pub insns: InstructionStore,
     /// Control-flow edges collected once, indexed when the walk finishes.
     pub refs: Vec<Reference>,
     /// Discovered/seeded functions, keyed by entry VMA (ordered).
@@ -47,7 +48,7 @@ pub(super) struct WalkState {
 
 /// Where [`step`] files a decoded instruction, and the visit dedup it asks.
 ///
-/// The serial walk's sink is its global `BTreeMap<u64, Insn>`; a sink that
+/// The serial walk's sink is its global instruction store; a sink that
 /// collects [`InsnLite`] records for a later merge is the other shape, which is
 /// why the record handed over is the `Send` one and the conversion to [`Insn`]
 /// belongs to the sink.
@@ -58,7 +59,7 @@ pub(super) trait InsnSink {
     fn record(&mut self, insn: InsnLite);
 }
 
-impl InsnSink for BTreeMap<u64, Insn> {
+impl InsnSink for InstructionStore {
     fn decoded(&self, vma: u64) -> bool {
         // INVARIANT (first-writer-wins): whoever decodes an address first owns
         // the record, and every later arrival at that address is dropped here.
@@ -491,7 +492,7 @@ fn walk_serial(
         frames.is_some(), ctx.translate, arch, ctx.code_space, ctx.exec_ranges,
     );
     let established = frames.as_ref().and_then(|frames| frames.established());
-    let mut insns = established.map_or_else(BTreeMap::new, |prior| prior.insns.clone());
+    let mut insns = established.map_or_else(InstructionStore::default, |prior| prior.insns.clone());
     let mut funcs = established.map_or_else(BTreeMap::new, |prior| prior.funcs.clone());
     let mode_runs = established.map_or_else(Vec::new, |prior| prior.mode_runs.clone());
     let mut refs = RefCollector::new(detail.refs);
@@ -536,7 +537,7 @@ fn walk_serial(
             let selection = super::kuna_walkcontext::InstructionMode::select(arch, ctx.translate, ctx.code_space, vma, mode);
             let mut work = Worklists { insns: std::mem::take(&mut successors), funcs: &mut func_worklist };
             if step(ctx, vma, &mut insns, &mut funcs, &mut refs, &mut callbacks, &mut work) {
-                let insn = &insns[&vma];
+                let insn = insns.get(&vma).unwrap();
                 let commits = if walk_context.is_some() { ctx.translate.last_context_commits() }
                     else { Vec::new() };
                 if let Some(selection) = &selection { selection.accept(insn.len); }

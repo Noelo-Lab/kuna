@@ -3952,6 +3952,29 @@ load-bearing gotchas are worth restating: a constant-space branch operand is
 p-code-relative (an intra-instruction branch), never a VMA; fall-through is decided
 by the *last* op only; and delay slots are already folded into the reported length.
 
+The instruction model stores records in 1,024-row chunks, with a B-tree of
+`(address, row number)` pairs for ordered lookup
+(`decompiler/crates/kuna-analysis/src/listing/kuna_insnstore.rs (InstructionStore)`).
+A partly filled tree node reserves small row numbers rather than full instruction
+records, and growing the walk allocates at most one more chunk without copying a
+whole-image buffer. Every record retains its flow targets, assembly and lazy
+p-code fields. Exact, range and interior queries still borrow the original
+record in address order. Replacing an address reuses its row; ARM frame-preserving
+rebuilds clone the records and index before extending them. Serial and parallel
+walks use the same store. This changes allocation and lookup layout, not the
+instruction partition or the facts any consumer receives.
+
+After loading, committing analysis and applying caller assertions, the in-process
+CLI returns unused glibc heap pages before selecting and decompiling functions
+(`decompiler/crates/kuna-cli/src/kuna_allocrelease.rs (after_analysis)`). Dropping
+the Listing ends its ownership, but small tree and string allocations can leave
+resident pages in allocator arenas. A single `malloc_trim(0)` at this boundary
+releases free pages without discarding live program facts or imposing a memory
+budget. This applies on GNU/Linux; other platforms retain their allocator's
+ordinary release policy. It reduces post-analysis residency, while the chunked
+instruction store reduces the construction peak on every platform. Worker
+admission still uses the measured high-water mark, not the trimmed current RSS.
+
 Three things the walk deliberately does **not** always produce. First, the human
 assembly text on each instruction: capturing it means a *second* full SLEIGH parse
 of the same bytes (`Translate::print_assembly`) plus two heap strings per

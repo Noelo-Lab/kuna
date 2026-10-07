@@ -1295,7 +1295,7 @@ fn partition_listing(
     funcs: &BTreeSet<u64>,
     exec: &[(u64, u64)],
 ) -> super::Listing {
-    let mut insns: BTreeMap<u64, super::Insn> = BTreeMap::new();
+    let mut insns = super::kuna_insnstore::InstructionStore::default();
     for &(addr, len) in partition {
         insns.insert(
             addr,
@@ -1311,7 +1311,7 @@ fn partition_listing(
             },
         );
     }
-    super::Listing::from_partition(
+    super::Listing::from_partition_store(
         insns,
         funcs
             .iter()

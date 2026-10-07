@@ -30,6 +30,7 @@
 
 pub mod classify;
 mod kuna_compactrefs;
+mod kuna_insnstore;
 pub mod context;
 pub mod decode;
 pub mod kuna_callbackentry;
@@ -102,7 +103,7 @@ impl ListingDetail {
 /// The Listing facade: three sub-models sharing one decode pass (design §2.5).
 pub struct Listing {
     /// Instruction model, keyed by VMA.
-    insns: BTreeMap<u64, Insn>,
+    insns: kuna_insnstore::InstructionStore,
     /// Cross-reference edges, indexed in both address orders.
     refs: kuna_compactrefs::ReferenceIndex,
     /// Discovered/seeded functions, keyed by entry VMA (ordered).
@@ -153,6 +154,14 @@ impl Listing {
     /// model is empty (the gap-walk reads neither).
     pub fn from_partition(
         insns: BTreeMap<u64, Insn>,
+        funcs: BTreeMap<u64, DiscoveredFunction>,
+        exec_ranges: Vec<(u64, u64)>,
+    ) -> Listing {
+        Self::from_partition_store(insns.into_iter().collect(), funcs, exec_ranges)
+    }
+
+    fn from_partition_store(
+        insns: kuna_insnstore::InstructionStore,
         funcs: BTreeMap<u64, DiscoveredFunction>,
         exec_ranges: Vec<(u64, u64)>,
     ) -> Listing {
@@ -268,7 +277,7 @@ impl Listing {
                 // caller asked for: `has_refs` reports what was built, not what
                 // was requested.
                 return Listing {
-                    insns: BTreeMap::new(),
+                    insns: kuna_insnstore::InstructionStore::default(),
                     refs: kuna_compactrefs::ReferenceIndex::default(),
                     funcs: BTreeMap::new(),
                     exec_ranges,

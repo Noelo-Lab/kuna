@@ -20,10 +20,10 @@ fn fallthrough_references_and_selected_and_whole_program_output() {
         let image = ObjectLoadImage::from_bytes(path, &bytes).unwrap();
         let arch = prog.arch();
         let listing = Listing::build(&file, &image, arch, arch.translate(), &[0x401000, 0x401010]);
-        assert_eq!(listing.num_instructions(), 260);
+        assert_eq!(listing.num_instructions(), 2052);
         assert_eq!(listing.function_count(), 2);
-        assert_eq!(listing.ref_source_iter().count(), 258);
-        for i in 0..256 {
+        assert_eq!(listing.ref_source_iter().count(), 2050);
+        for i in 0..2048 {
             let from = 0x401010 + i * stride;
             let outgoing = listing.refs_from(from);
             assert_eq!(outgoing.len(), 1);
@@ -35,7 +35,7 @@ fn fallthrough_references_and_selected_and_whole_program_output() {
             assert_eq!(listing.ref_count_to(from + stride), 1);
         }
         assert!(listing.refs_to(0x401010).is_empty());
-        let terminal = 0x401010 + 256 * stride + if stride == 1 { 5 } else { 4 };
+        let terminal = 0x401010 + 2048 * stride + if stride == 1 { 5 } else { 4 };
         assert!(listing.refs_from(terminal).is_empty());
         drop(listing);
 

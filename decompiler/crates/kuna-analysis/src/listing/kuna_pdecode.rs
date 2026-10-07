@@ -50,6 +50,7 @@ use kuna_sleigh::translate::Translate;
 use super::context::ContextPainter;
 use super::decode::decode_one;
 use super::model::{DiscoveredFunction, Insn, InsnLite, Reference};
+use super::kuna_insnstore::InstructionStore;
 use super::walk::{
     self, CallbackEvidence, CallbackSink, InsnSink, RefCollector, StepCtx, Successors, WalkPolicy,
     WalkState,
@@ -103,19 +104,12 @@ const MAX_ROUNDS: usize = 1024;
 /// Differences the self-check prints before it stops listing them.
 const SELFCHECK_REPORT: usize = 20;
 
-/// Resident bytes one instruction costs in the serial `BTreeMap<u64, Insn>`,
-/// measured on the fast (no-assembly, no-refs) path of a 20.2 M instruction
-/// x86-64 image: 6.02 GB of VmHWM against 20,218,436 instructions, the map
-/// dominating. Used to price the reconciled map out of
-/// [`lane_peak_excess_bytes`], which is meant to report what the LANES added and
-/// not what the walk would have held anyway.
-///
-/// It is the density of ONE walk shape. A `listing on` walk (`--mode
-/// aggressive|reliable`, `--option listing on`) carries disassembly text and the
-/// reference model, and its map measures ~713 B an instruction — so subtracting
-/// this price there books several GB of genuinely serial map as lane cost. That
-/// is why the subtraction is capped at [`lane_footprint`]: the lanes cannot have
-/// added more than the lanes hold.
+/// Historic no-assembly/no-reference serial-map density on a 20.2 M
+/// instruction x86-64 image. The chunked instruction store is smaller; keeping
+/// this subtraction conservative under-reports lane excess and prices workers
+/// high rather than admitting more workers from an uncalibrated density.
+/// Full-detail walks also carry strings and reference buffers, so the excess
+/// remains capped by the memory the lanes themselves can hold.
 const SERIAL_MAP_BYTES_PER_INSN: u64 = 298;
 
 /// Resident bytes one lane's rebuilt SLEIGH engine holds (~48 MB for x86-64's
@@ -460,9 +454,8 @@ impl Crossing {
 /// The decoded records of one interval: a flat, append-only list plus the
 /// membership test [`super::walk::step`] asks.
 ///
-/// Flat rather than a `BTreeMap` because the merge wants one sorted run per
-/// interval and the shard wants 112 bytes a record rather than a B-tree node's
-/// share of 298.
+/// Flat because the merge wants one sorted run per interval. Only the merged
+/// model needs an ordered address index and lazily populated p-code fields.
 #[derive(Default)]
 struct LaneInsns {
     seen: HashSet<u64>,
@@ -1149,7 +1142,7 @@ fn reconcile(
     seeds: &[u64],
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
 ) -> Result<(WalkState, u64), Refusal> {
-    let mut insns: BTreeMap<u64, Insn> = BTreeMap::new();
+    let mut insns = InstructionStore::default();
     let mut funcs: BTreeMap<u64, DiscoveredFunction> = BTreeMap::new();
     let mut refs: Vec<Reference> = Vec::new();
     let mut callbacks: BTreeMap<u64, u64> = BTreeMap::new();
