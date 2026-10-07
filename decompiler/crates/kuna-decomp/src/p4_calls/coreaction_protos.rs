@@ -1720,6 +1720,7 @@ impl Action for ActionReturnRecovery {
 
         if active.is_fully_checked() {
             crate::p4_calls::kuna_passthrough::keep_tail_return_whole(data, &mut active);
+            crate::p4_calls::kuna_zerofillreturn::drop_zero_fill(data, &mut active, &return_ops);
             crate::kuna_armfloatreturn::narrow_returns(data, &mut active);
             crate::kuna_retsysreg::drop_set_aside(data, &mut active, &return_ops);
             let own_input = crate::kuna_retcallhalf::accept(data, &mut active, &return_ops);

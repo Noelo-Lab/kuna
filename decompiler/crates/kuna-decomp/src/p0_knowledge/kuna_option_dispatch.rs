@@ -319,6 +319,12 @@ kuna_options! { self, p1;
         self.callee_read_arg = val;
         Ok(msg)
     },
+    "zerofillreturn" => {
+        let (val, msg) =
+            crate::p4_calls::kuna_zerofillreturn::OptionZeroFillReturn.apply(p1)?;
+        self.zero_fill_return = val;
+        Ok(msg)
+    },
     "argclobber" => {
         let (val, msg) = crate::p4_calls::kuna_argclobber::OptionArgClobber.apply(p1)?;
         self.arg_clobber = val;

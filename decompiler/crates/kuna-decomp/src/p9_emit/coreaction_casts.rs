@@ -1491,6 +1491,9 @@ impl Funcdata {
         if let Some((wide, unsigned)) = crate::p4_calls::kuna_voidret::narrowed_call_result(self, op) {
             return self.cast_narrowed_call(op, wide, unsigned);
         }
+        if let Some(float) = crate::p4_calls::kuna_callrettype::float_held_as_bits(self, op) {
+            return self.cast_narrowed_call(op, float, false);
+        }
         let tokenct = get_output_token(self, strat, op);
         self.cast_output_token(op, strat, tokenct)
     }
@@ -1498,7 +1501,10 @@ impl Funcdata {
     /// (kuna `voidret`) Make the call `op` write its callee's whole result,
     /// typed `wide`, into a temporary its output then truncates with a CAST,
     /// which prints the conversion, to an unsigned word where `unsigned` asks
-    /// ([`crate::p4_calls::kuna_voidret::narrowed_call_result`]).
+    /// ([`crate::p4_calls::kuna_voidret::narrowed_call_result`]).  (kuna
+    /// `callrettype`) A float the caller holds as bits goes through the same
+    /// CAST at its own width, which prints the reinterpretation
+    /// ([`crate::p4_calls::kuna_callrettype::float_held_as_bits`]).
     fn cast_narrowed_call(&mut self, op: OpId, wide: Rc<Datatype>, unsigned: bool) -> int4 {
         let Some((outvn, addr)) = self.obank().get(op).and_then(|o| Some((o.get_out()?, o.get_addr().clone()))) else {
             return 0;

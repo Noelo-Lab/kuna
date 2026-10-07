@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2211,
-    2211
+    2222,
+    2222
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -2214,7 +2214,18 @@
     "data:x64syscall #6: the no-SYSCALL control is byte-identical in all three passes",
     "data:x64syscall #7: on and abi save the pointer value before the system call",
     "data:x64syscall #8: on and abi combine the saved value with the reloaded buffer",
-    "data:x64syscall #9: off keeps the old pointer value motion"
+    "data:x64syscall #9: off keeps the old pointer value motion",
+    "data:zerofillreturn #10: a 128-bit value built with a lane insert keeps 16 bytes in both passes",
+    "data:zerofillreturn #11: a 128-bit zero write whose low lane is replaced keeps 16 bytes in both passes",
+    "data:zerofillreturn #1: option off returns q0 for the double of clang and gcc scale (bug reproduced)",
+    "data:zerofillreturn #2: option off prints return 0.0 as ZEXT816(0) (bug reproduced)",
+    "data:zerofillreturn #3: option off returns q0 for the two-exit double (bug reproduced)",
+    "data:zerofillreturn #4: the zero fill is joined to the low lane in 7 functions with the option off (bug reproduced) and only in the 3 controls with it on",
+    "data:zerofillreturn #5: option on returns the double of clang and gcc scale",
+    "data:zerofillreturn #6: option on prints return 0.0",
+    "data:zerofillreturn #7: option on returns the double on both exits of pick",
+    "data:zerofillreturn #8: option on returns the aggregate in d0 and d1",
+    "data:zerofillreturn #9: a 64-bit vector built lane by lane prints the same in both passes"
   ],
   "returncode": 0,
   "unit_footer": null

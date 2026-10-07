@@ -5739,8 +5739,20 @@ integer or a pointer makes no token: no C conversion keeps a float's bits, and
 gcc -O2's reader of a `struct { float, float }` returned in `xmm0` printed
 `dat_4040 = (unsigned long)sub_11d0()` beside `double sub_11d0(void)`, which
 stores 2 for the pair's 2.0000004. Such a reader withdraws the float return
-instead (`voidret`, below). A float statement is the
-token of a result the caller holds as a float or as raw bytes: nothing then
+instead (`voidret`, below). A reader that keeps the float's bits in an integer
+of the same width, or in raw bytes it declares (a local, its own return, a store
+through a variable that points to an integer or raw bytes), where
+the callee states a float or, stating nothing, was last recovered returning a
+float in exactly the storage and width the call's output sits in, a floating
+register of the call's model (`kuna_callrettype.rs (float_held_as_bits)`), has
+the cast pass write the call into a float and reinterpret it (chapter 09): a
+float recovered in `x0` moves no bits between register classes. AArch64
+`bl getd; fmov x0,d0` printed `return getd(a0,a1);` from an `unsigned long`
+function beside `double getd(int a0,double *a1)`, which C converts by value,
+and now prints `((union { double from; unsigned long long to; }){ .from =
+getd(a0,a1) }).to`, as does `fmov w0,s0` after a `float` callee. A float statement is the
+token of a result the caller holds as a float, or as raw bytes it only stores
+through an address computed in place or writes to a global: nothing then
 converts it, and a store of it through an untyped pointer takes the float's
 type. Without it crazyflie printed `*(unsigned int *)((unsigned int)v2 * 4 +
 a1) = sub_805bb84(..)` beside `float sub_805bb84(..)`, which C converts by value
@@ -5764,6 +5776,99 @@ narrowed by `--addr`, `--functions` or a triage filter, `--jobs N`, a raw image
 and `--option protoorder off`. A single-function decompile therefore still
 prints the conversion that the whole-binary listing leaves out, the same
 property `protoorder`'s argument types have.
+
+### (kuna) `zerofillreturn` — the zero fill above a returned vector lane
+
+AAPCS64 returns a `float` in `s0` and a `double` in `d0`, the low bytes of the
+16-byte vector register `q0`, and the AArch64 compiler specs (`AARCH64.cspec`,
+`AARCH64_apple.cspec`, `AARCH64_win.cspec`) make `q0`-`q3` the floating output
+entries. The SLEIGH spec lifts a scalar or 64-bit vector write (`scvtf d0,w0`,
+`fmul d0,..`, `fadd v0.2s,..`, `ldr s2,[..]`) as the write of its low lane plus
+a COPY of zero into each higher lane of the register (`zext_zd`, `zext_zs` in
+`AARCH64instructions.sinc`). Heritage then gives each RETURN a second trial in
+`q0` holding a literal 0, `ancestorOpUse` accepts a constant as returned, and the
+fill-in joins the two: `double scale(int a)` printed as
+`undefined16 scale(int a0)` with `v1._8_8_ = 0; return v1._0_16_;`, and
+`return 0.0` as `return ZEXT816(0)`. The zero need not come from the
+instruction that wrote the returned value: this SLEIGH spec gives `fmadd` no
+fill, so in `scvtf d0,w0; ..; fmadd d0,..` the returned zero is `scvtf`'s.
+A `float` in `s0` was already narrowed by the dead-code trim of a zero-extended
+return, but its masks are 64 bits wide and cannot narrow 16 bytes to 8.
+
+`zerofillreturn` (default on;
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_zerofillreturn.rs`) works in
+two steps. Right after flow, before heritage, the driver
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs`) calls `seed`,
+which marks the COPYs of zero into the upper doubleword of a floating output
+entry wider than 8 bytes that are such a fill. Each instruction's p-code is
+then still what SLEIGH emitted, so the instruction is read off the ops at its
+address. Its lane is its write at the entry's least significant byte plus the
+writes that continue it without a gap, other than COPYs of zero. The lane must
+end within 8 bytes, nothing may straddle its end, only COPYs of zero may follow
+it in the low doubleword, and the upper doubleword must be one 8-byte COPY of
+zero (one on each path of a conditional instruction such as `fcsel`): the shape
+of `zext_zd` and `zext_zs`. That COPY gets the `kuna_zerofill` op flag. A
+128-bit write whose upper half is zero (`movi v0.2d,#0`, which goes through a
+temporary; `movi v0.4s,#0`, four 4-byte lanes; `mov v0.d[1],v2.d[0]`;
+`ldr q0`) is not a fill. After heritage it could no longer be told apart:
+heritage splits it into the same lanes, and constant folding leaves a COPY of
+zero at the same instruction.
+
+In `ActionReturnRecovery`, once the trials are fully checked and before the
+output fill-in, `drop_zero_fill` marks inactive each active trial in the upper
+doubleword of such an entry whose value at every normal RETURN is a marked COPY
+of zero, directly or through MULTIEQUALs. The low lane is then the return
+value: `double scale(int a0)`, `return 0.0`, and a caller in a `decompile-all`
+reads a `double` without a cast. A complex double or an aggregate of two doubles
+whose second member the function computes in `d1` now matches the
+`homogeneous-float-aggregate` rule and joins the two registers, where it printed
+`q0` with an upper half of 0 in place of the imaginary part. Where `d1` is not
+shown to be returned (below), the return stays `q0` as before.
+
+An active fill fails every output rule, so the fill-in falls back to the best
+single register; retiring fills lets the rules join whatever else is active.
+So nothing is retired while a trial outside the floating entries is active:
+`x0` and a leftover `x1` (the zero a stack-protector check leaves) would join as
+a pair. Nothing is retired unless every register with an active low lane
+returns a whole doubleword there: a `float` in `s0` and the fill above it are
+left to the trim, which already narrows them, and a 64-bit vector built lane by
+lane is left as it was; the aggregate rule also joins one trial per register
+without comparing widths, and would join a `float` in `s0` with a 64-bit vector
+left in `d1` (glibc's `cprojf`). And nothing is retired when a later entry has
+an active low lane that is not returned alone: written, on every path, by an op
+whose value only goes on to the RETURN, from a value the function produced.
+Through COPYs and MULTIEQUALs that value must not be the function's own incoming
+value of the same register, nor come from a CALL, CALLIND or INDIRECT. A load
+counts only as `-O0`'s reload of a frame slot: the same incoming base register,
+constant offset and width as at least one store to it, every store that
+overlaps the slot being such a store of a value that passes the same test
+(return recovery runs before the stack is renamed, so the slot is matched by
+hand). A store through any other address may reach the slot and refuses: gcc
+`-O0` writes `*pr = get(p)` through a pointer to the slot that it reloads from
+the frame. Glibc's `math_force_eval` leaves an `fmul d1,d0,d0` no op reads on one
+path beside a `fabs d1,d0` the next compare reads. A forwarder of a complex
+result (libitm's `_ITM_RCD` family, `r = get(p); cnt++; return r;`) hands back
+the `d1` its callee returned, which kuna sees as the forwarder's own incoming
+`d1` once the call is found not to return it; joining it gave each forwarder
+two phantom parameters. `CMPLX(a * 2, b)`, whose imaginary part is the unchanged
+incoming `d1`, cannot be told apart from that, nor can `z * z`, whose NaN path
+returns what `__muldc3` left. Retiring only `q0`'s fill would print the first
+member of what may be a pair as the whole return, so every fill stays. A
+declared or DWARF output is never touched, and a trial whose value is anything
+but a marked fill on some path keeps its score.
+
+The binary cannot tell everything apart. A 128-bit vector whose upper half a
+64-bit write zeroed has the same p-code as a returned `double` and now returns
+8 bytes: gcc -O2 builds `(float64x2_t){x, 0}` with `fmov d0,d0`,
+`(uint64x2_t){x, 0}` with `fmov d0,x0`, and `vcombine_u32(vld1_u32(p),
+vdup_n_u32(0))` with `ldr d0,[x0]`. In the other direction, a `d1` the function
+computes and only hands to the RETURN is joined even where the source returns a
+single `double` and leaves that value unused (an asm-forced evaluation, as in
+`k(x, y) { math_force_eval(y * y); return x * 3; }`). No other compiler spec has
+a floating output entry that a narrow write fills, so the option changes nothing
+elsewhere. The stage test
+`tests/stages/gh873-zerofillreturn-a64.xml` runs clang and gcc AArch64 code
+with the option off and on.
 
 ### ARM scalar VFP contracts
 
@@ -6059,7 +6164,31 @@ come from `protoorder`'s statement or, where it states nothing, from the
 parameter classes `record` files for every function without a declared
 prototype, handed to each caller by `seed` (`Funcdata::kuna_callee_param_float`).
 A function whose own return converts the value it hands back from another type
-(`return (float)a0[3];` of an `int *`) files itself. The function is then
+(`return (float)a0[3];` of an `int *`) files itself.
+
+A move between register classes converts nothing, and the C prints a
+same-width cast between a float and an integer as a reinterpretation of the
+bits (chapter 09). So a RETURN fed by a cast of a bit pattern does not file the
+function (`kuna_voidret.rs (float_bits)`). The value counts as a bit pattern
+when the bit operations behind it (and, or, xor, add, shifts, pieces, phis)
+start from a float's own bits or from constants alone. Examples are glibc's
+`copysign` `x ^ (x ^ y) & sign`, `nextafter`'s `bits + 1`, `scalbn`'s exponent
+field beside the mantissa, and a sign chosen between two constants, each moved
+back by `fmov d0,x0`. An untyped call result left in a floating register does
+not file it either (`kuna_voidret.rs (float_register_call_result)`): `pick`
+tail-calling a complex-double `cboth`, recovered as a 16-byte join, returns
+`cboth`'s `d0`, and was withdrawn to `void` beside a reader that casts its
+`double`. On the reader side, a same-width cast of the result to an integer (an
+`fmov x0,d0`) holds the float's bits, an untyped copy that is only cast to a
+float holds a float, and a call that writes more of the register than its
+callee returns says nothing (`kuna_voidret.rs (wider_than_return)`): `q0`, read
+whole after a call that returns a `double` in `d0`, is the caller keeping the
+register. Each of these filed a function whose redo printed the same float
+again. On AArch64 glibc libm, 19 such redos, one of them the 1-second
+`__kernel_standard`, made `decompile-all` 10 to 17% slower once doubles stopped
+returning `q0` (`zerofillreturn`).
+
+The function is then
 decompiled once more without the float-register vote on its return
 (`Funcdata::kuna_float_return_withdrawn`, chapter 05) and without a forced
 return, so it declares what it did before this redo and the float vote (an
