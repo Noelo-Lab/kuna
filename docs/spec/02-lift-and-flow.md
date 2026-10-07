@@ -1108,10 +1108,19 @@ On MIPS the phantom `a3` had also pulled a wrapper's real parameters in with
 it: parameter recovery fills the positions before the last input it finds, so a
 `read` wrapper that hands its three parameters to the kernel in place printed
 `(a0,a1,a2,a3)` although the call read none of them, and without the phantom it
-printed `(void)`. So a MIPS system call also reads, written or not, at least as
-many argument registers as the kernel's entry point for its number takes
-(`kuna_syscallregs.rs (mips_floor)`). The number is the constant that every
-write of `v0` reaching the instruction, with no call in between, writes
+printed `(void)`. So a MIPS system call goes on reading argument registers,
+written or not, up to as many as the kernel's entry point for its number takes
+(`kuna_syscallregs.rs (mips_floor)`), each one only while, on every path to the
+instruction, it holds the function's incoming value with no call on the path or
+a value the function wrote after the path's last call
+(`kuna_syscallregs.rs (reaches_without_call)`). The o32 ABI does not preserve
+`a0`..`a3` across a call, while kuna's call model carries them through it, so a
+register that crossed a call would print the value from before the call:
+`foo(1,2,3,4)` followed by a `reboot` that sets `a0`..`a2` printed the 4 set up
+for `foo` as reboot's fourth argument. The first register that fails ends the
+list, which then reads exactly what the written-registers rule reads. The
+number is the constant that every write of `v0` reaching the instruction, with
+no call in between, writes
 (`kuna_syscallregs.rs (constant_at)`). The count comes from one table sorted by
 number (`kuna_syscallregs/mips_args.rs`), since the three ABIs number their
 calls in disjoint ranges (o32 from 4000, n64 from 5000, n32 from 6000). It is
@@ -1124,8 +1133,11 @@ wrapper. A number the table does not know, one computed at run time as in the
 C library's `syscall` dispatcher, reads all of `a0`..`a3`: such a function
 hands its own `a3` to the kernel, and taking fewer would drop a real parameter.
 Where it does not, its flag test still reads as a fourth parameter, as it did
-before. PowerPC keeps the written-registers rule: its flag is not an argument
-register, so no phantom pulled parameters in there.
+before. A call that sets up fewer registers than the kernel's entry takes, with
+no call before it, shows the rest as the function's parameters, since the
+kernel does read them: a `write` that sets `a0` and `a1` also passes the `a2`
+its caller left. PowerPC keeps the written-registers rule: its flag is not an
+argument register, so no phantom pulled parameters in there.
 
 The same policy gives the recognized system call unknown effects on writable
 memory. `kuna_syscallregs.rs (guard_memory)`, called by chapter 03's
@@ -1171,7 +1183,8 @@ test adds a loop that passes `a1`/`a2` through and keeps scratch values in
 `-ppc-cr0.xml` (an `mfcr` and a `bns` test, and a compare of the result as the
 control) check the error flag under `on` and the phantom parameter or the
 uninitialized `cr0` under `off`. The MIPS test adds a test of two calls' flags
-(`e1 | e2`) and a `read` wrapper that hands its three parameters over in place;
+(`e1 | e2`), a `read` wrapper that hands its three parameters over in place, and
+a `reboot` after a call whose `a3` is not read;
 the PowerPC test adds a flag that each branch sets and that is saved across a
 call after the join. In `-mips.xml`, `number` makes a `write` (4004) with two
 registers set, so it also passes the kernel the `a2` its caller left.
