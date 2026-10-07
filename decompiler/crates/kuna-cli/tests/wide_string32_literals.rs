@@ -6,21 +6,22 @@ mod common;
 use common::process;
 use std::process::Command;
 
-const FUNCS: &str = "wide,wide32,ornull,table,weekly";
+const FUNCS: &str = "wide,wide32,ornull,suffix,first,table,weekly";
 
 const DECLS: &str = "#include <stddef.h>\nextern long out;\nextern const int codes[], weeks[];\n\
                      long hashw();\nlong hash32();\nlong sum();\n";
 
 const WANT: &str = "wide 9286557868\nwide32 1023670406297060324\nornull0 7432334113\nornull1 298771414\n\
-                    table 0 0\nweekly 0 0\ntable 1 72\nweekly 1 52\ntable 2 173\nweekly 2 105\n\
+                    suffix 952240110\nfirst 275065641774781\ntable 0 0\nweekly 0 0\ntable 1 72\nweekly 1 52\ntable 2 173\nweekly 2 105\n\
                     table 3 281\nweekly 3 157\ntable 4 389\nweekly 4 209\ntable 5 500\nweekly 5 261\n\
                     table 6 500\nweekly 6 314\n";
 
-/// `widestr32.c` passes `L"hellow"`, `U"char32-text"` and `L"(NULL)"` to its own
-/// hash functions and `codes` (`int {72, 101, 108, 108, 111, 0}`, "Hello") and
-/// `weeks` (`int {52, 53, ..}`) to `sum`. Each x86-64 build's printed functions,
-/// compiled by gcc and clang at -O0 and -O2 against the fixture's harness, must
-/// do what the binary does.
+/// `widestr32.c` passes `L"hellow"`, `U"char32-text"`, `L"(NULL)"`, `L"xbind"`
+/// and its tail `L"bind"`, and `L"first-msg"` to its own hash functions and
+/// `codes` (`int {72, 101, 108, 108, 111, 0}`, "Hello") and `weeks` (`int {52,
+/// 53, ..}`) to `sum`. Each x86-64 build's printed functions, compiled by gcc and
+/// clang at -O0 and -O2 against the fixture's harness, must do what the binary
+/// does.
 #[test]
 fn wide_literals_round_trip_beside_int_tables() {
     let harness = common::fixture("widestr32.c");
@@ -32,7 +33,16 @@ fn wide_literals_round_trip_beside_int_tables() {
         let (printed, stderr, code) =
             common::run_kuna(&["decompile-all", &common::fixture(fixture), "--functions", FUNCS]);
         assert_eq!(code, 0, "{fixture}: {stderr}");
-        for want in ["hashw(L\"hellow\")", "hash32(L\"char32-text\")", "= L\"(NULL)\";", "sum(codes,", "sum(weeks,"] {
+        for want in [
+            "hashw(L\"hellow\")",
+            "hash32(L\"char32-text\")",
+            "= L\"(NULL)\";",
+            "hashw(L\"xbind\")",
+            "hashw(L\"bind\")",
+            "hashw(L\"first-msg\")",
+            "sum(codes,",
+            "sum(weeks,",
+        ] {
             assert!(printed.contains(want), "{fixture}: missing `{want}`:\n{printed}");
         }
         let src = common::scratch_file(fixture, "c");
@@ -77,13 +87,15 @@ fn option_off_prints_the_address() {
     assert!(!printed.contains("L\"hellow\""), "{printed}");
 }
 
-/// Stripped x86-64 builds (an operand points at each literal), relocatable
-/// AArch64 and ARM objects (their `.rodata.str4.4`) and a big-endian MIPS image
-/// (its symbol table) spell every literal, the tail `L"bind"` of `L"xbind"`
-/// included, and never read `weeks` as text.
+/// Stripped x86-64 builds (an operand points at each literal) and relocatable
+/// AArch64 and ARM objects (their `.rodata.str4.4`) spell every literal, the
+/// tail `L"bind"` of `L"xbind"` included, and never read `weeks`, the rows of
+/// `rows` or the switch table of `code` as text.
 #[test]
 fn other_builds_and_targets_spell_the_literals() {
     for fixture in [
+        "widestr32_gcc_O2_x86_64",
+        "widestr32_clang_O2_x86_64",
         "widestr32_gcc_O2_stripped_x86_64",
         "widestr32_clang_O2_stripped_x86_64",
         "widestr32_aarch64_O2.o",
@@ -92,9 +104,13 @@ fn other_builds_and_targets_spell_the_literals() {
     ] {
         let (printed, stderr, code) = common::run_kuna(&["decompile-all", &common::fixture(fixture)]);
         assert_eq!(code, 0, "{fixture}: {stderr}");
-        for want in ["(L\"hellow\")", "(L\"char32-text\")", "L\"(NULL)\"", "(L\"xbind\")", "(L\"bind\")"] {
-            assert!(printed.contains(want), "{fixture}: missing `{want}`:\n{printed}");
+        if fixture != "widestr32_mips32_be_O2" {
+            for want in ["(L\"hellow\")", "(L\"char32-text\")", "L\"(NULL)\"", "(L\"xbind\")", "(L\"bind\")"] {
+                assert!(printed.contains(want), "{fixture}: missing `{want}`:\n{printed}");
+            }
         }
-        assert!(!printed.contains("L\"4544"), "{fixture}: weeks prints as text:\n{printed}");
+        for text in ["L\"4544", "L\"helpz", "L\"alpha", "L\"bravo", "L\"qhellow"] {
+            assert!(!printed.contains(text), "{fixture}: a table prints as `{text}`:\n{printed}");
+        }
     }
 }

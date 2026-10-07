@@ -14,8 +14,12 @@
     Pass 1 (option widestrings32 off): the address (#1).
     Pass 2 (option widestrings32 on): the literal (#2) and the L"(NULL)"
     default of ornull (#3), while the int tables keep their names (#4).
+    Pass 3 (on, the clang build): L"hellow" follows the last unit of code's
+    switch table, 'q', which nothing names, so the operand pointing at
+    L"hellow" starts the literal (#5), and the table itself, which code
+    indexes, keeps its address although its bytes spell L"helpz" (#6).
 
-    operand_refs is on in both passes, as in the aggressive preset that small
+    operand_refs is on in every pass, as in the aggressive preset that small
     images default to.
 
     Source: decompiler/crates/kuna-analysis/tests/fixtures/widestr32.c
@@ -51,10 +55,23 @@ c3
   <com>lo fu weekly</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/widestr32_clang_O2_x86_64</com>
+  <com>option operand_refs on</com>
+  <com>option widestrings32 on</com>
+  <com>read symbols</com>
+  <com>lo fu wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu code</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="KUNA-WIDESTRINGS32 #1: off, the literal prints as its address" min="1" max="1">hashw\(0x402004\);</stringmatch>
-<stringmatch name="KUNA-WIDESTRINGS32 #2: on, the literal prints as L&quot;hellow&quot;" min="1" max="1">hashw\(L"hellow"\);</stringmatch>
+<stringmatch name="KUNA-WIDESTRINGS32 #2: on, the literal prints as L&quot;hellow&quot;" min="2" max="2">hashw\(L"hellow"\);</stringmatch>
 <stringmatch name="KUNA-WIDESTRINGS32 #3: on, the NULL default prints as a literal" min="1" max="1">= L"\(NULL\)";</stringmatch>
 <stringmatch name="KUNA-WIDESTRINGS32 #4: int tables of character codes keep their names" min="2" max="2">sum\((codes|weeks),</stringmatch>
+<stringmatch name="KUNA-WIDESTRINGS32 #5: on, clang, the literal after the switch table starts at its operand" min="0" max="0">L"qhellow"</stringmatch>
+<stringmatch name="KUNA-WIDESTRINGS32 #6: on, clang, the indexed switch table keeps its address" min="1" max="1">return dat_20a0\[</stringmatch>
 </decompilertest>
