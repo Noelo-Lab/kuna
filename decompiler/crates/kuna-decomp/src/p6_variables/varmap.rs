@@ -1611,6 +1611,7 @@ impl ScopeLocal {
             return Ok(overlap_problems); // No references to stack at all
         }
 
+        crate::p6_variables::kuna_arrayextent::settle(state, &self.space, types);
         let mut cur: RangeHint = state.next().clone();
         let mut cur_end = cur.sstart.wrapping_add(cur.size as int8);
         while state.get_next() {
@@ -2618,6 +2619,9 @@ pub struct MapState {
     /// (kuna `stackstoreguard`) The sorted signed offsets where an open range
     /// absorbs every unlocked hint that starts inside a hint it already absorbed.
     absorbing_bases: Vec<intb>,
+    /// (kuna `arrayextent`) The arrays `extend_unbounded` lengthened, settled
+    /// once the hints are sorted.
+    extended: Vec<crate::p6_variables::kuna_arrayextent::Extended>,
 }
 
 impl MapState {
@@ -2644,6 +2648,7 @@ impl MapState {
             checker: AliasChecker::new(),
             terminator_stores: std::collections::BTreeMap::new(),
             absorbing_bases: Vec::new(),
+            extended: Vec::new(),
         }
     }
 
@@ -2900,6 +2905,22 @@ impl MapState {
     /// absorbed, instead of ending there.
     pub fn set_absorbing_bases(&mut self, bases: Vec<intb>) {
         self.absorbing_bases = bases;
+    }
+
+    /// (kuna `stackstoreguard`) Does an open range starting at `sstart` absorb
+    /// the hints inside what it absorbed?
+    pub fn is_absorbing(&self, sstart: intb) -> bool {
+        self.absorbing_bases.binary_search(&sstart).is_ok()
+    }
+
+    /// (kuna `arrayextent`) Record the arrays `extend_unbounded` lengthened.
+    pub(crate) fn set_extended(&mut self, extended: Vec<crate::p6_variables::kuna_arrayextent::Extended>) {
+        self.extended = extended;
+    }
+
+    /// (kuna `arrayextent`) Take the recorded lengthened arrays.
+    pub(crate) fn take_extended(&mut self) -> Vec<crate::p6_variables::kuna_arrayextent::Extended> {
+        std::mem::take(&mut self.extended)
     }
 
     /// (kuna `nulterminator`) Record one constant COPY into `(start, size)`;

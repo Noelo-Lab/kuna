@@ -400,6 +400,8 @@ pub struct AnalysisOutput {
     /// decoded, steering ARM/Thumb instruction decode. Produced only on the ARM
     /// path (see [`crate::loader::arm_markers`]); empty otherwise.
     pub context_paints: Vec<ContextPaint>,
+    /// Successfully decoded recovery spans used to initialize inventory-seeded xrefs.
+    pub inventory_context_paints: Vec<ContextPaint>,
     /// Tracked register-values to seed at function entries (the kuna analog of
     /// Ghidra's `MipsAddressAnalyzer` `ProgramContext.setRegisterValue` / the
     /// console `set track <reg> <val> <start> <end>`). The commit boundary resolves
@@ -592,6 +594,7 @@ impl AnalysisOutput {
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
         self.context_paints.extend(other.context_paints);
+        self.inventory_context_paints.extend(other.inventory_context_paints);
         self.tracked_regs.extend(other.tracked_regs);
         self.call_fixups.extend(other.call_fixups);
         self.locals.extend(other.locals);

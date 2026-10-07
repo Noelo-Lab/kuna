@@ -541,7 +541,7 @@ fn guard_effects(fd: &Funcdata, space: &Rc<AddrSpace>) -> GuardEffects {
 
 /// Does an op other than an INDIRECT or MULTIEQUAL read `vn`, or the value of
 /// one that carries it on? Undecided past 256 values, which counts as yes.
-fn is_read(fd: &Funcdata, vn: VarnodeId) -> bool {
+pub(crate) fn is_read(fd: &Funcdata, vn: VarnodeId) -> bool {
     let mut seen = BTreeSet::new();
     let mut work = vec![vn];
     while let Some(v) = work.pop() {
@@ -614,7 +614,7 @@ fn store_reach(pieces: &[(intb, Option<intb>)]) -> Option<(Vec<intb>, Option<(in
 /// `None` when an index's known-bits mask does not bound it. The extra starts
 /// at the address the pointer names, since the C prints the access from there.
 /// A phi of different stack addresses gives one such piece per address.
-fn pointer_pieces(
+pub(crate) fn pointer_pieces(
     fd: &Funcdata,
     vn: VarnodeId,
     sb: VarnodeId,

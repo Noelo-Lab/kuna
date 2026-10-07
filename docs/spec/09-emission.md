@@ -72,7 +72,18 @@ decompile returned (`voidret`'s record; raw bytes print as `unsigned int`), each
 of which the listing prints as its prototype. A statement counts only in the
 storage and width the caller reads the result from (through the temporary the
 cast pass gives the call): a callee recovered returning `rax` says nothing of
-the `xmm0` its caller reads.
+the `xmm0` its caller reads. A float callee is not counted, because a cast to
+a float of its untyped result converts nothing. In the other direction, a call
+whose callee states a float, or was last recovered returning one, in the storage
+and width of the call's output, a floating register of the call's model, and
+whose result the caller holds as an integer
+of that width, or as raw bytes it does not only keep in memory
+(`kuna_callrettype.rs (float_held_as_bits)`, chapter 04), writes a float
+temporary that a `CAST` reads
+(`coreaction_casts.rs (Funcdata::cast_narrowed_call)`), so the move of its bits
+prints as a reinterpretation: `return getd(a0,a1);` from an `unsigned long`
+function, beside `double getd(..)`, now prints
+`((union { double from; unsigned long long to; }){ .from = getd(a0,a1) }).to`.
 crazyflie's `fabsf` clears the sign bit in a core register and hands the word
 back in `s0`; its readers printed `(float)sub_80043b8(a0)` beside `unsigned int
 sub_80043b8(unsigned int a0)`, a conversion of the bits, and now reinterpret

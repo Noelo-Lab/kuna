@@ -459,6 +459,7 @@ pub fn decompile_pulled(
         want_tokens,
         ..
     } = *opts;
+    prog.arch_mut().kuna_float_scan_batch = !single_target;
     // (kuna `structdefs`) A project export's bodies do NOT carry the
     // type-definition preamble: they `#include` the generated header, and
     // `build_header` renders every one of those definitions into it from the

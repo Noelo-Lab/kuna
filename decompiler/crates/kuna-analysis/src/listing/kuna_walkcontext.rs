@@ -16,6 +16,7 @@ pub(super) struct WalkContext<'a> {
     saved_writes: u32,
     original: Vec<(u64, u64, u32)>,
     calls: BTreeMap<u64, u32>,
+    inventory: BTreeMap<u64, u32>,
 }
 
 impl<'a> WalkContext<'a> {
@@ -69,11 +70,21 @@ impl<'a> WalkContext<'a> {
             saved_writes,
             original,
             calls: BTreeMap::new(),
+            inventory: BTreeMap::new(),
         })
     }
 
+    pub fn seed_inventory_modes(&mut self, seeds: impl Iterator<Item = u64>, modes: &[(u64, u64, u32)]) {
+        if modes.is_empty() { return; }
+        for at in seeds {
+            let Some(index) = modes.partition_point(|&(start, _, _)| start <= at).checked_sub(1) else { continue };
+            let (_, end, mode) = modes[index];
+            if at < end { self.inventory.insert(at, mode); }
+        }
+    }
+
     pub fn entry(&self, at: u64) -> Option<u32> {
-        self.calls.get(&at).copied().or_else(|| {
+        self.calls.get(&at).or_else(|| self.inventory.get(&at)).copied().or_else(|| {
             let index = self
                 .original
                 .partition_point(|&(start, _, _)| start <= at)

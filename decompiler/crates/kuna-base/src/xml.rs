@@ -2013,7 +2013,15 @@ mod tests {
         // register is not the high word of the return (GH-885)
         // and gh831-riscv-fpmove + gh831-riscv32-fpmove / RISC-V fmv.x.* and
         // fcvt.w* read and write the real registers (GH-831)
-        assert_eq!(count, 449, "corpus file count drifted");
+        // and kuna-condstmts / a folded condition operand prints at most the
+        // capped number of statements before its test
+        // and gh873-zerofillreturn-a64 / the zero fill above a returned
+        // AArch64 vector lane is no part of the value (GH-873)
+        // and kuna-floatglobals / a float parameter stored into a global the
+        // program only moves through float registers is a float (GH-888)
+        // and kuna-arrayextent / an indexed stack array covers the slots its
+        // index reaches past four elements (GH-867)
+        assert_eq!(count, 454, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

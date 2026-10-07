@@ -64,6 +64,29 @@ impl FlowEnvironment for ArchFlowEnv {
     fn translate(&self) -> &dyn Translate {
         self.arch().translate()
     }
+    fn arm_decode_mode(&self, addr: &Address) -> Option<crate::kuna_armflowcontext::ArmDecodeMode> {
+        self.arch().with_context_db_mut(|db| {
+            let var = db.get_variable(b"TMode").ok()?;
+            let word = var.get_word() as usize;
+            let mask = var.get_mask() << var.get_shift();
+            let (words, _, last) = db.get_context_bounds(addr);
+            let value = words.get(word).copied()? & mask;
+            Some(crate::kuna_armflowcontext::ArmDecodeMode { word, mask, value, last })
+        })
+    }
+    fn preserve_arm_decode_mode(
+        &self, addr: &Address, mode: crate::kuna_armflowcontext::ArmDecodeMode, entry: bool,
+    ) {
+        self.arch().with_context_db_mut(|db| {
+            if entry || db.get_context(addr)[mode.word] & mode.mask != mode.value {
+                let last = if entry { addr.get_offset() } else { mode.last };
+                let end = last.min(addr.get_space().unwrap().get_highest()).checked_add(1)
+                    .map(|end| Address::new(Rc::clone(addr.get_space().unwrap()), end))
+                    .unwrap_or_default();
+                let _ = db.set_variable_region(b"TMode", addr, &end, mode.value >> mode.mask.trailing_zeros());
+            }
+        });
+    }
     fn resolve_typeop(&self, opc: OpCode) -> TypeOp {
         self.arch().resolve_typeop(opc)
     }
@@ -945,6 +968,8 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // (kuna `calleedeadarg`) Same story for the entry-liveness probe the
         // input-trial scoring seam consults.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
+        // (kuna `zerofillreturn`) And the zero fills, read off the fresh p-code.
+        crate::p4_calls::kuna_zerofillreturn::seed(arch, fd);
         // (kuna `protoorder types`) And for the parameter types earlier callees stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, fd);
         crate::p4_calls::kuna_callrettype::seed(arch, fd);
@@ -1152,7 +1177,10 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     let staged_name_recs = std::mem::take(&mut arch.kuna_pending_name_recs);
     let staged_dyn_recs = std::mem::take(&mut arch.kuna_pending_dyn_recs);
     let staged_proto_model = arch.kuna_pending_proto_model.take();
-    let mut attempt = |prefollowed: Option<Funcdata>, unguarded: bool| -> KunaResult<Funcdata> {
+    let mut attempt = |prefollowed: Option<Funcdata>,
+                       unguarded: bool,
+                       condstmts_seed: &std::collections::BTreeSet<Address>|
+     -> KunaResult<Funcdata> {
         // Kept for the parked-prototype lookup below (the flow build consumes the
         // address).
         let entry_addr = funcaddr.clone();
@@ -1170,6 +1198,7 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         if unguarded {
             fd.withdraw_stack_store_guard();
         }
+        fd.set_condstmts_seed(condstmts_seed.clone());
         // The prototype the function is decompiled *against*. Two sources, in
         // precedence order:
         //
@@ -1258,6 +1287,10 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         // input-trial scoring seam consults, for the same reason and at the same
         // point; inert unless `option calleedeadarg` is live.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, &mut fd);
+        // (kuna `zerofillreturn`) Mark the zero fills of narrow vector-register
+        // writes while the p-code is still as lifted; heritage splits a 128-bit
+        // write into the same lanes.
+        crate::p4_calls::kuna_zerofillreturn::seed(arch, &mut fd);
         // (kuna `protoorder types`) The parameter types callees decompiled earlier stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, &mut fd);
         // (kuna `callrettype`) And the return types they stated.
@@ -1290,10 +1323,26 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     };
     // (kuna `stackstoreguard`) A function whose final layout spoiled what the
     // guard needs is analyzed again from scratch, as `stackstoreguard off` would.
-    let result = match attempt(prefollowed, false) {
-        Ok(fd) if fd.stack_store_guard_spoiled() => attempt(None, true),
+    let mut seed = std::collections::BTreeSet::new();
+    let mut unguarded = false;
+    let mut result = match attempt(prefollowed, false, &seed) {
+        Ok(fd) if fd.stack_store_guard_spoiled() => {
+            unguarded = true;
+            attempt(None, true, &seed)
+        }
         other => other,
     };
+    // (kuna `condstmts`) A function whose final structure folded a block over the
+    // cap is analyzed again with that block complex from the first structuring on.
+    for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
+        let Ok(fd) = &result else { break };
+        let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
+        seed = next;
+        match attempt(None, unguarded, &seed) {
+            Ok(fd) => result = Ok(fd),
+            Err(_) => break,
+        }
+    }
     // (kuna decompile-all watchdog) Disarm the deadline once the drive is over so
     // no later, non-drive pipeline run (console sub-queries) consults a stale one.
     arch.kuna_fn_deadline = None;

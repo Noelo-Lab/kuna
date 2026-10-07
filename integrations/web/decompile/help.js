@@ -9,6 +9,8 @@ const TOP_KEYS = [
   ['s', 'Side by side'],
   ['n', 'Rename what is selected'],
   ['y', 'Change its type'],
+  ['x', 'Who uses it (cross-references)'],
+  ['e', 'Explain what is selected'],
   ['u', 'Undo'],
   ['Esc', 'Close or clear the selection'],
 ];
@@ -27,7 +29,8 @@ const KEYS = [
   ['y', 'change its type (on a function name: its signature)'],
   [';', 'add a note to the selected instruction'],
   ['g', 'go to a function or an address'],
-  ['x', 'find who calls this function'],
+  ['x', 'cross-references: who calls a function and what it calls, or the lines that use a variable'],
+  ['e', 'open or close the Explain panel'],
   ['u · Ctrl+Z', 'undo'],
   ['Ctrl+Shift+Z', 'redo'],
   ['Alt+← Alt+→', 'back and forward between functions'],

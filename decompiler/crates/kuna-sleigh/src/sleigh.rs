@@ -2658,6 +2658,12 @@ impl Translate for Sleigh {
     fn context_scope(&self) -> Option<crate::kuna_contextscope::ContextScope<'_>> {
         Some(crate::kuna_contextscope::ContextScope::new(&self.context_db, &self.cache))
     }
+    fn decode_context_scope(&self) -> Option<crate::kuna_contextscope::DecodeContextScope<'_>> {
+        Some(crate::kuna_contextscope::DecodeContextScope::new(
+            &self.context_db,
+            &self.cache,
+        ))
+    }
     fn set_context_write_mask(&self, word: usize, mask: u32) -> u32 {
         self.cache.borrow_mut().set_write_mask(word, mask)
     }

@@ -786,6 +786,7 @@ pub fn run_listing_consumers(
     }
     let mut frame_aif: Option<crate::aif::kuna_entrychecks::CheckedAif> = None;
     let mut frame_pointers = None;
+    let mut inventory_context_paints = Vec::new();
     // Recover validated LR-saving ARM/Thumb frames in gaps before fingerprinting.
     if arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes {
         if let Some(code_space) = arch.manage().get_default_code_space() {
@@ -815,6 +816,7 @@ pub fn run_listing_consumers(
                             .flat_map(|checked| checked.entries.iter().copied())).collect::<Vec<_>>(),
                         &original,
                     );
+                    if arch.input_arm_isa_override { modes.retain_decoded_modes(); }
                     listing = crate::listing::Listing::build_tracking_frames(
                         &file, image, arch, translate, &seeds, &funcsym_seeds,
                         &seed_names, detail, plan, Some(&mut modes),
@@ -867,6 +869,7 @@ pub fn run_listing_consumers(
                             continue;
                         }
                     }
+                    inventory_context_paints = modes.decoded_paints();
                     if let Some(context) = frame_context {
                         context.commit();
                     }
@@ -1083,6 +1086,11 @@ pub fn run_listing_consumers(
         let mut mode_out = AnalysisOutput::default();
         mode_out.context_paints = mode_paints;
         out.push(("flowmode", mode_out));
+    }
+    if !inventory_context_paints.is_empty() {
+        let mut modes = AnalysisOutput::default();
+        modes.inventory_context_paints = inventory_context_paints;
+        out.push(("armframes", modes));
     }
     sanitize_all_names(&mut out);
     out

@@ -19,8 +19,7 @@ export function expand(target, index) {
   if (target.addr) {
     addrs.add(target.addr);
     for (const l of index.insnToLines.get(target.addr) || []) lines.add(l);
-    const inferred = index.inferredLine?.get(target.addr);
-    if (inferred) lines.add(inferred);
+    for (const l of index.inferredLine?.get(target.addr) || []) lines.add(l);
   }
   if (target.sym) {
     syms.add(target.sym);

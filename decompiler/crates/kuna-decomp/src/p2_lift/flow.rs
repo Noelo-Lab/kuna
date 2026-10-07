@@ -195,6 +195,15 @@ pub trait FlowEnvironment {
     /// p-code, returning the instruction length in bytes.
     fn translate(&self) -> &dyn Translate;
 
+    fn arm_decode_mode(&self, _addr: &Address) -> Option<super::kuna_armflowcontext::ArmDecodeMode> {
+        None
+    }
+
+    fn preserve_arm_decode_mode(
+        &self, _addr: &Address,
+        _mode: super::kuna_armflowcontext::ArmDecodeMode, _entry: bool,
+    ) {}
+
     /// Resolve an [`OpCode`] to its behavioral-class [`TypeOp`]
     /// (C++ `glb->inst[opc]`).  // STUB(W6)
     ///
@@ -587,6 +596,7 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     funcbound_cutoffs: std::collections::BTreeSet<Address>,
     /// Addresses to which there is flow — the work stack (C++ `addrlist`).
     addrlist: Vec<Address>,
+    arm_context: bool,
     /// List of BRANCHIND ops (preparing for jump table recovery) (C++ `tablelist`).
     tablelist: Vec<OpId>,
     /// List of p-code ops that need injection (C++ `injectlist`).
@@ -707,6 +717,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             outofbounds: std::collections::BTreeSet::new(),
             funcbound_cutoffs: std::collections::BTreeSet::new(),
             addrlist: Vec::new(),
+            arm_context: env.arm_decode_mode(&entry).is_some(),
             tablelist: Vec::new(),
             injectlist: Vec::new(),
             visited: BTreeMap::new(),
@@ -1720,6 +1731,10 @@ following this call as a branch"
             crate::overrides::flow_type::NONE
         };
 
+        let mode = self.arm_context.then(|| self.env.arm_decode_mode(curaddr)).flatten();
+        if curaddr == self.data.get_address() {
+            if let Some(mode) = mode { self.env.preserve_arm_decode_mode(curaddr, mode, true); }
+        }
         let mut emit = FlowEmit::new(&mut self.data, self.env);
         let decoded = match self.env.mapped_flow_image() {
             Some(image) => self.env.translate().one_instruction_checked(&mut emit, curaddr, image),
@@ -1735,6 +1750,9 @@ following this call as a branch"
                     // is infallible, so the error was captured; re-raise it here, at
                     // the same point the C++ exception would propagate.
                     return Err(err);
+                }
+                if let Some(mode) = mode {
+                    self.env.preserve_arm_decode_mode(curaddr, mode, false);
                 }
             }
             Err(err) => {
