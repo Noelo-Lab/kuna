@@ -6210,6 +6210,31 @@ its own float arithmetic is not withdrawn: its float is the type the machine
 computes, and a reader holding it as an integer prints what it did without the
 vote.
 
+(kuna `floatbits`, chapter 05.) A float return made of the bits of the
+function's float-register input is filed apart (`Ledger::float_bits`, and
+`Funcdata::kuna_callee_float_bits` in each caller's `seed`). A reader that
+holds the result of one in another register than the helper returns in holds
+what the call left there, and refuses nothing (`kuna_voidret.rs
+(elsewhere_than_return)`, on the register the caller holds the result in once
+the cast pass has reinterpreted it): betaflight's `bl fabsf; vcmpe.f32 s0,
+s15; .. pop {r4, pc}`, recovered returning the `r0` the call left, withdrew
+`fabsf`'s float from all 73 of its readers. The chain of
+wrappers stops at such a function when the withdrawn function also returns a
+float of its own arithmetic (`Ledger::own_float`, filed by `record` from
+`kuna_voidret.rs (returns_its_own_float)`): withdrawn, that function still
+returns a float, and taking back the helper's would change nothing it prints.
+A function whose float is only what such helpers return (`float wrapneg(float
+x) { return negf(x); }`, its return forced by the callers that read `xmm0`) is
+not withdrawn itself when a reader refuses it: withdrawn, it would lose the
+forced return and print `void`. The helpers are withdrawn instead
+(`Ledger::bits_withdrawn` remembers them), and it is decompiled again as their
+reader, returning the integer they now return. A withdrawn helper's parameters
+go back to integers as well, so `stale_readers` also returns every function
+that called it while it was float (`Ledger::bits_callers`, filed by `record`
+for every call, read or not): `from_bits`, which only tail-calls `fbabs`, had
+printed `fbabs(((union { unsigned int from; float to; }){ .from = a0 }).to)`
+against the final `unsigned int fbabs(unsigned int a0)`.
+
 A forced function whose final decompile still returns, on some path, a register
 a call only clobbers -- an INDIRECT creation the call's output never replaced --
 is withdrawn the same way (`kuna_voidret.rs (returns_a_call_clobber)`, filed by

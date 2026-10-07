@@ -3052,6 +3052,116 @@ fn a_return_stated_in_another_register_is_not_reinterpreted() {
     assert!(!stdout.contains(".from = sub_11c0("), "a return in rax reinterpreted as xmm0's float:\n{stdout}");
 }
 
+/// `floatbitshelper_armhf.o` (Cortex-M4F hard-float, clang -O2), `floatbitshelper_a64_O0.o`
+/// (AArch64, clang -O0) and `floatbitshelper_x86_64_gcc_O2` (stripped), built from
+/// `floatbitshelper.c`: `fb_fabsf`, `fb_negf` and `fb_copysignf` mask or flip the bits
+/// of the floats they receive in `s0`/`xmm0` and hand them back there,
+/// `fb_isnanf` compares them, and `fb_fabs` masks a double (`d0`/`xmm0`). Each printed
+/// `unsigned int (unsigned int)`, which C passes in a general register, so
+/// `fb_use` handed `fb_fabsf` its float as a number and wrapped each result in
+/// a union. `fb_keep` adds 1 to the bits `fb_fabsf` returns and keeps them as an
+/// integer, which now reinterprets the float at the call. The printed
+/// functions, compiled with gcc and clang and called with the source's floats,
+/// compute the fixture's bits; `fb_bump`, `fb_store` and `fb_mix` compute with,
+/// store or or an integer into the bits and keep their integer types.
+#[test]
+fn a_float_bit_helper_round_trips() {
+    let sp = specs();
+    let fixture = |name: &str| repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+    let prelude = format!(
+        "#include <stdio.h>\n#include <string.h>\n#include <stdbool.h>\n{BITS}\
+         #define ABS(x) _Generic((x), float: __builtin_fabsf, double: __builtin_fabs)(x)\n"
+    );
+    for (tag, name) in [("armhf", "floatbitshelper_armhf.o"), ("a64-O0", "floatbitshelper_a64_O0.o")] {
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture(name), "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        for want in [
+            "float fb_fabsf(float a0)",
+            "float fb_negf(float a0)",
+            "float fb_copysignf(float a0,float a1)",
+            "bool fb_isnanf(float a0)",
+            "v1 = fb_fabsf(a0 - a1);",
+            "v3 = fb_copysignf(3.0,a0);",
+            "*a1 = ((union { float from; int to; }){ .from = fb_fabsf(a0) }).to + 1;",
+            "int fb_bump(int a0)",
+            "void fb_store(unsigned int a0,unsigned int *a1)",
+            "unsigned int fb_mix(unsigned int a0,unsigned int a1)",
+        ] {
+            assert!(stdout.contains(want), "{tag}: missing `{want}`:\n{stdout}");
+        }
+        if tag == "a64-O0" {
+            for want in ["double fb_fabs(double a0)", "return fb_fabs(a0) * 3.0;"] {
+                assert!(stdout.contains(want), "{tag}: missing `{want}`:\n{stdout}");
+            }
+        }
+        let printed = printed_functions(
+            &stdout,
+            &["fb_fabsf ", "fb_negf ", "fb_copysignf ", "fb_isnanf ", "fb_bump ", "fb_store ", "fb_mix ", "fb_use ", "fb_keep "],
+        );
+        assert!(!printed.contains("float to; }){ .from = fb_"), "{tag}: a helper's result is reinterpreted as a float:\n{printed}");
+        let src = format!(
+            "{prelude}{printed}\n\
+             int main(void) {{\n  float a = -1.5f, b = 2.25f, n = -__builtin_nanf(\"\");\n  unsigned int s = 0;\n  int k = 0;\n  \
+             fb_store({}, &s);\n  fb_keep(a, &k);\n  \
+             printf(\"%llx %llx %llx %d %d %llx %x %llx %llx %llx %x\\n\", BITS(fb_fabsf(a)), BITS(fb_negf(a)), BITS(fb_copysignf(b, a)), \
+             (int)fb_isnanf(a), (int)fb_isnanf(n), BITS(fb_fabsf(n)), s, BITS(fb_bump({})), BITS(fb_mix({}, 0x80000000u)), BITS(fb_use(a, b)), k);\n  \
+             return 0;\n}}\n",
+            arg_of_bits(&printed, "fb_store", 0, 0xbfc0_0000),
+            arg_of_bits(&printed, "fb_bump", 0, 0xbfc0_0000),
+            arg_of_bits(&printed, "fb_mix", 0, 0x3fc0_0000),
+        );
+        for (cc, got) in compile_and_run_each(&format!("floatbits-{tag}"), &src) {
+            assert_eq!(
+                got, "3fc00000 3fc00000 c0100000 0 1 7fc00000 3fc00000 bfc00001 bfc00000 40100000 3fc00001",
+                "{tag} {cc}: the printed C computes something else:\n{printed}"
+            );
+        }
+    }
+
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture("floatbitshelper_x86_64_gcc_O2"), "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in [
+        "float sub_12f0(float a0)",
+        "float sub_1310(float a0)",
+        "float sub_1330(float a0,float a1)",
+        "bool sub_1360(float a0)",
+        "double sub_1380(double a0)",
+        "void sub_13c0(unsigned int a0,unsigned int *a1)",
+        "unsigned int sub_13e0(unsigned int a0,unsigned int a1)",
+    ] {
+        assert!(stdout.contains(want), "x86-64: missing `{want}`:\n{stdout}");
+    }
+    let printed = printed_functions(&stdout, &["sub_12f0 ", "sub_1310 ", "sub_1330 ", "sub_1360 ", "sub_1380 "]);
+    let src = format!(
+        "{prelude}{printed}\n\
+         int main(void) {{\n  float a = -1.5f, b = 2.25f, n = -__builtin_nanf(\"\");\n  double d = -4.5;\n  \
+         printf(\"%llx %llx %llx %d %d %llx %llx\\n\", BITS(sub_12f0(a)), BITS(sub_1310(a)), BITS(sub_1330(b, a)), \
+         (int)sub_1360(a), (int)sub_1360(n), BITS(sub_12f0(n)), BITS(sub_1380(d)));\n  return 0;\n}}\n"
+    );
+    for (cc, got) in compile_and_run_each("floatbits-x86-64", &src) {
+        assert_eq!(got, "3fc00000 3fc00000 c0100000 0 1 7fc00000 4012000000000000", "x86-64 {cc}: the printed C computes something else:\n{printed}");
+    }
+}
+
+/// `floatbitswithdraw_armhf.o` (Cortex-M4F hard-float, clang -O2, built from
+/// `floatbitswithdraw.c`): `abs_bits` returns the bits `fbabs` hands back in
+/// `s0` as an integer, which withdraws `fbabs`'s float return, and with it the
+/// float parameter the same bit ops gave it. `from_bits` tail-calls `fbabs`
+/// without reading its result, and was printed before the withdrawal as
+/// `fbabs(((union { unsigned int from; float to; }){ .from = a0 }).to)`, a
+/// float handed to the final `unsigned int fbabs(unsigned int a0)`, which C
+/// converts by value. Every caller of the helper is now decompiled again.
+#[test]
+fn a_withdrawn_float_bit_helper_is_called_with_its_final_prototype() {
+    let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatbitswithdraw_armhf.o").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    assert!(stdout.contains("unsigned int fbabs(unsigned int a0)"), "fbabs is no longer withdrawn; re-pick the case:\n{stdout}");
+    assert!(stdout.contains("  fbabs(a0); // tail-call"), "from_bits does not call fbabs with its integer:\n{stdout}");
+    assert!(!stdout.contains("float to; }){ .from = a0 }).to)"), "a float is handed to fbabs's integer parameter:\n{stdout}");
+}
+
 /// `floatret_put_{cm4,a64}.o` (Cortex-M4F and AArch64, clang -O2): `putf2` moves
 /// its floats from `s0`..`s2` into `r0`..`r2` / `w0`..`w2` and tail-calls
 /// `put3`, which stores them as `u32`. A float vote on the parameters printed

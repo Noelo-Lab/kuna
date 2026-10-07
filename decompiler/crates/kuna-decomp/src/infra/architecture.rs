@@ -389,6 +389,10 @@ pub struct Architecture {
     /// whose every read is a truth test.  Implementation:
     /// [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
     pub bool_byte: bool,
+    /// (kuna `floatbits`) Type a float-register input whose every use is a
+    /// bit op of a float, and the float-register return built from it, as
+    /// floats.  Implementation: [`kuna_floatbits`](crate::p5_types::kuna_floatbits).
+    pub float_bits: bool,
     pub partial_concat: bool,
     /// (kuna `charbyte`) Keep `char` for a byte loaded through a `char *` when
     /// the only unsigned vote on it is a zero-extension.  Implementation:
@@ -2512,6 +2516,7 @@ impl Architecture {
             kuna_float_globals: None,
             kuna_float_scan_batch: false,
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
+            float_bits: false, // (kuna) option floatbits; reset_defaults sets the shipped default
             partial_concat: true,
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
             cast_arith: false, // (kuna) option castarith; reset_defaults sets the shipped default
@@ -3004,6 +3009,7 @@ impl Architecture {
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.call_target_type = false; // (kuna) option calltargettype: default-OFF in the catalog because the XML datatest corpus pins the upstream `code *` spellings and applies no mode; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for every real binary
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
+        self.float_bits = true; // (kuna) option floatbits default-on: a float helper that only bit-ops its float-register input into its float-register return types float on both sides
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.partial_concat = true;
         self.arm_float_args = false; // (kuna) option armfloatargs default-off: scalar VFP input recovery is measured only on the feature's own corpus and one firmware image
@@ -3661,6 +3667,7 @@ impl Architecture {
         }
         ctx.codescalar = self.codescalar; // (kuna) codescalar
         ctx.bool_byte = self.bool_byte; // (kuna) boolbyte
+        ctx.float_bits = self.float_bits; // (kuna) floatbits
         ctx.unknown_byte_is_char =
             self.realtypes && self.print.out_lang() == crate::kuna_lang::OutLang::C;
         ctx.int_promotion = self.print.out_lang().profile().caps.integer_promotion;

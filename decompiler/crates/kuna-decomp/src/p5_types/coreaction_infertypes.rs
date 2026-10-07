@@ -369,6 +369,10 @@ fn get_local_type(data: &Funcdata, vn: VarnodeId) -> (Rc<Datatype>, bool) {
 fn build_localtypes(data: &mut Funcdata) {
     let order: Vec<VarnodeId> = data.vbank().iter_loc().collect();
     let mut elem_cache = crate::kuna_elemptr::Cache::default();
+    let float_bits = crate::kuna_floatbits::Plan::of(data);
+    if float_bits.types_a_return() {
+        data.kuna_note_float_bits_return();
+    }
     if data.get_arch().elem_ptr {
         data.kuna_elemptr_begin_pass();
     }
@@ -493,6 +497,7 @@ fn build_localtypes(data: &mut Funcdata) {
         } else {
             crate::kuna_floatreg::float_register_vote(data, vn, &ct)
                 .or_else(|| crate::kuna_floatreg::float_input_vote(data, vn, &ct))
+                .or_else(|| float_bits.vote(data, vn, &ct))
                 .unwrap_or(ct)
         };
         let ct = if from_seed {
