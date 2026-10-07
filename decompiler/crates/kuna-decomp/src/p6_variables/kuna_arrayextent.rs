@@ -17,7 +17,10 @@
 //! holds only unlocked hints of its element size and of a type `attempt_join`
 //! accepts, and is never read except through a pointer. A slot the function
 //! writes and never reads directly is only observable through the index, so it
-//! is an element of the array rather than a scalar of its own.
+//! is an element of the array rather than a scalar of its own. A slot it takes
+//! loses its constant-copy mark, so upstream's constant absorption
+//! (`RangeHint::absorb`) cannot raise the array one element past the last slot
+//! taken and from there over each following constant-initialised local.
 
 use std::rc::Rc;
 
@@ -30,7 +33,7 @@ use kuna_num::opcodes::OpCode;
 use crate::context::VarnodeId;
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
-use crate::varmap::{MapState, RangeHint, RangeType};
+use crate::varmap::{MapState, RangeHint, RangeType, COPY_CONSTANT};
 
 /// Upstream's four-element assumption only.
 pub const LEVEL_OFF: int4 = 0;
@@ -150,7 +153,8 @@ fn access_size(fd: &Funcdata, vn: VarnodeId) -> Option<int4> {
 }
 
 /// Lengthen the open hint of each unbounded indexed base over the contiguous
-/// write-only slots that follow its elements.
+/// write-only slots that follow its elements, and clear `COPY_CONSTANT` on the
+/// fixed hints of the slots it takes.
 pub(crate) fn extend_unbounded(
     fd: &Funcdata,
     state: &mut MapState,
@@ -200,6 +204,13 @@ pub(crate) fn extend_unbounded(
         }
         for h in hints.iter_mut().filter(|h| is_indexed_open(h, base)) {
             h.highind = h.highind.max(reach);
+        }
+        let taken = sstart + (highind as intb + 1) * elem..sstart + (reach as intb + 1) * elem;
+        for h in hints
+            .iter_mut()
+            .filter(|h| h.range_type == RangeType::Fixed && taken.contains(&h.sstart))
+        {
+            h.flags &= !COPY_CONSTANT;
         }
     }
 }

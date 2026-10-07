@@ -934,7 +934,14 @@ every slot through the index, so the array has to cover it for the C to be
 defined. The stop is there because a known-bits bound is loose (an index loaded
 as a byte reaches 256 elements whatever the loop does with it), and a slot whose
 address the function takes on its own is a different object: `char u[4], g[4],
-o[4]` filled by `u[i++] = 'r'` and passed to `printf` stay three arrays.
+o[4]` filled by `u[i++] = 'r'` and passed to `printf` stay three arrays. Short
+of that stop, every slot of the element width inside the reach joins the array,
+whether the function reads it on its own or not: the reach comes from the index
+alone, and no test on the path to the access narrows it, so in `int tab[4]; int
+y = x * 5, z = x - 9; int k = i & 7; if (k < 4) return tab[k] * y + z;` the
+masked `k` reaches eight elements and the array takes `y`, `z` and `k`. Each
+such scalar then prints as an element; the values are the same slots, so what
+the C computes does not change.
 
 At `on` (the default) an indexed base with no such bound also grows along the
 frame, in `kuna_arrayextent.rs (extend_unbounded)`, which runs after the
@@ -960,8 +967,17 @@ copied into the array still counts as an element, and its home slot, whose value
 is also in the array, does not. A slot the function writes and observes only
 through a pointer belongs to the array; a scalar it observes on its own stops
 the growth. The slots it takes then join the array through the ordinary
-`attempt_join`, since they now sit within `highind`. Merging slots never changes
-what the C computes, only how many declarations it has. `off` is upstream.
+`attempt_join`, since they now sit within `highind`, and each fixed hint in them
+loses its constant-copy mark (`COPY_CONSTANT`). Without that, a taken slot that
+holds a constant (`int flag = 0;` written and never read) would go on through
+upstream's constant absorption (`varmap.rs (RangeHint::is_const_absorbable)`),
+which takes a constant store at the array's last element and raises `highind`
+one past it (`varmap.rs (RangeHint::absorb)`): the next slot would join whatever
+reads it, and each constant-initialised slot joined that way would raise it
+again, so at `-O0` the loop counters and the sum after `int a[4]; int flag =
+0;` became elements. With the mark cleared the array ends at the last slot this
+rule took. Merging slots never changes what the C computes, only how many
+declarations it has. `off` is upstream.
 
 **Terminator absorption** (`option nulterminator`, **opt-in, default off**). An
 open hint that `attempt_join` cannot extend ends where the next hint starts, so
