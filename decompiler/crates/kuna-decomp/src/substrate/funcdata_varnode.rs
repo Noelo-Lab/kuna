@@ -2146,7 +2146,9 @@ impl Funcdata {
             let curtrial = fc.active_input().get_trial_for_input_varnode(j);
             if curtrial.is_checked() {
                 if curtrial.is_active() {
-                    return false;
+                    // (kuna) `varargsharedfloat`: see
+                    // [`crate::p4_calls::kuna_varargsharedfloat`].
+                    return op == opmatch && self.kuna_shared_float_call() == Some(op);
                 }
             } else if TraverseNode::is_alternate_path_valid(vn, fl, self.vbank(), self.obank()) {
                 return false;

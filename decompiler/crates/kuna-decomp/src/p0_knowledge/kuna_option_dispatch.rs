@@ -402,6 +402,7 @@ kuna_options! { self, p1;
         self.vararg_forward = val;
         Ok(msg)
     },
+    "varargsharedfloat" => on_off!(vararg_shared_float, "variadic doubles that also feed an earlier argument"),
     "calleearity" => {
         let (val, msg) =
             crate::p4_calls::kuna_calleearity::OptionCalleeArity.apply(p1)?;

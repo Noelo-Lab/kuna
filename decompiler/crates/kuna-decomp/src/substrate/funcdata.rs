@@ -492,6 +492,9 @@ pub struct Funcdata {
     /// (kuna `voidret`) Whether `ancestor_op_use` is scoring that storage, where a
     /// call's result used only on the way to the RETURN counts as the return value.
     kuna_forced_scoring: bool,
+    /// (kuna `varargsharedfloat`) The call whose other active argument slots a
+    /// scored value may also reach.
+    kuna_shared_float_call: Option<OpId>,
     /// (kuna `callrettype`) The extensions the return trimming narrowed the
     /// returned value back through ([`crate::kuna_callrettype::note_returned_extension`]).
     kuna_callret_returned: Vec<(bool, int4)>,
@@ -709,6 +712,7 @@ impl Funcdata {
             kuna_zext_word: None,
             kuna_float_pair_halves: std::collections::BTreeSet::new(),
             kuna_forced_scoring: false,
+            kuna_shared_float_call: None,
             kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
@@ -1201,6 +1205,18 @@ impl Funcdata {
     /// (kuna `voidret`) Whether the forced return storage is being scored.
     pub fn kuna_forced_scoring(&self) -> bool {
         self.kuna_forced_scoring
+    }
+
+    /// (kuna `varargsharedfloat`) Let the scored value reach `call`'s other
+    /// active argument slots (see the field).
+    pub fn kuna_set_shared_float_call(&mut self, call: Option<OpId>) {
+        self.kuna_shared_float_call = call;
+    }
+
+    /// (kuna `varargsharedfloat`) The call set by
+    /// [`Self::kuna_set_shared_float_call`].
+    pub fn kuna_shared_float_call(&self) -> Option<OpId> {
+        self.kuna_shared_float_call
     }
 
     /// (kuna `callrettype`) The loader's data ranges recorded by the seed.
