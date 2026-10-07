@@ -3063,7 +3063,7 @@ impl Action for ActionInferTypes {
         // a full pass has run and changed nothing.  A function whose first pass
         // is already at the fixpoint is settled too -- a lattice that never
         // needed to move is still decided.
-        if crate::coreaction_infertypes::run_infer_types(data) {
+        if crate::kuna_floatreg::with_moved_memo(|| crate::coreaction_infertypes::run_infer_types(data)) {
             self.localcount += 1;
             data.set_kuna_infertypes_settled(false);
         } else {

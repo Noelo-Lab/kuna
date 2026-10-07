@@ -260,6 +260,40 @@ const MAX_GLOBAL_FAMILY: usize = 4096;
 /// taken against it prints a conversion where the machine moves the bits
 /// (`v1 = (long)gd` for a case body that adds to them).
 pub(crate) fn moved_as_a_float_here(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    let key = (addr.get_offset(), size);
+    if let Some(known) = MOVED.with(|m| m.borrow().as_ref().and_then(|c| c.get(&key).copied())) {
+        return known;
+    }
+    let moved = walk_the_global(data, addr, size);
+    MOVED.with(|m| {
+        if let Some(c) = m.borrow_mut().as_mut() {
+            c.insert(key, moved);
+        }
+    });
+    moved
+}
+
+type MovedMemo = std::collections::HashMap<(u64, int4), bool>;
+
+thread_local! {
+    static MOVED: std::cell::RefCell<Option<MovedMemo>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Run `f` with [`moved_as_a_float_here`]'s answers kept by global: the walk
+/// reads the function's ops, constants, prototypes and the global scope, which
+/// one type-inference pass only types and never changes.
+pub(crate) fn with_moved_memo<T>(f: impl FnOnce() -> T) -> T {
+    struct Restore(Option<MovedMemo>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            MOVED.with(|m| *m.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(MOVED.with(|m| m.borrow_mut().replace(MovedMemo::new())));
+    f()
+}
+
+fn walk_the_global(data: &Funcdata, addr: &Address, size: int4) -> bool {
     let Some(space) = addr.get_space() else { return false };
     let (lo, hi) = (addr.get_offset(), addr.get_offset() + size as u64);
     let start = Address::new(Rc::clone(space), lo.saturating_sub(16));

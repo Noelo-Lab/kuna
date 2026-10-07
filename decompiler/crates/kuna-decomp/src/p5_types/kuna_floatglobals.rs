@@ -73,13 +73,12 @@ pub(crate) fn float_only(data: &Funcdata, addr: &Address, size: int4) -> bool {
     if !addr.get_space().zip(data_space).is_some_and(|(s, d)| Rc::ptr_eq(s, d)) {
         return false;
     }
-    if !crate::kuna_floatreg::moved_as_a_float_here(data, addr, size) {
-        return false;
-    }
     match &glb.float_globals {
-        Some(found) => found.get(&addr.get_offset()) == Some(&(size as u8)),
+        Some(found) => {
+            found.get(&addr.get_offset()) == Some(&(size as u8)) && crate::kuna_floatreg::moved_as_a_float_here(data, addr, size)
+        }
         None => {
-            if glb.float_globals_pending {
+            if glb.float_globals_pending && crate::kuna_floatreg::moved_as_a_float_here(data, addr, size) {
                 glb.float_globals_wanted.set(true);
             }
             false

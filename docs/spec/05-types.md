@@ -2766,7 +2766,7 @@ vote asks only once everything else it checks has held, so the question is put
 only where its answer decides the vote: a global -- a data-space Varnode, or a
 load or store through a constant address -- is then the one objection left.
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_floatglobals.rs (float_only)`
-first asks the function's own code, which the whole-program scan below can miss
+takes the float only where the function's own code agrees, which the whole-program scan below can miss
 but the decompiler cannot (`kuna_floatreg.rs (moved_as_a_float_here)`): every
 Varnode of the global's storage must be the whole global, every value written
 there must come from a float operation, a float-class register (an input, or a
@@ -2796,12 +2796,18 @@ first field). A constant below the global that no Symbol joins to it is
 another global's address, and an index from it is not followed: on a stripped
 image `((long *)&gs)[i]` beside `gs.d = b` takes the float for `gs.d`, and
 prints the index as raw address arithmetic, with no conversion. The constants
-are found through the function's own index of them, so the check costs nothing
-where nothing names the global. A function that adds to the bits in one case of
+are found through the function's own index of them. The walk runs only for a
+global the scan found float-only, or while the scan is still to be taken, and
+one type-inference pass (`ActionInferTypes`) keeps its answer per global
+(`with_moved_memo`): the pass only types Varnodes, and the walk reads the
+function's ops, constants, prototypes and the global scope, none of which it
+changes. Protoorder's family vote asks the same global for every call argument
+it weighs, so without the memo crazyflie walked one global's uses ten thousand
+times a run. A function that adds to the bits in one case of
 a switch (`g7 = *(long *)&gd + 1` beside `gd = b`) refuses: a float there would
-print `(long)gd`, a conversion where the machine moves the bits. Only then is the scan
-asked, which answers no while the program has not been scanned and marks the
-function. The console's decompile step (`kuna-console/src/decompile_step.rs`)
+print `(long)gd`, a conversion where the machine moves the bits. While the
+program has not been scanned, a global that passes this check is answered no
+and the function is marked. The console's decompile step (`kuna-console/src/decompile_step.rs`)
 then scans the program once and decompiles that function again; every later
 function of the run reads the answer from its `ArchContext`. An integer program
 rarely asks at all (gzip, grep, ls, bash and od never do), and when one does the
