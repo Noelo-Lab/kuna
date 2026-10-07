@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2335,
-    2335
+    2341,
+    2341
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -796,6 +796,12 @@
     "data:KUNA-UNMAPPEDENTRY #1: the option parses and round-trips in both directions, and is inert on the XML path -- the source form x <= 8 renders identically in all three passes",
     "data:KUNA-UNMAPPEDENTRY #2: the catalog documents it as a default-on P1 code/data-partition correctness fix, live-toggled back on",
     "data:KUNA-UNMAPPEDENTRY #3: the catalog row carries the correctness-fix change_kind an agent reads to judge the flip",
+    "data:KUNA-WIDESTRINGS32 #1: off, the literal prints as its address",
+    "data:KUNA-WIDESTRINGS32 #2: on, the literal prints as L\"hellow\"",
+    "data:KUNA-WIDESTRINGS32 #3: on, the NULL default prints as a literal",
+    "data:KUNA-WIDESTRINGS32 #4: int tables of character codes keep their names",
+    "data:KUNA-WIDESTRINGS32 #5: on, clang, the literal after the switch table starts at its operand",
+    "data:KUNA-WIDESTRINGS32 #6: on, clang, the indexed switch table keeps its address",
     "data:LIBCTYPES #10: glibc off, a MINTED stream shell has no members, so the refill body reads an offset",
     "data:LIBCTYPES #11: glibc on, the same two accesses are the published field",
     "data:LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset",
