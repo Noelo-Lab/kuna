@@ -147,8 +147,9 @@ f30f1efa90c3
 </script>
 <stringmatch name="STACKGUARD-TAILCALL #1: the fs_offset input is declared only with option stackguard off, once per function" min="5" max="5">// fs_offset$</stringmatch>
 <stringmatch name="STACKGUARD-TAILCALL #2: the entry-side canary load prints only with option stackguard off" min="5" max="5">= \*\([a-z0-9 ]+ \*\)\(v[0-9]+ \+ 0x28\);$</stringmatch>
-<stringmatch name="STACKGUARD-TAILCALL #3: default, t2 and t2s store b[0] and go straight to the tail call" min="2" max="2">v[0-9]+\[0\] = .*;
-return ext\(.*\); // tail-call</stringmatch>
+<stringmatch name="STACKGUARD-TAILCALL #3: default, t2, t3 and t2s store b[0] before the indexed store and test it after" min="3" max="3">v[0-9]+\[0\] = .*;
+v[0-9]+\[\(a0 &gt;&gt; 4\) % 0xc\] = a1;
+if \(!?v[0-9]+\[0\]\)</stringmatch>
 <stringmatch name="STACKGUARD-TAILCALL #4: default, w3's indexed store goes straight to the tail call" min="1" max="1">v1\[a0 >> 4 &amp; 3\] = 7;
 ext\(v1\[1\]\); // tail-call</stringmatch>
 <stringmatch name="STACKGUARD-TAILCALL #5: default, k2's fill loop, indexed store and tail call are unchanged" min="1" max="1">\} while \(v1 != &amp;v3\[0x10\]\);

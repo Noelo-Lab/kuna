@@ -228,7 +228,22 @@ secondary test:
   callee could reach the stack home through the alias while the untied value
   is live in it. The crossing set is every CALL plus the still-guarded STOREs
   (`funcdata_merge.rs (MergeContext::populate_affecting_ops)`), built once and
-  cached in the test cache's `cover.rs (PcodeOpSet)`.
+  cached in the test cache's `cover.rs (PcodeOpSet)`. Upstream's walk
+  (`cover.rs (Cover::intersect_op_set)`) steps through the cover's blocks and
+  the set's blocks together but keeps the index of the block it just tested,
+  so after every block the two share it skips the set's next block, and a
+  call or STORE there is never tested. kuna keeps that walk and, under option
+  `stackstoreguard` (on by default; off, the set's STOREs are walked as
+  upstream), adds a second one that reads each block's index and tests only
+  the guarded STOREs (`cover.rs (Cover::walk_op_set)`): iproute2 `ip` -O2 builds two netlink
+  requests on its frame, zeroing each with a `rep stos` loop before storing
+  its fields, and once `stackstoreguard` guards the fields against the loop's
+  STORE, the register holding one field's value was merged into the second
+  request's variable across that request's zeroing loop, so the C printed the
+  field store before the loop that clears it. Calls keep upstream's walk:
+  testing every skipped call as well changes the variables of some forty more
+  functions in a 38-binary corpus, and one of them (openssh `sshd` -O0
+  `0xd1ee1`) then prints a loop whose increment writes another variable.
 
 **Forced merges** (`coreaction_cleanup.rs (ActionMergeRequired)` — all files
 in this section under `decompiler/crates/kuna-decomp/src/p6_variables/` unless
@@ -1120,8 +1135,8 @@ the neighbour-bound layout.
 **An indexed store's slots are one local (kuna `stackstoreguard`, default
 on).** The stack STORE guard of chapter 03 (`stackstoreguard`) keeps an
 indexed byte store such as `u.b[i & 7] = j` from being folded past: every
-constant-initialized slot it may write keeps the store's effect, and the C
-prints the store through the local at its base address. That is only right
+constant-initialized or written slot it may write keeps the store's effect, and
+the C prints the store through the local at its base address. That is only right
 when every byte the store may reach, and every later read of those bytes,
 belongs to that one local. A slot mapped as a separate local is a separate C
 object, so a read of it never sees the store. Two layout decisions broke that.
@@ -1137,7 +1152,14 @@ stack base plus constants plus indices (`kuna_storereach.rs (pointer_pieces)`,
 through copies, casts, INDIRECTs, `PTRSUB`, `PTRADD` and `INT_ADD`, and through
 a pointer walk's `MULTIEQUAL` whose other inputs agree on the base). When every
 index has a known-bits mask that bounds it, the reach is `[base, base + max +
-1)`. A `MULTIEQUAL` that chooses between different stack addresses (`p = (j &
+1)`. An index that is an unsigned remainder by a constant, directly or through
+a copy, a zero extension, or a sign extension whose input's sign bit the
+remainder cannot reach, is also at most the divisor less one
+(`kuna_storereach.rs (index_bound)`), so `b[(i >> 4) % 12]` reaches 12 bytes;
+an index multiplied or shifted left by a constant is bounded by its operand's
+bound times that constant. With the option off, `pointer_pieces` bounds an
+index by its known-bits mask alone, as `arrayextent` does on main.
+A `MULTIEQUAL` that chooses between different stack addresses (`p = (j &
 2) ? &u.b[0] : &u.b[4]; *p ^= 1;`) gives one such piece per address, and the
 store reaches from the lowest piece to the end of the highest
 (`kuna_storereach.rs (store_reach)`). A walk that starts from such a choice
@@ -1162,6 +1184,25 @@ its value instead of reinterpreting its bits, so the upstream layout stays
 (`double v1[3]; v1[0] = 3.75; ((char *)v1)[i & 7] = j; return (int)(v1[0] +
 v1[0]);`). When that layout is still wrong, the function falls back to no
 guard (below).
+
+A wider store is not coalesced: its open hint already carries its element type.
+But a guard of an `int`, `short` or `long` store keeps slots out to its
+pointer's bound (chapter 03), while the upstream layout gives an array whose
+window value-set analysis did not lock only four elements, so a kept slot past
+them was its own local, which the C store through the array never writes
+(`b[5]` after `b[(i >> 4) % 12] = 7` with `int b[12]` printed as a separate
+`v2`). `kuna_storereach.rs (widen_open_hints)` raises the open hint at such a
+store's base to every element of its bound (`kuna_storereach.rs
+(store_window)`) when one of the store's guard INDIRECTs keeps a slot past the
+hint's end, and the slot then joins the array (`v1[5]`). The unlocked integer
+hints of another width inside the widened array are dropped, since an open
+range joins only hints of its element's width: `(int)(b[6] + b[1])` reads the
+low word of each `long`, and that word's hint would otherwise end the array
+before `b[6]`. A store whose index has no bound keeps the open hint's four
+elements, and the same hints inside them are dropped when its guard keeps a
+slot there and the C prints it through the local at its base (`b[1] = i;
+b[j] = 3; return (short)b[1];` with `int b[8]` would otherwise split the array
+at `b[1]` and leave a scalar at its base).
 
 The second is where an open range ends, which matters when the index is not
 bounded (`u.b[i]`, or a walk that starts at `&u.b[i]`). `RangeHint::attempt_join`
@@ -1211,11 +1252,67 @@ store writes from what is read. Each layout pass records what the final layout
 must satisfy (`Funcdata::note_store_reach_checks`): each guarded store's reach
 (its bounded reach, or everything at or above each unbounded piece's base,
 since nothing bounds how far `((u8 *)&s)[i]` or a walk writes), and the guarded
-store pieces in a float reach. An index whose known-bits span is 256 bytes or
+store pieces in a float reach. A wider store heritage guarded a written slot
+against (`Funcdata::indexed_guard_stores`) adds its reach when its index is
+bounded (`kuna_storereach.rs (wide_reaches)`): from its base to the end of its
+bound or of its furthest guarded slot. Without the check a `long b[8]` whose
+`b[6]` the layout left as a separate local after a six-element array printed
+`v1[a1 & 7] = 3`, which writes past `v1`. Every such wider store, bounded or
+not, must also find, at each stack address its pointer may index from (one, or
+a choice such as `p = c ? a : b; p[i] = x`, or a frame array chosen against a
+pointer from a call or a global), an array whose element is its own width or a
+part of it, holding every slot its guard keeps from that address to its reach
+(`kuna_storereach.rs (indexes_own_array)`): a scalar there prints the store as
+`(&v1)[a1] = 3`, past the scalar, and an array of wider elements indexes with
+the wrong stride. A pointer that comes from the stack base along a path
+`pointer_pieces` cannot resolve (`p = n >= 16 ? alloca(n * 8) : buf`) fails:
+no layout check can see the array it indexes, and the guard left `buf` as
+scalars the C indexed past (`v1 = &v3; v1[a1 & 3] = 3`); that holds for a loop
+walk too, except one of variable step from one stack address (`p = buf; ... p
++= len;`, `kuna_storereach.rs (variable_walk)`), which the final check follows
+from that address. At an address of a choice that has no index of its own and is stored
+through as it is (`*p = x` for `p = c ? &a : &b`), one local must hold the
+store's bytes (`kuna_storereach.rs (is_choice)`). A loop's pointer walk
+(`kuna_storereach.rs (loop_walk)`, such as a zeroing loop over a struct's first
+field) prints as `*p = 0`, not through the local; the final check below keeps
+the arrays it goes through whole.
+
+Beyond those, the guard must never end early a local that any indexed access
+or walk, load or store, goes through. A slot the guard keeps is guard-only
+when its values are read only through the guard (`kuna_storereach.rs
+(guard_only_ranges)`): no Varnode on it is an input, none from outside the
+guard has a use other than the guard's INDIRECTs and the MULTIEQUALs, COPYs,
+PIECEs and SUBPIECEs that carry their values, and none at all feeds another
+INDIRECT, which would be a call or store observing the slot (`&req` handed to
+a call). Without the guard such a slot has no Varnode, since the read after
+the store takes the earlier write's value, so it has no hint and no local:
+the open range below it runs on over it. A slot stays guard-only once any
+layout pass has found it so (`funcdata.rs (Funcdata::note_guard_only)`): a
+later pass may no longer see the guard's INDIRECTs live while the COPY and
+MULTIEQUAL they left still keep the slot a local of its own, as for the
+`short` field of an AArch64 struct array that a walk over another field goes
+through. Each layout pass therefore drops a
+guard-only integer hint at an element boundary of the open range below it, no
+wider than the element, when the element is wider than a byte
+(`kuna_storereach.rs (drop_guard_only_hints)`); its read becomes the element or
+a cast of it, and an element-wide one gives the range its type when the range
+has none (`short b[16]` keeps its sign). Byte hints stay, since the byte reach
+checks take the element type from them (`unsigned char b[12]` keeps its sign).
+A guard-only hint inside an element, wider than one, a float or a locked type
+stays as well, and the final check (`kuna_storereach.rs (guard_shortens)`) withdraws
+the guard when the local holding the lowest base of a LOAD or STORE through an
+index or a walk is a guard-only non-array, or is followed by guard-only storage
+up to and including the start of the next local. The storage need not be a
+local of its own: the merge may map a guard-only slot to the register its value
+came from (`int v5; // edi | stack - 0x30`), leaving only a gap in the frame.
+Without the check, `b[3] = i;` before a stride-2 walk over `long b[8]` that
+never reaches `b[3]` left `long v5[3]; long v7;`, and a walk over `struct
+{long a; int b; int c;} s[4]` that writes only `.a` left `long v4[3]` below
+`s[1].b`, and the walks wrote past the arrays. An index whose known-bits span is 256 bytes or
 more counts as unbounded (`u.b[i & 511]`). After the last pass
 `decompile_drive.rs (run_pipeline)` calls `kuna_storereach.rs
 (withdraw_spoiled_guard)`, which takes the bytes of every guard INDIRECT still
-on the stack. The layout is spoiled when such a slot whose value some op other
+on the stack whose effect is a byte store or one of those wider stores. The layout is spoiled when such a slot whose value some op other
 than an INDIRECT or MULTIEQUAL reads overlaps more than one local (the P3 guard
 keeps every constant-initialized slot, not only the slots inside a store's
 reach), or when any such slot inside a reach, read or not, does not lie in the

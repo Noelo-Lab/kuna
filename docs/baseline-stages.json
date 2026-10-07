@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2288,
-    2288
+    2316,
+    2316
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -673,6 +673,31 @@
     "data:INDEXALIASGUARD #5: load, the MOV [ESP+0x14],ECX at 0x40134d reaches element 1",
     "data:INDEXALIASGUARD #6: load, the MOV [ESP+0x20],EDX at 0x40135d reaches element 2 across the two intervening pushes",
     "data:INDEXALIASGUARD #7: load, the MOV [ESP+0x1c],EAX at 0x401355 reaches element 3",
+    "data:INDEXEDSTOREGUARD #10: off reproduces the stale slots past four elements",
+    "data:INDEXEDSTOREGUARD #11: default, a long array whose guarded slot lies past four elements is one array (gcc -O2, clang -O2)",
+    "data:INDEXEDSTOREGUARD #12: off reproduces the stale b[6] and b[1] of the long array",
+    "data:INDEXEDSTOREGUARD #13: default, b[1] and b[2] of an array indexed with no bound are read back from the array (u2, u5; gcc -O2, clang -O2)",
+    "data:INDEXEDSTOREGUARD #14: no store is printed through the address of a scalar",
+    "data:INDEXEDSTOREGUARD #15: the arrays the walks of w5, ws, wp and wq go through keep their length in both passes (gcc -O2, clang -O2)",
+    "data:INDEXEDSTOREGUARD #16: m8 stores through the frame array buf, not a scalar, in both passes (alloca or frame pointer; clang -O2)",
+    "data:INDEXEDSTOREGUARD #1: default, b[0] is stored before the indexed store and tested after it (byte, int, long; gcc -O2, clang -O2, gcc -O0)",
+    "data:INDEXEDSTOREGUARD #2: default, s[0].a is read back after the indexed store of .a fields",
+    "data:INDEXEDSTOREGUARD #3: default, b[1] is read back after a store indexed by j & 7",
+    "data:INDEXEDSTOREGUARD #4: default, b[0] and the constant-index b[3] are read back after the indexed store",
+    "data:INDEXEDSTOREGUARD #5: off reproduces the stale test of the parameter",
+    "data:INDEXEDSTOREGUARD #6: off reproduces the stale s[0].a",
+    "data:INDEXEDSTOREGUARD #7: off reproduces the stale b[1]",
+    "data:INDEXEDSTOREGUARD #8: off reproduces the stale b[0] and b[3]",
+    "data:INDEXEDSTOREGUARD #9: default, a slot past four elements that a bounded index may reach is read back after the store (int % 12, int & 7, short % 10, char % 12; gcc -O2, clang -O2)",
+    "data:INDEXEDSTOREGUARD-A64 #1: default, b[6] and b[1] are elements of one array read after the store",
+    "data:INDEXEDSTOREGUARD-A64 #2: the store writes through an array, not a scalar, in both passes",
+    "data:INDEXEDSTOREGUARD-A64 #3: off reproduces the stale values",
+    "data:INDEXEDSTOREGUARD-A64 #4: default, u2 and u5 (index with no bound) read b[1] and b[2] back from the array",
+    "data:INDEXEDSTOREGUARD-A64 #5: no store is printed through the address of a scalar",
+    "data:INDEXEDSTOREGUARD-A64 #6: off reproduces the stale u2 and u5",
+    "data:INDEXEDSTOREGUARD-A64 #7: the array w5's stride-2 walk goes through keeps its eight elements in both passes",
+    "data:INDEXEDSTOREGUARD-A64 #8: gap2's walk goes through one array of the whole struct array in both passes",
+    "data:INDEXEDSTOREGUARD-A64 #9: m8 stores through the frame array buf, not a scalar, in both passes",
     "data:INFLOOPSTYLE #1: legacy bottom-tested infinite spelling",
     "data:INFLOOPSTYLE #2: default top-tested infinite spelling",
     "data:INFLOOPSTYLE #3: body call preserved in both forms",
@@ -1188,7 +1213,7 @@
     "data:STACKGUARD-TAILCALL #11: no canary, h7 passes the address of t to consume in both passes",
     "data:STACKGUARD-TAILCALL #1: the fs_offset input is declared only with option stackguard off, once per function",
     "data:STACKGUARD-TAILCALL #2: the entry-side canary load prints only with option stackguard off",
-    "data:STACKGUARD-TAILCALL #3: default, t2 and t2s store b[0] and go straight to the tail call",
+    "data:STACKGUARD-TAILCALL #3: default, t2, t3 and t2s store b[0] before the indexed store and test it after",
     "data:STACKGUARD-TAILCALL #4: default, w3's indexed store goes straight to the tail call",
     "data:STACKGUARD-TAILCALL #5: default, k2's fill loop, indexed store and tail call are unchanged",
     "data:STACKGUARD-TAILCALL #6: every function keeps its check with option stackguard off, none by default",
@@ -2291,7 +2316,10 @@
     "data:zerofillreturn #6: option on prints return 0.0",
     "data:zerofillreturn #7: option on returns the double on both exits of pick",
     "data:zerofillreturn #8: option on returns the aggregate in d0 and d1",
-    "data:zerofillreturn #9: a 64-bit vector built lane by lane prints the same in both passes"
+    "data:zerofillreturn #9: a 64-bit vector built lane by lane prints the same in both passes",
+    "data:zeroloopfield #1: nl stores req2's type after the loop that zeroes req2",
+    "data:zeroloopfield #2: no request field is copied out of another request",
+    "data:zeroloopfield #3: off stores both types from the temporary loaded before the loops, as main does"
   ],
   "returncode": 0,
   "unit_footer": null

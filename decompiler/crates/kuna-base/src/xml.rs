@@ -2024,7 +2024,14 @@ mod tests {
         // and kuna-pointer-arguments / standalone printing has no batch contract
         // and kuna-floatbits / a float helper that only works on the bits of
         // its float-register input is a float on both sides (GH-890)
-        assert_eq!(count, 456, "corpus file count drifted");
+        // and kuna-indexedstoreguard / an indexed stack store of any width
+        // keeps a later read of a slot it may overwrite from seeing the
+        // slot's earlier value
+        // and kuna-zeroloopfield / a field stored after the loop that zeroes
+        // its request prints after that loop
+        // and kuna-indexedstoreguard-a64 / the guarded slots of an AArch64
+        // long or int array past four elements stay elements of the array
+        assert_eq!(count, 459, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
