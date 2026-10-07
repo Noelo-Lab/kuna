@@ -17,10 +17,11 @@
 //!
 //! An `int` table of character codes is byte for byte a wide literal:
 //! `{72, 101, 108, 108, 111, 0}` is `L"Hello"`, a table of the weeks in each
-//! year, `{52, 53, 52, ..}`, reads as `L"4544.."`, and a switch lookup table of
-//! character codes with a zero case runs on past its "terminator", so code
-//! indexing it would read past the literal. [`wide_string32_facts`] reads only
-//! read-only data, and plants a run only when
+//! year, `{52, 53, 52, ..}`, reads as `L"4544.."`, and a table such as
+//! `{97, 98, 99, 100, 101, 0, 7, 8}` or a switch lookup table of character
+//! codes runs on past its "terminator", so code reading it would read past the
+//! literal. [`wide_string32_facts`] reads only read-only data, and plants a run
+//! only when
 //!
 //! - no sized data object of the symbol tables overlaps it: a declared array,
 //!   whatever its element type, keeps printing as its name (an assembler-local
@@ -28,23 +29,32 @@
 //!   its own literals, does not count; `.Lswitch.table.f` does); and
 //! - it lies in a mergeable string section of 4-byte entries (a relocatable
 //!   object's `.rodata.str4.4`), where every NUL-terminated run is a literal, or
-//!   it holds at least [`MIN_UNITS`] units, three of them distinct, no code
-//!   adds a computed index to its address ([`crate::operand_refs`]' table uses:
-//!   `lea rcx,t` then `mov eax,[rcx+rax*4]`), and something points at its start:
-//!   an operand the scalar scan found, a pointer-aligned slot of a data section,
-//!   or a dynamic relocation. A literal laid out right after another object's
-//!   last printable unit (a switch table ending in `'q'`) is the tail of a
-//!   longer run; when nothing points at that run's start, an operand at one of
-//!   its units starts the run there instead.
+//!   all of the following hold:
+//!   - it holds at least [`MIN_UNITS`] units, three of them distinct;
+//!   - something points at its start: an operand the scalar scan found, a
+//!     pointer-aligned slot of a data section, or a dynamic relocation;
+//!   - something starts right after its terminator ([`follower`]): the end of
+//!     the section, or, past zero padding no longer than the next unit's
+//!     alignment asks for, an address something points at, a table base or a
+//!     symbol's start, as the next literal or object is;
+//!   - no code adds a computed index to an address from its start to its
+//!     terminator ([`crate::operand_refs`]' table uses: `lea rcx,t` then
+//!     `mov eax,[rcx+rax*4]`).
+//!
+//! A literal laid out right after another object's last printable unit (a
+//! switch table ending in `'q'`) is the tail of a longer run; when nothing
+//! points at that run's start, an operand at one of its units starts the run
+//! there instead, under the same tests.
 //!
 //! An ARM literal pool slot backs nothing, since the scan cannot see code index
 //! the address it loads (a switch table's sits in one too), and an address code
 //! builds in two instructions (AArch64 `adrp`/`add`, MIPS `lui`/`addiu`) is no
 //! operand, so a linked image of those targets plants only what a data slot
-//! holds. An anonymous table that passes all of that, a stripped image's `int`
-//! array whose address is passed to a function or indexed out of the scan's
-//! sight (through memory, past a jump), still prints as the literal its bytes
-//! spell, with the same values up to its first zero.
+//! holds. What is left is an anonymous table that ends at its zero, which
+//! prints as the literal its elements spell, the same values, and one whose
+//! elements past its zero are all zero up to an object at an aligned address,
+//! which the bytes cannot tell from a literal and its padding: a reader past
+//! the zero reads zeros in the binary and past the literal in the printed C.
 //!
 //! A relocatable object is read only through the laid-out view the loader
 //! builds; its raw sections all sit at address 0.
@@ -170,30 +180,23 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64], tables: &[u64])
     if runs.is_empty() {
         return Vec::new();
     }
+    let follows: Vec<Option<Option<u64>>> = runs
+        .iter()
+        .map(|(r, strings4, data, vma)| (!strings4).then(|| follower(r, data, *vma, little_endian)).flatten())
+        .collect();
     let mut unpointed: Vec<u64> = runs
         .iter()
-        .filter(|(r, strings4, ..)| !strings4 && targets.binary_search(&r.addr).is_err())
-        .map(|(r, ..)| r.addr)
+        .zip(&follows)
+        .filter(|((_, strings4, ..), _)| !strings4)
+        .flat_map(|((r, ..), next)| [Some(r.addr), next.flatten()])
+        .flatten()
+        .filter(|a| targets.binary_search(a).is_err())
         .collect();
-    if !unpointed.is_empty() {
-        unpointed.sort_unstable();
-        let held = held_pointers(file, &unpointed, false);
-        unpointed.retain(|a| !held.contains(a));
-    }
-    let runs = runs.into_iter().filter_map(|(r, strings4, data, vma)| {
-        if unpointed.binary_search(&r.addr).is_err() {
-            return Some((r, strings4));
-        }
-        let end = r.addr + 4 * r.units as u64;
-        let at = *targets.get(targets.partition_point(|&t| t <= r.addr))?;
-        if at >= end || (at - r.addr) % 4 != 0 {
-            return None;
-        }
-        let from = usize::try_from(at - vma).ok()?;
-        let to = usize::try_from(end + 4 - vma).ok()?;
-        let tail = scan_utf32_runs(data.get(from..to)?, at, little_endian, MIN_UNITS);
-        tail.into_iter().next().filter(|t| t.addr == at).map(|t| (t, false))
-    });
+    unpointed.sort_unstable();
+    unpointed.dedup();
+    let mut held = if unpointed.is_empty() { Vec::new() } else { held_pointers(file, &unpointed, false) };
+    held.sort_unstable();
+    let pointed = |a: u64| targets.binary_search(&a).is_ok() || held.binary_search(&a).is_ok();
     let (labels, objects): (Vec<_>, Vec<_>) = file
         .symbols()
         .chain(file.dynamic_symbols())
@@ -203,14 +206,67 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64], tables: &[u64])
     let objects = DataObjects::from_spans(objects.into_iter().map(|(_, span)| span).collect());
     let labels = DataObjects::from_spans(labels.into_iter().map(|(_, span)| span).collect());
     let (reach, label_reach) = (objects.reach(), labels.reach());
-    runs.filter(|(r, strings4)| {
-        let len = u64::from(r.len());
-        !objects.overlaps(&reach, r.addr, len)
-            && !labels.overlaps_other(&label_reach, r.addr, len)
-            && (*strings4 || (r.distinct >= 3 && tables.binary_search(&r.addr).is_err()))
-    })
-    .map(|(r, _)| StringFact { addr: r.addr, len: r.len() })
-    .collect()
+    let starts_object = |a: u64| {
+        pointed(a) || tables.binary_search(&a).is_ok() || objects.starts_at(a) || labels.starts_at(a)
+    };
+    let literal = |r: Run32, next: Option<Option<u64>>, data: &[u8], vma: u64| -> Option<Run32> {
+        if !next?.is_none_or(&starts_object) {
+            return None;
+        }
+        let terminator = r.addr + 4 * r.units as u64;
+        if tables.get(tables.partition_point(|&t| t < r.addr)).is_some_and(|&t| t <= terminator) {
+            return None;
+        }
+        if pointed(r.addr) {
+            return Some(r);
+        }
+        let at = *targets.get(targets.partition_point(|&t| t <= r.addr))?;
+        if at >= terminator || (at - r.addr) % 4 != 0 {
+            return None;
+        }
+        let from = usize::try_from(at - vma).ok()?;
+        let to = usize::try_from(terminator + 4 - vma).ok()?;
+        let tail = scan_utf32_runs(data.get(from..to)?, at, little_endian, MIN_UNITS);
+        tail.into_iter().next().filter(|t| t.addr == at)
+    };
+    runs.into_iter()
+        .zip(follows)
+        .filter_map(|((r, strings4, data, vma), next)| {
+            let r = if strings4 { r } else { literal(r, next, data, vma).filter(|r| r.distinct >= 3)? };
+            let len = u64::from(r.len());
+            (!objects.overlaps(&reach, r.addr, len) && !labels.overlaps_other(&label_reach, r.addr, len))
+                .then_some(StringFact { addr: r.addr, len: r.len() })
+        })
+        .collect()
+}
+
+/// The most zero bytes [`follower`] reads as padding.
+const MAX_PADDING: u64 = 64;
+
+/// What comes after `r`'s terminator in its section (`data`, mapped at `vma`):
+/// `Some(None)` the section's end, `Some(Some(a))` the first nonzero unit `a`
+/// past zero padding, which a literal's next object starts at, or `None` when
+/// the zeros are no padding: more than [`MAX_PADDING`] bytes, or more than the
+/// alignment of the unit after them asks for (`{97, 98, 99, 100, 101, 0, 0, 7}`
+/// is one table).
+fn follower(r: &Run32, data: &[u8], vma: u64, little_endian: bool) -> Option<Option<u64>> {
+    let next = r.addr + u64::from(r.len());
+    let mut at = next;
+    loop {
+        let Some(unit) = usize::try_from(at - vma).ok().and_then(|off| data.get(off..off + 4)) else {
+            return Some(None);
+        };
+        let raw = [unit[0], unit[1], unit[2], unit[3]];
+        if (if little_endian { u32::from_le_bytes(raw) } else { u32::from_be_bytes(raw) }) != 0 {
+            break;
+        }
+        at += 4;
+        if at - next > MAX_PADDING {
+            return None;
+        }
+    }
+    let align = 1u64 << at.trailing_zeros().min(MAX_PADDING.trailing_zeros());
+    (at - next < align || at == next).then_some(Some(at))
 }
 
 #[cfg(test)]
@@ -280,10 +336,11 @@ mod tests {
     /// `L"first-msg"` and `L"second-msg"` (both held by the pointer table `msgs`),
     /// beside the switch table `CSWTCH.19` (`L"helpz"` and then `'q'`), `rows`
     /// (`L"alpha"`, `L"bravo"`), `weeks` (two characters) and `codes`
-    /// (`L"Hello"`). With no operand only the pointer table backs a literal;
-    /// with the operands the literals are planted and every declared table keeps
-    /// its name; stripped, the operand at `codes` plants it, while the indexed
-    /// switch table and `rows` and the two-character `weeks` never are.
+    /// (`L"Hello"`, the last object of `.rodata`). With no operand only the
+    /// pointer table backs a literal; with the operands the literals are planted
+    /// and every declared table keeps its name; stripped, the operand at `codes`
+    /// plants it, while the switch table, whose `'q'` nothing points at, `rows`
+    /// and the two-character `weeks` never are.
     #[test]
     fn gcc_builds_plant_what_points_at_a_literal() {
         let held = vec![(0x402088, 40), (0x4020b0, 44)];
@@ -294,26 +351,63 @@ mod tests {
         assert_eq!(fixture_facts("widestr32_gcc_O2_x86_64", &targets, &tables), literals);
         let mut stripped = literals.clone();
         stripped.push((0x402180, 24));
-        assert_eq!(fixture_facts("widestr32_gcc_O2_stripped_x86_64", &targets, &tables), stripped);
-        let mut untabled = stripped.clone();
-        untabled.extend([(0x4020e0, 24), (0x402100, 24)]);
-        untabled.sort_unstable();
-        assert_eq!(fixture_facts("widestr32_gcc_O2_stripped_x86_64", &targets, &[]), untabled);
+        for tables in [&tables[..], &[]] {
+            assert_eq!(fixture_facts("widestr32_gcc_O2_stripped_x86_64", &targets, tables), stripped);
+        }
     }
 
     /// `widestr32_clang_O2_x86_64` keeps no symbol for its switch table
     /// (`L"helpz"` at 0x20a0, then `'q'`), so `L"hellow"` right after it is the
     /// tail of the run `L"qhellow"`: the operand at 0x20bc plants the literal
-    /// from there. The table is planted only when nothing says code indexes it.
+    /// from there. `L"first-msg"` is followed by `L"second-msg"`, which only a
+    /// table of relative offsets reaches, so nothing says where `L"first-msg"`
+    /// ends until an operand points at 0x2164.
     #[test]
     fn an_operand_inside_a_run_plants_the_literal_it_points_at() {
         assert!(fixture_facts("widestr32_clang_O2_x86_64", &[], &[]).is_empty());
         let targets = [0x20a0, 0x20bc, 0x20d8, 0x2108, 0x2124, 0x2128, 0x213c];
-        let literals = vec![(0x20bc, 28), (0x20d8, 48), (0x2108, 28), (0x2124, 24), (0x213c, 40)];
+        let literals = vec![(0x20bc, 28), (0x20d8, 48), (0x2108, 28), (0x2124, 24)];
         assert_eq!(fixture_facts("widestr32_clang_O2_x86_64", &targets, &[0x2060, 0x20a0]), literals);
-        let mut untabled = literals.clone();
-        untabled.insert(0, (0x20a0, 24));
-        assert_eq!(fixture_facts("widestr32_clang_O2_x86_64", &targets, &[]), untabled);
+        let mut explained = targets.to_vec();
+        explained.push(0x2164);
+        let mut first = literals.clone();
+        first.extend([(0x213c, 40), (0x2164, 44)]);
+        assert_eq!(fixture_facts("widestr32_clang_O2_x86_64", &explained, &[0x2060, 0x20a0]), first);
+    }
+
+    /// `widestr32_tables_gcc_O2_stripped`: int tables of character codes that
+    /// run on past their zero, and `L"control"`. A run whose next unit nothing
+    /// points at is refused (`passed`, 0x2100, then `7`; `keys`, 0x2040, held by
+    /// the struct `s`, then `'z'`); so is a run holding a table base, even from
+    /// an operand inside it (`inner`, indexed at 0x20a0 and passed from 0x20a8).
+    /// `L"control"` (0x2008) is followed by the format string `"%ld %u\n"`,
+    /// which `printf`'s operand points at.
+    #[test]
+    fn a_table_past_its_zero_is_no_literal() {
+        let name = "widestr32_tables_gcc_O2_stripped";
+        assert!(fixture_facts(name, &[0x2008], &[]).is_empty());
+        assert_eq!(fixture_facts(name, &[0x2008, 0x2028], &[]), [(0x2008, 32)]);
+        assert!(fixture_facts(name, &[0x2100], &[]).is_empty());
+        assert_eq!(fixture_facts(name, &[0x2100, 0x2118], &[]), [(0x2100, 24)]);
+        assert!(fixture_facts(name, &[], &[]).iter().all(|&(addr, _)| addr != 0x2040));
+        assert!(fixture_facts(name, &[0x20a8, 0x20c4], &[0x20a0]).is_empty());
+        assert_eq!(fixture_facts(name, &[0x20a8, 0x20c4], &[]), [(0x20a8, 28)]);
+    }
+
+    #[test]
+    fn padding_is_shorter_than_the_alignment_it_reaches() {
+        let mut d = wide("abcde", true);
+        d.extend_from_slice(&[0; 8]);
+        let run = scan_utf32_runs(&d, 0x1000, true, MIN_UNITS)[0];
+        assert_eq!(follower(&run, &d, 0x1000, true), Some(None));
+        d.extend_from_slice(&7u32.to_le_bytes());
+        assert_eq!(follower(&run, &d, 0x1000, true), Some(Some(0x1020)));
+        assert_eq!(follower(&run, &d, 0x1004, true), None);
+        let mut long = wide("abcde", true);
+        long.extend_from_slice(&[0; 68]);
+        long.extend_from_slice(&7u32.to_le_bytes());
+        let run = scan_utf32_runs(&long, 0x1000, true, MIN_UNITS)[0];
+        assert_eq!(follower(&run, &long, 0x1000, true), None);
     }
 
     /// A relocatable object's `.rodata.str4.4` holds only literals, so every run

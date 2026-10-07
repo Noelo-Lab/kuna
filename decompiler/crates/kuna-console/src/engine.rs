@@ -2703,7 +2703,7 @@ impl ConsoleProgram {
                         );
                         merged.merge(out);
                     } else if want_wide32_alone {
-                        merged.merge(kuna_analysis::passes::run_wide_strings32(&bytes));
+                        merged.merge(kuna_analysis::passes::run_wide_strings32(&bytes, &image, self.arch()));
                     }
                 }
             }

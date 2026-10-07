@@ -6,7 +6,7 @@ mod common;
 use common::process;
 use std::process::Command;
 
-const FUNCS: &str = "wide,wide32,ornull,suffix,first,table,weekly";
+const FUNCS: &str = "wide,wide32,ornull,suffix,table,weekly";
 
 const DECLS: &str = "#include <stddef.h>\nextern long out;\nextern const int codes[], weeks[];\n\
                      long hashw();\nlong hash32();\nlong sum();\n";
@@ -21,7 +21,8 @@ const WANT: &str = "wide 9286557868\nwide32 1023670406297060324\nornull0 7432334
 /// `codes` (`int {72, 101, 108, 108, 111, 0}`, "Hello") and `weeks` (`int {52,
 /// 53, ..}`) to `sum`. Each x86-64 build's printed functions, compiled by gcc and
 /// clang at -O0 and -O2 against the fixture's harness, must do what the binary
-/// does.
+/// does (`first` only from the gcc build: clang's `L"first-msg"` stays an
+/// address, see below).
 #[test]
 fn wide_literals_round_trip_beside_int_tables() {
     let harness = common::fixture("widestr32.c");
@@ -29,17 +30,21 @@ fn wide_literals_round_trip_beside_int_tables() {
         .into_iter()
         .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
-    for fixture in ["widestr32_gcc_O2_x86_64", "widestr32_clang_O2_x86_64"] {
+    for (fixture, funcs) in [
+        ("widestr32_gcc_O2_x86_64", format!("{FUNCS},first")),
+        ("widestr32_clang_O2_x86_64", FUNCS.to_string()),
+    ] {
         let (printed, stderr, code) =
-            common::run_kuna(&["decompile-all", &common::fixture(fixture), "--functions", FUNCS]);
+            common::run_kuna(&["decompile-all", &common::fixture(fixture), "--functions", &funcs]);
         assert_eq!(code, 0, "{fixture}: {stderr}");
+        let first = if funcs.ends_with("first") { "hashw(L\"first-msg\")" } else { "hashw(L\"hellow\")" };
         for want in [
             "hashw(L\"hellow\")",
             "hash32(L\"char32-text\")",
             "= L\"(NULL)\";",
             "hashw(L\"xbind\")",
             "hashw(L\"bind\")",
-            "hashw(L\"first-msg\")",
+            first,
             "sum(codes,",
             "sum(weeks,",
         ] {
@@ -91,7 +96,9 @@ fn option_off_prints_the_address() {
 /// AArch64 and ARM objects (their `.rodata.str4.4`) spell every literal, the
 /// tail `L"bind"` of `L"xbind"` included, and the big-endian MIPS image the one
 /// its pointer table `msgs` holds; none reads `weeks`, the rows of `rows` or the
-/// switch table of `code` as text.
+/// switch table of `code` as text. (clang reaches `L"second-msg"`, which follows
+/// `L"first-msg"`, only through a table of relative offsets, so nothing says
+/// where `L"first-msg"` ends.)
 #[test]
 fn other_builds_and_targets_spell_the_literals() {
     for fixture in [
@@ -107,6 +114,8 @@ fn other_builds_and_targets_spell_the_literals() {
         assert_eq!(code, 0, "{fixture}: {stderr}");
         let wants: &[&str] = if fixture == "widestr32_mips32_be_O2" {
             &["(L\"first-msg\")"]
+        } else if fixture.contains("clang") {
+            &["(L\"hellow\")", "(L\"char32-text\")", "L\"(NULL)\"", "(L\"xbind\")", "(L\"bind\")"]
         } else {
             &["(L\"hellow\")", "(L\"char32-text\")", "L\"(NULL)\"", "(L\"xbind\")", "(L\"bind\")", "(L\"first-msg\")"]
         };
@@ -115,6 +124,33 @@ fn other_builds_and_targets_spell_the_literals() {
         }
         for text in ["L\"4544", "L\"helpz", "L\"alpha", "L\"bravo", "L\"qhellow"] {
             assert!(!printed.contains(text), "{fixture}: a table prints as `{text}`:\n{printed}");
+        }
+    }
+}
+
+/// `widestr32_tables.c`'s int tables of character codes run on past their zero,
+/// and the code reads past it: passed whole to a function, indexed through a
+/// pointer an -O0 build keeps in memory, indexed and passed from an element
+/// inside, walked by a loop gcc peels, held by a struct. None prints as a wide
+/// literal, by default or with `operand_refs` off; `L"control"` does.
+#[test]
+fn tables_past_their_zero_never_print_as_text() {
+    let alone: &[&str] = &["--mode", "reliable", "--option", "widestrings32", "on"];
+    for fixture in [
+        "widestr32_tables_gcc_O2_stripped",
+        "widestr32_tables_gcc_O2_nopie_stripped",
+        "widestr32_tables_gcc_O0_stripped",
+        "widestr32_tables_clang_O2_stripped",
+    ] {
+        for extra in [&[][..], alone] {
+            let path = common::fixture(fixture);
+            let mut args = vec!["decompile-all", path.as_str()];
+            args.extend_from_slice(extra);
+            let (printed, stderr, code) = common::run_kuna(&args);
+            assert_eq!(code, 0, "{fixture} {extra:?}: {stderr}");
+            let wide = printed.matches("L\"").count();
+            let control = printed.matches("(L\"control\")").count();
+            assert!(control == 1 && wide == control, "{fixture} {extra:?}: a table prints as text:\n{printed}");
         }
     }
 }

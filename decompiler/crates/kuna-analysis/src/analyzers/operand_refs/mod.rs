@@ -639,7 +639,7 @@ impl DataObjects {
     }
 
     /// Does a declared object start at `addr`?
-    fn starts_at(&self, addr: u64) -> bool {
+    pub(crate) fn starts_at(&self, addr: u64) -> bool {
         let from = self.0.partition_point(|&(lo, _)| lo < addr);
         self.0.get(from).is_some_and(|&(lo, _)| lo == addr)
     }
@@ -879,12 +879,29 @@ impl AnalysisPass for OperandRefsPass {
         }
         let (refs, tables) = scan_scalar_refs_and_tables(ctx.file, ctx.arch.translate(), &code_space);
         let mut out = emit_facts(ctx.file, &refs);
-        let mut targets: Vec<u64> = refs.iter().map(|r| r.to).collect();
-        targets.sort_unstable();
-        targets.dedup();
-        out.wide_strings32 = crate::strings::kuna_widestrings32::wide_string32_facts(ctx.file, &targets, &tables);
+        out.wide_strings32 = wide_strings32(ctx.file, &refs, &tables);
         out
     }
+}
+
+/// (kuna `widestrings32`) The 4-byte string facts of the decode's operand
+/// targets `refs` and table uses `tables` (sorted).
+fn wide_strings32(file: &object::File, refs: &[ScalarRef], tables: &[u64]) -> Vec<crate::pass::StringFact> {
+    let mut targets: Vec<u64> = refs.iter().map(|r| r.to).collect();
+    targets.sort_unstable();
+    targets.dedup();
+    crate::strings::kuna_widestrings32::wide_string32_facts(file, &targets, tables)
+}
+
+/// (kuna `widestrings32`) The 4-byte string facts alone, for a run with
+/// `operand_refs` off: the same decode, for the operand targets and table uses
+/// the facts weigh, without the pass's own string facts.
+pub fn wide_strings32_alone(ctx: &AnalysisCtx) -> AnalysisOutput {
+    let Some(code_space) = ctx.arch.manage().get_default_code_space().map(Rc::clone) else {
+        return AnalysisOutput::default();
+    };
+    let (refs, tables) = scan_scalar_refs_and_tables(ctx.file, ctx.arch.translate(), &code_space);
+    AnalysisOutput { wide_strings32: wide_strings32(ctx.file, &refs, &tables), ..Default::default() }
 }
 
 #[cfg(test)]

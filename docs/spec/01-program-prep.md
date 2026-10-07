@@ -1457,21 +1457,29 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   printer path renders `L"hellow"`. Unlike the narrower widths, the bytes alone
   do not plant: an `int` table of character codes is byte for byte a wide
   literal (`{72, 101, 108, 108, 111, 0}` is `L"Hello"`, a table of the weeks in
-  each year reads `L"4544.."`), `int` tables are common, and a switch lookup
-  table of character codes with a zero case (`h e l p z 0 q`) runs on past its
-  "terminator", so code indexing it would read past the literal. A run is planted
-  only when no sized data object of the symbol tables overlaps it -- a declared
-  array keeps printing as its name, whatever its element type; an
-  assembler-local `.L` label of exactly the run's extent, which a relocatable
-  object keeps for its own literals, does not count, while one such as
-  `.Lswitch.table.f` does -- and either it lies in a mergeable string section of
-  4-byte entries (a relocatable object's `.rodata.str4.4`, where every
-  NUL-terminated run is a literal), or it holds at least five units, at least
-  three of them distinct, no code adds a computed index to its address, and
-  something points at its start: an operand target of the `operand_refs` scan, a
-  pointer-aligned slot of a data section, or a dynamic relocation. A symbol table
-  alone backs nothing, since a linked image keeps no symbol for clang's switch
-  tables. The index test follows the same linear decode
+  each year reads `L"4544.."`), `int` tables are common, and a table that runs
+  on past its zero (`{97, 98, 99, 100, 101, 0, 7, 8}`, a switch lookup table of
+  character codes with a zero case, `h e l p z 0 q`) would print as a literal
+  that code reading the table reads past. A run is planted only when no sized
+  data object of the symbol tables overlaps it -- a declared array keeps
+  printing as its name, whatever its element type; an assembler-local `.L`
+  label of exactly the run's extent, which a relocatable object keeps for its
+  own literals, does not count, while one such as `.Lswitch.table.f` does --
+  and either it lies in a mergeable string section of 4-byte entries (a
+  relocatable object's `.rodata.str4.4`, where every NUL-terminated run is a
+  literal), or all of these hold. It has at least five units, at least three
+  of them distinct. Something points at its start: an operand target of the
+  `operand_refs` scan, a pointer-aligned slot of a data section, or a dynamic
+  relocation; a symbol table alone backs nothing, since a linked image keeps no
+  symbol for clang's switch tables. Something starts right after its
+  terminator (`kuna_widestrings32.rs (follower)`): the section's end, or the
+  first nonzero unit after at most 64 bytes of zeros, fewer than that unit's
+  address alignment asks for, which an operand or a data slot points at, code
+  indexes, or a symbol starts at -- in an image a literal is followed by the
+  next literal or object, which something names, while a table goes on with
+  its next element, which nothing does. And no code adds a computed index to
+  any address from its start to its terminator. The index test follows the
+  same linear decode
   (`decompiler/crates/kuna-analysis/src/analyzers/operand_refs/mod.rs
   (TableUses)`): an address an instruction puts in a register stays held for
   the next 31 instructions, across calls and conditional branches (both fall
@@ -1479,32 +1487,36 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   tail call's argument is not the next function's table), and an add of a value
   that is not a constant to it, or of a register to an address constant in one
   instruction (`lea rcx,t` then `mov eax,[rcx+rax*4]`, `lea rdi,[rax+t]`), marks
-  it a table; the run that starts there is refused, a literal indexed in place
+  it a table; the run that holds it is refused, a literal indexed in place
   (`L"0123456789abcdef"[c]`) included, since the printer's index bound does not
-  cover a literal another pass planted. A table whose address reaches the index
-  only through memory or past a jump is not seen. A literal laid out right after
-  another object's last printable unit (clang's switch table ending in `'q'`
-  before `L"hellow"`) is the tail of a longer run nothing points at; an operand
-  target at one of its units starts the run there instead, under the same tests.
-  An ARM literal pool slot backs nothing, since the scan cannot see code index
-  the address it loads, and an address built in two instructions (AArch64
+  cover a literal another pass planted. A literal laid out right after another
+  object's last printable unit (clang's switch table ending in `'q'` before
+  `L"hellow"`) is the tail of a longer run nothing points at; an operand target
+  at one of its units starts the run there instead, under the same tests. A
+  literal whose next literal only a table of relative offsets reaches (clang's
+  `reltable`) has nothing after it that the image names, and is refused. An ARM
+  literal pool slot backs nothing, since the scan cannot see code index the
+  address it loads, and an address built in two instructions (AArch64
   `adrp`/`add`, MIPS `lui`/`addiu`) is no operand target, so a linked image of
   those targets plants only what a data slot holds (a pointer table's entries);
   their relocatable objects plant from `.rodata.str4.4`. A relocatable object is
   read through the laid-out view the loader builds, never its raw sections,
-  which all sit at address 0. An anonymous table of a stripped image that passes
-  all of that -- an `int` array of codes whose address is passed to a function
-  or indexed out of the scan's sight -- still prints as the literal its bytes
-  spell, with the same values up to its first zero. A run that a tail-merged suffix shares (`L"bind"` inside
-  `L"xbind"`) is planted whole from its first unit, and the printer reads the
-  suffix's literal at its own address (`lenw(L"bind")`), except where the
-  element-pointer rule refuses literals for the callee's parameter, which then
-  prints the address (`lenw((wchar_t *)0x2024)`). PE and COFF images, whose
-  `wchar_t` is 2 bytes, are not scanned. The scan reads the facts at the
-  deferred `operand_refs` commit, where that pass's operand targets and table
-  uses are known
-  (`decompiler/crates/kuna-analysis/src/passes.rs (run_wide_strings32)` runs it
-  alone, with no operand targets or table uses, when `operand_refs` is off). Scope: units in
+  which all sit at address 0. What remains is an anonymous table of a stripped
+  image that passes all of that: one that ends at its zero prints as the literal
+  its elements spell, the same values, and one whose elements past its zero are
+  all zero up to an object at an aligned address, which the bytes cannot tell
+  from a literal and its padding, prints as the literal too, so a reader past
+  the zero reads zeros in the binary and past the literal in the printed C. A
+  run that a tail-merged suffix shares (`L"bind"` inside `L"xbind"`) is planted
+  whole from its first unit, and the printer reads the suffix's literal at its
+  own address (`lenw(L"bind")`), except where the element-pointer rule refuses
+  literals for the callee's parameter, which then prints the address
+  (`lenw((wchar_t *)0x2024)`). PE and COFF images, whose `wchar_t` is 2 bytes,
+  are not scanned. The scan reads the facts at the deferred `operand_refs`
+  commit, where that pass's operand targets and table uses are known; with
+  `operand_refs` off,
+  `decompiler/crates/kuna-analysis/src/passes.rs (run_wide_strings32)` runs the
+  same decode for them without planting that pass's own facts. Scope: units in
   the 1-byte charset; a non-Latin literal is not recovered. Default **off**,
   carried by the aggressive preset; `off` drops the `wchar4` facts at the commit.
 (kuna) The **reporting** face of those two passes is a separate, read-only query
