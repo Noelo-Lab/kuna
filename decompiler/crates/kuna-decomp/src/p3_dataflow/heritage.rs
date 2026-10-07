@@ -2850,7 +2850,7 @@ impl Heritage {
             }
             write.push(outvn);
             self.indexed_store_guards.push((indop, store));
-            fd.note_indexed_guard_store(store);
+            fd.note_indexed_guard_store(store, indop);
             guarded.push(store);
         }
     }

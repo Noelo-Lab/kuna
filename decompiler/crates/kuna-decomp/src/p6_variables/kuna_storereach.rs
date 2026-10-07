@@ -100,6 +100,7 @@ pub(crate) fn prepare_hints(
         return checks;
     };
     widen_open_hints(fd, state, space, sb);
+    drop_guard_only_hints(fd, state, space);
     let byte_store = has_byte_store(fd);
     if !byte_store && fd.indexed_guard_stores().is_empty() {
         return checks;
@@ -256,6 +257,222 @@ fn widen_open_hints(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpace>, 
     }
 }
 
+/// The stack ranges `[lo, hi)` the written-slot guard alone keeps. A slot is
+/// guard-only when its values are read only through the guard: no Varnode on
+/// it is an input, none from outside the guard (not an output of its
+/// INDIRECTs, nor built from one by a MULTIEQUAL, COPY, PIECE or SUBPIECE) has
+/// a use other than those, and none at all feeds another INDIRECT (a call or
+/// store that observes the slot, as for `&req` handed to a call). Without the
+/// guard such a slot has no Varnode, since the read after the guarded store
+/// takes the earlier write's value, so no local there.
+fn guard_only_ranges(fd: &Funcdata, space: &Rc<AddrSpace>) -> Vec<(intb, intb)> {
+    let indirects = fd.indexed_guard_indirects();
+    if indirects.is_empty() {
+        return Vec::new();
+    }
+    let bits = space.get_addr_size() as int4 * 8 - 1;
+    let range_of = |vn: VarnodeId| -> Option<(intb, intb)> {
+        let v = fd.vbank().get(vn)?;
+        let lo = sign_extend(v.get_addr().get_offset() as intb, bits);
+        Some((lo, lo + v.get_size() as intb))
+    };
+    let mut downstream: BTreeSet<VarnodeId> = BTreeSet::new();
+    let mut ranges: Vec<(intb, intb)> = Vec::new();
+    for &ind in &indirects {
+        let Some(out) = fd
+            .obank()
+            .get(ind)
+            .filter(|o| !o.is_dead() && o.code() == OpCode::CPUI_INDIRECT)
+            .and_then(|o| o.get_out())
+        else {
+            continue;
+        };
+        if fd.vbank().get(out).is_some_and(|v| v.get_space().get_index() == space.get_index()) {
+            downstream.insert(out);
+            ranges.extend(range_of(out));
+        }
+    }
+    if ranges.is_empty() {
+        return Vec::new();
+    }
+    ranges.sort_unstable();
+    ranges.dedup();
+    let on: Vec<(VarnodeId, intb, intb)> = fd
+        .vbank()
+        .loc_space_ids(space)
+        .into_iter()
+        .filter(|&vn| fd.vbank().get(vn).is_some_and(|v| !v.is_free()))
+        .filter_map(|vn| range_of(vn).map(|(lo, hi)| (vn, lo, hi)))
+        .filter(|&(_, lo, hi)| ranges.iter().any(|&(rlo, rhi)| lo < rhi && rlo < hi))
+        .collect();
+    let carries = |code: OpCode| {
+        matches!(code, OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_COPY | OpCode::CPUI_PIECE | OpCode::CPUI_SUBPIECE)
+    };
+    loop {
+        let before = downstream.len();
+        for &(vn, _, _) in &on {
+            if downstream.contains(&vn) {
+                continue;
+            }
+            let Some(def) = fd.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else {
+                continue;
+            };
+            if carries(def.code()) && (0..def.num_input()).any(|k| def.get_in(k).is_some_and(|i| downstream.contains(&i))) {
+                downstream.insert(vn);
+            }
+        }
+        if downstream.len() == before {
+            break;
+        }
+    }
+    let observed = |vn: VarnodeId| {
+        let carried = downstream.contains(&vn);
+        fd.vbank().get(vn).is_some_and(|v| {
+            v.is_input()
+                || v.descend_iter().any(|u| {
+                    fd.obank().get(u).is_some_and(|op| {
+                        if indirects.contains(&u) {
+                            return false;
+                        }
+                        if op.code() == OpCode::CPUI_INDIRECT {
+                            return true;
+                        }
+                        !carried && !op.get_out().is_some_and(|o| downstream.contains(&o))
+                    })
+                })
+        })
+    };
+    let survives: Vec<(intb, intb)> = on
+        .iter()
+        .filter(|&&(vn, _, _)| observed(vn))
+        .map(|&(_, lo, hi)| (lo, hi))
+        .collect();
+    ranges
+        .into_iter()
+        .filter(|&(rlo, rhi)| !survives.iter().any(|&(lo, hi)| lo < rhi && rlo < hi))
+        .collect()
+}
+
+/// Drop the guard-only hints (`guard_only_ranges`) that fall in the extent of
+/// the open range below them (no other hint in between) when they are integers
+/// at an element boundary no wider than the element: the read becomes an
+/// element or a cast of one instead of a local that ends the array early. An
+/// element-wide one lends the range its type when the range has none. Any
+/// other guard-only hint stays, and the final layout check
+/// (`guard_shortens`) withdraws the guard if it ends an array early.
+fn drop_guard_only_hints(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
+    let guard_only = guard_only_ranges(fd, space);
+    if guard_only.is_empty() {
+        return;
+    }
+    let is_guard_only = |h: &RangeHint| {
+        h.range_type == RangeType::Fixed && guard_only.iter().any(|&(lo, hi)| lo <= h.sstart && hint_end(h) <= hi)
+    };
+    let hints: &[RangeHint] = state.hints_mut();
+    let mut order: Vec<usize> = (0..hints.len()).collect();
+    order.sort_by_key(|&k| (hints[k].sstart, k));
+    let mut drop: BTreeSet<usize> = BTreeSet::new();
+    let mut retype: Vec<(usize, Rc<Datatype>)> = Vec::new();
+    for (pos, &k) in order.iter().enumerate() {
+        let h = &hints[k];
+        if !is_guard_only(h) {
+            continue;
+        }
+        let Some(&below) = order[..pos].iter().rev().find(|&&j| !is_guard_only(&hints[j])) else {
+            continue;
+        };
+        let start = hints[below].sstart;
+        let Some(o) = order[..pos]
+            .iter()
+            .copied()
+            .filter(|&j| hints[j].sstart == start && hints[j].range_type == RangeType::Open && hints[j].size > 0)
+            .max_by_key(|&j| (hints[j].size, j))
+        else {
+            continue;
+        };
+        let open = &hints[o];
+        let elem = open.size as intb;
+        let fits = (h.sstart - open.sstart) % elem == 0
+            && h.size as intb <= elem
+            && !h.is_type_lock()
+            && matches!(
+                h.type_.get_metatype(),
+                type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+            );
+        if !fits {
+            continue;
+        }
+        if h.size as intb == elem && open.type_.get_metatype() == type_metatype::TYPE_UNKNOWN {
+            retype.push((o, Rc::clone(&h.type_)));
+        }
+        drop.insert(k);
+    }
+    for (o, ct) in retype {
+        let open = &mut state.hints_mut()[o];
+        if open.type_.get_metatype() == type_metatype::TYPE_UNKNOWN {
+            open.type_ = ct;
+        }
+    }
+    let mut k = 0;
+    state.hints_mut().retain(|_| {
+        k += 1;
+        !drop.contains(&(k - 1))
+    });
+}
+
+/// Does the final layout let the written-slot guard end early a local that an
+/// indexed access or a walk goes through? For every LOAD or STORE whose
+/// pointer is the stack base plus an index or a walk (`pointer_pieces`), the
+/// local holding its lowest base must neither consist only of guard-only
+/// storage while not being an array, nor be followed directly by a local that
+/// consists only of guard-only storage: without the guard those slots have no
+/// local, and the range at the base runs on over them.
+fn guard_shortens(
+    fd: &Funcdata,
+    space: &Rc<AddrSpace>,
+    sb: VarnodeId,
+    symbols: &[(intb, intb, Rc<Datatype>)],
+    guard_only: &[(intb, intb)],
+) -> bool {
+    if guard_only.is_empty() {
+        return false;
+    }
+    let bits = space.get_addr_size() as int4 * 8 - 1;
+    let only_guard = |lo: intb, hi: intb| {
+        let mut covered = lo;
+        let mut ranges: Vec<&(intb, intb)> = guard_only.iter().filter(|&&(a, b)| a < hi && lo < b).collect();
+        ranges.sort_unstable();
+        for &&(a, b) in &ranges {
+            if a > covered {
+                return false;
+            }
+            covered = covered.max(b);
+        }
+        covered >= hi
+    };
+    [OpCode::CPUI_LOAD, OpCode::CPUI_STORE].into_iter().any(|code| {
+        fd.obank().iter_code(code).any(|id| {
+            let Some(op) = fd.obank().get(id).filter(|o| !o.is_dead()) else {
+                return false;
+            };
+            let Some(pieces) = op.get_in(1).and_then(|p| pointer_pieces(fd, p, sb, 0)) else {
+                return false;
+            };
+            if pieces.len() == 1 && pieces[0].1 == Some(0) {
+                return false;
+            }
+            let Some(base) = pieces.iter().map(|&(off, _)| sign_extend(space.wrap_offset(off) as intb, bits)).min() else {
+                return false;
+            };
+            let Some(&(s, e, ref ct)) = symbols.iter().find(|&&(s, e, _)| s <= base && base < e) else {
+                return false;
+            };
+            (ct.get_array_base().is_none() && only_guard(s, e))
+                || symbols.iter().any(|&(s2, e2, _)| s2 == e && only_guard(s2, e2))
+        })
+    })
+}
+
 /// The signed stack ranges of the guard INDIRECTs `store` keeps in block `bl`.
 fn kept_slots(fd: &Funcdata, store: OpId, bl: crate::context::BlockId, space: &Rc<AddrSpace>) -> Vec<(intb, intb)> {
     let bits = space.get_addr_size() as int4 * 8 - 1;
@@ -291,6 +508,16 @@ fn plain_index_base(fd: &Funcdata, ptr: VarnodeId, sb: VarnodeId, space: &Rc<Add
     }
     match pointer_pieces(fd, ptr, sb, 0)?.as_slice() {
         [(off, _)] => Some(sign_extend(space.wrap_offset(*off) as intb, bits)),
+        _ => None,
+    }
+}
+
+/// The one stack address a walk's pointer starts from (`pointer_pieces` gives
+/// a single unbounded piece).
+fn walk_base(fd: &Funcdata, ptr: VarnodeId, sb: VarnodeId, space: &Rc<AddrSpace>) -> Option<intb> {
+    let bits = space.get_addr_size() as int4 * 8 - 1;
+    match pointer_pieces(fd, ptr, sb, 0)?.as_slice() {
+        [(off, None)] => Some(sign_extend(space.wrap_offset(*off) as intb, bits)),
         _ => None,
     }
 }
@@ -383,6 +610,7 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
             indexed
                 .iter()
                 .any(|&store| !indexes_own_array(fd, store, sb, &space, &symbols, effects.wide.get(&store)))
+                || guard_shortens(fd, &space, sb, &symbols, &guard_only_ranges(fd, &space))
         });
     if spoiled {
         fd.spoil_stack_store_guard();
@@ -395,9 +623,12 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
 /// or a part of it (`*(long *)&v1[i * 8]` into a byte array), which holds
 /// every slot at or above the base its guard INDIRECTs keep? A scalar, or an
 /// array of wider elements, makes the C index past the local (`(&v1)[a1] = 3`)
-/// or with the wrong stride. A store through a pointer variable, a byte store
-/// (written through a byte pointer, `((char *)v1)[i]`, and checked by the byte
-/// reaches), or one no longer live, passes.
+/// or with the wrong stride. A walk from one stack address whose local there
+/// is an array must find every slot its guard keeps inside that array (the C
+/// walks the array; a slot outside it is a separate object the walk writes
+/// past to reach); a walk whose local is not an array, a byte store (written
+/// through a byte pointer, `((char *)v1)[i]`, and checked by the byte reaches),
+/// or one no longer live, passes.
 fn indexes_own_array(
     fd: &Funcdata,
     store: OpId,
@@ -417,7 +648,14 @@ fn indexes_own_array(
         return true;
     }
     let Some(base) = plain_index_base(fd, ptr, sb, space) else {
-        return true;
+        let Some(base) = walk_base(fd, ptr, sb, space) else {
+            return true;
+        };
+        return symbols
+            .iter()
+            .find(|&&(s, e, _)| s <= base && base < e)
+            .filter(|(_, _, ct)| ct.get_array_base().is_some())
+            .is_none_or(|&(s, e, _)| slots.is_none_or(|slots| slots.iter().all(|&(lo, hi)| s <= lo && hi <= e)));
     };
     let Some((_, e, ct)) = symbols.iter().find(|&&(s, e, _)| s <= base && base < e) else {
         return slots.is_none_or(|slots| slots.is_empty());
