@@ -4175,10 +4175,14 @@ impl CloneBlockOps {
                 | opaf::stop_type_propagation
                 | opaf::store_unmapped
                 | opaf::kuna_zextreturn);
+        let error_flag = crate::kuna_syscallregs::is_error_flag(data, op);
         {
             let o = data.obank_mut().get_mut(dup).expect("buildOpClone: stale dup");
             o.set_flag(fl);
             o.set_additional_flag(afl);
+            if error_flag {
+                o.clear_flag(opf::call);
+            }
         }
         self.clone_list.push((op, dup)); // Map from clone to orig
         self.orig_to_clone.insert(op, dup); // Map from orig to clone
