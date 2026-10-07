@@ -67,6 +67,44 @@ fn ordinary_aif_does_not_publish_unreachable_interworking_modes() {
 }
 
 #[test]
+fn ordinary_decompilation_preserves_a_backward_blx_callers_mode() {
+    use kuna_console::engine::ArmIsa;
+    let specs = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../specs");
+    for (endian, target) in [("little", "ARM:LE:32:v8"), ("big", "ARM:BE:32:v8")] {
+        let path = fixture("ordinary-backward-call", "arm_xref_roots.py", &["arm", endian, "focusmode", "rootmode", "backwardframe"]);
+        for isa in [None, Some(ArmIsa::Arm)] {
+            for listing in ["off", "on"] {
+                for aif in ["off", "on"] {
+                    for frames in ["off", "on"] {
+                        let mut prog = bootstrap_from_object_with_isa(
+                            path.to_str().unwrap(), target, &[specs.to_str().unwrap().into()], isa,
+                        ).unwrap();
+                        for (name, value) in [("listing", listing), ("aif", aif), ("funcstart_patterns", "on"), ("armframes", frames)] {
+                            prog.arch_mut().set_kuna_option(name, value).unwrap();
+                        }
+                        prog.commit_pending_analysis().unwrap();
+                        let space = prog.arch().manage().get_default_code_space().unwrap().clone();
+                        for iteration in 0..2 {
+                            let entry = prog.resolve_address(&Address::new(space.clone(), 0x1600)).unwrap();
+                            let result = decompile_entry(&mut prog, entry, &DecompileOptions::default());
+                            assert!(result.error.is_none(), "{:?}", result.error);
+                            let code = result.code.unwrap();
+                            assert!(code.contains("sub_1380(") && !code.lines().any(|line| line.trim_start().starts_with('*')),
+                                "{endian}/{isa:?}/listing={listing}/aif={aif}/frames={frames}/iteration={iteration}: {code}");
+                            for at in [0x1600, 0x1604, 0x1608] {
+                                assert_eq!(prog.arch().with_context_db_mut(|db| db.get_variable_value(b"TMode", &Address::new(space.clone(), at))).unwrap(), 0);
+                            }
+                            assert_eq!(prog.arch().with_context_db_mut(|db| db.get_variable_value(b"TMode", &Address::new(space.clone(), 0x1380))).unwrap(), 1);
+                        }
+                    }
+                }
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
 fn recovered_xrefs_leave_unclaimed_modes_and_later_c_unchanged() {
     let specs = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../specs");
     for (endian, target) in [("little", "ARM:LE:32:v8"), ("big", "ARM:BE:32:v8")] {

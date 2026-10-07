@@ -428,6 +428,12 @@ pub trait Translate: RegisterLookup {
         None
     }
 
+    /// Isolate decoder commits with an undo journal, restoring them on scope exit.
+    /// Do not change defaults, registered variables or tracked registers here.
+    fn decode_context_scope(&self) -> Option<crate::kuna_contextscope::DecodeContextScope<'_>> {
+        None
+    }
+
     /// Replace the writable bits in one context word for translation commits,
     /// returning the previous mask so a temporary restriction can be restored.
     fn set_context_write_mask(&self, _word: usize, _mask: u32) -> u32 {
