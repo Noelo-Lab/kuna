@@ -1,13 +1,29 @@
-//! Reduce demanded byte ranges through wide SSA expressions.
+//! Reduce demanded byte ranges through wide SSA expressions — the `wideslice`
+//! decision point.
 //!
-//! Optimized vector code commonly packs values with `PIECE`, shifts the wide
-//! result, then extracts a narrower `SUBPIECE`.  Moving the demanded range
-//! through those bit-exact operations prevents artificial non-native-width
-//! aggregate locals.  The rule applies to synthetic, non-power-of-two values
-//! wider than the engine's scalar constant representation; native vector widths
-//! retain their architecture-specific lane rules.  It is deliberately
-//! independent of source types, function signatures, loop shapes, and the
-//! vector instruction that produced the SSA.
+//! Heritage widens each partial lane write of a vector register by joining it
+//! with the bytes below it (`Heritage::normalizeWriteSize`, `heritage.cc:417`),
+//! so a run of byte writes leaves intermediates 2..15 bytes wide, and
+//! `RuleConcatZext`/`RuleConcatZero` keep manufacturing such widths while they
+//! fold zero lanes.  Nothing upstream takes a 9..15-byte value apart again:
+//! `SubvariableFlow` stops at a 64-bit mask, `RuleDumptyHump`, `RuleSubCommute`
+//! and `RuleShiftSub` do not cross a piece boundary, and `ActionLaneDivide`
+//! accepts only lane-aligned `PIECE`s.  This rule pushes the demanded
+//! `SUBPIECE` through `PIECE`, byte-aligned logical shifts and
+//! `INT_AND`/`INT_OR`/`INT_XOR` as bitvector identities: a slice straddling a
+//! `PIECE` becomes a `PIECE` of two slices, a slice reaching into a shift's
+//! zero fill becomes a zero-extended shorter slice.  It is independent of
+//! source types, function signatures, loop shapes and the vector instruction
+//! that produced the SSA.
+//!
+//! Power-of-two widths (8, 16, 32, 64) are refused on purpose.  Those are the
+//! laned-register widths `ActionLaneDivide`, `simdlane` and `constspaceload`
+//! own, and slicing through them before lane division runs breaks their lane
+//! view: without the gate seven stage assertions regress and the byte-sum loop
+//! itself comes out as `CONCAT12(...) & 0xffffffffffff00ff`.  Rebuilding the
+//! heritage ladder as an aligned tree instead was tried and does not reach the
+//! clean output, because the rule pool recreates the odd widths.
+//! `option wideslice off` leaves the wide intermediates to upstream's rules.
 //!
 //! Offsets are significance offsets, independent of memory endianness.
 
@@ -71,6 +87,9 @@ impl Rule for RuleWideSlice {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> i32 {
+        if !data.get_arch().wide_slice_reduce {
+            return 0;
+        }
         let Some(operation) = data.obank().get(op) else {
             return 0;
         };

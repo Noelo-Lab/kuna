@@ -453,6 +453,7 @@ kuna_options! { self, p1;
     "splitstorekeep" => {
         on_off!(split_store_keep, "Refinement-split stack store mark")
     },
+    "wideslice" => on_off!(wide_slice_reduce, "Wide SSA slice reduction"),
     "regionstructure" => {
         let (val, msg) =
             crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;

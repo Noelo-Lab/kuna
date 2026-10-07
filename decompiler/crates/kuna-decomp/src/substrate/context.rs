@@ -1137,6 +1137,8 @@ pub struct ArchContext {
     pub tied_phi_trim: bool,
     /// (kuna) `splitstorekeep` — carry `stack_store` onto refinement pieces.
     pub split_store_keep: bool,
+    /// (kuna) `wideslice` — slice reduction through synthetic-width SSA trees.
+    pub wide_slice_reduce: bool,
     /// Guard stack slots against stores through stack-derived pointers.
     pub stack_store_guard: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -1750,6 +1752,7 @@ impl ArchContext {
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
             split_store_keep: false,     // splitstorekeep (Architecture::reset_defaults sets the shipped default: on)
+            wide_slice_reduce: false,    // wideslice (Architecture::reset_defaults sets the shipped default: on)
             stack_store_guard: false,
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)

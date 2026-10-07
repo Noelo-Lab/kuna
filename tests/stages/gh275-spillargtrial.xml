@@ -38,7 +38,7 @@
     elimination.  `option spillargtrial` narrows that STORE arm.
 
     Pass 1 (default, `spillargtrial off`): assertion #1 reproduces the first-call
-    bug. The always-on wide-slice reducer independently removes the spurious
+    bug. The default-on `wideslice` reducer independently removes the spurious
     12-byte reconstruction from the second call in both passes. Pass 2
     (`option spillargtrial reload`) proves the remaining argument is recovered.
     `reload` is the conservative level: it fires only because the slot is

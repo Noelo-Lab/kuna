@@ -1748,23 +1748,36 @@ value and every lane byte is provably zero — the broadcast mask, and the only
 wide constant mask the engine constructs. Settable `simdlane`, shipped default
 **on**.
 
-**Wide-slice SSA reduction** —
-`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_wideslice.rs` registers
-`RuleWideSlice` in the repeated analysis pool. Optimized vector lowering often
-builds wide `PIECE` trees, shifts them, and then asks for a narrower
-`SUBPIECE`. Keeping the intermediate whole creates artificial aggregate locals.
-The rule pushes the demanded byte range through
-`PIECE`, byte-aligned logical shifts, and `INT_AND`/`INT_OR`/`INT_XOR` before
-high-variable merging.
+**Wide-slice SSA reduction** (`option wideslice`, default **on**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_wideslice.rs
+(RuleWideSlice)`, in the repeated analysis pool. Heritage widens each partial
+lane write of a vector register by joining it with the bytes below it
+(`normalize_write_size`), so a run of byte writes leaves intermediates 2..15
+bytes wide, and `RuleConcatZext`/`RuleConcatZero` keep manufacturing such widths
+while they fold zero lanes. Nothing upstream takes a 9..15-byte value apart
+again: `SubvariableFlow` stops at a 64-bit mask, `RuleDumptyHump`,
+`RuleSubCommute` and `RuleShiftSub` do not cross a piece boundary, and lane
+division accepts only lane-aligned `PIECE`s. The rule pushes the demanded
+`SUBPIECE` through `PIECE`, byte-aligned logical shifts and
+`INT_AND`/`INT_OR`/`INT_XOR` as bitvector identities — a slice straddling a
+`PIECE` becomes a `PIECE` of two slices, a slice reaching into a shift's zero
+fill becomes a zero-extended shorter slice — without matching a function
+signature, loop, source type or vector instruction. Free inputs, type locks,
+precision marks, invalid ranges, non-byte shifts and arithmetic shifts are
+refused.
 
-The rule applies to synthetic, non-power-of-two widths greater than eight bytes,
-rather than matching a function signature, loop, source type, or vector
-instruction. Power-of-two SIMD widths remain with their architecture-specific
-lane rules. Free inputs, type locks, precision marks, invalid ranges, non-byte
-shifts, and arithmetic shifts are refused. Each accepted rewrite is a bitvector
-identity, so this is an always-on correctness fix with no option and no custom C
-emitter.
-`tests/stages/kuna-wideslice.xml` pins clang `-O3` SSE byte-unpacking;
+Power-of-two widths (8, 16, 32, 64) are refused on purpose. Those are the
+laned-register widths `ActionLaneDivide`, `simdlane` and `constspaceload` own,
+and slicing through them before lane division runs breaks their lane view:
+without the gate seven stage assertions regress and the byte-sum loop itself
+comes out as `CONCAT12(...) & 0xffffffffffff00ff`. Rebuilding the heritage
+ladder as an aligned tree instead was tried and does not reach the clean
+output, because the rule pool recreates the odd widths. The default is
+byte-identical on the datatest corpus (0/675) and within run-to-run noise on a
+whole-firmware `decompile-all`; `option wideslice off` leaves the wide
+intermediates to upstream's rules. `tests/stages/kuna-wideslice.xml` pins clang
+`-O3` SSE byte-unpacking in both passes (off: six 13-byte locals and ten lines of
+`SUB13x` reads; on: eight direct lane additions);
 `gh275-spillargtrial.xml` independently exercises a 12-byte packed-double tree.
 
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
