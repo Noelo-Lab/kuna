@@ -2035,7 +2035,10 @@ mod tests {
         // cr0 error flag a system call leaves (GH-857)
         // and kuna-widestrings32 / a 4-byte wide literal argument prints as
         // L"..." (GH-845)
-        assert_eq!(count, 462, "corpus file count drifted");
+        // and gh839-reloadarg + -a64 / a register popped from a slot that holds
+        // the caller's incoming rax is no argument of the call after it, and
+        // a saved frame pointer read from the frame still is (GH-839)
+        assert_eq!(count, 464, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

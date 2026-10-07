@@ -771,7 +771,8 @@ fn option_values_live_value_present_for_110() {
     // 113 -> 114: +1 for `retsysreg` (live_field = ret_sys_reg).
     // 114 -> 115: +1 for `floatglobals` (live_field = float_globals, default-on).
     // 115 -> 116: +1 for `floatbits` (live_field = float_bits).
-    assert_eq!(with_live, 116);
+    // 116 -> 117: +1 for `reloadarg` (live_field = reload_arg).
+    assert_eq!(with_live, 117);
 }
 
 #[test]

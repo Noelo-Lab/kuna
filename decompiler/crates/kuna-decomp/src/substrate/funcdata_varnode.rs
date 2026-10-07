@@ -2705,6 +2705,8 @@ pub(crate) struct AncestorRealistic {
     /// (kuna) `condexeret`: storage whose function input fails the walk even
     /// when it is directwrite.
     forbidden: Vec<(Address, int4)>,
+    /// (kuna) The LOADs the walk took as solid movement.
+    solid_loads: Vec<OpId>,
 }
 
 impl AncestorRealistic {
@@ -2722,7 +2724,21 @@ impl AncestorRealistic {
             collect_inputs: false,
             collected: Vec::new(),
             forbidden: Vec::new(),
+            solid_loads: Vec::new(),
         }
+    }
+
+    /// (kuna) The LOADs the last [`Self::execute`] stopped at as solid
+    /// movement, read by [`crate::p4_calls::kuna_reloadarg`].
+    pub(crate) fn solid_loads(&self) -> &[OpId] {
+        &self.solid_loads
+    }
+
+    fn solid_at(&mut self, fd: &Funcdata, op: Option<OpId>) -> AncestorCmd {
+        if let Some(op) = op.filter(|&o| fd.obank().get(o).is_some_and(|o| o.code() == OpCode::CPUI_LOAD)) {
+            self.solid_loads.push(op);
+        }
+        AncestorCmd::PopSolid
     }
 
     /// (kuna) `condexeret`: the op that read the non-directwrite function input
@@ -2908,7 +2924,7 @@ impl AncestorRealistic {
                             if c == Some(OpCode::CPUI_COPY) || c == Some(OpCode::CPUI_SUBPIECE) {
                                 curop = d;
                             } else {
-                                break;
+                                return self.solid_at(fd, Some(d));
                             }
                         }
                         None => break,
@@ -2970,7 +2986,7 @@ impl AncestorRealistic {
                     } else if opc == Some(OpCode::CPUI_PIECE) {
                         curvn = fd.obank().get(op2).and_then(|o| o.get_in(1)).unwrap_or(curvn);
                     } else {
-                        break;
+                        return self.solid_at(fd, Some(op2));
                     }
                 }
                 AncestorCmd::PopSolid
@@ -3023,7 +3039,7 @@ impl AncestorRealistic {
             {
                 AncestorCmd::PopFail
             }
-            _ => AncestorCmd::PopSolid,
+            _ => self.solid_at(fd, Some(op)),
         }
     }
 
@@ -3108,6 +3124,7 @@ impl AncestorRealistic {
         self.set_cond_exe_effect = false;
         self.input_fail_reader = None;
         self.collected.clear();
+        self.solid_loads.clear();
         // If the parameter itself is an input, we don't consider this realistic
         // (unless we are re-testing a conditional-execution trial).
         let in_slot = fd.obank().get(op).and_then(|o| o.get_in(slot));

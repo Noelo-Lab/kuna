@@ -259,6 +259,7 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                 *data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i) = trial;
                 if only {
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_active();
+                    crate::p4_calls::kuna_reloadarg::note(data, idx, i, ancestor.solid_loads());
                     crate::p4_calls::kuna_varargforward::narrow_undeclared_upper(data, idx, i);
                     if data
                         .get_call_specs_mut(idx)

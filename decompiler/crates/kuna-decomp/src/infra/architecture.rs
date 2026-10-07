@@ -649,6 +649,12 @@ pub struct Architecture {
     /// register is not the high word of its return.  Read by
     /// [`crate::kuna_retsysreg`] through the `ArchContext` handle.
     pub ret_sys_reg: bool,
+    /// (kuna) `option reloadarg`: a register argument reloaded from the
+    /// caller's frame is judged again once the frame is heritaged, and dropped
+    /// when the slot only gave back a scratch register no prototype passes.
+    /// Read by [`crate::p4_calls::kuna_reloadarg`] through the `ArchContext`
+    /// handle.
+    pub reload_arg: bool,
     /// (kuna) `option noreturnretuse`: a CALL on a block that ends in a no-return
     /// halt does not veto the RETURN's output trial.  Read by
     /// [`crate::p4_calls::kuna_noreturnretuse`] through the `ArchContext` handle.
@@ -685,6 +691,10 @@ pub struct Architecture {
     /// `option rustabi auto` tests.  The XML `<binaryimage>` bootstrap never runs
     /// the analyzer tier, so it stays false there.
     pub source_is_rust: bool,
+    /// (kuna) Did the loader's source-language detection report Go?  A load-time
+    /// fact like `source_is_rust`: Go's register ABI is not the cspec's, so
+    /// `option reloadarg` stands down on a Go image.
+    pub source_is_go: bool,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -2577,6 +2587,7 @@ impl Architecture {
             ret_input_half: false, // (kuna) option retinputhalf; reset_defaults sets the shipped default
             ret_pushed_half: false, // (kuna) option retpushedhalf; reset_defaults sets the shipped default
             ret_sys_reg: false, // (kuna) option retsysreg; reset_defaults sets the shipped default
+            reload_arg: false, // (kuna) option reloadarg; reset_defaults sets the shipped default
             noreturn_ret_use: false, // (kuna) option noreturnretuse; reset_defaults sets the shipped default
             zero_idiom_use: false, // (kuna) option zeroidiomuse; reset_defaults sets the shipped default
             stack_addr_arg_trial: false,
@@ -2585,6 +2596,7 @@ impl Architecture {
             be_join: false, // (kuna) option bejoin; reset_defaults sets the shipped default
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
             source_is_rust: false, // (kuna) a load-time fact; set by the console's `load file`
+            source_is_go: false, // (kuna) a load-time fact; set by the console's `load file`
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -2904,6 +2916,7 @@ impl Architecture {
         self.input_varnode_adjust = true; // (kuna) DIV-3 default-on (GH-9218)
         self.ret_input_half = true; // (kuna) DIV-85 default-on: a returned register half whose value is an input parameter the function MOVED into the return register is a real return, not leftover; keeping it also keeps the parameter it came from in the recovered signature. 0/675 byte-identical; an untouched return register is still dropped (the GH-6990 SPARC pass-through), restore the strict rule with `option retinputhalf off`
         self.ret_pushed_half = true; // (kuna) DIV-156 default-on: a register the function only ever PUSHED is stack maintenance, not a value it placed in a return register, so the alignment `push %r8` / `pop %rdx` idiom no longer invents a fifth argument and a 128-bit return. Narrows `retinputhalf` only; 0/675 byte-identical on the datatest corpus. Restore the address-only placement test with `option retpushedhalf off`
+        self.reload_arg = true; // (kuna) GH-839 default-on: a register popped or reloaded from a frame slot that only holds the caller's incoming scratch register (clang's `push %rax` ... `pop %rcx` alignment pair) is no argument of the next call; only the topmost active trials are dropped. 0/675 byte-identical on the datatest corpus; restore the first-pass verdict with `option reloadarg off`
         self.ret_sys_reg = true; // (kuna) GH-885 default-on: the second register of a returned pair whose value only goes to a system register (vmsr fpscr, msr basepri, mtc0) is that write's operand, not a high word. 0/675 byte-identical on the datatest corpus; restore the pair with `option retsysreg off`
         self.noreturn_ret_use = true; // (kuna) DIV-118 default-on: a status value handed to a no-return failure call at the end of its block cannot compete with the same value at the function's RETURN, so it no longer forces the prototype to void. 0/675 byte-identical on the datatest corpus and 0 changed lines across 23 linked binaries; restore the upstream blanket rejection with `option noreturnretuse off`
         self.zero_idiom_use = true; // (kuna) DIV-PENDING default-on: `INT_XOR(v,v)` is 0 whatever v is, so the x86 register-clearing idiom is not a competing use of the value it consumes and no longer sinks a call's input trials. An identity, one-directional (it can only decline a veto); 0/675 byte-identical on the datatest corpus. Restore the upstream walk with `option zeroidiomuse off`
@@ -3626,6 +3639,8 @@ impl Architecture {
         // so `kuna_rustabi` reaches both via `glb`.
         ctx.rust_abi = self.rust_abi;
         ctx.source_is_rust = self.source_is_rust;
+        ctx.source_is_go = self.source_is_go;
+        ctx.reload_arg = self.reload_arg;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;
         // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`
