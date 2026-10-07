@@ -737,6 +737,11 @@ pub struct ArchContext {
     /// what `option rustabi auto` tests.  Copied from the engine `Architecture`
     /// in `build_arch_handle`.
     pub source_is_rust: bool,
+    /// (kuna) The loader's Go verdict for this image; `option reloadarg`
+    /// stands down on Go.  Copied from the engine `Architecture`.
+    pub source_is_go: bool,
+    /// (kuna) `option reloadarg`; read by [`crate::p4_calls::kuna_reloadarg`].
+    pub reload_arg: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
     /// `sub_<addr>` / `dat_<addr>` rather than `func_<addr>` (C++
     /// `Architecture::name_style_angr`, default-on).  Read by the call-spec
@@ -1676,6 +1681,10 @@ impl ArchContext {
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
             source_is_rust: false,
+            source_is_go: false,
+            // (kuna) `option reloadarg` default-on; the real value is copied
+            // from the engine Architecture in `build_arch_handle`.
+            reload_arg: true,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
             // (kuna, Phase 3) ghidra-mode-only; never set on the standalone path.

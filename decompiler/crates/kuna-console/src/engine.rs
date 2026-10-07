@@ -4174,8 +4174,9 @@ pub fn bootstrap_from_object_with_isa(
     // written straight onto the arch here at load, upstream of every `option`
     // command. The XML `<binaryimage>` bootstrap never reaches this line, which is
     // why `option rustabi auto` is inert on the datatest corpus by construction.
-    let source_is_rust = kuna_analysis::sourcelang::detect_compiler_bytes(&bytes).is_rust();
-    sleigh.base_mut().unwrap().source_is_rust = source_is_rust;
+    let compiler = kuna_analysis::sourcelang::detect_compiler_bytes(&bytes);
+    sleigh.base_mut().unwrap().source_is_rust = compiler.is_rust();
+    sleigh.base_mut().unwrap().source_is_go = compiler.is_golang();
     // (kuna `pebnames`) The same kind of one-bit image fact: is this a Windows
     // GUI/console PE, whose segment base holds a user-mode TEB?  `option pebnames
     // auto` acts only when it is.

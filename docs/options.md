@@ -781,6 +781,12 @@ Three tiers:
 | the high word of a returned pair is the operand of a vmsr fpscr, msr cpsr_c, msr basepri or mtc0 | [`retsysreg`](#retsysreg) |
 | a FreeRTOS-style ulPortRaiseBASEPRI returns CONCAT44(0x50,v1) | [`retsysreg`](#retsysreg) |
 | a function that sets a system register through r1 and returns a computed r0 prints unsigned long long | [`retsysreg`](#retsysreg) |
+| a variadic tail call prints extra trailing arguments after push %rax ... pop %rcx | [`reloadarg`](#reloadarg) |
+| printf or a varargs callee gains a variable declared // rax  | [`reloadarg`](#reloadarg) |
+|  rcx  | [`reloadarg`](#reloadarg) |
+|  stack - 0x8 as its last argument | [`reloadarg`](#reloadarg) |
+| an rdx variable with no assignment is passed between the real arguments and a popped register | [`reloadarg`](#reloadarg) |
+| a function gains a phantom parameter that is only passed on to a variadic call | [`reloadarg`](#reloadarg) |
 | a function grows one more argument than the disassembly passes, used only as the high half of the return | [`retpushedhalf`](#retpushedhalf) |
 | an alignment push/pop around the body turns a pointer return into undefined16 | [`retpushedhalf`](#retpushedhalf) |
 | the recovered signature ends in an extra argument whose only appearance is `v._8_8_ = aN;` | [`retpushedhalf`](#retpushedhalf) |
@@ -2740,6 +2746,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: a function whose second return register only feeds a system register is byte for byte an `int` function that used that register as the scratch for the write, which is what clang does with `r1` whenever `r0` holds the result. Byte-identical (0/675) on the datatest corpus; over stripped ARM firmware and Lua, zlib, SQLite and x86 builds for ARM, Thumb, AArch64, MIPS, PowerPC, i386 and x86-64 the one function that changes is ChibiOS's `chEvtGetAndClearEvents`, to the 32-bit result it has. Set off to get the pair back for a function that really returns a 64-bit value and also writes its high word, alone, to a system register.
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · GH-885
 - **Example:** `option retsysreg off`
+
+### `reloadarg` -- on | off, default `on`
+
+- **Symptoms:** a variadic tail call prints extra trailing arguments after push %rax ... pop %rcx; printf or a varargs callee gains a variable declared // rax ;  rcx ;  stack - 0x8 as its last argument; an rdx variable with no assignment is passed between the real arguments and a popped register; a function gains a phantom parameter that is only passed on to a variadic call.
+- **What it does:** Judge a register argument reloaded from the caller's frame again once the frame is heritaged. Register trials are scored before ActionStackPtrFlow and the stack heritage, when a value popped or reloaded from the stack is still a raw LOAD that the ancestor walk takes as solid movement, and a checked trial is never scored again. clang -O2 keeps the stack aligned around one call with `push %rax` and takes the slot back with `pop %rcx` before a variadic tail call, so `pr("%d",h(k))` printed `pr("%d",(ulong)v1,v3,v2)`: the popped rcx, and rdx filled in below it. With this on, an active register trial whose walk stopped at a LOAD through the stack pointer is traced again when its call is finalized, back through COPY, SUBPIECE, PIECE and call INDIRECTs on a stack slot the alias checker says no pointer reaches. When every leaf is a register input the function's own prototype kills across calls and cannot take as a parameter (SysV rax, r10, r11), the trial is dropped, but only from the top of the call's register order and never when the format string names it. A callee-saved input (a saved rbp or x29 that `__builtin_frame_address(1)` reads), a parameter, a stack input, a computed value or a merge keeps the trial, and so does a junk register below a live argument, which stays the hole the ABI fills. Go images are left alone: Go passes arguments in registers the cspec calls scratch.
+- **When to flip:** On by default: 0/675 byte-identical on the datatest corpus, and over clang and gcc x86-64 builds (nginx, crackmes, linux tools, decbench -O0/-O2) the only functions that change are clang's push/pop alignment pair in front of a call, which lose the phantom trailing arguments. Set off to get the first-pass verdict back, for instance on hand-written code that really hands a callee the caller's incoming rax through a stack slot.
+- **Where / provenance:** P4/active-input-trial-scoring · kuna · correctness-fix · GH-839
+- **Example:** `option reloadarg off`
 
 ### `retpushedhalf` -- on | off, default `on`
 

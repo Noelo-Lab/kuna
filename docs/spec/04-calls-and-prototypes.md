@@ -1401,6 +1401,44 @@ classified:
   co-executes with the call, so relaxing that shape is the fabrication the
   family's own design notes warn against. `off` restores the upstream
   rejection, in which any LOAD or STORE of the value sinks the trial.
+
+  (kuna) `reloadarg` (default-on,
+  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_reloadarg.rs (note, recheck)`)
+  judges a register reloaded from the caller's own frame again once the frame is
+  heritaged. Register trials are scored on `ActionActiveParam`'s first pass,
+  before `ActionStackPtrFlow` and the stack heritage, and a checked trial is
+  never scored again. At that point a value popped off the stack is a raw
+  `LOAD [rsp]`, and the ancestor walk takes any LOAD as solid movement. clang
+  `-O2` aligns the stack around a single call with `push %rax` and takes the
+  slot back with `pop %rcx` before a variadic tail call, so `rcx` was active and
+  `fillinMap` filled `rdx` in beneath it: `pr("%d",v1,v3,v2)` for a call that
+  passes one value. The walk records the LOADs it stopped at as solid. When the
+  trial goes active and one of them reads through the stack pointer
+  (`kuna_spillargtrial.rs (frame_slot)`), the trial is flagged and its call asks
+  for a final check.
+
+  When the call is finalized, before `fillinMap`, each flagged value is traced
+  back through COPY, SUBPIECE and PIECE, and through a call's INDIRECT on a stack
+  slot that the alias checker says no pointer reaches. The value is junk only
+  when every leaf is a register input that the function's own prototype kills
+  across calls and cannot take as a parameter. Under SysV that is `rax`, `r10`
+  and `r11`. A callee-saved input is a real value: `__builtin_frame_address(1)`
+  reads the caller's saved `rbp` (AArch64 `x29`) from the frame the same way.
+  So is a parameter, a stack input such as an incoming stack argument, a computed
+  value, a merge, an indirect store, a slot reached through a pointer, and a LOAD
+  the heritage left in place. Any of these ends the trace and keeps the first
+  verdict.
+
+  Junk trials are dropped (no-use) only from the top of the call's order in the
+  callee model (`possible_input_param_with_slot`). The walk stops at the first
+  active trial that is not junk. The order matters because `fillinMap` cuts every
+  trial above a definitely-unused one. A junk `rdx` below a real `rcx`
+  (`mov $10,%ecx; pop %rdx; jmp q`) therefore stays the hole the ABI fills, and
+  dropping it would have taken the real argument with it. A trial that the
+  call's resolved format string names is kept. A Go image (`source_is_go`, from
+  the loader's language detection) is left alone, because Go passes arguments in
+  registers the cspec calls scratch. `off` restores the first-pass verdict.
+
 - **Callee-body evidence** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs`):
   every test above reasons on the *caller's* side of the call, and on that side
   a live argument register at an unprototyped callee is exactly what a real

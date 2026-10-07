@@ -2956,6 +2956,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "reloadarg"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "active-input-trial-scoring"
+strength = "HARD"
+rewind = "P4"
+issue = "GH-839"
+summary = "Judge a register argument reloaded from the caller's frame again once the frame is heritaged. Register trials are scored before ActionStackPtrFlow and the stack heritage, when a value popped or reloaded from the stack is still a raw LOAD that the ancestor walk takes as solid movement, and a checked trial is never scored again. clang -O2 keeps the stack aligned around one call with `push %rax` and takes the slot back with `pop %rcx` before a variadic tail call, so `pr(\"%d\",h(k))` printed `pr(\"%d\",(ulong)v1,v3,v2)`: the popped rcx, and rdx filled in below it. With this on, an active register trial whose walk stopped at a LOAD through the stack pointer is traced again when its call is finalized, back through COPY, SUBPIECE, PIECE and call INDIRECTs on a stack slot the alias checker says no pointer reaches. When every leaf is a register input the function's own prototype kills across calls and cannot take as a parameter (SysV rax, r10, r11), the trial is dropped, but only from the top of the call's register order and never when the format string names it. A callee-saved input (a saved rbp or x29 that `__builtin_frame_address(1)` reads), a parameter, a stack input, a computed value or a merge keeps the trial, and so does a junk register below a live argument, which stays the hole the ABI fills. Go images are left alone: Go passes arguments in registers the cspec calls scratch."
+use_when = "On by default: 0/675 byte-identical on the datatest corpus, and over clang and gcc x86-64 builds (nginx, crackmes, linux tools, decbench -O0/-O2) the only functions that change are clang's push/pop alignment pair in front of a call, which lose the phantom trailing arguments. Set off to get the first-pass verdict back, for instance on hand-written code that really hands a callee the caller's incoming rax through a stack slot."
+example = "option reloadarg off"
+source_decompiler = "kuna"
+inspiration = "GH-839: a clang -O2 variadic tail call after push %rax / pop %rcx gains the popped rcx and rdx as arguments"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a variadic tail call prints extra trailing arguments after push %rax ... pop %rcx|printf or a varargs callee gains a variable declared // rax | rcx | stack - 0x8 as its last argument|an rdx variable with no assignment is passed between the real arguments and a popped register|a function gains a phantom parameter that is only passed on to a variadic call"
+live_field = "reload_arg"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "retpushedhalf"
 values = "on|off"
 default = "on"
