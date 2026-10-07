@@ -16,28 +16,30 @@
 //! # Why a run needs more than its bytes
 //!
 //! An `int` table of character codes is byte for byte a wide literal:
-//! `{72, 101, 108, 108, 111, 0}` is `L"Hello"`, and a table of the weeks in each
-//! year, `{52, 53, 52, ..}`, reads as `L"4544.."`. So [`wide_string32_facts`]
-//! reads only read-only data, and plants a run only when
+//! `{72, 101, 108, 108, 111, 0}` is `L"Hello"`, a table of the weeks in each
+//! year, `{52, 53, 52, ..}`, reads as `L"4544.."`, and a switch lookup table of
+//! character codes with a zero case can run on past its "terminator", so code
+//! indexing it would read past the literal. [`wide_string32_facts`] reads only
+//! read-only data, and plants a run only when
 //!
 //! - no sized data object of the symbol tables overlaps it: a declared array,
 //!   whatever its element type, keeps printing as its name (an assembler-local
-//!   `.L` label, which a relocatable object keeps for its own literals, names
-//!   nothing the source declared); and
+//!   `.L` label of exactly the run's extent, which a relocatable object keeps for
+//!   its own literals, does not count; `.Lswitch.table.f` does); and
 //! - it lies in a mergeable string section of 4-byte entries (a relocatable
-//!   object's `.rodata.str4.4`), or it holds at least [`MIN_UNITS`] units of at
-//!   least three distinct characters and either the image kept its local
-//!   symbols (its symbol table names a source file), so every array it declares,
-//!   `static` ones included, is a named object and only literals are left
-//!   unnamed, or something points at its start: an operand the scalar scan
-//!   found, a pointer-aligned slot, a dynamic relocation.
+//!   object's `.rodata.str4.4`), where every NUL-terminated run is a literal, or
+//!   it holds at least [`MIN_UNITS`] units, three of them distinct, no code
+//!   indexes it as a table ([`crate::operand_refs`]' table uses: `lea rcx,t`
+//!   then `mov eax,[rcx+rax*4]`), and something points at its start: an operand
+//!   the scalar scan found, a pointer-aligned slot of a data section, or a
+//!   dynamic relocation.
+//!
+//! An anonymous table that passes all of that, a stripped image's `int` array
+//! whose address is passed to a function, still prints as the literal its bytes
+//! spell, with the same values up to its first zero.
 //!
 //! A relocatable object is read only through the laid-out view the loader
 //! builds; its raw sections all sit at address 0.
-//!
-//! A stripped image's anonymous `int` table that passes all of that, NUL unit
-//! included, still prints as the literal its bytes spell; the values are the
-//! same either way.
 
 use object::read::{Object, ObjectSection, ObjectSymbol};
 use object::{BinaryFormat, ObjectKind, SectionKind, SymbolKind};
@@ -137,8 +139,9 @@ fn elf_entsize(file: &object::File, index: object::SectionIndex) -> Option<u64> 
 /// The `wchar4[N]` facts of `file`: every 4-byte run [`scan_utf32_runs`] finds in
 /// its read-only data that the image backs as a string (see the module docs).
 /// `targets` (sorted) are the read-only addresses the scalar scan found operands
-/// pointing at, empty when it did not run.
-pub fn wide_string32_facts(file: &object::File, targets: &[u64]) -> Vec<StringFact> {
+/// pointing at and `tables` (sorted) the ones it saw code index as tables of
+/// wider elements; both are empty when it did not run.
+pub fn wide_string32_facts(file: &object::File, targets: &[u64], tables: &[u64]) -> Vec<StringFact> {
     if matches!(file.format(), BinaryFormat::Pe | BinaryFormat::Coff) {
         return Vec::new();
     }
@@ -158,32 +161,29 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64]) -> Vec<StringFa
     if runs.is_empty() {
         return Vec::new();
     }
-    let declared = |s: &object::Symbol| {
-        s.kind() == SymbolKind::Data
-            && !s.is_undefined()
-            && s.size() != 0
-            && !s.name().is_ok_and(|n| n.starts_with(".L"))
-    };
-    let named = file.symbols().any(|s| s.kind() == SymbolKind::File);
-    let objects = DataObjects::from_spans(
-        file.symbols()
-            .chain(file.dynamic_symbols())
-            .filter(|s| declared(s))
-            .map(|s| (s.address(), s.size()))
-            .collect(),
-    );
-    let reach = objects.reach();
+    let (labels, objects): (Vec<_>, Vec<_>) = file
+        .symbols()
+        .chain(file.dynamic_symbols())
+        .filter(|s| s.kind() == SymbolKind::Data && !s.is_undefined() && s.size() != 0)
+        .map(|s| (s.name().is_ok_and(|n| n.starts_with(".L")), (s.address(), s.size())))
+        .partition(|&(label, _)| label);
+    let objects = DataObjects::from_spans(objects.into_iter().map(|(_, span)| span).collect());
+    let labels = DataObjects::from_spans(labels.into_iter().map(|(_, span)| span).collect());
+    let (reach, label_reach) = (objects.reach(), labels.reach());
     runs.retain(|(r, strings4)| {
-        !objects.overlaps(&reach, r.addr, u64::from(r.len())) && (*strings4 || r.distinct >= 3)
+        let len = u64::from(r.len());
+        !objects.overlaps(&reach, r.addr, len)
+            && !labels.overlaps_other(&label_reach, r.addr, len)
+            && (*strings4 || (r.distinct >= 3 && tables.binary_search(&r.addr).is_err()))
     });
     let mut unbacked: Vec<u64> = runs
         .iter()
-        .filter(|(r, strings4)| !strings4 && !named && targets.binary_search(&r.addr).is_err())
+        .filter(|(r, strings4)| !strings4 && targets.binary_search(&r.addr).is_err())
         .map(|(r, _)| r.addr)
         .collect();
     if !unbacked.is_empty() {
         unbacked.sort_unstable();
-        let held = held_pointers(file, &unbacked);
+        let held = held_pointers(file, &unbacked, false);
         unbacked.retain(|a| !held.contains(a));
     }
     runs.into_iter()
@@ -248,7 +248,7 @@ mod tests {
         let raw = object::File::parse(bytes.as_slice()).expect("parse widestr32 fixture");
         let view = crate::loader::kuna_relocrebase::rebased_view(&raw, &bytes);
         let (file, _) = crate::loader::kuna_relocrebase::select(raw, &bytes, &view);
-        let mut facts: Vec<(u64, u32)> = wide_string32_facts(&file, targets).iter().map(|f| (f.addr, f.len)).collect();
+        let mut facts: Vec<(u64, u32)> = wide_string32_facts(&file, targets, &[]).iter().map(|f| (f.addr, f.len)).collect();
         facts.sort_unstable();
         facts
     }

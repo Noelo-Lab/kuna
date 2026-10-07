@@ -301,7 +301,11 @@ impl Operand {
 struct ScalarCapture {
     consts: Vec<u64>,
     arrays: IndexedBases,
+    steps: Option<Vec<Step>>,
 }
+
+/// One captured p-code op: its opcode, output and first inputs (how many).
+type Step = (OpCode, Option<(Operand, u32)>, [Operand; 2], usize);
 
 impl PcodeEmit for ScalarCapture {
     fn dump(
@@ -324,6 +328,94 @@ impl PcodeEmit for ScalarCapture {
         }
         let out = outvar.map(|v| (Operand::of(v), v.size));
         self.arrays.step(opc, out, &ins[..vars.len().min(2)]);
+        if let Some(steps) = &mut self.steps {
+            steps.push((opc, out, ins, vars.len().min(2)));
+        }
+    }
+}
+
+/// (kuna) How many instructions an address stays in a register for
+/// [`TableUses`].
+const TABLE_WINDOW: u8 = 4;
+
+/// (kuna) The addresses code puts in a register and, within [`TABLE_WINDOW`]
+/// instructions and no control flow, uses as the base of an indexed load wider
+/// than a byte (`lea rcx,table` then `mov eax,[rcx+rax*4]`): a table of numbers,
+/// whatever its bytes spell. [`IndexedBases`] sees the same use inside one
+/// instruction.
+#[derive(Default)]
+struct TableUses {
+    held: Vec<(Operand, u64, bool, u8)>,
+    bases: Vec<u64>,
+}
+
+impl TableUses {
+    /// The address `v` holds and whether an index was added to it.
+    fn base_of(&self, v: &Operand) -> Option<(u64, bool)> {
+        self.held.iter().find(|(loc, ..)| loc == v).map(|&(_, base, indexed, _)| (base, indexed))
+    }
+
+    /// Follow one decoded instruction's ops; `None` for an undecodable address.
+    fn instruction(&mut self, steps: Option<&[Step]>) {
+        let Some(steps) = steps else {
+            self.held.clear();
+            return;
+        };
+        let mut flow = false;
+        for &(opc, out, ins, n) in steps {
+            let indexed_by = |v: &Operand| !matches!(v, Operand::Const(_));
+            let from = match (opc, &ins[..n]) {
+                (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, &[Operand::Const(c), ..]) => {
+                    looks_like_address(c).then_some((c, false))
+                }
+                (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, &[v, ..]) => self.base_of(&v),
+                (OpCode::CPUI_INT_ADD, &[a, b]) => match (self.base_of(&a), self.base_of(&b), a, b) {
+                    (Some((base, ix)), None, _, other) | (None, Some((base, ix)), other, _) => {
+                        Some((base, ix || indexed_by(&other)))
+                    }
+                    (None, None, Operand::Const(c), other) | (None, None, other, Operand::Const(c))
+                        if looks_like_address(c) && indexed_by(&other) =>
+                    {
+                        Some((c, true))
+                    }
+                    _ => None,
+                },
+                (OpCode::CPUI_LOAD, &[_, addr]) => {
+                    if let Some((base, true)) = self.base_of(&addr) {
+                        if out.is_some_and(|(_, size)| size >= 2) && !self.bases.contains(&base) {
+                            self.bases.push(base);
+                        }
+                    }
+                    None
+                }
+                (
+                    OpCode::CPUI_BRANCH
+                    | OpCode::CPUI_CBRANCH
+                    | OpCode::CPUI_BRANCHIND
+                    | OpCode::CPUI_CALL
+                    | OpCode::CPUI_CALLIND
+                    | OpCode::CPUI_RETURN,
+                    _,
+                ) => {
+                    flow = true;
+                    None
+                }
+                _ => None,
+            };
+            if let Some((loc, _)) = out {
+                self.held.retain(|(l, ..)| *l != loc);
+                if let Some((base, indexed)) = from {
+                    self.held.push((loc, base, indexed, TABLE_WINDOW));
+                }
+            }
+        }
+        if flow {
+            self.held.clear();
+        }
+        self.held.retain_mut(|h| {
+            h.3 -= 1;
+            h.3 > 0
+        });
     }
 }
 
@@ -386,13 +478,15 @@ fn decode_scalars(
     translate: &dyn Translate,
     vma: u64,
     code_space: &Rc<AddrSpace>,
+    tables: Option<&mut TableUses>,
 ) -> Option<(u32, Vec<u64>)> {
     let addr = Address::new(Rc::clone(code_space), vma);
-    let mut cap = ScalarCapture::default();
-    let len = translate.one_instruction(&mut cap, &addr).ok()?;
-    if len <= 0 {
-        return None;
+    let mut cap = ScalarCapture { steps: tables.as_ref().map(|_| Vec::new()), ..Default::default() };
+    let len = translate.one_instruction(&mut cap, &addr).ok().filter(|&len| len > 0);
+    if let Some(tables) = tables {
+        tables.instruction(len.and(cap.steps.as_deref()));
     }
+    let len = len?;
     let arrays = &cap.arrays.bases;
     cap.consts.retain(|c| !arrays.contains(c));
     Some((len as u32, cap.consts))
@@ -451,8 +545,9 @@ const RELATIVE_TABLE_ENTRIES: usize = 256;
 /// (kuna) Which of `wanted` (sorted) the image holds as a pointer: the value of a
 /// pointer-aligned slot of an allocated section, read in the image's byte order,
 /// or the addend of a dynamic relocation, where a position-independent image
-/// keeps the pointers its loader writes.
-pub(crate) fn held_pointers(file: &object::File, wanted: &[u64]) -> Vec<u64> {
+/// keeps the pointers its loader writes. With `code_slots` false the slots of
+/// executable sections (an ARM literal pool) do not count.
+pub(crate) fn held_pointers(file: &object::File, wanted: &[u64], code_slots: bool) -> Vec<u64> {
     let width: usize = if file.is_64() { 8 } else { 4 };
     let little_endian = file.is_little_endian();
     let mut held: Vec<u64> = Vec::new();
@@ -468,8 +563,10 @@ pub(crate) fn held_pointers(file: &object::File, wanted: &[u64]) -> Vec<u64> {
     }
     for sec in file.sections() {
         let allocated = match sec.flags() {
-            object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_ALLOC != 0,
-            _ => true,
+            object::SectionFlags::Elf { sh_flags } => {
+                sh_flags & SHF_ALLOC != 0 && (code_slots || sh_flags & SHF_EXECINSTR == 0)
+            }
+            _ => code_slots || sec.kind() != SectionKind::Text,
         };
         let Some(data) = sec.data().ok().filter(|_| allocated) else {
             continue;
@@ -578,9 +675,22 @@ impl DataObjects {
     /// Does a declared object overlap `[addr, addr + len)`? `reach` is
     /// [`Self::reach`].
     pub(crate) fn overlaps(&self, reach: &[u64], addr: u64, len: u64) -> bool {
+        self.overlapping(reach, addr, len).next().is_some()
+    }
+
+    /// [`Self::overlaps`], by an object other than one of exactly that extent.
+    pub(crate) fn overlaps_other(&self, reach: &[u64], addr: u64, len: u64) -> bool {
+        self.overlapping(reach, addr, len).any(|span| span != (addr, len))
+    }
+
+    fn overlapping<'s>(&'s self, reach: &'s [u64], addr: u64, len: u64) -> impl Iterator<Item = (u64, u64)> + 's {
         let end = addr.saturating_add(len);
         let upto = self.0.partition_point(|&(lo, _)| lo < end);
-        (0..upto).rev().take_while(|&k| reach[k] > addr).any(|k| self.0[k].0.saturating_add(self.0[k].1) > addr)
+        (0..upto)
+            .rev()
+            .take_while(move |&k| reach[k] > addr)
+            .map(|k| self.0[k])
+            .filter(move |&(lo, size)| lo.saturating_add(size) > addr)
     }
 }
 
@@ -602,6 +712,29 @@ pub fn scan_scalar_refs(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
 ) -> Vec<ScalarRef> {
+    scan(file, translate, code_space, None)
+}
+
+/// (kuna) [`scan_scalar_refs`], also returning the addresses [`TableUses`] saw
+/// the code index as tables of wider elements.
+fn scan_scalar_refs_and_tables(
+    file: &object::File,
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+) -> (Vec<ScalarRef>, Vec<u64>) {
+    let mut tables = TableUses::default();
+    let refs = scan(file, translate, code_space, Some(&mut tables));
+    let mut bases = tables.bases;
+    bases.sort_unstable();
+    (refs, bases)
+}
+
+fn scan(
+    file: &object::File,
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+    mut tables: Option<&mut TableUses>,
+) -> Vec<ScalarRef> {
     let secs = section_ranges(file);
     let exec = exec_ranges(file);
     let mut out = Vec::new();
@@ -614,7 +747,7 @@ pub fn scan_scalar_refs(
         // linear sweep), so this stays O(consts) per instruction — no global set.
         let mut emitted_for_insn: Vec<u64> = Vec::new();
         while vma < hi {
-            let (len, consts) = match decode_scalars(translate, vma, code_space) {
+            let (len, consts) = match decode_scalars(translate, vma, code_space, tables.as_deref_mut()) {
                 Some(r) => r,
                 None => {
                     // Undecodable: realign by one byte (CISC linear sweep).
@@ -695,7 +828,7 @@ fn emit_facts(file: &object::File, refs: &[ScalarRef]) -> AnalysisOutput {
     if !unreferenced.is_empty() {
         unreferenced.sort_unstable();
         unreferenced.dedup();
-        let held = held_pointers(file, &unreferenced);
+        let held = held_pointers(file, &unreferenced, true);
         unreferenced.retain(|n| !held.contains(n));
     }
     let mut narrow: Vec<u64> = runs
@@ -748,14 +881,15 @@ impl AnalysisPass for OperandRefsPass {
             Some(s) => Rc::clone(s),
             None => return AnalysisOutput::default(),
         };
-        let refs = scan_scalar_refs(ctx.file, ctx.arch.translate(), &code_space);
-        let mut out = emit_facts(ctx.file, &refs);
-        if ctx.arch.analysis_widestrings32 {
-            let mut targets: Vec<u64> = refs.iter().map(|r| r.to).collect();
-            targets.sort_unstable();
-            targets.dedup();
-            out.wide_strings32 = crate::strings::kuna_widestrings32::wide_string32_facts(ctx.file, &targets);
+        if !ctx.arch.analysis_widestrings32 {
+            return emit_facts(ctx.file, &scan_scalar_refs(ctx.file, ctx.arch.translate(), &code_space));
         }
+        let (refs, tables) = scan_scalar_refs_and_tables(ctx.file, ctx.arch.translate(), &code_space);
+        let mut out = emit_facts(ctx.file, &refs);
+        let mut targets: Vec<u64> = refs.iter().map(|r| r.to).collect();
+        targets.sort_unstable();
+        targets.dedup();
+        out.wide_strings32 = crate::strings::kuna_widestrings32::wide_string32_facts(ctx.file, &targets, &tables);
         out
     }
 }
@@ -1029,7 +1163,7 @@ mod tests {
             let file = object::File::parse(bytes.as_slice()).expect("parse widecodes");
             let mut wanted = held.to_vec();
             wanted.push(not_held);
-            let mut found = held_pointers(&file, &wanted);
+            let mut found = held_pointers(&file, &wanted, true);
             found.sort_unstable();
             assert_eq!(found, held, "{fixture}");
         }
@@ -1049,7 +1183,7 @@ mod tests {
     fn a_relative_lookup_table_holds_its_strings() {
         let bytes = fixture_bytes("widecodes_switch_clang_O2_x86_64");
         let file = object::File::parse(bytes.as_slice()).expect("parse widecodes_switch");
-        assert!(held_pointers(&file, &[0x2006]).is_empty());
+        assert!(held_pointers(&file, &[0x2006], true).is_empty());
         assert_eq!(relative_string_table(&file, 0x2010, true), [0x2004, 0x2006, 0x2008, 0x200a, 0x200c]);
         assert!(relative_string_table(&file, 0x2004, true).is_empty());
         let refs: Vec<ScalarRef> = [0x2010, 0x2004, 0x200e]
