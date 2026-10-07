@@ -404,40 +404,57 @@ function tokenHtml(t, ctx) {
 const plainHtml = (s, text) => (s.cls ? `<span class="${s.cls}">${escapeHtml(text)}</span>` : escapeHtml(text));
 
 /**
- * One line's segments as HTML, with `breaks` (wrap-c.js `wrapBreaks` of the
- * line's text) turned into a newline and the continuation's indent. A break
- * that would fall inside a token is left out.
+ * One line's segments as HTML. With a `plan` (wrap-c.js `wrapPlan` of the
+ * line's text) each row is a `.wl` block carrying its indent as `--i`, so a
+ * row that is still wider than the pane soft-wraps under a hanging indent;
+ * the plan's breaks start rows, its drops leave brackets out. A break that
+ * would fall inside a token is left out.
  */
-export function lineHtml(line, ctx = {}, breaks = []) {
-  let out = '';
+export function lineHtml(line, ctx = {}, plan = null) {
+  if (!plan) return line.map((s) => (s.tok ? tokenHtml(s.tok, ctx) : plainHtml(s, s.text))).join('');
+  const { breaks = [], drops = new Set() } = plan;
+  const rows = [];
+  let row = { indent: 0, html: '' };
+  let lead = true;
   let off = 0;
   let b = 0;
   let eat = 0;
+  const newRow = (k) => {
+    rows.push(row);
+    row = { indent: k.indent, html: '' };
+    eat = k.eat;
+  };
   for (const s of line) {
     const start = off;
     off += s.text.length;
     while (b < breaks.length && breaks[b].at < start) b++;
     if (s.tok) {
-      if (b < breaks.length && breaks[b].at === start && !eat) out += `\n${' '.repeat(breaks[b++].indent)}`;
-      eat = 0;
-      out += tokenHtml(s.tok, ctx);
+      if (b < breaks.length && breaks[b].at === start) newRow(breaks[b++]);
+      let text = '';
+      for (let i = 0; i < s.text.length; i++) {
+        if (eat) { eat--; continue; }
+        if (!drops.has(start + i)) text += s.text[i];
+      }
+      lead = false;
+      if (text) row.html += tokenHtml(text === s.tok.text ? s.tok : { ...s.tok, text }, ctx);
       continue;
     }
-    let at = 0;
     let piece = '';
-    while (at < s.text.length) {
-      if (eat) { at++; eat--; continue; }
-      if (b < breaks.length && breaks[b].at === start + at) {
-        out += plainHtml(s, piece) + `\n${' '.repeat(breaks[b].indent)}`;
+    for (let i = 0; i < s.text.length; i++) {
+      if (b < breaks.length && breaks[b].at === start + i) {
+        if (piece) row.html += plainHtml(s, piece);
         piece = '';
-        eat = breaks[b++].eat;
-        continue;
+        newRow(breaks[b++]);
       }
-      piece += s.text[at++];
+      if (eat) { eat--; continue; }
+      if (lead && s.text[i] === ' ') { row.indent++; continue; }
+      lead = false;
+      if (!drops.has(start + i)) piece += s.text[i];
     }
-    if (piece) out += plainHtml(s, piece);
+    if (piece) row.html += plainHtml(s, piece);
   }
-  return out;
+  rows.push(row);
+  return rows.map((r) => `<span class="wl" style="--i:${r.indent}">${r.html}</span>`).join('');
 }
 
 /**
@@ -445,7 +462,7 @@ export function lineHtml(line, ctx = {}, breaks = []) {
  * address gutter, tokens as `.t` spans carrying their kind, symbol, address,
  * callee, global address and type. The preamble's rows are `.d2-ty`, under a
  * heading that folds them. `ctx`: `{index, segs, preamble, fnByName, globalsByName,
- * breaksOf}` (`breaksOf(i)`: where line i wraps).
+ * planOf}` (`planOf(i)`: how line i wraps, or null).
  */
 export function renderC(fnData, ctx = {}) {
   const segs = ctx.segs || lineSegments(fnData).segs;
@@ -468,7 +485,7 @@ export function renderC(fnData, ctx = {}) {
     out += `<div class="d2-cl${i < preamble ? ' d2-ty' : ''}" id="c-L${n}" role="option" data-line="${n}"` +
       `${attr('data-addrs', addrs.join(' '))}${attr('data-band', band)}>` +
       `<span class="ln">${n}</span><span class="la">${escapeHtml(bare(addrs[0]))}</span><span class="ct">` +
-      `${lineHtml(line, ctx, i < preamble ? [] : ctx.breaksOf?.(i) || [])}</span></div>`;
+      `${lineHtml(line, ctx, i < preamble ? null : ctx.planOf?.(i) || null)}</span></div>`;
   });
   return out + '</div>';
 }

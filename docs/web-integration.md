@@ -583,7 +583,7 @@ source tree):
 | `groups.js` | the function list's three groups and the function to open first |
 | `bytes-view.js` / `arch.js` | the hex dump and the patched file; no-op fills |
 | `mnemonics.js` / `stack-frame.js` / `xrefs-view.js` / `help.js` | instruction notes and idioms; the frame diagram; calls and callers in words and the `x` cross-references dialog; the help dialog |
-| `wrap-c.js` / `tags.js` | where a long C line breaks; kuna's end-of-line notes (`// branch-flip`, `// early-return x10`) in words for the Explain panel and the hover card |
+| `wrap-c.js` / `tags.js` | where a long C line splits (the Hex-Rays rules); kuna's end-of-line notes (`// branch-flip`, `// early-return x10`) in words for the Explain panel and the hover card |
 | `strings-view.js` | the sidebar's Strings list: its three groups, the users of each string, the search and the row cap |
 | `prefs.js` / `addr.js` | view settings (`kuna.d2.prefs`, v3 with the v1 and v2 migrations) and `hintsOn`; addresses as hex strings and BigInt |
 | `collab/` | *Working together* (below), loaded with a dynamic `import()` only when a session starts or an invite or reply link is opened: `collab.js` (dialogs, the roster, following), `sync.js` (the page's side: the Session ⇄ register sync, joining and leaving, where a session is stored), `group.js` (the protocol: hello, snapshots, relayed introductions, file transfer, digests, limits), `link.js` (WebRTC and BroadcastChannel links), `replica.js` (registers, `validOp`, digests, the register-based undo), `wire.js` (messages and their checks, invite and reply codes), `sdp.js`, `presence.js` (pointers and pings), `collab.css`; all but `collab.js`, `link.js` and `presence.js` are DOM-free (SHA-256 is `../sha256.js`, shared with the page) |
@@ -625,17 +625,21 @@ passed off as the engine's: a dashed band, `data-inferred="1"`, and the card rea
 The heading mode draws the same runs as blocks: one heading per C line, and "Function
 setup" over the frame set-up.
 
-**Long lines.** The C pane wraps a line wider than the pane (`wrap-c.js`, pref `cWrap`,
-View options' "Wrap long lines to fit", default on). The line is read as nested bracket
-groups; a group that does not fit breaks at its loosest operators first (`;`, then `,`,
-`?:`, `||`, `&&`, `|` … `*`), all of that kind at once, and its continuation rows line up
-after its opening bracket; only then are the pieces and the groups inside them broken,
-a piece's own continuation four columns in from it. An assignment's `=` breaks only when
-breaking inside its right-hand side cannot make the line fit; strings and comments never
-break. The breaks are a newline and spaces inside the row's `.ct`, so a wrapped line is
-still one `.d2-cl` row with one line number, and selection, hover and the line index are
-unchanged. The width is measured from the pane, and a `ResizeObserver` re-wraps only the
-rows that change when the pane is resized.
+**Long lines.** The C pane splits a long line the way Hex-Rays does at its right margin
+(`wrap-c.js`, pref `cWrap`, View options' "Wrap long lines to fit", default on). A line
+splits once it is longer than 120 columns (Hex-Rays' `RIGHT_MARGIN`) or than the pane, when
+that is narrower, and only three things split: a `&&`/`||` chain puts each operand on its
+own row with the operator leading it (four columns in from the statement, or after the
+bracket of a nested chain), a call puts each argument on its own row two columns in from
+the call's name (a signature's parameters eight in, a call through a pointer counts), and
+a comma list puts each element on its own row after its bracket. An argument or operand
+that fits stays whole. A chain nested in redundant brackets of the same operator
+(`((a && b) && c)`) is read as one chain, and those brackets are left out of the display.
+Arithmetic, casts, assignments, strings and comments never split, as in Hex-Rays and angr;
+a row still wider than the pane soft-wraps under a hanging indent four columns in (each row
+is a `.wl` block whose indent is padding). A split line is still one `.d2-cl` row with one
+line number, so selection, hover and the line index are unchanged. The width is measured
+from the pane, and a `ResizeObserver` re-lays only the rows that change.
 
 In side by side every operand cell carries its full text as a `title`, and `b` toggles
 the bytes column for the current layout (each layout keeps its own setting).
@@ -1081,7 +1085,8 @@ skips it as too costly):
    escaping, the index, the diff, assembly rows as comments and as headings, the easy
    spelling and the exact one, branch arrows, hover placement, the settings and their
    version-1 migration, the type definitions above a function), **`test/decompile-wrap.mjs`**
-   (where long C lines break and that only spaces are replaced, kuna's end-of-line notes in
+   (where long C lines split under the Hex-Rays rules, that only spaces and redundant
+   brackets go, the rows' hanging blocks, kuna's end-of-line notes in
    words, the `x` dialog's helpers, instruction grouping by basic block from `flow`),
    **`test/decompile-groups.mjs`** (which group a function lands
    in, `main` first, the function opened first),
