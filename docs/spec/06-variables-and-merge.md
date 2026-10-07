@@ -1267,7 +1267,10 @@ part of it, holding every slot its guard keeps from that address to its reach
 the wrong stride. A pointer that comes from the stack base along a path
 `pointer_pieces` cannot resolve (`p = n >= 16 ? alloca(n * 8) : buf`) fails:
 no layout check can see the array it indexes, and the guard left `buf` as
-scalars the C indexed past (`v1 = &v3; v1[a1 & 3] = 3`). A loop's pointer walk
+scalars the C indexed past (`v1 = &v3; v1[a1 & 3] = 3`); that holds for a loop
+walk too. At an address of a choice that has no index of its own and is stored
+through as it is (`*p = x` for `p = c ? &a : &b`), one local must hold the
+store's bytes (`kuna_storereach.rs (is_choice)`). A loop's pointer walk
 (`kuna_storereach.rs (loop_walk)`, such as a zeroing loop over a struct's first
 field) prints as `*p = 0`, not through the local; the final check below keeps
 the arrays it goes through whole.

@@ -619,9 +619,11 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
 /// INDIRECTs keep from there to its reach? A scalar, or an array of wider
 /// elements, makes the C index past the local (`(&v1)[a1] = 3`) or with the
 /// wrong stride. A pointer the checks cannot follow from the stack base (a
-/// choice between the frame and `alloca`'d stack) fails. A loop's pointer walk
-/// (whose arrays `guard_shortens` checks), a byte store (written through a
-/// byte pointer, `((char *)v1)[i]`, and checked by the byte reaches), or one no
+/// choice between the frame and `alloca`'d stack) fails. At an address of a
+/// choice with no index of its own, stored through as it is (`*p = x` for `p =
+/// c ? &a : &b`), one local must hold the store's bytes. A loop's pointer walk
+/// (whose arrays `guard_shortens` checks), a byte store (written through a byte
+/// pointer, `((char *)v1)[i]`, and checked by the byte reaches), or one no
 /// longer live, passes.
 fn indexes_own_array(
     fd: &Funcdata,
@@ -653,10 +655,11 @@ fn indexes_own_array(
         .map(|&(off, extra)| (sign_extend(space.wrap_offset(off) as intb, bits), extra))
         .collect();
     bases.sort_unstable();
-    let choice = bases.len() > 1;
+    let choice = through_walk(fd, ptr, 0);
+    let direct = choice && is_choice(fd, ptr);
     bases.iter().enumerate().all(|(k, &(base, extra))| {
-        if choice && extra == Some(0) {
-            return true;
+        if choice && (extra == Some(0) || (direct && extra.is_none())) {
+            return symbols.iter().any(|&(s, e, _)| s <= base && base + width as intb <= e);
         }
         let end = match extra {
             Some(x) if choice => base + x + width as intb,
@@ -671,6 +674,26 @@ fn indexes_own_array(
             .is_some_and(|el| el.get_size() > 0 && el.get_size() <= width && width % el.get_size() == 0)
             && slots.is_none_or(|slots| slots.iter().filter(reached).all(|&(_, hi)| hi <= *e))
     })
+}
+
+/// Is `vn`, through copies, casts and INDIRECTs, the output of a MULTIEQUAL:
+/// a choice of addresses with no index applied after it?
+fn is_choice(fd: &Funcdata, vn: VarnodeId) -> bool {
+    let mut cur = vn;
+    for _ in 0..12 {
+        let Some(op) = fd.vbank().get(cur).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else {
+            return false;
+        };
+        match op.code() {
+            OpCode::CPUI_MULTIEQUAL => return true,
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => match op.get_in(0) {
+                Some(i) => cur = i,
+                None => return false,
+            },
+            _ => return false,
+        }
+    }
+    false
 }
 
 /// Does `vn`'s pointer chain pass a MULTIEQUAL one of whose inputs steps from
