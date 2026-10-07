@@ -10,9 +10,10 @@
     true for -0.0 against 0.0. The ordered integer compares already
     reinterpreted the float. Now the equality compares the bits as an integer
     too, through the union reinterpretation, with the constant in hex, unless
-    the other side is a constant whose float comparison is exact (a normal
-    number or an infinity whose literal C reads back as that value): the bits
-    of 1.0f keep a0 == 1.0. A FLOAT_EQUAL / FLOAT_NOTEQUAL stays a == b.
+    a float comparison is exact: against a normal number or an infinity whose
+    literal C reads back as that value (the bits of 1.0f keep a0 == 1.0), or
+    against +0.0 when the other side is an ABS (ABS(a0) == 0.0). A FLOAT_EQUAL
+    or FLOAT_NOTEQUAL stays a == b.
 
     The XML wrapper only provides the harness architecture. The script loads
     floateq.c (source beside the fixtures) built by gcc -O2 and clang -O2 for
@@ -43,6 +44,9 @@ c3
   <com>load function fq_dqnan</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function fq_abszero</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>load function fq_one</com>
   <com>decompile</com>
   <com>print C</com>
@@ -68,6 +72,9 @@ c3
   <com>decompile</com>
   <com>print C</com>
   <com>load function fq_dqnan</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_abszero</com>
   <com>decompile</com>
   <com>print C</com>
   <com>load function fq_one</com>
@@ -97,6 +104,9 @@ c3
   <com>load function fq_dqnan</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function fq_abszero</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>load function fq_one</com>
   <com>decompile</com>
   <com>print C</com>
@@ -118,6 +128,9 @@ c3
   <com>load function fq_two</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function fq_abszero</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>load function fq_one</com>
   <com>decompile</com>
   <com>print C</com>
@@ -131,8 +144,9 @@ c3
 <stringmatch name="FLOATEQ #3: two floats' bits both reinterpret" min="4" max="4">\{ \.from = a0 \}\)\.to [!=]= \(\(union \{ float from; unsigned int to; \}\)\{ \.from = a1 \}\)\.to\)</stringmatch>
 <stringmatch name="FLOATEQ #4: the bits of a double's -0.0 compare as an integer" min="3" max="3">\(\(union \{ double from; unsigned long long to; \}\)\{ \.from = a0 \}\)\.to [!=]= 0x8000000000000000\)</stringmatch>
 <stringmatch name="FLOATEQ #5: a double's quiet NaN pattern compares as an integer" min="3" max="3">\(\(union \{ double from; unsigned long long to; \}\)\{ \.from = ABS\(a0\) \}\)\.to [!=]= 0x7ff8000000000000\)</stringmatch>
-<stringmatch name="FLOATEQ #6: no float comparison with -0.0 or NAN is left" min="0" max="0">[!=]= -?(0\.0|NAN)\b</stringmatch>
+<stringmatch name="FLOATEQ #6: no float comparison with -0.0 or NAN is left" min="0" max="0">[!=]= (-0\.0|-?NAN)\b</stringmatch>
 <stringmatch name="FLOATEQ #7: the bits of 1.0f keep the exact float comparison" min="4" max="4">if \(a0 [!=]= 1\.0\)</stringmatch>
+<stringmatch name="FLOATEQ #10: the magnitude's bits against zero keep the exact float comparison" min="4" max="4">if \(ABS\(a0\) [!=]= 0\.0\)</stringmatch>
 <stringmatch name="FLOATEQ #8: a float == stays a float comparison" min="4" max="4">\(?a0 == a1\)?( &amp; 1)?;</stringmatch>
 <stringmatch name="FLOATEQ #9: a double != stays a float comparison" min="3" max="3">\(?a0 != a1\)?( &amp; 1)?;</stringmatch>
 </decompilertest>

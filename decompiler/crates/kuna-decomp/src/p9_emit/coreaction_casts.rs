@@ -519,7 +519,7 @@ fn get_input_cast_equal(
     };
     if reqtype.get_metatype() == type_metatype::TYPE_FLOAT
         && matches!(reqtype.get_size(), 4 | 8)
-        && ![in0, in1].into_iter().any(|v| crate::kuna_floatbits::compares_as_a_float(data, v))
+        && !float_compare_is_exact(data, in0, in1)
     {
         reqtype = float_bits_type(data, &[type0, othertype], reqtype.get_size())?;
     }
@@ -536,10 +536,22 @@ fn get_input_cast_equal(
     strat.cast_standard(&reqtype, &slottype, false, false)
 }
 
+/// (kuna) Does a C float `==` of `a` and `b` decide what their bit test does?
+/// Only against a constant whose literal spells the value exactly (a normal
+/// number or an infinity), or against `+0.0` when the other side is an `ABS`,
+/// which can be neither `-0.0` nor equal to zero as a NaN.
+fn float_compare_is_exact(data: &Funcdata, a: VarnodeId, b: VarnodeId) -> bool {
+    let zero_against_abs = |c: VarnodeId, v: VarnodeId| {
+        data.vbank().get(c).is_some_and(|n| n.is_constant() && n.get_offset() == 0)
+            && data.vbank().get(v).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d))
+                .is_some_and(|o| o.code() == OpCode::CPUI_FLOAT_ABS)
+    };
+    [(a, b), (b, a)].into_iter().any(|(c, v)| crate::kuna_floatbits::compares_as_a_float(data, c) || zero_against_abs(c, v))
+}
+
 /// (kuna) The integer type an `INT_EQUAL`/`INT_NOTEQUAL` with a float input
 /// compares its bits as: the integer input's type, else `uint` of the width.
-/// A C `==` on floats differs from the bit test for -0.0, NaNs and NaN constants,
-/// so only a constant whose float comparison is exact keeps the float.
+/// A C `==` on floats differs from the bit test for -0.0, NaNs and NaN constants.
 fn float_bits_type(data: &Funcdata, types: &[Rc<Datatype>], size: int4) -> Option<Rc<Datatype>> {
     if let Some(t) = types.iter().find(|t| {
         t.get_size() == size && matches!(t.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT)

@@ -12,6 +12,7 @@ int fq_qnan(float x) { fu v = { x }; if ((v.u & 0x7fffffffu) == 0x7fc00000u) ret
 int fq_two(float x, float y) { fu a = { x }, b = { y }; if (a.u != b.u) return 3; return (int)(x - y); }
 int fq_dnegzero(double x) { du v = { x }; if (v.u == 0x8000000000000000ull) return 5; return (int)x; }
 int fq_dqnan(double x) { du v = { x }; if ((v.u & 0x7fffffffffffffffull) == 0x7ff8000000000000ull) return 5; return (int)x; }
+int fq_abszero(float x) { fu v = { x }; if ((v.u & 0x7fffffffu) == 0) return 6; return (int)x; }
 int fq_one(float x) { fu v = { x }; if (v.u == 0x3f800000u) return 4; return (int)x; }
 int fq_feq(float x, float y) { return x == y; }
 int fq_dfne(double x, double y) { return x != y; }
