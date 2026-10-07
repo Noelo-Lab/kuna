@@ -1,5 +1,5 @@
 //! Recompile stores whose pointers resolve after their memory SSA guards exist.
-mod common;
+use crate::common;
 use common::process;
 use std::collections::BTreeSet;
 use std::process::Command;

@@ -10,7 +10,7 @@
 //! it): two and three independent register locals, two stack locals, and one of
 //! each.
 
-mod common;
+use crate::common;
 
 /// The decompiled C and the rejected directives of one run, from the text
 /// surface and from `--json`.  Both must agree before either is returned.

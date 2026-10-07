@@ -3,7 +3,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Output};
 
-mod common;
+use crate::common;
 
 fn run(document: &str, save_first: bool) -> Output {
     let baseline = common::scratch_file("baseline", "json");

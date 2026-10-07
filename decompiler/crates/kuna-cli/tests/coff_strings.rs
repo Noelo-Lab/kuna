@@ -7,7 +7,7 @@ use object::{
 };
 use serde_json::Value;
 
-mod common;
+use crate::common;
 
 fn image() -> Vec<u8> {
     let mut obj = Object::new(BinaryFormat::Coff, Architecture::X86_64, Endianness::Little);

@@ -6,7 +6,7 @@
 //!
 //! Integration tests require the built processor specs under `specs/`.
 
-mod common;
+use crate::common;
 
 use common::process;
 

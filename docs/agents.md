@@ -65,6 +65,14 @@ The Rust test profile uses optimization level 1 for real-image tests, with debug
 assertions and integer-overflow checks enabled. Ordinary development builds retain
 Cargo's unoptimized default.
 
+Most integration-test files are modules of one `integration` executable per crate.
+Run a focused module with `cargo test -p PACKAGE --test integration MODULE::`.
+When adding a test file, register it in `tests/integration.rs`; `make rust-test`
+checks that every source file is registered exactly once. Tests that mutate
+process-global state, relaunch themselves by exact test name, or provide a
+publicly documented target remain separate `[[test]]` entries. Shared scratch
+helpers belong to the suite root so their filename counters stay unique.
+
 - **Never re-pin `docs/baseline.json` to absorb a regression** — fix the code or make the
   change opt-in. The only sanctioned re-pins are an intentional upstream sync or a
   deliberate default change, and the commit message says which (`kuna test --save-baseline`).

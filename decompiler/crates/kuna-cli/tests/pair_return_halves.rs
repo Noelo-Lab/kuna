@@ -2,7 +2,7 @@
 //! low word (`add r0,r0,#3; asr r1,r0,#31`), or whose low word is the argument
 //! left in its register (`mov r1,#0; bx lr`), returns all eight bytes. Both
 //! printed as `void f(void)`, so a caller of the printed C read nothing.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolFlags, SymbolKind, SymbolScope};

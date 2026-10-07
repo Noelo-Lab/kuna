@@ -2,7 +2,7 @@
 //! gets that result from the call. `bl full; uxtb r0,r1` overwrites `r0`
 //! unread, and the read of `r1` printed as a local nothing assigns beside a
 //! bare `full(a0);`, so the printed C computed garbage.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolFlags, SymbolKind, SymbolScope};

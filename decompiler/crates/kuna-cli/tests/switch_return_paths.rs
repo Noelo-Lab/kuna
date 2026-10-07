@@ -1,6 +1,6 @@
 #![cfg(all(target_arch = "x86_64", target_os = "linux"))]
 
-mod common;
+use crate::common;
 
 use common::process;
 use std::process::Command;

@@ -1,7 +1,7 @@
 //! A table of pointers whose first entry's bytes happen to be printable is
 //! still the table: the printed C indexes, passes and stores its address, never
 //! a short string literal.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 

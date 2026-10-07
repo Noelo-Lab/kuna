@@ -6,7 +6,7 @@
 //! in a loop, before a call, before a shared return block, and when the global
 //! is stored again; a function with more pointer stores than heritage guards
 //! keeps the output of `indexaliasguard load`.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 

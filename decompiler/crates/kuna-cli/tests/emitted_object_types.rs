@@ -1,5 +1,5 @@
 //! Runtime checks for scalar objects reached through saved pointers.
-mod common;
+use crate::common;
 use common::process;
 
 use object::write::{Object, Symbol, SymbolSection};

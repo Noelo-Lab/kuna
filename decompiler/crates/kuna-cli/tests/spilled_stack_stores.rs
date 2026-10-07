@@ -1,5 +1,5 @@
 //! A pointer spilled to a stack slot keeps later reads linked to its writes.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 

@@ -2,7 +2,7 @@
 
 #[path = "common/arm_images.rs"]
 mod arm_images;
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 use std::process::{Command, Output};

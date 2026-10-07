@@ -4,7 +4,7 @@
 //! register (`-fzero-call-used-regs`) returns the one its callers read. The
 //! fixture holds gcc and clang -O2 builds of each; the printed C is compiled
 //! against it and compared with it. A function nothing reads stays `void`.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 

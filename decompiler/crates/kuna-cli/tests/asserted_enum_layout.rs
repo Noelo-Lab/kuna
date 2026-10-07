@@ -1,7 +1,7 @@
 //! An `enum` stated with `--assert` is laid out and numbered as C lays it out:
 //! `int`-wide unless a constant needs more, its unvalued constants counting on
 //! from the one before, and as wide as a C23 underlying type when it names one.
-mod common;
+use crate::common;
 use common::process;
 
 use object::write::{Object, Symbol, SymbolSection};

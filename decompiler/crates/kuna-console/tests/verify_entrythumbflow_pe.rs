@@ -5,7 +5,7 @@
 //! with its machine word rewritten from `THUMB` (painted wholly Thumb by the
 //! Windows reading) to `ARM`.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

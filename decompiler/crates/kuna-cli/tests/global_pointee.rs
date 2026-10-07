@@ -1,7 +1,7 @@
 //! A pointer the binary stores to a global and keeps using from its register
 //! is dereferenced through its own variable, so the printed C means the same
 //! whatever type the global is declared with.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 

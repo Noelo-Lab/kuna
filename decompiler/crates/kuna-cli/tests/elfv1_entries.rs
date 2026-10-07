@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
 use std::process::Command;

@@ -3,7 +3,7 @@
 
 use serde_json::{Map, Value as Json};
 
-mod common;
+use crate::common;
 use common::{fixture, repo_root, run_kuna};
 
 /// The vendored non-stripped x86-64 `fauxware`: named functions and a `.rodata`

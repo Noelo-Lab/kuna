@@ -8,7 +8,7 @@
 #[path = "common/arm_images.rs"]
 #[allow(dead_code)]
 mod arm_images;
-mod common;
+use crate::common;
 
 const HELPER: [u32; 2] = [0xe2800001, 0xe12fff1e];
 

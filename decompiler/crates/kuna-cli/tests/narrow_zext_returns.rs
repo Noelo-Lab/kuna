@@ -4,7 +4,7 @@
 //! byte of unknown type read as `short` or `char`, and `u16_inc() * b >> 16`
 //! sign-extended the 0x8000 the binary returns as 32768. A RETURN that block
 //! duplication copies into each exit keeps the record (`h_loop` on PowerPC).
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 

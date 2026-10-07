@@ -5,7 +5,7 @@
 //! the printed C and compared with the source, as is a RISC-V 32 shift whose
 //! zero-shift path moves only the high word back; the 128-bit AArch64 and
 //! x86-64 returns print as a byte container, so those are checked by their text.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{

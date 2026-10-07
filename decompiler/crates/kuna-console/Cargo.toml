@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "kuna-console"
 description = "kuna Rust port: console front-end (decomp_dbg)"
 version.workspace = true
@@ -40,3 +41,63 @@ path = "src/bin/decomp_dbg.rs"
 # `kuna-console` (not the reverse), so the binary that needs both is produced
 # there.  It still builds to `target/<profile>/decomp_test_dbg` (the path the
 # Python `kuna/run_tests.py` resolves), unchanged.
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[[test]]
+name = "verify_dwarfstructs"
+path = "tests/verify_dwarfstructs.rs"
+
+[[test]]
+name = "verify_dwarfvariants"
+path = "tests/verify_dwarfvariants.rs"
+
+[[test]]
+name = "verify_fid"
+path = "tests/verify_fid.rs"
+
+[[test]]
+name = "verify_libctypes_glibc_target"
+path = "tests/verify_libctypes_glibc_target.rs"
+
+[[test]]
+name = "verify_macho_fat"
+path = "tests/verify_macho_fat.rs"
+
+[[test]]
+name = "verify_msvcfpconst"
+path = "tests/verify_msvcfpconst.rs"
+
+[[test]]
+name = "verify_pdatachained"
+path = "tests/verify_pdatachained.rs"
+
+[[test]]
+name = "verify_pdb"
+path = "tests/verify_pdb.rs"
+
+[[test]]
+name = "verify_relocrebase_gate"
+path = "tests/verify_relocrebase_gate.rs"
+
+[[test]]
+name = "verify_rexthunk"
+path = "tests/verify_rexthunk.rs"
+
+[[test]]
+name = "verify_symbolnamebound"
+path = "tests/verify_symbolnamebound.rs"
+
+[[test]]
+name = "verify_symbolnamechars"
+path = "tests/verify_symbolnamechars.rs"
+
+[[test]]
+name = "verify_symbolnamerepair"
+path = "tests/verify_symbolnamerepair.rs"
+
+[[test]]
+name = "verify_typedepth"
+path = "tests/verify_typedepth.rs"

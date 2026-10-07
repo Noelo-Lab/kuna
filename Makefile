@@ -88,6 +88,7 @@ test-cli:
 	PYTHONPATH=$(ROOT) python3 -m scripts.repipe.clitests
 
 test-tools:
+	$(PYTHON) scripts/check_test_layout.py
 	PYTHONPATH=$(ROOT) $(PYTHON) -m unittest discover -s $(ROOT)/scripts/tests -p 'test_*.py'
 
 # Print the repo version as MAJOR.MINOR (VERSION file + commit count -- the
@@ -98,6 +99,7 @@ version:
 # The Rust workspace's own unit/integration tests (the ported TEST() suites, the
 # golden differential vectors, the SLEIGH-compiler .sla content-parity tests, ...).
 rust-test:
+	$(PYTHON) scripts/check_test_layout.py
 	cd $(ENGINE) && cargo test --workspace --no-fail-fast
 
 # One invocation: a crate an earlier `--no-deps` run checked only as a dependency

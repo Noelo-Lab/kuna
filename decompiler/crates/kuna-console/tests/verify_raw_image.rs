@@ -1,6 +1,6 @@
 //! Headerless raw-image bootstrap and address-translation regressions.
 
-mod common;
+use crate::common;
 
 use std::io::Write;
 use std::path::PathBuf;
