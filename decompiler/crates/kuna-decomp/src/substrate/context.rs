@@ -831,6 +831,14 @@ pub struct ArchContext {
     /// Read by
     /// [`ActionCallTargetType`](crate::kuna_calltargettype::ActionCallTargetType).
     pub call_target_type: bool,
+    /// (kuna `floatglobals`) The globals the program only moves through float
+    /// registers, once the scan has run; read by
+    /// [`float_only`](crate::kuna_floatglobals::float_only).
+    pub float_globals: Option<Rc<crate::kuna_floatglobals::FloatGlobals>>,
+    /// (kuna `floatglobals`) The option is on and the scan can run but has not.
+    pub float_globals_pending: bool,
+    /// (kuna `floatglobals`) A vote asked while the scan was pending.
+    pub float_globals_wanted: std::cell::Cell<bool>,
     /// (kuna `codescalar`) Refuse a `code` pointee as the data-type of a
     /// dereferenced value; mirrors
     /// [`Architecture::codescalar`](crate::architecture::Architecture).
@@ -1007,6 +1015,10 @@ pub struct ArchContext {
     /// callee's own body reads them (`calleereadarg`).  Read by
     /// [`crate::p4_calls::kuna_calleereadarg::capture`].
     pub callee_read_arg: bool,
+    /// (kuna) drop the zero fill a narrow write leaves in the upper half of a
+    /// returned vector register (`zerofillreturn`).  Read by
+    /// [`crate::p4_calls::kuna_zerofillreturn::drop_zero_fill`].
+    pub zero_fill_return: bool,
     /// (kuna) narrow a call's `killedbycall` set to the registers a bounded
     /// decode of the callee's own body proves it writes (`calleepreserves`).
     /// Read by `Heritage::guard_calls` through
@@ -1134,6 +1146,10 @@ pub struct ArchContext {
     /// Levels in [`crate::p3_dataflow::kuna_indexaliasguard`]; read by
     /// [`Heritage::guard`](crate::p3_dataflow::heritage::Heritage).
     pub index_alias_guard: int4,
+    /// (kuna) `option arrayextent off|bound|on`: how far the open range at an
+    /// indexed stack base reaches past upstream's four elements. Levels in
+    /// [`crate::p6_variables::kuna_arrayextent`]; read by `gather_open`.
+    pub array_extent: int4,
     /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
     /// `RulePropagateCopy` marker propagation that would leave an address-tied
     /// `COPY` output holding a call's return value with no readers, so a
@@ -1272,6 +1288,9 @@ pub struct ArchContext {
     /// selector. Checked during [`lowered-switch detection`](crate::kuna_loweredswitch::ActionLowerSwitchDetect::detect).
     pub switch_selector_guard: bool,
     pub cond_fold: int4,
+    /// (kuna) `condstmts`: most statements a folded condition operand may print
+    /// before its test; negative = off.  See [`crate::p8_structure::kuna_condstmts`].
+    pub cond_stmts: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
@@ -1682,6 +1701,9 @@ impl ArchContext {
             rodata_string: false,        // (kuna) rodatastring
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
             call_target_type: false,     // (kuna) option calltargettype
+            float_globals: None,         // (kuna) option floatglobals
+            float_globals_pending: false,
+            float_globals_wanted: std::cell::Cell::new(false),
             struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode::Locals, // (kuna) option structsynth, default `locals`; the real value is copied from the engine Architecture in `build_arch_handle`
             struct_synth_shard: None,
             struct_merge: crate::p5_types::kuna_structmerge::StructMergeMode::Off, // (kuna) option structmerge, default `off`; the real value is copied from the engine Architecture in `build_arch_handle`
@@ -1750,6 +1772,7 @@ impl ArchContext {
             callee_dead_arg: true,
             hidden_ret_arg: true,
             callee_read_arg: true,       // calleereadarg (default-on)
+            zero_fill_return: true,
             callee_preserves: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)
@@ -1770,6 +1793,7 @@ impl ArchContext {
             cond_exe_ret_use: true,      // condexeretuse (default-on)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
+            array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
@@ -1794,6 +1818,7 @@ impl ArchContext {
             peb_names: false,
             switch_selector_guard: false, // switchselector (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
+            cond_stmts: -1,              // condstmts (-1 = off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
@@ -2143,6 +2168,13 @@ impl ArchContext {
     ) -> Option<(String, int4, Option<std::rc::Rc<crate::dtype::Datatype>>)> {
         self.effective_global_query(addr)
             .and_then(|gq| gq.name_for_varnode(addr, size, usepoint))
+    }
+
+    /// The first offset and size of the smallest global Symbol whose storage
+    /// holds `addr`, if any.
+    pub(crate) fn global_symbol_extent(&self, addr: &Address) -> Option<(u64, int4)> {
+        self.effective_global_query(addr)
+            .and_then(|gq| gq.find_container_entry(addr, 1, &Address::default()).map(|e| (e.first, e.size)))
     }
 
     /// Like [`name_for_global_varnode`](Self::name_for_global_varnode) but also

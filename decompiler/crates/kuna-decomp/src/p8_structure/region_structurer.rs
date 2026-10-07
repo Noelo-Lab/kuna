@@ -183,7 +183,10 @@ pub fn run_region_structurer(data: &mut Funcdata) -> KunaResult<(bool, Vec<Block
     // (and unbuilt) when the option is off, so OFF is byte-identical.
     let condfold_sets = crate::p8_structure::kuna_condfold::compute_condfold_sets(
         data,
-        data.get_arch().cond_fold,
+        crate::p8_structure::kuna_condstmts::condfold_budget(
+            data.get_arch().cond_fold,
+            data.get_arch().cond_stmts,
+        ),
     );
 
     // ---- 1d. Read the cyclic loop-successor refinement gate (regionlooprefine) -
@@ -299,8 +302,7 @@ fn compute_switch_maps(
 /// through [`RegionStructurer::is_complex`] (the kuna analog of
 /// `CollapseStructure::is_complex`, gating `ruleBlockOr`).
 fn compute_complex_blocks(data: &Funcdata) -> std::collections::BTreeSet<BlockId> {
-    let mut complex_blocks: std::collections::BTreeSet<BlockId> =
-        std::collections::BTreeSet::new();
+    let mut complex_blocks = crate::p8_structure::kuna_condstmts::complex_blocks(data);
     let nbb = data.bblocks_get_size();
     for i in 0..nbb {
         let bb = data.bblocks_get_block(i);

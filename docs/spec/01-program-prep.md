@@ -4840,8 +4840,13 @@ later AIF scans and prefix replacements cannot restart the same stale retry.
 Pointer and pool checks continue to use the partition preceding the AIF rewalk.
 Frame and AIF probes are scoped, and original-context prefix validation remains
 separate from the expanded fingerprint corpus. Scoped read and write policies
-are restored on exit. Recovery-disabled and non-ARM walks retain their existing
-context behavior.
+are restored on exit. Ordinary ARM AIF scans, including recovery-disabled xref
+gap scans and their fingerprint rendering, also run in a context scope. Speculative
+`TMode` writes are masked while other fields, including Thumb IT state, remain
+active inside the scan. Dropping the scope restores values, write boundaries,
+and read/write policies on every exit. Accepted entries are returned as facts;
+the subsequent real walk supplies their interworking effects. Non-ARM walks
+retain their existing context behavior.
 
 A focus preceding its frame claims
 the reachable push as body code before it can become a boundary; an earlier

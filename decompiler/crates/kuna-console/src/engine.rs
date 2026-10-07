@@ -414,6 +414,37 @@ impl kuna_sleigh::translate::PcodeEmit for OneShotPcodeEmit {
     }
 }
 
+/// The kind of control transfer an instruction makes, strongest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FlowKind {
+    Return,
+    JumpInd,
+    Jump,
+    CondJump,
+    Call,
+    CallInd,
+}
+
+impl FlowKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FlowKind::Return => "return",
+            FlowKind::JumpInd => "jumpind",
+            FlowKind::Jump => "jump",
+            FlowKind::CondJump => "cjump",
+            FlowKind::Call => "call",
+            FlowKind::CallInd => "callind",
+        }
+    }
+}
+
+/// [`ConsoleProgram::insn_flow`]'s answer: how one instruction passes control on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InsnFlow {
+    pub kind: FlowKind,
+    pub targets: Vec<u64>,
+}
+
 /// The console's loaded program: the engine assembly (C++ `dcp->conf`, an
 /// `XmlArchitecture : Architecture`) plus the console-owned marshaling registry
 /// and option database the `option` command needs.
@@ -1735,6 +1766,50 @@ impl ConsoleProgram {
         }
     }
 
+    /// How the instruction at `vma` passes control on, read from its own
+    /// p-code: the strongest flow op it holds (return, then indirect jump,
+    /// then jump, then conditional jump, then call) and the code addresses
+    /// its direct jumps and calls name. A branch within the instruction's own
+    /// p-code is not flow. `None` when it does not decode or does not flow.
+    pub fn insn_flow(&self, vma: u64) -> Option<InsnFlow> {
+        let code_space = Rc::clone(self.arch().manage().get_default_code_space()?);
+        let addr = Address::new(code_space, vma);
+        let mut emit = OneShotPcodeEmit::default();
+        let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.arch().translate().one_instruction(&mut emit, &addr)
+        }));
+        if !matches!(decoded, Ok(Ok(_))) {
+            return None;
+        }
+        let code_target = |in0: &Option<VarnodeData>| {
+            let v = in0.as_ref()?;
+            let space = v.space.as_ref()?;
+            (space.get_type() != kuna_base::space::spacetype::IPTR_CONSTANT).then_some(v.offset)
+        };
+        let mut kind: Option<FlowKind> = None;
+        let mut targets = Vec::new();
+        for (opc, in0) in &emit.ops {
+            let (k, target) = match opc {
+                OpCode::CPUI_RETURN => (FlowKind::Return, None),
+                OpCode::CPUI_BRANCHIND => (FlowKind::JumpInd, None),
+                OpCode::CPUI_BRANCH => match code_target(in0) {
+                    Some(t) => (FlowKind::Jump, Some(t)),
+                    None => continue,
+                },
+                OpCode::CPUI_CBRANCH => match code_target(in0) {
+                    Some(t) => (FlowKind::CondJump, Some(t)),
+                    None => continue,
+                },
+                OpCode::CPUI_CALL => (FlowKind::Call, code_target(in0)),
+                OpCode::CPUI_CALLIND => (FlowKind::CallInd, None),
+                _ => continue,
+            };
+            targets.extend(target);
+            kind = Some(kind.map_or(k, |old| old.min(k)));
+        }
+        kind.map(|kind| InsnFlow { kind, targets })
+    }
+
     /// (kuna) Add the fixed addresses the instruction at `vma` names — the
     /// constant locations it reads and the constant addresses it branches or
     /// calls to — to `into`.
@@ -2647,7 +2722,32 @@ impl ConsoleProgram {
         // terms: see `suppress_pdb_interior_entries`.
         suppress_pdb_interior_entries(self.arch(), &code_space, &mut merged);
         merged.context_paints.extend(input_context_paints);
-        commit_analysis_output(self, &code_space, merged)
+        let committed = commit_analysis_output(self, &code_space, merged);
+        self.stash_float_scan();
+        committed
+    }
+
+    /// (kuna `floatglobals`) Hand the engine what the whole-program float-global
+    /// scan reads -- the image's sections and every function entry -- so the
+    /// first function that asks can take it (`decompile_step`).
+    fn stash_float_scan(&mut self) {
+        let mut sections = self.sections();
+        if sections.is_empty() {
+            sections = self.segments();
+        }
+        if sections.is_empty() {
+            return;
+        }
+        let mut seeds: Vec<u64> = self
+            .symbols
+            .iter()
+            .filter(|s| s.addr.get_space().is_some())
+            .map(|s| self.thumb_normalized(s.addr.get_offset()))
+            .collect();
+        seeds.sort_unstable();
+        seeds.dedup();
+        self.arch_mut().kuna_float_scan =
+            Some(Rc::new(kuna_decomp::kuna_floatglobals::FloatScan { sections, seeds }));
     }
 }
 

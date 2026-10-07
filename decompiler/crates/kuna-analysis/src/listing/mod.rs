@@ -33,6 +33,7 @@ pub mod context;
 pub mod decode;
 pub mod kuna_callbackentry;
 pub mod kuna_entrythumbflow;
+pub mod kuna_floatglobals;
 pub mod kuna_pdecode;
 pub mod kuna_rawdiscover;
 pub mod kuna_tailcallentry;

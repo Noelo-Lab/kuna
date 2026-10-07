@@ -279,7 +279,10 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
         if hands_on(data, result) {
             handed.insert(callee);
         }
-        if arch.kuna_voidret.returns.get(&callee) == Some(&Returns::Float) && !held_as_float(data, outvn, result) {
+        if arch.kuna_voidret.returns.get(&callee) == Some(&Returns::Float)
+            && !wider_than_return(arch, callee, data, outvn)
+            && !held_as_float(data, outvn, result)
+        {
             arch.kuna_voidret.float_refused.entry(callee).or_default().insert(own);
         }
         if let Some(h) = held(data, result) {
@@ -331,6 +334,15 @@ fn holder(data: &Funcdata, outvn: crate::context::VarnodeId) -> crate::context::
     }
 }
 
+/// Does the call write more of the register than `callee` returns: a 16-byte
+/// `q0` read whole after a call that returns a double in `d0`?  The caller
+/// keeps the register, not the callee's value, which says nothing about the
+/// type it holds the result as.
+fn wider_than_return(arch: &Architecture, callee: (int4, uintb), data: &Funcdata, outvn: crate::context::VarnodeId) -> bool {
+    let Some((_, size)) = arch.kuna_voidret.storage.get(&callee) else { return false };
+    data.vbank().get(outvn).is_some_and(|v| v.get_size() > *size)
+}
+
 /// Does the caller keep the call result `outvn` as a float: typed one, and
 /// never converted to anything else?  A reader that holds a float callee's
 /// result as an integer (`unsigned int v3 = clampf(..)`), converts it
@@ -339,19 +351,38 @@ fn holder(data: &Funcdata, outvn: crate::context::VarnodeId) -> crate::context::
 /// through an `unsigned int *`, or returned as an integer -- converts it by
 /// value, where the binary moved its bits. Where `ActionSetCasts` converted the
 /// output ([`holder`]), the reader holds the result as the conversion's output,
-/// and the temporary the call writes carries only the call's own type.
+/// and the temporary the call writes carries only the call's own type. An
+/// untyped value only cast to a float holds one, and a same-width cast to an
+/// integer is the float's bits moved to an integer register (`fmov x0,d0`),
+/// which the C prints as a reinterpretation, not a conversion.
 fn held_as_float(data: &Funcdata, outvn: crate::context::VarnodeId, result: crate::context::VarnodeId) -> bool {
     use kuna_num::opcodes::OpCode;
     let float_ty = |t: &crate::dtype::Datatype| t.get_metatype() == crate::dtype::type_metatype::TYPE_FLOAT;
     let float = |v: crate::context::VarnodeId| data.vbank().get(v).is_some_and(|n| float_ty(&n.get_type()));
     let family = crate::kuna_protoorder::value_family(data, result);
+    let reinterpreted = |o: &crate::op::PcodeOp| {
+        o.code() == OpCode::CPUI_CAST
+            && o.get_in(0).and_then(|i| data.vbank().get(i)).is_some_and(|i| float_ty(&i.get_type()))
+            && o.get_out().and_then(|x| data.vbank().get(x)).is_some_and(|x| {
+                use crate::dtype::type_metatype::*;
+                matches!(x.get_type().get_metatype(), TYPE_INT | TYPE_UINT | TYPE_UNKNOWN)
+                    && Some(x.get_size()) == o.get_in(0).and_then(|i| data.vbank().get(i)).map(|i| i.get_size())
+            })
+    };
     family.iter().filter(|&&v| result == outvn || v != outvn).all(|&v| {
         let Some(node) = data.vbank().get(v) else { return true };
-        (node.is_constant() || float(v))
+        if node.get_def().and_then(|d| data.obank().get(d)).is_some_and(|o| reinterpreted(o)) {
+            return true;
+        }
+        let untyped_into_float = node.get_type().get_metatype() == crate::dtype::type_metatype::TYPE_UNKNOWN
+            && node.descend_iter().all(|r| {
+                data.obank().get(r).is_some_and(|o| o.code() == OpCode::CPUI_CAST && o.get_out().is_some_and(float))
+            });
+        (node.is_constant() || float(v) || untyped_into_float)
             && node.descend_iter().all(|r| {
                 let Some(o) = data.obank().get(r).filter(|o| !o.is_dead()) else { return true };
                 match o.code() {
-                    OpCode::CPUI_CAST => o.get_out().is_some_and(float),
+                    OpCode::CPUI_CAST => o.get_out().is_some_and(float) || reinterpreted(o),
                     OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => (1..o.num_input())
                         .filter(|&s| o.get_in(s) == Some(v))
                         .all(|s| !crate::kuna_protoorder::reads_other_than_a_float(data, r, s)),
@@ -405,7 +436,9 @@ fn returns_a_call_clobber(data: &Funcdata) -> bool {
 /// Does a live RETURN of `data` hand back a value converted from another type:
 /// `return (float)a0[3];` of an `int *`, the float the return register made the
 /// function return arguing with the type its body reads the value as?  A cast
-/// of the result of a callee recovered returning a float converts nothing.
+/// of the result of a callee recovered returning a float converts nothing, and
+/// neither does a cast of a float's own bits ([`float_bits`]) or of an untyped
+/// call result left in a floating register ([`float_register_call_result`]).
 fn converts_its_return(data: &Funcdata) -> bool {
     use kuna_num::opcodes::OpCode;
     let mut work: Vec<crate::context::VarnodeId> = data
@@ -423,8 +456,11 @@ fn converts_its_return(data: &Funcdata) -> bool {
             OpCode::CPUI_CAST => {
                 let from = def.get_in(0).and_then(|i| data.vbank().get(i));
                 if from.is_some_and(|i| {
-                    i.get_type().get_metatype() != crate::dtype::type_metatype::TYPE_FLOAT && !float_call_result(data, i)
-                }) {
+                    i.get_type().get_metatype() != crate::dtype::type_metatype::TYPE_FLOAT
+                        && !float_call_result(data, i)
+                        && !float_register_call_result(data, i, v)
+                }) && !def.get_in(0).is_some_and(|i| float_bits(data, i))
+                {
                     return true;
                 }
             }
@@ -434,6 +470,114 @@ fn converts_its_return(data: &Funcdata) -> bool {
         }
     }
     false
+}
+
+/// Is `vn` a bit pattern rather than an integer value: built through bit
+/// operations from a float's own bits (`copysign`'s `x ^ (x ^ y) & sign`,
+/// `nextafter`'s `bits + 1`, `scalbn`'s exponent field `(k + 0x3ff) << 52`
+/// beside the mantissa), or from constants alone (a sign chosen between two
+/// constants)?  Moved into a floating register (`fmov d0,x0`), that is a float
+/// again, which the C prints as a reinterpretation of the bits, not a
+/// conversion of a value.
+fn float_bits(data: &Funcdata, vn: crate::context::VarnodeId) -> bool {
+    let mut leaves = Leaves::default();
+    bit_leaves(data, vn, &mut Vec::new(), &mut leaves);
+    leaves.complete && (leaves.float || !leaves.integer)
+}
+
+/// What the bit operations behind a value start from.
+struct Leaves {
+    float: bool,
+    integer: bool,
+    complete: bool,
+}
+
+impl Default for Leaves {
+    fn default() -> Self {
+        Leaves { float: false, integer: false, complete: true }
+    }
+}
+
+fn bit_leaves(data: &Funcdata, vn: crate::context::VarnodeId, seen: &mut Vec<crate::context::VarnodeId>, leaves: &mut Leaves) {
+    use kuna_num::opcodes::OpCode;
+    if seen.contains(&vn) {
+        return;
+    }
+    if seen.len() >= 64 {
+        leaves.complete = false;
+        return;
+    }
+    seen.push(vn);
+    let Some(node) = data.vbank().get(vn) else {
+        leaves.complete = false;
+        return;
+    };
+    if node.is_constant() {
+        return;
+    }
+    if node.get_type().get_metatype() == crate::dtype::type_metatype::TYPE_FLOAT {
+        leaves.float = true;
+        return;
+    }
+    let def = node.get_def().and_then(|d| data.obank().get(d));
+    let inputs = match def.map(|o| o.code()) {
+        Some(
+            OpCode::CPUI_CAST
+            | OpCode::CPUI_COPY
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_INT_SUB
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_LEFT
+            | OpCode::CPUI_INT_RIGHT
+            | OpCode::CPUI_INT_SRIGHT
+            | OpCode::CPUI_INT_ZEXT
+            | OpCode::CPUI_PIECE
+            | OpCode::CPUI_SUBPIECE
+            | OpCode::CPUI_MULTIEQUAL,
+        ) => def.map(|o| (0..o.num_input()).filter_map(|k| o.get_in(k)).collect::<Vec<_>>()).unwrap_or_default(),
+        Some(OpCode::CPUI_INDIRECT) if def.is_some_and(|o| !o.is_indirect_creation()) => {
+            def.and_then(|o| o.get_in(0)).into_iter().collect()
+        }
+        _ => {
+            leaves.integer = true;
+            return;
+        }
+    };
+    for i in inputs {
+        bit_leaves(data, i, seen, leaves);
+    }
+}
+
+/// Is `node` an untyped call result in a floating register: what the callee
+/// left in `d0`, which no integer use gave a type to read it as?  Where the call
+/// writes a temporary only the cast reads, the cast's output `held` holds the
+/// register.
+fn float_register_call_result(data: &Funcdata, node: &crate::varnode::Varnode, held: crate::context::VarnodeId) -> bool {
+    use kuna_num::opcodes::OpCode;
+    if node.get_type().get_metatype() != crate::dtype::type_metatype::TYPE_UNKNOWN {
+        return false;
+    }
+    let Some(d) = node.get_def() else { return false };
+    if !data.obank().get(d).is_some_and(|o| matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)) {
+        return false;
+    }
+    let storage = if node.get_space().get_type() == spacetype::IPTR_INTERNAL {
+        match data.vbank().get(held) {
+            Some(h) => h,
+            None => return false,
+        }
+    } else {
+        node
+    };
+    let proto = data.get_func_proto();
+    let Some(out) = proto.has_model().then(|| proto.model().output_list()).flatten() else { return false };
+    out.get_entry().iter().any(|e| {
+        e.get_type() == crate::dtype::type_class::TYPECLASS_FLOAT
+            && e.justified_contain(storage.get_addr(), storage.get_size()) >= 0
+    })
 }
 
 /// Is `node` the result of a call whose callee returns a float: a locked float

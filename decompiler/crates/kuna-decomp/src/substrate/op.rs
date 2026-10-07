@@ -205,6 +205,10 @@ pub mod pcodeop_addlflags {
     pub const kuna_zextreturn: uint4 = 0x10000;
     /// The x86-64 syscall ABI rewrite ran; survives removal of unused RAX output.
     pub const kuna_x64syscall: uint4 = 0x20000;
+    /// (kuna) This COPY of zero is the fill a narrow write leaves in the upper
+    /// half of a vector register, as decoded.  Set and read by
+    /// [`crate::p4_calls::kuna_zerofillreturn`].
+    pub const kuna_zerofill: uint4 = 0x40000;
 }
 
 // ---------------------------------------------------------------------------

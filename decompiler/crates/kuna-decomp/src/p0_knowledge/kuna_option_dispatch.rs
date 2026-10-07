@@ -319,6 +319,12 @@ kuna_options! { self, p1;
         self.callee_read_arg = val;
         Ok(msg)
     },
+    "zerofillreturn" => {
+        let (val, msg) =
+            crate::p4_calls::kuna_zerofillreturn::OptionZeroFillReturn.apply(p1)?;
+        self.zero_fill_return = val;
+        Ok(msg)
+    },
     "argclobber" => {
         let (val, msg) = crate::p4_calls::kuna_argclobber::OptionArgClobber.apply(p1)?;
         self.arg_clobber = val;
@@ -453,6 +459,12 @@ kuna_options! { self, p1;
         self.index_alias_guard = val;
         Ok(msg)
     },
+    "arrayextent" => {
+        let (val, msg) =
+            crate::p6_variables::kuna_arrayextent::OptionArrayExtent.apply(p1)?;
+        self.array_extent = val;
+        Ok(msg)
+    },
     "tiedstorekeep" => {
         on_off!(tied_store_keep, "Address-tied store copy-propagation brake")
     },
@@ -502,6 +514,12 @@ kuna_options! { self, p1;
         let (val, msg) =
             crate::p8_structure::kuna_condfold::OptionCondFold.apply(p1)?;
         self.cond_fold = val;
+        Ok(msg)
+    },
+    "condstmts" => {
+        let (val, msg) =
+            crate::p8_structure::kuna_condstmts::OptionCondStmts.apply(p1)?;
+        self.cond_stmts = val;
         Ok(msg)
     },
     "gotoreduce" => {
@@ -666,6 +684,7 @@ kuna_options! { self, p1;
     },
     "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
     "calltargettype" => on_off!(call_target_type, "indirect-call target types"),
+    "floatglobals" => on_off!(float_globals, "float typing of globals moved only through float registers"),
     "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
     "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
     "charbyte" => on_off!(char_byte, "char-pointer byte typing"),

@@ -50,6 +50,7 @@ b6128810488b45f80fb60084c075d8488b45e8c60000905dc3
 <symbol space="ram" offset="0x1094" name="guard"/>
 </binaryimage>
 <script>
+  <com>option condstmts off</com>
   <com>option hideshadow off</com>
   <com>lo fu target</com>
   <com>decompile</com>

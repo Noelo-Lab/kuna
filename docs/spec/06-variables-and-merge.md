@@ -864,13 +864,13 @@ current Varnodes) and fills a `varmap.rs (MapState)` with typed hints — one
   `funcdata_spacebase.rs (Funcdata::add_guard)` turns each guard whose range
   the value-set refinement locked (`option loadguardrange`) into an open hint
   at the guard's minimum with the **real** index bound,
-  `highind = ((max - min) + 1) / step - 1` — the only hint source that can
-  push an indexed array's extent past the [0,3] fallback (an unrefined or
+  `highind = ((max - min) + 1) / step - 1` — upstream's only hint source that
+  can push an indexed array's extent past the [0,3] fallback (an unrefined or
   step-less guard contributes nothing, and an unlocked-but-stepped one
-  contributes the same [0,3] floor). This is what keeps element 4+ of an
-  indexed stack array inside the array instead of splitting off as a
-  separate, never-assigned scalar when `RangeHint::attempt_join` compares
-  distance against `highind`;
+  contributes the same [0,3] floor; kuna's `arrayextent` below adds two more).
+  This is what keeps element 4+ of an indexed stack array inside the array
+  instead of splitting off as a separate, never-assigned scalar when
+  `RangeHint::attempt_join` compares distance against `highind`;
 - `varmap.rs (MapState::gather_symbols)` — a hint per already-mapped Symbol
   (locked ones carry the `TYPELOCK` flag).
 
@@ -911,6 +911,88 @@ later passes and the final sync enable it. After `fullloop` exits,
 failure mode is tolerance, not an abort — the layout keeps the conceded
 unknowns (upstream additionally emits a "Could not reconcile some variable
 overlaps" warning header; kuna stubs that diagnostic).
+
+**An indexed array's extent (kuna `arrayextent`, default `on`).** The [0,3]
+floor is all upstream knows about an indexed base whose guard the value-set
+refinement could not lock, and the refinement fails on ordinary loops: one that
+exits on `i != n` with `n` clamped (`n = min(n, 5)`), an index that is only
+masked (`v[n & 7]`), or a loop whose bound sits behind `&&`. Element 4 onward
+then splits into scalars, the printed loop subscripts past the declared array,
+and the C reads the wrong object. `option arrayextent off|bound|on` adds two
+sources of extent, both in `funcdata_spacebase.rs (Funcdata::gather_open)`.
+
+At `bound`, an indexed base whose pointer is the stack base plus constants plus
+indices that their known bits bound (the same walk `stackstoreguard` uses,
+`kuna_storereach.rs (pointer_pieces)`), and which the function only
+dereferences or offsets (no call, store, compare or phi takes it),
+gets room for every element those LOAD and STORE ops may touch:
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_arrayextent.rs
+(bounded_items)` raises the base's open hint to cover `[base, lo + reach +
+width)`, stopping at the closest other pointer base above it
+(`kuna_arrayextent.rs (next_base)`). Inside that span the binary can address
+every slot through the index, so the array has to cover it for the C to be
+defined. The stop is there because a known-bits bound is loose (an index loaded
+as a byte reaches 256 elements whatever the loop does with it), and a slot whose
+address the function takes on its own is a different object: `char u[4], g[4],
+o[4]` filled by `u[i++] = 'r'` and passed to `printf` stay three arrays. Short
+of that stop, every slot of the element width inside the reach joins the array,
+whether the function reads it on its own or not: the reach comes from the index
+alone, and no test on the path to the access narrows it, so in `int tab[4]; int
+y = x * 5, z = x - 9; int k = i & 7; if (k < 4) return tab[k] * y + z;` the
+masked `k` reaches eight elements and the array takes `y`, `z` and `k`. Each
+such scalar then prints as an element; the values are the same slots, so what
+the C computes does not change.
+
+At `on` (the default) an indexed base with no such bound also grows along the
+frame, in `kuna_arrayextent.rs (extend_unbounded)`, which runs after the
+symbol hints are gathered. It applies to the open hint of every indexed base
+the alias checker found with no bound and of every guard with a step but no
+locked range (`Funcdata::add_guard` returns those), unless a locked guard
+covers the base. An array takes at most 256 slots past the length its layout
+pass starts it with, counted once per start and element size however many
+alias bases and guards share them. The hint takes the next slot of its element size while that
+slot starts exactly where its elements end, below the frame's endpoint; no
+fixed hint inside the array runs past it; every hint starting in it is an
+unlocked fixed hint exactly one element wide whose type keeps the array's
+(`kuna_arrayextent.rs (joinable)`: unknown, an integer beside an integer or
+unknown element, or the element type behind the same pointers); no open hint
+starts there, so a second array or an escaping address stops it; and the
+function cannot observe the slot except through a pointer
+(`kuna_arrayextent.rs (observed)`): no op reads a stack Varnode that overlaps it
+(`kuna_storereach.rs (is_read)`), and no value copied into it is used by
+anything but copies into stack slots outside the array. The second half matters
+at `-O0`, where a scalar's reads are propagated to the register it was stored
+from (`fmt = f(); if (fmt == 2)` reads the call's result, not the slot), and
+where a value is copied into the array's own elements as well (`float t = ...;
+float a[3] = {t, t, u};`); a parameter that is spilled to its home slot and
+copied into the array still counts as an element, and its home slot, whose value
+is also in the array, does not. A slot the function writes and observes only
+through a pointer belongs to the array; a scalar it observes on its own stops
+the growth. The slots it takes then join the array through the ordinary
+`attempt_join`, since they now sit within `highind`. Upstream's constant
+absorption (`varmap.rs (RangeHint::is_const_absorbable)`) takes a constant store
+at the array's last element and raises `highind` one past it
+(`varmap.rs (RangeHint::absorb)`), so the next slot joins whatever reads it, and
+each constant-initialised slot joined that way raises it again. Started from the
+last slot this rule took (`int flag = 0;` written and never read), that walk
+would carry the array over the loop counters and the sum that follow it at
+`-O0`. So once `MapState::initialize` has sorted the hints,
+`ScopeLocal::restructure` first calls `kuna_arrayextent.rs (settle)`, which
+runs the same merge steps
+(`merge`, the absorbing-base `absorb`, `attempt_join`) over copies of the
+sorted hints with each lengthened array back at its old `highind`
+(`kuna_arrayextent.rs (upstream_ends)`). Where that upstream merge ends the
+array at or before the end of the last slot taken, the fixed hints in that slot
+lose their constant-copy mark (`COPY_CONSTANT`) and the array ends there. Where
+it carries the array further on its own, the marks stay and the array is the
+one upstream builds, which keeps an element read on its own that the constants
+before it reach: `long a[6]` with `a[0]` to `a[4]` constant and `a[5] = x` read
+stays `[6]`, also when the compiler writes the first constants as one wider
+store (clang `-O1` stores `short a[6] = {1, 2, 3, 4, 5, x}`'s first four
+elements with one 8-byte move, whose merge raises `highind` at once). Clearing
+the mark there would end the array before that element and print the loop's
+index past it. Merging slots never changes what the C computes, only how many
+declarations it has. `off` is upstream.
 
 **Terminator absorption** (`option nulterminator`, **opt-in, default off**). An
 open hint that `attempt_join` cannot extend ends where the next hint starts, so

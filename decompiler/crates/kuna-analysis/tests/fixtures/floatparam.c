@@ -1,6 +1,7 @@
 /* Parameters passed in a floating-point register that the function only
    moves: stored through a pointer or into a field. A double copied into a
-   global, or handed back in an integer register, keeps its integer type.
+   global nothing else reads as an integer is a double (floatglobals); one
+   handed back in an integer register keeps its integer type.
    negsink hands sink the bits of an integer in a float register, k3b hands
    use the bits iget3 returns in an integer register, and twicetrunc reads
    the float trunc16 computes on its bits.

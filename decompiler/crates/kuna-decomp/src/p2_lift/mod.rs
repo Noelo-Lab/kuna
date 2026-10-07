@@ -5,6 +5,7 @@
 
 pub mod funcdata_resolveflow;
 pub mod flow;
+pub mod kuna_armflowcontext;
 pub mod jumptable;
 pub mod kuna_emulatefunction;
 pub mod userop;

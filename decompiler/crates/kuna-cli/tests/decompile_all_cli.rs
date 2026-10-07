@@ -2877,8 +2877,9 @@ fn compile_pair_and_run_each(tag: &str, lib: &str, main: &str) -> Vec<(String, S
 /// passes in a general register: `fs(unsigned long a0,unsigned int *a1,..)`
 /// read the pointer from `rsi`. The printed functions, compiled on the host
 /// beside a caller that declares the source prototypes, must store what the
-/// source stores. `fy` copies its double into a global another function may
-/// read as an integer, and keeps its integer type. `floatparam_a64.o` (AArch64,
+/// source stores. `fy` copies its double into a global nothing else in the
+/// object touches, which `floatglobals` finds is only ever a float.
+/// `floatparam_a64.o` (AArch64,
 /// clang -O2) and `floatparam_x86_64_clang_O0.o`: `negsink` hands `sink` the
 /// bits of an integer in `s0`/`xmm0`, and `k3b` hands `use` the bits `iget3`
 /// returns in an integer register, beside an `iget3` printed returning
@@ -2908,7 +2909,7 @@ fn a_float_register_parameter_round_trips() {
             "void ff(float a0,unsigned int *a1,float *a2)",
             "void fr(double a0,",
             "void sink(float a0,float a1,float *a2)",
-            "void fy(unsigned long a0,unsigned int *a1)",
+            "void fy(double a0,unsigned int *a1)",
         ] {
             assert!(stdout.contains(want), "{tag}: missing `{want}`:\n{stdout}");
         }
@@ -2959,6 +2960,81 @@ fn a_float_register_parameter_round_trips() {
     for (cc, got) in compile_and_run_each("floatparam-trunc-a64", &src) {
         assert_eq!(got, "40c90000", "{cc}: the printed C computes something else:\n{printed}");
     }
+}
+
+/// `floatglobal_{x86_64_gcc_O2,x86_64_clang_O0,a64_O2,armhf_O2}` (linked,
+/// `floatglobal.c`): `fy`, `fw` and `ff` copy a float parameter into a global
+/// the program only moves through float registers, and `pass`/`passf` hand one
+/// to a float parameter. Each parameter printed as an integer the convention
+/// passes in a general register (`fy(unsigned long a0,unsigned int *a1)` read
+/// the pointer from `rsi`), and each argument as a union reinterpretation of an
+/// integer. `gpun` takes a float's bits and is added to as an integer, so
+/// `set_gpun` keeps its integer parameter; `gz` is zeroed by an integer store at
+/// -O2 (`setz` keeps `unsigned long`) and through `xmm0` at clang -O0 (`setz`
+/// takes the `double`). The printed functions, compiled on the host beside a
+/// caller that declares the source prototypes, must store what the source
+/// stores. Hard-float ARM drops `fy`'s and `fw`'s `d0` parameter
+/// (`armfloatargs` off), so only `ff` is compiled there.
+#[test]
+fn a_global_only_moved_through_float_registers_round_trips() {
+    let sp = specs();
+    let fixture = |name: &str| repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+    for (tag, name, doubles, setz) in [
+        ("x86-gcc-O2", "floatglobal_x86_64_gcc_O2", true, "void setz(unsigned long a0)"),
+        ("x86-clang-O0", "floatglobal_x86_64_clang_O0", true, "void setz(double a0)"),
+        ("a64-O2", "floatglobal_a64_O2", true, "void setz(unsigned long a0)"),
+        ("armhf-O2", "floatglobal_armhf_O2", false, "void ff(float a0,unsigned int *a1)"),
+    ] {
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture(name), "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        let mut want = vec!["void ff(float a0,unsigned int *a1)", "sinkf(gf2)", "void set_gpun(unsigned int a0)", setz];
+        if doubles {
+            want.extend(["void fy(double a0,unsigned int *a1)", "void fw(double a0,unsigned int a1)", "sink(gd2)"]);
+        }
+        for w in want {
+            assert!(stdout.contains(w), "{tag}: missing `{w}`:\n{stdout}");
+        }
+        assert!(!stdout.contains(".from = gf2") && !stdout.contains(".from = gd2"), "{tag}: a float global reinterpreted:\n{stdout}");
+        let (names, calls, expect): (&[&str], &str, &str) = if doubles {
+            (&["fy ", "fw ", "ff "], "fy(&k1, 2.5);\n  fw(3, 4.5);\n  ff(&k2, 1.25f);", "1 2 4.5 1.25 3")
+        } else {
+            (&["ff "], "k1 = 1;\n  gd = 4.5;\n  gi = 3;\n  ff(&k2, 1.25f);", "1 2 4.5 1.25 3")
+        };
+        let lib = format!("double gd;\nfloat gf;\nunsigned int gi;\n{}", printed_functions(&stdout, names));
+        let callers = format!(
+            "#include <stdio.h>\nvoid fy(int *p, double b);\nvoid fw(int a, double b);\nvoid ff(int *p, float b);\n\
+             extern double gd;\nextern float gf;\nextern unsigned int gi;\n\
+             int main(void) {{\n  int k1 = 0, k2 = 0;\n  {calls}\n  printf(\"%d %d %g %g %u\\n\", k1, k2, gd, gf, gi);\n  return 0;\n}}\n"
+        );
+        for (cc, got) in compile_pair_and_run_each(&format!("floatglobal-{tag}"), &lib, &callers) {
+            assert_eq!(got, expect, "{tag} {cc}: the printed C stores something else:\n{lib}");
+        }
+    }
+}
+
+/// `floatglobal_index_x86_64_gcc_O2` (`floatglobal_index.c`): `ixa`, `lv0`,
+/// `fld`, `neg` and `pas` read a double global's bits as an integer through an
+/// index from its address, which the whole-program scan cannot see. A float
+/// taken there prints `(&gda)[a1]` as a double element, a value conversion
+/// where the machine adds to the bits, so the parameter and argument votes
+/// refuse. `put` indexes a double array only as doubles and keeps its double.
+#[test]
+fn an_integer_access_through_an_index_from_a_float_global_refuses_the_float() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatglobal_index_x86_64_gcc_O2").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for w in [
+        "void ixa(unsigned long a0,int a1)",
+        "void lv0(unsigned long a0,int a1)",
+        "void fld(unsigned long a0,int a1)",
+        "void neg(unsigned long a0,int a1)",
+        "void put(double a0,int a1)",
+        ".from = gdp }",
+    ] {
+        assert!(stdout.contains(w), "missing `{w}`:\n{stdout}");
+    }
+    assert!(!stdout.contains("sink(gdp)"), "gdp handed on as a float its own index reads as an integer:\n{stdout}");
 }
 
 /// `floatparam_retreg_clang_O2` (clang -O2, stripped): `v1` (`sub_11c0`) returns
@@ -9026,5 +9102,111 @@ fn an_int_worked_out_from_the_high_half_of_a_temporary_keeps_it() {
              printf(\"%d\\n\", bad);\n  return 0;\n}}\n"
         );
         bejoin_round_trip(fixture, &src_text, &printed);
+    }
+}
+
+/// `zerofillreturn_a64.o` (clang -O2, AArch64): `scale` returns
+/// `*g * 1.5 + a` in `d0`, but the `fmov d0,#1.5` before its `fmadd` zero-fills
+/// the upper half of `q0`, and that zero joined the return: `undefined16
+/// scale(..)` with `v1._8_8_ = 0`, `recip`'s `return 0.0` as `ZEXT816(0)`, and
+/// `floor_add` casting the 16-byte result, `(double)scale(a0,a1)`. The fill is
+/// no part of the value: every function returns its `double`, the tail call
+/// hands it on, and the printed functions compiled on the host compute what
+/// the source does. `zerofillfwd_a64.o` (gcc -O0): `mk` reloads both members
+/// of a two-double struct from its frame and joins them in `d1:d0`; `fa`
+/// writes its callee's complex result through a pointer reloaded from the frame,
+/// so the `d1` it reloads may be what the call left, and keeps `q0` as before.
+#[test]
+fn an_aarch64_double_return_leaves_out_the_zero_fill() {
+    let sp = specs();
+    let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/zerofillreturn_a64.o");
+    let fixture = fixture.to_str().unwrap();
+    let (off, stderr, ok) = run_kuna(&["decompile-all", fixture, "--sleighpath", &sp, "--option", "zerofillreturn", "off"]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    assert!(off.contains("undefined16 scale("), "the fill no longer joins the return with the option off:\n{off}");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", fixture, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in ["double scale(int a0,double *a1)", "double recip(int a0)", "double tail(int a0,double *a1)", "return 0.0;"] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    assert!(!stdout.contains("undefined16") && !stdout.contains("(double)scale("), "the fill is still returned:\n{stdout}");
+    let printed = printed_functions(&stdout, &["scale ", "recip ", "tail ", "floor_add "]);
+    let src = format!(
+        "#include <stdio.h>\n{printed}\n\
+         int main(void) {{\n  double g = 1.25;\n  \
+         printf(\"%g %g %g %d %d\\n\", scale(3, &g), tail(3, &g), recip(4), floor_add(3, &g), floor_add(-2, &g));\n  \
+         return 0;\n}}\n"
+    );
+    for (cc, got) in compile_and_run_each("zerofillreturn-a64", &src) {
+        assert_eq!(got, "4.875 5.875 0.25 5 0", "{cc}: the printed C computes something else:\n{printed}");
+    }
+    let fwd = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/zerofillfwd_a64.o");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", fwd.to_str().unwrap(), "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let fa = printed_functions(&stdout, &["fa "]);
+    let mk = printed_functions(&stdout, &["mk "]);
+    assert!(mk.contains("// d1:d0") && mk.contains("._8_8_ = a0 * a0;"), "mk's reloaded pair is not joined:\n{mk}");
+    assert!(!fa.contains("d1:d0") && fa.contains("._8_8_ = 0;"), "fa joins a d1 its callee may have left:\n{fa}");
+}
+
+/// `voidret_complexpick_a64.o` (clang -O2, AArch64): `pick` tail-calls `cpart`,
+/// which returns a double, on one path and `cboth`, a complex double recovered
+/// as a 16-byte `d1:d0` join, on the other; `user` reads `pick`'s `d0`. The
+/// return forced on `pick` for `user` hands back an untyped call result on the
+/// `cboth` path, which the float-return check counted as a conversion: `pick`
+/// was decompiled again without its return and printed `void`, beside
+/// `(double)pick(a0)` in `user`. A value left in a floating register is not an
+/// integer converted to a float, with the zero-fill option off or on.
+#[test]
+fn a_tail_call_wrapper_keeps_the_float_its_readers_read() {
+    let sp = specs();
+    let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/voidret_complexpick_a64.o");
+    let fixture = fixture.to_str().unwrap();
+    for extra in [&[][..], &["--option", "zerofillreturn", "off"][..]] {
+        let mut args = vec!["decompile-all", fixture, "--sleighpath", sp.as_str()];
+        args.extend_from_slice(extra);
+        let (stdout, stderr, ok) = run_kuna(&args);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        for want in ["double pick(double a0)", "return cpart(a0); // tail-call", "v1 = pick(a0);"] {
+            assert!(stdout.contains(want), "{extra:?}: missing `{want}`:\n{stdout}");
+        }
+    }
+}
+
+/// `floatbits_a64.o` (clang -O2, AArch64): `to_bits` and `exponent` move the
+/// bits of `getd`'s `double` to an integer register (`fmov x0,d0`), `to_fbits`
+/// those of `getf`'s `float` (`fmov w0,s0`), and `store_bits` stores them
+/// through an `unsigned long *`. The listing declares `double getd(..)` and
+/// `float getf(..)`, and the readers printed `return getf(a0,a1);` from an
+/// `unsigned int` function, `(unsigned long)getd(a0,a1) >> 0x34` and `*a2 =
+/// getd(a0,a1);`, which C converts by value. The printed functions, compiled
+/// on the host, hand back the bits.
+#[test]
+fn a_float_result_held_as_bits_round_trips() {
+    let sp = specs();
+    let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatbits_a64.o");
+    let fixture = fixture.to_str().unwrap();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", fixture, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in ["double getd(int a0,double *a1)", "float getf(int a0,float *a1)"] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    for bad in ["return getd(", "return getf(", ")getd(", ")getf(", "*a2 = getd("] {
+        assert!(!stdout.contains(bad), "a reader converts the float by value (`{bad}`):\n{stdout}");
+    }
+    let printed = printed_functions(&stdout, &["getd ", "getf ", "to_bits ", "to_fbits ", "exponent ", "store_bits "]);
+    let src = format!(
+        "#include <stdio.h>\n{printed}\n\
+         int main(void) {{\n  double g = 1.25;\n  float f = 1.25f;\n  unsigned long s = 0;\n  \
+         store_bits(-3, &g, (void *)&s);\n  \
+         printf(\"%lx %lx %x %x %d %d %lx\\n\", (unsigned long)to_bits(3, &g), (unsigned long)to_bits(-3, &g), \
+         (unsigned int)to_fbits(3, &f), (unsigned int)to_fbits(-3, &f), (int)exponent(3, &g), (int)exponent(-3, &g), s);\n  \
+         return 0;\n}}\n"
+    );
+    for (cc, got) in compile_and_run_each("floatbits-a64", &src) {
+        assert_eq!(
+            got, "4011000000000000 c00a000000000000 40880000 c0500000 1025 1024 c00a000000000000",
+            "{cc}: the printed C computes something else:\n{printed}"
+        );
     }
 }
