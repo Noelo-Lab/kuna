@@ -1225,7 +1225,7 @@ fn gap_entries(
         return Vec::new();
     }
     let mut listing = partition_listing(partition, funcs, exec);
-    let _probe = contexts.and_then(|_| translate.context_scope());
+    let _probe = crate::aif::arm_gap_probe_scope(translate);
     render_fingerprints(&mut listing, funcs, arch, translate, code_space, partition, contexts);
     if let Some(prior) = frame {
         crate::aif::run_aif_after_frames(
