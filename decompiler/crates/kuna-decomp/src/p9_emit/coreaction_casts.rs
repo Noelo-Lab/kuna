@@ -510,10 +510,18 @@ fn get_input_cast_equal(
 ) -> Option<Rc<Datatype>> {
     let in0 = data.obank().get(op)?.get_in(0)?;
     let in1 = data.obank().get(op)?.get_in(1)?;
-    let mut reqtype = data.vn_high_type_read_facing(in0, op);
+    let type0 = data.vn_high_type_read_facing(in0, op);
     let othertype = data.vn_high_type_read_facing(in1, op);
-    if othertype.type_order(&reqtype).unwrap_or(0) < 0 {
-        reqtype = othertype;
+    let mut reqtype = if othertype.type_order(&type0).unwrap_or(0) < 0 {
+        Rc::clone(&othertype)
+    } else {
+        Rc::clone(&type0)
+    };
+    if reqtype.get_metatype() == type_metatype::TYPE_FLOAT
+        && matches!(reqtype.get_size(), 4 | 8)
+        && ![in0, in1].into_iter().any(|v| crate::kuna_floatbits::compares_as_a_float(data, v))
+    {
+        reqtype = float_bits_type(data, &[type0, othertype], reqtype.get_size())?;
     }
     let needs_promote = {
         let ctx = FuncdataCastContext::new(data);
@@ -526,6 +534,19 @@ fn get_input_cast_equal(
     let slotvn = data.obank().get(op)?.get_in(slot)?;
     let slottype = data.vn_high_type_read_facing(slotvn, op);
     strat.cast_standard(&reqtype, &slottype, false, false)
+}
+
+/// (kuna) The integer type an `INT_EQUAL`/`INT_NOTEQUAL` with a float input
+/// compares its bits as: the integer input's type, else `uint` of the width.
+/// A C `==` on floats differs from the bit test for -0.0, NaNs and NaN constants,
+/// so only a constant whose float comparison is exact keeps the float.
+fn float_bits_type(data: &Funcdata, types: &[Rc<Datatype>], size: int4) -> Option<Rc<Datatype>> {
+    if let Some(t) = types.iter().find(|t| {
+        t.get_size() == size && matches!(t.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT)
+    }) {
+        return Some(Rc::clone(t));
+    }
+    data.get_arch().types_rc()?.get_base(size, type_metatype::TYPE_UINT).ok()
 }
 
 /// The signed/unsigned ordered-compare getInputCast body, shared by
