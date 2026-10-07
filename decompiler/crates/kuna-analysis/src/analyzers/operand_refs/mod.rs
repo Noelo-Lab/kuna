@@ -587,7 +587,7 @@ pub(crate) fn held_pointers(file: &object::File, wanted: &[u64], code_slots: boo
 /// positive character code (9..=0x7e, the first unit of a wide string or a code
 /// table the read has run into), points back into the entries read, or lands on
 /// no string, and at least two must remain.
-fn relative_string_table(file: &object::File, table: u64, little_endian: bool) -> Vec<u64> {
+pub(crate) fn relative_string_table(file: &object::File, table: u64, little_endian: bool) -> Vec<u64> {
     let Some(bytes) = bytes_at(file, table).filter(|b| table.is_multiple_of(4) && string_len(b).is_none())
     else {
         return Vec::new();

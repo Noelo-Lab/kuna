@@ -1471,14 +1471,18 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   of them distinct. Something points at its start: an operand target of the
   `operand_refs` scan, a pointer-aligned slot of a data section, or a dynamic
   relocation; a symbol table alone backs nothing, since a linked image keeps no
-  symbol for clang's switch tables. Something starts right after its
-  terminator (`kuna_widestrings32.rs (follower)`): the section's end, or the
-  first nonzero unit after at most 64 bytes of zeros, fewer than that unit's
-  address alignment asks for, which an operand or a data slot points at, code
-  indexes, or a symbol starts at -- in an image a literal is followed by the
-  next literal or object, which something names, while a table goes on with
-  its next element, which nothing does. And no code adds a computed index to
-  any address from its start to its terminator. The index test follows the
+  symbol for clang's switch tables. What follows its terminator
+  (`kuna_widestrings32.rs (follower)`) is the next literal or object, not the
+  table's next element: the section's end, or the first nonzero unit after at
+  most 64 bytes of zeros, fewer than that unit's address alignment asks for,
+  which an operand, a data slot or an entry of a table of relative offsets
+  (clang's `reltable`) points at, code indexes, or a symbol starts at, and
+  whose unit is no character (at or above U+110000) or opens a zero-terminated
+  run of printable units. In an image a literal is followed by the next
+  literal or object, while a table goes on with its next element, a code that
+  opens no literal even where the code names it (`sum(&tbl[6], 2)`, a struct's
+  count after its `int codes[6]`). And no code adds a computed index to any
+  address from its start to its terminator. The index test follows the
   same linear decode
   (`decompiler/crates/kuna-analysis/src/analyzers/operand_refs/mod.rs
   (TableUses)`): an address an instruction puts in a register stays held for
@@ -1492,21 +1496,23 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   cover a literal another pass planted. A literal laid out right after another
   object's last printable unit (clang's switch table ending in `'q'` before
   `L"hellow"`) is the tail of a longer run nothing points at; an operand target
-  at one of its units starts the run there instead, under the same tests. A
-  literal whose next literal only a table of relative offsets reaches (clang's
-  `reltable`) has nothing after it that the image names, and is refused. An ARM
+  at one of its units starts the run there instead, under the same tests. An
+  entry of a table of relative offsets at an operand target backs a run's
+  start the way a pointer slot does. An ARM
   literal pool slot backs nothing, since the scan cannot see code index the
   address it loads, and an address built in two instructions (AArch64
   `adrp`/`add`, MIPS `lui`/`addiu`) is no operand target, so a linked image of
   those targets plants only what a data slot holds (a pointer table's entries);
   their relocatable objects plant from `.rodata.str4.4`. A relocatable object is
   read through the laid-out view the loader builds, never its raw sections,
-  which all sit at address 0. What remains is an anonymous table of a stripped
-  image that passes all of that: one that ends at its zero prints as the literal
-  its elements spell, the same values, and one whose elements past its zero are
-  all zero up to an object at an aligned address, which the bytes cannot tell
-  from a literal and its padding, prints as the literal too, so a reader past
-  the zero reads zeros in the binary and past the literal in the printed C. A
+  which all sit at address 0. What remains are the anonymous tables of a
+  stripped image whose bytes are those of literals: one that ends at its zero
+  prints as the literal its elements spell, the same values; the rows of a 2-D
+  table of codes, each ending in a zero, print as one literal each; and a
+  fixed-size code table whose codes are followed by zero padding up to its size
+  (`static const int t[8] = {97, 98, 99, 100, 101}`, common C) prints as the
+  shorter literal, so code reading past its first zero reads zeros in the
+  binary and past the literal in the printed C, other values. A
   run that a tail-merged suffix shares (`L"bind"` inside `L"xbind"`) is planted
   whole from its first unit, and the printer reads the suffix's literal at its
   own address (`lenw(L"bind")`), except where the element-pointer rule refuses

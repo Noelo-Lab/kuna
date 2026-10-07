@@ -5,8 +5,8 @@
    weeks holds two characters, rows is indexed by a computed row, and code's
    switch becomes a lookup table of character codes that runs on past its zero
    case.  Built with WIDESTR32_HARNESS it supplies everything but wide, wide32,
-   ornull, suffix, table and weekly (and first, which it defines weak), and a
-   main that prints what each stores. */
+   ornull, suffix, first, table and weekly, and a main that prints what each
+   stores. */
 #include <stddef.h>
 typedef unsigned int char32;
 #ifdef __clang__
@@ -56,7 +56,7 @@ void wide(void);
 void wide32(void);
 void ornull(const wchar_t *);
 void suffix(void);
-__attribute__((weak)) void first(void) { out = hashw(L"first-msg"); }
+void first(void);
 void table(int);
 void weekly(int);
 int main(void)

@@ -32,11 +32,14 @@
 //!   all of the following hold:
 //!   - it holds at least [`MIN_UNITS`] units, three of them distinct;
 //!   - something points at its start: an operand the scalar scan found, a
-//!     pointer-aligned slot of a data section, or a dynamic relocation;
-//!   - something starts right after its terminator ([`follower`]): the end of
-//!     the section, or, past zero padding no longer than the next unit's
-//!     alignment asks for, an address something points at, a table base or a
-//!     symbol's start, as the next literal or object is;
+//!     pointer-aligned slot of a data section, a dynamic relocation, or an
+//!     entry of a table of relative offsets at an operand (clang's `reltable`);
+//!   - what follows its terminator ([`follower`]) is the next literal or
+//!     object, not the table's next element: the end of the section, or, past
+//!     zero padding no longer than the next unit's alignment asks for, an
+//!     address something points at, a table base or a symbol's start, whose
+//!     first unit is no character (at or above U+110000) or opens a
+//!     zero-terminated run of printable units;
 //!   - no code adds a computed index to an address from its start to its
 //!     terminator ([`crate::operand_refs`]' table uses: `lea rcx,t` then
 //!     `mov eax,[rcx+rax*4]`).
@@ -50,11 +53,13 @@
 //! the address it loads (a switch table's sits in one too), and an address code
 //! builds in two instructions (AArch64 `adrp`/`add`, MIPS `lui`/`addiu`) is no
 //! operand, so a linked image of those targets plants only what a data slot
-//! holds. What is left is an anonymous table that ends at its zero, which
-//! prints as the literal its elements spell, the same values, and one whose
-//! elements past its zero are all zero up to an object at an aligned address,
-//! which the bytes cannot tell from a literal and its padding: a reader past
-//! the zero reads zeros in the binary and past the literal in the printed C.
+//! holds. What is left are the tables the bytes cannot tell from literals: an
+//! anonymous table that ends at its zero prints as the literal its elements
+//! spell, the same values; the rows of a 2-D table of codes (`{{97, .., 0},
+//! {102, .., 0}}`) print as one literal each; and a fixed-size table whose
+//! codes are followed by zero padding (`int t[8] = {97, 98, 99, 100, 101}`)
+//! prints as the shorter literal, so code reading past its first zero reads
+//! zeros in the binary and past the literal in the printed C.
 //!
 //! A relocatable object is read only through the laid-out view the loader
 //! builds; its raw sections all sit at address 0.
@@ -62,7 +67,7 @@
 use object::read::{Object, ObjectSection, ObjectSymbol};
 use object::{BinaryFormat, ObjectKind, SectionKind, SymbolKind};
 
-use crate::operand_refs::{held_pointers, DataObjects};
+use crate::operand_refs::{held_pointers, relative_string_table, DataObjects};
 use crate::pass::StringFact;
 
 use super::is_string_char;
@@ -195,6 +200,14 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64], tables: &[u64])
     unpointed.sort_unstable();
     unpointed.dedup();
     let mut held = if unpointed.is_empty() { Vec::new() } else { held_pointers(file, &unpointed, false) };
+    if !unpointed.is_empty() && file.format() == BinaryFormat::Elf {
+        held.extend(
+            targets
+                .iter()
+                .flat_map(|&t| relative_string_table(file, t, little_endian))
+                .filter(|a| unpointed.binary_search(a).is_ok()),
+        );
+    }
     held.sort_unstable();
     let pointed = |a: u64| targets.binary_search(&a).is_ok() || held.binary_search(&a).is_ok();
     let (labels, objects): (Vec<_>, Vec<_>) = file
@@ -246,9 +259,12 @@ const MAX_PADDING: u64 = 64;
 /// What comes after `r`'s terminator in its section (`data`, mapped at `vma`):
 /// `Some(None)` the section's end, `Some(Some(a))` the first nonzero unit `a`
 /// past zero padding, which a literal's next object starts at, or `None` when
-/// the zeros are no padding: more than [`MAX_PADDING`] bytes, or more than the
-/// alignment of the unit after them asks for (`{97, 98, 99, 100, 101, 0, 0, 7}`
-/// is one table).
+/// it cannot be one: zeros that are no padding, more than [`MAX_PADDING`] bytes
+/// or more than the alignment of the unit after them asks for
+/// (`{97, 98, 99, 100, 101, 0, 0, 7}` is one table), or a unit below
+/// [`CODE_POINTS`] that does not open a zero-terminated run of printable units,
+/// the next literal (`{.., 101, 0, 7, 8}` goes on with the codes 7 and 8,
+/// whatever names them, and `{.., 101, 0}, 5` with a count).
 fn follower(r: &Run32, data: &[u8], vma: u64, little_endian: bool) -> Option<Option<u64>> {
     let next = r.addr + u64::from(r.len());
     let mut at = next;
@@ -266,8 +282,29 @@ fn follower(r: &Run32, data: &[u8], vma: u64, little_endian: bool) -> Option<Opt
         }
     }
     let align = 1u64 << at.trailing_zeros().min(MAX_PADDING.trailing_zeros());
-    (at - next < align || at == next).then_some(Some(at))
+    if at - next >= align && at != next {
+        return None;
+    }
+    let off = usize::try_from(at - vma).ok()?;
+    let unit = |k: usize| {
+        let raw: [u8; 4] = data.get(off + 4 * k..off + 4 * k + 4)?.try_into().ok()?;
+        Some(if little_endian { u32::from_le_bytes(raw) } else { u32::from_be_bytes(raw) })
+    };
+    let printable = |u: u32| u < 0x80 && is_string_char(u as u8);
+    let first = unit(0)?;
+    if first >= CODE_POINTS {
+        return Some(Some(at));
+    }
+    let mut k = 0;
+    while printable(unit(k)?) {
+        k += 1;
+    }
+    (k > 0 && unit(k)? == 0).then_some(Some(at))
 }
+
+/// One past the largest Unicode code point: a unit at or above it is no
+/// character, so data that starts with one is no next element of a code table.
+const CODE_POINTS: u32 = 0x11_0000;
 
 #[cfg(test)]
 mod tests {
@@ -359,9 +396,9 @@ mod tests {
     /// `widestr32_clang_O2_x86_64` keeps no symbol for its switch table
     /// (`L"helpz"` at 0x20a0, then `'q'`), so `L"hellow"` right after it is the
     /// tail of the run `L"qhellow"`: the operand at 0x20bc plants the literal
-    /// from there. `L"first-msg"` is followed by `L"second-msg"`, which only a
-    /// table of relative offsets reaches, so nothing says where `L"first-msg"`
-    /// ends until an operand points at 0x2164.
+    /// from there. `L"first-msg"` is followed by `L"second-msg"`, which only
+    /// clang's table of relative offsets `reltable.pick` (0x2050) reaches: with
+    /// the operand at that table both are planted.
     #[test]
     fn an_operand_inside_a_run_plants_the_literal_it_points_at() {
         assert!(fixture_facts("widestr32_clang_O2_x86_64", &[], &[]).is_empty());
@@ -369,40 +406,51 @@ mod tests {
         let literals = vec![(0x20bc, 28), (0x20d8, 48), (0x2108, 28), (0x2124, 24)];
         assert_eq!(fixture_facts("widestr32_clang_O2_x86_64", &targets, &[0x2060, 0x20a0]), literals);
         let mut explained = targets.to_vec();
-        explained.push(0x2164);
+        explained.insert(0, 0x2050);
         let mut first = literals.clone();
         first.extend([(0x213c, 40), (0x2164, 44)]);
         assert_eq!(fixture_facts("widestr32_clang_O2_x86_64", &explained, &[0x2060, 0x20a0]), first);
     }
 
     /// `widestr32_tables_gcc_O2_stripped`: int tables of character codes that
-    /// run on past their zero, and `L"control"`. A run whose next unit nothing
-    /// points at is refused (`passed`, 0x2100, then `7`; `keys`, 0x2040, held by
-    /// the struct `s`, then `'z'`); so is a run holding a table base, even from
-    /// an operand inside it (`inner`, indexed at 0x20a0 and passed from 0x20a8).
-    /// `L"control"` (0x2008) is followed by the format string `"%ld %u\n"`,
-    /// which `printf`'s operand points at.
+    /// run on past their zero, and `L"control"` (0x2008), followed by the format
+    /// string `"%ld %u\n"`, which `printf`'s operand points at. A run whose next
+    /// unit is a code that opens no literal is refused, whatever points at it
+    /// (`passed`, 0x2100, then `7`; `keys`, 0x2040, held by the struct `s`, then
+    /// `'z'`, `'x'`, 27); so is a run holding a table base, even from an operand
+    /// inside it.
     #[test]
     fn a_table_past_its_zero_is_no_literal() {
         let name = "widestr32_tables_gcc_O2_stripped";
         assert!(fixture_facts(name, &[0x2008], &[]).is_empty());
         assert_eq!(fixture_facts(name, &[0x2008, 0x2028], &[]), [(0x2008, 32)]);
-        assert!(fixture_facts(name, &[0x2100], &[]).is_empty());
-        assert_eq!(fixture_facts(name, &[0x2100, 0x2118], &[]), [(0x2100, 24)]);
+        assert!(fixture_facts(name, &[0x2100, 0x2118], &[]).is_empty());
         assert!(fixture_facts(name, &[], &[]).iter().all(|&(addr, _)| addr != 0x2040));
-        assert!(fixture_facts(name, &[0x20a8, 0x20c4], &[0x20a0]).is_empty());
-        assert_eq!(fixture_facts(name, &[0x20a8, 0x20c4], &[]), [(0x20a8, 28)]);
+        assert!(fixture_facts(name, &[0x200c, 0x2028], &[0x2008]).is_empty());
+        assert_eq!(fixture_facts(name, &[0x200c, 0x2028], &[]), [(0x200c, 28)]);
     }
 
     #[test]
-    fn padding_is_shorter_than_the_alignment_it_reaches() {
+    fn what_follows_a_literal_is_the_next_literal_or_no_code() {
         let mut d = wide("abcde", true);
         d.extend_from_slice(&[0; 8]);
         let run = scan_utf32_runs(&d, 0x1000, true, MIN_UNITS)[0];
         assert_eq!(follower(&run, &d, 0x1000, true), Some(None));
-        d.extend_from_slice(&7u32.to_le_bytes());
+        d.extend(wide("fg", true));
         assert_eq!(follower(&run, &d, 0x1000, true), Some(Some(0x1020)));
         assert_eq!(follower(&run, &d, 0x1004, true), None);
+        let mut named = wide("abcde", true);
+        named.extend_from_slice(&7u32.to_le_bytes());
+        let run = scan_utf32_runs(&named, 0x1000, true, MIN_UNITS)[0];
+        assert_eq!(follower(&run, &named, 0x1000, true), None);
+        let mut next = wide("abcde", true);
+        next.extend(wide("xy", true));
+        assert_eq!(follower(&run, &next, 0x1000, true), Some(Some(0x1018)));
+        next.truncate(next.len() - 4);
+        assert_eq!(follower(&run, &next, 0x1000, true), None);
+        let mut other = wide("abcde", true);
+        other.extend_from_slice(&0x2064_6c25u32.to_le_bytes());
+        assert_eq!(follower(&run, &other, 0x1000, true), Some(Some(0x1018)));
         let mut long = wide("abcde", true);
         long.extend_from_slice(&[0; 68]);
         long.extend_from_slice(&7u32.to_le_bytes());
