@@ -464,17 +464,15 @@ fn guard_shortens(
             let Some(pieces) = op.get_in(1).and_then(|p| pointer_pieces(fd, p, sb, 0)) else {
                 return false;
             };
-            if pieces.len() == 1 && pieces[0].1 == Some(0) {
-                return false;
-            }
-            let Some(base) = pieces.iter().map(|&(off, _)| sign_extend(space.wrap_offset(off) as intb, bits)).min() else {
-                return false;
-            };
-            let Some(&(s, e, ref ct)) = symbols.iter().find(|&&(s, e, _)| s <= base && base < e) else {
-                return false;
-            };
-            let next = symbols.iter().map(|&(s2, _, _)| s2).filter(|&s2| s2 >= e).min().unwrap_or(intb::MAX);
-            (ct.get_array_base().is_none() && only_guard(s, e)) || guard_only.iter().any(|&(lo, hi)| lo <= next && e < hi)
+            pieces.iter().filter(|&&(_, extra)| extra != Some(0)).any(|&(off, _)| {
+                let base = sign_extend(space.wrap_offset(off) as intb, bits);
+                let Some(&(s, e, ref ct)) = symbols.iter().find(|&&(s, e, _)| s <= base && base < e) else {
+                    return false;
+                };
+                let next = symbols.iter().map(|&(s2, _, _)| s2).filter(|&s2| s2 >= e).min().unwrap_or(intb::MAX);
+                (ct.get_array_base().is_none() && only_guard(s, e))
+                    || guard_only.iter().any(|&(lo, hi)| lo <= next && e < hi)
+            })
         })
     })
 }
@@ -614,14 +612,16 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
     spoiled
 }
 
-/// Does a wider written-slot STORE the C prints through the local at its base
-/// (`plain_index_base`) write an array there whose element is its own width
-/// or a part of it (`*(long *)&v1[i * 8]` into a byte array), which holds
-/// every slot at or above the base its guard INDIRECTs keep? A scalar, or an
-/// array of wider elements, makes the C index past the local (`(&v1)[a1] = 3`)
-/// or with the wrong stride. A store through a pointer variable (a walk, whose
-/// arrays `guard_shortens` checks), a byte store (written through a byte
-/// pointer, `((char *)v1)[i]`, and checked by the byte reaches), or one no
+/// Does a wider written-slot STORE write, at each stack address its pointer
+/// may index from (`pointer_pieces`: one, or a choice such as `p = c ? a : b;
+/// p[i] = x`), an array whose element is its own width or a part of it
+/// (`*(long *)&v1[i * 8]` into a byte array), which holds every slot its guard
+/// INDIRECTs keep from there to its reach? A scalar, or an array of wider
+/// elements, makes the C index past the local (`(&v1)[a1] = 3`) or with the
+/// wrong stride. A pointer the checks cannot follow from the stack base (a
+/// choice between the frame and `alloca`'d stack) fails. A loop's pointer walk
+/// (whose arrays `guard_shortens` checks), a byte store (written through a
+/// byte pointer, `((char *)v1)[i]`, and checked by the byte reaches), or one no
 /// longer live, passes.
 fn indexes_own_array(
     fd: &Funcdata,
@@ -641,15 +641,63 @@ fn indexes_own_array(
     if width <= 1 {
         return true;
     }
-    let Some(base) = plain_index_base(fd, ptr, sb, space) else {
+    let Some(pieces) = pointer_pieces(fd, ptr, sb, 0) else {
+        return !comes_from(fd, ptr, sb);
+    };
+    if loop_walk(fd, ptr, 0) {
         return true;
+    }
+    let bits = space.get_addr_size() as int4 * 8 - 1;
+    let mut bases: Vec<(intb, Option<intb>)> = pieces
+        .iter()
+        .map(|&(off, extra)| (sign_extend(space.wrap_offset(off) as intb, bits), extra))
+        .collect();
+    bases.sort_unstable();
+    let choice = bases.len() > 1;
+    bases.iter().enumerate().all(|(k, &(base, extra))| {
+        if choice && extra == Some(0) {
+            return true;
+        }
+        let end = match extra {
+            Some(x) if choice => base + x + width as intb,
+            _ if choice => bases.get(k + 1).map_or(intb::MAX, |&(b, _)| b),
+            _ => intb::MAX,
+        };
+        let reached = |&&(lo, _): &&(intb, intb)| base <= lo && lo < end;
+        let Some((_, e, ct)) = symbols.iter().find(|&&(s, e, _)| s <= base && base < e) else {
+            return slots.is_none_or(|slots| !slots.iter().any(|slot| reached(&slot)));
+        };
+        ct.get_array_base()
+            .is_some_and(|el| el.get_size() > 0 && el.get_size() <= width && width % el.get_size() == 0)
+            && slots.is_none_or(|slots| slots.iter().filter(reached).all(|&(_, hi)| hi <= *e))
+    })
+}
+
+/// Does `vn`'s pointer chain pass a MULTIEQUAL one of whose inputs steps from
+/// it by a constant (a loop's pointer walk)? Undecided past twelve steps,
+/// which counts as yes.
+fn loop_walk(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    if depth > 12 {
+        return true;
+    }
+    let Some(op) = fd.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else {
+        return false;
     };
-    let Some((_, e, ct)) = symbols.iter().find(|&&(s, e, _)| s <= base && base < e) else {
-        return slots.is_none_or(|slots| slots.is_empty());
-    };
-    ct.get_array_base()
-        .is_some_and(|el| el.get_size() > 0 && el.get_size() <= width && width % el.get_size() == 0)
-        && slots.is_none_or(|slots| slots.iter().all(|&(lo, hi)| lo < base || hi <= *e))
+    match op.code() {
+        OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).any(|k| {
+            op.get_in(k).is_some_and(|i| steps_from(fd, i, vn) || loop_walk(fd, i, depth + 1))
+        }),
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT | OpCode::CPUI_PTRSUB => {
+            op.get_in(0).is_some_and(|i| loop_walk(fd, i, depth + 1))
+        }
+        OpCode::CPUI_PTRADD | OpCode::CPUI_INT_ADD => (0..2).any(|k| {
+            op.get_in(k).is_some_and(|i| {
+                fd.vbank().get(i).is_some_and(|v| v.get_type().get_metatype() == type_metatype::TYPE_PTR || k == 0)
+                    && loop_walk(fd, i, depth + 1)
+            })
+        }),
+        _ => false,
+    }
 }
 
 /// Can the local of type `ct` at `[s, e)` print the writes of a store reaching

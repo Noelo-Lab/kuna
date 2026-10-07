@@ -1257,16 +1257,20 @@ against (`Funcdata::indexed_guard_stores`) adds its reach when its index is
 bounded (`kuna_storereach.rs (wide_reaches)`): from its base to the end of its
 bound or of its furthest guarded slot. Without the check a `long b[8]` whose
 `b[6]` the layout left as a separate local after a six-element array printed
-`v1[a1 & 7] = 3`, which writes past `v1`. Every such wider store the C prints
-through the local at its base (its pointer is one stack address plus indices,
-with no MULTIEQUAL on the way: `kuna_storereach.rs (plain_index_base)`),
-bounded or not, must also find an array there whose element is its own width or
-a part of it, holding every slot at or above the base its guard keeps
+`v1[a1 & 7] = 3`, which writes past `v1`. Every such wider store, bounded or
+not, must also find, at each stack address its pointer may index from (one, or
+a choice such as `p = c ? a : b; p[i] = x`, or a frame array chosen against a
+pointer from a call or a global), an array whose element is its own width or a
+part of it, holding every slot its guard keeps from that address to its reach
 (`kuna_storereach.rs (indexes_own_array)`): a scalar there prints the store as
 `(&v1)[a1] = 3`, past the scalar, and an array of wider elements indexes with
-the wrong stride. A store through a pointer variable (a walk, such as a zeroing
-loop over a struct's first field) prints as `*p = 0`, not through the local;
-the final check below keeps the arrays it goes through whole.
+the wrong stride. A pointer that comes from the stack base along a path
+`pointer_pieces` cannot resolve (`p = n >= 16 ? alloca(n * 8) : buf`) fails:
+no layout check can see the array it indexes, and the guard left `buf` as
+scalars the C indexed past (`v1 = &v3; v1[a1 & 3] = 3`). A loop's pointer walk
+(`kuna_storereach.rs (loop_walk)`, such as a zeroing loop over a struct's first
+field) prints as `*p = 0`, not through the local; the final check below keeps
+the arrays it goes through whole.
 
 Beyond those, the guard must never end early a local that any indexed access
 or walk, load or store, goes through. A slot the guard keeps is guard-only

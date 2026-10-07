@@ -720,7 +720,9 @@ a slot past those four, the layout makes the array as long as the bound (chapter
 06, `kuna_storereach.rs (widen_open_hints)`). A STORE whose pointer
 comes from the stack pointer after the function moved it by a non-constant
 amount (`LoadGuard::dynamic_stack`, an `alloca`) writes dynamically allocated
-stack, not the frame, and is skipped. Once the pass is renamed and the new
+stack, not the frame, and is skipped. One whose pointer may be either, by path,
+keeps its guard here; chapter 06 withdraws it when the final layout still has a
+pointer the checks cannot follow (`kuna_storereach.rs (indexes_own_array)`). Once the pass is renamed and the new
 windows are analyzed, `kuna_stackstoreguard.rs (prune_indexed)` removes each
 such `INDIRECT` whose STORE's analyzed window turned out not to reach its
 range. The frame resolution check above applies to this family too.

@@ -30,6 +30,14 @@
             struct S *q = s; for (int k = 0; k < j; k++, q++) q->a = k;
             return s[2].z + (signed char)s[5].z; }
 
+    m8 is built the same way, at 0x1001f0, with sink a local noinline stub after
+    it; its pointer is either alloca'd stack or the frame array buf:
+
+        int m8(int i, int j) { int n = j & 31; long buf[4];
+            long *p = n >= 16 ? __builtin_alloca(n * 8) : buf;
+            buf[0] = i; buf[1] = j; p[(unsigned)j % 4] = 3;
+            int r = (int)(buf[0] + buf[1]); sink(p); return r * 3; }
+
     Stage: P3 heritage stackstoreguard guards b[6] and b[1] at the indexed
     store (its index is bounded by `& 7`), and the P6 layout makes the array
     at the store's base as long as that bound.  u2 and u5 index with no
@@ -39,7 +47,9 @@
     w5 walks the array with stride 2, which never reaches the guarded b[3];
     the guard must not end that array before b[3].  Neither may gap2's walk
     over the .a fields end the struct array before the guarded s[2].z, which
-    only the first layout passes see as kept by the guard alone.  Pass 1 (default) reads both
+    only the first layout passes see as kept by the guard alone.  m8's
+    pointer may be alloca'd stack, which no layout check can follow, so it
+    keeps no guard and buf stays one array.  Pass 1 (default) reads both
     slots back after the store; pass 2 (stackstoreguard off) reproduces the
     stale values, as on main.
 -->
@@ -59,7 +69,11 @@ ff0302d1a80080523f0400710800084ae05f0079e8bf00794b030054ec030091
 e803012a3f04007181000054e9031faaea0300910d00001409797f92eb031faa
 8a11098b8c4100916d0500918b011ff86b0900917f0109eb8d0502f861ffff54
 3f0108eba0000054490501f8290500911f0109eba1ffff54e05f4079e8bf4079
-081d001300a1200bff030291c0035fd6
+081d001300a1200bff030291c0035fd6fd7bbea9f30b00f9fd030091ff8300d1
+e803002a291000123f4100710301005429711d53ea030091293d001129117c92
+400109cb1f00009102000014a08300d1087d4093297c40932a0400126b008052
+a8273ea90b582af8a8035eb8a9835eb83301080b060000946006130bbf030091
+f30b40f9fd7bc2a8c0035fd6c0035fd6
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="l6b"/>
 <symbol space="ram" offset="0x100038" name="i6b"/>
@@ -67,6 +81,8 @@ e803012a3f04007181000054e9031faaea0300910d00001409797f92eb031faa
 <symbol space="ram" offset="0x10009c" name="u5"/>
 <symbol space="ram" offset="0x1000bc" name="w5"/>
 <symbol space="ram" offset="0x100160" name="gap2"/>
+<symbol space="ram" offset="0x1001f0" name="m8"/>
+<symbol space="ram" offset="0x10026c" name="m8_sink"/>
 </binaryimage>
 <script>
   <com>lo fu l6b</com>
@@ -85,6 +101,9 @@ e803012a3f04007181000054e9031faaea0300910d00001409797f92eb031faa
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu gap2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m8</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option stackstoreguard off</com>
@@ -106,6 +125,9 @@ e803012a3f04007181000054e9031faaea0300910d00001409797f92eb031faa
   <com>lo fu gap2</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu m8</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #1: default, b[6] and b[1] are elements of one array read after the store" min="2" max="2">return (\(int4\))?v1\[1\] \+ (\(int4\))?v1\[6\];</stringmatch>
@@ -116,4 +138,5 @@ e803012a3f04007181000054e9031faaea0300910d00001409797f92eb031faa
 <stringmatch name="INDEXEDSTOREGUARD-A64 #6: off reproduces the stale u2 and u5" min="2" max="2">return (a0 \* 2 \+ 1|a0);</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #7: the array w5's stride-2 walk goes through keeps its eight elements in both passes" min="2" max="2">^\s*int8 v3 \[8\]; // ([^\n]+ \| )?stack - 0x40( \| [^\n]+)?$</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #8: gap2's walk goes through one array of the whole struct array in both passes" min="2" max="2">^\s*uint8 v2 \[16\]; // stack - 0x80$</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD-A64 #9: m8 stores through the frame array buf, not a scalar, in both passes" min="2" max="2">^\s*int8 v1 \[4\]; // </stringmatch>
 </decompilertest>

@@ -63,6 +63,15 @@
             return s[1].b + (short)s[1].c; }
         int wq(...)   ws with struct Q
 
+    cb_m8 (clang 14 -O2, -fno-stack-protector -fcf-protection=none, at 0x402560,
+    with sink a local noinline stub after it) indexes either alloca'd stack
+    or the frame array buf:
+
+        int m8(int i, int j) { int n = j & 31; long buf[4];
+            long *p = n >= 16 ? __builtin_alloca(n * 8) : buf;
+            buf[0] = i; buf[1] = j; p[(unsigned)j % 4] = 3;
+            int r = (int)(buf[0] + buf[1]); sink(p); return r * 3; }
+
     u2 and u5 index with no bound: the guarded b[1] and b[2] lie inside the
     four elements the layout gives the array, and a narrower read of them
     (`(int)b[1]`, `(short)b[1]`) must not split the array into scalars, or
@@ -76,6 +85,9 @@
     In wp the merge maps the guarded s[1].b to the register it came from,
     and in wq a two-byte gap lies between the array and the guarded s[5].z;
     neither may end the array early either.
+    cb_m8's pointer may be alloca'd stack, which no layout check can
+    follow, so it keeps no guard and buf stays one array its index stays
+    inside on the frame path, as on main.
 
     Stage: P3 heritage, stackstoreguard: an indexed stack STORE of any
     width gets an INDIRECT on each written stack range its analyzed window
@@ -155,7 +167,11 @@ f60f8e910000008d46ff83f8077309488d4424b831c9eb4f488d4424b889f283
 e2f831c9662e0f1f840000000000669089088d79018978088d79028978108d79
 038978188d79048978208d79058978288d79068978308d790789783883c10848
 83c04039d175c940f6c607742189c983e60731d2662e0f1f8400000000006690
-8d3c11893cd04883c20139d675f20fb77c24cc0fb74424e60fbfcf9801c8c3
+8d3c11893cd04883c20139d675f20fb77c24cc0fb74424e60fbfcf9801c8c300
+554889e5534883ec2889f083e01f83f81072158d0cc50f00000083e1f04889e0
+4829c84889c4eb04488d45d04863cf48894dd04863ce48894dd883e60348c704
+f0030000008b5dd8035dd04889c7e80d0000008d045b488d65f85b5dc30f1f00
+c3
 </bytechunk>
 <symbol space="ram" offset="0x401000" name="g_byte"/>
 <symbol space="ram" offset="0x401040" name="g_int"/>
@@ -191,6 +207,8 @@ e2f831c9662e0f1f840000000000669089088d79018978088d79028978108d79
 <symbol space="ram" offset="0x4023d0" name="cb_ws"/>
 <symbol space="ram" offset="0x402470" name="gb_wp"/>
 <symbol space="ram" offset="0x4024b0" name="cb_wq"/>
+<symbol space="ram" offset="0x402560" name="cb_m8"/>
+<symbol space="ram" offset="0x4025c0" name="cb_m8_sink"/>
 </binaryimage>
 <script>
   <com>lo fu g_byte</com>
@@ -293,6 +311,9 @@ e2f831c9662e0f1f840000000000669089088d79018978088d79028978108d79
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu cb_wq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_m8</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option stackstoreguard off</com>
@@ -398,6 +419,9 @@ e2f831c9662e0f1f840000000000669089088d79018978088d79028978108d79
   <com>lo fu cb_wq</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu cb_m8</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="INDEXEDSTOREGUARD #1: default, b[0] is stored before the indexed store and tested after it (byte, int, long; gcc -O2, clang -O2, gcc -O0)" min="7" max="7">v1\[0\] = .*;
@@ -417,4 +441,5 @@ if \(!?v1\[0\]\)</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD #13: default, b[1] and b[2] of an array indexed with no bound are read back from the array (u2, u5; gcc -O2, clang -O2)" min="4" max="4">return \(int4\)(v1\[2\] \+ \(int4\)v1\[1\]|\(int2\)v1\[1\]);</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD #14: no store is printed through the address of a scalar" min="0" max="0">\(&amp;v\d+\)\[</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD #15: the arrays the walks of w5, ws, wp and wq go through keep their length in both passes (gcc -O2, clang -O2)" min="10" max="10">^\s*(int8 v[345] \[9\]|uint4 v4 \[18\]);</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #16: m8 stores through the frame array buf, not a scalar, in both passes (alloca or frame pointer; clang -O2)" min="2" max="2">^\s*int8 v2 \[5\]; // </stringmatch>
 </decompilertest>
