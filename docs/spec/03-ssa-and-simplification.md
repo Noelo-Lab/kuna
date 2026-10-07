@@ -681,9 +681,9 @@ At `off` none of them runs, which is what kuna shipped before the option.
 `option stackstoreguard` (default on) also enables STORE guards at
 `indexaliasguard load` and `global` for constant-initialized stack slots. Before normalizing
 partial reads, it checks for a constant write (through COPY, SUBPIECE or
-integer extension) and the processor's stack space. Only byte STOREs already
-recorded by indexed stack-pointer discovery qualify; globals, unknown pointers
-and wider stores retain the explicit `full` policy. The gate lives in
+integer extension) and the processor's stack space. For this family only byte
+STOREs already recorded by indexed stack-pointer discovery qualify; globals and
+unknown pointers retain the explicit `full` policy. The gate lives in
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackstoreguard.rs`.
 A heritage pass also leaves the whole frame unguarded when one of those byte
 STOREs, or any other LOAD or STORE whose address comes from the stack pointer,
@@ -697,13 +697,53 @@ earlier pass guarded the frame, the option is turned off for the whole function
 (`heritage.rs (store_frame_resolves)`), which then decompiles exactly as with
 `stackstoreguard off`.
 
+The option's second family guards a slot the function writes with any value,
+against indexed STOREs of any width. A stack range whose writes include one
+that is not an `INDIRECT` or `MULTIEQUAL` (`kuna_stackstoreguard.rs
+(indexed_enabled)`) gets an `indirect_store` `INDIRECT` at each STORE that
+indexed stack-pointer discovery recorded, is not already guarded, and may
+write a byte of the range (`kuna_stackstoreguard.rs (indexed_stores)`, called
+from `heritage.rs (Heritage::guard_indexed_stores)`). Whether it may is read
+from the STORE's guard window (`kuna_stackstoreguard.rs (window_overlaps)`):
+an unanalyzed STORE may write anywhere, one whose value-set range is locked
+writes its window plus the store's width, and any other writes from the start
+of its window on. Within that, the STORE writes no byte outside its pointer's
+own bound (`kuna_storereach.rs (store_window)`, cached per pass): the stack
+base plus constants plus indices bounded by their known-bits masks, by the
+divisor of an unsigned remainder, and by any constant they are multiplied or
+shifted by (`b[(i >> 4) % 12]` with `int b[12]` writes 48 bytes). A STORE with
+neither a locked window nor such a bound writes at most four elements of its
+width, the length the stack layout gives an array whose window is not locked
+(upstream `MapState::gatherOpen` and `MapState::addGuard`), so the guard stays
+within the local the store writes through; for a wider STORE whose guard keeps
+a slot past those four, the layout makes the array as long as the bound (chapter
+06, `kuna_storereach.rs (widen_open_hints)`). A STORE whose pointer
+comes from the stack pointer after the function moved it by a non-constant
+amount (`LoadGuard::dynamic_stack`, an `alloca`) writes dynamically allocated
+stack, not the frame, and is skipped. Once the pass is renamed and the new
+windows are analyzed, `kuna_stackstoreguard.rs (prune_indexed)` removes each
+such `INDIRECT` whose STORE's analyzed window turned out not to reach its
+range. The frame resolution check above applies to this family too.
+
+Without it, the value written to a slot before an indexed store was forwarded
+to a read after it: `b[0] = i; b[(i >> 4) % 12] = j; if (b[0]) ...` printed
+`if ((char)a0)`, which tests `i` where the binary re-reads `b[0]` and sees `j`
+when the index is 0. The same held for `int`, `long`, `short` and struct
+arrays. A slot past the first four elements of a store whose window is not
+locked and whose index has no bound heritage can read (`b[4]` after
+`b[i % 6] = 3` with `long b[6]` from gcc -O2, whose remainder is still a
+multiply and shift when the frame is guarded) is still not guarded;
+`indexaliasguard full` lays that slot out as a separate local, so it is not
+printed right there either.
+
 This bounded policy prevents an initializer from flowing unchanged across a
 byte-fill loop into a later direct byte or word read. Otherwise constant
 folding can delete a reachable condition and side-effecting call. Guards
 conservatively describe a possible write; they do not invent its value or
 prove its range. General store-alias recovery remains outside this policy:
-applying every indexed store guard changes parameter and aggregate recovery
-in existing cases, so it is not enabled by this option.
+guarding every slot at every store changes parameter and aggregate recovery
+in existing cases, so the option guards only stack slots an indexed stack
+STORE may reach.
 
 Turning `stackstoreguard off` restores the previous load-only behavior without
 changing the explicit `full` policy. `indexaliasguard off` suppresses both

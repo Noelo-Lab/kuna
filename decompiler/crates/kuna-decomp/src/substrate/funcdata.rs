@@ -236,6 +236,9 @@ pub struct Funcdata {
     /// (kuna `stackstoreguard`) What the latest `restructure_varnode` pass says
     /// the final layout must satisfy (`p6_variables/kuna_storereach.rs`).
     store_reach_checks: std::cell::RefCell<crate::p6_variables::kuna_storereach::ReachChecks>,
+    /// (kuna `stackstoreguard`) The STOREs of any width heritage guarded a
+    /// written stack range against (`p3_dataflow/kuna_stackstoreguard.rs`).
+    indexed_guard_stores: std::cell::RefCell<std::collections::BTreeSet<OpId>>,
     /// (kuna `stackstoreguard`) Set when the guard is off for this function.
     /// Survives `clear()`.
     stack_store_guard_withdrawn: std::cell::Cell<bool>,
@@ -646,6 +649,7 @@ impl Funcdata {
             cast_objects: std::cell::RefCell::new(Vec::new()),
             store_reach_committed: std::cell::Cell::new(false),
             store_reach_checks: std::cell::RefCell::new(Default::default()),
+            indexed_guard_stores: std::cell::RefCell::new(Default::default()),
             stack_store_guard_withdrawn: std::cell::Cell::new(false),
             stack_store_guard_spoiled: std::cell::Cell::new(false),
             kuna_condstmts_seed: std::collections::BTreeSet::new(),
@@ -2034,6 +2038,18 @@ impl Funcdata {
     /// (kuna `stackstoreguard`) What the latest pass recorded.
     pub(crate) fn store_reach_checks(&self) -> crate::p6_variables::kuna_storereach::ReachChecks {
         self.store_reach_checks.borrow().clone()
+    }
+
+    /// (kuna `stackstoreguard`) Record a STORE heritage guarded a written
+    /// stack range against.
+    pub(crate) fn note_indexed_guard_store(&self, store: OpId) {
+        self.indexed_guard_stores.borrow_mut().insert(store);
+    }
+
+    /// (kuna `stackstoreguard`) The STOREs heritage guarded written stack
+    /// ranges against.
+    pub(crate) fn indexed_guard_stores(&self) -> std::collections::BTreeSet<OpId> {
+        self.indexed_guard_stores.borrow().clone()
     }
 
     /// (kuna `condstmts`) Block starts to structure as complex.
@@ -3718,6 +3734,7 @@ impl Funcdata {
         self.kuna_moved_back_returns.clear();
         self.store_reach_committed.set(false);
         *self.store_reach_checks.borrow_mut() = Default::default();
+        self.indexed_guard_stores.borrow_mut().clear();
         self.kuna_forced_return_planted.clear();
         self.kuna_float_pair_halves.clear();
         self.kuna_forced_claims.clear();

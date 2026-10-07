@@ -1,0 +1,54 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    An indexed store into an AArch64 stack array whose guarded slots lie past
+    the four elements the stack layout gives an array whose window is not
+    locked: the slots must be elements of the array the store writes
+    through.  Before, the layout made b[6] its own local after a six-element
+    array (or printed the store as `(&v1)[a1 & 7] = 3` into a scalar), so the
+    C wrote past the array and returned the separate b[6]; for `long b[8]`
+    gcc's x86 build of the printed C aborted with stack smashing.
+
+    clang 14, target aarch64-linux-gnu, -O2 -fno-stack-protector, .text at
+    0x100000:
+
+        int l6b(int i, int j) { long b[8]; b[6] = i; b[1] = j; b[j & 7] = 3;
+            return (int)(b[6] + b[1]); }
+        int i6b(int i, int j) { int b[8]; b[6] = i; b[1] = j; b[j & 7] = 3;
+            return b[6] + b[1]; }
+
+    Stage: P3 heritage stackstoreguard guards b[6] and b[1] at the indexed
+    store (its index is bounded by `& 7`), and the P6 layout makes the array
+    at the store's base as long as that bound.  Pass 1 (default) reads both
+    slots back after the store; pass 2 (stackstoreguard off) reproduces the
+    stale values, as on main.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+ff0301d1087c4093297c40932b0800126a008052ec030091e81b00f9e90700f9
+8a592bf8e83340b9e90b40b92001080bff030191c0035fd6ff8300d129080012
+e80300916a008052e01b00b9e10700b90a5929b8e81b40b9e90740b92001080b
+ff830091c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="l6b"/>
+<symbol space="ram" offset="0x100038" name="i6b"/>
+</binaryimage>
+<script>
+  <com>lo fu l6b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu i6b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option stackstoreguard off</com>
+  <com>lo fu l6b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu i6b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="INDEXEDSTOREGUARD-A64 #1: default, b[6] and b[1] are elements of one array read after the store" min="2" max="2">return (\(int4\))?v1\[1\] \+ (\(int4\))?v1\[6\];</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD-A64 #2: the store writes through an array, not a scalar, in both passes" min="4" max="4">^\s*v1\[a1 &amp; 7\] = 3;$</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD-A64 #3: off reproduces the stale values" min="2" max="2">return a1 \+ a0;</stringmatch>
+</decompilertest>

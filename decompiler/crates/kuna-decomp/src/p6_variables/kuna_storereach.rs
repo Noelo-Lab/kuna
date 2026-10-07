@@ -56,7 +56,7 @@
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use kuna_base::address::sign_extend;
+use kuna_base::address::{calc_mask, sign_extend};
 use kuna_base::space::{spacetype, AddrSpace};
 use kuna_base::types::{int4, intb, uintb};
 use kuna_num::opcodes::OpCode;
@@ -99,10 +99,19 @@ pub(crate) fn prepare_hints(
     let Some(sb) = fd.find_spacebase_input(space) else {
         return checks;
     };
-    if !has_byte_store(fd) {
+    widen_open_hints(fd, state, space);
+    let byte_store = has_byte_store(fd);
+    if !byte_store && fd.indexed_guard_stores().is_empty() {
         return checks;
     }
-    let guarded: Vec<OpId> = guard_effects(fd, space).stores.into_iter().collect();
+    let effects = guard_effects(fd, space);
+    checks.reaches = wide_reaches(fd, space, sb, &effects);
+    if !byte_store {
+        checks.reaches.sort_unstable();
+        checks.reaches.dedup();
+        return checks;
+    }
+    let guarded: Vec<OpId> = effects.stores.into_iter().collect();
     if guarded.is_empty() {
         return checks;
     }
@@ -174,6 +183,85 @@ pub(crate) fn prepare_hints(
     checks
 }
 
+/// Raise the open hint at a guarded wider-than-byte store's base to every
+/// element its bounded window (`store_window`) reaches, when a guard INDIRECT
+/// of the store keeps a slot past the elements the hint has: the layout gives
+/// an array whose window value-set analysis did not lock four elements, and a
+/// guarded slot past them would be a separate local the store never writes.
+/// The unlocked integer hints of another width inside the widened array go,
+/// so a narrower read of an element (`(int)b[6]`) is a piece of the array, not
+/// a local of its own; hints of the element's width join the array.
+fn widen_open_hints(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
+    let bits = space.get_addr_size() as int4 * 8 - 1;
+    for store in fd.indexed_guard_stores() {
+        let Some(op) = fd
+            .obank()
+            .get(store)
+            .filter(|o| !o.is_dead() && o.code() == OpCode::CPUI_STORE)
+        else {
+            continue;
+        };
+        let width = op.get_in(2).and_then(|v| fd.vbank().get(v)).map_or(0, |v| v.get_size());
+        let (Some(bl), true) = (op.get_parent(), width > 1) else {
+            continue;
+        };
+        let Some((lo, last)) = store_window(fd, store, space) else {
+            continue;
+        };
+        let (lo, last) = (sign_extend(lo as intb, bits), sign_extend(last as intb, bits));
+        let kept_end = fd
+            .bb_ops(bl)
+            .into_iter()
+            .filter_map(|id| {
+                let ind = fd.obank().get(id).filter(|o| o.code() == OpCode::CPUI_INDIRECT)?;
+                let iop = fd
+                    .vbank()
+                    .get(ind.get_in(1)?)
+                    .filter(|v| v.get_space().get_type() == spacetype::IPTR_IOP)?;
+                if crate::funcdata_varnode::op_iop_decode(iop.get_addr().get_offset()) != store {
+                    return None;
+                }
+                let out = fd
+                    .vbank()
+                    .get(ind.get_out()?)
+                    .filter(|o| o.get_space().get_index() == space.get_index())?;
+                Some(sign_extend(out.get_addr().get_offset() as intb, bits) + out.get_size() as intb)
+            })
+            .max();
+        let Some(kept_end) = kept_end else {
+            continue;
+        };
+        let elems = ((last - lo + 1) / width as intb) as int4;
+        let end = lo + elems as intb * width as intb;
+        let mut widened = false;
+        for h in state.hints_mut().iter_mut() {
+            if h.range_type == RangeType::Open
+                && h.sstart == lo
+                && h.size == width
+                && h.highind >= 0
+                && h.highind < elems - 1
+                && hint_end(h) < kept_end
+            {
+                h.highind = elems - 1;
+                widened = true;
+            }
+        }
+        if widened {
+            state.hints_mut().retain(|h| {
+                h.range_type != RangeType::Fixed
+                    || h.size == width
+                    || h.sstart < lo
+                    || hint_end(h) > end
+                    || h.is_type_lock()
+                    || !matches!(
+                        h.type_.get_metatype(),
+                        type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+                    )
+            });
+        }
+    }
+}
+
 /// If the final layout spoils what the guard needs, mark the function to be
 /// analyzed again from scratch without the guard. The guard stands
 /// only when every stack access in the frame resolved, every slot a guard
@@ -187,7 +275,7 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
     if !fd.stack_store_guard() {
         return false;
     }
-    if !has_byte_store(fd) {
+    if !has_byte_store(fd) && fd.indexed_guard_stores().is_empty() {
         return false;
     }
     let Some(sl) = fd.get_scope_local() else {
@@ -483,16 +571,22 @@ pub(crate) fn frame_unresolved(fd: &Funcdata, space: &Rc<AddrSpace>, stores: &[O
 struct GuardEffects {
     /// The byte STOREs a guard INDIRECT names as its effect.
     stores: BTreeSet<OpId>,
-    /// The signed stack ranges `[lo, hi)` of those INDIRECTs whose value is read.
+    /// The signed stack ranges `[lo, hi)` of those INDIRECTs, and of the
+    /// INDIRECTs of the wider written-slot STOREs, whose value is read.
     read: Vec<(intb, intb)>,
     /// The signed stack ranges of all of them.
     all: Vec<(intb, intb)>,
+    /// The ranges each wider written-slot STORE's INDIRECTs name.
+    wide: std::collections::BTreeMap<OpId, Vec<(intb, intb)>>,
 }
 
-/// The guard INDIRECTs on `space` whose effect is a byte STORE.
+/// The guard INDIRECTs on `space` whose effect is a byte STORE or a wider
+/// STORE heritage guarded a written stack range against
+/// (`Funcdata::indexed_guard_stores`).
 fn guard_effects(fd: &Funcdata, space: &Rc<AddrSpace>) -> GuardEffects {
     let bits = space.get_addr_size() as int4 * 8 - 1;
     let mut effects = GuardEffects::default();
+    let indexed = fd.indexed_guard_stores();
     for id in fd.obank().iter_alive() {
         let Some(op) = fd
             .obank()
@@ -519,22 +613,30 @@ fn guard_effects(fd: &Funcdata, space: &Rc<AddrSpace>) -> GuardEffects {
             continue;
         };
         let store = crate::funcdata_varnode::op_iop_decode(iop.get_addr().get_offset());
-        let byte_store = fd
+        let Some(width) = fd
             .obank()
             .get(store)
             .filter(|s| s.code() == OpCode::CPUI_STORE && !s.is_dead())
             .and_then(|s| s.get_in(2))
             .and_then(|v| fd.vbank().get(v))
-            .is_some_and(|v| v.get_size() == 1);
-        if byte_store {
-            effects.stores.insert(store);
-            let lo = sign_extend(out.get_addr().get_offset() as intb, bits);
-            let range = (lo, lo + out.get_size() as intb);
-            if is_read(fd, out_id) {
-                effects.read.push(range);
-            }
-            effects.all.push(range);
+            .map(|v| v.get_size())
+        else {
+            continue;
+        };
+        if width != 1 && !indexed.contains(&store) {
+            continue;
         }
+        let lo = sign_extend(out.get_addr().get_offset() as intb, bits);
+        let range = (lo, lo + out.get_size() as intb);
+        if width == 1 {
+            effects.stores.insert(store);
+        } else {
+            effects.wide.entry(store).or_default().push(range);
+        }
+        if is_read(fd, out_id) {
+            effects.read.push(range);
+        }
+        effects.all.push(range);
     }
     effects
 }
@@ -565,6 +667,31 @@ pub(crate) fn is_read(fd: &Funcdata, vn: VarnodeId) -> bool {
         }
     }
     false
+}
+
+/// The bytes `[base, end)` each wider written-slot STORE with a bounded index
+/// (`store_window`) may write, which the layout must keep in the local at its
+/// base: from its pointer's lowest base (its lowest guarded slot when the
+/// pointer does not resolve) to the end of its bound or of its furthest
+/// guarded slot. A store whose index has no bound, such as a zeroing loop's
+/// pointer walk, writes through a pointer the C prints as one, not through
+/// the local, and its guarded slots are checked only for being whole locals.
+fn wide_reaches(fd: &Funcdata, space: &Rc<AddrSpace>, sb: VarnodeId, effects: &GuardEffects) -> Vec<(intb, intb)> {
+    let bits = space.get_addr_size() as int4 * 8 - 1;
+    effects
+        .wide
+        .iter()
+        .filter_map(|(&store, slots)| {
+            let slot_lo = slots.iter().map(|&(lo, _)| lo).min()?;
+            let slot_hi = slots.iter().map(|&(_, hi)| hi).max()?;
+            let op = fd.obank().get(store)?;
+            let base = pointer_pieces(fd, op.get_in(1)?, sb, 0)
+                .and_then(|pieces| pieces.iter().map(|&(off, _)| sign_extend(space.wrap_offset(off) as intb, bits)).min())
+                .unwrap_or(slot_lo);
+            let bound = sign_extend(store_window(fd, store, space)?.1 as intb, bits) + 1;
+            Some((base.min(slot_lo), bound.max(slot_hi)))
+        })
+        .collect()
 }
 
 /// The signed stack bytes `[lo, hi)` a byte store may write, `hi` unknown when
@@ -706,10 +833,7 @@ pub(crate) fn pointer_pieces(
                 );
             }
             let (index, bias) = offset_index(fd, term).unwrap_or((term, 0));
-            let span = fd
-                .vbank()
-                .get(index)?
-                .get_nz_mask()
+            let span = index_bound(fd, index)?
                 .checked_add(bias)
                 .and_then(|m| m.checked_mul(scale))
                 .filter(|&s| s < MAX_REACH as uintb)
@@ -723,6 +847,77 @@ pub(crate) fn pointer_pieces(
         }
         _ => None,
     }
+}
+
+/// The largest value `vn` may hold: its known-bits mask, or less than the
+/// divisor of an unsigned remainder it copies or extends (sign-extends only
+/// while the remainder stays below the sign bit), times any constant it is
+/// multiplied or shifted by.
+fn index_bound(fd: &Funcdata, vn: VarnodeId) -> Option<uintb> {
+    index_bound_at(fd, vn, 0)
+}
+
+fn index_bound_at(fd: &Funcdata, vn: VarnodeId, depth: u32) -> Option<uintb> {
+    let value = fd.vbank().get(vn)?;
+    let mask = value.get_nz_mask();
+    let full = calc_mask(value.get_size());
+    let mut cur = vn;
+    let mut sign_bit = uintb::MAX;
+    for _ in 0..4 {
+        let Some(op) = fd.vbank().get(cur).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else {
+            break;
+        };
+        match (op.code(), op.get_in(0)) {
+            (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, Some(input)) => cur = input,
+            (OpCode::CPUI_INT_SEXT, Some(input)) => {
+                let bits = fd.vbank().get(input).map_or(0, |v| v.get_size() as u32 * 8);
+                sign_bit = sign_bit.min(1u64.checked_shl(bits.saturating_sub(1)).unwrap_or(uintb::MAX));
+                cur = input;
+            }
+            (OpCode::CPUI_INT_REM, _) => {
+                let divisor = op
+                    .get_in(1)
+                    .and_then(|c| fd.vbank().get(c))
+                    .filter(|c| c.is_constant())
+                    .map_or(0, |c| c.get_offset());
+                return Some(if divisor == 0 || divisor - 1 >= sign_bit { mask } else { mask.min(divisor - 1) });
+            }
+            (OpCode::CPUI_INT_MULT | OpCode::CPUI_INT_LEFT, Some(input)) if depth < 4 && sign_bit == uintb::MAX => {
+                let Some(c) = op.get_in(1).and_then(|c| fd.vbank().get(c)).filter(|c| c.is_constant()) else {
+                    break;
+                };
+                let scaled = index_bound_at(fd, input, depth + 1).and_then(|b| match op.code() {
+                    OpCode::CPUI_INT_MULT => b.checked_mul(c.get_offset()),
+                    _ => u32::try_from(c.get_offset())
+                        .ok()
+                        .filter(|&s| s < 64 && b.leading_zeros() > s)
+                        .map(|s| b << s),
+                });
+                return Some(scaled.filter(|&b| b <= full).map_or(mask, |b| b.min(mask)));
+            }
+            _ => break,
+        }
+    }
+    Some(mask)
+}
+
+/// The stack bytes `[lo, last]`, as offsets in `space`, an indexed STORE of
+/// any width may write: its pointer is the stack base plus constants plus
+/// indices that `index_bound` bounds, at one address or a choice of close ones.
+pub(crate) fn store_window(fd: &Funcdata, store: OpId, space: &Rc<AddrSpace>) -> Option<(uintb, uintb)> {
+    let sb = fd.find_spacebase_input(space)?;
+    let op = fd.obank().get(store).filter(|o| !o.is_dead() && o.code() == OpCode::CPUI_STORE)?;
+    let width = fd.vbank().get(op.get_in(2)?)?.get_size().max(1) as intb;
+    let bits = space.get_addr_size() as int4 * 8 - 1;
+    let pieces = pointer_pieces(fd, op.get_in(1)?, sb, 0)?;
+    let mut span: Option<(intb, intb)> = None;
+    for (off, extra) in pieces {
+        let lo = sign_extend(space.wrap_offset(off) as intb, bits);
+        let last = lo + extra? + width - 1;
+        span = Some(span.map_or((lo, last), |(l, h)| (l.min(lo), h.max(last))));
+    }
+    let (lo, last) = span.filter(|&(lo, last)| last - lo < MAX_REACH)?;
+    Some((space.wrap_offset(lo as uintb), space.wrap_offset(last as uintb)))
 }
 
 /// `vn` as `index + c` for a small non-negative constant `c`, which is at most

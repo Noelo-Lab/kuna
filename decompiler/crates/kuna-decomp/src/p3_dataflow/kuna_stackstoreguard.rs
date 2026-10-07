@@ -1,6 +1,9 @@
-//! Prevent constant propagation across indexed byte writes to initialized stack slots.
+//! Keep indexed stack writes between a stack slot's write and its later reads:
+//! every recorded indexed byte STORE guards a constant-initialized slot, and an
+//! indexed STORE of any width guards a written slot inside the array it may write.
 
 use kuna_base::address::Address;
+use kuna_base::types::int4;
 use std::rc::Rc;
 
 pub(super) fn enabled(
@@ -38,6 +41,162 @@ pub(super) fn frame_unresolved(
         })
         .collect();
     !stores.is_empty() && crate::p6_variables::kuna_storereach::frame_unresolved(fd, spc, &stores)
+}
+
+/// May an indexed stack STORE overwrite a value this function wrote to the
+/// stack range at `addr`? The range must have a write that is not an
+/// INDIRECT or MULTIEQUAL; an input-only range (a stack parameter) is left
+/// to the existing policy.
+pub(super) fn indexed_enabled(
+    fd: &crate::funcdata::Funcdata,
+    addr: &Address,
+    writes: &[crate::context::VarnodeId],
+) -> bool {
+    use kuna_num::opcodes::OpCode;
+    fd.stack_store_guard()
+        && addr
+            .get_space()
+            .zip(fd.get_arch().manage().get_stack_space())
+            .is_some_and(|(space, stack)| Rc::ptr_eq(space, stack))
+        && writes.iter().any(|&vn| {
+            fd.vbank()
+                .get(vn)
+                .and_then(|v| v.get_def())
+                .and_then(|d| fd.obank().get(d))
+                .is_some_and(|d| !matches!(d.code(), OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL))
+        })
+}
+
+/// The elements the stack layout gives an array whose window value-set
+/// analysis did not lock (`MapState::gatherOpen` and `MapState::addGuard`
+/// assume `[0,3]`).
+const UNLOCKED_ELEMENTS: u128 = 4;
+
+/// The bytes `[lo, last]` each indexed STORE may write by its pointer's own
+/// bound (`kuna_storereach.rs (store_window)`), computed once per heritage pass.
+pub(super) type StoreBounds = std::collections::HashMap<crate::context::OpId, Option<(u64, u64)>>;
+
+fn store_bound(
+    fd: &crate::funcdata::Funcdata,
+    guard: &super::heritage::LoadGuard,
+    bounds: &mut StoreBounds,
+) -> Option<(u64, u64)> {
+    *bounds
+        .entry(guard.op)
+        .or_insert_with(|| crate::p6_variables::kuna_storereach::store_window(fd, guard.op, &guard.spc))
+}
+
+/// Can `guard`'s STORE, writing `store_size` bytes, write any byte of
+/// `[lo, lo + size)` of the array it indexes? It writes no byte outside its
+/// pointer's bound, when the index has one. Within that, an unanalyzed guard
+/// may write anywhere and a range-locked guard writes its window; any other
+/// writes from its window's start to the bound's end or, with no bound, no
+/// further than the elements the stack layout gives an array whose window is
+/// not locked (a pointer walking down from its base, as an `alloca` probe
+/// does, writes only the base).
+pub(super) fn window_overlaps(
+    guard: &super::heritage::LoadGuard,
+    store_size: int4,
+    bound: Option<(u64, u64)>,
+    lo: u64,
+    size: int4,
+) -> bool {
+    let width = store_size.max(1) as u128;
+    let min = guard.minimum_offset as u128;
+    let window_last = guard.maximum_offset as u128 + width - 1;
+    let (first, last) = match (guard.analysis_state, bound) {
+        (0, _) => (0, u128::MAX),
+        (2, _) | (_, Some(_)) => (min, window_last),
+        _ => (min, window_last.min(min + UNLOCKED_ELEMENTS * width - 1)),
+    };
+    let (first, last) = match bound {
+        Some((b_lo, b_last)) => (first.max(b_lo as u128), last.min(b_last as u128)),
+        None => (first, last),
+    };
+    (lo as u128) <= last && first < lo as u128 + size.max(1) as u128
+}
+
+/// The live indexed stack STOREs into `spc` (any width) that may write
+/// `[addr, addr + size)`, other than those in `skip` and those through
+/// dynamically allocated stack.
+pub(super) fn indexed_stores(
+    fd: &crate::funcdata::Funcdata,
+    store_guard: &[super::heritage::LoadGuard],
+    bounds: &mut StoreBounds,
+    addr: &Address,
+    size: int4,
+    skip: &[crate::context::OpId],
+) -> Vec<crate::context::OpId> {
+    use kuna_num::opcodes::OpCode;
+    let Some(spc) = addr.get_space() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for guard in store_guard {
+        if !Rc::ptr_eq(&guard.spc, spc) || guard.dynamic_stack || skip.contains(&guard.op) {
+            continue;
+        }
+        let Some(store_size) = fd
+            .obank()
+            .get(guard.op)
+            .filter(|op| !op.is_dead() && op.code() == OpCode::CPUI_STORE)
+            .and_then(|op| op.get_in(2))
+            .and_then(|v| fd.vbank().get(v))
+            .map(|v| v.get_size())
+        else {
+            continue;
+        };
+        let bound = store_bound(fd, guard, bounds);
+        if window_overlaps(guard, store_size, bound, addr.get_offset(), size) {
+            out.push(guard.op);
+        }
+    }
+    out
+}
+
+/// Remove each `(INDIRECT, STORE)` guard whose STORE's analyzed window turned
+/// out not to reach the INDIRECT's range.
+pub(super) fn prune_indexed(
+    fd: &mut crate::funcdata::Funcdata,
+    store_guard: &[super::heritage::LoadGuard],
+    bounds: &mut StoreBounds,
+    guards: &[(crate::context::OpId, crate::context::OpId)],
+) {
+    use kuna_num::opcodes::OpCode;
+    for &(indirect, store) in guards {
+        let Some(guard) = store_guard.iter().find(|g| g.op == store) else {
+            continue;
+        };
+        let Some(store_size) = fd
+            .obank()
+            .get(store)
+            .filter(|op| !op.is_dead() && op.code() == OpCode::CPUI_STORE)
+            .and_then(|op| op.get_in(2))
+            .and_then(|v| fd.vbank().get(v))
+            .map(|v| v.get_size())
+        else {
+            continue;
+        };
+        let Some(op) = fd
+            .obank()
+            .get(indirect)
+            .filter(|op| !op.is_dead() && op.code() == OpCode::CPUI_INDIRECT)
+        else {
+            continue;
+        };
+        let (Some(input), Some(output)) = (op.get_in(0), op.get_out()) else {
+            continue;
+        };
+        let Some((lo, size)) = fd.vbank().get(output).map(|v| (v.get_offset(), v.get_size())) else {
+            continue;
+        };
+        let bound = store_bound(fd, guard, bounds);
+        if window_overlaps(guard, store_size, bound, lo, size) {
+            continue;
+        }
+        fd.total_replace(output, input).expect("remove indexed store guard");
+        fd.op_destroy(indirect);
+    }
 }
 
 fn constant_write(fd: &crate::funcdata::Funcdata, mut vn: crate::context::VarnodeId) -> bool {

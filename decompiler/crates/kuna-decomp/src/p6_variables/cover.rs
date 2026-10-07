@@ -697,7 +697,18 @@ impl Cover {
     /// `rep_addr` is the address of the representative Varnode for the secondary
     /// `affectsTest` (the C++ passes `Varnode *vn` and reads only `vn->getAddr()`
     /// in `StackAffectingOps::affectsTest`, so we thread the resolved address).
+    /// (kuna) Upstream's walk keeps the index of the block it just tested, so
+    /// it skips the set's next block after every block it shares with the
+    /// cover. A second walk that reads each block's index tests every guarded
+    /// STORE; CALLs keep upstream's walk.
     pub fn intersect_op_set(&self, op_set: &PcodeOpSet, rep_addr: &Address) -> bool {
+        self.walk_op_set(op_set, rep_addr, false)
+            || (op_set.op_list.iter().any(|e| e.store) && self.walk_op_set(op_set, rep_addr, true))
+    }
+
+    /// The block walk of [`Cover::intersect_op_set`]; `stores` re-reads the
+    /// set's block index after a shared block and tests only STORE entries.
+    fn walk_op_set(&self, op_set: &PcodeOpSet, rep_addr: &Address, stores: bool) -> bool {
         if op_set.op_list.is_empty() {
             return false;
         }
@@ -726,7 +737,7 @@ impl Cover {
                 }
                 loop {
                     let entry = &op_set.op_list[op_index];
-                    if cover_block.contain(Some(entry.point)) {
+                    if (!stores || entry.store) && cover_block.contain(Some(entry.point)) {
                         // Does range contain the call?
                         if cover_block.boundary(Some(entry.point)) == 0 {
                             // Is the call on the boundary
@@ -742,6 +753,9 @@ impl Cover {
                 }
                 if set_block >= op_set.block_start.len() {
                     break;
+                }
+                if stores {
+                    set_index = op_set.op_list[op_index].block_index;
                 }
             }
         }
@@ -789,6 +803,9 @@ pub struct PcodeOpSetEntry {
     pub point: CoverPoint,
     /// `op->getSeqNum().getOrder()` — the `compareByBlock` within-block key.
     pub order: uintm,
+    /// (kuna) A guarded stack STORE the second walk of
+    /// [`Cover::intersect_op_set`] tests (under `stackstoreguard`).
+    pub store: bool,
 }
 
 /// A set of PcodeOps that can be tested for Cover intersections (C++ `class
@@ -1330,18 +1347,21 @@ mod tests {
                     block_index: 2,
                     point: op_point(50),
                     order: 50,
+                    store: false,
                 },
                 PcodeOpSetEntry {
                     id: OpId::from(KeyData::from_ffi(2)),
                     block_index: 0,
                     point: op_point(20),
                     order: 20,
+                    store: false,
                 },
                 PcodeOpSetEntry {
                     id: OpId::from(KeyData::from_ffi(3)),
                     block_index: 0,
                     point: op_point(10),
                     order: 10,
+                    store: false,
                 },
             ]
         };
@@ -1372,6 +1392,7 @@ mod tests {
             block_index: blk,
             point: op_point(u),
             order: u,
+            store: false,
         };
         let mut set = PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _: &Address| false));
         assert!(!set.is_populated());

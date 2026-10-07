@@ -1,0 +1,288 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    An indexed store into a stack array that may overwrite a slot written
+    earlier: a later read of that slot must see the store.  Before this
+    test, the slot's earlier value was forwarded past the store, so the
+    test or result printed the stale value (`if ((char)a0)` where the
+    binary re-reads b[0] after `b[(i >> 4) % 12] = j`; for i = 5, j = 0
+    the binary returns 5 and the printed C returns 6).
+
+    The code is x86-64, byte for byte at its link address
+    (-nostdlib -static -Ttext=0x401000, -fno-stack-protector
+    -fcf-protection=none): g_* are gcc 11 -O2, c_* the same source with
+    clang 14 -O2, o_* gcc 11 -O0.
+
+        #define U(i) ((unsigned)(i))
+        int byte(int i, int j) { unsigned char b[12]; b[0] = i;
+            b[(U(i) >> 4) % 12] = j; if (b[0]) return b[0] + 1; return 5; }
+        int int_(...)   the same with int b[12]
+        long long_(...) the same with long b[12]
+        int struct_(int i, int j) { struct S { int a; int b; } s[6];
+            s[0].a = i; s[0].b = j; s[(U(i) >> 4) % 6].a = j;
+            return s[0].a * 3 + s[0].b; }
+        int second(int i, int j) { int b[8]; b[1] = i;
+            b[U(j) % 8] = i + j; return b[1] - 7; }
+        int two(int i, int j) { short b[10]; b[0] = i; b[3] = j;
+            b[(U(i) + U(j)) % 10] = 77; return b[0] + b[3] * 2; }
+
+    s[0].b is never reachable by the store (it writes only .a fields), so
+    struct_ still adds the parameter j.
+
+    gb_* (gcc 11 -O2) and cb_* (clang 14 -O2) at 0x402000 read a slot past
+    the four elements the stack layout gives an array whose window value-set
+    analysis did not lock; the index's own bound reaches it:
+
+        int ib(int i, int j) { int b[12]; b[0] = i; b[5] = j;
+            b[(U(i) >> 4) % 12] = 7; return b[0] + b[5] * 3; }
+        int im(int i, int j) { int b[8]; b[1] = i; b[6] = j;
+            b[U(j) & 7] = 9; return b[1] - b[6]; }
+        int sb(int i, int j) { short b[10]; b[0] = i; b[7] = j;
+            b[(U(i) + U(j)) % 10] = 77; return b[0] + b[7] * 5; }
+        int cb(int i, int j) { unsigned char b[12]; b[0] = i; b[9] = j;
+            b[(U(i) >> 4) % 12] = 5; return b[0] + b[9] * 3; }
+        int l6b(int i, int j) { long b[8]; b[6] = i; b[1] = j; b[j & 7] = 3;
+            return (int)(b[6] + b[1]); }
+
+    Stage: P3 heritage, stackstoreguard: an indexed stack STORE of any
+    width gets an INDIRECT on each written stack range its analyzed window
+    may reach.  P0 assertion: option stackstoreguard on|off.  Pass 1
+    (default on) proves the fix: every read after the indexed store is a
+    read of the array.  Pass 2 (off) reproduces the stale reads.  On the
+    unpatched engine #1 to #4, #9 and #11 count 0 and #5 to #8, #10 and #12
+    count twice their value.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+40887c24f4c1ef04baabaaaaaa89f8480fafc248c1e8238d0440c1e00229c740
+88743cf40fb64424f489c283c00184d2ba050000000f44c2c30f1f8000000000
+897c24c8c1ef04baabaaaaaa89f8480fafc248c1e8238d0440c1e00229c78974
+bcc88b5424c885d28d4201ba050000000f44c2c366662e0f1f84000000000090
+4863c7c1ef04baabaaaaaa4863f6488944249889f8480fafc248c1e8238d0440
+c1e00229c7488974fc98488b5424984885d2488d4201ba05000000480f44c2c3
+897c24c8c1ef04baabaaaaaa89f8480fafc248c1e8228d044001c029c78974fc
+c88b4424c88d044001f0c30f1f44000089f0897c24dc01f783e007897c84d88b
+4424dc83e807c3660f1f8400000000008d0437bacdcccccc66897c24d84889c7
+480fafc266897424de48c1e8238d048001c029c7b84d0000006689447cd80fbf
+5424de0fbf4424d88d0450c30f1f400040887c24f4c1ef04b8abaaaaaa480faf
+c748c1e823c1e0028d044029c74088743cf40fb64424f48d480185c0b8050000
+000f45c1c3662e0f1f84000000000090897c24c8c1ef04b8abaaaaaa480fafc7
+48c1e823c1e0028d044029c78974bcc88b4424c88d480185c0b8050000000f45
+c1c3662e0f1f8400000000000f1f40004863c748894424984863cec1e804baab
+aaaaaa480fafd048c1ea23c1e2028d145229d048894cc498488b442498488d48
+014885c0b805000000480f45c1c36690897c24c8c1ef04b8abaaaaaa480fafc7
+48c1e82201c08d044029c78974fcc88b4424c88d044001f0c30f1f8000000000
+897c24dc01f783e607897cb4d88b4424dc83c0f9c3662e0f1f84000000000090
+66897c24e866897424ee01feb8cdcccccc480fafc648c1e82301c08d048029c6
+66c74474e84d000fbf4424e80fbf4c24ee8d0448c3554889e5897dcc8975c88b
+45cc8945d08b45ccc1e80489c189cab8abaaaaaa480fafc248c1e82089c2c1ea
+0389d001c001d0c1e00229c189ca89d28b45c8894495d08b45d085c074088b45
+d083c001eb05b8050000005dc3554889e5897ddc8975d88b45dc8945e48b45d8
+83e00789c18b55dc8b45d801d089ca894495e08b45e483e8075dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+897c24c8c1ef04baabaaaaaa89f8897424dc480fafc248c1e8238d0440c1e002
+29c7c744bcc8070000008b4424dc8d0440034424c8c3662e0f1f840000000000
+897424f083e607897c24dcc744b4d8090000008b4424dc2b4424f0c30f1f4000
+8d0437bacdcccccc66897c24d84889c7480fafc266897424e648c1e8238d0480
+01c029c7b84d0000006689447cd80fbf4424e60fbf5424d88d048001d0c36690
+40887c24f4c1ef04baabaaaaaa89f840887424fd480fafc248c1e8238d0440c1
+e00229c7c6443cf4050fb64424fd0fb65424f48d044001d0c30f1f8000000000
+4863c64863ff83e60748897c24e848894424c048c744f4b803000000488b4424
+c0034424e8c3662e0f1f840000000000897c24c8897424dcc1ef04b8abaaaaaa
+480fafc748c1e823c1e0028d044029c7c744bcc8070000008b4424dc8d044003
+4424c8c3662e0f1f8400000000006690897c24dc897424f083e607c744b4d809
+0000008b4424dc2b4424f0c30f1f400066897c24e866897424f601feb8cdcccc
+cc480fafc648c1e82301c08d048029c666c74474e84d000fbf4c24e80fbf4424
+f68d048001c8c3660f1f84000000000040887c24f440887424fdc1ef04b8abaa
+aaaa480fafc748c1e823c1e0028d044029c7c6443cf4050fb64c24f40fb64424
+fd8d044001c8c3660f1f8400000000004863c748894424e84863c648894424c0
+83e00748c744c4b8030000008b4424c0034424e8c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="g_byte"/>
+<symbol space="ram" offset="0x401040" name="g_int"/>
+<symbol space="ram" offset="0x401080" name="g_long"/>
+<symbol space="ram" offset="0x4010c0" name="g_struct"/>
+<symbol space="ram" offset="0x4010f0" name="g_second"/>
+<symbol space="ram" offset="0x401110" name="g_two"/>
+<symbol space="ram" offset="0x401150" name="c_byte"/>
+<symbol space="ram" offset="0x401190" name="c_int"/>
+<symbol space="ram" offset="0x4011d0" name="c_long"/>
+<symbol space="ram" offset="0x401210" name="c_struct"/>
+<symbol space="ram" offset="0x401240" name="c_second"/>
+<symbol space="ram" offset="0x401260" name="c_two"/>
+<symbol space="ram" offset="0x401295" name="o_int"/>
+<symbol space="ram" offset="0x4012ed" name="o_second"/>
+<symbol space="ram" offset="0x402000" name="gb_ib"/>
+<symbol space="ram" offset="0x402040" name="gb_im"/>
+<symbol space="ram" offset="0x402060" name="gb_sb"/>
+<symbol space="ram" offset="0x4020a0" name="gb_cb"/>
+<symbol space="ram" offset="0x4020e0" name="gb_l6b"/>
+<symbol space="ram" offset="0x402110" name="cb_ib"/>
+<symbol space="ram" offset="0x402150" name="cb_im"/>
+<symbol space="ram" offset="0x402170" name="cb_sb"/>
+<symbol space="ram" offset="0x4021b0" name="cb_cb"/>
+<symbol space="ram" offset="0x4021f0" name="cb_l6b"/>
+</binaryimage>
+<script>
+  <com>lo fu g_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g_struct</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g_second</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_struct</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_second</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu o_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu o_second</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_ib</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_im</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_sb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_cb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_l6b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_ib</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_im</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_sb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_cb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_l6b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option stackstoreguard off</com>
+  <com>lo fu g_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g_struct</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g_second</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_struct</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_second</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu o_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu o_second</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_ib</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_im</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_sb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_cb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_l6b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_ib</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_im</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_sb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_cb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_l6b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="INDEXEDSTOREGUARD #1: default, b[0] is stored before the indexed store and tested after it (byte, int, long; gcc -O2, clang -O2, gcc -O0)" min="7" max="7">v1\[0\] = .*;
+v1\[\(a0 &gt;&gt; 4\) % 0xc\] = .*;
+if \(!?v1\[0\]\)</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #2: default, s[0].a is read back after the indexed store of .a fields" min="2" max="2">return v1\[0\] \* 3 \+ a1;</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #3: default, b[1] is read back after a store indexed by j &amp; 7" min="3" max="3">return v1\[1\] \+ -7;</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #4: default, b[0] and the constant-index b[3] are read back after the indexed store" min="2" max="2">return \(int4\)v1\[0\] \+ v1\[3\] \* 2;</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #5: off reproduces the stale test of the parameter" min="7" max="7">if \(!?(\(char\)|\(int8\)\(int4\))?a0\)</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #6: off reproduces the stale s[0].a" min="2" max="2">return a0 \* 3 \+ a1;</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #7: off reproduces the stale b[1]" min="3" max="3">return a0 \+ -7;</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #8: off reproduces the stale b[0] and b[3]" min="2" max="2">return \(int4\)\(int2\)a0 \+ \(int2\)a1 \* 2;</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #9: default, a slot past four elements that a bounded index may reach is read back after the store (int % 12, int &amp; 7, short % 10, char % 12; gcc -O2, clang -O2)" min="8" max="8">return (v1\[5\] \* 3 \+ v1\[0\]|v1\[1\] - v1\[6\]|v1\[7\] \* 5 \+ \(int4\)v1\[0\]|\(uint4\)v1\[9\] \+ \(uint4\)v1\[9\] \* 2 \+ \(uint4\)v1\[0\]);</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #10: off reproduces the stale slots past four elements" min="8" max="8">return (a1 \* 3 \+ a0|a0 - a1|\(int2\)a1 \* 5 \+ \(int4\)\(int2\)a0|\(uint4\)a1 \+ \(uint4\)a1 \* 2 \+ \(a0 &amp; 0xff\));</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #11: default, a long array whose guarded slot lies past four elements is one array (gcc -O2, clang -O2)" min="2" max="2">return \(int4\)v1\[1\] \+ \(int4\)v1\[6\];</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #12: off reproduces the stale b[6] and b[1] of the long array" min="2" max="2">return a1 \+ a0;</stringmatch>
+</decompilertest>
