@@ -45,7 +45,8 @@ pub const LEVEL_BOUND: int4 = 1;
 /// Also extend an unbounded indexed base over contiguous write-only slots.
 pub const LEVEL_ON: int4 = 2;
 
-/// Most slots one unbounded base takes past upstream's four.
+/// Most slots one unbounded base takes past the elements its layout pass
+/// starts with, however many alias bases or guards share its start.
 const MAX_FOLLOW: int4 = 256;
 
 /// `option arrayextent off|bound|on`.
@@ -203,8 +204,10 @@ pub(crate) fn extend_unbounded(
         };
         let (sstart, highind, ty) = (open.sstart, open.highind, Rc::clone(&open.type_));
         let elem = base.elem as intb;
+        let same = |e: &Extended| e.start == base.start && e.elem == base.elem;
+        let first = extended.iter().find(|e| same(e)).map_or(highind, |e| e.from);
         let mut reach = highind;
-        while reach < highind + MAX_FOLLOW {
+        while reach < first + MAX_FOLLOW {
             let slot = sstart + (reach as intb + 1) * elem;
             if slot + elem > end
                 || crosses(hints, &order, sstart, slot)
@@ -220,7 +223,7 @@ pub(crate) fn extend_unbounded(
         for h in hints.iter_mut().filter(|h| is_indexed_open(h, base)) {
             h.highind = h.highind.max(reach);
         }
-        match extended.iter_mut().find(|e| e.start == base.start) {
+        match extended.iter_mut().find(|e| same(e)) {
             Some(e) => e.to = reach,
             None => extended.push(Extended { start: base.start, sstart, elem: base.elem, from: highind, to: reach }),
         }
@@ -264,7 +267,10 @@ pub(crate) fn settle(state: &mut MapState, space: &Rc<AddrSpace>, types: &dyn Ty
 
 /// Is `h` an open hint `extend_unbounded` raised for `e`?
 fn is_lengthened(h: &RangeHint, e: &Extended) -> bool {
-    h.range_type == RangeType::Open && h.start == e.start && h.highind == e.to
+    h.range_type == RangeType::Open
+        && h.start == e.start
+        && h.type_.get_align_size() == e.elem
+        && h.highind == e.to
 }
 
 /// Where each array in `extended` ends when `ScopeLocal::restructure`'s merge
@@ -278,14 +284,9 @@ fn upstream_ends(
     space: &Rc<AddrSpace>,
     types: &dyn TypeFactory,
 ) -> Option<Vec<Option<intb>>> {
-    let base_of = |h: &RangeHint| {
-        extended
-            .iter()
-            .position(|e| h.range_type == RangeType::Open && h.start == e.start)
-    };
     let mut ends = vec![None; extended.len()];
     let mut cur = list.first()?.clone();
-    let mut held: Vec<usize> = base_of(&cur).into_iter().collect();
+    let mut held: Vec<usize> = bases_at(extended, &cur).collect();
     let mut cur_end = cur.sstart.wrapping_add(cur.size as intb);
     for next in &list[1..] {
         let next_end = next.sstart.wrapping_add(next.size as intb);
@@ -323,9 +324,15 @@ fn upstream_ends(
             cur = next.clone();
             cur_end = next_end;
         }
-        held.extend(base_of(next));
+        held.extend(bases_at(extended, next));
     }
     Some(ends)
+}
+
+/// The entries of `extended` whose array starts at the open hint `h`.
+fn bases_at<'a>(extended: &'a [Extended], h: &'a RangeHint) -> impl Iterator<Item = usize> + 'a {
+    (0..extended.len())
+        .filter(move |&e| h.range_type == RangeType::Open && h.start == extended[e].start)
 }
 
 /// Is `h` an open hint with index evidence at `base`'s start and element size?

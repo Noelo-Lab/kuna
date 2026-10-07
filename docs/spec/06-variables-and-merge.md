@@ -948,7 +948,9 @@ frame, in `kuna_arrayextent.rs (extend_unbounded)`, which runs after the
 symbol hints are gathered. It applies to the open hint of every indexed base
 the alias checker found with no bound and of every guard with a step but no
 locked range (`Funcdata::add_guard` returns those), unless a locked guard
-covers the base. The hint takes the next slot of its element size while that
+covers the base. An array takes at most 256 slots past the length its layout
+pass starts it with, counted once per start and element size however many
+alias bases and guards share them. The hint takes the next slot of its element size while that
 slot starts exactly where its elements end, below the frame's endpoint; no
 fixed hint inside the array runs past it; every hint starting in it is an
 unlocked fixed hint exactly one element wide whose type keeps the array's
