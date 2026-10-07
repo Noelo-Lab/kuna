@@ -38,9 +38,13 @@ Thumb IT state, retain their normal effects. Direct and indirect branches retain
 their existing target-mode selection. This strict correctness repair applies
 without Listing or frame discovery and adds no option.
 
-ARM return-dispatch probes preceding flow run in a private context scope with
+ARM return-dispatch probes preceding flow run in a decode context scope with
 `TMode` writes masked. Rejected probe chains cannot change the entry mode before
 the real walk establishes its boundary; local IT state remains active in a probe.
+The scope journals only touched context partitions, restoring their values and
+explicit-set masks and removing new split points on exit. Opening a scope does
+not copy the image's context database. No scope is opened when both
+`entryretdispatch` and `pushimmediateret` are disabled.
 
 Option defaults and flip guidance for every option named below live in the
 generated catalog ([docs/options.md](../options.md)); the rows are defined in

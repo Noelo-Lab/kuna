@@ -182,8 +182,10 @@ pub fn decompile_one_prefollowed(
     // RETURN, which distinguishes it from the incoming return address and from
     // ordinary RET/RET-immediate instructions. Seed the derived CALLs first so
     // an explicit flow assertion at the same address remains authoritative.
-    let probe = if arch.get_description().starts_with("ARM:") {
-        let scope = arch.translate().context_scope();
+    let probe = if (arch.entry_ret_dispatch || arch.push_immediate_ret)
+        && arch.get_description().starts_with("ARM:")
+    {
+        let scope = arch.translate().decode_context_scope();
         if let Some(scope) = &scope { let _ = scope.protect_variable(b"TMode"); }
         scope
     } else { None };
