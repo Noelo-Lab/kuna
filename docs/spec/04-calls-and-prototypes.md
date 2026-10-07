@@ -5739,18 +5739,20 @@ integer or a pointer makes no token: no C conversion keeps a float's bits, and
 gcc -O2's reader of a `struct { float, float }` returned in `xmm0` printed
 `dat_4040 = (unsigned long)sub_11d0()` beside `double sub_11d0(void)`, which
 stores 2 for the pair's 2.0000004. Such a reader withdraws the float return
-instead (`voidret`, below). A reader that keeps the float's bits as an integer
-or raw bytes of the same width, where the callee states a float or, stating
-nothing, was last recovered returning a float in exactly the storage and width
-the call's output sits in (`kuna_callrettype.rs (float_held_as_bits)`), has the
-cast pass write the call into a float and reinterpret it (chapter 09): AArch64
+instead (`voidret`, below). A reader that keeps the float's bits in an integer
+of the same width, or in raw bytes it declares (a local, its own return), where
+the callee states a float or, stating nothing, was last recovered returning a
+float in exactly the storage and width the call's output sits in, a floating
+register of the call's model (`kuna_callrettype.rs (float_held_as_bits)`), has
+the cast pass write the call into a float and reinterpret it (chapter 09): a
+float recovered in `x0` moves no bits between register classes. AArch64
 `bl getd; fmov x0,d0` printed `return getd(a0,a1);` from an `unsigned long`
 function beside `double getd(int a0,double *a1)`, which C converts by value,
 and now prints `((union { double from; unsigned long long to; }){ .from =
 getd(a0,a1) }).to`, as does `fmov w0,s0` after a `float` callee. A float statement is the
-token of a result the caller holds as a float or as raw bytes: nothing then
-converts it, and a store of it through an untyped pointer takes the float's
-type. Without it crazyflie printed `*(unsigned int *)((unsigned int)v2 * 4 +
+token of a result the caller holds as a float, or as raw bytes it only stores or
+writes to a global: nothing then converts it, and a store of it through an
+untyped pointer takes the float's type. Without it crazyflie printed `*(unsigned int *)((unsigned int)v2 * 4 +
 a1) = sub_805bb84(..)` beside `float sub_805bb84(..)`, which C converts by value
 (`floatret_cm4.o`'s `put2` stored 1.5 as 1); 29 of the 31 such stores on 27 binaries outside the cast
 corpus (27,954 functions, most of them ARM firmware) print

@@ -499,13 +499,16 @@ pub fn refused_token(data: &mut Funcdata, op: OpId) -> Option<Rc<Datatype>> {
     (other_class(&held, &ct) || float).then_some(ct)
 }
 
-/// The float the call `op` returns when the caller holds the result as raw
-/// bytes or an integer of its width: a float its callee stated it returns, or,
+/// The float the call `op` returns when the caller holds the result as an
+/// integer or raw bytes of its width: a float its callee stated it returns, or,
 /// with no statement, a float its last decompile returned, in exactly the
-/// storage and width the call's output sits in.  The listing declares the
-/// callee `double getd(int)`, so `unsigned long v2 = getd(a0)` would convert
-/// the value where the binary moves its bits (`fmov x0,d0`); the cast pass
-/// writes the call into a float and reinterprets it instead.
+/// storage and width the call's output sits in, which must be a floating
+/// register of the call's model (a float recovered in `x0` moves no bits
+/// between register classes).  The listing declares the callee `double
+/// getd(int)`, so `unsigned long v2 = getd(a0)` would convert the value where
+/// the binary moves its bits (`fmov x0,d0`); the cast pass writes the call into
+/// a float and reinterprets it instead.  Raw bytes kept in memory are left as
+/// they were ([`kept_in_memory`]).
 pub fn float_held_as_bits(data: &mut Funcdata, op: OpId) -> Option<Rc<Datatype>> {
     let (outvn, ct) = {
         let o = data.obank().get(op)?;
@@ -519,6 +522,12 @@ pub fn float_held_as_bits(data: &mut Funcdata, op: OpId) -> Option<Rc<Datatype>>
         let k = key(fc.get_entry_address())?;
         let outvn = o.get_out()?;
         let out = data.vbank().get(outvn)?;
+        let model = if fc.proto().has_model() { Some(fc.proto().model()) } else { data.get_arch().defaultfp.as_ref() };
+        let list = model.and_then(|m| m.output_list())?;
+        let entry = list.find_entry(out.get_addr(), out.get_size(), true)?;
+        if list.get_entry()[entry].get_type() != crate::dtype::type_class::TYPECLASS_FLOAT {
+            return None;
+        }
         let at = |addr: &Address, size: int4| out.get_addr() == addr && out.get_size() == size;
         let ct = match data.kuna_callret_stated(k) {
             Some(s) => (s.ct.get_metatype() == type_metatype::TYPE_FLOAT
@@ -539,11 +548,27 @@ pub fn float_held_as_bits(data: &mut Funcdata, op: OpId) -> Option<Rc<Datatype>>
         (outvn, ct)
     };
     let held = data.high_get_type(outvn)?;
-    let bits = matches!(
-        held.get_metatype(),
-        type_metatype::TYPE_UNKNOWN | type_metatype::TYPE_INT | type_metatype::TYPE_UINT
-    );
+    let bits = match held.get_metatype() {
+        type_metatype::TYPE_INT | type_metatype::TYPE_UINT => true,
+        type_metatype::TYPE_UNKNOWN => !kept_in_memory(data, outvn),
+        _ => false,
+    };
     (bits && held.get_size() == ct.get_size()).then_some(ct)
+}
+
+/// Is `vn` a global, or only written to memory: stored, which takes a float
+/// token as the type it stores ([`refused_token`]), or copied to a global?
+/// Raw bytes in memory are printed with no declaration that would convert them.
+fn kept_in_memory(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(node) = data.vbank().get(vn) else { return false };
+    node.is_persist()
+        || node.descend_iter().all(|r| {
+            data.obank().get(r).is_some_and(|o| match o.code() {
+                OpCode::CPUI_STORE => o.get_in(2) == Some(vn) && o.get_in(1) != Some(vn),
+                OpCode::CPUI_COPY => o.get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_persist()),
+                _ => false,
+            })
+        })
 }
 
 /// Does something the caller declares about the result outrank the statement
