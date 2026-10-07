@@ -5479,7 +5479,7 @@ int main(void) {
                     .unwrap();
                     let out = Command::new(cc)
                         .args([
-                            "-std=gnu11", level, "-w", "-fno-strict-aliasing", "-fwrapv", "-Wno-error=int-conversion",
+                            "-std=gnu11", level, "-w", "-fno-strict-aliasing", "-fwrapv", "-Wno-error=int-conversion", "-Werror=incompatible-pointer-types",
                             "-o", exe.to_str().unwrap(), src.to_str().unwrap(),
                         ])
                         .output()

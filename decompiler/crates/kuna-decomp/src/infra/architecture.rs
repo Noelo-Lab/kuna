@@ -1416,9 +1416,6 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
-    /// The parameter declarations a callee-first batch has printed so far, for
-    /// the byte-pointer argument casts of the callers printed after them.
-    pub kuna_pointerargs: RefCell<crate::kuna_pointerargs::Batch>,
     /// (kuna `vfpvariadic`) The default model with the variadic return rules,
     /// keyed by the default model it was derived from.
     pub kuna_vfp_variadic: RefCell<Option<(Rc<ProtoModel>, Option<Rc<ProtoModel>>)>>,
@@ -2702,7 +2699,6 @@ impl Architecture {
             kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
-            kuna_pointerargs: RefCell::new(crate::kuna_pointerargs::Batch::default()),
             kuna_vfp_variadic: RefCell::new(None),
             kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),

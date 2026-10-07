@@ -764,6 +764,9 @@ pub struct EmitNoMarkup {
     line_number: usize,
     capture_statement_provenance: bool,
     statement_provenance: MarkupProvenance,
+    position_cursor: usize,
+    position_line: usize,
+    position_start: usize,
 }
 
 impl EmitNoMarkup {
@@ -775,14 +778,35 @@ impl EmitNoMarkup {
             line_number: 0,
             capture_statement_provenance: false,
             statement_provenance: MarkupProvenance::default(),
+            position_cursor: 0,
+            position_line: 0,
+            position_start: 0,
         }
     }
     /// Borrow the accumulated output (C++ would read the bound `ostream`).
     pub fn output(&self) -> &str {
         &self.out
     }
+    /// One-based position of the next emitted byte in [`output`](Self::output),
+    /// scanning each preceding byte once.
+    pub fn position(&mut self) -> crate::kuna_pointerargs::Position {
+        for (i, &byte) in self.out.as_bytes()[self.position_cursor..].iter().enumerate() {
+            if byte == b'\n' {
+                self.position_line += 1;
+                self.position_start = self.position_cursor + i + 1;
+            }
+        }
+        self.position_cursor = self.out.len();
+        crate::kuna_pointerargs::Position {
+            line: self.position_line + 1,
+            column: self.out.len() - self.position_start,
+        }
+    }
     /// Take ownership of the accumulated output, leaving an empty buffer.
     pub fn take_output(&mut self) -> String {
+        self.position_cursor = 0;
+        self.position_line = 0;
+        self.position_start = 0;
         std::mem::take(&mut self.out)
     }
     /// Take the root-op association recorded for each emitted statement.
@@ -805,6 +829,9 @@ impl EmitNoMarkup {
         self.out.clear();
         self.line_number = 0;
         self.statement_provenance.associations.clear();
+        self.position_cursor = 0;
+        self.position_line = 0;
+        self.position_start = 0;
     }
 }
 

@@ -28,6 +28,7 @@ pub(super) fn decompile_entries_callee_first(
         park_recovered_proto: false,
         single_target: targets.len() == 1,
         want_tokens: false,
+        want_pointer_arguments: true,
     };
     decompile_callee_first(prog, args, targets, explicit, base)
 }
@@ -80,7 +81,6 @@ pub(crate) fn decompile_callee_first(
         ledger.recording = true;
     }
     let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
-    prog.arch().kuna_pointerargs.borrow_mut().start();
     kuna_decomp::kuna_elemptr::start(prog.arch_mut(), true);
     prog.arch_mut().kuna_voidret = Default::default();
     let mut reads = VoidReads::default();
@@ -103,8 +103,11 @@ pub(crate) fn decompile_callee_first(
     }
     converge_element_globals_callee_first(prog, &targets, &plan, &base, &mut slots);
     kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
-    prog.arch().kuna_pointerargs.borrow_mut().stop();
-    slots.into_iter().flatten().collect()
+    let mut results: Vec<FuncResult> = slots.into_iter().flatten().collect();
+    if base.want_pointer_arguments {
+        kuna_console::project::reconcile_pointer_arguments(&mut results);
+    }
+    results
 }
 
 /// (kuna `voidret`) How many rounds of redos one settling takes at most. A
