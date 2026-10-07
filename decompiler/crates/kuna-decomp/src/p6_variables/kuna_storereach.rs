@@ -395,8 +395,9 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
 /// or a part of it (`*(long *)&v1[i * 8]` into a byte array), which holds
 /// every slot at or above the base its guard INDIRECTs keep? A scalar, or an
 /// array of wider elements, makes the C index past the local (`(&v1)[a1] = 3`)
-/// or with the wrong stride. A store through a pointer variable, or one no
-/// longer live, passes.
+/// or with the wrong stride. A store through a pointer variable, a byte store
+/// (written through a byte pointer, `((char *)v1)[i]`, and checked by the byte
+/// reaches), or one no longer live, passes.
 fn indexes_own_array(
     fd: &Funcdata,
     store: OpId,
@@ -412,6 +413,9 @@ fn indexes_own_array(
     else {
         return true;
     };
+    if width <= 1 {
+        return true;
+    }
     let Some(base) = plain_index_base(fd, ptr, sb, space) else {
         return true;
     };
