@@ -1511,6 +1511,10 @@ pub struct Architecture {
     /// (`widestrings`); default on. Off drops the wide facts at the commit, so the
     /// markup is exactly the 1-byte pass's.
     pub analysis_widestrings: bool,
+    /// (kuna) Gate the 4-byte (`wchar_t`/`char32_t`) width of the string-literal
+    /// pass (`widestrings32`); default off, on in the aggressive preset. Off
+    /// drops the `wchar4[N]` facts at the commit.
+    pub analysis_widestrings32: bool,
     /// (kuna) Gate the entry-discovery pass (`entry_disc`); default on.
     pub analysis_entry_disc: bool,
     /// (kuna) Gate the `.eh_frame` LSDA landing-pad discovery sub-feature of the
@@ -2739,6 +2743,7 @@ impl Architecture {
             analysis_elfmain: false,
             analysis_strings: false,
             analysis_widestrings: false,
+            analysis_widestrings32: false,
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
             analysis_fdeinterior: false,
@@ -3065,6 +3070,7 @@ impl Architecture {
         // (kuna) DIV-139 declared-name libc prototype lookup -- default-ON.
         self.analysis_declaredlibcproto = true;
         self.analysis_strings = true;
+        self.analysis_widestrings32 = false;
         self.analysis_widestrings = true; // (kuna) DIV-110: the StringsAnalyzer `allCharWidths` 2-byte width default-ON (a wide literal was read as its own first character)
         self.analysis_entry_disc = true;
         // (kuna) Unmapped-CALL-target entry suppression -- default-ON (it only ever

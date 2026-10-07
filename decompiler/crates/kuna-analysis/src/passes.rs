@@ -1144,6 +1144,31 @@ pub fn run_operand_refs(
     out
 }
 
+/// (kuna `widestrings32`) The 4-byte string width alone, for a run with
+/// `operand_refs` off: the same linear decode [`run_operand_refs`] does, for the
+/// operand targets and table uses the facts weigh, without that pass's own facts.
+/// Takes the same rebased view of a relocatable object.
+pub fn run_wide_strings32(bytes: &[u8], image: &ObjectLoadImage, arch: &Architecture) -> AnalysisOutput {
+    let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
+        return AnalysisOutput::default();
+    };
+    let view = crate::loader::kuna_relocrebase::rebased_view(&raw, bytes);
+    let (file, bytes) = crate::loader::kuna_relocrebase::select(raw, bytes, &view);
+    let ctx = AnalysisCtx {
+        file: &file,
+        bytes,
+        image,
+        arch,
+        listing: None,
+        image_path: image_on_disk_path(image),
+    };
+    let mut out = crate::operand_refs::wide_strings32_alone(&ctx);
+    if let Some(view) = &view {
+        crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
+    }
+    out
+}
+
 /// The on-disk path of a load image, for
 /// [`AnalysisCtx::image_path`](crate::pass::AnalysisCtx::image_path).
 ///

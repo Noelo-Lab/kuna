@@ -1441,6 +1441,101 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   units are all in the 1-byte charset (the Windows-API case); a big-endian or
   non-Latin wide literal is not recovered. Default **on**; `off` leaves the markup
   exactly the 1-byte pass's.
+- **4-byte wide strings** (`widestrings32`,
+  `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_widestrings32.rs
+  (wide_string32_facts)`): the same matcher over 4-byte code units, the width of
+  a `wchar_t` literal on ELF and Mach-O targets and of a `char32_t` one. Read at
+  1 or 2 bytes `L"hellow"` (`68 00 00 00 65 00 00 00 ..`) is a one-character
+  string, so nothing marks it up and a call that hands it to the image's own
+  function printed its address (`lenw(&dat_2004)`), or before `operand_refs`
+  learned to decline it, its first character (`lenw((int *)"h")`). Units are read
+  in the image's byte order on 4-aligned addresses of read-only data (allocated,
+  not writable, not executable, not one of the loader's tables); each holds a
+  value of the 1-byte charset and a zero unit closes the run. Each planted run
+  commits a typelocked `wchar4[len/4]`, ahead of the 2- and 1-byte facts for the
+  same reason the 2-byte width goes before the 1-byte one, and the existing
+  printer path renders `L"hellow"`. Unlike the narrower widths, the bytes alone
+  do not plant: an `int` table of character codes is byte for byte a wide
+  literal (`{72, 101, 108, 108, 111, 0}` is `L"Hello"`, a table of the weeks in
+  each year reads `L"4544.."`), `int` tables are common, and a table that runs
+  on past its zero (`{97, 98, 99, 100, 101, 0, 7, 8}`, a switch lookup table of
+  character codes with a zero case, `h e l p z 0 q`) would print as a literal
+  that code reading the table reads past. A run is planted only when no sized
+  data object of the symbol tables overlaps it -- a declared array keeps
+  printing as its name, whatever its element type; an assembler-local `.L`
+  label of exactly the run's extent, which a relocatable object keeps for its
+  own literals, does not count, while one such as `.Lswitch.table.f` does --
+  and either it lies in a mergeable string section of 4-byte entries (a
+  relocatable object's `.rodata.str4.4`, where every NUL-terminated run is a
+  literal), or all of these hold. It has at least five units, at least three
+  of them distinct. Something points at its start: an operand target of the
+  `operand_refs` scan, a pointer-aligned slot of a data section, or a dynamic
+  relocation; a symbol table alone backs nothing, since a linked image keeps no
+  symbol for clang's switch tables. What follows its terminator
+  (`kuna_widestrings32.rs (follower)`) is the next literal or object, not the
+  table's next element: the section's end, or the first nonzero unit after at
+  most 64 bytes of zeros, fewer than that unit's address alignment asks for,
+  that either code indexes or a symbol starts at, with a unit that is no
+  character (at or above U+110000) or a string there, or that an operand, a
+  data slot or an entry of a table of relative offsets (clang's `reltable`)
+  points at, with a string there. A string is a zero-terminated run of
+  characters (printable ASCII, tab, CR, LF, or U+00A0 and above outside the
+  surrogates) with at least one printable ASCII unit, or a narrow string of
+  four characters or more; fewer are the bytes of a wide unit or of a pointer
+  such as `0x402039` (`"9 @"`). In an image a literal is followed by the next
+  literal or object, while a table goes on with its next element, a code or a
+  field that opens no string even where the code names it (`sum(&tbl[6], 2)`,
+  the count, a negative delta or a string pointer after a struct's
+  `int codes[6]`); a literal followed by a jump table the decode does not see
+  indexed (gnulib's `vasnprintf` loads the base of the one after `L"(NULL)"`
+  far from its jump in some builds) is refused with them. And no code adds a
+  computed index to any
+  address from its start to its terminator. The index test follows the
+  same linear decode
+  (`decompiler/crates/kuna-analysis/src/analyzers/operand_refs/mod.rs
+  (TableUses)`): an address an instruction puts in a register stays held for
+  the next 31 instructions, across calls and conditional branches (both fall
+  through with the register intact), until a jump, a return or an overwrite (a
+  tail call's argument is not the next function's table), and an add of a value
+  that is not a constant to it, or of a register to an address constant in one
+  instruction (`lea rcx,t` then `mov eax,[rcx+rax*4]`, `lea rdi,[rax+t]`), marks
+  it a table; the run that holds it is refused, a literal indexed in place
+  (`L"0123456789abcdef"[c]`) included, since the printer's index bound does not
+  cover a literal another pass planted. A literal laid out right after another
+  object's last printable unit (clang's switch table ending in `'q'` before
+  `L"hellow"`) is the tail of a longer run nothing points at; an operand target
+  at one of its units starts the run there instead, under the same tests. An
+  entry of a table of relative offsets at an operand target backs a run's
+  start the way a pointer slot does. An ARM
+  literal pool slot backs nothing, since the scan cannot see code index the
+  address it loads, and an address built in two instructions (AArch64
+  `adrp`/`add`, MIPS `lui`/`addiu`) is no operand target, so a linked image of
+  those targets plants only what a data slot holds (a pointer table's entries);
+  their relocatable objects plant from `.rodata.str4.4`. A relocatable object is
+  read through the laid-out view the loader builds, never its raw sections,
+  which all sit at address 0. What remains are the anonymous tables of a
+  stripped image whose bytes are those of literals: one that ends at its zero
+  prints as the literal its elements spell, the same values; the rows of a 2-D
+  table of codes, or adjacent code tables, each ending in a zero, and a code
+  table followed by a string (a struct's `char name[8]` after its
+  `int codes[6]`, or `{.., 101, 0, 233, 120, 0}`) print as one literal each,
+  so code reading across them reads past a literal; and a
+  fixed-size code table whose codes are followed by zero padding up to its size
+  (`static const int t[8] = {97, 98, 99, 100, 101}`, common C) prints as the
+  shorter literal, so code reading past its first zero reads zeros in the
+  binary and past the literal in the printed C, other values. A
+  run that a tail-merged suffix shares (`L"bind"` inside `L"xbind"`) is planted
+  whole from its first unit, and the printer reads the suffix's literal at its
+  own address (`lenw(L"bind")`), except where the element-pointer rule refuses
+  literals for the callee's parameter, which then prints the address
+  (`lenw((wchar_t *)0x2024)`). PE and COFF images, whose `wchar_t` is 2 bytes,
+  are not scanned. The scan reads the facts at the deferred `operand_refs`
+  commit, where that pass's operand targets and table uses are known; with
+  `operand_refs` off,
+  `decompiler/crates/kuna-analysis/src/passes.rs (run_wide_strings32)` runs the
+  same decode for them without planting that pass's own facts. Scope: units in
+  the 1-byte charset; a non-Latin literal is not recovered. Default **off**,
+  carried by the aggressive preset; `off` drops the `wchar4` facts at the commit.
 (kuna) The **reporting** face of those two passes is a separate, read-only query
 (`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_stringinv.rs
 (inventory)`, behind `kuna strings`), and it runs the same matcher over the same
@@ -4280,7 +4375,8 @@ only that table's symbol tells apart. The other way round, a wide or `char16_t`
 string whose suffix is referenced on its own, such as a tail-merged `L"xbind"`
 whose `L"bind"` another call passes, or `u"b"` inside `u"xb"`, still prints as its
 first character, as on main; only a scan for strings of the matching width would
-recover it. The scans run once, and only when some run is about to
+recover it, which `widestrings32` does for the 4-byte case (its `wchar4` fact
+commits first and takes the address). The scans run once, and only when some run is about to
 be refused. Refusing drops the fact and nothing else, so the
 reference prints as the array's symbol or address (`sum(arr,a0)`,
 `lenw(&dat_2004)`), never as a different value. A stripped array whose second

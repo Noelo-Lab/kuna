@@ -301,7 +301,11 @@ impl Operand {
 struct ScalarCapture {
     consts: Vec<u64>,
     arrays: IndexedBases,
+    steps: Option<Vec<Step>>,
 }
+
+/// One captured p-code op: its opcode, output and first inputs (how many).
+type Step = (OpCode, Option<(Operand, u32)>, [Operand; 2], usize);
 
 impl PcodeEmit for ScalarCapture {
     fn dump(
@@ -324,6 +328,87 @@ impl PcodeEmit for ScalarCapture {
         }
         let out = outvar.map(|v| (Operand::of(v), v.size));
         self.arrays.step(opc, out, &ins[..vars.len().min(2)]);
+        if let Some(steps) = &mut self.steps {
+            steps.push((opc, out, ins, vars.len().min(2)));
+        }
+    }
+}
+
+/// (kuna) How many instructions an address stays in a register for
+/// [`TableUses`].
+const TABLE_WINDOW: u8 = 32;
+
+/// (kuna) The addresses code puts in a register and, within [`TABLE_WINDOW`]
+/// instructions, adds a computed index to (`lea rcx,table` then
+/// `mov eax,[rcx+rax*4]`, or `lea rdi,[rax+table]`): the base of an array,
+/// whatever its bytes spell. A conditional branch or a call falls through to the
+/// next instruction with the register intact; a jump or a return does not, so
+/// it forgets every address (a tail call's argument is not the next function's
+/// table).
+#[derive(Default)]
+struct TableUses {
+    held: Vec<(Operand, u64, u8)>,
+    bases: Vec<u64>,
+}
+
+impl TableUses {
+    /// The address `v` holds.
+    fn base_of(&self, v: &Operand) -> Option<u64> {
+        self.held.iter().find(|(loc, ..)| loc == v).map(|&(_, base, _)| base)
+    }
+
+    fn indexed(&mut self, base: u64) -> Option<u64> {
+        if !self.bases.contains(&base) {
+            self.bases.push(base);
+        }
+        Some(base)
+    }
+
+    /// Follow one decoded instruction's ops; `None` for an undecodable address.
+    fn instruction(&mut self, steps: Option<&[Step]>) {
+        let Some(steps) = steps else {
+            self.held.clear();
+            return;
+        };
+        let mut flow = false;
+        for &(opc, out, ins, n) in steps {
+            let from = match (opc, &ins[..n]) {
+                (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, &[Operand::Const(c), ..]) => {
+                    looks_like_address(c).then_some(c)
+                }
+                (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, &[v, ..])
+                | (OpCode::CPUI_INT_MULT, &[v, Operand::Const(1)]) => self.base_of(&v),
+                (OpCode::CPUI_INT_ADD, &[a, b]) => match (self.base_of(&a), self.base_of(&b), a, b) {
+                    (Some(base), None, _, Operand::Const(_)) | (None, Some(base), Operand::Const(_), _) => Some(base),
+                    (Some(base), None, ..) | (None, Some(base), ..) => self.indexed(base),
+                    (None, None, Operand::Const(c), Operand::Loc(..))
+                    | (None, None, Operand::Loc(..), Operand::Const(c))
+                        if looks_like_address(c) =>
+                    {
+                        self.indexed(c)
+                    }
+                    _ => None,
+                },
+                (OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN, _) => {
+                    flow = true;
+                    None
+                }
+                _ => None,
+            };
+            if let Some((loc, _)) = out {
+                self.held.retain(|(l, ..)| *l != loc);
+                if let Some(base) = from {
+                    self.held.push((loc, base, TABLE_WINDOW));
+                }
+            }
+        }
+        if flow {
+            self.held.clear();
+        }
+        self.held.retain_mut(|h| {
+            h.2 -= 1;
+            h.2 > 0
+        });
     }
 }
 
@@ -386,13 +471,15 @@ fn decode_scalars(
     translate: &dyn Translate,
     vma: u64,
     code_space: &Rc<AddrSpace>,
+    tables: Option<&mut TableUses>,
 ) -> Option<(u32, Vec<u64>)> {
     let addr = Address::new(Rc::clone(code_space), vma);
-    let mut cap = ScalarCapture::default();
-    let len = translate.one_instruction(&mut cap, &addr).ok()?;
-    if len <= 0 {
-        return None;
+    let mut cap = ScalarCapture { steps: tables.as_ref().map(|_| Vec::new()), ..Default::default() };
+    let len = translate.one_instruction(&mut cap, &addr).ok().filter(|&len| len > 0);
+    if let Some(tables) = tables {
+        tables.instruction(len.and(cap.steps.as_deref()));
     }
+    let len = len?;
     let arrays = &cap.arrays.bases;
     cap.consts.retain(|c| !arrays.contains(c));
     Some((len as u32, cap.consts))
@@ -417,7 +504,7 @@ fn bytes_at<'d>(file: &object::File<'d>, addr: u64) -> Option<&'d [u8]> {
 /// [`STRING_MIN_LEN`] visible characters, its byte length **including** the NUL
 /// (the `char[N]` length). Reuses the [`crate::strings`] printable-char
 /// recognizer so a planted symbol is shaped identically.
-fn string_len(bytes: &[u8]) -> Option<u32> {
+pub(crate) fn string_len(bytes: &[u8]) -> Option<u32> {
     let len = bytes.iter().position(|&b| !is_printable_string_byte(b))?;
     (bytes[len] == 0 && len >= STRING_MIN_LEN).then_some((len + 1) as u32)
 }
@@ -451,8 +538,9 @@ const RELATIVE_TABLE_ENTRIES: usize = 256;
 /// (kuna) Which of `wanted` (sorted) the image holds as a pointer: the value of a
 /// pointer-aligned slot of an allocated section, read in the image's byte order,
 /// or the addend of a dynamic relocation, where a position-independent image
-/// keeps the pointers its loader writes.
-fn held_pointers(file: &object::File, wanted: &[u64]) -> Vec<u64> {
+/// keeps the pointers its loader writes. With `code_slots` false the slots of
+/// executable sections (an ARM literal pool) do not count.
+pub(crate) fn held_pointers(file: &object::File, wanted: &[u64], code_slots: bool) -> Vec<u64> {
     let width: usize = if file.is_64() { 8 } else { 4 };
     let little_endian = file.is_little_endian();
     let mut held: Vec<u64> = Vec::new();
@@ -468,8 +556,10 @@ fn held_pointers(file: &object::File, wanted: &[u64]) -> Vec<u64> {
     }
     for sec in file.sections() {
         let allocated = match sec.flags() {
-            object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_ALLOC != 0,
-            _ => true,
+            object::SectionFlags::Elf { sh_flags } => {
+                sh_flags & SHF_ALLOC != 0 && (code_slots || sh_flags & SHF_EXECINSTR == 0)
+            }
+            _ => code_slots || sec.kind() != SectionKind::Text,
         };
         let Some(data) = sec.data().ok().filter(|_| allocated) else {
             continue;
@@ -497,7 +587,7 @@ fn held_pointers(file: &object::File, wanted: &[u64]) -> Vec<u64> {
 /// positive character code (9..=0x7e, the first unit of a wide string or a code
 /// table the read has run into), points back into the entries read, or lands on
 /// no string, and at least two must remain.
-fn relative_string_table(file: &object::File, table: u64, little_endian: bool) -> Vec<u64> {
+pub(crate) fn relative_string_table(file: &object::File, table: u64, little_endian: bool) -> Vec<u64> {
     let Some(bytes) = bytes_at(file, table).filter(|b| table.is_multiple_of(4) && string_len(b).is_none())
     else {
         return Vec::new();
@@ -526,10 +616,10 @@ fn relative_string_table(file: &object::File, table: u64, little_endian: bool) -
 /// (kuna) The start and size of every sized data object the image's symbol
 /// tables declare, sorted. A relocatable object has no image addresses yet and
 /// lists none.
-struct DataObjects(Vec<(u64, u64)>);
+pub(crate) struct DataObjects(Vec<(u64, u64)>);
 
 impl DataObjects {
-    fn new(file: &object::File) -> Self {
+    pub(crate) fn new(file: &object::File) -> Self {
         if file.kind() == ObjectKind::Relocatable {
             return DataObjects(Vec::new());
         }
@@ -542,14 +632,14 @@ impl DataObjects {
         )
     }
 
-    fn from_spans(mut spans: Vec<(u64, u64)>) -> Self {
+    pub(crate) fn from_spans(mut spans: Vec<(u64, u64)>) -> Self {
         spans.sort_unstable();
         spans.dedup();
         DataObjects(spans)
     }
 
     /// Does a declared object start at `addr`?
-    fn starts_at(&self, addr: u64) -> bool {
+    pub(crate) fn starts_at(&self, addr: u64) -> bool {
         let from = self.0.partition_point(|&(lo, _)| lo < addr);
         self.0.get(from).is_some_and(|&(lo, _)| lo == addr)
     }
@@ -562,6 +652,38 @@ impl DataObjects {
     fn contradicts(&self, addr: u64, len: u64) -> bool {
         let from = self.0.partition_point(|&(lo, _)| lo < addr);
         self.0[from..].iter().take_while(|&&(lo, _)| lo == addr).any(|&(_, size)| size != len)
+    }
+
+    /// The furthest end of the objects up to each one, for [`Self::overlaps`].
+    pub(crate) fn reach(&self) -> Vec<u64> {
+        self.0
+            .iter()
+            .scan(0u64, |end, &(lo, size)| {
+                *end = (*end).max(lo.saturating_add(size));
+                Some(*end)
+            })
+            .collect()
+    }
+
+    /// Does a declared object overlap `[addr, addr + len)`? `reach` is
+    /// [`Self::reach`].
+    pub(crate) fn overlaps(&self, reach: &[u64], addr: u64, len: u64) -> bool {
+        self.overlapping(reach, addr, len).next().is_some()
+    }
+
+    /// [`Self::overlaps`], by an object other than one of exactly that extent.
+    pub(crate) fn overlaps_other(&self, reach: &[u64], addr: u64, len: u64) -> bool {
+        self.overlapping(reach, addr, len).any(|span| span != (addr, len))
+    }
+
+    fn overlapping<'s>(&'s self, reach: &'s [u64], addr: u64, len: u64) -> impl Iterator<Item = (u64, u64)> + 's {
+        let end = addr.saturating_add(len);
+        let upto = self.0.partition_point(|&(lo, _)| lo < end);
+        (0..upto)
+            .rev()
+            .take_while(move |&k| reach[k] > addr)
+            .map(|k| self.0[k])
+            .filter(move |&(lo, size)| lo.saturating_add(size) > addr)
     }
 }
 
@@ -583,6 +705,29 @@ pub fn scan_scalar_refs(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
 ) -> Vec<ScalarRef> {
+    scan(file, translate, code_space, None)
+}
+
+/// (kuna) [`scan_scalar_refs`], also returning the addresses [`TableUses`] saw
+/// the code index as tables of wider elements.
+fn scan_scalar_refs_and_tables(
+    file: &object::File,
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+) -> (Vec<ScalarRef>, Vec<u64>) {
+    let mut tables = TableUses::default();
+    let refs = scan(file, translate, code_space, Some(&mut tables));
+    let mut bases = tables.bases;
+    bases.sort_unstable();
+    (refs, bases)
+}
+
+fn scan(
+    file: &object::File,
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+    mut tables: Option<&mut TableUses>,
+) -> Vec<ScalarRef> {
     let secs = section_ranges(file);
     let exec = exec_ranges(file);
     let mut out = Vec::new();
@@ -595,7 +740,7 @@ pub fn scan_scalar_refs(
         // linear sweep), so this stays O(consts) per instruction — no global set.
         let mut emitted_for_insn: Vec<u64> = Vec::new();
         while vma < hi {
-            let (len, consts) = match decode_scalars(translate, vma, code_space) {
+            let (len, consts) = match decode_scalars(translate, vma, code_space, tables.as_deref_mut()) {
                 Some(r) => r,
                 None => {
                     // Undecodable: realign by one byte (CISC linear sweep).
@@ -676,7 +821,7 @@ fn emit_facts(file: &object::File, refs: &[ScalarRef]) -> AnalysisOutput {
     if !unreferenced.is_empty() {
         unreferenced.sort_unstable();
         unreferenced.dedup();
-        let held = held_pointers(file, &unreferenced);
+        let held = held_pointers(file, &unreferenced, true);
         unreferenced.retain(|n| !held.contains(n));
     }
     let mut narrow: Vec<u64> = runs
@@ -729,9 +874,34 @@ impl AnalysisPass for OperandRefsPass {
             Some(s) => Rc::clone(s),
             None => return AnalysisOutput::default(),
         };
-        let refs = scan_scalar_refs(ctx.file, ctx.arch.translate(), &code_space);
-        emit_facts(ctx.file, &refs)
+        if !ctx.arch.analysis_widestrings32 {
+            return emit_facts(ctx.file, &scan_scalar_refs(ctx.file, ctx.arch.translate(), &code_space));
+        }
+        let (refs, tables) = scan_scalar_refs_and_tables(ctx.file, ctx.arch.translate(), &code_space);
+        let mut out = emit_facts(ctx.file, &refs);
+        out.wide_strings32 = wide_strings32(ctx.file, &refs, &tables);
+        out
     }
+}
+
+/// (kuna `widestrings32`) The 4-byte string facts of the decode's operand
+/// targets `refs` and table uses `tables` (sorted).
+fn wide_strings32(file: &object::File, refs: &[ScalarRef], tables: &[u64]) -> Vec<crate::pass::StringFact> {
+    let mut targets: Vec<u64> = refs.iter().map(|r| r.to).collect();
+    targets.sort_unstable();
+    targets.dedup();
+    crate::strings::kuna_widestrings32::wide_string32_facts(file, &targets, tables)
+}
+
+/// (kuna `widestrings32`) The 4-byte string facts alone, for a run with
+/// `operand_refs` off: the same decode, for the operand targets and table uses
+/// the facts weigh, without the pass's own string facts.
+pub fn wide_strings32_alone(ctx: &AnalysisCtx) -> AnalysisOutput {
+    let Some(code_space) = ctx.arch.manage().get_default_code_space().map(Rc::clone) else {
+        return AnalysisOutput::default();
+    };
+    let (refs, tables) = scan_scalar_refs_and_tables(ctx.file, ctx.arch.translate(), &code_space);
+    AnalysisOutput { wide_strings32: wide_strings32(ctx.file, &refs, &tables), ..Default::default() }
 }
 
 #[cfg(test)]
@@ -916,6 +1086,72 @@ mod tests {
         assert!(bases(killed).is_empty());
     }
 
+    #[test]
+    fn computed_indexes_mark_a_table() {
+        let tables = |insns: Vec<Vec<(OpCode, Option<(Operand, u32)>, Vec<Operand>)>>| {
+            let mut uses = TableUses::default();
+            for insn in insns {
+                let steps: Vec<Step> = insn
+                    .into_iter()
+                    .map(|(opc, out, ins)| {
+                        let mut two = [Operand::Const(0); 2];
+                        for (slot, v) in two.iter_mut().zip(&ins) {
+                            *slot = *v;
+                        }
+                        (opc, out, two, ins.len().min(2))
+                    })
+                    .collect();
+                uses.instruction(Some(&steps));
+            }
+            uses.bases
+        };
+        let unique = |off: u64| Operand::Loc(3, off);
+        let at = Operand::Const;
+        let space = at(0x1234_5678);
+        let (rax, rcx, rdi) = (Operand::Loc(2, 0), Operand::Loc(2, 8), Operand::Loc(2, 0x38));
+        let lea = |reg, addr| vec![(OpCode::CPUI_COPY, Some((reg, 8)), vec![at(addr)])];
+        // lea rcx,[rip+table]; mov eax,[rcx+rax*4]
+        let load = vec![
+            (OpCode::CPUI_INT_MULT, Some((unique(0x100), 8)), vec![rax, at(4)]),
+            (OpCode::CPUI_INT_ADD, Some((unique(0x180), 8)), vec![rcx, unique(0x100)]),
+            (OpCode::CPUI_LOAD, Some((rax, 4)), vec![space, unique(0x180)]),
+        ];
+        assert_eq!(tables(vec![lea(rcx, 0x20a0), load.clone()]), [0x20a0]);
+        // lea rdx,[rip+table]; mov edx,[rcx+rdx*1]: the address as the index.
+        let scaled = vec![
+            (OpCode::CPUI_INT_MULT, Some((unique(0x100), 8)), vec![rcx, at(1)]),
+            (OpCode::CPUI_INT_ADD, Some((unique(0x180), 8)), vec![rax, unique(0x100)]),
+            (OpCode::CPUI_LOAD, Some((rax, 4)), vec![space, unique(0x180)]),
+        ];
+        assert_eq!(tables(vec![lea(rcx, 0x3b7a8), scaled]), [0x3b7a8]);
+        // lea rdi,[rip+rows]; add rdi,rax: a row of a table, passed on.
+        let add = vec![(OpCode::CPUI_INT_ADD, Some((rdi, 8)), vec![rdi, rax])];
+        assert_eq!(tables(vec![lea(rdi, 0x2060), add.clone()]), [0x2060]);
+        // lea rdi,[rax+0x402100] in one instruction.
+        assert_eq!(tables(vec![vec![(OpCode::CPUI_INT_ADD, Some((rdi, 8)), vec![rax, at(0x402100)])]]), [0x402100]);
+        // lea rdi,[rip+lit]; add rdi,4; call: a literal and its tail.
+        let tail = vec![(OpCode::CPUI_INT_ADD, Some((rdi, 8)), vec![rdi, at(4)])];
+        let call = vec![(OpCode::CPUI_CALL, None, vec![at(0x1130)])];
+        assert!(tables(vec![lea(rdi, 0x20bc), tail, call.clone()]).is_empty());
+        // A call or a conditional branch keeps the address; a jump, an
+        // overwrite or a window of instructions forgets it.
+        let cbranch = vec![(OpCode::CPUI_CBRANCH, None, vec![at(0x1200), unique(0x500)])];
+        assert_eq!(tables(vec![lea(rcx, 0x20a0), call.clone(), cbranch, load.clone()]), [0x20a0]);
+        let jump = vec![(OpCode::CPUI_BRANCH, None, vec![at(0x1130)])];
+        assert!(tables(vec![lea(rdi, 0x20bc), jump, add.clone()]).is_empty());
+        let other = vec![(OpCode::CPUI_COPY, Some((rcx, 8)), vec![rax])];
+        assert!(tables(vec![lea(rcx, 0x20a0), other, load.clone()]).is_empty());
+        let nop = vec![(OpCode::CPUI_COPY, Some((unique(0x400), 8)), vec![rax])];
+        let within = |gap: usize| {
+            let mut insns = vec![lea(rcx, 0x20a0)];
+            insns.extend(std::iter::repeat_n(nop.clone(), gap));
+            insns.push(load.clone());
+            !tables(insns).is_empty()
+        };
+        assert!(within(usize::from(TABLE_WINDOW) - 2));
+        assert!(!within(usize::from(TABLE_WINDOW) - 1));
+    }
+
     /// `tbl` in `ptrslot_gcc_O1_x86_64` starts with `26 42 40 00 ..`, a run the
     /// recognizer accepts, but it is the entry for 0x404226; a scalar that names
     /// it plants nothing.
@@ -1003,7 +1239,7 @@ mod tests {
             let file = object::File::parse(bytes.as_slice()).expect("parse widecodes");
             let mut wanted = held.to_vec();
             wanted.push(not_held);
-            let mut found = held_pointers(&file, &wanted);
+            let mut found = held_pointers(&file, &wanted, true);
             found.sort_unstable();
             assert_eq!(found, held, "{fixture}");
         }
@@ -1023,7 +1259,7 @@ mod tests {
     fn a_relative_lookup_table_holds_its_strings() {
         let bytes = fixture_bytes("widecodes_switch_clang_O2_x86_64");
         let file = object::File::parse(bytes.as_slice()).expect("parse widecodes_switch");
-        assert!(held_pointers(&file, &[0x2006]).is_empty());
+        assert!(held_pointers(&file, &[0x2006], true).is_empty());
         assert_eq!(relative_string_table(&file, 0x2010, true), [0x2004, 0x2006, 0x2008, 0x200a, 0x200c]);
         assert!(relative_string_table(&file, 0x2004, true).is_empty());
         let refs: Vec<ScalarRef> = [0x2010, 0x2004, 0x200e]
