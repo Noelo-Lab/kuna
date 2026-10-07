@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2341,
-    2341
+    2354,
+    2354
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -601,6 +601,19 @@
     "data:GH831 rv64 #5: fcvt.wu.d and fcvt.wu.s write a0",
     "data:GH831 rv64 #6: no read of register offset 0x900",
     "data:GH831 rv64 #7: no conversion function lost its result",
+    "data:GH839 #10: f1 and f4 keep the junk rdx below the real rcx",
+    "data:GH839 #1: reloadarg on, a2 and a5 pass pr the format and h's result only",
+    "data:GH839 #2: reloadarg on, a3 passes pr the format and g's double only",
+    "data:GH839 #3: reloadarg off, a2 passes the popped rcx and the rdx hole",
+    "data:GH839 #4: a4 keeps its three variadic arguments",
+    "data:GH839 #5: sp6 keeps the parameter it reloads from its frame into r8",
+    "data:GH839 #6: a6 keeps the slot init wrote through its pointer",
+    "data:GH839 #7: fa1 and fa4 pass the saved frame pointer",
+    "data:GH839 #8: fa2 prints the saved frame pointer",
+    "data:GH839 #9: fa3 passes both frame addresses and the return address",
+    "data:GH839-A64 #1: fa1 and fa4 pass the saved frame pointer",
+    "data:GH839-A64 #2: fa2 prints the saved frame pointer",
+    "data:GH839-A64 #3: fa3 passes the saved frame pointer",
     "data:GH8391 #1: Thumb mrrc2 decodes under v8-m (CDE)",
     "data:GH8391 #2: bytes no longer fail to decode",
     "data:GH840 a64 #1: the long passed in d0 is reinterpreted as a double (-O2, -O0)",
