@@ -504,7 +504,7 @@ fn bytes_at<'d>(file: &object::File<'d>, addr: u64) -> Option<&'d [u8]> {
 /// [`STRING_MIN_LEN`] visible characters, its byte length **including** the NUL
 /// (the `char[N]` length). Reuses the [`crate::strings`] printable-char
 /// recognizer so a planted symbol is shaped identically.
-fn string_len(bytes: &[u8]) -> Option<u32> {
+pub(crate) fn string_len(bytes: &[u8]) -> Option<u32> {
     let len = bytes.iter().position(|&b| !is_printable_string_byte(b))?;
     (bytes[len] == 0 && len >= STRING_MIN_LEN).then_some((len + 1) as u32)
 }

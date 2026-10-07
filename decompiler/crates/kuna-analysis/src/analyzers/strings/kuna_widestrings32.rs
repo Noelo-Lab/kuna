@@ -36,10 +36,12 @@
 //!     entry of a table of relative offsets at an operand (clang's `reltable`);
 //!   - what follows its terminator ([`follower`]) is the next literal or
 //!     object, not the table's next element: the end of the section, or, past
-//!     zero padding no longer than the next unit's alignment asks for, an
-//!     address something points at, a table base or a symbol's start, whose
-//!     first unit is no character (at or above U+110000) or opens a
-//!     zero-terminated run of printable units;
+//!     zero padding no longer than the next unit's alignment asks for, either a
+//!     table base or a symbol's start whose first unit is no character (at or
+//!     above U+110000) or opens a string, or an address something points at
+//!     that opens a string (a zero-terminated wide run, or a narrow string of
+//!     four characters or more) -- an operand naming the field after a struct's
+//!     codes (a negative count, a pointer) names no next object;
 //!   - no code adds a computed index to an address from its start to its
 //!     terminator ([`crate::operand_refs`]' table uses: `lea rcx,t` then
 //!     `mov eax,[rcx+rax*4]`).
@@ -56,7 +58,9 @@
 //! holds. What is left are the tables the bytes cannot tell from literals: an
 //! anonymous table that ends at its zero prints as the literal its elements
 //! spell, the same values; the rows of a 2-D table of codes (`{{97, .., 0},
-//! {102, .., 0}}`) print as one literal each; and a fixed-size table whose
+//! {102, .., 0}}`), or adjacent tables each ending in a zero, print as one
+//! literal each, so code reading across them reads past a literal; and a
+//! fixed-size table whose
 //! codes are followed by zero padding (`int t[8] = {97, 98, 99, 100, 101}`)
 //! prints as the shorter literal, so code reading past its first zero reads
 //! zeros in the binary and past the literal in the printed C.
@@ -185,7 +189,7 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64], tables: &[u64])
     if runs.is_empty() {
         return Vec::new();
     }
-    let follows: Vec<Option<Option<u64>>> = runs
+    let follows: Vec<Option<Option<Follower>>> = runs
         .iter()
         .map(|(r, strings4, data, vma)| (!strings4).then(|| follower(r, data, *vma, little_endian)).flatten())
         .collect();
@@ -193,7 +197,7 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64], tables: &[u64])
         .iter()
         .zip(&follows)
         .filter(|((_, strings4, ..), _)| !strings4)
-        .flat_map(|((r, ..), next)| [Some(r.addr), next.flatten()])
+        .flat_map(|((r, ..), next)| [Some(r.addr), next.flatten().map(|f| f.addr)])
         .flatten()
         .filter(|a| targets.binary_search(a).is_err())
         .collect();
@@ -219,11 +223,10 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64], tables: &[u64])
     let objects = DataObjects::from_spans(objects.into_iter().map(|(_, span)| span).collect());
     let labels = DataObjects::from_spans(labels.into_iter().map(|(_, span)| span).collect());
     let (reach, label_reach) = (objects.reach(), labels.reach());
-    let starts_object = |a: u64| {
-        pointed(a) || tables.binary_search(&a).is_ok() || objects.starts_at(a) || labels.starts_at(a)
-    };
-    let literal = |r: Run32, next: Option<Option<u64>>, data: &[u8], vma: u64| -> Option<Run32> {
-        if !next?.is_none_or(&starts_object) {
+    let declared = |a: u64| tables.binary_search(&a).is_ok() || objects.starts_at(a) || labels.starts_at(a);
+    let next_object = |f: Follower| declared(f.addr) || (f.string && pointed(f.addr));
+    let literal = |r: Run32, next: Option<Option<Follower>>, data: &[u8], vma: u64| -> Option<Run32> {
+        if !next?.is_none_or(next_object) {
             return None;
         }
         let terminator = r.addr + 4 * r.units as u64;
@@ -256,16 +259,28 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64], tables: &[u64])
 /// The most zero bytes [`follower`] reads as padding.
 const MAX_PADDING: u64 = 64;
 
+/// The first nonzero unit after a run's terminator, and whether a string
+/// starts there (a zero-terminated wide run or a narrow C string); otherwise its
+/// unit is no character, which only data an object starts at can be.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Follower {
+    pub addr: u64,
+    pub string: bool,
+}
+
 /// What comes after `r`'s terminator in its section (`data`, mapped at `vma`):
-/// `Some(None)` the section's end, `Some(Some(a))` the first nonzero unit `a`
-/// past zero padding, which a literal's next object starts at, or `None` when
-/// it cannot be one: zeros that are no padding, more than [`MAX_PADDING`] bytes
-/// or more than the alignment of the unit after them asks for
-/// (`{97, 98, 99, 100, 101, 0, 0, 7}` is one table), or a unit below
-/// [`CODE_POINTS`] that does not open a zero-terminated run of printable units,
-/// the next literal (`{.., 101, 0, 7, 8}` goes on with the codes 7 and 8,
-/// whatever names them, and `{.., 101, 0}, 5` with a count).
-fn follower(r: &Run32, data: &[u8], vma: u64, little_endian: bool) -> Option<Option<u64>> {
+/// `Some(None)` the section's end, `Some(Some(f))` the first nonzero unit past
+/// zero padding, which a literal's next literal or object starts at, or `None`
+/// when it cannot be one: zeros that are no padding, more than [`MAX_PADDING`]
+/// bytes or more than the alignment of the unit after them asks for
+/// (`{97, 98, 99, 100, 101, 0, 0, 7}` is one table), or a unit that is a
+/// character but opens no string (`{.., 101, 0, 7, 8}` goes on with the codes 7
+/// and 8, and `{.., 101, 0}, 5` with a count). A string is a zero-terminated run
+/// of characters below [`CODE_POINTS`] and outside the surrogates, the control
+/// codes but tab, CR and LF excluded, with at least one printable ASCII unit, or
+/// a narrow C string of four characters or more (fewer are the bytes of a
+/// wide unit or of a pointer such as `0x402039`, `"9 @"`).
+fn follower(r: &Run32, data: &[u8], vma: u64, little_endian: bool) -> Option<Option<Follower>> {
     let next = r.addr + u64::from(r.len());
     let mut at = next;
     loop {
@@ -290,16 +305,17 @@ fn follower(r: &Run32, data: &[u8], vma: u64, little_endian: bool) -> Option<Opt
         let raw: [u8; 4] = data.get(off + 4 * k..off + 4 * k + 4)?.try_into().ok()?;
         Some(if little_endian { u32::from_le_bytes(raw) } else { u32::from_be_bytes(raw) })
     };
-    let printable = |u: u32| u < 0x80 && is_string_char(u as u8);
-    let first = unit(0)?;
-    if first >= CODE_POINTS {
-        return Some(Some(at));
-    }
+    let ascii = |u: u32| u < 0x80 && is_string_char(u as u8);
+    let wide_char = |u: u32| ascii(u) || ((0xa0..CODE_POINTS).contains(&u) && !(0xd800..0xe000).contains(&u));
     let mut k = 0;
-    while printable(unit(k)?) {
+    let mut printable = false;
+    while let Some(u) = unit(k).filter(|&u| wide_char(u)) {
+        printable |= ascii(u);
         k += 1;
     }
-    (k > 0 && unit(k)? == 0).then_some(Some(at))
+    let wide = k > 0 && printable && unit(k) == Some(0);
+    let string = wide || crate::operand_refs::string_len(&data[off..]).is_some_and(|len| len > 4);
+    (string || unit(0)? >= CODE_POINTS).then_some(Some(Follower { addr: at, string }))
 }
 
 /// One past the largest Unicode code point: a unit at or above it is no
@@ -437,7 +453,7 @@ mod tests {
         let run = scan_utf32_runs(&d, 0x1000, true, MIN_UNITS)[0];
         assert_eq!(follower(&run, &d, 0x1000, true), Some(None));
         d.extend(wide("fg", true));
-        assert_eq!(follower(&run, &d, 0x1000, true), Some(Some(0x1020)));
+        assert_eq!(follower(&run, &d, 0x1000, true), Some(Some(Follower { addr: 0x1020, string: true })));
         assert_eq!(follower(&run, &d, 0x1004, true), None);
         let mut named = wide("abcde", true);
         named.extend_from_slice(&7u32.to_le_bytes());
@@ -445,12 +461,21 @@ mod tests {
         assert_eq!(follower(&run, &named, 0x1000, true), None);
         let mut next = wide("abcde", true);
         next.extend(wide("xy", true));
-        assert_eq!(follower(&run, &next, 0x1000, true), Some(Some(0x1018)));
+        assert_eq!(follower(&run, &next, 0x1000, true), Some(Some(Follower { addr: 0x1018, string: true })));
         next.truncate(next.len() - 4);
         assert_eq!(follower(&run, &next, 0x1000, true), None);
         let mut other = wide("abcde", true);
-        other.extend_from_slice(&0x2064_6c25u32.to_le_bytes());
-        assert_eq!(follower(&run, &other, 0x1000, true), Some(Some(0x1018)));
+        other.extend_from_slice(b"%ld %u\n\0");
+        assert_eq!(follower(&run, &other, 0x1000, true), Some(Some(Follower { addr: 0x1018, string: true })));
+        let mut pointer = wide("abcde", true);
+        pointer.extend_from_slice(&0x40_2039u64.to_le_bytes());
+        assert_eq!(follower(&run, &pointer, 0x1000, true), Some(Some(Follower { addr: 0x1018, string: false })));
+        let mut field = wide("abcde", true);
+        field.extend_from_slice(&(-5i32).to_le_bytes());
+        assert_eq!(follower(&run, &field, 0x1000, true), Some(Some(Follower { addr: 0x1018, string: false })));
+        let mut cafe = wide("abcde", true);
+        cafe.extend(wide("caf\u{e9}", true));
+        assert_eq!(follower(&run, &cafe, 0x1000, true), Some(Some(Follower { addr: 0x1018, string: true })));
         let mut long = wide("abcde", true);
         long.extend_from_slice(&[0; 68]);
         long.extend_from_slice(&7u32.to_le_bytes());

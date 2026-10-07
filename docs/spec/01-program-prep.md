@@ -1475,13 +1475,18 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   (`kuna_widestrings32.rs (follower)`) is the next literal or object, not the
   table's next element: the section's end, or the first nonzero unit after at
   most 64 bytes of zeros, fewer than that unit's address alignment asks for,
-  which an operand, a data slot or an entry of a table of relative offsets
-  (clang's `reltable`) points at, code indexes, or a symbol starts at, and
-  whose unit is no character (at or above U+110000) or opens a zero-terminated
-  run of printable units. In an image a literal is followed by the next
-  literal or object, while a table goes on with its next element, a code that
-  opens no literal even where the code names it (`sum(&tbl[6], 2)`, a struct's
-  count after its `int codes[6]`). And no code adds a computed index to any
+  that either code indexes or a symbol starts at, with a unit that is no
+  character (at or above U+110000) or a string there, or that an operand, a
+  data slot or an entry of a table of relative offsets (clang's `reltable`)
+  points at, with a string there. A string is a zero-terminated run of
+  characters (printable ASCII, tab, CR, LF, or U+00A0 and above outside the
+  surrogates) with at least one printable ASCII unit, or a narrow string of
+  four characters or more; fewer are the bytes of a wide unit or of a pointer
+  such as `0x402039` (`"9 @"`). In an image a literal is followed by the next
+  literal or object, while a table goes on with its next element, a code or a
+  field that opens no string even where the code names it (`sum(&tbl[6], 2)`,
+  the count, a negative delta or a string pointer after a struct's
+  `int codes[6]`). And no code adds a computed index to any
   address from its start to its terminator. The index test follows the
   same linear decode
   (`decompiler/crates/kuna-analysis/src/analyzers/operand_refs/mod.rs
@@ -1508,7 +1513,8 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   which all sit at address 0. What remains are the anonymous tables of a
   stripped image whose bytes are those of literals: one that ends at its zero
   prints as the literal its elements spell, the same values; the rows of a 2-D
-  table of codes, each ending in a zero, print as one literal each; and a
+  table of codes, or adjacent code tables, each ending in a zero, print as one
+  literal each, so code reading across them reads past a literal; and a
   fixed-size code table whose codes are followed by zero padding up to its size
   (`static const int t[8] = {97, 98, 99, 100, 101}`, common C) prints as the
   shorter literal, so code reading past its first zero reads zeros in the

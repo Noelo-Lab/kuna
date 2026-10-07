@@ -123,7 +123,9 @@ fn other_builds_and_targets_spell_the_literals() {
 /// and the code reads past it: passed whole to a function, indexed through a
 /// pointer an -O0 build keeps in memory, indexed and passed from an element
 /// inside, walked by a loop gcc peels, held by a struct. `widestr32_named.c`'s
-/// go on with an element the code also names (`&tbl[6]`, a struct's count).
+/// go on with an element the code also names (`&tbl[6]`, a struct's count),
+/// `widestr32_fields.c`'s with a struct field it names (a negative delta, a
+/// string pointer).
 /// None prints as a wide literal, by default or with `operand_refs` off;
 /// `L"control"` does.
 #[test]
@@ -137,6 +139,10 @@ fn tables_past_their_zero_never_print_as_text() {
         "widestr32_named_gcc_O2_stripped",
         "widestr32_named_gcc_O0_stripped",
         "widestr32_named_clang_O2_nopie_stripped",
+        "widestr32_fields_gcc_O2_nopie_stripped",
+        "widestr32_fields_gcc_O2_stripped",
+        "widestr32_fields_clang_O2_nopie_stripped",
+        "widestr32_fields_clang_O2_stripped",
     ] {
         for extra in [&[][..], alone] {
             let path = common::fixture(fixture);
