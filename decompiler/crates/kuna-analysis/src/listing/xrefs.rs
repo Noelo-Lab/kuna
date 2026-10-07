@@ -1492,7 +1492,7 @@ impl State {
 
 /// Lock one bucket's read ordering and collapse duplicates on `(from, to, kind)`,
 /// so a target reached twice from one site contributes exactly one row (the same
-/// contract [`super::Listing`]'s `finalize_refs` holds).
+/// contract [`super::Listing`]'s reference index holds).
 fn sort_dedup(refs: &mut Vec<Xref>, by_source: bool) {
     refs.sort_by(|a, b| {
         let (pa, sa) = if by_source { (a.from, a.to) } else { (a.to, a.from) };

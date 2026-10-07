@@ -33,10 +33,8 @@ use super::ListingDetail;
 pub(super) struct WalkState {
     /// Instruction model, keyed by VMA.
     pub insns: BTreeMap<u64, Insn>,
-    /// Incoming xref edges (callers / branch sources), keyed by target VMA.
-    pub refs_to: BTreeMap<u64, Vec<Reference>>,
-    /// Outgoing xref edges, keyed by source VMA.
-    pub refs_from: BTreeMap<u64, Vec<Reference>>,
+    /// Control-flow edges collected once, indexed when the walk finishes.
+    pub refs: Vec<Reference>,
     /// Discovered/seeded functions, keyed by entry VMA (ordered).
     pub funcs: BTreeMap<u64, DiscoveredFunction>,
     /// Plausible x86 `PUSH imm` callback evidence, keyed by target and bounded
@@ -97,41 +95,36 @@ impl FuncSink for BTreeMap<u64, DiscoveredFunction> {
 
 /// Where [`step`] files a cross-reference edge.
 pub(super) trait RefSink {
-    /// File a reference into both directions.
+    /// Collect a reference for both query directions.
     fn file(&mut self, from: u64, to: u64, kind: RefKind);
 }
 
-/// The serial walk's two reference maps behind a [`RefSink`].
+/// The walk's edge buffer behind a [`RefSink`].
 ///
 /// A no-op when the caller asked for no reference model, so the walk's edge
 /// sites read the same either way and a new one cannot miss the gate.
-pub(super) struct RefBuckets {
+pub(super) struct RefCollector {
     want: bool,
-    to: BTreeMap<u64, Vec<Reference>>,
-    from: BTreeMap<u64, Vec<Reference>>,
+    edges: Vec<Reference>,
 }
 
-impl RefBuckets {
-    pub(super) fn new(want: bool) -> RefBuckets {
-        RefBuckets { want, to: BTreeMap::new(), from: BTreeMap::new() }
+impl RefCollector {
+    pub(super) fn new(want: bool) -> RefCollector {
+        RefCollector { want, edges: Vec::new() }
     }
 
-    /// The two maps, for a caller that assembles them itself.
-    pub(super) fn into_parts(
-        self,
-    ) -> (BTreeMap<u64, Vec<Reference>>, BTreeMap<u64, Vec<Reference>>) {
-        (self.to, self.from)
+    pub(super) fn into_edges(self) -> Vec<Reference> {
+        self.edges
     }
 }
 
-impl RefSink for RefBuckets {
+impl RefSink for RefCollector {
     fn file(&mut self, from: u64, to: u64, kind: RefKind) {
         if !self.want {
             return;
         }
         let r = Reference { from, to, kind, op_index: None };
-        self.to.entry(to).or_default().push(r.clone());
-        self.from.entry(from).or_default().push(r);
+        self.edges.push(r);
     }
 }
 
@@ -501,11 +494,10 @@ fn walk_serial(
     let mut insns = established.map_or_else(BTreeMap::new, |prior| prior.insns.clone());
     let mut funcs = established.map_or_else(BTreeMap::new, |prior| prior.funcs.clone());
     let mode_runs = established.map_or_else(Vec::new, |prior| prior.mode_runs.clone());
-    let mut refs = RefBuckets::new(detail.refs);
+    let mut refs = RefCollector::new(detail.refs);
     let mut callbacks = CallbackEvidence::default();
     if let Some(prior) = established {
-        refs.to.clone_from(&prior.refs_to);
-        refs.from.clone_from(&prior.refs_from);
+        refs.edges.extend_from_slice(prior.refs.edges());
         for &(source, target) in &prior.stack_callback_refs {
             callbacks.file(source, target);
         }
@@ -569,8 +561,7 @@ fn walk_serial(
 
     WalkState {
         insns,
-        refs_to: refs.to,
-        refs_from: refs.from,
+        refs: refs.into_edges(),
         funcs,
         stack_callback_refs: callbacks.refs,
         mode_runs,

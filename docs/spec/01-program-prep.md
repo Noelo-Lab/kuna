@@ -3983,12 +3983,24 @@ pointer-only entries `fast_funcdisc` exists to find.
 
 Second, the cross-reference model itself, on the same reasoning and the same
 gate. An edge is filed for every control-flow successor of every instruction, a
-plain fall-through included, so the two direction maps together hold rather more
-entries than the instruction model does — and each is a `Vec` of its own inside a
-B-tree, which is several times the per-edge cost of an instruction. The model has
-exactly two readers, `noreturn_disc` and `tailcallentry`, and both are `listing`
-consumers, so a `fast_funcdisc`-only walk — again, the whole-binary export's path
-on any image `--mode auto` resolves to `fast` — builds neither map and every xref
+plain fall-through included. The walk collects each edge once in a contiguous
+buffer, including edges whose destination is not decoded. After the walk, it
+sorts and deduplicates that buffer by `(source, target, kind)` and makes one copy
+sorted by `(target, source, kind)`
+(`decompiler/crates/kuna-analysis/src/listing/kuna_compactrefs.rs (ReferenceIndex)`).
+Stable sorting preserves the first edge's operand metadata when duplicates are
+removed. Incoming and outgoing queries binary-search the corresponding buffer
+and borrow the matching slice; source iteration skips adjacent equal sources.
+There is no separate map node or growable vector for each instruction's
+fall-through. The reference model keeps the same edges, ordering, distinct-site
+counts and absence queries as the former bucket maps. Serial walks, decode-lane
+merges and ARM frame-preserving rebuilds all use this representation. During
+index construction, the collected buffer, its sorted copy and stable-sort
+scratch can overlap; every rebuild still owns its instruction partition.
+
+The readers, including `noreturn_disc`, `tailcallentry` and static format-string
+analysis, are `listing` consumers, so a `fast_funcdisc`-only walk — again, the whole-binary export's path
+on any image `--mode auto` resolves to `fast` — builds neither reference buffer and every xref
 query answers "none" for every address. What must hold is that nothing else about
 the walk changes, and nothing does: the reference filing is a pure sink, so the
 instructions decoded, the functions discovered and the executable ranges are
