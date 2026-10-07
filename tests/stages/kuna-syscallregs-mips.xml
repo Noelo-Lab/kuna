@@ -72,7 +72,7 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="SYSCALLREGS-MIPS #1: with option syscallregs on number keeps both arguments" min="1" max="1">unsigned int number\(unsigned int a0,unsigned int a1,unsigned int a2\)</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS #1: with option syscallregs on number keeps both arguments and the a2 write reads" min="1" max="1">unsigned int number\(unsigned int a0,unsigned int a1,unsigned int a2\)</stringmatch>
 <stringmatch name="SYSCALLREGS-MIPS #2: number returns the syscall result and shows the registers it set up" min="1" max="1">return syscall\(0,0xfa4,a1,a0,a2\);</stringmatch>
 <stringmatch name="SYSCALLREGS-MIPS #3: with option syscallregs off or auto number returns the syscall number" min="2" max="2">return 0xfa4;</stringmatch>
 <stringmatch name="SYSCALLREGS-MIPS #4: after reads the syscall result" min="1" max="1">v1 = syscall\(0,0xfb4\);</stringmatch>

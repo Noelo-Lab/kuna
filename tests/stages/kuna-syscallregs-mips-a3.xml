@@ -52,6 +52,19 @@
           return a3 ? -v0 : v0;
         }
 
+    Source at 0x100200 (the same compiler and flags, linked with
+    -Ttext=0x100200 against a separate foo):
+
+        extern int foo(long, long, long, long);
+        long rb(long cmd) {
+          foo(1, 2, 3, 4);
+          register long a0 asm("$4") = 0xfee1dead; register long a1 asm("$5") = 0x28121969;
+          register long a2 asm("$6") = cmd; register long v0 asm("$2") = 4088;
+          register long a3 asm("$7");
+          asm volatile("syscall" : "+r"(v0), "=r"(a3) : "r"(a0), "r"(a1), "r"(a2) : "memory");
+          return a3 ? -v0 : v0;
+        }
+
     rd is the clang form (movz on a3), wr the gcc form (a branch on a3) with a
     call after the syscall while a3 still holds the flag.  Pass 1 (option
     syscallregs on) defines a3 after each syscall with syscall_error(): rd
@@ -64,7 +77,9 @@
     one of them.  rd_nocancel hands its three parameters to read in place;
     the kernel's read takes three registers, so under on the call reads them
     and the function keeps them, without the phantom a3 the vendored model
-    adds after them.
+    adds after them.  rb sets three registers for reboot, which takes four,
+    after a call: the a3 it set up for foo may not survive the call, so the
+    system call does not read it.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 0100842410000624a30f02240c000000230802000a0847000800e00325102000
@@ -82,6 +97,14 @@ c90f02240c000000251840002528e00001008424c90f02240c0000002508e500
 </bytechunk>
 <symbol space="ram" offset="0x100100" name="both"/>
 <symbol space="ram" offset="0x100130" name="rd_nocancel"/>
+<bytechunk space="ram" offset="0x100200" readonly="true">
+e8ffbd271400bfaf1000b0af258080000100042402000524030006249800040c
+04000724e1fe013cadde24341228013c6919253425300002f80f02240c000000
+230802000a084700251020001000b08f1400bf8f0800e0031800bd2700000000
+0208c570210824000800e00323102700
+</bytechunk>
+<symbol space="ram" offset="0x100200" name="rb"/>
+<symbol space="ram" offset="0x100260" name="foo"/>
 </binaryimage>
 <script>
   <com>option syscallregs on</com>
@@ -95,6 +118,9 @@ c90f02240c000000251840002528e00001008424c90f02240c0000002508e500
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu rd_nocancel</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rb</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option syscallregs off</com>
@@ -114,7 +140,7 @@ c90f02240c000000251840002528e00001008424c90f02240c0000002508e500
 </script>
 <stringmatch name="SYSCALLREGS-MIPS-A3 #1: with option syscallregs on rd takes its two parameters" min="1" max="1">int4 rd\(int4 a0,unsigned int a1\)</stringmatch>
 <stringmatch name="SYSCALLREGS-MIPS-A3 #2: with option syscallregs on wr takes two parameters" min="1" max="1">int4 wr\(int4 a0,int4 a1\)</stringmatch>
-<stringmatch name="SYSCALLREGS-MIPS-A3 #3: rd, wr and rd_nocancel test the kernel's error flag" min="3" max="3">if \(!syscall_error\(\)\)</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #3: rd, wr, rd_nocancel and rb test the kernel's error flag" min="4" max="4">if \(!syscall_error\(\)\)</stringmatch>
 <stringmatch name="SYSCALLREGS-MIPS-A3 #4: rd hands read fd + 1, its own n and 16" min="1" max="1">v2 = syscall\(0,0xfa3,a0 \+ 1,a1,0x10\);</stringmatch>
 <stringmatch name="SYSCALLREGS-MIPS-A3 #5: wr hands fail the syscall result" min="1" max="1">return fail\(v1,</stringmatch>
 <stringmatch name="SYSCALLREGS-MIPS-A3 #6: the error flag is not an argument of fail" min="0" max="0">fail\([^)]*syscall_error</stringmatch>
@@ -122,4 +148,5 @@ c90f02240c000000251840002528e00001008424c90f02240c0000002508e500
 <stringmatch name="SYSCALLREGS-MIPS-A3 #8: both tests each system call's own flag" min="1" max="1">if \(syscall_error\(\) \|\| v\d+\)</stringmatch>
 <stringmatch name="SYSCALLREGS-MIPS-A3 #9: rd_nocancel keeps the three parameters it hands to read" min="1" max="1">rd_nocancel\([\w ]+ a0,[\w ]+ a1,[\w ]+ a2\)</stringmatch>
 <stringmatch name="SYSCALLREGS-MIPS-A3 #10: read takes them in place" min="1" max="1">syscall\(0,0xfa3,a0,a1,a2\);</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #11: reboot after a call reads the three registers rb sets, not a3" min="1" max="1">syscall\(0,0xff8,0xfee1dead,0x28121969,a0\);</stringmatch>
 </decompilertest>
