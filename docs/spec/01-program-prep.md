@@ -5410,3 +5410,8 @@ Ordinary decompilation context is not repainted by this metadata, and unrelated
 roots retain the explicit input mode. Discarded rounds and unclaimed gaps publish
 no hints. The behavior requires Listing, function-start patterns, and `armframes`.
 Automatic ISA selection continues to use loader mode facts without extra hints.
+
+Xref result formatting reuses the query's canonical inventory for names
+and fallback ownership. ARM address normalization and discovered-entry naming
+retain their existing precedence; formatting does not rebuild the inventory
+for each endpoint of every result row.
