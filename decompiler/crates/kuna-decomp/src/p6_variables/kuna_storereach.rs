@@ -426,9 +426,10 @@ fn drop_guard_only_hints(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpa
 /// indexed access or a walk goes through? For every LOAD or STORE whose
 /// pointer is the stack base plus an index or a walk (`pointer_pieces`), the
 /// local holding its lowest base must neither consist only of guard-only
-/// storage while not being an array, nor be followed directly by a local that
-/// consists only of guard-only storage: without the guard those slots have no
-/// local, and the range at the base runs on over them.
+/// storage while not being an array, nor be followed by guard-only storage up
+/// to and including the start of the next local (a register's spill the merge
+/// put elsewhere, or a local that starts guard-only): without the guard those
+/// slots have no Varnode, and the range at the base runs on over them.
 fn guard_shortens(
     fd: &Funcdata,
     space: &Rc<AddrSpace>,
@@ -469,8 +470,8 @@ fn guard_shortens(
             let Some(&(s, e, ref ct)) = symbols.iter().find(|&&(s, e, _)| s <= base && base < e) else {
                 return false;
             };
-            (ct.get_array_base().is_none() && only_guard(s, e))
-                || symbols.iter().any(|&(s2, e2, _)| s2 == e && only_guard(s2, e2))
+            let next = symbols.iter().map(|&(s2, _, _)| s2).filter(|&s2| s2 >= e).min().unwrap_or(intb::MAX);
+            (ct.get_array_base().is_none() && only_guard(s, e)) || guard_only.iter().any(|&(lo, hi)| lo <= next && e < hi)
         })
     })
 }
@@ -510,16 +511,6 @@ fn plain_index_base(fd: &Funcdata, ptr: VarnodeId, sb: VarnodeId, space: &Rc<Add
     }
     match pointer_pieces(fd, ptr, sb, 0)?.as_slice() {
         [(off, _)] => Some(sign_extend(space.wrap_offset(*off) as intb, bits)),
-        _ => None,
-    }
-}
-
-/// The one stack address a walk's pointer starts from (`pointer_pieces` gives
-/// a single unbounded piece).
-fn walk_base(fd: &Funcdata, ptr: VarnodeId, sb: VarnodeId, space: &Rc<AddrSpace>) -> Option<intb> {
-    let bits = space.get_addr_size() as int4 * 8 - 1;
-    match pointer_pieces(fd, ptr, sb, 0)?.as_slice() {
-        [(off, None)] => Some(sign_extend(space.wrap_offset(*off) as intb, bits)),
         _ => None,
     }
 }
@@ -625,12 +616,10 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
 /// or a part of it (`*(long *)&v1[i * 8]` into a byte array), which holds
 /// every slot at or above the base its guard INDIRECTs keep? A scalar, or an
 /// array of wider elements, makes the C index past the local (`(&v1)[a1] = 3`)
-/// or with the wrong stride. A walk from one stack address whose local there
-/// is an array must find every slot its guard keeps inside that array (the C
-/// walks the array; a slot outside it is a separate object the walk writes
-/// past to reach); a walk whose local is not an array, a byte store (written
-/// through a byte pointer, `((char *)v1)[i]`, and checked by the byte reaches),
-/// or one no longer live, passes.
+/// or with the wrong stride. A store through a pointer variable (a walk, whose
+/// arrays `guard_shortens` checks), a byte store (written through a byte
+/// pointer, `((char *)v1)[i]`, and checked by the byte reaches), or one no
+/// longer live, passes.
 fn indexes_own_array(
     fd: &Funcdata,
     store: OpId,
@@ -650,14 +639,7 @@ fn indexes_own_array(
         return true;
     }
     let Some(base) = plain_index_base(fd, ptr, sb, space) else {
-        let Some(base) = walk_base(fd, ptr, sb, space) else {
-            return true;
-        };
-        return symbols
-            .iter()
-            .find(|&&(s, e, _)| s <= base && base < e)
-            .filter(|(_, _, ct)| ct.get_array_base().is_some())
-            .is_none_or(|&(s, e, _)| slots.is_none_or(|slots| slots.iter().all(|&(lo, hi)| s <= lo && hi <= e)));
+        return true;
     };
     let Some((_, e, ct)) = symbols.iter().find(|&&(s, e, _)| s <= base && base < e) else {
         return slots.is_none_or(|slots| slots.is_empty());

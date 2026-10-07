@@ -1263,11 +1263,9 @@ bounded or not, must also find an array there whose element is its own width or
 a part of it, holding every slot at or above the base its guard keeps
 (`kuna_storereach.rs (indexes_own_array)`): a scalar there prints the store as
 `(&v1)[a1] = 3`, past the scalar, and an array of wider elements indexes with
-the wrong stride. A walk from one stack address whose local there is an array
-must hold every slot its guard keeps inside that array; a walk whose local is
-not an array (a zeroing loop over a struct's first field) prints as `*p = 0`
-through a pointer variable, and its slots are checked only for being whole
-locals.
+the wrong stride. A store through a pointer variable (a walk, such as a zeroing
+loop over a struct's first field) prints as `*p = 0`, not through the local;
+the final check below keeps the arrays it goes through whole.
 
 Beyond those, the guard must never end early a local that any indexed access
 or walk, load or store, goes through. A slot the guard keeps is guard-only
@@ -1288,10 +1286,14 @@ checks take the element type from them (`unsigned char b[12]` keeps its sign).
 A guard-only hint inside an element, wider than one, a float or a locked type
 stays as well, and the final check (`kuna_storereach.rs (guard_shortens)`) withdraws
 the guard when the local holding the lowest base of a LOAD or STORE through an
-index or a walk is a guard-only non-array or is followed directly by a
-guard-only local. Without it, `b[3] = i;` before a stride-2 walk over
-`long b[8]` that never reaches `b[3]` left `long v5[3]; long v7;` and the walk
-wrote past `v5`. An index whose known-bits span is 256 bytes or
+index or a walk is a guard-only non-array, or is followed by guard-only storage
+up to and including the start of the next local. The storage need not be a
+local of its own: the merge may map a guard-only slot to the register its value
+came from (`int v5; // edi | stack - 0x30`), leaving only a gap in the frame.
+Without the check, `b[3] = i;` before a stride-2 walk over `long b[8]` that
+never reaches `b[3]` left `long v5[3]; long v7;`, and a walk over `struct
+{long a; int b; int c;} s[4]` that writes only `.a` left `long v4[3]` below
+`s[1].b`, and the walks wrote past the arrays. An index whose known-bits span is 256 bytes or
 more counts as unbounded (`u.b[i & 511]`). After the last pass
 `decompile_drive.rs (run_pipeline)` calls `kuna_storereach.rs
 (withdraw_spoiled_guard)`, which takes the bytes of every guard INDIRECT still

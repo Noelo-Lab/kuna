@@ -54,6 +54,15 @@
             struct Q *q = s; for (int k = 0; k < j; k++, q++) q->x = k;
             return s[2].y + s[5].z; }
 
+    gb_wp (gcc 11 -O2) and cb_wq (clang 14 -O2), both also built with
+    -fno-strict-aliasing, walk an array of structs writing one field:
+
+        struct P { long a; int b; int c; };
+        int wp(int i, int j) { struct P s[4]; s[1].b = i; s[1].c = i + 7;
+            struct P *q = s; for (int k = 0; k < (j & 3); k++, q++) q->a = k;
+            return s[1].b + (short)s[1].c; }
+        int wq(...)   ws with struct Q
+
     u2 and u5 index with no bound: the guarded b[1] and b[2] lie inside the
     four elements the layout gives the array, and a narrower read of them
     (`(int)b[1]`, `(short)b[1]`) must not split the array into scalars, or
@@ -64,6 +73,9 @@
     slots; the guard must not end the array the walk goes through early (a
     `long v1[3]` the walk then writes past), so the array stays as long as
     without the guard, or the guard is withdrawn.
+    In wp the merge maps the guarded s[1].b to the register it came from,
+    and in wq a two-byte gap lies between the array and the guarded s[5].z;
+    neither may end the array early either.
 
     Stage: P3 heritage, stackstoreguard: an indexed stack STORE of any
     width gets an INDIRECT on each written stack range its analyzed window
@@ -136,7 +148,14 @@ c101c8c3662e0f1f840000000000669085f60f8e870000008d46ff83f8077309
 89088d51018950088d51028950108d51038950188d51048950208d5105895028
 8d51068950308d510789503883c1084883c0404439c175c840f6c60774214189
 c883e60731d2662e0f1f840000000000418d0c10890cd04883c20139d675f10f
-bfcf83c7010fbfc701c8c3
+bfcf83c7010fbfc701c8c30f1f4400008d4707897c24d0894424d483e603741e
+31c0488d5424b84889024883c0014883c21039c67ff18b7c24d08b4424d49801
+f8c3662e0f1f8400000000000f1f400066897c24cc89f883c00166894424e685
+f60f8e910000008d46ff83f8077309488d4424b831c9eb4f488d4424b889f283
+e2f831c9662e0f1f840000000000669089088d79018978088d79028978108d79
+038978188d79048978208d79058978288d79068978308d790789783883c10848
+83c04039d175c940f6c607742189c983e60731d2662e0f1f8400000000006690
+8d3c11893cd04883c20139d675f20fb77c24cc0fb74424e60fbfcf9801c8c3
 </bytechunk>
 <symbol space="ram" offset="0x401000" name="g_byte"/>
 <symbol space="ram" offset="0x401040" name="g_int"/>
@@ -170,6 +189,8 @@ bfcf83c7010fbfc701c8c3
 <symbol space="ram" offset="0x402300" name="cb_u5"/>
 <symbol space="ram" offset="0x402320" name="cb_w5"/>
 <symbol space="ram" offset="0x4023d0" name="cb_ws"/>
+<symbol space="ram" offset="0x402470" name="gb_wp"/>
+<symbol space="ram" offset="0x4024b0" name="cb_wq"/>
 </binaryimage>
 <script>
   <com>lo fu g_byte</com>
@@ -266,6 +287,12 @@ bfcf83c7010fbfc701c8c3
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu cb_ws</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_wp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_wq</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option stackstoreguard off</com>
@@ -365,6 +392,12 @@ bfcf83c7010fbfc701c8c3
   <com>lo fu cb_ws</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu gb_wp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_wq</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="INDEXEDSTOREGUARD #1: default, b[0] is stored before the indexed store and tested after it (byte, int, long; gcc -O2, clang -O2, gcc -O0)" min="7" max="7">v1\[0\] = .*;
@@ -383,5 +416,5 @@ if \(!?v1\[0\]\)</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD #12: off reproduces the stale b[6] and b[1] of the long array" min="2" max="2">return a1 \+ a0;</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD #13: default, b[1] and b[2] of an array indexed with no bound are read back from the array (u2, u5; gcc -O2, clang -O2)" min="4" max="4">return \(int4\)(v1\[2\] \+ \(int4\)v1\[1\]|\(int2\)v1\[1\]);</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD #14: no store is printed through the address of a scalar" min="0" max="0">\(&amp;v\d+\)\[</stringmatch>
-<stringmatch name="INDEXEDSTOREGUARD #15: the arrays the stride-2 walks of w5 and ws go through keep their length in both passes (gcc -O2, clang -O2)" min="6" max="6">^\s*(int8 v[45] \[9\]|uint4 v4 \[18\]);</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #15: the arrays the walks of w5, ws, wp and wq go through keep their length in both passes (gcc -O2, clang -O2)" min="10" max="10">^\s*(int8 v[345] \[9\]|uint4 v4 \[18\]);</stringmatch>
 </decompilertest>
