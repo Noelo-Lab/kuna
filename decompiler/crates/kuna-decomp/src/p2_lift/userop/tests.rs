@@ -112,6 +112,7 @@ fn builtin_ids_are_pinned() {
     assert_eq!(BUILTIN_WCSNCPY, 0x10000005);
     // (kuna) GH-9230
     assert_eq!(BUILTIN_MEMSET, 0x10000006);
+    assert_eq!(BUILTIN_SYSCALL_ERROR, 0x10000007);
 }
 
 #[test]

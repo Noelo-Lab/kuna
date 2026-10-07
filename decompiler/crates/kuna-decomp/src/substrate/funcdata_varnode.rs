@@ -3016,6 +3016,13 @@ impl AncestorRealistic {
                 }
                 AncestorCmd::PopSolid
             }
+            // (kuna syscallregs) the error flag a system call leaves is the
+            // kernel's clobber, like a register value through a call.
+            OpCode::CPUI_CALLOTHER
+                if self.trial_killed_by_call && crate::kuna_syscallregs::is_error_flag(fd, op) =>
+            {
+                AncestorCmd::PopFail
+            }
             _ => AncestorCmd::PopSolid,
         }
     }

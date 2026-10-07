@@ -383,7 +383,12 @@ call-spec record, so the ordinary call-site iteration cannot see them. A
 pointer LOAD or call result whose cover crosses one stays explicit. Thus
 `v = *p; svc; return v * 5 + *p` saves the first read before the system call,
 and two system calls cannot collapse their intervening read into the second
-one. Unrelated CALLOTHER operations retain their existing behavior.
+one. Unrelated CALLOTHER operations retain their existing behavior. The
+`syscall_error()` flag chapter 02 places after a MIPS or PowerPC system call
+(`kuna_syscallregs.rs (is_error_flag)`) is fenced the same way as a call
+output: crossing a call or another system call keeps it explicit, so the flag of
+the first of two system calls prints right after it, never as a
+`syscall_error()` after the second.
 
 Recognized x86-64 system calls use the same fence through
 `kuna_x64syscall.rs (memory_calls)`. The successful ABI rewrite marks each op,

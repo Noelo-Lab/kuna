@@ -1055,7 +1055,9 @@ the raw blocks that reach the instruction: a block decides for itself when it
 writes the register or makes a call, otherwise it takes the conjunction of its
 predecessors, and the entry decides no. Every block starts at yes and only
 falls, so a loop is decided by the paths into it, and more than 256 blocks
-answers no. Another system call writes the result register and nothing else.
+answers no. Another system call writes the result register, and on MIPS and
+PowerPC its error flag (below) as a value the function did not set, so a flag
+left by an earlier system call is not an argument the function wrote.
 
 The register pair goes away as a consequence. The low half is now the call's
 output, and the high half is an argument the call reads. Return recovery's
@@ -1064,6 +1066,78 @@ output, and the high half is an argument the call reads. Return recovery's
 argument is not also a returned half, even when the function throws the result
 away and the kernel-preserved argument register still reaches the `RETURN`. It
 stays free to be the next call's argument.
+
+MIPS and PowerPC kernels also report a failure outside the result: MIPS sets
+`a3` to 1 (0 on success) and PowerPC sets the summary-overflow bit of `cr0`, and
+the C library tests it right after the instruction (`movz` or `bnez` on `a3`;
+`bns`, or `mfcr` and a mask). So on those two families the rewrite also inserts,
+right after the system call, `a3 = syscall_error()` or `cr0 = syscall_error()`
+(`kuna_syscallregs.rs (define_error_flag)`): a `CALLOTHER` of the built-in user
+op `BUILTIN_SYSCALL_ERROR` (`decompiler/crates/kuna-decomp/src/p2_lift/userop.rs`)
+whose only input is that user-op id, with its call flag cleared. It is an
+ordinary write placed before heritage, so heritage treats it like any other
+register write (an `INDIRECT` there would not work, see below), and with no
+side effect dead-code removal drops it wherever nothing reads the register. A
+copy made when a block is duplicated (`funcdata_block.rs
+(CloneBlockOps::build_op_clone)`, `funcdata_op.rs (Funcdata::clone_op)`) clears
+the call flag that setting its opcode restores, so a copy dies the same way.
+The test after the call then
+reads the kernel's flag. Before, it read the function's entry `a3`, which became
+a phantom fourth parameter, or a `cr0` nothing set, printed as an uninitialized
+local; where the function had itself loaded `a3` as the fourth system-call
+argument, the test even folded to a constant, and glibc's MIPS `lutimes` always
+returned -1. The whole `cr0` field takes the opaque value: the Linux system-call
+ABI lists `cr0` as volatile across `sc`, its summary-overflow bit being the error
+condition, so code after the call cannot rely on its other bits.
+
+Three later consumers keep the flag tied to its own call. Every flag has the
+same input, the user-op id, but not the same value, so the test of whether two
+values are the same (`expression.rs (functional_equality_level)`) answers no for
+it, as it does for a call: `(e1 | e2) != 0` over two calls' flags is not folded
+to one of them, and the flags of two branches are not merged into a new
+`syscall_error()` after the join, which as a new op would also have regained the
+call flag and printed as a bare statement. Chapter 04's
+`AncestorRealistic` treats the flag reaching a later call's killed-by-call
+argument register like a value carried through a call, so it is not that call's
+argument. Chapter 06's implied-variable check treats its definition like a
+call's output: when its range crosses a call or another system call it is
+printed at its definition, so a `syscall_error()` never appears after a later
+system call it does not belong to.
+
+On MIPS the phantom `a3` had also pulled a wrapper's real parameters in with
+it: parameter recovery fills the positions before the last input it finds, so a
+`read` wrapper that hands its three parameters to the kernel in place printed
+`(a0,a1,a2,a3)` although the call read none of them, and without the phantom it
+printed `(void)`. So a MIPS system call goes on reading argument registers,
+written or not, up to as many as the kernel's entry point for its number takes
+(`kuna_syscallregs.rs (mips_floor)`), each one only while, on every path to the
+instruction, it holds the function's incoming value with no call on the path or
+a value the function wrote after the path's last call
+(`kuna_syscallregs.rs (reaches_without_call)`). The o32 ABI does not preserve
+`a0`..`a3` across a call, while kuna's call model carries them through it, so a
+register that crossed a call would print the value from before the call:
+`foo(1,2,3,4)` followed by a `reboot` that sets `a0`..`a2` printed the 4 set up
+for `foo` as reboot's fourth argument. The first register that fails ends the
+list, which then reads exactly what the written-registers rule reads. The
+number is the constant that every write of `v0` reaching the instruction, with
+no call in between, writes
+(`kuna_syscallregs.rs (constant_at)`). The count comes from one table sorted by
+number (`kuna_syscallregs/mips_args.rs`), since the three ABIs number their
+calls in disjoint ranges (o32 from 4000, n64 from 5000, n32 from 6000). It is
+built from the kernel's own `syscall_o32.tbl`, `syscall_n64.tbl` and
+`syscall_n32.tbl` and the parameter lists of the entry points they name, an o32
+64-bit parameter taking an even-aligned register pair; o32 reads at most four
+registers and n32/n64 six. These are the kernel's counts, not the documented
+wrappers': `faccessat` takes three registers, `ppoll` one more than its
+wrapper. A number the table does not know, one computed at run time as in the
+C library's `syscall` dispatcher, reads all of `a0`..`a3`: such a function
+hands its own `a3` to the kernel, and taking fewer would drop a real parameter.
+Where it does not, its flag test still reads as a fourth parameter, as it did
+before. A call that sets up fewer registers than the kernel's entry takes, with
+no call before it, shows the rest as the function's parameters, since the
+kernel does read them: a `write` that sets `a0` and `a1` also passes the `a2`
+its caller left. PowerPC keeps the written-registers rule: its flag is not an
+argument register, so no phantom pulled parameters in there.
 
 The same policy gives the recognized system call unknown effects on writable
 memory. `kuna_syscallregs.rs (guard_memory)`, called by chapter 03's
@@ -1078,19 +1152,22 @@ Registers, unique temporaries, read-only ranges, unrelated user ops, and
 compiler-spec injected system calls keep their existing effects. `off`, and
 `auto` on an unclassified image, retain the original memory model too.
 
-What it does not model. Arguments the function hands the kernel untouched are
-not read, since nothing says how many of them the kernel reads, and taking all
-of them would give a zero-argument call phantom parameters; the list stops at
+What it does not model. Outside MIPS, arguments the function hands the kernel
+untouched are not read, since nothing says how many of them the kernel reads,
+and taking all of them would give a zero-argument call phantom parameters; the list stops at
 the first of them, so a later argument the function does write is not shown
 either, and a pass-through wrapper prints its call with the number alone. When
 that leaves a written register out, return recovery can still take it as the
-high half of a returned pair, as the vendored model does. The registers a kernel
-writes besides the result (the MIPS `a3` error flag and `v1`, the PowerPC `cr0`
-error bit) also keep their pre-call values. An `INDIRECT` creation for them was
-tried and rejected: `Heritage::collect` reads a marker op already in a range as
-evidence of an earlier heritage pass and clears the range's new-addresses
-property, which turns off the call, store and return guards for that register.
-On MIPS, every call in a function with a `syscall` then lost its `a3` argument.
+high half of a returned pair, as the vendored model does. The MIPS `v1` that a
+few calls return a second value in keeps its pre-call value, and the o32
+arguments past `a3`, which the kernel reads from the stack, are not read. An
+`INDIRECT` creation was tried for the error flag first and rejected: `Heritage::collect`
+reads a marker op already in a range as evidence of an earlier heritage pass and
+clears the range's new-addresses property, which turns off the call, store and
+return guards for that register. On MIPS, every call in a function with a
+`syscall` then lost its `a3` argument. An image whose handler preserves `a3` or
+`cr0` under `on` reads the opaque flag where it kept its own value, the same
+caveat as for the result register.
 `option syscallregs off` restores the vendored zero-effect `CALLOTHER`.
 
 Exercised by `tests/stages/kuna-syscallregs-arm.xml`, `-aarch64.xml`,
@@ -1101,6 +1178,16 @@ byte chunk. The ARM test adds a call whose result is discarded, a call followed
 by a use of the kept `r1`, and a call that writes `r1` but not `r0`; the RISC-V
 test adds a loop that passes `a1`/`a2` through and keeps scratch values in
 `a3`/`a4`, none of which takes an argument position.
+`tests/stages/kuna-syscallregs-mips-a3.xml` (a clang `movz` and a gcc branch on
+`a3`, the latter followed by a call while `a3` still holds the flag) and
+`-ppc-cr0.xml` (an `mfcr` and a `bns` test, and a compare of the result as the
+control) check the error flag under `on` and the phantom parameter or the
+uninitialized `cr0` under `off`. The MIPS test adds a test of two calls' flags
+(`e1 | e2`), a `read` wrapper that hands its three parameters over in place, and
+a `reboot` after a call whose `a3` is not read;
+the PowerPC test adds a flag that each branch sets and that is saved across a
+call after the join. In `-mips.xml`, `number` makes a `write` (4004) with two
+registers set, so it also passes the kernel the `a2` its caller left.
 `tests/stages/kuna-syscallregs-cortexm.xml` is the bare-metal control: FreeRTOS's
 `xPortRaisePrivilege` keeps its returned `r0` under `auto` and `off`.
 `decompiler/crates/kuna-cli/tests/syscall_regs_cli.rs` loads the ARM witness as

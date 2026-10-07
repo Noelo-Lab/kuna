@@ -2031,7 +2031,9 @@ mod tests {
         // its request prints after that loop
         // and kuna-indexedstoreguard-a64 / the guarded slots of an AArch64
         // long or int array past four elements stay elements of the array
-        assert_eq!(count, 459, "corpus file count drifted");
+        // and kuna-syscallregs-mips-a3 + -ppc-cr0 / the MIPS a3 and PowerPC
+        // cr0 error flag a system call leaves (GH-857)
+        assert_eq!(count, 461, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
