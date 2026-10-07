@@ -1157,7 +1157,8 @@ a copy, a zero extension, or a sign extension whose input's sign bit the
 remainder cannot reach, is also at most the divisor less one
 (`kuna_storereach.rs (index_bound)`), so `b[(i >> 4) % 12]` reaches 12 bytes;
 an index multiplied or shifted left by a constant is bounded by its operand's
-bound times that constant.
+bound times that constant. With the option off, `pointer_pieces` bounds an
+index by its known-bits mask alone, as `arrayextent` does on main.
 A `MULTIEQUAL` that chooses between different stack addresses (`p = (j &
 2) ? &u.b[0] : &u.b[4]; *p ^= 1;`) gives one such piece per address, and the
 store reaches from the lowest piece to the end of the highest
@@ -1276,7 +1277,12 @@ PIECEs and SUBPIECEs that carry their values, and none at all feeds another
 INDIRECT, which would be a call or store observing the slot (`&req` handed to
 a call). Without the guard such a slot has no Varnode, since the read after
 the store takes the earlier write's value, so it has no hint and no local:
-the open range below it runs on over it. Each layout pass therefore drops a
+the open range below it runs on over it. A slot stays guard-only once any
+layout pass has found it so (`funcdata.rs (Funcdata::note_guard_only)`): a
+later pass may no longer see the guard's INDIRECTs live while the COPY and
+MULTIEQUAL they left still keep the slot a local of its own, as for the
+`short` field of an AArch64 struct array that a walk over another field goes
+through. Each layout pass therefore drops a
 guard-only integer hint at an element boundary of the open range below it, no
 wider than the element, when the element is wider than a byte
 (`kuna_storereach.rs (drop_guard_only_hints)`); its read becomes the element or

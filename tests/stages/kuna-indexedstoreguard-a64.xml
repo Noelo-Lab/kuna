@@ -23,6 +23,13 @@
             while (n) { n -= 1; *p = n * 9 + 1; p += 2; }
             return (int)b[3] + (short)b[3]; }
 
+    gap2 is built the same way with -fno-strict-aliasing, at 0x100160:
+
+        struct S { long a; char pad[6]; short z; };
+        int gap2(int i, int j) { struct S s[8]; s[2].z = i; s[5].z = i ^ 5;
+            struct S *q = s; for (int k = 0; k < j; k++, q++) q->a = k;
+            return s[2].z + (signed char)s[5].z; }
+
     Stage: P3 heritage stackstoreguard guards b[6] and b[1] at the indexed
     store (its index is bounded by `& 7`), and the P6 layout makes the array
     at the store's base as long as that bound.  u2 and u5 index with no
@@ -30,7 +37,9 @@
     the array, and the narrower reads of them must not split it into scalars
     (`(&v1)[a1] = 3` past a scalar, or with an 8-byte stride for u5's ints).
     w5 walks the array with stride 2, which never reaches the guarded b[3];
-    the guard must not end that array before b[3].  Pass 1 (default) reads both
+    the guard must not end that array before b[3].  Neither may gap2's walk
+    over the .a fields end the struct array before the guarded s[2].z, which
+    only the first layout passes see as kept by the guard alone.  Pass 1 (default) reads both
     slots back after the store; pass 2 (stackstoreguard off) reproduces the
     stale values, as on main.
 -->
@@ -45,13 +54,19 @@ e803009169008052e00700b909d921b8e00bc079ff830091c0035fd6ff0301d1
 e8030aaae9030091110000144bf97f924d0d0a8b48014092ad4500d189110b8b
 8c410091ee030baaaf2500918d0100f9ce0900d1ad4900d18f011ff88c810091
 4effffb57f010aebe00000540a0d088b4a2100d1080500d12a0501f84a2500d1
-a8ffffb5e80f40f900a1280bff030191c0035fd6
+a8ffffb5e80f40f900a1280bff030191c0035fd6000000000000000000000000
+ff0302d1a80080523f0400710800084ae05f0079e8bf00794b030054ec030091
+e803012a3f04007181000054e9031faaea0300910d00001409797f92eb031faa
+8a11098b8c4100916d0500918b011ff86b0900917f0109eb8d0502f861ffff54
+3f0108eba0000054490501f8290500911f0109eba1ffff54e05f4079e8bf4079
+081d001300a1200bff030291c0035fd6
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="l6b"/>
 <symbol space="ram" offset="0x100038" name="i6b"/>
 <symbol space="ram" offset="0x100068" name="u2"/>
 <symbol space="ram" offset="0x10009c" name="u5"/>
 <symbol space="ram" offset="0x1000bc" name="w5"/>
+<symbol space="ram" offset="0x100160" name="gap2"/>
 </binaryimage>
 <script>
   <com>lo fu l6b</com>
@@ -67,6 +82,9 @@ a8ffffb5e80f40f900a1280bff030191c0035fd6
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu w5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gap2</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option stackstoreguard off</com>
@@ -85,6 +103,9 @@ a8ffffb5e80f40f900a1280bff030191c0035fd6
   <com>lo fu w5</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu gap2</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #1: default, b[6] and b[1] are elements of one array read after the store" min="2" max="2">return (\(int4\))?v1\[1\] \+ (\(int4\))?v1\[6\];</stringmatch>
@@ -94,4 +115,5 @@ a8ffffb5e80f40f900a1280bff030191c0035fd6
 <stringmatch name="INDEXEDSTOREGUARD-A64 #5: no store is printed through the address of a scalar" min="0" max="0">\(&amp;v\d+\)\[</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #6: off reproduces the stale u2 and u5" min="2" max="2">return (a0 \* 2 \+ 1|a0);</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #7: the array w5's stride-2 walk goes through keeps its eight elements in both passes" min="2" max="2">^\s*int8 v3 \[8\]; // ([^\n]+ \| )?stack - 0x40( \| [^\n]+)?$</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD-A64 #8: gap2's walk goes through one array of the whole struct array in both passes" min="2" max="2">^\s*uint8 v2 \[16\]; // stack - 0x80$</stringmatch>
 </decompilertest>

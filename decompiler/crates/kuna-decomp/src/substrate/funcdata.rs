@@ -241,6 +241,9 @@ pub struct Funcdata {
     indexed_guard_stores: std::cell::RefCell<std::collections::BTreeSet<OpId>>,
     /// (kuna `stackstoreguard`) The INDIRECTs heritage placed for those STOREs.
     indexed_guard_indirects: std::cell::RefCell<std::collections::BTreeSet<OpId>>,
+    /// (kuna `stackstoreguard`) Every signed stack range a layout pass found
+    /// only the guard keeps (`p6_variables/kuna_storereach.rs`).
+    guard_only_seen: std::cell::RefCell<Vec<(kuna_base::types::intb, kuna_base::types::intb)>>,
     /// (kuna `stackstoreguard`) Set when the guard is off for this function.
     /// Survives `clear()`.
     stack_store_guard_withdrawn: std::cell::Cell<bool>,
@@ -653,6 +656,7 @@ impl Funcdata {
             store_reach_checks: std::cell::RefCell::new(Default::default()),
             indexed_guard_stores: std::cell::RefCell::new(Default::default()),
             indexed_guard_indirects: std::cell::RefCell::new(Default::default()),
+            guard_only_seen: std::cell::RefCell::new(Vec::new()),
             stack_store_guard_withdrawn: std::cell::Cell::new(false),
             stack_store_guard_spoiled: std::cell::Cell::new(false),
             kuna_condstmts_seed: std::collections::BTreeSet::new(),
@@ -2053,6 +2057,19 @@ impl Funcdata {
     /// (kuna `stackstoreguard`) The INDIRECTs heritage placed for those STOREs.
     pub(crate) fn indexed_guard_indirects(&self) -> std::collections::BTreeSet<OpId> {
         self.indexed_guard_indirects.borrow().clone()
+    }
+
+    /// (kuna `stackstoreguard`) Add the stack ranges a layout pass found only
+    /// the guard keeps, and return every one found since the analysis began.
+    pub(crate) fn note_guard_only(
+        &self,
+        ranges: Vec<(kuna_base::types::intb, kuna_base::types::intb)>,
+    ) -> Vec<(kuna_base::types::intb, kuna_base::types::intb)> {
+        let mut seen = self.guard_only_seen.borrow_mut();
+        seen.extend(ranges);
+        seen.sort_unstable();
+        seen.dedup();
+        seen.clone()
     }
 
     /// (kuna `stackstoreguard`) The STOREs heritage guarded written stack
@@ -3745,6 +3762,7 @@ impl Funcdata {
         *self.store_reach_checks.borrow_mut() = Default::default();
         self.indexed_guard_stores.borrow_mut().clear();
         self.indexed_guard_indirects.borrow_mut().clear();
+        self.guard_only_seen.borrow_mut().clear();
         self.kuna_forced_return_planted.clear();
         self.kuna_float_pair_halves.clear();
         self.kuna_forced_claims.clear();

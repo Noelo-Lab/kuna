@@ -264,7 +264,10 @@ fn widen_open_hints(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpace>, 
 /// a use other than those, and none at all feeds another INDIRECT (a call or
 /// store that observes the slot, as for `&req` handed to a call). Without the
 /// guard such a slot has no Varnode, since the read after the guarded store
-/// takes the earlier write's value, so no local there.
+/// takes the earlier write's value, so no local there. Callers take every
+/// range found since the analysis began (`Funcdata::note_guard_only`): a later
+/// pass may no longer see the guard's INDIRECTs, while the COPY and MULTIEQUAL
+/// they left still keep the slot a local of its own.
 fn guard_only_ranges(fd: &Funcdata, space: &Rc<AddrSpace>) -> Vec<(intb, intb)> {
     let indirects = fd.indexed_guard_indirects();
     if indirects.is_empty() {
@@ -362,7 +365,7 @@ fn guard_only_ranges(fd: &Funcdata, space: &Rc<AddrSpace>) -> Vec<(intb, intb)> 
 /// from them. Any other guard-only hint stays, and the final layout check
 /// (`guard_shortens`) withdraws the guard if it ends an array early.
 fn drop_guard_only_hints(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
-    let guard_only = guard_only_ranges(fd, space);
+    let guard_only = fd.note_guard_only(guard_only_ranges(fd, space));
     if guard_only.is_empty() {
         return;
     }
@@ -603,7 +606,7 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
             indexed
                 .iter()
                 .any(|&store| !indexes_own_array(fd, store, sb, &space, &symbols, effects.wide.get(&store)))
-                || guard_shortens(fd, &space, sb, &symbols, &guard_only_ranges(fd, &space))
+                || guard_shortens(fd, &space, sb, &symbols, &fd.note_guard_only(guard_only_ranges(fd, &space)))
         });
     if spoiled {
         fd.spoil_stack_store_guard();
@@ -1059,7 +1062,8 @@ fn store_reach(pieces: &[(intb, Option<intb>)]) -> Option<(Vec<intb>, Option<(in
 }
 
 /// `vn` as the stack base plus a constant plus a non-negative extra, which is
-/// `None` when an index's known-bits mask does not bound it. The extra starts
+/// `None` when an index's bound (`index_bound` under `stackstoreguard`, its
+/// known-bits mask otherwise) does not bound it. The extra starts
 /// at the address the pointer names, since the C prints the access from there.
 /// A phi of different stack addresses gives one such piece per address.
 pub(crate) fn pointer_pieces(
@@ -1154,7 +1158,12 @@ pub(crate) fn pointer_pieces(
                 );
             }
             let (index, bias) = offset_index(fd, term).unwrap_or((term, 0));
-            let span = index_bound(fd, index)?
+            let bound = if fd.stack_store_guard() {
+                index_bound(fd, index)?
+            } else {
+                fd.vbank().get(index)?.get_nz_mask()
+            };
+            let span = bound
                 .checked_add(bias)
                 .and_then(|m| m.checked_mul(scale))
                 .filter(|&s| s < MAX_REACH as uintb)
