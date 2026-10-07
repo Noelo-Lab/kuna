@@ -1173,7 +1173,8 @@ control) check the error flag under `on` and the phantom parameter or the
 uninitialized `cr0` under `off`. The MIPS test adds a test of two calls' flags
 (`e1 | e2`) and a `read` wrapper that hands its three parameters over in place;
 the PowerPC test adds a flag that each branch sets and that is saved across a
-call after the join.
+call after the join. In `-mips.xml`, `number` makes a `write` (4004) with two
+registers set, so it also passes the kernel the `a2` its caller left.
 `tests/stages/kuna-syscallregs-cortexm.xml` is the bare-metal control: FreeRTOS's
 `xPortRaisePrivilege` keeps its returned `r0` under `auto` and `off`.
 `decompiler/crates/kuna-cli/tests/syscall_regs_cli.rs` loads the ARM witness as
