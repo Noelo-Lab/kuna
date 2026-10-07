@@ -52,11 +52,13 @@
 //!
 //! That phantom `a3` used to pull a MIPS wrapper's real parameters in with it,
 //! `a0`..`a2` taking the positions before it, although the call read none of
-//! them. So a MIPS system call also reads, written or not, as many argument
-//! registers as the kernel's entry point for its constant number takes
-//! ([`mips_args`]), and all four of `a0`..`a3` when the table does not know the
-//! number: a wrapper that hands its parameters to the kernel in place keeps
-//! them.
+//! them. So a MIPS system call also reads, written or not, up to as many
+//! argument registers as the kernel's entry point for its constant number
+//! takes ([`mips_args`]), and all four of `a0`..`a3` when the table does not
+//! know the number: a wrapper that hands its parameters to the kernel in place
+//! keeps them. Such a register is read only while no call can have changed it
+//! on the way from the entry or from its write ([`reaches_without_call`]), so
+//! no value from before a call is printed as an argument.
 //!
 //! # When it acts
 //!
@@ -350,18 +352,32 @@ fn scan_back(
 
 /// Does every path from the function entry to `op` write `reg`, with no call
 /// between the write and `op`?
-///
-/// A must-define dataflow over the raw blocks that reach `op`: a block decides
-/// for itself when it writes the register or makes a call, and otherwise
-/// inherits from all of its predecessors; the entry decides no. Every block
-/// starts at yes and only falls to no, so a loop is decided by the paths into
-/// it. More than [`BLOCK_WALK_LIMIT`] blocks answers no.
 fn written_on_every_path(
     data: &Funcdata,
     op: OpId,
     reg: &Address,
     size: int4,
     regs: &SyscallStorage,
+) -> bool {
+    reaches_without_call(data, op, reg, size, regs, false)
+}
+
+/// Does `reg` reach `op` on every path from the function entry either written
+/// or, when `from_entry`, still holding the function's incoming value, with no
+/// call between that write or the entry and `op`?
+///
+/// A must-define dataflow over the raw blocks that reach `op`: a block decides
+/// for itself when it writes the register or makes a call, and otherwise
+/// inherits from all of its predecessors; the entry decides `from_entry`.
+/// Every block starts at yes and only falls to no, so a loop is decided by the
+/// paths into it. More than [`BLOCK_WALK_LIMIT`] blocks answers no.
+fn reaches_without_call(
+    data: &Funcdata,
+    op: OpId,
+    reg: &Address,
+    size: int4,
+    regs: &SyscallStorage,
+    from_entry: bool,
 ) -> bool {
     let Some(start) = data.obank().get(op).and_then(|o| o.get_parent()) else {
         return false;
@@ -390,7 +406,7 @@ fn written_on_every_path(
         work.extend(preds(b));
     }
     if blocks.is_empty() {
-        return false;
+        return from_entry;
     }
     let local: Vec<Scan> = blocks
         .iter()
@@ -409,7 +425,11 @@ fn written_on_every_path(
                 Scan::Clobbered => false,
                 Scan::Reached => {
                     let mut ps = preds(blocks[i]).peekable();
-                    ps.peek().is_some() && ps.all(|p| out[index[&p]])
+                    if ps.peek().is_some() {
+                        ps.all(|p| out[index[&p]])
+                    } else {
+                        from_entry
+                    }
                 }
             };
             if !now {
@@ -529,8 +549,11 @@ fn mips_floor(data: &Funcdata, op: OpId, number: &(Address, int4)) -> usize {
 /// The registers the call at `op` reads: the number register, then each
 /// argument register in order up to the first one the function does not write
 /// on every path to it. Nothing when the number register is not written so.
-/// A MIPS call reads at least [`mips_floor`] argument registers, written or
-/// not: a wrapper hands its own parameters to the kernel in place.
+/// A MIPS call goes on up to [`mips_floor`] argument registers, each one only
+/// while it reaches the call unchanged from the function's entry or from a
+/// write on every path with no call in between: a wrapper hands its own
+/// parameters to the kernel in place, but a register a call may have changed
+/// holds no value the function knows.
 fn read_set(data: &Funcdata, op: OpId, regs: &SyscallStorage) -> Vec<(Address, int4)> {
     let written =
         |(addr, size): &&(Address, int4)| written_on_every_path(data, op, addr, *size, regs);
@@ -542,7 +565,12 @@ fn read_set(data: &Funcdata, op: OpId, regs: &SyscallStorage) -> Vec<(Address, i
     }
     let mut count = args.iter().take_while(written).count();
     if regs.family == SyscallFamily::Mips {
-        count = count.max(mips_floor(data, op, number).min(args.len()));
+        let floor = mips_floor(data, op, number).min(args.len());
+        while count < floor
+            && reaches_without_call(data, op, &args[count].0, args[count].1, regs, true)
+        {
+            count += 1;
+        }
     }
     std::iter::once(number).chain(&args[..count]).cloned().collect()
 }

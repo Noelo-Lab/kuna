@@ -4,16 +4,17 @@
 //! n64 from 5000, n32 from 6000 -- so one table sorted by number serves all
 //! three. Each row is `(number, name, registers)`. Number and name come from
 //! the kernel's own `arch/mips/kernel/syscalls/syscall_{o32,n64,n32}.tbl`
-//! (Linux 6.5); the register count is the parameter list of the entry point
-//! that row names (`SYSCALL_DEFINEn`, or the `asmlinkage` definition of a MIPS
-//! entry such as `sysm_pipe`), laid out by the ABI. o32 uses the column a
+//! (Linux tree `v6.5-rc1-6-g3f01e9fed845`); the register count is the
+//! parameter list of the entry point that row names (`SYSCALL_DEFINEn`, or the
+//! `asmlinkage` definition of a MIPS entry such as `sysm_pipe`), laid out by
+//! the ABI. o32 uses the column a
 //! 64-bit kernel enters through where there is one, since it spells each
 //! 32-bit register (`sys_32_ftruncate64(fd, __dummy, a2, a3)`), and otherwise
 //! gives a 64-bit parameter an even-aligned register pair; o32 reads at most
 //! four registers (`a0`..`a3`, the rest come from the stack), n32 and n64 at
 //! most six. Set by hand: `clone` to the five-argument `CLONE_BACKWARDS`
 //! form; the indirect o32 `syscall` (4000), whose number is in `a0` and whose
-//! arguments follow it, to all four; and the calls a 6.5 kernel no longer
+//! arguments follow it, to all four; and the calls that tree no longer
 //! implements but an older C library still wraps, to their former entry
 //! points (`create_module` 2, `get_kernel_syms` 1, `bdflush` 2,
 //! `query_module` 5, `nfsservctl` 3, `getpmsg`/`putpmsg` 5). Other
