@@ -283,6 +283,13 @@ pub trait ContextDatabase {
     /// Unlike split-point copies, this preserves the behavior of future writes.
     fn clone_for_speculation(&self) -> Box<dyn ContextDatabase>;
 
+    /// Begin an undo journal for decoder context writes. Defaults, variable
+    /// registration and tracked registers must not be changed inside this scope.
+    fn begin_decode_context(&mut self);
+
+    /// Undo the innermost decoder journal, including values and split masks.
+    fn rollback_decode_context(&mut self);
+
     /// \brief Retrieve the context variable description object by name
     ///
     /// If the variable doesn't exist an error is returned.  (C++ protected
@@ -639,6 +646,13 @@ struct FreeArray {
 }
 
 impl FreeArray {
+    fn snapshot(&self) -> Self {
+        Self {
+            array: self.array.clone(),
+            mask: self.mask.clone(),
+        }
+    }
+
     /// Resize the context blob, preserving old values.
     ///
     /// The "array of words" and mask array are resized to the given value.
@@ -681,12 +695,23 @@ pub struct ContextInternal {
     database: PartMap<Address, FreeArray>,
     /// Partition map of tracked register sets
     trackbase: PartMap<Address, TrackedSet>,
+    /// Original values of touched splits; None marks a newly introduced split.
+    decode_journals: Vec<BTreeMap<Address, Option<FreeArray>>>,
 }
 
 impl ContextInternal {
     /// Construct an empty context database
     pub fn new() -> ContextInternal {
         ContextInternal::default()
+    }
+
+    fn record_decode_split(&mut self, addr: &Address) {
+        if let Some(journal) = self.decode_journals.last_mut() {
+            journal.entry(addr.clone()).or_insert_with(|| {
+                let (value, before, _, _) = self.database.bounds(addr);
+                (before == Some(addr)).then(|| value.snapshot())
+            });
+        }
     }
 
     /// \brief Encode a single context block to a stream
@@ -771,10 +796,7 @@ impl ContextInternal {
 
 impl ContextDatabase for ContextInternal {
     fn clone_for_speculation(&self) -> Box<dyn ContextDatabase> {
-        let copy = |value: &FreeArray| FreeArray {
-            array: value.array.clone(),
-            mask: value.mask.clone(),
-        };
+        let copy = FreeArray::snapshot;
         let mut database = PartMap::new(copy(self.database.default_value()));
         for (addr, value) in self.database.iter() {
             *database.split(addr) = copy(value);
@@ -784,7 +806,26 @@ impl ContextDatabase for ContextInternal {
             variables: self.variables.clone(),
             database,
             trackbase: self.trackbase.clone(),
+            decode_journals: Vec::new(),
         })
+    }
+
+    fn begin_decode_context(&mut self) {
+        self.decode_journals.push(BTreeMap::new());
+    }
+
+    fn rollback_decode_context(&mut self) {
+        for (addr, original) in self
+            .decode_journals
+            .pop()
+            .expect("active decode context journal")
+        {
+            if let Some(value) = original {
+                *self.database.split(&addr) = value;
+            } else {
+                self.database.remove_split(&addr);
+            }
+        }
     }
 
     fn get_variable(&self, nm: &[u8]) -> KunaResult<ContextBitRange> {
@@ -805,14 +846,21 @@ impl ContextDatabase for ContextInternal {
         mask: u32,
         each: &mut dyn FnMut(&mut [u32]),
     ) {
+        self.record_decode_split(addr1);
         self.database.split(addr1);
         // C++: biter = end if addr2 invalid, else split(addr2) then begin(addr2)
         if !addr2.is_invalid() {
+            self.record_decode_split(addr2);
             self.database.split(addr2);
         }
         for (key, freearray) in self.database.iter_from_mut(addr1) {
             if !addr2.is_invalid() && key >= addr2 {
                 break; // reached biter
+            }
+            if let Some(journal) = self.decode_journals.last_mut() {
+                journal
+                    .entry(key.clone())
+                    .or_insert_with(|| Some(freearray.snapshot()));
             }
             let word = num as usize; // cast: word index, non-negative
             freearray.mask[word] |= mask; // Mark that this value is being definitely set
@@ -827,6 +875,7 @@ impl ContextDatabase for ContextInternal {
         mask: u32,
         each: &mut dyn FnMut(&mut [u32]),
     ) {
+        self.record_decode_split(addr);
         self.database.split(addr);
         let word = num as usize; // cast: word index, non-negative
         let mut iter = self.database.iter_from_mut(addr);
@@ -837,9 +886,14 @@ impl ContextDatabase for ContextInternal {
                 each(&mut freearray.array);
             }
         }
-        for (_, freearray) in iter {
+        for (key, freearray) in iter {
             if (freearray.mask[word] & mask) != 0 {
                 break; // Reached point where this value was definitively set before
+            }
+            if let Some(journal) = self.decode_journals.last_mut() {
+                journal
+                    .entry(key.clone())
+                    .or_insert_with(|| Some(freearray.snapshot()));
             }
             each(&mut freearray.array);
         }
@@ -1300,6 +1354,171 @@ mod tests {
         assert_eq!(r.get_value(&blob), 0xcd);
         assert_eq!(bit.get_value(&blob), 1);
         assert_eq!(r3.get_value(&blob), 0x1234);
+    }
+
+    #[test]
+    fn decode_scope_keeps_untouched_context_storage() {
+        use crate::kuna_contextscope::DecodeContextScope;
+        use std::cell::RefCell;
+        let manager = test_manager();
+        let mut original = test_db();
+        for offset in 0..4000 {
+            original
+                .set_variable(b"fldA", &addr(&manager, "ram", offset * 4), 1)
+                .unwrap();
+        }
+        let database: RefCell<Box<dyn ContextDatabase>> = RefCell::new(Box::new(original));
+        let cache = RefCell::new(ContextCache::new());
+        let point = addr(&manager, "ram", 0x100);
+        let untouched = addr(&manager, "ram", 0x200);
+        let storage = database.borrow().get_context(&untouched).as_ptr();
+        {
+            let _scope = DecodeContextScope::new(&database, &cache);
+            assert_eq!(
+                database.borrow().get_context(&untouched).as_ptr(),
+                storage,
+                "opening a decode scope must not copy unrelated context partitions"
+            );
+            database
+                .borrow_mut()
+                .set_variable(b"fldA", &point, 2)
+                .unwrap();
+            assert_eq!(
+                database
+                    .borrow()
+                    .get_variable_value(b"fldA", &point)
+                    .unwrap(),
+                2
+            );
+            assert_eq!(
+                database
+                    .borrow()
+                    .get_variable_value(b"fldA", &untouched)
+                    .unwrap(),
+                1
+            );
+            assert_eq!(database.borrow().get_context(&untouched).as_ptr(), storage);
+        }
+        assert_eq!(
+            database
+                .borrow()
+                .get_variable_value(b"fldA", &point)
+                .unwrap(),
+            1
+        );
+        assert_eq!(database.borrow().get_context(&untouched).as_ptr(), storage);
+    }
+
+    #[test]
+    fn decode_scope_restores_nested_ranges_boundaries_and_cache_on_unwind() {
+        use crate::kuna_contextscope::DecodeContextScope;
+        use std::cell::RefCell;
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+        let manager = test_manager();
+        let mut original = test_db();
+        for (name, offset, value) in [
+            (b"fldA", 0x100, 2),
+            (b"fldB", 0x180, 7),
+            (b"fldA", 0x200, 3),
+        ] {
+            original
+                .set_variable(name, &addr(&manager, "ram", offset), value)
+                .unwrap();
+        }
+        let database: RefCell<Box<dyn ContextDatabase>> = RefCell::new(Box::new(original));
+        let cache = RefCell::new(ContextCache::new());
+        let point = addr(&manager, "ram", 0x140);
+        let snapshot = || {
+            let db = database.borrow();
+            let manager = &manager;
+            ["ram", "ram2"]
+                .into_iter()
+                .flat_map(|space| (0..0x240).map(move |offset| addr(manager, space, offset)))
+                .map(|at| {
+                    let (value, first, last) = db.get_context_bounds(&at);
+                    (value.to_vec(), first, last)
+                })
+                .collect::<Vec<_>>()
+        };
+        let before = snapshot();
+        cache.borrow_mut().allow_set(false);
+        cache.borrow_mut().set_write_mask(1, 0x1234);
+        cache
+            .borrow_mut()
+            .set_read_override(0, 0xff000000, 0x09000000);
+        let mut values = [0; 2];
+        cache
+            .borrow_mut()
+            .get_context(&**database.borrow(), &point, &mut values);
+        let before_cache = values;
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let scope = DecodeContextScope::new(&database, &cache);
+            scope.protect_variable(b"fldA").unwrap();
+            cache.borrow_mut().allow_set(true);
+            cache
+                .borrow_mut()
+                .set_context(&mut **database.borrow_mut(), &point, 0, 0xff000000, 0);
+            assert_eq!(
+                snapshot(),
+                before,
+                "protected writes must not create a split"
+            );
+            database
+                .borrow_mut()
+                .set_variable_region(b"fldA", &point, &addr(&manager, "ram", 0x220), 4)
+                .unwrap();
+            let parent = snapshot();
+            {
+                let _nested = DecodeContextScope::new(&database, &cache);
+                database
+                    .borrow_mut()
+                    .set_variable(b"wide", &point, 42)
+                    .unwrap();
+                database
+                    .borrow_mut()
+                    .set_variable(b"fldB", &addr(&manager, "ram2", 0x80), 8)
+                    .unwrap();
+                cache.borrow_mut().set_write_mask(1, 0);
+                cache.borrow_mut().set_read_override(0, 0, 0);
+            }
+            assert_eq!(snapshot(), parent);
+            assert_eq!(cache.borrow_mut().set_write_mask(1, u32::MAX), 0x1234);
+            panic!("abort speculative decode");
+        }));
+        assert!(result.is_err());
+        assert_eq!(snapshot(), before);
+        cache
+            .borrow_mut()
+            .get_context(&**database.borrow(), &point, &mut values);
+        assert_eq!(values, before_cache);
+        assert_eq!(cache.borrow_mut().set_write_mask(1, u32::MAX), 0x1234);
+        cache
+            .borrow_mut()
+            .set_context(&mut **database.borrow_mut(), &point, 0, 0xff000000, 0);
+        assert_eq!(snapshot(), before, "restore allow_set(false)");
+        cache.borrow_mut().allow_set(true);
+        cache.borrow_mut().set_context(
+            &mut **database.borrow_mut(),
+            &point,
+            0,
+            0xff000000,
+            0x05000000,
+        );
+        assert_eq!(
+            database
+                .borrow()
+                .get_variable_value(b"fldA", &addr(&manager, "ram", 0x180))
+                .unwrap(),
+            5
+        );
+        assert_eq!(
+            database
+                .borrow()
+                .get_variable_value(b"fldA", &addr(&manager, "ram", 0x200))
+                .unwrap(),
+            3,
+            "rollback must restore explicit-set masks, not just values"
+        );
     }
 
     #[test]

@@ -712,6 +712,11 @@ fn descend(
     let mut walk_context = super::kuna_walkcontext::WalkContext::new(
         prologues, translate, arch, &code_space, &exec,
     );
+    if arch.analysis_listing && arch.input_arm_isa_override {
+        if let Some(context) = &mut walk_context {
+            context.seed_inventory_modes(seed_set.iter().copied(), &arch.arm_inventory_modes);
+        }
+    }
     let mut frame_context = None;
     let mut frame_modes: Option<super::kuna_framemode::FrameModes> = None;
     let mut frame_reconciled = false;
@@ -1225,7 +1230,7 @@ fn gap_entries(
         return Vec::new();
     }
     let mut listing = partition_listing(partition, funcs, exec);
-    let _probe = contexts.and_then(|_| translate.context_scope());
+    let _probe = crate::aif::arm_gap_probe_scope(translate);
     render_fingerprints(&mut listing, funcs, arch, translate, code_space, partition, contexts);
     if let Some(prior) = frame {
         crate::aif::run_aif_after_frames(

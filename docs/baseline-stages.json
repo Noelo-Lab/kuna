@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2252,
-    2252
+    2255,
+    2255
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1429,6 +1429,9 @@
     "data:armfloatreturn #7: off loses the parameter of a float return converted from a double",
     "data:armfloatreturn #8: on keeps the float return in s0 and takes the double parameter",
     "data:armfloatreturn #9: off loses the double parameter of an integer function",
+    "data:backward BLX #1: retains the call",
+    "data:backward BLX #2: no invented store",
+    "data:backward BLX #3: no decode halt",
     "data:bejoin #1: on, wide_mul returns the mulhw word (r3) as the high half",
     "data:bejoin #2: on, add_one carries into the r3 word, the high half",
     "data:bejoin #3: on, the call output pair reads r3 as the high half",

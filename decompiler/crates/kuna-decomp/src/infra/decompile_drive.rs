@@ -64,6 +64,29 @@ impl FlowEnvironment for ArchFlowEnv {
     fn translate(&self) -> &dyn Translate {
         self.arch().translate()
     }
+    fn arm_decode_mode(&self, addr: &Address) -> Option<crate::kuna_armflowcontext::ArmDecodeMode> {
+        self.arch().with_context_db_mut(|db| {
+            let var = db.get_variable(b"TMode").ok()?;
+            let word = var.get_word() as usize;
+            let mask = var.get_mask() << var.get_shift();
+            let (words, _, last) = db.get_context_bounds(addr);
+            let value = words.get(word).copied()? & mask;
+            Some(crate::kuna_armflowcontext::ArmDecodeMode { word, mask, value, last })
+        })
+    }
+    fn preserve_arm_decode_mode(
+        &self, addr: &Address, mode: crate::kuna_armflowcontext::ArmDecodeMode, entry: bool,
+    ) {
+        self.arch().with_context_db_mut(|db| {
+            if entry || db.get_context(addr)[mode.word] & mode.mask != mode.value {
+                let last = if entry { addr.get_offset() } else { mode.last };
+                let end = last.min(addr.get_space().unwrap().get_highest()).checked_add(1)
+                    .map(|end| Address::new(Rc::clone(addr.get_space().unwrap()), end))
+                    .unwrap_or_default();
+                let _ = db.set_variable_region(b"TMode", addr, &end, mode.value >> mode.mask.trailing_zeros());
+            }
+        });
+    }
     fn resolve_typeop(&self, opc: OpCode) -> TypeOp {
         self.arch().resolve_typeop(opc)
     }

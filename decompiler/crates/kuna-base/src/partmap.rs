@@ -89,6 +89,11 @@ impl<K: Ord + Clone, V: Clone> PartMap<K, V> {
         }
     }
 
+    /// Remove an exact split point, letting the preceding value cover its range.
+    pub fn remove_split(&mut self, pnt: &K) {
+        self.database.remove(pnt);
+    }
+
     /// Get the default value object (C++ `defaultValue`, const flavor).
     pub fn default_value(&self) -> &V {
         &self.defaultvalue

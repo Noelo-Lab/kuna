@@ -168,6 +168,72 @@ fn thumb_it_context_and_text_match() {
 }
 
 #[test]
+fn decode_scope_keeps_thumb_it_state_local_and_rolls_back_failed_decodes() {
+    for (spec, bytes) in [
+        (
+            "ARM/data/languages/ARM7_le.sla",
+            [8, 0xbf, 1, 0x20, 0x70, 0x47],
+        ),
+        (
+            "ARM/data/languages/ARM7_be.sla",
+            [0xbf, 8, 0x20, 1, 0x47, 0x70],
+        ),
+    ] {
+        let (engine, _) = engine(spec, &bytes, &[("TMode", 1), ("LRset", 0)]);
+        let snapshot = || {
+            engine.with_context_db_mut(|db| {
+                (0..8)
+                    .map(|offset| {
+                        let (context, first, last) = db.get_context_bounds(&addr(&engine, offset));
+                        (context.to_vec(), first, last)
+                    })
+                    .collect::<Vec<_>>()
+            })
+        };
+        let before = snapshot();
+        for iteration in 0..2 {
+            {
+                let scope = engine.decode_context_scope().unwrap();
+                scope.protect_variable(b"TMode").unwrap();
+                engine
+                    .one_instruction(&mut Ops::default(), &addr(&engine, 0))
+                    .unwrap();
+                let mut conditional = Ops::default();
+                engine
+                    .one_instruction(&mut conditional, &addr(&engine, 2))
+                    .unwrap();
+                assert!(
+                    conditional
+                        .0
+                        .iter()
+                        .any(|op| op.starts_with("CPUI_CBRANCH")),
+                    "{spec}/{iteration}: IT must guard the MOV: {conditional:?}"
+                );
+                engine
+                    .one_instruction(&mut Ops::default(), &addr(&engine, 4))
+                    .unwrap();
+            }
+            assert_eq!(snapshot(), before);
+            let mut plain = Ops::default();
+            engine
+                .one_instruction(&mut plain, &addr(&engine, 2))
+                .unwrap();
+            assert!(!plain.0.iter().any(|op| op.starts_with("CPUI_CBRANCH")));
+        }
+        {
+            let _scope = engine.decode_context_scope().unwrap();
+            engine
+                .one_instruction(&mut Ops::default(), &addr(&engine, 0))
+                .unwrap();
+            assert!(engine
+                .one_instruction(&mut Ops::default(), &addr(&engine, 1))
+                .is_err());
+        }
+        assert_eq!(snapshot(), before);
+    }
+}
+
+#[test]
 fn variable_length_x86_text_and_flow_match() {
     let (old, new) = compare(
         "x86/data/languages/x86-64.sla",
