@@ -848,6 +848,11 @@ pub struct ArchContext {
     /// [`Architecture::bool_byte`](crate::architecture::Architecture); the walk
     /// lives in [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
     pub bool_byte: bool,
+    /// (kuna `floatbits`) A function whose float-register input is only
+    /// bit-opped into its float-register return keeps the float on both.
+    /// Mirror of [`Architecture::float_bits`](crate::architecture::Architecture);
+    /// the walk lives in [`kuna_floatbits`](crate::p5_types::kuna_floatbits).
+    pub float_bits: bool,
     /// (kuna) The printer spells a residual one-byte TYPE_UNKNOWN as C `char`
     /// (`realtypes` on, C output), so its promotion sign-extends.  Read by
     /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
@@ -1711,6 +1716,7 @@ impl ArchContext {
             field_type: false, // (kuna) option fieldtype, copied from Architecture
             codescalar: false,           // (kuna) option codescalar
             bool_byte: true, // (kuna) option boolbyte (default on)
+            float_bits: true, // (kuna) option floatbits (default on)
             unknown_byte_is_char: false, // (kuna) realtypes + C output
             int_promotion: true,         // (kuna) LangCaps::integer_promotion (C)
             char_byte: true, // (kuna) option charbyte

@@ -829,6 +829,9 @@ pub(crate) fn get_output_token(
             None => output_type_local(data, op),
         },
         OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+            if let Some(ct) = crate::kuna_floatbits::held_bits_token(data, op) {
+                return ct;
+            }
             let local = output_type_local(data, op);
             if local.get_metatype() != type_metatype::TYPE_UNKNOWN {
                 return local;

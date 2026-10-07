@@ -2022,7 +2022,9 @@ mod tests {
         // and kuna-arrayextent / an indexed stack array covers the slots its
         // index reaches past four elements (GH-867)
         // and kuna-pointer-arguments / standalone printing has no batch contract
-        assert_eq!(count, 455, "corpus file count drifted");
+        // and kuna-floatbits / a float helper that only works on the bits of
+        // its float-register input is a float on both sides (GH-890)
+        assert_eq!(count, 456, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

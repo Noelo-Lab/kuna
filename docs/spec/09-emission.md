@@ -606,7 +606,13 @@ beside a pointer, or holds a float statement's result as a float or raw bytes
 (`kuna_callrettype.rs (refused_token)`, chapter 04): the listing declares that
 return, so the caller prints the conversion (`v1 = (long)sub_eecc(a0,v3)`)
 instead of an assignment C rejects or pointer arithmetic it would scale, and
-stores a float through a `float *`.
+stores a float through a `float *`. (kuna `floatbits`) Before any of that, a
+call to a callee whose float return is the bits of its float-register input
+(chapter 05), whose output the caller holds as an integer of the float's width
+in another register than the callee returns in (what the call left there),
+takes the float as its token (`kuna_floatbits.rs (held_bits_token)`), so the
+cast it gains prints as a reinterpretation of the bits, where C would convert
+the value.
 An unlocked callee recovered returning more of the register than the call's
 output holds (`kuna_voidret.rs (narrowed_call_result)`, chapter 04: a 64-bit
 `unsigned long` whose caller compares only `eax`) gets its truncation

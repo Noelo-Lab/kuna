@@ -456,6 +456,9 @@ pub struct Funcdata {
     /// (kuna `voidret`) A reader keeps this function's float return as another
     /// type, so the float-register vote on the return is withdrawn.
     kuna_float_return_withdrawn: bool,
+    /// (kuna `floatbits`) An inference pass typed this function's return a
+    /// float because its float-register input reaches it only through bit ops.
+    kuna_float_bits_return: bool,
     /// (kuna `voidret`) The `void` callees' results this function's return would be.
     kuna_forced_claims: Vec<((int4, kuna_base::types::uintb), (Address, int4))>,
     /// (kuna `voidret`) The storage this function's callers read of the word it
@@ -466,6 +469,9 @@ pub struct Funcdata {
     kuna_zext_word: Option<(Address, int4, bool)>,
     /// (kuna `voidret`) What each callee's last decompile recovered it returns.
     kuna_callee_returns: std::collections::BTreeMap<(int4, kuna_base::types::uintb), crate::kuna_voidret::Returns>,
+    /// (kuna `floatbits`) The callees whose float return the bits of a
+    /// float-register input made one.
+    kuna_callee_float_bits: std::collections::BTreeSet<(int4, kuna_base::types::uintb)>,
     /// (kuna `voidret`) Per callee, whether each parameter its last decompile
     /// recovered is a float (`Some(true)`), an integer or pointer (`Some(false)`).
     kuna_callee_params: std::collections::BTreeMap<(int4, kuna_base::types::uintb), Vec<Option<bool>>>,
@@ -682,7 +688,9 @@ impl Funcdata {
             kuna_forced_return: Vec::new(),
             kuna_forced_return_planted: Vec::new(),
             kuna_float_return_withdrawn: false,
+            kuna_float_bits_return: false,
             kuna_callee_returns: std::collections::BTreeMap::new(),
+            kuna_callee_float_bits: std::collections::BTreeSet::new(),
             kuna_callee_params: std::collections::BTreeMap::new(),
             kuna_callee_return_storage: std::collections::BTreeMap::new(),
             kuna_forced_claims: Vec::new(),
@@ -1086,6 +1094,18 @@ impl Funcdata {
         self.kuna_zext_word.as_ref()
     }
 
+    /// (kuna `floatbits`) Seed the callees whose float return the bits of a
+    /// float-register input made one.
+    pub fn kuna_set_callee_float_bits(&mut self, callees: std::collections::BTreeSet<(int4, kuna_base::types::uintb)>) {
+        self.kuna_callee_float_bits = callees;
+    }
+
+    /// (kuna `floatbits`) Did the callee keyed `key` return a float for the
+    /// bits of its float-register input?
+    pub fn kuna_callee_float_bits(&self, key: (int4, kuna_base::types::uintb)) -> bool {
+        self.kuna_callee_float_bits.contains(&key)
+    }
+
     /// (kuna `voidret`) What the callee at `key` was last recovered to return.
     pub fn kuna_callee_returns(&self, key: (int4, kuna_base::types::uintb)) -> Option<crate::kuna_voidret::Returns> {
         self.kuna_callee_returns.get(&key).copied()
@@ -1137,6 +1157,18 @@ impl Funcdata {
     /// (kuna `voidret`) Is the float-register vote on the return withdrawn?
     pub fn kuna_float_return_withdrawn(&self) -> bool {
         self.kuna_float_return_withdrawn
+    }
+
+    /// (kuna `floatbits`) Note that an inference pass typed the return a float
+    /// for the bits of a float-register input.
+    pub fn kuna_note_float_bits_return(&mut self) {
+        self.kuna_float_bits_return = true;
+    }
+
+    /// (kuna `floatbits`) Did an inference pass of this decompile type the
+    /// return a float for the bits of a float-register input?
+    pub fn kuna_float_bits_return(&self) -> bool {
+        self.kuna_float_bits_return
     }
 
     /// (kuna `voidret`) Record that the RETURN read of one piece of that storage

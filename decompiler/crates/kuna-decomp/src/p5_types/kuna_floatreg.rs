@@ -656,7 +656,7 @@ fn passed_in_a_float_register(data: &Funcdata, call: crate::context::OpId, slot:
 }
 
 /// Does the op `code` produce a float from its inputs?
-fn makes_a_float(code: OpCode) -> bool {
+pub(crate) fn makes_a_float(code: OpCode) -> bool {
     matches!(
         code,
         OpCode::CPUI_FLOAT_ADD
@@ -675,7 +675,7 @@ fn makes_a_float(code: OpCode) -> bool {
 }
 
 /// Does the op `code` read its inputs as floats?
-fn reads_a_float(code: OpCode) -> bool {
+pub(crate) fn reads_a_float(code: OpCode) -> bool {
     matches!(
         code,
         OpCode::CPUI_FLOAT_ADD
@@ -735,7 +735,7 @@ fn refuses(data: &Funcdata, vn: VarnodeId, float: &Rc<Datatype>, jump: Option<cr
 /// all of them when it is refused for one. `if (ready) return packed.f; return
 /// 0.0f;` returns a global on one path and a constant on the other, and the
 /// constant alone would make the global a float.
-fn returned_beside(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
+pub(crate) fn returned_beside(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
     let Some(node) = data.vbank().get(vn) else { return vec![vn] };
     let slots: Vec<int4> = node
         .descend_iter()
@@ -847,7 +847,7 @@ pub(crate) fn jump_result_type(data: &Funcdata, op: crate::context::OpId, size: 
 /// of one (`d0` over `s0` and `s1`), so a value there is a `float` only when
 /// the function never uses the pair whole: `third()` loads `1.0 / 3.0` into
 /// `d0`, and the `s0` left once the load is folded is not a float.
-fn float_class(data: &Funcdata, list: Option<&ParamListStandard>, node: &Varnode) -> bool {
+pub(crate) fn float_class(data: &Funcdata, list: Option<&ParamListStandard>, node: &Varnode) -> bool {
     let Some((l, i)) = list.and_then(|l| l.find_entry(node.get_addr(), node.get_size(), true).map(|i| (l, i))) else {
         return false;
     };
@@ -917,7 +917,7 @@ pub(crate) fn note_float_pairs(data: &mut Funcdata) {
     }
 }
 
-fn returned_in_a_float_register(data: &Funcdata, vn: VarnodeId, node: &Varnode) -> bool {
+pub(crate) fn returned_in_a_float_register(data: &Funcdata, vn: VarnodeId, node: &Varnode) -> bool {
     let proto = data.get_func_proto();
     if !proto.has_model() || proto.is_output_locked() || data.kuna_float_return_withdrawn() {
         return false;
@@ -951,7 +951,7 @@ fn spells_exactly(data: &Funcdata, vn: VarnodeId) -> bool {
 
 /// Does `c`, when it is a constant, print as a float literal that compiles back
 /// to the same bits?
-fn spells(data: &Funcdata, c: VarnodeId) -> bool {
+pub(crate) fn spells(data: &Funcdata, c: VarnodeId) -> bool {
     let Some(node) = data.vbank().get(c).filter(|n| n.is_constant()) else { return true };
     let Some(format) = data.get_arch().get_float_format(node.get_size()) else { return false };
     let bits = node.get_offset() as u64;
