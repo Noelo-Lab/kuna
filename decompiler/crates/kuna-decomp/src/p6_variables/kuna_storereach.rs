@@ -461,7 +461,10 @@ fn guard_shortens(
             let Some(op) = fd.obank().get(id).filter(|o| !o.is_dead()) else {
                 return false;
             };
-            let Some(pieces) = op.get_in(1).and_then(|p| pointer_pieces(fd, p, sb, 0)) else {
+            let Some(pieces) = op
+                .get_in(1)
+                .and_then(|p| pointer_pieces(fd, p, sb, 0).or_else(|| variable_walk(fd, p, sb, 0).map(|b| vec![(b, None)])))
+            else {
                 return false;
             };
             pieces.iter().filter(|&&(_, extra)| extra != Some(0)).any(|&(off, _)| {
@@ -619,7 +622,8 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
 /// INDIRECTs keep from there to its reach? A scalar, or an array of wider
 /// elements, makes the C index past the local (`(&v1)[a1] = 3`) or with the
 /// wrong stride. A pointer the checks cannot follow from the stack base (a
-/// choice between the frame and `alloca`'d stack) fails. At an address of a
+/// choice between the frame and `alloca`'d stack) fails; a walk of variable
+/// step (`variable_walk`) is followed by `guard_shortens`. At an address of a
 /// choice with no index of its own, stored through as it is (`*p = x` for `p =
 /// c ? &a : &b`), one local must hold the store's bytes. A loop's pointer walk
 /// (whose arrays `guard_shortens` checks), a byte store (written through a byte
@@ -644,7 +648,7 @@ fn indexes_own_array(
         return true;
     }
     let Some(pieces) = pointer_pieces(fd, ptr, sb, 0) else {
-        return !comes_from(fd, ptr, sb);
+        return !comes_from(fd, ptr, sb) || variable_walk(fd, ptr, sb, 0).is_some();
     };
     if loop_walk(fd, ptr, 0) {
         return true;
@@ -674,6 +678,73 @@ fn indexes_own_array(
             .is_some_and(|el| el.get_size() > 0 && el.get_size() <= width && width % el.get_size() == 0)
             && slots.is_none_or(|slots| slots.iter().filter(reached).all(|&(_, hi)| hi <= *e))
     })
+}
+
+/// The one stack address a pointer walk of variable step starts from (`p =
+/// buf; ... p += len;`), which `pointer_pieces` does not follow: a MULTIEQUAL
+/// whose inputs are that address or the MULTIEQUAL itself moved by any amount,
+/// plus constants added after it.
+fn variable_walk(fd: &Funcdata, vn: VarnodeId, sb: VarnodeId, depth: u32) -> Option<uintb> {
+    if depth > 12 {
+        return None;
+    }
+    let op = fd.obank().get(fd.vbank().get(vn)?.get_def()?)?;
+    match op.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => variable_walk(fd, op.get_in(0)?, sb, depth + 1),
+        OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB => {
+            let c = fd.vbank().get(op.get_in(1)?).filter(|c| c.is_constant())?.get_offset();
+            Some(variable_walk(fd, op.get_in(0)?, sb, depth + 1)?.wrapping_add(c))
+        }
+        OpCode::CPUI_MULTIEQUAL => {
+            let mut base: Option<uintb> = None;
+            let mut stepped = false;
+            for k in 0..op.num_input() {
+                let input = op.get_in(k)?;
+                if moves_from(fd, input, vn) {
+                    stepped = true;
+                    continue;
+                }
+                let pieces = pointer_pieces(fd, input, sb, 0)?;
+                let &(off, _) = pieces.first()?;
+                if pieces.iter().any(|&(o, _)| o != off) || base.is_some_and(|b| b != off) {
+                    return None;
+                }
+                base = Some(off);
+            }
+            base.filter(|_| stepped)
+        }
+        _ => None,
+    }
+}
+
+/// Is `vn`, through copies, casts and INDIRECTs, `phi` moved by any amount?
+fn moves_from(fd: &Funcdata, vn: VarnodeId, phi: VarnodeId) -> bool {
+    let strip = |mut cur: VarnodeId| {
+        for _ in 0..12 {
+            let Some(op) = fd
+                .vbank()
+                .get(cur)
+                .and_then(|v| v.get_def())
+                .and_then(|d| fd.obank().get(d))
+                .filter(|op| matches!(op.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT))
+            else {
+                break;
+            };
+            match op.get_in(0) {
+                Some(n) => cur = n,
+                None => break,
+            }
+        }
+        cur
+    };
+    let Some(op) = fd.vbank().get(strip(vn)).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else {
+        return false;
+    };
+    match op.code() {
+        OpCode::CPUI_PTRADD => op.get_in(0).is_some_and(|b| strip(b) == phi),
+        OpCode::CPUI_INT_ADD => (0..2).any(|k| op.get_in(k).is_some_and(|b| strip(b) == phi)),
+        _ => false,
+    }
 }
 
 /// Is `vn`, through copies, casts and INDIRECTs, the output of a MULTIEQUAL:
