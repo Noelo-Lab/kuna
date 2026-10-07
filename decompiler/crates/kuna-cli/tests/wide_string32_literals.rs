@@ -89,8 +89,9 @@ fn option_off_prints_the_address() {
 
 /// Stripped x86-64 builds (an operand points at each literal) and relocatable
 /// AArch64 and ARM objects (their `.rodata.str4.4`) spell every literal, the
-/// tail `L"bind"` of `L"xbind"` included, and never read `weeks`, the rows of
-/// `rows` or the switch table of `code` as text.
+/// tail `L"bind"` of `L"xbind"` included, and the big-endian MIPS image the one
+/// its pointer table `msgs` holds; none reads `weeks`, the rows of `rows` or the
+/// switch table of `code` as text.
 #[test]
 fn other_builds_and_targets_spell_the_literals() {
     for fixture in [
@@ -104,10 +105,13 @@ fn other_builds_and_targets_spell_the_literals() {
     ] {
         let (printed, stderr, code) = common::run_kuna(&["decompile-all", &common::fixture(fixture)]);
         assert_eq!(code, 0, "{fixture}: {stderr}");
-        if fixture != "widestr32_mips32_be_O2" {
-            for want in ["(L\"hellow\")", "(L\"char32-text\")", "L\"(NULL)\"", "(L\"xbind\")", "(L\"bind\")"] {
-                assert!(printed.contains(want), "{fixture}: missing `{want}`:\n{printed}");
-            }
+        let wants: &[&str] = if fixture == "widestr32_mips32_be_O2" {
+            &["(L\"first-msg\")"]
+        } else {
+            &["(L\"hellow\")", "(L\"char32-text\")", "L\"(NULL)\"", "(L\"xbind\")", "(L\"bind\")", "(L\"first-msg\")"]
+        };
+        for want in wants {
+            assert!(printed.contains(want), "{fixture}: missing `{want}`:\n{printed}");
         }
         for text in ["L\"4544", "L\"helpz", "L\"alpha", "L\"bravo", "L\"qhellow"] {
             assert!(!printed.contains(text), "{fixture}: a table prints as `{text}`:\n{printed}");

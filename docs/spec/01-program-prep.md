@@ -1474,11 +1474,15 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   tables. The index test follows the same linear decode
   (`decompiler/crates/kuna-analysis/src/analyzers/operand_refs/mod.rs
   (TableUses)`): an address an instruction puts in a register stays held for
-  three more instructions or until control flow or an overwrite, and an add of a
-  value that is not a constant to it, or of a register to an address constant in
-  one instruction (`lea rcx,t` then `mov eax,[rcx+rax*4]`, `lea rdi,[rax+t]`),
-  marks it a table; the run that starts there is refused, a literal indexed in
-  place (`L"0123456789abcdef"[c]`) included. A literal laid out right after
+  the next 31 instructions, across calls and conditional branches (both fall
+  through with the register intact), until a jump, a return or an overwrite (a
+  tail call's argument is not the next function's table), and an add of a value
+  that is not a constant to it, or of a register to an address constant in one
+  instruction (`lea rcx,t` then `mov eax,[rcx+rax*4]`, `lea rdi,[rax+t]`), marks
+  it a table; the run that starts there is refused, a literal indexed in place
+  (`L"0123456789abcdef"[c]`) included, since the printer's index bound does not
+  cover a literal another pass planted. A table whose address reaches the index
+  only through memory or past a jump is not seen. A literal laid out right after
   another object's last printable unit (clang's switch table ending in `'q'`
   before `L"hellow"`) is the tail of a longer run nothing points at; an operand
   target at one of its units starts the run there instead, under the same tests.
@@ -1490,8 +1494,8 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   read through the laid-out view the loader builds, never its raw sections,
   which all sit at address 0. An anonymous table of a stripped image that passes
   all of that -- an `int` array of codes whose address is passed to a function
-  -- still prints as the literal its bytes spell, with the same values up to its
-  first zero. A run that a tail-merged suffix shares (`L"bind"` inside
+  or indexed out of the scan's sight -- still prints as the literal its bytes
+  spell, with the same values up to its first zero. A run that a tail-merged suffix shares (`L"bind"` inside
   `L"xbind"`) is planted whole from its first unit, and the printer reads the
   suffix's literal at its own address (`lenw(L"bind")`), except where the
   element-pointer rule refuses literals for the callee's parameter, which then

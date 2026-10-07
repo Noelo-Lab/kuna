@@ -42,8 +42,9 @@
 //! builds in two instructions (AArch64 `adrp`/`add`, MIPS `lui`/`addiu`) is no
 //! operand, so a linked image of those targets plants only what a data slot
 //! holds. An anonymous table that passes all of that, a stripped image's `int`
-//! array whose address is passed to a function, still prints as the literal its
-//! bytes spell, with the same values up to its first zero.
+//! array whose address is passed to a function or indexed out of the scan's
+//! sight (through memory, past a jump), still prints as the literal its bytes
+//! spell, with the same values up to its first zero.
 //!
 //! A relocatable object is read only through the laid-out view the loader
 //! builds; its raw sections all sit at address 0.

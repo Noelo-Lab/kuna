@@ -336,12 +336,15 @@ impl PcodeEmit for ScalarCapture {
 
 /// (kuna) How many instructions an address stays in a register for
 /// [`TableUses`].
-const TABLE_WINDOW: u8 = 4;
+const TABLE_WINDOW: u8 = 32;
 
 /// (kuna) The addresses code puts in a register and, within [`TABLE_WINDOW`]
-/// instructions and no control flow, adds a computed index to (`lea rcx,table`
-/// then `mov eax,[rcx+rax*4]`, or `lea rdi,[rax+table]`): the base of an array,
-/// whatever its bytes spell.
+/// instructions, adds a computed index to (`lea rcx,table` then
+/// `mov eax,[rcx+rax*4]`, or `lea rdi,[rax+table]`): the base of an array,
+/// whatever its bytes spell. A conditional branch or a call falls through to the
+/// next instruction with the register intact; a jump or a return does not, so
+/// it forgets every address (a tail call's argument is not the next function's
+/// table).
 #[derive(Default)]
 struct TableUses {
     held: Vec<(Operand, u64, u8)>,
@@ -373,7 +376,8 @@ impl TableUses {
                 (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, &[Operand::Const(c), ..]) => {
                     looks_like_address(c).then_some(c)
                 }
-                (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, &[v, ..]) => self.base_of(&v),
+                (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, &[v, ..])
+                | (OpCode::CPUI_INT_MULT, &[v, Operand::Const(1)]) => self.base_of(&v),
                 (OpCode::CPUI_INT_ADD, &[a, b]) => match (self.base_of(&a), self.base_of(&b), a, b) {
                     (Some(base), None, _, Operand::Const(_)) | (None, Some(base), Operand::Const(_), _) => Some(base),
                     (Some(base), None, ..) | (None, Some(base), ..) => self.indexed(base),
@@ -385,15 +389,7 @@ impl TableUses {
                     }
                     _ => None,
                 },
-                (
-                    OpCode::CPUI_BRANCH
-                    | OpCode::CPUI_CBRANCH
-                    | OpCode::CPUI_BRANCHIND
-                    | OpCode::CPUI_CALL
-                    | OpCode::CPUI_CALLIND
-                    | OpCode::CPUI_RETURN,
-                    _,
-                ) => {
+                (OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN, _) => {
                     flow = true;
                     None
                 }
@@ -1104,6 +1100,13 @@ mod tests {
             (OpCode::CPUI_LOAD, Some((rax, 4)), vec![space, unique(0x180)]),
         ];
         assert_eq!(tables(vec![lea(rcx, 0x20a0), load.clone()]), [0x20a0]);
+        // lea rdx,[rip+table]; mov edx,[rcx+rdx*1]: the address as the index.
+        let scaled = vec![
+            (OpCode::CPUI_INT_MULT, Some((unique(0x100), 8)), vec![rcx, at(1)]),
+            (OpCode::CPUI_INT_ADD, Some((unique(0x180), 8)), vec![rax, unique(0x100)]),
+            (OpCode::CPUI_LOAD, Some((rax, 4)), vec![space, unique(0x180)]),
+        ];
+        assert_eq!(tables(vec![lea(rcx, 0x3b7a8), scaled]), [0x3b7a8]);
         // lea rdi,[rip+rows]; add rdi,rax: a row of a table, passed on.
         let add = vec![(OpCode::CPUI_INT_ADD, Some((rdi, 8)), vec![rdi, rax])];
         assert_eq!(tables(vec![lea(rdi, 0x2060), add.clone()]), [0x2060]);
@@ -1113,13 +1116,23 @@ mod tests {
         let tail = vec![(OpCode::CPUI_INT_ADD, Some((rdi, 8)), vec![rdi, at(4)])];
         let call = vec![(OpCode::CPUI_CALL, None, vec![at(0x1130)])];
         assert!(tables(vec![lea(rdi, 0x20bc), tail, call.clone()]).is_empty());
-        // Control flow, an overwrite or a window of instructions forgets the address.
-        assert!(tables(vec![lea(rcx, 0x20a0), call, load.clone()]).is_empty());
+        // A call or a conditional branch keeps the address; a jump, an
+        // overwrite or a window of instructions forgets it.
+        let cbranch = vec![(OpCode::CPUI_CBRANCH, None, vec![at(0x1200), unique(0x500)])];
+        assert_eq!(tables(vec![lea(rcx, 0x20a0), call.clone(), cbranch, load.clone()]), [0x20a0]);
+        let jump = vec![(OpCode::CPUI_BRANCH, None, vec![at(0x1130)])];
+        assert!(tables(vec![lea(rdi, 0x20bc), jump, add.clone()]).is_empty());
         let other = vec![(OpCode::CPUI_COPY, Some((rcx, 8)), vec![rax])];
         assert!(tables(vec![lea(rcx, 0x20a0), other, load.clone()]).is_empty());
         let nop = vec![(OpCode::CPUI_COPY, Some((unique(0x400), 8)), vec![rax])];
-        let far = vec![lea(rcx, 0x20a0), nop.clone(), nop.clone(), nop, load.clone()];
-        assert!(tables(far).is_empty());
+        let within = |gap: usize| {
+            let mut insns = vec![lea(rcx, 0x20a0)];
+            insns.extend(std::iter::repeat_n(nop.clone(), gap));
+            insns.push(load.clone());
+            !tables(insns).is_empty()
+        };
+        assert!(within(usize::from(TABLE_WINDOW) - 2));
+        assert!(!within(usize::from(TABLE_WINDOW) - 1));
     }
 
     /// `tbl` in `ptrslot_gcc_O1_x86_64` starts with `26 42 40 00 ..`, a run the
