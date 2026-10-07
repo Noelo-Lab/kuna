@@ -55,7 +55,7 @@ const MAX_DEPTH: i32 = 32;
 /// C++ `ParserContext::MAX_OPERAND`.
 const MAX_OPERAND: i32 = 20;
 /// C++ `ParserContext::MAX_INSTRUCTION_LEN`.
-pub(crate) const MAX_INSTRUCTION_LEN: i32 = 16;
+const MAX_INSTRUCTION_LEN: i32 = 16;
 /// C++ `ParserContext::INITIAL_STATE_NUM`.
 const INITIAL_STATE_NUM: i32 = 64;
 /// C++ `ParserContext::STATE_GROWTH`.
@@ -938,24 +938,6 @@ struct PcodeCacher {
     labels: Vec<u64>,
 }
 
-#[derive(Default)]
-pub(crate) struct CachedPcode {
-    pool: Box<[VarnodeData]>,
-    issued: Box<[PcodeData]>,
-}
-impl CachedPcode {
-    pub fn bytes(&self) -> usize {
-        self.pool.len() * std::mem::size_of::<VarnodeData>()
-            + self.issued.len() * std::mem::size_of::<PcodeData>()
-    }
-    pub fn emit(&self, addr: &Address, emit: &mut dyn PcodeEmit) {
-        for op in &self.issued {
-            let inputs = op.invar.map_or(&[][..], |base| &self.pool[base..base + op.isize as usize]);
-            emit.dump(addr, op.opc, op.outvar.map(|i| &self.pool[i]), inputs);
-        }
-    }
-}
-
 impl PcodeCacher {
     /// C++ `PcodeCacher()`.
     fn new() -> PcodeCacher {
@@ -1544,7 +1526,6 @@ pub struct Sleigh {
     /// The context commits of the most recent `one_instruction`.
     last_commits: RefCell<Vec<ContextCommitRecord>>,
     context_queries: std::cell::Cell<u64>,
-    decode_reuse: RefCell<Option<crate::kuna_decodereuse::Cache>>,
 }
 
 /// A constructor decision reads only instruction bits (relative to the operand
@@ -1621,7 +1602,6 @@ impl Sleigh {
             constructor_matches: RefCell::new(Vec::new()),
             last_commits: RefCell::new(Vec::new()),
             context_queries: std::cell::Cell::new(0),
-            decode_reuse: RefCell::new(None),
         }
     }
 
@@ -2419,55 +2399,16 @@ impl Sleigh {
     ) -> KunaResult<i32> {
         mnemonic.clear();
         body.clear();
-        let key = self.reuse_key(baseaddr);
-        if let Some(record) = key.as_ref().and_then(|key| self.decode_reuse.borrow().as_ref()?.get(key)) {
-            if let Some((a, b)) = record.text.borrow().as_ref() {
-                if self.reuse_bytes_match(baseaddr, &record.bytes)? {
-                    mnemonic.push_str(a);
-                    body.push_str(b);
-                    return Ok(record.len);
-                }
-            }
-        }
-        let queries = self.context_queries.get();
-        let mut reusable = None;
         let result = (|| {
             let pos = self.obtain_context(baseaddr, ParseState::Disassembly)?;
             self.render_assembly(&pos, mnemonic, body)?;
-            if pos.contextcommit.is_empty() && pos.get_delay_slot() == 0 {
-                reusable = Some((pos.get_length(), pos.buf));
-            }
             Ok(pos.get_length())
         })();
         if result.is_err() {
             mnemonic.clear();
             body.clear();
-        } else if self.context_queries.get() == queries.wrapping_add(1) {
-            if let (Some(key), Some(cache)) = (key, self.decode_reuse.borrow_mut().as_mut()) {
-                if cache.get(&key).is_some() {
-                    cache.set_text(&key, (mnemonic.clone(), body.clone()));
-                } else if let Some((len, bytes)) = reusable {
-                    cache.insert(key, crate::kuna_decodereuse::Record {
-                        len, bytes, ops: RefCell::new(None), text: RefCell::new(Some((mnemonic.clone(), body.clone()))),
-                    });
-                }
-            }
         }
         result
-    }
-
-    fn reuse_bytes_match(&self, addr: &Address, expected: &[u8; MAX_INSTRUCTION_LEN as usize]) -> KunaResult<bool> {
-        let mut loader = self.loader.borrow_mut();
-        if loader.read_window().is_none() { return Ok(true); }
-        let mut bytes = [0; MAX_INSTRUCTION_LEN as usize];
-        loader.load_fill(&mut bytes, addr)?;
-        Ok(&bytes == expected)
-    }
-
-    fn reuse_key(&self, addr: &Address) -> Option<crate::kuna_decodereuse::Key> {
-        self.decode_reuse.borrow().as_ref()?;
-        Some(crate::kuna_decodereuse::Key(addr.get_space()?.get_index(), addr.get_offset(),
-            self.cache.borrow().effective_context(self.context_db.borrow().get_context(addr)).collect()))
     }
 
     fn render_assembly(
@@ -2537,7 +2478,6 @@ impl Sleigh {
         mut reusable: Option<&mut Option<Vec<u32>>>,
     ) -> KunaResult<i32> {
         if let Some(key) = reusable.as_deref_mut() { *key = None; }
-        let reuse_key = self.reuse_key(baseaddr);
         let queries = self.context_queries.get();
         let alignment = self.base.base.get_alignment();
         // C++ `(baseaddr.getOffset() % alignment) != 0`; clippy prefers the
@@ -2551,22 +2491,6 @@ impl Sleigh {
             Self::check_mapped_instruction(image, baseaddr, 1)?;
         }
         self.last_commits.borrow_mut().clear();
-        let cached = reuse_key.as_ref().and_then(|key| self.decode_reuse.borrow().as_ref()?.get(key));
-        if let Some(record) = cached {
-            if record.ops.borrow().is_some() && self.reuse_bytes_match(baseaddr, &record.bytes)? {
-            if let Some(image) = image { Self::check_mapped_instruction(image, baseaddr, record.len)?; }
-            record.emit(baseaddr, emit);
-            if let Some(assembly) = assembly {
-                let text = record.text.borrow();
-                if let Some((a, b)) = text.as_ref() { assembly.dump(baseaddr, a, b); }
-                else { drop(text); let _ = self.print_assembly(assembly, baseaddr); }
-            }
-            if self.context_queries.get() == queries {
-                if let Some(key) = reusable { *key = reuse_key.map(|key| key.2); }
-            }
-            return Ok(record.len);
-            }
-        }
         let mut pos = self.obtain_context_with_match_cache(baseaddr, ParseState::Pcode, assembly.is_some())?;
         if let Some(image) = image {
             Self::check_mapped_instruction(image, baseaddr, pos.get_length())?;
@@ -2657,6 +2581,7 @@ impl Sleigh {
         }
         cache.resolve_relatives()?;
         cache.emit(baseaddr, emit);
+        *self.pcode_cacher.borrow_mut() = cache;
         let context_free = contexts.len() == 1 && contexts[0].ctx.contextcommit.is_empty()
             && contexts[0].ctx.get_delay_slot() == 0;
         let rendered = assembly.as_ref().and_then(|_| {
@@ -2670,19 +2595,8 @@ impl Sleigh {
             let valid = self.render_assembly(pos, &mut mnemonic, &mut body).is_ok();
             Some((mnemonic, body, valid))
         });
-        let instruction_bytes = contexts[0].ctx.buf;
         contexts.clear();
         *self.ctx_vec.borrow_mut() = contexts;
-        if context_free && self.context_queries.get() == queries.wrapping_add(1) {
-            if let Some(key) = reuse_key {
-                let text = rendered.as_ref().and_then(|(a,b,valid)| valid.then(|| (a.clone(),b.clone())));
-                if let Some(reuse) = self.decode_reuse.borrow_mut().as_mut() {
-                    let ops = CachedPcode { pool: cache.pool.clone().into_boxed_slice(), issued: cache.issued.clone().into_boxed_slice() };
-                    reuse.insert(key, crate::kuna_decodereuse::Record { len: fall_offset, bytes: instruction_bytes, ops: RefCell::new(Some(ops)), text: RefCell::new(text) });
-                }
-            }
-        }
-        *self.pcode_cacher.borrow_mut() = cache;
         if let Some(assembly) = assembly {
             match rendered {
                 Some((mnemonic, body, valid)) => {
@@ -2691,8 +2605,6 @@ impl Sleigh {
                 }
                 None => { let _ = self.print_assembly(assembly, baseaddr); }
             }
-        } else if let Some((a,b,_)) = rendered {
-            *self.assembly_buffers.borrow_mut() = (a,b);
         }
         if context_free && self.context_queries.get() == queries.wrapping_add(1) {
             if let Some(key) = reusable {
@@ -2749,10 +2661,6 @@ impl Translate for Sleigh {
     fn set_context_write_mask(&self, word: usize, mask: u32) -> u32 {
         self.cache.borrow_mut().set_write_mask(word, mask)
     }
-    fn decode_reuse_scope(&self, limit: usize) -> Option<crate::kuna_decodereuse::DecodeReuseScope<'_>> {
-        Some(crate::kuna_decodereuse::DecodeReuseScope::new(&self.decode_reuse, limit))
-    }
-
     fn set_context_read_override(&self, word: usize, mask: u32, value: u32) -> (u32, u32) {
         self.cache.borrow_mut().set_read_override(word, mask, value)
     }

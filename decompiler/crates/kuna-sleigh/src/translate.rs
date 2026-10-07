@@ -428,13 +428,6 @@ pub trait Translate: RegisterLookup {
         None
     }
 
-    /// Reuse certified decodes for one query over an unchanged image and spec.
-    /// `limit` bounds retained payload bytes; context writes and failed decodes
-    /// are never replayed. The default implementation performs no reuse.
-    fn decode_reuse_scope(&self, _limit: usize) -> Option<crate::kuna_decodereuse::DecodeReuseScope<'_>> {
-        None
-    }
-
     /// Replace the writable bits in one context word for translation commits,
     /// returning the previous mask so a temporary restriction can be restored.
     fn set_context_write_mask(&self, _word: usize, _mask: u32) -> u32 {
