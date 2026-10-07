@@ -1478,9 +1478,7 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   that either code indexes or a symbol starts at, with a unit that is no
   character (at or above U+110000) or a string there, or that an operand, a
   data slot or an entry of a table of relative offsets (clang's `reltable`)
-  points at, with a string or a jump table there (its first two entries, read
-  as signed offsets from it, land in code: gnulib's `vasnprintf` puts one right
-  after `L"(NULL)"` and loads its base far from the indexed jump). A string is a zero-terminated run of
+  points at, with a string there. A string is a zero-terminated run of
   characters (printable ASCII, tab, CR, LF, or U+00A0 and above outside the
   surrogates) with at least one printable ASCII unit, or a narrow string of
   four characters or more; fewer are the bytes of a wide unit or of a pointer
@@ -1488,7 +1486,10 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   literal or object, while a table goes on with its next element, a code or a
   field that opens no string even where the code names it (`sum(&tbl[6], 2)`,
   the count, a negative delta or a string pointer after a struct's
-  `int codes[6]`). And no code adds a computed index to any
+  `int codes[6]`); a literal followed by a jump table the decode does not see
+  indexed (gnulib's `vasnprintf` loads the base of the one after `L"(NULL)"`
+  far from its jump in some builds) is refused with them. And no code adds a
+  computed index to any
   address from its start to its terminator. The index test follows the
   same linear decode
   (`decompiler/crates/kuna-analysis/src/analyzers/operand_refs/mod.rs
@@ -1515,8 +1516,10 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   which all sit at address 0. What remains are the anonymous tables of a
   stripped image whose bytes are those of literals: one that ends at its zero
   prints as the literal its elements spell, the same values; the rows of a 2-D
-  table of codes, or adjacent code tables, each ending in a zero, print as one
-  literal each, so code reading across them reads past a literal; and a
+  table of codes, or adjacent code tables, each ending in a zero, and a code
+  table followed by a string (a struct's `char name[8]` after its
+  `int codes[6]`, or `{.., 101, 0, 233, 120, 0}`) print as one literal each,
+  so code reading across them reads past a literal; and a
   fixed-size code table whose codes are followed by zero padding up to its size
   (`static const int t[8] = {97, 98, 99, 100, 101}`, common C) prints as the
   shorter literal, so code reading past its first zero reads zeros in the

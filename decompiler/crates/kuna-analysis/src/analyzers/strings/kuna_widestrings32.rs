@@ -40,8 +40,7 @@
 //!     table base or a symbol's start whose first unit is no character (at or
 //!     above U+110000) or opens a string, or an address something points at
 //!     that opens a string (a zero-terminated wide run, or a narrow string of
-//!     four characters or more) or a jump table, whose first two entries land
-//!     in code relative to it -- an operand naming the field after a struct's
+//!     four characters or more) -- an operand naming the field after a struct's
 //!     codes (a negative count, a pointer) names no next object;
 //!   - no code adds a computed index to an address from its start to its
 //!     terminator ([`crate::operand_refs`]' table uses: `lea rcx,t` then
@@ -59,8 +58,10 @@
 //! holds. What is left are the tables the bytes cannot tell from literals: an
 //! anonymous table that ends at its zero prints as the literal its elements
 //! spell, the same values; the rows of a 2-D table of codes (`{{97, .., 0},
-//! {102, .., 0}}`), or adjacent tables each ending in a zero, print as one
-//! literal each, so code reading across them reads past a literal; and a
+//! {102, .., 0}}`), adjacent tables each ending in a zero, or a code table
+//! followed by a string (a `char name[8]` field, `{.., 0, 233, 120, 0}`),
+//! print as one literal each, so code reading across them reads past a
+//! literal; and a
 //! fixed-size table whose
 //! codes are followed by zero padding (`int t[8] = {97, 98, 99, 100, 101}`)
 //! prints as the shorter literal, so code reading past its first zero reads
@@ -225,22 +226,7 @@ pub fn wide_string32_facts(file: &object::File, targets: &[u64], tables: &[u64])
     let labels = DataObjects::from_spans(labels.into_iter().map(|(_, span)| span).collect());
     let (reach, label_reach) = (objects.reach(), labels.reach());
     let declared = |a: u64| tables.binary_search(&a).is_ok() || objects.starts_at(a) || labels.starts_at(a);
-    let code: Vec<(u64, u64)> = file
-        .sections()
-        .filter(|sec| match sec.flags() {
-            object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_EXECINSTR != 0,
-            _ => sec.kind() == SectionKind::Text,
-        })
-        .map(|sec| (sec.address(), sec.address().saturating_add(sec.size())))
-        .collect();
-    let jump_table = |f: Follower| {
-        f.jumps.iter().all(|&e| {
-            let to = f.addr.wrapping_add_signed(i64::from(e));
-            e != 0 && code.iter().any(|&(lo, hi)| (lo..hi).contains(&to))
-        })
-    };
-    let next_object =
-        |f: Follower| declared(f.addr) || (pointed(f.addr) && (f.string || jump_table(f)));
+    let next_object = |f: Follower| declared(f.addr) || (f.string && pointed(f.addr));
     let literal = |r: Run32, next: Option<Option<Follower>>, data: &[u8], vma: u64| -> Option<Run32> {
         if !next?.is_none_or(next_object) {
             return None;
@@ -277,15 +263,11 @@ const MAX_PADDING: u64 = 64;
 
 /// The first nonzero unit after a run's terminator, and whether a string
 /// starts there (a zero-terminated wide run or a narrow C string); otherwise its
-/// unit is no character, which only data an object starts at can be: a table
-/// base, a symbol's start, or a jump table an operand names.
+/// unit is no character, which only data an object starts at can be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Follower {
     pub addr: u64,
     pub string: bool,
-    /// Its first two units read as signed offsets: a jump table's entries land
-    /// in code relative to its base.
-    pub jumps: [i32; 2],
 }
 
 /// What comes after `r`'s terminator in its section (`data`, mapped at `vma`):
@@ -335,8 +317,7 @@ fn follower(r: &Run32, data: &[u8], vma: u64, little_endian: bool) -> Option<Opt
     }
     let wide = k > 0 && printable && unit(k) == Some(0);
     let string = wide || crate::operand_refs::string_len(&data[off..]).is_some_and(|len| len > 4);
-    let jumps = [unit(0)? as i32, unit(1).unwrap_or(0) as i32];
-    (string || unit(0)? >= CODE_POINTS).then_some(Some(Follower { addr: at, string, jumps }))
+    (string || unit(0)? >= CODE_POINTS).then_some(Some(Follower { addr: at, string }))
 }
 
 /// One past the largest Unicode code point: a unit at or above it is no
@@ -469,13 +450,12 @@ mod tests {
 
     #[test]
     fn what_follows_a_literal_is_the_next_literal_or_no_code() {
-        let at = |f: Option<Option<Follower>>| f.map(|f| f.map(|f| (f.addr, f.string)));
         let mut d = wide("abcde", true);
         d.extend_from_slice(&[0; 8]);
         let run = scan_utf32_runs(&d, 0x1000, true, MIN_UNITS)[0];
         assert_eq!(follower(&run, &d, 0x1000, true), Some(None));
         d.extend(wide("fg", true));
-        assert_eq!(at(follower(&run, &d, 0x1000, true)), Some(Some((0x1020, true))));
+        assert_eq!(follower(&run, &d, 0x1000, true), Some(Some(Follower { addr: 0x1020, string: true })));
         assert_eq!(follower(&run, &d, 0x1004, true), None);
         let mut named = wide("abcde", true);
         named.extend_from_slice(&7u32.to_le_bytes());
@@ -483,21 +463,21 @@ mod tests {
         assert_eq!(follower(&run, &named, 0x1000, true), None);
         let mut next = wide("abcde", true);
         next.extend(wide("xy", true));
-        assert_eq!(at(follower(&run, &next, 0x1000, true)), Some(Some((0x1018, true))));
+        assert_eq!(follower(&run, &next, 0x1000, true), Some(Some(Follower { addr: 0x1018, string: true })));
         next.truncate(next.len() - 4);
         assert_eq!(follower(&run, &next, 0x1000, true), None);
         let mut other = wide("abcde", true);
         other.extend_from_slice(b"%ld %u\n\0");
-        assert_eq!(at(follower(&run, &other, 0x1000, true)), Some(Some((0x1018, true))));
+        assert_eq!(follower(&run, &other, 0x1000, true), Some(Some(Follower { addr: 0x1018, string: true })));
         let mut pointer = wide("abcde", true);
         pointer.extend_from_slice(&0x40_2039u64.to_le_bytes());
-        assert_eq!(at(follower(&run, &pointer, 0x1000, true)), Some(Some((0x1018, false))));
+        assert_eq!(follower(&run, &pointer, 0x1000, true), Some(Some(Follower { addr: 0x1018, string: false })));
         let mut field = wide("abcde", true);
         field.extend_from_slice(&(-5i32).to_le_bytes());
-        assert_eq!(at(follower(&run, &field, 0x1000, true)), Some(Some((0x1018, false))));
+        assert_eq!(follower(&run, &field, 0x1000, true), Some(Some(Follower { addr: 0x1018, string: false })));
         let mut cafe = wide("abcde", true);
         cafe.extend(wide("caf\u{e9}", true));
-        assert_eq!(at(follower(&run, &cafe, 0x1000, true)), Some(Some((0x1018, true))));
+        assert_eq!(follower(&run, &cafe, 0x1000, true), Some(Some(Follower { addr: 0x1018, string: true })));
         let mut long = wide("abcde", true);
         long.extend_from_slice(&[0; 68]);
         long.extend_from_slice(&7u32.to_le_bytes());

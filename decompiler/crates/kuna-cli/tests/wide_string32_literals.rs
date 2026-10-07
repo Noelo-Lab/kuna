@@ -125,7 +125,7 @@ fn other_builds_and_targets_spell_the_literals() {
 /// inside, walked by a loop gcc peels, held by a struct. `widestr32_named.c`'s
 /// go on with an element the code also names (`&tbl[6]`, a struct's count),
 /// `widestr32_fields.c`'s with a struct field it names (a negative delta, a
-/// string pointer).
+/// string pointer, two negative bounds that read as offsets into the code).
 /// None prints as a wide literal, by default or with `operand_refs` off;
 /// `L"control"` does.
 #[test]
