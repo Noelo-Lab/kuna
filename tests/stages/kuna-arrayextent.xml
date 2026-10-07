@@ -48,8 +48,8 @@
         return r;
       }
 
-    At 0x300000, ff and s6 with gcc -O0 and d4 with clang -O0 (all with
-    -fno-stack-protector -fcf-protection=none):
+    At 0x300000, ff and s6 with gcc -O0, d4 with clang -O0, and ws and h3 with
+    clang -O1 (all with -fno-stack-protector -fcf-protection=none):
 
       int ff(int n, int x) {
         int a[4]; int flag = 0;
@@ -72,6 +72,18 @@
         for (int i = 0; i < n; i++) t += a[i];
         return t * a[5];
       }
+      int ws(int n, int x) {
+        short a[6] = {1, 2, 3, 4, 5, (short)x};
+        int t = 0;
+        for (int i = 0; i < n; i++) t += a[i];
+        return t * a[5];
+      }
+      int h3(int n, int x) {
+        char a[6]; a[0] = 1; a[1] = 2; a[2] = 3; a[3] = 4; a[4] = 5; a[5] = (char)x;
+        int t = 0;
+        for (int i = 0; i < n; i++) t += a[i];
+        return t * a[5];
+      }
 
     Passes: default (on), `option arrayextent bound`, `option arrayextent off`.
     #1, #2, #4 and #6 prove the fix; #3, #5 and #7 reproduce the split in the
@@ -83,6 +95,8 @@
     unsigned that follow it.  #14 is the other side: when upstream's constant
     absorption already reaches past the slots taken (a[3] and a[4] hold
     constants), the array keeps the element it reaches (a[5], read on its own).
+    #15 is the same with clang -O1 merging the first constants into one wider
+    store (an 8-byte store over a[0..3] of ws, a 4-byte one over h3's).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 8b442408897c24e8897424ec895424f0894c24f444894424f844894c24fc85c0
@@ -130,7 +144,11 @@ c8837df4050f97c180e1010fb6c901c85dc3554889e5897dbc488975b048c745
 c00100000048c745c80200000048c745d00300000048c745d80400000048c745
 e005000000488b45b0488945e848c745f800000000c745f400000000eb128b45
 f44898488b44c5c0480145f88345f4018b45f43b45bc7ce6488b45e8480faf45
-f85dc3
+f85dc3662e0f1f8400000000000f1f0048b8010002000300040048894424f466
+c74424fc050066897424fe85ff7e2389f831d231c9662e0f1f84000000000090
+0fbf7c54f401f94883c2014839d075f0eb0231c90fbfc60fafc1c30f1f440000
+c74424fa01020304c64424fe0540887424ff85ff7e1c89f831d231c90f1f4000
+0fbe7c14fa01f94883c2014839d075f0eb0231c9400fbec60fafc1c3
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="h_clang"/>
 <symbol space="ram" offset="0x100060" name="m_clang"/>
@@ -145,6 +163,8 @@ f85dc3
 <symbol space="ram" offset="0x300000" name="ff_gcc"/>
 <symbol space="ram" offset="0x300070" name="d4_clang"/>
 <symbol space="ram" offset="0x300112" name="s6_gcc"/>
+<symbol space="ram" offset="0x300190" name="ws_clang"/>
+<symbol space="ram" offset="0x3001e0" name="h3_clang"/>
 </binaryimage>
 <script>
   <com>parse line extern void sink(void *p);</com>
@@ -179,6 +199,12 @@ f85dc3
   <com>lo fu s6_gcc</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu ws_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h3_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option arrayextent bound</com>
   <com>lo fu h_clang</com>
   <com>decompile</com>
@@ -208,6 +234,12 @@ f85dc3
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu s6_gcc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ws_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h3_clang</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option arrayextent off</com>
@@ -241,6 +273,12 @@ f85dc3
   <com>lo fu s6_gcc</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu ws_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h3_clang</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="ARRAYEXTENT #1: by default the clang -O1 loop array is one int4 [6]" min="1" max="1">int4 v5 \[6\]; // ecx \| edi \| edx \| esi \| r8d \| r9d \|</stringmatch>
@@ -262,4 +300,5 @@ int4 v3 \[4\]; // ecx \| edi \| edx \| esi \| stack - 0x10 \| stack - 0x14 \| st
   v\d = a1;
   v\d = 0;</stringmatch>
 <stringmatch name="ARRAYEXTENT #14: the gcc -O0 constant-initialised array keeps its sixth element in every pass" min="3" max="3">  int8 v1 \[6\]; // rax \| rsi \| stack - 0x20 \| stack - 0x28</stringmatch>
+<stringmatch name="ARRAYEXTENT #15: the clang -O1 arrays whose first constants are one wide store keep their sixth element in every pass" min="6" max="6">^  v3\[5\] = (\(char\))?a1;$</stringmatch>
 </decompilertest>

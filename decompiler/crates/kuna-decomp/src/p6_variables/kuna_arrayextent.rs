@@ -17,11 +17,13 @@
 //! holds only unlocked hints of its element size and of a type `attempt_join`
 //! accepts, and is never read except through a pointer. A slot the function
 //! writes and never reads directly is only observable through the index, so it
-//! is an element of the array rather than a scalar of its own. Unless
-//! upstream's constant absorption (`RangeHint::absorb`) would reach past the
-//! last slot taken on its own, that slot loses its constant-copy mark, so the
-//! absorption cannot raise the array one element past it and from there over
-//! each following constant-initialised local.
+//! is an element of the array rather than a scalar of its own. When
+//! upstream's merge (`ScopeLocal::restructure`), run over the same sorted hints
+//! with the array at its old length, ends the array at or before the last slot
+//! taken, that slot loses its constant-copy mark, so upstream's constant
+//! absorption (`RangeHint::absorb`) cannot raise the array one element past it
+//! and from there over each following constant-initialised local. Where
+//! upstream's merge reaches further on its own, the array is upstream's.
 
 use std::rc::Rc;
 
@@ -32,7 +34,7 @@ use kuna_base::types::{int4, intb, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::context::VarnodeId;
-use crate::dtype::{type_metatype, Datatype};
+use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
 use crate::varmap::{MapState, RangeHint, RangeType, COPY_CONSTANT};
 
@@ -153,9 +155,20 @@ fn access_size(fd: &Funcdata, vn: VarnodeId) -> Option<int4> {
     (size > 0).then_some(size)
 }
 
+/// An array `extend_unbounded` lengthened: its open hint's offset, start and
+/// element size, and its high index before and after.
+#[derive(Clone, Copy)]
+pub(crate) struct Extended {
+    start: uintb,
+    sstart: intb,
+    elem: int4,
+    from: int4,
+    to: int4,
+}
+
 /// Lengthen the open hint of each unbounded indexed base over the contiguous
-/// write-only slots that follow its elements, and clear `COPY_CONSTANT` on the
-/// last slot taken unless upstream's absorption reaches past it anyway.
+/// write-only slots that follow its elements, and record each array lengthened
+/// for [`settle`].
 pub(crate) fn extend_unbounded(
     fd: &Funcdata,
     state: &mut MapState,
@@ -175,6 +188,7 @@ pub(crate) fn extend_unbounded(
         .map(|(i, h)| (h.sstart, i))
         .collect();
     order.sort_unstable();
+    let mut extended: Vec<Extended> = Vec::new();
     for base in bases {
         if base.elem <= 0 || locked_guard_over(fd, base.start) {
             continue;
@@ -203,46 +217,115 @@ pub(crate) fn extend_unbounded(
         if reach == highind {
             continue;
         }
-        let probe = open.clone();
         for h in hints.iter_mut().filter(|h| is_indexed_open(h, base)) {
             h.highind = h.highind.max(reach);
         }
-        if absorbs_through(hints, &order, probe, reach, elem) {
-            continue;
+        match extended.iter_mut().find(|e| e.start == base.start) {
+            Some(e) => e.to = reach,
+            None => extended.push(Extended { start: base.start, sstart, elem: base.elem, from: highind, to: reach }),
         }
-        let last = sstart + reach as intb * elem;
-        for h in hints
-            .iter_mut()
-            .filter(|h| h.range_type == RangeType::Fixed && h.sstart == last)
-        {
-            h.flags &= !COPY_CONSTANT;
+    }
+    state.set_extended(extended);
+}
+
+/// Before `ScopeLocal::restructure` merges the sorted hints, clear
+/// `COPY_CONSTANT` on the last slot each lengthened array took, unless
+/// upstream's merge of the same hints, with the arrays at their old length,
+/// carries the array past that slot anyway. A constant there would otherwise
+/// let `RangeHint::absorb` raise the array one element past it and from there
+/// over each following constant-initialised local.
+pub(crate) fn settle(state: &mut MapState, space: &Rc<AddrSpace>, types: &dyn TypeFactory) {
+    let extended = state.take_extended();
+    if extended.is_empty() {
+        return;
+    }
+    let mut list = state.hints_mut().clone();
+    for h in list.iter_mut() {
+        if let Some(e) = extended.iter().find(|e| is_lengthened(h, e)) {
+            h.highind = e.from;
+        }
+    }
+    let Some(ends) = upstream_ends(state, &list, &extended, space, types) else {
+        return;
+    };
+    for (e, end) in extended.iter().zip(ends) {
+        let last = e.sstart + e.to as intb * e.elem as intb;
+        if end.is_some_and(|end| end <= last + e.elem as intb) {
+            for h in state
+                .hints_mut()
+                .iter_mut()
+                .filter(|h| h.range_type == RangeType::Fixed && h.sstart == last)
+            {
+                h.flags &= !COPY_CONSTANT;
+            }
         }
     }
 }
 
-/// Would upstream's constant absorption carry the open hint `probe` past the
-/// element at index `last` without this module: does every slot from its last
-/// element through `last` hold a constant store `RangeHint::is_const_absorbable`
-/// takes?
-fn absorbs_through(
-    hints: &[RangeHint],
-    order: &[(intb, usize)],
-    mut probe: RangeHint,
-    last: int4,
-    elem: intb,
-) -> bool {
-    let start = probe.sstart;
-    (probe.highind..=last).all(|j| {
-        probe.highind = j;
-        let slot = start + j as intb * elem;
-        let first = order.partition_point(|&(s, _)| s < slot);
-        order[first..]
+/// Is `h` an open hint `extend_unbounded` raised for `e`?
+fn is_lengthened(h: &RangeHint, e: &Extended) -> bool {
+    h.range_type == RangeType::Open && h.start == e.start && h.highind == e.to
+}
+
+/// Where each array in `extended` ends when `ScopeLocal::restructure`'s merge
+/// runs over the sorted `list`, the same steps on copies: `None` for one the
+/// merge never closes, and `None` overall if a merge fails. Ends at the next
+/// hint for an open range, at its own end for a fixed one.
+fn upstream_ends(
+    state: &MapState,
+    list: &[RangeHint],
+    extended: &[Extended],
+    space: &Rc<AddrSpace>,
+    types: &dyn TypeFactory,
+) -> Option<Vec<Option<intb>>> {
+    let base_of = |h: &RangeHint| {
+        extended
             .iter()
-            .take_while(|&&(s, _)| s == slot)
-            .any(|&(_, i)| {
-                hints[i].range_type == RangeType::Fixed && probe.is_const_absorbable(&hints[i])
-            })
-    })
+            .position(|e| h.range_type == RangeType::Open && h.start == e.start)
+    };
+    let mut ends = vec![None; extended.len()];
+    let mut cur = list.first()?.clone();
+    let mut held: Vec<usize> = base_of(&cur).into_iter().collect();
+    let mut cur_end = cur.sstart.wrapping_add(cur.size as intb);
+    for next in &list[1..] {
+        let next_end = next.sstart.wrapping_add(next.size as intb);
+        let absorbing = state.is_absorbing(cur.sstart);
+        if next.sstart < cur.sstart.wrapping_add(cur.size as intb) {
+            let was_open = cur.range_type == RangeType::Open;
+            cur.merge(next, space, types).ok()?;
+            cur_end = cur_end.max(next_end);
+            let aggregate = matches!(
+                cur.type_.get_metatype(),
+                type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION | type_metatype::TYPE_ARRAY
+            );
+            if absorbing && was_open && !cur.is_type_lock() && !aggregate {
+                cur.range_type = RangeType::Open;
+            }
+        } else if cur.range_type == RangeType::Open
+            && absorbing
+            && next.range_type != RangeType::Endpoint
+            && !next.is_type_lock()
+            && next.sstart < cur_end
+        {
+            cur.absorb(next);
+            cur_end = cur_end.max(next_end);
+        } else if cur.attempt_join(next) {
+            cur_end = cur_end.max(next_end);
+        } else {
+            let end = match cur.range_type {
+                RangeType::Open => next.sstart,
+                _ => cur.sstart.wrapping_add(cur.size as intb),
+            };
+            for &e in &held {
+                ends[e] = Some(end);
+            }
+            held.clear();
+            cur = next.clone();
+            cur_end = next_end;
+        }
+        held.extend(base_of(next));
+    }
+    Some(ends)
 }
 
 /// Is `h` an open hint with index evidence at `base`'s start and element size?

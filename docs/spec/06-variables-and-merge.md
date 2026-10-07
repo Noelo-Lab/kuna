@@ -974,17 +974,23 @@ at the array's last element and raises `highind` one past it
 each constant-initialised slot joined that way raises it again. Started from the
 last slot this rule took (`int flag = 0;` written and never read), that walk
 would carry the array over the loop counters and the sum that follow it at
-`-O0`. So the fixed hints in the last slot taken lose their constant-copy mark
-(`COPY_CONSTANT`) and the array ends there, unless upstream's absorption would
-have reached past that slot without this rule: every slot from the array's last
-upstream element through the last slot taken holds a constant store it accepts
-(`kuna_arrayextent.rs (absorbs_through)`). Then the marks stay and the array is
-the one upstream builds, which keeps an element read on its own that the
-constants before it reach (`long a[6]` with `a[0]` to `a[4]` constant and
-`a[5] = x` read stays `[6]`); clearing the mark there would end the array
-before that element and print the loop's index past it. Merging slots never
-changes what the C computes, only how many declarations it has. `off` is
-upstream.
+`-O0`. So once `MapState::initialize` has sorted the hints,
+`ScopeLocal::restructure` first calls `kuna_arrayextent.rs (settle)`, which
+runs the same merge steps
+(`merge`, the absorbing-base `absorb`, `attempt_join`) over copies of the
+sorted hints with each lengthened array back at its old `highind`
+(`kuna_arrayextent.rs (upstream_ends)`). Where that upstream merge ends the
+array at or before the end of the last slot taken, the fixed hints in that slot
+lose their constant-copy mark (`COPY_CONSTANT`) and the array ends there. Where
+it carries the array further on its own, the marks stay and the array is the
+one upstream builds, which keeps an element read on its own that the constants
+before it reach: `long a[6]` with `a[0]` to `a[4]` constant and `a[5] = x` read
+stays `[6]`, also when the compiler writes the first constants as one wider
+store (clang `-O1` stores `short a[6] = {1, 2, 3, 4, 5, x}`'s first four
+elements with one 8-byte move, whose merge raises `highind` at once). Clearing
+the mark there would end the array before that element and print the loop's
+index past it. Merging slots never changes what the C computes, only how many
+declarations it has. `off` is upstream.
 
 **Terminator absorption** (`option nulterminator`, **opt-in, default off**). An
 open hint that `attempt_join` cannot extend ends where the next hint starts, so
