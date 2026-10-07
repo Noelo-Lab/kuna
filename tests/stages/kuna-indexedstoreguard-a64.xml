@@ -19,13 +19,18 @@
         int u2(int i, int j) { long b[8]; b[1] = i; b[2] = i + 1; b[j] = 3;
             return (int)(b[1] + b[2]); }
         int u5(int i, int j) { int b[8]; b[1] = i; b[j] = 3; return (short)b[1]; }
+        int w5(int i, int j) { long b[8]; b[3] = i; long *p = b; int n = j >> 1;
+            while (n) { n -= 1; *p = n * 9 + 1; p += 2; }
+            return (int)b[3] + (short)b[3]; }
 
     Stage: P3 heritage stackstoreguard guards b[6] and b[1] at the indexed
     store (its index is bounded by `& 7`), and the P6 layout makes the array
     at the store's base as long as that bound.  u2 and u5 index with no
     bound; their guarded slots lie inside the four elements the layout gives
     the array, and the narrower reads of them must not split it into scalars
-    (`(&v1)[a1] = 3` past a scalar, or with an 8-byte stride for u5's ints).  Pass 1 (default) reads both
+    (`(&v1)[a1] = 3` past a scalar, or with an 8-byte stride for u5's ints).
+    w5 walks the array with stride 2, which never reaches the guarded b[3];
+    the guard must not end that array before b[3].  Pass 1 (default) reads both
     slots back after the store; pass 2 (stackstoreguard off) reproduces the
     stale values, as on main.
 -->
@@ -35,12 +40,18 @@ ff0301d1087c4093297c40932b0800126a008052ec030091e81b00f9e90700f9
 e80300916a008052e01b00b9e10700b90a5929b8e81b40b9e90740b92001080b
 ff830091c0035fd6ff0301d109040011087c4093297d40936a008052eb030091
 e8a700a96ad921f8e80b40b9e91340b92001080bff030191c0035fd6ff8300d1
-e803009169008052e00700b909d921b8e00bc079ff830091c0035fd6
+e803009169008052e00700b909d921b8e00bc079ff830091c0035fd6ff0301d1
+087c40933f080071e80f00f9e3030054ec0300912a7c41933f10007182000054
+e8030aaae9030091110000144bf97f924d0d0a8b48014092ad4500d189110b8b
+8c410091ee030baaaf2500918d0100f9ce0900d1ad4900d18f011ff88c810091
+4effffb57f010aebe00000540a0d088b4a2100d1080500d12a0501f84a2500d1
+a8ffffb5e80f40f900a1280bff030191c0035fd6
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="l6b"/>
 <symbol space="ram" offset="0x100038" name="i6b"/>
 <symbol space="ram" offset="0x100068" name="u2"/>
 <symbol space="ram" offset="0x10009c" name="u5"/>
+<symbol space="ram" offset="0x1000bc" name="w5"/>
 </binaryimage>
 <script>
   <com>lo fu l6b</com>
@@ -53,6 +64,9 @@ e803009169008052e00700b909d921b8e00bc079ff830091c0035fd6
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu u5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w5</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option stackstoreguard off</com>
@@ -68,6 +82,9 @@ e803009169008052e00700b909d921b8e00bc079ff830091c0035fd6
   <com>lo fu u5</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu w5</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #1: default, b[6] and b[1] are elements of one array read after the store" min="2" max="2">return (\(int4\))?v1\[1\] \+ (\(int4\))?v1\[6\];</stringmatch>
@@ -76,4 +93,5 @@ e803009169008052e00700b909d921b8e00bc079ff830091c0035fd6
 <stringmatch name="INDEXEDSTOREGUARD-A64 #4: default, u2 and u5 (index with no bound) read b[1] and b[2] back from the array" min="2" max="2">return (\(int4\)v1\[2\] \+ \(int4\)v1\[1\]|\(int8\)\(int2\)v1\[1\]);</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #5: no store is printed through the address of a scalar" min="0" max="0">\(&amp;v\d+\)\[</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD-A64 #6: off reproduces the stale u2 and u5" min="2" max="2">return (a0 \* 2 \+ 1|a0);</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD-A64 #7: the array w5's stride-2 walk goes through keeps its eight elements in both passes" min="2" max="2">^\s*int8 v3 \[8\]; // ([^\n]+ \| )?stack - 0x40( \| [^\n]+)?$</stringmatch>
 </decompilertest>

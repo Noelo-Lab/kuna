@@ -355,10 +355,11 @@ fn guard_only_ranges(fd: &Funcdata, space: &Rc<AddrSpace>) -> Vec<(intb, intb)> 
 
 /// Drop the guard-only hints (`guard_only_ranges`) that fall in the extent of
 /// the open range below them (no other hint in between) when they are integers
-/// at an element boundary no wider than the element: the read becomes an
-/// element or a cast of one instead of a local that ends the array early. An
-/// element-wide one lends the range its type when the range has none. Any
-/// other guard-only hint stays, and the final layout check
+/// at an element boundary no wider than an element wider than a byte: the read
+/// becomes an element or a cast of one instead of a local that ends the array
+/// early. An element-wide one lends the range its type when the range has
+/// none. Byte ranges keep theirs, since the byte checks take the element type
+/// from them. Any other guard-only hint stays, and the final layout check
 /// (`guard_shortens`) withdraws the guard if it ends an array early.
 fn drop_guard_only_hints(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
     let guard_only = guard_only_ranges(fd, space);
@@ -392,7 +393,8 @@ fn drop_guard_only_hints(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpa
         };
         let open = &hints[o];
         let elem = open.size as intb;
-        let fits = (h.sstart - open.sstart) % elem == 0
+        let fits = elem > 1
+            && (h.sstart - open.sstart) % elem == 0
             && h.size as intb <= elem
             && !h.is_type_lock()
             && matches!(
