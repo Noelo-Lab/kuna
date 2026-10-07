@@ -1055,7 +1055,9 @@ the raw blocks that reach the instruction: a block decides for itself when it
 writes the register or makes a call, otherwise it takes the conjunction of its
 predecessors, and the entry decides no. Every block starts at yes and only
 falls, so a loop is decided by the paths into it, and more than 256 blocks
-answers no. Another system call writes the result register and nothing else.
+answers no. Another system call writes the result register, and on MIPS and
+PowerPC its error flag (below) as a value the function did not set, so a flag
+left by an earlier system call is not an argument the function wrote.
 
 The register pair goes away as a consequence. The low half is now the call's
 output, and the high half is an argument the call reads. Return recovery's
@@ -1064,6 +1066,33 @@ output, and the high half is an argument the call reads. Return recovery's
 argument is not also a returned half, even when the function throws the result
 away and the kernel-preserved argument register still reaches the `RETURN`. It
 stays free to be the next call's argument.
+
+MIPS and PowerPC kernels also report a failure outside the result: MIPS sets
+`a3` to 1 (0 on success) and PowerPC sets the summary-overflow bit of `cr0`, and
+the C library tests it right after the instruction (`movz` or `bnez` on `a3`;
+`bns`, or `mfcr` and a mask). So on those two families the rewrite also inserts,
+right after the system call, `a3 = syscall_error()` or `cr0 = syscall_error()`
+(`kuna_syscallregs.rs (define_error_flag)`): a `CALLOTHER` of the built-in user
+op `BUILTIN_SYSCALL_ERROR` (`decompiler/crates/kuna-decomp/src/p2_lift/userop.rs`)
+with no inputs and its call flag cleared. It is an ordinary write placed before
+heritage, so heritage treats it like any other register write (an `INDIRECT`
+there would not work, see below), and with no side effect dead-code removal
+drops it wherever nothing reads the register. The test after the call then
+reads the kernel's flag. Before, it read the function's entry `a3`, which became
+a phantom fourth parameter, or a `cr0` nothing set, printed as an uninitialized
+local; where the function had itself loaded `a3` as the fourth system-call
+argument, the test even folded to a constant, and glibc's MIPS `lutimes` always
+returned -1. The whole `cr0` field takes the opaque value: the Linux system-call
+ABI lists `cr0` as volatile across `sc`, its summary-overflow bit being the error
+condition, so code after the call cannot rely on its other bits.
+
+Two later consumers keep the flag tied to its own call. Chapter 04's
+`AncestorRealistic` treats the flag reaching a later call's killed-by-call
+argument register like a value carried through a call, so it is not that call's
+argument. Chapter 06's implied-variable check treats its definition like a
+call's output: when its range crosses a call or another system call it is
+printed at its definition, so a `syscall_error()` never appears after a later
+system call it does not belong to.
 
 The same policy gives the recognized system call unknown effects on writable
 memory. `kuna_syscallregs.rs (guard_memory)`, called by chapter 03's
@@ -1084,13 +1113,15 @@ of them would give a zero-argument call phantom parameters; the list stops at
 the first of them, so a later argument the function does write is not shown
 either, and a pass-through wrapper prints its call with the number alone. When
 that leaves a written register out, return recovery can still take it as the
-high half of a returned pair, as the vendored model does. The registers a kernel
-writes besides the result (the MIPS `a3` error flag and `v1`, the PowerPC `cr0`
-error bit) also keep their pre-call values. An `INDIRECT` creation for them was
-tried and rejected: `Heritage::collect` reads a marker op already in a range as
-evidence of an earlier heritage pass and clears the range's new-addresses
-property, which turns off the call, store and return guards for that register.
-On MIPS, every call in a function with a `syscall` then lost its `a3` argument.
+high half of a returned pair, as the vendored model does. The MIPS `v1` that a
+few calls return a second value in keeps its pre-call value. An `INDIRECT`
+creation was tried for the error flag first and rejected: `Heritage::collect`
+reads a marker op already in a range as evidence of an earlier heritage pass and
+clears the range's new-addresses property, which turns off the call, store and
+return guards for that register. On MIPS, every call in a function with a
+`syscall` then lost its `a3` argument. An image whose handler preserves `a3` or
+`cr0` under `on` reads the opaque flag where it kept its own value, the same
+caveat as for the result register.
 `option syscallregs off` restores the vendored zero-effect `CALLOTHER`.
 
 Exercised by `tests/stages/kuna-syscallregs-arm.xml`, `-aarch64.xml`,
@@ -1101,6 +1132,11 @@ byte chunk. The ARM test adds a call whose result is discarded, a call followed
 by a use of the kept `r1`, and a call that writes `r1` but not `r0`; the RISC-V
 test adds a loop that passes `a1`/`a2` through and keeps scratch values in
 `a3`/`a4`, none of which takes an argument position.
+`tests/stages/kuna-syscallregs-mips-a3.xml` (a clang `movz` and a gcc branch on
+`a3`, the latter followed by a call while `a3` still holds the flag) and
+`-ppc-cr0.xml` (an `mfcr` and a `bns` test, and a compare of the result as the
+control) check the error flag under `on` and the phantom parameter or the
+uninitialized `cr0` under `off`.
 `tests/stages/kuna-syscallregs-cortexm.xml` is the bare-metal control: FreeRTOS's
 `xPortRaisePrivilege` keeps its returned `r0` under `auto` and `off`.
 `decompiler/crates/kuna-cli/tests/syscall_regs_cli.rs` loads the ARM witness as

@@ -1271,6 +1271,16 @@ classified:
   The cost is a function that really returns, as the high half of a 64-bit
   value, a register it also handed to the kernel: that half is dropped.
 
+  (kuna) The MIPS `a3` / PowerPC `cr0` error flag that `syscallregs` defines
+  after a system call with `syscall_error()` (chapter 02) is the kernel's write,
+  so `AncestorRealistic` treats it like a register value carried through a call:
+  a killed-by-call trial whose value is the flag fails
+  (`funcdata_varnode.rs (AncestorRealistic::enter_node)`, via
+  `kuna_syscallregs.rs (is_error_flag)`). Without this, gcc's `if (a3) return
+  fail(v0) * 3;` handed `fail` a fourth argument `syscall_error()`, the flag
+  still in `a3` at the call. A value the function writes to `a3` itself after
+  the system call stays an argument.
+
   The blanket STORE rejection exists to stop a value the caller writes to its
   own frame before a call from being mistaken for an argument. It also rejects
   the mirror-image idiom. On x86-64 SysV **no** xmm register is callee-saved, so
