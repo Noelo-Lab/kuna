@@ -99,7 +99,7 @@ pub(crate) fn prepare_hints(
     let Some(sb) = fd.find_spacebase_input(space) else {
         return checks;
     };
-    widen_open_hints(fd, state, space);
+    widen_open_hints(fd, state, space, sb);
     let byte_store = has_byte_store(fd);
     if !byte_store && fd.indexed_guard_stores().is_empty() {
         return checks;
@@ -191,7 +191,7 @@ pub(crate) fn prepare_hints(
 /// The unlocked integer hints of another width inside the widened array go,
 /// so a narrower read of an element (`(int)b[6]`) is a piece of the array, not
 /// a local of its own; hints of the element's width join the array.
-fn widen_open_hints(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
+fn widen_open_hints(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpace>, sb: VarnodeId) {
     let bits = space.get_addr_size() as int4 * 8 - 1;
     for store in fd.indexed_guard_stores() {
         let Some(op) = fd
@@ -202,63 +202,119 @@ fn widen_open_hints(fd: &Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) 
             continue;
         };
         let width = op.get_in(2).and_then(|v| fd.vbank().get(v)).map_or(0, |v| v.get_size());
-        let (Some(bl), true) = (op.get_parent(), width > 1) else {
+        let (Some(bl), Some(ptr), true) = (op.get_parent(), op.get_in(1), width > 1) else {
             continue;
         };
-        let Some((lo, last)) = store_window(fd, store, space) else {
+        let Some(kept_end) = kept_slots(fd, store, bl, space).into_iter().map(|(_, hi)| hi).max() else {
             continue;
         };
-        let (lo, last) = (sign_extend(lo as intb, bits), sign_extend(last as intb, bits));
-        let kept_end = fd
-            .bb_ops(bl)
-            .into_iter()
-            .filter_map(|id| {
-                let ind = fd.obank().get(id).filter(|o| o.code() == OpCode::CPUI_INDIRECT)?;
-                let iop = fd
-                    .vbank()
-                    .get(ind.get_in(1)?)
-                    .filter(|v| v.get_space().get_type() == spacetype::IPTR_IOP)?;
-                if crate::funcdata_varnode::op_iop_decode(iop.get_addr().get_offset()) != store {
-                    return None;
+        let (lo, end) = match store_window(fd, store, space) {
+            Some((lo, last)) => {
+                let (lo, last) = (sign_extend(lo as intb, bits), sign_extend(last as intb, bits));
+                let elems = ((last - lo + 1) / width as intb) as int4;
+                for h in state.hints_mut().iter_mut() {
+                    if h.range_type == RangeType::Open
+                        && h.sstart == lo
+                        && h.size == width
+                        && h.highind >= 0
+                        && h.highind < elems - 1
+                        && hint_end(h) < kept_end
+                    {
+                        h.highind = elems - 1;
+                    }
                 }
-                let out = fd
-                    .vbank()
-                    .get(ind.get_out()?)
-                    .filter(|o| o.get_space().get_index() == space.get_index())?;
-                Some(sign_extend(out.get_addr().get_offset() as intb, bits) + out.get_size() as intb)
-            })
-            .max();
-        let Some(kept_end) = kept_end else {
-            continue;
-        };
-        let elems = ((last - lo + 1) / width as intb) as int4;
-        let end = lo + elems as intb * width as intb;
-        let mut widened = false;
-        for h in state.hints_mut().iter_mut() {
-            if h.range_type == RangeType::Open
-                && h.sstart == lo
-                && h.size == width
-                && h.highind >= 0
-                && h.highind < elems - 1
-                && hint_end(h) < kept_end
-            {
-                h.highind = elems - 1;
-                widened = true;
+                (lo, lo + elems as intb * width as intb)
             }
+            None => {
+                let Some(lo) = plain_index_base(fd, ptr, sb, space) else {
+                    continue;
+                };
+                let Some(h) = state
+                    .hints_mut()
+                    .iter()
+                    .find(|h| h.range_type == RangeType::Open && h.sstart == lo && h.size == width && h.highind >= 0)
+                else {
+                    continue;
+                };
+                (lo, hint_end(h))
+            }
+        };
+        if kept_end <= lo {
+            continue;
         }
-        if widened {
-            state.hints_mut().retain(|h| {
-                h.range_type != RangeType::Fixed
-                    || h.size == width
-                    || h.sstart < lo
-                    || hint_end(h) > end
-                    || h.is_type_lock()
-                    || !matches!(
-                        h.type_.get_metatype(),
-                        type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
-                    )
-            });
+        state.hints_mut().retain(|h| {
+            h.range_type != RangeType::Fixed
+                || h.size == width
+                || h.sstart < lo
+                || hint_end(h) > end
+                || h.is_type_lock()
+                || !matches!(
+                    h.type_.get_metatype(),
+                    type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+                )
+        });
+    }
+}
+
+/// The signed stack ranges of the guard INDIRECTs `store` keeps in block `bl`.
+fn kept_slots(fd: &Funcdata, store: OpId, bl: crate::context::BlockId, space: &Rc<AddrSpace>) -> Vec<(intb, intb)> {
+    let bits = space.get_addr_size() as int4 * 8 - 1;
+    fd.bb_ops(bl)
+        .into_iter()
+        .filter_map(|id| {
+            let ind = fd.obank().get(id).filter(|o| o.code() == OpCode::CPUI_INDIRECT)?;
+            let iop = fd
+                .vbank()
+                .get(ind.get_in(1)?)
+                .filter(|v| v.get_space().get_type() == spacetype::IPTR_IOP)?;
+            if crate::funcdata_varnode::op_iop_decode(iop.get_addr().get_offset()) != store {
+                return None;
+            }
+            let out = fd
+                .vbank()
+                .get(ind.get_out()?)
+                .filter(|o| o.get_space().get_index() == space.get_index())?;
+            let lo = sign_extend(out.get_addr().get_offset() as intb, bits);
+            Some((lo, lo + out.get_size() as intb))
+        })
+        .collect()
+}
+
+/// The signed stack address an indexed store's pointer names when it is one
+/// stack address plus indices, not a walk: no MULTIEQUAL on the way back to
+/// the stack base, so the C prints the store through the local there
+/// (`v1[i] = x`), not through a pointer variable (`*p = x`).
+fn plain_index_base(fd: &Funcdata, ptr: VarnodeId, sb: VarnodeId, space: &Rc<AddrSpace>) -> Option<intb> {
+    let bits = space.get_addr_size() as int4 * 8 - 1;
+    if through_walk(fd, ptr, 0) {
+        return None;
+    }
+    match pointer_pieces(fd, ptr, sb, 0)?.as_slice() {
+        [(off, _)] => Some(sign_extend(space.wrap_offset(*off) as intb, bits)),
+        _ => None,
+    }
+}
+
+/// Does `vn`'s pointer chain pass a MULTIEQUAL?
+fn through_walk(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    if depth > 12 {
+        return true;
+    }
+    let Some(op) = fd.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else {
+        return false;
+    };
+    match op.code() {
+        OpCode::CPUI_MULTIEQUAL => true,
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT | OpCode::CPUI_PTRSUB => {
+            op.get_in(0).is_some_and(|i| through_walk(fd, i, depth + 1))
         }
+        OpCode::CPUI_PTRADD | OpCode::CPUI_INT_ADD => (0..2).any(|k| {
+            op.get_in(k).is_some_and(|i| {
+                fd.vbank().get(i).is_some_and(|v| v.get_type().get_metatype() == type_metatype::TYPE_PTR || k == 0)
+                    && through_walk(fd, i, depth + 1)
+            })
+        }),
+        _ => false,
     }
 }
 
@@ -284,7 +340,8 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
     let space = Rc::clone(sl.get_space_id());
     let checks = fd.store_reach_checks();
     let effects = guard_effects(fd, &space);
-    if checks.floats.is_empty() && checks.reaches.is_empty() && effects.read.is_empty() {
+    let indexed = fd.indexed_guard_stores();
+    if checks.floats.is_empty() && checks.reaches.is_empty() && effects.read.is_empty() && indexed.is_empty() {
         return false;
     }
     let bits = space.get_addr_size() as int4 * 8 - 1;
@@ -321,11 +378,49 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
             .any(|&(lo, hi)| match locals(lo, hi).as_slice() {
                 [(s, e)] => !read_only_as_float(fd, &space, *s, *e),
                 _ => true,
-            });
+            })
+        || fd.find_spacebase_input(&space).is_some_and(|sb| {
+            indexed
+                .iter()
+                .any(|&store| !indexes_own_array(fd, store, sb, &space, &symbols, effects.wide.get(&store)))
+        });
     if spoiled {
         fd.spoil_stack_store_guard();
     }
     spoiled
+}
+
+/// Does a wider written-slot STORE the C prints through the local at its base
+/// (`plain_index_base`) write an array there whose element is its own width
+/// or a part of it (`*(long *)&v1[i * 8]` into a byte array), which holds
+/// every slot at or above the base its guard INDIRECTs keep? A scalar, or an
+/// array of wider elements, makes the C index past the local (`(&v1)[a1] = 3`)
+/// or with the wrong stride. A store through a pointer variable, or one no
+/// longer live, passes.
+fn indexes_own_array(
+    fd: &Funcdata,
+    store: OpId,
+    sb: VarnodeId,
+    space: &Rc<AddrSpace>,
+    symbols: &[(intb, intb, Rc<Datatype>)],
+    slots: Option<&Vec<(intb, intb)>>,
+) -> bool {
+    let Some(op) = fd.obank().get(store).filter(|o| !o.is_dead() && o.code() == OpCode::CPUI_STORE) else {
+        return true;
+    };
+    let (Some(ptr), Some(width)) = (op.get_in(1), op.get_in(2).and_then(|v| fd.vbank().get(v)).map(|v| v.get_size()))
+    else {
+        return true;
+    };
+    let Some(base) = plain_index_base(fd, ptr, sb, space) else {
+        return true;
+    };
+    let Some((_, e, ct)) = symbols.iter().find(|&&(s, e, _)| s <= base && base < e) else {
+        return slots.is_none_or(|slots| slots.is_empty());
+    };
+    ct.get_array_base()
+        .is_some_and(|el| el.get_size() > 0 && el.get_size() <= width && width % el.get_size() == 0)
+        && slots.is_none_or(|slots| slots.iter().all(|&(lo, hi)| lo < base || hi <= *e))
 }
 
 /// Can the local of type `ct` at `[s, e)` print the writes of a store reaching

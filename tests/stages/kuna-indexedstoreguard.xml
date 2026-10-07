@@ -43,14 +43,23 @@
             b[(U(i) >> 4) % 12] = 5; return b[0] + b[9] * 3; }
         int l6b(int i, int j) { long b[8]; b[6] = i; b[1] = j; b[j & 7] = 3;
             return (int)(b[6] + b[1]); }
+        int u2(int i, int j) { long b[8]; b[1] = i; b[2] = i + 1; b[j] = 3;
+            return (int)(b[1] + b[2]); }
+        int u5(int i, int j) { int b[8]; b[1] = i; b[j] = 3; return (short)b[1]; }
+
+    u2 and u5 index with no bound: the guarded b[1] and b[2] lie inside the
+    four elements the layout gives the array, and a narrower read of them
+    (`(int)b[1]`, `(short)b[1]`) must not split the array into scalars, or
+    the C would store through `(&v1)[a1]` past a scalar or with the wrong
+    stride.
 
     Stage: P3 heritage, stackstoreguard: an indexed stack STORE of any
     width gets an INDIRECT on each written stack range its analyzed window
     may reach.  P0 assertion: option stackstoreguard on|off.  Pass 1
     (default on) proves the fix: every read after the indexed store is a
     read of the array.  Pass 2 (off) reproduces the stale reads.  On the
-    unpatched engine #1 to #4, #9 and #11 count 0 and #5 to #8, #10 and #12
-    count twice their value.
+    unpatched engine #1 to #4, #9, #11 and #13 count 0 and #5 to #8, #10 and
+    #12 count twice their value.
 -->
 <bytechunk space="ram" offset="0x401000" readonly="true">
 40887c24f4c1ef04baabaaaaaa89f8480fafc248c1e8238d0440c1e00229c740
@@ -88,15 +97,20 @@ d083c001eb05b8050000005dc3554889e5897ddc8975d88b45dc8945e48b45d8
 40887c24f4c1ef04baabaaaaaa89f840887424fd480fafc248c1e8238d0440c1
 e00229c7c6443cf4050fb64424fd0fb65424f48d044001d0c30f1f8000000000
 4863c64863ff83e60748897c24e848894424c048c744f4b803000000488b4424
-c0034424e8c3662e0f1f840000000000897c24c8897424dcc1ef04b8abaaaaaa
-480fafc748c1e823c1e0028d044029c7c744bcc8070000008b4424dc8d044003
-4424c8c3662e0f1f8400000000006690897c24dc897424f083e607c744b4d809
-0000008b4424dc2b4424f0c30f1f400066897c24e866897424f601feb8cdcccc
-cc480fafc648c1e82301c08d048029c666c74474e84d000fbf4c24e80fbf4424
-f68d048001c8c3660f1f84000000000040887c24f440887424fdc1ef04b8abaa
-aaaa480fafc748c1e823c1e0028d044029c7c6443cf4050fb64c24f40fb64424
-fd8d044001c8c3660f1f8400000000004863c748894424e84863c648894424c0
-83e00748c744c4b8030000008b4424c0034424e8c3
+c0034424e8c3662e0f1f8400000000004863c783c7014863f64863ff48894424
+c048897c24c848c744f4b803000000488b4424c8034424c0c30f1f8000000000
+4863f6897c24dcc744b4d8030000000fbf4424dcc3662e0f1f84000000000090
+897c24c8897424dcc1ef04b8abaaaaaa480fafc748c1e823c1e0028d044029c7
+c744bcc8070000008b4424dc8d0440034424c8c3662e0f1f8400000000006690
+897c24dc897424f083e607c744b4d8090000008b4424dc2b4424f0c30f1f4000
+66897c24e866897424f601feb8cdcccccc480fafc648c1e82301c08d048029c6
+66c74474e84d000fbf4c24e80fbf4424f68d048001c8c3660f1f840000000000
+40887c24f440887424fdc1ef04b8abaaaaaa480fafc748c1e823c1e0028d0440
+29c7c6443cf4050fb64c24f40fb64424fd8d044001c8c3660f1f840000000000
+4863c748894424e84863c648894424c083e00748c744c4b8030000008b4424c0
+034424e8c3662e0f1f840000000000904863c748894424c083c0014898488944
+24c84863c648c744c4b8030000008b4424c8034424c0c3660f1f840000000000
+897c24dc4863c6c74484d8030000000fbf4424dcc3
 </bytechunk>
 <symbol space="ram" offset="0x401000" name="g_byte"/>
 <symbol space="ram" offset="0x401040" name="g_int"/>
@@ -117,11 +131,15 @@ fd8d044001c8c3660f1f8400000000004863c748894424e84863c648894424c0
 <symbol space="ram" offset="0x402060" name="gb_sb"/>
 <symbol space="ram" offset="0x4020a0" name="gb_cb"/>
 <symbol space="ram" offset="0x4020e0" name="gb_l6b"/>
-<symbol space="ram" offset="0x402110" name="cb_ib"/>
-<symbol space="ram" offset="0x402150" name="cb_im"/>
-<symbol space="ram" offset="0x402170" name="cb_sb"/>
-<symbol space="ram" offset="0x4021b0" name="cb_cb"/>
-<symbol space="ram" offset="0x4021f0" name="cb_l6b"/>
+<symbol space="ram" offset="0x402110" name="gb_u2"/>
+<symbol space="ram" offset="0x402140" name="gb_u5"/>
+<symbol space="ram" offset="0x402160" name="cb_ib"/>
+<symbol space="ram" offset="0x4021a0" name="cb_im"/>
+<symbol space="ram" offset="0x4021c0" name="cb_sb"/>
+<symbol space="ram" offset="0x402200" name="cb_cb"/>
+<symbol space="ram" offset="0x402240" name="cb_l6b"/>
+<symbol space="ram" offset="0x402270" name="cb_u2"/>
+<symbol space="ram" offset="0x4022a0" name="cb_u5"/>
 </binaryimage>
 <script>
   <com>lo fu g_byte</com>
@@ -181,6 +199,12 @@ fd8d044001c8c3660f1f8400000000004863c748894424e84863c648894424c0
   <com>lo fu gb_l6b</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu gb_u2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_u5</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>lo fu cb_ib</com>
   <com>decompile</com>
   <com>print C</com>
@@ -194,6 +218,12 @@ fd8d044001c8c3660f1f8400000000004863c748894424e84863c648894424c0
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu cb_l6b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_u2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_u5</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option stackstoreguard off</com>
@@ -254,6 +284,12 @@ fd8d044001c8c3660f1f8400000000004863c748894424e84863c648894424c0
   <com>lo fu gb_l6b</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu gb_u2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gb_u5</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>lo fu cb_ib</com>
   <com>decompile</com>
   <com>print C</com>
@@ -267,6 +303,12 @@ fd8d044001c8c3660f1f8400000000004863c748894424e84863c648894424c0
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu cb_l6b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_u2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cb_u5</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -285,4 +327,6 @@ if \(!?v1\[0\]\)</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD #10: off reproduces the stale slots past four elements" min="8" max="8">return (a1 \* 3 \+ a0|a0 - a1|\(int2\)a1 \* 5 \+ \(int4\)\(int2\)a0|\(uint4\)a1 \+ \(uint4\)a1 \* 2 \+ \(a0 &amp; 0xff\));</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD #11: default, a long array whose guarded slot lies past four elements is one array (gcc -O2, clang -O2)" min="2" max="2">return \(int4\)v1\[1\] \+ \(int4\)v1\[6\];</stringmatch>
 <stringmatch name="INDEXEDSTOREGUARD #12: off reproduces the stale b[6] and b[1] of the long array" min="2" max="2">return a1 \+ a0;</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #13: default, b[1] and b[2] of an array indexed with no bound are read back from the array (u2, u5; gcc -O2, clang -O2)" min="4" max="4">return \(int4\)(v1\[2\] \+ \(int4\)v1\[1\]|\(int2\)v1\[1\]);</stringmatch>
+<stringmatch name="INDEXEDSTOREGUARD #14: no store is printed through the address of a scalar" min="0" max="0">\(&amp;v\d+\)\[</stringmatch>
 </decompilertest>

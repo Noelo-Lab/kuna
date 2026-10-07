@@ -1197,7 +1197,11 @@ hint's end, and the slot then joins the array (`v1[5]`). The unlocked integer
 hints of another width inside the widened array are dropped, since an open
 range joins only hints of its element's width: `(int)(b[6] + b[1])` reads the
 low word of each `long`, and that word's hint would otherwise end the array
-before `b[6]`.
+before `b[6]`. A store whose index has no bound keeps the open hint's four
+elements, and the same hints inside them are dropped when its guard keeps a
+slot there and the C prints it through the local at its base (`b[1] = i;
+b[j] = 3; return (short)b[1];` with `int b[8]` would otherwise split the array
+at `b[1]` and leave a scalar at its base).
 
 The second is where an open range ends, which matters when the index is not
 bounded (`u.b[i]`, or a walk that starts at `&u.b[i]`). `RangeHint::attempt_join`
@@ -1252,10 +1256,16 @@ against (`Funcdata::indexed_guard_stores`) adds its reach when its index is
 bounded (`kuna_storereach.rs (wide_reaches)`): from its base to the end of its
 bound or of its furthest guarded slot. Without the check a `long b[8]` whose
 `b[6]` the layout left as a separate local after a six-element array printed
-`v1[a1 & 7] = 3`, which writes past `v1`. A wider store without a bound, such
-as a zeroing loop's pointer walk, prints as a write through that pointer, not
-through the local at its base, and its slots are checked only for being whole
-locals. An index whose known-bits span is 256 bytes or
+`v1[a1 & 7] = 3`, which writes past `v1`. Every such wider store the C prints
+through the local at its base (its pointer is one stack address plus indices,
+with no MULTIEQUAL on the way: `kuna_storereach.rs (plain_index_base)`),
+bounded or not, must also find an array there whose element is its own width or
+a part of it, holding every slot at or above the base its guard keeps
+(`kuna_storereach.rs (indexes_own_array)`): a scalar there prints the store as
+`(&v1)[a1] = 3`, past the scalar, and an array of wider elements indexes with
+the wrong stride. A store through a pointer variable, such as a zeroing loop's
+walk, prints as `*p = 0`, not through the local, and its slots are checked only
+for being whole locals. An index whose known-bits span is 256 bytes or
 more counts as unbounded (`u.b[i & 511]`). After the last pass
 `decompile_drive.rs (run_pipeline)` calls `kuna_storereach.rs
 (withdraw_spoiled_guard)`, which takes the bytes of every guard INDIRECT still
