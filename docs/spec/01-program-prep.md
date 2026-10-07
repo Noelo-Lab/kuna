@@ -1478,7 +1478,9 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   that either code indexes or a symbol starts at, with a unit that is no
   character (at or above U+110000) or a string there, or that an operand, a
   data slot or an entry of a table of relative offsets (clang's `reltable`)
-  points at, with a string there. A string is a zero-terminated run of
+  points at, with a string or a jump table there (its first two entries, read
+  as signed offsets from it, land in code: gnulib's `vasnprintf` puts one right
+  after `L"(NULL)"` and loads its base far from the indexed jump). A string is a zero-terminated run of
   characters (printable ASCII, tab, CR, LF, or U+00A0 and above outside the
   surrogates) with at least one printable ASCII unit, or a narrow string of
   four characters or more; fewer are the bytes of a wide unit or of a pointer
