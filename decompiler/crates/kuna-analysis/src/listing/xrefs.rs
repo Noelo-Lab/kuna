@@ -712,6 +712,11 @@ fn descend(
     let mut walk_context = super::kuna_walkcontext::WalkContext::new(
         prologues, translate, arch, &code_space, &exec,
     );
+    if arch.analysis_listing && arch.input_arm_isa_override {
+        if let Some(context) = &mut walk_context {
+            context.seed_inventory_modes(seed_set.iter().copied(), &arch.arm_inventory_modes);
+        }
+    }
     let mut frame_context = None;
     let mut frame_modes: Option<super::kuna_framemode::FrameModes> = None;
     let mut frame_reconciled = false;

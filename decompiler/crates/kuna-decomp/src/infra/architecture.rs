@@ -254,6 +254,9 @@ pub struct Architecture {
     /// File input explicitly selected ARM/Thumb state; metadata must not repaint TMode.
     pub input_arm_isa_override: bool,
 
+    /// Bounded ARM decode facts retained for inventory-seeded reference queries.
+    pub arm_inventory_modes: Vec<(u64, u64, u32)>,
+
     /// Loader register seeds, merged with live user tracking at function creation.
     pub loader_entry_tracks:
         std::collections::BTreeMap<Address, kuna_sleigh::globalcontext::TrackedSet>,
@@ -2468,6 +2471,7 @@ impl Architecture {
         let mut arch = Architecture {
             archid: archid.to_string(),
             input_arm_isa_override: false,
+            arm_inventory_modes: Vec::new(),
             loader_entry_tracks: std::collections::BTreeMap::new(),
 
             symbol_snapshots: RefCell::new(SymbolSnapshots::default()),

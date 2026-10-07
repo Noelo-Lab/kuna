@@ -5401,3 +5401,12 @@ plays the leaf role itself — it resolves the language from the object header
 the default code space to the loader (the `postSpecFile` contract), and hands the
 loader to the engine as the byte source every subsequent instruction decode reads
 through.
+
+When the input explicitly selects an ARM ISA, frame recovery retains the
+successfully decoded instruction spans from its final accepted walk as inventory
+metadata. Inventory-seeded xref walks select those modes at matching seeds;
+later direct-call evidence takes precedence. The hints survive recovery retries.
+Ordinary decompilation context is not repainted by this metadata, and unrelated
+roots retain the explicit input mode. Discarded rounds and unclaimed gaps publish
+no hints. The behavior requires Listing, function-start patterns, and `armframes`.
+Automatic ISA selection continues to use loader mode facts without extra hints.
