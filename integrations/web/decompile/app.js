@@ -23,7 +23,7 @@ import {
 } from './render-c.js';
 import { loadPrefs, savePrefs, cycle, hintsOn, DEFAULT_PREFS } from './prefs.js';
 import { groupFunctions, groupOf, firstFunction } from './groups.js';
-import { wrapBreaks } from './wrap-c.js';
+import { wrapPlan } from './wrap-c.js';
 import { renderAsm, renderInsnRows, formatAddr, spacedBytes, inferLines, spellInsn } from './asm-view.js';
 import { createHover } from './hover.js';
 import { createSync } from './sync.js';
@@ -1114,7 +1114,7 @@ const RENDER = {
     const { data, segs, index, preamble } = cur;
     cur.wrapCols = state.prefs.cWrap ? state.wrapCols : 0;
     cur.wrapped = new Set();
-    els.ccode.innerHTML = renderC(data, { ...cContext(), index, segs, preamble, breaksOf: (i) => lineBreaks(cur, i) });
+    els.ccode.innerHTML = renderC(data, { ...cContext(), index, segs, preamble, planOf: (i) => linePlan(cur, i) });
     els.ccode.classList.toggle('no-addrs', index.lineToInsns.size === 0);
     applyTypesOpen();
     applyPaneClasses();
@@ -1159,14 +1159,19 @@ function cContext() {
   };
 }
 
-/** Where line `i` (0-based) of the current function wraps at its `wrapCols`; records it as wrapped. */
-function lineBreaks(cur, i) {
-  if (!cur.wrapCols || i < cur.preamble) return [];
+/** Hex-Rays' right margin: a line splits once it is longer than this, or than the pane when that is narrower. */
+const RIGHT_MARGIN = 120;
+
+/** How line `i` (0-based) of the current function wraps at its `wrapCols`, or null; records it as wrapped. */
+function linePlan(cur, i) {
+  if (!cur.wrapCols || i < cur.preamble) return null;
   const text = cur.codeLines[i] || '';
-  if (text.length <= cur.wrapCols) return [];
-  const breaks = wrapBreaks(cur.segs[i].map((s) => s.text).join(''), cur.wrapCols);
-  if (breaks.length) cur.wrapped.add(i);
-  return breaks;
+  const margin = Math.min(cur.wrapCols, RIGHT_MARGIN);
+  if (text.length <= margin) return null;
+  const plan = wrapPlan(cur.segs[i].map((s) => s.text).join(''), margin);
+  if (!plan.breaks.length && text.length <= cur.wrapCols) return null;
+  cur.wrapped.add(i);
+  return plan;
 }
 
 /** How many characters of code fit across the C pane (0 when it is not on screen). */
@@ -1198,13 +1203,13 @@ function rewrapC() {
   if (cols === cur.wrapCols) return;
   cur.wrapCols = cols;
   const rows = new Set(cur.wrapped);
-  if (cols) cur.codeLines.forEach((text, i) => { if (text.length > cols) rows.add(i); });
+  if (cols) cur.codeLines.forEach((text, i) => { if (text.length > Math.min(cols, RIGHT_MARGIN)) rows.add(i); });
   cur.wrapped = new Set();
   if (!rows.size) return;
   const ctx = cContext();
   for (const i of rows) {
     const ct = document.getElementById(`c-L${i + 1}`)?.querySelector('.ct');
-    if (ct) ct.innerHTML = lineHtml(cur.segs[i], ctx, lineBreaks(cur, i));
+    if (ct) ct.innerHTML = lineHtml(cur.segs[i], ctx, linePlan(cur, i));
   }
   if (state.cursor && !state.cursor.isConnected) setCursor(null);
   sync.refresh('c');
