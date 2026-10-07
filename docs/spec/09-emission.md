@@ -252,8 +252,8 @@ literal formatter reads back at §9.2's constant push.
 per-opcode `getInputCast` surface (`coreaction_casts.rs (get_input_cast)`)
 what type the operator requires at that slot: LOAD/STORE coerce the pointer to
 match the moved value, EQUAL-class compares coerce both sides to the more
-ordered of the two operand types, LESS-class compares and div/rem/shift gate
-on promotion, PIECE/SUBPIECE/INSERT never cast, and everything else falls to
+ordered of the two operand types (an integer `==`/`!=` with a float operand
+excepted, below), LESS-class compares and div/rem/shift gate on promotion, PIECE/SUBPIECE/INSERT never cast, and everything else falls to
 the default `cast_standard(input-type-local, read-facing-high-type)`. A `None`
 answer means no cast — only the constant-suffix marking runs; the STORE's value
 slot returns `None` for a `code` pointee under `codescalar` (chapter 05), which
@@ -265,6 +265,29 @@ and a pointer-to-struct being read as pointer-to-its-first-field inserts a
 cast (`coreaction_casts.rs (test_struct_offset0)`). Only when all of that
 fails is a real `CPUI_CAST` op inserted before the reader, with an implied
 unique output carrying the required type.
+
+**Integer equality on float bits (kuna).** An `INT_EQUAL` or `INT_NOTEQUAL`
+compares bits, but when the more ordered operand type is a 4- or 8-byte float
+the upstream rule coerces both sides to the float, and the comparison printed
+as a C float `==`: `(v.u == 0x80000000u)` printed `a0 == -0.0`, true for
+`+0.0` too; `(v.u & 0x7fffffff) == 0x7fc00000` printed `ABS(a0) == NAN`, never
+true; and an `==` of two floats' bits printed `a0 == a1`, false for equal NaNs.
+The ordered integer compares already require an integer type and reinterpret
+the float. `coreaction_casts.rs (get_input_cast_equal)` now requires the
+integer operand's type, or `unsigned int` / `unsigned long long` of the width
+(`float_bits_type`), so each float side takes a `CAST` that prints as the union
+reinterpretation above and a constant is retyped to the integer and prints in
+hex (`((union { float from; unsigned int to; }){ .from = a0 }).to !=
+0x80000000`; Rust `(a0).to_bits() != 0x80000000`). The float comparison is kept
+where it decides exactly what the bit test does
+(`float_compare_is_exact`): against a constant that is a normal number or an
+infinity whose printed literal, read by C as a `double`, is its value
+(`kuna_floatbits.rs (compares_as_a_float)`, chapter 05), so the bits of `1.0f`
+still print `a0 == 1.0`; and against `+0.0` when the other side is a
+`FLOAT_ABS`, which is never `-0.0` and as a NaN equals neither, so
+`ABS(a0) == 0.0` stays. A literal whose shortest spelling is another double
+(`a0 == -7.4544637e-06`, `!= 1.4013e-45`) prints its bits instead.
+`FLOAT_EQUAL`/`FLOAT_NOTEQUAL` are other opcodes and still print `a == b`.
 
 **Narrowed call arguments (kuna).** Dead-code analysis counts only the
 possibly-nonzero bits of a call input as consumed, so when a caller
