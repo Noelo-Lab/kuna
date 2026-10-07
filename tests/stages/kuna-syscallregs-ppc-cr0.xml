@@ -30,12 +30,29 @@
           return r3 == 0 ? 5 : r3;
         }
 
+    Source at 0x100100 (the same compiler and flags):
+
+        static __attribute__((noinline)) long ext(long x) { return x * 3 + 1; }
+        #define SC(n,x,r,cr) do { register long r0 asm("r0") = (n); \
+          register long r3 asm("r3") = (x); \
+          asm volatile("sc; mfcr %1" : "+r"(r3), "=r"(cr) : "r"(r0) : "memory","cr0"); \
+          r = r3; } while (0)
+        long join(long c, long fd) {
+          long r, cr;
+          if (c > 3) SC(6, fd + 1, r, cr); else SC(41, fd + 9, r, cr);
+          r = ext(r);
+          return (cr & 0x10000000) ? -1 : r;
+        }
+
     Pass 1 (option syscallregs on) defines cr0 after each sc with
     syscall_error(): rdp (the mfcr form) and rdp2 (the bns form) test its
     summary-overflow bit.  cmp is the control: its cr0 is a compare the
     function makes after the sc, so it does not read the flag.  Pass 2
     (option syscallregs off) is the vendored model: rdp and rdp2 test an
     uninitialized cr0.
+
+    join saves one of two flags across a call: each branch keeps its own
+    system call's flag, and the two are not merged into one after the join.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 386300013800000338a00010440000027c800026748410007c8300d04d820020
@@ -46,6 +63,14 @@
 <symbol space="ram" offset="0x100000" name="rdp"/>
 <symbol space="ram" offset="0x100028" name="rdp2"/>
 <symbol space="ram" offset="0x100040" name="cmp"/>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+7c0802a6900100049421ffe02c03000493a10014418000183864000138000006
+440000027fa00026480000143864000938000029440000027fa000264800002d
+77a410003880ffff4182000c608300004800000483a100148001002438210020
+7c0803a64e8000201c630003386300014e800020
+</bytechunk>
+<symbol space="ram" offset="0x100100" name="join"/>
+<symbol space="ram" offset="0x100168" name="ext"/>
 </binaryimage>
 <script>
   <com>option syscallregs on</com>
@@ -56,6 +81,9 @@
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu cmp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu join</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option syscallregs off</com>
@@ -74,6 +102,8 @@
 <stringmatch name="SYSCALLREGS-PPC-CR0 #2: rdp tests the summary-overflow bit it copied out with mfcr" min="1" max="1">if \(!\(syscall_error\(\) &amp; 1\)\)</stringmatch>
 <stringmatch name="SYSCALLREGS-PPC-CR0 #3: rdp2 tests the summary-overflow bit with bns" min="1" max="1">if \(\(bool\)\(syscall_error\(\) &amp; 1\)\)</stringmatch>
 <stringmatch name="SYSCALLREGS-PPC-CR0 #4: cmp compares the sc result" min="1" max="1">v1 = syscall\(6,a0 \+ 1\);</stringmatch>
-<stringmatch name="SYSCALLREGS-PPC-CR0 #5: only rdp and rdp2 read the flag" min="2" max="2">syscall_error</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC-CR0 #5: only rdp, rdp2 and join's two system calls read the flag" min="4" max="4">syscall_error</stringmatch>
 <stringmatch name="SYSCALLREGS-PPC-CR0 #6: with option syscallregs off rdp and rdp2 test an uninitialized cr0" min="2" max="2">uint1 v1; // cr0</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC-CR0 #7: join keeps each branch's flag" min="2" max="2">v\d+ = syscall_error\(\);</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC-CR0 #8: no flag is left as a bare statement" min="0" max="0">^\s*syscall_error\(\);</stringmatch>
 </decompilertest>

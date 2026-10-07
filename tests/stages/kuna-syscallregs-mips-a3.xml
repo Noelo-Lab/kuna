@@ -31,12 +31,40 @@
           return v0;
         }
 
+    Source at 0x100100 (clang -O2 -target mipsel-linux-gnu -fno-pic
+    -mno-abicalls -c, the .text bytes verbatim):
+
+        #define SC(n,x,r,e) do { register long a0 asm("$4") = (x); \
+          register long v0 asm("$2") = (n); register long a3 asm("$7"); \
+          asm volatile("syscall" : "+r"(v0), "=r"(a3) : "r"(a0) : "memory"); \
+          r = v0; e = a3; } while (0)
+        long both(long fd) {
+          long r1, e1, r2, e2;
+          SC(4041, fd, r1, e1); SC(4041, fd + 1, r2, e2);
+          if (e1 | e2) return -1;
+          return r1 + r2;
+        }
+        long rd_nocancel(long fd, long buf, long n) {
+          register long a0 asm("$4") = fd; register long a1 asm("$5") = buf;
+          register long a2 asm("$6") = n;  register long v0 asm("$2") = 4003;
+          register long a3 asm("$7");
+          asm volatile("syscall" : "+r"(v0), "=r"(a3) : "r"(a0), "r"(a1), "r"(a2) : "memory");
+          return a3 ? -v0 : v0;
+        }
+
     rd is the clang form (movz on a3), wr the gcc form (a branch on a3) with a
     call after the syscall while a3 still holds the flag.  Pass 1 (option
     syscallregs on) defines a3 after each syscall with syscall_error(): rd
-    takes one parameter and wr two, both test the flag, and the flag is not
-    handed to fail as an argument.  Pass 2 (option syscallregs off) is the
-    vendored model: both read the entry a3 and grow a fourth parameter.
+    and wr take two parameters (rd's n reaches read in place), both test the
+    flag, and the flag is not handed to fail as an argument.  Pass 2
+    (option syscallregs off) is the vendored model: each function reads the
+    entry a3 and grows a fourth parameter.
+
+    both tests two flags, which stay two values: the test is not folded into
+    one of them.  rd_nocancel hands its three parameters to read in place;
+    the kernel's read takes three registers, so under on the call reads them
+    and the function keeps them, without the phantom a3 the vendored model
+    adds after them.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 0100842410000624a30f02240c000000230802000a0847000800e00325102000
@@ -47,6 +75,13 @@
 <symbol space="ram" offset="0x100000" name="rd"/>
 <symbol space="ram" offset="0x100020" name="fail"/>
 <symbol space="ram" offset="0x10002c" name="wr"/>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+c90f02240c000000251840002528e00001008424c90f02240c0000002508e500
+21184300ffff02240800e0030a106100a30f02240c000000230802000a084700
+0800e00325102000
+</bytechunk>
+<symbol space="ram" offset="0x100100" name="both"/>
+<symbol space="ram" offset="0x100130" name="rd_nocancel"/>
 </binaryimage>
 <script>
   <com>option syscallregs on</com>
@@ -56,6 +91,12 @@
   <com>lo fu wr</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu both</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rd_nocancel</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option syscallregs off</com>
   <com>lo fu rd</com>
   <com>decompile</com>
@@ -63,13 +104,22 @@
   <com>lo fu wr</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu both</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rd_nocancel</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="SYSCALLREGS-MIPS-A3 #1: with option syscallregs on rd takes one parameter" min="1" max="1">int4 rd\(int4 a0\)</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #1: with option syscallregs on rd takes its two parameters" min="1" max="1">int4 rd\(int4 a0,unsigned int a1\)</stringmatch>
 <stringmatch name="SYSCALLREGS-MIPS-A3 #2: with option syscallregs on wr takes two parameters" min="1" max="1">int4 wr\(int4 a0,int4 a1\)</stringmatch>
-<stringmatch name="SYSCALLREGS-MIPS-A3 #3: rd and wr test the kernel's error flag" min="2" max="2">if \(!syscall_error\(\)\)</stringmatch>
-<stringmatch name="SYSCALLREGS-MIPS-A3 #4: rd negates the syscall result" min="1" max="1">v2 = syscall\(0,0xfa3,a0 \+ 1\);</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #3: rd, wr and rd_nocancel test the kernel's error flag" min="3" max="3">if \(!syscall_error\(\)\)</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #4: rd hands read fd + 1, its own n and 16" min="1" max="1">v2 = syscall\(0,0xfa3,a0 \+ 1,a1,0x10\);</stringmatch>
 <stringmatch name="SYSCALLREGS-MIPS-A3 #5: wr hands fail the syscall result" min="1" max="1">return fail\(v1,</stringmatch>
 <stringmatch name="SYSCALLREGS-MIPS-A3 #6: the error flag is not an argument of fail" min="0" max="0">fail\([^)]*syscall_error</stringmatch>
-<stringmatch name="SYSCALLREGS-MIPS-A3 #7: with option syscallregs off both read the entry a3 as a fourth parameter" min="2" max="2">,int4 a3\)</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #7: with option syscallregs off all four read the entry a3 as a fourth parameter" min="4" max="4">,int4 a3\)</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #8: both tests each system call's own flag" min="1" max="1">if \(syscall_error\(\) \|\| v\d+\)</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #9: rd_nocancel keeps the three parameters it hands to read" min="1" max="1">rd_nocancel\([\w ]+ a0,[\w ]+ a1,[\w ]+ a2\)</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS-A3 #10: read takes them in place" min="1" max="1">syscall\(0,0xfa3,a0,a1,a2\);</stringmatch>
 </decompilertest>
