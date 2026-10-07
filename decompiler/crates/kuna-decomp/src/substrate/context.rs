@@ -2165,6 +2165,13 @@ impl ArchContext {
             .and_then(|gq| gq.name_for_varnode(addr, size, usepoint))
     }
 
+    /// The first offset and size of the smallest global Symbol whose storage
+    /// holds `addr`, if any.
+    pub(crate) fn global_symbol_extent(&self, addr: &Address) -> Option<(u64, int4)> {
+        self.effective_global_query(addr)
+            .and_then(|gq| gq.find_container_entry(addr, 1, &Address::default()).map(|e| (e.first, e.size)))
+    }
+
     /// Like [`name_for_global_varnode`](Self::name_for_global_varnode) but also
     /// returns the owning Symbol's scope-name chain (innermost first, global
     /// excluded) for namespace-qualified rendering (`PrintC::pushSymbolScope`).

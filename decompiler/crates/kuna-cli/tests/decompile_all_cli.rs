@@ -2996,6 +2996,31 @@ fn a_global_only_moved_through_float_registers_round_trips() {
     }
 }
 
+/// `floatglobal_index_x86_64_gcc_O2` (`floatglobal_index.c`): `ixa`, `lv0`,
+/// `fld`, `neg` and `pas` read a double global's bits as an integer through an
+/// index from its address, which the whole-program scan cannot see. A float
+/// taken there prints `(&gda)[a1]` as a double element, a value conversion
+/// where the machine adds to the bits, so the parameter and argument votes
+/// refuse. `put` indexes a double array only as doubles and keeps its double.
+#[test]
+fn an_integer_access_through_an_index_from_a_float_global_refuses_the_float() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatglobal_index_x86_64_gcc_O2").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for w in [
+        "void ixa(unsigned long a0,int a1)",
+        "void lv0(unsigned long a0,int a1)",
+        "void fld(unsigned long a0,int a1)",
+        "void neg(unsigned long a0,int a1)",
+        "void put(double a0,int a1)",
+        ".from = gdp }",
+    ] {
+        assert!(stdout.contains(w), "missing `{w}`:\n{stdout}");
+    }
+    assert!(!stdout.contains("sink(gdp)"), "gdp handed on as a float its own index reads as an integer:\n{stdout}");
+}
+
 /// `floatparam_retreg_clang_O2` (clang -O2, stripped): `v1` (`sub_11c0`) returns
 /// `(float)geti()` in `xmm0`, but its recovery returns `rax`, and `main` reads
 /// the call's `xmm0`. The return a callee states in another register says

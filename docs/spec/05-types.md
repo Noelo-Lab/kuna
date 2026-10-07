@@ -2772,13 +2772,34 @@ Varnode of the global's storage must be the whole global, every value written
 there must come from a float operation, a float-class register (an input, or a
 call's result), memory or a constant that spells, every value read there must
 reach, through copies and joins, only float operations, stores of its bits and
-float-class registers of calls and returns, and every constant of the
-global's address must only be loaded and stored through at the global's width
-or indexed from (`used_as_an_address`): handed to a call or stored, it can read
-the global as anything. The constants are found through the function's own
-index of them, so the check costs nothing where nothing names the global. A function that adds to the bits in one case of a switch
-(`g7 = *(long *)&gd + 1` beside `gd = b`) refuses: a float there would print
-`(long)gd`, a conversion where the machine moves the bits. Only then is the scan
+float-class registers of calls and returns, and every load and store through
+a constant of the global's address, or through a pointer formed from one, must
+leave the global alone or move it whole as a float (`used_as_an_address`).
+The walk follows each pointer through copies, casts, joins and additions,
+keeping the address it holds while only constants move it: an access at a
+known address that overlaps the global must be the global's own, at its width,
+of a value moved as a float, and one beside it is no access of it. An index, or
+a join of two addresses, leaves the pointer able to reach any element, so every
+load and store through it must move a float of the global's width: `g7 =
+((long *)&gd)[i] + 1` beside `gd = b` reads `gd`'s bits as an integer when `i`
+is 0, and a float there printed `(&gd)[a1]` as a double element converted to
+`long`. A global its Symbol declares a scalar (the Symbol is no larger than the
+global) refuses any index, since one reads past it; a global inside a larger
+Symbol (an array element, a structure field) has every constant of that
+Symbol's extent walked the same way, so `((long *)hist)[i]` refuses a float
+for `hist[2]`; a global no Symbol sizes (a stripped image) is indexed from like
+an array element. The global's own address, or one a constant moves it by,
+handed to a call or stored can read it as anything and refuses; a pointer only
+an index reaches, handed on, is no read or write of the global by the function
+itself (Cortex-M firmware passes `&s.arr[i]` formed from the address of `s`'s
+first field). A constant below the global that no Symbol joins to it is
+another global's address, and an index from it is not followed: on a stripped
+image `((long *)&gs)[i]` beside `gs.d = b` takes the float for `gs.d`, and
+prints the index as raw address arithmetic, with no conversion. The constants
+are found through the function's own index of them, so the check costs nothing
+where nothing names the global. A function that adds to the bits in one case of
+a switch (`g7 = *(long *)&gd + 1` beside `gd = b`) refuses: a float there would
+print `(long)gd`, a conversion where the machine moves the bits. Only then is the scan
 asked, which answers no while the program has not been scanned and marks the
 function. The console's decompile step (`kuna-console/src/decompile_step.rs`)
 then scans the program once and decompiles that function again; every later
@@ -2867,7 +2888,8 @@ function that asks is refused by its own code first. A type-locked float global
 that some function reads as an integer prints a conversion (`return gf + 1;`
 for an `add` of its bits). A misread of the program by the scan can make two
 functions disagree about what a global holds, but a function takes the float
-only after its own reads and writes of the global have passed. With `floatglobals off` every global refuses a float vote, as
+only after its own reads and writes of the global -- through its storage, its
+address, and every pointer formed from either -- have passed. With `floatglobals off` every global refuses a float vote, as
 before the option existed.
 
 ### A narrow value returned zero-extended is unsigned (`kuna_zextreturn.rs`)

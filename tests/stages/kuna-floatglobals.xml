@@ -22,6 +22,15 @@
     stack slots than the scan follows. The function's own code refuses the
     global, so the parameter keeps its integer type and the read prints no
     conversion of gd.
+
+    floatglobal_index.c's functions store a double into a global and read or
+    write its bits as an integer through an index from its address, which
+    the scan cannot see either: a float there printed `(&gda)[a1]` as a
+    double element converted to the integer. From a declared scalar (ixa,
+    lv0, ixs) any index refuses; from a struct or an array (fld, neg) the
+    integer load through the index refuses. put indexes a double array only
+    as doubles and keeps its double. gcc -O2 and -O0 for x86-64, gcc -O2 for
+    AArch64 (an object, whose data no Symbol sizes).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -113,6 +122,57 @@ c3
   <com>load function fy</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatglobal_index_x86_64_gcc_O2</com>
+  <com>read symbols</com>
+  <com>load function ixa</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function lv0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fld</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function neg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function put</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatglobal_index_x86_64_gcc_O0</com>
+  <com>read symbols</com>
+  <com>load function ixa</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function lv0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ixs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fld</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function neg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function put</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatglobal_index_a64_O2.o</com>
+  <com>read symbols</com>
+  <com>load function ixa</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function lv0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function put</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="FLOATGLOBALS #1: with the option off a double copied into a global prints as an integer" min="2" max="2">void fy\(unsigned long a0,unsigned int \*a1\)</stringmatch>
@@ -123,4 +183,8 @@ c3
 <stringmatch name="FLOATGLOBALS #6: a double stored into a global an integer store zeroes keeps its integer type" min="2" max="2">void setz\(unsigned long a0\)</stringmatch>
 <stringmatch name="FLOATGLOBALS #7: a double stored into a global the same function reads as an integer keeps its integer type" min="4" max="4">void fy\(unsigned long a0(,uint4 a1)?\)</stringmatch>
 <stringmatch name="FLOATGLOBALS #8: no integer read of such a global prints as a value conversion or a reinterpretation" min="0" max="0">\(long\)gd|\(long long\)|union \{ double from</stringmatch>
+<stringmatch name="FLOATGLOBALS #9: a double stored into a scalar global the same function reads through an index from its address keeps its integer type" min="6" max="6">void (ixa|lv0)\(unsigned long a0,</stringmatch>
+<stringmatch name="FLOATGLOBALS #10: a double stored into a scalar global the same function writes through an index from its address keeps its integer type" min="1" max="1">void ixs\(unsigned long a0,int4 a1,int8 a2\)</stringmatch>
+<stringmatch name="FLOATGLOBALS #11: a double stored into a struct or array the same function reads through an index as an integer keeps its integer type" min="4" max="4">void (fld|neg)\(unsigned long a0,int4 a1\)</stringmatch>
+<stringmatch name="FLOATGLOBALS #12: a double stored into an array the function indexes only as doubles is a double" min="3" max="3">void put\(float8 a0,int4 a1\)</stringmatch>
 </decompilertest>

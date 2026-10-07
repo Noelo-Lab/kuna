@@ -276,42 +276,113 @@ pub(crate) fn moved_as_a_float_here(data: &Funcdata, addr: &Address, size: int4)
     }
     let Some(cspace) = data.get_arch().manage().get_constant_space().map(Rc::clone) else { return false };
     let Some(ptr) = data.get_arch().types().map(|t| t.get_size_of_pointer()) else { return false };
-    let first = Address::new(Rc::clone(&cspace), lo);
-    let last = Address::new(cspace, hi);
+    let symbol = data.get_arch().global_symbol_extent(addr).map(|(first, whole)| (first, first.saturating_add(whole as u64)));
+    let aggregate = symbol.filter(|&(first, last)| first <= lo && hi <= last && last - first > size as u64);
+    let indexable = symbol.is_none() || aggregate.is_some();
+    let (from, to) = aggregate.unwrap_or((lo, hi));
+    let first = Address::new(Rc::clone(&cspace), from);
+    let last = Address::new(cspace, to);
     for c in data.vbank().iter_loc_addr_range(&first, &last) {
         let Some(node) = data.vbank().get(c).filter(|n| n.is_constant() && n.get_size() == ptr) else { continue };
-        if !used_as_an_address(data, c, node.get_offset() == lo, size, 0) {
+        let own = (lo..hi).contains(&node.get_offset());
+        if !used_as_an_address(data, c, (lo, hi), indexable, own) {
             return false;
         }
     }
     true
 }
 
-/// Is the address `vn` (the global's own when `exact`, else one inside it)
-/// only loaded and stored through, or indexed from: every load or store
-/// through it the global's whole width, of a value moved as a float?  Handed
-/// to a call or stored, it can read the global as anything, and a float there
-/// would print the address as a bare number of another pointer type.
-fn used_as_an_address(data: &Funcdata, vn: VarnodeId, exact: bool, size: int4, depth: u32) -> bool {
-    let Some(node) = data.vbank().get(vn) else { return false };
-    node.descend_iter().all(|r| {
-        let Some(o) = data.obank().get(r).filter(|o| !o.is_dead()) else { return true };
-        let indexed = (0..o.num_input()).any(|j| o.get_in(j).and_then(|i| data.vbank().get(i)).is_some_and(|i| !i.is_constant()));
-        match o.code() {
-            OpCode::CPUI_LOAD | OpCode::CPUI_STORE if o.get_in(1) == Some(vn) => {
-                let value = if o.code() == OpCode::CPUI_LOAD { o.get_out() } else { o.get_in(2) };
-                let Some(value) = value else { return false };
-                let width = data.vbank().get(value).map_or(0, |v| v.get_size());
-                let moved = if o.code() == OpCode::CPUI_LOAD { read_as_a_float(data, value) } else { written_as_a_float(data, value) };
-                exact && width == size && moved
+/// How the address `v` reaches the output of `o`: `Some(Some(k))` moved by the
+/// constant `k`, `Some(None)` by an index, `None` when `o` does not form an
+/// address from it.
+fn moved_by(data: &Funcdata, o: &crate::op::PcodeOp, v: VarnodeId) -> Option<Option<u64>> {
+    let constant = |k: int4| o.get_in(k).and_then(|i| data.vbank().get(i)).filter(|n| n.is_constant()).map(|n| n.get_offset());
+    match o.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => Some(Some(0)),
+        OpCode::CPUI_INT_ADD => Some(constant(if o.get_in(0) == Some(v) { 1 } else { 0 })),
+        OpCode::CPUI_INT_SUB if o.get_in(0) == Some(v) => Some(constant(1).map(u64::wrapping_neg)),
+        OpCode::CPUI_PTRADD if o.get_in(0) == Some(v) => Some(constant(1).zip(constant(2)).map(|(i, e)| i.wrapping_mul(e))),
+        OpCode::CPUI_PTRSUB if o.get_in(0) == Some(v) => Some(constant(1)),
+        OpCode::CPUI_PTRSUB if constant(0) == Some(0) => Some(Some(0)),
+        _ => None,
+    }
+}
+
+/// Does every load and store through the constant address `vn`, and through
+/// every pointer formed from it, leave the global `[lo, hi)` alone or move it
+/// whole as a float?  A pointer at a known address must be the global's own
+/// where it overlaps it; one indexed from, or joined from two addresses, may
+/// reach any element, so each load and store through it must move a float of
+/// the global's width.  Only an `indexable` global -- an element of a larger
+/// Symbol, or one no Symbol sizes -- may be indexed from at all: from a
+/// declared scalar the index reads past it.  The global's `own` address, or
+/// one a constant moves it by, handed to a call, stored or returned can read
+/// it as anything; a pointer only an index reaches, or anything formed from a
+/// constant elsewhere in the aggregate, handed on is not the function's own
+/// read or write of the global.  Any other use of a pointer the walk cannot
+/// follow refuses.
+fn used_as_an_address(data: &Funcdata, vn: VarnodeId, (lo, hi): (u64, u64), indexable: bool, own: bool) -> bool {
+    let start = data.vbank().get(vn).map(|n| n.get_offset());
+    let mut work = vec![(vn, start, own)];
+    let mut seen: std::collections::HashMap<VarnodeId, (Option<u64>, bool)> = std::collections::HashMap::new();
+    while let Some((v, at, kept)) = work.pop() {
+        let (at, kept) = match seen.get(&v) {
+            None => (at, kept),
+            Some(&(prev, was)) => {
+                let joined = (if prev == at { prev } else { None }, was || kept);
+                if joined == (prev, was) {
+                    continue;
+                }
+                if joined.0.is_none() && !indexable {
+                    return false;
+                }
+                joined
             }
-            OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB if indexed => true,
-            OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_PTRSUB if depth < 4 => {
-                o.get_out().is_some_and(|out| used_as_an_address(data, out, exact, size, depth + 1))
-            }
-            _ => false,
+        };
+        seen.insert(v, (at, kept));
+        if seen.len() > MAX_GLOBAL_FAMILY {
+            return false;
         }
-    })
+        let Some(node) = data.vbank().get(v) else { return false };
+        for r in node.descend_iter() {
+            let Some(o) = data.obank().get(r).filter(|o| !o.is_dead()) else { continue };
+            let access = match o.code() {
+                OpCode::CPUI_LOAD if o.get_in(1) == Some(v) => o.get_out().map(|x| (x, true)),
+                OpCode::CPUI_STORE if o.get_in(1) == Some(v) && o.get_in(2) != Some(v) => o.get_in(2).map(|x| (x, false)),
+                _ => None,
+            };
+            if let Some((value, load)) = access {
+                let width = data.vbank().get(value).map_or(0, |n| n.get_size() as u64);
+                let touches = at.is_none_or(|a| a < hi && a.saturating_add(width) > lo);
+                let whole = at.is_none_or(|a| a == lo) && width == hi - lo;
+                let moved = if load { read_as_a_float(data, value) } else { written_as_a_float(data, value) };
+                if touches && !(whole && moved) {
+                    return false;
+                }
+                continue;
+            }
+            let handed_on = match o.code() {
+                OpCode::CPUI_INT_EQUAL
+                | OpCode::CPUI_INT_NOTEQUAL
+                | OpCode::CPUI_INT_LESS
+                | OpCode::CPUI_INT_LESSEQUAL
+                | OpCode::CPUI_INT_SLESS
+                | OpCode::CPUI_INT_SLESSEQUAL => continue,
+                OpCode::CPUI_INT_SUB if o.get_in(1) == Some(v) && o.get_in(0) != Some(v) => continue,
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => o.get_in(0) != Some(v),
+                OpCode::CPUI_STORE => o.get_in(2) == Some(v) && o.get_in(1) != Some(v),
+                OpCode::CPUI_RETURN => true,
+                _ => false,
+            };
+            match (moved_by(data, o, v), o.get_out()) {
+                (Some(Some(k)), Some(out)) => work.push((out, at.map(|a| a.wrapping_add(k)), kept)),
+                (Some(None), Some(out)) if indexable => work.push((out, None, false)),
+                _ if handed_on && !kept => {}
+                _ => return false,
+            }
+        }
+    }
+    true
 }
 
 /// Is every value `vn` takes, through copies and joins, made the way a float
