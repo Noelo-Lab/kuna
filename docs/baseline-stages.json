@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2235,
-    2235
+    2250,
+    2250
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -40,6 +40,21 @@
     "data:ARRAYCOVERWIDTH #3: the swap's first leg carries the transfer width on both sides",
     "data:ARRAYCOVERWIDTH #4: a genuine one-byte in-element read KEEPS its subscript, in both passes",
     "data:ARRAYCOVERWIDTH #5: arraycoverwidth off restores the size-blind element-zero form (the filed bug), exactly once",
+    "data:ARRAYEXTENT #10: the clang -O1 loop reads through the array in every pass",
+    "data:ARRAYEXTENT #11: by default the -O0 arrays take the write-only flag and nothing after it, both compilers",
+    "data:ARRAYEXTENT #12: the -O0 loop counters stay scalars in every pass, both compilers",
+    "data:ARRAYEXTENT #13: the clang -O0 unsigned read on its own stays a scalar in every pass",
+    "data:ARRAYEXTENT #14: the gcc -O0 constant-initialised array keeps its sixth element in every pass",
+    "data:ARRAYEXTENT #15: the clang -O1 arrays whose first constants are one wide store keep their sixth element in every pass",
+    "data:ARRAYEXTENT #1: by default the clang -O1 loop array is one int4 [6]",
+    "data:ARRAYEXTENT #2: by default its last element is written through the array",
+    "data:ARRAYEXTENT #3: bound and off keep the four-element array and the split scalar v[5]",
+    "data:ARRAYEXTENT #4: by default the gcc -O2 loop (guard hint) writes v[5] through the array",
+    "data:ARRAYEXTENT #5: bound and off split the gcc -O2 v[5] into a scalar",
+    "data:ARRAYEXTENT #6: on and bound size the masked index's array to eight elements, both compilers",
+    "data:ARRAYEXTENT #7: off splits the masked array's last four elements, both compilers",
+    "data:ARRAYEXTENT #8: struct fields read after the array escapes stay scalars, both compilers, every pass",
+    "data:ARRAYEXTENT #9: two adjacent indexed arrays stay two arrays in every pass",
     "data:ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0",
     "data:ARRAYSUBFIELD #2: an 8-byte read at offset 8 is a sized sub-field, not the ninth byte",
     "data:ARRAYSUBFIELD #3: the bug: no size-blind element subscript survives on either wide read",

@@ -752,6 +752,10 @@ Three tiers:
 | a variadic call renders with only its register arguments after the format string | [`cookiescramble`](#cookiescramble) |
 | a value stored to [rsp+0x20] right before a call never reaches the call | [`cookiescramble`](#cookiescramble) |
 | an argument-producing store survives as a dead assignment to a stack local | [`cookiescramble`](#cookiescramble) |
+| a stack array is declared with 4 elements while a loop subscripts it further | [`arrayextent`](#arrayextent) |
+| the elements after the fourth of a local array are separate scalars that are assigned and never read | [`arrayextent`](#arrayextent) |
+| a recompiled function reads past a local array under AddressSanitizer | [`arrayextent`](#arrayextent) |
+| a masked or clamped index (`v[n & 7]`, `min(n, 5)`) subscripts a smaller declared array | [`arrayextent`](#arrayextent) |
 | decompilation aborts with 'Unable to find unique hash for varnode' | [`dynamichashmax`](#dynamichashmax) |
 | dense unrolled simd/neon loop (aarch64, go) fails to decompile at symbol mapping | [`dynamichashmax`](#dynamichashmax) |
 | loop walks an array with a raw offset accumulator (iVar += 0x414) instead of an index | [`arraystride`](#arraystride) |
@@ -2660,6 +2664,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-126). With it OFF, `xor rax,rsp` in an MSVC /GS prologue makes the raw stack pointer an escape site at frame offset 0, so `hasLocalAlias` answers yes for every stack location in the function and `checkInputTrialUse` scores every stack-passed call argument no-use: calls in /GS-protected functions truncate at the register budget (x86-64 Windows: four arguments), the variable tail of a `...` prototype never appears, and the dropped argument's computation is dead-code eliminated. GCC/Clang read the cookie from %fs:0x28 and never touch the stack pointer, so the flip is inert on ELF corpora. Flip OFF to restore upstream `gatherAdditiveBase` for a bisect or an ablation.
 - **Where / provenance:** P6/alias-facets · ghidra-upstream · correctness-fix · re-needs-variadic-prototype-still-drops
 - **Example:** `option cookiescramble off`
+
+### `arrayextent` -- off | bound | on, default `on`
+
+- **Symptoms:** a stack array is declared with 4 elements while a loop subscripts it further; the elements after the fourth of a local array are separate scalars that are assigned and never read; a recompiled function reads past a local array under AddressSanitizer; a masked or clamped index (`v[n & 7]`, `min(n, 5)`) subscripts a smaller declared array.
+- **What it does:** Size an indexed stack array past the four elements upstream assumes when its guard has no locked range. `bound`: an indexed base whose pointer is the stack base plus constants plus indices bounded by their known bits (`v[n & 7]`), and which is only dereferenced, gets room for every element those LOADs and STOREs may touch, up to the next pointer base above it; every slot of the element width inside that reach joins the array, whether the function reads it on its own or not. `on` adds: an indexed base with no such bound, or a guard with a step but no locked range, takes each following slot of its element size while the slot is contiguous with its elements, holds only unlocked fixed hints of that width whose type keeps the element type, starts no other open range, and is observed only through a pointer (no direct read of the slot, and no other use of a value copied into it except copies into stack slots outside the array); a constant stored into the last slot it takes no longer lets upstream's constant absorption grow the array past it, unless upstream's merge of the same hints, with the array at its old length, reaches past that slot anyway. `off` is upstream's [0,3] floor.
+- **When to flip:** On by default (0/675 datatest assertions move). With it OFF a local array that a loop indexes up to a clamped bound (`for (i = 0; i < n && i < 6; i++) t += v[i];`, `v[n & 7]`) is declared with four elements and the rest split into scalars that are assigned and never read, so the printed loop subscripts past the declared array and the C reads the wrong object (ASan reports a stack-buffer-overflow on the recompiled function). `bound` keeps only the sound known-bits sizing. Flip `bound` or `off` to see the upstream split for a bisect.
+- **Where / provenance:** P6/stack-frame-layout · kuna · correctness-fix · GH-867
+- **Example:** `option arrayextent off`
 
 ### `dynamichashmax` -- on | off, default `on`
 
