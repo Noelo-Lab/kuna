@@ -967,17 +967,24 @@ copied into the array still counts as an element, and its home slot, whose value
 is also in the array, does not. A slot the function writes and observes only
 through a pointer belongs to the array; a scalar it observes on its own stops
 the growth. The slots it takes then join the array through the ordinary
-`attempt_join`, since they now sit within `highind`, and each fixed hint in them
-loses its constant-copy mark (`COPY_CONSTANT`). Without that, a taken slot that
-holds a constant (`int flag = 0;` written and never read) would go on through
-upstream's constant absorption (`varmap.rs (RangeHint::is_const_absorbable)`),
-which takes a constant store at the array's last element and raises `highind`
-one past it (`varmap.rs (RangeHint::absorb)`): the next slot would join whatever
-reads it, and each constant-initialised slot joined that way would raise it
-again, so at `-O0` the loop counters and the sum after `int a[4]; int flag =
-0;` became elements. With the mark cleared the array ends at the last slot this
-rule took. Merging slots never changes what the C computes, only how many
-declarations it has. `off` is upstream.
+`attempt_join`, since they now sit within `highind`. Upstream's constant
+absorption (`varmap.rs (RangeHint::is_const_absorbable)`) takes a constant store
+at the array's last element and raises `highind` one past it
+(`varmap.rs (RangeHint::absorb)`), so the next slot joins whatever reads it, and
+each constant-initialised slot joined that way raises it again. Started from the
+last slot this rule took (`int flag = 0;` written and never read), that walk
+would carry the array over the loop counters and the sum that follow it at
+`-O0`. So the fixed hints in the last slot taken lose their constant-copy mark
+(`COPY_CONSTANT`) and the array ends there, unless upstream's absorption would
+have reached past that slot without this rule: every slot from the array's last
+upstream element through the last slot taken holds a constant store it accepts
+(`kuna_arrayextent.rs (absorbs_through)`). Then the marks stay and the array is
+the one upstream builds, which keeps an element read on its own that the
+constants before it reach (`long a[6]` with `a[0]` to `a[4]` constant and
+`a[5] = x` read stays `[6]`); clearing the mark there would end the array
+before that element and print the loop's index past it. Merging slots never
+changes what the C computes, only how many declarations it has. `off` is
+upstream.
 
 **Terminator absorption** (`option nulterminator`, **opt-in, default off**). An
 open hint that `attempt_join` cannot extend ends where the next hint starts, so

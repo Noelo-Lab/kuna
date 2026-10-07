@@ -17,10 +17,11 @@
 //! holds only unlocked hints of its element size and of a type `attempt_join`
 //! accepts, and is never read except through a pointer. A slot the function
 //! writes and never reads directly is only observable through the index, so it
-//! is an element of the array rather than a scalar of its own. A slot it takes
-//! loses its constant-copy mark, so upstream's constant absorption
-//! (`RangeHint::absorb`) cannot raise the array one element past the last slot
-//! taken and from there over each following constant-initialised local.
+//! is an element of the array rather than a scalar of its own. Unless
+//! upstream's constant absorption (`RangeHint::absorb`) would reach past the
+//! last slot taken on its own, that slot loses its constant-copy mark, so the
+//! absorption cannot raise the array one element past it and from there over
+//! each following constant-initialised local.
 
 use std::rc::Rc;
 
@@ -154,7 +155,7 @@ fn access_size(fd: &Funcdata, vn: VarnodeId) -> Option<int4> {
 
 /// Lengthen the open hint of each unbounded indexed base over the contiguous
 /// write-only slots that follow its elements, and clear `COPY_CONSTANT` on the
-/// fixed hints of the slots it takes.
+/// last slot taken unless upstream's absorption reaches past it anyway.
 pub(crate) fn extend_unbounded(
     fd: &Funcdata,
     state: &mut MapState,
@@ -202,17 +203,46 @@ pub(crate) fn extend_unbounded(
         if reach == highind {
             continue;
         }
+        let probe = open.clone();
         for h in hints.iter_mut().filter(|h| is_indexed_open(h, base)) {
             h.highind = h.highind.max(reach);
         }
-        let taken = sstart + (highind as intb + 1) * elem..sstart + (reach as intb + 1) * elem;
+        if absorbs_through(hints, &order, probe, reach, elem) {
+            continue;
+        }
+        let last = sstart + reach as intb * elem;
         for h in hints
             .iter_mut()
-            .filter(|h| h.range_type == RangeType::Fixed && taken.contains(&h.sstart))
+            .filter(|h| h.range_type == RangeType::Fixed && h.sstart == last)
         {
             h.flags &= !COPY_CONSTANT;
         }
     }
+}
+
+/// Would upstream's constant absorption carry the open hint `probe` past the
+/// element at index `last` without this module: does every slot from its last
+/// element through `last` hold a constant store `RangeHint::is_const_absorbable`
+/// takes?
+fn absorbs_through(
+    hints: &[RangeHint],
+    order: &[(intb, usize)],
+    mut probe: RangeHint,
+    last: int4,
+    elem: intb,
+) -> bool {
+    let start = probe.sstart;
+    (probe.highind..=last).all(|j| {
+        probe.highind = j;
+        let slot = start + j as intb * elem;
+        let first = order.partition_point(|&(s, _)| s < slot);
+        order[first..]
+            .iter()
+            .take_while(|&&(s, _)| s == slot)
+            .any(|&(_, i)| {
+                hints[i].range_type == RangeType::Fixed && probe.is_const_absorbable(&hints[i])
+            })
+    })
 }
 
 /// Is `h` an open hint with index evidence at `base`'s start and element size?

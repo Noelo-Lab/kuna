@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2235,
-    2235
+    2236,
+    2236
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -44,6 +44,7 @@
     "data:ARRAYEXTENT #11: by default the -O0 arrays take the write-only flag and nothing after it, both compilers",
     "data:ARRAYEXTENT #12: the -O0 loop counters stay scalars in every pass, both compilers",
     "data:ARRAYEXTENT #13: the clang -O0 unsigned read on its own stays a scalar in every pass",
+    "data:ARRAYEXTENT #14: the gcc -O0 constant-initialised array keeps its sixth element in every pass",
     "data:ARRAYEXTENT #1: by default the clang -O1 loop array is one int4 [6]",
     "data:ARRAYEXTENT #2: by default its last element is written through the array",
     "data:ARRAYEXTENT #3: bound and off keep the four-element array and the split scalar v[5]",
