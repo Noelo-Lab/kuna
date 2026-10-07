@@ -26,12 +26,12 @@
 //! upper doubleword of such an entry when its value at every RETURN is a
 //! marked COPY, directly or through MULTIEQUALs. The low lane is then the
 //! return value: `double scale(int)`, and a complex double or an AAPCS64
-//! aggregate of two doubles joins `d0` and `d1` instead of returning `q0` with
-//! a zero upper half. A `float` in `s0`, which the trim already narrows, is
-//! left alone. A
-//! `float64x2_t {x, 0}` that a compiler builds with a single `fmov d0,d0` has
-//! the same p-code as a returned `double` and returns as the `double`. A
-//! declared output is never touched.
+//! aggregate of two doubles whose `d1` the function computes joins `d0` and
+//! `d1` instead of returning `q0` with a zero upper half. A `float` in `s0`,
+//! which the trim already narrows, is left alone. A 128-bit vector whose upper
+//! half a 64-bit write zeroes (`fmov d0,d0`, `fmov d0,x0`, `ldr d0`) has the
+//! same p-code as a returned `double` and returns as one. A declared output is
+//! never touched.
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -194,8 +194,10 @@ fn lane_end(writes: &[(i32, i32, bool)]) -> Option<i32> {
 /// (`x0` and a leftover `x1` would join as a pair), or unless every register
 /// with an active low lane returns a whole doubleword there: `s0` and its
 /// fill are left to the trim, and the homogeneous-aggregate rule would join
-/// one member per register whatever its width (`s0` beside a 64-bit `d1`). A
-/// later entry keeps its fill unless its low lane is [`returned_alone`].
+/// one member per register whatever its width (`s0` beside a 64-bit `d1`).
+/// Nor is anything retired when a later register's low lane is not
+/// [`returned_alone`]: retiring only `q0`'s fill would return the first member
+/// of what may be a pair, so every fill stays and the return is `q0` as before.
 pub fn drop_zero_fill(data: &Funcdata, active: &mut ParamActive, returns: &[OpId]) {
     if !data.get_arch().zero_fill_return || data.get_func_proto().is_output_locked() {
         return;
@@ -253,37 +255,35 @@ pub fn drop_zero_fill(data: &Funcdata, active: &mut ParamActive, returns: &[OpId
     if !lanes.iter().any(Option::is_some) || lanes.iter().flatten().any(|l| l.0 != LOW_LANE) {
         return;
     }
-    let joins: Vec<bool> = wide
-        .iter()
-        .zip(&lanes)
-        .map(|(e, lane)| {
-            lane.is_none_or(|(_, slot)| {
-                e.is_first_in_class()
-                    || live.iter().all(|&id| {
-                        let mut steps = MAX_STEPS;
-                        data.obank()
-                            .get(id)
-                            .and_then(|o| o.get_in(slot))
-                            .is_some_and(|vn| returned_alone(data, vn, &mut steps))
-                    })
-            })
+    let pairs = wide.iter().zip(&lanes).all(|(e, lane)| {
+        lane.is_none_or(|(_, slot)| {
+            e.is_first_in_class()
+                || live.iter().all(|&id| {
+                    let mut steps = MAX_STEPS;
+                    data.obank()
+                        .get(id)
+                        .and_then(|o| o.get_in(slot))
+                        .is_some_and(|vn| returned_alone(data, vn, e, &mut steps))
+                })
         })
-        .collect();
+    });
+    if !pairs {
+        return;
+    }
     for i in fills {
-        let t = active.get_trial(i);
-        let e = wide.iter().position(|e| e.justified_contain(t.get_address(), t.get_size()) >= LOW_LANE);
-        if e.is_some_and(|e| joins[e]) {
-            active.get_trial_mut(i).mark_inactive();
-        }
+        active.get_trial_mut(i).mark_inactive();
     }
 }
 
 /// Is `vn` written on every path by an op whose result only goes on to the
-/// RETURN? A second member of a returned aggregate is; what a function only
-/// leaves in the next register is not: glibc's `math_force_eval` keeps a
-/// `fmul d1,d0,d0` no op reads, on one path, beside a `fabs d1,d0` the next
-/// compare reads.
-fn returned_alone(data: &Funcdata, vn: VarnodeId, steps: &mut usize) -> bool {
+/// RETURN, from a value the function produced? A second member of a returned
+/// aggregate is; what a function only leaves in the next register is not:
+/// glibc's `math_force_eval` keeps a `fmul d1,d0,d0` no op reads, on one path,
+/// beside a `fabs d1,d0` the next compare reads. Nor is what a call left there
+/// or the function's own incoming `d1` ([`produced_here`]): a forwarder of a
+/// complex result copies back the `d1` its callee returned, which kuna sees as
+/// the incoming one, and `CMPLX(a * 2, b)` cannot be told apart from it.
+fn returned_alone(data: &Funcdata, vn: VarnodeId, entry: &ParamEntry, steps: &mut usize) -> bool {
     if *steps == 0 {
         return false;
     }
@@ -293,11 +293,115 @@ fn returned_alone(data: &Funcdata, vn: VarnodeId, steps: &mut usize) -> bool {
     match op.code() {
         OpCode::CPUI_MULTIEQUAL => {
             op.num_input() > 0
-                && (0..op.num_input()).all(|k| op.get_in(k).is_some_and(|v| returned_alone(data, v, steps)))
+                && (0..op.num_input()).all(|k| op.get_in(k).is_some_and(|v| returned_alone(data, v, entry, steps)))
         }
         OpCode::CPUI_INDIRECT | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => false,
+        OpCode::CPUI_COPY => op.get_in(0).is_some_and(|v| produced_here(data, v, entry, steps)),
+        OpCode::CPUI_LOAD => reloads_produced(data, op, entry, steps),
         _ => true,
     }
+}
+
+/// Followed through copies, phis and frame reloads, is `vn` something the
+/// function computed, rather than the incoming value of the register `entry`
+/// names or what a call left there? An incoming value of another register is
+/// the function's own: `CMPLX(a * 2, a)` returns its `d0` argument in `d1`.
+fn produced_here(data: &Funcdata, vn: VarnodeId, entry: &ParamEntry, steps: &mut usize) -> bool {
+    if *steps == 0 {
+        return false;
+    }
+    *steps -= 1;
+    let Some(value) = data.vbank().get(vn) else { return false };
+    if value.is_constant() {
+        return true;
+    }
+    if value.is_input() {
+        return !entry.intersects(value.get_addr(), value.get_size());
+    }
+    let Some(op) = value.get_def().and_then(|d| data.obank().get(d)) else { return false };
+    match op.code() {
+        OpCode::CPUI_COPY => op.get_in(0).is_some_and(|v| produced_here(data, v, entry, steps)),
+        OpCode::CPUI_MULTIEQUAL => {
+            op.num_input() > 0
+                && (0..op.num_input()).all(|k| op.get_in(k).is_some_and(|v| produced_here(data, v, entry, steps)))
+        }
+        OpCode::CPUI_INDIRECT | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => false,
+        OpCode::CPUI_LOAD => reloads_produced(data, op, entry, steps),
+        _ => true,
+    }
+}
+
+/// Does the load `op` read back a frame slot every store to which writes
+/// something [`produced_here`]? Return recovery runs before the stack is
+/// renamed, so `-O0`'s spill and reload of a value (`str d0,[sp,#8]` ..
+/// `ldr d1,[sp,#8]`) is matched by hand: same incoming base register, same
+/// constant offset, same width. A store that overlaps the slot any other way,
+/// or none at all, refuses; a store through an address not computed from that
+/// register is taken not to reach the frame.
+fn reloads_produced(data: &Funcdata, op: &crate::op::PcodeOp, entry: &ParamEntry, steps: &mut usize) -> bool {
+    let Some(size) = op.get_out().and_then(|o| data.vbank().get(o)).map(|o| i64::from(o.get_size())) else {
+        return false;
+    };
+    let Some((base, off)) = op.get_in(1).and_then(|a| frame_slot(data, a)) else { return false };
+    let space_of = |o: &crate::op::PcodeOp| o.get_in(0).and_then(|c| data.vbank().get(c)).map(|c| c.get_offset());
+    let space = space_of(op);
+    let mut stored = false;
+    for id in data.obank().iter_code(OpCode::CPUI_STORE) {
+        let Some(store) = data.obank().get(id).filter(|s| !s.is_dead()) else { continue };
+        let Some((b, o)) = store.get_in(1).and_then(|a| frame_slot(data, a)) else { continue };
+        let Some(value) = store.get_in(2) else { return false };
+        let width = data.vbank().get(value).map_or(0, |v| i64::from(v.get_size()));
+        if b != base || o.wrapping_add(width) <= off || off.wrapping_add(size) <= o {
+            continue;
+        }
+        if o != off || width != size || space_of(store) != space || !produced_here(data, value, entry, steps) {
+            return false;
+        }
+        stored = true;
+    }
+    stored
+}
+
+/// The incoming register `vn` is computed from and the constant offset it
+/// adds, through copies and constant additions and subtractions.
+fn frame_slot(data: &Funcdata, mut vn: VarnodeId) -> Option<(Address, i64)> {
+    let mut off: i64 = 0;
+    for _ in 0..MAX_STEPS {
+        let v = data.vbank().get(vn)?;
+        if v.is_input() {
+            return Some((v.get_addr().clone(), off));
+        }
+        let op = data.obank().get(v.get_def()?)?;
+        match op.code() {
+            OpCode::CPUI_COPY => vn = op.get_in(0)?,
+            OpCode::CPUI_INT_ADD => {
+                off = off.wrapping_add(constant(data, op.get_in(1)?)?);
+                vn = op.get_in(0)?;
+            }
+            OpCode::CPUI_INT_SUB => {
+                off = off.wrapping_sub(constant(data, op.get_in(1)?)?);
+                vn = op.get_in(0)?;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// The signed value of `vn`, a constant or a copy of one.
+fn constant(data: &Funcdata, mut vn: VarnodeId) -> Option<i64> {
+    for _ in 0..4 {
+        let v = data.vbank().get(vn)?;
+        if v.is_constant() {
+            return Some(kuna_base::address::sign_extend(v.get_offset() as i64, v.get_size() * 8 - 1));
+        }
+        let op = data.obank().get(v.get_def()?)?;
+        if op.code() != OpCode::CPUI_COPY {
+            return None;
+        }
+        vn = op.get_in(0)?;
+    }
+    None
 }
 
 /// Is `vn` a marked zero fill on every path into it?

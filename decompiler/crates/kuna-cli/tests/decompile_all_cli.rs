@@ -9070,3 +9070,39 @@ fn a_tail_call_wrapper_keeps_the_float_its_readers_read() {
         }
     }
 }
+
+/// `floatbits_a64.o` (clang -O2, AArch64): `to_bits` and `exponent` move the
+/// bits of `getd`'s `double` to an integer register (`fmov x0,d0`), `to_fbits`
+/// those of `getf`'s `float` (`fmov w0,s0`). The listing declares `double
+/// getd(..)` and `float getf(..)`, and the readers printed `return getf(a0,a1);`
+/// from an `unsigned int` function and `(unsigned long)getd(a0,a1) >> 0x34`,
+/// which C converts by value. The printed functions, compiled on the host,
+/// hand back the bits.
+#[test]
+fn a_float_result_held_as_bits_round_trips() {
+    let sp = specs();
+    let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatbits_a64.o");
+    let fixture = fixture.to_str().unwrap();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", fixture, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in ["double getd(int a0,double *a1)", "float getf(int a0,float *a1)"] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    for bad in ["return getd(", "return getf(", ")getd(", ")getf("] {
+        assert!(!stdout.contains(bad), "a reader converts the float by value (`{bad}`):\n{stdout}");
+    }
+    let printed = printed_functions(&stdout, &["getd ", "getf ", "to_bits ", "to_fbits ", "exponent "]);
+    let src = format!(
+        "#include <stdio.h>\n{printed}\n\
+         int main(void) {{\n  double g = 1.25;\n  float f = 1.25f;\n  \
+         printf(\"%lx %lx %x %x %d %d\\n\", (unsigned long)to_bits(3, &g), (unsigned long)to_bits(-3, &g), \
+         (unsigned int)to_fbits(3, &f), (unsigned int)to_fbits(-3, &f), (int)exponent(3, &g), (int)exponent(-3, &g));\n  \
+         return 0;\n}}\n"
+    );
+    for (cc, got) in compile_and_run_each("floatbits-a64", &src) {
+        assert_eq!(
+            got, "4011000000000000 c00a000000000000 40880000 c0500000 1025 1024",
+            "{cc}: the printed C computes something else:\n{printed}"
+        );
+    }
+}

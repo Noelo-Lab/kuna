@@ -499,6 +499,53 @@ pub fn refused_token(data: &mut Funcdata, op: OpId) -> Option<Rc<Datatype>> {
     (other_class(&held, &ct) || float).then_some(ct)
 }
 
+/// The float the call `op` returns when the caller holds the result as raw
+/// bytes or an integer of its width: a float its callee stated it returns, or,
+/// with no statement, a float its last decompile returned, in exactly the
+/// storage and width the call's output sits in.  The listing declares the
+/// callee `double getd(int)`, so `unsigned long v2 = getd(a0)` would convert
+/// the value where the binary moves its bits (`fmov x0,d0`); the cast pass
+/// writes the call into a float and reinterprets it instead.
+pub fn float_held_as_bits(data: &mut Funcdata, op: OpId) -> Option<Rc<Datatype>> {
+    let (outvn, ct) = {
+        let o = data.obank().get(op)?;
+        if !matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            return None;
+        }
+        let fc = data.get_call_specs(data.get_call_specs_index(op)?);
+        if fc.proto().is_output_locked() {
+            return None;
+        }
+        let k = key(fc.get_entry_address())?;
+        let outvn = o.get_out()?;
+        let out = data.vbank().get(outvn)?;
+        let at = |addr: &Address, size: int4| out.get_addr() == addr && out.get_size() == size;
+        let ct = match data.kuna_callret_stated(k) {
+            Some(s) => (s.ct.get_metatype() == type_metatype::TYPE_FLOAT
+                && s.ct.get_size() == s.size
+                && at(&s.addr, s.size))
+            .then(|| Rc::clone(&s.ct))?,
+            None => {
+                if data.kuna_callee_returns(k) != Some(crate::kuna_voidret::Returns::Float) {
+                    return None;
+                }
+                let (addr, size) = data.kuna_callee_return_storage(k)?;
+                if !at(addr, *size) {
+                    return None;
+                }
+                data.get_arch().types()?.get_base(*size, type_metatype::TYPE_FLOAT).ok()?
+            }
+        };
+        (outvn, ct)
+    };
+    let held = data.high_get_type(outvn)?;
+    let bits = matches!(
+        held.get_metatype(),
+        type_metatype::TYPE_UNKNOWN | type_metatype::TYPE_INT | type_metatype::TYPE_UINT
+    );
+    (bits && held.get_size() == ct.get_size()).then_some(ct)
+}
+
 /// Does something the caller declares about the result outrank the statement
 /// `ct`?  Another call writing the same value whose declared or stated result
 /// is of the other class (an integer beside a pointer) always does.  For an

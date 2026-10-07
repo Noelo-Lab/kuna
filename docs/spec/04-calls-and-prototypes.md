@@ -5739,7 +5739,15 @@ integer or a pointer makes no token: no C conversion keeps a float's bits, and
 gcc -O2's reader of a `struct { float, float }` returned in `xmm0` printed
 `dat_4040 = (unsigned long)sub_11d0()` beside `double sub_11d0(void)`, which
 stores 2 for the pair's 2.0000004. Such a reader withdraws the float return
-instead (`voidret`, below). A float statement is the
+instead (`voidret`, below). A reader that keeps the float's bits as an integer
+or raw bytes of the same width, where the callee states a float or, stating
+nothing, was last recovered returning a float in exactly the storage and width
+the call's output sits in (`kuna_callrettype.rs (float_held_as_bits)`), has the
+cast pass write the call into a float and reinterpret it (chapter 09): AArch64
+`bl getd; fmov x0,d0` printed `return getd(a0,a1);` from an `unsigned long`
+function beside `double getd(int a0,double *a1)`, which C converts by value,
+and now prints `((union { double from; unsigned long long to; }){ .from =
+getd(a0,a1) }).to`, as does `fmov w0,s0` after a `float` callee. A float statement is the
 token of a result the caller holds as a float or as raw bytes: nothing then
 converts it, and a store of it through an untyped pointer takes the float's
 type. Without it crazyflie printed `*(unsigned int *)((unsigned int)v2 * 4 +
@@ -5808,9 +5816,10 @@ doubleword of such an entry whose value at every normal RETURN is a marked COPY
 of zero, directly or through MULTIEQUALs. The low lane is then the return
 value: `double scale(int a0)`, `return 0.0`, and a caller in a `decompile-all`
 reads a `double` without a cast. A complex double or an aggregate of two doubles
-returned in `d0` and `d1` now matches the `homogeneous-float-aggregate` rule and
-joins the two registers, where it printed `q0` with an upper half of 0 in place
-of the imaginary part.
+whose second member the function computes in `d1` now matches the
+`homogeneous-float-aggregate` rule and joins the two registers, where it printed
+`q0` with an upper half of 0 in place of the imaginary part. Where `d1` is not
+shown to be returned (below), the return stays `q0` as before.
 
 An active fill fails every output rule, so the fill-in falls back to the best
 single register; retiring fills lets the rules join whatever else is active.
@@ -5821,18 +5830,37 @@ returns a whole doubleword there: a `float` in `s0` and the fill above it are
 left to the trim, which already narrows them, and a 64-bit vector built lane by
 lane is left as it was; the aggregate rule also joins one trial per register
 without comparing widths, and would join a `float` in `s0` with a 64-bit vector
-left in `d1` (glibc's `cprojf`). And a later entry's fill stays unless its low
-lane is written, on every path, by an op whose value only goes on to the
-RETURN: glibc's `math_force_eval` leaves an `fmul d1,d0,d0` no op reads on one
-path beside a `fabs d1,d0` the next compare reads. A declared or DWARF output is
-never touched, and a trial whose value is anything but a marked fill on some
-path keeps its score.
+left in `d1` (glibc's `cprojf`). And nothing is retired when a later entry has
+an active low lane that is not returned alone: written, on every path, by an op
+whose value only goes on to the RETURN, from a value the function produced.
+Through COPYs and MULTIEQUALs that value must not be the function's own incoming
+value of the same register, nor come from a CALL, CALLIND or INDIRECT. A load
+counts only as `-O0`'s reload of a frame slot: the same incoming base register,
+constant offset and width as at least one store to it, every store that
+overlaps the slot being such a store of a value that passes the same test
+(return recovery runs before the stack is renamed, so the slot is matched by
+hand). Glibc's `math_force_eval` leaves an `fmul d1,d0,d0` no op reads on one
+path beside a `fabs d1,d0` the next compare reads. A forwarder of a complex
+result (libitm's `_ITM_RCD` family, `r = get(p); cnt++; return r;`) hands back
+the `d1` its callee returned, which kuna sees as the forwarder's own incoming
+`d1` once the call is found not to return it; joining it gave each forwarder
+two phantom parameters. `CMPLX(a * 2, b)`, whose imaginary part is the unchanged
+incoming `d1`, cannot be told apart from that, nor can `z * z`, whose NaN path
+returns what `__muldc3` left. Retiring only `q0`'s fill would print the first
+member of what may be a pair as the whole return, so every fill stays. A
+declared or DWARF output is never touched, and a trial whose value is anything
+but a marked fill on some path keeps its score.
 
 The binary cannot tell everything apart. A 128-bit vector whose upper half a
-scalar operation zeroed, such as gcc's `fmov d0,d0` for `(float64x2_t){x, 0}`,
-has the same p-code as a returned `double`, and now returns 8 bytes. No
-other compiler spec has a floating output entry that a narrow write fills, so
-the option changes nothing elsewhere. The stage test
+64-bit write zeroed has the same p-code as a returned `double` and now returns
+8 bytes: gcc -O2 builds `(float64x2_t){x, 0}` with `fmov d0,d0`,
+`(uint64x2_t){x, 0}` with `fmov d0,x0`, and `vcombine_u32(vld1_u32(p),
+vdup_n_u32(0))` with `ldr d0,[x0]`. In the other direction, a `d1` the function
+computes and only hands to the RETURN is joined even where the source returns a
+single `double` and leaves that value unused (an asm-forced evaluation, as in
+`k(x, y) { math_force_eval(y * y); return x * 3; }`). No other compiler spec has
+a floating output entry that a narrow write fills, so the option changes nothing
+elsewhere. The stage test
 `tests/stages/gh873-zerofillreturn-a64.xml` runs clang and gcc AArch64 code
 with the option off and on.
 
