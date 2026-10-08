@@ -1310,9 +1310,13 @@ The extent is the symbol's size cut at the next function symbol and at the end o
 section: an exported Thumb function whose symbol the linker moved onto its A32
 interworking stub keeps the function's size, and must paint only the stub. The extent
 then grows over every direct A32 `b`/`bl` target it reaches before the next function
-symbol, up to the first return or unconditional branch on that target's linear run and
-over what that run branches to in turn: an A32 branch target is A32 by its encoding,
-so an unsymbolized A32 static helper an A32 export calls keeps A32. Past the
+symbol, up to the first return, unconditional branch, call to a function the
+no-return list names (the image's own definition or its PLT stub), or literal-pool word
+on that target's linear run, and over what that run branches to in turn: an A32 branch
+target is A32 by its encoding, so an unsymbolized A32 static helper an A32 export calls
+keeps A32. A run that reaches the next function symbol or the section end without such
+a stop says nothing about where its code ends and adds nothing, and words a PC-relative
+`ldr` in the scanned code loads are data, never read as branches. Past the
 extent the Thumb mode the symbol paint gave resumes, so a stripped library's
 unsymbolized Thumb routines after an A32 one keep their mode. A symbol of size 0
 states no extent and is skipped, and an image whose function symbols are all even

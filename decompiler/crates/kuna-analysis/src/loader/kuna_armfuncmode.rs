@@ -94,13 +94,14 @@ pub fn arm_func_mode_paints(file: &object::File) -> Vec<ContextPaint> {
     }
     let little = file.is_little_endian()
         || matches!(file.flags(), object::FileFlags::Elf { e_flags, .. } if e_flags & EF_ARM_BE8 != 0);
+    let noreturn = super::noreturn::known_noreturn_addrs(file);
     let mut paints = Vec::new();
     for (addr, (end, limit, index)) in arm.into_iter().filter(|(addr, (end, ..))| end > addr) {
         let end = file
             .section_by_index(index)
             .ok()
             .and_then(|section| Some((section.address(), section.data().ok()?)))
-            .map_or(end, |(base, data)| a32_reach(data, base, little, addr, end, limit));
+            .map_or(end, |(base, data)| a32_reach(data, base, little, addr, end, limit, &noreturn));
         paints.push(ContextPaint { addr, end: Some(end), var: TMODE, value: 0 });
         if end < next_start(addr) {
             paints.push(ContextPaint { addr: end, end: None, var: TMODE, value: 1 });
@@ -111,10 +112,21 @@ pub fn arm_func_mode_paints(file: &object::File) -> Vec<ContextPaint> {
 
 /// The end of the A32 code `[addr, end)` reaches by a direct A32 `b`/`bl` into
 /// `[end, limit)`, the bytes before the next function symbol: such a target is
-/// A32 by its encoding, so the extent grows over it, up to the first return or
-/// unconditional branch the target's linear run meets, and over what that run
-/// branches to in turn.
-fn a32_reach(data: &[u8], base: u64, little: bool, addr: u64, end: u64, limit: u64) -> u64 {
+/// A32 by its encoding, so the extent grows over it, up to the first return,
+/// unconditional branch, call to a function that never returns (`noreturn`),
+/// or literal-pool word on the target's linear run, and over what that run
+/// branches to in turn. A run that reaches `limit` without such a stop says
+/// nothing about where its code ends and adds nothing. Words a PC-relative
+/// `ldr` loads are data and are never read as branches.
+fn a32_reach(
+    data: &[u8],
+    base: u64,
+    little: bool,
+    addr: u64,
+    end: u64,
+    limit: u64,
+    noreturn: &BTreeSet<u64>,
+) -> u64 {
     let word = |at: u64| -> Option<u32> {
         let offset = usize::try_from(at.checked_sub(base)?).ok()?;
         let bytes: [u8; 4] = data.get(offset..offset.checked_add(4)?)?.try_into().ok()?;
@@ -127,41 +139,78 @@ fn a32_reach(data: &[u8], base: u64, little: bool, addr: u64, end: u64, limit: u
         let offset = (((insn & 0x00FF_FFFF) << 8) as i32 >> 6) as i64;
         at.checked_add(8)?.checked_add_signed(offset)
     };
-    let stops = |insn: u32| {
+    let literal = |at: u64, insn: u32| -> Option<u64> {
+        if insn >> 28 == 0xF || insn & 0x0F7F_0000 != 0x051F_0000 {
+            return None;
+        }
+        let pc = at.checked_add(8)?;
+        let imm = u64::from(insn & 0xFFF);
+        if insn & (1 << 23) != 0 { pc.checked_add(imm) } else { pc.checked_sub(imm) }.map(|lit| lit & !3)
+    };
+    let stops = |at: u64, insn: u32| {
         insn >> 28 == 0xE
             && ((insn & 0x0FFF_FFF0) == 0x012F_FF10
                 || (insn >> 24) & 0xF == 0b1010
                 || (insn & 0x0FFF_8000) == 0x08BD_8000
                 || insn == 0xE49D_F004
-                || insn == 0xE1A0_F00E)
+                || insn == 0xE1A0_F00E
+                || ((insn >> 24) & 0xF == 0b1011 && target(at, insn).is_some_and(|to| noreturn.contains(&to))))
     };
+    let mut pool: BTreeSet<u64> = BTreeSet::new();
+    let mut at = addr & !3;
+    while at < end {
+        if let Some(lit) = word(at).and_then(|insn| literal(at, insn)) {
+            pool.insert(lit);
+        }
+        at += 4;
+    }
     let mut reach = end;
     let mut walked: BTreeSet<u64> = BTreeSet::new();
     let mut queue: Vec<u64> = Vec::new();
     let mut at = addr & !3;
     while at < end {
-        walked.insert(at);
-        if let Some(to) = word(at).and_then(|insn| target(at, insn)) {
-            queue.push(to);
+        if !pool.contains(&at) {
+            if let Some(to) = word(at).and_then(|insn| target(at, insn)) {
+                queue.push(to);
+            }
         }
+        walked.insert(at);
         at += 4;
     }
     while let Some(start) = queue.pop() {
-        if start < end || start >= limit || start & 3 != 0 || walked.contains(&start) {
+        if start < end || start >= limit || start & 3 != 0 || walked.contains(&start) || pool.contains(&start) {
             continue;
         }
+        let mut run: BTreeSet<u64> = BTreeSet::new();
+        let mut run_pool: BTreeSet<u64> = BTreeSet::new();
+        let mut branches: Vec<u64> = Vec::new();
         let mut at = start;
-        while at < limit && walked.insert(at) {
-            let Some(insn) = word(at) else { break };
-            if let Some(to) = target(at, insn) {
-                queue.push(to);
+        let mut stopped = false;
+        while at < limit {
+            if pool.contains(&at) || run_pool.contains(&at) || walked.contains(&at) || !run.insert(at) {
+                stopped = true;
+                break;
             }
+            let Some(insn) = word(at) else { break };
+            if let Some(lit) = literal(at, insn) {
+                run_pool.insert(lit);
+            }
+            if let Some(to) = target(at, insn) {
+                branches.push(to);
+            }
+            let stop = stops(at, insn);
             at += 4;
-            if stops(insn) {
+            if stop {
+                stopped = true;
                 break;
             }
         }
-        reach = reach.max(at);
+        if stopped {
+            reach = reach.max(at);
+            walked.extend(run);
+            pool.extend(run_pool);
+            queue.extend(branches);
+        }
     }
     reach
 }
@@ -205,6 +254,21 @@ mod tests {
         let paints = paints("arm_funcmode_helper_o2_le32.so");
         let a32 = paints.iter().find(|(addr, ..)| *addr == 0x101f8).copied();
         assert!(a32.is_some_and(|(_, end, value)| value == 0 && end.is_some_and(|end| end > 0x1020c)), "{paints:x?}");
+    }
+
+    #[test]
+    fn a32_growth_stops_at_noreturn_calls_runs_without_a_stop_and_literal_pools() {
+        for (fixture, thumb) in [
+            ("arm_funcmode_noreturn_le32.so", 0x10290),
+            ("arm_funcmode_stackprot_le32.so", 0x103e0),
+            ("arm_funcmode_pool_le32", 0x0200_0094),
+        ] {
+            let paints = paints(fixture);
+            let covered = paints.iter().any(|&(addr, end, value)| {
+                value == 0 && addr <= thumb && end.is_some_and(|end| thumb < end)
+            });
+            assert!(!covered, "{fixture}: {paints:x?}");
+        }
     }
 
     #[test]
