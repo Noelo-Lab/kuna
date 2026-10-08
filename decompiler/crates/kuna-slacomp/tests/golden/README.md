@@ -15,6 +15,11 @@ The Rust test compiles the listed sources and compares directly with these
 digests. It needs no prebuilt `.sla` files, Ghidra installation or C++ toolchain.
 The other golden text files pin scanner, parser and macro-expansion traces.
 
+The SPARC entries include kuna's destination corrections for `fdtoi`, `fqtoi`
+and `fstox`.
+They were regenerated with Ghidra's C++ compiler on the corrected sources;
+the same compiler reproduces the previous hashes on the unmodified sources.
+
 `xml_ops.xml` is the same pinned C++ compiler's `-y` output for
 `snips/xml_ops.slaspec`. The CLI test compares XML output byte-for-byte in both
 single-file and recursive modes, including the `BUILD` and `INT_ADD` opcode

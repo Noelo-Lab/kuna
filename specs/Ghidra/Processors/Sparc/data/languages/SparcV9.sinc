@@ -1285,10 +1285,10 @@ define pcodeop stqa;
 :fxtoq  fdrs2,fqrd                   is op=0x2 & fqrd & op3=0x34 & opf=0x8c & fdrs2 { fqrd = int2float(fdrs2); }
 
 :fstoi  fsrs2,fsrd                   is op=0x2 & fsrd & op3=0x34 & opf=0xd1 & fsrs2 { fsrd = trunc(fsrs2); }
-:fdtoi  fdrs2,fdrd                   is op=0x2 & fdrd & op3=0x34 & opf=0xd2 & fdrs2 { fdrd = trunc(fdrs2); }
-:fqtoi  fqrs2,fqrd                   is op=0x2 & fqrd & op3=0x34 & opf=0xd3 & fqrs2 { fqrd = trunc(fqrs2); }
+:fdtoi  fdrs2,fsrd                   is op=0x2 & fsrd & op3=0x34 & opf=0xd2 & fdrs2 { fsrd = trunc(fdrs2); }
+:fqtoi  fqrs2,fsrd                   is op=0x2 & fsrd & op3=0x34 & opf=0xd3 & fqrs2 { fsrd = trunc(fqrs2); }
 
-:fstox  fsrs2,fsrd                   is op=0x2 & fsrd & op3=0x34 & opf=0x81 & fsrs2 { fsrd = trunc(fsrs2); }
+:fstox  fsrs2,fdrd                   is op=0x2 & fdrd & op3=0x34 & opf=0x81 & fsrs2 { fdrd = trunc(fsrs2); }
 :fdtox  fdrs2,fdrd                   is op=0x2 & fdrd & op3=0x34 & opf=0x82 & fdrs2 { fdrd = trunc(fdrs2); }
 :fqtox  fqrs2,fqrd                   is op=0x2 & fqrd & op3=0x34 & opf=0x83 & fqrs2 { fqrd = trunc(fqrs2); }
 
