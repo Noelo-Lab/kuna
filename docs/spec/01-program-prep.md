@@ -1321,7 +1321,12 @@ commit. The pass paints nothing for an image with `$a`/`$t` mapping symbols, a
 relocatable object, an image whose build attributes rule out A32 (M profile or
 `Tag_ARM_ISA_use` 0), a Cortex-M image with a vector table, or an address that also
 carries an odd function symbol. Its paints are committed under its own gate and fed
-to the Listing's context painter as well; an explicit `--isa` states the whole
+to the Listing's context painter as well, and the Listing keeps the A32 extents: the
+AIF gap walk rejects a Thumb walk (a 2-aligned candidate, or one whose first
+instruction is 2 bytes) whose flow leaves the gap for a decoded instruction inside one
+of them, since a Thumb branch cannot reach A32 code without an exchange. Without that
+check a Thumb walk over the zero padding before an A32 routine was accepted once its
+branches landed on the A32 instruction starts the extent now yields; an explicit `--isa` states the whole
 image's mode and turns the pass off, and so does the option, which restores the leak.
 `decompiler/crates/kuna-analysis/src/loader/mips_markers.rs` carries the MIPS pair:
 `MipsIsaModePass` (`mips_isa`) paints `ISA_MODE` at MIPS16e/microMIPS entries

@@ -120,6 +120,9 @@ pub struct Listing {
     /// The `(start, end, mode)` ARM decode-mode runs [`kuna_flowmode`] proved
     /// and the context database disagrees with; empty when it has none.
     mode_runs: Vec<(u64, u64, u32)>,
+    /// (kuna `armfuncmode`) The extents painted A32 from function-symbol
+    /// evidence (see [`crate::loader::kuna_armfuncmode`]); empty otherwise.
+    a32_extents: Vec<(u64, u64)>,
 }
 
 impl Listing {
@@ -168,6 +171,7 @@ impl Listing {
             has_refs: false,
             stack_callback_refs: Vec::new(),
             mode_runs: Vec::new(),
+            a32_extents: Vec::new(),
         }
     }
 
@@ -280,6 +284,7 @@ impl Listing {
                     has_refs: false,
                     stack_callback_refs: Vec::new(),
                     mode_runs: Vec::new(),
+                    a32_extents: Vec::new(),
                 };
             }
         };
@@ -362,6 +367,7 @@ impl Listing {
                 .map(|(target, source)| (source, target))
                 .collect(),
             mode_runs: st.mode_runs,
+            a32_extents: painter.a32_extents().to_vec(),
         }
     }
 
@@ -432,6 +438,7 @@ impl Listing {
             has_refs: detail.refs,
             stack_callback_refs: Vec::new(),
             mode_runs: Vec::new(),
+            a32_extents: Vec::new(),
         }
     }
 
@@ -451,6 +458,7 @@ impl Listing {
             has_refs: false,
             stack_callback_refs: Vec::new(),
             mode_runs: Vec::new(),
+            a32_extents: Vec::new(),
         }
     }
 
@@ -471,6 +479,7 @@ impl Listing {
             has_refs: false,
             stack_callback_refs,
             mode_runs: Vec::new(),
+            a32_extents: Vec::new(),
         }
     }
 
@@ -588,6 +597,13 @@ impl Listing {
                 value,
             })
             .collect()
+    }
+
+    /// (kuna `armfuncmode`) Whether `vma` lies in an extent the pass painted A32
+    /// from function-symbol evidence.
+    pub fn in_a32_symbol_extent(&self, vma: u64) -> bool {
+        let at = self.a32_extents.partition_point(|&(start, _)| start <= vma);
+        at > 0 && vma < self.a32_extents[at - 1].1
     }
 
     /// The decoded instruction whose `[addr, addr+len)` byte span contains `vma`
@@ -807,6 +823,7 @@ mod tests {
             has_refs: true,
             stack_callback_refs: Vec::new(),
             mode_runs: Vec::new(),
+            a32_extents: Vec::new(),
         };
         let addrs = |start, end| {
             listing
