@@ -1316,7 +1316,11 @@ on that target's linear run, and over what that run branches to in turn: an A32 
 target is A32 by its encoding, so an unsymbolized A32 static helper an A32 export calls
 keeps A32. A run that reaches the next function symbol or the section end without such
 a stop says nothing about where its code ends and adds nothing, and words a PC-relative
-`ldr` in the scanned code loads are data, never read as branches. Past the
+`ldr` in the scanned code loads are data, never read as branches. That data test is a
+known limit: a pool word reached through `adr` + `ldr`, `vldr` or `ldrd` is still read
+as a possible `b`, and a Thumb-2 `pop.w {..., pc}` at an address 2 mod 4 reads as an A32
+`pop {..., pc}` stop, so a run over such bytes can still grow over a following
+unsymbolized Thumb routine. Past the
 extent the Thumb mode the symbol paint gave resumes, so a stripped library's
 unsymbolized Thumb routines after an A32 one keep their mode. A symbol of size 0
 states no extent and is skipped, and an image whose function symbols are all even
