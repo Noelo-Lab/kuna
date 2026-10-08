@@ -1,0 +1,36 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v5t">
+<!--
+  Independently authored MCR/MRC selector regression, P2 SLEIGH correctness
+  repair without an option. No matching upstream issue at 919984b8.
+  WriteRegion: mov r0,#1; mcr p15,0,r0,c6,c0,0; bx lr.
+  WriteSelectors: mcr p15,3,r0,c6,c5,2; bx lr.
+  ReadSelectors: mrc p15,3,r0,c6,c5,2; bx lr.
+  Before the repair all three assertions fail: CRn/CRm become uninitialized
+  pseudo-register values. CPU write data must remain the live argument.
+  v5t models the ARM9 decode target; the separate v4t control models ARM7
+  decoding only, without assuming that either processor implements CP15.
+-->
+<bytechunk space="ram" offset="0x10000">0100a0e3100f06ee1eff2fe1550f66ee1eff2fe1550f76ee1eff2fe1</bytechunk>
+<symbol space="ram" offset="0x10000" name="WriteRegion"/>
+<symbol space="ram" offset="0x1000c" name="WriteSelectors"/>
+<symbol space="ram" offset="0x10014" name="ReadSelectors"/>
+</binaryimage>
+<script>
+  <com>parse line extern void WriteRegion(void);</com>
+  <com>parse line extern void WriteSelectors(uint4 data);</com>
+  <com>parse line extern uint4 ReadSelectors(void);</com>
+  <com>load function WriteRegion</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function WriteSelectors</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ReadSelectors</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="CP selectors #1: region numbers are constants" min="1" max="1">coprocessor_moveto\(0xf,0,0,1,6,0\);</stringmatch>
+<stringmatch name="CP selectors #2: CPU data stays dynamic" min="1" max="1">coprocessor_moveto\(0xf,3,2,data,6,5\);</stringmatch>
+<stringmatch name="CP selectors #3: read numbers are constants" min="1" max="1">return coprocessor_movefromRt\(0xf,3,2,6,5\);</stringmatch>
+</decompilertest>

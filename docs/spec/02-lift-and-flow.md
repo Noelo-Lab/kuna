@@ -29,6 +29,17 @@ bytes and its PC write preserves interworking. Other PC loads retain their
 existing branch behavior; an explicitly prepared LR retains the indirect-call
 form. This is a SLEIGH correctness repair, without an inference option.
 
+Generic ARM `MCR`/`MRC` and `MCR2`/`MRC2` transfers pass the encoded
+`CRn` and `CRm` numbers to their opaque coprocessor intrinsics as four-byte
+constants. A32 and Thumb constructors use unattached numeric aliases of the token
+fields, retaining the `cr0`–`cr15` attachments for assembly spelling. The CPU
+source of `MCR` remains live register data; `MRC` still writes its CPU
+destination, including the Thumb APSR flag destination. Coprocessor number,
+opcode fields, condition handling, and instruction spelling are preserved.
+This repairs selector identity without an option and does not emulate CP15,
+interpret processor-specific registers, or change named CP15 intrinsics,
+coprocessor data processing, or double-register transfers.
+
 Ordinary ARM flow establishes a `TMode` write boundary at the function entry.
 A backward interworking call may publish the callee's mode up to that boundary,
 but cannot repaint the caller. After a successful instruction, a mode commit
