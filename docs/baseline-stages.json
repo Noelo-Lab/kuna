@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2364,
-    2364
+    2374,
+    2374
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -405,6 +405,16 @@
     "data:FLOATBITS #7: copysignf is float on both sides",
     "data:FLOATBITS #8: the classifier's parameter is an integer with the option off",
     "data:FLOATBITS #9: a classifier answering in an integer register takes a float",
+    "data:FLOATEQ #10: the magnitude's bits against zero keep the exact float comparison",
+    "data:FLOATEQ #1: the bits of -0.0 compare as an integer",
+    "data:FLOATEQ #2: the quiet NaN pattern compares as an integer",
+    "data:FLOATEQ #3: two floats' bits both reinterpret",
+    "data:FLOATEQ #4: the bits of a double's -0.0 compare as an integer",
+    "data:FLOATEQ #5: a double's quiet NaN pattern compares as an integer",
+    "data:FLOATEQ #6: no float comparison with -0.0 or NAN is left",
+    "data:FLOATEQ #7: the bits of 1.0f keep the exact float comparison",
+    "data:FLOATEQ #8: a float == stays a float comparison",
+    "data:FLOATEQ #9: a double != stays a float comparison",
     "data:FLOATGLOBALS #10: a double stored into a scalar global the same function writes through an index from its address keeps its integer type",
     "data:FLOATGLOBALS #11: a double stored into a struct or array the same function reads through an index as an integer keeps its integer type",
     "data:FLOATGLOBALS #12: a double stored into an array the function indexes only as doubles is a double",
