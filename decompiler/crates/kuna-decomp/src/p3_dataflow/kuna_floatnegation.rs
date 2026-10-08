@@ -215,17 +215,14 @@ fn reads_memory(data: &Funcdata, vn: VarnodeId) -> bool {
         .is_some_and(|v| v.is_free() && !v.is_constant())
 }
 
+/// A second reader of an unheritaged memory read needs its own varnode.
 fn operand_copy(data: &mut Funcdata, vn: VarnodeId) -> VarnodeId {
-    let v = data.vbank().get(vn).unwrap();
-    if !v.is_free() {
+    if !reads_memory(data, vn) {
         return vn;
     }
-    let (size, addr, offset) = (v.get_size(), v.get_addr().clone(), v.get_offset());
-    if v.is_constant() {
-        data.new_constant(size, offset)
-    } else {
-        data.new_varnode(size, &addr, None)
-    }
+    let v = data.vbank().get(vn).unwrap();
+    let (size, addr) = (v.get_size(), v.get_addr().clone());
+    data.new_varnode(size, &addr, None)
 }
 
 /// The complement, issued right after the guarded comparison so a memory operand is read
@@ -309,9 +306,8 @@ pub(crate) fn fold_guarded_negate(data: &mut Funcdata, negate: OpId) -> bool {
             .expect("guarded float complement copy");
         return true;
     }
-    let inputs = [operand_copy(data, c.lhs), operand_copy(data, c.rhs)];
     data.op_set_opcode(negate, crate::typeop::seam_type_op_for(c.code));
-    data.op_set_all_input(negate, &inputs)
+    data.op_set_all_input(negate, &[c.lhs, c.rhs])
         .expect("guarded float complement inputs");
     true
 }
@@ -333,8 +329,7 @@ fn fold_guarded_branch(data: &mut Funcdata, branch: OpId) -> bool {
         let result = data
             .new_unique_out(1, comparison)
             .expect("guarded branch output");
-        let inputs = [operand_copy(data, c.lhs), operand_copy(data, c.rhs)];
-        data.op_set_all_input(comparison, &inputs)
+        data.op_set_all_input(comparison, &[c.lhs, c.rhs])
             .expect("guarded branch inputs");
         data.op_insert_before(comparison, branch);
         result
