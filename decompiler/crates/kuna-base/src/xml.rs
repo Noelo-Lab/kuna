@@ -2040,7 +2040,9 @@ mod tests {
         // a saved frame pointer read from the frame still is (GH-839)
         // and gh841-varargsharedfloat-ppc / a 32-bit PowerPC -O0 variadic
         // double that also feeds an earlier argument (GH-841)
-        assert_eq!(count, 465, "corpus file count drifted");
+        // and kuna-floateq / an integer == or != on the bits of a float
+        // compares the bits, not the float values (GH-890)
+        assert_eq!(count, 466, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

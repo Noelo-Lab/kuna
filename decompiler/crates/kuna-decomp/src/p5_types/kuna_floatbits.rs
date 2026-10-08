@@ -344,7 +344,7 @@ const DOUBLE_FIELDS: [u64; 7] = [
 /// value: a zero compares equal to the other zero, a NaN to nothing, a
 /// denormal to zero where the FPU flushes them, and `0.1`, the shortest
 /// spelling of `0.1f`, is another double, while the binary compares bits.
-fn compares_as_a_float(data: &Funcdata, c: VarnodeId) -> bool {
+pub(crate) fn compares_as_a_float(data: &Funcdata, c: VarnodeId) -> bool {
     let Some(node) = data.vbank().get(c).filter(|n| n.is_constant()) else { return false };
     let bits = node.get_offset() as u64;
     let (exponent, mantissa) = match node.get_size() {

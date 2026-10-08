@@ -2926,11 +2926,13 @@ sign bit (gcc's `fneg` is `add $0x80000000,%eax`); a word split
 and an `==` or `!=` with an infinity, or with a normal number whose printed
 literal is the constant itself (`compares_as_a_float`). What the bit ops make
 is walked on in turn. The cast pass reinterprets the float for an ordered
-comparison, but an `==` or `!=` of two values of one type takes no cast and
-prints as a float comparison, which agrees with the bits only against such a
-constant: `ABS(a0) == INFINITY`, `a0 == 1.0` and `a0 == 16777218.0` hold for
-exactly the bits the binary tests, while `-0.0` equals `0.0`, a NaN equals
-nothing, and a flushed denormal equals zero. The printer writes a float
+comparison, and for an `==` or `!=` too except against such a constant
+(chapter 09, *Integer equality on float bits*), where the float comparison
+holds for exactly the bits the binary tests (`ABS(a0) == INFINITY`, `a0 ==
+1.0`, `a0 == 16777218.0`), while `-0.0` equals `0.0`, a NaN equals nothing,
+and a flushed denormal equals zero. The refusals below predate that cast and
+are kept: an accepted input against any other constant would now print as
+the union reinterpretation of its bits rather than a wrong float comparison. The printer writes a float
 constant by its shortest digits with no `f` suffix, which C reads as a
 `double`, so `0.1f` prints `0.1`, another value, and `a0 == 0.1` is false for
 `a0 = 0.1f`; the literal is printed (`FloatFormat::print_decimal`, in both
