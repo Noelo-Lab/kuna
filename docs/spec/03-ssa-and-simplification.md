@@ -944,7 +944,9 @@ decides the unordered case, so `RuleIgnoreNan`'s
 `ignorenan_check_back_for_compare` refuses to treat it as a comparison that
 protects a NaN test: an explicit `isnan(x) || x > c` or the `setnp`/`jp` of a
 separate compare keeps its `NAN(x)` term beside the exact comparison instead
-of being dropped against it. Dropping it was harmless while both sides were
+of being dropped against it. The mark survives op cloning (`CloneBlockOps::build_op_clone`, used when
+`RuleConditionalMove` hoists a branch's comparison or a block is duplicated,
+and `Funcdata::clone_op`). Dropping it was harmless while both sides were
 approximated, because the two approximations cancelled; beside an exact
 comparison it changes the value for a NaN.
 

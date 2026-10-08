@@ -32,12 +32,22 @@
   <symbol space="ram" offset="0x401027" name="not_at_least"/>
   <symbol space="ram" offset="0x401034" name="pick"/>
   <symbol space="ram" offset="0x401041" name="above_branch"/>
+  <bytechunk space="ram" offset="0x407000">
+    0f2ec07a0a0f2fc10f92c00fb6c0c3b800000000ebf5660f2ec07a10660f
+    2fc10f92c00fb6c08d044001f8c3b800000000ebf031c00f2ec07a060f2f
+    c10f92c00fb6c0c331c0660f2ec07a07660f2fc10f92c00fb6c08d044001
+    f8c3
+  </bytechunk>
   <symbol space="ram" offset="0x404000" name="nan_or_huge"/>
   <symbol space="ram" offset="0x404020" name="ordered_below_pair"/>
   <symbol space="ram" offset="0x404040" name="nan_or_above"/>
   <symbol space="ram" offset="0x404060" name="ordered_below"/>
   <symbol space="ram" offset="0x404079" name="jp_jbe"/>
   <symbol space="ram" offset="0x404090" name="work"/>
+  <symbol space="ram" offset="0x407000" name="guarded_below"/>
+  <symbol space="ram" offset="0x407016" name="guarded_sum"/>
+  <symbol space="ram" offset="0x407033" name="guarded_below_os"/>
+  <symbol space="ram" offset="0x407044" name="guarded_sum_os"/>
 </binaryimage>
 <script>
   <com>parse line extern int above(float x);</com>
@@ -52,6 +62,10 @@
   <com>parse line extern int ordered_below(float x);</com>
   <com>parse line extern int jp_jbe(float x);</com>
   <com>parse line extern double work(double x);</com>
+  <com>parse line extern int guarded_below(float x,float y);</com>
+  <com>parse line extern int guarded_sum(double x,double y,int k);</com>
+  <com>parse line extern int guarded_below_os(float x,float y);</com>
+  <com>parse line extern int guarded_sum_os(double x,double y,int k);</com>
   <com>map address r0x402000 float one</com>
   <com>map address r0x405000 float8 huge</com>
   <com>map address r0x405008 float8 bound</com>
@@ -89,6 +103,18 @@
   <com>lo fu jp_jbe</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu guarded_below</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu guarded_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu guarded_below_os</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu guarded_sum_os</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option nanignore none</com>
   <com>lo fu not_above</com>
   <com>decompile</com>
@@ -109,4 +135,6 @@
 <stringmatch name="UCOMISS unordered #12: setnp beside an exact setb through a pointer stays" min="1" max="1">return !\(limit &lt;= x\) &amp;&amp; !NAN\(x\);</stringmatch>
 <stringmatch name="UCOMISS unordered #13: jp then jbe on one memory compare" min="1" max="1">if \(\(!NAN\(x\) &amp;&amp; !NAN\(limit\)\) &amp;&amp; \(limit &lt; x\)\)</stringmatch>
 <stringmatch name="UCOMISS unordered #14: no NaN test dropped beside an exact compare" min="0" max="0">if \(x &lt;= limit\)|return x &lt; limit;|!\(x &lt; bound\)|!\(x &lt;= huge\)</stringmatch>
+<stringmatch name="UCOMISS unordered #15: a guard hoisted out of the branch keeps its NaN test (gcc -O1/-Os)" min="4" max="4">!NAN\(x\) &amp;&amp; !\(y &lt;= x\)</stringmatch>
+<stringmatch name="UCOMISS unordered #16: the hoisted guard never prints unguarded" min="0" max="0">return x &lt; y;|= x &lt; y;</stringmatch>
 </decompilertest>

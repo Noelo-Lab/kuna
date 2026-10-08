@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2390,
-    2390
+    2392,
+    2392
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1449,6 +1449,8 @@
     "data:UCOMISS unordered #12: setnp beside an exact setb through a pointer stays",
     "data:UCOMISS unordered #13: jp then jbe on one memory compare",
     "data:UCOMISS unordered #14: no NaN test dropped beside an exact compare",
+    "data:UCOMISS unordered #15: a guard hoisted out of the branch keeps its NaN test (gcc -O1/-Os)",
+    "data:UCOMISS unordered #16: the hoisted guard never prints unguarded",
     "data:UCOMISS unordered #1: seta is one < x",
     "data:UCOMISS unordered #2: setae is one <= x",
     "data:UCOMISS unordered #3: setbe keeps the unordered case",
