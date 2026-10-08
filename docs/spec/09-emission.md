@@ -279,8 +279,9 @@ integer operand's type, or `unsigned int` / `unsigned long long` of the width
 reinterpretation above and a constant is retyped to the integer and prints in
 hex (`((union { float from; unsigned int to; }){ .from = a0 }).to !=
 0x80000000`; Rust `(a0).to_bits() != 0x80000000`). The float comparison is kept
-where it decides exactly what the bit test does
-(`float_compare_is_exact`): against a constant that is a normal number or an
+where, under the default (non-flushing) floating-point environment, it decides
+exactly what the bit test does (`float_compare_is_exact`; with DAZ/FTZ set a
+denormal's `ABS` compares equal to `0.0`): against a constant that is a normal number or an
 infinity whose printed literal, read by C as a `double`, is its value
 (`kuna_floatbits.rs (compares_as_a_float)`, chapter 05), so the bits of `1.0f`
 still print `a0 == 1.0`; and against `+0.0` when the other side is a
