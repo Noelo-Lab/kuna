@@ -171,6 +171,8 @@ code{font-family:var(--font-code);font-size:.92em;}
 .str .su{margin-top:1px;color:var(--text-muted);font-size:var(--fs-small);overflow-wrap:anywhere;}
 .str .su a.xt{color:var(--accent);}
 .str .su a.xt:hover{text-decoration:underline;}
+.str .sr{display:none;margin-left:6px;font-size:inherit;}
+.str:hover .sr,.str.sel .sr,.str:focus-within .sr{display:inline;}
 .d2-strmore{margin:4px 0 8px;padding:0 22px;color:var(--text-faint);font-size:var(--fs-small);}
 
 /* ── the main area ──────────────────────────────────────────────────────── */
