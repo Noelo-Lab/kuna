@@ -228,6 +228,10 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // this is a strict no-op for every non-ARM binary (the parity gates are
         // structurally untouched). Always-on, like noreturn/libproto/entry.
         Box::new(crate::loader::arm_markers::ArmMarkerPass),
+        // (kuna `armfuncmode`) `TMode=0` at each even function symbol of an ARM
+        // image without mapping symbols, so a Thumb paint stops at the next A32
+        // function.
+        Box::new(crate::loader::kuna_armfuncmode::ArmFuncModePass),
         // S1 MIPS `$gp` recovery: seed `t9 = func_entry` as a tracked register
         // value at each MIPS function entry (the PIC `jalr t9` ABI convention), so
         // a PIC prologue's `addu gp,gp,t9` folds to the real `$gp` and

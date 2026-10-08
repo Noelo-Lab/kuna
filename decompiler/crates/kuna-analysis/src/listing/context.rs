@@ -80,6 +80,9 @@ impl ContextPainter {
         // ARM `$t`/`$a` mapping symbols + STT_FUNC-LSB → `TMode` (Thumb). The scan
         // is ARM-gated; on a non-ARM object it returns an empty output.
         paints.extend(scan_arm_markers(file).context_paints);
+        if arch.analysis_armfuncmode {
+            paints.extend(crate::loader::kuna_armfuncmode::arm_func_mode_paints(file));
+        }
         // ARM Cortex-M: a stripped bare-metal firmware image carries none of the
         // `$t`/FUNC-LSB markers `scan_arm_markers` reads. When a hardware vector
         // table is detected, the whole image is Thumb-only, so region-paint

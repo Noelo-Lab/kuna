@@ -1298,6 +1298,27 @@ decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/lo
 (ArmMarkerPass)` (`arm_markers`) ports ARM's `ARM_ElfExtension`/`ArmSymbolAnalyzer`:
 `$t`/`$a` mapping symbols and the STT_FUNC odd-address convention become `TMode`
 paints, applied to the engine's `ContextDatabase` at commit, before any decode.
+(kuna) Those are point paints: each fills up to the next address where the mode was
+set, and so does the `TMode=1` a `blx` commits for its target. In an image with
+function symbols but no mapping symbols nothing set the mode again at an A32
+function placed after a Thumb one, so the Thumb mode reached it. The `armfuncmode`
+pass (`decompiler/crates/kuna-analysis/src/loader/kuna_armfuncmode.rs (arm_func_mode_paints)`,
+default on) sets `TMode=0` over each defined function symbol whose value is even, the
+AAELF32 mark of an A32 function, when it lies in an executable section of a linked
+ARM ELF after an odd function symbol, and sets `TMode=1` again where its extent ends.
+The extent is the symbol's size cut at the next function symbol and at the end of the
+section: an exported Thumb function whose symbol the linker moved onto its A32
+interworking stub keeps the function's size, and must paint only the stub. Past the
+extent the Thumb mode the symbol paint gave resumes, so a stripped library's
+unsymbolized Thumb routines after an A32 one keep their mode. A symbol of size 0
+states no extent and is skipped, and an image whose function symbols are all even
+keeps the language default it already had, together with whatever modes its calls
+commit. The pass paints nothing for an image with `$a`/`$t` mapping symbols, a
+relocatable object, an image whose build attributes rule out A32 (M profile or
+`Tag_ARM_ISA_use` 0), a Cortex-M image with a vector table, or an address that also
+carries an odd function symbol. Its paints are committed under its own gate and fed
+to the Listing's context painter as well; an explicit `--isa` states the whole
+image's mode and turns the pass off, and so does the option, which restores the leak.
 `decompiler/crates/kuna-analysis/src/loader/mips_markers.rs` carries the MIPS pair:
 `MipsIsaModePass` (`mips_isa`) paints `ISA_MODE` at MIPS16e/microMIPS entries
 (LSB-set or `st_other` STO-marked), and `MipsMarkerPass` (`mips_gp`) is a register
