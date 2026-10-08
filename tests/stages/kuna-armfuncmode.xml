@@ -31,6 +31,12 @@
     object (`.dynsym` only) whose A32 `arm_export` follows the Thumb
     `thumb_first`: off it decodes as Thumb, by default it is the A32 loop
     `s += i ^ 0x33`.
+
+    Pass 10 uses `arm_funcmode_helper_o2_le32.so` (clang -O2, linked with
+    lld, stripped): the A32 export `a_func` calls an unsymbolized A32 static
+    helper at 0x1020c with `bl`. The A32 extent grows over a direct A32
+    branch target before the next function symbol, so the helper is not
+    handed back to Thumb where the extent ends.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -96,6 +102,12 @@ c3
   <com>load function arm_export</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_funcmode_helper_o2_le32.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x1020c</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="ARMFUNCMODE #1: off, and for a size-0 symbol, arm_helper decodes as Thumb" min="3" max="3">void arm_helper\(void\)</stringmatch>
@@ -103,4 +115,5 @@ c3
 <stringmatch name="ARMFUNCMODE #3: the A32 body appears in the four other passes" min="4" max="4">return a0 \+ 1;</stringmatch>
 <stringmatch name="ARMFUNCMODE #4: gcc -O2 .so, off, arm_export decodes as Thumb" min="1" max="1">void arm_export\(void\)</stringmatch>
 <stringmatch name="ARMFUNCMODE #5: gcc -O2 .so, default, arm_export is the A32 loop" min="1" max="1">v2 = v3 \^ 0x33;</stringmatch>
+<stringmatch name="ARMFUNCMODE #6: an unsymbolized A32 helper an A32 export calls stays A32" min="1" max="1">return a0 \* 5 \+ a1 \* 7 \+ 3;</stringmatch>
 </decompilertest>

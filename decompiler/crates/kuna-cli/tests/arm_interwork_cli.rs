@@ -408,6 +408,22 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// A stripped armel shared object (`arm_funcmode_helper_*.c`) whose A32
+/// export `a_func` follows the Thumb `t_entry` and calls the unsymbolized A32
+/// static helper at 0x1020c with `bl`: the helper stays A32 by default and
+/// with `armfuncmode` off.
+#[test]
+fn an_unsymbolized_a32_helper_after_an_a32_export_keeps_its_mode() {
+    let path = fixture("arm_funcmode_helper_o2_le32.so");
+    let lib = path.to_str().unwrap();
+    for extra in [&[][..], &["--option", "armfuncmode", "off"][..]] {
+        let mut args = vec!["decompile", lib, "0x1020c", "--addr"];
+        args.extend_from_slice(extra);
+        let helper = kuna(&args);
+        assert!(helper.contains("return a0 * 5 + a1 * 7 + 3;"), "{extra:?}: {helper}");
+    }
+}
+
 /// Stripped armel shared objects (`arm_interwork_stubs_le32.c`) whose every
 /// export has an even address (the Thumb ones are A32 linker stubs), so no
 /// symbol paints Thumb: the A32 `arm_export`, which calls three functions, is

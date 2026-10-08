@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2397,
-    2397
+    2398,
+    2398
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -40,6 +40,7 @@
     "data:ARMFUNCMODE #3: the A32 body appears in the four other passes",
     "data:ARMFUNCMODE #4: gcc -O2 .so, off, arm_export decodes as Thumb",
     "data:ARMFUNCMODE #5: gcc -O2 .so, default, arm_export is the A32 loop",
+    "data:ARMFUNCMODE #6: an unsymbolized A32 helper an A32 export calls stays A32",
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
     "data:ARRAYCOVERWIDTH #2: and so does bank B's",
     "data:ARRAYCOVERWIDTH #3: the swap's first leg carries the transfer width on both sides",

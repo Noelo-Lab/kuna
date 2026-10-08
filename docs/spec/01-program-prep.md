@@ -1308,7 +1308,11 @@ AAELF32 mark of an A32 function, when it lies in an executable section of a link
 ARM ELF after an odd function symbol, and sets `TMode=1` again where its extent ends.
 The extent is the symbol's size cut at the next function symbol and at the end of the
 section: an exported Thumb function whose symbol the linker moved onto its A32
-interworking stub keeps the function's size, and must paint only the stub. Past the
+interworking stub keeps the function's size, and must paint only the stub. The extent
+then grows over every direct A32 `b`/`bl` target it reaches before the next function
+symbol, up to the first return or unconditional branch on that target's linear run and
+over what that run branches to in turn: an A32 branch target is A32 by its encoding,
+so an unsymbolized A32 static helper an A32 export calls keeps A32. Past the
 extent the Thumb mode the symbol paint gave resumes, so a stripped library's
 unsymbolized Thumb routines after an A32 one keep their mode. A symbol of size 0
 states no extent and is skipped, and an image whose function symbols are all even

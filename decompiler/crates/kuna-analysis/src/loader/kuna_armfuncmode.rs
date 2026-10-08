@@ -33,6 +33,7 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Phase
 
 const TMODE: &str = "TMode";
 const SHF_EXECINSTR: u64 = 0x4;
+const EF_ARM_BE8: u32 = 0x0080_0000;
 
 pub struct ArmFuncModePass;
 
@@ -61,9 +62,12 @@ pub fn arm_func_mode_paints(file: &object::File) -> Vec<ContextPaint> {
     if symbols().any(|sym| sym.name().is_ok_and(is_mapping_mode_symbol)) {
         return Vec::new();
     }
-    let functions: Vec<(u64, u64, u64)> = symbols()
+    let functions: Vec<(u64, u64, SectionIndex, u64)> = symbols()
         .filter(|sym| sym.kind() == SymbolKind::Text && sym.is_definition() && sym.address() != 0)
-        .filter_map(|sym| Some((sym.address(), sym.size(), executable_end(file, sym.section_index()?)?)))
+        .filter_map(|sym| {
+            let index = sym.section_index()?;
+            Some((sym.address(), sym.size(), index, executable_end(file, index)?))
+        })
         .collect();
     let thumb: BTreeSet<u64> =
         functions.iter().filter(|(addr, ..)| addr & 1 != 0).map(|(addr, ..)| addr & !1).collect();
@@ -72,14 +76,15 @@ pub fn arm_func_mode_paints(file: &object::File) -> Vec<ContextPaint> {
     };
     let starts: BTreeSet<u64> = functions.iter().map(|(addr, ..)| addr & !1).collect();
     let next_start = |addr: u64| starts.range(addr + 1..).next().copied().unwrap_or(u64::MAX);
-    let mut arm: BTreeMap<u64, u64> = BTreeMap::new();
-    for &(addr, size, section_end) in functions.iter() {
+    let mut arm: BTreeMap<u64, (u64, u64, SectionIndex)> = BTreeMap::new();
+    for &(addr, size, index, section_end) in functions.iter() {
         if addr & 1 != 0 || addr < first_thumb || size == 0 || thumb.contains(&addr) {
             continue;
         }
-        let end = addr.saturating_add(size).min(next_start(addr)).min(section_end);
-        let extent = arm.entry(addr).or_insert(end);
-        *extent = (*extent).max(end);
+        let limit = next_start(addr).min(section_end);
+        let end = addr.saturating_add(size).min(limit);
+        let extent = arm.entry(addr).or_insert((end, limit, index));
+        extent.0 = extent.0.max(end);
     }
     if arm.is_empty()
         || super::kuna_armfloatabi::thumb_only(file)
@@ -87,14 +92,78 @@ pub fn arm_func_mode_paints(file: &object::File) -> Vec<ContextPaint> {
     {
         return Vec::new();
     }
+    let little = file.is_little_endian()
+        || matches!(file.flags(), object::FileFlags::Elf { e_flags, .. } if e_flags & EF_ARM_BE8 != 0);
     let mut paints = Vec::new();
-    for (addr, end) in arm.into_iter().filter(|(addr, end)| end > addr) {
+    for (addr, (end, limit, index)) in arm.into_iter().filter(|(addr, (end, ..))| end > addr) {
+        let end = file
+            .section_by_index(index)
+            .ok()
+            .and_then(|section| Some((section.address(), section.data().ok()?)))
+            .map_or(end, |(base, data)| a32_reach(data, base, little, addr, end, limit));
         paints.push(ContextPaint { addr, end: Some(end), var: TMODE, value: 0 });
         if end < next_start(addr) {
             paints.push(ContextPaint { addr: end, end: None, var: TMODE, value: 1 });
         }
     }
     paints
+}
+
+/// The end of the A32 code `[addr, end)` reaches by a direct A32 `b`/`bl` into
+/// `[end, limit)`, the bytes before the next function symbol: such a target is
+/// A32 by its encoding, so the extent grows over it, up to the first return or
+/// unconditional branch the target's linear run meets, and over what that run
+/// branches to in turn.
+fn a32_reach(data: &[u8], base: u64, little: bool, addr: u64, end: u64, limit: u64) -> u64 {
+    let word = |at: u64| -> Option<u32> {
+        let offset = usize::try_from(at.checked_sub(base)?).ok()?;
+        let bytes: [u8; 4] = data.get(offset..offset.checked_add(4)?)?.try_into().ok()?;
+        Some(if little { u32::from_le_bytes(bytes) } else { u32::from_be_bytes(bytes) })
+    };
+    let target = |at: u64, insn: u32| -> Option<u64> {
+        if insn >> 28 == 0xF || (insn >> 25) & 7 != 0b101 {
+            return None;
+        }
+        let offset = (((insn & 0x00FF_FFFF) << 8) as i32 >> 6) as i64;
+        at.checked_add(8)?.checked_add_signed(offset)
+    };
+    let stops = |insn: u32| {
+        insn >> 28 == 0xE
+            && ((insn & 0x0FFF_FFF0) == 0x012F_FF10
+                || (insn >> 24) & 0xF == 0b1010
+                || (insn & 0x0FFF_8000) == 0x08BD_8000
+                || insn == 0xE49D_F004
+                || insn == 0xE1A0_F00E)
+    };
+    let mut reach = end;
+    let mut walked: BTreeSet<u64> = BTreeSet::new();
+    let mut queue: Vec<u64> = Vec::new();
+    let mut at = addr & !3;
+    while at < end {
+        walked.insert(at);
+        if let Some(to) = word(at).and_then(|insn| target(at, insn)) {
+            queue.push(to);
+        }
+        at += 4;
+    }
+    while let Some(start) = queue.pop() {
+        if start < end || start >= limit || start & 3 != 0 || walked.contains(&start) {
+            continue;
+        }
+        let mut at = start;
+        while at < limit && walked.insert(at) {
+            let Some(insn) = word(at) else { break };
+            if let Some(to) = target(at, insn) {
+                queue.push(to);
+            }
+            at += 4;
+            if stops(insn) {
+                break;
+            }
+        }
+        reach = reach.max(at);
+    }
+    reach
 }
 
 impl AnalysisPass for ArmFuncModePass {
@@ -129,6 +198,13 @@ mod tests {
         let expected = vec![(0x0200_0080, Some(0x0200_0088), 0), (0x0200_0088, None, 1)];
         assert_eq!(paints("arm_funcmode_le32"), expected);
         assert_eq!(paints("arm_funcmode_nocall_le32"), expected);
+    }
+
+    #[test]
+    fn a_direct_a32_branch_past_the_extent_keeps_its_target_a32() {
+        let paints = paints("arm_funcmode_helper_o2_le32.so");
+        let a32 = paints.iter().find(|(addr, ..)| *addr == 0x101f8).copied();
+        assert!(a32.is_some_and(|(_, end, value)| value == 0 && end.is_some_and(|end| end > 0x1020c)), "{paints:x?}");
     }
 
     #[test]
