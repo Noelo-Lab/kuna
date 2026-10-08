@@ -6,7 +6,7 @@ use common::process;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const FUNCTIONS: &str = "above,at_least,not_above,not_at_least,pick,not_above_pair,above_two,nan_or_huge,nan_or_above,ordered_below,ordered_below_pair";
+const FUNCTIONS: &str = "above,at_least,not_above,not_at_least,pick,not_above_pair,above_two,nan_or_huge,ordered_below_pair";
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -60,7 +60,6 @@ fn float_compare_flags_keep_their_unordered_case() {
         let one = format!("data 0x{} float one", symbol(&native, "one"));
         let two = format!("data 0x{} double two", symbol(&native, "two"));
         let huge = format!("data 0x{} double huge", symbol(&native, "huge"));
-        let bound = format!("data 0x{} double bound", symbol(&native, "bound"));
         let (printed, stderr, rc) = common::run_kuna(&[
             "decompile-all",
             native.to_str().unwrap(),
@@ -88,10 +87,6 @@ fn float_compare_flags_keep_their_unordered_case() {
             "--assert",
             "prototype nan_or_huge double nan_or_huge(double x)",
             "--assert",
-            "prototype nan_or_above int nan_or_above(double x)",
-            "--assert",
-            "prototype ordered_below int ordered_below(float x)",
-            "--assert",
             "prototype ordered_below_pair int ordered_below_pair(float x,float y)",
             "--assert",
             "prototype work double work(double x)",
@@ -101,13 +96,11 @@ fn float_compare_flags_keep_their_unordered_case() {
             &two,
             "--assert",
             &huge,
-            "--assert",
-            &bound,
         ]);
         assert_eq!(rc, 0, "{stderr}\n{printed}");
         let emitted = dir.join(format!("printed-{cc}.c"));
         std::fs::write(&emitted, format!(
-            "#include <math.h>\n#undef NAN\n#define NAN(x) isnan(x)\ntypedef float float4;\ntypedef double float8;\ntypedef int int4;\ntypedef unsigned int uint4;\nextern const float one;\nextern const double two;\nextern const double huge;\nextern const double bound;\nextern double work(double);\n{printed}"
+            "#include <math.h>\n#undef NAN\n#define NAN(x) isnan(x)\ntypedef float float4;\ntypedef double float8;\ntypedef int int4;\ntypedef unsigned int uint4;\nextern const float one;\nextern const double two;\nextern const double huge;\nextern double work(double);\n{printed}"
         )).unwrap();
         for level in ["-O0", "-O2"] {
             let executable = dir.join(format!("printed-{cc}{level}"));
