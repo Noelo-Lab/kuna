@@ -1743,6 +1743,9 @@ pub struct Architecture {
     pub analysis_poolentry: bool,
     /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
     pub analysis_arm_markers: bool,
+    /// (kuna) `armfuncmode`: paint `TMode=0` at each even function symbol of an
+    /// ARM ELF without mapping symbols; default on.
+    pub analysis_armfuncmode: bool,
     /// (kuna) Gate the entry-reachable Thumb context walk (`entrythumbflow`) for a
     /// mixed ARM image whose container entry carries the Thumb bit but whose
     /// machine word makes no whole-image mode claim; default on. The walk decodes
@@ -2772,6 +2775,7 @@ impl Architecture {
             analysis_ptrentry: false,
             analysis_poolentry: false,
             analysis_arm_markers: false,
+            analysis_armfuncmode: false,
             analysis_entrythumbflow: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
@@ -3132,6 +3136,7 @@ impl Architecture {
         self.analysis_ptrentry = false; // (kuna) pointer-referenced ARM entries default-off (output-changing)
         self.analysis_poolentry = false; // (kuna) ARM literal-pool inference default-off
         self.analysis_arm_markers = true;
+        self.analysis_armfuncmode = true; // (kuna) even ARM function symbol = A32 when no mapping symbols
         self.analysis_entrythumbflow = true; // (kuna) entry-reachable Thumb context default-on; inert without a Thumb-bit entry
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)

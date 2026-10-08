@@ -1298,6 +1298,44 @@ decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/lo
 (ArmMarkerPass)` (`arm_markers`) ports ARM's `ARM_ElfExtension`/`ArmSymbolAnalyzer`:
 `$t`/`$a` mapping symbols and the STT_FUNC odd-address convention become `TMode`
 paints, applied to the engine's `ContextDatabase` at commit, before any decode.
+(kuna) Those are point paints: each fills up to the next address where the mode was
+set, and so does the `TMode=1` a `blx` commits for its target. In an image with
+function symbols but no mapping symbols nothing set the mode again at an A32
+function placed after a Thumb one, so the Thumb mode reached it. The `armfuncmode`
+pass (`decompiler/crates/kuna-analysis/src/loader/kuna_armfuncmode.rs (arm_func_mode_paints)`,
+default on) sets `TMode=0` over each defined function symbol whose value is even, the
+AAELF32 mark of an A32 function, when it lies in an executable section of a linked
+ARM ELF after an odd function symbol, and sets `TMode=1` again where its extent ends.
+The extent is the symbol's size cut at the next function symbol and at the end of the
+section: an exported Thumb function whose symbol the linker moved onto its A32
+interworking stub keeps the function's size, and must paint only the stub. The extent
+then grows over every direct A32 `b`/`bl` target it reaches before the next function
+symbol, up to the first return, unconditional branch, call to a function the
+no-return list names (the image's own definition or its PLT stub), or literal-pool word
+on that target's linear run, and over what that run branches to in turn: an A32 branch
+target is A32 by its encoding, so an unsymbolized A32 static helper an A32 export calls
+keeps A32. A run that reaches the next function symbol or the section end without such
+a stop says nothing about where its code ends and adds nothing, and words a PC-relative
+`ldr` in the scanned code loads are data, never read as branches. That data test is a
+known limit: a pool word reached through `adr` + `ldr`, `vldr` or `ldrd` is still read
+as a possible `b`, and a Thumb-2 `pop.w {..., pc}` at an address 2 mod 4 reads as an A32
+`pop {..., pc}` stop, so a run over such bytes can still grow over a following
+unsymbolized Thumb routine. Past the
+extent the Thumb mode the symbol paint gave resumes, so a stripped library's
+unsymbolized Thumb routines after an A32 one keep their mode. A symbol of size 0
+states no extent and is skipped, and an image whose function symbols are all even
+keeps the language default it already had, together with whatever modes its calls
+commit. The pass paints nothing for an image with `$a`/`$t` mapping symbols, a
+relocatable object, an image whose build attributes rule out A32 (M profile or
+`Tag_ARM_ISA_use` 0), a Cortex-M image with a vector table, or an address that also
+carries an odd function symbol. Its paints are committed under its own gate and fed
+to the Listing's context painter as well, and the Listing keeps the A32 extents: the
+AIF gap walk rejects a Thumb walk (a 2-aligned candidate, or one whose first
+instruction is 2 bytes) whose flow leaves the gap for a decoded instruction inside one
+of them, since a Thumb branch cannot reach A32 code without an exchange. Without that
+check a Thumb walk over the zero padding before an A32 routine was accepted once its
+branches landed on the A32 instruction starts the extent now yields; an explicit `--isa` states the whole
+image's mode and turns the pass off, and so does the option, which restores the leak.
 `decompiler/crates/kuna-analysis/src/loader/mips_markers.rs` carries the MIPS pair:
 `MipsIsaModePass` (`mips_isa`) paints `ISA_MODE` at MIPS16e/microMIPS entries
 (LSB-set or `st_other` STO-marked), and `MipsMarkerPass` (`mips_gp`) is a register

@@ -2932,6 +2932,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // decompile-all surface). x86-64 keeps it off ⇒ byte-identical there.
         "funcdisc_recursive" => arch.analysis_funcstart_patterns,
         "arm_markers" => arch.analysis_arm_markers,
+        // (kuna `armfuncmode`) An explicit `--isa` states the mode of the whole
+        // image, so the symbol-derived A32 extents yield to it.
+        "armfuncmode" => arch.analysis_armfuncmode && !arch.input_arm_isa_override,
         // (kuna) The entry-reachable Thumb context walk. Its paints are computed at
         // the commit (after byte overlays) and stashed under this id, so the gate
         // here is the defensive half of the check that decides whether it runs.
