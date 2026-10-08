@@ -914,6 +914,30 @@ bounded boolean fan-out first, before dropping guards could hide the proof.
 Thus ordinary UCOMISS conditions keep their ordered forms without granting
 an unguarded MINSS comparison a false complement.
 
+A guard matches an operand when both are the same value, or when both are
+reads of one location by one instruction: two LOADs through one pointer, or
+two not-yet-heritaged reads of one memory varnode, provided no op of that
+instruction stores, calls, or writes the location. This is how
+`comiss one(%rip),%xmm0` qualifies, since the SLEIGH `fucompe` macro reads its
+memory operand once for each flag. A complement built from such an operand
+is issued directly after the guarded comparison, so its fresh read sits at
+the same instruction, and a free memory varnode never gains a second reader.
+
+`RuleIgnoreNan` visits the guarded roots reachable from a NaN test outermost
+first, so `CF || ZF` folds before the `CF` it reads. A root whose live readers
+all consume it directly (a `setb`/`setbe` copy, a zero extension, an `sbb`
+borrow, a multiply) is rewritten in place to the negated complement:
+`NAN(a) || NAN(b) || a < b` becomes `!(b <= a)`, and with the matching
+equality `!(b < a)`, true for unordered inputs exactly as the flag is.
+Without this, the `nanignore compare` policy strips the guards and a `seta`
+after `comiss` prints as `!(x < c) && x != c`, which is true for a NaN. A root
+that is combined with other booleans (`&&`, `||`, `&`, `|`, `^`, or a copy
+read by them) is left to the policy, because a later strip of a remaining
+`!NAN` term beside a negated complement would lose the exclusion. A root
+packed into a status word (`zext(flag) << n`, the x87 `fnstsw` path) is also
+left alone; those bits are only reassembled into a condition after the
+guards are gone, so x87 status-word compares keep the upstream approximation.
+
 The upstream rule set is ported across eight files in C++ definition order —
 `ruleaction.cc` split at class boundaries. The map, by dominant theme (named
 rules are representative, not exhaustive; a rule's registration row in
