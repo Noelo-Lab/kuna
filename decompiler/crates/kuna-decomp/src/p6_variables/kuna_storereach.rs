@@ -53,7 +53,8 @@
 //! the guard (`withdraw_spoiled_guard`), which prints what `stackstoreguard
 //! off` prints.
 
-use std::collections::BTreeSet;
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use kuna_base::address::{calc_mask, sign_extend};
@@ -71,6 +72,40 @@ const MAX_REACH: intb = 0x100;
 
 /// Most stack addresses one pointer may choose between.
 const MAX_PIECES: usize = 8;
+
+/// One walk back along a pointer's definitions: what each `(Varnode, depth)`
+/// gave, so a pointer built through nested choices is walked once per value
+/// rather than once per path. The answer at a Varnode depends only on it and
+/// its depth, so the walk answers as an unremembered one would.
+struct Walk<T> {
+    seen: RefCell<BTreeMap<(VarnodeId, u32), T>>,
+    steps: Cell<u32>,
+    expired: Cell<bool>,
+}
+
+impl<T: Clone> Walk<T> {
+    fn new() -> Self {
+        Walk { seen: RefCell::new(BTreeMap::new()), steps: Cell::new(0), expired: Cell::new(false) }
+    }
+
+    /// The answer at `(vn, depth)`, from `step` the first time. Every 256th new
+    /// value also checks the function's watchdog deadline; once it has passed,
+    /// every answer is `gave_up`.
+    fn at(&self, vn: VarnodeId, depth: u32, gave_up: T, step: impl FnOnce() -> T) -> T {
+        if let Some(known) = self.seen.borrow().get(&(vn, depth)) {
+            return known.clone();
+        }
+        let n = self.steps.get().wrapping_add(1);
+        self.steps.set(n);
+        if self.expired.get() || (n % 256 == 0 && crate::infra::decompile_drive::deadline_passed()) {
+            self.expired.set(true);
+            return gave_up;
+        }
+        let answer = step();
+        self.seen.borrow_mut().insert((vn, depth), answer.clone());
+        answer
+    }
+}
 
 /// What the latest layout pass asks of the final layout.
 #[derive(Clone, Default)]
@@ -519,8 +554,17 @@ fn plain_index_base(fd: &Funcdata, ptr: VarnodeId, sb: VarnodeId, space: &Rc<Add
     }
 }
 
-/// Does `vn`'s pointer chain pass a MULTIEQUAL?
+/// Does `vn`'s pointer chain pass a MULTIEQUAL? Undecided past twelve steps
+/// or the watchdog deadline, which counts as yes.
 fn through_walk(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    through_walk_within(fd, vn, depth, &Walk::new())
+}
+
+fn through_walk_within(fd: &Funcdata, vn: VarnodeId, depth: u32, walk: &Walk<bool>) -> bool {
+    walk.at(vn, depth, true, || through_walk_step(fd, vn, depth, walk))
+}
+
+fn through_walk_step(fd: &Funcdata, vn: VarnodeId, depth: u32, walk: &Walk<bool>) -> bool {
     if depth > 12 {
         return true;
     }
@@ -530,12 +574,12 @@ fn through_walk(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     match op.code() {
         OpCode::CPUI_MULTIEQUAL => true,
         OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT | OpCode::CPUI_PTRSUB => {
-            op.get_in(0).is_some_and(|i| through_walk(fd, i, depth + 1))
+            op.get_in(0).is_some_and(|i| through_walk_within(fd, i, depth + 1, walk))
         }
         OpCode::CPUI_PTRADD | OpCode::CPUI_INT_ADD => (0..2).any(|k| {
             op.get_in(k).is_some_and(|i| {
                 fd.vbank().get(i).is_some_and(|v| v.get_type().get_metatype() == type_metatype::TYPE_PTR || k == 0)
-                    && through_walk(fd, i, depth + 1)
+                    && through_walk_within(fd, i, depth + 1, walk)
             })
         }),
         _ => false,
@@ -768,9 +812,17 @@ fn is_choice(fd: &Funcdata, vn: VarnodeId) -> bool {
 }
 
 /// Does `vn`'s pointer chain pass a MULTIEQUAL one of whose inputs steps from
-/// it by a constant (a loop's pointer walk)? Undecided past twelve steps,
-/// which counts as yes.
+/// it by a constant (a loop's pointer walk)? Undecided past twelve steps or
+/// the watchdog deadline, which counts as yes.
 fn loop_walk(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    loop_walk_within(fd, vn, depth, &Walk::new())
+}
+
+fn loop_walk_within(fd: &Funcdata, vn: VarnodeId, depth: u32, walk: &Walk<bool>) -> bool {
+    walk.at(vn, depth, true, || loop_walk_step(fd, vn, depth, walk))
+}
+
+fn loop_walk_step(fd: &Funcdata, vn: VarnodeId, depth: u32, walk: &Walk<bool>) -> bool {
     if depth > 12 {
         return true;
     }
@@ -779,15 +831,15 @@ fn loop_walk(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     };
     match op.code() {
         OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).any(|k| {
-            op.get_in(k).is_some_and(|i| steps_from(fd, i, vn) || loop_walk(fd, i, depth + 1))
+            op.get_in(k).is_some_and(|i| steps_from(fd, i, vn) || loop_walk_within(fd, i, depth + 1, walk))
         }),
         OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT | OpCode::CPUI_PTRSUB => {
-            op.get_in(0).is_some_and(|i| loop_walk(fd, i, depth + 1))
+            op.get_in(0).is_some_and(|i| loop_walk_within(fd, i, depth + 1, walk))
         }
         OpCode::CPUI_PTRADD | OpCode::CPUI_INT_ADD => (0..2).any(|k| {
             op.get_in(k).is_some_and(|i| {
                 fd.vbank().get(i).is_some_and(|v| v.get_type().get_metatype() == type_metatype::TYPE_PTR || k == 0)
-                    && loop_walk(fd, i, depth + 1)
+                    && loop_walk_within(fd, i, depth + 1, walk)
             })
         }),
         _ => false,
@@ -1208,12 +1260,24 @@ fn store_reach(pieces: &[(intb, Option<intb>)]) -> Option<(Vec<intb>, Option<(in
 /// known-bits mask otherwise) does not bound it. The extra starts
 /// at the address the pointer names, since the C prints the access from there.
 /// A phi of different stack addresses gives one such piece per address.
+/// Each value is walked once (`Walk`); past the watchdog deadline the walk
+/// gives `None`.
 pub(crate) fn pointer_pieces(
     fd: &Funcdata,
     vn: VarnodeId,
     sb: VarnodeId,
     depth: u32,
 ) -> Option<Vec<(uintb, Option<intb>)>> {
+    pieces_within(fd, vn, sb, depth, &Walk::new())
+}
+
+type Pieces = Option<Vec<(uintb, Option<intb>)>>;
+
+fn pieces_within(fd: &Funcdata, vn: VarnodeId, sb: VarnodeId, depth: u32, memo: &Walk<Pieces>) -> Pieces {
+    memo.at(vn, depth, None, || pieces_step(fd, vn, sb, depth, memo))
+}
+
+fn pieces_step(fd: &Funcdata, vn: VarnodeId, sb: VarnodeId, depth: u32, memo: &Walk<Pieces>) -> Pieces {
     if vn == sb {
         return Some(vec![(0, Some(0))]);
     }
@@ -1223,7 +1287,7 @@ pub(crate) fn pointer_pieces(
     let op = fd.obank().get(fd.vbank().get(vn)?.get_def()?)?;
     match op.code() {
         OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => {
-            pointer_pieces(fd, op.get_in(0)?, sb, depth + 1)
+            pieces_within(fd, op.get_in(0)?, sb, depth + 1, memo)
         }
         OpCode::CPUI_MULTIEQUAL => {
             let mut walk = false;
@@ -1234,7 +1298,7 @@ pub(crate) fn pointer_pieces(
                     walk = true;
                     continue;
                 }
-                let Some(found) = pointer_pieces(fd, input, sb, depth + 1) else {
+                let Some(found) = pieces_within(fd, input, sb, depth + 1, memo) else {
                     if comes_from(fd, input, sb) {
                         return None;
                     }
@@ -1268,7 +1332,7 @@ pub(crate) fn pointer_pieces(
                 .get(op.get_in(1)?)
                 .filter(|c| c.is_constant())?
                 .get_offset();
-            let pieces = pointer_pieces(fd, op.get_in(0)?, sb, depth + 1)?;
+            let pieces = pieces_within(fd, op.get_in(0)?, sb, depth + 1, memo)?;
             Some(
                 pieces
                     .into_iter()
@@ -1281,10 +1345,10 @@ pub(crate) fn pointer_pieces(
                 OpCode::CPUI_PTRADD => fd.vbank().get(op.get_in(2)?)?.get_offset(),
                 _ => 1,
             };
-            let (pieces, term) = match pointer_pieces(fd, op.get_in(0)?, sb, depth + 1) {
+            let (pieces, term) = match pieces_within(fd, op.get_in(0)?, sb, depth + 1, memo) {
                 Some(base) => (base, op.get_in(1)?),
                 None if op.code() == OpCode::CPUI_INT_ADD => (
-                    pointer_pieces(fd, op.get_in(1)?, sb, depth + 1)?,
+                    pieces_within(fd, op.get_in(1)?, sb, depth + 1, memo)?,
                     op.get_in(0)?,
                 ),
                 None => return None,

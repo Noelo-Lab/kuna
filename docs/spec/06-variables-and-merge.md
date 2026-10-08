@@ -1155,7 +1155,17 @@ before `endptrbound`. It takes each STORE of a one-byte value that a guard
 INDIRECT on the stack names as its effect, and resolves its pointer as the
 stack base plus constants plus indices (`kuna_storereach.rs (pointer_pieces)`,
 through copies, casts, INDIRECTs, `PTRSUB`, `PTRADD` and `INT_ADD`, and through
-a pointer walk's `MULTIEQUAL` whose other inputs agree on the base). When every
+a pointer walk's `MULTIEQUAL` whose other inputs agree on the base). The walk
+gives up, as unresolved, past twelve steps. It remembers what each Varnode at
+each depth gave (`kuna_storereach.rs (Walk)`), so a pointer built through
+nested choices is walked once per value rather than once per path, which on
+MIPS `ld.so.1` never finished; the answer is the same either way. The two
+tests beside it, whether a pointer passes a `MULTIEQUAL`
+(`kuna_storereach.rs (through_walk)`) and whether it is a loop's walk
+(`kuna_storereach.rs (loop_walk)`), remember the same way and treat a give-up
+(past twelve steps, or past the watchdog deadline) as yes. Past the deadline
+every walk gives up, and the drive reports the function as over its budget.
+When every
 index has a known-bits mask that bounds it, the reach is `[base, base + max +
 1)`. An index that is an unsigned remainder by a constant, directly or through
 a copy, a zero extension, or a sign extension whose input's sign bit the
