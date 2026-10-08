@@ -6,6 +6,7 @@ use kuna_num::opcodes::OpCode;
 use crate::context::{OpId, VarnodeId};
 use crate::expression::functional_equality;
 use crate::funcdata::Funcdata;
+use crate::op::pcodeop_addlflags::kuna_exactfloat;
 
 fn copied_value(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
     for _ in 0..6 {
@@ -209,6 +210,20 @@ fn guarded_complement(data: &Funcdata, root: VarnodeId) -> Option<Complement> {
     })
 }
 
+/// A comparison this module issued: it already decides the unordered case, so `RuleIgnoreNan`
+/// must not drop a separate NaN test against it.
+pub(crate) fn is_exact(data: &Funcdata, op: OpId) -> bool {
+    data.obank()
+        .get(op)
+        .is_some_and(|op| op.get_addlflags() & kuna_exactfloat != 0)
+}
+
+fn mark_exact(data: &mut Funcdata, op: OpId) {
+    if let Some(op) = data.obank_mut().get_mut(op) {
+        op.set_additional_flag(kuna_exactfloat);
+    }
+}
+
 fn reads_memory(data: &Funcdata, vn: VarnodeId) -> bool {
     data.vbank()
         .get(vn)
@@ -236,6 +251,7 @@ fn complement_at_leaf(data: &mut Funcdata, c: &Complement) -> VarnodeId {
     data.op_set_all_input(op, &inputs)
         .expect("guarded complement inputs");
     data.op_insert_after(op, c.leaf);
+    mark_exact(data, op);
     result
 }
 
@@ -309,6 +325,7 @@ pub(crate) fn fold_guarded_negate(data: &mut Funcdata, negate: OpId) -> bool {
     data.op_set_opcode(negate, crate::typeop::seam_type_op_for(c.code));
     data.op_set_all_input(negate, &[c.lhs, c.rhs])
         .expect("guarded float complement inputs");
+    mark_exact(data, negate);
     true
 }
 
@@ -332,6 +349,7 @@ fn fold_guarded_branch(data: &mut Funcdata, branch: OpId) -> bool {
         data.op_set_all_input(comparison, &[c.lhs, c.rhs])
             .expect("guarded branch inputs");
         data.op_insert_before(comparison, branch);
+        mark_exact(data, comparison);
         result
     };
     data.op_set_input(branch, result, 1)

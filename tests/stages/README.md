@@ -156,8 +156,10 @@ against the original assembly.
 `kuna-ucomiss-unordered.xml` pins x86 COMISS/COMISD flags read by `seta`,
 `setae`, `setbe`, `setb`, an `sbb` borrow and a `jbe` branch, with a memory
 operand. Each flag includes the unordered case, so `x > one` prints as
-`one < x` and `setbe` as `!(one < x)`. This is an unconditional correctness
-fix, exercised with defaults and `nanignore none`.
+`one < x` and `setbe` as `!(one < x)`. A second image of gcc and clang -O2
+`isnan`/`isunordered` idioms and a `jp`+`jbe` pair pins that a separate NaN
+test beside such an exact comparison is kept. This is an unconditional
+correctness fix, exercised with defaults and `nanignore none`.
 `kuna-cli/tests/float_unordered_compare.rs` compiles the emitted bodies with
 GCC and Clang and checks NaN, signed zeros, infinities and finite values
 against the original functions.

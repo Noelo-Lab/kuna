@@ -209,6 +209,10 @@ pub mod pcodeop_addlflags {
     /// half of a vector register, as decoded.  Set and read by
     /// [`crate::p4_calls::kuna_zerofillreturn`].
     pub const kuna_zerofill: uint4 = 0x40000;
+    /// (kuna) This float comparison is the exact complement of a NaN-guarded
+    /// flag, so no separate NaN test may be dropped against it.  Set by
+    /// [`crate::p3_dataflow::kuna_floatnegation`]; read by `RuleIgnoreNan`.
+    pub const kuna_exactfloat: uint4 = 0x80000;
 }
 
 // ---------------------------------------------------------------------------

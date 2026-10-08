@@ -3,6 +3,8 @@
 
 const float one = 1.0f;
 const double two = 2.0;
+const double huge = 1e300;
+const double bound = 2.5;
 
 extern int above(float);
 extern int at_least(float);
@@ -11,8 +13,20 @@ extern int not_at_least(float);
 extern int pick(double, double);
 extern int not_above_pair(double, double);
 extern int above_two(double);
+extern double nan_or_huge(double);
+extern int nan_or_above(double);
+extern int ordered_below(float);
+extern int ordered_below_pair(float, float);
+
+double work(double x) { (void)x; return 42.0; }
 
 static int failures;
+
+static void check_double(double got, double want, const char *name, double x) {
+    if (got == want || (isnan(got) && isnan(want))) return;
+    fprintf(stderr, "%s(%g): got %g, expected %g\n", name, x, got, want);
+    failures++;
+}
 
 static void check(int got, int want, const char *name, double x, double y) {
     if (got == want) return;
@@ -31,10 +45,14 @@ int main(void) {
         check(not_above(f), !(f > one), "not_above", f, 0);
         check(not_at_least(f), !(f >= one), "not_at_least", f, 0);
         check(above_two(x), x > two ? 3 : 5, "above_two", x, 0);
+        check_double(nan_or_huge(x), isnan(x) || x > huge ? x + x : 42.0, "nan_or_huge", x);
+        check(nan_or_above(x), isnan(x) || x > bound, "nan_or_above", x, 0);
+        check(ordered_below(f), !isnan(f) && !(f >= one), "ordered_below", f, 0);
         for (int j = 0; j < count; j++) {
             double y = inputs[j];
             check(pick(x, y), x >= y ? 3 : 5, "pick", x, y);
             check(not_above_pair(x, y), !(x > y), "not_above_pair", x, y);
+            check(ordered_below_pair((float)x, (float)y), (float)x < (float)y, "ordered_below_pair", x, y);
         }
     }
     return failures != 0;

@@ -931,12 +931,22 @@ borrow, a multiply) is rewritten in place to the negated complement:
 equality `!(b < a)`, true for unordered inputs exactly as the flag is.
 Without this, the `nanignore compare` policy strips the guards and a `seta`
 after `comiss` prints as `!(x < c) && x != c`, which is true for a NaN. A root
-that is combined with other booleans (`&&`, `||`, `&`, `|`, `^`, or a copy
-read by them) is left to the policy, because a later strip of a remaining
-`!NAN` term beside a negated complement would lose the exclusion. A root
-packed into a status word (`zext(flag) << n`, the x87 `fnstsw` path) is also
-left alone; those bits are only reassembled into a condition after the
-guards are gone, so x87 status-word compares keep the upstream approximation.
+whose live readers combine it with other booleans (`&&`, `||`, `&`, `|`, `^`,
+or a copy) is not rewritten in place here; the negated and branch folds above
+still apply to it once those combinations are normalized. A root packed into a status word
+(`zext(flag) << n`, the x87 `fnstsw` path) is also left alone; those bits are
+only reassembled into a condition after the guards are gone, so x87
+status-word compares keep the upstream approximation.
+
+Every comparison these folds issue or rewrite carries the `kuna_exactfloat`
+addlflag (`decompiler/crates/kuna-decomp/src/substrate/op.rs`). It already
+decides the unordered case, so `RuleIgnoreNan`'s
+`ignorenan_check_back_for_compare` refuses to treat it as a comparison that
+protects a NaN test: an explicit `isnan(x) || x > c` or the `setnp`/`jp` of a
+separate compare keeps its `NAN(x)` term beside the exact comparison instead
+of being dropped against it. Dropping it was harmless while both sides were
+approximated, because the two approximations cancelled; beside an exact
+comparison it changes the value for a NaN.
 
 The upstream rule set is ported across eight files in C++ definition order —
 `ruleaction.cc` split at class boundaries. The map, by dominant theme (named

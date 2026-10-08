@@ -18,12 +18,26 @@
     0283c003c30f2e05b80f00007606b803000000c3b805000000c3
   </bytechunk>
   <bytechunk space="ram" offset="0x402000">0000803f</bytechunk>
+  <bytechunk space="ram" offset="0x404000">
+    660f2ec07a0a660f2f05f20f00007608f20f58c0c30f1f00e9730000000f
+    1f000f2fc10f92c231c00f2ec10f9bc021d0c3662e0f1f8400000000000f
+    1f440000660f2ec00f9ac0660f2e05b90f00000f97c108c10fb6c1c30f1f
+    8400000000000f2ec00f9bc048c7c1105040000f2e010f92c120c10fb6c1
+    c30f2e05900f00007a087606b803000000c3b805000000c3c3
+  </bytechunk>
+  <bytechunk space="ram" offset="0x405000">9c7500883ce4377e00000000000004400000c842</bytechunk>
   <symbol space="ram" offset="0x401000" name="above"/>
   <symbol space="ram" offset="0x40100d" name="at_least"/>
   <symbol space="ram" offset="0x40101a" name="not_above"/>
   <symbol space="ram" offset="0x401027" name="not_at_least"/>
   <symbol space="ram" offset="0x401034" name="pick"/>
   <symbol space="ram" offset="0x401041" name="above_branch"/>
+  <symbol space="ram" offset="0x404000" name="nan_or_huge"/>
+  <symbol space="ram" offset="0x404020" name="ordered_below_pair"/>
+  <symbol space="ram" offset="0x404040" name="nan_or_above"/>
+  <symbol space="ram" offset="0x404060" name="ordered_below"/>
+  <symbol space="ram" offset="0x404079" name="jp_jbe"/>
+  <symbol space="ram" offset="0x404090" name="work"/>
 </binaryimage>
 <script>
   <com>parse line extern int above(float x);</com>
@@ -32,7 +46,16 @@
   <com>parse line extern int not_at_least(float x);</com>
   <com>parse line extern int pick(double x,double y);</com>
   <com>parse line extern int above_branch(float x);</com>
+  <com>parse line extern double nan_or_huge(double x);</com>
+  <com>parse line extern int ordered_below_pair(float x,float y);</com>
+  <com>parse line extern int nan_or_above(double x);</com>
+  <com>parse line extern int ordered_below(float x);</com>
+  <com>parse line extern int jp_jbe(float x);</com>
+  <com>parse line extern double work(double x);</com>
   <com>map address r0x402000 float one</com>
+  <com>map address r0x405000 float8 huge</com>
+  <com>map address r0x405008 float8 bound</com>
+  <com>map address r0x405010 float4 limit</com>
   <com>lo fu above</com>
   <com>decompile</com>
   <com>print C</com>
@@ -51,6 +74,21 @@
   <com>lo fu above_branch</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu nan_or_huge</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ordered_below_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nan_or_above</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ordered_below</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu jp_jbe</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option nanignore none</com>
   <com>lo fu not_above</com>
   <com>decompile</com>
@@ -61,8 +99,14 @@
 <stringmatch name="UCOMISS unordered #2: setae is one &lt;= x" min="1" max="1">return one &lt;= x;</stringmatch>
 <stringmatch name="UCOMISS unordered #3: setbe keeps the unordered case" min="1" max="1">return !\(one &lt; x\);</stringmatch>
 <stringmatch name="UCOMISS unordered #4: setb keeps the unordered case" min="1" max="1">return !\(one &lt;= x\);</stringmatch>
-<stringmatch name="UCOMISS unordered #5: sbb borrow keeps the unordered case" min="1" max="1">!\(y &lt;= x\)</stringmatch>
+<stringmatch name="UCOMISS unordered #5: sbb borrow keeps the unordered case" min="1" max="1">-\(uint4\)!\(y &lt;= x\)</stringmatch>
 <stringmatch name="UCOMISS unordered #6: jbe branch is one &lt; x" min="1" max="1">if \(one &lt; x\)</stringmatch>
-<stringmatch name="UCOMISS unordered #7: nanignore none keeps the guards" min="1" max="1">NAN\(x\)</stringmatch>
+<stringmatch name="UCOMISS unordered #7: nanignore none keeps the guards" min="1" max="1">\(NAN\(x\) \|\| NAN\(one\)\) \|\| x &lt;= one</stringmatch>
 <stringmatch name="UCOMISS unordered #8: no ordered spelling of an unordered flag" min="0" max="0">x != one|return x &lt;= one;|return x &lt; one;|!\(x &lt;= one\)|!\(x &lt; one\)|\(x &lt; y\)</stringmatch>
+<stringmatch name="UCOMISS unordered #9: an isnan test beside an exact jbe stays" min="1" max="1">if \(\(!NAN\(x\)\) &amp;&amp; \(!\(huge &lt; x\)\)\)</stringmatch>
+<stringmatch name="UCOMISS unordered #10: setnp beside an exact setb stays" min="1" max="1">\(!NAN\(x\) &amp;&amp; !NAN\(y\)\) &amp;&amp; !\(y &lt;= x\)</stringmatch>
+<stringmatch name="UCOMISS unordered #11: setp beside an exact seta stays" min="1" max="1">return bound &lt; x \|\| NAN\(x\);</stringmatch>
+<stringmatch name="UCOMISS unordered #12: setnp beside an exact setb through a pointer stays" min="1" max="1">return !\(limit &lt;= x\) &amp;&amp; !NAN\(x\);</stringmatch>
+<stringmatch name="UCOMISS unordered #13: jp then jbe on one memory compare" min="1" max="1">if \(\(!NAN\(x\) &amp;&amp; !NAN\(limit\)\) &amp;&amp; \(limit &lt; x\)\)</stringmatch>
+<stringmatch name="UCOMISS unordered #14: no NaN test dropped beside an exact compare" min="0" max="0">if \(x &lt;= limit\)|return x &lt; limit;|!\(x &lt; bound\)|!\(x &lt;= huge\)</stringmatch>
 </decompilertest>
