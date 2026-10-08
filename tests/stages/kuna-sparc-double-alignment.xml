@@ -1,0 +1,33 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!--
+Independent assembly regression.
+Stage: P5 target data organization.
+Strict correctness fix; no option. Every assertion checks the corrected behavior.
+.text
+.global double_field
+.type double_field,@function
+double_field:
+ save %sp, -112, %sp
+ ldd [%i1], %f2
+ std %f2, [%i0+16]
+ ret
+ restore
+.size double_field, .-double_field
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+9de3bf90c51e4000c53e201081c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="double_field"/>
+</binaryimage>
+<script>
+  <com>parse line typedef struct Record { short a; short b; short c; short d; short e; double value; } Record;</com>
+  <com>parse line extern void double_field(Record *output, double *input);</com>
+  <com>lo fu double_field</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="double is stored in its declared field" min="1" max="1">output-&gt;value = \*input;</stringmatch>
+<stringmatch name="no shifted field store" min="0" max="0">&amp;output-&gt;value \+ 4</stringmatch>
+</decompilertest>
