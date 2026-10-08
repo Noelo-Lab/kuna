@@ -478,11 +478,15 @@ mod tests {
         /// and a `void` guard that leaves the tested value in the return
         /// register compiles to the same bytes (clang's ARM `thr`/`keep`), so
         /// in the preset it would give such guards a return they do not have.
+        ///
+        /// `varargsharedfloat` reads a PowerPC register choice that only -O0
+        /// code preserves: on clang -O2 and -Os batteries it adds 23 arguments
+        /// the source never passed for 11 it restores.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "bejoin", "armframes",
-              "mixedtailret"];
+              "mixedtailret", "varargsharedfloat"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

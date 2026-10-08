@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2354,
-    2354
+    2364,
+    2364
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -624,6 +624,16 @@
     "data:GH840 x86 #2: both longs passed in xmm0/xmm1 are reinterpreted, the one in rsi is not",
     "data:GH840 x86 #3: a long never prints raw where a double is passed",
     "data:GH840 x86 #4: control, a double parameter passes unchanged",
+    "data:GH841 #10: the -O2 a7 prints the same",
+    "data:GH841 #1: default (off) drops a9's trailing x (bug reproduced)",
+    "data:GH841 #2: default (off) drops a7's trailing x",
+    "data:GH841 #3: default (off) drops a5's trailing x",
+    "data:GH841 #4: varargsharedfloat on passes a9's x (and b2 is unchanged)",
+    "data:GH841 #5: varargsharedfloat on passes a7's x after y",
+    "data:GH841 #6: varargsharedfloat on passes a5's x",
+    "data:GH841 #7: b1 is unchanged",
+    "data:GH841 #8: the fmadd scratch in f2 is not passed at -O0 or -O2",
+    "data:GH841 #9: the -O2 copies (fmr 2,1) print the same",
     "data:GH8456 #1: MRS (Banked) decodes to 'mrs r0,r9_fiq'",
     "data:GH8456 #2: bytes no longer fail to decode",
     "data:GH8467 #1: dynamichashmax on lets the function decompile to a full body (fix)",

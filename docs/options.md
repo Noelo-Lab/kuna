@@ -170,6 +170,8 @@ Three tiers:
 | a switch inlined into a larger function renders as an if/else or goto ladder into a shared join while the same switch in its own function re-rolls | [`loweredswitchheads`](#loweredswitchheads) |
 | every arm of a compare ladder assigns one variable and jumps to the same label | [`loweredswitchheads`](#loweredswitchheads) |
 | option loweredswitch off and on give byte-identical output on a binary-search compare tree preceded by another test of the same variable | [`loweredswitchheads`](#loweredswitchheads) |
+| a 32-bit PowerPC -O0 variadic call drops a trailing double that an earlier argument is computed from | [`varargsharedfloat`](#varargsharedfloat) |
+| `sumi(2, x * 2, x)` prints as `sumi(2,x + x)` on PowerPC | [`varargsharedfloat`](#varargsharedfloat) |
 | a FILE * or char * the caller holds becomes long at the callee's parameter | [`protoorder`](#protoorder) |
 | a function that only hands a string on to a recursive function (quotearg_buffer_restyled, a tree walk, a pair of functions calling each other) keeps an integer parameter | [`protoorder`](#protoorder) |
 | an argument is typed at one call site of a callee and not at another | [`protoorder`](#protoorder) |
@@ -1434,6 +1436,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-184). Turn off to try only the first compare on the switch variable as the cascade head, so a switch inlined after another test of its selector renders as an if/else or goto ladder.
 - **Where / provenance:** P2/switch-model · kuna · structure-recovery · GH-468
 - **Example:** `option loweredswitchheads off`
+
+### `varargsharedfloat` -- on | off, default `off`
+
+- **Symptoms:** a 32-bit PowerPC -O0 variadic call drops a trailing double that an earlier argument is computed from; `sumi(2, x * 2, x)` prints as `sumi(2,x + x)` on PowerPC.
+- **What it does:** Keep a variadic double on 32-bit PowerPC whose register also feeds an earlier argument of the same call. `sumi(2, x * 2, x)` with `sumi(int, ...)` compiles at clang -O0 to `lfd 2,16(31); fadd 1,2,2; li 3,2; crset 6; bl sumi`: x is loaded once into f2 and `x + x` is computed from it into f1. Upstream's checkCallDoubleUse (funcdata_varnode.cc:1802) refuses a value that also feeds another active argument, so the f2 trial is inactive and, as the last one, dropped: `sumi(2,x + x)`. The same instructions are what a scratch register looks like (`sumi(1, *a * *b + *c)` is `lfd 0; lfd 1; lfd 2; fmadd 1,0,1,2; crset 6`), and CR bit 6 says only that some FPR is passed, so the evidence is the register choice: a scratch double gets the lowest free FPR. With the option on, an inactive 8-byte trial of a variadic call whose block sets CR bit 6 is active when it is a floating-point entry past the first, every earlier floating-point entry is an active trial, its value is written in the call's block, f0 or one of those earlier registers is free from the instruction after the write to the last instruction before the call that reads the value, and every other use of the value reaches only another active argument slot of the same call.
+- **When to flip:** Off by default. Turn it on for 32-bit PowerPC code built without optimization (-O0) when a variadic call such as `sumi(2, x * 2, x)` prints `sumi(2,x + x)`; the callee must be declared variadic (DWARF or `--assert prototype`). The register-choice evidence holds only when nothing reorders instructions after register allocation. Measured on 1,200 random clang calls of a non-format variadic double function: at -O0 it restores 91 dropped arguments and adds none; at -O2 and -Os it restores 11 and adds 23 arguments the source never passed, because the post-allocation scheduler moves a scratch value's readers so f0 or f1 looks free. Optimized code rarely needs it: -O2 copies the shared value (`fmr 2,1; fadd 1,1,1`) and prints correctly already.
+- **Where / provenance:** P4/active-input-trial-scoring · kuna · correctness-fix · GH-841
+- **Example:** `option varargsharedfloat on`
 
 ### `protoorder` -- off | types | cycles | lock, default `cycles`
 

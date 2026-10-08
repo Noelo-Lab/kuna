@@ -2038,7 +2038,9 @@ mod tests {
         // and gh839-reloadarg + -a64 / a register popped from a slot that holds
         // the caller's incoming rax is no argument of the call after it, and
         // a saved frame pointer read from the frame still is (GH-839)
-        assert_eq!(count, 464, "corpus file count drifted");
+        // and gh841-varargsharedfloat-ppc / a 32-bit PowerPC -O0 variadic
+        // double that also feeds an earlier argument (GH-841)
+        assert_eq!(count, 465, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

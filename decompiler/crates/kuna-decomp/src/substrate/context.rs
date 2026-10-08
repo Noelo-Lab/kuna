@@ -1073,6 +1073,10 @@ pub struct ArchContext {
     /// variable part (`varargforward`).  Read by
     /// [`crate::p4_calls::kuna_varargforward::forwards_declared_parameter`].
     pub vararg_forward: bool,
+    /// (kuna) keep a counted variadic double that also feeds an earlier
+    /// argument (`varargsharedfloat`).  Read by
+    /// [`crate::p4_calls::kuna_varargsharedfloat::feeds_earlier_argument`].
+    pub vararg_shared_float: bool,
     /// (kuna) reconcile a call's recovered argument list with a sibling call to
     /// the same callee (`calleearity`).  Read by
     /// [`build_input_from_trials`](crate::funcdata_callsite::build_input_from_trials)
@@ -1796,6 +1800,7 @@ impl ArchContext {
             stack_arg_gap: true,         // stackarggap (DIV-140 default-on)
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             vararg_forward: true,        // varargforward (default-on)
+            vararg_shared_float: false,  // varargsharedfloat (default-off)
             callee_arity: true,          // calleearity (DIV-102 default-on)
             callee_arity_fwd: true,      // calleearityfwd (default-on)
             callee_arity_live: true,     // calleearitylive (default-on)

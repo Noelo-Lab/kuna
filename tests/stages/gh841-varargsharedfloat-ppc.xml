@@ -1,0 +1,166 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default:default">
+<!--
+    GH-841 (kuna): "PowerPC -O0: a variadic call drops a trailing double whose
+    register also feeds an earlier argument".
+    https://github.com/Noelo-Lab/kuna/issues/841
+
+    Source (clang -O0 -fno-pic -target powerpc-linux-gnu -c, the .text bytes
+    verbatim at 0x100000; the same at -O2 at 0x101000, functions suffixed _o2):
+
+        static __attribute__((noinline)) int sumi(int n, ...) { ... va_arg(ap, double) ... }
+        int a9(double x) { return sumi(2, x * 2, x); }
+        int a7(double x, double y) { return sumi(3, x * 2, y, x); }
+        int a5(double x) { return sumi(2, -x, x); }
+        int b1(double x) { return sumi(2, x, x * 2); }
+        int b2(double x) { double t = x * 2; return sumi(2, t, x); }
+        int p1(double *a, double *b, double *c) { return sumi(1, *a * *b + *c); }
+        int p4(double *a, double *b, double *c) { return sumi(1, *c - *a * *b); }
+
+    a9 is `lfd 2,16(31); fadd 1,2,2; li 3,2; crset 6; bl sumi`: x is loaded
+    once into f2 and x + x is computed from it into f1.  Upstream's
+    checkCallDoubleUse refuses a value that also feeds another active argument,
+    so the f2 trial is dropped.  p1 (`lfd 0; lfd 1; lfd 2; fmadd 1,0,1,2`) and
+    p4 are the same shape with f2 a scratch: f0 is busy there, so the register
+    choice does not say f2 was passed.  b1 and b2 are already right.
+
+    Stage model: P4 call recovery, active-input-trial scoring.
+    P0 assertion: option varargsharedfloat on|off (default off).
+    Pass 1 (default, off) reproduces the bug: a9 prints sumi(2,x + x), a7
+    drops its trailing x, a5 its x.  Pass 2 (on) passes them; b1, b2, p1, p4
+    and the -O2 copies print the same as with the option off.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+7c0802a6900100049421ffe093e1001c7c3f0b78d83f0010c85f0010fc22102a
+386000024cc63242480000198001002483e1001c382100207c0803a64e800020
+9421ff6093e1009c7c3f0b78d91f0078d8ff0070d8df0068d8bf0060d89f0058
+d87f0050d85f0048d83f0040915f003c913f0038911f003490ff003090df002c
+90bf0028909f0024907f0020907f009838600001987f008838600000987f0089
+389f00a8909f008c389f0020909f0090907f0084907f008048000004807f0098
+3883ffff909f00982c030001418000a448000004387f0088907f000c38800001
+508307fe907f0010887f0089907f001428030007418100384800000480bf0010
+809f0014807f000c80630008548618387cc607747c6332143863002038840001
+98850000907f00084800003080bf000c809f0010386000089864000080650004
+38630007546300383883000890850004907f000848000004807f0008c8230000
+c81f0080fc00082ad81f00804bffff50c81f0080fc00001ed81f0018807f001c
+83e1009c382100a04e8000207c0802a6900100049421ffe093e1001c7c3f0b78
+d83f0010d85f0008c87f0010fc23182ac85f0008386000034cc632424bfffe85
+8001002483e1001c382100207c0803a64e8000207c0802a6900100049421ffe0
+93e1001c7c3f0b78d83f0010c85f0010fc201050386000024cc632424bfffe45
+8001002483e1001c382100207c0803a64e8000207c0802a6900100049421ffe0
+93e1001c7c3f0b78d83f0010c83f0010fc41082a386000024cc632424bfffe05
+8001002483e1001c382100207c0803a64e8000207c0802a6900100049421ffe0
+93e1001c7c3f0b78d83f0010c81f0010fc00002ad81f0008c83f0008c85f0010
+386000024cc632424bfffdb98001002483e1001c382100207c0803a64e800020
+7c0802a6900100049421ffe093e1001c7c3f0b78907f0018909f001490bf0010
+807f0018c8030000807f0014c8230000807f0010c8430000fc20107a38600001
+4cc632424bfffd5d8001002483e1001c382100207c0803a64e8000207c0802a6
+900100049421ffe093e1001c7c3f0b78907f0018909f001490bf0010807f0010
+c8430000807f0018c8030000807f0014c8230000fc000050fc20107a38600001
+4cc632424bfffcfd8001002483e1001c382100207c0803a64e800020
+</bytechunk>
+<bytechunk space="ram" offset="0x101000" readonly="true">
+7c0802a6900100049421fff0fc400890fc21082a4cc632423860000248000015
+80010014382100107c0803a64e8000209421ff80396100109081001438810088
+90a1001838a001002c0300019061001090c1001c90e100209101002491210028
+9141002cd8210030d8410038d8610040d8810048d8a10050d8c10058d8e10060
+d90100689161007890810074b0a100704180007c80a100783cc0000088810071
+7c6903a6c0060000386500204800002c80a10074388000089881007138a50007
+54a5003838c5000890c10074c8250000fc00082a424000245485063e28050007
+4181ffd054851e38388400017ca32a14988100714bffffd8fc00001ed8010008
+8061000c382100804e80002038600000382100804e8000207c0802a690010004
+9421fff0fc600890fc21082a4cc63242386000034bfffefd8001001438210010
+7c0803a64e8000207c0802a6900100049421fff0fc400890fc2008504cc63242
+386000024bfffecd80010014382100107c0803a64e8000207c0802a690010004
+9421fff0fc41082a4cc63242386000024bfffea180010014382100107c0803a6
+4e8000207c0802a6900100049421fff0fc400890fc21082a4cc6324238600002
+4bfffe7180010014382100107c0803a64e8000207c0802a6900100049421fff0
+c80300004cc63242c824000038600001c8450000fc20107a4bfffe3980010014
+382100107c0803a64e8000207c0802a6900100049421fff0c82300004cc63242
+c805000038600001c8440000fc200850fc2100ba4bfffdfd8001001438210010
+7c0803a64e800020
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="a9"/>
+<symbol space="ram" offset="0x100040" name="sumi"/>
+<symbol space="ram" offset="0x10018c" name="a7"/>
+<symbol space="ram" offset="0x1001d4" name="a5"/>
+<symbol space="ram" offset="0x100214" name="b1"/>
+<symbol space="ram" offset="0x100254" name="b2"/>
+<symbol space="ram" offset="0x1002a0" name="p1"/>
+<symbol space="ram" offset="0x1002fc" name="p4"/>
+<symbol space="ram" offset="0x101000" name="a9_o2"/>
+<symbol space="ram" offset="0x101030" name="sumi_o2"/>
+<symbol space="ram" offset="0x101118" name="a7_o2"/>
+<symbol space="ram" offset="0x1011d4" name="p1_o2"/>
+<symbol space="ram" offset="0x10120c" name="p4_o2"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 sumi(int4 n, ...);</com>
+  <com>parse line extern int4 sumi_o2(int4 n, ...);</com>
+  <com>parse line extern int4 a9(float8 x);</com>
+  <com>parse line extern int4 a7(float8 x, float8 y);</com>
+  <com>parse line extern int4 a5(float8 x);</com>
+  <com>parse line extern int4 b1(float8 x);</com>
+  <com>parse line extern int4 b2(float8 x);</com>
+  <com>parse line extern int4 p1(float8 *a, float8 *b, float8 *c);</com>
+  <com>parse line extern int4 p4(float8 *a, float8 *b, float8 *c);</com>
+  <com>parse line extern int4 a9_o2(float8 x);</com>
+  <com>parse line extern int4 a7_o2(float8 x, float8 y);</com>
+  <com>parse line extern int4 p1_o2(float8 *a, float8 *b, float8 *c);</com>
+  <com>parse line extern int4 p4_o2(float8 *a, float8 *b, float8 *c);</com>
+  <com>lo fu a9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a7</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option varargsharedfloat on</com>
+  <com>lo fu a9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a7</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu b1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu b2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu p1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu p4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a9_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a7_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu p1_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu p4_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH841 #1: default (off) drops a9's trailing x (bug reproduced)" min="1" max="1">return sumi\(2,x \+ x\);</stringmatch>
+<stringmatch name="GH841 #2: default (off) drops a7's trailing x" min="1" max="1">return sumi\(3,x \+ x,y\);</stringmatch>
+<stringmatch name="GH841 #3: default (off) drops a5's trailing x" min="1" max="1">return sumi\(2,-x\);</stringmatch>
+<stringmatch name="GH841 #4: varargsharedfloat on passes a9's x (and b2 is unchanged)" min="2" max="2">return sumi\(2,x \+ x,x\);</stringmatch>
+<stringmatch name="GH841 #5: varargsharedfloat on passes a7's x after y" min="1" max="1">return sumi\(3,x \+ x,y,x\);</stringmatch>
+<stringmatch name="GH841 #6: varargsharedfloat on passes a5's x" min="1" max="1">return sumi\(2,-x,x\);</stringmatch>
+<stringmatch name="GH841 #7: b1 is unchanged" min="1" max="1">return sumi\(2,x,x \+ x\);</stringmatch>
+<stringmatch name="GH841 #8: the fmadd scratch in f2 is not passed at -O0 or -O2" min="4" max="4">return sumi(_o2)?\(1,[^,;]*\);</stringmatch>
+<stringmatch name="GH841 #9: the -O2 copies (fmr 2,1) print the same" min="1" max="1">return sumi_o2\(2,x \+ x,x\);</stringmatch>
+<stringmatch name="GH841 #10: the -O2 a7 prints the same" min="1" max="1">return sumi_o2\(3,x \+ x,y,x\);</stringmatch>
+</decompilertest>

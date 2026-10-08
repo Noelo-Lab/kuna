@@ -64,5 +64,6 @@ pub mod kuna_vfpvariadic; // (kuna) a declared ARM hard-float variadic function 
 pub mod kuna_varargformat;
 pub mod kuna_varargtransfer;
 pub mod kuna_varargforward; // (kuna) a declared parameter forwarded unchanged to a variadic call
+pub mod kuna_varargsharedfloat; // (kuna) a counted variadic double that also feeds an earlier argument
 pub mod kuna_voidret; // (kuna) a function whose result a caller reads returns it
 pub mod kuna_bejoin; // (kuna) a big-endian pair joins its halves in the ABI's order when its low word is returned on purpose
