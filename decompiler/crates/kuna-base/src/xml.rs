@@ -2005,7 +2005,7 @@ mod tests {
         // (GH-846)
         // and kuna-condexeretuse / a use a re-tested condition rules out does
         // not reject an ARM return value (GH-874)
-        assert_eq!(count, 440, "corpus file count drifted");
+        assert_eq!(count, 441, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

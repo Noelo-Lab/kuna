@@ -939,6 +939,11 @@ pub struct Architecture {
     /// non-power-of-two) PIECE/shift/bitwise trees (option `wideslice`,
     /// default-on).  See [`crate::p3_dataflow::kuna_wideslice`].
     pub wide_slice_reduce: bool,
+    /// (kuna) Re-roll a vectorized integer reduction (guard, stride loop with
+    /// one accumulator per lane, fold, scalar remainder loop) into its scalar
+    /// loop (option `devectorize`, opt-in default-off).  See
+    /// [`crate::p3_dataflow::kuna_devectorize`].
+    pub devectorize_reduction: bool,
     /// Guard stack slots against stores through stack-derived pointers.
     pub stack_store_guard: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -2600,6 +2605,7 @@ impl Architecture {
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
             split_store_keep: false, // (kuna) option splitstorekeep; reset_defaults sets the shipped default (on)
             wide_slice_reduce: false, // (kuna) option wideslice; reset_defaults sets the shipped default (on)
+            devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
             stack_store_guard: false,
             region_structure: true,
             guard_arm: false,
@@ -3659,6 +3665,7 @@ impl Architecture {
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim
         ctx.split_store_keep = self.split_store_keep; // splitstorekeep
         ctx.wide_slice_reduce = self.wide_slice_reduce; // wideslice
+        ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.stack_store_guard = self.stack_store_guard;
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm

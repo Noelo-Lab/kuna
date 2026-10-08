@@ -1758,6 +1758,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "devectorize"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "wide-ssa-slices"
+summary = "Re-roll a vectorized integer reduction into the scalar loop it came from. clang and gcc turn `for (i) sum += a[i]` into a guard `length >= S`, a stride-S loop with one accumulator per lane, a horizontal fold, an early return when `length & -S == length`, and a scalar copy of the loop that finishes the remainder or, when the guard failed, runs from zero. The pass proves the whole shape on SSA -- zero inits; lanes that zero-extend disjoint E-byte slices of loads at base + i*E + c and tile exactly S elements, for a power-of-two S the guard bounds; a fold that adds every accumulator once; both exits handing back their sums; no side effects in the arm; nothing defined in it read outside except through the phis the edge removal patches -- and removes the guard's vector edge (Funcdata::remove_branch), leaving the arm to the unreachable-block collector. Integer addition is associative and commutative modulo 2^(8Z), so the scalar loop from zero computes the same value on every input. Needs wideslice to have reduced the lanes to byte reads first; floats, saturating and sign-extended lanes are not matched."
+use_when = "Turn ON when an -O2/-O3 loop that sums the elements of an array comes out as a guard `if (8 <= length)`, a do-while adding `v2 & 0xff`, `v2 >> 8 & 0xff`, ... into eight separate accumulators, a line summing those accumulators, and a second do-while over `bytes[v4]` for the remainder -- and you want the source loop `v1 += bytes[v2]` instead. OFF (the default) keeps the compiler's shape, which shows the stride, the alignment of the handoff and the duplicated body. Inert on a function with no loop of that shape."
+example = "option devectorize on"
+source_decompiler = "kuna"
+inspiration = "clang -O3 x86-64 byte_sum (SSE punpcklbw/punpcklwd/paddd unpack-accumulate loop) after RuleWideSlice; the edge-removal pair of kuna_stackguard / kuna_securitycheck"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "a loop summing an array prints as eight lane accumulators added into one total after the loop|a vectorised reduction is followed by a second copy of the loop over the remainder|an array sum is guarded by if (8 <= length) with a stride-eight do-while behind it|a line like v8 + v12 + v6 + v10 + v7 + v11 + v5 + v9 follows a loop"
+live_field = "devectorize_reduction"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "simdlane"
 values = "on|off"
 default = "on"

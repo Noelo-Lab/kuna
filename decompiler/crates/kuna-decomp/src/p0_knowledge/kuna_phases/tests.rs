@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_264() {
-    assert_eq!(kuna_num_settables(), 264);
-    assert_eq!(SETTABLE_TABLE.len(), 264);
+fn settable_count_is_265() {
+    assert_eq!(kuna_num_settables(), 265);
+    assert_eq!(SETTABLE_TABLE.len(), 265);
 }
 
 #[test]
-fn tier_counts_are_89_core_107_transform_68_analysis() {
+fn tier_counts_are_89_core_108_transform_68_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_89_core_107_transform_68_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (89, 107, 68));
+    assert_eq!((core, transform, analysis), (89, 108, 68));
 }
 
 #[test]
@@ -756,7 +756,8 @@ fn option_values_live_value_present_for_110() {
     // 111 -> 112: +1 for `calltargettype` (live_field = call_target_type).
     // 112 -> 113: +1 for `condexeretuse` (live_field = cond_exe_ret_use).
     // 113 -> 114: +1 for `wideslice` (live_field = wide_slice_reduce, default-on).
-    assert_eq!(with_live, 114);
+    // 114 -> 115: +1 for `devectorize` (live_field = devectorize_reduction, opt-in).
+    assert_eq!(with_live, 115);
 }
 
 #[test]
@@ -948,7 +949,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 253 -> 254: +1 for `protoranges`; its P6 row sits mid-table.
     // 257 -> 258: +1 for `bejoin`.
     // 263 -> 264: +1 for `wideslice`; its P3 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 263);
+    // 264 -> 265: +1 for `devectorize`; its P3 row sits mid-table.
+    assert_eq!(json.matches("},\n").count(), 264);
 }
 
 #[test]

@@ -1780,6 +1780,33 @@ intermediates to upstream's rules. `tests/stages/kuna-wideslice.xml` pins clang
 `SUB13x` reads; on: eight direct lane additions);
 `gh275-spillargtrial.xml` independently exercises a 12-byte packed-double tree.
 
+**De-vectorized reductions** (`option devectorize`, default **off**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_devectorize.rs
+(ActionDevectorize)`, in the fullloop tail beside the stack-guard and
+security-check strippers. clang and gcc vectorize `for (i) sum += a[i]` into a
+guard `length >= S`, a stride-S loop with one accumulator per lane, a
+horizontal fold, an early return when `length & -S == length`, and a scalar
+copy of the loop that finishes the remainder or, when the guard failed, runs
+from zero. After the wide-slice reduction the vector arm is S copies of the
+scalar body in a different order. The action matches the whole shape on SSA and
+proves it: the accumulators and the induction variable start at zero; each lane
+zero-extends a disjoint E-byte slice of a load at `base + i*E + c`, and the
+lanes tile exactly S elements for a power-of-two S the guard bounds; the fold
+adds every accumulator once; the scalar loop starts at `length & -S` with the
+fold, or at zero with zero, steps one element and exits at `length`; both exits
+hand back their sums (the early return and the scalar exit, or a shared join
+whose other phis agree slot for slot); every block of the arm is free of side
+effects; and nothing defined in the arm is read outside it except on a phi slot
+of the join. Integer addition is associative and commutative modulo 2^(8Z), so
+the scalar loop from zero computes the same value on every input; the guard's
+vector edge is removed (`remove_branch`) and the arm is collected as
+unreachable. The option ships off because the rewrite erases the stride, the
+handoff alignment and the duplicated body, which a reader of the binary may
+want; floats, saturating and sign-extended lanes are not matched.
+`tests/stages/kuna-devectorize.xml` runs the byte-sum witness in both passes
+(off: the guard, eight accumulators, fold and remainder loop; on: one
+`do { v1 += bytes[v2]; ... } while (length != v2)`).
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space
