@@ -1619,3 +1619,59 @@ fn named_callback_typedef_keeps_its_declared_name() {
     assert_eq!(name, "x");
     assert_eq!(C_SPELLER.declarator(&SpellCtx::OFF, &ty), ("Callback".into(), "".into()));
 }
+
+#[test]
+fn qualified_declarations_roundtrip_without_moving_qualifiers() {
+    use kuna_decomp::kuna_langc::C_SPELLER;
+    use kuna_decomp::kuna_langtypes::{SpellCtx, TypeSpeller};
+    use std::rc::Rc;
+
+    let f = factory_with_model_resources(&[], true);
+    for declaration in ["typedef uint4 *Ptr;", "typedef volatile uint4 Register;"] {
+        super::parse_c(declaration, &f, org(), &[], |_, _| Ok(())).unwrap();
+    }
+    for (source, expected) in [
+        ("volatile uint4 *x", "volatile uint4 *x"),
+        ("uint4 * volatile x", "uint4 * volatile x"),
+        ("const uint4 *x", "const uint4 *x"),
+        ("uint4 * restrict x", "uint4 * restrict x"),
+        ("uint4 * volatile const x", "uint4 * const volatile x"),
+        ("volatile uint4 * const *x", "volatile uint4 * const *x"),
+        ("volatile uint4 (*x)[3]", "volatile uint4 (*x)[3]"),
+        ("uint4 (* volatile x)[3]", "uint4 (* volatile x)[3]"),
+        ("uint4 * volatile x[3]", "uint4 * volatile x[3]"),
+        ("uint4 (* volatile x)(const uint4 *)", "uint4 (* volatile x)(const uint4 *)"),
+        ("volatile Ptr x", "volatile Ptr x"),
+        ("Register *x", "Register *x"),
+    ] {
+        let (ty, name) = parse_type(source, &f, org()).unwrap();
+        let (front, back) = C_SPELLER.declarator(&SpellCtx::OFF, &ty);
+        let sep = if front.ends_with('*') || front.ends_with('(') { "" } else { " " };
+        let printed = format!("{front}{sep}{name}{back}");
+        assert_eq!(printed, expected, "{source}");
+        let (again, _) = parse_type(&printed, &f, org()).unwrap();
+        assert!(Rc::ptr_eq(&ty, &again), "qualified types must intern: {source}");
+        assert_eq!(ty.compare(&again, 10).unwrap(), 0);
+    }
+    let pointee = parse_type("volatile uint4 *", &f, org()).unwrap().0;
+    let pointer = parse_type("uint4 * volatile", &f, org()).unwrap().0;
+    assert_eq!(pointee.c_qualifiers(), 0);
+    assert_eq!(pointer.get_ptr_to().unwrap().c_qualifiers(), 0);
+    assert_ne!(pointee.compare(&pointer, 10).unwrap(), 0);
+    assert!(!Rc::ptr_eq(&pointee, &pointer));
+}
+
+#[test]
+fn prototype_return_qualifiers_and_typedefs_survive() {
+    use kuna_decomp::kuna_langc::C_SPELLER;
+    use kuna_decomp::kuna_langtypes::{SpellCtx, TypeSpeller};
+    let f = factory();
+    let pieces = parse_protopieces("extern volatile uint4 *read(volatile uint4 *p);", &f, org()).unwrap();
+    for ty in [pieces.outtype.as_ref().unwrap(), &pieces.intypes[0]] {
+        assert_eq!(C_SPELLER.declarator(&SpellCtx::OFF, ty), ("volatile uint4 *".into(), "".into()));
+    }
+    super::parse_c("typedef volatile uint4 Register;", &f, org(), &[], |_, _| Ok(())).unwrap();
+    let alias = f.find_by_name("Register").unwrap().unwrap();
+    assert!(kuna_decomp::kuna_typequal::is_volatile(&alias));
+    assert_eq!(C_SPELLER.declarator(&SpellCtx::OFF, &alias), ("Register".into(), "".into()));
+}

@@ -134,6 +134,26 @@ pub(crate) fn is_volatile(data: &Funcdata, id: OpId) -> bool {
 
 /// [`is_volatile`] sharing `memo` across the LOADs of one unchanged op graph.
 pub(crate) fn is_volatile_with(data: &Funcdata, id: OpId, memo: &mut Memo) -> bool {
+    if let Some(pointer) = data.obank().get(id)
+        .filter(|op| op.code() == OpCode::CPUI_LOAD)
+        .and_then(|op| op.get_in(1))
+    {
+        let node = data.vbank().get(pointer);
+        if node.and_then(|node| node.get_type().get_ptr_to())
+            .is_some_and(|ty| crate::kuna_typequal::is_volatile(&ty))
+        {
+            return true;
+        }
+        if data.get_arch().types().is_some_and(|types| types.has_volatile_types()) {
+            let mut budget = BUDGET;
+            if crate::kuna_typequal::address_type(data, pointer, &mut budget)
+                .and_then(|ty| ty.get_ptr_to())
+                .is_some_and(|ty| crate::kuna_typequal::is_volatile(&ty))
+            {
+                return true;
+            }
+        }
+    }
     target(data, id, memo).is_some()
 }
 
@@ -148,9 +168,10 @@ pub(crate) fn rereads(
     memo: &mut Memo,
     kept: impl Fn(&Funcdata, OpId) -> bool,
 ) -> bool {
-    let Some(want) = target(data, id, memo) else {
+    let want = target(data, id, memo);
+    if want.is_none() && !is_volatile_with(data, id, memo) {
         return false;
-    };
+    }
     let Some(op) = data.obank().get(id) else {
         return false;
     };
@@ -163,8 +184,18 @@ pub(crate) fn rereads(
         .collect();
     siblings.into_iter().any(|sibling| {
         data.obank().get(sibling).is_some_and(|o| {
+            let same = if let Some(want) = want {
+                target(data, sibling, memo) == Some(want)
+            } else {
+                o.code() == OpCode::CPUI_LOAD
+                    && o.get_in(1) == op.get_in(1)
+                    && o.get_in(0).and_then(|vn| data.vbank().get(vn)).map(|vn| vn.get_offset())
+                        == op.get_in(0).and_then(|vn| data.vbank().get(vn)).map(|vn| vn.get_offset())
+                    && o.get_out().and_then(|vn| data.vbank().get(vn)).map(|vn| vn.get_size())
+                        == op.get_out().and_then(|vn| data.vbank().get(vn)).map(|vn| vn.get_size())
+            };
             !o.is_dead()
-                && target(data, sibling, memo) == Some(want)
+                && same
                 && (kept(data, sibling) || o.get_time() < time)
         })
     })

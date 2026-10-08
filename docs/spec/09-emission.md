@@ -5,6 +5,17 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p9_emit
 ```
 
+C declarators preserve explicit type qualification. Qualifiers on a base or a
+named typedef precede its name; qualifiers on a pointer follow its own `*`.
+The declarator walk keeps those layers through arrays and function pointers,
+so `volatile uint4 *p` and `uint4 * volatile p` remain distinct. This applies to
+parameters, return types, declarations, and casts with either internal or target
+C scalar names. A named typedef is printed by its alias rather than expanding
+its inherited qualifiers.
+When an access needs a cast for its width, the cast retains the pointee's
+qualification. A write through a const-qualified access path casts away const
+while retaining volatile, so the original write remains expressible in C.
+
 This phase renders the finished decompilation: it inserts the explicit
 cast/field-access operations a C compiler would need to *see* the recovered
 types (§9.1), then walks the structured block tree of chapter 08 and the SSA

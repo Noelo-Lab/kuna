@@ -741,7 +741,7 @@ fn propagate_from_pointer(
         return None;
     }
     if ptrto.get_size() == sz {
-        return Some(ptrto);
+        return Some(crate::kuna_typequal::unqualified_value(ptrto));
     }
     // Size mismatch: only propagate (partial) enumerations.
     if dt.is_pointer_rel() {
@@ -850,7 +850,7 @@ fn propagate_type(
             if invn_is_spacebase {
                 spacebase_pointer(data, alttype.get_size())
             } else {
-                Some(alttype)
+                Some(crate::kuna_typequal::unqualified_value(alttype))
             }
         }
         OpCode::CPUI_INDIRECT => {
@@ -868,7 +868,7 @@ fn propagate_type(
             if invn_is_spacebase {
                 spacebase_pointer(data, alttype.get_size())
             } else {
-                Some(alttype)
+                Some(crate::kuna_typequal::unqualified_value(alttype))
             }
         }
         // TypeOpEqual / TypeOpNotEqual / TypeOpIntLess / TypeOpIntLessEqual all
