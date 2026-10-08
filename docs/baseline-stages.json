@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2400,
-    2400
+    2406,
+    2406
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -2042,6 +2042,7 @@
     "data:indirectonly-escape #4: with the option on the register is merged into the slot",
     "data:indirectonly-escape #5: so the decrement is written to memory twice instead of once",
     "data:indirectonly-escape #6: and both arms still hand the object to the call that reads it",
+    "data:induction limit keeps count",
     "data:inferfuncentry #1: the bounded value keeps its integer type",
     "data:inferfuncentry #2: an integer bound that lands on a function entry stays a number",
     "data:inferfuncentry #3: a callback argument at the same address still prints its name",
@@ -2102,6 +2103,7 @@
     "data:nested PA-RISC operand: backward call target",
     "data:nested PA-RISC operand: forward call target",
     "data:nested PPC operand: full rotation and mask",
+    "data:no fabricated zero multiplication",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
     "data:opcode-seam #1: the function emits a real body (was: no output, seam panic)",
@@ -2172,6 +2174,8 @@
     "data:realtypes-pointee #5: the declared stride agrees with the index expression in both passes",
     "data:realtypes-pointee #6: the untouched off path keeps the upstream placeholder spelling",
     "data:realtypes-pointee #7: the off path shows the same width the relabel now preserves",
+    "data:recurrence keeps its previous value",
+    "data:recurrence starts at seed",
     "data:regionstructure #1: the if/else diamond is structured (true clause), both passes",
     "data:regionstructure #2: the else clause is structured, both passes",
     "data:regionstructure #3: the join sequence + tail return is recovered, both passes",
@@ -2210,6 +2214,8 @@
     "data:returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)",
     "data:rodatastring #1: default pipeline recovers the read-only block copy as one builtin_strncpy",
     "data:rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)",
+    "data:saved pointer reaches store",
+    "data:scale survives the join",
     "data:short UTF-16 #1: explicit wchar_t mapping replaces narrow exact-address data",
     "data:short UTF-16 #2: the one-byte rendering is gone",
     "data:short UTF-16 #3: adjacent wide literal is preserved",
