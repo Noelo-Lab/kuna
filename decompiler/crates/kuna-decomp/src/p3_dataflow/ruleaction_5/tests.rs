@@ -250,6 +250,54 @@ fn float_negation_checks_the_unguarded_constant_for_nan() {
 }
 
 #[test]
+fn guarded_float_root_keeps_unordered_case_for_direct_readers() {
+    for (reader, folds) in [(OpCode::CPUI_INT_ZEXT, true), (OpCode::CPUI_INT_AND, false)] {
+        let mut fd = build_fd();
+        let a = mk_input(&mut fd, 0x10, 4);
+        let b = mk_input(&mut fd, 0x20, 4);
+        let written = |fd: &mut Funcdata, code, inputs: &[VarnodeId], size| {
+            let op = mk_op(fd, inputs.len() as int4, 0x100, code);
+            fd.op_set_all_input(op, inputs).unwrap();
+            (op, fd.new_unique_out(size, op).unwrap())
+        };
+        let (compare, less) = written(&mut fd, OpCode::CPUI_FLOAT_LESS, &[a, b], 1);
+        let (nan_a, guard_a) = written(&mut fd, OpCode::CPUI_FLOAT_NAN, &[a], 1);
+        let (nan_b, guard_b) = written(&mut fd, OpCode::CPUI_FLOAT_NAN, &[b], 1);
+        let (either, unordered) = written(&mut fd, OpCode::CPUI_BOOL_OR, &[guard_a, guard_b], 1);
+        let (carry, flag) = written(&mut fd, OpCode::CPUI_INT_OR, &[unordered, less], 1);
+        let inputs: Vec<VarnodeId> = if reader == OpCode::CPUI_INT_ZEXT {
+            vec![flag]
+        } else {
+            vec![flag, guard_a]
+        };
+        let (consumer, value) = written(&mut fd, reader, &inputs, if folds { 4 } else { 1 });
+        let ret = mk_op(&mut fd, 1, 0x110, OpCode::CPUI_RETURN);
+        fd.op_set_all_input(ret, &[value]).unwrap();
+        let root = fd.bblocks_ref().root.unwrap();
+        let block = fd.bblocks_mut().new_block_basic(root);
+        for op in [compare, nan_a, nan_b, either, carry, consumer, ret] {
+            fd.op_insert_end(op, block);
+        }
+        assert_eq!(
+            crate::p3_dataflow::kuna_floatnegation::fold_nan_consumers(&mut fd, nan_a),
+            folds
+        );
+        if !folds {
+            assert_eq!(code_of(&fd, carry), OpCode::CPUI_INT_OR);
+            continue;
+        }
+        assert_eq!(code_of(&fd, carry), OpCode::CPUI_BOOL_NEGATE);
+        let inner = fd.obank().get(carry).unwrap().get_in(0).unwrap();
+        let op = fd.vbank().get(inner).unwrap().get_def().unwrap();
+        let op = fd.obank().get(op).unwrap();
+        assert_eq!(op.code(), OpCode::CPUI_FLOAT_LESSEQUAL);
+        assert_eq!(op.get_in(0), Some(b));
+        assert_eq!(op.get_in(1), Some(a));
+        assert_eq!(code_of(&fd, compare), OpCode::CPUI_FLOAT_LESS);
+    }
+}
+
+#[test]
 fn guarded_float_branch_preserves_polarity_and_shared_conditions() {
     for flipped in [false, true] {
         let mut fd = build_fd();

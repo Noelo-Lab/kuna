@@ -2046,7 +2046,9 @@ mod tests {
         // choices does not stall the stack-store guard's walks
         // and kuna-pointerwalk-memo / those walks give what an exhaustive
         // walk gives
-        assert_eq!(count, 468, "corpus file count drifted");
+        // and kuna-ucomiss-unordered / an x86 float compare flag read by
+        // seta/setae/setbe/setb keeps its unordered case
+        assert_eq!(count, 469, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
