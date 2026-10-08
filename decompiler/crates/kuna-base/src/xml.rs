@@ -2042,7 +2042,11 @@ mod tests {
         // double that also feeds an earlier argument (GH-841)
         // and kuna-floateq / an integer == or != on the bits of a float
         // compares the bits, not the float values (GH-890)
-        assert_eq!(count, 466, "corpus file count drifted");
+        // and kuna-pointerwalk-budget-mips / a pointer built through nested
+        // choices does not stall the stack-store guard's walks
+        // and kuna-pointerwalk-memo / those walks give what an exhaustive
+        // walk gives
+        assert_eq!(count, 468, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

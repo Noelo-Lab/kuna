@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2374,
-    2374
+    2376,
+    2376
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1152,6 +1152,8 @@
     "data:PEMAIN #1: off, the CRT startup calls the program entry as an anonymous sub",
     "data:PEMAIN #2: default, the same call site names main",
     "data:PEMAIN #3: default, main is defined under its name",
+    "data:POINTERWALK-BUDGET #1: the function decompiles",
+    "data:POINTERWALK-MEMO #1: buf is one array of sixteen bytes",
     "data:PPCISA #1: only the reporting pass gives the ISA hint",
     "data:PPCISA #2: the supported override is actionable",
     "data:PPCISA #3: the selected decoder still halts",

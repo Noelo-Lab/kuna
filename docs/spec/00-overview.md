@@ -1467,8 +1467,13 @@ at every group/sub-action boundary and repeat gate
 (`decompiler/crates/kuna-decomp/src/infra/action.rs (ActionGroup::apply,
 Action::perform, ActionRestartGroup::apply)`), every 1024 op-visits inside the
 rule-pool loop (`decompiler/crates/kuna-decomp/src/infra/action.rs
-(POOL_DEADLINE_STRIDE)`), and at the heritage loop
-(`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`). On expiry the
+(POOL_DEADLINE_STRIDE)`), at the heritage loop
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`) and before each
+address the written-slot guard guards, every 256 new values a pointer walk of
+`stackstoreguard` visits, and again after the final layout checks: the drive
+publishes its deadline to
+`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (deadline_passed)`,
+so a walk inside one pass gives up rather than run past it. On expiry the
 containers stop scheduling work and unwind; the driver converts that into the
 function's `error` record and the batch continues. A function whose drive
 completes before expiry is byte-identical with or without a budget, and the

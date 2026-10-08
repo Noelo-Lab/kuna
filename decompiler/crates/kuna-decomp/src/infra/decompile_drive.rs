@@ -946,9 +946,19 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         total += r;
         // (kuna `stackstoreguard`) A function whose final layout spoils what the
         // guard needs is analyzed again from scratch without it by the drive.
-        if fd.stack_store_guard_spoiled()
-            || crate::p6_variables::kuna_storereach::withdraw_spoiled_guard(fd)
-        {
+        // The deadline is checked again after the layout checks: their walks
+        // give up once it passes, which would otherwise keep the guard.
+        let spoiled =
+            fd.stack_store_guard_spoiled() || crate::p6_variables::kuna_storereach::withdraw_spoiled_guard(fd);
+        if let Some(deadline) = arch.kuna_fn_deadline {
+            if std::time::Instant::now() >= deadline {
+                let secs = arch.kuna_fn_budget.map(|b| b.as_secs()).unwrap_or(0);
+                return Err(kuna_base::error::KunaError::lowlevel(format!(
+                    "per-function decompile budget exceeded ({secs} s)"
+                )));
+            }
+        }
+        if spoiled {
             return Ok(total);
         }
         if !(reflow_requested && fd.has_restart_pending()) {
@@ -1172,6 +1182,7 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     // and the action pipeline — and is consulted cooperatively at the action /
     // rule-pool / heritage loop boundaries.
     arch.kuna_fn_deadline = arch.kuna_fn_budget.map(|b| std::time::Instant::now() + b);
+    let _deadline_scope = DeadlineScope::enter(arch.kuna_fn_deadline);
     // (ghidra-mode, Phase 4) Take the staged name recommendations UP FRONT so
     // an early flow failure can never leak them into a later drive.
     let staged_name_recs = std::mem::take(&mut arch.kuna_pending_name_recs);
@@ -2499,3 +2510,30 @@ fn emit_inject(
 
 #[cfg(test)]
 mod tests;
+
+thread_local! {
+    static FN_DEADLINE: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+}
+
+/// (kuna decompile-all watchdog) Has the running drive's per-function deadline
+/// passed? For a long walk inside one pass, which no action or heritage loop
+/// boundary interrupts, to give up early.
+pub(crate) fn deadline_passed() -> bool {
+    FN_DEADLINE.with(|d| d.get().is_some_and(|d| std::time::Instant::now() >= d))
+}
+
+/// Publishes a drive's deadline to [`deadline_passed`] and restores the one
+/// before it when the drive ends.
+struct DeadlineScope(Option<std::time::Instant>);
+
+impl DeadlineScope {
+    fn enter(deadline: Option<std::time::Instant>) -> Self {
+        DeadlineScope(FN_DEADLINE.with(|d| d.replace(deadline)))
+    }
+}
+
+impl Drop for DeadlineScope {
+    fn drop(&mut self) {
+        FN_DEADLINE.with(|d| d.set(self.0));
+    }
+}
