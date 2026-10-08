@@ -1545,8 +1545,9 @@ decomp_command!(
             let (addr_size, word_size) = prog.arch().data_org();
             let org = crate::grammar::DataOrg { addr_size, word_size };
             let typetext = s.rest();
-            let (ct, name) = crate::grammar::parse_type(&typetext, prog.arch().types(), org)
-                .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
+            let (ct, name, volatile) =
+                crate::grammar::parse_type_with_volatile(&typetext, prog.arch().types(), org)
+                    .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
             let invalid = kuna_base::address::Address::new_invalid();
             let fd = dcp.fd.as_mut().expect("fd checked Some above");
             let scope_local = fd.get_scope_local_mut().ok_or_else(|| {
@@ -1555,7 +1556,11 @@ decomp_command!(
             let sym = scope_local
                 .add_symbol(&name, ct, &addr, &invalid)
                 .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-            scope_local.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+            scope_local.set_attribute(
+                sym,
+                varnode_flags::namelock | varnode_flags::typelock
+                    | if volatile { varnode_flags::volatil } else { 0 },
+            );
             return Ok(());
         }
         let dcp = dcp_mut(status)?;
@@ -1566,13 +1571,16 @@ decomp_command!(
         let (addr_size, word_size) = prog.arch().data_org();
         let org = crate::grammar::DataOrg { addr_size, word_size };
         let typetext = s.rest();
-        let (ct, name) = crate::grammar::parse_type(&typetext, prog.arch().types(), org)
-            .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
+        let (ct, name, volatile) =
+            crate::grammar::parse_type_with_volatile(&typetext, prog.arch().types(), org)
+                .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
         // Global branch: build the flags, resolve/create the scope, add the mapped
         // symbol, set the locks, and (for a namespace scope) register its range.
         use kuna_decomp::varnode::varnode_flags;
         let inherit = prog.arch().symboltab.get_property(&addr);
-        let flags = varnode_flags::namelock | varnode_flags::typelock | inherit;
+        let flags = varnode_flags::namelock | varnode_flags::typelock | inherit
+            | if volatile { varnode_flags::volatil } else { 0 };
+        let size = ct.get_size();
         let num_spaces = prog.arch().manage().num_spaces() as int4;
         let arch = prog.arch_mut();
         let (scope, basename) = arch
@@ -1585,6 +1593,10 @@ decomp_command!(
             .upsert_data_mapped(scope, &basename, ct, &addr, &invalid)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         arch.symboltab.set_attribute(sym, flags);
+        if volatile && size > 0 {
+            let last = &addr + size as i64;
+            arch.symboltab.set_property_range(varnode_flags::volatil, &addr, &last);
+        }
         // C++ ifacedecomp.cc:573-576: if this is a (global) namespace scope (it has
         // a parent), register the symbol's whole-map address range on that scope so
         // address->symbol resolution descends into the namespace.

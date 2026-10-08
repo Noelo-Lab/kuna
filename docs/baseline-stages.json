@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2400,
-    2400
+    2407,
+    2407
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1908,6 +1908,8 @@
     "data:finalorder #4: the entry component prints first",
     "data:finalorder #5: the mid-function label the buggy order hoisted is still emitted",
     "data:finalorder #6: the entry falls through into the loop head label",
+    "data:first cursor snapshot is explicit",
+    "data:first index uses first snapshot",
     "data:foldcallret #1: spilled call return (only pass 1, off)",
     "data:foldcallret #2: call folded into condition (only pass 2, on)",
     "data:foldcallretphi #1: call result spilled to its own statement (pass 1 default with a narrowed output, and pass 5 off)",
@@ -2080,6 +2082,7 @@
     "data:kuna-msvcstackguard #1: the entry-side cookie scramble is emitted only with the option off",
     "data:kuna-msvcstackguard #2: the checker call is emitted only with the option off",
     "data:kuna-msvcstackguard #3: the computation the function actually performs survives both passes",
+    "data:mirror receives the local without a device read",
     "data:mode aggressive enables returndup (warning appears once); mode reliable does not",
     "data:namestyle #1 default: argument renders as aN",
     "data:namestyle #2 default: local renders as vN with a register source-location comment",
@@ -2210,6 +2213,10 @@
     "data:returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)",
     "data:rodatastring #1: default pipeline recovers the read-only block copy as one builtin_strncpy",
     "data:rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)",
+    "data:second cursor snapshot is explicit",
+    "data:second index uses second snapshot",
+    "data:selected local reaches configuration",
+    "data:selected local reaches first device write",
     "data:short UTF-16 #1: explicit wchar_t mapping replaces narrow exact-address data",
     "data:short UTF-16 #2: the one-byte rendering is gone",
     "data:short UTF-16 #3: adjacent wide literal is preserved",
