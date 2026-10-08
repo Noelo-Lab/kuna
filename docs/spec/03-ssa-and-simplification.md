@@ -2047,6 +2047,11 @@ the Windows loader writes there. The action also folds to zero any varnode whose
 consumed bits and nonzero mask are
 disjoint (skipping constants and COPYs of nonzero constants, which would
 recurse).
+With `stackalias on`, physical frame writes held by the opt-in P6 policy retain
+that hold across this pass (chapter [06](06-variables-and-merge.md)). Clearing a
+hold that dead-code elimination immediately reinstates would prevent the main
+loop from converging; ordinary temporary holds keep their existing release rule.
+
 
 A read from a volatile range becomes a `read_volatile` user op only once its
 address is a constant: `RuleLoadVarnode` turns the LOAD into a COPY of the
@@ -2109,3 +2114,114 @@ branch, severing the dead edge
 constant-propagation result (P5 facts) edits the P2 control-flow artifact
 without any restart (§0.7): the next mainloop iteration simply re-heritages
 the smaller graph.
+
+
+With `stackviews on`, unresolved STOREs in the containing memory space guard
+escaped frame ranges with an INDIRECT memory version. A reloaded pointer need
+not remain syntactically derived from the stack pointer: it can still designate
+those bytes. The existing deferred alias checker gates these additional guards;
+literal global addresses retain their ordinary disjoint behavior. This prevents
+folding a direct stack read to the old constant after an indirect whole or byte
+write. Unknown call effects retain their existing frame guards.
+
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_calleememory.rs` derives
+read, write and pointer-escape summaries from a direct callee's instructions
+when `stackviews` or `stackalias` is enabled. A complete call-free body can
+identify constant byte ranges relative to incoming pointer registers and exact
+pointer-width stack argument slots. Copies,
+constant pointer displacements and exact private-frame spills preserve those
+origins; overlapping register writes invalidate them. Reads and writes from
+every visited branch and loop state contribute to the summary. Storing an
+incoming pointer outside the callee's frame records an escape, and return
+states retain pointer origins for the caller's output-storage check.
+
+An untouched incoming stack slot retains its entry offset independently of the
+callee's changing stack pointer. Exact private spills preserve that origin;
+partial slot writes and potentially aliasing stores invalidate it. Pointer
+origins from stack slots match the locked prototype's actual stack storage,
+including caller-cleaned cdecl arguments and x64 arguments beyond the register
+bank. Positive entry-frame reads and writes also contribute direct byte
+footprints: an access beyond the prototype's arguments is not treated as private
+memory or silently ignored. Those footprints are translated using the recovered
+call-site spacebase offset.
+
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_calleehomes.rs` distinguishes
+pointer writes into a verified Win64 home area from external pointer publication.
+The callee summary retains each possible home escape and its full write footprint,
+even if later writes partially overwrite the pointer. The caller may discharge
+that escape only for the locked, non-variadic prototype model's exact `[8,40)`
+home interval, mapped wholly into its own negative local frame. The caller scan
+must rule out reads and forwarding of the residual cell, including stack-value
+reads, pointer escapes and observations through other calls. The current
+callee's own home loads are expected and do not substitute for that caller proof.
+Other calls require the strict summary path, which checks lost provenance and
+unresolved frame fragments even when the other callee has no homes of its own.
+It does not recursively discharge further home escapes. Unknown calls, ambiguous
+addresses and exhausted budgets decline. Home write effects remain present for overlapping-frame
+preservation checks. Other positive stack slots and unknown pointer-sized stores
+retain the existing conservative treatment.
+
+Partial home reloads and unresolved loss of incoming pointer provenance
+prevent discharge, including fragments of other arguments and narrow or bulk
+frame reads whose contents may include pointer bits. Explicitly initialized
+scalar register values do not count as entry pointer fragments; partial overwrites of tracked pointers
+retain their original loss marker. Lost frame-pointer provenance is a
+call-observation barrier even without
+homes or when all actual arguments are constants: a published truncated stack
+address could expose caller bytes independently of those arguments. Exhausting
+the bounded loss metadata also declines observation proofs. Complete
+write footprints and return inference remain usable. Modeled return storage
+also checks unchanged input registers rather than
+only explicitly written values. The caller scan is bounded to 4096 operations
+and 128 ancestry nodes per value, with each mapped cell scanned once per query;
+neither the scan nor its call-site proof is cached across decompilation phases.
+
+When a write through an incoming pointer would invalidate a tracked home spill,
+the summary may retain its pointer origin only with an explicit non-alias
+condition between that write footprint and the home cell. Every such condition
+must be proved from the actual call-site addresses before any summary effects
+or return facts are used. These alias conditions use exact physical frame-cell
+translation on any supported ABI; they do not grant the cell privacy. Only
+escape discharge requires the stricter Win64 home proof. This lets repeated
+home reloads survive known disjoint
+field writes without guessing from a pointee layout. Unknown or overlapping
+actual addresses decline; other spill invalidation stays unchanged.
+
+The driver takes the summaries before heritage and re-seeds them after reflow;
+each target is cached per image. Decode errors, nested or indirect calls,
+user operations, indirect or internal p-code branches, unresolved memory
+addresses and exhausted budgets yield no proof. The initial bounds are 256
+instruction-state visits, 256 tracked values or effects, 64 spills or return
+states, and 64 KiB constant displacements. Only byte-addressed, negative-growth
+frames are supported. `const` and pointee layouts provide no memory-effect
+evidence.
+Return-address rewriting and bodies consisting only of return machinery also
+decline a proof, so placeholder return stubs cannot narrow external-call effects.
+
+With `stackviews`, a complete summary can leave a caller frame range unaffected
+when none of its possible writes reaches that range. The range must lie above
+the declared callee frame and argument area, including the full extent of every
+locked stack parameter rather than just the callee's extra-pop count; explicit
+effect overrides win.
+Unknown aliases retain the existing guard. The P6 physical-write policy also
+uses the possible reads and escapes to decide whether a call observes bytes
+before a later overwrite. An opaque return value alone is not a memory read:
+the subsequent CFG walk still stops at a possible dereference, another observer,
+or a path without the overwrite. This permits ordinary pointer-width integer
+results on 32-bit targets without accepting a returned-pointer read before the
+overwrite. Explicit returned incoming-pointer origins remain conservative
+observers. These proofs refine memory versions and write
+liveness; they do not create independent logical objects or invalidate old
+pointers.
+
+With explicit `stackviews` or `stackalias` recovery, the declared-callee and
+unknown-pointer-store guards test the complete frame range. An alias starting
+inside a wider heritaged value must prevent forwarding its pre-call bytes; testing
+only the first byte incorrectly declares that wider value unaffected. The existing
+negative-stack alias boundary is monotone, so testing both endpoints suffices.
+Positive-growth frames retain a conservative guard.
+
+For `mulblob`, an isolated dynamic name without a type lock still describes a
+numeric value. Mapping that name does not disable the widened-operand guard when
+the datatype is the fallback array and every reader satisfies the existing
+arithmetic/SUBPIECE checks. Explicit locked array types keep their structuring.

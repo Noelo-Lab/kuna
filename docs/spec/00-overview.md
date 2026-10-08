@@ -2036,7 +2036,8 @@ its type lock; ordinary recovered local types remain inference hints.
 A parameter edit also crosses the prototype store. The standalone engine keeps
 its parameter Symbol separate from its prototype entry, so replaying only the
 Symbol can leave the old name or type in the signature while the body reads an
-uninitialized local. `kuna_hightarget.rs (carried_parameter_maps)` matches locked
+uninitialized local. `decompiler/crates/kuna-console/src/kuna_paramasserts.rs`
+matches locked
 parameter Symbols by category, slot and input storage, and carries their edited
 names and types through the existing parameter-map seed. When any parameter
 changes, the complete input list keeps its recovered slots, storage and parameter
@@ -2049,8 +2050,8 @@ from the forced prototype input, leaving a branch condition or return reading
 an uninitialized local even when the signature carries the edited name.
 
 A printed register alias of a later value uses the local-symbol channel instead.
-It may share an input parameter's register only when equal storage widths and
-disjoint CFG covers establish separate lifetimes. Replay must preserve both
+It may share an input parameter's register when the definition identity and
+storage width identify the later value independently. Replay must preserve both
 Symbols: parameter creation checks the entry usepoint, type seeding checks each
 Varnode's definition usepoint, and naming and declaration emission retain the
 selected Symbol identity. Renaming the later local then changes its assignments
@@ -2072,14 +2073,14 @@ Three properties of that mapping are load-bearing, each measured on
   A bare `type v6 <T>` therefore states no name, and the retyped local can come
   back under a different number; its storage comment is what identifies it across
   the two passes, and `type v6 <T> <newname>` pins a name outright.
-* **Only addressable storage is a target.** A `unique`-space temporary is
+* **Synthetic storage needs a dynamic anchor.** A `unique`-space temporary is
   renumbered on every IR rebuild and a `join` is a synthetic register pair, so a
   Symbol mapped over one binds nothing on the second pass and survives as a
   declared-but-unused local while the variable the caller aimed at is unchanged.
-  Reporting that as `applied` is the failure this plane exists to end, so such a
-  target is rejected with `Not addressable storage`. Naming a decompiler
-  temporary durably needs the dynamic-hash channel
-  (`Funcdata::seed_dynamic_recommendations`), which this does not use.
+  Such targets use the dynamic-hash channel
+  (`Funcdata::seed_dynamic_recommendations`). Before reporting `applied`, the
+  resolver verifies that the hash selects the same HighVariable and width;
+  unresolved or ambiguous identities are rejected.
 
 (kuna) **Every `name`/`type` in one batch reads its identifier against the same
 pass.** A batch is the directives applied between two decompiles: the
@@ -2114,14 +2115,25 @@ first reading applies; the second would only undo or chain the earlier rename
 onto a name another local still prints. A second directive on a local the batch
 already mapped edits that Symbol rather than mapping another, and it keeps the
 register's width, so `type rc char *` on a 4-byte register is still `Storage is
-4 bytes, the stated type is 8`. Two register locals whose storage overlaps --
-`char *s; // rax` and a later `uint4 v1; // eax` -- cannot both be given a
-Symbol: the second pass folds them into one variable (`s._0_4_ = 0`), so the
-later directive is rejected with `Storage of v1 overlaps s, which an earlier
-directive already changed`. That is the one rejection that depends on order, and
-it names the directive it lost to. On the stack, `name v2 credbuf` followed by
+4 bytes, the stated type is 8`. Different-width register locals whose storage overlaps --
+`char *s; // rax` and a later `uint4 v1; // eax` -- can receive distinct
+Symbols when their definition identities distinguish them. The second pass
+retains both values instead of folding the narrower value into `s._0_4_`.
+On the stack, `name v2 credbuf` followed by
 `type v2 char[8]` now retypes `credbuf` where it used to be rejected, and still
 maps one Symbol over the slot.
+
+Locals that the first pass already distinguishes may bind separate
+Symbols when `(storage, width, definition usepoint)` uniquely identifies each
+selected HighVariable. Their logical CFG covers need not be disjoint: copy
+propagation can keep an earlier register value live through a saved copy after
+the register is reused. The replay mapping retains its definition usepoint and
+is isolated from speculative merges. These identities survive separate console
+decompiles, including mixed-width locals and later reuse of parameter registers.
+Definitions sharing one native instruction address use a verified dynamic-hash
+anchor; an unresolved or ambiguous anchor still rejects the directive.
+Type seeding uses the definition usepoint, and naming retains the selected SymbolId;
+a storage-only re-query must not attach another lifetime's name or type.
 
 (kuna) **A `prototype` directive binds to `<func>`, whatever name its declaration
 carries.** The operand says which function the signature describes; the

@@ -1,6 +1,4 @@
-//! Tests for the `stackalias` option toggle (kuna GH-8500).  The behavioral fix
-//! is an anchor edit in `ActionDeadCode::lastChanceLoad` (coreaction.cc) ported
-//! with the W-coreaction wave; this module owns only the gate.
+//! Checks for the conservative stack-write preservation gate.
 
 use super::*;
 

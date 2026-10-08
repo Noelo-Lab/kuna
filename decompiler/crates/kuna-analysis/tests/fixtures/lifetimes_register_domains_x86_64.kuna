@@ -1,0 +1,6 @@
+typedef struct Node { struct Node *next; struct Node *previous; unsigned int identity; unsigned char padding[4]; };
+prototype value_domains struct Node *value_domains(struct Node *first, struct Node *last, struct Node **selected, unsigned int choose_last)
+data 0x402000 struct Node first
+data 0x402018 struct Node last
+data 0x402030 struct Node *selected
+data 0x402038 unsigned long long observed_hash

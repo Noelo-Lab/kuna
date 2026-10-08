@@ -139,7 +139,6 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("constselectjump", "on"),
     ("switchguardbound", "on"), // speed-expensive
     ("unrolledguard", "on"),    // speed-expensive
-    ("stackalias", "on"),
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("regionedgeorder", "on"),
     ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
@@ -457,6 +456,11 @@ mod tests {
         /// guard at any later call -- so fabricating a store as the default output
         /// under 500 KiB is the operator's judgement, not the preset's.
         ///
+        /// `stackalias` now preserves physical frame writes that escaped pointers
+        /// can observe. Retaining those writes changes stack layout and declaration
+        /// types; recovery stays explicit until the memory/view chain is complete.
+        /// `stackviews` likewise remains manual while bounded coverage is completed.
+        ///
         /// `protoorder` is a whole-binary RUN ORDER, not a pass, and its own
         /// default (`cycles`) already turns it on where it means anything: a
         /// serial `kuna decompile-all`. The other surfaces cannot act on it, so
@@ -485,7 +489,7 @@ mod tests {
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
-              "structdefs", "indirectonly", "protoorder", "bejoin", "armframes",
+              "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin", "armframes",
               "mixedtailret", "varargsharedfloat"];
 
         /// Default-off options that predate this test and are **not** in the preset,

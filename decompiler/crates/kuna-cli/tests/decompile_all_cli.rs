@@ -7235,9 +7235,9 @@ fn callrettype_calls(listing: &str) -> std::collections::BTreeMap<String, Vec<(S
 /// global and a `long` compared signed.  The controls keep their casts: a callee
 /// whose unsigned result shares a variable with `strcmp`'s signed one, the
 /// `unsigned long` shift a `long` result is read through, a callee recovered
-/// `void`, which states nothing, and a `long *` result the merge ties into one
-/// variable with the `-1` and the count the function returns (`cached`, which
-/// must stay `unsigned long` rather than turn into a pointer), and two callers
+/// `void`, which states nothing, and a `long *` result stored in an integer
+/// cache while the function returns `-1` or a count (`cached`, which must stay
+/// `unsigned long` rather than turn into a pointer), and two callers
 /// that zero-extend a callee's `short` and `int` result in place before
 /// returning it (`unsigned short use_s16_as_u`, `unsigned int
 /// use_neg_as_unsigned`, called through their printed prototypes, where a
@@ -7259,7 +7259,7 @@ fn a_call_result_typed_by_its_callee_round_trips_through_the_printed_c() {
         "skip_blanks", "count_upper", "upper_after_blanks", "upper_of_rest", "first_of", "first_char",
         "signed_delta", "is_behind", "clamp_delta", "hash_of", "pick", "after_colon", "fallback_name", "name_len",
         "pick_stream", "stream_no", "s16", "use_s16_as_u", "neg32", "use_neg_as_unsigned", "widen_signed", "tick",
-        "keep_widened", "keep_across", "halve", "pass_widened", "mark", "marked_len",
+        "keep_widened", "keep_across", "halve", "pass_widened", "mark", "marked_len", "cached",
     ];
     const O2: &[&str] = &[
         "first_of", "first_char", "signed_delta", "is_behind", "clamp_delta", "hash_of", "pick", "after_colon",
@@ -7274,6 +7274,14 @@ int main(void) {
   char buf[] = "  AbC";
   char buf2[] = "xyzw";
   char buf3[] = "Hi!Hi!!";
+  unsigned long keys[] = {0, 5, 99, 100, 500};
+  for (unsigned i = 0; i < 5; ++i) {
+    long good[4] = {0, 1, 7, 0}, empty[4] = {0};
+    unsigned long key = keys[i];
+    if (cached(good, key) != ((key && key < 100) ? key : key + 7)) return 1;
+    if ((!key || key >= 100) && good[0] != (long)&good[2]) return 2;
+    if (cached(empty, key) != ((key && key < 100) ? key : ~0UL)) return 3;
+  }
   printf("%ld %ld %ld\n", (long)upper_after_blanks((long)buf), (long)upper_of_rest(buf),
          (long)((char *)skip_blanks(buf) - buf));
   printf("%d %d\n", (int)first_char((unsigned long)(buf2 + 1), 3L) - 17, (int)first_char((unsigned long)buf2, 0L));
@@ -7327,8 +7335,8 @@ int main(void) {
                 "(unsigned int)hash_of(a0) % 7",
                 "  mark(a0);\n",
                 "unsigned long cached(long *a0,unsigned long a1)",
-                "        v1 = 0xffffffffffffffff;",
-                "    v1 = lookup((long *)*a0,a1);",
+                "        return 0xffffffffffffffff;",
+                "    a1 = lookup((long *)*a0,a1);",
                 "unsigned short use_s16_as_u(",
                 "unsigned int use_neg_as_unsigned(",
                 "unsigned long keep_widened(",
@@ -7418,7 +7426,10 @@ int main(void) {
                             "#include <stdbool.h>\n#include <stdio.h>\n#include <string.h>\n\
                              #define stderr_ptr (&stderr)\n#define stdout_ptr (&stdout)\n\
                              #define CONCAT22(h, l) ((unsigned int)(unsigned short)(h) << 16 | (unsigned short)(l))\n\
-                             char *g_fallback = \"fallback\";\nvolatile int g_ticks;\n{printed}\n{main}"
+                             char *g_fallback = \"fallback\";\nvolatile int g_ticks;\n\
+                             long *table_of(long *c) {{ return c[1] ? &c[2] : NULL; }}\n\
+                             unsigned long lookup(long *t, unsigned long k) {{ return (unsigned long)t[0] + k; }}\n\
+                             {printed}\n{main}"
                         ),
                     )
                     .unwrap();

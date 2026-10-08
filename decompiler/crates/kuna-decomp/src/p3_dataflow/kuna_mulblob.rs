@@ -24,7 +24,8 @@
 //! (an array of `undefined1` exactly as wide as the varnode), and whose only
 //! readers are wide integer arithmetic ops that are themselves read only through
 //! `SUBPIECE`.  A varnode backed by a Symbol, an addr-tied one, or one whose
-//! array type came from real type recovery keeps upstream's behaviour.
+//! array type came from real type recovery keeps upstream's behaviour. A dynamic
+//! name alone keeps the value guard; it asserts no array datatype.
 //!
 //! Gated by `Architecture::mul_blob` (option `mulblob on|off`).
 
@@ -112,9 +113,12 @@ pub fn declines_zext(data: &Funcdata, op: OpId) -> bool {
     let Some(ov) = data.vbank().get(outvn) else {
         return false;
     };
-    // Real storage keeps upstream's structuring: only an anonymous temporary is
-    // in scope.
-    if ov.is_addr_tied() || ov.is_persist() || ov.is_mapped() || ov.is_proto_partial() {
+    // Real storage and explicit types keep upstream's structuring.
+    if ov.is_addr_tied()
+        || ov.is_persist()
+        || (ov.is_mapped() && !name_only_value(data, outvn))
+        || ov.is_proto_partial()
+    {
         return false;
     }
     if ov.get_space().get_type() != kuna_base::space::spacetype::IPTR_INTERNAL {
@@ -157,6 +161,16 @@ pub fn declines_zext(data: &Funcdata, op: OpId) -> bool {
         }
     }
     any
+}
+
+fn name_only_value(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(symbol) = data.vbank().get(vn).and_then(|v| v.kuna_symbol_entry()) else {
+        return false;
+    };
+    let Some(scope) = data.get_scope_local() else { return false };
+    let Some(symbol) = scope.database().try_symbol(symbol) else { return false };
+    !symbol.is_type_locked()
+        && symbol.get_flags() & crate::varnode::varnode_flags::namelock != 0
 }
 
 /// `option mulblob on|off` (kuna).

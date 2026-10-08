@@ -139,11 +139,11 @@
 <stringmatch name="globalpointee #7: the load after a store that may alias the global stays a load" min="2" max="2">return gi\[1\];</stringmatch>
 <stringmatch name="globalpointee #8: the chars are read through the value, not the int global" min="1" max="1">return \(int4\)a0\[1\] \+ \(int4\)a0\[5\];</stringmatch>
 <stringmatch name="globalpointee #9: the load after a store through a pointer reads the global, the value its register" min="2" max="2">v1 = \(&amp;a0\[a1\]\)\[2\];
-  \*a2 = a0;
+  \*a2 = \(unsigned long\)a0;
   return v1 \+ gi\[1\];</stringmatch>
 <stringmatch name="globalpointee #10: a value read before its store keeps its register, the load after the pointer store reads the global" min="2" max="2">v1 = \(&amp;a0\[a1\]\)\[3\];
   gi = &amp;a0\[a1\];
-  \*a2 = a0;
+  \*a2 = \(unsigned long\)a0;
   return v1 \+ gi\[1\];</stringmatch>
 <stringmatch name="globalpointee #11: the load after a store through another pointer reads the global" min="2" max="2">\*a2 = a3;
   return (v1|a0\[1\]) \+ \*gi;</stringmatch>
@@ -152,7 +152,7 @@
 <stringmatch name="globalpointee #13: a load between two pointer stores keeps its own variable" min="2" max="2">v2 = gi;
   \*a3 = </stringmatch>
 <stringmatch name="globalpointee #14: the load after a pointer store reads the global while its earlier value is read too" min="2" max="2">v1 = \(&amp;a0\[a1\]\)\[2\];
-  \*a2 = a0;
+  \*a2 = \(unsigned long\)a0;
   return (\*v2 \+ gi\[1\] \+ v1|v1 \+ gi\[1\] \+ \*v2);</stringmatch>
 <stringmatch name="globalpointee #15: a pointer stored in both arms keeps its variable, the load after the pointer store reads the global" min="2" max="2">v1 = v2\[1\];
   \*a2 = a0;

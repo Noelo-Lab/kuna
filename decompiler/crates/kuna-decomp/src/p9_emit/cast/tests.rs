@@ -133,6 +133,22 @@ fn copy_cast_printed(s: &CastStrategyC, t1: &Rc<Datatype>, t2: &Rc<Datatype>) ->
 // -- cast_basic (testtypes.cc:121-135) --------------------------------------
 
 #[test]
+fn unknown_scalar_storage_requires_a_pointer_conversion() {
+    let strategy = strategy_c();
+    let destination = unknown_t(8);
+    let pointer = ptr_to(void_t(), 1);
+    let cast = strategy.cast_standard(&destination, &pointer, false, true).unwrap();
+    assert!(Rc::ptr_eq(&cast, &destination));
+    assert!(strategy.cast_standard(&destination, &pointer, false, false).is_none());
+    assert!(!copy_cast_printed(&strategy, &destination, &uint_t(8)));
+    assert!(!copy_cast_printed(
+        &strategy,
+        &ptr_to(unknown_t(8), 1),
+        &ptr_to(uint_t(8), 1),
+    ));
+}
+
+#[test]
 fn cast_basic() {
     let s = strategy_c();
     assert_eq!(s.promote_size(), 4);

@@ -2042,6 +2042,23 @@ fn error_json(error: Option<&str>) -> Json {
     error.map(|e| Json::Str(e.to_string())).unwrap_or(Json::Null)
 }
 
+fn stack_object_json(object: &kuna_decomp::kuna_stackobjectinfo::StackObjectInfo) -> Json {
+    Json::Object(vec![
+        ("id".into(), Json::Str(object.id.clone())),
+        ("name".into(), Json::Str(object.name.clone())),
+        ("stack_offset".into(), Json::Number(object.stack_offset.to_string())),
+        ("size".into(), Json::Number(object.size.to_string())),
+        ("defined".into(), Json::Bool(object.defined)),
+        ("uses".into(), Json::Array(object.uses.iter().map(|use_| {
+            Json::Object(vec![
+                ("address".into(), Json::Number(use_.address.to_string())),
+                ("slot".into(), Json::Number(use_.slot.to_string())),
+                ("type".into(), Json::Str(use_.type_name.clone())),
+            ])
+        }).collect())),
+    ])
+}
+
 /// Build the `decompile-all --json` document.
 fn result_json(
     binary: &str,
@@ -2059,7 +2076,7 @@ fn result_json(
                 let line_mappings =
                     Json::Array(f.line_mappings.iter().map(line_mapping_json).collect());
                 let types = Json::Array(f.types.iter().map(type_json).collect());
-                Json::Object(vec![
+                let mut fields = vec![
                     ("name".into(), Json::Str(f.name.clone())),
                     ("address".into(), Json::Number(f.address.to_string())),
                     ("address_hex".into(), Json::Str(format!("0x{:x}", f.address))),
@@ -2091,7 +2108,13 @@ fn result_json(
                     // the composites this function's C names, as records.
                     // Always present, `[]` unless the option is on.
                     ("types".into(), types),
-                ])
+                ];
+                if !f.stack_objects.is_empty() {
+                    fields.push(("stack_objects".into(), Json::Array(
+                        f.stack_objects.iter().map(stack_object_json).collect(),
+                    )));
+                }
+                Json::Object(fields)
             })
             .collect(),
     );
@@ -2271,6 +2294,7 @@ mod provenance_json_tests {
                 definition: "struct mystruct {\n    int a;\n};\n".into(),
                 size: 4,
             }],
+            stack_objects: Vec::new(),
             globals: Vec::new(),
             line_mappings: vec![LineMapping {
                 line_number: 3,

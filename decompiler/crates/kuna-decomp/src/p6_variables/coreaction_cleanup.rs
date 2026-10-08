@@ -591,6 +591,12 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
             return;
         }
     }
+    let is_register = data.get_arch().manage().register_lookup().is_some_and(|lookup| {
+        !lookup.get_register_name(addr.get_space().unwrap(), addr.get_offset(), size).is_empty()
+    });
+    if is_register && !crate::kuna_registerepochs::single_family(data, &written) {
+        return;
+    }
     for vn in targets {
         if let Some(v) = data.vbank_mut().get_mut(vn) {
             v.mark_mapped_addr_tied();
@@ -649,6 +655,7 @@ impl Action for ActionMergeRequired {
         // would let an un-tied input (a global like `dat_52`) wrongly merge into
         // it (no trim COPY fires).  Marking the output storage addrtied restores
         // the `high_is_addr_tied(out) && !high_is_addr_tied(in)` trim trigger.
+        crate::kuna_stackobjects::recover(data);
         mark_output_storage_addr_tied(data);
 
         // Drive over `data.getMerge()` — the single persistent `Merge` on
@@ -1506,6 +1513,11 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
                 }
             }
         }
+    }
+    if opc == OpCode::CPUI_LOAD && has_cover
+        && crate::p6_variables::kuna_stackloadcover::crosses_write(data, vn)
+    {
+        return false;
     }
     // (kuna `indexaliasguard global`) a load stays ahead of a store to a global
     // it may read; see [`crate::p3_dataflow::kuna_indexaliasguard`].
@@ -2758,7 +2770,22 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         let usepoint = data.vn_use_point(name_rep.unwrap());
         let container = data
             .get_scope_local()
-            .and_then(|lm| lm.query_container_for_link(&v_addr, &usepoint));
+            .and_then(|lm| {
+                if !v_input {
+                    if let Some(backing) = crate::kuna_stackparamviews::backing_for_address(data, &v_addr, v_size) {
+                        return Some(backing);
+                    }
+                }
+                let info = lm.query_container_for_link(&v_addr, &usepoint)?;
+                if data.get_arch().stack_views
+                    && info.category == crate::database::symbol_category::FUNCTION_PARAMETER
+                    && info.entry_size < v_size
+                {
+                    lm.query_container_for_link_width(&v_addr, v_size, &usepoint).or(Some(info))
+                } else {
+                    Some(info)
+                }
+            });
         if let Some(info) = container {
             // C++ `handleSymbolConflict(entry, vn)` (`funcdata_varnode.cc:1018`)
             // reuses the entry when the Varnode is input/addr-tied/persist/constant
@@ -2819,9 +2846,16 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 v_addrtied && !v_input && !v_persist && !v_constant
                     && size_mismatch && v_size < info.entry_size
                     && !entry_is_composite;
+            let wider_parameter_local = data.get_arch().stack_views
+                && info.category == crate::database::symbol_category::FUNCTION_PARAMETER
+                && v_addrtied && !v_input && !v_persist && !v_constant
+                && v_size > info.entry_size;
             let reuse_directly =
-                (v_input || v_addrtied || v_persist || v_constant) && !narrower_addrtied_local;
-            let conflict = if reuse_directly || !size_mismatch {
+                (v_input || v_addrtied || v_persist || v_constant)
+                    && !narrower_addrtied_local && !wider_parameter_local;
+            let conflict = if wider_parameter_local {
+                true
+            } else if reuse_directly || !size_mismatch {
                 false
             } else {
                 // Scan `beginLoc(entry->getSize(), entry->getAddr())..endLoc(...)`
@@ -2864,11 +2898,9 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 found
             };
             if !conflict {
-                // Reuse the containing entry's Symbol (the parameter / mapped
-                // local).  `resolve_default_name`'s namerec rename
-                // (coreaction.cc:3087-3094) still applies for an undefined-named
-                // whole-symbol cover. Keep the selected entry's identity across
-                // naming; another register lifetime may occupy the same storage.
+                // Reuse the exact containing entry selected above.  Re-querying by
+                // storage alone could choose a different usepoint-scoped register
+                // Symbol at the same address.
                 // lookForFuncParamNames override (coreaction.cc:2992): a sub-function's
                 // locked parameter name for this argument high wins over the `vN`
                 // default for an undefined whole-symbol cover (the spill struct local
@@ -2882,6 +2914,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 let resolved = data.get_scope_local_mut().and_then(|lm| {
                     lm.resolve_default_name_for_link(&info, v_size, &mut base, rec_name.as_deref())
                 });
+                let bound_sid = info.symbol;
                 let (sym_name, sym_off, sym_type) = match resolved {
                     Some(t) => t,
                     None => (info.display_name, info.sym_off, info.sym_type),
@@ -2893,19 +2926,13 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 // deliberately leaves the high symbol-less) can never be
                 // mistaken for a bind: re-deriving there would hand the
                 // conflict-separated high the PARAMETER's symbol id.
-                let bound_sid = data
-                    .get_scope_local()
-                    .and_then(|lm| lm.container_symbol_link(&v_addr, &usepoint))
-                    .map(|(sid, _, _, _)| sid);
                 if let Some(h) = data.high_bank_mut().get_mut(high) {
                     h.set_kuna_name(sym_name);
                     h.set_symbol_offset(sym_off);
                     if let Some(t) = sym_type {
                         h.set_symbol_type(t);
                     }
-                    if let Some(sid) = bound_sid {
-                        h.set_kuna_link_symbol(sid);
-                    }
+                    h.set_kuna_link_symbol(bound_sid);
                 }
                 continue;
             }

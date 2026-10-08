@@ -1,0 +1,39 @@
+<decompilertest>
+  <!--Kuna #810 / P6 byte origins and P9 shared storage. stackviews off reads fictitious upper fields; on prints the native byte/word stores without synthetic whole-RGB rewrites.-->
+  <binaryimage arch="x86:LE:64:default:windows">
+    <bytechunk space="ram" offset="0x401000">534883ec10448844242284d2740b448844242266b8ffc8eb09c6442422ff66b800966689442420488d4c2420e820000000e8310000004889442420488b4c2420e82a0000000305b90f00004883c4105bc30fb6010fb6510101d00fb6510201d089059e0f0000c3488d05920f0000c38b01c34883ec3031d24531c0e880ffffff3dcc0100007546ba010000004531c0e86cffffff3dfe0100007532ba0100000041b801000000e855ffffff3dff010000751bba0100000041b8ff000000e83effffff3dfd020000750431ffeb05bf01000000b83c0000000f05</bytechunk>
+    <bytechunk space="ram" offset="0x402000">3700000000000000</bytechunk>
+    <symbol space="ram" offset="0x401000" name="rgb_reuse" />
+    <symbol space="ram" offset="0x401051" name="read_rgb" />
+    <symbol space="ram" offset="0x401067" name="make_manager" />
+    <symbol space="ram" offset="0x40106f" name="read_manager" />
+  </binaryimage>
+  <script>
+    <com>parse line struct RGB { uint1 red; uint1 green; uint1 blue; };</com>
+    <com>parse line struct Manager { int4 value; };</com>
+    <com>parse line extern int4 rgb_reuse(uint8 ignored,bool inverted,uint1 blue);</com>
+    <com>parse line extern void read_rgb(RGB *color);</com>
+    <com>parse line extern Manager *make_manager(void);</com>
+    <com>parse line extern int4 read_manager(Manager *manager);</com>
+    <com>map addr r0x402000 Manager datum</com>
+    <com>map addr r0x402004 int4 rgb_result</com>
+    <com>option structdefs on</com>
+    <com>option stackalias off</com>
+    <com>option stackviews off</com>
+    <com>lo fu rgb_reuse</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>option stackviews on</com>
+    <com>lo fu rgb_reuse</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>print stack objects</com>
+    <com>quit</com>
+  </script>
+  <stringmatch name="partial stack: off reads fictitious upper fields" min="2" max="2">v2\[0\]\._3_5_</stringmatch>
+  <stringmatch name="partial stack: on copies changed RGB bytes" min="3" max="3">v2\.(view_RGB\.blue|view_uint2) =</stringmatch>
+  <stringmatch name="partial stack: RGB call retains its member view" min="1" max="1">read_rgb\(&amp;v2\.view_RGB\)</stringmatch>
+  <stringmatch name="partial stack: the complete RGB object is defined" min="1" max="1">object_40102c_1 stack=0x8 size=3 state=defined</stringmatch>
+  <stringmatch name="partial stack: the word retains its native write" min="1" max="1">^  bytes 0\.\.2 0x401022$</stringmatch>
+  <stringmatch name="partial stack: the blue byte retains both native branches" min="1" max="1">^  bytes 2\.\.3 0x40100e\|0x401019$</stringmatch>
+</decompilertest>

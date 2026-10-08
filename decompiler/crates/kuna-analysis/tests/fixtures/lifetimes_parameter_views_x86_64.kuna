@@ -1,0 +1,13 @@
+typedef struct LifetimePair { int x; int y; };
+typedef struct LifetimeIncomingPair { bool x; unsigned char padding[3]; int y; };
+typedef struct LifetimeHandle { int *value; };
+prototype param_pair int param_pair(int a,int b,int c,int d,int e,int f,bool prepare_only)
+prototype param_incoming int param_incoming(int a,int b,int c,int d,int e,int f,bool prepare_only)
+prototype param_mutation int param_mutation(int a,int b,int c,int d,int e,int f,bool prepare_only)
+prototype param_escaped int param_escaped(int a,int b,int c,int d,int e,int f,bool prepare_only)
+prototype read_pair int read_pair(const struct LifetimePair *pair)
+prototype read_incoming_pair int read_incoming_pair(const struct LifetimeIncomingPair *pair)
+prototype read_handle int read_handle(const struct LifetimeHandle *handle)
+prototype read_saved_handle int read_saved_handle(void)
+data 0x402000 int datum
+data 0x402008 void *escaped_pointer

@@ -1,0 +1,14 @@
+typedef struct CalleePair { int first; int second; };
+prototype overwrite_after_read_second int overwrite_after_read_second(void)
+prototype overwrite_after_no_memory int overwrite_after_no_memory(void)
+prototype overwrite_after_hidden_read int overwrite_after_hidden_read(void)
+prototype overwrite_after_branch_read int overwrite_after_branch_read(int condition)
+prototype overwrite_after_const_write int overwrite_after_const_write(void)
+prototype read_after_const_write int read_after_const_write(void)
+prototype callee_read_pair int callee_read_pair(const struct CalleePair *pair)
+prototype callee_read_second int callee_read_second(const struct CalleePair *pair)
+prototype callee_no_memory int callee_no_memory(const struct CalleePair *pair)
+prototype callee_hidden_read int callee_hidden_read(const struct CalleePair *pair)
+prototype callee_read_choice int callee_read_choice(const struct CalleePair *pair, int condition)
+prototype callee_const_write int callee_const_write(const struct CalleePair *pair)
+data 0x402000 struct CalleePair *callee_saved_pointer

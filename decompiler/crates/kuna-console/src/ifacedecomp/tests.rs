@@ -47,8 +47,8 @@ fn registers_full_command_set() {
     // 9 base/comment commands + the decompiler module commands.  The exact
     // count guards against an accidental add/drop in register_decomp_commands:
     // 9 (comment x3, quit, history, openfile write/append, closefile, echo)
-    // + 96 decompiler commands = 105.
-    assert_eq!(status.num_commands(), 105);
+    // + 97 decompiler commands = 106.
+    assert_eq!(status.num_commands(), 106);
 }
 
 #[test]
@@ -456,7 +456,8 @@ fn w9_con_ifacedecomp_v1_register_token_sequence_byte_identical() {
             .unwrap_or_else(|e| panic!("token {words:?} did not resolve: {e}"));
         assert_eq!(&resolved, words, "registered token drifted: {words:?}");
     }
-    assert_eq!(status.num_commands(), CPP_REGISTER_ORDER.len());
+    assert_eq!(status.num_commands(), CPP_REGISTER_ORDER.len() + 1);
+    assert_eq!(status.resolve("print stack objects").unwrap(), vec!["print", "stack", "objects"]);
 }
 
 #[test]

@@ -1,0 +1,11 @@
+typedef struct ChoiceArray { unsigned int count; unsigned char padding[4]; struct ChoiceItem **items; };
+typedef struct ChoiceQueue { struct ChoiceItem **begin; struct ChoiceItem **end; struct ChoiceItem **capacity; };
+typedef struct ChoiceItem { int kind; int key; };
+prototype frame_alias void frame_alias(struct ChoiceArray *array,struct ChoiceQueue *queue)
+prototype read_key void read_key(const int *key)
+prototype read_item void read_item(struct ChoiceItem *const *item)
+prototype expose_input void expose_input(const struct ChoiceItem *item)
+prototype frame_seed void frame_seed(struct ChoiceArray *array,struct ChoiceQueue *queue)
+prototype frame_cached unsigned long long frame_cached(unsigned long long input)
+prototype advance_word void advance_word(unsigned long long *word)
+data 0x402060 struct ChoiceItem item_two

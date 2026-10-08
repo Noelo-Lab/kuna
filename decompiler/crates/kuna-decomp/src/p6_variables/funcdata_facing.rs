@@ -111,6 +111,9 @@ impl Funcdata {
     /// data-type, resolved against the *write* edge (`slot == -1`) when it needs
     /// union resolution.  `vn` **must** be written.
     pub fn vn_type_def_facing(&self, vn: VarnodeId) -> Rc<Datatype> {
+        if let Some(op) = self.vbank().get(vn).and_then(|v| v.get_def()) {
+            if let Some(view) = crate::kuna_stackviews::access_type(self, vn, op, -1) { return view }
+        }
         let v = self.vbank().get(vn).expect("vn_type_def_facing: stale vn");
         let ty = Rc::clone(v.get_type());
         if !ty.needs_resolution() {
@@ -124,6 +127,8 @@ impl Funcdata {
     /// data-type, resolved against the *read* edge (`op->getSlot(this)`) when it
     /// needs union resolution.
     pub fn vn_type_read_facing(&self, vn: VarnodeId, op: OpId) -> Rc<Datatype> {
+        let slot = self.obank().get(op).map(|o| o.get_slot(vn)).unwrap_or(-1);
+        if let Some(view) = crate::kuna_stackviews::access_type(self, vn, op, slot) { return view }
         let ty = Rc::clone(self.vbank().get(vn).expect("vn_type_read_facing: stale vn").get_type());
         if !ty.needs_resolution() {
             return ty;
@@ -137,6 +142,9 @@ impl Funcdata {
     /// union resolution.  This is the def-facing node of the type graph the Casts
     /// stage walks.
     pub fn vn_high_type_def_facing(&mut self, vn: VarnodeId) -> Rc<Datatype> {
+        if let Some(op) = self.vbank().get(vn).and_then(|v| v.get_def()) {
+            if let Some(view) = crate::kuna_stackviews::access_type(self, vn, op, -1) { return view }
+        }
         let ct = self
             .high_get_type(vn)
             .unwrap_or_else(|| Rc::clone(self.vbank().get(vn).expect("stale vn").get_type()));
@@ -156,6 +164,8 @@ impl Funcdata {
     /// resolution.  This is the read-facing node of the type graph
     /// `ActionSetCasts::castInput`/`castOutput` query.
     pub fn vn_high_type_read_facing(&mut self, vn: VarnodeId, op: OpId) -> Rc<Datatype> {
+        let slot = self.obank().get(op).map(|o| o.get_slot(vn)).unwrap_or(-1);
+        if let Some(view) = crate::kuna_stackviews::access_type(self, vn, op, slot) { return view }
         let ct = self
             .high_get_type(vn)
             .unwrap_or_else(|| Rc::clone(self.vbank().get(vn).expect("stale vn").get_type()));

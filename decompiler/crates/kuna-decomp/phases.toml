@@ -2802,6 +2802,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "stackviews"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P6"
+subphase = "alias-facets"
+strength = "HARD"
+rewind = "P3"
+issue = "#810"
+summary = "Represent incompatible stack-object incarnations as typed views of shared backing storage."
+use_when = "Enable when a frame address is passed with incompatible declared pointee types, or when separate byte-definition families need lifetime-scoped name/type assertions. Shared backing keeps old pointers and simultaneous views at the same address, retains escaped frame writes, and preserves byte-copy semantics for reinterpreted accesses. Fixed and bounded indexed byte extents can share a backing object. Unbounded indices and explicit user-locked layouts retain their existing mapping. Complete leaf-callee bodies can refine frame read and write barriers; unresolved effects remain conservative."
+example = "option stackviews on"
+source_decompiler = "kuna"
+inspiration = "Kuna #810: stack-object incarnations and shared storage"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "a reused stack slot is assigned a value of an incompatible type|two object views of one frame address become unrelated local variables"
+live_field = "stack_views"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "stackalias"
 values = "on|off"
 default = "off"

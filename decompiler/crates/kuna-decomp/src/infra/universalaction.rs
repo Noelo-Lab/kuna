@@ -607,6 +607,7 @@ pub fn universal_sched(
             act!(crate::kuna_structsynth::ActionStructSynth::boxed("typerecovery")),
             act!(ActionRestructureVarnode::boxed("localrecovery")),
             stackstall,
+            act!(crate::p6_variables::kuna_savedregisterspills::ActionRestrictLocalSavedLanes::boxed()),
             act!(ActionRedundBranch::boxed("deadcontrolflow")),
             act!(ActionBlockStructure::boxed("blockrecovery")),
             act!(ActionConstantPtr::boxed("typerecovery")),

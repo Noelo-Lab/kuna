@@ -160,6 +160,8 @@ Three tiers:
 | an out-parameter local is passed as (int *)&v2 to waitpid or wait | [`castobject`](#castobject) |
 | a stack local is declared unsigned int where the callee that fills it declares int * | [`castobject`](#castobject) |
 | return (int)v1 >> 8 & 0xff; over an unsigned int status filled by waitpid | [`castobject`](#castobject) |
+| a reused stack slot is assigned a value of an incompatible type | [`stackviews`](#stackviews) |
+| two object views of one frame address become unrelated local variables | [`stackviews`](#stackviews) |
 | spurious uninitialized local (xStack_N) returned after storing through a pointer to a local | [`stackalias`](#stackalias) |
 | store through a take-address-of-local pointer dropped as dead so the later read is garbage | [`stackalias`](#stackalias) |
 | bogus (*pcVar1)() indirect call after calling a struct-returning function on sparc | [`sparcstructret`](#sparcstructret) |
@@ -1407,6 +1409,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. An out-parameter local is declared the way the callee declares it -- `waitpid`'s and `wait`'s `int *` status, `pthread_setcancelstate`'s `int *` old state -- when the body reads it with bit tests and signed operators only; the call then passes `&v1` uncast and an arithmetic shift of the status reads it uncast. A status the body also shifts right logically (the -O2 form of `WEXITSTATUS`), compares unsigned or zero-extends stays unsigned. Flip OFF to see the frame layout's own reading of the slot (`unsigned int v5; waitpid(v2,(int *)&v5,0)`), for a bisect or an ablation. The flip's evidence is docs/features/castobject/default-on-evaluation.md.
 - **Where / provenance:** P6/stack-frame-layout · kuna · type-inference · kuna-castobject
 - **Example:** `option castobject on`
+
+### `stackviews` -- on | off, default `off`
+
+- **Symptoms:** a reused stack slot is assigned a value of an incompatible type; two object views of one frame address become unrelated local variables.
+- **What it does:** Represent incompatible stack-object incarnations as typed views of shared backing storage.
+- **When to flip:** Enable when a frame address is passed with incompatible declared pointee types, or when separate byte-definition families need lifetime-scoped name/type assertions. Shared backing keeps old pointers and simultaneous views at the same address, retains escaped frame writes, and preserves byte-copy semantics for reinterpreted accesses. Fixed and bounded indexed byte extents can share a backing object. Unbounded indices and explicit user-locked layouts retain their existing mapping. Complete leaf-callee bodies can refine frame read and write barriers; unresolved effects remain conservative.
+- **Where / provenance:** P6/alias-facets · kuna · opt-in-tool · #810
+- **Example:** `option stackviews on`
 
 ### `stackalias` -- on | off, default `off` (destructive opt-in)
 

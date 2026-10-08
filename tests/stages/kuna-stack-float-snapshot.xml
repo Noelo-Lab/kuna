@@ -1,0 +1,36 @@
+<decompilertest>
+  <!-- Two independent cached float snapshots cover both members of a generated Point backing. -->
+  <binaryimage arch="x86:LE:64:default:gcc">
+    <bytechunk space="ram" offset="0x401000">554889e54883ec20f30f1145f48975f04889fe488d7df8e894000000488d7df8e89e000000f30f1005d30f0000f30f104df8837df00074080f57c8f30f114df8f30f1005c80f0000f30f1145f8f30f584df4f30f10c1c9c3554889e54883ec20f30f1145f48975f04889fe488d7df8e83c000000488d7dfce846000000f30f10057b0f0000f30f104dfc837df00074080f57c8f30f114dfcf30f1005700f0000f30f1145fcf30f584df4f30f10c1c9c3f30f100ef30f110ff30f104e04f30f114f04c38b07c3f30f2ac7c3</bytechunk>
+    <bytechunk space="ram" offset="0x402000">000000800000000000000000000000000000e040</bytechunk>
+    <symbol space="ram" offset="0x401000" name="flip_first_and_add" />
+    <symbol space="ram" offset="0x401058" name="flip_second_and_add" />
+    <symbol space="ram" offset="0x4010b0" name="copy_point" />
+    <symbol space="ram" offset="0x4010c3" name="observe_word" />
+    <symbol space="ram" offset="0x4010c6" name="integer_to_float" />
+  </binaryimage>
+  <script>
+    <com>parse line struct FloatPair { float x; float y; };</com>
+    <com>parse line extern void copy_point(FloatPair *destination,const FloatPair *source);</com>
+    <com>parse line extern uint4 observe_word(const uint4 *source);</com>
+    <com>parse line extern float4 flip_first_and_add(const FloatPair *source,float4 bias,int4 flip);</com>
+    <com>parse line extern float4 flip_second_and_add(const FloatPair *source,float4 bias,int4 flip);</com>
+    <com>parse line extern float4 integer_to_float(int4 value);</com>
+    <com>option stackalias off</com>
+    <com>option stackviews off</com>
+    <com>lo fu flip_first_and_add</com><com>decompile</com><com>print C</com>
+    <com>lo fu flip_second_and_add</com><com>decompile</com><com>print C</com>
+    <com>option stackviews on</com>
+    <com>lo fu flip_first_and_add</com><com>decompile</com><com>print C</com>
+    <com>lo fu flip_second_and_add</com><com>decompile</com><com>print C</com>
+    <com>lo fu integer_to_float</com><com>decompile</com><com>print C</com>
+    <com>quit</com>
+  </script>
+  <stringmatch name="off reads the first Point lane as float" min="1" max="1">return v1\.x \+ bias;</stringmatch>
+  <stringmatch name="off reads the second Point lane as float" min="1" max="1">return v1\.y \+ bias;</stringmatch>
+  <stringmatch name="on keeps both cached lane snapshots as integers" min="2" max="2">^  uint4 v2;</stringmatch>
+  <stringmatch name="on preserves the first lane's integer XOR" min="1" max="1">v2 = v1\.view_uint4 \^ dat_402000;</stringmatch>
+  <stringmatch name="on reinterprets each snapshot at its float use" min="2" max="2">return \(\(union \{ unsigned int from; float to; \}\)\{ \.from = v2 \}\)\.to \+ bias;</stringmatch>
+  <stringmatch name="on preserves the second lane's integer XOR" min="1" max="1">v2 = v1\.view_uint4_at4\.value \^ dat_402000;</stringmatch>
+  <stringmatch name="integer to float remains a numeric conversion" min="1" max="1">return \(float4\)value;</stringmatch>
+</decompilertest>

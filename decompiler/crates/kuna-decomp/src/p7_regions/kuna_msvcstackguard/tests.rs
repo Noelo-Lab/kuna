@@ -13,6 +13,8 @@
 //   - `cookie_check_op`: only a direct call with one exact cancel and no live
 //     output is classified; indirect calls, mismatched SPs, two cancels, and a
 //     read output all fail closed.
+//   - the cookie walk is iterative across long INDIRECT and phi chains; grounded
+//     cycles pass, while seedless cycles and unproven inputs fail closed.
 //   - the first enabled action pass seeds the exact call site and requests a
 //     restart; the replay removes it.
 //   - with removal off, every locked-void checker is marked in one pass for
@@ -319,7 +321,7 @@ fn a_cookie_carried_across_many_calls_still_matches() {
     let f1 = frame_ptr(&mut fd, bl, 0x14, spin, (-0x48i64) as u64, 0x108);
     let mut saved = binop(&mut fd, bl, 0x18, OpCode::CPUI_INT_XOR, k, f1, 0x110);
     let init = fd.vbank().get(saved).unwrap().get_def().unwrap();
-    for i in 0..64u64 {
+    for i in 0..300u64 {
         let op = mk_op(&mut fd, 2, 0x40 + i, OpCode::CPUI_INDIRECT);
         fd.op_set_input(op, saved, 0).unwrap();
         let blocker = fd.new_constant(8, i);
@@ -457,6 +459,29 @@ fn a_seedless_multi_phi_cycle_declines() {
 }
 
 #[test]
+fn a_seedless_cycle_alongside_a_valid_scramble_declines() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let spin = sp_input(&mut fd);
+    let k = cookie_read(&mut fd, bl, 0x10, 0x100);
+    let f1 = frame_ptr(&mut fd, bl, 0x14, spin, (-0x48i64) as u64, 0x108);
+    let saved = binop(&mut fd, bl, 0x18, OpCode::CPUI_INT_XOR, k, f1, 0x110);
+
+    let loop_op = mk_op(&mut fd, 2, 0x1c, OpCode::CPUI_MULTIEQUAL);
+    let loop_addr = reg(&fd, 0x118);
+    let loop_value = fd.vbank_mut().create(8, loop_addr, unk(8));
+    fd.op_set_output(loop_op, loop_value).unwrap();
+    fd.op_set_input(loop_op, loop_value, 0).unwrap();
+    fd.op_set_input(loop_op, loop_value, 1).unwrap();
+    fd.op_insert_begin(loop_op, bl);
+
+    let joined = phi(&mut fd, bl, 0x20, saved, loop_value, 0x120);
+    let f2 = frame_ptr(&mut fd, bl, 0x24, spin, (-0x48i64) as u64, 0x128);
+    let out = binop(&mut fd, bl, 0x28, OpCode::CPUI_INT_XOR, joined, f2, 0x130);
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), None);
+}
+
+#[test]
 fn a_multi_phi_cycle_with_an_unproven_entry_declines() {
     let mut fd = build_fd();
     let (out, _) = build_multi_phi_cycle_cancel(&mut fd, CycleExternal::Unknown);
@@ -547,6 +572,45 @@ fn a_join_with_one_scramble_at_another_offset_declines() {
     let (out, _) = build_phi_cancel(&mut fd, -0x40);
     let sp = sp(&fd);
     assert_eq!(cookie_cancel(out, &fd, &sp), None);
+}
+
+#[test]
+fn a_cookie_carried_through_more_than_walk_depth_phis_matches() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let spin = sp_input(&mut fd);
+    let k = cookie_read(&mut fd, bl, 0x10, 0x100);
+    let f1 = frame_ptr(&mut fd, bl, 0x14, spin, (-0x48i64) as u64, 0x108);
+    let first = binop(&mut fd, bl, 0x18, OpCode::CPUI_INT_XOR, k, f1, 0x110);
+    let init = fd.vbank().get(first).unwrap().get_def().unwrap();
+    let mut carried = first;
+    for i in 0..40u64 {
+        carried = phi(&mut fd, bl, 0x200 + i * 4, carried, carried, 0x600 + i * 8);
+    }
+    let f2 = frame_ptr(&mut fd, bl, 0x400, spin, (-0x48i64) as u64, 0x900);
+    let out = binop(&mut fd, bl, 0x404, OpCode::CPUI_INT_XOR, carried, f2, 0x908);
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), Some(vec![init]));
+}
+
+#[test]
+fn a_transparent_cycle_in_the_cookie_operand_declines() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let spin = sp_input(&mut fd);
+
+    let copy = mk_op(&mut fd, 1, 0x10, OpCode::CPUI_COPY);
+    let cookie_addr = reg(&fd, 0x100);
+    let cookie = fd.vbank_mut().create(8, cookie_addr, unk(8));
+    fd.op_set_output(copy, cookie).unwrap();
+    fd.op_set_input(copy, cookie, 0).unwrap();
+    fd.op_insert_begin(copy, bl);
+
+    let f1 = frame_ptr(&mut fd, bl, 0x14, spin, (-0x48i64) as u64, 0x108);
+    let saved = binop(&mut fd, bl, 0x18, OpCode::CPUI_INT_XOR, cookie, f1, 0x110);
+    let f2 = frame_ptr(&mut fd, bl, 0x1c, spin, (-0x48i64) as u64, 0x118);
+    let out = binop(&mut fd, bl, 0x20, OpCode::CPUI_INT_XOR, saved, f2, 0x120);
+
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), None);
 }
 
 // --- cookie_check_op ---------------------------------------------------------

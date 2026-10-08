@@ -465,15 +465,48 @@ kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'
 #   unsigned long *v6;  // rax        (was: unsigned long v6;)
 ```
 
-Two consequences worth knowing before you use it. A bare `type <local> <T>`
-states no name, so the retyped local may come back under a different `vN` — the
-storage comment identifies it across the two passes, and
-`type v6 unsigned long *vmtop` pins a name outright. And a local the decompiler
-holds in a temporary rather than in a register or on the stack has no location
-a symbol can be mapped to. Its source comment can still report a register copy
-removed during simplification; `// tmp` means no machine home was recovered. The
-directive is `rejected` with `Not addressable storage` rather than accepted and
-dropped.
+A bare `type <local> <T>` states no name, so the retyped local may come back
+under a different `vN`; `type v6 unsigned long *vmtop` pins a name outright.
+Register assertions identify a definition at its native address and width.
+Saved copies, joins and later reuse of that register remain distinct. JOIN
+values, temporaries and ambiguous definition addresses use a validated
+dataflow anchor. A missing or ambiguous anchor rejects the directive rather
+than applying it to another value.
+
+With `option stackviews on`, the console command `print stack objects` lists
+logical frame objects at declared address uses: calls, typed pointer assignments,
+volatile writes, and declared pointer returns. Each record includes its
+physical range, native use addresses and the reaching definitions of its bytes.
+Repeated unchanged contents share a record; overwrites can create another at
+the same address. `uncertain` records retain incoming bytes or opaque effects.
+These records do not allocate separate storage or stop escaped pointers aliasing.
+The record's `object_<address>_<slot>` identifier accepts ordinary `name` and
+`type` directives. Equal layouts reused at one address can therefore receive
+independent names and types:
+
+```text
+name obj_reuse::object_40104b_1 initial
+name obj_reuse::object_401064_1 replacement
+type obj_reuse::initial struct SemanticPair
+```
+
+`decompile --json` and `decompile-all --json` expose these selectors in a
+per-function `stack_objects` array when objects were recovered. Each row has
+`id`, `name`, `stack_offset`, `size`, `defined`, and `uses`; each use has its native
+`address`, input `slot`, and declared pointee `type`. `name` initially equals
+`id`, then reflects an applied object name. Pass `id` to a function-scoped
+`name`/`type` directive. Native addresses follow the CLI's address units; treat
+selectors as opaque identifiers. `--no-vars` suppresses these records.
+
+For an existing mapped frame layout, a logical name can appear as a typed
+`<name>_view` pointer into that physical object. Repeated uses of the same family
+share one pointer; different families can name the same address independently.
+The declared frame object keeps its layout. Name collisions add a numeric suffix.
+
+The asserted type must be complete and occupy the same number of bytes. Named
+objects appear as members of the shared backing, such as `frame.initial.left`
+and `read_pair(&frame.replacement)`. Each native use must still match its byte
+family after replay. Packed or ambiguous writes can retain raw storage views.
 
 **Every `name`/`type` in one run reads the output you were shown.** Each
 directive's identifier is looked up in the C kuna printed before any of them
@@ -485,9 +518,13 @@ is both a printed name and a name an earlier directive gave a different local
 as an ambiguous name, naming both locals. The exception is a `name` whose new
 name was also printed (`name v2 v1` after `name v1 v2`, or a rotation): it
 renames the local printed under the identifier. Two register locals that share a
-register at different widths (`char *s; // rax` and `uint4 v1; // eax`) cannot
-both be named in one run: the second is `rejected` with `Storage of v1 overlaps
-s`.
+register at different widths (`char *s; // rax` and `uint4 v1; // eax`) can both
+be named when their definition identities are distinct.
+
+Parameter `name` and `type` directives update the signature and its body uses.
+They retain the parameter's native storage, so a retype must occupy the same
+number of bytes. Renames also survive reuse of the incoming stack area and
+repeated console decompiles.
 
 **Write the type in C.** The standard scalar keywords — `void`, `char`, `short`,
 `int`, `long`, `float`, `double`, `signed`, `unsigned`, `_Bool`, `wchar_t` — are

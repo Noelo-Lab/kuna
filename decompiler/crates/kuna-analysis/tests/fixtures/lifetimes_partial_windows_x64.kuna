@@ -1,0 +1,8 @@
+typedef struct RGB { unsigned char red; unsigned char green; unsigned char blue; };
+typedef struct Manager { int value; };
+prototype rgb_reuse int rgb_reuse(unsigned long long ignored, bool inverted, unsigned char blue)
+prototype read_rgb void read_rgb(const struct RGB *color)
+prototype make_manager struct Manager *make_manager(void)
+prototype read_manager int read_manager(const struct Manager *manager)
+data 0x402000 struct Manager datum
+data 0x402004 int rgb_result

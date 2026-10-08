@@ -83,6 +83,8 @@ pub const TYPELOCK: uint4 = 1;
 /// Boolean property: only a constant is COPYed into the range
 /// (C++ `RangeHint::copy_constant = 2`, `varmap.hh:103`).
 pub const COPY_CONSTANT: uint4 = 2;
+/// A recovered shared-storage layout takes priority over ordinary hints.
+pub const SHARED_STORAGE: uint4 = 4;
 
 // ===========================================================================
 // RangeHint (varmap.hh:90-127, varmap.cc:30-335)
@@ -279,6 +281,12 @@ impl RangeHint {
             }
         } else if self.is_type_lock() {
             return Ok(true);
+        }
+
+        let shared = self.flags & SHARED_STORAGE != 0;
+        let other_shared = b.flags & SHARED_STORAGE != 0;
+        if shared != other_shared {
+            return Ok(shared);
         }
 
         if self.range_type == RangeType::Open && b.range_type != RangeType::Open {
@@ -1409,6 +1417,62 @@ impl ScopeLocal {
         Ok(Some(sym))
     }
 
+    /// A reused stack local does not replace the incoming parameter symbol.
+    pub fn add_param_symbol_for_stack_reuse(
+        &mut self,
+        i: int4,
+        name: &str,
+        ct: Rc<Datatype>,
+        addr: &Address,
+        restricted_usepoint: &Address,
+    ) -> KunaResult<Option<crate::database::SymbolId>> {
+        if addr.get_space().is_none_or(|space| space.get_index() != self.space.get_index()) {
+            return self.add_param_symbol(i, name, ct, addr, restricted_usepoint);
+        }
+        let invalid = Address::new_invalid();
+        let parameter = self.db.find_container_matching(
+            self.scope,
+            addr,
+            ct.get_size(),
+            &invalid,
+            |symbol| symbol.get_category() == crate::database::symbol_category::FUNCTION_PARAMETER,
+        );
+        if let Some(parameter) = parameter {
+            let entry = self.db.entry(self.scope, parameter);
+            if entry.get_addr() == addr && entry.get_size() == ct.get_size() {
+                let symbol = entry.symbol;
+                self.db.set_category(
+                    self.scope,
+                    symbol,
+                    crate::database::symbol_category::FUNCTION_PARAMETER,
+                    i,
+                );
+                return Ok(Some(symbol));
+            }
+        }
+        let existing = self.db
+            .find_container(self.scope, addr, ct.get_size(), &invalid)
+            .filter(|&entry| {
+                let entry = self.db.entry(self.scope, entry);
+                entry.get_addr() == addr
+                    && entry.get_size() == ct.get_size()
+                    && self.db.symbol(entry.symbol).dtype.as_ref()
+                        .is_some_and(|ty| Rc::ptr_eq(ty, &ct))
+            })
+            .map(|entry| self.db.entry(self.scope, entry).symbol);
+        let symbol = match existing {
+            Some(symbol) => symbol,
+            None => self.db.add_symbol_mapped(self.scope, name, ct, addr, &invalid)?.0,
+        };
+        self.db.set_category(
+            self.scope,
+            symbol,
+            crate::database::symbol_category::FUNCTION_PARAMETER,
+            i,
+        );
+        Ok(Some(symbol))
+    }
+
     /// C++ `Scope::addCodeLabel` reached via `getScopeLocal()->addCodeLabel`
     /// (`IfcMaplabel` fd-local form).
     pub fn add_code_label(
@@ -1464,6 +1528,12 @@ impl ScopeLocal {
     pub fn set_symbol_isolated(&mut self, sym: crate::database::SymbolId, val: bool) {
         self.isolated_present |= val;
         self.db.symbol_mut(sym).set_isolated(val);
+    }
+
+    /// Isolate a named value without declaring its inferred type.
+    pub fn set_symbol_identity_isolated(&mut self, sym: crate::database::SymbolId) {
+        self.isolated_present = true;
+        self.db.symbol_mut(sym).dispflags |= crate::database::symbol_dispflags::ISOLATE;
     }
 
     /// (kuna) Can any Symbol in this scope answer `true` to
@@ -1934,6 +2004,15 @@ impl ScopeLocal {
         addr: &Address,
         usepoint: &Address,
     ) -> Option<LinkEntryInfo> {
+        self.query_container_for_link_width(addr, 1, usepoint)
+    }
+
+    pub fn query_container_for_link_width(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<LinkEntryInfo> {
         // C++ `Funcdata::linkSymbol` (`funcdata_varnode.cc:1190`):
         //   queryProperties(vn->getAddr(), 1, vn->getUsePoint(*this), fl) -> findContainer.
         // The `usepoint` is the Varnode's use address (def-op address if written,
@@ -1945,7 +2024,23 @@ impl ScopeLocal {
         // directive's usepoint-scoped Symbol) only matches when the usepoint falls in
         // its range.  Threading the real usepoint here is what lets such a Symbol bind
         // at the register read it is scoped to (the `tmp` retstruct return Symbol).
-        let eref = self.db.find_container(self.scope, addr, 1, usepoint)?;
+        let eref = self.db.find_container(self.scope, addr, size, usepoint)?;
+        Some(self.link_entry_info(addr, eref))
+    }
+
+    pub fn query_container_for_link_matching(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+        accepts: impl Fn(&crate::database::Symbol) -> bool,
+    ) -> Option<LinkEntryInfo> {
+        let entry = self.db
+            .find_container_matching(self.scope, addr, size, usepoint, accepts)?;
+        Some(self.link_entry_info(addr, entry))
+    }
+
+    fn link_entry_info(&self, addr: &Address, eref: crate::database::EntryRef) -> LinkEntryInfo {
         let entry = self.db.entry(self.scope, eref);
         let sym = entry.symbol;
         let entry_addr = entry.get_addr().clone();
@@ -1955,7 +2050,7 @@ impl ScopeLocal {
         let symbol = self.db.symbol(sym);
         let sym_off =
             (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
-        Some(LinkEntryInfo {
+        LinkEntryInfo {
             symbol: sym,
             display_name: symbol.get_display_name().to_string(),
             sym_off,
@@ -1965,7 +2060,7 @@ impl ScopeLocal {
             category: symbol.get_category(),
             is_name_undefined: symbol.is_name_undefined(),
             is_isolated: symbol.is_isolated(),
-        })
+        }
     }
 
     /// Read `Symbol::isIsolated()` for a SymbolId in this scope (C++
@@ -2223,12 +2318,11 @@ impl ScopeLocal {
         Some(SyncOverlap { all_flags, entry_size, sized_type: sized, symbol_id: sym, extraflags })
     }
 
-    /// The `ActionInferTypes::buildLocaltypes` type-locked-symbol seed (C++
-    /// `coreaction.cc:5275-5281`).  When a (non-type-locked) Varnode at
-    /// `(addr, size)` is covered by a SymbolEntry whose owning Symbol *is*
-    /// type-locked, the local data-type is seeded from the exact piece of the
-    /// Symbol's type at the access offset, rather than floating from the local
-    /// def/use flow (`Varnode::getLocalType`).
+    /// Storage-only compatibility form of the `ActionInferTypes::buildLocaltypes`
+    /// type-locked-symbol seed (C++ `coreaction.cc:5275-5281`). For a live
+    /// Varnode, use [`build_localtype_seed_at`] so a register Symbol is resolved
+    /// at the Varnode's definition usepoint, as `linkSymbol` does. This form is
+    /// for callers that only have a storage address and size.
     ///
     /// Returns:
     /// * `Some(ct)` — the seeded exact-piece type (the caller adopts it),
@@ -2236,11 +2330,8 @@ impl ScopeLocal {
     ///   null/`TYPE_UNKNOWN` (the caller falls through to `getLocalType`, i.e.
     ///   "let the data-type float even though the parent symbol is type-locked").
     ///
-    /// `vn->getSymbolEntry()` is the SymbolEntry `linkSymbol`/`coverVarnodes`
-    /// cache on the Varnode; here it is resolved freshly via `findOverlap`
-    /// (`queryProperties`), the exact lookup that cache mirrors, so the seed is
-    /// available on every InferTypes round without depending on the link pass
-    /// having already run.
+    /// The entry is resolved freshly via `findOverlap`; the usepoint-aware
+    /// production path is [`build_localtype_seed_at`].
     pub fn build_localtype_seed(
         &self,
         addr: &Address,

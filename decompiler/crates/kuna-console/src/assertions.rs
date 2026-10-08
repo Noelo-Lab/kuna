@@ -1117,14 +1117,15 @@ fn apply_one_symbol_scoped(
     fd: &mut Funcdata,
     body: &Body,
 ) -> Result<(), String> {
+    let maxduplicates = if prog.arch().dynamic_hash_maxdup_high { 16 } else { 8 };
     match body {
         Body::Name { symbol, newname, .. } => {
-            crate::kuna_hightarget::apply_local(fd, symbol, newname, None)
+            crate::kuna_hightarget::apply_local(fd, symbol, newname, None, maxduplicates)
         }
         Body::Type { symbol, decl, .. } => {
             let (ct, newname) = crate::grammar::parse_type(decl, prog.arch().types(), data_org(prog))
                 .map_err(|e| e.explain().to_string())?;
-            crate::kuna_hightarget::apply_local(fd, symbol, &newname, Some(ct))
+            crate::kuna_hightarget::apply_local(fd, symbol, &newname, Some(ct), maxduplicates)
         }
         _ => Err("internal: not a symbol-scoped directive".into()),
     }
@@ -1155,7 +1156,7 @@ pub fn unclaimed(directive: &Directive) -> Outcome {
 /// re-seeds it from (`IfcDecompile` carries the same specs across its own IR
 /// rebuild).
 pub fn carried_symbols(fd: &Funcdata) -> Vec<(String, Rc<Datatype>, Address, uint4)> {
-    fd.mapped_symbol_specs()
+    crate::kuna_paramasserts::exclude_from_locals(fd, fd.mapped_symbol_specs())
 }
 
 /// The usepoint-scoped half of the same carry: the register-storage Symbols a
@@ -1167,5 +1168,5 @@ pub fn carried_symbols(fd: &Funcdata) -> Vec<(String, Rc<Datatype>, Address, uin
 pub fn carried_usepoint_symbols(
     fd: &Funcdata,
 ) -> Vec<(String, Rc<Datatype>, Address, uint4, Address, bool)> {
-    fd.usepoint_symbol_specs()
+    crate::kuna_paramasserts::exclude_from_usepoints(fd, fd.usepoint_symbol_specs())
 }

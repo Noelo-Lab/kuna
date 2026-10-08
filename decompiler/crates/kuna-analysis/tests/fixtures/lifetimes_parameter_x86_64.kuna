@@ -1,0 +1,2 @@
+prototype param_reuse int param_reuse(int a,int b,int c,int d,int e,int f,bool prepare_only)
+prototype read_key int read_key(const int *key)

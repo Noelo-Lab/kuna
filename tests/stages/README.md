@@ -1,5 +1,17 @@
 # Stage-model issue testcases
 
+`kuna-stackpointerfields.xml` checks that naming a logical frame object preserves
+pointer-field dereferences. Its CLI companion executes the native fixture and the
+unnamed and named C with GCC and Clang.
+
+`kuna-stackversions.xml` checks conditional frame-pointer publication, a four-byte
+seed and a real cached word. Its CLI companion executes an aliasing counterexample,
+fast/growth branches and the cached return with GCC and Clang at O0/O2.
+
+`kuna-stack-float-snapshot.xml` checks cached float lanes consumed by integer
+bit operations and native float arithmetic. Its CLI companion executes both
+Point lanes and a numeric conversion against the emitted C with GCC and Clang.
+
 kuna-owned datatests derived from **real, open decompiler issues** (sourced from the
 PHADE issue dataset), each demonstrating that the issue is fixable through the kuna
 stage model (`docs/phases.md`): a named sub-stage decision point,
@@ -134,6 +146,7 @@ writeup, not here.
 | `kuna-callretmulti.xml` | RE-friction need `call-result-folding-duplicates` (one call result is narrowed and consumed twice, either in one block or across a loop; the old implied-expression multiplier printed the call at both sinks) | P6 variable & storage model, explicit/implied marking (`foldcallret` keeps a derived fan-out explicit, preserving one evaluation) | pass 1 (`option foldcallret off`) pins the conservative form; pass 2 (`option foldcallret on`) proves the shipped fold also evaluates each call once |
 | `kuna-foldcallret-shortcircuit.xml` | kuna [GH-684](https://github.com/Noelo-Lab/kuna/issues/684) (a call combined with a comparison by a non-short-circuit `&` was folded into the right-hand operand of the `&&`/`||` the printer emits, so the printed C skipped a call the binary always makes) | P6 variable & storage model, explicit/implied marking (`foldcallret` declines a fold whose value reaches input 1 of a `BOOL_AND`/`BOOL_OR` on its way to the print point; correctness fix, no option) | default only: gcc -O0 and clang -O2 keep the spill, clang -O0 (call on the left) still folds |
 | `kuna-tiedphitrim.xml` | kuna [GH-468](https://github.com/Noelo-Lab/kuna/issues/468) follow-up (MSVC `/O2` `ab_o2.exe main`: a byte-sum loop over a stack buffer printed `while (v10[0]) { ... v10[0] = v10[v6]; }`, a store into the buffer the binary never performs; the gcc and clang-12 `-O2` builds print the same store as `v2 = *v1;`) | P6 variable & storage model, forced merge (`Merge::merge_op` trims a loop head's direct read of an aliased location, and `merge_opcode`/`merge_adjacent` do not fold the loop variable back) | `option tiedphitrim on\|off`, default on (DIV-182): pass 1 (default) pins the entering-edge copy for the MSVC, gcc and clang loops and gcc `outparam_walk`, pass 2 (off) pins the stores; a live store in a loop, a store after a join, an if/else join, a computed loop value, and gcc `xa11`/`xa13` (an in-loop value stored into the buffer after the loop) print identically in both passes; gcc `t8`/`t1`/`t1b` pin the exit byte stored into a neighbouring slot only after the loop |
+| `kuna-msvcstackguard.xml` (long chain extension) | RE-friction pointer-return regression: a 271-call cookie chain lost the factory pointer held in RAX after the checker | P7 cookie provenance -> P0 exact-site restart -> P3 return-storage preservation | crosses `calleeretpreserves off/on` with `msvcstackguard off/on`; verifies generic guarding loses the return, while exact preservation keeps the checker and removal/preservation both keep the factory result |
 | `kuna-msvcstackguard-return.xml` | RE-friction need `msvc-cookie-removal-changes` (P7 removal exposed one constant return at both arms of a shared `/GS` epilogue) | P7 exact cookie recognition -> P0 restart seed -> P3 call guard replay | crosses `msvcstackguard on|off` with `calleeretpreserves on|off`; the checker tail reaches a nested ordinary call before fast-fail |
 | `kuna-stackguard-tailcall.xml` | kuna [GH-866](https://github.com/Noelo-Lab/kuna/issues/866) (gcc `-O2`/`-Os` `-fstack-protector`: a canary checked right before a tail call kept `v1 = *(unsigned long *)(fs_offset + 0x28); ... v4 = v1;`) | P7 regions, stackguard (`ActionStripStackGuard` also resolves the canary slot forward from the `FS_OFFSET + 0x28` LOADs the compare reads) | `option stackguard on\|off`: pass 1 (default) pins t2/t2s/k2/w3 with no canary load and no `fs_offset`, pass 2 (off) keeps every check; t3 (check after a call, GH-183 shape) is the control; h6/h7 (no canary, a struct-field compare at offset 0x28) keep their stack stores and call arguments in both passes |
 | `kuna-declaring-double-score-return.xml` | RE-friction need `declaring-double-score-return` (locking a later `/GS` checker void disconnected an earlier `double` accumulation from XMM0) | P7 exact cookie recognition -> P0 restart seed -> P3 locked-void exact-slice return-storage preservation | `calleeretpreserves off|on`; loop-carried cookie proof, an XMM0 write before an unresolved nested call, and a real 16-byte XMM overlap whose low output lane survives while its upper scratch lane stays killed |

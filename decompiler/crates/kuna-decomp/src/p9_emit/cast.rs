@@ -734,8 +734,13 @@ impl CastStrategy for CastStrategyC {
             return Some(Rc::clone(reqtype)); // Otherwise, always cast change in size
         }
         match reqbase.get_metatype() {
-            type_metatype::TYPE_UNKNOWN
-            | type_metatype::TYPE_PARTIALSTRUCT
+            type_metatype::TYPE_UNKNOWN => {
+                if care_ptr_uint && curbase.get_metatype() == type_metatype::TYPE_PTR {
+                    return Some(Rc::clone(reqtype));
+                }
+                return None;
+            }
+            type_metatype::TYPE_PARTIALSTRUCT
             | type_metatype::TYPE_PARTIALUNION => {
                 // As they are ultimately stripped, treat partials as undefined
                 return None;
