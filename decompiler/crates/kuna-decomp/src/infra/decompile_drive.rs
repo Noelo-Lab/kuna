@@ -357,7 +357,7 @@ impl FlowEnvironment for ArchFlowEnv {
         )
     }
 
-    fn is_sparc_struct_ret_trap(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
+    fn sparc_struct_ret_trap_producer(&self, fd: &Funcdata, op: crate::context::OpId) -> Option<crate::context::OpId> {
         // (kuna) GH-6882: wire the ported `kunaIsSparcStructRetTrap` predicate.
         // The gate is the architecture-owned `sparc_struct_return` flag (`option
         // sparcstructret on|off`, default off / upstream byte-identical); the
@@ -367,9 +367,9 @@ impl FlowEnvironment for ArchFlowEnv {
         if !arch.sparc_struct_return {
             // Fast-path the default-off gate without touching the IR (matches the
             // predicate's leading `if (!gate) return false`).
-            return false;
+            return None;
         }
-        crate::kuna_sparcstructret::kuna_is_sparc_struct_ret_trap(
+        crate::kuna_sparcstructret::kuna_sparc_struct_ret_trap_producer(
             fd,
             op,
             arch.sparc_struct_return,

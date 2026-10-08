@@ -1,4 +1,4 @@
-//! Logic-level tests for `kuna_is_sparc_struct_ret_trap` (GH-6882), exercising
+//! Logic-level tests for `kuna_sparc_struct_ret_trap_producer` (GH-6882), exercising
 //! the positional pre-SSA walk to the trap CALLOTHER on hand-built dead-list IR.
 
 use std::rc::Rc;
@@ -103,14 +103,38 @@ fn resolver(id: u32) -> Option<String> {
 fn gate_off_returns_false() {
     let mut fd = build_fd();
     let branchind = build_unimp_idiom(&mut fd, 7);
-    assert!(!kuna_is_sparc_struct_ret_trap(&fd, branchind, false, resolver));
+    assert!(!kuna_sparc_struct_ret_trap_producer(&fd, branchind, false, resolver).is_some());
 }
 
 #[test]
 fn canonical_unimp_idiom_fires() {
     let mut fd = build_fd();
     let branchind = build_unimp_idiom(&mut fd, 7);
-    assert!(kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver));
+    assert!(kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some());
+}
+
+#[test]
+fn neutralized_marker_keeps_its_instruction_start_without_a_trap_effect() {
+    let mut fd = build_fd();
+    let producer = make_op(&mut fd, OpCode::CPUI_CALLOTHER, 0x1000, 2, true);
+    let userop = fd.new_constant(4, 7);
+    let size = fd.new_constant(4, 8);
+    fd.op_set_input(producer, userop, 0).unwrap();
+    fd.op_set_input(producer, size, 1).unwrap();
+    let output = fd.new_unique_out(4, producer).unwrap();
+    let address = fd.vbank().get(output).unwrap().get_addr().clone();
+    let destination = fd.new_varnode(4, &address, None);
+    let branch = make_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x1000, 1, false);
+    fd.op_set_input(branch, destination, 0).unwrap();
+    assert!(kuna_sparc_struct_ret_trap_producer(&fd, branch, true, resolver).is_some());
+    let recognized = kuna_sparc_struct_ret_trap_producer(&fd, branch, true, resolver).unwrap();
+    assert_eq!(recognized, producer);
+    neutralize_trap_producer(&mut fd, recognized).unwrap();
+    let marker = fd.obank().get(producer).unwrap();
+    assert_eq!(marker.code(), OpCode::CPUI_COPY);
+    assert!(marker.is_instruction_start());
+    assert_eq!(marker.num_input(), 1);
+    assert_eq!(fd.vbank().get(marker.get_in(0).unwrap()).unwrap().get_offset(), 0);
 }
 
 #[test]
@@ -119,7 +143,45 @@ fn non_branchind_returns_false() {
     // Build the idiom but probe the CALLOTHER itself (not a BRANCHIND).
     let callother = make_op(&mut fd, OpCode::CPUI_CALLOTHER, 0x1000, 1, true);
     set_const_input(&mut fd, callother, 0, 7);
-    assert!(!kuna_is_sparc_struct_ret_trap(&fd, callother, true, resolver));
+    assert!(!kuna_sparc_struct_ret_trap_producer(&fd, callother, true, resolver).is_some());
+}
+
+#[test]
+fn neutralization_without_output_preserves_drop_only_fallback() {
+    let mut fd = build_fd();
+    let branch = build_unimp_idiom(&mut fd, 7);
+    let producer = kuna_sparc_struct_ret_trap_producer(&fd, branch, true, resolver).unwrap();
+    neutralize_trap_producer(&mut fd, producer).unwrap();
+    let destination = fd.new_constant(4, 0);
+    fd.op_set_input(branch, destination, 0).unwrap();
+    fd.op_destroy_raw(branch).unwrap();
+    assert!(!fd.obank().on_dead_list(branch));
+    assert_eq!(fd.obank().get(producer).unwrap().code(), OpCode::CPUI_CALLOTHER);
+}
+
+#[test]
+fn neutralization_leaves_a_non_trap_opcode_unchanged() {
+    let mut fd = build_fd();
+    let producer = make_op(&mut fd, OpCode::CPUI_INT_ADD, 0x1000, 2, true);
+    fd.new_unique_out(4, producer).unwrap();
+    neutralize_trap_producer(&mut fd, producer).unwrap();
+    assert_eq!(fd.obank().get(producer).unwrap().code(), OpCode::CPUI_INT_ADD);
+}
+
+#[test]
+fn shared_destination_does_not_override_the_userop_name() {
+    let mut fd = build_fd();
+    let trap = make_op(&mut fd, OpCode::CPUI_CALLOTHER, 0x1000, 1, true);
+    set_const_input(&mut fd, trap, 0, 7);
+    let output = fd.new_unique_out(4, trap).unwrap();
+    let address = fd.vbank().get(output).unwrap().get_addr().clone();
+    let other = make_op(&mut fd, OpCode::CPUI_CALLOTHER, 0x1000, 1, false);
+    set_const_input(&mut fd, other, 0, 9);
+    fd.new_varnode_out(4, &address, other).unwrap();
+    let branch = make_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x1000, 1, false);
+    let destination = fd.new_varnode(4, &address, None);
+    fd.op_set_input(branch, destination, 0).unwrap();
+    assert_eq!(kuna_sparc_struct_ret_trap_producer(&fd, branch, true, resolver), Some(trap));
 }
 
 #[test]
@@ -127,7 +189,7 @@ fn callother_with_different_userop_returns_false() {
     let mut fd = build_fd();
     // id 9 resolves to a non-null UserPcodeOp with a different name.
     let branchind = build_unimp_idiom(&mut fd, 9);
-    assert!(!kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver));
+    assert!(!kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some());
 }
 
 #[test]
@@ -135,7 +197,7 @@ fn callother_with_null_userop_returns_false() {
     let mut fd = build_fd();
     // id 3 resolves to null (no UserPcodeOp registered).
     let branchind = build_unimp_idiom(&mut fd, 3);
-    assert!(!kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver));
+    assert!(!kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some());
 }
 
 #[test]
@@ -149,7 +211,7 @@ fn non_constant_userop_input_returns_false() {
         .create(4, Address::new(ram_space, 0x40), unk_type(4));
     fd.obank_mut().get_mut(callother).unwrap().set_input(Some(reg), 0);
     let branchind = make_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x1000, 1, false);
-    assert!(!kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver));
+    assert!(!kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some());
 }
 
 #[test]
@@ -165,7 +227,7 @@ fn walk_stops_at_instruction_start() {
     let branchind = make_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x1000, 1, false);
     // The walk visits BRANCHIND, then COPY (instruction-start -> break) and
     // never reaches prev_trap.
-    assert!(!kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver));
+    assert!(!kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some());
 }
 
 #[test]
@@ -175,7 +237,7 @@ fn branchind_is_itself_instruction_start_returns_false() {
     let mut fd = build_fd();
     let branchind = make_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x1000, 1, true);
     set_const_input(&mut fd, branchind, 0, 7); // a register/dest, not a CALLOTHER
-    assert!(!kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver));
+    assert!(!kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some());
 }
 
 #[test]
@@ -185,7 +247,7 @@ fn walk_reaches_dead_list_head() {
     // the CALLOTHER (which is also instruction-start) and matches.
     let mut fd = build_fd();
     let branchind = build_unimp_idiom(&mut fd, 7);
-    assert!(kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver));
+    assert!(kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some());
 }
 
 #[test]

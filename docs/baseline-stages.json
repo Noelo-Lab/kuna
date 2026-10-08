@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2400,
-    2400
+    2402,
+    2402
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1852,6 +1852,7 @@
     "data:constspaceload #3: only the option-off pass reads near-null memory for the lanes that need an offset",
     "data:constspaceload #4: only the option-off pass leaves the immediate as a 16-byte pointer-shaped value",
     "data:constspaceload #5: the buffer still escapes to the callee in both passes",
+    "data:continuation still uses aggregate result",
     "data:cookiescramble #1: the /GS cookie mix drops both stack-passed arguments (bug reproduced)",
     "data:cookiescramble #2: option off leaves the dropped arguments as dead stores to locals",
     "data:cookiescramble #3: option on recovers both stack-passed arguments",
@@ -2080,6 +2081,7 @@
     "data:kuna-msvcstackguard #1: the entry-side cookie scramble is emitted only with the option off",
     "data:kuna-msvcstackguard #2: the checker call is emitted only with the option off",
     "data:kuna-msvcstackguard #3: the computation the function actually performs survives both passes",
+    "data:marker has no executable trap",
     "data:mode aggressive enables returndup (warning appears once); mode reliable does not",
     "data:namestyle #1 default: argument renders as aN",
     "data:namestyle #2 default: local renders as vN with a register source-location comment",

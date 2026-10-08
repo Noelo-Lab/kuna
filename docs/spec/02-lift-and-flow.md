@@ -2014,17 +2014,16 @@ after a returning callee that happens to share a listed name.
 
 **(kuna) SPARC struct return — `option sparcstructret`, default off,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_sparcstructret.rs
-(kuna_is_sparc_struct_ret_trap)` (from Ghidra issue GH-6882).** The SPARC ABI
-plants an `unimp <structsize>` word after a call to a struct-returning
-function; the SLEIGH spec lifts it to an `IllegalInstructionTrap` CALLOTHER
-feeding a BRANCHIND, which jump-table recovery can never resolve — so the
-function loses its tail to a non-returning CALLIND. The predicate, consulted in
-the BRANCHIND arm of `xref_control_flow`, identifies the idiom *positionally*
-(pre-SSA the input is not def-linked): walk backwards over the dead list within
-the same instruction looking for a CALLOTHER whose user op is named
-`IllegalInstructionTrap`. On a match the BRANCHIND is destroyed and the
-instruction falls through. Kept opt-in per program: globally it would convert a
-*real* trap into silent fall-through on other targets.
+(kuna_sparc_struct_ret_trap_producer)` (from Ghidra issue GH-6882).** The SPARC ABI
+places an `unimp <structsize>` word after a call to a struct-returning function.
+SLEIGH lifts this marker to an `IllegalInstructionTrap` CALLOTHER feeding a
+BRANCHIND. With the option enabled, flow classification recognizes the named
+trap within the same instruction and removes the branch so execution falls
+through. When the producer has an output, it becomes an inert COPY, retaining
+its instruction-start operation until SSA so raw flow targets remain valid.
+If the producer cannot be rewritten, the branch is still removed, preserving
+the previous drop-only behavior. The option remains off by default because
+interpreting a real trap as an ABI marker would suppress its trap effect.
 
 **Emulate-function hooks.** `kuna_emulatefunction.rs (EmulateFunction)` is the
 lightweight emulator behind every address enumeration in §2.3: a memory state
