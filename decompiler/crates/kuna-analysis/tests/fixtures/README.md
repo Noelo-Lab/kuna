@@ -1317,3 +1317,5 @@ return, a call to a stub that never returns and literal-pool words: the first
 pool decodes as valid instructions that fall into the next frame, the second
 does not decode. Tests generate the images in Cargo scratch directories; no
 generated binary is retained.
+
+`sparc_external_tail.s` / `sparc_external_tail.o`: synthetic five-instruction SPARC32 external tail call with `HI22`/`LO10` relocations and an untyped provider. Rebuild with `llvm-mc -triple=sparc -filetype=obj sparc_external_tail.s -o sparc_external_tail.o`. Used by `tests/stages/kuna-sparc-external-tail.xml`.

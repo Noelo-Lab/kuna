@@ -469,7 +469,13 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   non-empty section out above `0x400000` (`RELOC_BASE`, matching CLE so addresses
   line up with angr's), apply the relocations, rebase defined symbols, and bind
   each undefined extern to a synthetic call target in an extern area above the
-  sections so calls render by name. The relocation encoder handles generic
+  sections so calls render by name. An adjacent SPARC `sethi`/`jmpl` pair
+  carrying `HI22`/`LO10` relocations to the same symbol with zero addends also
+  identifies that symbol as code, even when the ELF marks it `STT_NOTYPE`.
+  The jump must use the register written by `sethi` and discard the link or
+  write `%o7`; an ordinary address materialization or data load does not qualify.
+  This lets existing tail-call recovery resolve a named external destination
+  and preserve its delay-slot arguments. The relocation encoder handles generic
   absolute, relative, PLT-relative, and image-offset fields at 8/16/32/64 bits in
   the object's byte order, plus the instruction fields and ABI formulas for ARM
   `CALL`/`JUMP24`/Thumb branches/`REL32`/`PREL31`, AArch64 branch/page/low-12

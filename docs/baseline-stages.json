@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2422,
-    2422
+    2424,
+    2424
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1252,6 +1252,8 @@
     "data:SIGNED-STACK-INDEX #1: default reads the word written by the loop",
     "data:SIGNED-STACK-INDEX #2: off exposes stale initializer forwarding",
     "data:SIGNED-STACK-INDEX #3: both runs retain indexed writes",
+    "data:SPARC-EXTERNAL-TAIL #1: off still follows the jump into missing extern bytes",
+    "data:SPARC-EXTERNAL-TAIL #2: default recovers the named tail call and delay-slot argument",
     "data:SPARC64 odd destination conversion reaches return",
     "data:SPLITSTOREKEEP #1: the seven-byte cell the store at src+8 was cut down to is a variable, at the default only",
     "data:SPLITSTOREKEEP #2: and so is its destination cell at dst+8",
