@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2541,
-    2541
+    2546,
+    2546
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -2355,6 +2355,11 @@
     "data:sparc64-callreturn #4: f3 subtracts the second atoi result (O2 and O0)",
     "data:sparc64-callreturn #5: fd stores dd's fd0 result (O2 and O0)",
     "data:sparc64-callreturn #6: no call result is dropped",
+    "data:stack bytes: legacy copies retain loops",
+    "data:stack bytes: legacy seed reads",
+    "data:stack bytes: legacy snapshot lost",
+    "data:stack bytes: scalar members absent",
+    "data:stack bytes: snapshot remains independent",
     "data:stack indices: byte copies start at the whole backing object",
     "data:stack indices: four bounded accesses recover one backing object",
     "data:stack indices: off and unresolved bounds retain the original array",

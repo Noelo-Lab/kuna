@@ -4424,6 +4424,7 @@ impl Heritage {
         readvars: &[crate::context::VarnodeId],
         writevars: &[crate::context::VarnodeId],
         inputvars: &[crate::context::VarnodeId],
+        byte_copy: bool,
     ) -> Option<usize> {
         let size = self.disjoint.get(idx).size;
         if size > 1024 {
@@ -4435,6 +4436,9 @@ impl Heritage {
         self.build_refinement(fd, &mut refine, &addr, readvars);
         self.build_refinement(fd, &mut refine, &addr, writevars);
         self.build_refinement(fd, &mut refine, &addr, inputvars);
+        if byte_copy {
+            refine.fill(1);
+        }
         refine.pop(); // remove the fencepost
         // Convert boundary points to partition sizes.
         let mut lastpos: usize = 0;
@@ -4448,7 +4452,9 @@ impl Heritage {
             return None; // No non-trivial refinements
         }
         refine[lastpos] = size - lastpos as int4;
-        self.remove13_refinement(&mut refine);
+        if !byte_copy {
+            self.remove13_refinement(&mut refine);
+        }
         let mut newvn: Vec<crate::context::VarnodeId> = Vec::new();
         for &vn in readvars {
             self.refine_read(fd, vn, &addr, &refine, &mut newvn);
@@ -4513,9 +4519,16 @@ impl Heritage {
             let maxw =
                 self.collect(fd, &mut memrange, &mut readvars, &mut writevars, &mut inputvars, &mut removevars);
             // refinement (heritage.cc:2611-2619): only when size>4 && max<size.
-            if memrange.size > 4 && maxw < memrange.size {
+            let byte_copy = memrange.addr.get_space()
+                .zip(fd.get_arch().manage().get_stack_space())
+                .is_some_and(|(space, stack)| space.get_index() == stack.get_index())
+                && writevars.iter().any(|&vn| {
+                fd.vbank().get(vn).and_then(|v| v.get_def())
+                    .is_some_and(|op| fd.is_stack_byte_copy_op(op))
+            });
+            if byte_copy || (memrange.size > 4 && maxw < memrange.size) {
                 if let Some(refiter) =
-                    self.refinement(fd, idx, &readvars, &writevars, &inputvars)
+                    self.refinement(fd, idx, &readvars, &writevars, &inputvars, byte_copy)
                 {
                     idx = refiter;
                     memrange = self.disjoint.get(idx).clone();

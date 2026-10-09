@@ -685,6 +685,44 @@ integer extension) and the processor's stack space. For this family only byte
 STOREs already recorded by indexed stack-pointer discovery qualify; globals and
 unknown pointers retain the explicit `full` policy. The gate lives in
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackstoreguard.rs`.
+
+Before heritage, `kuna_stackbytecopy.rs` expands a short frame byte-copy loop
+whose control flow and scalar setup prove that it exits after two to four
+iterations. The loop must consist of one basic block with one byte LOAD and
+one byte STORE, a single outside predecessor, a self edge, and a conditional
+exit. Calls, other special operations, writes to the stack-pointer register,
+and accesses outside the stack's containing memory space reject the rewrite.
+The proof evaluates only known scalar values and stack-relative pointer
+arithmetic; memory reads remain unknown. It bounds the setup to 128 operations,
+the loop to 64 operations, and the simulation to four iterations. A larger or
+data-dependent trip count keeps the existing guard policy.
+
+If every destination byte is already known to hold a constant from the setup,
+the loop keeps the existing indexed-store guard path. The setup proof tracks
+constant frame writes of up to eight bytes, removes facts overwritten by a
+nonconstant frame write, and clears them at an unknown STORE. This leaves the
+constant-initialized buffer family unchanged while recovering pushed words
+and fresh scratch whose contents that guard cannot establish.
+
+Expansion copies every operation in its original order, including each load
+before its corresponding store. It introduces neither a bulk copy nor a new
+alias assumption, so overlapping copies retain their sequential byte semantics.
+Ordinary heritage then sees the concrete frame accesses: pushed scratch bytes
+no longer inherit a stale saved-register value after a complete overwrite, a
+partial overwrite retains the untouched bytes, and an earlier snapshot remains
+independent. No physical store is deleted by the rewrite. It is disabled by
+`stackstoreguard off` or `indexaliasguard off`; `stackviews` is not required.
+
+The expanded memory operations retain a function-local identity until analysis
+is cleared. Heritage refines a stack range containing one of these writes into
+individual bytes, including ranges of four bytes or less. It does not apply the
+ordinary one-plus-three coalescing policy to those ranges. This keeps a saved
+word, later byte writes, and partial reads in the same SSA memory state without
+normalizing each byte write into a replacement whole word. Register ranges and
+unrelated frame ranges retain the ordinary refinement policy. Wide reads are
+reconstructed from these bytes; chapter 05 describes why their source LOADs
+retain byte widths.
+
 A heritage pass also leaves the whole frame unguarded when one of those byte
 STOREs, or any other LOAD or STORE whose address comes from the stack pointer,
 has an address that does not resolve to the stack base plus constants plus

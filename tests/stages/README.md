@@ -1,5 +1,11 @@
 # Stage-model issue testcases
 
+`kuna-stack-byte-copy.xml` checks pushed scratch bytes, partial reads and a
+saved snapshot with `stackstoreguard` off and on. Its CLI companion compiles
+and executes the exact C at O2 in default, stackviews and stackalias modes, and checks
+that larger and data-dependent loops retain their control flow. The authored
+assembly also includes a sequential overlapping-copy control.
+
 `kuna-stackpointerfields.xml` checks that naming a logical frame object preserves
 pointer-field dereferences. Its CLI companion executes the native fixture and the
 unnamed and named C with GCC and Clang.

@@ -251,6 +251,7 @@ pub struct Funcdata {
     /// (kuna `stackstoreguard`) Set when the final layout spoiled what the
     /// guard needs; the drive then analyzes the function again without it.
     stack_store_guard_spoiled: std::cell::Cell<bool>,
+    stack_byte_copy_ops: std::collections::BTreeSet<OpId>,
     /// (kuna `condstmts`) Block start addresses structured as complex from the
     /// first structuring on; set by the drive and kept across `clear()`.
     kuna_condstmts_seed: std::collections::BTreeSet<Address>,
@@ -672,6 +673,7 @@ impl Funcdata {
             guard_only_seen: std::cell::RefCell::new(Vec::new()),
             stack_store_guard_withdrawn: std::cell::Cell::new(false),
             stack_store_guard_spoiled: std::cell::Cell::new(false),
+            stack_byte_copy_ops: Default::default(),
             kuna_condstmts_seed: std::collections::BTreeSet::new(),
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
             jumpvec: Vec::new(),
@@ -2063,6 +2065,14 @@ impl Funcdata {
     /// (kuna `stackstoreguard`) Is the guard on for this function?
     pub fn stack_store_guard(&self) -> bool {
         self.get_arch().stack_store_guard && !self.stack_store_guard_withdrawn.get()
+    }
+
+    pub(crate) fn note_stack_byte_copy_op(&mut self, op: OpId) {
+        self.stack_byte_copy_ops.insert(op);
+    }
+
+    pub(crate) fn is_stack_byte_copy_op(&self, op: OpId) -> bool {
+        self.stack_byte_copy_ops.contains(&op)
     }
 
     /// (kuna `stackstoreguard`) Record what this pass says the final layout
@@ -3804,6 +3814,7 @@ impl Funcdata {
         self.store_reach_committed.set(false);
         *self.store_reach_checks.borrow_mut() = Default::default();
         self.indexed_guard_stores.borrow_mut().clear();
+        self.stack_byte_copy_ops.clear();
         self.indexed_guard_indirects.borrow_mut().clear();
         self.guard_only_seen.borrow_mut().clear();
         self.kuna_forced_return_planted.clear();

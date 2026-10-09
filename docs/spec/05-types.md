@@ -3269,6 +3269,13 @@ input halves into one logical input via `combine_input_varnodes`.
 LOADs/STOREs into one whole-width access — requiring address contiguity in
 the right endian order and proving no interfering write between the two ops.
 
+LOADs originating in the short frame byte-copy expansion of chapter 03 keep
+their original byte widths. Their source pointer need only be byte-aligned;
+fusion into a halfword or word would introduce an alignment requirement the
+binary does not have. Concatenation also avoids an `undefined3` dereference with
+no matching C integer storage type. Other LOADs and all STOREs retain their
+existing contiguity and conflict rules.
+
 **When it wins/loses.** It wins when the compiler's lowering kept the standard
 shapes: the output shows one 2N-bit variable with ordinary arithmetic. It
 declines — silently and safely — when the marking guards fail, when a
