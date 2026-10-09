@@ -2048,7 +2048,7 @@ mod tests {
         // walk gives
         // and kuna-ucomiss-unordered / an x86 float compare flag read by
         // seta/setae/setbe/setb keeps its unordered case
-        assert_eq!(count, 473, "corpus file count drifted");
+        assert_eq!(count, 475, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
