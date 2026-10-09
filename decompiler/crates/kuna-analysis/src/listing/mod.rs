@@ -191,8 +191,8 @@ impl Listing {
     /// second full SLEIGH parse per instruction (see [`decode::decode_one`]).
     ///
     /// `detail.refs` selects whether the reference model is built at all. Its
-    /// only two consumers — the `noreturn_disc` Listing pass and
-    /// `tailcallentry` — are both gated on `--option listing on`, so the
+    /// consumers — the `noreturn_disc` Listing pass, `tailcallentry` and static
+    /// format-string analysis — are all gated on `--option listing on`, so the
     /// `fast_funcdisc`-only path passes `false` and skips filing (and then
     /// sorting, and then dropping) one edge per control-flow successor of every
     /// instruction in the program.

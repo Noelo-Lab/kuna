@@ -4018,8 +4018,9 @@ There is no separate map node or growable vector for each instruction's
 fall-through. The reference model keeps the same edges, ordering, distinct-site
 counts and absence queries as the former bucket maps. Serial walks, decode-lane
 merges and ARM frame-preserving rebuilds all use this representation. During
-index construction, the collected buffer, its sorted copy and stable-sort
-scratch can overlap; every rebuild still owns its instruction partition.
+index construction, the deduplicated buffer is trimmed to its length before it
+is copied, and the copy is sorted in place, its keys being unique; every rebuild
+still owns its instruction partition.
 
 The readers, including `noreturn_disc`, `tailcallentry` and static format-string
 analysis, are `listing` consumers, so a `fast_funcdisc`-only walk — again, the whole-binary export's path

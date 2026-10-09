@@ -14,9 +14,47 @@ impl ReferenceIndex {
     pub fn new(mut edges: Vec<Reference>) -> Self {
         edges.sort_by_key(|r| (r.from, r.to, kind_order(r.kind)));
         edges.dedup_by(|a, b| a.from == b.from && a.to == b.to && a.kind == b.kind);
+        edges.shrink_to_fit();
         let mut to = edges.clone();
-        to.sort_by_key(|r| (r.to, r.from, kind_order(r.kind)));
+        to.sort_unstable_by_key(|r| (r.to, r.from, kind_order(r.kind)));
         Self { from: edges, to }
+    }
+
+    /// Edges held by only one side, each tagged `true` when it is `self`'s.
+    pub fn differences<'a>(&'a self, other: &'a Self) -> Vec<(&'a Reference, bool)> {
+        let key = |r: &Reference| (r.from, r.to, kind_order(r.kind));
+        let (mut left, mut right) = (self.from.iter().peekable(), other.from.iter().peekable());
+        let mut out = Vec::new();
+        loop {
+            match (left.peek().copied(), right.peek().copied()) {
+                (Some(a), Some(b)) => match key(a).cmp(&key(b)) {
+                    std::cmp::Ordering::Less => {
+                        out.push((a, true));
+                        left.next();
+                    }
+                    std::cmp::Ordering::Greater => {
+                        out.push((b, false));
+                        right.next();
+                    }
+                    std::cmp::Ordering::Equal => {
+                        if a != b {
+                            out.extend([(a, true), (b, false)]);
+                        }
+                        left.next();
+                        right.next();
+                    }
+                },
+                (Some(a), None) => {
+                    out.push((a, true));
+                    left.next();
+                }
+                (None, Some(b)) => {
+                    out.push((b, false));
+                    right.next();
+                }
+                (None, None) => return out,
+            }
+        }
     }
 
     pub fn to(&self, address: u64) -> &[Reference] {

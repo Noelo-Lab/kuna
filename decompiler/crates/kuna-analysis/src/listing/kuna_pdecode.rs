@@ -1250,8 +1250,12 @@ pub(super) fn compare(parallel: &WalkState, serial: &WalkState) -> usize {
 
     let left = super::kuna_compactrefs::ReferenceIndex::new(parallel.refs.clone());
     let right = super::kuna_compactrefs::ReferenceIndex::new(serial.refs.clone());
-    if left != right {
-        report("references differ".to_string());
+    for (edge, in_lanes) in left.differences(&right) {
+        let side = if in_lanes { "lanes" } else { "serial walk" };
+        report(format!(
+            "ref {:#x} -> {:#x} ({:?}) only in the {side}",
+            edge.from, edge.to, edge.kind
+        ));
     }
 
     if parallel.stack_callback_refs != serial.stack_callback_refs {
