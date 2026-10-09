@@ -64,6 +64,29 @@ impl FlowEnvironment for ArchFlowEnv {
     fn translate(&self) -> &dyn Translate {
         self.arch().translate()
     }
+    fn arm_decode_mode(&self, addr: &Address) -> Option<crate::kuna_armflowcontext::ArmDecodeMode> {
+        self.arch().with_context_db_mut(|db| {
+            let var = db.get_variable(b"TMode").ok()?;
+            let word = var.get_word() as usize;
+            let mask = var.get_mask() << var.get_shift();
+            let (words, _, last) = db.get_context_bounds(addr);
+            let value = words.get(word).copied()? & mask;
+            Some(crate::kuna_armflowcontext::ArmDecodeMode { word, mask, value, last })
+        })
+    }
+    fn preserve_arm_decode_mode(
+        &self, addr: &Address, mode: crate::kuna_armflowcontext::ArmDecodeMode, entry: bool,
+    ) {
+        self.arch().with_context_db_mut(|db| {
+            if entry || db.get_context(addr)[mode.word] & mode.mask != mode.value {
+                let last = if entry { addr.get_offset() } else { mode.last };
+                let end = last.min(addr.get_space().unwrap().get_highest()).checked_add(1)
+                    .map(|end| Address::new(Rc::clone(addr.get_space().unwrap()), end))
+                    .unwrap_or_default();
+                let _ = db.set_variable_region(b"TMode", addr, &end, mode.value >> mode.mask.trailing_zeros());
+            }
+        });
+    }
     fn resolve_typeop(&self, opc: OpCode) -> TypeOp {
         self.arch().resolve_typeop(opc)
     }
@@ -334,7 +357,7 @@ impl FlowEnvironment for ArchFlowEnv {
         )
     }
 
-    fn is_sparc_struct_ret_trap(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
+    fn sparc_struct_ret_trap_producer(&self, fd: &Funcdata, op: crate::context::OpId) -> Option<crate::context::OpId> {
         // (kuna) GH-6882: wire the ported `kunaIsSparcStructRetTrap` predicate.
         // The gate is the architecture-owned `sparc_struct_return` flag (`option
         // sparcstructret on|off`, default off / upstream byte-identical); the
@@ -344,9 +367,9 @@ impl FlowEnvironment for ArchFlowEnv {
         if !arch.sparc_struct_return {
             // Fast-path the default-off gate without touching the IR (matches the
             // predicate's leading `if (!gate) return false`).
-            return false;
+            return None;
         }
-        crate::kuna_sparcstructret::kuna_is_sparc_struct_ret_trap(
+        crate::kuna_sparcstructret::kuna_sparc_struct_ret_trap_producer(
             fd,
             op,
             arch.sparc_struct_return,
@@ -923,9 +946,19 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         total += r;
         // (kuna `stackstoreguard`) A function whose final layout spoils what the
         // guard needs is analyzed again from scratch without it by the drive.
-        if fd.stack_store_guard_spoiled()
-            || crate::p6_variables::kuna_storereach::withdraw_spoiled_guard(fd)
-        {
+        // The deadline is checked again after the layout checks: their walks
+        // give up once it passes, which would otherwise keep the guard.
+        let spoiled =
+            fd.stack_store_guard_spoiled() || crate::p6_variables::kuna_storereach::withdraw_spoiled_guard(fd);
+        if let Some(deadline) = arch.kuna_fn_deadline {
+            if std::time::Instant::now() >= deadline {
+                let secs = arch.kuna_fn_budget.map(|b| b.as_secs()).unwrap_or(0);
+                return Err(kuna_base::error::KunaError::lowlevel(format!(
+                    "per-function decompile budget exceeded ({secs} s)"
+                )));
+            }
+        }
+        if spoiled {
             return Ok(total);
         }
         if !(reflow_requested && fd.has_restart_pending()) {
@@ -1149,6 +1182,7 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     // and the action pipeline — and is consulted cooperatively at the action /
     // rule-pool / heritage loop boundaries.
     arch.kuna_fn_deadline = arch.kuna_fn_budget.map(|b| std::time::Instant::now() + b);
+    let _deadline_scope = DeadlineScope::enter(arch.kuna_fn_deadline);
     // (ghidra-mode, Phase 4) Take the staged name recommendations UP FRONT so
     // an early flow failure can never leak them into a later drive.
     let staged_name_recs = std::mem::take(&mut arch.kuna_pending_name_recs);
@@ -2476,3 +2510,30 @@ fn emit_inject(
 
 #[cfg(test)]
 mod tests;
+
+thread_local! {
+    static FN_DEADLINE: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+}
+
+/// (kuna decompile-all watchdog) Has the running drive's per-function deadline
+/// passed? For a long walk inside one pass, which no action or heritage loop
+/// boundary interrupts, to give up early.
+pub(crate) fn deadline_passed() -> bool {
+    FN_DEADLINE.with(|d| d.get().is_some_and(|d| std::time::Instant::now() >= d))
+}
+
+/// Publishes a drive's deadline to [`deadline_passed`] and restores the one
+/// before it when the drive ends.
+struct DeadlineScope(Option<std::time::Instant>);
+
+impl DeadlineScope {
+    fn enter(deadline: Option<std::time::Instant>) -> Self {
+        DeadlineScope(FN_DEADLINE.with(|d| d.replace(deadline)))
+    }
+}
+
+impl Drop for DeadlineScope {
+    fn drop(&mut self) {
+        FN_DEADLINE.with(|d| d.set(self.0));
+    }
+}

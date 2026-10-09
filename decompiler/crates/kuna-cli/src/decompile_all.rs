@@ -25,7 +25,7 @@ use kuna_console::engine::{
 // The decompile loop + result shape live in the shared decompile-project core
 // (`kuna_console::project` — also reused by the `kuna_wasm` front-end).
 use kuna_console::project::{
-    converge_synthesized_structs, decompile_pulled, decompile_targets, default_fn_budget_seconds,
+    converge_synthesized_structs, decompile_pulled, default_fn_budget_seconds,
     render_c, BatchOutcome, DecompileOptions, FuncResult,
 };
 // `File::architecture()` (the ARM-discovery default, decbench) plus the
@@ -123,6 +123,9 @@ pub(crate) struct Args {
     /// Report each function's callee hints — the `--stream` scheduler's
     /// frontier, asked for by `--jobs-callees`.
     pub(crate) jobs_callees: bool,
+    /// Record pointer-argument facts for the parent to reconcile, asked for by
+    /// `--jobs-pointerargs`.
+    pub(crate) jobs_pointerargs: bool,
     /// Internal: what this worker does with the synthesized-structure ledger
     /// (`--jobs-synth record|force|serial`, see [`jobs::SynthWorker`]).
     pub(crate) jobs_synth: Option<jobs::SynthWorker>,
@@ -167,6 +170,7 @@ impl Args {
             jobs_provenance: false,
             jobs_types: false,
             jobs_callees: false,
+            jobs_pointerargs: false,
             jobs_synth: None,
             jobs_objects: false,
         }
@@ -735,6 +739,7 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                 park_recovered_proto: false,
                 single_target: false,
                 want_tokens: false,
+                want_pointer_arguments: args.jobs_pointerargs,
             };
             let mut pending = entries.into_iter();
             let mut pulled = 0usize;
@@ -896,7 +901,10 @@ pub(crate) fn decompile_targets_pooled(
     cfg.synth_base = synth_base;
     cfg.serial_callee_first = serial_callee_first;
     cfg.elem_objects = targets.len() <= 1;
-    jobs::run_pool(&cfg, &specs, &inventory)
+    cfg.want_pointer_arguments = true;
+    let mut pooled = jobs::run_pool(&cfg, &specs, &inventory)?;
+    kuna_console::project::reconcile_pointer_arguments(&mut pooled.results);
+    Ok(pooled)
 }
 
 /// (kuna `structsynth`) The ledger a sharded run replays its workers' lookups
@@ -948,6 +956,7 @@ pub(crate) fn pool_config<'a>(
         want_provenance,
         want_types,
         want_callee_hints,
+        want_pointer_arguments: false,
         max_fn_seconds: args.max_fn_seconds,
         full_load: args.jobs_full_load,
         load_seconds,
@@ -1246,7 +1255,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     let funcs = if callee_first {
         decompile_entries_callee_first(&mut prog, args, targets, explicit)
     } else {
-        decompile_entries(&mut prog, args, targets)
+        decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true)
     };
     Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes() })
 }
@@ -1260,23 +1269,27 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
 /// decompile drive arms a cooperative deadline from this budget for EACH
 /// function, so one pathological function becomes a per-function `error` record
 /// instead of hanging the whole batch.
+///
+/// `pointer_arguments` is whether the returned batch reconciles scalar
+/// addresses with the parameter declarations printed in it.
 pub(crate) fn decompile_entries(
     prog: &mut ConsoleProgram,
     args: &Args,
     targets: Vec<FunctionEntry>,
+    pointer_arguments: bool,
 ) -> Vec<FuncResult> {
     if args.max_fn_seconds > 0 {
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
-
-    decompile_targets(
-        prog,
-        targets,
-        args.no_vars,
-        /* want_proto= */ false,
-        /* want_provenance= */ args.json,
-    )
+    let opts = DecompileOptions {
+        no_vars: args.no_vars,
+        want_provenance: args.json,
+        single_target: targets.len() == 1,
+        want_pointer_arguments: pointer_arguments,
+        ..DecompileOptions::default()
+    };
+    kuna_console::project::decompile_targets_with(prog, targets, &opts)
 }
 
 /// (kuna `protoorder`) Whether this run takes the callee-first order, and
@@ -2268,6 +2281,7 @@ mod provenance_json_tests {
             object_location: None,
             callee_hints: Vec::new(),
             synth: None,
+            pointerargs: None,
             detail: None,
         };
 
@@ -2415,6 +2429,7 @@ pub(crate) fn parse_args_with_filters(
     let mut jobs_provenance = false;
     let mut jobs_types = false;
     let mut jobs_callees = false;
+    let mut jobs_pointerargs = false;
     let mut jobs_objects = false;
     let mut jobs_synth: Option<jobs::SynthWorker> = None;
     // The three whole-binary surfaces the worker POOL serves; `functions`
@@ -2478,6 +2493,7 @@ pub(crate) fn parse_args_with_filters(
             "--jobs-provenance" if cmd == "decompile-all" => jobs_provenance = true,
             "--jobs-types" if cmd == "decompile-all" => jobs_types = true,
             "--jobs-callees" if cmd == "decompile-all" => jobs_callees = true,
+            "--jobs-pointerargs" if cmd == "decompile-all" => jobs_pointerargs = true,
             "--jobs-objects" if cmd == "decompile-all" => jobs_objects = true,
             "--jobs-synth" if cmd == "decompile-all" => {
                 jobs_synth = Some(jobs::SynthWorker::parse(&take(argv, &mut i, "--jobs-synth")?)?);
@@ -2719,6 +2735,7 @@ pub(crate) fn parse_args_with_filters(
             jobs_provenance,
             jobs_types,
             jobs_callees,
+            jobs_pointerargs,
             jobs_synth,
             jobs_objects,
         },

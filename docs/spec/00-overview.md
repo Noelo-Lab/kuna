@@ -16,6 +16,18 @@ hand-off, the front-ends, the IR containers, the knowledge plane, the two
 pipeline non-linear. The algorithms themselves live in chapters 01–09; this is how
 they are hosted, ordered, configured, and restarted.
 
+C declarations supplied through the console or strict CLI assertions retain a
+`volatile` qualifier on the type layer where it was written. `const` and
+`restrict` are accepted and dropped, so they leave emitted C unchanged; the type
+layer can carry them, but no declaration attaches them. Specifier qualifiers attach to the base before declarator
+modifiers are applied; qualifiers following `*` attach to that pointer, including
+in parameters and return types. A qualified type retains its underlying shape
+for existing type consumers and an interned link to its unqualified type for
+identity and spelling. Typedefs retain their own names and inherit the underlying
+qualification. Kuna's type encoder preserves anonymous qualified layers in a
+`qualified` element with a qualifier bit mask and an underlying type reference;
+unqualified types keep their existing encoding.
+
 The object-file bootstrap records an explicit ARM/Thumb input selection in
 `Architecture::input_arm_isa_override`. This is an input fact, separate from
 analysis options: metadata painters preserve it when discovery or graph/xref
@@ -1467,8 +1479,13 @@ at every group/sub-action boundary and repeat gate
 (`decompiler/crates/kuna-decomp/src/infra/action.rs (ActionGroup::apply,
 Action::perform, ActionRestartGroup::apply)`), every 1024 op-visits inside the
 rule-pool loop (`decompiler/crates/kuna-decomp/src/infra/action.rs
-(POOL_DEADLINE_STRIDE)`), and at the heritage loop
-(`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`). On expiry the
+(POOL_DEADLINE_STRIDE)`), at the heritage loop
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`) and before each
+address the written-slot guard guards, every 256 new values a pointer walk of
+`stackstoreguard` visits, and again after the final layout checks: the drive
+publishes its deadline to
+`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (deadline_passed)`,
+so a walk inside one pass gives up rather than run past it. On expiry the
 containers stop scheduling work and unwind; the driver converts that into the
 function's `error` record and the batch continues. A function whose drive
 completes before expiry is byte-identical with or without a budget, and the
@@ -1956,6 +1973,15 @@ lowering) and applied by
 | `readonly <addr>+<size>` | `readonly` | P1 code-data-partition |
 | `volatile <addr>+<size>` | `volatile` | P1 code-data-partition |
 | `bytes <addr> <hex\|@FILE>` | `override bytes` | P1 code-data-partition |
+
+`map address` retains an object's outer `volatile` qualifier and marks a
+global object's entire byte range volatile, so `--assert 'data 0x20000 volatile int cursor'`
+has the same access semantics as a separate volatile range assertion.
+Declarator binding matters: `volatile int *p` qualifies the pointed-to data,
+while `int *volatile p` qualifies the mapped pointer itself. An array inherits
+its element qualifier. Function-local mappings carry the symbol attribute only;
+the global property map does not describe stack-local storage. Volatility remains
+a storage property.
 
 Four application points, and the ordering between them is forced rather than
 stylistic. **Image-scoped** directives state what memory holds before anything
@@ -2531,6 +2557,15 @@ The matching `option` is still applied afterwards so the run's configuration
 record is honest.
 
 ## 0.3 The IR substrate
+
+When `TransformManager` materializes a lane of an existing varnode, storage
+addresses follow the target's byte order, but consumption masks always follow
+bit significance. `create_var_replacement` preserves the lane's original
+least-significant-byte offset before computing its big-endian storage address,
+and passes that preserved offset to `transfer_varnode_properties`. Using the
+address offset here would swap the masks of a register pair and allow live
+pointer, loop-bound or floating point values to be replaced with zero. This
+applies to integer and FPU lanes.
 
 Partition lookup in `decompiler/crates/kuna-base/src/partmap.rs
 (PartMap::get_value_mut)` returns the value at the greatest split point no

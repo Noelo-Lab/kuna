@@ -254,6 +254,9 @@ pub struct Architecture {
     /// File input explicitly selected ARM/Thumb state; metadata must not repaint TMode.
     pub input_arm_isa_override: bool,
 
+    /// Bounded ARM decode facts retained for inventory-seeded reference queries.
+    pub arm_inventory_modes: Vec<(u64, u64, u32)>,
+
     /// Loader register seeds, merged with live user tracking at function creation.
     pub loader_entry_tracks:
         std::collections::BTreeMap<Address, kuna_sleigh::globalcontext::TrackedSet>,
@@ -386,6 +389,10 @@ pub struct Architecture {
     /// whose every read is a truth test.  Implementation:
     /// [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
     pub bool_byte: bool,
+    /// (kuna `floatbits`) Type a float-register input whose every use is a
+    /// bit op of a float, and the float-register return built from it, as
+    /// floats.  Implementation: [`kuna_floatbits`](crate::p5_types::kuna_floatbits).
+    pub float_bits: bool,
     pub partial_concat: bool,
     /// (kuna `charbyte`) Keep `char` for a byte loaded through a `char *` when
     /// the only unsigned vote on it is a zero-extension.  Implementation:
@@ -642,6 +649,12 @@ pub struct Architecture {
     /// register is not the high word of its return.  Read by
     /// [`crate::kuna_retsysreg`] through the `ArchContext` handle.
     pub ret_sys_reg: bool,
+    /// (kuna) `option reloadarg`: a register argument reloaded from the
+    /// caller's frame is judged again once the frame is heritaged, and dropped
+    /// when the slot only gave back a scratch register no prototype passes.
+    /// Read by [`crate::p4_calls::kuna_reloadarg`] through the `ArchContext`
+    /// handle.
+    pub reload_arg: bool,
     /// (kuna) `option noreturnretuse`: a CALL on a block that ends in a no-return
     /// halt does not veto the RETURN's output trial.  Read by
     /// [`crate::p4_calls::kuna_noreturnretuse`] through the `ArchContext` handle.
@@ -678,6 +691,10 @@ pub struct Architecture {
     /// `option rustabi auto` tests.  The XML `<binaryimage>` bootstrap never runs
     /// the analyzer tier, so it stays false there.
     pub source_is_rust: bool,
+    /// (kuna) Did the loader's source-language detection report Go?  A load-time
+    /// fact like `source_is_rust`: Go's register ABI is not the cspec's, so
+    /// `option reloadarg` stands down on a Go image.
+    pub source_is_go: bool,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -874,6 +891,10 @@ pub struct Architecture {
     /// own register, to a variadic call's variable part (option
     /// `varargforward`).  See [`crate::p4_calls::kuna_varargforward`].
     pub vararg_forward: bool,
+    /// (kuna) Keep a counted variadic double whose register also feeds an
+    /// earlier argument of the same call (option `varargsharedfloat`).  See
+    /// [`crate::p4_calls::kuna_varargsharedfloat`].
+    pub vararg_shared_float: bool,
     /// (kuna) Reconcile a call's recovered argument list with a sibling call to
     /// the same callee in the same function (option `calleearity`).  See
     /// [`crate::p4_calls::kuna_calleearity`].
@@ -1413,9 +1434,6 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
-    /// The parameter declarations a callee-first batch has printed so far, for
-    /// the byte-pointer argument casts of the callers printed after them.
-    pub kuna_pointerargs: RefCell<crate::kuna_pointerargs::Batch>,
     /// (kuna `vfpvariadic`) The default model with the variadic return rules,
     /// keyed by the default model it was derived from.
     pub kuna_vfp_variadic: RefCell<Option<(Rc<ProtoModel>, Option<Rc<ProtoModel>>)>>,
@@ -1507,6 +1525,10 @@ pub struct Architecture {
     /// (`widestrings`); default on. Off drops the wide facts at the commit, so the
     /// markup is exactly the 1-byte pass's.
     pub analysis_widestrings: bool,
+    /// (kuna) Gate the 4-byte (`wchar_t`/`char32_t`) width of the string-literal
+    /// pass (`widestrings32`); default off, on in the aggressive preset. Off
+    /// drops the `wchar4[N]` facts at the commit.
+    pub analysis_widestrings32: bool,
     /// (kuna) Gate the entry-discovery pass (`entry_disc`); default on.
     pub analysis_entry_disc: bool,
     /// (kuna) Gate the `.eh_frame` LSDA landing-pad discovery sub-feature of the
@@ -1630,6 +1652,12 @@ pub struct Architecture {
     /// and an entry AT an FDE start is always kept. Off restores the previous
     /// discovery set exactly; inert on any image with no `.eh_frame` FDEs.
     pub analysis_fdeinterior: bool,
+    /// (kuna) Add the extra entry points of a multi-entry `.cold` fragment
+    /// (`coldentry`); default **on**. An address strictly inside a single-function
+    /// FDE body that a `jmp`/`jcc rel32` from outside the body targets, and that
+    /// follows a no-fall-through instruction, is a function of its own. Off
+    /// restores the previous discovery set exactly; x86/x86-64 ELF only.
+    pub analysis_coldentry: bool,
     /// (kuna) Reject a discovered function entry that falls strictly inside a
     /// single-function `.pdata` `RUNTIME_FUNCTION` body (`pdatainterior`);
     /// default **on**. The PE half of [`Self::analysis_fdeinterior`] and the same
@@ -1721,6 +1749,9 @@ pub struct Architecture {
     pub analysis_poolentry: bool,
     /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
     pub analysis_arm_markers: bool,
+    /// (kuna) `armfuncmode`: paint `TMode=0` at each even function symbol of an
+    /// ARM ELF without mapping symbols; default on.
+    pub analysis_armfuncmode: bool,
     /// (kuna) Gate the entry-reachable Thumb context walk (`entrythumbflow`) for a
     /// mixed ARM image whose container entry carries the Thumb bit but whose
     /// machine word makes no whole-image mode claim; default on. The walk decodes
@@ -2468,6 +2499,7 @@ impl Architecture {
         let mut arch = Architecture {
             archid: archid.to_string(),
             input_arm_isa_override: false,
+            arm_inventory_modes: Vec::new(),
             loader_entry_tracks: std::collections::BTreeMap::new(),
 
             symbol_snapshots: RefCell::new(SymbolSnapshots::default()),
@@ -2511,6 +2543,7 @@ impl Architecture {
             kuna_float_globals: None,
             kuna_float_scan_batch: false,
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
+            float_bits: false, // (kuna) option floatbits; reset_defaults sets the shipped default
             partial_concat: true,
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
             cast_arith: false, // (kuna) option castarith; reset_defaults sets the shipped default
@@ -2567,6 +2600,7 @@ impl Architecture {
             ret_input_half: false, // (kuna) option retinputhalf; reset_defaults sets the shipped default
             ret_pushed_half: false, // (kuna) option retpushedhalf; reset_defaults sets the shipped default
             ret_sys_reg: false, // (kuna) option retsysreg; reset_defaults sets the shipped default
+            reload_arg: false, // (kuna) option reloadarg; reset_defaults sets the shipped default
             noreturn_ret_use: false, // (kuna) option noreturnretuse; reset_defaults sets the shipped default
             zero_idiom_use: false, // (kuna) option zeroidiomuse; reset_defaults sets the shipped default
             stack_addr_arg_trial: false,
@@ -2575,6 +2609,7 @@ impl Architecture {
             be_join: false, // (kuna) option bejoin; reset_defaults sets the shipped default
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
             source_is_rust: false, // (kuna) a load-time fact; set by the console's `load file`
+            source_is_go: false, // (kuna) a load-time fact; set by the console's `load file`
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -2621,6 +2656,7 @@ impl Architecture {
             stack_arg_gap: true,
             vararg_stack_args: true,
             vararg_forward: true,
+            vararg_shared_float: false,
             callee_arity: true,
             callee_arity_fwd: true,
             callee_arity_live: true,
@@ -2698,7 +2734,6 @@ impl Architecture {
             kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
-            kuna_pointerargs: RefCell::new(crate::kuna_pointerargs::Batch::default()),
             kuna_vfp_variadic: RefCell::new(None),
             kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),
@@ -2734,9 +2769,11 @@ impl Architecture {
             analysis_elfmain: false,
             analysis_strings: false,
             analysis_widestrings: false,
+            analysis_widestrings32: false,
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
             analysis_fdeinterior: false,
+            analysis_coldentry: false,
             analysis_pdatainterior: false,
             analysis_pdbinterior: false,
             analysis_funcstart_patterns: false,
@@ -2745,6 +2782,7 @@ impl Architecture {
             analysis_ptrentry: false,
             analysis_poolentry: false,
             analysis_arm_markers: false,
+            analysis_armfuncmode: false,
             analysis_entrythumbflow: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
@@ -2894,6 +2932,7 @@ impl Architecture {
         self.input_varnode_adjust = true; // (kuna) DIV-3 default-on (GH-9218)
         self.ret_input_half = true; // (kuna) DIV-85 default-on: a returned register half whose value is an input parameter the function MOVED into the return register is a real return, not leftover; keeping it also keeps the parameter it came from in the recovered signature. 0/675 byte-identical; an untouched return register is still dropped (the GH-6990 SPARC pass-through), restore the strict rule with `option retinputhalf off`
         self.ret_pushed_half = true; // (kuna) DIV-156 default-on: a register the function only ever PUSHED is stack maintenance, not a value it placed in a return register, so the alignment `push %r8` / `pop %rdx` idiom no longer invents a fifth argument and a 128-bit return. Narrows `retinputhalf` only; 0/675 byte-identical on the datatest corpus. Restore the address-only placement test with `option retpushedhalf off`
+        self.reload_arg = true; // (kuna) GH-839 default-on: a register popped or reloaded from a frame slot that only holds the caller's incoming scratch register (clang's `push %rax` ... `pop %rcx` alignment pair) is no argument of the next call; only the topmost active trials are dropped. 0/675 byte-identical on the datatest corpus; restore the first-pass verdict with `option reloadarg off`
         self.ret_sys_reg = true; // (kuna) GH-885 default-on: the second register of a returned pair whose value only goes to a system register (vmsr fpscr, msr basepri, mtc0) is that write's operand, not a high word. 0/675 byte-identical on the datatest corpus; restore the pair with `option retsysreg off`
         self.noreturn_ret_use = true; // (kuna) DIV-118 default-on: a status value handed to a no-return failure call at the end of its block cannot compete with the same value at the function's RETURN, so it no longer forces the prototype to void. 0/675 byte-identical on the datatest corpus and 0 changed lines across 23 linked binaries; restore the upstream blanket rejection with `option noreturnretuse off`
         self.zero_idiom_use = true; // (kuna) DIV-PENDING default-on: `INT_XOR(v,v)` is 0 whatever v is, so the x86 register-clearing idiom is not a competing use of the value it consumes and no longer sinks a call's input trials. An identity, one-directional (it can only decline a veto); 0/675 byte-identical on the datatest corpus. Restore the upstream walk with `option zeroidiomuse off`
@@ -2939,6 +2978,7 @@ impl Architecture {
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
         self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
         self.vararg_forward = true; // (kuna) default-on: a declared parameter forwarded unchanged in its own register to a variadic call's variable part is an argument (0/675 ablation)
+        self.vararg_shared_float = false; // (kuna) default-off: the register-choice reading holds only for -O0 code (post-RA scheduling defeats it at -O1+)
         self.callee_arity = true; // (kuna) DIV-102 default-on: one callee, one argument list across its call sites (0/675 ablation)
         self.callee_arity_fwd = true; // (kuna) DIV-PENDING default-on: retry that reconciliation against the siblings that finalize later (0/675 ablation)
         self.callee_arity_live = true; // (kuna) DIV-PENDING default-on: extend a partial argument list when the callee body agrees (0/675 ablation)
@@ -3004,6 +3044,7 @@ impl Architecture {
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.call_target_type = false; // (kuna) option calltargettype: default-OFF in the catalog because the XML datatest corpus pins the upstream `code *` spellings and applies no mode; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for every real binary
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
+        self.float_bits = true; // (kuna) option floatbits default-on: a float helper that only bit-ops its float-register input into its float-register return types float on both sides
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.partial_concat = true;
         self.arm_float_args = false; // (kuna) option armfloatargs default-off: scalar VFP input recovery is measured only on the feature's own corpus and one firmware image
@@ -3059,6 +3100,7 @@ impl Architecture {
         // (kuna) DIV-139 declared-name libc prototype lookup -- default-ON.
         self.analysis_declaredlibcproto = true;
         self.analysis_strings = true;
+        self.analysis_widestrings32 = false;
         self.analysis_widestrings = true; // (kuna) DIV-110: the StringsAnalyzer `allCharWidths` 2-byte width default-ON (a wide literal was read as its own first character)
         self.analysis_entry_disc = true;
         // (kuna) Unmapped-CALL-target entry suppression -- default-ON (it only ever
@@ -3091,6 +3133,7 @@ impl Architecture {
         self.analysis_eh_frame_full = false;
         // (kuna) DIV-61 `.eh_frame` FDE-interior entry suppression — default-ON.
         self.analysis_fdeinterior = true;
+        self.analysis_coldentry = true;
         // (kuna) `.pdata` RUNTIME_FUNCTION-interior entry suppression — default-ON.
         self.analysis_pdatainterior = true;
         // (kuna) PDB-procedure-interior entry suppression — default-ON.
@@ -3101,6 +3144,7 @@ impl Architecture {
         self.analysis_ptrentry = false; // (kuna) pointer-referenced ARM entries default-off (output-changing)
         self.analysis_poolentry = false; // (kuna) ARM literal-pool inference default-off
         self.analysis_arm_markers = true;
+        self.analysis_armfuncmode = true; // (kuna) even ARM function symbol = A32 when no mapping symbols
         self.analysis_entrythumbflow = true; // (kuna) entry-reachable Thumb context default-on; inert without a Thumb-bit entry
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
@@ -3614,6 +3658,8 @@ impl Architecture {
         // so `kuna_rustabi` reaches both via `glb`.
         ctx.rust_abi = self.rust_abi;
         ctx.source_is_rust = self.source_is_rust;
+        ctx.source_is_go = self.source_is_go;
+        ctx.reload_arg = self.reload_arg;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;
         // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`
@@ -3661,6 +3707,7 @@ impl Architecture {
         }
         ctx.codescalar = self.codescalar; // (kuna) codescalar
         ctx.bool_byte = self.bool_byte; // (kuna) boolbyte
+        ctx.float_bits = self.float_bits; // (kuna) floatbits
         ctx.unknown_byte_is_char =
             self.realtypes && self.print.out_lang() == crate::kuna_lang::OutLang::C;
         ctx.int_promotion = self.print.out_lang().profile().caps.integer_promotion;
@@ -3703,6 +3750,7 @@ impl Architecture {
         ctx.stack_arg_gap = self.stack_arg_gap; // stackarggap
         ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
         ctx.vararg_forward = self.vararg_forward; // varargforward
+        ctx.vararg_shared_float = self.vararg_shared_float; // varargsharedfloat
         ctx.callee_arity = self.callee_arity; // calleearity
         ctx.callee_arity_fwd = self.callee_arity_fwd; // calleearityfwd
         ctx.callee_arity_live = self.callee_arity_live; // calleearitylive
@@ -4614,7 +4662,8 @@ impl Architecture {
     fn register_string_builtins(&mut self) -> KunaResult<()> {
         use crate::userop::{
             BUILTIN_MEMCPY, BUILTIN_MEMSET, BUILTIN_STRINGDATA, BUILTIN_STRNCPY,
-            BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
+            BUILTIN_SYSCALL_ERROR, BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE,
+            BUILTIN_WCSNCPY,
         };
         // Split the &mut userops borrow from the &self type-factory read by
         // building a small adapter over the (already-populated) factory.
@@ -4643,6 +4692,8 @@ impl Architecture {
             userops.register_builtin(BUILTIN_WCSNCPY, &adapter)?;
             // (kuna GH-9230/1537) the constant-fill recovery CALLOTHER.
             userops.register_builtin(BUILTIN_MEMSET, &adapter)?;
+            // (kuna syscallregs) the MIPS/PowerPC system-call failure flag.
+            userops.register_builtin(BUILTIN_SYSCALL_ERROR, &adapter)?;
             Ok(())
         })();
         self.userops = userops;

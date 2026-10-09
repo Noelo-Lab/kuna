@@ -737,6 +737,11 @@ pub struct ArchContext {
     /// what `option rustabi auto` tests.  Copied from the engine `Architecture`
     /// in `build_arch_handle`.
     pub source_is_rust: bool,
+    /// (kuna) The loader's Go verdict for this image; `option reloadarg`
+    /// stands down on Go.  Copied from the engine `Architecture`.
+    pub source_is_go: bool,
+    /// (kuna) `option reloadarg`; read by [`crate::p4_calls::kuna_reloadarg`].
+    pub reload_arg: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
     /// `sub_<addr>` / `dat_<addr>` rather than `func_<addr>` (C++
     /// `Architecture::name_style_angr`, default-on).  Read by the call-spec
@@ -848,6 +853,11 @@ pub struct ArchContext {
     /// [`Architecture::bool_byte`](crate::architecture::Architecture); the walk
     /// lives in [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
     pub bool_byte: bool,
+    /// (kuna `floatbits`) A function whose float-register input is only
+    /// bit-opped into its float-register return keeps the float on both.
+    /// Mirror of [`Architecture::float_bits`](crate::architecture::Architecture);
+    /// the walk lives in [`kuna_floatbits`](crate::p5_types::kuna_floatbits).
+    pub float_bits: bool,
     /// (kuna) The printer spells a residual one-byte TYPE_UNKNOWN as C `char`
     /// (`realtypes` on, C output), so its promotion sign-extends.  Read by
     /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
@@ -1063,6 +1073,10 @@ pub struct ArchContext {
     /// variable part (`varargforward`).  Read by
     /// [`crate::p4_calls::kuna_varargforward::forwards_declared_parameter`].
     pub vararg_forward: bool,
+    /// (kuna) keep a counted variadic double that also feeds an earlier
+    /// argument (`varargsharedfloat`).  Read by
+    /// [`crate::p4_calls::kuna_varargsharedfloat::feeds_earlier_argument`].
+    pub vararg_shared_float: bool,
     /// (kuna) reconcile a call's recovered argument list with a sibling call to
     /// the same callee (`calleearity`).  Read by
     /// [`build_input_from_trials`](crate::funcdata_callsite::build_input_from_trials)
@@ -1671,6 +1685,10 @@ impl ArchContext {
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
             source_is_rust: false,
+            source_is_go: false,
+            // (kuna) `option reloadarg` default-on; the real value is copied
+            // from the engine Architecture in `build_arch_handle`.
+            reload_arg: true,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
             // (kuna, Phase 3) ghidra-mode-only; never set on the standalone path.
@@ -1711,6 +1729,7 @@ impl ArchContext {
             field_type: false, // (kuna) option fieldtype, copied from Architecture
             codescalar: false,           // (kuna) option codescalar
             bool_byte: true, // (kuna) option boolbyte (default on)
+            float_bits: true, // (kuna) option floatbits (default on)
             unknown_byte_is_char: false, // (kuna) realtypes + C output
             int_promotion: true,         // (kuna) LangCaps::integer_promotion (C)
             char_byte: true, // (kuna) option charbyte
@@ -1781,6 +1800,7 @@ impl ArchContext {
             stack_arg_gap: true,         // stackarggap (DIV-140 default-on)
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             vararg_forward: true,        // varargforward (default-on)
+            vararg_shared_float: false,  // varargsharedfloat (default-off)
             callee_arity: true,          // calleearity (DIV-102 default-on)
             callee_arity_fwd: true,      // calleearityfwd (default-on)
             callee_arity_live: true,     // calleearitylive (default-on)

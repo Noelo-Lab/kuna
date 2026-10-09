@@ -50,6 +50,22 @@ fn arm_thumb() -> String {
         .to_string()
 }
 
+#[test]
+fn explicit_isa_does_not_pin_uniform_recovery_spans() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_stubs_o0_le32");
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all", bin.to_str().unwrap(), "--json", "--isa", "arm",
+        "--mode", "reliable", "--option", "funcstart_patterns", "on",
+        "--option", "armframes", "on", "--option", "aif", "on",
+    ]);
+    assert!(ok, "{stderr}");
+    let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let function = doc["functions"].as_array().unwrap().iter()
+        .find(|function| function["address"].as_u64() == Some(0x48a)).unwrap();
+    let code = function["code"].as_str().unwrap();
+    assert!(code.contains("dat_2010") && !code.contains("halt_baddata"), "{code}");
+}
+
 fn arm_thumb_pe() -> String {
     repo_root()
         .join("decompiler/crates/kuna-analysis/tests/fixtures/armv4t_thumb_pe.exe")
@@ -2456,6 +2472,7 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
         for level in ["-O0", "-O2"] {
             let compiled = Command::new(cc)
                 .args(["-std=gnu11", "-w", "-fno-pie", "-no-pie", level])
+                .args(common::CC_GCC15_DEMOTE)
                 .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                 .output()
                 .expect("spawn the C compiler");
@@ -2494,6 +2511,7 @@ fn compile_and_run_each(tag: &str, src: &str) -> Vec<(String, String)> {
     for cc in round_trip_compilers() {
         let exe = dir.join(format!("rt-{cc}"));
         let built = Command::new(cc)
+            .args(common::CC_GCC15_DEMOTE)
             .args(["-std=gnu11", "-w", "-Werror=int-conversion", "-Werror=implicit-function-declaration", "-o"])
             .arg(&exe)
             .arg(&file)
@@ -2841,6 +2859,7 @@ fn compile_pair_and_run_each(tag: &str, lib: &str, main: &str) -> Vec<(String, S
     for cc in round_trip_compilers() {
         let exe = dir.join(format!("rt-{cc}"));
         let built = Command::new(cc)
+            .args(common::CC_GCC15_DEMOTE)
             .args(["-std=gnu11", "-w", "-Werror=int-conversion", "-Werror=implicit-function-declaration", "-o"])
             .arg(&exe)
             .arg(&main_file)
@@ -3034,6 +3053,116 @@ fn a_return_stated_in_another_register_is_not_reinterpreted() {
     assert!(ok, "kuna decompile-all failed: {stderr}");
     assert!(stdout.contains("unsigned long sub_11c0("), "sub_11c0 no longer returns rax; re-pick the case:\n{stdout}");
     assert!(!stdout.contains(".from = sub_11c0("), "a return in rax reinterpreted as xmm0's float:\n{stdout}");
+}
+
+/// `floatbitshelper_armhf.o` (Cortex-M4F hard-float, clang -O2), `floatbitshelper_a64_O0.o`
+/// (AArch64, clang -O0) and `floatbitshelper_x86_64_gcc_O2` (stripped), built from
+/// `floatbitshelper.c`: `fb_fabsf`, `fb_negf` and `fb_copysignf` mask or flip the bits
+/// of the floats they receive in `s0`/`xmm0` and hand them back there,
+/// `fb_isnanf` compares them, and `fb_fabs` masks a double (`d0`/`xmm0`). Each printed
+/// `unsigned int (unsigned int)`, which C passes in a general register, so
+/// `fb_use` handed `fb_fabsf` its float as a number and wrapped each result in
+/// a union. `fb_keep` adds 1 to the bits `fb_fabsf` returns and keeps them as an
+/// integer, which now reinterprets the float at the call. The printed
+/// functions, compiled with gcc and clang and called with the source's floats,
+/// compute the fixture's bits; `fb_bump`, `fb_store` and `fb_mix` compute with,
+/// store or or an integer into the bits and keep their integer types.
+#[test]
+fn a_float_bit_helper_round_trips() {
+    let sp = specs();
+    let fixture = |name: &str| repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+    let prelude = format!(
+        "#include <stdio.h>\n#include <string.h>\n#include <stdbool.h>\n{BITS}\
+         #define ABS(x) _Generic((x), float: __builtin_fabsf, double: __builtin_fabs)(x)\n"
+    );
+    for (tag, name) in [("armhf", "floatbitshelper_armhf.o"), ("a64-O0", "floatbitshelper_a64_O0.o")] {
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture(name), "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        for want in [
+            "float fb_fabsf(float a0)",
+            "float fb_negf(float a0)",
+            "float fb_copysignf(float a0,float a1)",
+            "bool fb_isnanf(float a0)",
+            "v1 = fb_fabsf(a0 - a1);",
+            "v3 = fb_copysignf(3.0,a0);",
+            "*a1 = ((union { float from; int to; }){ .from = fb_fabsf(a0) }).to + 1;",
+            "int fb_bump(int a0)",
+            "void fb_store(unsigned int a0,unsigned int *a1)",
+            "unsigned int fb_mix(unsigned int a0,unsigned int a1)",
+        ] {
+            assert!(stdout.contains(want), "{tag}: missing `{want}`:\n{stdout}");
+        }
+        if tag == "a64-O0" {
+            for want in ["double fb_fabs(double a0)", "return fb_fabs(a0) * 3.0;"] {
+                assert!(stdout.contains(want), "{tag}: missing `{want}`:\n{stdout}");
+            }
+        }
+        let printed = printed_functions(
+            &stdout,
+            &["fb_fabsf ", "fb_negf ", "fb_copysignf ", "fb_isnanf ", "fb_bump ", "fb_store ", "fb_mix ", "fb_use ", "fb_keep "],
+        );
+        assert!(!printed.contains("float to; }){ .from = fb_"), "{tag}: a helper's result is reinterpreted as a float:\n{printed}");
+        let src = format!(
+            "{prelude}{printed}\n\
+             int main(void) {{\n  float a = -1.5f, b = 2.25f, n = -__builtin_nanf(\"\");\n  unsigned int s = 0;\n  int k = 0;\n  \
+             fb_store({}, &s);\n  fb_keep(a, &k);\n  \
+             printf(\"%llx %llx %llx %d %d %llx %x %llx %llx %llx %x\\n\", BITS(fb_fabsf(a)), BITS(fb_negf(a)), BITS(fb_copysignf(b, a)), \
+             (int)fb_isnanf(a), (int)fb_isnanf(n), BITS(fb_fabsf(n)), s, BITS(fb_bump({})), BITS(fb_mix({}, 0x80000000u)), BITS(fb_use(a, b)), k);\n  \
+             return 0;\n}}\n",
+            arg_of_bits(&printed, "fb_store", 0, 0xbfc0_0000),
+            arg_of_bits(&printed, "fb_bump", 0, 0xbfc0_0000),
+            arg_of_bits(&printed, "fb_mix", 0, 0x3fc0_0000),
+        );
+        for (cc, got) in compile_and_run_each(&format!("floatbits-{tag}"), &src) {
+            assert_eq!(
+                got, "3fc00000 3fc00000 c0100000 0 1 7fc00000 3fc00000 bfc00001 bfc00000 40100000 3fc00001",
+                "{tag} {cc}: the printed C computes something else:\n{printed}"
+            );
+        }
+    }
+
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture("floatbitshelper_x86_64_gcc_O2"), "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in [
+        "float sub_12f0(float a0)",
+        "float sub_1310(float a0)",
+        "float sub_1330(float a0,float a1)",
+        "bool sub_1360(float a0)",
+        "double sub_1380(double a0)",
+        "void sub_13c0(unsigned int a0,unsigned int *a1)",
+        "unsigned int sub_13e0(unsigned int a0,unsigned int a1)",
+    ] {
+        assert!(stdout.contains(want), "x86-64: missing `{want}`:\n{stdout}");
+    }
+    let printed = printed_functions(&stdout, &["sub_12f0 ", "sub_1310 ", "sub_1330 ", "sub_1360 ", "sub_1380 "]);
+    let src = format!(
+        "{prelude}{printed}\n\
+         int main(void) {{\n  float a = -1.5f, b = 2.25f, n = -__builtin_nanf(\"\");\n  double d = -4.5;\n  \
+         printf(\"%llx %llx %llx %d %d %llx %llx\\n\", BITS(sub_12f0(a)), BITS(sub_1310(a)), BITS(sub_1330(b, a)), \
+         (int)sub_1360(a), (int)sub_1360(n), BITS(sub_12f0(n)), BITS(sub_1380(d)));\n  return 0;\n}}\n"
+    );
+    for (cc, got) in compile_and_run_each("floatbits-x86-64", &src) {
+        assert_eq!(got, "3fc00000 3fc00000 c0100000 0 1 7fc00000 4012000000000000", "x86-64 {cc}: the printed C computes something else:\n{printed}");
+    }
+}
+
+/// `floatbitswithdraw_armhf.o` (Cortex-M4F hard-float, clang -O2, built from
+/// `floatbitswithdraw.c`): `abs_bits` returns the bits `fbabs` hands back in
+/// `s0` as an integer, which withdraws `fbabs`'s float return, and with it the
+/// float parameter the same bit ops gave it. `from_bits` tail-calls `fbabs`
+/// without reading its result, and was printed before the withdrawal as
+/// `fbabs(((union { unsigned int from; float to; }){ .from = a0 }).to)`, a
+/// float handed to the final `unsigned int fbabs(unsigned int a0)`, which C
+/// converts by value. Every caller of the helper is now decompiled again.
+#[test]
+fn a_withdrawn_float_bit_helper_is_called_with_its_final_prototype() {
+    let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatbitswithdraw_armhf.o").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    assert!(stdout.contains("unsigned int fbabs(unsigned int a0)"), "fbabs is no longer withdrawn; re-pick the case:\n{stdout}");
+    assert!(stdout.contains("  fbabs(a0); // tail-call"), "from_bits does not call fbabs with its integer:\n{stdout}");
+    assert!(!stdout.contains("float to; }){ .from = a0 }).to)"), "a float is handed to fbabs's integer parameter:\n{stdout}");
 }
 
 /// `floatret_put_{cm4,a64}.o` (Cortex-M4F and AArch64, clang -O2): `putf2` moves
@@ -3463,6 +3592,7 @@ fn a_float_pointee_keeps_the_callers_integer_stores_round_trip() {
         .unwrap();
         let cc = Command::new("cc")
             .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+            .args(common::CC_GCC15_DEMOTE)
             .output()
             .expect("spawn cc");
         assert!(
@@ -4650,6 +4780,7 @@ fn a_sign_contested_synthesized_field_round_trips_through_the_printed_c() {
     .unwrap();
     let cc = Command::new("cc")
         .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+        .args(common::CC_GCC15_DEMOTE)
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed f did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
@@ -4708,6 +4839,7 @@ fn a_float_and_integer_union_field_round_trips_through_the_printed_c() {
     .unwrap();
     let cc = Command::new("cc")
         .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+        .args(common::CC_GCC15_DEMOTE)
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed vread did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
@@ -4764,6 +4896,7 @@ fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
         .unwrap();
         let cc = Command::new("cc")
             .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+            .args(common::CC_GCC15_DEMOTE)
             .output()
             .expect("spawn cc");
         assert!(cc.status.success(), "the printed f did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
@@ -4869,6 +5002,7 @@ int main(void) {
                 .unwrap();
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .args(common::CC_GCC15_DEMOTE)
                     .output()
                     .expect("spawn the C compiler");
                 assert!(
@@ -5040,6 +5174,7 @@ int main(void) {
                 let exe = dir.join("rt");
                 std::fs::write(&src, format!("{PRELUDE}{printed}\n{MAIN}")).unwrap();
                 let mut cmd = Command::new(cc);
+                cmd.args(common::CC_GCC15_DEMOTE);
                 cmd.args(["-std=gnu11", "-w", "-Werror=int-conversion", "-o", exe.to_str().unwrap()]);
                 if clang {
                     cmd.arg("-DNO_CELL");
@@ -5213,6 +5348,7 @@ int main(void) {
                     .unwrap();
                     let out = Command::new(cc)
                         .args(["-std=gnu11", level, "-w", "-Wno-error=int-conversion", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                        .args(common::CC_GCC15_DEMOTE)
                         .output()
                         .expect("spawn the C compiler");
                     assert!(
@@ -5462,8 +5598,9 @@ int main(void) {
                     )
                     .unwrap();
                     let out = Command::new(cc)
+                        .args(common::CC_GCC15_DEMOTE)
                         .args([
-                            "-std=gnu11", level, "-w", "-fno-strict-aliasing", "-fwrapv", "-Wno-error=int-conversion",
+                            "-std=gnu11", level, "-w", "-fno-strict-aliasing", "-fwrapv", "-Wno-error=int-conversion", "-Werror=incompatible-pointer-types",
                             "-o", exe.to_str().unwrap(), src.to_str().unwrap(),
                         ])
                         .output()
@@ -5776,6 +5913,7 @@ int main(void) {
                     .unwrap();
                     let out = Command::new(cc)
                         .args(["-std=gnu11", "-w", "-Wno-error=int-conversion", level])
+                        .args(common::CC_GCC15_DEMOTE)
                         .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                         .output()
                         .expect("spawn the C compiler");
@@ -5987,6 +6125,7 @@ int main(void) {
                     .unwrap();
                     let out = Command::new(cc)
                         .args(["-std=gnu11", "-w", "-Wno-error=int-conversion", level])
+                        .args(common::CC_GCC15_DEMOTE)
                         .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                         .output()
                         .expect("spawn the C compiler");
@@ -6210,6 +6349,7 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
             .unwrap();
             let cc = Command::new("cc")
                 .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), c.to_str().unwrap()])
+                .args(common::CC_GCC15_DEMOTE)
                 .output()
                 .expect("spawn cc");
             assert!(
@@ -6335,6 +6475,7 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
             .unwrap();
             let cc = Command::new("cc")
                 .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), c.to_str().unwrap()])
+                .args(common::CC_GCC15_DEMOTE)
                 .output()
                 .expect("spawn cc");
             assert!(
@@ -6458,6 +6599,7 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
             .unwrap();
             let cc = Command::new("cc")
                 .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), c.to_str().unwrap()])
+                .args(common::CC_GCC15_DEMOTE)
                 .output()
                 .expect("spawn cc");
             assert!(
@@ -6622,7 +6764,12 @@ fn check_globalref_round_trip(run_native: bool) {
             for n in &names {
                 args.push(format!("-Wl,--defsym,{n}=0x{}", &n[4..]));
             }
-            let built = Command::new(cc).args(&args).current_dir(&out).output().expect("spawn cc");
+            let built = Command::new(cc)
+                .args(&args)
+                .args(common::CC_GCC15_DEMOTE)
+                .current_dir(&out)
+                .output()
+                .expect("spawn cc");
             assert!(
                 built.status.success(),
                 "{arm}/{cc}: the printed callers did not compile:\n{}\n{printed}",
@@ -6729,6 +6876,7 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
         .unwrap();
         let cc = Command::new("cc")
             .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+            .args(common::CC_GCC15_DEMOTE)
             .output()
             .expect("spawn cc");
         assert!(cc.status.success(), "{name}: the printed C did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
@@ -6825,6 +6973,7 @@ int main(void) {
     std::fs::write(&src, harness.replace("@PRINTED@", &stdout)).unwrap();
     let cc = Command::new("cc")
         .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+        .args(common::CC_GCC15_DEMOTE)
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed functions did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
@@ -6921,6 +7070,7 @@ int main(void) {
     std::fs::write(&src, harness.replace("@PRINTED@", &printed)).unwrap();
     let cc = Command::new("cc")
         .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+        .args(common::CC_GCC15_DEMOTE)
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed functions did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
@@ -7298,6 +7448,7 @@ int main(void) {
                     .unwrap();
                     let out = Command::new(cc)
                         .args(["-std=gnu11", "-w", "-Wno-error=int-conversion", level])
+                        .args(common::CC_GCC15_DEMOTE)
                         .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                         .output()
                         .expect("spawn the C compiler");
@@ -7540,7 +7691,12 @@ fn check_elemptr_round_trip(run_native: bool) {
                 for n in &names {
                     args.push(format!("-Wl,--defsym,{n}=0x{}", &n[4..]));
                 }
-                let built = Command::new(cc).args(&args).current_dir(&out).output().expect("spawn cc");
+                let built = Command::new(cc)
+                    .args(&args)
+                    .args(common::CC_GCC15_DEMOTE)
+                    .current_dir(&out)
+                    .output()
+                    .expect("spawn cc");
                 assert!(
                     built.status.success(),
                     "{build} {arm}/{cc}: the printed witnesses did not compile:\n{}\n{printed}",
@@ -7702,6 +7858,7 @@ fn check_narrowload_round_trip(
                         "harness.c",
                         "printed.c",
                     ])
+                    .args(common::CC_GCC15_DEMOTE)
                     .current_dir(&out)
                     .output()
                     .expect("spawn cc");
@@ -7947,6 +8104,7 @@ int main(void) {
                 .unwrap();
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .args(common::CC_GCC15_DEMOTE)
                     .output()
                     .expect("spawn the C compiler");
                 assert!(
@@ -8048,6 +8206,7 @@ fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
             args.extend(kept.iter().map(|k| format!("-DGLOBALSTORE_KEEP_{k}")));
             let out = Command::new(cc)
                 .args(&args)
+                .args(common::CC_GCC15_DEMOTE)
                 .args(["-o", exe.to_str().unwrap(), printed.to_str().unwrap(), harness.to_str().unwrap()])
                 .output()
                 .expect("spawn the C compiler");
@@ -8162,6 +8321,7 @@ fn bejoin_round_trip(label: &str, src_text: &str, printed: &str) {
             std::fs::write(&src, src_text).unwrap();
             let out = Command::new(cc)
                 .args(["-std=gnu11", "-w", "-fwrapv", "-Wno-error=int-conversion", level])
+                .args(common::CC_GCC15_DEMOTE)
                 .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                 .output()
                 .expect("spawn the C compiler");

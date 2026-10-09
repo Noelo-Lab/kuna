@@ -1520,7 +1520,11 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
     if crate::p6_variables::kuna_pointeevalue::load_crosses_write(data, vn) {
         return false;
     }
-    if (data.obank().get(def).map(|o| o.is_call()).unwrap_or(false) || opc == OpCode::CPUI_LOAD)
+    // (kuna syscallregs) a system call's error flag reads like the call it
+    // follows, so it is printed ahead of any later call as well.
+    if (data.obank().get(def).map(|o| o.is_call()).unwrap_or(false)
+        || opc == OpCode::CPUI_LOAD
+        || crate::kuna_syscallregs::is_error_flag(data, def))
         && has_cover
     {
         for callop in crate::kuna_syscallregs::memory_calls(data).into_iter()

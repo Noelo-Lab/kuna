@@ -206,6 +206,7 @@ kuna_options! { self, p1;
     "retinputhalf" => on_off!(ret_input_half, "Returned input-parameter half retention"),
     "retpushedhalf" => on_off!(ret_pushed_half, "Push-only register placement rejection"),
     "retsysreg" => on_off!(ret_sys_reg, "System-register operand high-word rejection"),
+    "reloadarg" => on_off!(reload_arg, "Frame-reload scratch-register argument rejection"),
     "noreturnretuse" => on_off!(noreturn_ret_use, "No-return call argument use in return trials"),
     "zeroidiomuse" => on_off!(zero_idiom_use, "Self-cancelling zeroing-idiom use in input trials"),
     "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
@@ -401,6 +402,7 @@ kuna_options! { self, p1;
         self.vararg_forward = val;
         Ok(msg)
     },
+    "varargsharedfloat" => on_off!(vararg_shared_float, "variadic doubles that also feed an earlier argument"),
     "calleearity" => {
         let (val, msg) =
             crate::p4_calls::kuna_calleearity::OptionCalleeArity.apply(p1)?;
@@ -687,6 +689,7 @@ kuna_options! { self, p1;
     "floatglobals" => on_off!(float_globals, "float typing of globals moved only through float registers"),
     "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
     "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
+    "floatbits" => on_off!(float_bits, "float typing of helpers that work on a float's bits"),
     "charbyte" => on_off!(char_byte, "char-pointer byte typing"),
     "castarith" => on_off!(cast_arith, "pointer arithmetic in pointer terms"),
     "castindex" => on_off!(cast_index, "variable indexes and pointer differences in pointer terms"),
@@ -760,6 +763,9 @@ kuna_options! { self, p1;
     "widestrings" => {
         on_off!(analysis_widestrings, "UTF-16LE width of the string-literal pass")
     },
+    "widestrings32" => {
+        on_off!(analysis_widestrings32, "UTF-32 width of the string-literal pass")
+    },
     "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
     "unmappedentry" => {
         on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
@@ -810,6 +816,9 @@ kuna_options! { self, p1;
     "eh_frame_full" => {
         on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
     },
+    "coldentry" => {
+        on_off!(analysis_coldentry, "Multi-entry .cold fragment entry discovery")
+    },
     "fdeinterior" => {
         on_off!(analysis_fdeinterior, ".eh_frame FDE-interior entry suppression")
     },
@@ -838,6 +847,7 @@ kuna_options! { self, p1;
         )
     },
     "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
+    "armfuncmode" => on_off!(analysis_armfuncmode, "A32 mode at even ARM function symbols"),
     "entrythumbflow" => {
         on_off!(analysis_entrythumbflow, "Entry-reachable Thumb context walk")
     },

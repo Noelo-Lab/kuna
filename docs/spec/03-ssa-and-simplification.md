@@ -5,6 +5,18 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p3_dataflow
 ```
 
+A LOAD through a pointer with an explicitly volatile pointee is treated as a
+volatile read by early removal and consume-based dead-code elimination, even
+when its value is unused. This type fact supplements the existing volatile
+address-range lookup; qualification of the pointer object alone does not mark
+its pointee volatile. The lookup follows typedef qualification without marking
+unqualified pointers.
+Before inference has typed an address temporary, a bounded walk through copies,
+casts, pointer arithmetic, and pointer loads can recover its declared pointer
+type. That walk is enabled only after the type factory has seen an explicit
+volatile type. Repeated SLEIGH loads of the same SSA pointer at one instruction
+are still one read; distinct instructions remain separate reads.
+
 This phase owns the **definition web**: the SSA linkage over the op-graph
 (heritage — phi placement, renaming, call/return/load/store guards, the
 dead-definition gate) and the **simplification fixpoint** that runs over it (the
@@ -681,9 +693,9 @@ At `off` none of them runs, which is what kuna shipped before the option.
 `option stackstoreguard` (default on) also enables STORE guards at
 `indexaliasguard load` and `global` for constant-initialized stack slots. Before normalizing
 partial reads, it checks for a constant write (through COPY, SUBPIECE or
-integer extension) and the processor's stack space. Only byte STOREs already
-recorded by indexed stack-pointer discovery qualify; globals, unknown pointers
-and wider stores retain the explicit `full` policy. The gate lives in
+integer extension) and the processor's stack space. For this family only byte
+STOREs already recorded by indexed stack-pointer discovery qualify; globals and
+unknown pointers retain the explicit `full` policy. The gate lives in
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackstoreguard.rs`.
 A heritage pass also leaves the whole frame unguarded when one of those byte
 STOREs, or any other LOAD or STORE whose address comes from the stack pointer,
@@ -697,13 +709,61 @@ earlier pass guarded the frame, the option is turned off for the whole function
 (`heritage.rs (store_frame_resolves)`), which then decompiles exactly as with
 `stackstoreguard off`.
 
+The option's second family guards a slot the function writes with any value,
+against indexed STOREs of any width. A stack range whose writes include one
+that is not an `INDIRECT` or `MULTIEQUAL` (`kuna_stackstoreguard.rs
+(indexed_enabled)`) gets an `indirect_store` `INDIRECT` at each STORE that
+indexed stack-pointer discovery recorded, is not already guarded, and may
+write a byte of the range (`kuna_stackstoreguard.rs (indexed_stores)`, called
+from `heritage.rs (Heritage::guard_indexed_stores)`). Whether it may is read
+from the STORE's guard window (`kuna_stackstoreguard.rs (window_overlaps)`):
+an unanalyzed STORE may write anywhere, one whose value-set range is locked
+writes its window plus the store's width. Without a locked window or an
+independent pointer bound, the fallback covers four elements from the greater
+of the pointer's base and the provisional minimum, clipped to the provisional
+maximum plus the store width. If that entire byte range precedes the base,
+the fallback retains its inferred minimum so it remains nonempty. A signed
+index can put that window's minimum far below the base; using that minimum as
+the start of the four-element fallback would exclude the array itself and let
+its initializer replace a later read. Within any of these windows, the STORE
+writes no byte outside its pointer's own bound (`kuna_storereach.rs (store_window)`, cached per pass): the stack
+base plus constants plus indices bounded by their known-bits masks, by the
+divisor of an unsigned remainder, and by any constant they are multiplied or
+shifted by (`b[(i >> 4) % 12]` with `int b[12]` writes 48 bytes). A STORE with
+neither a locked window nor such a bound writes at most four elements of its
+width. This count matches the fallback extent used for open stack-array hints
+(upstream `MapState::gatherOpen` and `MapState::addGuard`), but the provisional
+guard and the layout hint need not share a starting address. For a wider STORE
+whose guard keeps a slot past those four, the layout makes the array as long as
+the bound (chapter 06, `kuna_storereach.rs (widen_open_hints)`). A STORE whose pointer
+comes from the stack pointer after the function moved it by a non-constant
+amount (`LoadGuard::dynamic_stack`, an `alloca`) writes dynamically allocated
+stack, not the frame, and is skipped. One whose pointer may be either, by path,
+keeps its guard here; chapter 06 withdraws it when the final layout still has a
+pointer the checks cannot follow (`kuna_storereach.rs (indexes_own_array)`). Once the pass is renamed and the new
+windows are analyzed, `kuna_stackstoreguard.rs (prune_indexed)` removes each
+such `INDIRECT` whose STORE's analyzed window turned out not to reach its
+range. The frame resolution check above applies to this family too.
+
+Without it, the value written to a slot before an indexed store was forwarded
+to a read after it: `b[0] = i; b[(i >> 4) % 12] = j; if (b[0]) ...` printed
+`if ((char)a0)`, which tests `i` where the binary re-reads `b[0]` and sees `j`
+when the index is 0. The same held for `int`, `long`, `short` and struct
+arrays. A slot past the first four elements of a store whose window is not
+locked and whose index has no bound heritage can read (`b[4]` after
+`b[i % 6] = 3` with `long b[6]` from gcc -O2, whose remainder is still a
+multiply and shift when the frame is guarded) is still not guarded;
+`indexaliasguard full` lays that slot out as a separate local, so it is not
+printed right there either.
+
 This bounded policy prevents an initializer from flowing unchanged across a
 byte-fill loop into a later direct byte or word read. Otherwise constant
 folding can delete a reachable condition and side-effecting call. Guards
 conservatively describe a possible write; they do not invent its value or
 prove its range. General store-alias recovery remains outside this policy:
-applying every indexed store guard changes parameter and aggregate recovery
-in existing cases, so it is not enabled by this option.
+guarding every slot at every store changes parameter and aggregate recovery
+in existing cases, so the option guards only stack slots an indexed stack
+STORE may reach.
 
 Turning `stackstoreguard off` restores the previous load-only behavior without
 changing the explicit `full` policy. `indexaliasguard off` suppresses both
@@ -871,6 +931,42 @@ flips its condition flag, preserving both branch destinations.
 bounded boolean fan-out first, before dropping guards could hide the proof.
 Thus ordinary UCOMISS conditions keep their ordered forms without granting
 an unguarded MINSS comparison a false complement.
+
+A guard matches an operand when both are the same value, or when both are
+reads of one location by one instruction: two LOADs through one pointer, or
+two not-yet-heritaged reads of one memory varnode, provided no op of that
+instruction stores, calls, or writes the location. This is how
+`comiss one(%rip),%xmm0` qualifies, since the SLEIGH `fucompe` macro reads its
+memory operand once for each flag. A complement built from such an operand
+is issued directly after the guarded comparison, so its fresh read sits at
+the same instruction, and a free memory varnode never gains a second reader.
+
+`RuleIgnoreNan` visits the guarded roots reachable from a NaN test outermost
+first, so `CF || ZF` folds before the `CF` it reads. A root whose live readers
+all consume it directly (a `setb`/`setbe` copy, a zero extension, an `sbb`
+borrow, a multiply) is rewritten in place to the negated complement:
+`NAN(a) || NAN(b) || a < b` becomes `!(b <= a)`, and with the matching
+equality `!(b < a)`, true for unordered inputs exactly as the flag is.
+Without this, the `nanignore compare` policy strips the guards and a `seta`
+after `comiss` prints as `!(x < c) && x != c`, which is true for a NaN. A root
+whose live readers combine it with other booleans (`&&`, `||`, `&`, `|`, `^`,
+or a copy) is not rewritten in place here; the negated and branch folds above
+still apply to it once those combinations are normalized. A root packed into a status word
+(`zext(flag) << n`, the x87 `fnstsw` path) is also left alone; those bits are
+only reassembled into a condition after the guards are gone, so x87
+status-word compares keep the upstream approximation.
+
+Every comparison these folds issue or rewrite carries the `kuna_exactfloat`
+addlflag (`decompiler/crates/kuna-decomp/src/substrate/op.rs`). It already
+decides the unordered case, so `RuleIgnoreNan`'s
+`ignorenan_check_back_for_compare` refuses to treat it as a comparison that
+protects a NaN test: an explicit `isnan(x) || x > c` or the `setnp`/`jp` of a
+separate compare keeps its `NAN(x)` term beside the exact comparison instead
+of being dropped against it. The mark survives op cloning (`CloneBlockOps::build_op_clone`, used when
+`RuleConditionalMove` hoists a branch's comparison or a block is duplicated,
+and `Funcdata::clone_op`). Dropping it was harmless while both sides were
+approximated, because the two approximations cancelled; beside an exact
+comparison it changes the value for a NaN.
 
 The upstream rule set is ported across eight files in C++ definition order —
 `ruleaction.cc` split at class boundaries. The map, by dominant theme (named

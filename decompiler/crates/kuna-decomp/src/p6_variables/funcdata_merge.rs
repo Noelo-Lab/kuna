@@ -1180,7 +1180,7 @@ impl MergeContext for Funcdata {
             let op = self.get_call_specs(i).get_op();
             let (block_index, point) = self.op_cover_point(op);
             let order = self.op_order(op);
-            op_set.add_op_entry(PcodeOpSetEntry { id: op, block_index, point, order });
+            op_set.add_op_entry(PcodeOpSetEntry { id: op, block_index, point, order, store: false });
         }
 
         // store-guard arm: every store-guard whose op is still a live STORE
@@ -1201,7 +1201,7 @@ impl MergeContext for Funcdata {
             }
             let (block_index, point) = self.op_cover_point(op);
             let order = self.op_order(op);
-            op_set.add_op_entry(PcodeOpSetEntry { id: op, block_index, point, order });
+            op_set.add_op_entry(PcodeOpSetEntry { id: op, block_index, point, order, store: self.stack_store_guard() });
             guard_ranges.push((
                 op,
                 Rc::clone(&guard.spc),

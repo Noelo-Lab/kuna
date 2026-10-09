@@ -391,6 +391,14 @@ variants cover the modern cspec vocabulary: `GotoStack`, `ConvertToPointer`,
 storage classes), `ConsumeAs`, `HiddenReturnAssign`, and the resource-burning
 side-effects `ConsumeExtra`, `ExtraStack`, `ConsumeRemaining`.
 
+When a `MultiSlotAssign` takes no register and spills the whole argument to the
+stack, upstream rounds its slot up to the data type's alignment. The kuna
+`<join stackalign="false"/>` attribute skips that rounding, so the argument
+takes the next free stack slot (`modelrules.rs (AssignAction::assign_address)`).
+`SparcV9_32.cspec` sets it: SPARC32 passes arguments as consecutive words, while
+its data organization aligns eight-byte objects to eight for structure layout.
+Every other cspec keeps the upstream rounding.
+
 The bundled AArch64 cspecs (`AARCH64.cspec`, `AARCH64_apple.cspec` and
 `AARCH64_win.cspec`) never split an argument wider than one general register
 between x7 and the stack. AAPCS64 passes such an argument wholly in registers
@@ -1271,6 +1279,16 @@ classified:
   The cost is a function that really returns, as the high half of a 64-bit
   value, a register it also handed to the kernel: that half is dropped.
 
+  (kuna) The MIPS `a3` / PowerPC `cr0` error flag that `syscallregs` defines
+  after a system call with `syscall_error()` (chapter 02) is the kernel's write,
+  so `AncestorRealistic` treats it like a register value carried through a call:
+  a killed-by-call trial whose value is the flag fails
+  (`funcdata_varnode.rs (AncestorRealistic::enter_node)`, via
+  `kuna_syscallregs.rs (is_error_flag)`). Without this, gcc's `if (a3) return
+  fail(v0) * 3;` handed `fail` a fourth argument `syscall_error()`, the flag
+  still in `a3` at the call. A value the function writes to `a3` itself after
+  the system call stays an argument.
+
   The blanket STORE rejection exists to stop a value the caller writes to its
   own frame before a call from being mistaken for an argument. It also rejects
   the mirror-image idiom. On x86-64 SysV **no** xmm register is callee-saved, so
@@ -1391,6 +1409,44 @@ classified:
   co-executes with the call, so relaxing that shape is the fabrication the
   family's own design notes warn against. `off` restores the upstream
   rejection, in which any LOAD or STORE of the value sinks the trial.
+
+  (kuna) `reloadarg` (default-on,
+  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_reloadarg.rs (note, recheck)`)
+  judges a register reloaded from the caller's own frame again once the frame is
+  heritaged. Register trials are scored on `ActionActiveParam`'s first pass,
+  before `ActionStackPtrFlow` and the stack heritage, and a checked trial is
+  never scored again. At that point a value popped off the stack is a raw
+  `LOAD [rsp]`, and the ancestor walk takes any LOAD as solid movement. clang
+  `-O2` aligns the stack around a single call with `push %rax` and takes the
+  slot back with `pop %rcx` before a variadic tail call, so `rcx` was active and
+  `fillinMap` filled `rdx` in beneath it: `pr("%d",v1,v3,v2)` for a call that
+  passes one value. The walk records the LOADs it stopped at as solid. When the
+  trial goes active and one of them reads through the stack pointer
+  (`kuna_spillargtrial.rs (frame_slot)`), the trial is flagged and its call asks
+  for a final check.
+
+  When the call is finalized, before `fillinMap`, each flagged value is traced
+  back through COPY, SUBPIECE and PIECE, and through a call's INDIRECT on a stack
+  slot that the alias checker says no pointer reaches. The value is junk only
+  when every leaf is a register input that the function's own prototype kills
+  across calls and cannot take as a parameter. Under SysV that is `rax`, `r10`
+  and `r11`. A callee-saved input is a real value: `__builtin_frame_address(1)`
+  reads the caller's saved `rbp` (AArch64 `x29`) from the frame the same way.
+  So is a parameter, a stack input such as an incoming stack argument, a computed
+  value, a merge, an indirect store, a slot reached through a pointer, and a LOAD
+  the heritage left in place. Any of these ends the trace and keeps the first
+  verdict.
+
+  Junk trials are dropped (no-use) only from the top of the call's order in the
+  callee model (`possible_input_param_with_slot`). The walk stops at the first
+  active trial that is not junk. The order matters because `fillinMap` cuts every
+  trial above a definitely-unused one. A junk `rdx` below a real `rcx`
+  (`mov $10,%ecx; pop %rdx; jmp q`) therefore stays the hole the ABI fills, and
+  dropping it would have taken the real argument with it. A trial that the
+  call's resolved format string names is kept. A Go image (`source_is_go`, from
+  the loader's language detection) is left alone, because Go passes arguments in
+  registers the cspec calls scratch. `off` restores the first-pass verdict.
+
 - **Callee-body evidence** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs`):
   every test above reasons on the *caller's* side of the call, and on that side
   a live argument register at an unprototyped callee is exactly what a real
@@ -5038,6 +5094,67 @@ char *f, int a) { return pr(f); }` prints `pr(f,a)`, and an unused `double` in
 `d0` joins an AArch64 variadic call. The register holds that value when the
 callee starts, so the printed call compiles back to the same instructions.
 
+### (kuna) `varargsharedfloat` — a variadic double that also feeds an earlier argument
+
+(kuna) `varargsharedfloat` (default off,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargsharedfloat.rs
+(feeds_earlier_argument)`) keeps a 32-bit PowerPC variadic double whose value
+also feeds an earlier argument of the same call. `int a9(double x) { return
+sumi(2, x * 2, x); }` with `sumi(int, ...)` compiles at clang -O0 to
+`lfd 2,16(31); fadd 1,2,2; li 3,2; crset 6; bl sumi`. `x` is loaded once into
+f2, the second variadic double, and `x + x` is computed from it into f1. The
+walk `only_op_use` reaches the same CALL at f1's slot, and `checkCallDoubleUse`
+(`check_call_double_use`) refuses a value that also feeds another active
+argument. The f2 trial is inactive, and as the last one it is dropped, so the
+call prints `sumi(2,x + x)`. Optimized code copies the value instead
+(`fmr 2,1; fadd 1,1,1`) and prints correctly.
+
+The same instructions are what a scratch register looks like. clang compiles
+`sumi(1, *a * *b + *c)` to `lfd 0; lfd 1; lfd 2; fmadd 1,0,1,2; crset 6`, with
+`*c` in f2 and only f1 passed. CR bit 6 says only that some FPR is passed
+(`kuna_varargretreg` counts it as one), so the evidence is the register choice:
+a compiler gives a scratch double the lowest free FPR, f0 first, and a value
+held in f2 while a lower register was free was put there for the call. In
+`check_input_trial_use`, when `ancestor_op_use` leaves a trial inactive, the
+option keeps it when:
+
+* the call's prototype ends in `...` (the callee is declared variadic, by
+  DWARF or `--assert prototype`), the image passes variadic doubles under
+  CR bit 6 (32-bit PowerPC), and the call's block sets the bit;
+* the trial is an 8-byte floating-point entry of the model past the first, and
+  every earlier floating-point entry is an active trial;
+* the value at the call slot is written in the call's block by an op that is
+  not an INDIRECT or MULTIEQUAL, and every reader other than the call is in
+  that block before it;
+* f0 or one of those earlier floating-point registers is free over the value's
+  life as a scratch: from the instruction after the one writing it to the last
+  instruction before the call that reads it. A register is busy when an op in
+  that stretch writes it before the last reading instruction, or when an op
+  after the writing instruction, the call included, reads a value of it written
+  before the last reading instruction (an input, or a write in an earlier
+  block, counts as before). A write by the last reading instruction itself does
+  not count, since the scratch's last use and that write can share a register;
+* and `ancestor_op_use` passes when it is run again with the call recorded
+  (`Funcdata::kuna_set_shared_float_call`), so `check_call_double_use` accepts
+  a use that reaches another active slot of that same call. Any other
+  competing use, such as a store, a branch or another call, still refuses it.
+
+A trial kept this way is active, so `sumi(2,x + x,x)` and `sumi(3,x + x,y,x)`
+print. `sumi(2, x * 2, x * 3, x)` at -O0 (`lfd 3; fadd 1,3,3; lfs 0; fmul
+2,3,0`) is kept through f2, which the last reading instruction writes. The
+fmadd shape keeps its single argument, since f0 and f1 are both live while
+`*c` is.
+
+The register-choice reading holds only when nothing moves instructions after
+register allocation. clang's scheduler does so at -O1 and above, so a scratch
+value's readers can move until f0 or f1 looks free. On 1,200 random clang calls
+of a non-format variadic double function the option restores 91 dropped
+arguments at -O0 and adds none, and at -O2 and -Os restores 11 and adds 23
+arguments the source never passed (`sumi(2, x, 2.5 * (y + y + (y - x)))` with
+`fadd 3,2,2` scheduled above `lfs 0` prints a third argument `y + y`). It is
+therefore off by default and in no mode preset, and is meant for code built
+without optimization. With it off, upstream's refusal applies.
+
 ### (kuna) `callbacktype` — the prototype of the slot a callback is passed to
 
 `protoorder` carries a callee's types out to its callers and `calleevote`
@@ -6209,6 +6326,31 @@ float vote. A callee whose float return is declared (a libc row) or computed by
 its own float arithmetic is not withdrawn: its float is the type the machine
 computes, and a reader holding it as an integer prints what it did without the
 vote.
+
+(kuna `floatbits`, chapter 05.) A float return made of the bits of the
+function's float-register input is filed apart (`Ledger::float_bits`, and
+`Funcdata::kuna_callee_float_bits` in each caller's `seed`). A reader that
+holds the result of one in another register than the helper returns in holds
+what the call left there, and refuses nothing (`kuna_voidret.rs
+(elsewhere_than_return)`, on the register the caller holds the result in once
+the cast pass has reinterpreted it): betaflight's `bl fabsf; vcmpe.f32 s0,
+s15; .. pop {r4, pc}`, recovered returning the `r0` the call left, withdrew
+`fabsf`'s float from all 73 of its readers. The chain of
+wrappers stops at such a function when the withdrawn function also returns a
+float of its own arithmetic (`Ledger::own_float`, filed by `record` from
+`kuna_voidret.rs (returns_its_own_float)`): withdrawn, that function still
+returns a float, and taking back the helper's would change nothing it prints.
+A function whose float is only what such helpers return (`float wrapneg(float
+x) { return negf(x); }`, its return forced by the callers that read `xmm0`) is
+not withdrawn itself when a reader refuses it: withdrawn, it would lose the
+forced return and print `void`. The helpers are withdrawn instead
+(`Ledger::bits_withdrawn` remembers them), and it is decompiled again as their
+reader, returning the integer they now return. A withdrawn helper's parameters
+go back to integers as well, so `stale_readers` also returns every function
+that called it while it was float (`Ledger::bits_callers`, filed by `record`
+for every call, read or not): `from_bits`, which only tail-calls `fbabs`, had
+printed `fbabs(((union { unsigned int from; float to; }){ .from = a0 }).to)`
+against the final `unsigned int fbabs(unsigned int a0)`.
 
 A forced function whose final decompile still returns, on some path, a register
 a call only clobbers -- an INDIRECT creation the call's output never replaced --

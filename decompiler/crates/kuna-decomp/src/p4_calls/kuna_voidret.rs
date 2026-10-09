@@ -157,6 +157,18 @@ pub struct Ledger {
     /// Per function returning a float, the callees whose float return it hands
     /// on as its own ([`float_sources`]).
     pub float_sources: BTreeMap<(int4, uintb), BTreeSet<(int4, uintb)>>,
+    /// (kuna `floatbits`) The functions whose float return the bits of a
+    /// float-register input made one.
+    pub float_bits: BTreeSet<(int4, uintb)>,
+    /// The functions returning a float a float op of their own computes
+    /// ([`returns_its_own_float`]): withdrawn, they still return one.
+    pub own_float: BTreeSet<(int4, uintb)>,
+    /// The functions in `float_bits` when their float return was withdrawn.
+    pub bits_withdrawn: BTreeSet<(int4, uintb)>,
+    /// Per function in `float_bits`, every function that called it while it
+    /// was: a withdrawal takes its float parameters back as well, so each must
+    /// be decompiled again, whether or not it reads the result.
+    pub bits_callers: BTreeMap<(int4, uintb), BTreeSet<(int4, uintb)>>,
     /// The functions a forced return left returning a register a call only
     /// clobbers: withdrawn like a refused float return.
     pub unset: BTreeSet<(int4, uintb)>,
@@ -256,6 +268,17 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
     if returns == Some(Returns::Float) && converts_its_return(data) {
         arch.kuna_voidret.float_refused.entry(own).or_default().insert(own);
     }
+    let float = returns == Some(Returns::Float);
+    for (set, member) in [
+        (&mut arch.kuna_voidret.float_bits, float && data.kuna_float_bits_return()),
+        (&mut arch.kuna_voidret.own_float, float && returns_its_own_float(data)),
+    ] {
+        if member {
+            set.insert(own);
+        } else {
+            set.remove(&own);
+        }
+    }
     let sources = if returns == Some(Returns::Float) { float_sources(data) } else { BTreeSet::new() };
     if sources.is_empty() {
         arch.kuna_voidret.float_sources.remove(&own);
@@ -272,6 +295,9 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
         if callee == own || fc.proto().is_output_locked() {
             continue;
         }
+        if arch.kuna_voidret.float_bits.contains(&callee) {
+            arch.kuna_voidret.bits_callers.entry(callee).or_default().insert(own);
+        }
         let Some(outvn) = data.obank().get(fc.get_op()).filter(|o| !o.is_dead()).and_then(|o| o.get_out()) else {
             continue;
         };
@@ -281,6 +307,7 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
         }
         if arch.kuna_voidret.returns.get(&callee) == Some(&Returns::Float)
             && !wider_than_return(arch, callee, data, outvn)
+            && !(arch.kuna_voidret.float_bits.contains(&callee) && elsewhere_than_return(arch, callee, data, result))
             && !held_as_float(data, outvn, result)
         {
             arch.kuna_voidret.float_refused.entry(callee).or_default().insert(own);
@@ -341,6 +368,17 @@ fn holder(data: &Funcdata, outvn: crate::context::VarnodeId) -> crate::context::
 fn wider_than_return(arch: &Architecture, callee: (int4, uintb), data: &Funcdata, outvn: crate::context::VarnodeId) -> bool {
     let Some((_, size)) = arch.kuna_voidret.storage.get(&callee) else { return false };
     data.vbank().get(outvn).is_some_and(|v| v.get_size() > *size)
+}
+
+/// (kuna `floatbits`) Does the caller hold the call's result, `result`
+/// ([`holder`]), in another register than the one `callee` returns its float
+/// in?  That is what the call left there, not the callee's value: betaflight's
+/// `bl fabsf; vcmpe.f32 s0, s15; .. pop {r4, pc}` hands back the `r0` the call
+/// left, which says nothing about the type the caller holds the bits of
+/// `fabsf`'s float as.
+fn elsewhere_than_return(arch: &Architecture, callee: (int4, uintb), data: &Funcdata, result: crate::context::VarnodeId) -> bool {
+    let Some((addr, _)) = arch.kuna_voidret.storage.get(&callee) else { return false };
+    data.vbank().get(result).and_then(read_storage).is_some_and(|(read, _)| read != *addr)
 }
 
 /// Does the caller keep the call result `outvn` as a float: typed one, and
@@ -607,6 +645,11 @@ fn float_call_result(data: &Funcdata, node: &crate::varnode::Varnode) -> bool {
 /// vote made return `double`, and its reader's `dat_4060 = wrapd(..)` then
 /// converts by value. So the callees whose float it hands on are withdrawn
 /// with it, and theirs in turn, down the chain ([`float_sources`]).
+///
+/// (kuna `floatbits`) A function whose float is only what such callees return
+/// for the bits of their float-register input is left as it is: withdrawn, it
+/// would lose the return its readers forced, and it returns what the callees
+/// return once they are withdrawn and it is decompiled again as their reader.
 pub fn withdrawals(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
     let ledger = &mut arch.kuna_voidret;
     let float = |k: &(int4, uintb)| ledger.returns.get(k) == Some(&Returns::Float);
@@ -616,23 +659,63 @@ pub fn withdrawals(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
         .filter(|(k, readers)| !readers.is_empty() && float(k) && !ledger.displacing.contains(k))
         .map(|(k, _)| *k)
         .collect();
-    let mut out: BTreeSet<(int4, uintb)> =
-        refused.iter().chain(ledger.unset.iter()).copied().filter(|k| !ledger.withdrawn.contains(k)).collect();
+    let bits = |s: &(int4, uintb)| ledger.float_bits.contains(s) || ledger.bits_withdrawn.contains(s);
+    let hands_on_bits =
+        |k: &(int4, uintb)| !ledger.own_float.contains(k) && ledger.float_sources.get(k).is_some_and(|s| !s.is_empty() && s.iter().all(bits));
+    let mut out: BTreeSet<(int4, uintb)> = refused
+        .iter()
+        .filter(|k| !hands_on_bits(k))
+        .chain(ledger.unset.iter())
+        .copied()
+        .filter(|k| !ledger.withdrawn.contains(k))
+        .collect();
     let mut work = refused;
     let mut seen = BTreeSet::new();
     while let Some(k) = work.pop() {
         if !seen.insert(k) {
             continue;
         }
-        for s in ledger.float_sources.get(&k).into_iter().flatten().filter(|s| float(s)) {
+        let kept = |s: &(int4, uintb)| ledger.float_bits.contains(s) && ledger.own_float.contains(&k);
+        for s in ledger.float_sources.get(&k).into_iter().flatten().filter(|s| float(s) && !kept(s)) {
             if !ledger.withdrawn.contains(s) {
                 out.insert(*s);
             }
             work.push(*s);
         }
     }
+    let bits_now: Vec<(int4, uintb)> = out.iter().filter(|k| ledger.float_bits.contains(k)).copied().collect();
+    ledger.bits_withdrawn.extend(bits_now);
     ledger.withdrawn.extend(out.iter().copied());
     out
+}
+
+/// Does a live RETURN of `data` hand back, through copies and joins, a float
+/// one of its own float ops computes?  Withdrawn, the function still returns a
+/// float, so withdrawing a callee whose float it also hands on changes nothing
+/// it prints.
+fn returns_its_own_float(data: &Funcdata) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let mut work: Vec<crate::context::VarnodeId> = data
+        .obank()
+        .iter_code(OpCode::CPUI_RETURN)
+        .filter_map(|r| data.obank().get(r).filter(|o| !o.is_dead() && o.get_halt_type() == 0))
+        .flat_map(|o| (1..o.num_input()).filter_map(|s| o.get_in(s)).collect::<Vec<_>>())
+        .collect();
+    let mut seen = BTreeSet::new();
+    while let Some(v) = work.pop() {
+        if !seen.insert(v) || seen.len() > 256 {
+            continue;
+        }
+        let Some(def) = data.vbank().get(v).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d)) else { continue };
+        match def.code() {
+            OpCode::CPUI_COPY => work.extend(def.get_in(0)),
+            OpCode::CPUI_INDIRECT if !def.is_indirect_creation() => work.extend(def.get_in(0)),
+            OpCode::CPUI_MULTIEQUAL => work.extend((0..def.num_input()).filter_map(|k| def.get_in(k))),
+            code if crate::kuna_floatreg::makes_a_float(code) => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// The callees, last recovered returning a float, whose result reaches a live
@@ -981,6 +1064,12 @@ fn displaced(ledger: &Ledger, callee: &(int4, uintb), read: &(Address, int4)) ->
 /// withdrawn. Its other stale text is a conversion the listing leaves out; a
 /// second decompile of sort -O2's `main` alone cost ten seconds, two thirds of
 /// the first.
+///
+/// (kuna `floatbits`) A function whose bit-op float its withdrawal took back
+/// also takes back its float parameters, so every function that called it
+/// before is decompiled again, a reader or not: `from_bits`'s tail call
+/// `fbabs(((union { unsigned int from; float to; }){ .from = a0 }).to)` would
+/// hand a float to `unsigned int fbabs(unsigned int a0)`, which C converts.
 pub fn stale_readers(
     arch: &Architecture,
     stamp_of: &BTreeMap<(int4, uintb), usize>,
@@ -998,6 +1087,10 @@ pub fn stale_readers(
                     p.get_size() > 1 && p.get_metatype() != crate::dtype::type_metatype::TYPE_VOID
                 })
         });
+        if arch.kuna_voidret.bits_withdrawn.contains(callee) {
+            let callers = arch.kuna_voidret.bits_callers.get(callee).into_iter().flatten();
+            out.extend(callers.filter(|c| *c != callee && stamp_of.get(*c).is_some_and(|&s| s < at)));
+        }
         for reader in arch.kuna_voidret.readers.get(callee).into_iter().flatten() {
             if reader == callee || stamp_of.get(reader).is_none_or(|&s| s >= at) {
                 continue;
@@ -1129,6 +1222,11 @@ pub fn seed(arch: &Architecture, data: &mut Funcdata) {
         .filter_map(|k| Some((k, arch.kuna_voidret.storage.get(&k)?.clone())))
         .collect();
     data.kuna_set_callee_return_storage(storage);
+    let float_bits = (0..data.num_calls())
+        .filter_map(|i| key(data.get_call_specs(i).get_entry_address()))
+        .filter(|k| arch.kuna_voidret.float_bits.contains(k))
+        .collect();
+    data.kuna_set_callee_float_bits(float_bits);
     let own = key(data.get_address());
     data.kuna_set_wide_return(own.and_then(|k| arch.kuna_voidret.wide.get(&k).cloned()));
     let withdrawn = own.is_some_and(|k| arch.kuna_voidret.withdrawn.contains(&k));

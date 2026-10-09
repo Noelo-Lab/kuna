@@ -5,6 +5,18 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p9_emit
 ```
 
+C declarators preserve explicit type qualification. Qualifiers on a base or a
+named typedef precede its name; qualifiers on a pointer follow its own `*`.
+The declarator walk keeps those layers through arrays and function pointers,
+so `volatile uint4 *p` and `uint4 * volatile p` remain distinct. This applies to
+parameters, return types, declarations, and casts with either internal or target
+C scalar names. A named typedef is printed by its alias rather than expanding
+its inherited qualifiers.
+When an access needs a cast for its width, the cast retains the pointee's
+qualification. Value conversions ignore qualifiers (`cast.rs (cast_standard)`),
+so a store through `volatile float *p` prints `*p = x;` with no cast; only a
+pointer conversion that drops a `volatile` pointee still needs one.
+
 This phase renders the finished decompilation: it inserts the explicit
 cast/field-access operations a C compiler would need to *see* the recovered
 types (§9.1), then walks the structured block tree of chapter 08 and the SSA
@@ -252,8 +264,8 @@ literal formatter reads back at §9.2's constant push.
 per-opcode `getInputCast` surface (`coreaction_casts.rs (get_input_cast)`)
 what type the operator requires at that slot: LOAD/STORE coerce the pointer to
 match the moved value, EQUAL-class compares coerce both sides to the more
-ordered of the two operand types, LESS-class compares and div/rem/shift gate
-on promotion, PIECE/SUBPIECE/INSERT never cast, and everything else falls to
+ordered of the two operand types (an integer `==`/`!=` with a float operand
+excepted, below), LESS-class compares and div/rem/shift gate on promotion, PIECE/SUBPIECE/INSERT never cast, and everything else falls to
 the default `cast_standard(input-type-local, read-facing-high-type)`. A `None`
 answer means no cast — only the constant-suffix marking runs; the STORE's value
 slot returns `None` for a `code` pointee under `codescalar` (chapter 05), which
@@ -265,6 +277,30 @@ and a pointer-to-struct being read as pointer-to-its-first-field inserts a
 cast (`coreaction_casts.rs (test_struct_offset0)`). Only when all of that
 fails is a real `CPUI_CAST` op inserted before the reader, with an implied
 unique output carrying the required type.
+
+**Integer equality on float bits (kuna).** An `INT_EQUAL` or `INT_NOTEQUAL`
+compares bits, but when the more ordered operand type is a 4- or 8-byte float
+the upstream rule coerces both sides to the float, and the comparison printed
+as a C float `==`: `(v.u == 0x80000000u)` printed `a0 == -0.0`, true for
+`+0.0` too; `(v.u & 0x7fffffff) == 0x7fc00000` printed `ABS(a0) == NAN`, never
+true; and an `==` of two floats' bits printed `a0 == a1`, false for equal NaNs.
+The ordered integer compares already require an integer type and reinterpret
+the float. `coreaction_casts.rs (get_input_cast_equal)` now requires the
+integer operand's type, or `unsigned int` / `unsigned long long` of the width
+(`float_bits_type`), so each float side takes a `CAST` that prints as the union
+reinterpretation above and a constant is retyped to the integer and prints in
+hex (`((union { float from; unsigned int to; }){ .from = a0 }).to !=
+0x80000000`; Rust `(a0).to_bits() != 0x80000000`). The float comparison is kept
+where, under the default (non-flushing) floating-point environment, it decides
+exactly what the bit test does (`float_compare_is_exact`; with DAZ/FTZ set a
+denormal's `ABS` compares equal to `0.0`): against a constant that is a normal number or an
+infinity whose printed literal, read by C as a `double`, is its value
+(`kuna_floatbits.rs (compares_as_a_float)`, chapter 05), so the bits of `1.0f`
+still print `a0 == 1.0`; and against `+0.0` when the other side is a
+`FLOAT_ABS`, which is never `-0.0` and as a NaN equals neither, so
+`ABS(a0) == 0.0` stays. A literal whose shortest spelling is another double
+(`a0 == -7.4544637e-06`, `!= 1.4013e-45`) prints its bits instead.
+`FLOAT_EQUAL`/`FLOAT_NOTEQUAL` are other opcodes and still print `a == b`.
 
 **Narrowed call arguments (kuna).** Dead-code analysis counts only the
 possibly-nonzero bits of a call input as consumed, so when a caller
@@ -339,27 +375,34 @@ nearly every `int` argument on x86-64 is such a trim, and the cast would land
 on all of them to fix the few whose callee reads the full register.
 
 **Byte-pointer arguments
-(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_pointerargs.rs`).** A
-callee-first run (`decompile-all` and `decompile-project` with `protoorder` on,
-the default) remembers the parameter declarations of every function it has
-printed. When a caller printed later passes the address of a whole scalar local
-or parameter where such a callee declares a character pointer (`char *`,
-`unsigned char *`, or an undefined byte, which prints as `char`), and the
-parameter has the call's finalized ABI storage at that position, the address is
-cast to the parameter's type: `sink((unsigned char *)&v1)` for `unsigned long
-v1`. The local keeps its declared type and width; C lets a character pointer
-access any object's bytes, so the cast is the conversion C requires and nothing
-else changes. There is no cast when the local already has the parameter's
-pointee type or differs from it only in the signedness of a byte (`char`
-against `unsigned char`), when the argument is an array, structure, union,
-member or any other pointer expression, for a varargs call, or where a per-call
-prototype override applies. Only declarations printed before the caller count,
-so a caller printed before its callee inside a call-graph cycle keeps the uncast
-call; a function decompiled again later in the run sees every declaration
-printed by then. Outside a callee-first run (`--jobs` workers, `protoorder off`,
-`decompile-graph`, streamed exports and single-function `kuna decompile`)
-nothing is recorded and calls print unchanged, so `--jobs N` still matches
-`--jobs 1 --option protoorder off`, as it does for `protoorder` itself.
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_pointerargs.rs`).** Buffered
+`decompile-all`, `decompile-project` and `decompile-graph` reconcile C calls after selecting their
+final successful function results. When a caller passes the address of a whole
+scalar local or parameter to a character-pointer parameter (`char *`,
+`unsigned char *`, or an undefined byte printed as `char`), the call is cast to
+that emitted parameter's type: `sink((unsigned char *)&v1)` for `unsigned long
+v1`. Parameter position and finalized ABI storage must agree. The local keeps
+its declared type and width; C allows a character pointer to access its bytes.
+
+The printer records declarations and exact argument positions with each result,
+only for a driver that asks; the batch that returns the final results applies them.
+The buffered driver uses only the accepted results, after any type convergence
+or worker structure renaming. Failed, omitted, and conflicting definitions
+cannot supply a cast. Workers transport the records; this reconciliation never
+re-decompiles a function. Address order, recursive call ordering, filtered
+selections and `protoorder off` do not disable the conversion. `protoorder`
+continues to control inference independently.
+
+Arrays, structures, unions, members, other pointer expressions, varargs and
+per-call prototype overrides abstain. A byte local of another signedness also
+retains the existing spelling. No text search identifies a call: each recorded
+position must still contain its recorded expression before its cast is added. A
+position that does not (an emitter defect) leaves only that argument uncast.
+The inserted text contains no newlines. No buffered driver captures token maps;
+a result that did would have its map withdrawn rather than left misaligned.
+Structure renaming first adjusts the recorded byte columns. Streamed exports, non-C output and standalone `decompile` do not
+reconcile incomplete batches. The worker path still matches
+serial output with `--option protoorder off` on both.
 
 **Casts C already performs (kuna `castimplied`).** `is_extension_cast_implied`
 hides an extension only when integer arithmetic, or a comparison against an
@@ -599,7 +642,13 @@ beside a pointer, or holds a float statement's result as a float or raw bytes
 (`kuna_callrettype.rs (refused_token)`, chapter 04): the listing declares that
 return, so the caller prints the conversion (`v1 = (long)sub_eecc(a0,v3)`)
 instead of an assignment C rejects or pointer arithmetic it would scale, and
-stores a float through a `float *`.
+stores a float through a `float *`. (kuna `floatbits`) Before any of that, a
+call to a callee whose float return is the bits of its float-register input
+(chapter 05), whose output the caller holds as an integer of the float's width
+in another register than the callee returns in (what the call left there),
+takes the float as its token (`kuna_floatbits.rs (held_bits_token)`), so the
+cast it gains prints as a reinterpretation of the bits, where C would convert
+the value.
 An unlocked callee recovered returning more of the register than the call's
 output holds (`kuna_voidret.rs (narrowed_call_result)`, chapter 04: a 64-bit
 `unsigned long` whose caller compares only `eax`) gets its truncation

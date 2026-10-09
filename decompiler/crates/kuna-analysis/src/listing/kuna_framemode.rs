@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 pub(crate) struct FrameModes<'a> {
     roots: HashSet<u64>,
     spans: BTreeMap<u64, Span>,
+    decoded: Option<BTreeMap<u64, (u64, u32)>>,
     stale: BTreeSet<u64>,
     established: Option<&'a super::Listing>,
 }
@@ -19,6 +20,7 @@ impl<'a> FrameModes<'a> {
         Self {
             roots: roots.iter().copied().collect(),
             spans: BTreeMap::new(),
+            decoded: None,
             stale: BTreeSet::new(),
             established: None,
         }
@@ -37,11 +39,12 @@ impl<'a> FrameModes<'a> {
     }
 
     pub fn record(&mut self, root: u64, at: u64, len: u32, mode: Option<u32>) {
+        let Some(mode) = mode else { return };
+        let end = at.saturating_add(u64::from(len));
+        if let Some(decoded) = &mut self.decoded { decoded.insert(at, (end, mode)); }
         if !self.roots.contains(&root) {
             return;
         }
-        let Some(mode) = mode else { return };
-        let end = at.saturating_add(u64::from(len));
         if let Some((_, span)) = self.spans.range_mut(..at).next_back() {
             if span.end == at && span.root == root && span.mode == mode {
                 span.end = end;
@@ -49,6 +52,24 @@ impl<'a> FrameModes<'a> {
             }
         }
         self.spans.insert(at, Span { end, root, mode });
+    }
+
+    pub fn retain_decoded_modes(&mut self) {
+        self.decoded = Some(BTreeMap::new());
+    }
+
+    pub fn decoded_paints(&self) -> Vec<crate::pass::ContextPaint> {
+        let mut paints: Vec<crate::pass::ContextPaint> = Vec::new();
+        for (&addr, &(end, value)) in self.decoded.iter().flat_map(|decoded| decoded.iter()) {
+            if let Some(last) = paints.last_mut() {
+                if last.end == Some(addr) && last.value == value {
+                    last.end = Some(end);
+                    continue;
+                }
+            }
+            paints.push(crate::pass::ContextPaint { addr, end: Some(end), var: "TMode", value });
+        }
+        paints
     }
 
     pub fn called(&mut self, target: u64, mode: Option<u32>) {

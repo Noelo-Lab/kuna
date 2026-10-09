@@ -632,6 +632,8 @@ fn follow_subroutine(
     let mut linear = prefix;
     let mut extend_linear = true;
     let mut speculative: HashSet<u64> = HashSet::new();
+    let thumb_walk = prefix.start & 3 == 2
+        || decoder.probe(prefix.start).is_some_and(|insn| insn.len == 2);
 
     'follow: while let Some(vma) = worklist.pop() {
         if prefix.contains(vma) || body.contains(&vma) {
@@ -655,6 +657,11 @@ fn follow_subroutine(
             // Outside the gap: if it is decoded code, "adds info"; otherwise (data /
             // undecoded outside the gap) it is a bad flow target → reject.
             if listing.is_instruction_start(vma) {
+                // (kuna `armfuncmode`) A Thumb walk cannot reach code the
+                // function symbols state is A32 without an exchange.
+                if thumb_walk && listing.in_a32_symbol_extent(vma) {
+                    return None;
+                }
                 adds_info = true;
                 continue;
             }
@@ -803,6 +810,7 @@ pub fn run_aif(
     aifstrict: bool,
     aifcorroborate: bool,
 ) -> Vec<u64> {
+    let _probe = arm_gap_probe_scope(translate);
     let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
     run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate)
 }
@@ -816,9 +824,19 @@ pub(crate) fn run_aif_after_frames(
     aifstrict: bool,
     aifcorroborate: bool,
 ) -> Vec<u64> {
+    let _probe = arm_gap_probe_scope(translate);
     let mut decoder = GapDecoder::new(translate, code_space, listing.exec_ranges());
     decoder.prior_partition = Some(prior);
     run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate)
+}
+
+/// Probe ARM gaps without publishing their modes; local IT state remains active.
+pub(crate) fn arm_gap_probe_scope(
+    translate: &dyn Translate,
+) -> Option<kuna_sleigh::kuna_contextscope::ContextScope<'_>> {
+    let scope = translate.context_scope()?;
+    scope.protect_variable(b"TMode").ok()?;
+    Some(scope)
 }
 
 fn run_aif_with_decoder(

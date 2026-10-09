@@ -805,6 +805,10 @@ pub fn functional_equality_level(
     if obank.get(op2).expect("funcEqLevel").is_call() {
         return -1;
     }
+    // (kuna syscallregs) each system call's error flag is its own value.
+    if crate::kuna_syscallregs::is_error_flag_op(obank, vbank, op1) {
+        return -1;
+    }
     if opc == OpCode::CPUI_LOAD {
         // We assume two loads produce the same result if the address is the same
         // and the loads occur in the same instruction

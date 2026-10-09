@@ -217,7 +217,9 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // NOT registered here. It is a DEFERRED pass, run at the commit point by
         // [`run_deferred_entry_passes`] where its (default-OFF) gate is finally in
         // effect, rather than swept at load on every binary and discarded. See
-        // `entry::FuncStartPatternPass`.
+        // `entry::FuncStartPatternPass`. The multi-entry `.cold` fragment pass
+        // (`coldentry`) is deferred the same way, because it decodes through the
+        // engine `Translate`, which has no program image until the commit point.
         // S1 ARM/Thumb decode-mode markers: paint the SLEIGH `TMode` context
         // variable from ARM mapping symbols (`$t`/`$a`) + the STT_FUNC odd-address
         // (LSB=1 ⇒ Thumb) convention, so Thumb code decodes as Thumb. The kuna
@@ -228,6 +230,10 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // this is a strict no-op for every non-ARM binary (the parity gates are
         // structurally untouched). Always-on, like noreturn/libproto/entry.
         Box::new(crate::loader::arm_markers::ArmMarkerPass),
+        // (kuna `armfuncmode`) `TMode=0` at each even function symbol of an ARM
+        // image without mapping symbols, so a Thumb paint stops at the next A32
+        // function.
+        Box::new(crate::loader::kuna_armfuncmode::ArmFuncModePass),
         // S1 MIPS `$gp` recovery: seed `t9 = func_entry` as a tracked register
         // value at each MIPS function entry (the PIC `jalr t9` ABI convention), so
         // a PIC prologue's `addu gp,gp,t9` folds to the real `$gp` and
@@ -512,13 +518,16 @@ fn listing_seeds_for_language(
 /// resolves each name from the fully merged `entry_names`, so where a pass's
 /// entries land in the merge order does not change what is installed.
 fn deferred_entry_passes() -> Vec<Box<dyn AnalysisPass>> {
-    vec![Box::new(crate::entry::FuncStartPatternPass)]
+    vec![
+        Box::new(crate::entry::FuncStartPatternPass),
+        Box::new(crate::entry::kuna_coldentry::ColdEntryPass),
+    ]
 }
 
 /// Run the [`deferred_entry_passes`] over the stashed image at the commit point,
 /// keyed by [`AnalysisPass::id`] (the same per-pass-split shape as
 /// [`run_default_analyses_per_pass`], so the console applies the identical
-/// `analysis_pass_enabled` filter).
+/// `analysis_pass_enabled` filter). Only the passes `enabled` accepts by id run.
 ///
 /// The object view is built exactly as [`run_default_analyses_per_pass`] builds
 /// it, `relocrebase` rebasing included: a relocatable object is laid out
@@ -529,6 +538,7 @@ pub fn run_deferred_entry_passes(
     bytes: &[u8],
     image: &ObjectLoadImage,
     arch: &Architecture,
+    enabled: &dyn Fn(&str) -> bool,
 ) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
         return Vec::new();
@@ -545,6 +555,7 @@ pub fn run_deferred_entry_passes(
     };
     let mut split: Vec<(&'static str, AnalysisOutput)> = deferred_entry_passes()
         .iter()
+        .filter(|pass| enabled(pass.id()))
         .map(|pass| {
             let mut out = pass.run(&ctx);
             if let Some(view) = &view {
@@ -643,6 +654,7 @@ pub fn run_listing_consumers(
     noreturn_seeds: &[u64],
     callfixup_seeds: &[u64],
     committed_entries: &[u64],
+    cold_entries: &[u64],
     plan: &crate::listing::WalkPlan,
 ) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(file) = crate::loadimage_object::parse_object(bytes) else {
@@ -690,6 +702,20 @@ pub fn run_listing_consumers(
         // functions than `kuna functions` reported.
         seeds.extend(
             committed_entries
+                .iter()
+                .copied()
+                .filter(|&vma| crate::entry::in_executable_section(&execs, vma)),
+        );
+        seeds.sort_unstable();
+        seeds.dedup();
+    }
+    // (kuna `coldentry`) The extra entries of a multi-entry `.cold` fragment are
+    // roots on every architecture: nothing else makes them walk functions, so
+    // without them `noreturn_propagate` never concludes their no-return.
+    if !cold_entries.is_empty() {
+        let execs = crate::entry::executable_sections(&file);
+        seeds.extend(
+            cold_entries
                 .iter()
                 .copied()
                 .filter(|&vma| crate::entry::in_executable_section(&execs, vma)),
@@ -786,6 +812,7 @@ pub fn run_listing_consumers(
     }
     let mut frame_aif: Option<crate::aif::kuna_entrychecks::CheckedAif> = None;
     let mut frame_pointers = None;
+    let mut inventory_context_paints = Vec::new();
     // Recover validated LR-saving ARM/Thumb frames in gaps before fingerprinting.
     if arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes {
         if let Some(code_space) = arch.manage().get_default_code_space() {
@@ -815,6 +842,7 @@ pub fn run_listing_consumers(
                             .flat_map(|checked| checked.entries.iter().copied())).collect::<Vec<_>>(),
                         &original,
                     );
+                    if arch.input_arm_isa_override { modes.retain_decoded_modes(); }
                     listing = crate::listing::Listing::build_tracking_frames(
                         &file, image, arch, translate, &seeds, &funcsym_seeds,
                         &seed_names, detail, plan, Some(&mut modes),
@@ -867,6 +895,7 @@ pub fn run_listing_consumers(
                             continue;
                         }
                     }
+                    inventory_context_paints = modes.decoded_paints();
                     if let Some(context) = frame_context {
                         context.commit();
                     }
@@ -1084,6 +1113,11 @@ pub fn run_listing_consumers(
         mode_out.context_paints = mode_paints;
         out.push(("flowmode", mode_out));
     }
+    if !inventory_context_paints.is_empty() {
+        let mut modes = AnalysisOutput::default();
+        modes.inventory_context_paints = inventory_context_paints;
+        out.push(("armframes", modes));
+    }
     sanitize_all_names(&mut out);
     out
 }
@@ -1133,6 +1167,31 @@ pub fn run_operand_refs(
         crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
     }
     out.sanitize_names(symbolnamechars_mode());
+    out
+}
+
+/// (kuna `widestrings32`) The 4-byte string width alone, for a run with
+/// `operand_refs` off: the same linear decode [`run_operand_refs`] does, for the
+/// operand targets and table uses the facts weigh, without that pass's own facts.
+/// Takes the same rebased view of a relocatable object.
+pub fn run_wide_strings32(bytes: &[u8], image: &ObjectLoadImage, arch: &Architecture) -> AnalysisOutput {
+    let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
+        return AnalysisOutput::default();
+    };
+    let view = crate::loader::kuna_relocrebase::rebased_view(&raw, bytes);
+    let (file, bytes) = crate::loader::kuna_relocrebase::select(raw, bytes, &view);
+    let ctx = AnalysisCtx {
+        file: &file,
+        bytes,
+        image,
+        arch,
+        listing: None,
+        image_path: image_on_disk_path(image),
+    };
+    let mut out = crate::operand_refs::wide_strings32_alone(&ctx);
+    if let Some(view) = &view {
+        crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
+    }
     out
 }
 

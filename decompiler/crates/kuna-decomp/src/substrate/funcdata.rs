@@ -236,6 +236,14 @@ pub struct Funcdata {
     /// (kuna `stackstoreguard`) What the latest `restructure_varnode` pass says
     /// the final layout must satisfy (`p6_variables/kuna_storereach.rs`).
     store_reach_checks: std::cell::RefCell<crate::p6_variables::kuna_storereach::ReachChecks>,
+    /// (kuna `stackstoreguard`) The STOREs of any width heritage guarded a
+    /// written stack range against (`p3_dataflow/kuna_stackstoreguard.rs`).
+    indexed_guard_stores: std::cell::RefCell<std::collections::BTreeSet<OpId>>,
+    /// (kuna `stackstoreguard`) The INDIRECTs heritage placed for those STOREs.
+    indexed_guard_indirects: std::cell::RefCell<std::collections::BTreeSet<OpId>>,
+    /// (kuna `stackstoreguard`) Every signed stack range a layout pass found
+    /// only the guard keeps (`p6_variables/kuna_storereach.rs`).
+    guard_only_seen: std::cell::RefCell<Vec<(kuna_base::types::intb, kuna_base::types::intb)>>,
     /// (kuna `stackstoreguard`) Set when the guard is off for this function.
     /// Survives `clear()`.
     stack_store_guard_withdrawn: std::cell::Cell<bool>,
@@ -456,6 +464,9 @@ pub struct Funcdata {
     /// (kuna `voidret`) A reader keeps this function's float return as another
     /// type, so the float-register vote on the return is withdrawn.
     kuna_float_return_withdrawn: bool,
+    /// (kuna `floatbits`) An inference pass typed this function's return a
+    /// float because its float-register input reaches it only through bit ops.
+    kuna_float_bits_return: bool,
     /// (kuna `voidret`) The `void` callees' results this function's return would be.
     kuna_forced_claims: Vec<((int4, kuna_base::types::uintb), (Address, int4))>,
     /// (kuna `voidret`) The storage this function's callers read of the word it
@@ -466,6 +477,9 @@ pub struct Funcdata {
     kuna_zext_word: Option<(Address, int4, bool)>,
     /// (kuna `voidret`) What each callee's last decompile recovered it returns.
     kuna_callee_returns: std::collections::BTreeMap<(int4, kuna_base::types::uintb), crate::kuna_voidret::Returns>,
+    /// (kuna `floatbits`) The callees whose float return the bits of a
+    /// float-register input made one.
+    kuna_callee_float_bits: std::collections::BTreeSet<(int4, kuna_base::types::uintb)>,
     /// (kuna `voidret`) Per callee, whether each parameter its last decompile
     /// recovered is a float (`Some(true)`), an integer or pointer (`Some(false)`).
     kuna_callee_params: std::collections::BTreeMap<(int4, kuna_base::types::uintb), Vec<Option<bool>>>,
@@ -478,6 +492,9 @@ pub struct Funcdata {
     /// (kuna `voidret`) Whether `ancestor_op_use` is scoring that storage, where a
     /// call's result used only on the way to the RETURN counts as the return value.
     kuna_forced_scoring: bool,
+    /// (kuna `varargsharedfloat`) The call whose other active argument slots a
+    /// scored value may also reach.
+    kuna_shared_float_call: Option<OpId>,
     /// (kuna `callrettype`) The extensions the return trimming narrowed the
     /// returned value back through ([`crate::kuna_callrettype::note_returned_extension`]).
     kuna_callret_returned: Vec<(bool, int4)>,
@@ -640,6 +657,9 @@ impl Funcdata {
             cast_objects: std::cell::RefCell::new(Vec::new()),
             store_reach_committed: std::cell::Cell::new(false),
             store_reach_checks: std::cell::RefCell::new(Default::default()),
+            indexed_guard_stores: std::cell::RefCell::new(Default::default()),
+            indexed_guard_indirects: std::cell::RefCell::new(Default::default()),
+            guard_only_seen: std::cell::RefCell::new(Vec::new()),
             stack_store_guard_withdrawn: std::cell::Cell::new(false),
             stack_store_guard_spoiled: std::cell::Cell::new(false),
             kuna_condstmts_seed: std::collections::BTreeSet::new(),
@@ -682,7 +702,9 @@ impl Funcdata {
             kuna_forced_return: Vec::new(),
             kuna_forced_return_planted: Vec::new(),
             kuna_float_return_withdrawn: false,
+            kuna_float_bits_return: false,
             kuna_callee_returns: std::collections::BTreeMap::new(),
+            kuna_callee_float_bits: std::collections::BTreeSet::new(),
             kuna_callee_params: std::collections::BTreeMap::new(),
             kuna_callee_return_storage: std::collections::BTreeMap::new(),
             kuna_forced_claims: Vec::new(),
@@ -690,6 +712,7 @@ impl Funcdata {
             kuna_zext_word: None,
             kuna_float_pair_halves: std::collections::BTreeSet::new(),
             kuna_forced_scoring: false,
+            kuna_shared_float_call: None,
             kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
@@ -1086,6 +1109,18 @@ impl Funcdata {
         self.kuna_zext_word.as_ref()
     }
 
+    /// (kuna `floatbits`) Seed the callees whose float return the bits of a
+    /// float-register input made one.
+    pub fn kuna_set_callee_float_bits(&mut self, callees: std::collections::BTreeSet<(int4, kuna_base::types::uintb)>) {
+        self.kuna_callee_float_bits = callees;
+    }
+
+    /// (kuna `floatbits`) Did the callee keyed `key` return a float for the
+    /// bits of its float-register input?
+    pub fn kuna_callee_float_bits(&self, key: (int4, kuna_base::types::uintb)) -> bool {
+        self.kuna_callee_float_bits.contains(&key)
+    }
+
     /// (kuna `voidret`) What the callee at `key` was last recovered to return.
     pub fn kuna_callee_returns(&self, key: (int4, kuna_base::types::uintb)) -> Option<crate::kuna_voidret::Returns> {
         self.kuna_callee_returns.get(&key).copied()
@@ -1139,6 +1174,18 @@ impl Funcdata {
         self.kuna_float_return_withdrawn
     }
 
+    /// (kuna `floatbits`) Note that an inference pass typed the return a float
+    /// for the bits of a float-register input.
+    pub fn kuna_note_float_bits_return(&mut self) {
+        self.kuna_float_bits_return = true;
+    }
+
+    /// (kuna `floatbits`) Did an inference pass of this decompile type the
+    /// return a float for the bits of a float-register input?
+    pub fn kuna_float_bits_return(&self) -> bool {
+        self.kuna_float_bits_return
+    }
+
     /// (kuna `voidret`) Record that the RETURN read of one piece of that storage
     /// was planted.
     pub fn kuna_note_forced_return_planted(&mut self, addr: Address, size: int4) {
@@ -1158,6 +1205,18 @@ impl Funcdata {
     /// (kuna `voidret`) Whether the forced return storage is being scored.
     pub fn kuna_forced_scoring(&self) -> bool {
         self.kuna_forced_scoring
+    }
+
+    /// (kuna `varargsharedfloat`) Let the scored value reach `call`'s other
+    /// active argument slots (see the field).
+    pub fn kuna_set_shared_float_call(&mut self, call: Option<OpId>) {
+        self.kuna_shared_float_call = call;
+    }
+
+    /// (kuna `varargsharedfloat`) The call set by
+    /// [`Self::kuna_set_shared_float_call`].
+    pub fn kuna_shared_float_call(&self) -> Option<OpId> {
+        self.kuna_shared_float_call
     }
 
     /// (kuna `callrettype`) The loader's data ranges recorded by the seed.
@@ -2002,6 +2061,37 @@ impl Funcdata {
     /// (kuna `stackstoreguard`) What the latest pass recorded.
     pub(crate) fn store_reach_checks(&self) -> crate::p6_variables::kuna_storereach::ReachChecks {
         self.store_reach_checks.borrow().clone()
+    }
+
+    /// (kuna `stackstoreguard`) Record a STORE heritage guarded a written
+    /// stack range against, and the INDIRECT it placed.
+    pub(crate) fn note_indexed_guard_store(&self, store: OpId, indirect: OpId) {
+        self.indexed_guard_stores.borrow_mut().insert(store);
+        self.indexed_guard_indirects.borrow_mut().insert(indirect);
+    }
+
+    /// (kuna `stackstoreguard`) The INDIRECTs heritage placed for those STOREs.
+    pub(crate) fn indexed_guard_indirects(&self) -> std::collections::BTreeSet<OpId> {
+        self.indexed_guard_indirects.borrow().clone()
+    }
+
+    /// (kuna `stackstoreguard`) Add the stack ranges a layout pass found only
+    /// the guard keeps, and return every one found since the analysis began.
+    pub(crate) fn note_guard_only(
+        &self,
+        ranges: Vec<(kuna_base::types::intb, kuna_base::types::intb)>,
+    ) -> Vec<(kuna_base::types::intb, kuna_base::types::intb)> {
+        let mut seen = self.guard_only_seen.borrow_mut();
+        seen.extend(ranges);
+        seen.sort_unstable();
+        seen.dedup();
+        seen.clone()
+    }
+
+    /// (kuna `stackstoreguard`) The STOREs heritage guarded written stack
+    /// ranges against.
+    pub(crate) fn indexed_guard_stores(&self) -> std::collections::BTreeSet<OpId> {
+        self.indexed_guard_stores.borrow().clone()
     }
 
     /// (kuna `condstmts`) Block starts to structure as complex.
@@ -3686,6 +3776,9 @@ impl Funcdata {
         self.kuna_moved_back_returns.clear();
         self.store_reach_committed.set(false);
         *self.store_reach_checks.borrow_mut() = Default::default();
+        self.indexed_guard_stores.borrow_mut().clear();
+        self.indexed_guard_indirects.borrow_mut().clear();
+        self.guard_only_seen.borrow_mut().clear();
         self.kuna_forced_return_planted.clear();
         self.kuna_float_pair_halves.clear();
         self.kuna_forced_claims.clear();

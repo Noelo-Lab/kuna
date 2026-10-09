@@ -26,6 +26,7 @@ pub mod kuna_retinputhalf;
 pub mod kuna_retcallhalf; // (kuna) a call's result handed back beside a computed second return register
 pub mod kuna_retsysreg; // (kuna) a register set for a system register is not the high word of the return
 pub mod kuna_retpushedhalf;
+pub mod kuna_reloadarg; // (kuna) a register reloaded from the caller's frame is re-scored once the frame is heritaged
 pub mod kuna_returnuncomputed;
 pub mod kuna_spillargtrial;
 pub mod kuna_stackaddrargtrial;
@@ -63,5 +64,6 @@ pub mod kuna_vfpvariadic; // (kuna) a declared ARM hard-float variadic function 
 pub mod kuna_varargformat;
 pub mod kuna_varargtransfer;
 pub mod kuna_varargforward; // (kuna) a declared parameter forwarded unchanged to a variadic call
+pub mod kuna_varargsharedfloat; // (kuna) a counted variadic double that also feeds an earlier argument
 pub mod kuna_voidret; // (kuna) a function whose result a caller reads returns it
 pub mod kuna_bejoin; // (kuna) a big-endian pair joins its halves in the ABI's order when its low word is returned on purpose

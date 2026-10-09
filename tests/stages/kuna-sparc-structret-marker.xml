@@ -1,0 +1,54 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!--
+Independent assembly regression.
+Stage: P2 lift/flow.
+P0 assertion: option sparcstructret on. The disabled behavior remains covered by gh6882-sparcstructret.xml.
+.text
+.global aggregate_marker
+.type aggregate_marker,@function
+aggregate_marker:
+ save %sp, -112, %sp
+ add %fp, -16, %l0
+ st %l0, [%sp+64]
+ call make_pair
+ nop
+ unimp 8
+ ld [%fp-16], %i0
+ add %i0, 7, %i0
+ ret
+ restore
+.global make_pair
+.type make_pair,@function
+make_pair:
+ save %sp, -96, %sp
+ ld [%fp+64], %l0
+ mov 11, %l1
+ st %l1, [%l0]
+ st %g0, [%l0+4]
+ jmp %i7+12
+ restore
+.size make_pair, .-make_pair
+.size aggregate_marker, .-aggregate_marker
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+9de3bf90a007bff0e023a040400000070100000000000008f007bff0b0062007
+81c7e00881e800009de3bfa0e007a040a210200be2240000c024200481c7e00c
+81e80000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="aggregate_marker"/>
+<symbol space="ram" offset="0x10028" name="make_pair"/>
+</binaryimage>
+<script>
+  <com>parse line typedef struct Pair { int first; int second; } Pair;</com>
+  <com>parse line extern int aggregate_marker(void);</com>
+  <com>parse line extern Pair make_pair(void);</com>
+  <com>option sparcstructret on</com>
+  <com>lo fu aggregate_marker</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="marker has no executable trap" min="0" max="0">IllegalInstructionTrap</stringmatch>
+<stringmatch name="continuation still uses aggregate result" min="1" max="1">\.first \+ 7;</stringmatch>
+</decompilertest>

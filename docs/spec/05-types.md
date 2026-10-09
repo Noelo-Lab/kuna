@@ -34,6 +34,17 @@ is created, and every phase from lift to emission reads it. What lives in
 `p5_types` is the *inference* — the passes that decide which type a Varnode
 carries.
 
+The qualifier representation in
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_typequal.rs` distinguishes a
+volatile pointee from a volatile pointer object. Type ordering prefers the
+qualified form when its underlying type otherwise compares equal, allowing
+pointer copies and pointer arithmetic to retain the pointee qualification.
+Loads and value copies drop outer storage qualifiers while retaining pointee
+qualification: volatile storage does not make the local receiving its value
+volatile.
+The same module recovers declared pointer types through bounded address
+expressions for volatile-read preservation before inference runs (chapter 03).
+
 **The metatype lattice.** Every type reduces to one of 18 meta-types
 (`decompiler/crates/kuna-decomp/src/substrate/dtype.rs (type_metatype)`),
 transcribed with explicit discriminants because **the numeric order is the
@@ -192,6 +203,13 @@ x87 extended format and annotate the storage in a comment
 all means the target aliases it to `double` (MSVC, ARM32), which is the fallback
 `setup_sizes` applies. Consumers must therefore treat a long-double width as an
 approximation to name, never as a layout guarantee.
+
+SPARC32 objects of size eight have alignment eight in `SparcV9_32.cspec`.
+This places a `double` after five consecutive `short` fields at offset 16,
+with total struct size 24. Argument passing does not follow that alignment:
+the calling convention's `<join stackalign="false"/>` rule (chapter 04) keeps
+a stack-passed `double` in the next free word, so after seven `int` arguments
+it is the two words at `%fp+96`.
 
 The `long` fallback is not neutral. With no `<long_size>`, `setup_sizes` makes
 `long` 8 bytes whenever `int` is 4 (upstream's LP64 assumption), so every ILP32
@@ -2897,6 +2915,122 @@ functions disagree about what a global holds, but a function takes the float
 only after its own reads and writes of the global -- through its storage, its
 address, and every pointer formed from either -- have passed. With `floatglobals off` every global refuses a float vote, as
 before the option existed.
+### A float helper that works on the bits is a float (`kuna_floatbits.rs`)
+
+(kuna, GH-890, option `floatbits`, default on.) Both votes above refuse a value
+an integer op computes with, and a float helper written on the bits is nothing
+but integer ops. newlib's `fabsf` is `GET_FLOAT_WORD(ix,x);
+SET_FLOAT_WORD(x,ix&0x7fffffff); return x;`, which hard-float ARM compiles to
+`vmov r3,s0; bic r3,r3,#0x80000000; vmov s0,r3; bx lr` and x86-64 gcc to `movd
+%xmm0,%eax; and $0x7fffffff,%eax; movd %eax,%xmm0`. The fold typed it `unsigned
+int (unsigned int)`, a prototype C passes in `r0`, and every caller printed the
+call as a reinterpretation of its result -- 73 of them for betaflight's -- while
+handing it its float argument as a number. The convention passes the value in
+`s0` and takes it back there, and only a float travels there.
+
+`kuna_floatbits.rs (Plan::of)` decides, once per `build_localtypes` pass, which
+inputs and returned values take the float, and the vote follows the two above
+(`Plan::vote`, where the fold says no more than an integer or raw bytes). The
+candidates are the 4- and 8-byte inputs in a float-class entry of the
+function's own model, under the same whole-pair test for an ARM `s` register,
+of a function whose inputs are not locked. Each is walked forward over every
+use of its value (`walk`). Uses the bits of a float have pass: a copy, merge,
+cast or INDIRECT; a float op; a call that reads a float of the value's width
+there, for the untouched input; an `&`, `|` or `^` whose other operand is a
+constant or built the same way from the function's float-register inputs
+(`bits_of`), a `~`, a shift by a constant, an add or subtract of exactly the
+sign bit (gcc's `fneg` is `add $0x80000000,%eax`); a word split
+(`SUBPIECE`) or join (`PIECE`); an ordered integer comparison of such values;
+and an `==` or `!=` with an infinity, or with a normal number whose printed
+literal is the constant itself (`compares_as_a_float`). What the bit ops make
+is walked on in turn. The cast pass reinterprets the float for an ordered
+comparison, and for an `==` or `!=` too except against such a constant
+(chapter 09, *Integer equality on float bits*), where the float comparison
+holds for exactly the bits the binary tests (`ABS(a0) == INFINITY`, `a0 ==
+1.0`, `a0 == 16777218.0`), while `-0.0` equals `0.0`, a NaN equals nothing,
+and a flushed denormal equals zero. The refusals below predate that cast and
+are kept: an accepted input against any other constant would now print as
+the union reinterpretation of its bits rather than a wrong float comparison. The printer writes a float
+constant by its shortest digits with no `f` suffix, which C reads as a
+`double`, so `0.1f` prints `0.1`, another value, and `a0 == 0.1` is false for
+`a0 = 0.1f`; the literal is printed (`FloatFormat::print_decimal`, in both
+notations) and read back as a `double`, which must be the constant's value. So
+an `==` or `!=` with zero, a NaN pattern, a denormal, `0.1f`, `FLT_MAX` or
+another value refuses the input (`v.u == 0`, `(v.u & 0x7fffffff) ==
+0x7fc00000`, `x.u == y.u`, `v.u == 0x3dcccccd`). Anything else refuses the input as well:
+arithmetic on the bits, a use as an address, a store, a global, a call argument
+made of the bits, and the untouched input returned in an integer register
+(`unsigned f2u(float x)` stays the reinterpretation its callers spell). An
+input no bit op touches is left to the vote above.
+
+An 8-byte input must look like one double. Its walk must meet a bit op that
+cuts the value at a double's exponent field -- a 64-bit magnitude, exponent or
+mantissa mask, or a shift by 52 (`Shape`) -- and no mask that repeats one
+32-bit pattern in both halves (`0x7fffffff7fffffff`, two float or integer
+lanes). Bit 63 alone (its mask, a flip of it, a shift by 63) is no evidence:
+it is also the sign of the second float of a `struct { float, float }` in
+`xmm0`, or a bit of a `_Float128`'s low word, whose callers would then convert
+the value they pass, so `signbit(double)` and `copysign(double, double)` keep
+their integers. And it must not be half of a 16-byte register another input of
+the function also reads (`half_of_a_wider_register`): gcc passes a `_Float128`
+in `xmm0` as `XMM0_Qa` and `XMM0_Qb`, and AArch64 code reads the rest of `q0`
+beside `d0`. These keep a `v2si`, AArch64's `bit v0.8b,v1.8b,v31.8b`
+`copysignf`, and the bit-63 helpers of a struct integer. A `_Float128` stays
+integer only where the function also reads its high word, or touches no more
+than bit 63 of the low word: a low word masked with a magnitude mask or
+shifted by 52 while the high word goes unread prints as a `double`, and a
+caller handing it a `_Float128` then converts the value (AArch64 -O2's
+`uselow` gains `(double)__multf3()`, which main already prints wrong through
+the arguments it drops). A constant merged into a value the walk reaches (through copies and
+merges, not as the operand of a bit op) must be one a float literal spells
+(`bits_of`): `if (c) v.u = 0x7fc00001;` or erased flash's `0xffffffff` would
+print as `NAN` and lose the payload, and refuses.
+
+A value the walk reaches at a RETURN in a float-class register of the input's
+width takes the float as well, when every value returned in that slot
+(`returned_beside`) is built by those ops from accepted inputs and constants,
+or is a constant a float literal spells (`returned_beside_ok`). A slot that
+fails refuses every input that reaches it, and the plan is taken again without
+them, so the helper prints float on both sides or on neither: `fb_mix(float x,
+u32 k)` ors its integer parameter into the bits it returns in `s0`, and keeps
+`unsigned int fb_mix(unsigned int,unsigned int)`. A returned value in an
+integer register is the classifier's answer and keeps its own type, so
+`isnanf`, `signbit` and newlib's `isfinitef` take a float parameter only. The
+bit ops in the body then read a float, the cast pass inserts the cast each
+needs, and each prints as the reinterpretation of the bits (`kuna_bitcast.rs`);
+`RuleFloatSignCleanup`, which reads the new type, turns the sign mask and the
+sign flip into `ABS` and unary minus, so `fabsf` prints `float fabsf(float a0)
+{ return ABS(a0); }` and `copysignf` keeps its masks inside two unions.
+
+In `decompile-all` such a return is not the guess `voidret`'s withdrawals
+(chapter 04) exist for. A reader that keeps the bits in an integer of the
+float's width, in the register the helper returns in, gets the
+reinterpretation `callrettype` prints for any float callee
+(`kuna_callrettype.rs (float_held_as_bits)`, chapter 04): betaflight's `vstr s0`
+of `fabsf`'s result into a word array prints `v2 = ((union { float from;
+unsigned int to; }){ .from = sub_8008010(v5) }).to;`. A reader that holds, as
+an integer of that width, another register than the helper returns in holds
+what the call left there (betaflight's `bl fabsf; vcmpe.f32 s0, s15; .. pop
+{r4, pc}` returns the `r0` the call left). That files no refusal
+(`kuna_voidret.rs (elsewhere_than_return)`), and the call's output token is
+the helper's float (`kuna_floatbits.rs (held_bits_token)`, from
+`ActionSetCasts`' `get_output_token`), so the integer receives the bits through
+a reinterpretation, as it did from the integer prototype, rather than a C
+conversion of the value. A function returning a float its own arithmetic
+computes does not take the helper's back when its own is withdrawn
+(`kuna_voidret.rs (returns_its_own_float)`): newlib's `powf` returns `fabsf`'s
+result on one path and products on the rest. A withdrawal takes the helper's
+float parameters back with its return, so every function that called it while
+it was float is decompiled again, a reader of its result or not
+(`Ledger::bits_callers`, `kuna_voidret.rs (stale_readers)`). That costs a
+second decompile of each such caller: a synthetic Cortex-M4F object whose
+helper 200 callers read before one reader withdraws it decompiles 74% slower,
+and no binary of the corpus pays it. A caller that hands the bits to a
+function forwarding them to the helper (`nabs(x)` returning `fbabs(x)` with
+the sign set) is not one of its callers and is not decompiled again; it
+keeps the float argument it was printed with, and its result is unused. On betaflight, crazyflie and
+cleanflight -O2 the unions fall from 305 to 231, 504 to 463 and 49 to 39; the
+x86-64 decbench binaries have no such helper and do not change.
 
 ### A narrow value returned zero-extended is unsigned (`kuna_zextreturn.rs`)
 

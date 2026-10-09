@@ -870,13 +870,18 @@ fn apply_data(prog: &mut ConsoleProgram, vma: u64, decl: &str) -> Result<(), Str
     use kuna_decomp::varnode::varnode_flags;
     let org = data_org(prog);
     let addr = data_addr(prog, vma)?;
-    let (ct, name) = crate::grammar::parse_type(decl, prog.arch().types(), org)
-        .map_err(|e| e.explain().to_string())?;
+    let (ct, name, volatile) =
+        crate::grammar::parse_type_with_volatile(decl, prog.arch().types(), org)
+            .map_err(|e| e.explain().to_string())?;
     if name.is_empty() {
         return Err("a data declaration must name the symbol".into());
     }
+    let size = ct.get_size();
     let inherit = prog.arch().symboltab.get_property(&addr);
-    let flags = varnode_flags::namelock | varnode_flags::typelock | inherit;
+    let flags = varnode_flags::namelock
+        | varnode_flags::typelock
+        | inherit
+        | if volatile { varnode_flags::volatil } else { 0 };
     let num_spaces = prog.arch().manage().num_spaces() as int4;
     let arch = prog.arch_mut();
     let (scope, basename) = arch
@@ -889,6 +894,9 @@ fn apply_data(prog: &mut ConsoleProgram, vma: u64, decl: &str) -> Result<(), Str
         .upsert_data_mapped(scope, &basename, ct, &addr, &invalid)
         .map_err(|e| e.explain().to_string())?;
     arch.symboltab.set_attribute(sym, flags);
+    if volatile && size > 0 {
+        paint_property(prog, vma, size, varnode_flags::volatil)?;
+    }
     Ok(())
 }
 

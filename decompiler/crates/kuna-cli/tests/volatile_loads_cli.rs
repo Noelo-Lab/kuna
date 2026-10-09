@@ -191,3 +191,33 @@ fn a_reloaded_operand_is_one_volatile_read() {
     assert_eq!(reads.matches("= dat_20;").count(), 1, "{reads}");
     assert_eq!(reads.matches("= dat_22;").count(), 1, "{reads}");
 }
+
+#[test]
+fn a_volatile_data_assertion_keeps_each_read_in_decompile_all() {
+    let path = common::scratch_file("volatile-data-all", "bin");
+    std::fs::write(
+        &path,
+        [0x8b, 0x04, 0x25, 0x00, 0x10, 0x60, 0x00, 0x03, 0x04, 0x25, 0x00, 0x10, 0x60, 0x00, 0xc3],
+    )
+    .unwrap();
+    for declaration in ["data 0x601000 volatile int cursor", "data 0x601000 int volatile cursor"] {
+        let (out, err, code) = common::run_kuna(&[
+            "decompile-all",
+            path.to_str().unwrap(),
+            "--addr",
+            "0x400000",
+            "--raw-image",
+            "--base",
+            "0x400000",
+            "--target",
+            "x86:LE:64:default:gcc",
+            "--assert",
+            "function 0x400000=f",
+            "--assert",
+            declaration,
+        ]);
+        assert_eq!(code, 0, "{err}");
+        assert!(out.contains("v1 = cursor;"), "{declaration}:\n{out}");
+        assert!(!out.contains("cursor * 2"), "{declaration}:\n{out}");
+    }
+}

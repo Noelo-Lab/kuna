@@ -2021,7 +2021,34 @@ mod tests {
         // program only moves through float registers is a float (GH-888)
         // and kuna-arrayextent / an indexed stack array covers the slots its
         // index reaches past four elements (GH-867)
-        assert_eq!(count, 453, "corpus file count drifted");
+        // and kuna-pointer-arguments / standalone printing has no batch contract
+        // and kuna-floatbits / a float helper that only works on the bits of
+        // its float-register input is a float on both sides (GH-890)
+        // and kuna-indexedstoreguard / an indexed stack store of any width
+        // keeps a later read of a slot it may overwrite from seeing the
+        // slot's earlier value
+        // and kuna-zeroloopfield / a field stored after the loop that zeroes
+        // its request prints after that loop
+        // and kuna-indexedstoreguard-a64 / the guarded slots of an AArch64
+        // long or int array past four elements stay elements of the array
+        // and kuna-syscallregs-mips-a3 + -ppc-cr0 / the MIPS a3 and PowerPC
+        // cr0 error flag a system call leaves (GH-857)
+        // and kuna-widestrings32 / a 4-byte wide literal argument prints as
+        // L"..." (GH-845)
+        // and gh839-reloadarg + -a64 / a register popped from a slot that holds
+        // the caller's incoming rax is no argument of the call after it, and
+        // a saved frame pointer read from the frame still is (GH-839)
+        // and gh841-varargsharedfloat-ppc / a 32-bit PowerPC -O0 variadic
+        // double that also feeds an earlier argument (GH-841)
+        // and kuna-floateq / an integer == or != on the bits of a float
+        // compares the bits, not the float values (GH-890)
+        // and kuna-pointerwalk-budget-mips / a pointer built through nested
+        // choices does not stall the stack-store guard's walks
+        // and kuna-pointerwalk-memo / those walks give what an exhaustive
+        // walk gives
+        // and kuna-ucomiss-unordered / an x86 float compare flag read by
+        // seta/setae/setbe/setb keeps its unordered case
+        assert_eq!(count, 481, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
