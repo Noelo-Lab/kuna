@@ -1,0 +1,28 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/sparc_external_tail.o</com>
+  <com>read symbols</com>
+  <com>parse line extern int external_tail(short value);</com>
+  <com>parse line extern int provider(short value);</com>
+  <com>option tailcalljump off</com>
+  <com>load function external_tail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/sparc_external_tail.o</com>
+  <com>read symbols</com>
+  <com>parse line extern int external_tail(short value);</com>
+  <com>parse line extern int provider(short value);</com>
+  <com>load function external_tail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SPARC-EXTERNAL-TAIL #1: off still follows the jump into missing extern bytes" min="1" max="1">halt_missing\(\);</stringmatch>
+<stringmatch name="SPARC-EXTERNAL-TAIL #2: default recovers the named tail call and delay-slot argument" min="1" max="1">return provider\(value \+ 1\);</stringmatch>
+</decompilertest>

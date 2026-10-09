@@ -8,16 +8,17 @@
 //! resolve the target, so `flow.cc::truncateIndirectJump` turns the BRANCHIND
 //! into a non-returning CALLIND and the function loses its tail.  When
 //! `option sparcstructret on`, at flow-classification time this exact idiom is
-//! recognized and converted to a fall-through (the dead BRANCHIND is removed).
+//! recognized and converted to a fall-through: the trap producer becomes an
+//! inert COPY and the dead BRANCHIND is removed.
 //!
 //! ## What this module ports
 //!
-//! [`kuna_is_sparc_struct_ret_trap`] is a faithful free-function transcription
-//! of the C++ `kunaIsSparcStructRetTrap(Funcdata&, const PcodeOp*)` predicate,
+//! [`kuna_sparc_struct_ret_trap_producer`] returns the producer recognized by
+//! the C++ `kunaIsSparcStructRetTrap(Funcdata&, const PcodeOp*)` predicate,
 //! including its **positional** (pre-SSA) backward walk over the dead/insert
 //! list to locate the trap CALLOTHER in the same instruction.  The
 //! fall-through rewrite itself is driven by `flow.rs` at
-//! `FlowInfo::xrefControlFlow`; this module owns only the *decision*.
+//! `FlowInfo::xrefControlFlow`; this module also neutralizes the trap producer.
 //!
 //! ## STUB(W4): Rule/Action + ArchOption + user-op wrappers
 //!
@@ -82,80 +83,52 @@ impl SparcStructRetOption {
 /// The user-op name the SPARC `unimp`/`illtrap` lifting emits.
 const ILLEGAL_INSTRUCTION_TRAP: &str = "IllegalInstructionTrap";
 
-/// (kuna) Is `op` a SPARC struct-return `unimp` BRANCHIND that should fall
-/// through? (C++ `kunaIsSparcStructRetTrap`, kuna_sparcstructret.cc:14-48, GH-6882).
-///
-/// `gate` is the resolved `glb->sparc_struct_return` (see
-/// [`SparcStructRetOption`]).  `userop_name` resolves a user-op id (the C++
-/// `(uint4)idvn->getOffset()`) to `glb->userops.getOp(id)->getName()`
-/// (`None` == a null `UserPcodeOp *`).  // STUB(W4)
-///
-/// The C++ backward dead-list iteration (`op->getInsertIter()` walked with
-/// `--iter` until `beginOpDead()`) is ported by locating `op` in the op bank's
-/// `iter_dead()` order (the intrusive insert list, ADR 0001) and walking the
-/// preceding entries — semantically identical to the C++ `const_iterator`
-/// decrement.
-pub fn kuna_is_sparc_struct_ret_trap<F>(data: &Funcdata, op: OpId, gate: bool, userop_name: F) -> bool
+/// Neutralize a recognized producer when its output is available; otherwise leave it intact.
+pub fn neutralize_trap_producer(data: &mut Funcdata, producer: OpId) -> kuna_base::error::KunaResult<()> {
+    let Some(op) = data.obank().get(producer) else {
+        return Ok(());
+    };
+    if op.code() != OpCode::CPUI_CALLOTHER {
+        return Ok(());
+    }
+    let Some(size) = op.get_out().and_then(|v| data.vbank().get(v)).map(|v| v.get_size()) else {
+        return Ok(());
+    };
+    let zero = data.new_constant(size, 0);
+    data.op_set_opcode_code(producer, OpCode::CPUI_COPY);
+    data.op_set_all_input(producer, &[zero])?;
+    Ok(())
+}
+
+/// Find the IllegalInstructionTrap producer within the branch's instruction.
+pub fn kuna_sparc_struct_ret_trap_producer<F>(data: &Funcdata, branch: OpId, gate: bool, userop_name: F) -> Option<OpId>
 where
     F: Fn(u32) -> Option<String>,
 {
-    // default-off gate
-    if !gate {
-        return false;
+    if !gate || !data.obank().on_dead_list(branch) {
+        return None;
     }
-    let opref = match data.obank().get(op) {
-        Some(o) => o,
-        None => return false,
-    };
-    if opref.code() != OpCode::CPUI_BRANCHIND {
-        return false;
+    if data.obank().get(branch)?.code() != OpCode::CPUI_BRANCHIND {
+        return None;
     }
-
-    // The dead list in `iter_dead()` order is the C++ `beginOpDead()..` range;
-    // `op` sits at some index `pos` in it (the C++ `getInsertIter()`).  We walk
-    // `cur` back from `pos` toward `beg` (index 0), exactly as `--iter`.
-    let deadlist: Vec<OpId> = data.obank().iter_dead().collect();
-    let mut pos = match deadlist.iter().position(|&o| o == op) {
-        Some(p) => p,
-        // If `op` is not on the dead list the C++ premise (raw flow stage) does
-        // not hold; conservatively no match.
-        None => return false,
-    };
-
-    loop {
-        let cur = deadlist[pos];
-        let curref = match data.obank().get(cur) {
-            Some(o) => o,
-            None => return false,
-        };
-        if curref.code() == OpCode::CPUI_CALLOTHER {
-            // first input = user-op id
-            if let Some(idvn) = curref.get_in(0) {
-                if let Some(vnref) = data.vbank().get(idvn) {
-                    if vnref.is_constant() {
-                        // (uint4) truncation: the user-op id is a 32-bit index;
-                        // the C++ casts the 64-bit constant offset to uint4.
-                        let userop_id = vnref.get_offset() as u32;
-                        if let Some(name) = userop_name(userop_id) {
-                            if name == ILLEGAL_INSTRUCTION_TRAP {
-                                return true;
-                            }
-                        }
-                    }
+    let mut current = Some(branch);
+    while let Some(id) = current {
+        let op = data.obank().get(id)?;
+        if op.code() == OpCode::CPUI_CALLOTHER {
+            if let Some(input) = op.get_in(0).and_then(|v| data.vbank().get(v)) {
+                if input.is_constant()
+                    && userop_name(input.get_offset() as u32).as_deref() == Some(ILLEGAL_INSTRUCTION_TRAP)
+                {
+                    return Some(id);
                 }
             }
         }
-        // reached the first op of this insn
-        if curref.is_instruction_start() {
+        if op.is_instruction_start() {
             break;
         }
-        // reached the dead-list head
-        if pos == 0 {
-            break;
-        }
-        pos -= 1;
+        current = data.obank().dead_prev(id);
     }
-    false
+    None
 }
 
 #[cfg(test)]

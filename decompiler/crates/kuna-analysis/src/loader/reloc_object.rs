@@ -364,6 +364,15 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         };
         // Collect first so the `laid` buffer can be borrowed mutably below.
         let relocs: Vec<(u64, object::Relocation)> = sec.relocations().collect();
+        if matches!(architecture, Architecture::Sparc | Architecture::Sparc32Plus)
+            && sec.kind() == SectionKind::Text
+        {
+            code_externs.extend(super::kuna_sparc_relcode::code_targets(
+                &laid[li].data,
+                &relocs,
+                little_endian,
+            ));
+        }
         for (offset, reloc) in relocs {
             let r_type = match reloc.flags() {
                 RelocationFlags::Elf { r_type } => Some(r_type),
@@ -1379,6 +1388,91 @@ mod tests {
             slot,
             "the patched branch must reach the named slot"
         );
+    }
+
+    #[test]
+    fn sparc_split_relocation_names_only_matching_jmpl_targets() {
+        for (name, high, low, same_symbol, addend, expected) in [
+            ("tail", 0x03000000u32, 0x81c06000u32, true, 0, true),
+            ("call", 0x03000000, 0x9fc06000, true, 0, true),
+            ("load", 0x03000000, 0xc2006000, true, 0, false),
+            ("address", 0x03000000, 0x82106000, true, 0, false),
+            ("other_register", 0x03000000, 0x81c0a000, true, 0, false),
+            ("register_jump", 0x03000000, 0x81c04000, true, 0, false),
+            ("zero_register", 0x01000000, 0x81c02000, true, 0, false),
+            ("other_symbol", 0x03000000, 0x81c06000, false, 0, false),
+            ("interior_target", 0x03000000, 0x81c06000, true, 4, false),
+        ] {
+            let mut object =
+                write::Object::new(BinaryFormat::Elf, Architecture::Sparc, Endianness::Big);
+            let text = object.section_id(write::StandardSection::Text);
+            let code: Vec<u8> = high
+                .to_be_bytes()
+                .into_iter()
+                .chain(low.to_be_bytes())
+                .collect();
+            object.append_section_data(text, &code, 4);
+            let target = add_symbol(
+                &mut object,
+                b"provider",
+                write::SymbolSection::Undefined,
+                0,
+                SymbolKind::Unknown,
+            );
+            let high_target = if same_symbol {
+                target
+            } else {
+                add_symbol(
+                    &mut object,
+                    b"other",
+                    write::SymbolSection::Undefined,
+                    0,
+                    SymbolKind::Unknown,
+                )
+            };
+            add_elf_relocation(&mut object, text, 0, high_target, object::elf::R_SPARC_HI22);
+            object
+                .add_relocation(
+                    text,
+                    write::Relocation {
+                        offset: 4,
+                        symbol: target,
+                        addend,
+                        flags: RelocationFlags::Elf {
+                            r_type: object::elf::R_SPARC_LO10,
+                        },
+                    },
+                )
+                .expect("add low relocation");
+            let bytes = object.write().expect("write SPARC object");
+            let file = object::File::parse(&*bytes).expect("parse SPARC object");
+            let layout = layout_relocatable(&file, &ElfFormat);
+            assert_eq!(
+                layout
+                    .funcsyms
+                    .iter()
+                    .any(|(_, symbol)| symbol == b"provider"),
+                expected,
+                "{name}",
+            );
+            if expected {
+                assert!(
+                    layout.diagnostics.is_empty(),
+                    "{name}: {:?}",
+                    layout.diagnostics
+                );
+                let slot = layout
+                    .funcsyms
+                    .iter()
+                    .find(|(_, symbol)| symbol == b"provider")
+                    .unwrap()
+                    .0;
+                let patched = &layout.segments[0].1;
+                let high = u32::from_be_bytes(patched[..4].try_into().unwrap());
+                let low = u32::from_be_bytes(patched[4..8].try_into().unwrap());
+                assert_eq!(((high & 0x3fffff) << 10 | low & 0x3ff) as u64, slot);
+            }
+        }
     }
 
     #[test]
