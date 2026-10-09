@@ -93,6 +93,11 @@ impl Funcdata {
     /// exactly as the op.rs bank tests call `change_opcode` with an explicit
     /// `TypeOp`).  STUB(W6): `glb->inst[opc]`.
     pub fn op_set_opcode(&mut self, op: OpId, t_op: TypeOp) {
+        if self.op_is_call_or_store(op)
+            || matches!(t_op.get_opcode(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_STORE)
+        {
+            self.affecting_ops_changed();
+        }
         if t_op.get_opcode() != OpCode::CPUI_COPY {
             if let Some(output) = self
                 .obank()

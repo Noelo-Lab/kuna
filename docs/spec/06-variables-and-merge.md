@@ -159,6 +159,20 @@ as live nowhere and an overlapping merge is accepted. This bites the trim COPYs
 joined a high — the merged variable then holds two values that are live at the
 same instant.
 
+The call/store crossing test snapshots operation identities, block indices and
+order positions in `PcodeOpSet`. Those positions are valid only for the IR
+revision at which they were collected. `MergeIntersect::intersection` checks
+`MergeContext::affecting_ops_revision` before consulting cached pairwise results.
+A changed revision clears both the saved operation set and the pairwise results;
+the next crossing query collects the current positions. Unchanged revisions
+reuse both caches. This matters even when a call's identity survives: a block
+renumber can move its old cached position inside a range whose end is that very
+call. Treating the stale position as an interior crossing can make an
+address-forced INDIRECT merge fail and stop required merging before a later
+loop PHI, leaving the emitted cursor without its live entering definition.
+Refreshing the positions preserves the boundary exclusion and the actual PHI
+dataflow. Calls genuinely inside the range still veto the merge.
+
 **What makes two Varnodes mergeable.** The gate is a three-rung test ladder in
 `decompiler/crates/kuna-decomp/src/p6_variables/merge.rs`, and the rung used
 determines how aggressive the merge may be:
