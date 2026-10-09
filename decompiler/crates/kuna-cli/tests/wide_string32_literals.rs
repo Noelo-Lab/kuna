@@ -52,6 +52,7 @@ fn wide_literals_round_trip_beside_int_tables() {
             for level in ["-O0", "-O2"] {
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", level, "-DWIDESTR32_HARNESS"])
+                    .args(common::CC_GCC15_DEMOTE)
                     .arg("-o")
                     .arg(&exe)
                     .arg(&src)

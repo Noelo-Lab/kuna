@@ -753,9 +753,27 @@ impl Funcdata {
     /// The bank refuses to destroy an integrated varnode (one with a def or
     /// descendants); that condition is the C++ `LowlevelError`.
     pub fn delete_varnode(&mut self, vn: VarnodeId) -> KunaResult<()> {
+        self.purge_high_on_free(vn);
         self.vbank_mut().destroy(vn)?;
         self.kuna_forget_storage_sources(vn);
         Ok(())
+    }
+
+    /// C++ `~Varnode()` (varnode.cc:629): detach the varnode from its HighVariable and
+    /// drop the high if it is left unattached.
+    ///
+    /// `vbank.destroy()` runs `delete vn`, which fires this purge in C++; the Rust bank
+    /// has no destructor, so every path that models `delete vn` runs it explicitly here
+    /// before the varnode is freed.  Without it a destroyed varnode lingers in its
+    /// HighVariable's `inst` list and a later naming pass (`get_name_representative`)
+    /// derefs the freed vn.
+    fn purge_high_on_free(&mut self, vn: VarnodeId) {
+        if let Some(high) = self.vbank().get(vn).and_then(|v| v.get_high()) {
+            self.high_remove_member(high, vn);
+            if self.high_bank().is_unattached(high) {
+                self.high_bank_mut().erase(high);
+            }
+        }
     }
 
     /// Create a new Varnode which is a \e clone of the given Varnode
@@ -860,17 +878,8 @@ impl Funcdata {
             self.vbank_mut().make_free(vn);
         }
         // ~Varnode(): if (high != 0) { high->remove(this); if (high->isUnattached())
-        //   delete high; }  (varnode.cc:629).  vbank.destroy() runs `delete vn`,
-        // which fires this purge in C++; the Rust bank has no destructor, so it
-        // is done explicitly here before the varnode is freed.  Without it a
-        // destroyed varnode lingers in its HighVariable's `inst` list and a later
-        // naming pass (get_name_representative) derefs the freed vn.
-        if let Some(high) = self.vbank().get(vn).and_then(|v| v.get_high()) {
-            self.high_remove_member(high, vn);
-            if self.high_bank().is_unattached(high) {
-                self.high_bank_mut().erase(high);
-            }
-        }
+        //   delete high; }  (varnode.cc:629).  See `purge_high_on_free`.
+        self.purge_high_on_free(vn);
         self.vbank_mut().destroy_descend(vn);
         self.delete_varnode(vn)
     }
@@ -3436,6 +3445,29 @@ mod tests {
         assert_eq!(fd.num_varnodes(), 1);
         fd.delete_varnode(vn).unwrap();
         assert_eq!(fd.num_varnodes(), 0);
+    }
+
+    /// `delete_varnode` models the C++ `delete vn`, which runs `~Varnode()` and with it
+    /// the detach from the HighVariable (varnode.cc:629).  Skipping it leaves the freed id
+    /// in the high's `inst` list for the naming pass to deref.
+    #[test]
+    fn delete_varnode_detaches_high() {
+        let mut fd = build_fd();
+        let r = ram(&fd);
+        fd.set_high_level();
+        let vn = fd.new_varnode(4, &Address::new(r, 0x40), None);
+        let high = fd
+            .vbank()
+            .get(vn)
+            .unwrap()
+            .get_high()
+            .expect("a varnode created with the high layer on has a high");
+        assert_eq!(fd.high_bank().get(high).unwrap().num_instances(), 1);
+        fd.delete_varnode(vn).unwrap();
+        assert!(
+            fd.high_bank().get(high).is_none(),
+            "the high is unattached once its last member is freed"
+        );
     }
 
     #[test]

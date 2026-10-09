@@ -136,14 +136,11 @@ corpus (`tests/datatests/`, 83 files / 675 assertions) with the Rust decompiler.
 | `Makefile` | Top-level build/test driver (Rust-only) |
 | `docs/history.md` | The project history, incl. the C++→Rust port and its validation |
 
-## License
-
-kuna is released under the [Apache License 2.0](LICENSE). It is derived from
-[Ghidra](https://github.com/NationalSecurityAgency/ghidra), developed at the National
-Security Agency and released under Apache-2.0 — see [NOTICE](NOTICE) for attribution
-(including the angr-ported portions, BSD-2-Clause).
-
 ## Acknowledgement
 Kuna is only possible through the support it receives from the community and sponsors.
 We are especially grateful to the generous sponsorship from the [Air Force Research Lab](https://www.afrl.af.mil/) (VRFP, SA10032026051342),
 [Metalware](https://www.metalware.com/) (VRFP), and the Department of Defense.
+
+---
+
+Need to get in touch? Contact the lead maintainer [Zion Basque](https://zionbasque) through email: zionbasque@uga.edu.
