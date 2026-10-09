@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 fn decompile(words: &[u32], parameter: &str) -> String {
     let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();

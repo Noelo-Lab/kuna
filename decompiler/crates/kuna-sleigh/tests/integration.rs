@@ -1,4 +1,7 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "arm_coprocessor_selectors.rs"]
+mod arm_coprocessor_selectors;
+
 #[path = "arm_neon_vldm_regression.rs"]
 mod arm_neon_vldm_regression;
 
@@ -19,6 +22,9 @@ mod macro_symbol;
 
 #[path = "ppc_nested_operands.rs"]
 mod ppc_nested_operands;
+
+#[path = "sparc_float_to_integer.rs"]
+mod sparc_float_to_integer;
 
 #[path = "verify_context_commits.rs"]
 mod verify_context_commits;

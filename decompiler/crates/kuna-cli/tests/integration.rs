@@ -214,6 +214,9 @@ mod retcallchain_cli;
 #[path = "runtime_hints_cli.rs"]
 mod runtime_hints_cli;
 
+#[path = "signed_stack_index.rs"]
+mod signed_stack_index;
+
 #[path = "soft_float_typed_calls.rs"]
 mod soft_float_typed_calls;
 
@@ -291,6 +294,9 @@ mod variadic_xmm_whole;
 
 #[path = "volatile_loads_cli.rs"]
 mod volatile_loads_cli;
+
+#[path = "volatile_qualifiers_cli.rs"]
+mod volatile_qualifiers_cli;
 
 #[path = "wide_element_strings.rs"]
 mod wide_element_strings;

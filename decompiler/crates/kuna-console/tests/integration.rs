@@ -58,6 +58,9 @@ mod verify_coff_comdat;
 #[path = "verify_coff_object.rs"]
 mod verify_coff_object;
 
+#[path = "verify_coldentry.rs"]
+mod verify_coldentry;
+
 #[path = "verify_cortexmvectors.rs"]
 mod verify_cortexmvectors;
 
@@ -195,6 +198,9 @@ mod verify_listing_context;
 
 #[path = "verify_listing_core.rs"]
 mod verify_listing_core;
+
+#[path = "verify_listing_fallthrough.rs"]
+mod verify_listing_fallthrough;
 
 #[path = "verify_listing_parity.rs"]
 mod verify_listing_parity;

@@ -1,6 +1,6 @@
 //! A signed stack index must not forward the initializer past the indexed writes.
 
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 
