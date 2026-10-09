@@ -816,6 +816,9 @@ kuna_options! { self, p1;
     "eh_frame_full" => {
         on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
     },
+    "coldentry" => {
+        on_off!(analysis_coldentry, "Multi-entry .cold fragment entry discovery")
+    },
     "fdeinterior" => {
         on_off!(analysis_fdeinterior, ".eh_frame FDE-interior entry suppression")
     },

@@ -193,6 +193,13 @@ all means the target aliases it to `double` (MSVC, ARM32), which is the fallback
 `setup_sizes` applies. Consumers must therefore treat a long-double width as an
 approximation to name, never as a layout guarantee.
 
+SPARC32 objects of size eight have alignment eight in `SparcV9_32.cspec`.
+This places a `double` after five consecutive `short` fields at offset 16,
+with total struct size 24. Argument passing does not follow that alignment:
+the calling convention's `<join stackalign="false"/>` rule (chapter 04) keeps
+a stack-passed `double` in the next free word, so after seven `int` arguments
+it is the two words at `%fp+96`.
+
 The `long` fallback is not neutral. With no `<long_size>`, `setup_sizes` makes
 `long` 8 bytes whenever `int` is 4 (upstream's LP64 assumption), so every ILP32
 compiler spec states its 4-byte `long`: the 32-bit MIPS ones (o32, o64, the
