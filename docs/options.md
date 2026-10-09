@@ -731,6 +731,9 @@ Three tiers:
 | an array-typed local is assigned at element zero for a whole-array copy | [`arraycoverwidth`](#arraycoverwidth) |
 | the same variable shows both v1._0_4_ and v1[0] for accesses of different width | [`arraycoverwidth`](#arraycoverwidth) |
 | declared char v[16] but every whole-bank access reads as one byte | [`arraycoverwidth`](#arraycoverwidth) |
+| mapped unsigned char array uses invalid ._offset_size_ members | [`bytearrayc`](#bytearrayc) |
+| wide byte-array accesses need compilable C | [`bytearrayc`](#bytearrayc) |
+| unaligned mapped integer transfer needs an alias-safe C representation | [`bytearrayc`](#bytearrayc) |
 | a pointer variable is initialised to an empty string literal and then indexed past its terminator | [`emptystrconst`](#emptystrconst) |
 | a data address visible in the disassembly appears nowhere in the emitted C | [`emptystrconst`](#emptystrconst) |
 | a blob or table pointer renders as = "" instead of its address | [`emptystrconst`](#emptystrconst) |
@@ -2663,6 +2666,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: the element-zero subscript is a false statement about the access width, and every changed line is a token-for-token substitution -- 0/675 datatest assertions move, and a whole-binary sweep over 40 images changed only the accesses whose width the subscript could not carry, with no statement added, deleted or re-anchored. Flip off to reproduce upstream Ghidra's bare whole-symbol name (and kuna's pre-existing element-zero form) when diffing against Ghidra, or when a consumer parses the subscript spelling.
 - **Where / provenance:** P9/array-cover-width · kuna · correctness-fix · repipe-16-byte-vm-state
 - **Example:** `option arraycoverwidth off`
+
+### `bytearrayc` -- on | off, default `off`
+
+- **Symptoms:** mapped unsigned char array uses invalid ._offset_size_ members; wide byte-array accesses need compilable C; unaligned mapped integer transfer needs an alias-safe C representation.
+- **What it does:** Emit standard C byte-transfer helpers for direct nonvolatile integer accesses of 2, 4 or 8 bytes within a mapped global byte array. Helpers preserve target endianness, unaligned offsets and overlapping copies without wider pointer casts. One-byte accesses retain their subscript; whole-array integer covers use the same helpers. Other types, wider values and volatile annotations retain their existing rendering. Requires C11 and fixed-width integer types.
+- **When to flip:** Opt in when recompiling mapped byte-array accesses that otherwise use artificial ._offset_size_ members. Off keeps the existing width-carrying notation. This does not supply a C representation for volatile wide accesses or vector/aggregate values.
+- **Where / provenance:** P9/array-cover-width · kuna · presentation-default · mapped-byte-array-c
+- **Example:** `option bytearrayc on`
 
 ### `emptystrconst` -- on | off, default `on`
 

@@ -70,6 +70,11 @@ kuna_options! { self, p1;
         self.print_mut().options.set_array_cover_width(val);
         Ok(msg)
     },
+    "bytearrayc" => {
+        let value = on_or_off(p1)?;
+        self.print_mut().options.bytearray_c = value;
+        Ok(format!("Standard C byte-array transfers turned {}", if value { "on" } else { "off" }))
+    },
     "emptystrconst" => {
         let (val, msg) = crate::kuna_emptystrconst::OptionEmptyStrConst.apply(p1)?;
         self.print_mut().options.set_empty_str_const(val);

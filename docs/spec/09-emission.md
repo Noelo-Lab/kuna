@@ -1129,6 +1129,46 @@ shifts a member of an array. What this does **not** fix is that container type
 itself. Recovering it needs either a scalar wide-integer type or a mid-end fold
 of the `CONCAT88(0,x) << 64` idiom; neither is done here.
 
+**Standard C for mapped byte arrays.** `bytearrayc` (default **off**,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_bytearrayc.rs`) provides a C11
+rendering choice for direct integer accesses of two, four or eight bytes within
+a mapped global array of one-byte integer elements. A one-byte access retains
+its subscript; a whole one-element byte array explicitly uses element zero.
+Partial and whole-array covers use the same checked interval:
+the offset plus access size must fit within the mapped object. This does not
+change the declared array type or the recovered operations.
+
+Reads call an emitted `kuna_bytearray_load<bits>_<le|be>` helper through the
+address of the first byte, then convert to the read-facing integer type. Stores
+call the matching `kuna_bytearray_store<bits>_<le|be>` helper with the value
+expression evaluated once. Same-width integer casts into an array view use
+scalar bits instead of an invalid C array cast. The helper reads or writes exactly the requested
+bytes through character pointers; it neither dereferences a wider pointer nor
+requires alignment or an effective integer type for the mapped object. Explicit
+unsigned shifts encode the target storage space's byte order, independently of
+the host byte order. A read used in a store argument completes before the store
+helper starts, preserving overlapping copies. Each width/endian pair has guarded
+static inline definitions so independently emitted functions can share one C
+translation unit. The preamble includes `<stdint.h>` and `<limits.h>` and asserts
+that a C byte has eight bits. The `kuna_bytearray_` helper names and
+`KUNA_BYTEARRAY_C_` guards belong to this generated support surface.
+
+The option deliberately leaves volatile accesses in their existing form:
+splitting a wide device access into several volatile byte accesses changes the
+observable access width and count, while casting a byte array to a wider volatile
+pointer would invent alignment and aliasing guarantees. Their standard-C
+representation requires an additional device/type contract. Read helpers accept
+`const void *`, store helpers accept `void *`, and neither casts away a qualifier
+on a source or destination argument. This option does not repair qualifier loss
+in declaration recovery. Arrays nested in aggregates, stack/register containers,
+noninteger values, non-byte-addressed spaces and other transfer widths also
+retain their existing representation. Off retains all existing emitted C.
+The authored CLI round trips in
+`decompiler/crates/kuna-cli/tests/mapped_array_c.rs` compile unchanged emitted
+bodies at `-O0` and `-O2` with strict aliasing and UBSan, including unaligned
+transfers, overlapping stores, signed reads, const sources, both ARM endian
+variants and an unchanged named-struct control.
+
 **Leaves with no Symbol.** Not every leaf has one. When no mapped symbol covers
 the storage the leaf falls through to the upstream `pushUnnamedLocation`
 naming, `printc.rs (kuna_unnamed_location_name)`: the register name covering

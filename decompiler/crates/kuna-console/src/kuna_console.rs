@@ -166,6 +166,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         });
     }
     Some(Cow::Borrowed(match option {
+        "bytearrayc" => on_off(conf.print().options.bytearray_c),
         "infloopstyle" => if conf.print().options.inf_loop_top { "while" } else { "do" },
         "loopcontinue" => on_off(conf.loop_continue),
         "compareform" => {

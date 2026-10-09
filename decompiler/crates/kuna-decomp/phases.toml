@@ -1550,6 +1550,25 @@ tier = "core"
 symptoms = "a 16-byte movaps/movdqa transfer emits as v1[0] = v2[0]|a vector zero store emits as arr[0] = 0|an array-typed local is assigned at element zero for a whole-array copy|the same variable shows both v1._0_4_ and v1[0] for accesses of different width|declared char v[16] but every whole-bank access reads as one byte"
 
 [[settable]]
+option = "bytearrayc"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P9"
+subphase = "array-cover-width"
+strength = "HARD"
+rewind = "P9"
+issue = "mapped-byte-array-c"
+summary = "Emit standard C byte-transfer helpers for direct nonvolatile integer accesses of 2, 4 or 8 bytes within a mapped global byte array. Helpers preserve target endianness, unaligned offsets and overlapping copies without wider pointer casts. One-byte accesses retain their subscript; whole-array integer covers use the same helpers. Other types, wider values and volatile annotations retain their existing rendering. Requires C11 and fixed-width integer types."
+use_when = "Opt in when recompiling mapped byte-array accesses that otherwise use artificial ._offset_size_ members. Off keeps the existing width-carrying notation. This does not supply a C representation for volatile wide accesses or vector/aggregate values."
+example = "option bytearrayc on"
+source_decompiler = "kuna"
+inspiration = "authored ARM five-word copy into an unsigned char[20] mapping"
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "mapped unsigned char array uses invalid ._offset_size_ members|wide byte-array accesses need compilable C|unaligned mapped integer transfer needs an alias-safe C representation"
+
+[[settable]]
 option = "emptystrconst"
 values = "on|off"
 default = "on"
