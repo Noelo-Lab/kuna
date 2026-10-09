@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts import check_test_layout
 from scripts.check_test_layout import check
 
 
@@ -47,3 +48,22 @@ class TestIntegrationLayout(unittest.TestCase):
     def test_auto_discovered_crates_are_unchanged(self):
         (self.crate / "Cargo.toml").write_text('[package]\nname = "example"\n')
         self.assertEqual(check(self.root), [])
+
+    def test_commented_registration_does_not_count(self):
+        (self.tests / "integration.rs").write_text('// #[path = "grouped.rs"]\n// mod grouped;\n')
+        self.assertTrue(any("grouped.rs: expected one registration, found 0" in e for e in check(self.root)))
+
+    def test_fallback_manifest_parser_matches_tomllib(self):
+        text = (self.crate / "Cargo.toml").read_text()
+        saved = check_test_layout.tomllib
+        check_test_layout.tomllib = None
+        try:
+            fallback = check_test_layout.load_manifest(text)
+            self.assertEqual(check(self.root), [])
+        finally:
+            check_test_layout.tomllib = saved
+        self.assertFalse(fallback["package"]["autotests"])
+        self.assertEqual(
+            [(t["name"], t["path"]) for t in fallback["test"]],
+            [("integration", "tests/integration.rs"), ("isolated", "tests/isolated.rs")],
+        )

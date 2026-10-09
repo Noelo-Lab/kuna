@@ -4,7 +4,7 @@
 # `cargo run -p kuna-lift-diff -- --self-test` resolves a package by that name.
 # All logic lives in `kuna-harness::corpus` (the B2 structural differential, the
 # corpus case table, the bootstrap + extractor).  The same `run_self_test()` is
-# shared with the `cargo test -p kuna-harness --test lift_diff` integration test,
+# shared with the `cargo test -p kuna-harness --test integration lift_diff::` integration test,
 # so the bin and the test exercise identical code.
 [package]
 name = "kuna-lift-diff"

@@ -4,13 +4,38 @@ from collections import Counter
 from pathlib import Path
 import re
 import sys
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    tomllib = None
+
+REGISTRATION = re.compile(r'^\s*#\[path\s*=\s*"([^"]+)"\]\s*\n\s*mod\s+\w+;', re.M)
+
+
+def load_manifest(text: str) -> dict:
+    """Parse a Cargo manifest; without tomllib, read only what the check needs."""
+    if tomllib is not None:
+        return tomllib.loads(text)
+    config = {"package": {}, "test": []}
+    table = None
+    for line in text.splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line == "[[test]]":
+            table = {}
+            config["test"].append(table)
+        elif line.startswith("["):
+            table = config["package"] if line == "[package]" else None
+        elif table is not None and "=" in line:
+            key, value = (part.strip() for part in line.split("=", 1))
+            table[key] = {"true": True, "false": False}.get(value, value.strip('"'))
+    return config
 
 
 def check(root: Path) -> list[str]:
     errors = []
     for manifest in sorted((root / "decompiler/crates").glob("*/Cargo.toml")):
-        config = tomllib.loads(manifest.read_text())
+        config = load_manifest(manifest.read_text())
         if config.get("package", {}).get("autotests", True):
             continue
         crate = manifest.parent
@@ -22,7 +47,7 @@ def check(root: Path) -> list[str]:
                 errors.append(f"{path.relative_to(root)}: missing test entry point")
                 continue
             if target["name"] == "integration":
-                for relative in re.findall(r'#\[path\s*=\s*"([^"]+)"\]', path.read_text()):
+                for relative in REGISTRATION.findall(path.read_text()):
                     references[path.parent / relative] += 1
         for path in sorted(set((crate / "tests").glob("*.rs")) | set(references)):
             if not path.is_file():

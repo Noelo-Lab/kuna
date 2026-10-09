@@ -70,7 +70,7 @@ test-ghidra:
 	@bash -c 'set -o pipefail; cd $(ENGINE) && \
 	  cargo test --$(PROFILE) -p kuna-ghidra -- --include-ignored --nocapture \
 	    2>&1 | tee $(GHIDRA_SIM_LOG)'
-	@grep -q 'test ghidra_sim_sort_grep_breadth \.\.\. ok' $(GHIDRA_SIM_LOG) || { \
+	@grep -qE 'test (ghidra_sim_e2e::)?ghidra_sim_sort_grep_breadth \.\.\. ok' $(GHIDRA_SIM_LOG) || { \
 	  echo "ERROR: the sort/grep breadth test did not RUN (needs --include-ignored) -- false green"; \
 	  exit 1; \
 	}
@@ -88,7 +88,7 @@ test-cli:
 	PYTHONPATH=$(ROOT) python3 -m scripts.repipe.clitests
 
 test-tools:
-	$(PYTHON) scripts/check_test_layout.py
+	$(PYTHON) $(ROOT)/scripts/check_test_layout.py
 	PYTHONPATH=$(ROOT) $(PYTHON) -m unittest discover -s $(ROOT)/scripts/tests -p 'test_*.py'
 
 # Print the repo version as MAJOR.MINOR (VERSION file + commit count -- the
@@ -99,7 +99,7 @@ version:
 # The Rust workspace's own unit/integration tests (the ported TEST() suites, the
 # golden differential vectors, the SLEIGH-compiler .sla content-parity tests, ...).
 rust-test:
-	$(PYTHON) scripts/check_test_layout.py
+	$(PYTHON) $(ROOT)/scripts/check_test_layout.py
 	cd $(ENGINE) && cargo test --workspace --no-fail-fast
 
 # One invocation: a crate an earlier `--no-deps` run checked only as a dependency
