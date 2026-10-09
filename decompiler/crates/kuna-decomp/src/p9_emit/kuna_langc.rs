@@ -40,10 +40,21 @@ struct CDeclarator {
 
 impl CDeclarator {
     fn pointer(&mut self) {
+        self.front.insert(0, '*');
+        self.ungrouped_pointer = true;
+    }
+
+    fn qualified_pointer(&mut self, qualifiers: u8) {
         // We are walking from the outer type toward the base.  A newly reached
         // pointer belongs nearest the base type, so it prefixes the complete
         // declarator already accumulated around the identifier.
-        self.front.insert(0, '*');
+        if qualifiers == 0 {
+            self.pointer();
+            return;
+        }
+        let text = crate::kuna_typequal::spelling(qualifiers);
+        let gap = if self.front.is_empty() { "" } else { " " };
+        self.front.insert_str(0, &format!("* {text}{gap}"));
         self.ungrouped_pointer = true;
     }
 
@@ -108,10 +119,14 @@ impl TypeSpeller for CSpeller {
     /// function suffixes through the same `CDeclarator::postfix` grouping rule.
     fn declarator(&self, cx: &SpellCtx, ct: &Rc<Datatype>) -> (String, String) {
         // buildTypeStack: walk to the base (named) type, recording the modifiers.
-        let mut stack: Vec<Rc<Datatype>> = Vec::new();
+        let mut stack: Vec<(Rc<Datatype>, u8)> = Vec::new();
         let mut cur = Rc::clone(ct);
         loop {
-            stack.push(Rc::clone(&cur));
+            let qualifiers = cur.c_qualifiers();
+            if let Some(base) = cur.qualified_base() {
+                cur = Rc::clone(base);
+            }
+            stack.push((Rc::clone(&cur), qualifiers));
             if !cur.get_name().is_empty() {
                 break; // base type
             }
@@ -130,7 +145,7 @@ impl TypeSpeller for CSpeller {
             }
         }
         // The base type's display name (anonymous -> `undefined<N>` / `void`).
-        let base = stack.last().expect("declarator: non-empty stack");
+        let (base, qualifiers) = stack.last().expect("declarator: non-empty stack");
         // (kuna) realtypes: relabel a residual TYPE_UNKNOWN base as a real C type
         // by size. Under a pointer modifier the same size table applies, so the
         // pointee width survives into the declaration; only a residual size with
@@ -139,6 +154,7 @@ impl TypeSpeller for CSpeller {
         let under_pointer = stack[..stack.len() - 1]
             .iter()
             .rev()
+            .map(|(m, _)| m)
             .take_while(|m| m.get_metatype() != type_metatype::TYPE_CODE)
             .any(|m| matches!(m.get_metatype(), type_metatype::TYPE_PTR));
         let base_name = if let Some(n) = self.relabel(cx, base, under_pointer) {
@@ -149,14 +165,21 @@ impl TypeSpeller for CSpeller {
             base.get_display_name().to_string()
         };
 
+        let qualifier_text = crate::kuna_typequal::spelling(*qualifiers);
+        let base_name = if qualifier_text.is_empty() {
+            base_name
+        } else {
+            format!("{qualifier_text} {base_name}")
+        };
+
         // Walk modifiers OUTERMOST-to-base (`stack[0]..stack[len-2]`).  This is
         // the order in which a C declarator is built around its identifier.  A
         // pointer followed inward by an array postfix must be grouped;
         // the mirror ordering is an array of pointers and must not be grouped.
         let mut decl = CDeclarator::default();
-        for ct_mod in stack.iter().take(stack.len() - 1) {
+        for (ct_mod, qualifiers) in stack.iter().take(stack.len() - 1) {
             match ct_mod.get_metatype() {
-                type_metatype::TYPE_PTR => decl.pointer(),
+                type_metatype::TYPE_PTR => decl.qualified_pointer(*qualifiers),
                 type_metatype::TYPE_ARRAY => {
                     let n = ct_mod.num_elements().unwrap_or_else(|| {
                         let base = ct_mod
@@ -205,6 +228,9 @@ impl TypeSpeller for CSpeller {
     }
 
     fn type_name(&self, cx: &SpellCtx, t: &Rc<Datatype>) -> (String, String) {
+        if t.qualified_base().is_some() {
+            return self.declarator(cx, t);
+        }
         // (kuna) realtypes: a scalar residual TYPE_UNKNOWN (the named `xunknownN`
         // core type or an anonymous `undefined<N>`) becomes its real C type by size.
         if let Some(n) = self.relabel(cx, t, false) {

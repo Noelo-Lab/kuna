@@ -16,6 +16,18 @@ hand-off, the front-ends, the IR containers, the knowledge plane, the two
 pipeline non-linear. The algorithms themselves live in chapters 01–09; this is how
 they are hosted, ordered, configured, and restarted.
 
+C declarations supplied through the console or strict CLI assertions retain a
+`volatile` qualifier on the type layer where it was written. `const` and
+`restrict` are accepted and dropped, so they leave emitted C unchanged; the type
+layer can carry them, but no declaration attaches them. Specifier qualifiers attach to the base before declarator
+modifiers are applied; qualifiers following `*` attach to that pointer, including
+in parameters and return types. A qualified type retains its underlying shape
+for existing type consumers and an interned link to its unqualified type for
+identity and spelling. Typedefs retain their own names and inherit the underlying
+qualification. Kuna's type encoder preserves anonymous qualified layers in a
+`qualified` element with a qualifier bit mask and an underlying type reference;
+unqualified types keep their existing encoding.
+
 The object-file bootstrap records an explicit ARM/Thumb input selection in
 `Architecture::input_arm_isa_override`. This is an input fact, separate from
 analysis options: metadata painters preserve it when discovery or graph/xref

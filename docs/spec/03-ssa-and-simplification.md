@@ -5,6 +5,18 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p3_dataflow
 ```
 
+A LOAD through a pointer with an explicitly volatile pointee is treated as a
+volatile read by early removal and consume-based dead-code elimination, even
+when its value is unused. This type fact supplements the existing volatile
+address-range lookup; qualification of the pointer object alone does not mark
+its pointee volatile. The lookup follows typedef qualification without marking
+unqualified pointers.
+Before inference has typed an address temporary, a bounded walk through copies,
+casts, pointer arithmetic, and pointer loads can recover its declared pointer
+type. That walk is enabled only after the type factory has seen an explicit
+volatile type. Repeated SLEIGH loads of the same SSA pointer at one instruction
+are still one read; distinct instructions remain separate reads.
+
 This phase owns the **definition web**: the SSA linkage over the op-graph
 (heritage — phi placement, renaming, call/return/load/store guards, the
 dead-definition gate) and the **simplification fixpoint** that runs over it (the
