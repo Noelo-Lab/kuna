@@ -2615,11 +2615,13 @@ impl ConsoleProgram {
         // load it swept the whole image on every binary and was discarded whenever
         // the gate was off (the default). See `passes::run_deferred_entry_passes`.
         let want_funcstart_patterns = self.arch().analysis_funcstart_patterns;
+        let want_coldentry = self.arch().analysis_coldentry;
         if (want_listing
             || want_fast_funcdisc
             || want_operand_refs
             || want_wide32_alone
-            || want_funcstart_patterns)
+            || want_funcstart_patterns
+            || want_coldentry)
             && self.analysis_image.is_some()
         {
             let analysis_target = self.arch.arch_id().to_string();
@@ -2637,16 +2639,16 @@ impl ConsoleProgram {
                     // in `merged` before `committed_entry_seeds` is read below, which
                     // is what hands the load-time inventory to the Listing walk as
                     // extra roots (`armdiscseed`).
-                    if want_funcstart_patterns {
+                    if want_funcstart_patterns || want_coldentry {
+                        let arch = self.arch();
                         let entry_out = kuna_analysis::passes::run_deferred_entry_passes(
                             &bytes,
                             &image,
-                            self.arch(),
+                            arch,
+                            &|id| analysis_pass_enabled(arch, id),
                         );
-                        for (id, out) in entry_out {
-                            if analysis_pass_enabled(self.arch(), id) {
-                                merged.merge(out);
-                            }
+                        for (_, out) in entry_out {
+                            merged.merge(out);
                         }
                     }
                     // Deferred Listing build + consumer/fast-inventory run, gated
@@ -2681,6 +2683,7 @@ impl ConsoleProgram {
                             &noreturn_seed_addrs,
                             &[],
                             &committed_entry_seeds,
+                            &merged.fde_interior_entries,
                             &plan,
                         );
                         for (id, out) in consumer_out {
@@ -2725,6 +2728,10 @@ impl ConsoleProgram {
             &mut merged.entries,
             &fde_bodies,
         );
+        // (kuna, `coldentry`) The FDE-interior entries a multi-entry `.cold`
+        // fragment is jumped into at, added past the suppression above.
+        let cold_entries = std::mem::take(&mut merged.fde_interior_entries);
+        merged.entries.extend(cold_entries);
         // (kuna, `pdbinterior`) The same rejection inside PDB procedures, on its own
         // terms: see `suppress_pdb_interior_entries`.
         suppress_pdb_interior_entries(self.arch(), &code_space, &mut merged);
@@ -2904,6 +2911,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // strictly inside one. Default-ON; with the gate off the fact stream is
         // dropped here and the discovery set is exactly what it was before.
         "fdeinterior" => arch.analysis_fdeinterior,
+        "coldentry" => arch.analysis_coldentry,
         "pdatainterior" => arch.analysis_pdatainterior,
         // (kuna) PDB-procedure-interior entry suppression — the extents come out of
         // the `.pdb`, so switching `pdb` off withdraws them too.
