@@ -72,7 +72,7 @@ fn deferred_entry_pass_rebases_a_relocatable_object() {
         Sleigh::new(Box::new(backing), Box::new(ContextInternal::new())),
     );
 
-    let out = run_deferred_entry_passes(&bytes, &image, &arch);
+    let out = run_deferred_entry_passes(&bytes, &image, &arch, &|id| id == "funcstart_patterns");
     let ids: Vec<&str> = out.iter().map(|(id, _)| *id).collect();
     assert_eq!(ids, vec!["funcstart_patterns"]);
     let entries: Vec<u64> = out.iter().flat_map(|(_, o)| o.entries.iter().copied()).collect();
