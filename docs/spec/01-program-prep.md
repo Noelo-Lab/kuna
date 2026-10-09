@@ -4118,6 +4118,29 @@ load-bearing gotchas are worth restating: a constant-space branch operand is
 p-code-relative (an intra-instruction branch), never a VMA; fall-through is decided
 by the *last* op only; and delay slots are already folded into the reported length.
 
+The instruction model stores records in 1,024-row chunks, with a B-tree of
+`(address, row number)` pairs for ordered lookup
+(`decompiler/crates/kuna-analysis/src/listing/kuna_insnstore.rs (InstructionStore)`).
+A partly filled tree node reserves small row numbers rather than full instruction
+records, and growing the walk allocates at most one more chunk without copying a
+whole-image buffer. Every record retains its flow targets, assembly and lazy
+p-code fields. Exact, range and interior queries still borrow the original
+record in address order. Replacing an address reuses its row; ARM frame-preserving
+rebuilds clone the records and index before extending them. Serial and parallel
+walks use the same store. This changes allocation and lookup layout, not the
+instruction partition or the facts any consumer receives.
+
+After loading, committing analysis and applying caller assertions, the in-process
+CLI returns unused glibc heap pages before selecting and decompiling functions
+(`decompiler/crates/kuna-cli/src/kuna_allocrelease.rs (after_analysis)`). Dropping
+the Listing ends its ownership, but small tree and string allocations can leave
+resident pages in allocator arenas. A single `malloc_trim(0)` at this boundary
+releases free pages without discarding live program facts or imposing a memory
+budget. This applies on GNU/Linux; other platforms retain their allocator's
+ordinary release policy. It reduces post-analysis residency, while the chunked
+instruction store reduces the construction peak on every platform. Worker
+admission still uses the measured high-water mark, not the trimmed current RSS.
+
 Three things the walk deliberately does **not** always produce. First, the human
 assembly text on each instruction: capturing it means a *second* full SLEIGH parse
 of the same bytes (`Translate::print_assembly`) plus two heap strings per
@@ -4149,12 +4172,25 @@ pointer-only entries `fast_funcdisc` exists to find.
 
 Second, the cross-reference model itself, on the same reasoning and the same
 gate. An edge is filed for every control-flow successor of every instruction, a
-plain fall-through included, so the two direction maps together hold rather more
-entries than the instruction model does — and each is a `Vec` of its own inside a
-B-tree, which is several times the per-edge cost of an instruction. The model has
-exactly two readers, `noreturn_disc` and `tailcallentry`, and both are `listing`
-consumers, so a `fast_funcdisc`-only walk — again, the whole-binary export's path
-on any image `--mode auto` resolves to `fast` — builds neither map and every xref
+plain fall-through included. The walk collects each edge once in a contiguous
+buffer, including edges whose destination is not decoded. After the walk, it
+sorts and deduplicates that buffer by `(source, target, kind)` and makes one copy
+sorted by `(target, source, kind)`
+(`decompiler/crates/kuna-analysis/src/listing/kuna_compactrefs.rs (ReferenceIndex)`).
+Stable sorting preserves the first edge's operand metadata when duplicates are
+removed. Incoming and outgoing queries binary-search the corresponding buffer
+and borrow the matching slice; source iteration skips adjacent equal sources.
+There is no separate map node or growable vector for each instruction's
+fall-through. The reference model keeps the same edges, ordering, distinct-site
+counts and absence queries as the former bucket maps. Serial walks, decode-lane
+merges and ARM frame-preserving rebuilds all use this representation. During
+index construction, the deduplicated buffer is trimmed to its length before it
+is copied, and the copy is sorted in place, its keys being unique; every rebuild
+still owns its instruction partition.
+
+The readers, including `noreturn_disc`, `tailcallentry` and static format-string
+analysis, are `listing` consumers, so a `fast_funcdisc`-only walk — again, the whole-binary export's path
+on any image `--mode auto` resolves to `fast` — builds neither reference buffer and every xref
 query answers "none" for every address. What must hold is that nothing else about
 the walk changes, and nothing does: the reference filing is a pure sink, so the
 instructions decoded, the functions discovered and the executable ranges are

@@ -3,7 +3,7 @@
 //! Modelled on `verify_listing_queries.rs`'s partition comparator, widened to
 //! everything the walk produces: each instruction's extent, classified flow,
 //! static targets and disassembly text; whole `DiscoveredFunction` records; both
-//! reference maps after `finalize_refs`; and the executable ranges. Comparing
+//! finalized reference indices; and the executable ranges. Comparing
 //! addresses alone would pass on a walk that decoded the same bytes and
 //! classified them differently.
 //!

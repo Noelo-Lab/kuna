@@ -29,6 +29,8 @@
 //! decoded instruction.
 
 pub mod classify;
+mod kuna_compactrefs;
+mod kuna_insnstore;
 pub mod context;
 pub mod decode;
 pub mod kuna_callbackentry;
@@ -77,9 +79,8 @@ pub use model::{
 /// functions) is what the walk exists for; the disassembly TEXT and the
 /// cross-reference MODEL are each an extra, and each costs per instruction —
 /// the text a second full SLEIGH parse plus two heap `String`s, the references
-/// two B-tree inserts plus a `Vec` allocation per control-flow edge. Neither is
-/// free to build and discard: on a 94 MB `.text` the reference model alone is
-/// 23 million edges across two maps.
+/// one collected edge and two sorted buffers for incoming/outgoing queries.
+/// Neither is free to build and discard on a large instruction partition.
 ///
 /// Every consumer of either is gated on `--option listing on`, so a build that
 /// only wants the partition ([`ListingDetail::PARTITION_ONLY`]) is asking for
@@ -102,11 +103,9 @@ impl ListingDetail {
 /// The Listing facade: three sub-models sharing one decode pass (design §2.5).
 pub struct Listing {
     /// Instruction model, keyed by VMA.
-    insns: BTreeMap<u64, Insn>,
-    /// Incoming xref edges (callers / branch sources), keyed by target VMA.
-    refs_to: BTreeMap<u64, Vec<Reference>>,
-    /// Outgoing xref edges, keyed by source VMA.
-    refs_from: BTreeMap<u64, Vec<Reference>>,
+    insns: kuna_insnstore::InstructionStore,
+    /// Cross-reference edges, indexed in both address orders.
+    refs: kuna_compactrefs::ReferenceIndex,
     /// Discovered/seeded functions, keyed by entry VMA (ordered).
     funcs: BTreeMap<u64, DiscoveredFunction>,
     /// The coverage universe for the partition / gap walk (sorted, disjoint).
@@ -161,10 +160,17 @@ impl Listing {
         funcs: BTreeMap<u64, DiscoveredFunction>,
         exec_ranges: Vec<(u64, u64)>,
     ) -> Listing {
+        Self::from_partition_store(insns.into_iter().collect(), funcs, exec_ranges)
+    }
+
+    fn from_partition_store(
+        insns: kuna_insnstore::InstructionStore,
+        funcs: BTreeMap<u64, DiscoveredFunction>,
+        exec_ranges: Vec<(u64, u64)>,
+    ) -> Listing {
         Listing {
             insns,
-            refs_to: BTreeMap::new(),
-            refs_from: BTreeMap::new(),
+            refs: kuna_compactrefs::ReferenceIndex::default(),
             funcs,
             exec_ranges,
             has_assembly: true,
@@ -189,8 +195,8 @@ impl Listing {
     /// second full SLEIGH parse per instruction (see [`decode::decode_one`]).
     ///
     /// `detail.refs` selects whether the reference model is built at all. Its
-    /// only two consumers — the `noreturn_disc` Listing pass and
-    /// `tailcallentry` — are both gated on `--option listing on`, so the
+    /// consumers — the `noreturn_disc` Listing pass, `tailcallentry` and static
+    /// format-string analysis — are all gated on `--option listing on`, so the
     /// `fast_funcdisc`-only path passes `false` and skips filing (and then
     /// sorting, and then dropping) one edge per control-flow successor of every
     /// instruction in the program.
@@ -275,9 +281,8 @@ impl Listing {
                 // caller asked for: `has_refs` reports what was built, not what
                 // was requested.
                 return Listing {
-                    insns: BTreeMap::new(),
-                    refs_to: BTreeMap::new(),
-                    refs_from: BTreeMap::new(),
+                    insns: kuna_insnstore::InstructionStore::default(),
+                    refs: kuna_compactrefs::ReferenceIndex::default(),
                     funcs: BTreeMap::new(),
                     exec_ranges,
                     has_assembly: detail.assembly,
@@ -342,21 +347,11 @@ impl Listing {
             frames,
         );
 
-        let mut refs_to = st.refs_to;
-        let mut refs_from = st.refs_from;
-        // Lock the xref read-API ordering/dedup semantics (design §6 / PR4): each
-        // bucket is sorted (refs_to by source VMA then kind, refs_from by target
-        // VMA then kind) and de-duplicated on `(from, to, kind)`, so a target
-        // referenced twice from the same call site contributes one edge and
-        // `ref_count_to` equals the number of distinct referencing sites.
-        // Both maps are empty when the walk was told not to build them.
-        finalize_refs(&mut refs_to, /* by_source = */ true);
-        finalize_refs(&mut refs_from, /* by_source = */ false);
+        let refs = kuna_compactrefs::ReferenceIndex::new(st.refs);
 
         Listing {
             insns: st.insns,
-            refs_to,
-            refs_from,
+            refs,
             funcs: st.funcs,
             exec_ranges,
             has_assembly: detail.assembly,
@@ -424,14 +419,10 @@ impl Listing {
             &WalkPlan::serial(),
             None,
         );
-        let mut refs_to = st.refs_to;
-        let mut refs_from = st.refs_from;
-        finalize_refs(&mut refs_to, /* by_source = */ true);
-        finalize_refs(&mut refs_from, /* by_source = */ false);
+        let refs = kuna_compactrefs::ReferenceIndex::new(st.refs);
         Listing {
             insns: st.insns,
-            refs_to,
-            refs_from,
+            refs,
             funcs: st.funcs,
             exec_ranges,
             has_assembly: detail.assembly,
@@ -450,8 +441,7 @@ impl Listing {
     pub(crate) fn from_insns_for_test(insns: Vec<Insn>, has_assembly: bool) -> Listing {
         Listing {
             insns: insns.into_iter().map(|i| (i.addr, i)).collect(),
-            refs_to: BTreeMap::new(),
-            refs_from: BTreeMap::new(),
+            refs: kuna_compactrefs::ReferenceIndex::default(),
             funcs: BTreeMap::new(),
             exec_ranges: vec![(0, u64::MAX)],
             has_assembly,
@@ -471,8 +461,7 @@ impl Listing {
     ) -> Listing {
         Listing {
             insns: insns.into_iter().map(|i| (i.addr, i)).collect(),
-            refs_to: BTreeMap::new(),
-            refs_from: BTreeMap::new(),
+            refs: kuna_compactrefs::ReferenceIndex::default(),
             funcs: funcs.into_iter().map(|f| (f.entry, f)).collect(),
             exec_ranges,
             has_assembly: true,
@@ -703,30 +692,30 @@ impl Listing {
     /// Incoming references to `to` (callers / branch sources), sorted by source
     /// VMA then kind, de-duplicated on `(from, to, kind)`.
     pub fn refs_to(&self, to: u64) -> &[Reference] {
-        self.refs_to.get(&to).map(Vec::as_slice).unwrap_or(&[])
+        self.refs.to(to)
     }
 
     /// Outgoing references from `from`, sorted by target VMA then kind,
     /// de-duplicated on `(from, to, kind)`.
     pub fn refs_from(&self, from: u64) -> &[Reference] {
-        self.refs_from.get(&from).map(Vec::as_slice).unwrap_or(&[])
+        self.refs.from(from)
     }
 
     /// Iterate every distinct reference *source* VMA in address order (the
     /// call-site / reference worklist a consumer drives).
     pub fn ref_source_iter(&self) -> impl Iterator<Item = u64> + '_ {
-        self.refs_from.keys().copied()
+        self.refs.sources()
     }
 
     /// True iff anything references `to`.
     pub fn has_refs_to(&self, to: u64) -> bool {
-        self.refs_to.get(&to).is_some_and(|v| !v.is_empty())
+        !self.refs.to(to).is_empty()
     }
 
     /// The number of (distinct) references to `to` — equal to the number of
     /// distinct referencing sites after dedup.
     pub fn ref_count_to(&self, to: u64) -> usize {
-        self.refs_to.get(&to).map_or(0, Vec::len)
+        self.refs.to(to).len()
     }
 
     // ---- function model (ordered, design §6 / PR3) ----
@@ -763,33 +752,6 @@ impl Listing {
     }
 }
 
-/// Numeric rank of a [`RefKind`] for a stable secondary sort key.
-fn ref_kind_ord(k: RefKind) -> u8 {
-    match k {
-        RefKind::Call => 0,
-        RefKind::Code => 1,
-        RefKind::Data => 2,
-        RefKind::Read => 3,
-        RefKind::Write => 4,
-    }
-}
-
-/// Sort + dedup one direction of the xref multimap, locking the read-API ordering
-/// (design §6 / PR4). `by_source` sorts each bucket by source VMA (the `refs_to`
-/// direction, where the bucket key is the target); otherwise by target VMA (the
-/// `refs_from` direction, where the bucket key is the source). Kind is the
-/// secondary key. Dedup is on the full `(from, to, kind)` triple.
-pub(super) fn finalize_refs(map: &mut BTreeMap<u64, Vec<Reference>>, by_source: bool) {
-    for refs in map.values_mut() {
-        refs.sort_by(|a, b| {
-            let pa = if by_source { a.from } else { a.to };
-            let pb = if by_source { b.from } else { b.to };
-            pa.cmp(&pb).then_with(|| ref_kind_ord(a.kind).cmp(&ref_kind_ord(b.kind)))
-        });
-        refs.dedup_by(|a, b| a.from == b.from && a.to == b.to && a.kind == b.kind);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -815,8 +777,7 @@ mod tests {
             .collect();
         let listing = Listing {
             insns,
-            refs_to: BTreeMap::new(),
-            refs_from: BTreeMap::new(),
+            refs: kuna_compactrefs::ReferenceIndex::default(),
             funcs: BTreeMap::new(),
             exec_ranges: Vec::new(),
             has_assembly: true,

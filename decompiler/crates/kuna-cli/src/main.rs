@@ -18,6 +18,7 @@ mod function_info;
 mod image;
 mod jobs;
 mod jsonfmt;
+mod kuna_allocrelease;
 mod limits;
 mod loadtime;
 mod optname;

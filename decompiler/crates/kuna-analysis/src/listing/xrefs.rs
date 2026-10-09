@@ -1300,7 +1300,7 @@ fn partition_listing(
     funcs: &BTreeSet<u64>,
     exec: &[(u64, u64)],
 ) -> super::Listing {
-    let mut insns: BTreeMap<u64, super::Insn> = BTreeMap::new();
+    let mut insns = super::kuna_insnstore::InstructionStore::default();
     for &(addr, len) in partition {
         insns.insert(
             addr,
@@ -1316,7 +1316,7 @@ fn partition_listing(
             },
         );
     }
-    super::Listing::from_partition(
+    super::Listing::from_partition_store(
         insns,
         funcs
             .iter()
@@ -1497,7 +1497,7 @@ impl State {
 
 /// Lock one bucket's read ordering and collapse duplicates on `(from, to, kind)`,
 /// so a target reached twice from one site contributes exactly one row (the same
-/// contract [`super::Listing`]'s `finalize_refs` holds).
+/// contract [`super::Listing`]'s reference index holds).
 fn sort_dedup(refs: &mut Vec<Xref>, by_source: bool) {
     refs.sort_by(|a, b| {
         let (pa, sa) = if by_source { (a.from, a.to) } else { (a.to, a.from) };
