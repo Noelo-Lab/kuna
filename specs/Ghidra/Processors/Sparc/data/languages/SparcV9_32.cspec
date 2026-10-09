@@ -64,7 +64,7 @@
 	</rule>
 	<rule>
 	  <datatype name="any" maxsize="8"/>
-	  <join storage="general"/>  <!-- join is NOT aligned -->
+	  <join storage="general" stackalign="false"/>  <!-- join is NOT aligned -->
 	</rule>
       </input>
       <output>

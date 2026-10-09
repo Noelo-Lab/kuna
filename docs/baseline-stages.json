@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2402,
-    2402
+    2404,
+    2404
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -2255,6 +2255,8 @@
     "data:sparc64-callreturn #4: f3 subtracts the second atoi result (O2 and O0)",
     "data:sparc64-callreturn #5: fd stores dd's fd0 result (O2 and O0)",
     "data:sparc64-callreturn #6: no call result is dropped",
+    "data:stack double after seven ints is read whole",
+    "data:stack double is not split across a realigned slot",
     "data:stackarggap #1: option off invents a fourth and fifth argument to reach a stack slot (bug reproduced)",
     "data:stackarggap #2: option on ends the argument list at the register the caller never wrote",
     "data:stalejumptable #1: the real jump-table switch survives on BOTH passes (0 before the fix: pass 1 panicked)",

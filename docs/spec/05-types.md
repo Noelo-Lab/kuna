@@ -195,8 +195,10 @@ approximation to name, never as a layout guarantee.
 
 SPARC32 objects of size eight have alignment eight in `SparcV9_32.cspec`.
 This places a `double` after five consecutive `short` fields at offset 16,
-with total struct size 24. The alignment of aggregate members is distinct from
-the unaligned joining of register arguments in the same calling convention.
+with total struct size 24. Argument passing does not follow that alignment:
+the calling convention's `<join stackalign="false"/>` rule (chapter 04) keeps
+a stack-passed `double` in the next free word, so after seven `int` arguments
+it is the two words at `%fp+96`.
 
 The `long` fallback is not neutral. With no `<long_size>`, `setup_sizes` makes
 `long` 8 bytes whenever `int` is 4 (upstream's LP64 assumption), so every ILP32

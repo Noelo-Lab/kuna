@@ -14,20 +14,45 @@ double_field:
  ret
  restore
 .size double_field, .-double_field
+.global eighth_double
+.type eighth_double,@function
+eighth_double:
+ save %sp, -96, %sp
+ ld [%fp+92], %i0
+ st %i0, [%fp-4]
+ ld [%fp-4], %f0
+ ldd [%fp+96], %f2
+ fitod %f0, %f0
+ faddd %f0, %f2, %f0
+ ret
+ restore
+.size eighth_double, .-eighth_double
+Stack argument words keep their slots: the eighth argument, a double after
+seven ints, is the two words at %fp+96, not realigned to %fp+100.
 -->
 <bytechunk space="ram" offset="0x10000" readonly="true">
 9de3bf90c51e4000c53e201081c7e00881e80000
 </bytechunk>
+<bytechunk space="ram" offset="0x10100" readonly="true">
+9de3bfa0f007a05cf027bffcc107bffcc51fa06081a0190081a0084281c7e00881e80000
+</bytechunk>
 <symbol space="ram" offset="0x10000" name="double_field"/>
+<symbol space="ram" offset="0x10100" name="eighth_double"/>
 </binaryimage>
 <script>
   <com>parse line typedef struct Record { short a; short b; short c; short d; short e; double value; } Record;</com>
   <com>parse line extern void double_field(Record *output, double *input);</com>
+  <com>parse line extern double eighth_double(int a,int b,int c,int d,int e,int f,int g,double x);</com>
   <com>lo fu double_field</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu eighth_double</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="double is stored in its declared field" min="1" max="1">output-&gt;value = \*input;</stringmatch>
 <stringmatch name="no shifted field store" min="0" max="0">&amp;output-&gt;value \+ 4</stringmatch>
+<stringmatch name="stack double after seven ints is read whole" min="1" max="1">return \(float8\)g \+ x;</stringmatch>
+<stringmatch name="stack double is not split across a realigned slot" min="0" max="0">CONCAT44</stringmatch>
 </decompilertest>
