@@ -1,0 +1,78 @@
+<decompilertest>
+  <binaryimage arch="x86:LE:64:default:gcc">
+    <bytechunk space="ram" offset="0x401000">5341544883ec08e8240000004889c34989d44889df4c89e6e81e0000004889df4c89e6e8130000004883c408415c5bc3b80d000000ba37000000c34801f748013dbb0f0000c3e8b5ffffff31ff48813da80f000088000000400f94c783f701b83c0000000f05</bytechunk>
+    <bytechunk space="ram" offset="0x402000">0000000000000000</bytechunk>
+    <symbol space="ram" offset="0x401000" name="wide_names" />
+    <symbol space="ram" offset="0x401030" name="wide_source" />
+    <symbol space="ram" offset="0x40103b" name="observe_wide" />
+    <bytechunk space="ram" offset="0x403000">53415441554889f8ba0700000048f7e24889c34989d44889c7e8580000004c89e7e8500000004889dfe8480000004c89e7e840000000415d415c5bc3534154415589f8ba07000000f7e24889c34989d44889c7e81e0000004c89e7e8160000004889dfe80e0000004c89e7e806000000415d415c5bc348013d830f0000c3bf0d000000e878ffffff48813d6d0f0000b6000000753148c705600f000000000000bfffffffffe892ffffff48b8feffffff01000000483905450f0000750931ffb83c0000000f05bf01000000b83c0000000f05</bytechunk>
+    <bytechunk space="ram" offset="0x404000">0000000000000000</bytechunk>
+    <symbol space="ram" offset="0x403000" name="multiply_names" />
+    <symbol space="ram" offset="0x403076" name="observe_number" />
+    <bytechunk space="ram" offset="0x405000">81ffc8000000740f81ff8e000000751abf3a000000eb05bf640000004883ec08e8080000004883c408c389f8c38d043fc3</bytechunk>
+    <symbol space="ram" offset="0x405000" name="register_parameter_reuse" />
+    <symbol space="ram" offset="0x40502d" name="consume_key" />
+    <bytechunk space="ram" offset="0x408000">4989f94989f249b8b3010000000100000fb647114c0fafc00fb647124931c085c974054889f0eb034889f8488902410fb641134931c04c8905fb0f00004c89d0c3488d3db80f0000488d35c90f0000488d15da0f000031c9e8a3ffffff488d35b40f00004839f07559488d3d900f000048393db90f0000754949b8b3010000000100004d6bc0564983f0344983f0124c3905a20f0000752a488d15910f0000b901000000e857ffffff488d35680f00004839f0750d483935740f0000750431ffeb05bf01000000b83c0000000f05</bytechunk>
+    <bytechunk space="ram" offset="0x409000">00000000000000000000000000000000785634120000000000000000000000000000000000000000000000000000000000000000000000000000000000000000</bytechunk>
+    <symbol space="ram" offset="0x408000" name="value_domains" />
+  </binaryimage>
+  <script>
+    <com>parse line typedef struct LifetimeWide { unsigned long long x; unsigned long long y; } LifetimeWide;</com>
+    <com>parse line typedef struct LifetimeWide LifetimeWideAlias;</com>
+    <com>parse line extern void wide_names(void);</com>
+    <com>parse line extern struct LifetimeWide wide_source(void);</com>
+    <com>parse line extern void observe_wide(struct LifetimeWide value);</com>
+    <com>lo fu wide_names</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>rename value recovered_wide</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>retype recovered_wide LifetimeWideAlias</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>parse line extern void multiply_names(unsigned long long input);</com>
+    <com>parse line extern void observe_number(unsigned long long value);</com>
+    <com>option impliedrefs 0</com>
+    <com>lo fu multiply_names</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>rename v1 operand</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>rename v1 multiplier</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>option impliedrefs 2</com>
+    <com>parse line extern int4 register_parameter_reuse(int4 property);</com>
+    <com>parse line extern int4 consume_key(int4 key);</com>
+    <com>lo fu register_parameter_reuse</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>rename property_00 cleared_property</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>parse line struct Node { struct Node *next; struct Node *previous; uint4 identity; uint1 padding[4]; };</com>
+    <com>map addr r0x409038 uint8 observed_hash</com>
+    <com>lo fu value_domains</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>parse line extern struct Node *value_domains(struct Node *first,struct Node *last,struct Node **selected,uint4 choose_last);</com>
+    <com>lo fu value_domains</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>quit</com>
+  </script>
+  <stringmatch name="register lifetimes: native join baseline remains readable" min="2" max="2">observe_wide\(value\);</stringmatch>
+  <stringmatch name="register lifetimes: a join rename is attached across recovery" min="4" max="4">observe_wide\(recovered_wide\);</stringmatch>
+  <stringmatch name="register lifetimes: a locked join type survives recovery" min="1" max="1">LifetimeWideAlias recovered_wide;</stringmatch>
+  <stringmatch name="register lifetimes: an anonymous widened operand starts as a value" min="1" max="1">v1 = ZEXT816\(input\);</stringmatch>
+  <stringmatch name="register lifetimes: a temporary name survives each rebuild" min="2" max="2">operand = ZEXT816\(input\);</stringmatch>
+  <stringmatch name="register lifetimes: a second temporary remains independently named" min="1" max="1">multiplier = ZEXT816\(7\);</stringmatch>
+  <stringmatch name="register lifetimes: a later rename keeps incoming branch conditions" min="2" max="2">if \(property != 200\)</stringmatch>
+  <stringmatch name="register lifetimes: a later rename keeps the incoming return value" min="2" max="2">return property;</stringmatch>
+  <stringmatch name="register lifetimes: the dispatched key has its requested name" min="1" max="1">consume_key\(cleared_property\)</stringmatch>
+  <stringmatch name="register lifetimes: byte operands leave the pointer return independent" min="1" max="1">return last;</stringmatch>
+  <stringmatch name="register lifetimes: inferred return contracts preserve the final pointer" min="1" max="1">return a1;</stringmatch>
+  <stringmatch name="register lifetimes: an inferred scalar destination keeps the pointer bits" min="1" max="1">\*a2 = \(unsigned long\)v[0-9]+;</stringmatch>
+</decompilertest>

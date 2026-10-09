@@ -1,0 +1,7 @@
+# Apply after the GD dash_lifecycle_readable bundle, which defines DashPoint.
+# GeometryDash.exe SHA256 fc5a16c292278bc2e8e078fb1d5023c2bd658322dd72712767ea70c2dd9ec6d0; base 0x140000000.
+prototype 0x140516d00 void DashArray_removeAt(void *array,unsigned int index,bool release)
+prototype 0x1405169f8 struct DashPoint *DashPoint_copy(struct DashPoint *output,const struct DashPoint *source)
+prototype 0x140516a08 struct DashPoint *DashPoint_assign(struct DashPoint *output,const struct DashPoint *source)
+prototype 0x1404d0770 void *Dash_allocate(unsigned long long size)
+prototype 0x14017ab00 void *Dash_constructManager(void *storage)

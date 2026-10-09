@@ -433,6 +433,7 @@ fn output_only_prototype_pieces_do_not_abort_the_drive() {
             mapped_symbols: &[],
             usepoint_symbols: &[],
             dynamic_symbols: &[],
+            object_assertions: &[],
             pending_proto: Some(&pieces),
             flow_overrides: &[],
             mapped_params: &[],

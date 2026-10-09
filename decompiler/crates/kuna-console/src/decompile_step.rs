@@ -47,6 +47,7 @@ use kuna_decomp::kuna_formatstring::ParkedFormatSite;
 /// mirrors `decompile_func_full_with_override_dyn`'s argument order so the
 /// forwarding stays checkable by eye.
 pub struct DecompileSeed<'a> {
+    pub object_assertions: &'a [kuna_decomp::kuna_stackobjectasserts::ObjectAssertion],
     /// `map addr` symbols ++ the function's DWARF stack locals.
     pub mapped_symbols: &'a [(String, Rc<Datatype>, Address, uint4)],
     /// `type varnode %REG(pc)` usepoint-scoped symbols (console only).
@@ -69,6 +70,7 @@ impl DecompileSeed<'_> {
         flow_overrides: &'a [(Address, uint4)],
     ) -> DecompileSeed<'a> {
         DecompileSeed {
+            object_assertions: &[],
             mapped_symbols,
             usepoint_symbols: &[],
             dynamic_symbols: &[],
@@ -243,7 +245,7 @@ pub fn decompile_one_prefollowed(
     // shape: prototype overrides are consumed AT FLOW TIME, so IR followed
     // without them does not carry the typing.
     let prefollowed = if has_derived_flow || !parked.is_empty() { None } else { prefollowed };
-    let mut result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn_prefollowed(
+    let mut result = kuna_decomp::decompile_drive::decompile_func_full_with_objects(
         arch,
         name,
         // Cloned so `entry` survives for the conditional re-decompile below
@@ -259,6 +261,7 @@ pub fn decompile_one_prefollowed(
         proto_overrides,
         seed.mapped_params,
         prefollowed,
+        seed.object_assertions,
     );
     // (kuna `floatglobals`) A float vote asked about a global before the
     // whole-program scan ran: take it once for the run, and drive again. One
@@ -327,7 +330,7 @@ pub fn decompile_one_prefollowed(
         last_overrides.clone_from(&merged);
         arch.format_override_callpoints.retain(|at| !dropped.contains(at));
         arch.format_override_callpoints.extend(discovered.iter().map(|(a, _)| a.get_offset()));
-        result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
+        result = kuna_decomp::decompile_drive::decompile_func_full_with_objects(
             arch,
             name,
             entry,
@@ -339,6 +342,8 @@ pub fn decompile_one_prefollowed(
             &flow_overrides,
             &merged,
             seed.mapped_params,
+            None,
+            seed.object_assertions,
         );
     }
     // (kuna `callrettype`) A callee's stated return type that the finished
@@ -350,7 +355,7 @@ pub fn decompile_one_prefollowed(
     };
     if !contradicted.is_empty() {
         kuna_decomp::kuna_callrettype::refuse(arch, &redo_entry, &contradicted);
-        result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
+        result = kuna_decomp::decompile_drive::decompile_func_full_with_objects(
             arch,
             name,
             redo_entry,
@@ -362,6 +367,8 @@ pub fn decompile_one_prefollowed(
             &flow_overrides,
             &last_overrides,
             seed.mapped_params,
+            None,
+            seed.object_assertions,
         );
     }
     arch.format_override_callpoints.clear();

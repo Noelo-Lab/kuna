@@ -257,12 +257,12 @@ pass with inference live.
 1. **Seed** (`build_localtypes`): every live Varnode gets a *temporary* type
    from purely local evidence. A type-locked Varnode is its own seed (and a
    hard wall — nothing propagates over it). A Varnode covered by a type-locked
-   symbol gets the exact byte-slice of the symbol's type
-   (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
-   (build_localtype_seed_at)` → the factory's `get_exact_piece`). The lookup uses
-   the Varnode's definition usepoint (entry-minus-one for inputs), so a locked
-   later register local cannot seed the type of an incoming parameter sharing
-   that register. The char-byte seeding guard uses the same query. Everything else
+   symbol gets the exact byte-slice of the symbol's type: `build_localtype_seed_at`
+   first resolves the Varnode's base byte at its definition usepoint, matching
+   `linkSymbol`, then calls the factory's `get_exact_piece`. This keeps
+   same-register Symbols with different use limits from seeding one another's
+   definitions. `kuna_charbyte::seed_char` uses the same lookup when deciding
+   whether a locked Symbol protects the byte. Everything else
    asks its defining op and each reading op for a suggestion
    (`output_type_local` / `input_type_local`, same module) and keeps the most
    specific by `type_order`. The suggestions come from the per-opcode table
@@ -305,6 +305,15 @@ non-zero mask (§5.3) admits values above 1. When the incoming type is a union
 (Funcdata::resolve_in_flow)` (§5.4) — except across MULTIEQUAL/INDIRECT
 markers, where the unresolved union flows on so one phi input cannot lock the
 facet for all of them.
+
+With stackviews enabled, `decompiler/crates/kuna-decomp/src/p5_types/kuna_stackwordtypes.rs`
+separates a generated frame backing from the value stored through another
+pointer. A one-, two-, four-, or eight-byte STORE value uses its resolved scalar
+piece, falling back to unsigned bits when the selected view is a byte array or
+an unresolved aggregate. Frame symbols and union-resolution edges remain intact.
+The destination must not acquire an array pointee merely because the source
+frame exposes a byte-array storage view; declared pointer fields continue to
+supply their own type.
 
 The S5→S6 feedback lives at the end of the pass: `propagate_spacebase_ref`
 finds the stack-pointer input and pushes recovered pointer types (e.g. a
@@ -3259,6 +3268,13 @@ input halves into one logical input via `combine_input_varnodes`.
 `RuleDoubleLoad` / `RuleDoubleStore` (same file) fuse two adjacent half-width
 LOADs/STOREs into one whole-width access — requiring address contiguity in
 the right endian order and proving no interfering write between the two ops.
+
+LOADs originating in the short frame byte-copy expansion of chapter 03 keep
+their original byte widths. Their source pointer need only be byte-aligned;
+fusion into a halfword or word would introduce an alignment requirement the
+binary does not have. Concatenation also avoids an `undefined3` dereference with
+no matching C integer storage type. Other LOADs and all STOREs retain their
+existing contiguity and conflict rules.
 
 **When it wins/loses.** It wins when the compiler's lowering kept the standard
 shapes: the output shows one 2N-bit variable with ordinary arithmetic. It

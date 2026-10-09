@@ -15,6 +15,7 @@ pub mod bitfield;
 pub mod constseq;
 pub mod prefersplit;
 pub mod coreaction_infertypes;
+pub(crate) mod kuna_stackwordtypes;
 pub mod kuna_memsetsequence;
 pub mod kuna_rodatastring;
 pub mod kuna_ptrdepth;

@@ -33,7 +33,7 @@ use crate::context::{OpId, TypeOp, VarnodeId};
 use crate::varnode::varnode_flags;
 
 #[cfg(test)]
-mod spacebase_tests;
+pub(crate) mod spacebase_tests;
 
 impl Funcdata {
     /// Mark Varnode objects that hold stack-pointer values and set up special
@@ -602,6 +602,8 @@ impl Funcdata {
             let declared = crate::kuna_castobject::declare_out_params(self, &mut state, &space);
             self.record_cast_objects(declared);
         }
+
+        crate::kuna_stackviews::gather(self, &mut state, &space);
 
         // overlapProblems = restructure(state).  Clone the type factory `Rc` out
         // first so the &mut ScopeLocal borrow does not alias the &self arch read.

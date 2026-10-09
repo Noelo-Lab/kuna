@@ -94,10 +94,15 @@ impl Funcdata {
         // `ProtoStoreSymbol::setInput` when a parameter's storage is not owned by
         // any scope (e.g. a register).
         let restricted_usepoint = &self.get_address().clone() + -1;
+        let stack_views = self.get_arch().stack_views;
         for (i, name, ty, addr) in specs {
             let rup = restricted_usepoint.clone();
             if let Some(lm) = self.get_scope_local_mut() {
-                let _ = lm.add_param_symbol(i, &name, ty, &addr, &rup);
+                if stack_views {
+                    let _ = lm.add_param_symbol_for_stack_reuse(i, &name, ty, &addr, &rup);
+                } else {
+                    let _ = lm.add_param_symbol(i, &name, ty, &addr, &rup);
+                }
             }
         }
     }
@@ -1173,9 +1178,9 @@ impl Funcdata {
         // for which `SymbolEntry::inUse` is usepoint-independent — an invalid usepoint
         // resolves the same container the prior call did.
         let sb_usepoint = Address::new_invalid();
-        let local_hit = self
-            .get_scope_local()
-            .and_then(|lm| lm.query_container_for_link(&addr, &sb_usepoint));
+        let local_hit = crate::kuna_stackparamviews::backing_for_address(self, &addr, 1)
+            .or_else(|| self.get_scope_local()
+                .and_then(|lm| lm.query_container_for_link(&addr, &sb_usepoint)));
         let info_is_global = local_hit.is_none();
         let local_sid = local_hit.as_ref().map(|i| i.symbol);
         let resolved: Option<(String, int4, Option<Rc<Datatype>>, bool)> = match local_hit {

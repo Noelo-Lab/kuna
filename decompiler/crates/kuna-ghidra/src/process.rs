@@ -832,6 +832,8 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                                 seed_dynamic.push(kuna_decomp::database::DynamicSymbolSpec {
                                     name: l.name.clone(),
                                     dtype: std::rc::Rc::clone(&l.dtype),
+                                    flags: kuna_decomp::varnode::varnode_flags::namelock
+                                        | kuna_decomp::varnode::varnode_flags::typelock,
                                     addr: l.addr.clone(),
                                     hash: l.hash,
                                     category: -1,

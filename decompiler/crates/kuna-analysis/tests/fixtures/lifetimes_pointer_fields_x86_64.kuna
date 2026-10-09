@@ -1,0 +1,4 @@
+typedef struct FieldNode { struct FieldNode *next; struct FieldNode *previous; int value; unsigned char padding[4]; };
+typedef struct FieldSet { float load; unsigned char padding[4]; struct FieldNode *head; unsigned long long count; };
+prototype group_fields int group_fields(void)
+prototype construct_set bool construct_set(struct FieldSet *set)

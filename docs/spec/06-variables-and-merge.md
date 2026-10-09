@@ -13,7 +13,8 @@ simplification — runs its committing half strictly *after* the Band-B fixpoint
 (§6.5). Per the schedule (00-overview §0.6) the phase is split in two: the
 *preparatory* members run inside `mainloop` and co-evolve with SSA and types
 (`ActionRestrictLocal`, `ActionDynamicMapping`, `ActionRestructureVarnode`,
-and `stackstall`'s `ActionStackPtrFlow` plus the `stackvars` rules), while the
+and `stackstall`'s `ActionStackPtrFlow` plus the `stackvars` rules, followed
+by `ActionRestrictLocalSavedLanes` after `stackstall`), while the
 *committing* merge phalanx (`ActionAssignHigh` through `ActionCopyMarker`) is a
 one-shot tail after `fullloop` exits — the exact order is the pass tree in
 `decompiler/crates/kuna-decomp/src/infra/universalaction.rs (universal_sched)`.
@@ -751,6 +752,42 @@ registers (calling-convention bookkeeping, not a variable). The same
 mechanism (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 (ScopeLocal::mark_not_mapped)`) later excludes an unaliased return-value
 staging slot (`funcdata_spacebase.rs (Funcdata::check_unaliased_return)`).
+
+`kuna_savedregisterspills.rs (ActionRestrictLocalSavedLanes)` handles the
+split-lane case the exact-width pass cannot see: SLEIGH may represent a
+16-byte unaffected register effect, such as Win64 XMM6, as several smaller
+unaffected input Varnodes and lower its stack save to `STORE`s. It enumerates
+only fully contained lanes whose own prototype effect is unaffected, then
+recognizes only direct lane-to-frame `COPY`/`STORE` saves. A candidate must be a
+negative local-frame slot with an exact frame address. Overlap checks compare
+wrapped interval starts in constant time, including ranges that cross zero.
+A raw `LOAD` or `STORE` counts as a stack access only when
+`RuleLoadVarnode::check_spacebase` confirms
+that P-code input 0 and pointer input 1 resolve to this same stack space; an
+overlapping cross-space or unresolved access keeps the slot mapped. Every
+overlapping stack-space Varnode output from every opcode must be the exact
+candidate save. Every surviving read of candidate bytes, including a
+same-lane-looking LOAD or stack-space COPY, keeps the slot mapped. Every direct
+call in the function must have complete `unobserved` and `preserves` body
+summaries for every candidate byte. Frame-derived pointers may propagate only
+through ordinary register/unique temporaries; returning one, storing one as
+data, or copying one into persistent/global or stack storage keeps the slot
+mapped. A `LOAD` result is the memory's contents, not the provenance of its
+address; ordinary disjoint field values may still be computed and returned.
+Indirect calls, user ops, unbounded stack addresses, and other overlapping
+writes also keep the slot mapped. The conventional restore need not survive
+DCE: the motivating P-code has already
+removed it, and any surviving read blocks pruning. The action returns before
+scanning when both `stackviews` and `stackalias_deadstore` are off, because
+calleememory summaries are populated only with one of those options enabled.
+With either option on, missing or incomplete summaries still leave direct calls
+as barriers. The pass is additive to the old exact-width path and does not
+classify positive caller-owned stack homes as private.
+
+An unresolved call-frame offset defers the attempt rather than consuming its
+once-per-function opportunity. The action retries on later main-loop iterations
+and stops after the first successful restriction, allowing ordinary dead-code
+and alias cleanup to finish on the next iteration.
 
 **Reporting the frame vs. reporting the declarations (`option framelayout`).**
 Because the layout is rebuilt from scratch every pass, a slot is only in the
@@ -1548,6 +1585,15 @@ pipeline never adds a record, so both passes are structurally inert there.
 The C++ `collectNameRecs` harvest (standalone symbols → records) remains an
 unported follow-up.
 
+**Keep the resolved Symbol identity through naming.** `name_local_highs_angr`
+selects the smallest containing entry with `query_container_for_link(addr,
+usepoint)`, matching `Funcdata::linkSymbol`. Its undefined-name and parameter-
+name overrides must rename that returned `SymbolId` directly
+(`ScopeLocal::resolve_default_name_for_link`); re-querying by storage alone can
+select another register Symbol with the same address but a different use limit.
+The one-usepoint Symbol then names only highs whose definitions resolve to that
+entry.
+
 **The scope wire encode.** The whole local scope marshals out for the
 ghidra-mode `decompileAt` response as the `<localdb>` element
 (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
@@ -1891,23 +1937,41 @@ is a declared library call or already prints a cast (`(long)lseek(..) < 0`).
 Provenance and the corpus sweep:
 `docs/features/foldcallretphi/`.
 
-**(kuna, Ghidra issue GH-8500) `option stackalias`** (default **off**,
-destructive). The recorded gap: a store through a take-address-of-local
-pointer could be dead-coded one heritage round before the aliasing LOAD
-resolved, leaving a read of an uninitialized `xStack_*` local. The module
-(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackalias.rs
-(StackAliasOption)`) owns only the gate (`Architecture::stack_alias_deadstore`);
-the behavioral arm — holding all stack stores live for the round when a
-pointer-to-stack LOAD is seen in `ActionDeadCode::lastChanceLoad` — is **not
-in the live tree** (recorded at the gate's would-be consumption point in
-`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
-(deadcode_apply)`), because the general heritage deadcode-delay restart
-(chapter [03](03-ssa-and-simplification.md), edge table in 00-overview §0.7)
-was fixed to persist across re-flows and now subsumes the known repro — in
-`tests/stages/gh8500-stackalias.xml` the default (off) pass recovers the
-store, and the option-on pass is byte-identical. It stays a settable (and deliberately not default-on, DIV-3: as a
-global default it would pin genuinely dead stores alive) so the surface and
-its catalog row exist for the day a non-subsumed case appears.
+**(kuna, GH-8500 and #810) `option stackalias`** (default **off**,
+destructive). An address of frame storage can escape into a global and be
+reloaded before a later read. That read does not necessarily become a reader of
+the frame SSA values, so dead-code elimination can erase the writes that the
+physical memory read needs. The general heritage delay fixes GH-8500's original
+control but does not cover this escape.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackalias.rs`
+(`holds_store`) identifies physical `stack_store` writes in the local frame
+space. With `stackalias on`, `deadcode_apply` in
+`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs` holds them
+live before its consumption walk. `ActionVarnodeProps` retains these holds
+instead of clearing and re-seeding them on every iteration; clearing them
+would report a fresh change forever. The option reaches the per-function
+`ArchContext`; refinement pieces retain their physical-write mark through
+`splitstorekeep`. Ordinary copy propagation is unchanged. Global writes marked
+by store lowering are excluded by the frame-space check.
+
+The policy excludes proved `NoLocalAlias` spills and computes potentially aliased
+bytes before each dead-code pass. A bounded control-flow search follows every
+successor with the bytes that still belong to the old write. A physical write
+removes the bytes it covers. Any call, load, store, return or overlapping frame
+read that precedes complete coverage keeps the old hold. Joins and loop entries
+are keyed by block, position and remaining-byte mask, so distinct path states are
+not collapsed. Exceeding the 4096-step budget keeps the hold conservatively.
+
+An initialization overwritten by every branch, or by a loop that must execute,
+can therefore disappear. A branch that leaves its bytes intact, or a loop that
+may be skipped, keeps it. Byte masks also let `push rax` used to reserve space
+avoid forcing an eight-byte object when only its overwritten upper four bytes
+escape; an initialized whole word whose upper half escapes stays live. Unknown
+effects remain barriers. This does not repair conflicting layouts by itself. Keep it explicit per function; aggressive
+mode no longer implicitly enables this physical-write policy. `escaped_alias` in the authored
+`lifetimes_stack_x86_64` fixture loses both writes with the option off; the
+option-on body keeps the physical initialization and overwrite.
 
 **(kuna, Ghidra issue GH-9218) `option inputvarnodeadjust`** (default **on**,
 DIV-3). When parameter recovery widens an unjustified input container
@@ -2244,6 +2308,306 @@ free — and a more faithful frame can expose weaknesses further down: an
 outgoing-argument slot that lands inside the caller's `localrange` once the
 frame is the right size is scored no-use by `checkInputTrialUse` (§4.4) and the
 argument is dropped, which is visible on deep-frame MSVC CRT helpers.
+
+
+Register assertion symbols participate in the merge's required-symbol identity
+checks before names are emitted. A usepoint-scoped register entry identifies a
+value only at its exact storage range and native definition address. This keeps
+an EAX definition separate from an earlier RAX pointer, including saved copies
+and CFG joins. Symbol isolation on a narrower register entry does not isolate a
+wider sibling merely because both start at the same address. Two different
+names or types survive both assertion orders and successive IR rebuilds.
+
+JOIN storage, renumbered temporaries and ambiguous native definition addresses
+use a dynamic-symbol anchor instead of a physical address. The console verifies
+that hashing and resolving the selected representative returns the same high and
+width; a missing or ambiguous anchor rejects the assertion. Both the CLI's second
+pass and later console decompiles carry these symbols and their isolation flags.
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_dynamiclocals.rs` applies a
+locked dynamic type before propagation and merging, then refreshes the symbol on
+a rebuilt high without rebinding another symbol's value. The late mapping follows
+CASTs to the explicit value. Analysis-local arena identities are never replay keys.
+The native two-register aggregate control checks names, types, both assertion
+orders and successive rebuilds without changing the emitted body for execution.
+
+Parameter recovery queries mapped storage at the incoming restricted usepoint.
+A later local occupying the same register, including a narrower subregister,
+is not the input symbol;
+it keeps its local category and the input receives a separate entry-scoped
+mapping. Renaming the later dispatch value therefore preserves earlier branches
+and returns that read the incoming argument. Exact storage alone is insufficient
+to reuse a parameter mapping. The wider-input regression names a later EDX
+dispatch value without changing the RDX parameter or its low-word comparisons;
+native and emitted C agree for inputs with both zero and nonzero upper words.
+
+The fallback that ties a return register across its marker definitions requires
+one connected SSA value family, whether the return contract is declared or
+inferred.
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_registerepochs.rs`
+walks same-width COPY, CAST, MULTIEQUAL and non-creating INDIRECT edges in both
+directions, excluding constants and the INDIRECT operation annotation. Unrelated
+loads or computations occupying the register do not join that family. A bounded
+walk conservatively declines the fallback when it cannot prove connectivity.
+The architecture register lookup restricts this guard to actual registers;
+address-tied memory retains its physical aliasing. A native byte-hash/pointer
+fixture checks that independent RAX values remain separately typed, including a
+pointer branch join, with and without a declared prototype in both stackviews
+modes.
+
+
+### Shared stack-object views
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackuses.rs` reads declared
+pointer contracts from calls, typed assignments, and volatile writes as well as
+declared pointer returns. The same contracts drive backing views and logical
+object identities. Global assignments require a locked storage type; unknown
+user operations do not supply a contract. Non-call address uses select their
+declared member of the shared backing, and assertion replay matches the declared
+use and input slot rather than restricting its search to calls. Stores through
+declared pointer parameters resolve their field contract by following bounded
+copy and pointer-offset chains back to the locked declaration. Inferred pointer
+types alone do not create a contract. Interior views retain their displacement
+when selecting a backing member.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackvalueviews.rs` selects
+scalar members for register instances coalesced with a shared frame symbol.
+The selection follows the high variable's symbol and byte offset, and preserves
+existing scalar resolutions and declared aggregate views. A generated backing's
+wide byte-array edge is replaced with a scalar member when used as a machine
+value. Definitions and reads both receive field edges;
+a loop counter merged with its stack copy must not lose its scalar member just
+because the counter's own storage is a register.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackvaluecopies.rs` prevents
+generated frame types from becoming standalone scalar snapshot types. Unlocked,
+untied values without a backing symbol retain their one-, two-, four-, or
+eight-byte unsigned representation. Locked declarations and physical storage
+retain their types. Updating a snapshot also dirties its high variable's type,
+so saved values remain independent of later writes to the original frame bytes.
+Unused bookkeeping copies do not supply a snapshot type. A detached producer
+retains a declared pointer view when every byte at that use comes from its one
+native stack store. Conflicting pointer contracts keep the unsigned fallback;
+locked source declarations and incoming values remain authoritative.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackvalueorder.rs` prevents
+a register value from merging into shared frame storage when that would publish
+its bytes before the native store. For an original stack-store COPY into a
+generated backing, the defining value must be in the same block and have no
+intervening memory access, call or frame store. Otherwise the merge is refused;
+required markers use their normal trim copies instead. The real store remains
+explicit on its original branch. This matters when a helper lets another input
+alias the frame: reading an object pointer must not overwrite the object before
+its kind or key is examined. The guard runs only with `stackviews`.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackloadcover.rs` keeps a load
+explicit when its live cover spans a physical frame write. Such writes can be
+COPY or arithmetic operations after lifting, so the ordinary STORE-only alias
+check is insufficient. Known frame ranges use byte overlap; unresolved pointers
+may observe locally aliased storage, while literal global addresses cannot name
+this frame. Marker versions are not writes. The check is enabled by stackviews.
+
+`stackviews on` collects distinct complete, declared pointee types before
+spatial stack hints are reconciled. Direct calls, typed indirect calls and
+call-site prototype overrides contribute the same locked parameter types;
+undeclared or incomplete pointee types contribute no object extent. Incompatible
+views at one frame address use one union backing object, including scalar writes
+and a raw byte view. The
+normal operation-specific union resolution selects the field used by each call
+or access. Members have a canonical order and stable names, so repeated recovery
+of the same views reuses the same datatype even when scalar fields are later
+rediscovered as root hints. Raw whole-word constant writes explicitly select an
+integer member; address-valued writes select a pointer member. They must not be coerced into an
+aggregate just because a later call views those same bytes as a struct.
+
+The backing object preserves physical address identity: passing the address as
+two types never creates two independent addresses. An earlier escaped pointer
+continues to observe later writes. `stackviews` also retains escaped physical
+writes through the dataflow dead-store passes and guards indirect stores, even
+when generic `indexaliasguard` is off. `stackalias` remains a separate preservation
+option for runs without typed view recovery. Explicit locked user layouts are
+not replaced. Intersecting constant ranges form one connected backing extent;
+views at interior offsets use a wrapper with the exact byte displacement. Adjacent
+ranges remain separate. Limits are 32 distinct views and 64 KiB per extent.
+
+An incoming stack parameter can be narrower than an object later written over
+its slot. Parameter-area aliases keep those writes live too. For a fully
+defined scalar object with one surviving full-width value, whose known address
+uses all consume that full range, `kuna_stackparamviews.rs` binds the call to
+the wider local. The input parameter keeps its original name and value; it is
+not grouped as a field of the later local. Full-width symbol lookups let ordinary
+and logical naming assertions select that local without falling back to the
+smaller parameter entry. Escaped addresses, partial or unknown pointee uses,
+incoming bytes and multiple surviving value identities decline this shortcut.
+
+Aggregate, floating-point and pointer views in the parameter area instead use
+the same union backing as ordinary frame objects. Scalar views also need this
+backing when an address escapes or has observers outside the closed full-width
+uses. A persistent address remains an escape when later analysis represents it
+as a call-effect INDIRECT rather than its original COPY.
+
+When a generated frame-union value becomes a detached integer snapshot,
+`kuna_stackvaluecopies.rs` records that role on its high before emission. The
+register/unique instances can retain partial-union types after the declaration
+has become an integer; tracing their storage addresses would also miss copied
+or phi-joined values. P9 uses the recorded role and the actual integer C
+declaration to preserve bits at native floating uses. Integer bit operations and
+explicit numeric conversion opcodes retain their original interpretation.
+
+An early layout or required-merge query can precede prototype-store attachment.
+Parameter-view recovery then reports no known formal views and declines the
+parameter-specific backing shortcut. It does not create a prototype store or
+invent inputs. Once the real store is attached, the same query can recover its
+declared views normally.
+
+The prototype retains each incoming parameter symbol, including parameters
+whose width equals the backing and parameters inside a larger extent. Symbol
+lookups distinguish the formal and body-storage categories before selecting a
+container, so their coincident geometry cannot select the wrong identity. Each
+covered formal initializes the matching backing member in the dominating entry
+block, using an offset wrapper for an interior formal. A Pair spanning two
+parameters therefore receives both entry values. These emitted initializations
+do not become native byte definitions in the logical-object records; bytes not
+covered by a formal retain their incoming or unknown origins.
+
+Address-tied merging keeps the incoming parameter apart from later backing
+values. Naming and spacebase references select the backing for body accesses,
+including narrow writes and addresses that escape before the first typed call.
+The cast tail also separates an input already merged with physical writes and
+binds the surviving writes to the backing symbol. Logical assertion roots retain
+that exact symbol identity; a one-byte lookup must not reselect the overlapping
+parameter. The native parameter-view fixture checks complete reuse, partial
+initialization, a byte store and observation through an earlier escaped pointer.
+
+Typed uses inside a backing select their declared union member explicitly from
+the backing's root symbol. An interior view then applies its recorded byte
+displacement, rather than using the interior formal's symbol or an unresolved
+partial-field token. Ordinary and named uses share this construction. The
+parameter-variants fixture checks scalar escape, equal-width double reuse,
+multiple formals, replacement inside their shared extent and a partial read of
+an incoming word; logical name/type replay preserves the native results.
+
+`decompiler/crates/kuna-console/src/kuna_paramasserts.rs` synchronizes a named
+parameter's scope symbol with its internal prototype. The category slot and
+complete storage must agree before a directive applies; a retype preserves the
+native width. Rebuilds carry the locked input descriptions, retaining storage,
+names, types and parameter attributes, rather than seeding the changed formal
+as an ordinary local. All inputs are retained when an input assertion locks the
+prototype. The console persists this input seed through subsequent decompiles.
+Parameter names therefore also reach the initializers of shared frame backing,
+and name swaps preserve the original parameter slots. The console
+`kassert P9 naming-policy` directive uses the same local-assertion path as
+`rename`, so its parameter edits also survive prototype reconstruction.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackranges.rs` follows
+same-width copies, casts and additive pointer expressions back to the input
+spacebase. It retains byte scales, constant displacements and bounded index
+terms. Native-width scalar additions, subtractions, negations and constant
+products can contribute these terms; nonzero masks bound their remaining values.
+The interval includes the access width, so a masked word index selecting offsets
+zero or four covers eight bytes. Negative scales retain the same physical range.
+Pointer walks and scalar walks have separate work budgets, and checked arithmetic
+or an unresolved bound declines recovery. Any unresolved indexed reference keeps
+the existing frame mapping; a pointee declaration contributes a view, not proof
+that a callee cannot escape its argument. No logical object lifetime is inferred
+from a finite address range alone.
+
+Body-derived callee summaries let the physical-write worklist cross a direct
+call only when its possible reads do not reach the outstanding bytes and no
+pointer can escape through storage or the result. All branch reads count, even
+when only one path consumes a field. A helper reading only a record's second
+word therefore need not keep an overwritten first-word initializer alive.
+Unknown calls, aliases and summaries remain observers. Callee writes are not
+credited as mandatory overwrites: a possible write is not an all-path kill.
+
+
+Recovered views have a dedicated RangeHint priority, rather than TYPELOCK:
+TYPELOCK describes an existing user symbol and is not materialized during
+restructure. Covered ordinary hints are replaced by the backing object's exact
+extent. Casts query the selected storage member as the facing type, since an SSA
+value can prefer a pointer while its printed lvalue is a raw integer view.
+
+Write edges retain their selected backing view through cast insertion. C cast
+spelling consults the same facing type used to request the cast, rather than the
+SSA type that originally occupied the register or slot. Global destinations also
+keep their declared scalar type when a frame address escapes into them.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackobjects.rs` records
+logical object identities at complete, locked pointee uses when `stackviews` is
+enabled. Each identity retains its physical range, declared views, native use
+points and the reaching definition family of each byte. Equal defined families
+at the same range can share an identity across calls; a full or partial overwrite
+changes only the affected byte families. Unknown families at different use points
+remain distinct. The identities use native code addresses rather than Varnode,
+HighVariable or operation allocation numbers.
+
+Queries walk predecessor blocks and follow SSA MULTIEQUALs, including loop
+backedges. PIECE and SUBPIECE preserve byte order for both endian conventions.
+An INDIRECT belonging to the queried call is its output effect, not an input
+definition; earlier uncertain calls or stores contribute possible effects and
+retain the earlier origins. Incoming, opaque or budget-limited bytes stay
+uncertain. Collection precedes required high-variable merges so the physical
+backing does not erase the distinction; the cast tail removes dead use points.
+The initial budgets are 256 bytes per object, 4096 requested bytes per function
+and 65536 work steps. Only exact byte-addressed frame positions are collected.
+
+Synthetic slices and widened frame values can lose the native store flag.
+For a non-marker value, a preceding native store at the same instruction in
+the same block restores the origin of each byte inside that store's exact
+extent. An intervening memory effect stops the search. Bytes outside the
+native extent remain governed by their earlier families; synthetic widening
+does not turn untouched padding into initialized storage.
+
+`print stack objects` exposes these families in the console. A family is a basis
+for scoping object assertions, not a claim that a C or C++ lifetime ended. It
+neither removes memory versions nor allocates separate addresses: an escaped
+pointer continues to observe the shared backing.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackobjectasserts.rs`
+consumes these identities for `name` and `type` directives. An assertion retains
+native call addresses, argument slots, its physical range and byte-definition
+families across rebuilds; it contains no operation or high-variable identifiers.
+The selected family gains named members of the shared backing union. Equal
+layouts at different incarnations can receive separate names and types, while
+unchanged contents used more than once retain one name. Several declared layouts
+of one family receive type-qualified member names unless an explicit type is
+asserted. An asserted type must be complete and match the object's byte size.
+
+At the cast tail, native use anchors select explicit field references rooted in
+the same frame storage. Interior objects retain their offset through the placed
+view's wrapper. Unique scalar write families select the same named view when
+the source representation agrees; ambiguous, packed or reinterpreted writes
+retain their raw storage view. The final drive checks the recovered ranges,
+families and selected field references at bound native uses, rejecting a stale
+or unsupported binding. Duplicate asserted object names are rejected. Seeds
+travel through console rebuilds, in-process assertion replay and driver retries.
+When stack-store protection requests a fresh unguarded run, assertion validation
+checks that final run; the discarded intermediate layout is not a binding result.
+
+Name-only dynamic value assertions preserve naming and identity isolation without
+locking the inferred datatype. Their replay specs carry the original name/type
+lock flags. Stack-layout cleanup retains an isolated name-locked value, even
+without a type lock, so its dynamic entry cannot disappear underneath a bound
+varnode. Explicit retypes still lock the datatype. This distinction matters for
+wide integer temporaries represented internally by a fallback byte-array type:
+naming the operand does not declare that it is an aggregate in memory.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackobjectinfo.rs` exports
+logical selectors, asserted names, signed frame ranges, defined/uncertain state
+and declared native uses without exposing analysis-local identifiers. CLI results
+carry these records through batch workers. `--no-vars` suppresses their extraction;
+empty collections do not add a JSON field to ordinary runs.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackobjectalias.rs` binds a
+logical assertion through an existing mapped layout when no matching generated
+union member is available. Its whole extent must fit both the physical entry and
+its complete datatype, with an exact byte displacement. A typed `<name>_view`
+pointer is initialized from the entry's spacebase address in the dominating
+entry block. Interior views use byte-scaled displacement; an explicit cast carries
+the requested pointee type. One pointer serves every native use of a family and
+datatype. The mapped object retains its type and address, including explicit locks.
+The final drive verifies the name, pointee and exact frame address through call
+casts; byte-family and native-use validation remain mandatory. A name collision
+with an existing local gains a numeric suffix.
 
 A declared struct parameter split across registers and the entry stack can be
 spilled contiguously beside its incoming stack tail. The spill then crosses

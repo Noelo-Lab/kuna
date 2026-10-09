@@ -1,0 +1,6 @@
+typedef struct LifetimeWide { unsigned long long x; unsigned long long y; };
+typedef typedef struct LifetimeWide LifetimeWideAlias;
+prototype wide_names void wide_names(void)
+prototype wide_source struct LifetimeWide wide_source(void)
+prototype observe_wide void observe_wide(struct LifetimeWide value)
+data 0x402000 unsigned long long wide_total

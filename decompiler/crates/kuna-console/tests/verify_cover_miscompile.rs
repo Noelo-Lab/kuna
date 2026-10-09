@@ -25,6 +25,7 @@
 //!    the second select's value twice.
 
 use std::path::PathBuf;
+use std::process::Command;
 
 use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
@@ -64,59 +65,64 @@ fn decompile(func: &str) -> String {
     status.optr.clone()
 }
 
-/// The name the printer gave the returned local — the single local declared with
-/// the pointer-sized return storage.  Returns the `vN` token assigned from the
-/// `lookup(...)` call, which is the variable the epilogue returns.
-fn returned_local(c: &str) -> Option<String> {
-    for line in c.lines() {
-        let t = line.trim();
-        if let Some(rest) = t.strip_prefix("return ") {
-            return Some(rest.trim_end_matches(';').trim().to_string());
+#[test]
+fn returned_parameter_survives_a_failed_lookup() {
+    let c = decompile("lookup_service");
+    let declaration = c.lines().find(|line| line.contains("lookup_service("))
+        .expect("lookup_service declaration");
+    let code = &c[c.find(declaration).unwrap()..];
+    let source = std::env::temp_dir().join(format!("kuna-returned-parameter-{}.c", std::process::id()));
+    std::fs::write(&source, format!(r#"
+#include <stdint.h>
+#include <stdlib.h>
+typedef int32_t int4;
+struct svc {{ char *name; }};
+char service[] = "http";
+__attribute__((noinline)) struct svc *lookup(int port) {{
+    static struct svc s = {{service}};
+    return port == 80 ? &s : 0;
+}}
+int4 is_digit_c(int4 c) {{ return c >= '0' && c <= '9'; }}
+{code}
+int main(void) {{
+    char alpha[] = "alpha", zero[] = "0", missing[] = "99999", found[] = "80";
+    char *names[] = {{alpha, zero, missing, found}};
+    for (unsigned i = 0; i < 4; ++i) {{
+        int4 warnings = 0;
+        if (lookup_service(names[i], &warnings) != (i == 3 ? service : names[i])) return 1;
+        if (warnings != (i == 2)) return 2;
+    }}
+    return 0;
+}}
+"#)).unwrap();
+    let mut checked = false;
+    for compiler in ["gcc", "clang"] {
+        let available = match Command::new(compiler).arg("--version").output() {
+            Ok(output) => {
+                assert!(output.status.success(), "{compiler} --version failed");
+                true
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => panic!("cannot run {compiler}: {error}"),
+        };
+        if !available {
+            continue;
+        }
+        for level in ["-O0", "-O2"] {
+            let executable = source.with_extension(format!("{compiler}{}", &level[1..]));
+            let output = Command::new(compiler)
+                .args(["-std=c11", level, "-Werror=int-conversion", "-Werror=incompatible-pointer-types"])
+                .arg(&source).arg("-o").arg(&executable).output().unwrap();
+            assert!(output.status.success(), "{}\n{code}", String::from_utf8_lossy(&output.stderr));
+            assert!(Command::new(&executable).status().unwrap().success(), "{code}");
+            std::fs::remove_file(executable).unwrap();
+            checked = true;
         }
     }
-    None
-}
-
-#[test]
-fn restore_of_returned_parameter_is_emitted() {
-    let c = decompile("lookup_service");
-    eprintln!("---- lookup_service ----\n{c}");
-
-    // Sanity: the fixture still produces the merged single-exit shape this bug
-    // needs — one trailing `return vN` whose variable is also written by the
-    // `lookup(...)` call.
-    let ret = returned_local(&c).expect("lookup_service must end in a `return <expr>;`");
-    assert!(
-        ret.starts_with('v'),
-        "expected the epilogue to return a merged local (the shape this bug needs), got `{ret}`\n--- C ---\n{c}"
-    );
-    assert!(
-        c.contains(&format!("{ret} = ")) && c.contains("lookup("),
-        "expected `{ret}` to be assigned from the lookup(...) call\n--- C ---\n{c}"
-    );
-
-    // The bug: the reload of the parameter on the lookup-failed path was deleted,
-    // so the function returned the NULL from `lookup`.  Assert the restore is
-    // present AFTER the clobbering call — the statement that carries the VALUE.
-    // (An identical `vN = a0;` is hoisted to the entry for the other two guards,
-    // so position, not mere presence, is what distinguishes the bug.)
-    let lines: Vec<&str> = c.lines().map(|l| l.trim()).collect();
-    let clobber = lines
-        .iter()
-        .position(|l| l.starts_with(&format!("{ret} = ")) && l.contains("lookup("))
-        .expect("lookup_service must assign the returned local from lookup(...)");
-    let is_restore =
-        |l: &&str| **l == format!("{ret} = a0;") || **l == format!("{ret} = (void *)a0;");
-    assert!(
-        lines[..clobber].iter().any(is_restore),
-        "expected the entry hoist `{ret} = a0;` before the lookup(...) call\n--- C ---\n{c}"
-    );
-    assert!(
-        lines[clobber + 1..].iter().any(is_restore),
-        "the `{ret} = a0;` restore on the lookup-failed path is MISSING — the emitted C \
-         returns NULL where the binary returns the parameter (Merge::checkCopyPair \
-         addRefPoint, merge.cc:1121)\n--- C ---\n{c}"
-    );
+    std::fs::remove_file(source).unwrap();
+    if !checked {
+        eprintln!("no C compiler available; skipping emitted-C execution");
+    }
 }
 
 #[test]

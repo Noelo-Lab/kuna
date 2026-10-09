@@ -2133,9 +2133,9 @@ decomp_command!(
         let command_seq = status.command_seq;
         // Read the per-function values + take the program out so the engine work
         // borrows neither `status` nor `dcp` while the console output is written.
-        let (name, has_no_code, proc_started, entry, size, mut mapped_symbols, usepoint_symbols, dynamic_symbols, pending_proto, all_pending_protos, mut prog) = {
+        let (name, has_no_code, proc_started, entry, size, mut mapped_symbols, usepoint_symbols, dynamic_symbols, object_assertions, pending_proto, all_pending_protos, mut prog) = {
             let dcp = dcp_mut(status)?;
-            let (name, has_no_code, proc_started, entry, size, mapped_symbols, usepoint_symbols, dynamic_symbols) = match &dcp.fd {
+            let (name, has_no_code, proc_started, entry, size, mapped_symbols, usepoint_symbols, dynamic_symbols, object_assertions) = match &dcp.fd {
                 None => return Err(IfaceError::execution("No function selected")),
                 Some(fd) => (
                     fd.get_name().to_string(),
@@ -2145,14 +2145,15 @@ decomp_command!(
                     fd.get_size(),
                     // The console-mapped `map addr` symbols (carried across the
                     // IR rebuild below, which discards the current Funcdata).
-                    fd.mapped_symbol_specs(),
+                    crate::assertions::carried_symbols(fd),
                     // The console-added usepoint-scoped `type varnode %REG(pc)`
                     // symbols (e.g. retstruct's `tmp`), carried WITH their use
                     // address so `linkSymbol`'s usepoint query still binds them.
-                    fd.usepoint_symbol_specs(),
+                    crate::assertions::carried_usepoint_symbols(fd),
                     // The console-added `map hash` dynamic symbols (likewise carried
                     // across so `ActionDynamicSymbols` can name the matched temps).
                     fd.dynamic_symbol_specs(),
+                    kuna_decomp::kuna_stackobjectasserts::specs(fd).to_vec(),
                 ),
             };
             // The `parse line extern <decl>` prototype stashed for this function
@@ -2168,7 +2169,7 @@ decomp_command!(
             match dcp.conf.take() {
                 None => return Err(IfaceError::execution("No load image present")),
                 Some(prog) => {
-                    (name, has_no_code, proc_started, entry, size, mapped_symbols, usepoint_symbols, dynamic_symbols, pending_proto, all_pending_protos, prog)
+                    (name, has_no_code, proc_started, entry, size, mapped_symbols, usepoint_symbols, dynamic_symbols, object_assertions, pending_proto, all_pending_protos, prog)
                 }
             }
         };
@@ -2214,20 +2215,17 @@ decomp_command!(
         }
         // The `map param <i> <addr> <decl>` storage locks stashed for this
         // function (re-seeded on the rebuilt IR, like `pending_proto`).
-        let mut mapped_params = dcp_mut(status)?
-            .pending_param_maps
-            .get(&name)
-            .cloned()
-            .unwrap_or_default();
-        let parameter_edits = dcp_mut(status)?
-            .fd.as_ref()
-            .filter(|fd| fd.is_high_on())
-            .map(crate::kuna_hightarget::carried_parameter_maps)
-            .unwrap_or_default();
-        if !parameter_edits.is_empty() {
-            mapped_params = parameter_edits;
-            dcp_mut(status)?.pending_param_maps.insert(name.clone(), mapped_params.clone());
-        }
+        let mapped_params = {
+            let dcp = dcp_mut(status)?;
+            let original = dcp.pending_param_maps.get(&name).cloned().unwrap_or_default();
+            let carried = dcp.fd.as_ref()
+                .map(|fd| crate::kuna_paramasserts::carried(fd, &original))
+                .unwrap_or(original);
+            if !carried.is_empty() {
+                dcp.pending_param_maps.insert(name.clone(), carried.clone());
+            }
+            carried
+        };
         // The `override prototype` facts stashed for this function (re-seeded on the
         // rebuilt IR), consumed at flow time as `Override::applyPrototype`.  The
         // shared decompile step may discover further per-call-site printf/scanf
@@ -2271,6 +2269,7 @@ decomp_command!(
             let seeds_empty = mapped_symbols.is_empty()
                 && usepoint_symbols.is_empty()
                 && dynamic_symbols.is_empty()
+                && object_assertions.is_empty()
                 && pending_proto.is_none()
                 && all_pending_protos_empty
                 && mapped_params.is_empty()
@@ -2334,6 +2333,7 @@ decomp_command!(
                 mapped_symbols: &mapped_symbols,
                 usepoint_symbols: &usepoint_symbols,
                 dynamic_symbols: &dynamic_symbols,
+                object_assertions: &object_assertions,
                 pending_proto: pending_proto.as_ref(),
                 flow_overrides: &flow_overrides,
                 mapped_params: &mapped_params,
@@ -2576,6 +2576,20 @@ decomp_command!(
 );
 
 // --- list action / override / prototypes (ifacedecomp.cc:1029-1079) --------
+
+decomp_command!(
+    /// `print stack objects`: logical frame objects and byte-definition families.
+    IfcPrintStackObjects,
+    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+        let text = {
+            let dcp = dcp_mut(status)?;
+            let fd = dcp.fd.as_ref().ok_or_else(|| IfaceError::execution("No function selected"))?;
+            kuna_decomp::kuna_stackobjects::describe(fd)
+        };
+        status.file_out(&text);
+        Ok(())
+    }
+);
 
 decomp_command!(
     /// C++ `IfcListaction`: `list action`.
@@ -2845,8 +2859,10 @@ decomp_command!(
         if newname.is_empty() {
             return Err(IfaceError::parse("Missing new name"));
         }
-        let fd = dcp_mut(status)?.local_symbol_fd(&oldname)?;
-        crate::kuna_hightarget::apply_local(fd, &oldname, &newname, None)
+        let dcp = dcp_mut(status)?;
+        let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
+        let fd = dcp.local_symbol_fd(&oldname)?;
+        crate::kuna_hightarget::apply_local(fd, &oldname, &newname, None, maxduplicates)
             .map_err(IfaceError::execution)
     }
 );
@@ -2891,8 +2907,10 @@ decomp_command!(
             crate::grammar::parse_type(&typetext, prog.arch().types(), org)
                 .map_err(|e| IfaceError::parse(e.explain().to_string()))?
         };
-        let fd = dcp_mut(status)?.local_symbol_fd(&name)?;
-        crate::kuna_hightarget::apply_local(fd, &name, &newname, Some(ct))
+        let dcp = dcp_mut(status)?;
+        let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
+        let fd = dcp.local_symbol_fd(&name)?;
+        crate::kuna_hightarget::apply_local(fd, &name, &newname, Some(ct), maxduplicates)
             .map_err(IfaceError::execution)
     }
 );
@@ -4170,6 +4188,7 @@ pub fn register_decomp_commands(status: &mut IfaceStatus) {
     status.register_com(Box::new(IfcProduceC), &["produce", "C"]);
     status.register_com(Box::new(IfcProducePrototypes), &["produce", "prototypes"]);
     status.register_com(Box::new(IfcPrintRaw), &["print", "raw"]);
+    status.register_com(Box::new(IfcPrintStackObjects), &["print", "stack", "objects"]);
     status.register_com(Box::new(IfcPrintInputs), &["print", "inputs"]);
     status.register_com(Box::new(IfcPrintInputsAll), &["print", "inputs", "all"]);
     status.register_com(Box::new(IfcListaction), &["list", "action"]);

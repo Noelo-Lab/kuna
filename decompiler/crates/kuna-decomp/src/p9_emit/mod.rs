@@ -11,6 +11,7 @@ pub mod kuna_partialconcat;
 pub mod prettyprint;
 pub mod printjava;
 pub mod cast;
+pub mod kuna_unknowncasts;
 pub mod stringmanage;
 pub mod kuna_naming;
 pub mod kuna_varsources;
@@ -24,6 +25,10 @@ pub mod kuna_paramrefdecl;
 pub mod kuna_addressdecl;
 pub mod kuna_callerstack;
 pub mod kuna_bitcast;
+pub mod kuna_stackmem;
+pub mod kuna_stackassign;
+pub mod kuna_stackbytes;
+pub mod kuna_stacklayout;
 pub mod kuna_truthycond;
 pub mod kuna_braceelide;
 pub mod kuna_labelstmt; // (kuna) every printed C label labels a statement
@@ -49,3 +54,6 @@ pub mod kuna_rusttypes; // (kuna) the rust-language type speller
 pub mod kuna_ctypes; // (kuna) valid per-architecture C spelling of the core types
 pub mod coreaction_render;
 pub mod kuna_srcmap; // (kuna) the token-level source map of a rendered function
+
+pub(crate) mod kuna_stackmarkers;
+pub(crate) mod kuna_stackversions;

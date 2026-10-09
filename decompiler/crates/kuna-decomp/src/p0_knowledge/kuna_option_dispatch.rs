@@ -222,6 +222,11 @@ kuna_options! { self, p1;
     "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
     "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
     "stackalias" => on_off!(stack_alias_deadstore, "Stack-pointer-alias dead-store hold"),
+    "stackviews" => {
+        let (value, message) = crate::kuna_stackviews::OptionStackViews.apply(p1)?;
+        self.stack_views = value;
+        Ok(message)
+    },
     "dynamichashmax" => on_off!(dynamic_hash_maxdup_high, "DynamicHash collision budget"),
     "stackprobeloop" => {
         let (form, msg) = crate::kuna_stackprobeloop::parse_stack_probe_loop_form(p1)?;

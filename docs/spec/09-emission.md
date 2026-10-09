@@ -46,9 +46,44 @@ first piece is declared at the piece's type, as a directly accessed piece
 already is. This corrects the declaration without extending `castobject`'s
 permission to retype escaped locals.
 
+With `stackviews`, a physical stack declaration can contain the scalar being
+cast rather than itself being that scalar. Bit-transfer classification descends
+through an exact member at the symbol offset and access width; a declared
+FloatStorage or DoubleStorage therefore contributes its float member's C type.
+An implied arithmetic expression retains its own type. Numeric FLOAT_* operators
+keep their ordinary conversions.
+
+Pointer field notation also uses the type facing the particular `PTRSUB` read.
+A pointer loaded from a selected member of shared frame storage remains a pointer
+to that member's pointee, even when an object name introduces a union backing.
+The whole backing type cannot replace that pointer type: doing so would turn a
+native `head->next` dereference into an unresolved `PTRSUB(head,0)` expression.
+
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_stackversions.rs` separates memory
+SSA bookkeeping from writes under `stackviews`. Generated-backing definitions
+without the native stack-store mark describe reconstructed memory versions, not
+additional C assignments. They retain their IR and provenance but do not print.
+ABI-input materializations and original stores remain visible. COPY, CAST,
+MULTIEQUAL and piece temporaries used only by those versions also do not print;
+a reverse liveness walk retains any temporary reaching a real computation or
+return, including a cached word read before later writes. Closed bookkeeping
+cycles do not make a snapshot live. Unused temporaries cannot determine the type
+of a live register value with which they were previously coalesced. In particular,
+initializing four bytes must not read and rewrite an uninitialized eight-byte word.
+
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_stackmarkers.rs` distinguishes a
+non-creating INDIRECT version over physical frame bytes from a C assignment.
+With `stackviews`, cast insertion, statement emission and body counting
+skip that placeholder and unique-space merge copies consumed exclusively by
+such placeholders. Copies that feed an ordinary read and actual frame stores
+retain their assignments. The native owner still executes and the memory version
+remains in the IR for reaching definitions and alias effects; the printer neither
+restores the preceding value nor copies bytes out of a constant's fictitious
+fields. Register effects and creation markers keep their existing handling.
+
 A same-width `CAST` between an integer and a 32- or 64-bit float is a bit
-reinterpretation, not a numeric conversion (`kuna_bitcast.rs`). Only a `CAST`
-qualifies: `ActionSetCasts` inserts one wherever the merged types of a value
+reinterpretation, not a numeric conversion (`kuna_bitcast.rs`). For this
+path, `ActionSetCasts` inserts a `CAST` wherever the merged types of a value
 and its reader disagree, so a `COPY` between the two kinds is either fed by
 such a `CAST` already or writes an undefined destination that takes the bits
 as they are. Each side's kind is the type the printed C gives it: a named
@@ -103,6 +138,19 @@ complementary tokens. `tests/stages/kuna-minss-nan.xml` pins MINSS selection
 with defaults and `nanignore none`; the CLI regression compiles the printed C
 and checks its NaN payloads, signed zeros, finite values and infinities against
 the authored instructions.
+With `stackviews`, a cached integer snapshot can also need a float
+reinterpretation at its consuming `FLOAT_*` edge. P9 requires an explicit
+integer C declaration and the P6 marker recording its conversion from generated
+frame-union storage into a detached scalar snapshot. Raw partial-union types and
+register-only high instances cannot recover this role reliably after conversion.
+It emits the same single-evaluation union transfer for C or `from_bits` for Rust
+at that use only. Integer operations
+such as the sign-bit XOR keep the snapshot as integer, and values already
+declared as floats keep their ordinary expression. Unnamed expressions,
+unmarked values and declarations that are not integers keep ordinary emission.
+`FLOAT_INT2FLOAT` remains a numeric conversion; `FLOAT_TRUNC` and
+`FLOAT_FLOAT2FLOAT` still perform their numeric conversions after any required
+input reinterpretation.
 
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
@@ -232,6 +280,21 @@ mutually cast-free unless the operator *cares* about signedness (the
 peeled in parallel first — different word sizes or different address spaces
 force a cast, `void *` never does, and once inside a pointer the signedness
 care is always on.
+
+An unknown scalar destination prints as integer storage, so assignments from
+pointers still require a conversion when `care_ptr_uint` is set. The unknown
+metatype cannot suppress that conversion merely because its bit width matches
+the pointer. Numeric values and compatible unknown pointees keep the existing
+cast-free behavior. This also preserves the pointer bits stored through an
+inferred integer pointer without changing the inferred destination contract.
+An unknown call-argument type is instead an ABI placeholder unless that
+parameter is type-locked. `kuna_unknowncasts.rs` checks the declared contract
+before requesting the pointer conversion; untyped calls and internal user-op
+arguments retain their pointer expressions and string literals.
+With stackviews enabled, a volatile write uses its locked storage contract when
+inserting casts. Its stored value is an assignment to declared C storage rather
+than an untyped user-op argument, including a pointer view retyped by an object
+assertion.
 
 **Integer promotion.** C silently promotes small integers, so many extensions
 must *not* print. The strategy classifies a sub-`int` value's promotion as
@@ -1834,6 +1897,14 @@ name it took from the parameter symbol it is bound to. The result is a
 signature parameter and a body local of the same name and different types in one
 scope, which is not compilable C.
 
+With `stackviews` enabled, a formal input and its reused body backing can have
+identical stack geometry. A high containing an input and linked to the exact
+`function_parameter` symbol remains a prototype parameter even if a container
+query would select the body union. The prototype-name guard still applies.
+This preserves the incoming value without declaring an uninitialized local
+under a suffixed parameter name. A high linked to the backing has a distinct
+symbol and keeps its body declaration.
+
 The option `paramrefdecl` (default on since DIV-143) supplies the missing half
 of the same predicate, on symbol identity rather than storage: a high whose
 bound symbol — the identity `linkSpacebaseSymbol` already recorded, kuna's
@@ -2874,6 +2945,77 @@ casts; with the option off the output is byte-identical to the build without it.
 On the 4,815 functions kuna and IDA both emit, casts fall from 45,126 to 44,001
 and no function gains one. Variables and types are untouched, so `type_match`
 cannot move (1,609 perfect functions in both arms of the 444-slice sweep).
+
+
+Declared function-pointer types retain their embedded prototype in C declarators.
+The modifier walk includes the function's argument suffix and continues through
+its return type. Callbacks therefore emit as `void (*callback)(int4 *)`, including
+when passed a frame object that the callback can modify, rather than as a byte
+pointer with a call applied to it.
+
+An incoming high variable bound to a function-parameter symbol is declared in
+the signature. The local declaration walk uses that recorded identity before
+its storage fallback in every mode: a later asserted local in the same register
+must not hide the input's category or cause its body references to be renamed
+to an uninitialized local.
+
+When `stackviews` is on, a multi-byte LOAD or STORE through a reinterpreted
+pointer uses `__builtin_memcpy` and a typed C compound literal. Casting a word
+pointer over an integer local does not establish C aliasing: both GCC and clang
+can otherwise optimize a later integer read to its old initializer. The copy
+preserves the bytes and evaluates the pointer and value once. This fallback is
+C-only and bounded to scalar accesses of 2, 4 or 8 bytes.
+
+Bounded indexed accesses into a recovered backing object also copy their bytes,
+including one-byte loads and stores. The byte pointer starts at the whole backing
+object, with the original constant displacement and scaled index terms. Indexing
+from the address of a struct field would leave that C subobject at the next field,
+even when both fields occupy the same physical frame extent. The emitter checks
+that the address interval and access width fit the containing symbol, and leaves
+unresolved cases unchanged. Ordinary byte accesses keep their existing syntax.
+
+`kuna_stackassign.rs` handles direct scalar assignments into a type-locked frame
+layout that declared call uses reinterpret as another object. The declared layout
+is retained. Stores copy bytes from a scalar compound literal at the original
+displacement instead of assigning a pointer to a struct or imposing the declared
+field's numeric type on a later incarnation. COPY and same-width CAST retain the
+source representation; computed stores use the opcode's result type, including
+floating arithmetic and numeric conversions. Integer bit patterns are printed as
+unsigned constants, while named pointer constants retain their address provenance.
+Equal-width signed, unsigned and unknown integer views remain compatible and
+keep ordinary scalar assignments; the fallback targets incompatible layouts or
+representations rather than changes of integer signedness.
+
+`kuna_stackbytes.rs` follows byte provenance through COPY, same-width CAST,
+PIECE, SUBPIECE, zero extension and byte-aligned logical shifts. With
+`stackviews on`, a write that preserves bytes of the same physical backing
+copies only its changed contiguous ranges. Each range uses a byte-array
+compound literal, so a three-byte write never invents a scalar or struct
+field and never reads untouched upper bytes. The preserved source must be
+bound to the same backing symbol; an incoming formal at the same stack
+address is a separate value. Full-width integer bits assigned to an aggregate
+view use the same byte path. Unsupported expressions retain ordinary emission;
+the provenance walk is bounded to eight-byte values and 32 levels.
+
+Explicit zero-offset PTRSUB field selections keep their union write-edge
+resolution through cast fixup. Their output token is the selected member's
+pointer type, rather than an unresolved parent or generic byte pointer. Logical
+frame-object assertions use this path to keep a named incarnation visible at
+each call. Scalar accesses through the synthetic backing continue through an
+equal-sized one-field struct to the scalar member, so a pointer write uses
+`backing.handle.value`, not an aggregate assignment.
+
+Synthetic `stack_views_` unions and `stack_slice_` wrappers preserve exact extents
+and displacements. When their byte layout differs from natural C alignment, the
+printer adds a packed/aligned attribute matching the recovered storage; an
+interior eight-byte view at offset four must not move to offset eight, nor grow a
+twelve-byte backing object to sixteen. Ordinary declared composites are unchanged.
+
+Read and definition type queries in C emission use Funcdata's facing accessors,
+including numeric conversions, extensions, truncations and constant spelling.
+The Varnode-only accessors cannot resolve union edges. Numeric int-to-float
+conversion targets the float member, never the shared backing union. Storage
+bitcasts also prefer that selected member over a whole-object declaration type.
 
 **Preserved scalar prefixes (`partialconcat`).** A partial-register update can
 leave `PIECE(SUBPIECE(source, low_size), low)` in the finished expression graph.

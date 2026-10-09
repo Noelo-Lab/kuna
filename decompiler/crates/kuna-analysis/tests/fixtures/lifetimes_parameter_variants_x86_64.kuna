@@ -1,0 +1,14 @@
+typedef struct LifetimeParameterPair { bool x; unsigned char padding[7]; long long y; };
+typedef struct LifetimeHandle { int *value; };
+prototype param_scalar_escaped int param_scalar_escaped(int a,int b,int c,int d,int e,int f,bool prepare_only)
+prototype read_word int read_word(const int *word)
+prototype read_saved_word int read_saved_word(void)
+prototype param_equal_float int param_equal_float(double a,double b,double c,double d,double e,double f,double g,double h,double prepared_value)
+prototype read_float_handle int read_float_handle(const struct LifetimeHandle *handle)
+prototype param_multiple int param_multiple(int a,int b,int c,int d,int e,int f,bool prepare_only,long long carried_value)
+prototype read_parameter_pair int read_parameter_pair(const struct LifetimeParameterPair *pair)
+prototype read_parameter_handle int read_parameter_handle(const struct LifetimeHandle *handle)
+data 0x402000 void *escaped_pointer
+data 0x402008 int datum
+prototype param_multiple_interior int param_multiple_interior(int a,int b,int c,int d,int e,int f,bool prepare_only,long long carried_value)
+prototype param_word_partial int param_word_partial(int a,int b,int c,int d,int e,int f,long long incoming_word)

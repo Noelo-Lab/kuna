@@ -5018,6 +5018,9 @@ impl Rule for RuleDoubleLoad {
         };
 
         let size = vn_get_size(data, piece0) + vn_get_size(data, piece1);
+        if data.is_stack_byte_copy_op(load0) || data.is_stack_byte_copy_op(load1) {
+            return 0;
+        }
         let latest = match RuleDoubleLoad::no_write_conflict(data, loadlo, loadhi, spc, None) {
             Some(l) => l,
             None => return 0, // There was a conflict

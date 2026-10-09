@@ -33,6 +33,7 @@ pub mod codedata;
 pub mod kuna_retcallchain;
 pub mod kuna_console;
 pub mod kuna_hightarget;
+mod kuna_paramasserts;
 pub mod kuna_buildstamp;
 #[cfg(test)]
 mod kuna_buildstamp_fingerprint;

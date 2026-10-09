@@ -989,6 +989,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // (kuna `calleepreserves`) And for the call-guard seam's view of the
         // callee's writes; shares rustabi's cache, so this is a map lookup.
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, fd);
+        crate::kuna_calleememory::seed(arch, fd);
     }
     // Exceeded the cross-flow restart budget; keep the last analyzed IR.
     fd.set_restart_pending(false);
@@ -1174,6 +1175,26 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
     prefollowed: Option<Funcdata>,
 ) -> KunaResult<Funcdata> {
+    decompile_func_full_with_objects(arch, name, funcaddr, size, mapped_symbols, usepoint_symbols, dynamic_symbols, pending_proto, flow_overrides, proto_overrides, mapped_params, prefollowed, &[])
+}
+
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::mutable_key_type)]
+pub fn decompile_func_full_with_objects(
+    arch: &mut Architecture,
+    name: &str,
+    funcaddr: Address,
+    size: int4,
+    mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
+    usepoint_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4, Address, bool)],
+    dynamic_symbols: &[crate::database::DynamicSymbolSpec],
+    pending_proto: Option<&crate::fspec::PrototypePieces>,
+    flow_overrides: &[(Address, kuna_base::types::uint4)],
+    proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
+    mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
+    prefollowed: Option<Funcdata>,
+    object_assertions: &[crate::kuna_stackobjectasserts::ObjectAssertion],
+) -> KunaResult<Funcdata> {
     // (kuna decompile-all watchdog) Arm the per-function deadline from the
     // driver-set budget (`kuna decompile-all --max-fn-seconds N` sets
     // `kuna_fn_budget`; every other path leaves it `None`, so this is a `None`
@@ -1206,6 +1227,7 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
                 proto_overrides,
             )?,
         };
+        crate::kuna_stackobjectasserts::seed(&mut fd, object_assertions);
         if unguarded {
             fd.withdraw_stack_store_guard();
         }
@@ -1316,6 +1338,7 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         // decode: the registers the callee is proven NOT to write; inert unless
         // `option calleepreserves` is live.
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, &mut fd);
+        crate::kuna_calleememory::seed(arch, &mut fd);
         // Report a pass panic as a per-function failure at the driver boundary.
         let res =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_pipeline(arch, &mut fd)));
@@ -1357,7 +1380,10 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     // (kuna decompile-all watchdog) Disarm the deadline once the drive is over so
     // no later, non-drive pipeline run (console sub-queries) consults a stale one.
     arch.kuna_fn_deadline = None;
-    result
+    result.and_then(|fd| {
+        crate::kuna_stackobjectasserts::validate(&fd).map_err(KunaError::lowlevel)?;
+        Ok(fd)
+    })
 }
 
 /// (kuna) Build the IR for `name` and run a **named reduced pipeline** variant
@@ -2294,7 +2320,7 @@ fn resolve_markup_provenance_with_addresses(
 /// `getStorage().getStackOffset()`, which the decbench `type_match` metric
 /// calibrates per binary against DWARF.  Stack spaces are byte-addressed
 /// (`word_size == 1`), so no `byte_to_address` scaling is needed.
-fn signed_space_offset(space: &Rc<kuna_base::space::AddrSpace>, off: u64) -> i64 {
+pub(crate) fn signed_space_offset(space: &Rc<kuna_base::space::AddrSpace>, off: u64) -> i64 {
     kuna_base::address::sign_extend(off as i64, space.get_addr_size() as i32 * 8 - 1)
 }
 

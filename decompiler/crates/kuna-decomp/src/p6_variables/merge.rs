@@ -402,6 +402,9 @@ pub trait MergeContext: HighContext {
     fn global_copy_moves_write(&self, _global: HighVariableId, _value: HighVariableId) -> bool {
         false
     }
+    fn stack_copy_moves_write(&self, _storage: HighVariableId, _value: HighVariableId) -> bool {
+        false
+    }
 
     // --- Cover construction for a single read (eliminateIntersect) --------
     /// Build the [`Cover`] of the single read of `vn` by `op` (the C++
@@ -525,6 +528,12 @@ impl Merge {
     ) -> bool {
         if high_in == high_out {
             return true; // Already merged
+        }
+
+        if ctx.stack_copy_moves_write(high_out, high_in)
+            || ctx.stack_copy_moves_write(high_in, high_out)
+        {
+            return false;
         }
 
         // If types are locked don't merge unless both types are the same.

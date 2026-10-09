@@ -1,0 +1,18 @@
+function 0x401100-0x401105=consume_number
+prototype 0x401100 unsigned long long consume_number(unsigned long long number)
+function 0x401120-0x401163=register_names
+prototype 0x401120 void register_names(unsigned long long input, const int *pointer)
+function 0x401170-0x401174=identity_pointer
+prototype 0x401170 const int *identity_pointer(const int *pointer)
+function 0x401180-0x401188=observe_number
+prototype 0x401180 void observe_number(unsigned long long number)
+function 0x401190-0x40119a=observe_pointer
+prototype 0x401190 void observe_pointer(const int *pointer)
+function 0x401200-0x40123f=register_overlap
+prototype 0x401200 void register_overlap(unsigned long long input, const int *pointer)
+data 0x402000 int datum
+data 0x402008 unsigned long long observed_total
+prototype register_branch void register_branch(unsigned long long input, const int *pointer, int repeat)
+prototype register_loop void register_loop(unsigned long long input, const int *pointer)
+prototype register_parameter_reuse int register_parameter_reuse(int property)
+prototype consume_key int consume_key(int key)

@@ -357,6 +357,7 @@ pub struct HighVariable {
     /// `getSymbol()->getType()` stand-in, used by the printer to render an array
     /// or struct member access `name[idx]`).  `None` for an unnamed/scalar high.
     kuna_symbol_type: Option<Rc<Datatype>>,
+    kuna_frame_snapshot: bool,
     /// (kuna) The local-scope EquateSymbol bound to this high by
     /// `Funcdata::build_dynamic_symbol` (C++ `vn->setSymbolEntry(sym->...)` whose
     /// effect is `high->getSymbol() == sym`).  The W4 `Symbol`/`SymbolEntry`
@@ -432,11 +433,20 @@ impl HighVariable {
             symbol_offset: -1,
             kuna_name: None,
             kuna_symbol_type: None,
+            kuna_frame_snapshot: false,
             kuna_equate_symbol: None,
             kuna_global: false,
             kuna_link_symbol: None,
             kuna_ref_symbol: None,
         }
+    }
+
+    pub(crate) fn is_kuna_frame_snapshot(&self) -> bool {
+        self.kuna_frame_snapshot
+    }
+
+    pub(crate) fn set_kuna_frame_snapshot(&mut self) {
+        self.kuna_frame_snapshot = true;
     }
 
     /// (kuna) Get the name bound by `ActionNameVars` (the ScopeLocal/`Symbol`

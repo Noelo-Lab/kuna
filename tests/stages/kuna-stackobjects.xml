@@ -1,0 +1,207 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- Kuna #810 / P6 alias-facets. stackviews off has no logical objects;
+on distinguishes contents at typed uses. Native tests preserve physical behavior. -->
+<bytechunk space="ram" offset="0x401000">8b07034704c3534883ec10c7042405000000c7442404070000004889e7e8deffffff89c34889e7e8d4ffffff01d84883c4105bc3534883ec10c7042405000000c7442404070000004889e7e8b0ffffff89c3c7042409000000c74424040b0000004889e7e897ffffff01d84883c4105bc34883ec1885ff7411c7042405000000c744240407000000eb0fc7042409000000c74424040b0000004889e7e85fffffff4883c418c3535541544883ec1031ed41bc02000000c7042405000000c7442404070000004889e7e833ffffff01c5c704240900000041ffcc75ea89e84883c410415c5d5bc3534883ec10c7042405000000c7442404070000004889e7e8fefeffff89c3c6442401aa4889e7e8effeffff01d84883c4105bc3e8e8feffff83f818753fe80cffffff83f820753531ffe83dffffff83f8147529bf01000000e82effffff83f80c751ae859ffffff83f81c7510e88fffffff3d18aa0000750431ffeb05bf01000000b83c0000000f05</bytechunk>
+<symbol space="ram" offset="0x401000" name="read_pair"/>
+<symbol space="ram" offset="0x401006" name="obj_repeat"/>
+<symbol space="ram" offset="0x401034" name="obj_reuse"/>
+<symbol space="ram" offset="0x401071" name="obj_branch"/>
+<symbol space="ram" offset="0x4010a6" name="obj_loop"/>
+<symbol space="ram" offset="0x4010e6" name="obj_partial"/>
+<bytechunk space="ram" offset="0x402000">807c2408007533534883ec10c74424200a000000488d7c2420e82200000089c3c74424200b000000488d7c2420e80e00000001d84883c4105bc3b863000000c38b07c3</bytechunk>
+<symbol space="ram" offset="0x402000" name="param_reuse"/>
+<symbol space="ram" offset="0x402040" name="read_key"/>
+<bytechunk space="ram" offset="0x403000">807c240800753e534883ec1048b805000000070000004889442420488d7c2420e8ee00000089c3488d05d20f00004889442420488d7c2420e8e300000001d84883c4105bc3b863000000c3534883ec10c744242407000000488d7c2420e8b700000089c3488d05950f00004889442420488d7c2420e8a600000001d84883c4105bc3b863000000c3534883ec10c644242001c744242407000000488d7c2420e87500000089c3488d05530f00004889442420488d7c2420e86400000001d84883c4105bc3b863000000c3534883ec10488d4424204889052d0f0000c744242407000000488d7c2420e82c00000089c3488d050a0f00004889442420488d7c2420e82100000001d84883c4105bc3b863000000c38b07034704c30fb607034704c3488b078b00c3488b05db0e0000488b008b00c34883ec08c7042400000000e8bdfeffff83f843757bc7042401000000e8acfeffff83f863756ac7042400000000e8e6feffff83f83e7559c7042401000000e8d5feffff83f83f7548c7042400000000e801ffffff83f83f7537c7042401000000e8f0feffff83f83f7526c7042400000000e821ffffff83f83e7515c7042401000000e810ffffff83f83f750431ffeb05bf01000000b83c0000000f05</bytechunk>
+<bytechunk space="ram" offset="0x404000">37000000000000000000000000000000</bytechunk>
+<symbol space="ram" offset="0x403000" name="param_pair"/>
+<symbol space="ram" offset="0x40304b" name="param_incoming"/>
+<symbol space="ram" offset="0x403088" name="param_mutation"/>
+<symbol space="ram" offset="0x4030ca" name="param_escaped"/>
+<symbol space="ram" offset="0x403113" name="parameter_read_pair"/>
+<symbol space="ram" offset="0x403119" name="parameter_read_incoming_pair"/>
+<symbol space="ram" offset="0x403120" name="parameter_read_handle"/>
+<symbol space="ram" offset="0x403126" name="parameter_read_saved_handle"/>
+<bytechunk space="ram" offset="0x405000">807c240800753f534883ec10488d442420488905e80f0000c74424200a000000488d7c2420e82200000089c3c74424200b000000488d7c2420e81100000001d84883c4105bc3b863000000c38b07c3488b05aa0f00008b00c3534883ec10f20f10442420f20f2cd8488d05990f00004889442420488d7c2420e80800000001d84883c4105bc3488b078b00c3534883ec10488d7c2420e82000000089c3488d05640f00004889442420488d7c2420e80f00000001d84883c4105bc30fb607034708c3488b078b00c3534883ec10488d7c2420e8e4ffffff89c3488d05280f00004889442428488d7c2428e8d3ffffff01d84883c4105bc3534883ec10488d7c2424e846ffffff89c3488d05f90e00004889442420488d7c2420e8a4ffffff01d84883c4105bc34883ec1048c7042400000000e8c9feffff83f8150f85f200000048c7042401000000e8b3feffff83f8630f85dc00000048b80000000000002a4048890424e8f0feffff83f8440f85c000000048b8000000000000314048890424e8d4feffff83f8480f85a400000048c704240000000048c74424080d000000e8e8feffff83f8440f858500000048c704240100000048c744240811000000e8c9feffff83f849756a48c704240000000048c74424080d000000e8eafeffff83f844754f48c704240100000048c744240811000000e8cffeffff83f849753448b8010000000d00000048890424e8e6feffff83f844751c48b8010000001100000048890424e8cefeffff83f848750431ffeb05bf01000000b83c0000000f05</bytechunk>
+<bytechunk space="ram" offset="0x406000">000000000000000037000000</bytechunk>
+<symbol space="ram" offset="0x405000" name="param_scalar_escaped"/>
+<symbol space="ram" offset="0x40504c" name="variant_read_word"/>
+<symbol space="ram" offset="0x40504f" name="variant_read_saved_word"/>
+<symbol space="ram" offset="0x405059" name="param_equal_float"/>
+<symbol space="ram" offset="0x405086" name="variant_read_float_handle"/>
+<symbol space="ram" offset="0x40508c" name="param_multiple"/>
+<symbol space="ram" offset="0x4050bb" name="variant_read_parameter_pair"/>
+<symbol space="ram" offset="0x4050c2" name="variant_read_parameter_handle"/>
+<symbol space="ram" offset="0x4050c8" name="param_multiple_interior"/>
+<symbol space="ram" offset="0x4050f7" name="param_word_partial"/>
+</binaryimage>
+<script>
+<com>parse line struct LifetimePair { int4 x; int4 y; };</com>
+<com>parse line extern int4 read_pair(LifetimePair *pair);</com>
+<com>parse line extern int4 obj_repeat(void);</com>
+<com>parse line extern int4 obj_reuse(void);</com>
+<com>parse line extern int4 obj_branch(int4 condition);</com>
+<com>parse line extern int4 obj_loop(void);</com>
+<com>parse line extern int4 obj_partial(void);</com>
+<com>option stackviews off</com>
+<com>lo fu obj_repeat</com><com>decompile</com><com>print stack objects</com>
+<com>option stackviews on</com>
+<com>option stackalias off</com>
+<com>lo fu obj_repeat</com><com>decompile</com><com>print stack objects</com>
+<com>lo fu obj_reuse</com><com>decompile</com><com>print stack objects</com>
+<com>lo fu obj_branch</com><com>decompile</com><com>print stack objects</com>
+<com>lo fu obj_loop</com><com>decompile</com><com>print stack objects</com>
+<com>lo fu obj_partial</com><com>decompile</com><com>print stack objects</com>
+<com>parse line struct SemanticPair { int4 left; int4 right; };</com>
+<com>lo fu obj_reuse</com><com>decompile</com>
+<com>rename object_40104b_1 initial</com><com>decompile</com>
+<com>rename object_401064_1 replacement</com>
+<com>retype initial SemanticPair</com><com>decompile</com><com>print C</com>
+<com>rename initial first_pair</com><com>decompile</com><com>print C</com>
+<com>lo fu obj_repeat</com>
+<com>map addr s0xffffffffffffffe8 LifetimePair protected_pair</com>
+<com>decompile</com>
+<com>rename object_40101d_1 repeat_pair</com><com>decompile</com><com>print C</com>
+<com>parse line extern int4 param_reuse(int4 a, int4 b, int4 c, int4 d, int4 e, int4 f, bool prepare_only);</com>
+<com>parse line extern int4 read_key(int4 *key);</com>
+<com>option protoorder off</com>
+<com>option stackviews off</com>
+<com>lo fu param_reuse</com><com>decompile</com><com>print C</com>
+<com>option stackviews on</com>
+<com>lo fu param_reuse</com><com>decompile</com><com>print stack objects</com><com>print C</com>
+<com>rename v2 key_storage</com><com>decompile</com><com>print C</com>
+<com>rename object_402019_1 first_key</com>
+<com>rename object_40202d_1 second_key</com><com>decompile</com><com>print C</com>
+<com>parse line struct LifetimeIncomingPair { bool x; uint1 padding[3]; int4 y; };</com>
+<com>parse line struct LifetimeHandle { int4 *value; };</com>
+<com>parse line extern int4 parameter_read_pair(LifetimePair *pair);</com>
+<com>parse line extern int4 parameter_read_incoming_pair(LifetimeIncomingPair *pair);</com>
+<com>parse line extern int4 parameter_read_handle(LifetimeHandle *handle);</com>
+<com>parse line extern int4 parameter_read_saved_handle(void);</com>
+<com>parse line extern int4 param_pair(int4 a, int4 b, int4 c, int4 d, int4 e, int4 f, bool prepare_only);</com>
+<com>parse line extern int4 param_incoming(int4 a, int4 b, int4 c, int4 d, int4 e, int4 f, bool prepare_only);</com>
+<com>parse line extern int4 param_mutation(int4 a, int4 b, int4 c, int4 d, int4 e, int4 f, bool prepare_only);</com>
+<com>parse line extern int4 param_escaped(int4 a, int4 b, int4 c, int4 d, int4 e, int4 f, bool prepare_only);</com>
+<com>map addr r0x404000 int4 parameter_datum</com>
+<com>map addr r0x404008 void *parameter_escaped_pointer</com>
+<com>option stackviews off</com>
+<com>lo fu param_incoming</com><com>decompile</com><com>print C</com>
+<com>option stackviews on</com>
+<com>lo fu param_pair</com><com>decompile</com><com>print stack objects</com>
+<com>lo fu param_incoming</com><com>decompile</com><com>print stack objects</com><com>print C</com>
+<com>rename object_40305d_1 incoming_view</com><com>decompile</com><com>print C</com>
+<com>rename object_403075_1 handle_view</com><com>decompile</com><com>print C</com>
+<com>lo fu param_mutation</com><com>decompile</com><com>print C</com>
+<com>lo fu param_escaped</com><com>decompile</com><com>print C</com>
+<com>rename object_4030e8_1 escaped_view</com><com>decompile</com><com>print C</com>
+<com>parse line struct LifetimeParameterPair { bool x; uint1 padding[7]; int8 y; };</com>
+<com>parse line extern int4 param_scalar_escaped(int4 a, int4 b, int4 c, int4 d, int4 e, int4 f, bool prepare_only);</com>
+<com>parse line extern int4 param_equal_float(float8 a, float8 b, float8 c, float8 d, float8 e, float8 f, float8 g, float8 h, float8 prepared_value);</com>
+<com>parse line extern int4 param_multiple(int4 a, int4 b, int4 c, int4 d, int4 e, int4 f, bool prepare_only, int8 carried_value);</com>
+<com>parse line extern int4 param_multiple_interior(int4 a, int4 b, int4 c, int4 d, int4 e, int4 f, bool prepare_only, int8 carried_value);</com>
+<com>parse line extern int4 param_word_partial(int4 a, int4 b, int4 c, int4 d, int4 e, int4 f, int8 incoming_word);</com>
+<com>parse line extern int4 variant_read_word(int4 *word);</com>
+<com>parse line extern int4 variant_read_saved_word(void);</com>
+<com>parse line extern int4 variant_read_float_handle(LifetimeHandle *handle);</com>
+<com>parse line extern int4 variant_read_parameter_pair(LifetimeParameterPair *pair);</com>
+<com>parse line extern int4 variant_read_parameter_handle(LifetimeHandle *handle);</com>
+<com>map addr r0x406000 void *variant_escaped_pointer</com>
+<com>map addr r0x406008 int4 variant_datum</com>
+<com>option stackviews off</com>
+<com>lo fu param_scalar_escaped</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu param_equal_float</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option stackviews on</com>
+<com>lo fu param_scalar_escaped</com>
+<com>decompile</com>
+<com>print stack objects</com>
+<com>print C</com>
+<com>lo fu param_equal_float</com>
+<com>decompile</com>
+<com>print stack objects</com>
+<com>print C</com>
+<com>lo fu param_multiple</com>
+<com>decompile</com>
+<com>print stack objects</com>
+<com>print C</com>
+<com>lo fu param_multiple_interior</com>
+<com>decompile</com>
+<com>print stack objects</com>
+<com>print C</com>
+<com>lo fu param_word_partial</com>
+<com>decompile</com>
+<com>print stack objects</com>
+<com>print C</com>
+<com>lo fu param_multiple_interior</com>
+<com>decompile</com>
+<com>rename object_4050ea_1 interior_handle</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu param_scalar_escaped</com>
+<com>decompile</com>
+<com>rename prepare_only source_flag</com>
+<com>decompile</com>
+<com>print C</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="one identity for unchanged contents" min="1" max="1">^object_40101d_1 stack=-0x18 size=8 state=defined$</stringmatch>
+<stringmatch name="both uses of unchanged contents retained" min="1" max="1">^  use 0x401027:1 LifetimePair$</stringmatch>
+<stringmatch name="two identities despite the same layout and address" min="2" max="2">^object_4010(4b|64)_1 stack=-0x18 size=8 state=defined$</stringmatch>
+<stringmatch name="branch alternatives are defined" min="1" max="1">^  bytes 0..4 0x401079\|0x40108a$</stringmatch>
+<stringmatch name="loop initial and backedge definitions share a family" min="1" max="1">^  bytes 0..4 0x4010b6\|0x4010cf$</stringmatch>
+<stringmatch name="partial update retains the first byte" min="1" max="1">^  bytes 0..1 0x4010eb$</stringmatch>
+<stringmatch name="partial update changes only the second byte" min="1" max="1">^  bytes 1..2 0x401104$</stringmatch>
+<stringmatch name="partial update retains the other bytes" min="1" max="1">^  bytes 2..4 0x4010eb$</stringmatch>
+<stringmatch name="partial update retains the second word across both uses" min="2" max="2">^  bytes 4..8 0x4010f2$</stringmatch>
+<stringmatch name="all seven families are defined and option off adds none" min="7" max="7">^object_[0-9a-f]+_1 stack=-0x[0-9a-f]+ size=8 state=defined$</stringmatch>
+<stringmatch name="known read-only calls do not add uncertain effects" min="0" max="0">^(object_4010[0-9a-f]+_1 .*state=uncertain|  bytes .*effect@)</stringmatch>
+<stringmatch name="logical assertion selects the first initializer fields" min="1" max="1">initial\.left = 5;</stringmatch>
+<stringmatch name="logical assertion selects the later initializer fields" min="2" max="2">replacement\.x = 9;</stringmatch>
+<stringmatch name="logical retype keeps the first call at the named physical view" min="1" max="1">read_pair\(\(LifetimePair \*\)&amp;v[0-9]+\.initial\)</stringmatch>
+<stringmatch name="later incarnation retains its independent named call view" min="2" max="2">read_pair\(&amp;v[0-9]+\.replacement\)</stringmatch>
+<stringmatch name="rename after rebuilding updates initializer fields" min="1" max="1">first_pair\.left = 5;</stringmatch>
+<stringmatch name="rename after rebuilding updates the call view" min="1" max="1">read_pair\(\(LifetimePair \*\)&amp;v[0-9]+\.first_pair\)</stringmatch>
+<stringmatch name="late logical bindings never emit an undefined frame name" min="0" max="0">&amp;Stackffffffffffffffe8</stringmatch>
+<stringmatch name="locked layouts keep their declared physical object" min="1" max="1">LifetimePair protected_pair;</stringmatch>
+<stringmatch name="locked layouts expose one pointer per logical view" min="1" max="1">LifetimePair \*repeat_pair_view;</stringmatch>
+<stringmatch name="logical pointers refer to the protected physical object" min="1" max="1">repeat_pair_view = (\(LifetimePair \*\))?&amp;protected_pair;</stringmatch>
+<stringmatch name="unchanged contents reuse one logical pointer at both calls" min="2" max="2">read_pair\(repeat_pair_view\)</stringmatch>
+<stringmatch name="option off still takes the incoming parameter address" min="2" max="2">read_key\(\(int4 \*\)&amp;prepare_only\)</stringmatch>
+<stringmatch name="reused parameter bytes have complete native definitions" min="2" max="2">^object_4020(19|2d)_1 stack=0x8 size=4 state=defined$</stringmatch>
+<stringmatch name="input condition survives local rename and logical naming" min="6" max="6">if \(!prepare_only\)</stringmatch>
+<stringmatch name="wider local rename keeps both native key stores" min="4" max="4">key_storage = (10|0xb);</stringmatch>
+<stringmatch name="first object name selects the wider parameter slot local" min="1" max="1">first_key_view = \(int4 \*\)&amp;key_storage;</stringmatch>
+<stringmatch name="second object name selects the same physical word" min="1" max="1">second_key_view = \(int4 \*\)&amp;key_storage;</stringmatch>
+<stringmatch name="option off aggregate still addresses the smaller parameter" min="1" max="1">parameter_read_incoming_pair\(\(LifetimeIncomingPair \*\)&amp;prepare_only\)</stringmatch>
+<stringmatch name="fully overwritten aggregate parameter objects retain native definitions" min="2" max="2">^object_4030(20|38)_1 stack=0x8 size=8 state=defined$</stringmatch>
+<stringmatch name="partial parameter object retains its incoming family" min="1" max="1">^object_40305d_1 stack=0x8 size=8 state=uncertain$</stringmatch>
+<stringmatch name="synthetic initialization does not claim a native write" min="2" max="2">^  bytes 0..4 incoming$</stringmatch>
+<stringmatch name="backing initialization reads the actual ABI parameter" min="10" max="10">v[0-9]+\.view_bool = prepare_only;</stringmatch>
+<stringmatch name="narrow writes target the physical backing" min="1" max="1">v[0-9]+\.bytes\[0\] = 1;</stringmatch>
+<stringmatch name="narrow writes do not name the formal parameter as a union" min="0" max="0">prepare_only\.bytes</stringmatch>
+<stringmatch name="escaped addresses retain the shared backing" min="2" max="2">dat_404008 = &amp;v[0-9]+;</stringmatch>
+<stringmatch name="named incoming families retain the same backing at their use" min="2" max="2">parameter_read_incoming_pair\(&amp;\(\(stack_views_40304b_p8_[0-9]+ \*\)&amp;v[0-9]+\)-&gt;incoming_view\)</stringmatch>
+<stringmatch name="named replacement retains its exact backing symbol" min="1" max="1">parameter_read_handle\(&amp;\(\(stack_views_40304b_p8_[0-9]+ \*\)&amp;v[0-9]+\)-&gt;handle_view\)</stringmatch>
+<stringmatch name="option off scalar escape names the incoming value" min="1" max="1">dat_406000 = &amp;prepare_only;</stringmatch>
+<stringmatch name="option off equal-width reuse addresses the incoming float" min="1" max="1">variant_read_float_handle\(\(LifetimeHandle \*\)&amp;prepared_value\)</stringmatch>
+<stringmatch name="escaped scalar storage keeps one physical backing" min="3" max="3">dat_406000 = &amp;v[0-9]+;</stringmatch>
+<stringmatch name="equal-width float initializes from its formal input" min="1" max="1">v[0-9]+\.view_float8 = prepared_value;</stringmatch>
+<stringmatch name="equal-width input has no uninitialized shadow local" min="0" max="0">float8 prepared_value_[0-9]+;</stringmatch>
+<stringmatch name="both interior formals initialize the shared extent" min="3" max="3">v[0-9]+\.view_int8_at8\.value = carried_value;</stringmatch>
+<stringmatch name="partial input read receives the whole incoming word" min="1" max="1">v[0-9]+\.view_int8 = incoming_word;</stringmatch>
+<stringmatch name="larger objects preserve incoming rather than synthetic definitions" min="2" max="2">^object_4050(96|d2)_1 stack=0x8 size=16 state=uncertain$</stringmatch>
+<stringmatch name="interior replacement retains its native definition" min="1" max="1">^object_4050ea_1 stack=0x10 size=8 state=defined$</stringmatch>
+<stringmatch name="partial input read selects its offset view" min="1" max="1">variant_read_word\(&amp;v[0-9]+\.view_int4_at4\.value\)</stringmatch>
+<stringmatch name="ordinary interior use selects its offset view" min="1" max="1">variant_read_parameter_handle\(.*view_LifetimeHandle_at8\)\.value\)</stringmatch>
+<stringmatch name="named interior use stays on its shared backing" min="1" max="1">variant_read_parameter_handle\(.*interior_handle\)\.value\)</stringmatch>
+<stringmatch name="named interior use never takes the formal address" min="0" max="0">interior_handle_view = .*&amp;carried_value;</stringmatch>
+<stringmatch name="interior uses never emit undefined storage or partial tokens" min="0" max="0">(&amp;Stack000000|Register00000020|\._8_8_)</stringmatch>
+<stringmatch name="formal rename survives consecutive rebuilds in the signature" min="2" max="2">bool source_flag\)</stringmatch>
+<stringmatch name="formal rename survives consecutive backing initializers" min="2" max="2">v[0-9]+\.view_bool = source_flag;</stringmatch>
+<stringmatch name="formal rename does not produce an uninitialized body shadow" min="0" max="0">bool source_flag;</stringmatch>
+</decompilertest>

@@ -1570,18 +1570,21 @@ impl Heritage {
                     .get_space()
                     .map(|s| s.get_type() != spacetype::IPTR_INTERNAL)
                     .unwrap_or(false);
-            if high_ptr_possible {
-                let mut guarded_stores = if level >= LEVEL_FULL || guard_stack_bytes {
-                    self.guard_stores(fd, addr, size, write, level < LEVEL_FULL)
-                } else {
-                    if level == LEVEL_GLOBAL && (fl & varnode_flags::readonly) == 0 {
-                        self.guard_global_stores(fd, fl, addr, size, write);
-                    }
-                    Vec::new()
-                };
-                if level < LEVEL_FULL && guard_stack_indexed {
-                    self.guard_indexed_stores(fd, addr, size, write, &mut guarded_stores);
+            let stack_effects = crate::kuna_stackeffects::enabled_for(fd, addr);
+            let mut guarded_stores = if (high_ptr_possible && level >= LEVEL_FULL) || stack_effects {
+                self.guard_stores(fd, addr, size, write, false)
+            } else if high_ptr_possible && guard_stack_bytes {
+                self.guard_stores(fd, addr, size, write, true)
+            } else {
+                if high_ptr_possible && level == LEVEL_GLOBAL && (fl & varnode_flags::readonly) == 0 {
+                    self.guard_global_stores(fd, fl, addr, size, write);
                 }
+                Vec::new()
+            };
+            if high_ptr_possible && level < LEVEL_FULL && guard_stack_indexed && !stack_effects {
+                self.guard_indexed_stores(fd, addr, size, write, &mut guarded_stores);
+            }
+            if high_ptr_possible {
                 if level < LEVEL_FULL && self.spill_store_budget_ok {
                     super::kuna_spillstoreguard::build(
                         fd, addr, size, &self.spill_stores, &guarded_stores, &self.spill_store_bounds,
@@ -1612,6 +1615,7 @@ impl Heritage {
         fd: &crate::funcdata::Funcdata,
         spc: &Rc<AddrSpace>,
         offset: uintb,
+        size: int4,
     ) -> bool {
         if self.protostack_alias.is_none() {
             self.protostack_alias = Some(fd.build_alias_checker_deferred());
@@ -1621,8 +1625,20 @@ impl Heritage {
             None => return true,
         };
         let mut access = fd.alias_gather_access();
-        checker.has_local_alias(Some((Rc::clone(spc), offset)), &mut access)
+        if checker.has_local_alias(Some((Rc::clone(spc), offset)), &mut access)
             || checker.has_parameter_alias(offset, &mut access)
+        {
+            return true;
+        }
+        if fd.get_arch().stack_views || fd.get_arch().stack_alias_deadstore {
+            if !spc.stack_grows_negative() {
+                return true;
+            }
+            let end = spc.wrap_offset(offset.wrapping_add(size.saturating_sub(1) as uintb));
+            return checker.has_local_alias(Some((Rc::clone(spc), end)), &mut access)
+                || checker.has_parameter_alias(end, &mut access);
+        }
+        false
     }
 
     /// Guard CALL ops (C++ `Heritage::guardCalls`, `heritage.cc:1444`).
@@ -1693,6 +1709,11 @@ impl Heritage {
             // heritage.cc:1468) because the output-active branch can promote it to
             // `killedbycall`.
             let mut effecttype = fc.proto().has_effect(&trans_addr, size);
+            if effecttype == effect_type::UNKNOWN_EFFECT
+                && crate::kuna_calleememory::preserves(fd, fc, addr, size)
+            {
+                effecttype = effect_type::UNAFFECTED;
+            }
             // (kuna) `calleeprotostack` — a callee with a locked, non-variadic
             // prototype owns the return-address slot and its own parameter area
             // and nothing above them.  A caller slot above that floor is reachable
@@ -1712,7 +1733,7 @@ impl Heritage {
                         size,
                         spc.get_addr_size() as int4,
                         floor,
-                    ) && !self.protostack_is_aliased(fd, &spc, addr.get_offset())
+                    ) && !self.protostack_is_aliased(fd, &spc, addr.get_offset(), size)
                     {
                         effecttype = effect_type::UNAFFECTED;
                     }
@@ -2792,7 +2813,10 @@ impl Heritage {
                 fd.obank().get(op).map(|o| o.uses_spacebase_ptr()).unwrap_or(false);
             let contained =
                 container.as_ref().map(|c| Rc::ptr_eq(c, &store_space)).unwrap_or(false);
-            if !((contained && uses_spacebase) || Rc::ptr_eq(&spc, &store_space)) {
+            let escaped = crate::kuna_stackeffects::enabled_for(fd, addr)
+                && self.protostack_is_aliased(fd, &spc, addr.get_offset(), size);
+            let indirect_frame_store = contained && escaped && crate::kuna_stackeffects::unresolved_store(fd, op);
+            if !((contained && uses_spacebase) || Rc::ptr_eq(&spc, &store_space) || indirect_frame_store) {
                 continue;
             }
             let indop = fd.new_indirect_op(op, addr, size, pcodeop_flags::indirect_store);
@@ -4400,6 +4424,7 @@ impl Heritage {
         readvars: &[crate::context::VarnodeId],
         writevars: &[crate::context::VarnodeId],
         inputvars: &[crate::context::VarnodeId],
+        byte_copy: bool,
     ) -> Option<usize> {
         let size = self.disjoint.get(idx).size;
         if size > 1024 {
@@ -4411,6 +4436,9 @@ impl Heritage {
         self.build_refinement(fd, &mut refine, &addr, readvars);
         self.build_refinement(fd, &mut refine, &addr, writevars);
         self.build_refinement(fd, &mut refine, &addr, inputvars);
+        if byte_copy {
+            refine.fill(1);
+        }
         refine.pop(); // remove the fencepost
         // Convert boundary points to partition sizes.
         let mut lastpos: usize = 0;
@@ -4424,7 +4452,9 @@ impl Heritage {
             return None; // No non-trivial refinements
         }
         refine[lastpos] = size - lastpos as int4;
-        self.remove13_refinement(&mut refine);
+        if !byte_copy {
+            self.remove13_refinement(&mut refine);
+        }
         let mut newvn: Vec<crate::context::VarnodeId> = Vec::new();
         for &vn in readvars {
             self.refine_read(fd, vn, &addr, &refine, &mut newvn);
@@ -4489,9 +4519,16 @@ impl Heritage {
             let maxw =
                 self.collect(fd, &mut memrange, &mut readvars, &mut writevars, &mut inputvars, &mut removevars);
             // refinement (heritage.cc:2611-2619): only when size>4 && max<size.
-            if memrange.size > 4 && maxw < memrange.size {
+            let byte_copy = memrange.addr.get_space()
+                .zip(fd.get_arch().manage().get_stack_space())
+                .is_some_and(|(space, stack)| space.get_index() == stack.get_index())
+                && writevars.iter().any(|&vn| {
+                fd.vbank().get(vn).and_then(|v| v.get_def())
+                    .is_some_and(|op| fd.is_stack_byte_copy_op(op))
+            });
+            if byte_copy || (memrange.size > 4 && maxw < memrange.size) {
                 if let Some(refiter) =
-                    self.refinement(fd, idx, &readvars, &writevars, &inputvars)
+                    self.refinement(fd, idx, &readvars, &writevars, &inputvars, byte_copy)
                 {
                     idx = refiter;
                     memrange = self.disjoint.get(idx).clone();

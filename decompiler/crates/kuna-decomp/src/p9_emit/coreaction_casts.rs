@@ -372,10 +372,16 @@ pub(crate) fn get_input_cast(
             if data.vbank().get(invn)?.is_annotation() {
                 return None;
             }
-            let reqtype = input_type_local(data, op, slot);
+            let contract = (data.get_arch().stack_views && opc == OpCode::CPUI_CALLOTHER)
+                .then(|| crate::p6_variables::kuna_stackuses::input_contract(data, op, slot))
+                .flatten();
+            let declared_storage = contract.is_some();
+            let reqtype = contract.unwrap_or_else(|| input_type_local(data, op, slot));
             let curtype = data.vn_high_type_read_facing(invn, op);
+            let care_ptr_uint = declared_storage || reqtype.get_metatype() != type_metatype::TYPE_UNKNOWN
+                || crate::p9_emit::kuna_unknowncasts::declared_argument(data, op, slot);
             strat
-                .cast_standard(&reqtype, &curtype, false, true)
+                .cast_standard(&reqtype, &curtype, false, care_ptr_uint)
                 .or_else(|| crate::kuna_truncarg::narrowed_arg_cast(data, strat, op, slot))
         }
     }
@@ -934,6 +940,13 @@ fn get_output_token_ptrsub(data: &mut Funcdata, op: OpId) -> Rc<Datatype> {
     // guard (type.cc:1225-1226) is skipped (`ptrtoSize != 0` is false); the type
     // is not an array/struct, so `!isArray -> getTypePointerStripArray` applies.
     let ptrto = ptype.get_ptr_to();
+    if offset == 0 && ptrto.as_ref().is_some_and(|ty| ty.get_metatype() == type_metatype::TYPE_UNION) {
+        if let Some(resolution) = data.get_union_field(&ptype, op, -1) {
+            if resolution.get_field_num() >= 0 {
+                return Rc::clone(resolution.get_datatype());
+            }
+        }
+    }
     let is_spacebase = ptrto
         .as_ref()
         .map(|p| p.get_metatype() == type_metatype::TYPE_SPACEBASE)
@@ -1165,6 +1178,8 @@ impl Funcdata {
     /// CAST/PTRSUB ops the rendered C needs.  Returns the number of changes made.
     pub fn action_set_casts(&mut self) -> int4 {
         self.start_cast_phase();
+        crate::p9_emit::kuna_stackversions::prepare(self);
+        crate::kuna_stackviews::prepare_casts(self);
         let tlst = match self.get_arch().types_rc() {
             Some(t) => t as Rc<dyn crate::dtype::TypeFactory>,
             None => return 0,
@@ -1186,7 +1201,7 @@ impl Funcdata {
                     Some(o) => o,
                     None => continue,
                 };
-                if o.not_printed() {
+                if o.not_printed() || crate::p9_emit::kuna_stackmarkers::nonprinting(self, op) {
                     continue;
                 }
                 let opc = o.code();
@@ -1308,6 +1323,16 @@ impl Funcdata {
             (in0, in1off)
         };
         let curtype = self.vn_type_read_facing(in0, op);
+        if in1off == 0
+            && curtype.get_ptr_to().is_some_and(|ty| {
+                ty.get_metatype() == type_metatype::TYPE_UNION
+                    && self.get_union_field(&curtype, op, -1).is_some_and(|resolution| {
+                        ty.get_field(resolution.get_field_num()).is_some()
+                    })
+            })
+        {
+            return;
+        }
         let matching = self.is_ptrsub_matching_scope(&curtype, in1off as i64, 0i64, 0i64);
         if !matching {
             if in1off == 0 {
@@ -1575,7 +1600,8 @@ impl Funcdata {
             Some(t) => t,
             None => Rc::clone(self.vbank().get(outvn).expect("castOutput: stale outvn").get_type()),
         };
-        if Rc::ptr_eq(&tokenct, &out_high_type) {
+        let storage_type = crate::kuna_stackviews::access_type(self, outvn, op, -1);
+        if Rc::ptr_eq(&tokenct, storage_type.as_ref().unwrap_or(&out_high_type)) {
             if tokenct.needs_resolution() {
                 let resolve = ResolvedUnion::new(Rc::clone(&tokenct));
                 self.set_union_field(&tokenct, op, -1, resolve);
@@ -1651,6 +1677,14 @@ impl Funcdata {
         }
         if out_high_type.needs_resolution() {
             self.inherit_union_field(&out_high_type, newop, -1, op, -1);
+        }
+        if let Some(view) = self.stack_write_views.remove(&op) {
+            self.inherit_union_field(&view.backing, newop, -1, op, -1);
+            self.stack_write_views.insert(newop, view);
+        } else if storage_type.is_some() {
+            if let Some(backing) = self.vbank().get(outvn).and_then(|v| v.get_high()).and_then(|h| self.high_bank().get(h)).and_then(|h| h.kuna_symbol_type()).cloned() {
+                self.inherit_union_field(&backing, newop, -1, op, -1);
+            }
         }
         1
     }

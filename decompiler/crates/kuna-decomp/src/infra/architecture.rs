@@ -772,6 +772,8 @@ pub struct Architecture {
     /// (kuna GH-8500) Hold a store-through-a-stack-pointer-alias across the
     /// deadcode race (C++ `stack_alias_deadstore`).
     pub stack_alias_deadstore: bool,
+    /// Operation-specific typed views over shared physical frame storage.
+    pub stack_views: bool,
     /// (kuna GH-8724) Re-express a strided-induction offset as counter*stride
     /// (C++ `recover_array_stride`).
     pub recover_array_stride: bool,
@@ -1417,6 +1419,10 @@ pub struct Architecture {
     pub kuna_callee_dead_cache: std::collections::HashMap<
         (int4, uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
+    >,
+    pub kuna_callee_memory_cache: std::collections::HashMap<
+        (int4, uintb),
+        std::rc::Rc<crate::kuna_calleememory::CalleeMemory>,
     >,
     /// (kuna `argclobber`) Per-image cache of the forwarding resolution
     /// ([`crate::kuna_calleedeadarg::resolve_forward_transfer`]) — what a value
@@ -2617,6 +2623,7 @@ impl Architecture {
             jumptable_share_partial: true,
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
+            stack_views: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
             lowered_switch_labels: false,
@@ -2726,6 +2733,7 @@ impl Architecture {
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
             kuna_callee_write_cache: std::collections::HashMap::new(),
             kuna_callee_dead_cache: std::collections::HashMap::new(),
+            kuna_callee_memory_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_vfp_variadic: RefCell::new(None),
@@ -2944,6 +2952,7 @@ impl Architecture {
         self.unrolled_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
+        self.stack_views = false;
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
@@ -3756,6 +3765,8 @@ impl Architecture {
         ctx.load_guard_range = self.load_guard_range; // loadguardrange
         ctx.index_alias_guard = self.index_alias_guard; // indexaliasguard
         ctx.array_extent = self.array_extent; // arrayextent
+        ctx.stack_alias_deadstore = self.stack_alias_deadstore; // stackalias
+        ctx.stack_views = self.stack_views;
         ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim

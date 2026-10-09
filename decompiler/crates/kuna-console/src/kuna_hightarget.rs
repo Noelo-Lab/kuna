@@ -8,13 +8,10 @@
 //! it, so the one plane an agent states facts through cannot name it — while
 //! `kuna decompile --help` teaches `type v2 char[16]` on exactly such a name.
 //!
-//! The console already owns the machinery this needs.  `type varnode %RAX(pc)
-//! <type>` maps an isolated, locked Symbol over a register at a use address, and
-//! `linkSymbol`'s `query_container_for_link(addr, vn->getUsePoint())` binds it to
-//! the high that reads that storage there.  What was missing is the translation
-//! from the identifier the printer chose to that `(storage, usepoint)` pair.
-//! This module is that translation and nothing else: it adds no decision to the
-//! pipeline, so it carries no option.
+//! Native storage uses a definition-scoped Symbol. Renumbered temporaries,
+//! JOIN storage and definitions sharing one native address use the existing
+//! DynamicHash machinery, checked against the selected high before binding.
+//! Both kinds survive the next IR rebuild; no analysis-local id is a replay key.
 //!
 //! # The usepoint is load-bearing
 //!
@@ -50,75 +47,25 @@
 //! naming both.  The one exception is a `name` whose new name the pass also
 //! printed, on a variable that still carries the identifier (`name v1 v2`,
 //! `name v2 v1`): the caller is permuting the names it was shown, and the first
-//! reading is what makes swaps and rotations work.  Two
-//! register locals whose storage overlaps (`char *s // rax` then `uint4 v1 //
-//! eax`) cannot both be given a Symbol in one batch -- the second pass merges
-//! them into one variable -- so the later of the two is rejected, naming the
-//! earlier.
+//! reading is what makes swaps and rotations work. Different-width register
+//! locals may share physical storage when unique definition witnesses select
+//! separate highs. Required merges and isolation use those exact identities.
 
 use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::space::spacetype::{IPTR_CONSTANT, IPTR_INTERNAL, IPTR_JOIN};
 use kuna_base::types::int4;
-use kuna_decomp::context::HighVariableId;
+use kuna_decomp::context::{HighVariableId, VarnodeId};
 use kuna_decomp::database::{symbol_category, SymbolId};
 use kuna_decomp::dtype::Datatype;
 use kuna_decomp::funcdata::{DirectiveSymbol, Funcdata};
-use kuna_decomp::fspec::{parameter_pieces_flags, ParameterPieces};
 use kuna_decomp::varnode::varnode_flags;
-
-/// Carry edited parameter Symbols through the separate prototype store on an IR rebuild.
-/// The complete input list is needed to retain recovered slots when locking the inputs.
-pub fn carried_parameter_maps(fd: &Funcdata) -> Vec<(int4, String, ParameterPieces)> {
-    let Some(scope) = fd.get_scope_local() else { return Vec::new() };
-    let proto = fd.get_func_proto();
-    if !proto.has_store() {
-        return Vec::new();
-    }
-    let usepoint = &fd.get_address().clone() + -1;
-    let mut changed = false;
-    let mut maps = Vec::new();
-    for slot in 0..proto.num_params() {
-        let Some(param) = proto.get_param(slot) else { continue };
-        let addr = param.get_address();
-        let mut name = kuna_decomp::database::kuna_materialized_param_name(
-            fd.get_arch().name_style_angr, slot, param.get_name(),
-        );
-        let mut dtype = param.get_type().cloned();
-        if let Some(entry) = scope.query_container_for_link(&addr, &usepoint) {
-            let symbol = scope.database().symbol(entry.symbol);
-            if entry.category == symbol_category::FUNCTION_PARAMETER
-                && entry.entry_addr == addr
-                && symbol.get_category_index() as int4 == slot
-                && (symbol.flags & (varnode_flags::namelock | varnode_flags::typelock)) != 0
-            {
-                changed |= symbol.name != name
-                    || match (&dtype, &symbol.dtype) {
-                        (Some(a), Some(b)) => !Rc::ptr_eq(a, b),
-                        _ => false,
-                    };
-                name = symbol.name.clone();
-                dtype = symbol.dtype.clone();
-            }
-        }
-        let mut flags = parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::NAMELOCK;
-        for (present, flag) in [
-            (param.is_size_type_locked(), parameter_pieces_flags::SIZELOCK),
-            (param.is_this_pointer(), parameter_pieces_flags::ISTHIS),
-            (param.is_indirect_storage(), parameter_pieces_flags::INDIRECTSTORAGE),
-            (param.is_hidden_return(), parameter_pieces_flags::HIDDENRETPARM),
-            (proto.has_custom_storage(), parameter_pieces_flags::CUSTOM_STORAGE),
-        ] {
-            if present { flags |= flag; }
-        }
-        maps.push((slot, name, ParameterPieces { addr, type_: dtype, flags }));
-    }
-    if changed { maps } else { Vec::new() }
-}
 
 /// The storage a printed local occupies, in the shape `Scope::addSymbol` takes.
 pub struct PrintedLocal {
+    /// Analysis-local identity, used only within this assertion batch.
+    pub high: kuna_decomp::context::HighVariableId,
     /// The name representative's storage address (`%RAX`, a unique-space temp).
     pub addr: Address,
     /// The width of that storage, which a stated type has to match.
@@ -129,6 +76,8 @@ pub struct PrintedLocal {
     /// The type the representative carries today, so a `name` directive can
     /// rename without also restating the type.
     pub dtype: Rc<Datatype>,
+    /// Dataflow identity for storage that cannot be replayed by address alone.
+    pub dynamic_hash: Option<u64>,
 }
 
 /// What a `name`/`type` identifier resolved to.
@@ -136,7 +85,7 @@ pub enum LocalTarget {
     /// A Symbol: a stack slot, a parameter, or a register local an earlier
     /// directive in the batch already mapped.
     Symbol(SymbolId),
-    /// A register-resident local no Symbol backs yet.
+    /// A printed local no Symbol backs yet.
     Printed(PrintedLocal),
 }
 
@@ -150,6 +99,7 @@ fn resolve_local(
     fd: &mut Funcdata,
     name: &str,
     renaming_to: Option<&str>,
+    maxduplicates: u32,
 ) -> Result<LocalTarget, String> {
     let touched = fd.kuna_directive_symbols().to_vec();
     let mut printed: Vec<SymbolId> =
@@ -194,7 +144,7 @@ fn resolve_local(
     if let Some(sym) = printed {
         return Ok(LocalTarget::Symbol(sym));
     }
-    if let Some(target) = resolve_printed_local(fd, name, &touched)? {
+    if let Some(target) = resolve_printed_local(fd, name, &touched, maxduplicates)? {
         return Ok(LocalTarget::Printed(target));
     }
     match given.len() {
@@ -242,15 +192,20 @@ pub fn apply_local(
     name: &str,
     newname: &str,
     retype: Option<Rc<Datatype>>,
+    maxduplicates: u32,
 ) -> Result<(), String> {
-    let sym = match resolve_local(fd, name, retype.is_none().then_some(newname))? {
+    if kuna_decomp::kuna_stackobjectasserts::apply(fd, name, newname, retype.clone())? {
+        return Ok(());
+    }
+    let sym = match resolve_local(fd, name, retype.is_none().then_some(newname), maxduplicates)? {
         LocalTarget::Printed(target) => {
+            let lock_type = retype.is_some();
             let ct = retype.unwrap_or_else(|| target.dtype.clone());
-            let symbol = bind_printed_local(fd, &target, newname, ct)?;
+            let symbol = bind_printed_local(fd, &target, newname, ct, lock_type)?;
             fd.kuna_record_directive_symbol(DirectiveSymbol {
                 symbol,
                 printed: name.to_string(),
-                bound: Some((target.addr.clone(), target.size)),
+                bound: Some((target.addr.clone(), target.size, target.high)),
             });
             return Ok(());
         }
@@ -260,10 +215,11 @@ pub fn apply_local(
         .kuna_directive_symbols()
         .iter()
         .find(|d| d.symbol == sym)
-        .and_then(|d| d.bound.as_ref().map(|(_, size)| *size));
+        .and_then(|d| d.bound.as_ref().map(|(_, size, _)| *size));
     if let (Some(size), Some(ct)) = (bound_size, retype.as_ref()) {
         check_width(size, ct)?;
     }
+    let parameter = crate::kuna_paramasserts::prepare(fd, sym, retype.as_ref())?;
     // A parameter's storage is model-derived; locking its name or type locks the
     // input side of the prototype too (C++ `IfcRename`/`IfcRetype`).
     let lm = fd.get_scope_local().ok_or_else(|| "Function has no local scope".to_string())?;
@@ -276,8 +232,20 @@ pub fn apply_local(
         .ok_or_else(|| "Function has no local scope".to_string())?;
     match retype {
         None => {
+            let symbol = lm.database().symbol(sym);
+            let dynamic = !symbol.mapentry.is_empty()
+                && symbol.mapentry.iter().all(|entry| {
+                    matches!(entry, kuna_decomp::database::EntryRef::Dynamic(_))
+                });
             lm.rename_symbol(sym, newname).map_err(|e| e.explain().to_string())?;
-            lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+            if dynamic {
+                lm.set_attribute(sym, varnode_flags::namelock);
+                if !lm.database().symbol(sym).is_type_locked() {
+                    lm.set_symbol_identity_isolated(sym);
+                }
+            } else {
+                lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+            }
         }
         Some(ct) => {
             lm.retype_symbol(sym, ct).map_err(|e| e.explain().to_string())?;
@@ -288,6 +256,9 @@ pub fn apply_local(
             }
         }
     }
+    if let Some(parameter) = parameter {
+        crate::kuna_paramasserts::apply(fd, sym, parameter);
+    }
     fd.kuna_record_directive_symbol(DirectiveSymbol { symbol: sym, printed: current, bound: None });
     Ok(())
 }
@@ -297,7 +268,8 @@ pub fn apply_local(
 fn resolve_printed_local(
     fd: &mut Funcdata,
     name: &str,
-    touched: &[DirectiveSymbol],
+    _touched: &[DirectiveSymbol],
+    maxduplicates: u32,
 ) -> Result<Option<PrintedLocal>, String> {
     let ids = printed_highs(fd, name);
     match ids.len() {
@@ -312,117 +284,81 @@ fn resolve_printed_local(
         let v = fd.vbank().get(rep).ok_or_else(|| format!("No storage for: {name}"))?;
         (v.get_addr().clone(), v.get_size(), v.get_type().clone(), v.is_written(), v.get_def())
     };
-    // A Symbol is keyed by its storage, and only storage the next IR rebuild
-    // re-creates at the same address can be found again: a machine register, the
-    // stack frame, ram.  A `unique`-space temporary is renumbered every rebuild
-    // and a JOIN is a synthetic pair, so a Symbol mapped over one binds nothing
-    // on the second pass -- it survives as a declared-but-unused local while the
-    // variable the caller aimed at is unchanged.  Reporting that as `applied`
-    // would be the failure this plane exists to end, so it is a rejection.
-    let stable = addr
-        .get_space()
-        .is_some_and(|spc| !matches!(spc.get_type(), IPTR_INTERNAL | IPTR_JOIN | IPTR_CONSTANT));
+    let stable = addr.get_space().is_some_and(|space|
+        !matches!(space.get_type(), IPTR_INTERNAL | IPTR_JOIN | IPTR_CONSTANT));
     if !stable {
-        return Err(format!(
-            "Not addressable storage: {name} (a decompiler temporary has no stable location)"
-        ));
+        return dynamic_target(fd, ids[0], rep, addr, size, dtype, maxduplicates).map(Some);
     }
+    // The replay key is storage + a native definition address, not just a
+    // register. Prove this anchor names only the selected high; several p-code
+    // definitions can share an instruction address, so PC alone is not always
+    // sufficient. Keep those cases rejected until a richer witness exists.
     let usepoint = match def.filter(|_| written).and_then(|op| fd.obank().get(op)) {
         Some(op) => op.get_addr().clone(),
         None => &fd.get_address().clone() + -1,
     };
-    let proto = fd.get_func_proto();
-    let params: Vec<_> = if proto.has_store() {
-        (0..proto.num_params()).filter_map(|i| proto.get_param(i))
-            .map(|p| (p.get_address(), p.get_size())).collect()
-    } else {
-        Vec::new()
-    };
-    for (at, width) in params {
-        if at.overlap(0, &addr, size) < 0 && addr.overlap(0, &at, width) < 0 {
-            continue;
+    let ambiguous = fd.vbank().iter_loc().any(|vn| {
+        let Some(v) = fd.vbank().get(vn) else { return false };
+        if v.get_addr() != &addr || v.get_size() != size || v.get_high() == Some(ids[0]) {
+            return false;
         }
-        let input = fd.vbank().find_input(width, &at).and_then(|v| fd.vbank().get(v)?.get_high());
-        if at != addr || width != size || !written
-            || !input.is_some_and(|i| disjoint_parameter_input(fd, ids[0], i, &addr, size))
-        {
-            return Err(format!("Storage of {name} overlaps a live parameter"));
-        }
-    }
-    // Ordinary named locals sharing this storage retain conservative rejection.
-    let rivals: Vec<_> = fd
-        .high_bank()
-        .iter()
-        .filter(|(id, h)| *id != ids[0] && h.kuna_name().is_some_and(|n| n != name))
-        .map(|(id, _)| id)
-        .collect();
-    for rival in rivals {
-        let rep = match fd.high_name_representative(rival) {
-            Some(r) => r,
-            None => continue,
+        let at = match v.get_def().and_then(|op| fd.obank().get(op)) {
+            Some(op) if v.is_written() => op.get_addr().clone(),
+            _ => &fd.get_address().clone() + -1,
         };
-        let shared = fd
-            .vbank()
-            .get(rep)
-            .is_some_and(|v| v.get_addr() == &addr && v.get_size() == size);
-        if shared && !(written && disjoint_parameter_input(fd, ids[0], rival, &addr, size)) {
-            return Err(format!("Storage of {name} is shared by another variable"));
-        }
-    }
-    // Two Symbols the batch mapped over overlapping registers (`eax` inside
-    // `rax`) are the same trap at different widths: the second pass folds both
-    // variables into one (`text._0_4_ = 0`).  One per register per batch.
-    let clash = touched.iter().find(|d| {
-        d.bound.as_ref().is_some_and(|(at, width)| {
-            at.overlap(0, &addr, size) >= 0 || addr.overlap(0, at, *width) >= 0
-        })
+        at == usepoint
     });
-    if let Some(earlier) = clash {
-        return Err(format!(
-            "Storage of {name} overlaps {}, which an earlier directive already changed",
-            earlier.printed
-        ));
+    if ambiguous {
+        return dynamic_target(fd, ids[0], rep, addr, size, dtype, maxduplicates).map(Some);
     }
-    // Keep an existing Symbol at this usepoint; later register lifetimes can differ.
+    // These are already separate HighVariables; selecting them does not request
+    // a merge or a split. Their logical covers can overlap after COPY
+    // propagation (the earlier register value was saved elsewhere), even though
+    // their native definitions select different register incarnations. The
+    // unique definition anchor above, not cover interference, identifies the
+    // Symbol on replay. bind_printed_local makes that Symbol isolated so later
+    // merging cannot erase its identity.
+    // The scope already owns this storage, so the high is a stack local or a
+    // parameter the by-name query missed.  Mapping a second Symbol over storage
+    // a Symbol already covers would put two entries on one stack slot, so this is
+    // a miss.
     if fd
         .get_scope_local()
         .is_some_and(|lm| lm.query_container_for_link(&addr, &usepoint).is_some())
     {
         return Ok(None);
     }
-    Ok(Some(PrintedLocal { addr, size, usepoint, dtype }))
+    Ok(Some(PrintedLocal {
+        high: ids[0],
+        addr,
+        size,
+        usepoint,
+        dtype,
+        dynamic_hash: None,
+    }))
 }
 
-/// A later register local may reuse an input's storage only with disjoint CFG covers.
-fn disjoint_parameter_input(
+/// A native operation plus its dataflow hash anchors storage that is renumbered.
+fn dynamic_target(
     fd: &mut Funcdata,
-    local: HighVariableId,
-    rival: HighVariableId,
-    addr: &Address,
+    high: HighVariableId,
+    rep: VarnodeId,
+    addr: Address,
     size: int4,
-) -> bool {
-    let proto = fd.get_func_proto();
-    if !proto.has_store() || !(0..proto.num_params()).any(|i| {
-        proto.get_param(i).is_some_and(|p| p.get_address() == *addr && p.get_size() == size)
-    }) {
-        return false;
+    dtype: Rc<Datatype>,
+    maxduplicates: u32,
+) -> Result<PrintedLocal, String> {
+    let (hash, usepoint) = kuna_decomp::dynamic::dynamic_unique_hash(rep, maxduplicates, fd)
+        .map_err(|error| error.explain().to_string())?;
+    let found = (hash != 0).then(|| {
+        kuna_decomp::dynamic::DynamicHash::new().find_varnode(fd, &usepoint, hash)
+    }).flatten();
+    if !found.and_then(|id| fd.vbank().get(id))
+        .is_some_and(|v| v.get_high() == Some(high) && v.get_size() == size)
+    {
+        return Err("Unable to identify the selected variable uniquely for replay".to_string());
     }
-    let Some(input) = fd.high_bank().get(rival) else { return false };
-    if !(0..input.num_instances()).any(|i| {
-        fd.vbank().get(input.get_instance(i)).is_some_and(|v| {
-            v.is_input() && v.get_addr() == addr && v.get_size() == size
-        })
-    }) {
-        return false;
-    }
-    fd.high_update_cover(local);
-    fd.high_update_cover(rival);
-    let (Some(a), Some(b)) = (fd.high_bank().get_cover(local), fd.high_bank().get_cover(rival)) else {
-        return false;
-    };
-    a.iter().any(|(_, block)| !block.empty())
-        && b.iter().any(|(_, block)| !block.empty())
-        && a.intersect(b) < 2
+    Ok(PrintedLocal { high, addr, size, usepoint, dtype, dynamic_hash: Some(hash) })
 }
 
 /// A Symbol covers `ct.get_size()` bytes from the storage address, so a type
@@ -432,7 +368,10 @@ fn disjoint_parameter_input(
 /// the caller cannot see from the C, so say it.
 fn check_width(size: int4, ct: &Datatype) -> Result<(), String> {
     if ct.get_size() != size {
-        return Err(format!("Storage is {size} bytes, the stated type is {}", ct.get_size()));
+        return Err(format!(
+            "Storage is {size} bytes, the stated type is {}",
+            ct.get_size()
+        ));
     }
     Ok(())
 }
@@ -460,16 +399,22 @@ fn bind_printed_local(
     target: &PrintedLocal,
     name: &str,
     ct: Rc<Datatype>,
+    lock_type: bool,
 ) -> Result<SymbolId, String> {
     check_width(target.size, &ct)?;
     let scope = fd
         .get_scope_local_mut()
         .ok_or_else(|| "Function has no local scope".to_string())?;
-    let sym = scope
-        .add_symbol(name, ct, &target.addr, &target.usepoint)
-        .map_err(|e| e.explain().to_string())?;
-    scope.set_attribute(sym, varnode_flags::typelock);
-    scope.set_symbol_isolated(sym, true);
+    let sym = match target.dynamic_hash {
+        Some(hash) => scope.add_dynamic_symbol(name, ct, &target.usepoint, hash),
+        None => scope.add_symbol(name, ct, &target.addr, &target.usepoint),
+    }.map_err(|error| error.explain().to_string())?;
+    if target.dynamic_hash.is_some() && !lock_type {
+        scope.set_symbol_identity_isolated(sym);
+    } else {
+        scope.set_attribute(sym, varnode_flags::typelock);
+        scope.set_symbol_isolated(sym, true);
+    }
     if !name.is_empty() {
         scope.set_attribute(sym, varnode_flags::namelock);
     }

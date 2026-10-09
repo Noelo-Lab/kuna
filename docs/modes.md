@@ -68,7 +68,7 @@ future-proofs the preset: if the defaults later drift more aggressive,
 ## `aggressive`
 
 `aggressive` flips **every** on/off off-by-default option on, with the exclusions
-listed below. It carries 28 of the 36 such options; the five *multi-valued*
+listed below. The five *multi-valued*
 default-off options (`condfold`, `rustabi`, `calloverlap`, `spillargtrial`,
 `outline`) are out of reach by construction, since a preset can only pin a single
 "on". `AGGRESSIVE_OVERRIDES` in `p0_knowledge/modes.rs` is the authority — the
@@ -77,7 +77,7 @@ build failure. The options it enables:
 
 - **transform tier**: `switchmodbound`, `constselectjump`,
   `switchguardbound` (speed-costly),
-  `unrolledguard` (speed-costly), `stackalias`, `sparcstructret`,
+  `unrolledguard` (speed-costly), `sparcstructret`,
   `regionedgeorder`, `returndup`, `orchain`, `iteexpr`, `ctypes`,
   `calltargettype` (an indirect call's target takes the function-pointer type
   the call states, so the call compiles as C),
@@ -281,3 +281,7 @@ options that net-help, which then become candidate default-on flips. The omitted
 with input size and is therefore not a stable benchmark baseline.
 Use `fast` for latency-sensitive bulk export and compare its function inventory
 and output against `reliable` before adopting the coverage tradeoff.
+
+`stackalias` and `stackviews` require an explicit per-function choice. Physical
+frame-write preservation can change object layout and declaration types; neither
+recovery policy is promoted by `aggressive` while that integration is incomplete.

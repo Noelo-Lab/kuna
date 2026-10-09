@@ -72,7 +72,7 @@ fn registers_all_twenty_one_kuna_commands() {
         st.num_commands()
     };
     assert_eq!(only_kuna, 21);
-    assert_eq!(console(&[]).num_commands(), 105 + 21);
+    assert_eq!(console(&[]).num_commands(), 106 + 21);
 }
 
 #[test]

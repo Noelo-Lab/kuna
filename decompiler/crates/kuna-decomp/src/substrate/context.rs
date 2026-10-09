@@ -1164,6 +1164,10 @@ pub struct ArchContext {
     /// indexed stack base reaches past upstream's four elements. Levels in
     /// [`crate::p6_variables::kuna_arrayextent`]; read by `gather_open`.
     pub array_extent: int4,
+    /// Keep physical frame writes live when conservative stack aliasing is requested.
+    pub stack_alias_deadstore: bool,
+    /// Operation-specific typed views over shared physical frame storage.
+    pub stack_views: bool,
     /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
     /// `RulePropagateCopy` marker propagation that would leave an address-tied
     /// `COPY` output holding a call's return value with no readers, so a
@@ -1814,6 +1818,8 @@ impl ArchContext {
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
+            stack_alias_deadstore: false,
+            stack_views: false, // stackviews (opt-in)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)

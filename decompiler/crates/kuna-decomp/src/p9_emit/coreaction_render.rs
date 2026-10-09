@@ -2337,13 +2337,19 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
     // a real run already built it in `op_heritage`).
     data.ensure_heritage_info_list();
 
+    let policy_changes = crate::kuna_stackalias::prepare(data);
+
     // 1. Clear consume flags on every Varnode; drop addrforce on non-directwrite.
     let all_locs: Vec<VarnodeId> = data.vbank().iter_loc().collect();
     for vn in all_locs {
+        let hold_store = crate::kuna_stackalias::holds_store(data, vn);
         // One arena lookup, not three: none of the clears touch `addrforce` or
         // `directwrite`, so the two reads see what a re-fetch would.  This loop
         // runs over every Varnode in the function on every ActionDeadCode pass.
         let vm = data.vbank_mut().get_mut(vn).expect("deadcode: stale vn");
+        if hold_store {
+            vm.set_auto_live_hold();
+        }
         vm.clear_consume_list();
         vm.clear_consume_vacuous();
         vm.set_consume(0);
@@ -2468,12 +2474,9 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
             dc_propagate_consumed(data, &mut worklist);
         }
     }
-    // holdStackAliasStores (kuna GH-8500) is gated default-off
-    // (arch.stack_alias_deadstore) — a no-op when the option is off, which is the
-    // default; the stack-alias re-seed is a later cleanup-wave concern.
 
     // 6. Sweep: remove dead ops, replace never-consumed values, reconcile.
-    let mut total_change = 0i32;
+    let mut total_change = policy_changes;
     for spc in &spaces {
         let spc = Rc::clone(spc);
         if !spc.does_deadcode() {

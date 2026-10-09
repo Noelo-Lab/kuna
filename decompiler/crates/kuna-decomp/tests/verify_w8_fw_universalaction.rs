@@ -122,7 +122,7 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 287,
+        nonblank, 289,
         "full kuna schedule registration count changed"
     );
 

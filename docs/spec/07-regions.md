@@ -434,20 +434,21 @@ the stack space's base-register storage (or the `spacebase`-flagged input) and
 walks the `PTRSUB`/`PTRADD`/`INT_ADD`-of-a-constant chain the stack-pointer
 normalization of chapter 06 leaves behind, so an `/Od` frame and an `/O2`
 frame agree. The saved value may reach the epilogue through a MULTIEQUAL join
-or a loop-carried phi. `kuna_msvcstackguard.rs (cookie_scramble_walk)` uses a
-cycle-aware fixed point: every non-backedge input must prove a scramble at the
-same offset and at least one seed must exist; a recursive backedge is neutral,
-not evidence. Nested phis propagate that pending state upward instead of
-turning an inner, locally all-backedge SCC into a negative result. A seedless
-SCC therefore still fails at the top level, as do unknown entries and
-conflicting frame offsets. Value-preserving COPY/CAST/INDIRECT chains have a separate finite
-256-link peel budget because one INDIRECT can be introduced per intervening
-call. Three further gates keep the edit
-honest: the victim must be a direct `CPUI_CALL` (the checker is statically
-linked into the image, never an import thunk); the call's output must have no
-reader (the checker returns `void`, and destroying a read Varnode is not
-recoverable); and exactly one argument may be a cookie cancel — a call that
-takes the pattern twice is not the one-argument checker.
+or a loop-carried phi. `kuna_msvcstackguard.rs (cookie_scramble)` uses an
+explicit worklist over the finite p-code graph. It follows every MULTIEQUAL
+input after peeling value-preserving COPY/CAST/INDIRECT links, rejects unknown
+terminals and malformed or cyclic value-preserving chains, and requires all
+scramble seeds to share one frame offset. Every visited node must be able to
+reach a seed, admitting grounded loops while rejecting seedless cyclic
+components. The worklist and peel are iterative, so long call and phi chains
+do not depend on recursion depth or an arbitrary link count. The stack-pointer
+affine walk still has its separate 32-step bound.
+Three further gates keep the edit honest: the victim must be a direct
+`CPUI_CALL` (the checker is statically linked into the image, never an import
+thunk); the call's output must have no reader (the checker returns `void`, and
+destroying a read Varnode is not recoverable); and exactly one argument may be
+a cookie cancel — a call that takes the pattern twice is not the one-argument
+checker.
 
 **What it REMOVES.** The check call, with the stock pair
 `Funcdata::block_remove_internal` uses for a CALL inside a deleted block and

@@ -86,7 +86,7 @@ fn a_pointer_table_at_a_printable_base_is_not_a_string() {
         common::run_kuna(&["decompile-all", &common::fixture(fixture), "--functions", FUNCS]);
     assert_eq!(code, 0, "{fixture}: {stderr}");
     assert!(!printed.contains('"'), "{fixture}: the table prints as a string literal:\n{printed}");
-    for want in ["&tbl[a0 * 4]", "pick(tbl,a0);", "*a0 = tbl;"] {
+    for want in ["&tbl[a0 * 4]", "pick(tbl,a0);", "*a0 = (unsigned int)tbl;"] {
         assert!(printed.contains(want), "{fixture}: missing `{want}`:\n{printed}");
     }
 }

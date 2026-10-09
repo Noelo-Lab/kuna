@@ -1,0 +1,11 @@
+prototype register_names void register_names(unsigned long long input, const int *pointer)
+prototype consume_number unsigned long long consume_number(unsigned long long number)
+prototype identity_pointer const int *identity_pointer(const int *pointer)
+prototype observe_number void observe_number(unsigned long long number)
+prototype observe_pointer void observe_pointer(const int *pointer)
+typedef struct LifetimePair { int x; int y; };
+typedef struct LifetimeHandle { const int *value; };
+prototype win_stack_reuse int win_stack_reuse(void)
+prototype win_read_pair int win_read_pair(const struct LifetimePair *pair)
+prototype win_read_handle int win_read_handle(const struct LifetimeHandle *handle)
+data 0x140002008 int win_datum
