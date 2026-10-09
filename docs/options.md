@@ -462,6 +462,9 @@ Three tiers:
 | c++ catch/cleanup landing pads missing from a stripped binary's function list | [`eh_frame_full`](#eh_frame_full) |
 | exception-handler code never discovered as entries | [`eh_frame_full`](#eh_frame_full) |
 | gcc_except_table call-site targets left unexplored | [`eh_frame_full`](#eh_frame_full) |
+| functions ghidra finds in a stripped gcc binary's .cold region missing from kuna's function list | [`coldentry`](#coldentry) |
+| a hot function's decompile inlines an abort or error tail reached by a jump into another function's fde | [`coldentry`](#coldentry) |
+| gaps between consecutive sub_<addr> cold fragments that hold code | [`coldentry`](#coldentry) |
 | spurious sub_<addr> functions inside a c++ function that uses try/catch | [`fdeinterior`](#fdeinterior) |
 | a decompiled function body dereferences an uninitialised frame pointer so every local is garbage | [`fdeinterior`](#fdeinterior) |
 | function count inflated by unwinder-only landing pads | [`fdeinterior`](#fdeinterior) |
@@ -2051,6 +2054,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (default) limits .eh_frame use to FDE pcBegin function starts. Flip on to also discover exception-handler landing pads (catch/cleanup blocks) from the .gcc_except_table LSDA in a C++ try/catch binary.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-ehframe-lsda
 - **Example:** `--option eh_frame_full on`
+
+### `coldentry` -- on | off, default `on`
+
+- **Symptoms:** functions ghidra finds in a stripped gcc binary's .cold region missing from kuna's function list; a hot function's decompile inlines an abort or error tail reached by a jump into another function's fde; gaps between consecutive sub_<addr> cold fragments that hold code.
+- **What it does:** Add the extra entry points of a multi-entry .cold fragment. GCC's hot/cold splitting moves a function's unlikely blocks into a separate foo.cold fragment with its own .eh_frame FDE, and when several unlikely paths are split out they are laid back to back in that one fragment, each reached by its own jmp/jcc rel32 from the hot body. The FDE oracle names only the fragment's first address, so every later path is strictly inside an FDE body, no metadata oracle names it, and the hot function's decompile inlines it through the jump. An address is added when it is strictly inside a single-function FDE body (the fdeinterior eligibility), a direct jmp/jcc rel32 from outside that body targets it (found by a byte scan of the executable sections and confirmed by decoding the source), a linear decode of the body lands on it, and the instruction before it has no fall-through (ud2, jmp, ret), so nothing inside the fragment flows into it. The entries are added after the fdeinterior suppression. Only the FDEs a candidate lands in are decoded. x86/x86-64 ELF only; inert without .eh_frame.
+- **When to flip:** On (default) lists each split-out unlikely path of a stripped GCC binary as its own sub_<addr>, as Ghidra does: the tell-tale of it being off is a run of sub_<addr> cold fragments with gaps between them, and a hot function whose decompile inlines an error/abort tail reached by a jump into the middle of another function's FDE. Flip off to restore the previous discovery set exactly.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-coldentry
+- **Example:** `--option coldentry off`
 
 ### `fdeinterior` -- on | off, default `on`
 
