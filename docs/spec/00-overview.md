@@ -1962,6 +1962,15 @@ lowering) and applied by
 | `volatile <addr>+<size>` | `volatile` | P1 code-data-partition |
 | `bytes <addr> <hex\|@FILE>` | `override bytes` | P1 code-data-partition |
 
+`map address` retains an object's outer `volatile` qualifier and marks a
+global object's entire byte range volatile, so `--assert 'data 0x20000 volatile int cursor'`
+has the same access semantics as a separate volatile range assertion.
+Declarator binding matters: `volatile int *p` qualifies the pointed-to data,
+while `int *volatile p` qualifies the mapped pointer itself. An array inherits
+its element qualifier. Function-local mappings carry the symbol attribute only;
+the global property map does not describe stack-local storage. Volatility remains
+a storage property.
+
 Four application points, and the ordering between them is forced rather than
 stylistic. **Image-scoped** directives state what memory holds before anything
 reads it. `bytes` replaces the mapped bytes at an address with the caller's own

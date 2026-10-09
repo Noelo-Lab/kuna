@@ -12,6 +12,26 @@ use super::{
     GrammarLexer, GrammarToken,
 };
 
+#[test]
+fn mapped_object_volatile_qualifiers_follow_declarator_binding() {
+    let f = factory();
+    for (source, expected) in [
+        ("volatile int4 word", true),
+        ("int4 volatile word", true),
+        ("volatile int4 words[2]", true),
+        ("volatile int4 *pointer", false),
+        ("int4 *volatile pointer", true),
+        ("volatile int4 *pointers[2]", false),
+        ("int4 *volatile pointers[2]", true),
+        ("int4 (*volatile pointer)[2]", true),
+        ("volatile int4 (*pointer)[2]", false),
+        ("int4 word", false),
+    ] {
+        let (_, _, volatile) = super::parse_type_with_volatile(source, &f, org()).unwrap();
+        assert_eq!(volatile, expected, "{source}");
+    }
+}
+
 // -- test helpers -----------------------------------------------------------
 
 /// Build a factory wired with the alignment map, a max base size of 8, and the
