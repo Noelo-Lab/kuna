@@ -932,6 +932,46 @@ failure mode is tolerance, not an abort — the layout keeps the conceded
 unknowns (upstream additionally emits a "Could not reconcile some variable
 overlaps" warning header; kuna stubs that diagnostic).
 
+**Call-escaped integer storage (kuna `callarrayextent`, default `off`).**
+A plain frame address passed to a declared integer-pointer parameter can
+refer to more storage than its first directly observed slot. If a later slot
+is read from an `INDIRECT` caused by that same direct call, the default layout
+can split it from the passed array and print an independent uninitialized
+scalar. `option callarrayextent on` represents the region as a single array,
+using the next address-taken frame base or the local frame end as its capacity,
+whichever comes first, and never extending past offset zero. Regions whose
+available capacity exceeds 4096 bytes decline the change.
+This is an opt-in storage representation: a pointer prototype does not prove
+the source array's length. It does not infer a callee's exact write footprint.
+
+Only unindexed addresses whose live uses are direct calls at locked, matching
+4- or 8-byte integer-pointer parameters qualify. Undeclared, variadic-format
+or overridden prototypes, other pointer uses and conflicting pointees at the
+same passed address decline.
+A frame address carried through a `MULTIEQUAL` before the call is not a direct
+call use and declines as well.
+A compatible multi-element parent that crosses the passed address or ends
+exactly there keeps its complete minimum extent: an open hint covers at least
+`highind + 1` elements, rather than one. The common allocation begins at that
+parent's base, so widening an interior or adjacent output pointer cannot
+truncate an earlier initialization loop. If its minimum extent already crosses
+the capacity bound, the change is declined. A single unindexed open scalar
+cannot seed this parent expansion, and a parent reconstructed from contiguous
+hints stops at the passed address unless the parent's own indexed extent
+already crosses it.
+
+All overlapping hints must be unlocked integer or unknown storage, with a
+matching element width and aligned element positions, wholly inside the common
+allocation. Integer arrays are allowed; floating-point values, other aggregates,
+type locks and hints crossing the allocation veto the change. Independently
+defined caller values in the newly extended tail also veto it. Existing parent
+storage retains its earlier values and aliases. The qualifying post-call read
+is still recognized relative to the original passed address, not the expanded
+parent base. Parameters and positive frame offsets are excluded. Explicit local
+types remain authoritative. The implementation is
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callarrayextent.rs`.
+
+
 **An indexed array's extent (kuna `arrayextent`, default `on`).** The [0,3]
 floor is all upstream knows about an indexed base whose guard the value-set
 refinement could not lock, and the refinement fails on ordinary loops: one that

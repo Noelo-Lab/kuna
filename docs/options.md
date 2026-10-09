@@ -416,6 +416,9 @@ Three tiers:
 | acting on an almostregion inline-candidate report by hand or with an llm | [`outline`](#outline) |
 | an unprototyped call loses a local output pointer | [`stackaddrargtrial`](#stackaddrargtrial) |
 | a post-call word or halfword output folds to its initializer | [`stackaddrargtrial`](#stackaddrargtrial) |
+| a helper's stack output array is shorter than the helper writes | [`callarrayextent`](#callarrayextent) |
+| a post-call stack read is emitted as an independent uninitialized scalar | [`callarrayextent`](#callarrayextent) |
+| a stack array passed to a helper loses aliases with neighboring frame slots | [`callarrayextent`](#callarrayextent) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -2007,6 +2010,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Enable when an unprototyped call loses a local output pointer and subsequent loads incorrectly fold to the pre-call initializer. This is evidence of intent, not a declared prototype: a live stack address can also be incidental, so the option is off by default. Supply a prototype when the interface is known.
 - **Where / provenance:** P4/active-input-trial-scoring · kuna · opt-in-tool · kuna-stack-address-argument
 - **Example:** `option stackaddrargtrial on`
+
+### `callarrayextent` -- on | off, default `off` (destructive opt-in)
+
+- **Symptoms:** a helper's stack output array is shorter than the helper writes; a post-call stack read is emitted as an independent uninitialized scalar; a stack array passed to a helper loses aliases with neighboring frame slots.
+- **What it does:** Represent unlocked integer storage passed directly to declared integer-pointer parameters as one array when a later slot is read after being clobbered by the same call. Preserve a compatible multi-element parent that crosses or ends at the output base. Reserve through the next address-taken frame base or the local frame end, never crossing offset zero, and decline regions larger than 4096 bytes. Decline conflicting parameter types, type locks, incompatible hints, and caller-defined values in newly added storage. This preserves aliases across the call but estimates storage capacity, not the source array's exact length.
+- **When to flip:** A helper writes through a stack pointer, but the caller declares a short array followed by independent uninitialized scalars for the helper's output, or splits adjacent input and output storage used by one call. Opt in only when the frame region is intended to be shared storage: caller-defined neighboring values are excluded, but a pointer prototype still does not establish the exact array length. Explicit local types remain authoritative.
+- **Where / provenance:** P6/stack-frame-layout · kuna · feature · kuna-callarrayextent
+- **Example:** `option callarrayextent on`
 
 ## Analysis & loader passes
 

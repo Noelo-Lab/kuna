@@ -43,6 +43,9 @@ mod broken_pipe;
 #[path = "buildstamp_cli.rs"]
 mod buildstamp_cli;
 
+#[path = "call_array_extent.rs"]
+mod call_array_extent;
+
 #[path = "call_result_high_word_reads.rs"]
 mod call_result_high_word_reads;
 

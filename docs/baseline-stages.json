@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2506,
-    2506
+    2523,
+    2523
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -104,6 +104,22 @@
     "data:Bit reinterpret x64 #1: storage transfers use a union",
     "data:Bit reinterpret x64 #2: numeric integer conversion stays a cast",
     "data:Bit reinterpret x64 #3: numeric float truncation stays a cast",
+    "data:CALL-ARRAY-EXTENT #10: indexed parent retains room for every store",
+    "data:CALL-ARRAY-EXTENT #11: return reads the copied word in shared storage",
+    "data:CALL-ARRAY-EXTENT #12: loop-carried pointer declines",
+    "data:CALL-ARRAY-EXTENT #13: lower initialized scalar remains separate",
+    "data:CALL-ARRAY-EXTENT #14: lower scalar does not block output repair",
+    "data:CALL-ARRAY-EXTENT #15: initialized scalar after parent declines",
+    "data:CALL-ARRAY-EXTENT #16: conflicting duplicate pointees decline",
+    "data:CALL-ARRAY-EXTENT #1: off retains the short array",
+    "data:CALL-ARRAY-EXTENT #2: off returns an independent scalar",
+    "data:CALL-ARRAY-EXTENT #3: on reserves shared frame capacity",
+    "data:CALL-ARRAY-EXTENT #4: on reads the third helper output",
+    "data:CALL-ARRAY-EXTENT #5: discoverable opt-in",
+    "data:CALL-ARRAY-EXTENT #6: another address-taken slot bounds capacity",
+    "data:CALL-ARRAY-EXTENT #7: caller-defined scalar blocks frame-wide coalescing",
+    "data:CALL-ARRAY-EXTENT #8: caller-defined scalar remains separate",
+    "data:CALL-ARRAY-EXTENT #9: off splits the later copy output",
     "data:CALLBACKTYPE #1: with no recorded call site the comparator keeps its own parameters in both passes",
     "data:CALLBACKTYPE #2: the slot's void \\* is never claimed from the function's shape",
     "data:CALLBACKTYPE #3: the handler gains no parameter without the signal call site",
@@ -800,6 +816,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
+    "data:KUNA-CATALOG #15: 285 registry rows plus four individual queries",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
     "data:KUNA-CATALOG #2: arraynotation documented as default-on, P9 pointer-notation",
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
