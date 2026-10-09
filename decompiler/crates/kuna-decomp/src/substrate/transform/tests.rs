@@ -29,6 +29,10 @@ use crate::context::{ArchContext, VarnodeId};
 // --- test harness -------------------------------------------------------------
 
 fn build_manager() -> AddrSpaceManager {
+    build_manager_endian(false)
+}
+
+fn build_manager_endian(big_endian: bool) -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
     m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
@@ -36,7 +40,7 @@ fn build_manager() -> AddrSpaceManager {
     m.insert_space(Rc::new(AddrSpace::new(
         spacetype::IPTR_PROCESSOR,
         "ram",
-        false,
+        big_endian,
         8,
         1,
         3,
@@ -569,6 +573,32 @@ fn apply_piece_materializes_varnode_and_transfers_consume() {
     assert_eq!(rv.get_offset(), 0x100, "little-endian lane 0 at the base offset");
     // transferVarnodeProperties copies the (masked) consume bits.
     assert_eq!(rv.get_consume(), 0xffff, "consume transferred & masked to the 2-byte lane");
+}
+
+#[test]
+fn split_lanes_keep_consumed_bits_in_both_byte_orders() {
+    for big_endian in [false, true] {
+        for mask in [0x0000_0000_ffff_ffff, 0xffff_ffff_0000_0000, 0x0123_4567_89ab_cdef] {
+            let arch = Rc::new(ArchContext::new(build_manager_endian(big_endian)));
+            let ram = Rc::clone(arch.manage().get_space_by_name("ram").unwrap());
+            let mut fd = Funcdata::new(
+                "lanes", "lanes", arch, Address::new(ram, 0x1000), 0x10000000, 0x40,
+            ).unwrap();
+            let vn = mk_vn(&mut fd, 0x100, 8);
+            fd.vbank_mut().get_mut(vn).unwrap().set_consume(mask);
+            let key = fd.vbank().get(vn).unwrap().get_create_index() as int4;
+            let mut tm = TransformManager::new();
+            tm.new_split(&fd, vn, &LaneDescription::uniform(8, 4));
+            tm.apply(&mut fd).unwrap();
+            for idx in 0..2 {
+                let replacement = tm.var(TVarRef::Piece { key, idx }).get_replacement().unwrap();
+                let lane = fd.vbank().get(replacement).unwrap();
+                let storage_offset = if big_endian { (1 - idx) * 4 } else { idx * 4 };
+                assert_eq!(lane.get_offset(), 0x100 + storage_offset as u64);
+                assert_eq!(lane.get_consume(), (mask >> (idx * 32)) & 0xffff_ffff);
+            }
+        }
+    }
 }
 
 #[test]

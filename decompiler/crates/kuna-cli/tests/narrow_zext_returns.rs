@@ -106,6 +106,7 @@ fn a_zero_extended_narrow_return_round_trips_through_the_printed_c() {
                 std::fs::write(&src, &program).unwrap();
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", "-fwrapv", "-no-pie", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .args(common::CC_GCC15_DEMOTE)
                     .output()
                     .expect("spawn the C compiler");
                 assert!(

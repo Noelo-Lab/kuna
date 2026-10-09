@@ -316,6 +316,11 @@ pub struct AnalysisOutput {
     /// [`crate::entry::kuna_pdatainterior`] (`.pdata` records), so the list is
     /// empty whenever their gates are off and the suppression is a no-op.
     pub fde_bodies: Vec<(u64, u64)>,
+    /// (kuna) Function entries strictly inside an FDE body that the image itself
+    /// enters from outside it — the extra entry points of a multi-entry `.cold`
+    /// fragment. Added after the [`Self::fde_bodies`] suppression. Produced only by
+    /// [`crate::entry::kuna_coldentry`] (`coldentry`).
+    pub fde_interior_entries: Vec<u64>,
     /// (kuna) PDB procedure extents that describe exactly one function, as
     /// `[start, end)`, sorted and disjoint. Applied after [`Self::fde_bodies`],
     /// only where a function is committed at `start` (a `static` function has an
@@ -588,6 +593,7 @@ impl AnalysisOutput {
         self.typed_data.extend(other.typed_data);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
+        self.fde_interior_entries.extend(other.fde_interior_entries);
         self.pdb_bodies.extend(other.pdb_bodies);
         self.entry_names.extend(other.entry_names);
         self.noreturn.extend(other.noreturn);

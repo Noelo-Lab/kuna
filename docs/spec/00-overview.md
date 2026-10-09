@@ -2537,6 +2537,15 @@ record is honest.
 
 ## 0.3 The IR substrate
 
+When `TransformManager` materializes a lane of an existing varnode, storage
+addresses follow the target's byte order, but consumption masks always follow
+bit significance. `create_var_replacement` preserves the lane's original
+least-significant-byte offset before computing its big-endian storage address,
+and passes that preserved offset to `transfer_varnode_properties`. Using the
+address offset here would swap the masks of a register pair and allow live
+pointer, loop-bound or floating point values to be replaced with zero. This
+applies to integer and FPU lanes.
+
 Partition lookup in `decompiler/crates/kuna-base/src/partmap.rs
 (PartMap::get_value_mut)` returns the value at the greatest split point no
 larger than the query, or the default value before the first split. Mutable
