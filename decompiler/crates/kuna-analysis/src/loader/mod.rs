@@ -57,6 +57,7 @@ pub mod reloc_object;
 // Architecture-aware ELF instruction/data relocation encoders used by the
 // relocatable-object layout. Kept separate so bitfield rules are unit-testable.
 mod reloc_apply;
+mod kuna_sparc_relcode;
 // (kuna) `relocrebase`: rebase the load-time analysis facts of a relocatable
 // object into the loaded image's address space (GH-289).
 pub mod kuna_relocrebase;
@@ -84,6 +85,8 @@ pub mod noreturn;
 pub mod pe_iat;
 // (kuna) `armfloatreturn`: does an ARM ELF state the VFP procedure-call standard?
 pub mod kuna_armfloatabi;
+// (kuna `armfuncmode`) an even ARM function symbol starts A32 code.
+pub mod kuna_armfuncmode;
 // (kuna) does an ELF say whether float arguments travel in FP registers?
 pub mod kuna_floatabi;
 // (kuna) does an arm64 image's platform have the callee extend a narrow return?

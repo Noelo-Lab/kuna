@@ -1652,6 +1652,12 @@ pub struct Architecture {
     /// and an entry AT an FDE start is always kept. Off restores the previous
     /// discovery set exactly; inert on any image with no `.eh_frame` FDEs.
     pub analysis_fdeinterior: bool,
+    /// (kuna) Add the extra entry points of a multi-entry `.cold` fragment
+    /// (`coldentry`); default **on**. An address strictly inside a single-function
+    /// FDE body that a `jmp`/`jcc rel32` from outside the body targets, and that
+    /// follows a no-fall-through instruction, is a function of its own. Off
+    /// restores the previous discovery set exactly; x86/x86-64 ELF only.
+    pub analysis_coldentry: bool,
     /// (kuna) Reject a discovered function entry that falls strictly inside a
     /// single-function `.pdata` `RUNTIME_FUNCTION` body (`pdatainterior`);
     /// default **on**. The PE half of [`Self::analysis_fdeinterior`] and the same
@@ -1743,6 +1749,9 @@ pub struct Architecture {
     pub analysis_poolentry: bool,
     /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
     pub analysis_arm_markers: bool,
+    /// (kuna) `armfuncmode`: paint `TMode=0` at each even function symbol of an
+    /// ARM ELF without mapping symbols; default on.
+    pub analysis_armfuncmode: bool,
     /// (kuna) Gate the entry-reachable Thumb context walk (`entrythumbflow`) for a
     /// mixed ARM image whose container entry carries the Thumb bit but whose
     /// machine word makes no whole-image mode claim; default on. The walk decodes
@@ -2764,6 +2773,7 @@ impl Architecture {
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
             analysis_fdeinterior: false,
+            analysis_coldentry: false,
             analysis_pdatainterior: false,
             analysis_pdbinterior: false,
             analysis_funcstart_patterns: false,
@@ -2772,6 +2782,7 @@ impl Architecture {
             analysis_ptrentry: false,
             analysis_poolentry: false,
             analysis_arm_markers: false,
+            analysis_armfuncmode: false,
             analysis_entrythumbflow: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
@@ -3122,6 +3133,7 @@ impl Architecture {
         self.analysis_eh_frame_full = false;
         // (kuna) DIV-61 `.eh_frame` FDE-interior entry suppression — default-ON.
         self.analysis_fdeinterior = true;
+        self.analysis_coldentry = true;
         // (kuna) `.pdata` RUNTIME_FUNCTION-interior entry suppression — default-ON.
         self.analysis_pdatainterior = true;
         // (kuna) PDB-procedure-interior entry suppression — default-ON.
@@ -3132,6 +3144,7 @@ impl Architecture {
         self.analysis_ptrentry = false; // (kuna) pointer-referenced ARM entries default-off (output-changing)
         self.analysis_poolentry = false; // (kuna) ARM literal-pool inference default-off
         self.analysis_arm_markers = true;
+        self.analysis_armfuncmode = true; // (kuna) even ARM function symbol = A32 when no mapping symbols
         self.analysis_entrythumbflow = true; // (kuna) entry-reachable Thumb context default-on; inert without a Thumb-bit entry
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)

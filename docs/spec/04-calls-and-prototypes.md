@@ -391,6 +391,14 @@ variants cover the modern cspec vocabulary: `GotoStack`, `ConvertToPointer`,
 storage classes), `ConsumeAs`, `HiddenReturnAssign`, and the resource-burning
 side-effects `ConsumeExtra`, `ExtraStack`, `ConsumeRemaining`.
 
+When a `MultiSlotAssign` takes no register and spills the whole argument to the
+stack, upstream rounds its slot up to the data type's alignment. The kuna
+`<join stackalign="false"/>` attribute skips that rounding, so the argument
+takes the next free stack slot (`modelrules.rs (AssignAction::assign_address)`).
+`SparcV9_32.cspec` sets it: SPARC32 passes arguments as consecutive words, while
+its data organization aligns eight-byte objects to eight for structure layout.
+Every other cspec keeps the upstream rounding.
+
 The bundled AArch64 cspecs (`AARCH64.cspec`, `AARCH64_apple.cspec` and
 `AARCH64_win.cspec`) never split an argument wider than one general register
 between x7 and the stack. AAPCS64 passes such an argument wholly in registers

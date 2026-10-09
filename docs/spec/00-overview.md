@@ -16,6 +16,18 @@ hand-off, the front-ends, the IR containers, the knowledge plane, the two
 pipeline non-linear. The algorithms themselves live in chapters 01–09; this is how
 they are hosted, ordered, configured, and restarted.
 
+C declarations supplied through the console or strict CLI assertions retain a
+`volatile` qualifier on the type layer where it was written. `const` and
+`restrict` are accepted and dropped, so they leave emitted C unchanged; the type
+layer can carry them, but no declaration attaches them. Specifier qualifiers attach to the base before declarator
+modifiers are applied; qualifiers following `*` attach to that pointer, including
+in parameters and return types. A qualified type retains its underlying shape
+for existing type consumers and an interned link to its unqualified type for
+identity and spelling. Typedefs retain their own names and inherit the underlying
+qualification. Kuna's type encoder preserves anonymous qualified layers in a
+`qualified` element with a qualifier bit mask and an underlying type reference;
+unqualified types keep their existing encoding.
+
 The object-file bootstrap records an explicit ARM/Thumb input selection in
 `Architecture::input_arm_isa_override`. This is an input fact, separate from
 analysis options: metadata painters preserve it when discovery or graph/xref
@@ -1962,6 +1974,15 @@ lowering) and applied by
 | `volatile <addr>+<size>` | `volatile` | P1 code-data-partition |
 | `bytes <addr> <hex\|@FILE>` | `override bytes` | P1 code-data-partition |
 
+`map address` retains an object's outer `volatile` qualifier and marks a
+global object's entire byte range volatile, so `--assert 'data 0x20000 volatile int cursor'`
+has the same access semantics as a separate volatile range assertion.
+Declarator binding matters: `volatile int *p` qualifies the pointed-to data,
+while `int *volatile p` qualifies the mapped pointer itself. An array inherits
+its element qualifier. Function-local mappings carry the symbol attribute only;
+the global property map does not describe stack-local storage. Volatility remains
+a storage property.
+
 Four application points, and the ordering between them is forced rather than
 stylistic. **Image-scoped** directives state what memory holds before anything
 reads it. `bytes` replaces the mapped bytes at an address with the caller's own
@@ -2536,6 +2557,15 @@ The matching `option` is still applied afterwards so the run's configuration
 record is honest.
 
 ## 0.3 The IR substrate
+
+When `TransformManager` materializes a lane of an existing varnode, storage
+addresses follow the target's byte order, but consumption masks always follow
+bit significance. `create_var_replacement` preserves the lane's original
+least-significant-byte offset before computing its big-endian storage address,
+and passes that preserved offset to `transfer_varnode_properties`. Using the
+address offset here would swap the masks of a register pair and allow live
+pointer, loop-bound or floating point values to be replaced with zero. This
+applies to integer and FPU lanes.
 
 Partition lookup in `decompiler/crates/kuna-base/src/partmap.rs
 (PartMap::get_value_mut)` returns the value at the greatest split point no

@@ -82,6 +82,12 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: linux-x86_64
+          # Fully static (musl): no glibc dependency, runs on any Linux. kuna
+          # pulls no C via a `cc`-crate dep, so the musl target links
+          # self-contained -- `rustup target add` is the only setup needed.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            name: linux-x86_64-musl
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             name: linux-arm64

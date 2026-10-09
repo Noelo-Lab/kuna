@@ -201,6 +201,7 @@ fn a_high_word_built_from_the_low_word_or_beside_the_argument_round_trips() {
                 std::fs::write(&src, format!("{PRELUDE}{text}\n{SOURCE}\n{}", main_for(&text))).unwrap();
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", "-fwrapv", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .args(common::CC_GCC15_DEMOTE)
                     .output()
                     .expect("spawn the C compiler");
                 assert!(

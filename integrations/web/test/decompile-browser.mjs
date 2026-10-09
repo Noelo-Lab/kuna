@@ -403,7 +403,7 @@ try {
   await page.waitFor(`document.querySelectorAll('#strlist .str').length === 4`, { what: 'the search', timeout: 10000 });
   assert.deepEqual(await page.call(() => [...document.querySelectorAll('#strlist .str .sx')].map((b) => b.textContent)),
     ['flag{str1ngs_4re_3asy}', 'Nope, that is not the flag.', 'Enter the flag: ', 'Correct! You found the flag.'], 'what matches "flag", used strings first');
-  assert.match(await text('#strlist .str[data-addr="0x2004"] .su'), /^Used in check ×2 through the pointer secret$/);
+  assert.match(await text('#strlist .str[data-addr="0x2004"] .su'), /^Used in check ×2 through the pointer secret all uses$/);
   const flagLink = '#strlist .str[data-addr="0x2004"] a.xt';
   const sites = (await page.call((s) => document.querySelector(s).dataset.sites, flagLink)).split(' ');
   await page.click(flagLink);
@@ -419,6 +419,29 @@ try {
   await page.key(' ', { code: 'Space' });
   await page.waitFor(`document.getElementById('vname').textContent === 'check'`, { what: 'Space on a string', timeout: 60000 });
   assert.equal(await page.call(() => document.getElementById('tab-c').getAttribute('aria-selected')), 'true', 'Space opens the string, not the Assembly view');
+  await page.key('x');
+  await page.waitFor(`document.getElementById('xrefs').open && document.querySelectorAll('#xrefs .xr-row').length > 0`, { what: 'x on a string', timeout: 10000 });
+  assert.equal(await text('#xrefstitle'), 'Uses of "flag{str1ngs_4re_3asy}"', 'x on a string asks about the string, not the open function');
+  assert.deepEqual(await page.call(() => [...document.querySelectorAll('#xrefs .xr-row')].map((r) => [r.dataset.site, r.querySelector('.xr-name').textContent, r.querySelector('.xr-how').textContent])),
+    sites.map((at) => [at, 'check', 'reads the pointer secret']), 'every use, with the pointer it reads');
+  await page.key('ArrowDown');
+  await page.key('Enter');
+  await page.waitFor(`!document.getElementById('xrefs').open && document.getElementById('asmcode').getAttribute('aria-activedescendant') === 'a-${sites[1]}'`, { what: 'a string use from x', timeout: 30000 });
+  await page.hover('#strlist .str[data-addr="0x201b"] .sx');
+  await page.click('#strlist .str[data-addr="0x201b"] .sr');
+  await page.waitFor(`document.getElementById('xrefs').open && document.querySelectorAll('#xrefs .xr-row').length === 2`, { what: 'all uses of a string', timeout: 10000 });
+  assert.deepEqual(await page.call(() => [...document.querySelectorAll('#xrefs .xr-name')].map((e) => e.textContent)), ['check', 'main'], 'the button lists the uses too');
+  await page.call(() => document.querySelectorAll('#xrefs .xr-row')[1].click());
+  await page.waitFor(`document.getElementById('vname').textContent === 'main' && /Nope/.test(document.querySelector('#ccode .d2-cl.hl-sel')?.textContent || '')`, { what: 'main at the use', timeout: 60000 });
+  await page.click('#ccode .d2-cl');
+  await page.key('x');
+  await page.waitFor(`document.getElementById('xrefs').open`, { what: 'x after the code was clicked', timeout: 10000 });
+  assert.match(await text('#xrefstitle'), /^(References to|Uses of) (?!")/, 'once the code is clicked, x asks about the code again');
+  await page.key('Escape');
+  await page.waitFor(`!document.getElementById('xrefs').open`, { what: 'x dialog closed', timeout: 10000 });
+  await page.call(() => document.querySelector('#strlist .str[data-addr="0x2004"] .sx').focus());
+  await page.key(' ', { code: 'Space' });
+  await page.waitFor(`document.getElementById('vname').textContent === 'check'`, { what: 'back in check', timeout: 60000 });
   await page.key('/');
   assert.equal(await page.call(() => document.activeElement.id), 'strfilter', '/ searches the list that is open');
   await page.call(() => { const i = document.getElementById('strfilter'); i.value = 'ld-linux'; i.dispatchEvent(new Event('input')); return true; });

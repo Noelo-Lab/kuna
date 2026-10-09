@@ -243,6 +243,7 @@ fn compile_and_run(stem: &str, program: &str, compilers: &[&str]) -> Result<(), 
             std::fs::write(&src, program).unwrap();
             let out = Command::new(cc)
                 .args(["-std=gnu11", "-w", "-fwrapv", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                .args(common::CC_GCC15_DEMOTE)
                 .output()
                 .expect("spawn the C compiler");
             if !out.status.success() {

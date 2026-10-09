@@ -816,6 +816,9 @@ kuna_options! { self, p1;
     "eh_frame_full" => {
         on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
     },
+    "coldentry" => {
+        on_off!(analysis_coldentry, "Multi-entry .cold fragment entry discovery")
+    },
     "fdeinterior" => {
         on_off!(analysis_fdeinterior, ".eh_frame FDE-interior entry suppression")
     },
@@ -844,6 +847,7 @@ kuna_options! { self, p1;
         )
     },
     "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
+    "armfuncmode" => on_off!(analysis_armfuncmode, "A32 mode at even ARM function symbols"),
     "entrythumbflow" => {
         on_off!(analysis_entrythumbflow, "Entry-reachable Thumb context walk")
     },

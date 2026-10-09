@@ -405,6 +405,10 @@ fn get_input_cast_load(
     } else {
         return tlst.get_type_pointer(in_size, reqtype, wordsize).ok();
     }
+    let reqtype = tlst.get_qualified_type(
+        crate::kuna_typequal::unqualified_value(reqtype),
+        crate::kuna_typequal::effective_qualifiers(&curtype),
+    ).ok()?;
     if !Rc::ptr_eq(&curtype, &reqtype) && curtype.get_size() == reqtype.get_size() {
         let curmeta = curtype.get_metatype();
         if curmeta != type_metatype::TYPE_STRUCT
@@ -461,13 +465,21 @@ fn get_input_cast_store(
     } else {
         (Rc::clone(&pointer_type), -1)
     };
+    let qualifiers = crate::kuna_typequal::effective_qualifiers(&pointed_to);
+    let access_type = |ty| tlst.get_qualified_type(
+        crate::kuna_typequal::unqualified_value(ty),
+        qualifiers & !crate::kuna_typequal::CONST,
+    ).ok();
     if dest_size != value_type.get_size() {
         if slot == 1 {
-            return tlst.get_type_pointer(pointer_size, value_type, wordsize).ok();
+            return tlst.get_type_pointer(pointer_size, access_type(value_type)?, wordsize).ok();
         }
         return None;
     }
     if slot == 1 {
+        if qualifiers & crate::kuna_typequal::CONST != 0 {
+            return tlst.get_type_pointer(pointer_size, access_type(pointed_to)?, wordsize).ok();
+        }
         let v = data.vbank().get(pointer_vn)?;
         let is_cast = v.is_written()
             && v.get_def()
@@ -478,7 +490,7 @@ fn get_input_cast_store(
             && data.vbank().get(pointer_vn)?.is_implied()
             && data.lone_descend(pointer_vn) == Some(op)
         {
-            let new_type = tlst.get_type_pointer(pointer_size, Rc::clone(&value_type), wordsize).ok()?;
+            let new_type = tlst.get_type_pointer(pointer_size, access_type(Rc::clone(&value_type))?, wordsize).ok()?;
             if !Rc::ptr_eq(&pointer_type, &new_type) {
                 return Some(new_type);
             }

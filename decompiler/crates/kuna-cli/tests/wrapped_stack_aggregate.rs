@@ -93,7 +93,7 @@ other e;e.temp=c?other_change:0;e.t=9;for(int i=0;i<16;i++)e.pad[i]=200+i;
 if(readother(e)!=source_readother(e))return 21;
 if(readboth(d,e)!=source_readboth(d,e))return 22;
 }}return bad;}}
-void _start(void){{int r=driver();__asm__ volatile("mov %0,%%ebx;mov $1,%%eax;int $0x80"::"r"(r):"eax","ebx");}}
+__attribute__((force_align_arg_pointer)) void _start(void){{int r=driver();__asm__ volatile("mov %0,%%ebx;mov $1,%%eax;int $0x80"::"r"(r):"eax","ebx");}}
 "#
             );
             let src = common::scratch_file("wrappedstackaggregate", "c");

@@ -5,6 +5,18 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p3_dataflow
 ```
 
+A LOAD through a pointer with an explicitly volatile pointee is treated as a
+volatile read by early removal and consume-based dead-code elimination, even
+when its value is unused. This type fact supplements the existing volatile
+address-range lookup; qualification of the pointer object alone does not mark
+its pointee volatile. The lookup follows typedef qualification without marking
+unqualified pointers.
+Before inference has typed an address temporary, a bounded walk through copies,
+casts, pointer arithmetic, and pointer loads can recover its declared pointer
+type. That walk is enabled only after the type factory has seen an explicit
+volatile type. Repeated SLEIGH loads of the same SSA pointer at one instruction
+are still one read; distinct instructions remain separate reads.
+
 This phase owns the **definition web**: the SSA linkage over the op-graph
 (heritage — phi placement, renaming, call/return/load/store guards, the
 dead-definition gate) and the **simplification fixpoint** that runs over it (the
@@ -706,18 +718,24 @@ write a byte of the range (`kuna_stackstoreguard.rs (indexed_stores)`, called
 from `heritage.rs (Heritage::guard_indexed_stores)`). Whether it may is read
 from the STORE's guard window (`kuna_stackstoreguard.rs (window_overlaps)`):
 an unanalyzed STORE may write anywhere, one whose value-set range is locked
-writes its window plus the store's width, and any other writes from the start
-of its window on. Within that, the STORE writes no byte outside its pointer's
-own bound (`kuna_storereach.rs (store_window)`, cached per pass): the stack
+writes its window plus the store's width. Without a locked window or an
+independent pointer bound, the fallback covers four elements from the greater
+of the pointer's base and the provisional minimum, clipped to the provisional
+maximum plus the store width. If that entire byte range precedes the base,
+the fallback retains its inferred minimum so it remains nonempty. A signed
+index can put that window's minimum far below the base; using that minimum as
+the start of the four-element fallback would exclude the array itself and let
+its initializer replace a later read. Within any of these windows, the STORE
+writes no byte outside its pointer's own bound (`kuna_storereach.rs (store_window)`, cached per pass): the stack
 base plus constants plus indices bounded by their known-bits masks, by the
 divisor of an unsigned remainder, and by any constant they are multiplied or
 shifted by (`b[(i >> 4) % 12]` with `int b[12]` writes 48 bytes). A STORE with
 neither a locked window nor such a bound writes at most four elements of its
-width, the length the stack layout gives an array whose window is not locked
-(upstream `MapState::gatherOpen` and `MapState::addGuard`), so the guard stays
-within the local the store writes through; for a wider STORE whose guard keeps
-a slot past those four, the layout makes the array as long as the bound (chapter
-06, `kuna_storereach.rs (widen_open_hints)`). A STORE whose pointer
+width. This count matches the fallback extent used for open stack-array hints
+(upstream `MapState::gatherOpen` and `MapState::addGuard`), but the provisional
+guard and the layout hint need not share a starting address. For a wider STORE
+whose guard keeps a slot past those four, the layout makes the array as long as
+the bound (chapter 06, `kuna_storereach.rs (widen_open_hints)`). A STORE whose pointer
 comes from the stack pointer after the function moved it by a non-constant
 amount (`LoadGuard::dynamic_stack`, an `alloca`) writes dynamically allocated
 stack, not the frame, and is skipped. One whose pointer may be either, by path,

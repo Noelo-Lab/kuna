@@ -469,7 +469,13 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   non-empty section out above `0x400000` (`RELOC_BASE`, matching CLE so addresses
   line up with angr's), apply the relocations, rebase defined symbols, and bind
   each undefined extern to a synthetic call target in an extern area above the
-  sections so calls render by name. The relocation encoder handles generic
+  sections so calls render by name. An adjacent SPARC `sethi`/`jmpl` pair
+  carrying `HI22`/`LO10` relocations to the same symbol with zero addends also
+  identifies that symbol as code, even when the ELF marks it `STT_NOTYPE`.
+  The jump must use the register written by `sethi` and discard the link or
+  write `%o7`; an ordinary address materialization or data load does not qualify.
+  This lets existing tail-call recovery resolve a named external destination
+  and preserve its delay-slot arguments. The relocation encoder handles generic
   absolute, relative, PLT-relative, and image-offset fields at 8/16/32/64 bits in
   the object's byte order, plus the instruction fields and ABI formulas for ARM
   `CALL`/`JUMP24`/Thumb branches/`REL32`/`PREL31`, AArch64 branch/page/low-12
@@ -1298,6 +1304,44 @@ decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/lo
 (ArmMarkerPass)` (`arm_markers`) ports ARM's `ARM_ElfExtension`/`ArmSymbolAnalyzer`:
 `$t`/`$a` mapping symbols and the STT_FUNC odd-address convention become `TMode`
 paints, applied to the engine's `ContextDatabase` at commit, before any decode.
+(kuna) Those are point paints: each fills up to the next address where the mode was
+set, and so does the `TMode=1` a `blx` commits for its target. In an image with
+function symbols but no mapping symbols nothing set the mode again at an A32
+function placed after a Thumb one, so the Thumb mode reached it. The `armfuncmode`
+pass (`decompiler/crates/kuna-analysis/src/loader/kuna_armfuncmode.rs (arm_func_mode_paints)`,
+default on) sets `TMode=0` over each defined function symbol whose value is even, the
+AAELF32 mark of an A32 function, when it lies in an executable section of a linked
+ARM ELF after an odd function symbol, and sets `TMode=1` again where its extent ends.
+The extent is the symbol's size cut at the next function symbol and at the end of the
+section: an exported Thumb function whose symbol the linker moved onto its A32
+interworking stub keeps the function's size, and must paint only the stub. The extent
+then grows over every direct A32 `b`/`bl` target it reaches before the next function
+symbol, up to the first return, unconditional branch, call to a function the
+no-return list names (the image's own definition or its PLT stub), or literal-pool word
+on that target's linear run, and over what that run branches to in turn: an A32 branch
+target is A32 by its encoding, so an unsymbolized A32 static helper an A32 export calls
+keeps A32. A run that reaches the next function symbol or the section end without such
+a stop says nothing about where its code ends and adds nothing, and words a PC-relative
+`ldr` in the scanned code loads are data, never read as branches. That data test is a
+known limit: a pool word reached through `adr` + `ldr`, `vldr` or `ldrd` is still read
+as a possible `b`, and a Thumb-2 `pop.w {..., pc}` at an address 2 mod 4 reads as an A32
+`pop {..., pc}` stop, so a run over such bytes can still grow over a following
+unsymbolized Thumb routine. Past the
+extent the Thumb mode the symbol paint gave resumes, so a stripped library's
+unsymbolized Thumb routines after an A32 one keep their mode. A symbol of size 0
+states no extent and is skipped, and an image whose function symbols are all even
+keeps the language default it already had, together with whatever modes its calls
+commit. The pass paints nothing for an image with `$a`/`$t` mapping symbols, a
+relocatable object, an image whose build attributes rule out A32 (M profile or
+`Tag_ARM_ISA_use` 0), a Cortex-M image with a vector table, or an address that also
+carries an odd function symbol. Its paints are committed under its own gate and fed
+to the Listing's context painter as well, and the Listing keeps the A32 extents: the
+AIF gap walk rejects a Thumb walk (a 2-aligned candidate, or one whose first
+instruction is 2 bytes) whose flow leaves the gap for a decoded instruction inside one
+of them, since a Thumb branch cannot reach A32 code without an exchange. Without that
+check a Thumb walk over the zero padding before an A32 routine was accepted once its
+branches landed on the A32 instruction starts the extent now yields; an explicit `--isa` states the whole
+image's mode and turns the pass off, and so does the option, which restores the leak.
 `decompiler/crates/kuna-analysis/src/loader/mips_markers.rs` carries the MIPS pair:
 `MipsIsaModePass` (`mips_isa`) paints `ISA_MODE` at MIPS16e/microMIPS entries
 (LSB-set or `st_other` STO-marked), and `MipsMarkerPass` (`mips_gp`) is a register
@@ -3335,6 +3379,33 @@ without `.eh_frame` FDEs, which covers essentially the whole bare-metal ARM
 population (they unwind through `.ARM.exidx`), so the ARM entry-recall options
 compose with it unchanged.
 
+**(kuna) Except where a `.cold` fragment is entered more than once**
+(`coldentry`, default-**on**;
+`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_coldentry.rs`). GCC's
+hot/cold splitting moves a function's unlikely blocks into a separate `foo.cold`
+fragment with its own FDE, and when several unlikely paths are split out they are
+laid back to back in that ONE fragment, each reached by its own `jmp`/`jcc rel32`
+from the hot body. The FDE oracle names only the fragment's first address, so every
+later path is strictly inside an FDE body: no metadata oracle names it, and the hot
+function's decompile inlines it through the jump. Ghidra makes each of those jump
+targets a function, since it is reached from outside every body that holds it; on
+Ubuntu 22.04's stripped `/bin/bash` that is 18 entries in `[0x30c3d, 0x312b3]`.
+An address `t` strictly inside a single-function FDE body (the `fdeinterior`
+eligibility above) is added when (1) a direct `jmp rel32`/`jcc rel32` outside the
+body targets it — found by a byte scan of the executable sections for the `E9` /
+`0F 8x` encodings and confirmed by decoding the source; (2) a linear decode of the
+body from its start lands on `t`; and (3) the instruction before `t` is `ud2`,
+`ret`, `hlt` or a direct `jmp`, so nothing inside the fragment flows into it. Guard
+3 keeps an ordinary function's shared tail (reached by its own fall-through as well
+as another function's jump) whole; an indirect `jmp` does not satisfy it, since the
+block after one is a switch case as often as an entry. Candidates are pre-filtered
+on the bytes before `t` and a body is decoded only up to its last surviving
+candidate, so the pass costs one scan of the executable bytes plus short decodes
+(about 2 ms on `bash`). It decodes through the engine `Translate`, so it runs as a
+deferred entry pass at the commit point, and its entries join the inventory *after*
+the `fdeinterior` filter (which would otherwise reject every one of them by
+construction). x86/x86-64 ELF only; inert without `.eh_frame`.
+
 **(kuna) `.pdata` interiors are not function starts either** (`pdatainterior`,
 default-**on**, DIV-155;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_pdatainterior.rs`). The
@@ -4047,6 +4118,29 @@ load-bearing gotchas are worth restating: a constant-space branch operand is
 p-code-relative (an intra-instruction branch), never a VMA; fall-through is decided
 by the *last* op only; and delay slots are already folded into the reported length.
 
+The instruction model stores records in 1,024-row chunks, with a B-tree of
+`(address, row number)` pairs for ordered lookup
+(`decompiler/crates/kuna-analysis/src/listing/kuna_insnstore.rs (InstructionStore)`).
+A partly filled tree node reserves small row numbers rather than full instruction
+records, and growing the walk allocates at most one more chunk without copying a
+whole-image buffer. Every record retains its flow targets, assembly and lazy
+p-code fields. Exact, range and interior queries still borrow the original
+record in address order. Replacing an address reuses its row; ARM frame-preserving
+rebuilds clone the records and index before extending them. Serial and parallel
+walks use the same store. This changes allocation and lookup layout, not the
+instruction partition or the facts any consumer receives.
+
+After loading, committing analysis and applying caller assertions, the in-process
+CLI returns unused glibc heap pages before selecting and decompiling functions
+(`decompiler/crates/kuna-cli/src/kuna_allocrelease.rs (after_analysis)`). Dropping
+the Listing ends its ownership, but small tree and string allocations can leave
+resident pages in allocator arenas. A single `malloc_trim(0)` at this boundary
+releases free pages without discarding live program facts or imposing a memory
+budget. This applies on GNU/Linux; other platforms retain their allocator's
+ordinary release policy. It reduces post-analysis residency, while the chunked
+instruction store reduces the construction peak on every platform. Worker
+admission still uses the measured high-water mark, not the trimmed current RSS.
+
 Three things the walk deliberately does **not** always produce. First, the human
 assembly text on each instruction: capturing it means a *second* full SLEIGH parse
 of the same bytes (`Translate::print_assembly`) plus two heap strings per
@@ -4078,12 +4172,25 @@ pointer-only entries `fast_funcdisc` exists to find.
 
 Second, the cross-reference model itself, on the same reasoning and the same
 gate. An edge is filed for every control-flow successor of every instruction, a
-plain fall-through included, so the two direction maps together hold rather more
-entries than the instruction model does — and each is a `Vec` of its own inside a
-B-tree, which is several times the per-edge cost of an instruction. The model has
-exactly two readers, `noreturn_disc` and `tailcallentry`, and both are `listing`
-consumers, so a `fast_funcdisc`-only walk — again, the whole-binary export's path
-on any image `--mode auto` resolves to `fast` — builds neither map and every xref
+plain fall-through included. The walk collects each edge once in a contiguous
+buffer, including edges whose destination is not decoded. After the walk, it
+sorts and deduplicates that buffer by `(source, target, kind)` and makes one copy
+sorted by `(target, source, kind)`
+(`decompiler/crates/kuna-analysis/src/listing/kuna_compactrefs.rs (ReferenceIndex)`).
+Stable sorting preserves the first edge's operand metadata when duplicates are
+removed. Incoming and outgoing queries binary-search the corresponding buffer
+and borrow the matching slice; source iteration skips adjacent equal sources.
+There is no separate map node or growable vector for each instruction's
+fall-through. The reference model keeps the same edges, ordering, distinct-site
+counts and absence queries as the former bucket maps. Serial walks, decode-lane
+merges and ARM frame-preserving rebuilds all use this representation. During
+index construction, the deduplicated buffer is trimmed to its length before it
+is copied, and the copy is sorted in place, its keys being unique; every rebuild
+still owns its instruction partition.
+
+The readers, including `noreturn_disc`, `tailcallentry` and static format-string
+analysis, are `listing` consumers, so a `fast_funcdisc`-only walk — again, the whole-binary export's path
+on any image `--mode auto` resolves to `fast` — builds neither reference buffer and every xref
 query answers "none" for every address. What must hold is that nothing else about
 the walk changes, and nothing does: the reference filing is a pure sink, so the
 instructions decoded, the functions discovered and the executable ranges are

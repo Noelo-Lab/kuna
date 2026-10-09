@@ -56,7 +56,7 @@ fn character_code_arrays_round_trip_beside_one_character_literals() {
             for level in ["-O0", "-O2"] {
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", level, "-DWIDECODES_HARNESS"])
-                    .args(["-Wno-error=int-conversion", "-Wno-error=incompatible-pointer-types"])
+                    .args(common::CC_GCC15_DEMOTE)
                     .arg("-o")
                     .arg(&exe)
                     .arg(&src)

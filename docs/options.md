@@ -462,6 +462,9 @@ Three tiers:
 | c++ catch/cleanup landing pads missing from a stripped binary's function list | [`eh_frame_full`](#eh_frame_full) |
 | exception-handler code never discovered as entries | [`eh_frame_full`](#eh_frame_full) |
 | gcc_except_table call-site targets left unexplored | [`eh_frame_full`](#eh_frame_full) |
+| functions ghidra finds in a stripped gcc binary's .cold region missing from kuna's function list | [`coldentry`](#coldentry) |
+| a hot function's decompile inlines an abort or error tail reached by a jump into another function's fde | [`coldentry`](#coldentry) |
+| gaps between consecutive sub_<addr> cold fragments that hold code | [`coldentry`](#coldentry) |
 | spurious sub_<addr> functions inside a c++ function that uses try/catch | [`fdeinterior`](#fdeinterior) |
 | a decompiled function body dereferences an uninitialised frame pointer so every local is garbage | [`fdeinterior`](#fdeinterior) |
 | function count inflated by unwinder-only landing pads | [`fdeinterior`](#fdeinterior) |
@@ -546,6 +549,9 @@ Three tiers:
 | a32 u-boot recall is far below the cortex-m images | [`poolentry`](#poolentry) |
 | thumb code misdecoded as arm garbage instructions | [`arm_markers`](#arm_markers) |
 | $t/$a mapping symbols ignored so the wrong decode mode applies | [`arm_markers`](#arm_markers) |
+| an a32 function after a thumb function decodes as thumb garbage | [`armfuncmode`](#armfuncmode) |
+| function flow reaches unmapped memory in an a32 function of an image without mapping symbols | [`armfuncmode`](#armfuncmode) |
+| a thumb function's mode leaks into the even-addressed function after it | [`armfuncmode`](#armfuncmode) |
 | unresolved *(gp + offset) loads on mips | [`mips_gp`](#mips_gp) |
 | got/.sdata references never fold to real addresses in a pic mips binary | [`mips_gp`](#mips_gp) |
 | i386 pie libc calls render as sub_<addr> instead of exit/dcgettext | [`i386_pie_plt`](#i386_pie_plt) |
@@ -2049,6 +2055,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-ehframe-lsda
 - **Example:** `--option eh_frame_full on`
 
+### `coldentry` -- on | off, default `on`
+
+- **Symptoms:** functions ghidra finds in a stripped gcc binary's .cold region missing from kuna's function list; a hot function's decompile inlines an abort or error tail reached by a jump into another function's fde; gaps between consecutive sub_<addr> cold fragments that hold code.
+- **What it does:** Add the extra entry points of a multi-entry .cold fragment. GCC's hot/cold splitting moves a function's unlikely blocks into a separate foo.cold fragment with its own .eh_frame FDE, and when several unlikely paths are split out they are laid back to back in that one fragment, each reached by its own jmp/jcc rel32 from the hot body. The FDE oracle names only the fragment's first address, so every later path is strictly inside an FDE body, no metadata oracle names it, and the hot function's decompile inlines it through the jump. An address is added when it is strictly inside a single-function FDE body (the fdeinterior eligibility), a direct jmp/jcc rel32 from outside that body targets it (found by a byte scan of the executable sections and confirmed by decoding the source), a linear decode of the body lands on it, and the instruction before it has no fall-through (ud2, jmp, ret), so nothing inside the fragment flows into it. The entries are added after the fdeinterior suppression. Only the FDEs a candidate lands in are decoded. x86/x86-64 ELF only; inert without .eh_frame.
+- **When to flip:** On (default) lists each split-out unlikely path of a stripped GCC binary as its own sub_<addr>, as Ghidra does: the tell-tale of it being off is a run of sub_<addr> cold fragments with gaps between them, and a hot function whose decompile inlines an error/abort tail reached by a jump into the middle of another function's FDE. Flip off to restore the previous discovery set exactly.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-coldentry
+- **Example:** `--option coldentry off`
+
 ### `fdeinterior` -- on | off, default `on`
 
 - **Symptoms:** spurious sub_<addr> functions inside a c++ function that uses try/catch; a decompiled function body dereferences an uninitialised frame pointer so every local is garbage; function count inflated by unwinder-only landing pads; a function entry lands in the middle of an instruction; extra entries between two real functions in a binary built with exceptions.
@@ -2192,6 +2206,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) decodes Thumb regions as Thumb on ARM; off leaves the default (ARM) decode mode.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-armmarkers
 - **Example:** `option arm_markers off`
+
+### `armfuncmode` -- on | off, default `on`
+
+- **Symptoms:** an a32 function after a thumb function decodes as thumb garbage; function flow reaches unmapped memory in an a32 function of an image without mapping symbols; a thumb function's mode leaks into the even-addressed function after it.
+- **What it does:** In an ARM ELF without $a/$t mapping symbols, set TMode=0 (A32) over each defined function symbol whose value is even, the AAELF32 mark of an A32 function, when it lies after an odd (Thumb) function symbol, and resume TMode=1 where its extent ends. A Thumb function symbol's TMode=1 paint, and the TMode=1 a blx to it commits, fill up to the next address where the mode was set; with no such point at the A32 function after it, that function decoded as Thumb. The extent is the symbol's size cut at the next function symbol and at the end of its section (a linker moves an exported Thumb function's symbol onto its A32 interworking stub and keeps the function's size), then grown over every direct A32 b/bl target it reaches before the next function symbol (an unsymbolized A32 static helper the A32 function calls), up to that target's first return, unconditional branch, call to a function that never returns, or literal-pool word; a run with no such stop before the next symbol adds nothing, and ldr literal words are never read as branches; past it the Thumb mode the symbol paint gave resumes, so unsymbolized Thumb code after an A32 function keeps decoding as Thumb. A size-0 symbol states no extent and is skipped, and an image whose function symbols are all even keeps the language default. Skipped for an image with $a/$t mapping symbols (they already mark every mode change), a relocatable object, an image whose build attributes rule out A32 (M-profile, Tag_ARM_ISA_use 0), a Cortex-M image with a vector table, an address that also carries an odd function symbol, an explicit --isa, and every non-ARM or non-ELF object.
+- **When to flip:** On (default): an A32 function placed after a Thumb function in an image with a symbol table but no mapping symbols decodes as A32. Flip off to let the Thumb mode before an even function symbol reach it, or use --isa when the whole image is one mode and its symbols are wrong.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-armfuncmode
+- **Example:** `option armfuncmode off`
 
 ### `mips_gp` -- on | off, default `on`
 

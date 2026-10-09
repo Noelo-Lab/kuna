@@ -92,6 +92,7 @@ fn spilled_stack_pointer_writes_round_trip_with_alias_and_escape_controls() {
                 for level in ["-O0", "-O2"] {
                     let compile = Command::new(cc)
                         .args(["-std=gnu11", "-w", "-fno-strict-aliasing", level])
+                        .args(common::CC_GCC15_DEMOTE)
                         .arg(&src)
                         .arg("-o")
                         .arg(&exe)

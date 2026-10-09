@@ -41,3 +41,6 @@ Other rules for bodies:
 - For a **feature or refactor** rather than a fix, section 1 becomes "what this
   makes possible" plus a before/after of the visible behaviour — same budget,
   same order: the observable thing first, mechanism second.
+- If you are reviewing another contributors PR, NEVER destroy or edit the 
+  text they put in their PR. Instead, just make a comment with more info
+  that you want to add to the PR.

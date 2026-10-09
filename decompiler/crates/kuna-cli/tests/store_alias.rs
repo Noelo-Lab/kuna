@@ -62,6 +62,7 @@ fn a_global_is_read_where_the_binary_reads_it_around_a_pointer_store() {
             for level in ["-O0", "-O2"] {
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", level, "-fno-strict-aliasing", "-DSTOREALIAS_HARNESS"])
+                    .args(common::CC_GCC15_DEMOTE)
                     .args(keep)
                     .arg("-o")
                     .arg(&exe)

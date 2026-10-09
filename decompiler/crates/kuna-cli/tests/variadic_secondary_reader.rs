@@ -183,7 +183,11 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
     let binary = common::scratch_file("variadic-secondary-native", "exe");
     let object = common::scratch_file("variadic-secondary-selected", "o");
     let compiled = Command::new("gcc")
-        .args(["-O2", "-fno-optimize-sibling-calls", "-c"])
+        // Pin the baseline ISA: GCC 15 (Ubuntu 26.04) defaults to a higher
+        // -march and vectorizes the clamp with AVX pminsd/pmaxsd, which leaks
+        // the stored argument into the varargforward-off reading. Baseline
+        // x86-64 keeps the clamp scalar, as on the GCC the fixture was authored.
+        .args(["-O2", "-fno-optimize-sibling-calls", "-march=x86-64", "-c"])
         .arg(fixture.join("selected.c"))
         .arg("-o")
         .arg(&object)
