@@ -2,7 +2,7 @@
 //! compiles as C11 with `-pedantic-errors` and behaves like the source: an
 //! empty last switch arm (ARM and x86-64) and a goto target at the end of a
 //! loop body (x86-64). The empty arm's Rust `match` form compiles too.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{

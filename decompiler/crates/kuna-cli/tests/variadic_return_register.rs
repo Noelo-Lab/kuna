@@ -5,7 +5,7 @@
 //! keeps a value left in the register out of the call, and a count of one
 //! (`crset 6`) keeps another call's result in it. A constant moved into `d0`
 //! prints as a `double`.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{

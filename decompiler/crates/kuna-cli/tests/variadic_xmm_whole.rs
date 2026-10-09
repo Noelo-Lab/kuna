@@ -3,7 +3,7 @@
 //! written: whole by `pxor`, `movq` or `cvtsi2sd` after `pxor`, or in 4-byte
 //! lanes by `movaps`. The printed C is compiled back with gcc and clang and run
 //! against the source. A register written whole past the count stays out.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{

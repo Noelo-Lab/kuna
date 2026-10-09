@@ -4,7 +4,7 @@
 use serde_json::Value as Json;
 use std::path::PathBuf;
 
-mod common;
+use crate::common;
 use common::{fixture, run_kuna};
 
 /// The vendored non-stripped `fauxware`: `.rodata` prompts referenced from

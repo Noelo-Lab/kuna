@@ -2,7 +2,7 @@
 //! kept when the global is stored again after the load: in a loop, on a branch,
 //! for byte, short and long globals, and for two globals at once; and the load
 //! stays ahead of the stores the binary makes after it.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 

@@ -10,7 +10,7 @@
 //! one that leaves the return register unwritten on its other path stay
 //! `void`; so do an AArch64 function whose tail callee takes its value in `w0`
 //! and one that returns where `cmp w0,#7` found it equal.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope};

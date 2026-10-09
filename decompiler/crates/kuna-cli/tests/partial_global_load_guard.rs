@@ -1,5 +1,5 @@
 //! Partial writes must reach a pointer read before a later whole-object write.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 

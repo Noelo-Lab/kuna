@@ -2,7 +2,7 @@
 //! own function prints as `L"..."` (`widestrings32`, carried by the aggressive
 //! preset small images default to), while an `int` table of character codes
 //! keeps its name.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 

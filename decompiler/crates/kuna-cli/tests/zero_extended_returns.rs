@@ -7,7 +7,7 @@
 //! whole register; in 32, a narrower value is unsigned. Before, the printed
 //! callers sign-extended an `int` or a `char` that the binary zero-extends, or
 //! computed in 32 bits what the binary computes in 64.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope};

@@ -1,6 +1,6 @@
 //! Callback writes update a by-value struct spilled across entry SP=0.
 #![cfg(all(target_os = "linux", any(target_arch = "x86", target_arch = "x86_64")))]
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 

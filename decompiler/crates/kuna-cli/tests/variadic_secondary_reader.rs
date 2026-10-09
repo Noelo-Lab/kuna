@@ -1,6 +1,6 @@
 //! A stored integer still reaches a variadic call; format evidence must not
 //! claim registers outside its argument list or apply to unknown formats.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 

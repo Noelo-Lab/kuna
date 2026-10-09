@@ -4,7 +4,7 @@
 //! caller of the printed C read nothing at all. The same holds for gcc's i386
 //! code, which pushes the argument and so never names `%eax`, and for a caller
 //! that changes only one or two bytes of `%edx`.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolFlags, SymbolKind, SymbolScope};

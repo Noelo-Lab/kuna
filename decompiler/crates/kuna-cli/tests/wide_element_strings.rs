@@ -2,7 +2,7 @@
 //! reads as a one-character string is still the array: the printed C passes
 //! its address, never a `"A"` literal, while genuine one-character literals laid
 //! out side by side keep printing as literals.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 

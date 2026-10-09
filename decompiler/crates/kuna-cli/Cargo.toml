@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "kuna-cli"
 description = "kuna Rust port: the user-facing `kuna` CLI (decompile / test / catalog / specs)"
 version.workspace = true
@@ -30,3 +31,19 @@ workspace = true
 [[bin]]
 name = "kuna"
 path = "src/main.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[[test]]
+name = "decompile_all_cli"
+path = "tests/decompile_all_cli.rs"
+
+[[test]]
+name = "docs_cli"
+path = "tests/docs_cli.rs"
+
+[[test]]
+name = "process_helpers"
+path = "tests/process_helpers.rs"

@@ -1,6 +1,6 @@
 //! UEFI TE image bootstrap and address-translation regressions.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

@@ -3,7 +3,7 @@
 //! gets the zero-extension the binary performs. Narrowed to the low word it
 //! printed as `int`, and `(unsigned long long)ins16(0x7fff, 0)` became
 //! `0xffffffff80000000` where the source returns `0x80000000`.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{

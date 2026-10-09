@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 use std::process::Command;
 
 fn image(count: usize, scalar: bool, last: bool) -> Vec<u8> {

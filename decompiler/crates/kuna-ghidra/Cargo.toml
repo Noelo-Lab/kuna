@@ -7,6 +7,7 @@
 # (Funcdata encode, ScopeGhidra, TypeFactoryGhidra, ...) is phase 2.
 
 [package]
+autotests = false
 name = "kuna-ghidra"
 description = "kuna Rust port: ghidra-mode process front-end (Ghidra's `decompile` binary)"
 version.workspace = true
@@ -45,3 +46,7 @@ workspace = true
 [[bin]]
 name = "kuna_ghidra"
 path = "src/bin/kuna_ghidra.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

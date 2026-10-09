@@ -1,6 +1,6 @@
 //! A scalar address matches its character-pointer callee in a buffered batch,
 //! independently of inference, address order, or worker assignment.
-mod common;
+use crate::common;
 use common::process;
 
 use object::write::{Object, Symbol, SymbolSection};

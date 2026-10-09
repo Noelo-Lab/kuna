@@ -1,7 +1,7 @@
 //! Process-level proof that malformed/unsupported relocation volume cannot
 //! produce unbounded stderr, including for machine-readable output.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

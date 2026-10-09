@@ -1,5 +1,5 @@
 //! Native switches must keep the selector and its case labels in one domain.
-mod common;
+use crate::common;
 use common::process;
 
 use std::path::PathBuf;

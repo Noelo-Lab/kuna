@@ -5,7 +5,7 @@
 //! for arguments, and their compilers for return values (`narrowext compiler`).
 //! With the compiler spec's own extension a negative result read as a large
 //! positive one, or the rest of its register as an unassigned piece.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 
