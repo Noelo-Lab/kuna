@@ -30,8 +30,8 @@ existing branch behavior; an explicitly prepared LR retains the indirect-call
 form. This is a SLEIGH correctness repair, without an inference option.
 
 The SPARC floating-to-integer constructors use the integer result width:
-`fdtoi` and `fqtoi` write one 32-bit word through `fsrd`, while `fstox` writes
-64 bits through `fdrd`. Scalar destinations preserve odd register numbers;
+`fdtoi` and `fqtoi` write one 32-bit word through `fsrd`, while `fstox` and
+`fqtox` write 64 bits through `fdrd`. Scalar destinations preserve odd register numbers;
 double destinations use the V9 encoding that maps an odd encoded field into
 the upper register bank. The rules apply in both language variants. See the
 [SPARC V9 instruction mapping](https://docs.oracle.com/cd/E19963-01/html/821-1607/sparcv9-32853.html).

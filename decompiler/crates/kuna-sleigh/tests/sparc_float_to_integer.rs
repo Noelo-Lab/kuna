@@ -69,3 +69,11 @@ fn fstox_uses_a_double_destination_and_the_upper_bank_encoding() {
         ("fstox %f2, %f32", 0x83a01022, 4, 8, "fd32"),
     ]);
 }
+
+#[test]
+fn fqtox_uses_a_double_destination_and_the_upper_bank_encoding() {
+    check_conversions(&[
+        ("fqtox %f0, %f2", 0x85a01060, 16, 8, "fd2"),
+        ("fqtox %f0, %f32", 0x83a01060, 16, 8, "fd32"),
+    ]);
+}

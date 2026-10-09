@@ -1290,7 +1290,7 @@ define pcodeop stqa;
 
 :fstox  fsrs2,fdrd                   is op=0x2 & fdrd & op3=0x34 & opf=0x81 & fsrs2 { fdrd = trunc(fsrs2); }
 :fdtox  fdrs2,fdrd                   is op=0x2 & fdrd & op3=0x34 & opf=0x82 & fdrs2 { fdrd = trunc(fdrs2); }
-:fqtox  fqrs2,fqrd                   is op=0x2 & fqrd & op3=0x34 & opf=0x83 & fqrs2 { fqrd = trunc(fqrs2); }
+:fqtox  fqrs2,fdrd                   is op=0x2 & fdrd & op3=0x34 & opf=0x83 & fqrs2 { fdrd = trunc(fqrs2); }
 
 :fstod  fsrs2,fdrd                   is op=0x2 & fdrd & op3=0x34 & opf=0xc9 & fsrs2 { fdrd = float2float(fsrs2); }
 :fstoq  fsrs2,fqrd                   is op=0x2 & fqrd & op3=0x34 & opf=0xcd & fsrs2 { fqrd = float2float(fsrs2); }
