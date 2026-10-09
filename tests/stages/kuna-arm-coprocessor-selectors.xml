@@ -2,7 +2,7 @@
 <binaryimage arch="ARM:LE:32:v5t">
 <!--
   Independently authored MCR/MRC selector regression, P2 SLEIGH correctness
-  repair without an option. No matching upstream issue at 919984b8.
+  repair without an option.
   WriteRegion: mov r0,#1; mcr p15,0,r0,c6,c0,0; bx lr.
   WriteSelectors: mcr p15,3,r0,c6,c5,2; bx lr.
   ReadSelectors: mrc p15,3,r0,c6,c5,2; bx lr.
