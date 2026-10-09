@@ -29,7 +29,7 @@ const KEYS = [
   ['y', 'change its type (on a function name: its signature)'],
   [';', 'add a note to the selected instruction'],
   ['g', 'go to a function or an address'],
-  ['x', 'cross-references: who calls a function and what it calls, or the lines that use a variable'],
+  ['x', 'cross-references: who calls a function and what it calls, the lines that use a variable, or where a string is used'],
   ['e', 'open or close the Explain panel'],
   ['u · Ctrl+Z', 'undo'],
   ['Ctrl+Shift+Z', 'redo'],
