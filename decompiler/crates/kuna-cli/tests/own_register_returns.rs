@@ -292,6 +292,7 @@ int main(void) {{
             for level in ["-O0", "-O2"] {
                 let compile = Command::new(cc)
                     .args(["-std=gnu11", "-w", level, "-o"])
+                    .args(common::CC_GCC15_DEMOTE)
                     .arg(&exe)
                     .arg(&src)
                     .output()
@@ -377,6 +378,7 @@ int main(void) {{
         for level in ["-O0", "-O2"] {
             let compile = Command::new(cc)
                 .args(["-std=gnu11", "-w", level, "-o"])
+                .args(common::CC_GCC15_DEMOTE)
                 .arg(&exe)
                 .arg(&src)
                 .output()
