@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2400,
-    2400
+    2402,
+    2402
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1243,6 +1243,8 @@
     "data:SHORT ASCII STRING #1: off, the four bytes remain a raw data word",
     "data:SHORT ASCII STRING #2: default, the four-byte literal is one string copy",
     "data:SHORT ASCII STRING #3: both passes preserve the surrounding string transform",
+    "data:SPARC-EXTERNAL-TAIL #1: off still follows the jump into missing extern bytes",
+    "data:SPARC-EXTERNAL-TAIL #2: default recovers the named tail call and delay-slot argument",
     "data:SPLITSTOREKEEP #1: the seven-byte cell the store at src+8 was cut down to is a variable, at the default only",
     "data:SPLITSTOREKEEP #2: and so is its destination cell at dst+8",
     "data:SPLITSTOREKEEP #3: the one byte the two middle stores overlap on is its own cell",
