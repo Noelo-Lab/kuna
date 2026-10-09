@@ -51,7 +51,7 @@ fn a_pointer_table_with_printable_entries_round_trips() {
             for level in ["-O0", "-O2"] {
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", level, "-fno-strict-aliasing", "-DPTRSLOT_HARNESS"])
-                    .args(["-Wno-error=int-conversion", "-Wno-error=incompatible-pointer-types"])
+                    .args(common::CC_GCC15_DEMOTE)
                     .arg("-o")
                     .arg(&exe)
                     .arg(&src)
