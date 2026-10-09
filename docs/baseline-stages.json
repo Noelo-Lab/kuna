@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2400,
-    2400
+    2404,
+    2404
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1861,6 +1861,7 @@
     "data:cspecprotos #4: the registered __thiscall model resolves and recovers ECX as the first parameter",
     "data:cspecprotos #5: the member access is now a parameter dereference",
     "data:cspecprotos #6: the stack argument shifts to the second slot behind the this-pointer",
+    "data:double is stored in its declared field",
     "data:earlyreturn #1: OFF keeps the diamond's else-arm, ON hoists it away (else appears once, in the OFF pass only)",
     "data:earlyreturn #2: ON logs the const-guard hoist exactly once",
     "data:elemptr #10: with the option on a returned word nothing shows the sign of is an unsigned element",
@@ -2102,6 +2103,7 @@
     "data:nested PA-RISC operand: backward call target",
     "data:nested PA-RISC operand: forward call target",
     "data:nested PPC operand: full rotation and mask",
+    "data:no shifted field store",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
     "data:opcode-seam #1: the function emits a real body (was: no output, seam panic)",
@@ -2253,6 +2255,8 @@
     "data:sparc64-callreturn #4: f3 subtracts the second atoi result (O2 and O0)",
     "data:sparc64-callreturn #5: fd stores dd's fd0 result (O2 and O0)",
     "data:sparc64-callreturn #6: no call result is dropped",
+    "data:stack double after seven ints is read whole",
+    "data:stack double is not split across a realigned slot",
     "data:stackarggap #1: option off invents a fourth and fifth argument to reach a stack slot (bug reproduced)",
     "data:stackarggap #2: option on ends the argument list at the register the caller never wrote",
     "data:stalejumptable #1: the real jump-table switch survives on BOTH passes (0 before the fix: pass 1 panicked)",
