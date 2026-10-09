@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2419,
-    2419
+    2422,
+    2422
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1249,6 +1249,9 @@
     "data:SHORT ASCII STRING #1: off, the four bytes remain a raw data word",
     "data:SHORT ASCII STRING #2: default, the four-byte literal is one string copy",
     "data:SHORT ASCII STRING #3: both passes preserve the surrounding string transform",
+    "data:SIGNED-STACK-INDEX #1: default reads the word written by the loop",
+    "data:SIGNED-STACK-INDEX #2: off exposes stale initializer forwarding",
+    "data:SIGNED-STACK-INDEX #3: both runs retain indexed writes",
     "data:SPARC64 odd destination conversion reaches return",
     "data:SPLITSTOREKEEP #1: the seven-byte cell the store at src+8 was cut down to is a variable, at the default only",
     "data:SPLITSTOREKEEP #2: and so is its destination cell at dst+8",
