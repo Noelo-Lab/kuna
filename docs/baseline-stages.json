@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2404,
-    2404
+    2407,
+    2407
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1243,6 +1243,7 @@
     "data:SHORT ASCII STRING #1: off, the four bytes remain a raw data word",
     "data:SHORT ASCII STRING #2: default, the four-byte literal is one string copy",
     "data:SHORT ASCII STRING #3: both passes preserve the surrounding string transform",
+    "data:SPARC64 odd destination conversion reaches return",
     "data:SPLITSTOREKEEP #1: the seven-byte cell the store at src+8 was cut down to is a variable, at the default only",
     "data:SPLITSTOREKEEP #2: and so is its destination cell at dst+8",
     "data:SPLITSTOREKEEP #3: the one byte the two middle stores overlap on is its own cell",
@@ -2106,6 +2107,7 @@
     "data:no shifted field store",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
+    "data:odd destination reaches the halfword store",
     "data:opcode-seam #1: the function emits a real body (was: no output, seam panic)",
     "data:opcode-seam #2: RuleBitUndistribute pulls the common INT_SRIGHT out of the AND",
     "data:opcode-seam #3: no residual per-operand shift is left behind",
@@ -2385,6 +2387,7 @@
     "data:whiledo-complex #3: the bound check is a proper if statement in the loop body",
     "data:whiledo-complex #4: the loop exit is a proper break statement",
     "data:whiledo-complex #5: the bound-check return is a statement, not condition text",
+    "data:word conversion reaches return",
     "data:x64syscall #1: with the option off the user-op reads nothing, so it prints with empty parens in both syscall-bearing functions -- the bug",
     "data:x64syscall #2: and nothing redefines RAX, so kernel_call returns the RAX:RDX pair it was handed instead of a result",
     "data:x64syscall #3: on, kernel_call recovers the number and all three arguments, and returns the syscall's own result",
