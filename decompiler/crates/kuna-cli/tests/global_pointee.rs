@@ -72,10 +72,7 @@ fn a_pointer_stored_to_a_global_is_not_dereferenced_through_the_global() {
                         "-fno-strict-aliasing",
                         "-DGLOBALPOINTEE_HARNESS",
                     ])
-                    .args([
-                        "-Wno-error=int-conversion",
-                        "-Wno-error=incompatible-pointer-types",
-                    ])
+                    .args(common::CC_GCC15_DEMOTE)
                     .arg("-o")
                     .arg(&exe)
                     .arg(&src)

@@ -40,7 +40,7 @@ env:
 jobs:
   gates:
     name: parity gates
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -198,7 +198,7 @@ jobs:
       github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.fork
       || contains(github.event.pull_request.labels.*.name, 'full-ci')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 180
     # Full debug information across the test executables can fill the runner disk.
     # Keep backtrace line numbers and the workspace's debug/overflow checks.

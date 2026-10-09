@@ -1652,6 +1652,12 @@ pub struct Architecture {
     /// and an entry AT an FDE start is always kept. Off restores the previous
     /// discovery set exactly; inert on any image with no `.eh_frame` FDEs.
     pub analysis_fdeinterior: bool,
+    /// (kuna) Add the extra entry points of a multi-entry `.cold` fragment
+    /// (`coldentry`); default **on**. An address strictly inside a single-function
+    /// FDE body that a `jmp`/`jcc rel32` from outside the body targets, and that
+    /// follows a no-fall-through instruction, is a function of its own. Off
+    /// restores the previous discovery set exactly; x86/x86-64 ELF only.
+    pub analysis_coldentry: bool,
     /// (kuna) Reject a discovered function entry that falls strictly inside a
     /// single-function `.pdata` `RUNTIME_FUNCTION` body (`pdatainterior`);
     /// default **on**. The PE half of [`Self::analysis_fdeinterior`] and the same
@@ -2767,6 +2773,7 @@ impl Architecture {
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
             analysis_fdeinterior: false,
+            analysis_coldentry: false,
             analysis_pdatainterior: false,
             analysis_pdbinterior: false,
             analysis_funcstart_patterns: false,
@@ -3126,6 +3133,7 @@ impl Architecture {
         self.analysis_eh_frame_full = false;
         // (kuna) DIV-61 `.eh_frame` FDE-interior entry suppression — default-ON.
         self.analysis_fdeinterior = true;
+        self.analysis_coldentry = true;
         // (kuna) `.pdata` RUNTIME_FUNCTION-interior entry suppression — default-ON.
         self.analysis_pdatainterior = true;
         // (kuna) PDB-procedure-interior entry suppression — default-ON.

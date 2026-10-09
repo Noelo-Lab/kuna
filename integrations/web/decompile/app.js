@@ -43,7 +43,7 @@ import { explain, idioms } from './mnemonics.js';
 import { frameModel, renderFrame, slotIndex } from './stack-frame.js';
 import { lineTags, commentStart } from './tags.js';
 import { renderXrefs, renderLocalCalls, localCallees, renderRefsDialog, useKind } from './xrefs-view.js';
-import { renderStringList } from './strings-view.js';
+import { renderStringList, stringRefsModel } from './strings-view.js';
 import { helpHtml } from './help.js';
 import { decodeBase64, pastedName } from './base64.js';
 
@@ -716,6 +716,19 @@ function markString(row) {
 
 const visibleStrings = () => [...els.strList.querySelectorAll('details[open] .str .sx')];
 
+let strFocus = false;
+const noteArea = (e) => { if (!els.xrefsDialog.contains(e.target)) strFocus = els.strList.contains(e.target); };
+document.addEventListener('pointerdown', noteArea, true);
+document.addEventListener('focusin', noteArea, true);
+
+/** The string `x` asks about: the one with the keyboard in the Strings list, else the one last picked there if nothing else was touched since. */
+function stringSubject() {
+  if (state.side !== 'strs' || !state.strings?.doc) return null;
+  const row = els.strList.contains(document.activeElement) ? document.activeElement.closest('.str') : null;
+  const addr = row?.dataset.addr || (strFocus ? state.strSel : null);
+  return addr ? state.strings.doc.strings.find((s) => s.address_hex === addr) || null : null;
+}
+
 let strRender = 0;
 els.strFilter.addEventListener('input', () => {
   cancelAnimationFrame(strRender);
@@ -755,6 +768,11 @@ els.strList.addEventListener('click', (e) => {
   const row = e.target.closest('.str');
   if (!row) return;
   const link = e.target.closest('a.xt[data-sites]');
+  if (e.target.closest('[data-act=str-refs]')) {
+    markString(row);
+    openStringXrefs(state.strings.doc.strings.find((s) => s.address_hex === row.dataset.addr));
+    return;
+  }
   if (link) {
     e.preventDefault();
     markString(row);
@@ -2161,6 +2179,11 @@ document.addEventListener('keydown', (e) => {
     openHelp();
     return;
   }
+  if (e.key === 'x' && stringSubject()) {
+    e.preventDefault();
+    openStringXrefs(stringSubject());
+    return;
+  }
   if (!state.current && e.key !== '/') return;
   if (hexKey(e)) {
     e.preventDefault();
@@ -3398,9 +3421,16 @@ function xrefsModel(subject, res, err) {
 }
 
 function showXrefs(subject, res = null, err = null) {
+  showRefsDialog(xrefsModel(subject, res, err));
+}
+
+let refsOpened = 0;
+
+function showRefsDialog(model, { ofString = false } = {}) {
   const dlg = els.xrefsDialog;
+  dlg.dataset.subject = ofString ? 'string' : '';
   const focusedAt = [...dlg.querySelectorAll('.xr-row')].indexOf(document.activeElement);
-  dlg.innerHTML = renderRefsDialog(xrefsModel(subject, res, err));
+  dlg.innerHTML = renderRefsDialog(model);
   const rows = dlg.querySelectorAll('.xr-row');
   (rows[Math.max(focusedAt, 0)] || dlg.querySelector('[data-act=xrefs-close]'))?.focus();
 }
@@ -3413,13 +3443,25 @@ function openXrefs() {
   const subject = xrefsSubject();
   const fnAddr = state.current.data.address_hex;
   const target = subject.fn || subject.data || subject.gaddr;
+  const opened = ++refsOpened;
+  const still = () => els.xrefsDialog.open && refsOpened === opened;
   if (!els.xrefsDialog.open) els.xrefsDialog.showModal();
   showXrefs(subject);
   if (!target || !state.caps.inspect) return;
   fetchXrefs(target).then(
-    (res) => { if (els.xrefsDialog.open && state.current?.data.address_hex === fnAddr) showXrefs(subject, res); },
-    (e) => { if (els.xrefsDialog.open && !(e instanceof KunaWorkerCancelledError)) showXrefs(subject, null, errorLine(e)); },
+    (res) => { if (still() && state.current?.data.address_hex === fnAddr) showXrefs(subject, res); },
+    (e) => { if (still() && !(e instanceof KunaWorkerCancelledError)) showXrefs(subject, null, errorLine(e)); },
   );
+}
+
+/** `x` on a string in the Strings list: every instruction that uses it, to jump from. */
+function openStringXrefs(s) {
+  if (!s) return;
+  hover.hide();
+  closeMenus();
+  refsOpened++;
+  if (!els.xrefsDialog.open) els.xrefsDialog.showModal();
+  showRefsDialog(stringRefsModel(s, { nameOf: stringNameOf }), { ofString: true });
 }
 
 function activateXref(row) {
@@ -3430,6 +3472,14 @@ function activateXref(row) {
     return;
   }
   const { fn: fnHex, site } = row.dataset;
+  if (els.xrefsDialog.dataset.subject === 'string') {
+    goToUse(fnHex, site);
+    if (narrowView.matches) {
+      els.work.classList.remove('fns');
+      els.fnsBtn.setAttribute('aria-expanded', 'false');
+    }
+    return;
+  }
   const fn = state.byAddr.get(fnHex);
   if (fn && fn.address_hex !== state.current.data.address_hex) openFunction(fn, { focusAddr: site || null });
   else if (site || fnHex) gotoAddr(site || fnHex);
