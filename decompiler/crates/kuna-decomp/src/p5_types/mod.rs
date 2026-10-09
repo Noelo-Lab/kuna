@@ -36,5 +36,4 @@ pub mod kuna_structheadless; // (kuna) a closed function's parameter read only p
 pub mod kuna_fieldtype; // (kuna) a synthesized field some access holds as a pointer is declared as that pointer
 pub mod kuna_structsynth; // (kuna) synthesize a struct type from a pointer parameter's constant-offset dereferences
 pub mod kuna_varargfloat; // (kuna) a variadic argument in a floating-point register is a double
-
-pub mod kuna_typequal;
+pub mod kuna_typequal; // (kuna) C type qualifiers on their own type layer

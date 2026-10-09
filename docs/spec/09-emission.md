@@ -13,8 +13,9 @@ parameters, return types, declarations, and casts with either internal or target
 C scalar names. A named typedef is printed by its alias rather than expanding
 its inherited qualifiers.
 When an access needs a cast for its width, the cast retains the pointee's
-qualification. A write through a const-qualified access path casts away const
-while retaining volatile, so the original write remains expressible in C.
+qualification. Value conversions ignore qualifiers (`cast.rs (cast_standard)`),
+so a store through `volatile float *p` prints `*p = x;` with no cast; only a
+pointer conversion that drops a `volatile` pointee still needs one.
 
 This phase renders the finished decompilation: it inserts the explicit
 cast/field-access operations a C compiler would need to *see* the recovered

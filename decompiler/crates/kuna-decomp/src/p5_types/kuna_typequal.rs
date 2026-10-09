@@ -83,6 +83,11 @@ pub fn is_volatile(ty: &Datatype) -> bool {
     effective_qualifiers(ty) & VOLATILE != 0
 }
 
+/// Converting a pointer to `current` into a pointer to `required` drops `volatile`.
+pub(crate) fn discards_volatile(required: &Datatype, current: &Datatype) -> bool {
+    is_volatile(current) && !is_volatile(required)
+}
+
 /// Loading a value drops its outer qualifiers, including those hidden by aliases.
 pub fn unqualified_value(mut ty: Rc<Datatype>) -> Rc<Datatype> {
     for _ in 0..64 {

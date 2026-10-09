@@ -134,7 +134,9 @@ pub(crate) fn is_volatile(data: &Funcdata, id: OpId) -> bool {
 
 /// [`is_volatile`] sharing `memo` across the LOADs of one unchanged op graph.
 pub(crate) fn is_volatile_with(data: &Funcdata, id: OpId, memo: &mut Memo) -> bool {
-    if let Some(pointer) = data.obank().get(id)
+    if let Some(pointer) = data.get_arch().types()
+        .filter(|types| types.has_volatile_types())
+        .and(data.obank().get(id))
         .filter(|op| op.code() == OpCode::CPUI_LOAD)
         .and_then(|op| op.get_in(1))
     {
@@ -144,14 +146,12 @@ pub(crate) fn is_volatile_with(data: &Funcdata, id: OpId, memo: &mut Memo) -> bo
         {
             return true;
         }
-        if data.get_arch().types().is_some_and(|types| types.has_volatile_types()) {
-            let mut budget = BUDGET;
-            if crate::kuna_typequal::address_type(data, pointer, &mut budget)
-                .and_then(|ty| ty.get_ptr_to())
-                .is_some_and(|ty| crate::kuna_typequal::is_volatile(&ty))
-            {
-                return true;
-            }
+        let mut budget = BUDGET;
+        if crate::kuna_typequal::address_type(data, pointer, &mut budget)
+            .and_then(|ty| ty.get_ptr_to())
+            .is_some_and(|ty| crate::kuna_typequal::is_volatile(&ty))
+        {
+            return true;
         }
     }
     target(data, id, memo).is_some()

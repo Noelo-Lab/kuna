@@ -874,11 +874,13 @@ pub mod flags {
     pub const F_ENUM: uint4 = 2048;
 }
 
+/// Only `volatile` reaches the type: `const` and `restrict` are accepted and dropped.
 fn type_qualifiers(flags: uint4) -> u8 {
-    use kuna_decomp::kuna_typequal::{CONST, RESTRICT, VOLATILE};
-    (if flags & self::flags::F_CONST != 0 { CONST } else { 0 })
-        | (if flags & self::flags::F_VOLATILE != 0 { VOLATILE } else { 0 })
-        | (if flags & self::flags::F_RESTRICT != 0 { RESTRICT } else { 0 })
+    if flags & self::flags::F_VOLATILE != 0 {
+        kuna_decomp::kuna_typequal::VOLATILE
+    } else {
+        0
+    }
 }
 
 /// A declarator: a base type plus an ordered list of modifications and an
