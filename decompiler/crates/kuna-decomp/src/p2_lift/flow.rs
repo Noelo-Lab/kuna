@@ -341,11 +341,9 @@ pub trait FlowEnvironment {
         false
     }
 
-    /// (kuna) GH-6882: is `op` a SPARC struct-return `unimp`-after-call trap
-    /// BRANCHIND to drop as a fall-through no-op? (C++ `kunaIsSparcStructRetTrap`).
-    /// // STUB(W4).
-    fn is_sparc_struct_ret_trap(&self, _fd: &Funcdata, _op: OpId) -> bool {
-        false
+    /// Return the trap producer for a SPARC struct-return marker branch when enabled.
+    fn sparc_struct_ret_trap_producer(&self, _fd: &Funcdata, _op: OpId) -> Option<OpId> {
+        None
     }
 
     /// (kuna `fastfailnoreturn`) Is `op` the CALLIND half of a Windows `int 0x29`
@@ -1387,8 +1385,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 }
                 OpCode::CPUI_BRANCHIND => {
                     // (kuna) GH-6882: SPARC struct-return `unimp` after a call.
-                    if self.env.is_sparc_struct_ret_trap(&self.data, curop) {
-                        //   -- STUB(W3-funcdata): op_destroy_raw deferred (loss).
+                    if let Some(producer) = self.env.sparc_struct_ret_trap_producer(&self.data, curop) {
+                        crate::kuna_sparcstructret::neutralize_trap_producer(&mut self.data, producer)?;
                         self.data.op_destroy_raw(curop)?;
                         op = None;
                         *isfallthru = true;

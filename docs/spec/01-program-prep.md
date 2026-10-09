@@ -469,7 +469,13 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   non-empty section out above `0x400000` (`RELOC_BASE`, matching CLE so addresses
   line up with angr's), apply the relocations, rebase defined symbols, and bind
   each undefined extern to a synthetic call target in an extern area above the
-  sections so calls render by name. The relocation encoder handles generic
+  sections so calls render by name. An adjacent SPARC `sethi`/`jmpl` pair
+  carrying `HI22`/`LO10` relocations to the same symbol with zero addends also
+  identifies that symbol as code, even when the ELF marks it `STT_NOTYPE`.
+  The jump must use the register written by `sethi` and discard the link or
+  write `%o7`; an ordinary address materialization or data load does not qualify.
+  This lets existing tail-call recovery resolve a named external destination
+  and preserve its delay-slot arguments. The relocation encoder handles generic
   absolute, relative, PLT-relative, and image-offset fields at 8/16/32/64 bits in
   the object's byte order, plus the instruction fields and ABI formulas for ARM
   `CALL`/`JUMP24`/Thumb branches/`REL32`/`PREL31`, AArch64 branch/page/low-12
@@ -3372,6 +3378,33 @@ start is always kept, so oracle 3's own product survives. ELF-only and inert
 without `.eh_frame` FDEs, which covers essentially the whole bare-metal ARM
 population (they unwind through `.ARM.exidx`), so the ARM entry-recall options
 compose with it unchanged.
+
+**(kuna) Except where a `.cold` fragment is entered more than once**
+(`coldentry`, default-**on**;
+`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_coldentry.rs`). GCC's
+hot/cold splitting moves a function's unlikely blocks into a separate `foo.cold`
+fragment with its own FDE, and when several unlikely paths are split out they are
+laid back to back in that ONE fragment, each reached by its own `jmp`/`jcc rel32`
+from the hot body. The FDE oracle names only the fragment's first address, so every
+later path is strictly inside an FDE body: no metadata oracle names it, and the hot
+function's decompile inlines it through the jump. Ghidra makes each of those jump
+targets a function, since it is reached from outside every body that holds it; on
+Ubuntu 22.04's stripped `/bin/bash` that is 18 entries in `[0x30c3d, 0x312b3]`.
+An address `t` strictly inside a single-function FDE body (the `fdeinterior`
+eligibility above) is added when (1) a direct `jmp rel32`/`jcc rel32` outside the
+body targets it — found by a byte scan of the executable sections for the `E9` /
+`0F 8x` encodings and confirmed by decoding the source; (2) a linear decode of the
+body from its start lands on `t`; and (3) the instruction before `t` is `ud2`,
+`ret`, `hlt` or a direct `jmp`, so nothing inside the fragment flows into it. Guard
+3 keeps an ordinary function's shared tail (reached by its own fall-through as well
+as another function's jump) whole; an indirect `jmp` does not satisfy it, since the
+block after one is a switch case as often as an entry. Candidates are pre-filtered
+on the bytes before `t` and a body is decoded only up to its last surviving
+candidate, so the pass costs one scan of the executable bytes plus short decodes
+(about 2 ms on `bash`). It decodes through the engine `Translate`, so it runs as a
+deferred entry pass at the commit point, and its entries join the inventory *after*
+the `fdeinterior` filter (which would otherwise reject every one of them by
+construction). x86/x86-64 ELF only; inert without `.eh_frame`.
 
 **(kuna) `.pdata` interiors are not function starts either** (`pdatainterior`,
 default-**on**, DIV-155;

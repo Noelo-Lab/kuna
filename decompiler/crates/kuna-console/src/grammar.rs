@@ -2671,6 +2671,16 @@ pub fn parse_type(
     factory: &dyn TypeFactory,
     org: DataOrg,
 ) -> KunaResult<(Rc<Datatype>, String)> {
+    let (ty, name, _) = parse_type_with_volatile(input, factory, org)?;
+    Ok((ty, name))
+}
+
+/// Parse a mapped object's type while retaining its outer volatile qualifier.
+pub fn parse_type_with_volatile(
+    input: &str,
+    factory: &dyn TypeFactory,
+    org: DataOrg,
+) -> KunaResult<(Rc<Datatype>, String, bool)> {
     let mut parser = CParse::new(factory, org, 4096);
     if !parser.parse_stream(input.as_bytes().to_vec(), DocType::ParameterDeclaration)? {
         return Err(KunaError::parse(parser.get_error().to_string()));
@@ -2688,7 +2698,14 @@ pub fn parse_type(
     }
     let name = decl.get_identifier().to_string();
     let ty = decl.build_type(factory, &org)?;
-    Ok((ty, name))
+    let qualifiers = decl.mods.iter()
+        .find_map(|m| match m {
+            TypeModifier::Pointer { flags } => Some(*flags),
+            TypeModifier::Function { .. } => Some(0),
+            TypeModifier::Array { .. } => None,
+        })
+        .unwrap_or(decl.flags);
+    Ok((ty, name, qualifiers & flags::F_VOLATILE != 0))
 }
 
 /// C++ `parse_protopieces(PrototypePieces &pieces,istream &s,Architecture *glb)`

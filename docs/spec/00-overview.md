@@ -1974,6 +1974,15 @@ lowering) and applied by
 | `volatile <addr>+<size>` | `volatile` | P1 code-data-partition |
 | `bytes <addr> <hex\|@FILE>` | `override bytes` | P1 code-data-partition |
 
+`map address` retains an object's outer `volatile` qualifier and marks a
+global object's entire byte range volatile, so `--assert 'data 0x20000 volatile int cursor'`
+has the same access semantics as a separate volatile range assertion.
+Declarator binding matters: `volatile int *p` qualifies the pointed-to data,
+while `int *volatile p` qualifies the mapped pointer itself. An array inherits
+its element qualifier. Function-local mappings carry the symbol attribute only;
+the global property map does not describe stack-local storage. Volatility remains
+a storage property.
+
 Four application points, and the ordering between them is forced rather than
 stylistic. **Image-scoped** directives state what memory holds before anything
 reads it. `bytes` replaces the mapped bytes at an address with the caller's own
@@ -2548,6 +2557,15 @@ The matching `option` is still applied afterwards so the run's configuration
 record is honest.
 
 ## 0.3 The IR substrate
+
+When `TransformManager` materializes a lane of an existing varnode, storage
+addresses follow the target's byte order, but consumption masks always follow
+bit significance. `create_var_replacement` preserves the lane's original
+least-significant-byte offset before computing its big-endian storage address,
+and passes that preserved offset to `transfer_varnode_properties`. Using the
+address offset here would swap the masks of a register pair and allow live
+pointer, loop-bound or floating point values to be replaced with zero. This
+applies to integer and FPU lanes.
 
 Partition lookup in `decompiler/crates/kuna-base/src/partmap.rs
 (PartMap::get_value_mut)` returns the value at the greatest split point no

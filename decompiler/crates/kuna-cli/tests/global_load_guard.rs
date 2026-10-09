@@ -58,6 +58,7 @@ fn a_store_before_a_pointer_load_is_kept_when_the_global_is_stored_again() {
             for level in ["-O0", "-O2"] {
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", level, "-fno-strict-aliasing", "-DGLOBALLOADGUARD_HARNESS"])
+                    .args(common::CC_GCC15_DEMOTE)
                     .args(&keep)
                     .arg("-o")
                     .arg(&exe)
