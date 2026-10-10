@@ -24,6 +24,7 @@ pub mod kuna_tiedphitrim;
 pub mod kuna_globalvalue;
 pub mod kuna_globalorder;
 pub mod kuna_calleepop;
+pub mod kuna_calleepopslot;
 pub mod kuna_cookiescramble;
 pub mod kuna_nulterminator;
 pub mod kuna_endptrbound;

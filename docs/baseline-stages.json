@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2482,
-    2482
+    2487,
+    2487
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -112,6 +112,11 @@
     "data:CALLEARITY FORMAT WITNESS #3: the sibling call keeps its three arguments in both passes",
     "data:CALLEARITY FORMAT WITNESS #4: a non-format constant never lends its longer arity",
     "data:CALLEARITY FORMAT WITNESS #5: the longer non-format call stays unchanged",
+    "data:CALLEEPOPSLOT #1: off lands the hidden return pointer on the local",
+    "data:CALLEEPOPSLOT #2: off leaves operator= without arguments",
+    "data:CALLEEPOPSLOT #3: on passes the hidden return pointer to operator=",
+    "data:CALLEEPOPSLOT #4: the first Note keeps its argument in both passes",
+    "data:CALLEEPOPSLOT #5: the second Note keeps its argument in both passes",
     "data:CALLEEPRESERVES #1: off, the value that crossed the thunk is a local nothing assigns",
     "data:CALLEEPRESERVES #2: off, f loses the parameter that value was loaded from",
     "data:CALLEEPRESERVES #3: on, EDX survives the thunk and f regains its second parameter",

@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_281() {
-    assert_eq!(kuna_num_settables(), 281);
-    assert_eq!(SETTABLE_TABLE.len(), 281);
+fn settable_count_is_282() {
+    assert_eq!(kuna_num_settables(), 282);
+    assert_eq!(SETTABLE_TABLE.len(), 282);
 }
 
 #[test]
-fn tier_counts_are_96_core_109_transform_76_analysis() {
+fn tier_counts_are_97_core_109_transform_76_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_96_core_109_transform_76_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (96, 109, 76));
+    assert_eq!((core, transform, analysis), (97, 109, 76));
 }
 
 #[test]
@@ -791,7 +791,8 @@ fn option_values_live_value_present_for_110() {
     // 117 -> 118: +1 for `varargsharedfloat` (live_field = vararg_shared_float).
     // 118 -> 119: +1 for `armfuncmode` (live_field = analysis_armfuncmode).
     // 119 -> 120: +1 for `armwalkmode` (live_field = analysis_armwalkmode).
-    assert_eq!(with_live, 120);
+    // 120 -> 121: +1 for `calleepopslot` (live_field = callee_pop_slot).
+    assert_eq!(with_live, 121);
 }
 
 #[test]
@@ -984,7 +985,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 257 -> 258: +1 for `bejoin`.
     // +1 for `coldentry`; its P1 row sits mid-table beside `fdeinterior`.
     // +1 for `thunkentry`; its P1 row sits mid-table beside `unmappedentry`.
-    assert_eq!(json.matches("},\n").count(), 280);
+    assert_eq!(json.matches("},\n").count(), 281);
 }
 
 #[test]
