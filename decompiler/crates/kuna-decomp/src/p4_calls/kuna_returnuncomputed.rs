@@ -321,6 +321,27 @@ pub(crate) fn slot_storage(data: &Funcdata, whole: VarnodeId, lsb: i32, width: i
     None
 }
 
+/// The high half and low-half size of `whole = ZEXT(hi) << 8*k`, the form
+/// `RuleConcatZero` rewrites the return pair `PIECE(hi, #0:k)` to.
+fn zero_low_pair(data: &Funcdata, def: OpId) -> Option<(VarnodeId, i32, VarnodeId)> {
+    let op = data.obank().get(def)?;
+    if op.code() != OpCode::CPUI_INT_LEFT || op.num_input() != 2 {
+        return None;
+    }
+    let whole = op.get_out()?;
+    let sa = data.vbank().get(op.get_in(1)?)?;
+    if !sa.is_constant() {
+        return None;
+    }
+    let ext = data.obank().get(data.vbank().get(op.get_in(0)?)?.get_def()?)?;
+    if ext.code() != OpCode::CPUI_INT_ZEXT {
+        return None;
+    }
+    let hi = ext.get_in(0)?;
+    let lo_size = data.vbank().get(whole)?.get_size() - data.vbank().get(hi)?.get_size();
+    (lo_size > 0 && sa.get_offset() == 8 * lo_size as u64).then_some((hi, lo_size, whole))
+}
+
 /// Repair a RETURN whose value is a return-recovery register **pair** with an
 /// uncomputed half: rewrite it to the half that carries a value, and destroy the
 /// now-dead concatenation.
@@ -337,12 +358,21 @@ pub(crate) fn slot_storage(data: &Funcdata, whole: VarnodeId, lsb: i32, width: i
 /// returns on purpose ([`crate::kuna_bejoin`]). The second register of an i386
 /// `EDX:EAX` join is never kept on its own; that RETURN returns nothing.
 ///
+/// A pair joined first register low on an ABI that returns the first register
+/// high ([`Funcdata::kuna_pairs_first_low`]) whose low half is a literal zero
+/// is read in its folded form `ZEXT(hi) << 8*k`: the zero is kept when the
+/// high half is uncomputed, as it is for any other literal.
+///
 /// Returns `true` when a RETURN was rewritten.
 pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
     // Collect first: the rewrite mutates the op bank.
     let mut fixes: Vec<(OpId, VarnodeId, OpId)> = Vec::new();
     let mut own_pairs: Vec<(OpId, VarnodeId, OpId)> = Vec::new();
     let mut drops: Vec<(OpId, OpId)> = Vec::new();
+    let mut zeros: Vec<(OpId, i32, OpId)> = Vec::new();
+    let moved = |data: &Funcdata, vn: VarnodeId, slot: &Address, size: i32| {
+        crate::kuna_retinputhalf::is_moved_back(data, slot, size) && computes_from(data, vn, 0, None)
+    };
     for retop in data.obank().iter_code(OpCode::CPUI_RETURN).collect::<Vec<_>>() {
         let Some(o) = data.obank().get(retop) else { continue };
         if o.is_dead() || o.get_halt_type() != 0 || o.num_input() < 2 {
@@ -350,6 +380,21 @@ pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
         }
         let Some(joined) = o.get_in(1) else { continue };
         let Some(def) = data.vbank().get(joined).and_then(|v| v.get_def()) else { continue };
+        if let Some((hi, lo_size, whole)) = zero_low_pair(data, def) {
+            if !data.kuna_pairs_first_low() || !spans_two_locations(data, whole) {
+                continue;
+            }
+            let hi_size = data.vbank().get(hi).map_or(0, |v| v.get_size());
+            let (Some(hi_slot), Some(_)) =
+                (slot_storage(data, whole, lo_size, hi_size), slot_storage(data, whole, 0, lo_size))
+            else {
+                continue;
+            };
+            if !computes_from(data, hi, 0, Some(&hi_slot)) && !moved(data, hi, &hi_slot, hi_size) {
+                zeros.push((retop, lo_size, def));
+            }
+            continue;
+        }
         let Some(piece) = data.obank().get(def) else { continue };
         // Only the two-register join return recovery builds; anything else is
         // someone else's op and stays.
@@ -371,11 +416,8 @@ pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
         let lo_slot = slot_storage(data, whole, 0, lo_size).unwrap_or(lo_addr);
         let hi_placed = computes_from(data, hi, 0, Some(&hi_slot));
         let lo_placed = computes_from(data, lo, 0, Some(&lo_slot));
-        let moved = |vn: VarnodeId, slot: &Address, size: i32| {
-            crate::kuna_retinputhalf::is_moved_back(data, slot, size) && computes_from(data, vn, 0, None)
-        };
-        let hi_moved = !hi_placed && moved(hi, &hi_slot, hi_size);
-        let lo_moved = !lo_placed && moved(lo, &lo_slot, lo_size);
+        let hi_moved = !hi_placed && moved(data, hi, &hi_slot, hi_size);
+        let lo_moved = !lo_placed && moved(data, lo, &lo_slot, lo_size);
         let keep = match (hi_placed || hi_moved, lo_placed || lo_moved) {
             // Both halves carry a value: a genuine wide return. Leave it alone.
             (true, true) => continue,
@@ -422,8 +464,12 @@ pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
         fixes.push((retop, keep, def));
     }
 
-    if fixes.is_empty() && drops.is_empty() {
+    if fixes.is_empty() && drops.is_empty() && zeros.is_empty() {
         return false;
+    }
+    for (retop, size, piece) in zeros {
+        let zero = data.new_constant(size, 0);
+        fixes.push((retop, zero, piece));
     }
     fixes.extend(own_pairs);
     let mut scratch: Vec<OpId> = Vec::new();

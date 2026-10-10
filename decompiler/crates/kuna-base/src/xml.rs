@@ -2050,7 +2050,9 @@ mod tests {
         // seta/setae/setbe/setb keeps its unordered case
         // and kuna-thunkentry / the target of a jmp thunk is a function entry
         // and kuna-armwalkmode / a bl target keeps A32 after a blx to Thumb
-        assert_eq!(count, 483, "corpus file count drifted");
+        // and kuna-sparc-zeropair / a SPARC int's return 0 is not the second
+        // argument shifted into the high word (#796)
+        assert_eq!(count, 484, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

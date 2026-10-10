@@ -8237,16 +8237,16 @@ fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
 /// `add_one` and `triple_plus` are left out: kuna drops a half of the first
 /// (on either endianness), and in the second cannot follow MIPS's unrelocated
 /// call. SPARC `triple_plus` reads the `%o0:%o1` pair its call to `triple`
-/// returns (#862). SPARC `keep_zero` is left out: `restore` hands the
-/// second argument back in `%o1`, and the pair still prints that argument
-/// shifted into the high word, as it did before the join order was fixed.
+/// returns (#862). On SPARC `restore` hands the second argument back in `%o1`,
+/// and `keep_zero` and `same` printed it shifted into the high word on their
+/// `return 0` path (#796).
 #[test]
 fn a_big_endian_register_pair_round_trips_through_the_printed_c() {
     const ALL: &[&str] = &["wide_mul", "add_one", "triple", "triple_plus", "same", "keep_zero"];
     let cases: [(&str, bool, &[&str]); 6] = [
         ("bejoin_ppc32_be.o", true, ALL),
         ("bejoin_arm32_be.o", true, ALL),
-        ("bejoin_sparc32_be.o", true, &["wide_mul", "add_one", "triple", "triple_plus", "same"]),
+        ("bejoin_sparc32_be.o", true, ALL),
         ("bejoin_mips32_be.o", true, &["wide_mul", "triple", "same", "keep_zero"]),
         ("bejoin_ppc32_le.o", false, ALL),
         ("bejoin_arm32_le.o", false, ALL),
@@ -8497,18 +8497,21 @@ fn bejoin_stubs(printed: &str) -> (String, String) {
 /// in the ABI's order it keeps the wrong one, and printed `both` as `v1 <<
 /// 0x20`, `bound`'s pair returns with their halves swapped, and the byte
 /// readers as `char`. These stay joined as before and keep the first
-/// register. Every function is compiled with gcc and clang at -O0 and -O2 and
-/// run against the source. Left out: `hi_only` returns `(u64)x << 32` with the
+/// register. `zero_after` and `one_after` keep the second argument in `%i1`
+/// after passing it to a call, and their `return 0` printed it shifted into
+/// the high word, folded into the pair before the repair read it (#796).
+/// Every function is compiled with gcc and clang at -O0 and -O2 and run
+/// against the source. Left out: `hi_only` returns `(u64)x << 32` with the
 /// same zero in `$3` as the `int` functions and prints as its high word, as
-/// before; `pgetc_like` and `expand` print a pair of the value and `%i1`, as
-/// before, since the window's leftover folds before it can be dropped.
+/// before; `pgetc_like`, `expand` and -O0 `one_after` print a pair of the
+/// value and a value they also used in `%i1`, as before.
 #[test]
 fn a_big_endian_function_returning_one_register_keeps_it() {
     let sp = specs();
     let cases: [(&str, &[&str]); 5] = [
         ("bejoin_zero_mips32_O0.o", &["realeof", "both"]),
-        ("bejoin_window_sparc32_O0.o", &["mark"]),
-        ("bejoin_window_sparc32_O2.o", &["back4"]),
+        ("bejoin_window_sparc32_O0.o", &["mark", "zero_after"]),
+        ("bejoin_window_sparc32_O2.o", &["back4", "zero_after", "one_after"]),
         ("bejoin_narrow_sparc32_O0.o", &["bound", "ibyte", "ubyte", "ihalf", "ibyte_leaf"]),
         ("bejoin_narrow_sparc32_O2.o", &["bound", "ibyte", "ubyte", "ihalf", "ibyte_leaf"]),
     ];
@@ -8536,6 +8539,10 @@ fn a_big_endian_function_returning_one_register_keeps_it() {
                 "mark" => "  for (int n = 0; n < 8; n++) {\n    char buf[8] = \"abcdefg\";\n    \
                            bad += (long long)mark(buf, n) != (long long)(n + 1) || buf[n] != 0 || buf[0] != 0;\n  }\n",
                 "back4" => "  for (int i = 5; i < 29; i++)\n    bad += (long long)back4(text + i) != (long long)ref_back4(text + i);\n",
+                "zero_after" => "  for (int i = 0; i < 10; i++)\n    for (int j = 0; j < 10; j++)\n      \
+                                 bad += (long long)zero_after(xs[i], xs[j]) != 0LL;\n",
+                "one_after" => "  for (int i = 0; i < 10; i++)\n    for (int j = 0; j < 10; j++)\n      \
+                                bad += (long long)one_after(xs[i], xs[j]) != (long long)(xs[i] > 0);\n",
                 "bound" => "  for (int i = 0; i < 16; i++)\n    for (int n = 0; n < 10; n++) {\n      \
                             int s[4] = {(i & 1) ? 15 : 3, (i >> 1) & 1, 1000 + i, (i >> 2) & 1};\n      \
                             unsigned int v = (unsigned int)xs[n] >> 2;\n      \
