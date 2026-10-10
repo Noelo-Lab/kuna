@@ -58,6 +58,9 @@ mod coff_strings;
 #[path = "compact_switch_cli.rs"]
 mod compact_switch_cli;
 
+#[path = "contiguous_byte_frame.rs"]
+mod contiguous_byte_frame;
+
 #[path = "crypto_cli.rs"]
 mod crypto_cli;
 
