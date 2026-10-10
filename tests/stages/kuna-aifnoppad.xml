@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: no AIF gap entry starts on nop padding
+    (`option aifnoppad on|off`, default-ON).
+
+    Issue:      kuna GH-299 - aif plants entries that are not function starts
+                on large i386 PEs; most of the non-start ones are the nop runs
+                in front of Wine's relay thunks.
+    Stage:      P1 code/data partition - the AIF gap-walk probe
+                (`analyzers/aif/kuna_aifnoppad.rs`).
+    P0 assert:  `option aifnoppad on|off`.
+
+    The XML wrapper only provides the harness architecture.  Every pass clears
+    it and loads `aifnoppad_pe_i386.exe` (source `aifnoppad_pe_i386.asm`
+    beside it): five called stubs open with nine nops, so `nop, nop` is a
+    shared prologue fingerprint; eight nops pad from `relay`'s `ret 4` to the
+    called `hot` at 0x401230; `dead` at 0x401239 opens with `mov edi,edi`
+    straight after a return; `lone` at 0x40124c sits behind six nops with a
+    prologue nothing else shares.  Neither `dead` nor `lone` is referenced.
+
+    Pass 1 (`mode aggressive`, `option aifnoppad off`) reproduces the bug:
+    the inventory lists sub_401228 and sub_401248, both on nops.
+    Pass 2 (`mode aggressive`, shipped default) drops both, lists `lone` at
+    its own address, and keeps `dead`: `mov edi,edi` is not padding.
+    Pass 3 (`mode aggressive`, `option aif off`) shows `dead` and `lone` are
+    the gap walk's own finds.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/aifnoppad_pe_i386.exe</com>
+  <com>mode aggressive</com>
+  <com>option aifnoppad off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/aifnoppad_pe_i386.exe</com>
+  <com>mode aggressive</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/aifnoppad_pe_i386.exe</com>
+  <com>mode aggressive</com>
+  <com>option aif off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>phase catalog aifnoppad</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-AIFNOPPAD #1: hot is a function in all three passes" min="3" max="3">0x401230 sub_401230</stringmatch>
+<stringmatch name="KUNA-AIFNOPPAD #2: the padding in front of hot is a function only with the option off" min="1" max="1">0x401228 sub_401228</stringmatch>
+<stringmatch name="KUNA-AIFNOPPAD #3: the padding in front of lone is a function only with the option off" min="1" max="1">0x401248 sub_401248</stringmatch>
+<stringmatch name="KUNA-AIFNOPPAD #4: lone is found at its own address only with the option on" min="1" max="1">0x40124c sub_40124c</stringmatch>
+<stringmatch name="KUNA-AIFNOPPAD #5: the mov edi,edi entry after a return stays an AIF function" min="2" max="2">0x401239 sub_401239</stringmatch>
+<stringmatch name="KUNA-AIFNOPPAD #6: the catalog documents it as a default-on P1 code/data-partition option" min="1" max="1">"option": "aifnoppad", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
+</decompilertest>

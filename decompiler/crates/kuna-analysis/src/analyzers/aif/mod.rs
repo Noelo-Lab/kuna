@@ -110,6 +110,7 @@ use crate::listing::{decode::{decode_one_with_assembly, Decoded}, FlowKind, List
 
 pub mod kuna_aifbracket;
 pub mod kuna_aifcorroborate;
+pub mod kuna_aifnoppad;
 pub mod kuna_aifstrict;
 pub mod kuna_poolentry;
 pub(crate) mod kuna_entrychecks;
@@ -803,6 +804,8 @@ fn follow_subroutine(
 /// an aligned address or a hole's first byte. `aifcorroborate` (GH-313) restores
 /// upstream's second fingerprint test in [`kuna_aifcorroborate`]: an accept must
 /// either add information or match a prologue 50 discovered functions share.
+/// `aifnoppad` (GH-299) keeps every entry off padding and zero fill in [`kuna_aifnoppad`].
+#[allow(clippy::too_many_arguments)]
 pub fn run_aif(
     listing: &Listing,
     translate: &dyn Translate,
@@ -811,13 +814,15 @@ pub fn run_aif(
     aifstrict: bool,
     aifcorroborate: bool,
     aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
+    aifnoppad: bool,
 ) -> Vec<u64> {
     let _probe = arm_gap_probe_scope(translate);
     let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
-    run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate, aifbracket)
+    run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate, aifbracket, aifnoppad)
 }
 
 /// Retain pre-frame validation extents while admitting starts only in current gaps.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_aif_after_frames(
     listing: &Listing,
     prior: &Listing,
@@ -826,11 +831,12 @@ pub(crate) fn run_aif_after_frames(
     aifstrict: bool,
     aifcorroborate: bool,
     aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
+    aifnoppad: bool,
 ) -> Vec<u64> {
     let _probe = arm_gap_probe_scope(translate);
     let mut decoder = GapDecoder::new(translate, code_space, listing.exec_ranges());
     decoder.prior_partition = Some(prior);
-    run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate, aifbracket)
+    run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate, aifbracket, aifnoppad)
 }
 
 /// Probe ARM gaps without publishing their modes; local IT state remains active.
@@ -848,8 +854,11 @@ fn run_aif_with_decoder(
     aifstrict: bool,
     aifcorroborate: bool,
     aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
+    aifnoppad: bool,
 ) -> Vec<u64> {
-    let gap_walk = GapWalk { strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket };
+    let gap_walk = GapWalk {
+        strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket, noppad: aifnoppad,
+    };
     aif_candidates(listing, listing, decoder, gap_walk, &BTreeMap::new(), None, None)
 }
 
@@ -859,6 +868,7 @@ struct GapWalk<'e> {
     strict: bool,
     corroborate: bool,
     bracket: Option<&'e kuna_aifbracket::BracketEvidence>,
+    noppad: bool,
 }
 
 /// Frame-prefix probes skip claimed spans and gaps containing no frame roots.
@@ -872,8 +882,9 @@ fn aif_candidates(
     roots: Option<&BTreeSet<u64>>,
     mut bodies: Option<&mut BTreeMap<u64, ProbedBody>>,
 ) -> Vec<u64> {
-    let GapWalk { strict: aifstrict, corroborate: aifcorroborate, bracket } = policy;
+    let GapWalk { strict: aifstrict, corroborate: aifcorroborate, bracket, noppad } = policy;
     let bracket = bracket.filter(|_| roots.is_none());
+    let mut padding = (noppad && roots.is_none()).then(|| kuna_aifnoppad::PaddingRuns::new(decoder));
     if corpus.function_count() < MINIMUM_FUNCTION_COUNT || corpus.num_instructions() == 0 {
         return Vec::new();
     }
@@ -930,9 +941,15 @@ fn aif_candidates(
         } else {
             gap_start.saturating_add(1)
         };
-        let probe_here =
-            !aifstrict || kuna_aifstrict::probe_allowed(listing, gap_start);
-        if probe_here && listing.is_undefined(gap_start) && !claimed.contains(&gap_start) {
+        let probe_here = (!aifstrict || kuna_aifstrict::probe_allowed(listing, gap_start))
+            && listing.is_undefined(gap_start) && !claimed.contains(&gap_start);
+        // (kuna, `aifnoppad`) No entry starts on filler: filler in front of a known
+        // function or zero fill is not probed, and an accept moves past padding.
+        let filler = match &mut padding {
+            Some(runs) if probe_here => runs.classify(listing, decoder, gap_start),
+            _ => kuna_aifnoppad::Filler::No,
+        };
+        if probe_here && filler != kuna_aifnoppad::Filler::Refuse {
             // (kuna, `aifbracket`) A fragment of the enclosing known function is
             // refused but, like an `aifcorroborate` refusal, consumes its body.
             let probe = match probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate) {
@@ -944,10 +961,14 @@ fn aif_candidates(
             match probe
             {
                 Probe::Accept(body) => {
+                    let entry = match filler {
+                        kuna_aifnoppad::Filler::Before(at) if body.contains(&at) => at,
+                        _ => gap_start,
+                    };
                     if let Some(bodies) = &mut bodies {
-                        bodies.insert(gap_start, body.iter().map(|&at| (at, decoder.recorded(at))).collect());
+                        bodies.insert(entry, body.iter().map(|&at| (at, decoder.recorded(at))).collect());
                     }
-                    accepted.insert(gap_start);
+                    accepted.insert(entry);
                     let body_max = body.iter().copied().max().unwrap_or(gap_start);
                     advanced = body_max.saturating_add(1);
                     claimed.extend(body);
@@ -1204,7 +1225,7 @@ fn reconcile_frame_prefixes(
 ) -> BTreeMap<u64, u64> {
     let mut accepted = roots.clone();
     let mut replacements = BTreeMap::new();
-    let policy = GapWalk { strict, corroborate, bracket: None };
+    let policy = GapWalk { strict, corroborate, bracket: None, noppad: false };
     let prefixes = aif_candidates(listing, corpus, decoder, policy, &claimed, Some(roots), Some(bodies));
     for prefix in prefixes {
         if !listing.is_undefined(prefix) {

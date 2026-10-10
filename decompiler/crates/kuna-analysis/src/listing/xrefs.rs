@@ -1240,12 +1240,12 @@ fn gap_entries(
     if let Some(prior) = frame {
         crate::aif::run_aif_after_frames(
             &listing, prior, translate, Rc::clone(code_space),
-            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket,
+            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket, arch.analysis_aifnoppad,
         )
     } else {
         crate::aif::run_aif(
             &listing, translate, Rc::clone(code_space), listing.exec_ranges(),
-            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket,
+            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket, arch.analysis_aifnoppad,
         )
     }
 }

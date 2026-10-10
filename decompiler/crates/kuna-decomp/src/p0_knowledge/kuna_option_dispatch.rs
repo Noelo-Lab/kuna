@@ -1045,6 +1045,9 @@ kuna_options! { self, p1;
     "aifbracket" => {
         on_off!(analysis_aifbracket, "AIF bracketed-candidate reject (GH-299)")
     },
+    "aifnoppad" => {
+        on_off!(analysis_aifnoppad, "AIF padding/zero-fill candidate reject (GH-299)")
+    },
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
     },
