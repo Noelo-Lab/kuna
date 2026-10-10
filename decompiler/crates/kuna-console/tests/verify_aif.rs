@@ -223,6 +223,7 @@ fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
             &exec,
             false,
             false,
+            None,
         );
         (count, insns, entries)
     };

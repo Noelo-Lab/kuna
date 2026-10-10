@@ -673,6 +673,10 @@ pub fn run_listing_consumers(
         return Vec::new();
     }
     let mut seeds = listing_seeds_for_language(&file, bytes, Some(arch.get_description()));
+    let bracket_evidence = std::cell::OnceCell::new();
+    let bracket = |exec: &[(u64, u64)]| arch.analysis_aifbracket.then(|| {
+        bracket_evidence.get_or_init(|| crate::aif::kuna_aifbracket::BracketEvidence::from_object(&file, exec))
+    });
     // (kuna, recursive-descent discovery) When the prologue-pattern pass is active
     // (`funcstart_patterns`, default-ON for non-x86-64 on `decompile-all`, DIV-20),
     // seed the recursive-descent walk with its `<patternpairs>` function starts too — not
@@ -885,7 +889,7 @@ pub fn run_listing_consumers(
                         } else { Vec::new() };
                         let mut checked = crate::aif::kuna_entrychecks::run(
                             &listing, Some(&original), arch, translate,
-                            std::rc::Rc::clone(code_space), pointers,
+                            std::rc::Rc::clone(code_space), pointers, bracket(listing.exec_ranges()),
                         );
                         drop(probe);
                         checked.entries.retain(|root| !rejected.contains(root));
@@ -1048,6 +1052,7 @@ pub fn run_listing_consumers(
             let mut aif_out = AnalysisOutput::default();
             let checked = frame_aif.unwrap_or_else(|| crate::aif::kuna_entrychecks::run(
                 &listing, None, arch, translate, std::rc::Rc::clone(code_space), ptrentry_out.clone(),
+                bracket(listing.exec_ranges()),
             ));
             aif_out.entries = checked.entries;
             if !checked.pool_entries.is_empty() {

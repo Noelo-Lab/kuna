@@ -540,6 +540,11 @@ impl Listing {
         ))
     }
 
+    /// The last decoded instruction that starts strictly before `vma`.
+    pub fn instruction_before(&self, vma: u64) -> Option<&Insn> {
+        self.insns.range(..vma).next_back().map(|(_, insn)| insn)
+    }
+
     /// The VMA of the first decoded instruction that starts strictly after `vma`
     /// (the upper bound of an undefined gap that begins at `vma`). `None` if no
     /// decoded instruction starts after `vma` (the gap runs to the end of the

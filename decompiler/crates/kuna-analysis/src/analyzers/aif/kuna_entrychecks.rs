@@ -23,6 +23,7 @@ pub(crate) fn run(
     translate: &dyn Translate,
     code_space: Rc<AddrSpace>,
     pointer_entries: Vec<u64>,
+    bracket: Option<&super::kuna_aifbracket::BracketEvidence>,
 ) -> CheckedAif {
     let mut entries = if let Some(prior) = pre_frame {
         super::run_aif_after_frames(
@@ -32,6 +33,7 @@ pub(crate) fn run(
             Rc::clone(&code_space),
             arch.analysis_aifstrict,
             arch.analysis_aifcorroborate,
+            bracket,
         )
     } else {
         super::run_aif(
@@ -41,6 +43,7 @@ pub(crate) fn run(
             listing.exec_ranges(),
             arch.analysis_aifstrict,
             arch.analysis_aifcorroborate,
+            bracket,
         )
     };
     let mut pool_entries = Vec::new();

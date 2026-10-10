@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2463,
-    2463
+    2467,
+    2467
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -766,6 +766,10 @@
     "data:JUMPTABLEMAX #2: every case of the table is a case label",
     "data:JUMPTABLEMAX #3: `option jumptablemax 2` refuses the four-case table and the dispatch prints as a call",
     "data:JUMPTABLEMAX #4: the lower cap prints no case label, so the one `case 0:` is the default pass",
+    "data:KUNA-AIFBRACKET #1: dispatch is a function in all three passes",
+    "data:KUNA-AIFBRACKET #2: the fragment inside dispatch is a function only with the option off",
+    "data:KUNA-AIFBRACKET #3: the pointer-referenced routine after padding stays an AIF function",
+    "data:KUNA-AIFBRACKET #4: the catalog documents it as a default-on P1 code/data-partition option",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
     "data:KUNA-ASSERT #2: kassert list reports the P3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic P9 assertion as HINT via HARD mechanism",

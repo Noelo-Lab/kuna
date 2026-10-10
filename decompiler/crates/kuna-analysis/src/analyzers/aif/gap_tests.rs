@@ -84,7 +84,7 @@ fn rejected_padding_does_not_retain_the_scanned_image() {
     for size in [4096, 65536] {
         let (engine, space, listing) = padding_fixture(size, 20);
         let mut decoder = GapDecoder::new(&engine, space, listing.exec_ranges());
-        let entries = run_aif_with_decoder(&listing, &mut decoder, true, false);
+        let entries = run_aif_with_decoder(&listing, &mut decoder, true, false, None);
         assert!(entries.is_empty(), "padding is not a function");
         assert!(
             decoder.decoded_addresses.len() > size / 8,
@@ -103,7 +103,7 @@ fn aif_activation_boundary_does_not_hide_the_gap_scan() {
     for count in [19, 20, 21] {
         let (engine, space, listing) = padding_fixture(4096, count);
         let mut decoder = GapDecoder::new(&engine, space, listing.exec_ranges());
-        assert!(run_aif_with_decoder(&listing, &mut decoder, true, false).is_empty());
+        assert!(run_aif_with_decoder(&listing, &mut decoder, true, false, None).is_empty());
         assert_eq!(decoder.decoded_addresses.is_empty(), count < 20);
     }
 }
@@ -232,7 +232,7 @@ fn retiring_and_span_scanning_preserve_entries_and_first_decode_order() {
                 let mut reference = GapDecoder::new(&old, old_space, old_listing.exec_ranges());
                 let mut candidate = GapDecoder::new(&new, new_space, new_listing.exec_ranges());
                 let want = legacy_walk(&old_listing, &mut reference, strict, corroborate);
-                let got = run_aif_with_decoder(&new_listing, &mut candidate, strict, corroborate);
+                let got = run_aif_with_decoder(&new_listing, &mut candidate, strict, corroborate, None);
                 assert_eq!(
                     got, want,
                     "{kind}, strict={strict}, corroborate={corroborate}"

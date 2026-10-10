@@ -4555,13 +4555,37 @@ the cursor past the accepted body — a phantom accepted one halfword inside a l
 pool consumes the real function behind it. Off restores the byte-granular cursor
 exactly.
 
-The complementary reject the issue asks for — refuse a candidate bracketed by a known
-function — is deliberately absent. The Listing's function model is entry-ordered and
-carries no extents, so "this hole lies inside one body" can only be approximated by
-the interval between known entries, and on a sparsely discovered image that
-approximation swallows whole unexplored regions rather than one body's interior. It
-is the `fdeinterior` question (§1.5) asked of an image that has no unwind extents to
-answer it with, and the answer needs real per-instruction walk ownership.
+(kuna, GH-299) The complementary reject the issue asks for — refuse a candidate
+bracketed by a known function — is `aifbracket` (default-on;
+`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifbracket.rs`). Some holes
+are not gaps between functions but blocks inside a function the walk already knows,
+behind a dispatch it could not follow, an undecodable instruction, or a call it
+believes does not return; a block there that opens with a common prologue and
+branches back into the function's decoded code passes both acceptance tests, since
+the validity walk counts that branch as adding information. The Listing's function
+model is entry-ordered and carries no extents, so "this hole lies inside one body"
+cannot be read off the interval between known entries — on a sparsely discovered
+image nearly every hole lies between two of them, and an interval test swallows
+whole unexplored regions. It is the `fdeinterior` question (§1.5) asked of an image
+with no unwind extents, and the candidate's own speculative body answers it instead:
+an accept is a fragment of its enclosing function when that body falls through or
+jumps (not calls) into an instruction the walk decoded that is not a function entry
+and lies in the same entry interval as the candidate. A fragment is refused unless
+boundary evidence says a function starts there anyway: the walk files a reference to
+it, or an aligned pointer-sized word in an allocated section holds its address; it
+lies within the first word of a hole that a return, a direct unconditional jump or a
+no-return call opens (the word admits the function behind a one-word A32 literal
+pool); or the instruction ending exactly at it is alignment padding (`nop`, `int3`,
+a self-move or self-`lea`), a return or an unconditional jump. A hole a computed jump
+opens has no such boundary, which is exactly the unresolved-switch case. Like an
+`aifcorroborate` refusal, a refused fragment still consumes its body so the cursor
+does not resume inside it. The refusal runs only in the plain gap walk (both the
+Listing and the reference-walk callers); the frame-prefix reconciliation, which
+replaces one accepted root by another, is untouched. Scored against unstripped twins
+it removes 1,291 to 2,874 mid-body entries per corpus and mode (ARM ELF, i386 PE)
+without losing or gaining a true function start; most of the mid-body entries that
+remain never touch decoded code — the tail of a function that ends in its own return
+— and are outside what a flow-join proof can see.
 
 (kuna, GH-313) Upstream applies a **second** fingerprint test that kuna's port
 dropped. Its analyzer refuses a candidate twice — once on the shared-prologue count
