@@ -294,6 +294,7 @@ pub static LANG_RUST: LangProfile = LangProfile {
         paren_conditions: false,
         integer_suffixes: false,
         integer_promotion: false,
+        signed_text_byte: false,
     },
     forms: LangForms {
         proto: ProtoForm::RustFnArrow,
@@ -327,8 +328,6 @@ mod tests;
 // through a `LangForms` match in `printc.rs`, so the C path is a different arm
 // and cannot be perturbed by anything written here.
 // ===========================================================================
-
-use kuna_base::types::int4;
 
 use crate::architecture::Architecture;
 use crate::context::BlockId;
@@ -833,31 +832,13 @@ impl PrintC {
         if case.isdefault {
             self.emit.print(self.lang().kw_default, SyntaxHighlight::KeywordColor);
         } else {
-            let jt_index = fd.sblocks_ref().block(blk).switch_jt_index();
-            let nlabels = match (jt_index, case.basicblock) {
-                (Some(j), Some(bb)) => {
-                    fd.get_jump_table(j as int4).num_indices_by_block(fd, bb).unwrap_or(1).max(1)
-                }
-                _ => 1,
-            };
-            let signed = jt_index
-                .map(|j| fd.get_jump_table(j as int4).kuna_has_signed_labels())
-                .unwrap_or(false);
-            let sz = self.switch_var_size(fd, blk);
-            for i in 0..nlabels {
+            for i in 0..self.switch_case_label_count(fd, blk, &case) {
                 if i != 0 {
                     self.emit.spaces(1, 0);
                     self.emit.print("|", SyntaxHighlight::NoColor);
                     self.emit.spaces(1, 0);
                 }
-                let val = match (jt_index, case.basicblock) {
-                    (Some(j), Some(bb)) => {
-                        let ind =
-                            fd.get_jump_table(j as int4).get_index_by_block(fd, bb, i).unwrap_or(0);
-                        fd.get_jump_table(j as int4).get_label_by_index(ind)
-                    }
-                    _ => case.label,
-                };
+                let (val, sz, signed) = self.switch_case_label(fd, arch, blk, &case, i);
                 match firstop.or_else(|| self.any_op(fd, case.block)) {
                     Some(op) => {
                         if signed {
@@ -876,10 +857,14 @@ impl PrintC {
                     // No op to hang the constant's markup on. C emits `case :`
                     // here, which is merely odd; a `match` arm with no pattern
                     // does not parse, so the value is printed directly.
-                    None => self.emit.print(
-                        &format!("{}", val as i64),
-                        SyntaxHighlight::ConstColor,
-                    ),
+                    None => {
+                        let text = if signed {
+                            kuna_base::address::sign_extend(val as i64, sz * 8 - 1).to_string()
+                        } else {
+                            val.to_string()
+                        };
+                        self.emit.print(&text, SyntaxHighlight::ConstColor)
+                    }
                 }
             }
         }

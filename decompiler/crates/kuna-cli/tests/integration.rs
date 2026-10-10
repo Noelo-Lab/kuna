@@ -163,6 +163,9 @@ mod name_miss_cli;
 #[path = "narrow_extension.rs"]
 mod narrow_extension;
 
+#[path = "narrow_switch_labels.rs"]
+mod narrow_switch_labels;
+
 #[path = "narrow_zext_returns.rs"]
 mod narrow_zext_returns;
 
