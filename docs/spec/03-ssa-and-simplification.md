@@ -1887,6 +1887,65 @@ value and every lane byte is provably zero — the broadcast mask, and the only
 wide constant mask the engine constructs. Settable `simdlane`, shipped default
 **on**.
 
+**Wide-slice SSA reduction** (`option wideslice`, default **on**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_wideslice.rs
+(RuleWideSlice)`, in the repeated analysis pool. Heritage widens each partial
+lane write of a vector register by joining it with the bytes below it
+(`normalize_write_size`), so a run of byte writes leaves intermediates 2..15
+bytes wide, and `RuleConcatZext`/`RuleConcatZero` keep manufacturing such widths
+while they fold zero lanes. Nothing upstream takes a 9..15-byte value apart
+again: `SubvariableFlow` stops at a 64-bit mask, `RuleDumptyHump`,
+`RuleSubCommute` and `RuleShiftSub` do not cross a piece boundary, and lane
+division accepts only lane-aligned `PIECE`s. The rule pushes the demanded
+`SUBPIECE` through `PIECE`, byte-aligned logical shifts and
+`INT_AND`/`INT_OR`/`INT_XOR` as bitvector identities — a slice straddling a
+`PIECE` becomes a `PIECE` of two slices, a slice reaching into a shift's zero
+fill becomes a zero-extended shorter slice — without matching a function
+signature, loop, source type or vector instruction. Free inputs, type locks,
+precision marks, invalid ranges, non-byte shifts and arithmetic shifts are
+refused.
+
+Power-of-two widths (8, 16, 32, 64) are refused on purpose. Those are the
+laned-register widths `ActionLaneDivide`, `simdlane` and `constspaceload` own,
+and slicing through them before lane division runs breaks their lane view:
+without the gate seven stage assertions regress and the byte-sum loop itself
+comes out as `CONCAT12(...) & 0xffffffffffff00ff`. Rebuilding the heritage
+ladder as an aligned tree instead was tried and does not reach the clean
+output, because the rule pool recreates the odd widths. The default is
+byte-identical on the datatest corpus (0/675) and within run-to-run noise on a
+whole-firmware `decompile-all`; `option wideslice off` leaves the wide
+intermediates to upstream's rules. `tests/stages/kuna-wideslice.xml` pins clang
+`-O3` SSE byte-unpacking in both passes (off: six 13-byte locals and ten lines of
+`SUB13x` reads; on: eight direct lane additions);
+`gh275-spillargtrial.xml` independently exercises a 12-byte packed-double tree.
+
+**De-vectorized reductions** (`option devectorize`, default **off**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_devectorize.rs
+(ActionDevectorize)`, in the fullloop tail beside the stack-guard and
+security-check strippers. clang and gcc vectorize `for (i) sum += a[i]` into a
+guard `length >= S`, a stride-S loop with one accumulator per lane, a
+horizontal fold, an early return when `length & -S == length`, and a scalar
+copy of the loop that finishes the remainder or, when the guard failed, runs
+from zero. After the wide-slice reduction the vector arm is S copies of the
+scalar body in a different order. The action matches the whole shape on SSA and
+proves it: the accumulators and the induction variable start at zero; each lane
+zero-extends a disjoint E-byte slice of a load at `base + i*E + c`, and the
+lanes tile exactly S elements for a power-of-two S the guard bounds; the fold
+adds every accumulator once; the scalar loop starts at `length & -S` with the
+fold, or at zero with zero, steps one element and exits at `length`; both exits
+hand back their sums (the early return and the scalar exit, or a shared join
+whose other phis agree slot for slot); every block of the arm is free of side
+effects; and nothing defined in the arm is read outside it except on a phi slot
+of the join. Integer addition is associative and commutative modulo 2^(8Z), so
+the scalar loop from zero computes the same value on every input; the guard's
+vector edge is removed (`remove_branch`) and the arm is collected as
+unreachable. The option ships off because the rewrite erases the stride, the
+handoff alignment and the duplicated body, which a reader of the binary may
+want; floats, saturating and sign-extended lanes are not matched.
+`tests/stages/kuna-devectorize.xml` runs the byte-sum witness in both passes
+(off: the guard, eight accumulators, fold and remainder loop; on: one
+`do { v1 += bytes[v2]; ... } while (length != v2)`).
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space

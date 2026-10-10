@@ -361,6 +361,7 @@ pub fn universal_sched(
         rrow!("andzext", "analysis", crate::ruleaction_2::RuleAndZext),
         rrow!("andcompare", "analysis", crate::ruleaction_2::RuleAndCompare),
         rrow!("doublesub", "analysis", crate::ruleaction_2::RuleDoubleSub),
+        rrow!("wideslice", "analysis", crate::kuna_wideslice::RuleWideSlice::new("analysis")),
         rrow!("doubleshift", "analysis", crate::ruleaction_2::RuleDoubleShift),
         rrow!("doublearithshift", "analysis", crate::ruleaction_2::RuleDoubleArithShift),
         rrow!("concatshift", "analysis", crate::ruleaction_2::RuleConcatShift),
@@ -663,6 +664,14 @@ pub fn universal_sched(
                 false,
                 "returnsplit"
             ))),
+            // (kuna) devectorize (option `devectorize`, default-OFF): re-roll a
+            // vectorized integer reduction -- guard, stride loop with one
+            // accumulator per lane, fold, scalar remainder loop -- into its scalar
+            // loop by removing the guard's vector edge.  Sits with the edge-removal
+            // strippers above for the same reason: the repeating fullloop re-runs
+            // mainloop's dead-code passes over the reduced graph before P8
+            // structures it.
+            act!(Box::new(crate::kuna_devectorize::ActionDevectorize::new(false, "returnsplit"))),
             act!(ActionReturnSplit::boxed("returnsplit")),
             // (kuna) angr SAILR gotoless `ReturnDuplicatorHigh` (option `returndup`,
             // default-OFF).  Runs right after ActionReturnSplit (the goto-driven

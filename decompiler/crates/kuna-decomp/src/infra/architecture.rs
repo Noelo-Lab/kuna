@@ -1002,6 +1002,15 @@ pub struct Architecture {
     /// `ActionDeadCode` (option `splitstorekeep`, default-on, DIV-153).  See
     /// [`crate::p3_dataflow::kuna_splitstorekeep`].
     pub split_store_keep: bool,
+    /// (kuna) Push a demanded SUBPIECE through 9..15-byte (and wider
+    /// non-power-of-two) PIECE/shift/bitwise trees (option `wideslice`,
+    /// default-on).  See [`crate::p3_dataflow::kuna_wideslice`].
+    pub wide_slice_reduce: bool,
+    /// (kuna) Re-roll a vectorized integer reduction (guard, stride loop with
+    /// one accumulator per lane, fold, scalar remainder loop) into its scalar
+    /// loop (option `devectorize`, opt-in default-off).  See
+    /// [`crate::p3_dataflow::kuna_devectorize`].
+    pub devectorize_reduction: bool,
     /// Guard stack slots against stores through stack-derived pointers.
     pub stack_store_guard: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -2740,6 +2749,8 @@ impl Architecture {
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
             split_store_keep: false, // (kuna) option splitstorekeep; reset_defaults sets the shipped default (on)
+            wide_slice_reduce: false, // (kuna) option wideslice; reset_defaults sets the shipped default (on)
+            devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
             stack_store_guard: false,
             region_structure: true,
             guard_arm: false,
@@ -3072,6 +3083,7 @@ impl Architecture {
         self.hide_shadow = true; // (kuna) default-on: the upstream ActionHideShadow body, which kuna carried as an inert stub. Consolidates two copies of one value into one chain so ActionCopyMarker can hide the repeated assignment (0/675 ablation, stages PARITY OK; 434 of 444 stripped ELFs byte-identical and the other 10 each lose a duplicated assignment); `option hideshadow off` restores the stub's behaviour exactly
         self.tied_phi_trim = true; // (kuna) DIV-182 default-on: Merge::mergeOp trims a loop head's direct read of an aliased location, so the values the loop loads do not print as stores into it (0/675 ablation); `option tiedphitrim off` restores upstream's merge
         self.split_store_keep = true; // (kuna) DIV-153 default-on: Heritage::refineWrite carries the stack_store mark onto its refinement pieces, so an overlapping-range frame store stays a direct write and is not swept by ActionDeadCode (0/675 ablation); `option splitstorekeep off` restores upstream's unmarked pieces
+        self.wide_slice_reduce = true; // (kuna) default-on: every rewrite is a bitvector identity on a synthetic 9..15-byte intermediate that no upstream rule can take apart; byte-identical (0/675) on the datatest corpus, and the power-of-two widths ActionLaneDivide owns are refused; `option wideslice off` leaves the wide intermediates to upstream's rules
         self.stack_store_guard = true;
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.loop_continue = true;
@@ -3854,6 +3866,8 @@ impl Architecture {
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim
         ctx.split_store_keep = self.split_store_keep; // splitstorekeep
+        ctx.wide_slice_reduce = self.wide_slice_reduce; // wideslice
+        ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.stack_store_guard = self.stack_store_guard;
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm

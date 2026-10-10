@@ -22,6 +22,10 @@ Three tiers:
 | `vN._8_8_ = 0; vN._0_8_ = x;` pairs appear in front of a `SUB168(... * ...,0)` | [`mulblob`](#mulblob) |
 | a function with several `mul` instructions declares twice as many locals as it has values | [`mulblob`](#mulblob) |
 | the high half of a 64x64 product is read out of a blob instead of off the multiply | [`mulblob`](#mulblob) |
+| a loop summing an array prints as eight lane accumulators added into one total after the loop | [`devectorize`](#devectorize) |
+| a vectorised reduction is followed by a second copy of the loop over the remainder | [`devectorize`](#devectorize) |
+| an array sum is guarded by if (8 <= length) with a stride-eight do-while behind it | [`devectorize`](#devectorize) |
+| a line like v8 + v12 + v6 + v10 + v7 + v11 + v5 + v9 follows a loop | [`devectorize`](#devectorize) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring) |
@@ -754,6 +758,10 @@ Three tiers:
 | byte arithmetic retains -2*x + (x << 1) instead of cancelling modulo 256 | [`cancelbytearithmetic`](#cancelbytearithmetic) |
 | a string initializer is split by one computed byte even though its coefficients sum to zero | [`cancelbytearithmetic`](#cancelbytearithmetic) |
 | an exact low-byte multiply/left-shift cancellation remains unsimplified | [`cancelbytearithmetic`](#cancelbytearithmetic) |
+| a vectorised loop declares 9- to 15-byte char array locals that exist nowhere in the source | [`wideslice`](#wideslice) |
+| lane sums are written as SUB133, SUB137 or ZEXT513 expressions over a wide temporary | [`wideslice`](#wideslice) |
+| an XMM value rebuilt from byte lanes prints as a stack of _N_M_ partial assignments | [`wideslice`](#wideslice) |
+| a call argument is rebuilt from a 12-byte packed-double temporary instead of read from its register | [`wideslice`](#wideslice) |
 | a wall of SUB161( lane temporaries read off one pshufb( result | [`simdlane`](#simdlane) |
 | dozens of char vN; declarations each assigned once from a consecutive SIMD byte lane | [`simdlane`](#simdlane) |
 | a vectorised byte loop needs SSE lanes simulated by hand to see that every lane holds the same broadcast byte | [`simdlane`](#simdlane) |
@@ -1151,6 +1159,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. x86-64 `MUL r64` lowers (SLEIGH `ia.sinc:4128`) to `tmp:16 = zext(RAX) * zext(rm64)`, and a 16-byte varnode has no primitive data-type, so the type factory hands it the width fallback `undefined1[16]` - an array, which `Datatype::isPieceStructured` accepts. `RulePieceStructure` (ruleaction.cc:7488) therefore rewrites each zero-extension into a `PIECE` rooted at a partial-root Varnode, and P6 gives that root a declaration of its own: every unsigned wide multiply costs two `char vN [16]` locals whose entire content is the operand (`v8._8_8_ = 0; v8._0_8_ = v29;`) before a single `SUB168` reads the product back out. The signed sibling never had this: `IMUL` lowers through `sext`, `INT_SEXT` is not in `RulePieceStructure`'s op list, and kuna already prints `SUB168(SEXT816(x) * SEXT816(y),8)`. On, the unsigned form prints the same way. The decline is narrow: the extension's output must be an anonymous unique, not addr-tied, not mapped, not covered by a Symbol, 9..16 bytes wide, typed with the width fallback (an array of exactly that many one-byte `undefined` elements) and read only by same-width integer arithmetic whose own result is read only through `SUBPIECE`. A Varnode backed by real storage or a recovered array keeps upstream's structuring in either arm. Flip off to restore the upstream `undefined1 auVarN [16]` rendering - Ghidra prints those blobs too, so this is a deliberate divergence, not a fidelity fix.
 - **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · wide-multiply-operand-blobs
 - **Example:** `option mulblob off`
+
+### `devectorize` -- on | off, default `off`
+
+- **Symptoms:** a loop summing an array prints as eight lane accumulators added into one total after the loop; a vectorised reduction is followed by a second copy of the loop over the remainder; an array sum is guarded by if (8 <= length) with a stride-eight do-while behind it; a line like v8 + v12 + v6 + v10 + v7 + v11 + v5 + v9 follows a loop.
+- **What it does:** Re-roll a vectorized integer reduction into the scalar loop it came from. clang and gcc turn `for (i) sum += a[i]` into a guard `length >= S`, a stride-S loop with one accumulator per lane, a horizontal fold, an early return when `length & -S == length`, and a scalar copy of the loop that finishes the remainder or, when the guard failed, runs from zero. The pass proves the whole shape on SSA -- zero inits; lanes that zero-extend disjoint E-byte slices of loads at base + i*E + c and tile exactly S elements, for a power-of-two S the guard bounds; a fold that adds every accumulator once; both exits handing back their sums; no side effects in the arm; nothing defined in it read outside except through the phis the edge removal patches -- and removes the guard's vector edge (Funcdata::remove_branch), leaving the arm to the unreachable-block collector. Integer addition is associative and commutative modulo 2^(8Z), so the scalar loop from zero computes the same value on every input. Needs wideslice to have reduced the lanes to byte reads first; floats, saturating and sign-extended lanes are not matched.
+- **When to flip:** Turn ON when an -O2/-O3 loop that sums the elements of an array comes out as a guard `if (8 <= length)`, a do-while adding `v2 & 0xff`, `v2 >> 8 & 0xff`, ... into eight separate accumulators, a line summing those accumulators, and a second do-while over `bytes[v4]` for the remainder -- and you want the source loop `v1 += bytes[v2]` instead. OFF (the default) keeps the compiler's shape, which shows the stride, the alignment of the handoff and the duplicated body. Inert on a function with no loop of that shape.
+- **Where / provenance:** P3/simplification-quiescence · kuna · structure-recovery · wide-ssa-slices
+- **Example:** `option devectorize on`
 
 ### `rodatastring` -- on | off, default `on`
 
@@ -2719,6 +2735,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-174). Keep it on when byte arithmetic retains matching multiply and left-shift terms that provably cancel modulo 256. Flip off to retain the unsimplified arithmetic.
 - **Where / provenance:** P3/simplification-quiescence · kuna · correctness-fix · repipe-cancelling-byte-arithmetic-splits
 - **Example:** `option cancelbytearithmetic off`
+
+### `wideslice` -- on | off, default `on`
+
+- **Symptoms:** a vectorised loop declares 9- to 15-byte char array locals that exist nowhere in the source; lane sums are written as SUB133, SUB137 or ZEXT513 expressions over a wide temporary; an XMM value rebuilt from byte lanes prints as a stack of _N_M_ partial assignments; a call argument is rebuilt from a 12-byte packed-double temporary instead of read from its register.
+- **What it does:** Push a demanded SUBPIECE through PIECE, byte-aligned logical shifts and INT_AND/INT_OR/INT_XOR when the sliced value has a synthetic width: more than eight bytes and not a power of two. Heritage widens each partial lane write of a vector register by joining it with the bytes below it (Heritage::normalizeWriteSize, heritage.cc:417), and RuleConcatZext/RuleConcatZero keep manufacturing such widths while they fold zero lanes, so clang -O3 SSE byte widening leaves 9..15-byte intermediates that nothing else takes apart: SubvariableFlow stops at a 64-bit mask, RuleDumptyHump/RuleSubCommute/RuleShiftSub refuse to cross a piece boundary, and ActionLaneDivide accepts only lane-aligned PIECEs. Each rewrite is a bitvector identity -- a slice straddling a PIECE becomes a PIECE of two slices, a slice reaching into a shift's zero fill becomes a zero-extended shorter slice -- and the rule declines free inputs, type locks, precision marks, non-byte and arithmetic shifts. Power-of-two widths (8, 16, 32, 64) are refused on purpose: those are the laned-register widths ActionLaneDivide, simdlane and constspaceload own, and slicing through them first breaks their lane view (seven stage assertions regress without the gate). OFF leaves the wide intermediates to upstream's rules.
+- **When to flip:** On by default. The OFF symptom is a vectorised loop (SSE/AVX punpcklbw, punpcklwd, pmovzx byte widening) whose body declares 9- to 15-byte locals that exist nowhere in the program -- `char v3 [13]; // xmm3 | xmm3_bd | xmm3_qa` -- and sums lanes through SUB133(...), SUB137(ZEXT513(...) << 0x40,6) and CONCAT expressions instead of `v9 += v2 >> 8 & 0xff`. Inert on any function with no SUBPIECE of a wide non-power-of-two value: 0/675 datatest assertions move. Flip OFF to see upstream's rendering of the wide intermediates, or to bisect whether a changed SIMD lane rendering came from this rule.
+- **Where / provenance:** P3/simplification-quiescence · kuna · correctness-fix · wide-ssa-slices
+- **Example:** `option wideslice off`
 
 ### `simdlane` -- on | off, default `on`
 
