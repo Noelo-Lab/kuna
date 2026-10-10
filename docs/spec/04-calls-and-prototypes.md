@@ -2034,10 +2034,10 @@ order (`docs/features/bejoin/record.json`). No function there whose DWARF
 return type is `int` or a pointer changes value, but that is a measurement on
 these corpora, not something the rule proves: an earlier form of it changed
 one, iproute2's `rt_addr_n2a_r` (the unrecovered switch above), which now
-prints as on main. A SPARC `int` function whose result folds
-into the pair before the uncomputed-half repair can drop the leftover (`return
-0` with the second argument still in `%i1`) prints the argument shifted into the
-high word, as it did before.
+prints as on main. A SPARC `int` function whose `return 0` folds into the
+pair before the uncomputed-half repair runs (the second argument still in
+`%i1`) is narrowed by that repair in either mode (*A literal zero folded into
+the pair*, below).
 
 When the two registers are contiguous in the joined order, the whole is built at
 their parent register rather than in the join space (`constructJoinAddress`).
@@ -2889,6 +2889,46 @@ A high register the function set to zero is computed too, so the pair of a
 zero-extended 64-bit return survives this repair. The earlier trim that narrowed
 it to its low register, and printed `unsigned long long` as `int`, refuses a pair
 no wider than eight bytes (chapter [03](03-ssa-and-simplification.md) §3.3).
+
+#### A literal zero folded into the pair
+
+The rule pool runs before the repair and can rewrite its concatenation. A
+literal zero low half is the shape it changes: `RuleConcatZero` turns
+`PIECE(hi, 0)` into `ZEXT(hi) << 32`, which is no longer a `PIECE` of two
+halves. On SPARC that is every `return 0` of a function that opened a register
+window, because `restore` copies `%i1` back into `%o1` and the pair forms with
+whatever `%i1` held as its high half: the second argument, or a global the
+function loaded. `int keep_zero(int *p, int b) { *p = b; return 0; }` printed
+`long long keep_zero(...)` returning `(unsigned long long)a1 << 0x20`, while the
+same function returning 5 kept its `PIECE` and was repaired to `return 5;`.
+
+So on a pair joined first register low on an ABI that returns the first
+register high (PowerPC, MIPS o32, SPARC and ARM big-endian, wherever return
+recovery keeps the old join: `Funcdata::kuna_pairs_first_low`, recorded with
+`bejoin` on or off), the repair reads `ZEXT(hi) << 8k` as the pair of `hi` and
+a `k`-byte zero and decides it as it decides any other: when the high half is
+uncomputed by the placement test above and was not moved back, the RETURN
+returns a `k`-byte zero, the low register's width
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed.rs
+(zero_low_pair)`). On such a pair the folded value is never a 64-bit value the
+function returns: a `long long` there holds its high word in the first
+register, which is the zero, so the folded form prints its words swapped, and
+narrowing it replaces only a wrong value. It does not tell an `int` from the
+`long long` that compiles to the same instructions: `unsigned long long f(unsigned
+a, unsigned b) { return b; }` is `save; ret; restore %g0,%g0,%o0` on SPARC -O2,
+the code of `int f(int a, int b) { return 0; }`, and now prints as that `int`,
+as the same function with a nonzero high word already did. On a little-endian
+ABI the first register is the low word, the folded form reads the words in the
+ABI's order and can be the value, and the repair leaves it as it was.
+
+Over 25 userland projects (bash, coreutils, e2fsprogs, gnutls, openssh, zlib
+and others) compiled with clang 14 for SPARC (-O0, -O2, -Os) and for PowerPC,
+MIPS and ARM big-endian (-O0, -O2), 1,272 of 90,049 functions change, all on
+SPARC (833 of 8,402 at -O2, 182 of 11,959 at -O0, 257 of 8,920 at -Os), and
+none has an eight-byte DWARF return type: they return `int`, a pointer, an
+enum, `_Bool`, a character or nothing. Their `long long` headers drop from 1,064 to 172, and the number that
+print the DWARF parameter count rises from 775 to 943, as the phantom second
+parameter only the return read goes away.
 
 This subsumes `returnpair` on the GH-6990 case it was written for (`tests/stages/
 gh6990-returnpair.xml` now records both passes agreeing); the flag remains as the

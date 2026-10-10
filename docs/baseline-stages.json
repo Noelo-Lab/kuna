@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2456,
-    2456
+    2463,
+    2463
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -2295,6 +2295,13 @@
     "data:sparc-callreturn #7: no call result is dropped",
     "data:sparc-callreturn #8: widen still returns a long long",
     "data:sparc-callreturn #9: widen does not lose its low word",
+    "data:sparc-zeropair #1: no function returns its second argument in the high word",
+    "data:sparc-zeropair #2: keep_zero returns an int",
+    "data:sparc-zeropair #3: same returns an int, 1 or 0",
+    "data:sparc-zeropair #4: flag_zero returns an int",
+    "data:sparc-zeropair #4b: every path that returns 0 returns 0",
+    "data:sparc-zeropair #5: keep_five keeps its literal",
+    "data:sparc-zeropair #6: the 64-bit returns keep their width",
     "data:sparc64-callreturn #1: f1 returns atoi's result plus one (O2 and O0)",
     "data:sparc64-callreturn #2: f2 tests getenv's result (O2 and O0)",
     "data:sparc64-callreturn #3: f3 keeps the first atoi result (O2 and O0)",
