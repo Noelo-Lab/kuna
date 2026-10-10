@@ -1200,6 +1200,18 @@ its value instead of reinterpreting its bits, so the upstream layout stays
 v1[0]);`). When that layout is still wrong, the function falls back to no
 guard (below).
 
+For a byte STORE whose value-set guard has a fully locked range and unit step,
+`kuna_storereach.rs (locked_byte_ranges)` supplies that proven span even when
+no guard INDIRECT survives. A zeroing loop can cover a word header and a
+payload whose address is taken at an interior offset; a later header write
+must not let the fixed word hint discard the loop's array hint and split the
+payload into another C object. Coalescing the proven span keeps the header
+write, byte indexing, interior call arguments and whole-frame copy on one
+backing array. Dynamic stack, unproven ranges and stores wider than one byte
+do not contribute this evidence. The existing locked-type, float, analyzed
+frame and 256-byte limits still apply; adjacent storage outside the span is
+not included solely because its address is taken.
+
 A wider store is not coalesced: its open hint already carries its element type.
 But a guard of an `int`, `short` or `long` store keeps slots out to its
 pointer's bound (chapter 03), while the upstream layout gives an array whose

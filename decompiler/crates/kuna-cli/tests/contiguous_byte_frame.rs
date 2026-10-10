@@ -1,10 +1,11 @@
 //! A byte loop spans a word header and an interior payload pointer in one frame.
+#![cfg(all(target_os = "linux", target_endian = "little"))]
 
 use crate::common;
 use common::process;
 use std::process::Command;
 
-fn emitted_frame(mutable: bool) -> String {
+fn emitted_frame(mutable: bool, options: &[&str]) -> String {
     let hex = include_str!("fixtures/contiguous_byte_frame.hex").trim();
     let bytes: Vec<_> = (0..hex.len())
         .step_by(2)
@@ -23,7 +24,8 @@ fn emitted_frame(mutable: bool) -> String {
         },
     )
     .unwrap();
-    let (stdout, stderr, status) = common::run_kuna(&[
+    let directive = format!("@{}", assertions.display());
+    let mut args = vec![
         "decompile-all",
         image.to_str().unwrap(),
         "--raw-image",
@@ -43,8 +45,10 @@ fn emitted_frame(mutable: bool) -> String {
         "--json",
         "--assert-strict",
         "--assert",
-        &format!("@{}", assertions.display()),
-    ]);
+        &directive,
+    ];
+    args.extend_from_slice(options);
+    let (stdout, stderr, status) = common::run_kuna(&args);
     assert_eq!(status, 0, "{stderr}\n{stdout}");
     let result: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert!(result["functions"][0]["error"].is_null(), "{stdout}");
@@ -59,7 +63,9 @@ fn emitted_frame_preserves_bytes_and_object_bounds() {
         .collect();
     assert!(!compilers.is_empty(), "a C compiler is required");
     for mutable in [false, true] {
-        let code = emitted_frame(mutable);
+        let code = emitted_frame(mutable, &[]);
+        let pieces = regex::Regex::new(r"(\w+)\._0_4_ = ([^;\n]+);").unwrap();
+        let compilable = pieces.replace_all(&code, "store_word($1, $2);");
         let source = common::scratch_file("contiguous-byte-frame", "c");
         std::fs::write(
             &source,
@@ -70,12 +76,13 @@ fn emitted_frame_preserves_bytes_and_object_bounds() {
 typedef uint8_t uint1;
 typedef uint32_t uint4;
 typedef int32_t int4;
+static void store_word(uint1 *p, uint4 value) {{ memcpy(p, &value, sizeof(value)); }}
 void FillPayload(uint1 *p, uint4 n) {{ for (uint4 i = 0; i < n; ++i) p[i] = i + 1; }}
 uint4 PayloadSum({qualifier}uint1 *p, uint4 n) {{
     uint4 sum = 0; for (uint4 i = 0; i < n; ++i) sum += p[i]; return sum;
 }}
 void CopyFrame(uint1 *d, {qualifier}uint1 *p, uint4 n) {{ memcpy(d, p, n); }}
-{code}
+{compilable}
 int main(void) {{
     const uint1 expected[22] = {{153, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
                                 10, 11, 12, 13, 14, 15, 16, 17, 0}};
@@ -121,5 +128,17 @@ int main(void) {{
                 );
             }
         }
+    }
+}
+
+#[test]
+fn disabling_range_proof_or_shared_store_layout_retains_the_split() {
+    for option in ["loadguardrange", "stackstoreguard"] {
+        let code = emitted_frame(false, &["--option", option, "off"]);
+        assert!(code.contains("+ -4]"), "{option}: {code}");
+        assert!(
+            code.contains("CopyFrame(destination,(uint1 *)&"),
+            "{option}: {code}"
+        );
     }
 }
