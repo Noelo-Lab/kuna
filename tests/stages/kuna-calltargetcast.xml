@@ -1,0 +1,80 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    calltargettype (GH-869): an indirect call through a target the option
+    cannot retype (a parameter, a global, a record field) is cast to the
+    call's own type at the call.
+
+    Stage: P5 type recovery, just before casts are decided, and the P9 cast
+    decision for the target of a CALLIND. P0 assertion: option calltargettype
+    on|off.
+
+    Source, gcc 11 -O1 -fno-pic -fcf-protection=none, linked with text at
+    0x100000 and gfp at 0x200000:
+
+        struct ops { int tag; int (*add)(int, long); void (*done)(void); };
+        int (*gfp)(int, long);
+        int viaparam(int (*f)(int, long), int x) { return f(x, 3) + 1; }
+        int viaglobal(int x) { return gfp(x, 5) * 2; }
+        int viafield(struct ops *o, int x) { o->done(); return o->add(x, o->tag); }
+
+    gfp is mapped void *, and the record's two callbacks are declared void *
+    and code *, the way a DWARF function-pointer type reaches kuna.
+
+    Pass 1 (ctypes on, option calltargettype off, the shipped catalog default)
+    is the bug: each target is a pointer C cannot call, so every call is a call
+    of a void * (asserts 1 to 4), which no C compiler accepts. Pass 2 (ctypes
+    on, calltargettype on, what the aggressive preset selects) leaves the
+    parameter, the global and the fields their types, since other functions see
+    them, and casts each target to the function-pointer type its call states
+    (asserts 5 to 8). The local the void * field is copied into takes that type
+    itself, as it did before, and is called without a cast (asserts 9, 10).
+    Pass 3 (Rust output, calltargettype on) spells every code pointer
+    *const () whatever its prototype, so it adds no cast (asserts 11, 12).
+
+    Assertions span the combined output of the three passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4883ec084889f889f7be03000000ffd083c0014883c408c34883ec08be050000
+00ff15d9ff0f0001c04883c408c355534883ec084889fb89f5ff571048633389
+efff53084883c4085b5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x200000">
+0000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="viaparam"/>
+<symbol space="ram" offset="0x100018" name="viaglobal"/>
+<symbol space="ram" offset="0x10002e" name="viafield"/>
+</binaryimage>
+<script>
+<com>map address r0x200000 void *gfp</com>
+<com>parse line struct ops { int4 tag; void *add; code *done; };</com>
+<com>parse line extern int4 viafield(ops *o, int4 x);</com>
+<com>option ctypes on</com>
+<com>option calltargettype off</com>
+<com>lo fu viaparam</com><com>decompile</com><com>print C</com>
+<com>lo fu viaglobal</com><com>decompile</com><com>print C</com>
+<com>lo fu viafield</com><com>decompile</com><com>print C</com>
+<com>option calltargettype on</com>
+<com>lo fu viaparam</com><com>decompile</com><com>print C</com>
+<com>lo fu viaglobal</com><com>decompile</com><com>print C</com>
+<com>lo fu viafield</com><com>decompile</com><com>print C</com>
+<com>option setlanguage rust-language</com>
+<com>lo fu viaparam</com><com>decompile</com><com>print C</com>
+<com>lo fu viaglobal</com><com>decompile</com><com>print C</com>
+<com>lo fu viafield</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="CALLTARGETCAST #1: off calls the parameter as a void *, as Rust prints it" min="2" max="2">return \(\*a0\)\(a1,3\) \+ 1;</stringmatch>
+<stringmatch name="CALLTARGETCAST #2: off calls the global as a void *, as Rust prints it" min="2" max="2">v1 = \(\*gfp\)\(a0,5\);</stringmatch>
+<stringmatch name="CALLTARGETCAST #3: off calls the code * field bare" min="1" max="1">^  \(\*o-&gt;done\)\(\);</stringmatch>
+<stringmatch name="CALLTARGETCAST #4: off keeps the local the void * field is read into void *" min="1" max="1">void \*v2; // tmp</stringmatch>
+<stringmatch name="CALLTARGETCAST #5: on casts the parameter to its call's type" min="1" max="1">return \(\*\(int \(\*\)\(unsigned int,unsigned long\)\)a0\)\(a1,3\) \+ 1;</stringmatch>
+<stringmatch name="CALLTARGETCAST #6: the parameter keeps void * in both C passes" min="2" max="2">int viaparam\(void \*a0,unsigned int a1\)</stringmatch>
+<stringmatch name="CALLTARGETCAST #7: on casts the global to its call's type" min="1" max="1">v1 = \(\*\(int \(\*\)\(unsigned long,unsigned long\)\)gfp\)\(a0,5\);</stringmatch>
+<stringmatch name="CALLTARGETCAST #8: on casts the code * field to its call's type" min="1" max="1">\(\*\(void \(\*\)\(void\)\)o-&gt;done\)\(\);</stringmatch>
+<stringmatch name="CALLTARGETCAST #9: on types the local the void * field is read into, so its call needs no cast" min="1" max="1">int \(\*v2\)\(int,long\); // tmp</stringmatch>
+<stringmatch name="CALLTARGETCAST #10: the local is called bare in every pass" min="3" max="3">return \(\*v2\)\(x,(\(long\)v1|v1 as i64)\);</stringmatch>
+<stringmatch name="CALLTARGETCAST #11: Rust adds no cast to a code pointer" min="0" max="0"> as \*mut \*const \(\)\)\)\(</stringmatch>
+<stringmatch name="CALLTARGETCAST #12: Rust calls the code * field bare" min="1" max="1">\(\*\(\*o\)\.done\)\(\);</stringmatch>
+</decompilertest>

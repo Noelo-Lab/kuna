@@ -34,11 +34,11 @@
       "eq": 0
     },
     "stdout_absent": [
-      "\\(\\*dat_[0-9a-f]+\\)\\([^,\\n]+,[^,\\n]+,[^,\\n]+,[^,\\n]+,[^,\\n]+,[^,\\n]+\\)",
+      "\\(\\*(?:\\([^()]*\\(\\*\\)\\([^()]*\\)\\))?dat_[0-9a-f]+\\)\\([^,\\n]+,[^,\\n]+,[^,\\n]+,[^,\\n]+,[^,\\n]+,[^,\\n]+\\)",
       "void hash_final\\(unsigned long \\*a0,"
     ],
     "stdout_matches": [
-      "\\(\\*dat_[0-9a-f]+\\)\\(a0\\[4\\],a0\\[3\\],a0\\[2\\],a0\\[1\\],\\*a0\\);"
+      "\\(\\*(?:\\([^()]*\\(\\*\\)\\([^()]*\\)\\))?dat_[0-9a-f]+\\)\\(a0\\[4\\],a0\\[3\\],a0\\[2\\],a0\\[1\\],\\*a0\\);"
     ]
   },
   "notes": "need sha-finalization-receives-two. Witness: crackmes.one 6869d705aadb6eeafb399027 sub_14000b970, where EVP_DigestFinal_ex (3 arguments) rendered as EVP_DigestFinal_ex(v3,v9,v7,a3,1). Retargeted onto the vendored stackarggap_x86_64, no dataset in CI: hash_final loads RDI..R8, never writes R9, and leaves a 1 in the first outgoing stack slot, so with the veto off the call takes seven arguments."

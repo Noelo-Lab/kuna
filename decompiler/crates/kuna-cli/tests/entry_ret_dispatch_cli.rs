@@ -39,7 +39,11 @@ fn decompile(function: &str) -> String {
     decompile_with(function, &[])
 }
 
-const CALLS: [&str; 3] = ["(*dat_804a000)()", "(*dat_804a004)()", "(*dat_804a008)()"];
+const CALLS: [&str; 3] = [
+    "(*(void (*)(void))dat_804a000)()",
+    "(*(void (*)(void))dat_804a004)()",
+    "(*(void (*)(void))dat_804a008)()",
+];
 
 #[test]
 fn entry_dispatch_recovers_every_call_and_continuation() {

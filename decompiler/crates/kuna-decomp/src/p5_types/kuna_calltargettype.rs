@@ -57,6 +57,16 @@
 //! address computed from a base (`&v4`, `&a1[2]`) has the base's C type rather
 //! than its own, so the call's type takes `void *` there.
 //!
+//! In C output, a target left with a pointer C cannot call is cast to the
+//! call's type at each call instead ([`uncallable_target_cast`]):
+//!
+//! ```text
+//!   return (*(int (*)(unsigned int,unsigned long))a0)(a1,3) + 1;
+//! ```
+//!
+//! So is a record field read as `o->fn`: the read prints as the member access,
+//! whose C type is the field's even when the value read is retyped.
+//!
 //! Gated by [`ArchContext::call_target_type`](crate::context::ArchContext)
 //! (option `calltargettype on|off`), which is set only together with `ctypes`:
 //! without C's own spelling the target prints the upstream `code *`, and nothing
@@ -121,6 +131,17 @@ fn uncallable_pointer(ty: &Datatype) -> bool {
         type_metatype::TYPE_CODE => to.get_code_prototype().is_none(),
         _ => false,
     })
+}
+
+/// The cast an indirect call `op` needs on its target `cur` when that is a
+/// pointer C cannot call and the call's own type was recorded: a target left
+/// with that type is cast to it at the call.
+pub fn uncallable_target_cast(data: &Funcdata, op: OpId, slot: int4, cur: &Datatype) -> Option<Rc<Datatype>> {
+    if slot != 0 || !data.get_arch().call_target_cast || !uncallable_pointer(cur) {
+        return None;
+    }
+    data.obank().get(op).filter(|o| o.code() == OpCode::CPUI_CALLIND)?;
+    data.kuna_call_target_type(op)
 }
 
 /// Is `ty` a pointer to a function with a prototype.
@@ -343,6 +364,12 @@ pub fn retype_call_targets(data: &mut Funcdata) {
         .collect();
     for high in linked_disagree {
         chosen.remove(&high);
+    }
+    for (high, group) in &groups {
+        let high_ty = chosen.get(high);
+        for (op, ty) in group {
+            data.kuna_set_call_target_type(*op, Rc::clone(high_ty.unwrap_or(ty)));
+        }
     }
     for (high, ty) in chosen {
         retype_high(data, tlst, high, &ty);

@@ -30,9 +30,9 @@
       "eq": 0
     },
     "stdout_matches": [
-      "\\(\\*dat_804a000\\)\\(\\)",
-      "\\(\\*dat_804a004\\)\\(\\)",
-      "\\(\\*dat_804a008\\)\\(\\)"
+      "\\(\\*(?:\\([^()]*\\(\\*\\)\\([^()]*\\)\\))?dat_804a000\\)\\(\\)",
+      "\\(\\*(?:\\([^()]*\\(\\*\\)\\([^()]*\\)\\))?dat_804a004\\)\\(\\)",
+      "\\(\\*(?:\\([^()]*\\(\\*\\)\\([^()]*\\)\\))?dat_804a008\\)\\(\\)"
     ]
   },
   "notes": "Desired: a `flow <addr> call` override on one `push <cont>; push <target>; ret` link follows the chain it starts, instead of recovering one call and leaving the rest of the body dead. Witness: crackmes.one 5ab77f5c33c5d40ad448c681 (bm3.exe sub_401757 @0x40176f), 22 such links, which printed `LoadLibraryA(s_40151e);` and nothing else. Unpatched, only the first call here appears."

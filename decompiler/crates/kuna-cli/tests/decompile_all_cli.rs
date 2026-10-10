@@ -5033,8 +5033,9 @@ int main(void) {
 /// that clang -O2 passes to one `fprintf` through the register a string also
 /// takes.  The printed functions are compiled with the option off and on, with
 /// gcc and clang, and each build must print what the fixture binary prints.
-/// `ops_run` is checked by spelling only: kuna spells a code pointer `void *`,
-/// so a call through one is not C in either arm.  `cell_val` is left out of the
+/// `ops_run` is checked by spelling only: its call through the field is cast
+/// to the call's own type in both arms, whether the field is declared `long`
+/// or `void *`.  `cell_val` is left out of the
 /// clang builds (at -O0 its double conversion prints as partial-variable
 /// assignments, at -O2 its double return is lost, in either arm), and
 /// `pctx_print` out of gcc -O2, whose jump table prints as a call in either arm.
@@ -5091,7 +5092,7 @@ int main(void) {
     const CELL: &str = "cell 4 -12 2.5\n";
     const PCTX: &str = " 42| 99|  7|path| 2a|z|(none) NULL(none) 0\n";
     const WANT: &str = "buf 1054690 4 1  fie\nent 10 -1 13 -2\nrange 1600 1 0\ncell 4 -12 2.5\n 42| 99|  7|path| 2a|z|(none) NULL(none) 0\nslot 10\n";
-    let changed: [(&str, &str); 6] = [
+    let changed: [(&str, &str); 5] = [
         ("    long field_0x0;\n    long field_0x8;", "    void *field_0x0;\n    long field_0x8;"),
         (
             "memmove((void *)a0->field_0x0,(void *)(a0->field_0x0 + (a0->field_0x8 - a0->field_0x10)),a0->field_0x10);",
@@ -5100,8 +5101,8 @@ int main(void) {
         ("v2 = strlen((char *)a0->field_0x10);", "v2 = strlen(a0->field_0x10);"),
         ("    long field_0x10;\n    long field_0x18;", "    long *field_0x10;\n    long *field_0x18;"),
         ("a0->field_0x0 = a0->field_0x0 + 8;", "a0->field_0x0 = &a0->field_0x0[1];"),
-        ("v1 = (*(long (*)(unsigned long))a0->field_0x8)(a0->field_0x10);", "v1 = (*a0->field_0x8)(a0->field_0x10);"),
     ];
+    let field_call = "v1 = (*(long (*)(unsigned long))a0->field_0x8)(a0->field_0x10);";
     let index_stays_a_number = "    int field_0x0;\n    char field_0x4[4];\n    long field_0x8;";
     let number_stays_a_number = "    long field_0x0;\n    char *field_0x8;\n    unsigned int field_0x10;";
     let sp = specs();
@@ -5145,6 +5146,7 @@ int main(void) {
                     let want = if opt == "on" { on } else { off };
                     assert!(all.contains(want), "{fixture} option {opt} does not print `{want}`:\n{all}");
                 }
+                assert!(all.contains(field_call), "{fixture} option {opt} does not print `{field_call}`:\n{all}");
             }
             if !clang {
                 assert!(

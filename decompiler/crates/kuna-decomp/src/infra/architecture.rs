@@ -3763,6 +3763,7 @@ impl Architecture {
         ctx.rodata_string = self.rodata_string; // (kuna) rodatastring
         ctx.ptrdepthcap = self.ptrdepthcap; // (kuna) ptrdepthcap
         ctx.call_target_type = self.call_target_type && self.ctypes; // (kuna) calltargettype: only C's own spelling needs it
+        ctx.call_target_cast = ctx.call_target_type && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) calltargettype
         if self.float_globals {
             ctx.float_globals = self.kuna_float_globals.clone(); // (kuna) floatglobals
             ctx.float_globals_pending = self.kuna_float_globals.is_none() && self.kuna_float_scan.is_some();

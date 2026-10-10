@@ -1451,9 +1451,27 @@ does not hold. What receives the type then depends on the target:
   `(**(void (**)(void))&tbl[i])()`,
   `(*((void (**)(unsigned long,long))a0)[9])(...)`.
 
-Everything else keeps the spelling it had, which for a `code *` that is never
+Everything else keeps the type it had, which for a `code *` that is never
 called directly, and for a parameter, a global, a record field or a variable
-whose calls disagree, is the `void *` above. The option takes effect only with
+whose calls disagree, is the `void *` above. A record field keeps it even when
+the value read from it takes the call's type: the read prints as the member
+access `o->fn`, whose C type is the field's, and `ActionSetCasts` hands the
+implied load back the field type. Each call through such a target is cast
+instead. Every indirect call whose type was built records it per op, whether or
+not its target took it (the type the target took, when it did), and
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_calltargettype.rs
+(uncallable_target_cast)`, consulted by the default arm of `get_input_cast`
+(chapter 09) when `cast_standard` asks for nothing, casts a slot-0 target that
+is still a pointer C cannot call to that type at the call:
+`(*(int (*)(unsigned int,unsigned long))a0)(a1,3)`,
+`(*(void (*)(void))o->done)()`, and for a local called with two arities one
+cast per call. The cast changes no value -- it converts a pointer to a function
+pointer whose parameters the call already passes in the storage the type lays
+them out in -- and only C output gets it (`ArchContext::call_target_cast`): the
+Rust speller spells every pointer to code `*const ()` whatever its prototype,
+so there the cast would name the type the target already has. A call whose type
+could not be built (a float held as an integer, a union-resolving argument)
+stays a call of a `void *`. The option takes effect only with
 `ctypes` on (`ArchContext::call_target_type` is set from both): without C's own
 spelling the target prints the upstream `code *`, which the option leaves
 alone. Shipped OFF in the catalog, because the XML datatest corpus pins the
@@ -1471,11 +1489,18 @@ the same build, the `called object is not a function` errors fall from 1,634 to
 clang 14, and the number of casts does not change (77,147). Keyed by statement,
 no statement gains an error; under gcc 15, 15 statements whose call no longer
 fails report the pre-existing assignment type error gcc 15 stopped at the call
-before. Exercised by `tests/stages/kuna-calltargettype.xml` (gcc -O1 and clang
+before. Those figures predate the cast at the call. On the -O2 decbench gzip,
+dash, diff and bash, exported under `--mode aggressive`, the cast takes the
+errors that remained from 64 to 2 (both a `union node *` argument dash passes)
+under gcc 11 with no other error gained; `decompile-all` changes 617 of 3,483
+functions, every changed line differing only in the cast on a call's target, and 507 of them PLT
+stubs that call their GOT slot. Exercised by `tests/stages/kuna-calltargettype.xml` (gcc -O1 and clang
 -O2 builds of a table dispatch, a local holding a table entry, a record's
 callback, a local called with two arities, a local that receives a function's
 address, a local handed to `qsort`, a float held in `xmm0` as an integer, and a
-`ctypes off` pass), and by `kuna-calltargettype-a64.xml` and
+`ctypes off` pass), by `kuna-calltargetcast.xml` (a call through a parameter,
+a global mapped `void *` and record fields declared `void *` and `code *`, cast
+at the call in C and left alone in Rust), and by `kuna-calltargettype-a64.xml` and
 `kuna-calltargettype-armhf.xml` (a float call typed `float (*)(float)` in `s0`,
 an integer call, and a float held in `s0` as an integer, on AArch64 and ARMv7
 hard-float).
