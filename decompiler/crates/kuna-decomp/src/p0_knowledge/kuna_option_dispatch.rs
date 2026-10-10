@@ -849,6 +849,7 @@ kuna_options! { self, p1;
     },
     "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
     "armfuncmode" => on_off!(analysis_armfuncmode, "A32 mode at even ARM function symbols"),
+    "armwalkmode" => on_off!(analysis_armwalkmode, "ARM decode mode carried along the Listing walk"),
     "entrythumbflow" => {
         on_off!(analysis_entrythumbflow, "Entry-reachable Thumb context walk")
     },

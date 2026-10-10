@@ -25,7 +25,7 @@ use kuna_sleigh::translate::Translate;
 use super::classify::classify;
 use super::context::ContextPainter;
 use super::decode::decode_one;
-use super::model::{DiscoveredFunction, Insn, InsnLite, Reference, RefKind};
+use super::model::{DiscoveredFunction, FlowKind, Insn, InsnLite, Reference, RefKind};
 use super::ListingDetail;
 use super::kuna_insnstore::InstructionStore;
 
@@ -386,6 +386,9 @@ impl Successors for Worklists<'_> {
 /// `flow_mode`, when present, runs [`super::kuna_flowmode::disagreeing_runs`]
 /// after the walk, which leaves the walk's own result as it is.
 ///
+/// `arm_walk`, when present, carries the ARM decode mode along the walk's
+/// control flow (see [`super::kuna_armwalkmode`]).
+///
 /// `local_entries` is the PPC64 ELFv2 local-entry fold (`ppclocalentry`), keyed
 /// by the local entry VMA: a CALL landing on one of those is a call into the
 /// INTERIOR of the function at its value, so no function is claimed there. Empty
@@ -409,6 +412,7 @@ pub(super) fn walk(
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
     painter: &ContextPainter,
     flow_mode: Option<&super::kuna_flowmode::FlowMode>,
+    arm_walk: Option<&super::kuna_armwalkmode::ArmWalkMode>,
     local_entries: &BTreeMap<u64, u64>,
     detail: ListingDetail,
     want_stack_callbacks: bool,
@@ -430,7 +434,7 @@ pub(super) fn walk(
     let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
     let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail };
 
-    let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames);
+    let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk);
     if let Some(mode) = flow_mode {
         st.mode_runs.extend(super::kuna_flowmode::disagreeing_runs(&ctx, arch, mode));
     }
@@ -438,6 +442,7 @@ pub(super) fn walk(
 }
 
 /// The serial or parallel walk, as [`walk`] runs it.
+#[allow(clippy::too_many_arguments)]
 fn walk_plain(
     ctx: &StepCtx<'_>,
     arch: &Architecture,
@@ -446,9 +451,10 @@ fn walk_plain(
     painter: &ContextPainter,
     plan: &super::kuna_pdecode::WalkPlan,
     frames: Option<&mut super::kuna_framemode::FrameModes>,
+    arm_walk: Option<&super::kuna_armwalkmode::ArmWalkMode>,
 ) -> WalkState {
     let StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail } = *ctx;
-    if plan.lanes() > 1 && frames.is_none() {
+    if plan.lanes() > 1 && frames.is_none() && arm_walk.is_none() {
         let inputs = super::kuna_pdecode::ParallelInputs {
             arch,
             translate,
@@ -465,7 +471,7 @@ fn walk_plain(
             let Some(abort) = super::kuna_pdecode::selfcheck() else {
                 return parallel;
             };
-            let serial = walk_serial(ctx, seeds, seed_funcs, detail, arch, None);
+            let serial = walk_serial(ctx, seeds, seed_funcs, detail, arch, None, None);
             let differences = super::kuna_pdecode::compare(&parallel, &serial);
             assert!(
                 differences == 0 || !abort,
@@ -475,7 +481,7 @@ fn walk_plain(
         }
     }
 
-    walk_serial(ctx, seeds, seed_funcs, detail, arch, frames)
+    walk_serial(ctx, seeds, seed_funcs, detail, arch, frames, arm_walk)
 }
 
 /// The serial walk: the two-level worklist over [`step`], and the only walk that
@@ -487,6 +493,7 @@ fn walk_serial(
     detail: ListingDetail,
     arch: &Architecture,
     mut frames: Option<&mut super::kuna_framemode::FrameModes>,
+    arm_walk: Option<&super::kuna_armwalkmode::ArmWalkMode>,
 ) -> WalkState {
     let mut walk_context = super::kuna_walkcontext::WalkContext::new(
         frames.is_some(), ctx.translate, arch, ctx.code_space, ctx.exec_ranges,
@@ -513,6 +520,11 @@ fn walk_serial(
     for &entry in seeds {
         let df = seed_funcs.get(&entry).cloned().unwrap_or_else(|| discovered(entry));
         funcs.entry(entry).or_insert(df);
+    }
+
+    if let Some(mode) = arm_walk.filter(|_| walk_context.is_none()) {
+        let mut state = WalkSinks { insns: &mut insns, funcs: &mut funcs, refs: &mut refs, callbacks: &mut callbacks };
+        walk_carried(ctx, arch, mode, &mut func_worklist, &mut visited_funcs, &mut state);
     }
 
     while let Some(entry) = func_worklist.pop() {
@@ -566,6 +578,114 @@ fn walk_serial(
         funcs,
         stack_callback_refs: callbacks.refs,
         mode_runs,
+    }
+}
+
+/// The serial walk's stores, as [`walk_carried`] fills them.
+struct WalkSinks<'a> {
+    insns: &'a mut InstructionStore,
+    funcs: &'a mut BTreeMap<u64, DiscoveredFunction>,
+    refs: &'a mut RefCollector,
+    callbacks: &'a mut CallbackEvidence,
+}
+
+/// (kuna `armwalkmode`) The serial walk with each instruction decoded in the
+/// mode its control flow carries, or in the database's where none does; it
+/// drains `func_worklist`, then resumes the instructions after calls it held.
+fn walk_carried(
+    ctx: &StepCtx<'_>,
+    arch: &Architecture,
+    mode: &super::kuna_armwalkmode::ArmWalkMode,
+    func_worklist: &mut Vec<u64>,
+    visited_funcs: &mut BTreeSet<u64>,
+    sinks: &mut WalkSinks<'_>,
+) {
+    let mut modes = mode.begin();
+    let mut resumed = Vec::new();
+    loop {
+        walk_items(ctx, &mut modes, std::mem::take(&mut resumed), func_worklist, sinks);
+        while let Some(entry) = func_worklist.pop() {
+            if visited_funcs.insert(entry) {
+                let start = vec![(entry, modes.entry(entry))];
+                walk_items(ctx, &mut modes, start, func_worklist, sinks);
+            }
+        }
+        resumed = modes.resume(arch, ctx.code_space, sinks.insns);
+        if resumed.is_empty() {
+            break;
+        }
+    }
+    modes.finish(arch, ctx.code_space);
+}
+
+/// Walk from `start`, each item in the mode it carries (`None` reads the
+/// database), filing what it decodes as [`step`] does.
+fn walk_items(
+    ctx: &StepCtx<'_>,
+    modes: &mut super::kuna_armwalkmode::WalkModes<'_>,
+    start: Vec<(u64, Option<u32>)>,
+    func_worklist: &mut Vec<u64>,
+    sinks: &mut WalkSinks<'_>,
+) {
+    let mut pending = start;
+    let mut successors = Vec::new();
+    let mut reads = modes.read_override(ctx.translate);
+    while let Some((vma, mode)) = pending.pop() {
+        reads.set(mode);
+        let mut work = Worklists { insns: std::mem::take(&mut successors), funcs: func_worklist };
+        let mut store = LastRecord { store: sinks.insns, last: None };
+        step(ctx, vma, &mut store, sinks.funcs, sinks.refs, sinks.callbacks, &mut work);
+        match (store.last, mode) {
+            (Some(last), Some(mode)) => {
+                let commits = if last.target.is_some() {
+                    ctx.translate.last_context_commits()
+                } else {
+                    Vec::new()
+                };
+                modes.decoded(vma, last.len, mode);
+                let comes_back = last.flow.is_call || last.flow.kind == FlowKind::CallOther;
+                let callee = last.target.filter(|_| last.flow.is_call);
+                if let Some(target) = callee {
+                    modes.called(target, modes.successor(target, mode, &commits));
+                }
+                for next in work.insns.drain(..) {
+                    let next_mode = modes.successor(next, mode, &commits);
+                    if comes_back {
+                        modes.hold(next, next_mode, callee);
+                    } else {
+                        pending.push((next, Some(next_mode)));
+                    }
+                }
+            }
+            (Some(_), None) => pending.extend(work.insns.drain(..).map(|next| (next, None))),
+            (None, _) => {}
+        }
+        successors = work.insns;
+    }
+}
+
+/// What [`walk_items`] reads back about the instruction [`step`] just filed.
+#[derive(Clone, Copy)]
+struct Filed {
+    len: u32,
+    flow: super::model::FlowType,
+    target: Option<u64>,
+}
+
+/// An [`InsnSink`] that keeps [`Filed`] for the last record it files.
+struct LastRecord<'a> {
+    store: &'a mut InstructionStore,
+    last: Option<Filed>,
+}
+
+impl InsnSink for LastRecord<'_> {
+    fn decoded(&self, vma: u64) -> bool {
+        self.store.decoded(vma)
+    }
+
+    fn record(&mut self, insn: InsnLite) {
+        self.last = Some(Filed { len: insn.len, flow: insn.flow, target: insn.flows.first().copied() });
+        self.store.record(insn);
     }
 }
 
