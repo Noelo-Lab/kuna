@@ -473,6 +473,7 @@ kuna_options! { self, p1;
         self.index_alias_guard = val;
         Ok(msg)
     },
+    "callarrayextent" => on_off!(call_array_extent, "Call-escaped frame array extent"),
     "arrayextent" => {
         let (val, msg) =
             crate::p6_variables::kuna_arrayextent::OptionArrayExtent.apply(p1)?;

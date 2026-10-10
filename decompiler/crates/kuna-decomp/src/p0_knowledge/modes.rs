@@ -482,11 +482,16 @@ mod tests {
         /// `varargsharedfloat` reads a PowerPC register choice that only -O0
         /// code preserves: on clang -O2 and -Os batteries it adds 23 arguments
         /// the source never passed for 11 it restores.
+        ///
+        /// `callarrayextent` preserves call-written aliases by declaring the
+        /// available frame region as an array, but a pointer parameter does not
+        /// establish the source array's exact length. Keep that representation
+        /// choice per-run rather than enabling it in a preset.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "bejoin", "armframes",
-              "mixedtailret", "varargsharedfloat"];
+              "mixedtailret", "varargsharedfloat", "callarrayextent"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

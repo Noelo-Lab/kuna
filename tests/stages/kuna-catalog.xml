@@ -50,4 +50,5 @@
 <stringmatch name="KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in" min="1" max="1">"option": "armfloatargs", "values": \["on", "off"\], "default": "off", "current": "off"</stringmatch>
 <stringmatch name="KUNA-CATALOG #13: validated ARM frames are default-off" min="2" max="2">"option": "armframes", "values": \["on", "off"\], "default": "off", "current": "off"</stringmatch>
 <stringmatch name="KUNA-CATALOG #14: validated ARM frames are explicitly enabled" min="1" max="1">"option": "armframes", "values": \["on", "off"\], "default": "off", "current": "on"</stringmatch>
+<stringmatch name="KUNA-CATALOG #15: 285 registry rows plus four individual queries" min="289" max="289">"option": </stringmatch>
 </decompilertest>
