@@ -2048,7 +2048,8 @@ mod tests {
         // walk gives
         // and kuna-ucomiss-unordered / an x86 float compare flag read by
         // seta/setae/setbe/setb keeps its unordered case
-        assert_eq!(count, 481, "corpus file count drifted");
+        // and kuna-thunkentry / the target of a jmp thunk is a function entry
+        assert_eq!(count, 482, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

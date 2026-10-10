@@ -485,6 +485,11 @@ Three tiers:
 | decompiling a discovered function returns no body at all | [`unmappedentry`](#unmappedentry) |
 | the function inventory of an anti-disassembly binary contains an address that is not mapped | [`unmappedentry`](#unmappedentry) |
 | a call target from junk bytes behind an always-taken branch becomes a function | [`unmappedentry`](#unmappedentry) |
+| kuna functions lists only the 5-byte jmp thunks of an msvc incremental-link image | [`thunkentry`](#thunkentry) |
+| a thunk's size covers many real functions | [`thunkentry`](#thunkentry) |
+| decompile-all prints each body under the name of its thunk | [`thunkentry`](#thunkentry) |
+| function behind a jmp rel32 thunk is never a function start | [`thunkentry`](#thunkentry) |
+| fast mode finds no function bodies at all on an msvc debug build | [`thunkentry`](#thunkentry) |
 | every function in a ppc64 binary is listed twice, as an 8-byte named husk plus an anonymous body | [`ppclocalentry`](#ppclocalentry) |
 | kuna decompile of a named ppc64 function returns an empty body with a funcboundflow truncation warning | [`ppclocalentry`](#ppclocalentry) |
 | kuna functions reports size 8 for a ppc64 function that is plainly longer | [`ppclocalentry`](#ppclocalentry) |
@@ -2094,6 +2099,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) keeps the function inventory free of entries at addresses the image does not contain: the tell-tale is a sub_<addr> in kuna functions whose address is outside every section and whose size is 0, typically on an obfuscated or anti-disassembly binary. Flip off to restore the previous discovery set exactly - e.g. to see every address the walk followed as a call target, including the unmapped ones.
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-unmappedentry
 - **Example:** `--option unmappedentry off`
+
+### `thunkentry` -- on | off, default `on`
+
+- **Symptoms:** kuna functions lists only the 5-byte jmp thunks of an msvc incremental-link image; a thunk's size covers many real functions; decompile-all prints each body under the name of its thunk; function behind a jmp rel32 thunk is never a function start; fast mode finds no function bodies at all on an msvc debug build.
+- **What it does:** Make the target of a jump thunk a function entry. The Listing walk creates a function only at a CALL target and treats every other flow target as a same-function successor, so when a function's whole body is one direct jmp, the routine it jumps to never became a function: its body was attributed to the thunk. MSVC /INCREMENTAL links the image entry and every call through a table of 5-byte jmp rel32 thunks, so on such an image fast_funcdisc found the thunks and none of the bodies, and the last thunk's extent ran over every body after it. This reads the completed walk and promotes the target of a walk entry that opens with a direct unconditional jmp to a decoded instruction when three conditions hold: no decoded instruction falls through into the target and no conditional branch targets it; the address right after the thunk's jmp is undecoded, a function entry, another direct jmp (the next thunk of a table) or the target itself, so a function that opens with a jump over its own loop body to the loop condition is not split; and the thunk is itself an entry, including one this pass promoted, so a thunk-to-thunk chain resolves, followed at most four jumps from a walk entry. The promoted targets join the walk's own committed set (funcdisc_recursive, fast_funcdisc) and nothing else: no instruction is decoded differently, because the target is a branch successor of the thunk and was decoded either way. Measured on five x64 MSVC /INCREMENTAL images scored against their own .pdb (kept from kuna): 84 new entries, all real function starts, no body split, no entry lost. On 88 crackmes with a thunk table it adds 5,087 entries in fast mode and none is removed; 98 percent start at a thunk or right after padding or a ret, and the rest checked by hand are function starts after a thunk table or a Delphi jmp-over-ret prologue. On 464 stripped x86-64 ELFs and 12 i386 PEs without incremental linking it adds and removes nothing. x86 (I386 and x86-64) only; inert where the walk's set is not committed.
+- **When to flip:** On (default) gives each function behind a jmp thunk its own entry and extent, so an incremental-linked MSVC image lists its real bodies in every mode and each thunk decompiles to a one-line tail call. Flip off to restore the previous discovery set exactly, for instance to compare against a function list taken before this option existed.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · GH-992
+- **Example:** `--option thunkentry off`
 
 ### `ppclocalentry` -- on | off, default `on`
 

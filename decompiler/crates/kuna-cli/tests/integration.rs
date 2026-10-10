@@ -268,6 +268,9 @@ mod tail_call_returns;
 #[path = "target_selection_cli.rs"]
 mod target_selection_cli;
 
+#[path = "thunk_entries_cli.rs"]
+mod thunk_entries_cli;
+
 #[path = "triage_cli.rs"]
 mod triage_cli;
 

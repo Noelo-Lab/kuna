@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_276() {
-    assert_eq!(kuna_num_settables(), 276);
-    assert_eq!(SETTABLE_TABLE.len(), 276);
+fn settable_count_is_277() {
+    assert_eq!(kuna_num_settables(), 277);
+    assert_eq!(SETTABLE_TABLE.len(), 277);
 }
 
 #[test]
-fn tier_counts_are_96_core_109_transform_71_analysis() {
+fn tier_counts_are_96_core_109_transform_72_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_96_core_109_transform_71_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (96, 109, 71));
+    assert_eq!((core, transform, analysis), (96, 109, 72));
 }
 
 #[test]
@@ -394,6 +394,10 @@ fn option_values_live_value_present_for_110() {
         // no codegen live reader (read console-side via kuna_live_value), like the
         // discovery gates around it. Default-ON.
         "unmappedentry",
+        // (kuna) Jump-thunk target function entries -- an analysis-tier gate with
+        // no codegen live reader (read console-side via kuna_live_value), like
+        // `unmappedentry` above. Default-ON.
+        "thunkentry",
         // (kuna) PPC64 ELFv2 local-entry entry suppression -- an analysis-tier gate
         // with no codegen live reader (read console-side via kuna_live_value), like
         // `unmappedentry` above. Default-ON.
@@ -969,7 +973,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 253 -> 254: +1 for `protoranges`; its P6 row sits mid-table.
     // 257 -> 258: +1 for `bejoin`.
     // +1 for `coldentry`; its P1 row sits mid-table beside `fdeinterior`.
-    assert_eq!(json.matches("},\n").count(), 275);
+    // +1 for `thunkentry`; its P1 row sits mid-table beside `unmappedentry`.
+    assert_eq!(json.matches("},\n").count(), 276);
 }
 
 #[test]

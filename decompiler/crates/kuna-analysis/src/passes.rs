@@ -1076,6 +1076,17 @@ pub fn run_listing_consumers(
         out.push(("tailcallentry", tce_out));
     }
 
+    // (kuna `thunkentry`) The targets of the walk's jump thunks join the walk's own
+    // function set wherever that set is committed (`funcdisc_recursive`,
+    // `fast_funcdisc`). See `listing/kuna_thunkentry.rs`.
+    let walk_committed = (arch.analysis_listing && arch.analysis_funcstart_patterns)
+        || arch.analysis_fast_funcdisc;
+    let thunk_targets = if arch.analysis_thunkentry && walk_committed {
+        crate::listing::kuna_thunkentry::thunk_entries(&file, &listing)
+    } else {
+        Vec::new()
+    };
+
     // (kuna, recursive-descent discovery) Promote the walk's discovered functions — the
     // CALL targets it followed from the (prologue-seeded) roots — to committed function
     // entries. This is the commit step that turns the `walk.rs` two-level worklist
@@ -1085,7 +1096,9 @@ pub fn run_listing_consumers(
     // `analysis_funcstart_patterns` flag, so x86-64 (funcstart_patterns off) is byte-identical.
     if arch.analysis_listing && arch.analysis_funcstart_patterns {
         let mut rd_out = AnalysisOutput::default();
-        rd_out.entries = listing.functions().map(|(&vma, _)| vma).collect();
+        rd_out.entries =
+            listing.functions().map(|(&vma, _)| vma).chain(thunk_targets.iter().copied()).collect();
+        rd_out.entries.sort_unstable();
         out.push(("funcdisc_recursive", rd_out));
     }
     if !ptrentry_out.is_empty() {
@@ -1099,6 +1112,7 @@ pub fn run_listing_consumers(
             .functions()
             .map(|(&vma, _)| vma)
             .chain(fast_pointer_seeds)
+            .chain(thunk_targets)
             .collect();
         fast_out.entries.sort_unstable();
         fast_out.entries.dedup();

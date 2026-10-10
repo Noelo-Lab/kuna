@@ -1546,6 +1546,15 @@ pub struct Architecture {
     /// the claim that the target is a function is withheld. Off restores the
     /// previous (phantom-producing) discovery set exactly.
     pub analysis_unmappedentry: bool,
+    /// (kuna) Make the target of a jump thunk a function entry (`thunkentry`);
+    /// default **on**. The Listing walk makes a function only at a CALL target,
+    /// so the routine behind a function whose whole body is one direct `jmp`
+    /// (an MSVC `/INCREMENTAL` thunk) was attributed to the thunk. On, the
+    /// target of such a jump becomes a function of the walk's committed set
+    /// when it is not fallen into, not a conditional-branch target, and the
+    /// address after the thunk's jump holds no ordinary code. x86 only. Off
+    /// restores the previous discovery set exactly.
+    pub analysis_thunkentry: bool,
     /// (kuna) Refuse a function entry at a PPC64 ELFv2 **local entry point**
     /// (`ppclocalentry`); default **on**. The OpenPOWER ELFv2 ABI gives a
     /// function two entries — the symbol's `st_value` (which materialises the
@@ -2758,6 +2767,7 @@ impl Architecture {
             analysis_win32sigs: false,
             analysis_declaredlibcproto: false,
             analysis_unmappedentry: false,
+            analysis_thunkentry: false,
             analysis_ppclocalentry: false,
             analysis_flowmode: false,
             analysis_flowmode_aftercall: false,
@@ -3106,6 +3116,8 @@ impl Architecture {
         // (kuna) Unmapped-CALL-target entry suppression -- default-ON (it only ever
         // withholds an entry the walk already refused to decode).
         self.analysis_unmappedentry = true;
+        // (kuna) Jump-thunk target function entries -- default-ON (x86 only).
+        self.analysis_thunkentry = true;
         // (kuna) PPC64 ELFv2 local-entry entry suppression -- default-ON (it only
         // ever withholds the duplicate second entry over a function whose global
         // entry is already a seed, so no body can be lost).
