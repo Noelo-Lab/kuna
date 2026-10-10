@@ -4854,42 +4854,8 @@ impl PrintC {
             self.emit_default_case_label(case.label, &case_markup);
         } else {
             // case <label>: — one line per index targeting this case.
-            let jt_index = fd.sblocks_ref().block(blk).switch_jt_index();
-            let nlabels = match (jt_index, case.basicblock) {
-                (Some(j), Some(bb)) => {
-                    fd.get_jump_table(j as int4).num_indices_by_block(fd, bb).unwrap_or(1).max(1)
-                }
-                _ => 1,
-            };
-            for i in 0..nlabels {
-                let val = match (jt_index, case.basicblock) {
-                    (Some(j), Some(bb)) => {
-                        let ind = fd
-                            .get_jump_table(j as int4)
-                            .get_index_by_block(fd, bb, i)
-                            .unwrap_or(0);
-                        fd.get_jump_table(j as int4).get_label_by_index(ind)
-                    }
-                    _ => case.label,
-                };
-                let sz = self.switch_var_size(fd, blk);
-                let val = match jt_index {
-                    Some(j) if fd.get_jump_table(j as int4).kuna_lowered_var().is_none() => val & calc_mask(sz),
-                    _ => val,
-                };
-                let signed = jt_index
-                    .map(|j| {
-                        let jt = fd.get_jump_table(j as int4);
-                        match jt.get_indirect_op().and_then(|op| lowered_switch_label_form(fd, arch, op)) {
-                            Some((signed, _)) => signed,
-                            None if jt.kuna_lowered_var().is_some() => jt.kuna_has_signed_labels(),
-                            None => jt
-                                .get_indirect_op()
-                                .and_then(|op| native_switch_label_signedness(fd, arch, op))
-                                .unwrap_or(jt.kuna_has_signed_labels()),
-                        }
-                    })
-                    .unwrap_or(false);
+            for i in 0..self.switch_case_label_count(fd, blk, &case) {
+                let (val, sz, signed) = self.switch_case_label(fd, arch, blk, &case, i);
                 self.emit_numeric_case_label(
                     val,
                     sz,
@@ -4898,7 +4864,60 @@ impl PrintC {
                 );
             }
         }
-        let _ = arch;
+    }
+
+    /// How many labels a non-default case arm prints: one per jump-table index
+    /// that targets its block.
+    pub(crate) fn switch_case_label_count(
+        &self,
+        fd: &Funcdata,
+        blk: BlockId,
+        case: &crate::block::CaseOrder,
+    ) -> int4 {
+        match (fd.sblocks_ref().block(blk).switch_jt_index(), case.basicblock) {
+            (Some(j), Some(bb)) => {
+                fd.get_jump_table(j as int4).num_indices_by_block(fd, bb).unwrap_or(1).max(1)
+            }
+            _ => 1,
+        }
+    }
+
+    /// The `i`th label of a non-default case arm as the value, byte size and
+    /// signedness it prints with. Both output languages print labels from this,
+    /// so a label always names the value the printed selector holds.
+    pub(crate) fn switch_case_label(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        blk: BlockId,
+        case: &crate::block::CaseOrder,
+        i: int4,
+    ) -> (uintb, int4, bool) {
+        let jt_index = fd.sblocks_ref().block(blk).switch_jt_index();
+        let val = match (jt_index, case.basicblock) {
+            (Some(j), Some(bb)) => {
+                let jt = fd.get_jump_table(j as int4);
+                jt.get_label_by_index(jt.get_index_by_block(fd, bb, i).unwrap_or(0))
+            }
+            _ => case.label,
+        };
+        let sz = self.switch_var_size(fd, blk);
+        let Some(j) = jt_index else {
+            return (val, sz, false);
+        };
+        let jt = fd.get_jump_table(j as int4);
+        let val = if jt.kuna_lowered_var().is_none() { val & calc_mask(sz) } else { val };
+        let text_signed = self.lang().caps.signed_text_byte;
+        let lowered = jt.get_indirect_op().and_then(|op| lowered_switch_label_form(fd, arch, op, text_signed));
+        let signed = match lowered {
+            Some((signed, _)) => signed,
+            None if jt.kuna_lowered_var().is_some() => jt.kuna_has_signed_labels(),
+            None => jt
+                .get_indirect_op()
+                .and_then(|op| native_switch_label_signedness(fd, arch, op, text_signed))
+                .unwrap_or(jt.kuna_has_signed_labels()),
+        };
+        (val, sz, signed)
     }
 
     fn emit_default_case_label(&mut self, value: uintb, markup: &MarkupRef) {
@@ -5673,7 +5692,8 @@ impl PrintC {
                     self.emit.open_group()
                 };
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
-                    let cast = lowered_switch_label_form(fd, arch, op).and_then(|(_, cast)| cast);
+                    let cast = lowered_switch_label_form(fd, arch, op, self.lang().caps.signed_text_byte)
+                        .and_then(|(_, cast)| cast);
                     if let Some(ct) = &cast {
                         self.push_cast_open(ct, op);
                     }
@@ -11001,6 +11021,7 @@ fn lowered_switch_label_form(
     fd: &Funcdata,
     arch: &Architecture,
     op: OpId,
+    signed_text_byte: bool,
 ) -> Option<(bool, Option<std::rc::Rc<crate::dtype::Datatype>>)> {
     use crate::dtype::type_metatype::{TYPE_INT, TYPE_UINT};
     if !arch.lowered_switch_exact {
@@ -11018,7 +11039,7 @@ fn lowered_switch_label_form(
     }
     if let Some(ct) = switch_variable_type(fd, arch, op) {
         if ct.get_size() == sz && matches!(ct.get_metatype(), TYPE_INT | TYPE_UINT) {
-            return Some((ct.get_metatype() == TYPE_INT, None));
+            return Some((printed_integer_signedness(&ct, signed_text_byte) == Some(true), None));
         }
     }
     let signed = jt.kuna_has_signed_labels();
@@ -11058,13 +11079,26 @@ fn switch_variable_type(fd: &Funcdata, arch: &Architecture, op: OpId) -> Option<
 }
 
 /// Native labels follow the selector's declared type, or its expression type.
-fn native_switch_label_signedness(fd: &Funcdata, arch: &Architecture, op: OpId) -> Option<bool> {
-    use crate::dtype::type_metatype::{TYPE_ENUM_INT, TYPE_ENUM_UINT, TYPE_INT, TYPE_UINT};
+fn native_switch_label_signedness(
+    fd: &Funcdata,
+    arch: &Architecture,
+    op: OpId,
+    signed_text_byte: bool,
+) -> Option<bool> {
     let vn = fd.vbank().get(fd.obank().get(op)?.get_in(0)?)?;
     let ct = switch_variable_type(fd, arch, op)
         .filter(|ct| ct.get_size() == vn.get_size())
         .unwrap_or_else(|| vn.get_type_read_facing(op).clone());
+    printed_integer_signedness(&ct, signed_text_byte)
+}
+
+/// Whether the output language spells the integer type `ct` signed; `None` for
+/// a non-integer. A text byte is signed exactly when `signed_text_byte` says so
+/// (C's `char`, Rust's `u8`).
+fn printed_integer_signedness(ct: &crate::dtype::Datatype, signed_text_byte: bool) -> Option<bool> {
+    use crate::dtype::type_metatype::{TYPE_ENUM_INT, TYPE_ENUM_UINT, TYPE_INT, TYPE_UINT};
     match ct.get_metatype() {
+        TYPE_INT if ct.is_char_print() && ct.is_core_type() => Some(signed_text_byte),
         TYPE_INT | TYPE_ENUM_INT => Some(true),
         TYPE_UINT | TYPE_ENUM_UINT => Some(false),
         _ => None,
