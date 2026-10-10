@@ -3939,6 +3939,69 @@ a refusal cannot omit it from the documentation checks. A compatibility test
 pins the existing order and spellings; the scheduling and fallback policies do
 not depend on this representation.
 
+(kuna) **The ARM decode mode the walk carries** (`armwalkmode`, default on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_armwalkmode.rs (ArmWalkMode)`,
+driven by `decompiler/crates/kuna-analysis/src/listing/walk.rs (walk_carried)`).
+ARM `TMode` chooses the instruction set an address decodes in, and an
+interworking call (`blx imm`) runs a SLEIGH `globalset` that writes the
+callee's mode into the `ContextDatabase` from its target up to the next address
+where the mode was set explicitly. A stripped image has no such address, so
+once the walk decoded a caller of a Thumb helper, every address above the
+helper read as Thumb, and the walk decoded an A32 function placed there in
+Thumb even when an A32 `bl` called it: in GH-780's 136-byte image the A32
+helper at `0x2000080`, called after a `blx` to a Thumb helper at `0x2000040`,
+decompiled to `halt_missing()` with a Thumb decode starting at `0x2000082`.
+Ghidra's disassembler instead carries the context along the flow it follows
+and applies a `globalset` to its target.
+
+With the option on, the walk carries a mode the way the instruction set does,
+starting from code whose mode the image states: an even `e_entry` and each even
+function symbol, which the ELF for the ARM architecture makes A32. An
+instruction decoded in a carried mode passes it to its branch targets and its
+fall-through, and a direct call passes its target the mode it commits there
+(`blx imm` switches) or else its own (`bl`); the first call to reach a target
+decides. Each such instruction decodes through a context read override
+(`Translate::set_context_read_override`), so the database's partition is not
+touched while it decodes. A function entry nothing carries a mode to (a
+prologue-pattern, pointer, callback or gap seed) and everything reached from
+it read the database exactly as before, including what the walk's own `blx`
+writes put there, so a Thumb function reached only through a pointer table
+keeps the Thumb a `blx` below it wrote.
+
+The instruction after a call or a user-defined p-code operation (`svc`,
+`bkpt`, a barrier, a coprocessor access) is where a carried mode can run into
+the next function, when the call or operation does not come back at its site.
+The walk therefore holds each such address until it has walked every function
+its worklist holds, so a function a call reaches decodes in its call's mode
+before a fall-through can claim its first instruction. An address still
+undecoded then carries the mode on when the database holds that mode there,
+after an operation or an indirect call, or when the callee reaches a return
+instruction or an indirect branch through decoded code; resuming one address
+can decode the return another callee needs, so the walk repeats until no held
+address qualifies, and only then lets the rest read the database. A local
+function such as `b .` that never returns therefore leaves the bytes after its
+calls to the database. The fall-through of an ordinary instruction and a
+branch target are still trusted, so code a compiler leaves unreachable after
+`__builtin_unreachable()` without a call can still carry the mode into what
+follows it.
+
+When the walk ends, every instruction it decoded in a carried mode whose span
+the database holds in the other mode is painted with that mode
+(`set_variable_region` over runs of adjacent instructions), so the decompiler
+and every later walk read the instructions this walk found. The address after
+each painted run is then marked as set with the mode it already holds: a
+`blx` write at or inside the run, from a later walk or the decompiler, stops
+at the run's end instead of filling the code placed after it, and one written
+before the run stops at its start. Nothing else changes value.
+The option applies to a linked ARM ELF with an even `e_entry`, no mapping
+symbol, no odd (Thumb) function symbol, no Cortex-M vector table, no
+`armfuncmode` extent and build attributes that allow A32 code
+(`decompiler/crates/kuna-analysis/src/loader/kuna_armfloatabi.rs (thumb_only)`),
+and not under an explicit `--isa`. Where metadata paints a mode, the walk reads
+those paints as before. The parallel walk
+declines every ARM image already (its decodes commit context), and the
+validated-frame walk of `armframes` keeps its own context lifecycle.
+
 (kuna) **Flow-proven ARM decode-mode paints** (`flowmode`, values `on`,
 `aftercall` and `off`, default `off`;
 `decompiler/crates/kuna-analysis/src/listing/kuna_flowmode.rs (disagreeing_runs)`).
@@ -3949,7 +4012,9 @@ address where the mode was set explicitly. A stripped image has no such address,
 so once the walk decodes a caller of a Thumb helper, every address above the
 helper holds Thumb: a `bl` to the A32 helper at `0x2000080`, two instructions
 after a `blx` to a Thumb helper at `0x2000040`, decompiled to `halt_missing()`
-with a Thumb decode starting at `0x2000082`.
+with a Thumb decode starting at `0x2000082`. That is the walk `armwalkmode off`
+runs; with it on (the default), the walk itself already decodes such code in
+the mode its flow carries, and this proof finds nothing left to paint there.
 
 The walk itself is not changed: its instructions, functions and references, and
 every context write it makes, stay as they are. After it, kuna decodes again the
@@ -5068,8 +5133,8 @@ admit recovered frames share one context lifecycle
   below its corpus threshold, or enabled. Repeated queries and later
   decompilation therefore see the same unrelated instruction streams.
 
-Initial Listing discovery retains its existing context behavior and optional
-`flowmode` proof policy. Already established Listing bodies are retained during
+Initial Listing discovery keeps its own context behavior, `armwalkmode`'s
+carried modes and the optional `flowmode` proof policy. Already established Listing bodies are retained during
 a recovery rebuild. Provisional
 bodies contradicted by direct interworking, including calls into instruction
 interiors, are invalidated using the recorded call mode. Inventory rebuilds

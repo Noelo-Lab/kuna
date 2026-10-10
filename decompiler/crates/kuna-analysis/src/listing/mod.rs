@@ -43,6 +43,7 @@ pub mod kuna_thunkentry;
 mod kuna_walkcontext;
 mod kuna_fingerprintcontext;
 mod kuna_flowmode;
+mod kuna_armwalkmode;
 pub(crate) mod kuna_framemode;
 pub(crate) mod kuna_decodereuse;
 mod kuna_picbase;
@@ -323,6 +324,7 @@ impl Listing {
         // decode correctly instead of as A32/MIPS32 garbage.
         let painter = context::ContextPainter::new(file, arch);
         let flow_mode = kuna_flowmode::FlowMode::for_object(file, arch, &painter);
+        let arm_walk = kuna_armwalkmode::ArmWalkMode::for_object(file, arch, &painter);
 
         // The PPC64 ELFv2 local-entry fold (`ppclocalentry`): an intra-module `bl`
         // targets `st_value + <localentry>`, which is a point inside the callee,
@@ -341,6 +343,7 @@ impl Listing {
             &seed_funcs,
             &painter,
             flow_mode.as_ref(),
+            arm_walk.as_ref(),
             &local_entries,
             detail,
             want_stack_callbacks,
@@ -413,6 +416,7 @@ impl Listing {
             seeds,
             &seed_funcs,
             &context::ContextPainter::empty(),
+            None,
             None,
             &BTreeMap::new(),
             detail,
