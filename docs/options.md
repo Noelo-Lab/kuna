@@ -630,6 +630,11 @@ Three tiers:
 | this renders as int8 * or unsigned long instead of the class type | [`cppsig`](#cppsig) |
 | a mangled symbol names the function but not its parameter types | [`cppsig`](#cppsig) |
 | no signature recovery on a stripped c++ shared library | [`cppsig`](#cppsig) |
+| a __thiscall c++ import call loses its this argument | [`msvcsig`](#msvcsig) |
+| an msvc-mangled import is named but its call has no arguments | [`msvcsig`](#msvcsig) |
+| a call to a c++ import that returns a class loses its hidden return pointer | [`msvcsig`](#msvcsig) |
+| arguments of one call are given to an earlier msvc c++ import call | [`msvcsig`](#msvcsig) |
+| a __cdecl c++ import is treated as popping its own arguments | [`msvcsig`](#msvcsig) |
 | mcount/__fentry__ profiling calls clutter every -pg function prologue | [`callfixup`](#callfixup) |
 | cspec call-fixup targets rendered as plain calls instead of dissolved | [`callfixup`](#callfixup) |
 | absolute function-pointer table in rodata never recognized | [`addrtable`](#addrtable) |
@@ -2384,6 +2389,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** proven (default) is precision 1.0000 / recall 0.7093 on google/leveldb: `void leveldb::Cache::~Cache(Cache *this)` instead of `void leveldb::Cache::~Cache(unsigned long a0)`. Raise to inferred for precision 0.9278 / recall 0.9978 - it additionally recovers plain (non-const, non-ctor) member functions like `leveldb::TableBuilder::WriteBlock(TableBuilder *this,BlockBuilder *a1,BlockHandle *a2)` and namespaced free functions like `leveldb::NewMemEnv(Env *a0)`, at the cost of a spurious `this` on a static member. Flip off to restore name-only demangling.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-cppsig
 - **Example:** `option cppsig inferred`
+
+### `msvcsig` -- on | off, default `on`
+
+- **Symptoms:** a __thiscall c++ import call loses its this argument; an msvc-mangled import is named but its call has no arguments; a call to a c++ import that returns a class loses its hidden return pointer; arguments of one call are given to an earlier msvc c++ import call; a __cdecl c++ import is treated as popping its own arguments.
+- **What it does:** Read an MSVC-mangled name as the full declaration it is and apply it to the defined functions AND the PE imports that carry one (cppsig alone read only defined symbols, so an import named ?IsValid@Arr@@QAEHXZ got a name and no prototype). On 32-bit x86 the stated __cdecl/__stdcall/__thiscall/__fastcall selects the prototype model, so a __thiscall member takes this in ECX and a __cdecl callee leaves its arguments for the caller to pop. The stated return type is applied. A class returned by value comes back through a hidden pointer passed after this, and that is applied where it is certain: for every non-static member, and for any function whose class the image proves non-trivial (it defines or imports the class's copy or user constructor, destructor, vftable or deleting destructor); a free function returning a class with no such witness is refused, because MSVC returns a trivially copyable 1/2/4/8-byte aggregate in EDX:EAX and the name gives neither size nor triviality. A class, struct, union or enum passed by value has a width the name does not give, so on a __cdecl import the parameters before it are applied and the rest of the list is left open (recovered at the call site, as for a variadic call), and everywhere else the declaration is refused: a callee-pops convention would claim a stack adjustment that depends on the missing size. Gated on cppsig (off disables both). LOSS: a parameter after a by-value class is not placed, and where MSVC builds that class in its outgoing slot through a pointer (a copy constructor) the call-site recovery does not take the slots above it, so those arguments render as stores before the call.
+- **When to flip:** On (default) gives a 32-bit MSVC image's C++ imports their signatures: v1 = Arr::IsValid(a0) with this typed Arr *, std::basic_ios::setstate((basic_ios *)(a0 + *(int *)(*a0 + 4)),2,0) instead of setstate(2,0), MakeStack(a1) keeping its hidden return pointer typed Arr *, and the copy constructor Arr::Arr((Arr *)&v1,a2) no longer swallowing the next call's pushes. Flip off to restore the cppsig reading of MSVC names (defined symbols only, default model, no return type, __thiscall refused) when a stated convention is suspected to disagree with the code.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-msvcsig
+- **Example:** `option msvcsig off`
 
 ### `callfixup` -- on | off, default `on`
 

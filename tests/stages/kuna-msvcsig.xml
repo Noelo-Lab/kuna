@@ -1,0 +1,76 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    MSVC-mangled PE imports get a prototype (`option msvcsig on|off`).
+
+    Issue: GH Noelo-Lab/kuna#990. A 32-bit MSVC image calls C++ imports through
+    its IAT. The demangled-signature pass read only defined symbols, so each
+    import was named from its mangled name and had no prototype: a `__thiscall`
+    call lost the `this` MSVC passes in ECX, and a callee with no declared
+    arity took the pushes meant for the next call.
+
+    Stage / sub-stage: P1 external-refinement (`kuna-analysis`
+    `analyzers/demangle/kuna_msvcsig.rs` reads the declaration off the import
+    name; the commit parks it by address under the stated convention's model
+    and locks it onto the import symbol) feeding P4 prototype-source
+    (`ActionDefaultParams` / `ActionDeindirect` at the IAT call).
+
+    P0 assertion: `option msvcsig on|off` (on by default, gated on `cppsig`).
+
+    The fixture `msvcsig_protos_i386.exe` is the issue's clean-room repro,
+    assembled from `msvcsig_protos_i386.asm` (see the fixtures README). It
+    imports from arr.dll, where `Arr` is a 4-byte class with a destructor:
+      ?IsValid@Arr@@QAEHXZ               int Arr::IsValid()            __thiscall
+      ??0Arr@@QAE@ABV0@@Z                Arr::Arr(Arr const &)         __thiscall
+      ?Note@@YAXJ@Z                      void Note(long)               __cdecl
+      ?MakeStack@@YA?AVArr@@V1@AAV1@1@Z  Arr MakeStack(Arr, Arr &, Arr &) __cdecl
+    0x401000 is `int Check(Arr *a) { int v = a->IsValid(); Note(v); return v; }`
+    and 0x401020 is `Arr Build(Arr &x, Arr &y) { return MakeStack(x, x, y); }`.
+
+    Pass 1 (`option msvcsig off`) reproduces the BUG: `IsValid()` has no `this`,
+    and the copy constructor takes MakeStack's arguments.
+    Pass 2 (default) is the FIX: `Arr::IsValid(a0)` with `this` typed `Arr *`,
+    the copy constructor takes its slot and its source, and MakeStack keeps its
+    hidden return pointer, typed. The copy constructor's evidence (it is
+    imported) is what proves MakeStack returns Arr through that pointer.
+    MakeStack's by-value `Arr` has a size the name does not state, so the
+    parameters after it are left open; they are not recovered here, because
+    the slot's address is passed to the copy constructor, so the pushes above
+    it stay stores before the call in both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcsig_protos_i386.exe</com>
+  <com>option msvcsig off</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcsig_protos_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MSVCSIG #1: off drops this from the __thiscall import call" min="1" max="1">v1 = IsValid\(\);</stringmatch>
+<stringmatch name="MSVCSIG #2: off hands MakeStack's pushes to the copy constructor" min="1" max="1">Arr\(a2,a0,a2,a3\);</stringmatch>
+<stringmatch name="MSVCSIG #3: on passes this to the __thiscall import" min="1" max="1">v1 = Arr::IsValid\(a0\);</stringmatch>
+<stringmatch name="MSVCSIG #4: on types the caller's parameter as the class pointer" min="1" max="1">int4 sub_401000\(Arr \*a0\)</stringmatch>
+<stringmatch name="MSVCSIG #5: on gives the copy constructor its slot and its source" min="1" max="1">Arr::Arr\(\(Arr \*\)&amp;v1,a2\);</stringmatch>
+<stringmatch name="MSVCSIG #6: the hidden return pointer is MakeStack's argument in both passes" min="2" max="2">MakeStack\(a1\);</stringmatch>
+<stringmatch name="MSVCSIG #7: on types the hidden return pointer" min="1" max="1">Arr \* sub_401020\(</stringmatch>
+<stringmatch name="MSVCSIG #8: the cdecl import keeps its argument in both passes" min="2" max="2">Note\(v1\);</stringmatch>
+</decompilertest>

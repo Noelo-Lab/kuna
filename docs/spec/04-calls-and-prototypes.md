@@ -290,9 +290,19 @@ OptionProtoEval)`) — the ABI-trust knob of the `abi-trust` sub-phase row in
 `decompiler/crates/kuna-decomp/phases.toml`. Those options are what the registry
 makes usable: on an x86 PE target `option defaultprototype __thiscall`
 resolves and recovers the ECX `this` pointer as the first parameter, where
-before it failed with "Unknown prototype model". Automatic
-assignment of `__thiscall` to member functions (from the demangler or from DWARF
-`DW_AT_object_pointer`) is not wired.
+before it failed with "Unknown prototype model". The demangler assigns a model
+automatically only for an MSVC name, which states its convention (`msvcsig`,
+01): the model is recorded against the function's entry ADDRESS
+(`decompiler/crates/kuna-decomp/src/infra/architecture.rs
+(Architecture::set_function_prototype_model_at)`), because the name-keyed record
+above is shared by every function of one spelling and an MSVC import set carries
+overloads (`Arr::Arr()` and `Arr::Arr(class Arr const &)`); a name-keyed
+declaration for the same function still wins at the join. Its `TypeCode` lock may
+declare the inputs only — a constructor states no return type — and such pieces
+(no `outtype`, no explicit output storage) build a prototype whose output is laid
+out as `void` and left unlocked, the same reading `seed_locked_from_pieces` gives
+them, rather than aborting the storage assignment. Assigning `__thiscall` from
+DWARF `DW_AT_object_pointer` is not wired.
 
 Registration is not the whole story, because a spec can also **nominate** one of
 its registered models for evaluating a function's own unlocked prototype:

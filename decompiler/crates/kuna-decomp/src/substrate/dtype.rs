@@ -6418,11 +6418,21 @@ impl TypeFactoryImpl {
         tc.flags |= flags::variable_length;
         //   proto = new FuncProto(); proto->setInternal(sig.model, voidtype);
         let mut fp = crate::fspec::FuncProto::new();
-        fp.set_internal(model, voidtype);
+        fp.set_internal(model, Rc::clone(&voidtype));
         //   proto->updateAllTypes(sig); setInputLock(true); setOutputLock(true);
-        fp.update_all_types(proto, self, &manager_rc)?;
+        // (kuna `cppsig`) Pieces with no `outtype` and no explicit output storage
+        // declare the inputs only (`FuncProto::seed_locked_from_pieces`), so the
+        // output is laid out as `void` and left unlocked for recovery.
+        let input_only = proto.outtype.is_none() && proto.output_storage.is_none();
+        if input_only {
+            let mut typed = proto.clone();
+            typed.outtype = Some(voidtype);
+            fp.update_all_types(&typed, self, &manager_rc)?;
+        } else {
+            fp.update_all_types(proto, self, &manager_rc)?;
+        }
         fp.set_input_lock(true);
-        fp.set_output_lock(true);
+        fp.set_output_lock(!input_only);
         tc.kind = DatatypeKind::Code { proto: Some(Rc::new(fp)) };
 
         // markComplete(): clear type_incomplete.

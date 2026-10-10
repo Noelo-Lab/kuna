@@ -384,7 +384,31 @@ calls, with identical observable result — the analysis path locks callee
 signatures before flow runs). A CALLIND keeps its computed target as input 0
 (`setup_callind_specs`) unless a previous decompilation pass planted an
 indirect override (de-indirection), which converts it to a direct CALL before
-the spec is built. `flow.rs (FlowInfo::check_for_flow_modification)` then
+the spec is built. (kuna `msvcsig`) One more CALLIND is made direct there: a
+call through an import slot whose MSVC-declared prototype the analysis commit
+locked onto the import symbol (01, `msvcsig`)
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_msvcimportcall.rs
+(locked_import_slot)`). The target must be the word the call's own instruction
+reads from a constant address (the folded `COPY` of a memory varnode, or a
+`LOAD` through a constant pointer, through temporary copies), that address must
+be in the slot set the commit recorded and painted external by `peimportcall`,
+and the FunctionSymbol there must carry an input-locked prototype. Left to
+`ActionDeindirect`, such a call is resolved only after the default-model
+prototype it was given has been merged against a locked `__thiscall` or
+`__cdecl` one, which fails and restarts the function to plant exactly this
+override; resolving it here removes that restart, which on a 32-bit MSVC C++
+image nearly every function paid. Other import calls are unchanged: one whose
+symbol carries only parked pieces (the Win32 and libc tables) still waits for
+`ActionDeindirect`. A call to any address that set names, direct or made direct
+here, copies the locked prototype at flow and so never reaches the
+`ActionDefaultParams` arm that gives a declared callee the stack adjustment its
+parameter list implies (`calleeprotostack`, 04); the copy applies that rule
+itself
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeprotostack.rs
+(resolve_declared_extra_pop)`), so a
+`__thiscall` or `__stdcall` import pops what its declaration says instead of
+what the push run in front of it suggests.
+`flow.rs (FlowInfo::check_for_flow_modification)` then
 applies the callee's flow effects: an *inline* callee queues the op for
 injection; a *no-return* callee gets an artificial halt planted directly after
 the call plus the `"Subroutine does not return"` warning, so flow never runs

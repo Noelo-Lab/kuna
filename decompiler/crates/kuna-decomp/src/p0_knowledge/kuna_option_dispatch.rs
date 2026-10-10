@@ -967,6 +967,7 @@ kuna_options! { self, p1;
         self.analysis_cppsig = mode;
         Ok(msg)
     },
+    "msvcsig" => on_off!(analysis_msvcsig, "MSVC declaration arm of the demangled signatures"),
     "typedepth" => {
         let val = on_or_off(p1)?;
         self.analysis_typedepth = val;

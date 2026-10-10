@@ -2597,12 +2597,89 @@ moves.
   from class evidence mined out of the binary's own symbols: a scope that owns a
   constructor, a destructor, a cv-qualified member or a `_ZTV`/`_ZTI`/`_ZTS` symbol
   is a class, so its members take `this`; a scope with no such witness is a
-  namespace, so its functions do not. A 32-bit MSVC `__thiscall` member is refused
-  under every mode — that ABI passes `this` in ECX rather than as ordinary argument
-  0, and selecting the registered `__thiscall` prototype model (04 §4.1) is the
-  follow-up. Like the DWARF arm the pass runs at `load file`, so both certainty
-  tiers are computed there and stashed apart, and the mode selects which of them
-  the analysis commit applies.
+  namespace, so its functions do not. This reading refuses a 32-bit MSVC
+  `__thiscall` member — that ABI passes `this` in ECX rather than as ordinary
+  argument 0 — and reads an MSVC name only off a defined symbol; the MSVC arm
+  below replaces it for MSVC names unless `msvcsig` is off. Like the DWARF arm the
+  pass runs at `load file`, so both certainty tiers are computed there and stashed
+  apart, and the mode selects which of them the analysis commit applies.
+- **MSVC declarations** (`msvcsig`, `on|off`, default `on`, applied only while
+  `cppsig` is not `off`;
+  `decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_msvcsig.rs`, the
+  signature half of Ghidra's `MicrosoftDemanglerAnalyzer`) reads an MSVC-mangled
+  name as the full declaration it is, and reads it off the **PE imports** as well
+  as off defined symbols. The Itanium reading above sees only `file.symbols()` and
+  `file.dynamic_symbols()`, and a PE import lives in the import table, so a call
+  through the IAT to `?IsValid@Arr@@QAEHXZ` was named `Arr::IsValid` and had no
+  prototype: the `this` that MSVC passes in ECX was dropped, a hidden return
+  pointer was left as the call's only argument, and the arguments a callee did
+  not claim were handed to the next call (a copy constructor took the four pushes
+  meant for the call after it). Unlike an Itanium name an MSVC name states the
+  access specifier, `static`, the calling convention, the return type and every
+  parameter type, so the arm decides five things from it. The **convention**: on
+  32-bit x86 (a PE or COFF image) the stated `__cdecl`, `__stdcall`, `__thiscall`
+  or `__fastcall` names the prototype model the pieces are laid out for, so a
+  member takes `this` in ECX and a `__cdecl` callee leaves its arguments for the
+  caller to pop; any other platform keeps its one default convention, and a
+  convention with no model of its own in the spec (only an alias of the default)
+  drops the declaration at the commit. **`this`**: a member that is not `static`
+  takes one as argument 0. The **return type** is applied, which Itanium cannot
+  offer; a constructor or destructor states none and keeps return recovery. The
+  **hidden return pointer**: a class, struct or union returned by value comes back
+  through a pointer the caller passes after `this`, and the callee returns that
+  pointer in EAX — but not always, since MSVC returns a trivially copyable
+  aggregate of 1, 2, 4 or 8 bytes from a free or `static` function in EDX:EAX and
+  the name gives neither the size nor the triviality. The pointer is placed only
+  where it is certain: for every non-static member (which always returns a class
+  indirectly), and for any function whose class the image proves non-trivial by
+  defining or importing its destructor (`??1`), a vftable (`??_7`), a deleting
+  destructor (`??_G`/`??_E`) or a constructor that takes arguments (`??0`, a copy,
+  move or user constructor) — a trivial special member is never emitted, so its
+  symbol cannot exist. A default constructor is not a witness, because one that
+  only runs member initializers is emitted for a class MSVC still returns in
+  registers; and a free function returning a class with no witness is refused.
+  The **parameters**: a primitive (at the MSVC width: `long` is 4 bytes, `wchar_t`
+  2, `long double` 8), a pointer, a reference or a function pointer is placed. A
+  class, struct, union or enum passed **by value** has a width the name does not
+  give — MSVC copies it into the outgoing argument area at its own size — so on an
+  **import** declared `__cdecl` the parameters before it are placed and the rest of
+  the list is left open, the way a variadic declaration leaves it (the caller pops,
+  so the open tail claims nothing about the stack), and everywhere else the
+  declaration is refused: a callee-pops convention would claim a stack adjustment
+  that depends on the missing size, and a defined function would lose the
+  parameters its own body recovers. Each declaration is checked whole before any
+  type is built, so a refused one leaves nothing in the type factory. Overloaded
+  operators, which the Itanium reading refuses for its bracket-depth parse, are
+  read here (`operator<<`, `operator()`, `operator new`, conversions), since the
+  parameter list is found by matching parentheses from the end and an MSVC name
+  states its `this` outright; special names (`` `vftable' ``, adjustor thunks),
+  data symbols, function templates and the `__vectorcall`/`__clrcall` conventions
+  are refused. At the commit an MSVC prototype is parked by entry address on every
+  address the import resolver names (the IAT slot and each `FF 25` thunk), its
+  model is recorded against that address
+  (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
+  (Architecture::set_function_prototype_model_at)`), and it is also locked onto the
+  function symbol as the prototype-bearing `TypeCode` a `--assert prototype`
+  directive would lock (04 §4.1). The lock is what reaches a 32-bit IAT call:
+  `ActionDefaultParams` sees the target of a `call [abs32]` as a temporary its
+  flow has not linked to the slot yet, and `ActionDeindirect` later merges the
+  prototype `query_function` reads off the symbol, so a prototype parked only as
+  pieces is not seen there. The commit also records each locked address, and the
+  flow makes a call through one of those slots direct before the spec is built
+  (02 §2.1), so the locked prototype is copied in at flow instead of costing the
+  function a restart. Measured on the local RE-challenge corpus, 175 distinct
+  32-bit and 229 distinct 64-bit MSVC PE images that import MSVC-mangled names
+  (the `msvcp` iostream and string API in most): calls printed with no arguments
+  fall from 13,819 to 11,302 and from 18,858 to 17,355, 5.4% and 8.3% of the
+  functions change, and total decompile CPU time moves by +0.3% and -0.5%.
+  LOSS: a parameter after a by-value class is not placed, and where MSVC
+  constructs that class in its
+  outgoing slot through a pointer — a copy constructor, or a call returning into
+  the slot — the call-site recovery refuses every slot above the one whose address
+  was taken, so those arguments render as stores before the call
+  (`MakeStack(a1)`, after `Arr::Arr((Arr *)&v1,a2)`, keeps only its hidden return
+  pointer). `--option msvcsig off` restores the Itanium-arm reading of MSVC names
+  exactly.
 - **Source-language detection**
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
   (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) runs once,

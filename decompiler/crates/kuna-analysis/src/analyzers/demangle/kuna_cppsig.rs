@@ -71,6 +71,13 @@
 //! (`__gnu_cxx::operator==<…>(…)`) are the densest source of static/free-function
 //! false positives.
 //!
+//! ## MSVC names
+//!
+//! An MSVC name is read twice. This module's parse is the `msvcsig off`
+//! reading, kept so that gate restores it exactly; [`super::kuna_msvcsig`] reads
+//! the same names, and the PE imports, with their calling convention, return
+//! type and hidden return pointer, which is what the commit applies by default.
+//!
 //! ## Origin (upstream Ghidra)
 //!
 //! `DemangledFunction.applyTo` + `GnuDemanglerAnalyzer`'s "Apply Function
@@ -145,24 +152,22 @@ impl AnalysisPass for CppSigPass {
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
         let mangled = mangled_function_symbols(ctx.file);
-        if mangled.is_empty() {
+        let imports = super::kuna_msvcsig::msvc_imports(ctx);
+        if mangled.is_empty() && imports.is_empty() {
             return out;
         }
-        let decls: Vec<(u64, Decl)> = mangled
+        let decls: Vec<(u64, Decl, bool)> = mangled
             .iter()
             .filter_map(|(addr, raw)| {
                 let dem = demangle_raw(raw)?;
-                Some((*addr, parse_decl(&dem)?))
+                Some((*addr, parse_decl(&dem)?, raw.starts_with('?')))
             })
             .collect();
-        if decls.is_empty() {
-            return out;
-        }
-        let classes = class_scopes(ctx.file, &decls);
+        let classes = class_scopes(ctx.file, decls.iter().map(|(_, d, _)| d));
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
         let ptr = types.get_size_of_pointer();
-        for (addr, decl) in &decls {
+        for (addr, decl, msvc) in &decls {
             let (has_this, proven) = match decl.this_kind {
                 ThisKind::Proven => (true, true),
                 ThisKind::ProvenNone => (false, true),
@@ -177,12 +182,15 @@ impl AnalysisPass for CppSigPass {
             let Some(pieces) = build_pieces(decl, has_this, types, ptr, word_size) else {
                 continue;
             };
-            if proven {
+            if *msvc {
+                out.cpp_sig.msvc_legacy.push((*addr, pieces));
+            } else if proven {
                 out.cpp_sig.proven.push((*addr, pieces));
             } else {
                 out.cpp_sig.inferred.push((*addr, pieces));
             }
         }
+        super::kuna_msvcsig::collect(ctx, &mangled, &imports, &mut out.cpp_sig.msvc);
         out
     }
 }
@@ -247,9 +255,9 @@ fn infer_this(scope: &str, classes: &HashSet<String>) -> Option<bool> {
 /// a constructor or destructor filed under the scope, a cv-qualified member of
 /// it, and a `_ZTV`/`_ZTI`/`_ZTS` (vtable / typeinfo / typeinfo-name) symbol
 /// naming it. Only `inferred` consults this set.
-fn class_scopes(file: &object::File, decls: &[(u64, Decl)]) -> HashSet<String> {
+fn class_scopes<'a>(file: &object::File, decls: impl Iterator<Item = &'a Decl>) -> HashSet<String> {
     let mut scopes: HashSet<String> = HashSet::new();
-    for (_, d) in decls {
+    for d in decls {
         if d.this_kind == ThisKind::Proven && !d.scope.is_empty() {
             scopes.insert(d.scope.clone());
         }
@@ -322,8 +330,8 @@ fn parse_decl(dem: &str) -> Option<Decl> {
     // demangled form carries the ACCESS SPECIFIER (only a class member has one),
     // the `static` keyword, and the calling convention.  A 32-bit MSVC member
     // (`__thiscall`) passes `this` in ECX rather than as ordinary argument 0, so
-    // that one combination is refused rather than mis-placed — selecting the
-    // `__thiscall` prototype model (registered by #265) is the follow-up.
+    // that one combination is refused here rather than mis-placed; the MSVC arm
+    // (`kuna_msvcsig`) reads it with its convention.
     let msvc = prefix.contains("__cdecl")
         || prefix.contains("__thiscall")
         || prefix.contains("__stdcall")
@@ -446,7 +454,7 @@ fn is_cv_ref_only(s: &str) -> bool {
 
 /// The last space-separated token at bracket depth 0 — the qualified name, with
 /// any return type in front of it dropped.
-fn last_token(s: &str) -> String {
+pub(super) fn last_token(s: &str) -> String {
     let b = s.as_bytes();
     let mut depth: i32 = 0;
     let mut cut = 0usize;
@@ -462,7 +470,7 @@ fn last_token(s: &str) -> String {
 }
 
 /// Split a qualified name on every depth-0 `::`.
-fn split_top_level(s: &str) -> Vec<&str> {
+pub(super) fn split_top_level(s: &str) -> Vec<&str> {
     let b = s.as_bytes();
     let mut depth: i32 = 0;
     let mut out = Vec::new();
@@ -487,7 +495,7 @@ fn split_top_level(s: &str) -> Vec<&str> {
 }
 
 /// Split a parameter list on every depth-0 `,`.
-fn split_params(s: &str) -> Vec<&str> {
+pub(super) fn split_params(s: &str) -> Vec<&str> {
     if s.trim().is_empty() {
         return Vec::new();
     }
@@ -512,7 +520,7 @@ fn split_params(s: &str) -> Vec<&str> {
 
 /// Drop every balanced `<...>` group, leaving the bare name (`basic_string<char,
 /// …>` -> `basic_string`).
-fn strip_template_args(s: &str) -> String {
+pub(super) fn strip_template_args(s: &str) -> String {
     let mut depth: i32 = 0;
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -669,7 +677,7 @@ fn build_param_type(
 /// through to the aggregate arm) and `Some(None)` when it is a primitive the type
 /// factory declined to build (so the caller refuses the signature).
 #[allow(clippy::type_complexity)]
-fn primitive_type(text: &str, types: &dyn TypeFactory) -> Option<Option<Rc<Datatype>>> {
+pub(super) fn primitive_type(text: &str, types: &dyn TypeFactory) -> Option<Option<Rc<Datatype>>> {
     let long = types.get_size_of_long();
     let int = types.get_size_of_int();
     let (size, meta) = match text {
@@ -700,7 +708,7 @@ fn primitive_type(text: &str, types: &dyn TypeFactory) -> Option<Option<Rc<Datat
 
 /// Strip a trailing cv qualifier WORD, never a suffix of an identifier: `Slice
 /// const` peels to `Slice`, `Xconst` does not peel at all.
-fn strip_qualifier_word<'a>(s: &'a str, word: &str) -> Option<&'a str> {
+pub(super) fn strip_qualifier_word<'a>(s: &'a str, word: &str) -> Option<&'a str> {
     let r = s.strip_suffix(word)?;
     match r.chars().next_back() {
         None => Some(r),
@@ -710,28 +718,60 @@ fn strip_qualifier_word<'a>(s: &'a str, word: &str) -> Option<&'a str> {
 }
 
 /// A plain C identifier (what a placeholder structure may be named).
-fn is_identifier(s: &str) -> bool {
+pub(super) fn is_identifier(s: &str) -> bool {
     !s.is_empty()
         && !s.starts_with(|c: char| c.is_ascii_digit())
         && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Fold the pass's two certainty tiers into the list the commit boundary applies,
-/// under the resolved `--option cppsig` mode.
-pub fn select(facts: CppSigFacts, inferred: bool) -> Vec<(u64, PrototypePieces)> {
+/// One demangled prototype the commit boundary applies.
+#[derive(Debug)]
+pub struct SelectedSig {
+    /// The entry address it is parked at.
+    pub addr: u64,
+    pub pieces: PrototypePieces,
+    /// The prototype model the pieces were laid out for, when the MSVC arm named
+    /// one.
+    pub model: Option<&'static str>,
+    /// Read by the MSVC arm: a full declaration, locked onto the function symbol
+    /// itself as well as parked for its callers.
+    pub msvc: bool,
+}
+
+/// Fold the pass's certainty tiers into the list the commit boundary applies,
+/// under the resolved `--option cppsig` mode and `--option msvcsig` gate.
+pub fn select(facts: CppSigFacts, inferred: bool, msvc: bool) -> Vec<SelectedSig> {
     let CppSigFacts {
         proven,
         inferred: amb,
+        msvc: msvc_sigs,
+        msvc_legacy,
     } = facts;
-    let mut out = proven;
+    let plain = |(addr, pieces): (u64, PrototypePieces)| SelectedSig {
+        addr,
+        pieces,
+        model: None,
+        msvc: false,
+    };
+    let mut out: Vec<SelectedSig> = proven.into_iter().map(plain).collect();
+    if msvc {
+        out.extend(msvc_sigs.into_iter().map(|(addr, pieces, model)| SelectedSig {
+            addr,
+            pieces,
+            model,
+            msvc: true,
+        }));
+    } else {
+        out.extend(msvc_legacy.into_iter().map(plain));
+    }
     if inferred {
-        out.extend(amb);
+        out.extend(amb.into_iter().map(plain));
     }
     // Two symbols can alias one entry (a `C1`/`C2` constructor pair); the parked
     // prototype is per address, so keep the first and let the rest fall away
     // rather than re-parking the same function repeatedly.
     let mut seen: HashMap<u64, ()> = HashMap::new();
-    out.retain(|(a, _)| seen.insert(*a, ()).is_none());
+    out.retain(|s| seen.insert(s.addr, ()).is_none());
     out
 }
 

@@ -4321,12 +4321,13 @@ fn commit_analysis_output(
     //     shape as `cppproto` above, but the gate is three-valued, so the mode
     //     selects WHICH certainty tiers survive: `proven` only the prototypes the
     //     mangling entails, `inferred` those plus the class-evidence inferences,
-    //     `off` neither.
+    //     `off` neither. `msvcsig` picks which reading of an MSVC name applies.
     let cppsig_mode = prog.arch().analysis_cppsig;
     let cppsig_protos = if cppsig_mode.enabled() {
         kuna_analysis::demangle::kuna_cppsig::select(
             std::mem::take(&mut out.cpp_sig),
             cppsig_mode.inferred(),
+            prog.arch().analysis_msvcsig,
         )
     } else {
         Vec::new()
@@ -4866,9 +4867,32 @@ fn commit_analysis_output(
     //     carries a DECLARATION (which can disagree with the code a compiler
     //     actually emitted), DWARF carries ground truth, so wherever both reach a
     //     function the DWARF signature must be the one that survives. Empty when
-    //     `--option cppsig off`.
-    for (addr, pieces) in cppsig_protos {
+    //     `--option cppsig off`. An MSVC declaration laid out for a named
+    //     convention is parked with that model, and dropped where the spec does
+    //     not register it as a model of its own (only an alias of the default),
+    //     since its storage would then be the default's. It is also locked onto
+    //     the symbol, as a `prototype` directive is, because a call through a PE
+    //     import slot reads the symbol's prototype, not the parked pieces; and
+    //     the address is recorded so the flow can make such a call direct.
+    for sig in cppsig_protos {
+        let kuna_analysis::demangle::kuna_cppsig::SelectedSig { addr, pieces, model, msvc } = sig;
         let a = Address::new(Rc::clone(code_space), addr);
+        let model = match model {
+            Some(name) => {
+                let model = prog.arch().get_model(name).filter(|m| m.get_alias_parent().is_none()).cloned();
+                let Some(model) = model else { continue };
+                prog.arch_mut().set_function_prototype_model_at(&a, Rc::clone(&model));
+                Some(model)
+            }
+            None => None,
+        };
+        if msvc {
+            let target = crate::assertions::ProtoTarget::At(a.clone(), String::new());
+            crate::assertions::lock_prototype_on_symbol(prog, &target, &pieces, model.as_ref());
+            if let Some(space) = a.get_space() {
+                prog.arch_mut().msvcsig_import_slots.insert((space.get_index(), addr));
+            }
+        }
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
 
