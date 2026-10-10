@@ -414,6 +414,37 @@ impl kuna_sleigh::translate::PcodeEmit for OneShotPcodeEmit {
     }
 }
 
+/// The kind of control transfer an instruction makes, strongest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FlowKind {
+    Return,
+    JumpInd,
+    Jump,
+    CondJump,
+    Call,
+    CallInd,
+}
+
+impl FlowKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FlowKind::Return => "return",
+            FlowKind::JumpInd => "jumpind",
+            FlowKind::Jump => "jump",
+            FlowKind::CondJump => "cjump",
+            FlowKind::Call => "call",
+            FlowKind::CallInd => "callind",
+        }
+    }
+}
+
+/// [`ConsoleProgram::insn_flow`]'s answer: how one instruction passes control on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InsnFlow {
+    pub kind: FlowKind,
+    pub targets: Vec<u64>,
+}
+
 /// The console's loaded program: the engine assembly (C++ `dcp->conf`, an
 /// `XmlArchitecture : Architecture`) plus the console-owned marshaling registry
 /// and option database the `option` command needs.
@@ -1735,6 +1766,50 @@ impl ConsoleProgram {
         }
     }
 
+    /// How the instruction at `vma` passes control on, read from its own
+    /// p-code: the strongest flow op it holds (return, then indirect jump,
+    /// then jump, then conditional jump, then call) and the code addresses
+    /// its direct jumps and calls name. A branch within the instruction's own
+    /// p-code is not flow. `None` when it does not decode or does not flow.
+    pub fn insn_flow(&self, vma: u64) -> Option<InsnFlow> {
+        let code_space = Rc::clone(self.arch().manage().get_default_code_space()?);
+        let addr = Address::new(code_space, vma);
+        let mut emit = OneShotPcodeEmit::default();
+        let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.arch().translate().one_instruction(&mut emit, &addr)
+        }));
+        if !matches!(decoded, Ok(Ok(_))) {
+            return None;
+        }
+        let code_target = |in0: &Option<VarnodeData>| {
+            let v = in0.as_ref()?;
+            let space = v.space.as_ref()?;
+            (space.get_type() != kuna_base::space::spacetype::IPTR_CONSTANT).then_some(v.offset)
+        };
+        let mut kind: Option<FlowKind> = None;
+        let mut targets = Vec::new();
+        for (opc, in0) in &emit.ops {
+            let (k, target) = match opc {
+                OpCode::CPUI_RETURN => (FlowKind::Return, None),
+                OpCode::CPUI_BRANCHIND => (FlowKind::JumpInd, None),
+                OpCode::CPUI_BRANCH => match code_target(in0) {
+                    Some(t) => (FlowKind::Jump, Some(t)),
+                    None => continue,
+                },
+                OpCode::CPUI_CBRANCH => match code_target(in0) {
+                    Some(t) => (FlowKind::CondJump, Some(t)),
+                    None => continue,
+                },
+                OpCode::CPUI_CALL => (FlowKind::Call, code_target(in0)),
+                OpCode::CPUI_CALLIND => (FlowKind::CallInd, None),
+                _ => continue,
+            };
+            targets.extend(target);
+            kind = Some(kind.map_or(k, |old| old.min(k)));
+        }
+        kind.map(|kind| InsnFlow { kind, targets })
+    }
+
     /// (kuna) Add the fixed addresses the instruction at `vma` names — the
     /// constant locations it reads and the constant addresses it branches or
     /// calls to — to `into`.
@@ -2534,12 +2609,19 @@ impl ConsoleProgram {
         let want_listing = self.arch().analysis_listing;
         let want_fast_funcdisc = self.arch().analysis_fast_funcdisc;
         let want_operand_refs = self.arch().analysis_operand_refs;
+        let want_wide32_alone = self.arch().analysis_widestrings32 && !want_operand_refs;
         // (kuna) The full byte-pattern entry sweep is deferred here too — not
         // because it decodes, but because its gate is only known now. Registered at
         // load it swept the whole image on every binary and was discarded whenever
         // the gate was off (the default). See `passes::run_deferred_entry_passes`.
         let want_funcstart_patterns = self.arch().analysis_funcstart_patterns;
-        if (want_listing || want_fast_funcdisc || want_operand_refs || want_funcstart_patterns)
+        let want_coldentry = self.arch().analysis_coldentry;
+        if (want_listing
+            || want_fast_funcdisc
+            || want_operand_refs
+            || want_wide32_alone
+            || want_funcstart_patterns
+            || want_coldentry)
             && self.analysis_image.is_some()
         {
             let analysis_target = self.arch.arch_id().to_string();
@@ -2557,16 +2639,16 @@ impl ConsoleProgram {
                     // in `merged` before `committed_entry_seeds` is read below, which
                     // is what hands the load-time inventory to the Listing walk as
                     // extra roots (`armdiscseed`).
-                    if want_funcstart_patterns {
+                    if want_funcstart_patterns || want_coldentry {
+                        let arch = self.arch();
                         let entry_out = kuna_analysis::passes::run_deferred_entry_passes(
                             &bytes,
                             &image,
-                            self.arch(),
+                            arch,
+                            &|id| analysis_pass_enabled(arch, id),
                         );
-                        for (id, out) in entry_out {
-                            if analysis_pass_enabled(self.arch(), id) {
-                                merged.merge(out);
-                            }
+                        for (_, out) in entry_out {
+                            merged.merge(out);
                         }
                     }
                     // Deferred Listing build + consumer/fast-inventory run, gated
@@ -2601,6 +2683,7 @@ impl ConsoleProgram {
                             &noreturn_seed_addrs,
                             &[],
                             &committed_entry_seeds,
+                            &merged.fde_interior_entries,
                             &plan,
                         );
                         for (id, out) in consumer_out {
@@ -2622,6 +2705,8 @@ impl ConsoleProgram {
                             self.arch(),
                         );
                         merged.merge(out);
+                    } else if want_wide32_alone {
+                        merged.merge(kuna_analysis::passes::run_wide_strings32(&bytes, &image, self.arch()));
                     }
                 }
             }
@@ -2643,11 +2728,40 @@ impl ConsoleProgram {
             &mut merged.entries,
             &fde_bodies,
         );
+        // (kuna, `coldentry`) The FDE-interior entries a multi-entry `.cold`
+        // fragment is jumped into at, added past the suppression above.
+        let cold_entries = std::mem::take(&mut merged.fde_interior_entries);
+        merged.entries.extend(cold_entries);
         // (kuna, `pdbinterior`) The same rejection inside PDB procedures, on its own
         // terms: see `suppress_pdb_interior_entries`.
         suppress_pdb_interior_entries(self.arch(), &code_space, &mut merged);
         merged.context_paints.extend(input_context_paints);
-        commit_analysis_output(self, &code_space, merged)
+        let committed = commit_analysis_output(self, &code_space, merged);
+        self.stash_float_scan();
+        committed
+    }
+
+    /// (kuna `floatglobals`) Hand the engine what the whole-program float-global
+    /// scan reads -- the image's sections and every function entry -- so the
+    /// first function that asks can take it (`decompile_step`).
+    fn stash_float_scan(&mut self) {
+        let mut sections = self.sections();
+        if sections.is_empty() {
+            sections = self.segments();
+        }
+        if sections.is_empty() {
+            return;
+        }
+        let mut seeds: Vec<u64> = self
+            .symbols
+            .iter()
+            .filter(|s| s.addr.get_space().is_some())
+            .map(|s| self.thumb_normalized(s.addr.get_offset()))
+            .collect();
+        seeds.sort_unstable();
+        seeds.dedup();
+        self.arch_mut().kuna_float_scan =
+            Some(Rc::new(kuna_decomp::kuna_floatglobals::FloatScan { sections, seeds }));
     }
 }
 
@@ -2741,6 +2855,7 @@ fn suppress_pdb_interior_entries(
 /// enabled (a new pass with no registered gate still runs — fail-open, additive).
 fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
     match pass_id {
+        "armframes" => arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes,
         "noreturn_known" => arch.analysis_noreturn_known,
         // (kuna) PE/Mach-O import-slot call binding — typed-slot `externref`
         // paint plus PE-only Win32 no-return names, committed only when enabled.
@@ -2796,6 +2911,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // strictly inside one. Default-ON; with the gate off the fact stream is
         // dropped here and the discovery set is exactly what it was before.
         "fdeinterior" => arch.analysis_fdeinterior,
+        "coldentry" => arch.analysis_coldentry,
         "pdatainterior" => arch.analysis_pdatainterior,
         // (kuna) PDB-procedure-interior entry suppression — the extents come out of
         // the `.pdb`, so switching `pdb` off withdraws them too.
@@ -2824,6 +2940,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // decompile-all surface). x86-64 keeps it off ⇒ byte-identical there.
         "funcdisc_recursive" => arch.analysis_funcstart_patterns,
         "arm_markers" => arch.analysis_arm_markers,
+        // (kuna `armfuncmode`) An explicit `--isa` states the mode of the whole
+        // image, so the symbol-derived A32 extents yield to it.
+        "armfuncmode" => arch.analysis_armfuncmode && !arch.input_arm_isa_override,
         // (kuna) The entry-reachable Thumb context walk. Its paints are computed at
         // the commit (after byte overlays) and stashed under this id, so the gate
         // here is the defensive half of the check that decides whether it runs.
@@ -2850,6 +2969,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // silently re-enables a pass id that does not exist.
         "noreturn_discstrict" => arch.analysis_noreturn_discstrict,
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
+        "callerreads" => arch.caller_reads,
         "fid" => arch.analysis_fid,
         // (kuna) MSVC RTTI / vftable recovery — a standalone load-time pass whose
         // class-name + RTTI_* labels are computed at LOAD but COMMITTED only when
@@ -2875,6 +2995,14 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // Registered here so the fail-open `_ => true` never silently re-enables a
         // pass id that does not exist.
         "aifcorroborate" => arch.analysis_aifcorroborate,
+        // (kuna, GH-299) The AIF bracketed-candidate reject — like `aifstrict` it
+        // has no fact stream of its own, shaping the `aif` accept list inside
+        // `run_aif`. Registered here so the fail-open `_ => true` never silently
+        // re-enables a pass id that does not exist.
+        "aifbracket" => arch.analysis_aifbracket,
+        // (kuna, GH-299) The AIF filler reject, shaping the `aif` accept list the
+        // same way; registered for the same fail-open reason.
+        "aifnoppad" => arch.analysis_aifnoppad,
         // (kuna) Tail-call function-entry recovery — default-OFF (discovers more
         // functions, so it changes emitted C by construction). Listing consumer;
         // the live gate is the pre-invocation check in `run_listing_consumers`.
@@ -4066,8 +4194,9 @@ pub fn bootstrap_from_object_with_isa(
     // written straight onto the arch here at load, upstream of every `option`
     // command. The XML `<binaryimage>` bootstrap never reaches this line, which is
     // why `option rustabi auto` is inert on the datatest corpus by construction.
-    let source_is_rust = kuna_analysis::sourcelang::detect_compiler_bytes(&bytes).is_rust();
-    sleigh.base_mut().unwrap().source_is_rust = source_is_rust;
+    let compiler = kuna_analysis::sourcelang::detect_compiler_bytes(&bytes);
+    sleigh.base_mut().unwrap().source_is_rust = compiler.is_rust();
+    sleigh.base_mut().unwrap().source_is_go = compiler.is_golang();
     // (kuna `pebnames`) The same kind of one-bit image fact: is this a Windows
     // GUI/console PE, whose segment base holds a user-mode TEB?  `option pebnames
     // auto` acts only when it is.
@@ -4201,12 +4330,13 @@ fn commit_analysis_output(
     //     shape as `cppproto` above, but the gate is three-valued, so the mode
     //     selects WHICH certainty tiers survive: `proven` only the prototypes the
     //     mangling entails, `inferred` those plus the class-evidence inferences,
-    //     `off` neither.
+    //     `off` neither. `msvcsig` picks which reading of an MSVC name applies.
     let cppsig_mode = prog.arch().analysis_cppsig;
     let cppsig_protos = if cppsig_mode.enabled() {
         kuna_analysis::demangle::kuna_cppsig::select(
             std::mem::take(&mut out.cpp_sig),
             cppsig_mode.inferred(),
+            prog.arch().analysis_msvcsig,
         )
     } else {
         Vec::new()
@@ -4438,6 +4568,15 @@ fn commit_analysis_output(
         prog.arch_mut().error_noreturn_callsites = sites;
     }
 
+    // (kuna `callerreads`) Park where each direct call returns to. Empty without
+    // the Listing, so the datatest/console parity paths are unaffected.
+    if !out.call_returns.is_empty() {
+        let mut sites = out.call_returns.clone();
+        sites.sort_unstable();
+        sites.dedup();
+        prog.arch_mut().kuna_call_returns = sites;
+    }
+
     // 3a''. (kuna `formatstring static`) Park the per-call-site printf/scanf
     //       prototype overrides the load-time resolver recovered, keyed by the
     //       CONTAINING function so the decompile step can hand exactly this
@@ -4522,10 +4661,17 @@ fn commit_analysis_output(
     //    `LoadLibraryW("n")` defect. Whichever fact is planted first wins the
     //    `occupied` guard below, so the width that read the whole literal has to go
     //    first. The stream is dropped entirely when the gate is off — `off` is
-    //    byte-identical to the 1-byte markup alone.
+    //    byte-identical to the 1-byte markup alone. (kuna `widestrings32`) The
+    //    4-byte width (`wchar4[N]`, element count `len / 4`) goes before both on
+    //    the same grounds, under its own gate.
     let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
-    for (fact, char_size) in
-        wide.iter().map(|f| (f, 2u32)).chain(out.strings.iter().map(|f| (f, 1u32)))
+    let wide32 =
+        if prog.arch().analysis_widestrings32 { out.wide_strings32.as_slice() } else { &[] };
+    for (fact, char_size) in wide32
+        .iter()
+        .map(|f| (f, 4u32))
+        .chain(wide.iter().map(|f| (f, 2u32)))
+        .chain(out.strings.iter().map(|f| (f, 1u32)))
     {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         // Conservative guard: skip an address that already carries a symbol (an
@@ -4555,10 +4701,10 @@ fn commit_analysis_output(
         let ch = if char_size == 1 {
             prog.arch().types().get_type_char(prog.arch().types().get_size_of_char())?
         } else {
-            // A language whose <coretypes> declares no 2-byte character type has no
-            // `wchar2` to plant. Skip the wide fact rather than fail the whole
-            // commit — the 1-byte arm keeps its original hard failure.
-            match prog.arch().types().get_type_char(2) {
+            // A language whose <coretypes> declares no 2- or 4-byte character type
+            // has no `wchar2`/`wchar4` to plant. Skip the wide fact rather than fail
+            // the whole commit — the 1-byte arm keeps its original hard failure.
+            match prog.arch().types().get_type_char(char_size as int4) {
                 Ok(ch) => ch,
                 Err(_) => continue,
             }
@@ -4739,9 +4885,32 @@ fn commit_analysis_output(
     //     carries a DECLARATION (which can disagree with the code a compiler
     //     actually emitted), DWARF carries ground truth, so wherever both reach a
     //     function the DWARF signature must be the one that survives. Empty when
-    //     `--option cppsig off`.
-    for (addr, pieces) in cppsig_protos {
+    //     `--option cppsig off`. An MSVC declaration laid out for a named
+    //     convention is parked with that model, and dropped where the spec does
+    //     not register it as a model of its own (only an alias of the default),
+    //     since its storage would then be the default's. It is also locked onto
+    //     the symbol, as a `prototype` directive is, because a call through a PE
+    //     import slot reads the symbol's prototype, not the parked pieces; and
+    //     the address is recorded so the flow can make such a call direct.
+    for sig in cppsig_protos {
+        let kuna_analysis::demangle::kuna_cppsig::SelectedSig { addr, pieces, model, msvc } = sig;
         let a = Address::new(Rc::clone(code_space), addr);
+        let model = match model {
+            Some(name) => {
+                let model = prog.arch().get_model(name).filter(|m| m.get_alias_parent().is_none()).cloned();
+                let Some(model) = model else { continue };
+                prog.arch_mut().set_function_prototype_model_at(&a, Rc::clone(&model));
+                Some(model)
+            }
+            None => None,
+        };
+        if msvc {
+            let target = crate::assertions::ProtoTarget::At(a.clone(), String::new());
+            crate::assertions::lock_prototype_on_symbol(prog, &target, &pieces, model.as_ref());
+            if let Some(space) = a.get_space() {
+                prog.arch_mut().msvcsig_import_slots.insert((space.get_index(), addr));
+            }
+        }
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
 
@@ -4771,6 +4940,8 @@ fn commit_analysis_output(
     //    ELF decompile would regress. The producing pass already gates on the
     //    object being ARM (so on a non-ARM binary `out.context_paints` is empty),
     //    and this swallow is the belt-and-suspenders second guard.
+    prog.arch_mut().arm_inventory_modes = out.inventory_context_paints.iter()
+        .filter_map(|paint| Some((paint.addr, paint.end?, paint.value))).collect();
     for paint in &out.context_paints {
         let begin = Address::new(Rc::clone(code_space), paint.addr);
         // Drop the Result: an unregistered context variable (non-ARM language) is

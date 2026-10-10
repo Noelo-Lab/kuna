@@ -9,6 +9,9 @@ pub mod modelrules;
 pub mod coreaction_protos;
 pub mod kuna_calleedeadarg;
 pub mod kuna_hiddenretarg; // (kuna) a value left in the hidden-return register is no argument a callee cannot take
+pub mod kuna_calleereadarg; // (kuna) keep a refused argument the callee's own body reads
+pub mod kuna_zerofillreturn; // (kuna) the zero a narrow write leaves in a returned q register's upper half is no part of the value
+pub mod kuna_zerocallregs; // (kuna) a register a -fzero-call-used-regs epilogue clears is no part of the return value
 pub mod kuna_calleepreserves; // (kuna) the decoded callee's writes narrow the cspec killedbycall set
 pub mod kuna_callretpair; // (kuna) complete the two-register CALL output arm on any image, not just a Rust one
 pub mod kuna_calleeprotostack; // (kuna) a declared callee's prototype states its stack contract
@@ -22,7 +25,9 @@ pub mod kuna_noreturnretuse;
 pub mod kuna_returnpair;
 pub mod kuna_retinputhalf;
 pub mod kuna_retcallhalf; // (kuna) a call's result handed back beside a computed second return register
+pub mod kuna_retsysreg; // (kuna) a register set for a system register is not the high word of the return
 pub mod kuna_retpushedhalf;
+pub mod kuna_reloadarg; // (kuna) a register reloaded from the caller's frame is re-scored once the frame is heritaged
 pub mod kuna_returnuncomputed;
 pub mod kuna_spillargtrial;
 pub mod kuna_stackaddrargtrial;
@@ -30,6 +35,7 @@ pub mod kuna_zeroidiomuse; // (kuna) a self-cancelling `xor r,r` is not a compet
 pub mod kuna_varargstackargs; // (kuna) the variadic call's stack tail is its own fillinMap section
 pub mod kuna_argclobber; // (kuna) drop a trailing register argument a previous call's clobber put there
 pub mod kuna_passthrough; // (kuna) a register forwarded untouched to a callee that reads it is a parameter
+pub mod kuna_mixedtailret; // (kuna) a value returned beside a claimed tail-call result is returned too
 pub mod kuna_varargtail; // (kuna) a recovered parameter that only feeds a variadic tail is not one a caller may gain
 pub mod kuna_calleearity; // (kuna) one callee, one argument list across its call sites
 pub mod kuna_calleearityfwd; // (kuna) reconcile against a sibling call that finalizes later
@@ -59,5 +65,7 @@ pub mod kuna_vfpvariadic; // (kuna) a declared ARM hard-float variadic function 
 pub mod kuna_varargformat;
 pub mod kuna_varargtransfer;
 pub mod kuna_varargforward; // (kuna) a declared parameter forwarded unchanged to a variadic call
+pub mod kuna_varargsharedfloat; // (kuna) a counted variadic double that also feeds an earlier argument
 pub mod kuna_voidret; // (kuna) a function whose result a caller reads returns it
+pub mod kuna_callerreads; // (kuna) a function decompiled alone returns what its callers read
 pub mod kuna_bejoin; // (kuna) a big-endian pair joins its halves in the ABI's order when its low word is returned on purpose

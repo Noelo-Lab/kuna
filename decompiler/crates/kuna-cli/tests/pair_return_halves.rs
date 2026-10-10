@@ -2,7 +2,7 @@
 //! low word (`add r0,r0,#3; asr r1,r0,#31`), or whose low word is the argument
 //! left in its register (`mov r1,#0; bx lr`), returns all eight bytes. Both
 //! printed as `void f(void)`, so a caller of the printed C read nothing.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
@@ -201,6 +201,7 @@ fn a_high_word_built_from_the_low_word_or_beside_the_argument_round_trips() {
                 std::fs::write(&src, format!("{PRELUDE}{text}\n{SOURCE}\n{}", main_for(&text))).unwrap();
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", "-fwrapv", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .args(common::CC_GCC15_DEMOTE)
                     .output()
                     .expect("spawn the C compiler");
                 assert!(

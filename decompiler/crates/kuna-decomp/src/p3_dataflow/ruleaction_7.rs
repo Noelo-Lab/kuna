@@ -2211,7 +2211,7 @@ fn ignorenan_check_back_for_compare(
         def1 = vn_def(data, vn).expect("ignorenan: negate in0 written");
     }
     if op_is_floating_point(data, def1) {
-        if op_num_input(data, def1) != 2 {
+        if op_num_input(data, def1) != 2 || crate::kuna_floatnegation::is_exact(data, def1) {
             return false;
         }
         let in0 = op_in(data, def1, 0).expect("ignorenan: cmp in0");
@@ -2243,7 +2243,7 @@ fn ignorenan_check_back_for_compare(
         if !op_is_floating_point(data, def2) {
             continue;
         }
-        if op_num_input(data, def2) != 2 {
+        if op_num_input(data, def2) != 2 || crate::kuna_floatnegation::is_exact(data, def2) {
             continue;
         }
         let in0 = op_in(data, def2, 0).expect("ignorenan: cmp2 in0");

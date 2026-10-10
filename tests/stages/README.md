@@ -80,6 +80,7 @@ writeup, not here.
 | `gh6389-8085-undoc.xml` | [GH-6389](https://github.com/NationalSecurityAgency/ghidra/issues/6389) | S1 decode-table (8085 spec-fix, no option) | Nine undocumented 8085 instructions (DSUB/ARHL/RDEL/LDSI/SHLX/LHLX/RSTV/JNK/JK) now decode |
 
 | `gh7451-riscvzfaflis.xml` | [GH-7451](https://github.com/NationalSecurityAgency/ghidra/issues/7451) | S1 decode-table (RISCV spec-fix, no option) | SLEIGH adds Zfa `fli.s` (constant table + `fli` pcodeop) |
+| `gh831-riscv-fpmove.xml`, `gh831-riscv32-fpmove.xml` | [Kuna #831](https://github.com/Noelo-Lab/kuna/issues/831) | P2 p-code lift (RISCV spec-fix, no option) | `fmv.x.d`/`fmv.x.w` read the FP register itself, and `fmv.x.w`/`fcvt.w*` write the integer register (sign-extended on RV64) |
 
 | `gh6904-ppc-e500-concat44.xml` | [GH-6904](https://github.com/NationalSecurityAgency/ghidra/issues/6904) | P-code lift (PowerPC e500 spec-fix, no option) | `or`/`or.` (`mr`/`mr.`) zero-extend their 32-bit result on the 64-bit-register e500, killing spurious CONCAT44 at function boundaries (partial) |
 
@@ -93,6 +94,9 @@ writeup, not here.
 | `kuna-entryretdispatch.xml` | RE-friction need `entry-point-ret-dispatch` | S2 flow classification (proven entry `push continuation; push target; ret` links become calls) | `option entryretdispatch on\|off` |
 | `kuna-extent-fallthrough.xml` | [Kuna #850](https://github.com/Noelo-Lab/kuna/issues/850) | S2 flow classification (caller-declared extent vs discovered interior entry) | `option funcboundflow on\|off` |
 | `kuna-extent-direct-branch.xml` | [Kuna #850](https://github.com/Noelo-Lab/kuna/issues/850) | S2 flow classification (in-extent direct and recovered indirect branches vs tail-call inference; out-of-extent veneer control) | `option tailcalljump on\|off` |
+| `kuna-thunkentry.xml` | [Kuna #992](https://github.com/Noelo-Lab/kuna/issues/992) | P1 code/data partition (the target of a walk entry that is one direct `jmp` becomes a function; MSVC `/INCREMENTAL` thunk table) | `option thunkentry on\|off` |
+| `kuna-aifbracket.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (an AIF gap candidate whose own flow rejoins the known function around it is refused without boundary evidence) | `option aifbracket on\|off` |
+| `kuna-aifnoppad.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (no AIF gap entry starts on nop padding: padding in front of a known function is not probed, and an accept behind padding moves to the code after it) | `option aifnoppad on\|off` |
 | `kuna-pushimmediateret.xml` | RE-friction duplicate needs `entry-point-push-return` + `push-immediate-ret-transfer` | S2 flow classification (a proven one-store `push immediate; ret` becomes a terminal branch; no target function is synthesized) | `option pushimmediateret on\|off` |
 | `kuna-subcommuteshift.xml` | RE-friction need `cancelling-byte-arithmetic-splits` | S3 simplification quiescence (exact modulo-256 multiply/shift cancellation) | `option cancelbytearithmetic on\|off` |
 | `kuna-wideslice.xml` | clang x86-64 `-O3` byte-sum regression | P3 SSA reduction (push demanded slices through 9..15-byte `PIECE`, byte shifts, and bitwise operations; the artificial aggregates heritage and the rule pool leave behind, without recognizing the source algorithm) | `option wideslice on\|off` |
@@ -153,6 +157,18 @@ correctness fix, exercised with defaults and `nanignore none`.
 `kuna-cli/tests/sse_minss_cli.rs` compiles the emitted bodies with GCC and Clang
 at `-O0` and `-O2` and checks NaN payloads, signed zeros and finite controls
 against the original assembly.
+
+`kuna-ucomiss-unordered.xml` pins x86 COMISS/COMISD flags read by `seta`,
+`setae`, `setbe`, `setb`, an `sbb` borrow and a `jbe` branch, with a memory
+operand. Each flag includes the unordered case, so `x > one` prints as
+`one < x` and `setbe` as `!(one < x)`. A second image of gcc and clang -O2
+`isnan`/`isunordered` idioms and a `jp`+`jbe` pair pins that a separate NaN
+test beside such an exact comparison is kept, also after a conditional move
+clones the comparison out of the guarded branch (gcc -O1 and -Os). This is an unconditional
+correctness fix, exercised with defaults and `nanignore none`.
+`kuna-cli/tests/float_unordered_compare.rs` compiles the emitted bodies with
+GCC and Clang and checks NaN, signed zeros, infinities and finite values
+against the original functions.
 
 `kuna-globalorder.xml` pins issue [#871](https://github.com/Noelo-Lab/kuna/issues/871)
 and case-local global stores at the `indexaliasguard global` default: a

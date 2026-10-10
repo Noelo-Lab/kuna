@@ -1,5 +1,5 @@
 //! Native switches must keep the selector and its case labels in one domain.
-mod common;
+use crate::common;
 use common::process;
 
 use std::path::PathBuf;
@@ -286,6 +286,7 @@ int main(int argc, char **argv) {{
         for level in ["-O0", "-O2"] {
             let compile = Command::new(cc)
                 .args(["-w", "-fPIE", "-pie", level])
+                .args(common::CC_GCC15_DEMOTE)
                 .arg(&src)
                 .arg("-o")
                 .arg(&exe)
@@ -843,6 +844,7 @@ int main(int argc, char **argv) {{
         for level in ["-O0", "-O2"] {
             let compile = Command::new(cc)
                 .args(["-w", "-fPIE", "-pie", level])
+                .args(common::CC_GCC15_DEMOTE)
                 .arg(&src)
                 .arg("-o")
                 .arg(&exe)

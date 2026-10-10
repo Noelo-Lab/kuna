@@ -25,18 +25,17 @@ use kuna_sleigh::translate::Translate;
 use super::classify::classify;
 use super::context::ContextPainter;
 use super::decode::decode_one;
-use super::model::{DiscoveredFunction, Insn, InsnLite, Reference, RefKind};
+use super::model::{DiscoveredFunction, FlowKind, Insn, InsnLite, Reference, RefKind};
 use super::ListingDetail;
+use super::kuna_insnstore::InstructionStore;
 
 /// The accumulating maps the walk fills. Lifted into [`super::Listing`] by
 /// [`super::Listing::build`].
 pub(super) struct WalkState {
     /// Instruction model, keyed by VMA.
-    pub insns: BTreeMap<u64, Insn>,
-    /// Incoming xref edges (callers / branch sources), keyed by target VMA.
-    pub refs_to: BTreeMap<u64, Vec<Reference>>,
-    /// Outgoing xref edges, keyed by source VMA.
-    pub refs_from: BTreeMap<u64, Vec<Reference>>,
+    pub insns: InstructionStore,
+    /// Control-flow edges collected once, indexed when the walk finishes.
+    pub refs: Vec<Reference>,
     /// Discovered/seeded functions, keyed by entry VMA (ordered).
     pub funcs: BTreeMap<u64, DiscoveredFunction>,
     /// Plausible x86 `PUSH imm` callback evidence, keyed by target and bounded
@@ -49,7 +48,7 @@ pub(super) struct WalkState {
 
 /// Where [`step`] files a decoded instruction, and the visit dedup it asks.
 ///
-/// The serial walk's sink is its global `BTreeMap<u64, Insn>`; a sink that
+/// The serial walk's sink is its global instruction store; a sink that
 /// collects [`InsnLite`] records for a later merge is the other shape, which is
 /// why the record handed over is the `Send` one and the conversion to [`Insn`]
 /// belongs to the sink.
@@ -60,7 +59,7 @@ pub(super) trait InsnSink {
     fn record(&mut self, insn: InsnLite);
 }
 
-impl InsnSink for BTreeMap<u64, Insn> {
+impl InsnSink for InstructionStore {
     fn decoded(&self, vma: u64) -> bool {
         // INVARIANT (first-writer-wins): whoever decodes an address first owns
         // the record, and every later arrival at that address is dropped here.
@@ -97,41 +96,36 @@ impl FuncSink for BTreeMap<u64, DiscoveredFunction> {
 
 /// Where [`step`] files a cross-reference edge.
 pub(super) trait RefSink {
-    /// File a reference into both directions.
+    /// Collect a reference for both query directions.
     fn file(&mut self, from: u64, to: u64, kind: RefKind);
 }
 
-/// The serial walk's two reference maps behind a [`RefSink`].
+/// The walk's edge buffer behind a [`RefSink`].
 ///
 /// A no-op when the caller asked for no reference model, so the walk's edge
 /// sites read the same either way and a new one cannot miss the gate.
-pub(super) struct RefBuckets {
+pub(super) struct RefCollector {
     want: bool,
-    to: BTreeMap<u64, Vec<Reference>>,
-    from: BTreeMap<u64, Vec<Reference>>,
+    edges: Vec<Reference>,
 }
 
-impl RefBuckets {
-    pub(super) fn new(want: bool) -> RefBuckets {
-        RefBuckets { want, to: BTreeMap::new(), from: BTreeMap::new() }
+impl RefCollector {
+    pub(super) fn new(want: bool) -> RefCollector {
+        RefCollector { want, edges: Vec::new() }
     }
 
-    /// The two maps, for a caller that assembles them itself.
-    pub(super) fn into_parts(
-        self,
-    ) -> (BTreeMap<u64, Vec<Reference>>, BTreeMap<u64, Vec<Reference>>) {
-        (self.to, self.from)
+    pub(super) fn into_edges(self) -> Vec<Reference> {
+        self.edges
     }
 }
 
-impl RefSink for RefBuckets {
+impl RefSink for RefCollector {
     fn file(&mut self, from: u64, to: u64, kind: RefKind) {
         if !self.want {
             return;
         }
         let r = Reference { from, to, kind, op_index: None };
-        self.to.entry(to).or_default().push(r.clone());
-        self.from.entry(from).or_default().push(r);
+        self.edges.push(r);
     }
 }
 
@@ -392,6 +386,9 @@ impl Successors for Worklists<'_> {
 /// `flow_mode`, when present, runs [`super::kuna_flowmode::disagreeing_runs`]
 /// after the walk, which leaves the walk's own result as it is.
 ///
+/// `arm_walk`, when present, carries the ARM decode mode along the walk's
+/// control flow (see [`super::kuna_armwalkmode`]).
+///
 /// `local_entries` is the PPC64 ELFv2 local-entry fold (`ppclocalentry`), keyed
 /// by the local entry VMA: a CALL landing on one of those is a call into the
 /// INTERIOR of the function at its value, so no function is claimed there. Empty
@@ -415,6 +412,7 @@ pub(super) fn walk(
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
     painter: &ContextPainter,
     flow_mode: Option<&super::kuna_flowmode::FlowMode>,
+    arm_walk: Option<&super::kuna_armwalkmode::ArmWalkMode>,
     local_entries: &BTreeMap<u64, u64>,
     detail: ListingDetail,
     want_stack_callbacks: bool,
@@ -436,7 +434,7 @@ pub(super) fn walk(
     let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
     let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail };
 
-    let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames);
+    let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk);
     if let Some(mode) = flow_mode {
         st.mode_runs.extend(super::kuna_flowmode::disagreeing_runs(&ctx, arch, mode));
     }
@@ -444,6 +442,7 @@ pub(super) fn walk(
 }
 
 /// The serial or parallel walk, as [`walk`] runs it.
+#[allow(clippy::too_many_arguments)]
 fn walk_plain(
     ctx: &StepCtx<'_>,
     arch: &Architecture,
@@ -452,9 +451,10 @@ fn walk_plain(
     painter: &ContextPainter,
     plan: &super::kuna_pdecode::WalkPlan,
     frames: Option<&mut super::kuna_framemode::FrameModes>,
+    arm_walk: Option<&super::kuna_armwalkmode::ArmWalkMode>,
 ) -> WalkState {
     let StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail } = *ctx;
-    if plan.lanes() > 1 && frames.is_none() {
+    if plan.lanes() > 1 && frames.is_none() && arm_walk.is_none() {
         let inputs = super::kuna_pdecode::ParallelInputs {
             arch,
             translate,
@@ -471,7 +471,7 @@ fn walk_plain(
             let Some(abort) = super::kuna_pdecode::selfcheck() else {
                 return parallel;
             };
-            let serial = walk_serial(ctx, seeds, seed_funcs, detail, arch, None);
+            let serial = walk_serial(ctx, seeds, seed_funcs, detail, arch, None, None);
             let differences = super::kuna_pdecode::compare(&parallel, &serial);
             assert!(
                 differences == 0 || !abort,
@@ -481,7 +481,7 @@ fn walk_plain(
         }
     }
 
-    walk_serial(ctx, seeds, seed_funcs, detail, arch, frames)
+    walk_serial(ctx, seeds, seed_funcs, detail, arch, frames, arm_walk)
 }
 
 /// The serial walk: the two-level worklist over [`step`], and the only walk that
@@ -493,19 +493,19 @@ fn walk_serial(
     detail: ListingDetail,
     arch: &Architecture,
     mut frames: Option<&mut super::kuna_framemode::FrameModes>,
+    arm_walk: Option<&super::kuna_armwalkmode::ArmWalkMode>,
 ) -> WalkState {
     let mut walk_context = super::kuna_walkcontext::WalkContext::new(
         frames.is_some(), ctx.translate, arch, ctx.code_space, ctx.exec_ranges,
     );
     let established = frames.as_ref().and_then(|frames| frames.established());
-    let mut insns = established.map_or_else(BTreeMap::new, |prior| prior.insns.clone());
+    let mut insns = established.map_or_else(InstructionStore::default, |prior| prior.insns.clone());
     let mut funcs = established.map_or_else(BTreeMap::new, |prior| prior.funcs.clone());
     let mode_runs = established.map_or_else(Vec::new, |prior| prior.mode_runs.clone());
-    let mut refs = RefBuckets::new(detail.refs);
+    let mut refs = RefCollector::new(detail.refs);
     let mut callbacks = CallbackEvidence::default();
     if let Some(prior) = established {
-        refs.to.clone_from(&prior.refs_to);
-        refs.from.clone_from(&prior.refs_from);
+        refs.edges.extend_from_slice(prior.refs.edges());
         for &(source, target) in &prior.stack_callback_refs {
             callbacks.file(source, target);
         }
@@ -520,6 +520,11 @@ fn walk_serial(
     for &entry in seeds {
         let df = seed_funcs.get(&entry).cloned().unwrap_or_else(|| discovered(entry));
         funcs.entry(entry).or_insert(df);
+    }
+
+    if let Some(mode) = arm_walk.filter(|_| walk_context.is_none()) {
+        let mut state = WalkSinks { insns: &mut insns, funcs: &mut funcs, refs: &mut refs, callbacks: &mut callbacks };
+        walk_carried(ctx, arch, mode, &mut func_worklist, &mut visited_funcs, &mut state);
     }
 
     while let Some(entry) = func_worklist.pop() {
@@ -544,7 +549,7 @@ fn walk_serial(
             let selection = super::kuna_walkcontext::InstructionMode::select(arch, ctx.translate, ctx.code_space, vma, mode);
             let mut work = Worklists { insns: std::mem::take(&mut successors), funcs: &mut func_worklist };
             if step(ctx, vma, &mut insns, &mut funcs, &mut refs, &mut callbacks, &mut work) {
-                let insn = &insns[&vma];
+                let insn = insns.get(&vma).unwrap();
                 let commits = if walk_context.is_some() { ctx.translate.last_context_commits() }
                     else { Vec::new() };
                 if let Some(selection) = &selection { selection.accept(insn.len); }
@@ -569,11 +574,118 @@ fn walk_serial(
 
     WalkState {
         insns,
-        refs_to: refs.to,
-        refs_from: refs.from,
+        refs: refs.into_edges(),
         funcs,
         stack_callback_refs: callbacks.refs,
         mode_runs,
+    }
+}
+
+/// The serial walk's stores, as [`walk_carried`] fills them.
+struct WalkSinks<'a> {
+    insns: &'a mut InstructionStore,
+    funcs: &'a mut BTreeMap<u64, DiscoveredFunction>,
+    refs: &'a mut RefCollector,
+    callbacks: &'a mut CallbackEvidence,
+}
+
+/// (kuna `armwalkmode`) The serial walk with each instruction decoded in the
+/// mode its control flow carries, or in the database's where none does; it
+/// drains `func_worklist`, then resumes the instructions after calls it held.
+fn walk_carried(
+    ctx: &StepCtx<'_>,
+    arch: &Architecture,
+    mode: &super::kuna_armwalkmode::ArmWalkMode,
+    func_worklist: &mut Vec<u64>,
+    visited_funcs: &mut BTreeSet<u64>,
+    sinks: &mut WalkSinks<'_>,
+) {
+    let mut modes = mode.begin();
+    let mut resumed = Vec::new();
+    loop {
+        walk_items(ctx, &mut modes, std::mem::take(&mut resumed), func_worklist, sinks);
+        while let Some(entry) = func_worklist.pop() {
+            if visited_funcs.insert(entry) {
+                let start = vec![(entry, modes.entry(entry))];
+                walk_items(ctx, &mut modes, start, func_worklist, sinks);
+            }
+        }
+        resumed = modes.resume(arch, ctx.code_space, sinks.insns);
+        if resumed.is_empty() {
+            break;
+        }
+    }
+    modes.finish(arch, ctx.code_space);
+}
+
+/// Walk from `start`, each item in the mode it carries (`None` reads the
+/// database), filing what it decodes as [`step`] does.
+fn walk_items(
+    ctx: &StepCtx<'_>,
+    modes: &mut super::kuna_armwalkmode::WalkModes<'_>,
+    start: Vec<(u64, Option<u32>)>,
+    func_worklist: &mut Vec<u64>,
+    sinks: &mut WalkSinks<'_>,
+) {
+    let mut pending = start;
+    let mut successors = Vec::new();
+    let mut reads = modes.read_override(ctx.translate);
+    while let Some((vma, mode)) = pending.pop() {
+        reads.set(mode);
+        let mut work = Worklists { insns: std::mem::take(&mut successors), funcs: func_worklist };
+        let mut store = LastRecord { store: sinks.insns, last: None };
+        step(ctx, vma, &mut store, sinks.funcs, sinks.refs, sinks.callbacks, &mut work);
+        match (store.last, mode) {
+            (Some(last), Some(mode)) => {
+                let commits = if last.target.is_some() {
+                    ctx.translate.last_context_commits()
+                } else {
+                    Vec::new()
+                };
+                modes.decoded(vma, last.len, mode);
+                let comes_back = last.flow.is_call || last.flow.kind == FlowKind::CallOther;
+                let callee = last.target.filter(|_| last.flow.is_call);
+                if let Some(target) = callee {
+                    modes.called(target, modes.successor(target, mode, &commits));
+                }
+                for next in work.insns.drain(..) {
+                    let next_mode = modes.successor(next, mode, &commits);
+                    if comes_back {
+                        modes.hold(next, next_mode, callee);
+                    } else {
+                        pending.push((next, Some(next_mode)));
+                    }
+                }
+            }
+            (Some(_), None) => pending.extend(work.insns.drain(..).map(|next| (next, None))),
+            (None, _) => {}
+        }
+        successors = work.insns;
+    }
+}
+
+/// What [`walk_items`] reads back about the instruction [`step`] just filed.
+#[derive(Clone, Copy)]
+struct Filed {
+    len: u32,
+    flow: super::model::FlowType,
+    target: Option<u64>,
+}
+
+/// An [`InsnSink`] that keeps [`Filed`] for the last record it files.
+struct LastRecord<'a> {
+    store: &'a mut InstructionStore,
+    last: Option<Filed>,
+}
+
+impl InsnSink for LastRecord<'_> {
+    fn decoded(&self, vma: u64) -> bool {
+        self.store.decoded(vma)
+    }
+
+    fn record(&mut self, insn: InsnLite) {
+        self.last = Some(Filed { len: insn.len, flow: insn.flow, target: insn.flows.first().copied() });
+        self.store.record(insn);
     }
 }
 

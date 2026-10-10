@@ -80,3 +80,31 @@ fn option_values_parse() {
         assert_eq!(OptionSyscallRegs.apply(m.as_str()).unwrap().0, m);
     }
 }
+
+#[test]
+fn the_mips_table_is_sorted_and_within_each_abi() {
+    let rows = mips_args::MIPS_SYSCALL_ARGS;
+    assert!(rows.windows(2).all(|w| w[0].0 < w[1].0));
+    for &(nr, name, regs) in rows {
+        let cap = if nr < 5000 { 4 } else { 6 };
+        assert!((4000..7000).contains(&nr), "{name}");
+        assert!(regs <= cap, "{name}");
+    }
+}
+
+#[test]
+fn mips_counts_are_the_kernel_entry_points() {
+    use mips_args::mips_arg_count as n;
+    assert_eq!(n(4003), Some(3)); // o32 read
+    assert_eq!(n(4006), Some(1)); // o32 close
+    assert_eq!(n(4042), Some(0)); // o32 pipe: sysm_pipe returns both ends
+    assert_eq!(n(4212), Some(4)); // o32 ftruncate64: fd, pad, a 64-bit pair
+    assert_eq!(n(4288), Some(4)); // o32 openat
+    assert_eq!(n(4300), Some(3)); // o32 faccessat: the flags are the C library's
+    assert_eq!(n(5043), Some(6)); // n64 sendto
+    assert_eq!(n(6000), Some(3)); // n32 read
+    assert_eq!(n(4000), Some(4)); // o32 indirect syscall: number in a0, then three arguments
+    assert_eq!(n(4187), Some(4)); // o32 query_module, gone from 6.5
+    assert_eq!(n(4017), None); // o32 break, never implemented
+    assert_eq!(n(3), None);
+}

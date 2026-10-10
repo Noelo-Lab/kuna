@@ -29,13 +29,8 @@ is not needed for day-to-day work.
 ## Build & test
 
 Only prerequisite: a Rust toolchain. Develop in the workspace directly
-(`cd decompiler && cargo build/test ...`); the Makefile is the driver:
-
-```bash
-make            # binaries + specs
-make binaries   # decomp_dbg / decomp_test_dbg / slacomp / kuna  → decompiler/target/release/
-make specs      # compile all .slaspec → .sla with slacomp
-```
+(`cd decompiler && cargo build/test ...`); the Makefile is the driver (`make` builds the
+binaries into `decompiler/target/release/` and compiles the specs).
 
 **Four gates — run all of them before every commit:**
 
@@ -70,6 +65,13 @@ The Rust test profile uses optimization level 1 for real-image tests, with debug
 assertions and integer-overflow checks enabled. Ordinary development builds retain
 Cargo's unoptimized default.
 
+Most crates build their integration tests into one `integration` binary. Register a
+new `tests/x.rs` in that crate's `tests/integration.rs` (`#[path = "x.rs"] mod x;`,
+with `use crate::common;`, never `mod common;`). A test that mutates env or other
+process-global state, or relaunches itself by test name, gets its own `[[test]]`
+instead. `make rust-test` and `make test-tools` enforce this. Focused run:
+`cargo test -p PKG --test integration x::`.
+
 - **Never re-pin `docs/baseline.json` to absorb a regression** — fix the code or make the
   change opt-in. The only sanctioned re-pins are an intentional upstream sync or a
   deliberate default change, and the commit message says which (`kuna test --save-baseline`).
@@ -86,21 +88,9 @@ Cargo's unoptimized default.
 ## The `kuna` CLI
 
 The user-facing binary (`decompiler/crates/kuna-cli` → `decompiler/target/release/kuna`).
-The commands agents use most:
-
-```bash
-kuna docs                                          # the embedded manual — cli, options, phases, modes
-kuna install-skill                                 # install the embedded agent skill (skills/kuna/SKILL.md)
-kuna decompile ./a.out main [--json]               # one function (or an address with --addr)
-kuna xrefs ./a.out --to 0x401030 --json            # what references this; --from for the reverse
-kuna unpack ./packed.bin                           # statically unpack a UPX image
-kuna decompile-all ./a.out --json                  # whole binary in one in-process load
-kuna functions ./a.out --json                      # enumerate functions
-kuna decompile-project ./a.out                     # export .c/.h/.asm/README project folder
-kuna catalog --json                                # discover the settable options
-kuna decompile ./a.out main --option NAME VALUE    # flip a decision for this run
-kuna test --all --baseline docs/baseline.json      # the parity gate
-```
+`kuna docs` prints the embedded manual (cli, options, phases, modes) and `kuna --help` lists
+the subcommands. Decisions are flipped per run with `--option NAME VALUE`; discover them with
+`kuna catalog --json`.
 
 Full reference (flags, JSON schemas, watchdog, project-export artifacts): **`docs/cli.md`**.
 
@@ -173,50 +163,9 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   `docs/baseline-stages.json`. Two such PRs in flight WILL conflict on both; resolve the count
   to base + all merged, and re-record the baseline rather than hand-merging it.
 - Any time any public thing is created fully automatically, it should start with `[AUTOMATED]`. That goes for PRs, Issues (opening and responses), and most importantly replies or comments to issues/PRs. It should also be in the commit message, but can go outside of the tagline and more inside the extended part.
-
-### PR bodies — three short sections, and lead with the repro
-
-The reader does not yet know what is broken, so lead with the repro, not the
-mechanism along with *not being hard to read."*
-
-**The structure, for a bug fix, in this order:**
-
-1. **The problem — at most two sentences, then a runnable example.** Say what
-   is wrong in plain terms, then show it: a command anyone can paste, with its
-   actual (wrong) output in a fenced block. Trim the output to the part that
-   carries the bug, but do not paraphrase it. The example is the section — the
-   prose is only there to say what to look at.
-2. **The fix — a few bullets.** What the change does, not a narration of the
-   diff. One bullet per idea; mention a design choice only where a reviewer
-   would otherwise ask "why not the obvious way?".
-3. **The tests — a few lines at most.** Which cases were added and which one
-   fails without the fix. Numbers only if they are the evidence (suite
-   before/after, "no existing expectation moved"); never a paragraph of them.
-
-**Length is the check.** If the body is longer than roughly a screen, it is
-wrong regardless of accuracy — cut, do not reword. Detail that feels too
-valuable to drop belongs in `notes/`, which is where it should have been
-anyway.
-
-Other rules for bodies:
-
-- **Never open with the internal mechanism.** "`X()` falls through to `Y()`,
-  so `Z` lands outside the enum" is section 2 material at best, and usually
-  belongs in the code or in `notes/`.
-- **The example must be one the reviewer can run**, against the unpatched tree.
-  A fixture path they do not have, or a command needing our harness, is not a
-  repro — reduce it to `cstool` / `r2 -qc` / `rasm2` on bytes.
-- **No LLM register.** Bold-per-clause, "Root cause:", "Note that", em-dashed
-  asides stacked three deep, and restating the same fact in two registers all
-  read as generated. Write the sentence once, plainly.
-- **Never mention our internal process** — milestone codes, review rounds,
-  agents, gate runs, how many `/code-review` passes it took. Same rule as
-  "Upstream hygiene" above; PR bodies are public.
-- **Fill in the repo's template** if it has one but the template's headings do
-  not excuse a long body.
-- For a **feature or refactor** rather than a fix, section 1 becomes "what this
-  makes possible" plus a before/after of the visible behaviour — same budget,
-  same order: the observable thing first, mechanism second.
+- **PR bodies** lead with a runnable repro, stay under one screen, and never mention our
+  internal process (milestones, review rounds, agents, gate runs). The full rules are in
+  `docs/pr-bodies.md`; read it before opening or editing a PR.
 
 ## Doc map (look up on demand — don't preload)
 
@@ -226,6 +175,7 @@ Other rules for bodies:
 | `docs/spec/` | How any algorithm/pass actually works (start `00-overview.md`). |
 | `docs/options.md` | The generated option catalog (tiers, symptoms, flip guidance). |
 | `docs/cli.md` | The full `kuna` CLI reference. |
+| `docs/pr-bodies.md` | How to write a PR body (read before opening or editing any PR). |
 | `docs/improvement-pipeline.md` | The autonomous improvement pipeline + standing requirements for feature PRs. |
 | `docs/re-pipeline.md` | The RE-friction loop: agents solve crackmes with kuna, record where it fails them, and close those gaps. The second, self-merging lane. |
 | `docs/decbench-loop.md` | The decbench benchmark / improvement campaign. |

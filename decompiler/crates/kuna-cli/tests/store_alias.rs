@@ -6,7 +6,7 @@
 //! in a loop, before a call, before a shared return block, and when the global
 //! is stored again; a function with more pointer stores than heritage guards
 //! keeps the output of `indexaliasguard load`.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 
@@ -62,6 +62,7 @@ fn a_global_is_read_where_the_binary_reads_it_around_a_pointer_store() {
             for level in ["-O0", "-O2"] {
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", level, "-fno-strict-aliasing", "-DSTOREALIAS_HARNESS"])
+                    .args(common::CC_GCC15_DEMOTE)
                     .args(keep)
                     .arg("-o")
                     .arg(&exe)

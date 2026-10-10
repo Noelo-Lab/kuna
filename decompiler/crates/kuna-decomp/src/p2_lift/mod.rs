@@ -5,6 +5,7 @@
 
 pub mod funcdata_resolveflow;
 pub mod flow;
+pub mod kuna_armflowcontext;
 pub mod jumptable;
 pub mod kuna_emulatefunction;
 pub mod userop;
@@ -42,5 +43,6 @@ pub mod kuna_x64syscall; // (kuna) give the x86-64 SYSCALL user-op the Linux ABI
 pub mod kuna_syscallregs; // (kuna) give the ARM/AArch64/RISC-V/MIPS/PowerPC system-call user-op its register effects
 pub mod kuna_msvcstrappend; // (kuna) collapse an inlined MSVC std::string push_back/append diamond into one call
 pub mod kuna_fastfailnoreturn; // (kuna) a Windows `int 0x29` (__fastfail) ends the flow instead of unbalancing the stack
+pub mod kuna_msvcimportcall; // (kuna `msvcsig`) a call through an import slot with a locked MSVC prototype is direct from the flow on
 pub mod kuna_int3pad; // (kuna) name the int3 pad control ran into instead of printing it as a call through swi()
 pub mod kuna_decodehalt; // (kuna) a halt planted where the decode failed says so instead of printing as an ordinary return

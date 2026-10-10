@@ -1,5 +1,5 @@
 //! Bit-for-bit round trips through the emitted C on three instruction sets.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{

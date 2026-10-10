@@ -2,7 +2,7 @@
 //! reads as a one-character string is still the array: the printed C passes
 //! its address, never a `"A"` literal, while genuine one-character literals laid
 //! out side by side keep printing as literals.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 
@@ -56,7 +56,7 @@ fn character_code_arrays_round_trip_beside_one_character_literals() {
             for level in ["-O0", "-O2"] {
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", level, "-DWIDECODES_HARNESS"])
-                    .args(["-Wno-error=int-conversion", "-Wno-error=incompatible-pointer-types"])
+                    .args(common::CC_GCC15_DEMOTE)
                     .arg("-o")
                     .arg(&exe)
                     .arg(&src)

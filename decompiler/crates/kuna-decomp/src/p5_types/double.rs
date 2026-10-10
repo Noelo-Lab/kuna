@@ -255,9 +255,14 @@ fn bl_last_op(data: &Funcdata, bl: BlockId) -> Option<OpId> {
 /// (the C++ `BlockBasic::getStart` is the address of `op.front()`).
 #[inline]
 fn bl_start_addr(data: &Funcdata, bl: BlockId) -> Address {
-    let ops = data.bb_ops(bl);
-    let first = *ops.first().expect("double: bl_start_addr on empty block");
-    op_get_addr(data, first)
+    match data.bb_ops(bl).first() {
+        Some(&first) => op_get_addr(data, first),
+        // A function discovered mid-stream can leave the block registered as the start
+        // block with no ops, where the C++ `op.front()` read has no defined answer.  The
+        // address is only used to place the synthesized whole at the function entry, so
+        // fall back to the entry address.
+        None => data.get_address().clone(),
+    }
 }
 /// Test whether `defblock` dominates the block containing `existblock` by walking
 /// the immediate-dominator chain (C++ `while(curbl) curbl=curbl->getImmedDom()`).
@@ -5953,5 +5958,18 @@ mod tests {
         );
         assert_eq!(form.negconst, 0xFFFF_FFFA, "explicit expected value");
         assert!(form.negconst <= 0xFFFF_FFFF, "must NOT carry high u64 bits past the mask");
+    }
+
+    /// A discovered function can start mid-stream, leaving the block registered as the
+    /// start block with no ops.  `find_create_whole` asks it for an address when a
+    /// double's pieces have no defining block, so an empty start block must fall back to
+    /// the entry address instead of panicking.
+    #[test]
+    fn start_addr_of_empty_block_is_entry_address() {
+        let mut fd = build_fd();
+        let root = fd.bblocks_root_pub();
+        let bl = fd.bblocks_mut().new_block_basic(root);
+        assert!(fd.bb_ops(bl).is_empty(), "sanity: the block is empty");
+        assert_eq!(bl_start_addr(&fd, bl), *fd.get_address());
     }
 }

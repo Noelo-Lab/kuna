@@ -1,0 +1,148 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    An even ARM function symbol starts A32 code (`option armfuncmode on|off`,
+    default on, GH-842).
+
+    The XML wrapper only provides the harness architecture. Every pass clears
+    it and loads one of the synthetic ARM32 ELFs from
+    `arm_funcmode_le32.py`: an A32 `entry` at 0x2000000 that runs
+    `blx 0x2000040` and `bl 0x2000080`, a Thumb `thumb_helper` symbol at
+    0x2000041 (`movs r0,#7; bx lr`) and an A32 `arm_helper` symbol at
+    0x2000080 (`add r0,r0,#1; bx lr`).
+
+    Pass 1 (`armfuncmode off`, GH-842's image, no mapping symbols) reproduces
+    the defect: the Thumb mode of `thumb_helper` (its symbol, and the `blx`)
+    reaches `arm_helper`, which decodes as Thumb and runs off the image.
+    Pass 2 (default) sets A32 at the even `arm_helper` symbol: `return a0 + 1`.
+
+    Passes 3 and 4 use the image whose `blx` is a `nop`, so only the odd
+    `thumb_helper` symbol carries Thumb: off is still wrong, default is right.
+
+    Passes 5 and 6 use GH-842's image with `$a`/`$t`/`$a` mapping symbols. The
+    pass paints nothing there, and both decode `arm_helper` as A32.
+
+    The A32 paint covers a function symbol's size, cut at the next function
+    symbol, and the Thumb mode resumes past it. A size-0 symbol states no
+    extent and is skipped: pass 7 uses the image whose `arm_helper` has size
+    0, and it still decodes as Thumb.
+
+    Passes 8 and 9 use `arm_static_thumb_so_o2_le32`, a gcc -O2 armel shared
+    object (`.dynsym` only) whose A32 `arm_export` follows the Thumb
+    `thumb_first`: off it decodes as Thumb, by default it is the A32 loop
+    `s += i ^ 0x33`.
+
+    Pass 10 uses `arm_funcmode_helper_o2_le32.so` (clang -O2, linked with
+    lld, stripped): the A32 export `a_func` calls an unsymbolized A32 static
+    helper at 0x1020c with `bl`. The A32 extent grows over a direct A32
+    branch target before the next function symbol, so the helper is not
+    handed back to Thumb where the extent ends.
+
+    Passes 11 to 13 bound that growth. A run ends at a call to a function that
+    never returns (`abort`, `__stack_chk_fail`) and adds nothing if it meets
+    no stop before the next function symbol, and words a PC-relative `ldr`
+    loads are data: in `arm_funcmode_noreturn_le32.so` (clang -O2, the A32
+    helper calls `abort`) and `arm_funcmode_stackprot_le32.so` (clang -O2
+    -fstack-protector-all) the unsymbolized Thumb `t_help` behind the A32
+    helper, and in `arm_funcmode_pool_le32` the Thumb `t_s` behind an A32
+    function whose literal pool holds a word shaped like a `b`, keep Thumb.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_funcmode_le32</com>
+  <com>option armfuncmode off</com>
+  <com>read symbols</com>
+  <com>load function arm_helper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_funcmode_le32</com>
+  <com>read symbols</com>
+  <com>load function arm_helper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_funcmode_nocall_le32</com>
+  <com>option armfuncmode off</com>
+  <com>read symbols</com>
+  <com>load function arm_helper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_funcmode_nocall_le32</com>
+  <com>read symbols</com>
+  <com>load function arm_helper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_funcmode_mapsyms_le32</com>
+  <com>option armfuncmode off</com>
+  <com>read symbols</com>
+  <com>load function arm_helper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_funcmode_mapsyms_le32</com>
+  <com>read symbols</com>
+  <com>load function arm_helper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_funcmode_sizes_le32</com>
+  <com>read symbols</com>
+  <com>load function arm_helper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_static_thumb_so_o2_le32</com>
+  <com>option armfuncmode off</com>
+  <com>read symbols</com>
+  <com>load function arm_export</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_static_thumb_so_o2_le32</com>
+  <com>read symbols</com>
+  <com>load function arm_export</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_funcmode_helper_o2_le32.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x1020c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_funcmode_noreturn_le32.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x10290</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_funcmode_stackprot_le32.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x103e0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_funcmode_pool_le32</com>
+  <com>read symbols</com>
+  <com>load addr 0x2000094</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ARMFUNCMODE #1: off, and for a size-0 symbol, arm_helper decodes as Thumb" min="3" max="3">void arm_helper\(void\)</stringmatch>
+<stringmatch name="ARMFUNCMODE #2: arm_helper decodes as A32 in the four other passes" min="4" max="4">int4 arm_helper\(int4 a0\)</stringmatch>
+<stringmatch name="ARMFUNCMODE #3: the A32 body appears in the four other passes" min="4" max="4">return a0 \+ 1;</stringmatch>
+<stringmatch name="ARMFUNCMODE #4: gcc -O2 .so, off, arm_export decodes as Thumb" min="1" max="1">void arm_export\(void\)</stringmatch>
+<stringmatch name="ARMFUNCMODE #5: gcc -O2 .so, default, arm_export is the A32 loop" min="1" max="1">v2 = v3 \^ 0x33;</stringmatch>
+<stringmatch name="ARMFUNCMODE #6: an unsymbolized A32 helper an A32 export calls stays A32" min="1" max="1">return a0 \* 5 \+ a1 \* 7 \+ 3;</stringmatch>
+<stringmatch name="ARMFUNCMODE #7: a Thumb static behind an A32 helper that calls a noreturn function keeps Thumb" min="2" max="2">return \(a0 \^ 0x3c\) \* 7 \+ -5;</stringmatch>
+<stringmatch name="ARMFUNCMODE #8: a Thumb static behind an A32 literal pool keeps Thumb" min="1" max="1">return a0 \* 3;</stringmatch>
+</decompilertest>

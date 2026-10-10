@@ -69,3 +69,44 @@ impl Drop for ContextScope<'_> {
         }
     }
 }
+
+/// Rolls back decoder context commits without copying untouched database entries.
+/// Only decode operations and cache policy changes are allowed inside this scope;
+/// use ContextScope when changing defaults, registration or tracked registers.
+pub struct DecodeContextScope<'a> {
+    database: &'a RefCell<Box<dyn ContextDatabase>>,
+    cache: &'a RefCell<ContextCache>,
+    saved_cache: ContextCache,
+}
+
+impl<'a> DecodeContextScope<'a> {
+    pub(crate) fn new(
+        database: &'a RefCell<Box<dyn ContextDatabase>>,
+        cache: &'a RefCell<ContextCache>,
+    ) -> Self {
+        let saved_cache = cache.borrow().clone();
+        database.borrow_mut().begin_decode_context();
+        Self {
+            database,
+            cache,
+            saved_cache,
+        }
+    }
+
+    /// Prevent translation from writing a variable while preserving other masks.
+    pub fn protect_variable(&self, name: &[u8]) -> KunaResult<()> {
+        let var = self.database.borrow().get_variable(name)?;
+        let word = var.get_word() as usize;
+        let mut cache = self.cache.borrow_mut();
+        let mask = cache.set_write_mask(word, u32::MAX);
+        cache.set_write_mask(word, mask & !(var.get_mask() << var.get_shift()));
+        Ok(())
+    }
+}
+
+impl Drop for DecodeContextScope<'_> {
+    fn drop(&mut self) {
+        self.database.borrow_mut().rollback_decode_context();
+        self.cache.replace(std::mem::take(&mut self.saved_cache));
+    }
+}

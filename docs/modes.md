@@ -89,8 +89,9 @@ build failure. The options it enables:
 - **analysis tier**: `listing` (the master gate that enables the
   Listing-consuming passes — `fid`, `aif`, the discovered-no-return family),
   `fast_funcdisc`, `eh_frame_full`, `funcstart_patterns`, `addrtable`,
-  `operand_refs`, `fid`, `rtti`, `itaniumrtti`, `aif`, `aifstrict`, `objc`,
-  `pdb`, `macho-arm64e`
+  `operand_refs`, `widestrings32` (4-byte `wchar_t`/`char32_t` literals),
+  `fid`, `rtti`, `itaniumrtti`, `aif`, `aifstrict`, `objc`, `pdb`,
+  `macho-arm64e`
 - **analysis tier, ARM entry discovery** (DIV-93): `cortexmvectors`, `ptrentry`,
   `tailcallentry`, `poolentry` — the four-step sequence that takes stripped ARM
   entry recall from 88.63% to 93.31% over the 110 non-x86-64 decbench twins while

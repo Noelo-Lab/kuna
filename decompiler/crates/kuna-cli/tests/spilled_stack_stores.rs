@@ -1,5 +1,5 @@
 //! A pointer spilled to a stack slot keeps later reads linked to its writes.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 
@@ -92,6 +92,7 @@ fn spilled_stack_pointer_writes_round_trip_with_alias_and_escape_controls() {
                 for level in ["-O0", "-O2"] {
                     let compile = Command::new(cc)
                         .args(["-std=gnu11", "-w", "-fno-strict-aliasing", level])
+                        .args(common::CC_GCC15_DEMOTE)
                         .arg(&src)
                         .arg("-o")
                         .arg(&exe)

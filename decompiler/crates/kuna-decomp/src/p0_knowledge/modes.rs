@@ -206,6 +206,11 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("funcstart_patterns", "on"),
     ("addrtable", "on"),
     ("operand_refs", "on"),
+    // (kuna) The 4-byte string width: an int table of character codes is
+    // byte-for-byte a wide literal, so it ships off and plants only what the image
+    // backs as a string (an operand or pointer at the start that no code indexes,
+    // a 4-byte mergeable string section).
+    ("widestrings32", "on"),
     ("fid", "on"),
     ("rtti", "on"),          // PE-only; no-op off-PE
     ("itaniumrtti", "on"),   // ELF-only, and inert without __cxxabiv1 typeinfo relocs
@@ -476,10 +481,20 @@ mod tests {
         /// On a stripped 400,556-byte BusyBox it grows the reachable walk from
         /// 2,271 instructions to about 74,000 and raises query time from 0.78 s
         /// to 2.05 s. This cost keeps recovery opt-in in every mode.
+        ///
+        /// `mixedtailret` returns a value a function tested beside a tail call,
+        /// and a `void` guard that leaves the tested value in the return
+        /// register compiles to the same bytes (clang's ARM `thr`/`keep`), so
+        /// in the preset it would give such guards a return they do not have.
+        ///
+        /// `varargsharedfloat` reads a PowerPC register choice that only -O0
+        /// code preserves: on clang -O2 and -Os batteries it adds 23 arguments
+        /// the source never passed for 11 it restores.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
-              "structdefs", "indirectonly", "protoorder", "bejoin", "armframes"];
+              "structdefs", "indirectonly", "protoorder", "bejoin", "armframes",
+              "mixedtailret", "varargsharedfloat"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

@@ -2,7 +2,7 @@
 //! (`push {r4,lr}; bl provider; pop {r4,pc}`, `jal provider; ...; jr ra`) the
 //! way it already does for an x86-64 `call provider; ret`, and keeps every
 //! refusal the rule has.
-mod common;
+use crate::common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,

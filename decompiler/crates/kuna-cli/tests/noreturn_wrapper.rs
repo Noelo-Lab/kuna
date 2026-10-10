@@ -1,6 +1,6 @@
 //! Explicit no-return facts seed wrapper propagation before bounded caller flow.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

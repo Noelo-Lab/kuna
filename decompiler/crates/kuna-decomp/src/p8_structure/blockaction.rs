@@ -3765,6 +3765,7 @@ impl Action for ActionBlockStructure {
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ blockaction.cc:2170.
         if data.sblocks_get_size() != 0 {
+            crate::p8_structure::kuna_condstmts::record_hits(data);
             return 0; // Already structured
         }
         data.install_switch_defaults();
@@ -3809,8 +3810,7 @@ impl Action for ActionBlockStructure {
         // graph is a BlockCopy mirror without op ownership), keyed by the bblocks
         // id each BlockCopy's `copy` pointer references.  ruleBlockOr/whileDo read
         // it through `CollapseStructure::is_complex`.
-        let mut complex_blocks: std::collections::BTreeSet<BlockId> =
-            std::collections::BTreeSet::new();
+        let mut complex_blocks = crate::p8_structure::kuna_condstmts::complex_blocks(data);
         // Precompute the bblocks switch-block → jumpvec slot map (C++
         // `BlockSwitch(ind)` does `ind->getJumptable()`; the structuring graph has
         // no Funcdata pointer, so resolve it here).  A bblocks `BlockBasic` is a
@@ -3878,7 +3878,10 @@ impl Action for ActionBlockStructure {
         // is off.
         let condfold_sets = crate::p8_structure::kuna_condfold::compute_condfold_sets(
             data,
-            data.get_arch().cond_fold,
+            crate::p8_structure::kuna_condstmts::condfold_budget(
+                data.get_arch().cond_fold,
+                data.get_arch().cond_stmts,
+            ),
         );
         let apply_index = crate::p8_structure::kuna_ifnoexit::next_apply_index();
         if dbg_ifne {

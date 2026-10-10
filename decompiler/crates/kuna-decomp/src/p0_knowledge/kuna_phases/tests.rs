@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_265() {
-    assert_eq!(kuna_num_settables(), 265);
-    assert_eq!(SETTABLE_TABLE.len(), 265);
+fn settable_count_is_286() {
+    assert_eq!(kuna_num_settables(), 286);
+    assert_eq!(SETTABLE_TABLE.len(), 286);
 }
 
 #[test]
-fn tier_counts_are_89_core_108_transform_68_analysis() {
+fn tier_counts_are_100_core_110_transform_76_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_89_core_108_transform_68_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (89, 108, 68));
+    assert_eq!((core, transform, analysis), (100, 110, 76));
 }
 
 #[test]
@@ -293,6 +293,9 @@ fn option_values_live_value_present_for_110() {
         // analysis-pass gate read at the commit boundary (console-side via
         // kuna_live_value), same as `strings` above. Default-ON (DIV-110).
         "widestrings",
+        // (kuna) The 4-byte width of the string-literal markup -- read at the
+        // commit boundary like `widestrings`. Default-off (aggressive on).
+        "widestrings32",
         "entry_disc",
         // (kuna) `.eh_frame` LSDA landing-pad discovery sub-feature of entry_disc
         // (GccExceptionAnalyzer), default-off; analysis-tier, no codegen live reader.
@@ -301,6 +304,9 @@ fn option_values_live_value_present_for_110() {
         // with no codegen live reader (read console-side via kuna_live_value), same
         // as the gates around it. Default-ON (DIV-61).
         "fdeinterior",
+        // (kuna) Multi-entry `.cold` fragment entries — an analysis-pass gate with
+        // no codegen live reader. Default-ON.
+        "coldentry",
         // (kuna) `.pdata` RUNTIME_FUNCTION-interior entry suppression — the PE half
         // of `fdeinterior`, an analysis-pass gate with no codegen live reader.
         // Default-ON.
@@ -388,6 +394,10 @@ fn option_values_live_value_present_for_110() {
         // no codegen live reader (read console-side via kuna_live_value), like the
         // discovery gates around it. Default-ON.
         "unmappedentry",
+        // (kuna) Jump-thunk target function entries -- an analysis-tier gate with
+        // no codegen live reader (read console-side via kuna_live_value), like
+        // `unmappedentry` above. Default-ON.
+        "thunkentry",
         // (kuna) PPC64 ELFv2 local-entry entry suppression -- an analysis-tier gate
         // with no codegen live reader (read console-side via kuna_live_value), like
         // `unmappedentry` above. Default-ON.
@@ -416,6 +426,12 @@ fn option_values_live_value_present_for_110() {
         // with no codegen live reader (read console-side via kuna_live_value), like
         // `aifstrict` above. Default-OFF, carried by the `aggressive` preset.
         "aifcorroborate",
+        // (kuna, GH-299) The AIF bracketed-candidate reject — an analysis-tier gate
+        // with no codegen live reader (read console-side via kuna_live_value), like
+        // `aifcorroborate` above. Default-ON, inert without `aif`.
+        "aifbracket",
+        // (kuna, GH-299) The AIF filler reject, read console-side like `aifbracket`.
+        "aifnoppad",
         // (kuna) Tail-call function-entry recovery — an analysis-pass gate with no
         // codegen live reader (read console-side via kuna_live_value), same as the
         // gates around it. Default-off, ARM-only.
@@ -472,6 +488,9 @@ fn option_values_live_value_present_for_110() {
         // at the analysis COMMIT boundary (console-side via kuna_live_value), like
         // `cppproto` above. Three-valued, default `proven`.
         "cppsig",
+        // (kuna) The MSVC declaration arm of the demangled signatures -- the same
+        // commit-boundary gate as `cppsig`, read console-side. Default-on.
+        "msvcsig",
         // (kuna) Full-depth DWARF type resolution — a LOAD-time gate read from the
         // `KUNA_TYPEDEPTH` env var (the types are mapped inside `load file`), so
         // like `macho-arm64e` above it has no codegen live_value. Default-on.
@@ -515,6 +534,9 @@ fn option_values_live_value_present_for_110() {
                             | "loopcontinue"
                             | "regionedgeorder"
                             | "condfold"
+                            // (kuna) `condstmts` takes `off` or an INTEGER cap;
+                            // its live value is `Architecture::cond_stmts`.
+                            | "condstmts"
                             | "stackguard"
                             | "msvcstackguard"
                             | "securitycheck"
@@ -624,12 +646,20 @@ fn option_values_live_value_present_for_110() {
                             | "calleearityscratch"
                             | "calleedeadarg"
                             | "hiddenretarg"
+                            | "mixedtailret"
+                            | "calleereadarg"
+                            | "zerofillreturn"
+                            | "zerocallregs"
                             | "calleepreserves"
                             | "calleeretpreserves"
                             | "calleescratchbody"
                             | "indirectanchor"
                             | "calloverlap"
                             | "indexaliasguard"
+                            // (kuna) `arrayextent` takes a MODE
+                            // (`off|bound|on`) over an int field; its live
+                            // value is `Architecture::array_extent`.
+                            | "arrayextent"
                             | "spillargtrial"
                             | "paramcopyhoist"
                             | "guardarm"
@@ -755,9 +785,17 @@ fn option_values_live_value_present_for_110() {
     // 110 -> 111: +1 for `bejoin` (live_field = be_join).
     // 111 -> 112: +1 for `calltargettype` (live_field = call_target_type).
     // 112 -> 113: +1 for `condexeretuse` (live_field = cond_exe_ret_use).
-    // 113 -> 114: +1 for `wideslice` (live_field = wide_slice_reduce, default-on).
-    // 114 -> 115: +1 for `devectorize` (live_field = devectorize_reduction, opt-in).
-    assert_eq!(with_live, 115);
+    // 113 -> 114: +1 for `retsysreg` (live_field = ret_sys_reg).
+    // 114 -> 115: +1 for `floatglobals` (live_field = float_globals, default-on).
+    // 115 -> 116: +1 for `floatbits` (live_field = float_bits).
+    // 116 -> 117: +1 for `reloadarg` (live_field = reload_arg).
+    // 117 -> 118: +1 for `varargsharedfloat` (live_field = vararg_shared_float).
+    // 118 -> 119: +1 for `armfuncmode` (live_field = analysis_armfuncmode).
+    // 119 -> 120: +1 for `armwalkmode` (live_field = analysis_armwalkmode).
+    // 120 -> 121: +1 for `calleepopslot` (live_field = callee_pop_slot).
+    // 121 -> 122: +1 for `callerreads` (live_field = caller_reads).
+    // 122 -> 124: +2 for `wideslice` and `devectorize`.
+    assert_eq!(with_live, 124);
 }
 
 #[test]
@@ -948,9 +986,12 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 252 -> 253: +1 for `stackstoreguard`.
     // 253 -> 254: +1 for `protoranges`; its P6 row sits mid-table.
     // 257 -> 258: +1 for `bejoin`.
-    // 263 -> 264: +1 for `wideslice`; its P3 row sits mid-table.
-    // 264 -> 265: +1 for `devectorize`; its P3 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 264);
+    // +1 for `coldentry`; its P1 row sits mid-table beside `fdeinterior`.
+    // +1 for `thunkentry`; its P1 row sits mid-table beside `unmappedentry`.
+    // +1 for `zerocallregs`; its P4 row sits mid-table beside `zerofillreturn`.
+    // +1 for `callerreads`.
+    // +2 for `wideslice` and `devectorize`.
+    assert_eq!(json.matches("},\n").count(), 285);
 }
 
 #[test]

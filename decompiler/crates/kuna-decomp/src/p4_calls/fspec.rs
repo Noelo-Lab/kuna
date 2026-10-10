@@ -984,6 +984,8 @@ pub mod param_trial_flags {
     /// Solid movement into the Varnode.
     pub const ANCESTOR_SOLID: uint4 = 0x400;
     pub const STACK_ADDRESS: uint4 = 0x800;
+    /// (kuna) Solid only through a reload from the caller's frame.
+    pub const FRAME_RELOAD: uint4 = 0x1000;
 }
 
 /// A register or memory location that may be used to pass a parameter or return
@@ -1149,6 +1151,8 @@ impl ParamTrial {
     /// Record opt-in evidence that this input carries a stack address.
     pub fn set_stack_address(&mut self) { self.flags |= param_trial_flags::STACK_ADDRESS; }
     pub fn has_stack_address(&self) -> bool { self.flags & param_trial_flags::STACK_ADDRESS != 0 }
+    pub fn set_frame_reload(&mut self) { self.flags |= param_trial_flags::FRAME_RELOAD; }
+    pub fn has_frame_reload(&self) -> bool { self.flags & param_trial_flags::FRAME_RELOAD != 0 }
 
     /// Does this show solid movement into the Varnode (C++ `hasAncestorSolid`)?
     pub fn has_ancestor_solid(&self) -> bool {

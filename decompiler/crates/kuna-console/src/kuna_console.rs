@@ -256,6 +256,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         },
         "strings" => on_off(conf.analysis_strings),
         "widestrings" => on_off(conf.analysis_widestrings),
+        "widestrings32" => on_off(conf.analysis_widestrings32),
         "entry_disc" => on_off(conf.analysis_entry_disc),
         "eh_frame_full" => on_off(conf.analysis_eh_frame_full),
         "arm_markers" => on_off(conf.analysis_arm_markers),
@@ -282,11 +283,13 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // (kuna `cppsig`) Three-valued, so it reports its own token rather than
         // on/off.
         "cppsig" => conf.analysis_cppsig.as_str(),
+        "msvcsig" => on_off(conf.analysis_msvcsig),
         "callfixup" => on_off(conf.analysis_callfixup),
         "addrtable" => on_off(conf.analysis_addrtable),
         "listing" => on_off(conf.analysis_listing),
         "armframes" => on_off(conf.analysis_armframes),
         "unmappedentry" => on_off(conf.analysis_unmappedentry),
+        "thunkentry" => on_off(conf.analysis_thunkentry),
         "ppclocalentry" => on_off(conf.analysis_ppclocalentry),
         // (kuna `flowmode`) Valued `on|aftercall|off`, so it reports its own token.
         "flowmode" => match (conf.analysis_flowmode, conf.analysis_flowmode_aftercall) {
@@ -303,6 +306,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "fast_funcdisc" => on_off(conf.analysis_fast_funcdisc),
         "rawdiscover" => on_off(conf.analysis_rawdiscover),
         "gopclntab" => on_off(conf.analysis_gopclntab),
+        "aifbracket" => on_off(conf.analysis_aifbracket),
+        "aifnoppad" => on_off(conf.analysis_aifnoppad),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested
         // state (the live spec-selection gate is the load-time env var, but the
         // catalog `current` mirrors the `option macho-arm64e on|off` request).

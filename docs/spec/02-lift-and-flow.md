@@ -29,6 +29,42 @@ bytes and its PC write preserves interworking. Other PC loads retain their
 existing branch behavior; an explicitly prepared LR retains the indirect-call
 form. This is a SLEIGH correctness repair, without an inference option.
 
+The SPARC floating-to-integer constructors use the integer result width:
+`fdtoi` and `fqtoi` write one 32-bit word through `fsrd`, while `fstox` and
+`fqtox` write 64 bits through `fdrd`. Scalar destinations preserve odd register numbers;
+double destinations use the V9 encoding that maps an odd encoded field into
+the upper register bank. The rules apply in both language variants. See the
+[SPARC V9 instruction mapping](https://docs.oracle.com/cd/E19963-01/html/821-1607/sparcv9-32853.html).
+This is a SLEIGH correctness repair, without an inference option.
+
+Generic ARM `MCR`/`MRC` and `MCR2`/`MRC2` transfers pass the encoded
+`CRn` and `CRm` numbers to their opaque coprocessor intrinsics as four-byte
+constants. A32 and Thumb constructors use unattached numeric aliases of the token
+fields, retaining the `cr0`–`cr15` attachments for assembly spelling. The CPU
+source of `MCR` remains live register data; `MRC` still writes its CPU
+destination, including the Thumb APSR flag destination. Coprocessor number,
+opcode fields, condition handling, and instruction spelling are preserved.
+This repairs selector identity without an option and does not emulate CP15,
+interpret processor-specific registers, or change named CP15 intrinsics,
+coprocessor data processing, or double-register transfers.
+
+Ordinary ARM flow establishes a `TMode` write boundary at the function entry.
+A backward interworking call may publish the callee's mode up to that boundary,
+but cannot repaint the caller. After a successful instruction, a mode commit
+that reached the instruction's own address is bounded by restoring its original
+mode there, preserving the call's fall-through. Other context fields, including
+Thumb IT state, retain their normal effects. Direct and indirect branches retain
+their existing target-mode selection. This strict correctness repair applies
+without Listing or frame discovery and adds no option.
+
+ARM return-dispatch probes preceding flow run in a decode context scope with
+`TMode` writes masked. Rejected probe chains cannot change the entry mode before
+the real walk establishes its boundary; local IT state remains active in a probe.
+The scope journals only touched context partitions, restoring their values and
+explicit-set masks and removing new split points on exit. Opening a scope does
+not copy the image's context database. No scope is opened when both
+`entryretdispatch` and `pushimmediateret` are disabled.
+
 Option defaults and flip guidance for every option named below live in the
 generated catalog ([docs/options.md](../options.md)); the rows are defined in
 `decompiler/crates/kuna-decomp/phases.toml` and the intentional
@@ -348,7 +384,31 @@ calls, with identical observable result — the analysis path locks callee
 signatures before flow runs). A CALLIND keeps its computed target as input 0
 (`setup_callind_specs`) unless a previous decompilation pass planted an
 indirect override (de-indirection), which converts it to a direct CALL before
-the spec is built. `flow.rs (FlowInfo::check_for_flow_modification)` then
+the spec is built. (kuna `msvcsig`) One more CALLIND is made direct there: a
+call through an import slot whose MSVC-declared prototype the analysis commit
+locked onto the import symbol (01, `msvcsig`)
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_msvcimportcall.rs
+(locked_import_slot)`). The target must be the word the call's own instruction
+reads from a constant address (the folded `COPY` of a memory varnode, or a
+`LOAD` through a constant pointer, through temporary copies), that address must
+be in the slot set the commit recorded and painted external by `peimportcall`,
+and the FunctionSymbol there must carry an input-locked prototype. Left to
+`ActionDeindirect`, such a call is resolved only after the default-model
+prototype it was given has been merged against a locked `__thiscall` or
+`__cdecl` one, which fails and restarts the function to plant exactly this
+override; resolving it here removes that restart, which on a 32-bit MSVC C++
+image nearly every function paid. Other import calls are unchanged: one whose
+symbol carries only parked pieces (the Win32 and libc tables) still waits for
+`ActionDeindirect`. A call to any address that set names, direct or made direct
+here, copies the locked prototype at flow and so never reaches the
+`ActionDefaultParams` arm that gives a declared callee the stack adjustment its
+parameter list implies (`calleeprotostack`, 04); the copy applies that rule
+itself
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeprotostack.rs
+(resolve_declared_extra_pop)`), so a
+`__thiscall` or `__stdcall` import pops what its declaration says instead of
+what the push run in front of it suggests.
+`flow.rs (FlowInfo::check_for_flow_modification)` then
 applies the callee's flow effects: an *inline* callee queues the op for
 injection; a *no-return* callee gets an artificial halt planted directly after
 the call plus the `"Subroutine does not return"` warning, so flow never runs
@@ -1038,7 +1098,9 @@ the raw blocks that reach the instruction: a block decides for itself when it
 writes the register or makes a call, otherwise it takes the conjunction of its
 predecessors, and the entry decides no. Every block starts at yes and only
 falls, so a loop is decided by the paths into it, and more than 256 blocks
-answers no. Another system call writes the result register and nothing else.
+answers no. Another system call writes the result register, and on MIPS and
+PowerPC its error flag (below) as a value the function did not set, so a flag
+left by an earlier system call is not an argument the function wrote.
 
 The register pair goes away as a consequence. The low half is now the call's
 output, and the high half is an argument the call reads. Return recovery's
@@ -1047,6 +1109,78 @@ output, and the high half is an argument the call reads. Return recovery's
 argument is not also a returned half, even when the function throws the result
 away and the kernel-preserved argument register still reaches the `RETURN`. It
 stays free to be the next call's argument.
+
+MIPS and PowerPC kernels also report a failure outside the result: MIPS sets
+`a3` to 1 (0 on success) and PowerPC sets the summary-overflow bit of `cr0`, and
+the C library tests it right after the instruction (`movz` or `bnez` on `a3`;
+`bns`, or `mfcr` and a mask). So on those two families the rewrite also inserts,
+right after the system call, `a3 = syscall_error()` or `cr0 = syscall_error()`
+(`kuna_syscallregs.rs (define_error_flag)`): a `CALLOTHER` of the built-in user
+op `BUILTIN_SYSCALL_ERROR` (`decompiler/crates/kuna-decomp/src/p2_lift/userop.rs`)
+whose only input is that user-op id, with its call flag cleared. It is an
+ordinary write placed before heritage, so heritage treats it like any other
+register write (an `INDIRECT` there would not work, see below), and with no
+side effect dead-code removal drops it wherever nothing reads the register. A
+copy made when a block is duplicated (`funcdata_block.rs
+(CloneBlockOps::build_op_clone)`, `funcdata_op.rs (Funcdata::clone_op)`) clears
+the call flag that setting its opcode restores, so a copy dies the same way.
+The test after the call then
+reads the kernel's flag. Before, it read the function's entry `a3`, which became
+a phantom fourth parameter, or a `cr0` nothing set, printed as an uninitialized
+local; where the function had itself loaded `a3` as the fourth system-call
+argument, the test even folded to a constant, and glibc's MIPS `lutimes` always
+returned -1. The whole `cr0` field takes the opaque value: the Linux system-call
+ABI lists `cr0` as volatile across `sc`, its summary-overflow bit being the error
+condition, so code after the call cannot rely on its other bits.
+
+Three later consumers keep the flag tied to its own call. Every flag has the
+same input, the user-op id, but not the same value, so the test of whether two
+values are the same (`expression.rs (functional_equality_level)`) answers no for
+it, as it does for a call: `(e1 | e2) != 0` over two calls' flags is not folded
+to one of them, and the flags of two branches are not merged into a new
+`syscall_error()` after the join, which as a new op would also have regained the
+call flag and printed as a bare statement. Chapter 04's
+`AncestorRealistic` treats the flag reaching a later call's killed-by-call
+argument register like a value carried through a call, so it is not that call's
+argument. Chapter 06's implied-variable check treats its definition like a
+call's output: when its range crosses a call or another system call it is
+printed at its definition, so a `syscall_error()` never appears after a later
+system call it does not belong to.
+
+On MIPS the phantom `a3` had also pulled a wrapper's real parameters in with
+it: parameter recovery fills the positions before the last input it finds, so a
+`read` wrapper that hands its three parameters to the kernel in place printed
+`(a0,a1,a2,a3)` although the call read none of them, and without the phantom it
+printed `(void)`. So a MIPS system call goes on reading argument registers,
+written or not, up to as many as the kernel's entry point for its number takes
+(`kuna_syscallregs.rs (mips_floor)`), each one only while, on every path to the
+instruction, it holds the function's incoming value with no call on the path or
+a value the function wrote after the path's last call
+(`kuna_syscallregs.rs (reaches_without_call)`). The o32 ABI does not preserve
+`a0`..`a3` across a call, while kuna's call model carries them through it, so a
+register that crossed a call would print the value from before the call:
+`foo(1,2,3,4)` followed by a `reboot` that sets `a0`..`a2` printed the 4 set up
+for `foo` as reboot's fourth argument. The first register that fails ends the
+list, which then reads exactly what the written-registers rule reads. The
+number is the constant that every write of `v0` reaching the instruction, with
+no call in between, writes
+(`kuna_syscallregs.rs (constant_at)`). The count comes from one table sorted by
+number (`kuna_syscallregs/mips_args.rs`), since the three ABIs number their
+calls in disjoint ranges (o32 from 4000, n64 from 5000, n32 from 6000). It is
+built from the kernel's own `syscall_o32.tbl`, `syscall_n64.tbl` and
+`syscall_n32.tbl` and the parameter lists of the entry points they name, an o32
+64-bit parameter taking an even-aligned register pair; o32 reads at most four
+registers and n32/n64 six. These are the kernel's counts, not the documented
+wrappers': `faccessat` takes three registers, `ppoll` one more than its
+wrapper. A number the table does not know, one computed at run time as in the
+C library's `syscall` dispatcher, reads all of `a0`..`a3`: such a function
+hands its own `a3` to the kernel, and taking fewer would drop a real parameter.
+Where it does not, its flag test still reads as a fourth parameter, as it did
+before. A call that sets up fewer registers than the kernel's entry takes, with
+no call before it, shows the rest as the function's parameters, since the
+kernel does read them: a `write` that sets `a0` and `a1` also passes the `a2`
+its caller left. PowerPC keeps the written-registers rule: its flag is not an
+argument register, so no phantom pulled parameters in there.
 
 The same policy gives the recognized system call unknown effects on writable
 memory. `kuna_syscallregs.rs (guard_memory)`, called by chapter 03's
@@ -1061,19 +1195,22 @@ Registers, unique temporaries, read-only ranges, unrelated user ops, and
 compiler-spec injected system calls keep their existing effects. `off`, and
 `auto` on an unclassified image, retain the original memory model too.
 
-What it does not model. Arguments the function hands the kernel untouched are
-not read, since nothing says how many of them the kernel reads, and taking all
-of them would give a zero-argument call phantom parameters; the list stops at
+What it does not model. Outside MIPS, arguments the function hands the kernel
+untouched are not read, since nothing says how many of them the kernel reads,
+and taking all of them would give a zero-argument call phantom parameters; the list stops at
 the first of them, so a later argument the function does write is not shown
 either, and a pass-through wrapper prints its call with the number alone. When
 that leaves a written register out, return recovery can still take it as the
-high half of a returned pair, as the vendored model does. The registers a kernel
-writes besides the result (the MIPS `a3` error flag and `v1`, the PowerPC `cr0`
-error bit) also keep their pre-call values. An `INDIRECT` creation for them was
-tried and rejected: `Heritage::collect` reads a marker op already in a range as
-evidence of an earlier heritage pass and clears the range's new-addresses
-property, which turns off the call, store and return guards for that register.
-On MIPS, every call in a function with a `syscall` then lost its `a3` argument.
+high half of a returned pair, as the vendored model does. The MIPS `v1` that a
+few calls return a second value in keeps its pre-call value, and the o32
+arguments past `a3`, which the kernel reads from the stack, are not read. An
+`INDIRECT` creation was tried for the error flag first and rejected: `Heritage::collect`
+reads a marker op already in a range as evidence of an earlier heritage pass and
+clears the range's new-addresses property, which turns off the call, store and
+return guards for that register. On MIPS, every call in a function with a
+`syscall` then lost its `a3` argument. An image whose handler preserves `a3` or
+`cr0` under `on` reads the opaque flag where it kept its own value, the same
+caveat as for the result register.
 `option syscallregs off` restores the vendored zero-effect `CALLOTHER`.
 
 Exercised by `tests/stages/kuna-syscallregs-arm.xml`, `-aarch64.xml`,
@@ -1084,6 +1221,16 @@ byte chunk. The ARM test adds a call whose result is discarded, a call followed
 by a use of the kept `r1`, and a call that writes `r1` but not `r0`; the RISC-V
 test adds a loop that passes `a1`/`a2` through and keeps scratch values in
 `a3`/`a4`, none of which takes an argument position.
+`tests/stages/kuna-syscallregs-mips-a3.xml` (a clang `movz` and a gcc branch on
+`a3`, the latter followed by a call while `a3` still holds the flag) and
+`-ppc-cr0.xml` (an `mfcr` and a `bns` test, and a compare of the result as the
+control) check the error flag under `on` and the phantom parameter or the
+uninitialized `cr0` under `off`. The MIPS test adds a test of two calls' flags
+(`e1 | e2`), a `read` wrapper that hands its three parameters over in place, and
+a `reboot` after a call whose `a3` is not read;
+the PowerPC test adds a flag that each branch sets and that is saved across a
+call after the join. In `-mips.xml`, `number` makes a `write` (4004) with two
+registers set, so it also passes the kernel the `a2` its caller left.
 `tests/stages/kuna-syscallregs-cortexm.xml` is the bare-metal control: FreeRTOS's
 `xPortRaisePrivilege` keeps its returned `r0` under `auto` and `off`.
 `decompiler/crates/kuna-cli/tests/syscall_regs_cli.rs` loads the ARM witness as
@@ -1910,17 +2057,16 @@ after a returning callee that happens to share a listed name.
 
 **(kuna) SPARC struct return — `option sparcstructret`, default off,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_sparcstructret.rs
-(kuna_is_sparc_struct_ret_trap)` (from Ghidra issue GH-6882).** The SPARC ABI
-plants an `unimp <structsize>` word after a call to a struct-returning
-function; the SLEIGH spec lifts it to an `IllegalInstructionTrap` CALLOTHER
-feeding a BRANCHIND, which jump-table recovery can never resolve — so the
-function loses its tail to a non-returning CALLIND. The predicate, consulted in
-the BRANCHIND arm of `xref_control_flow`, identifies the idiom *positionally*
-(pre-SSA the input is not def-linked): walk backwards over the dead list within
-the same instruction looking for a CALLOTHER whose user op is named
-`IllegalInstructionTrap`. On a match the BRANCHIND is destroyed and the
-instruction falls through. Kept opt-in per program: globally it would convert a
-*real* trap into silent fall-through on other targets.
+(kuna_sparc_struct_ret_trap_producer)` (from Ghidra issue GH-6882).** The SPARC ABI
+places an `unimp <structsize>` word after a call to a struct-returning function.
+SLEIGH lifts this marker to an `IllegalInstructionTrap` CALLOTHER feeding a
+BRANCHIND. With the option enabled, flow classification recognizes the named
+trap within the same instruction and removes the branch so execution falls
+through. When the producer has an output, it becomes an inert COPY, retaining
+its instruction-start operation until SSA so raw flow targets remain valid.
+If the producer cannot be rewritten, the branch is still removed, preserving
+the previous drop-only behavior. The option remains off by default because
+interpreting a real trap as an ABI marker would suppress its trap effect.
 
 **Emulate-function hooks.** `kuna_emulatefunction.rs (EmulateFunction)` is the
 lightweight emulator behind every address enumeration in §2.3: a memory state
@@ -2234,3 +2380,23 @@ does not change the host process interrupt state. An execution adapter must
 provide processor-version and privilege-appropriate reads and masked writes.
 Register and immediate MSR update NZCVQ only when the flag byte is selected,
 preserving arithmetic flags across control-only writes.
+
+### RISC-V moves and conversions from FP to integer registers (GH-831)
+
+`fmv.x.d` copies the 64-bit pattern of its FP source into the integer
+destination. `fmv.x.w` copies the low 32 bits of the FP register and, on RV64,
+sign-extends them to the register width. `fcvt.w.d`, `fcvt.wu.d`, `fcvt.w.s`
+and `fcvt.wu.s` write their 32-bit result the same way. The unsigned forms
+convert to a 64-bit integer and keep its low 32 bits, so a source in
+[2^31, 2^32) gets its unsigned value, which a 32-bit signed conversion cannot
+represent.
+The FP operand is read as a value. Reading it through a register-space pointer
+to the operand's address would read the temporary that the operand table
+exports, at register offset 0x900, which prints as `dat_900`. The result is
+written to `rd` with `assignW`. A destination table that exports a temporary
+copy of the register would drop the write, which made these conversions
+produce no value at all. The fix is in the RISC-V SLEIGH sources, so
+`riscv.lp64d.sla`, `riscv.ilp32d.sla` and `andestar_v5.sla` must be rebuilt.
+Exercised by `tests/stages/gh831-riscv-fpmove.xml` (RV64: a call result moved
+by `fmv.x.d` and `fmv.x.w`, and all four conversions) and
+`tests/stages/gh831-riscv32-fpmove.xml` (the RV32 forms).

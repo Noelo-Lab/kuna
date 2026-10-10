@@ -4165,7 +4165,8 @@ impl CloneBlockOps {
                 | opf::fallthru_true
                 | opf::calculated_bool
                 | opf::ptrflow);
-        // The addl-flag subset (funcdata_block.cc:987-988), plus the kuna_zextreturn record.
+        // The addl-flag subset (funcdata_block.cc:987-988), plus the kuna_zextreturn and
+        // kuna_exactfloat records.
         use crate::op::pcodeop_addlflags as opaf;
         let afl = op_addl
             & (opaf::special_prop
@@ -4174,11 +4175,16 @@ impl CloneBlockOps {
                 | opaf::is_cpool_transformed
                 | opaf::stop_type_propagation
                 | opaf::store_unmapped
-                | opaf::kuna_zextreturn);
+                | opaf::kuna_zextreturn
+                | opaf::kuna_exactfloat);
+        let error_flag = crate::kuna_syscallregs::is_error_flag(data, op);
         {
             let o = data.obank_mut().get_mut(dup).expect("buildOpClone: stale dup");
             o.set_flag(fl);
             o.set_additional_flag(afl);
+            if error_flag {
+                o.clear_flag(opf::call);
+            }
         }
         self.clone_list.push((op, dup)); // Map from clone to orig
         self.orig_to_clone.insert(op, dup); // Map from orig to clone

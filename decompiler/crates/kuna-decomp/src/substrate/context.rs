@@ -695,6 +695,16 @@ pub struct ArchContext {
     /// for a returned half (`option retpushedhalf`); read by
     /// [`crate::kuna_retpushedhalf`].
     pub ret_pushed_half: bool,
+    /// (kuna) A register the function sets for a system register is not the
+    /// high word of its return (`option retsysreg`); read by
+    /// [`crate::kuna_retsysreg`].
+    pub ret_sys_reg: bool,
+    /// (kuna) CALLOTHER user-op ids named in
+    /// [`STATE_USEROP_NAMES`](crate::kuna_retsysreg::STATE_USEROP_NAMES), and
+    /// those named in [`COP_USEROP_NAMES`](crate::kuna_retsysreg::COP_USEROP_NAMES),
+    /// resolved from the program's user ops when the handle is built.
+    pub retsysreg_userops: Vec<kuna_base::types::uint4>,
+    pub retsysreg_cop_userops: Vec<kuna_base::types::uint4>,
     /// (kuna) Let a CALL on a block that ends in a no-return halt coexist with the
     /// RETURN's output trial (`option noreturnretuse`); read by
     /// [`crate::p4_calls::kuna_noreturnretuse`].
@@ -727,6 +737,11 @@ pub struct ArchContext {
     /// what `option rustabi auto` tests.  Copied from the engine `Architecture`
     /// in `build_arch_handle`.
     pub source_is_rust: bool,
+    /// (kuna) The loader's Go verdict for this image; `option reloadarg`
+    /// stands down on Go.  Copied from the engine `Architecture`.
+    pub source_is_go: bool,
+    /// (kuna) `option reloadarg`; read by [`crate::p4_calls::kuna_reloadarg`].
+    pub reload_arg: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
     /// `sub_<addr>` / `dat_<addr>` rather than `func_<addr>` (C++
     /// `Architecture::name_style_angr`, default-on).  Read by the call-spec
@@ -821,6 +836,14 @@ pub struct ArchContext {
     /// Read by
     /// [`ActionCallTargetType`](crate::kuna_calltargettype::ActionCallTargetType).
     pub call_target_type: bool,
+    /// (kuna `floatglobals`) The globals the program only moves through float
+    /// registers, once the scan has run; read by
+    /// [`float_only`](crate::kuna_floatglobals::float_only).
+    pub float_globals: Option<Rc<crate::kuna_floatglobals::FloatGlobals>>,
+    /// (kuna `floatglobals`) The option is on and the scan can run but has not.
+    pub float_globals_pending: bool,
+    /// (kuna `floatglobals`) A vote asked while the scan was pending.
+    pub float_globals_wanted: std::cell::Cell<bool>,
     /// (kuna `codescalar`) Refuse a `code` pointee as the data-type of a
     /// dereferenced value; mirrors
     /// [`Architecture::codescalar`](crate::architecture::Architecture).
@@ -830,6 +853,11 @@ pub struct ArchContext {
     /// [`Architecture::bool_byte`](crate::architecture::Architecture); the walk
     /// lives in [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
     pub bool_byte: bool,
+    /// (kuna `floatbits`) A function whose float-register input is only
+    /// bit-opped into its float-register return keeps the float on both.
+    /// Mirror of [`Architecture::float_bits`](crate::architecture::Architecture);
+    /// the walk lives in [`kuna_floatbits`](crate::p5_types::kuna_floatbits).
+    pub float_bits: bool,
     /// (kuna) The printer spells a residual one-byte TYPE_UNKNOWN as C `char`
     /// (`realtypes` on, C output), so its promotion sign-extends.  Read by
     /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
@@ -937,6 +965,10 @@ pub struct ArchContext {
     /// [`StackSolver::build`](crate::coreaction_stackptr) through
     /// [`crate::p6_variables::kuna_calleepop::guess_extra_pop`].
     pub callee_pop: bool,
+    /// (kuna) keep the `calleepop` guess right for a slot pushed in front of one
+    /// call and popped by a later one (`calleepopslot`).  Read by
+    /// [`crate::p6_variables::kuna_calleepopslot::guess_extra_pop`].
+    pub callee_pop_slot: bool,
     /// (kuna) `calleeprotostack` — a declared callee's locked prototype states
     /// its stack contract.  See [`crate::p4_calls::kuna_calleeprotostack`].
     pub callee_proto_stack: bool,
@@ -950,6 +982,9 @@ pub struct ArchContext {
     /// [`crate::p4_calls::kuna_passthrough`]; it needs a prototype `protoorder`
     /// parked, which no fixture has, so the seam carries the shipped default.
     pub pass_through: bool,
+    /// (kuna) `mixedtailret`: a value returned beside a claimed tail-call
+    /// result is returned too.  Read by [`crate::p4_calls::kuna_mixedtailret`].
+    pub mixed_tail_ret: bool,
     /// (kuna) `armfloatreturn` is on and the image states the ARM VFP calling
     /// convention.  Read by [`crate::p4_calls::kuna_armfloatreturn`].
     pub arm_float_return: bool,
@@ -990,6 +1025,18 @@ pub struct ArchContext {
     /// through (`hiddenretarg`).  Read by
     /// [`crate::p4_calls::kuna_hiddenretarg::trial_is_not_hidden_return`].
     pub hidden_ret_arg: bool,
+    /// (kuna) give a call the register arguments `onlyOpUse` refused when the
+    /// callee's own body reads them (`calleereadarg`).  Read by
+    /// [`crate::p4_calls::kuna_calleereadarg::capture`].
+    pub callee_read_arg: bool,
+    /// (kuna) drop the zero fill a narrow write leaves in the upper half of a
+    /// returned vector register (`zerofillreturn`).  Read by
+    /// [`crate::p4_calls::kuna_zerofillreturn::drop_zero_fill`].
+    pub zero_fill_return: bool,
+    /// (kuna) drop the registers a `-fzero-call-used-regs` epilogue clears
+    /// from the return value (`zerocallregs`).  Read by
+    /// [`crate::p4_calls::kuna_zerocallregs::drop_epilogue_zeros`].
+    pub zero_call_regs: bool,
     /// (kuna) narrow a call's `killedbycall` set to the registers a bounded
     /// decode of the callee's own body proves it writes (`calleepreserves`).
     /// Read by `Heritage::guard_calls` through
@@ -1034,6 +1081,10 @@ pub struct ArchContext {
     /// variable part (`varargforward`).  Read by
     /// [`crate::p4_calls::kuna_varargforward::forwards_declared_parameter`].
     pub vararg_forward: bool,
+    /// (kuna) keep a counted variadic double that also feeds an earlier
+    /// argument (`varargsharedfloat`).  Read by
+    /// [`crate::p4_calls::kuna_varargsharedfloat::feeds_earlier_argument`].
+    pub vararg_shared_float: bool,
     /// (kuna) reconcile a call's recovered argument list with a sibling call to
     /// the same callee (`calleearity`).  Read by
     /// [`build_input_from_trials`](crate::funcdata_callsite::build_input_from_trials)
@@ -1117,6 +1168,10 @@ pub struct ArchContext {
     /// Levels in [`crate::p3_dataflow::kuna_indexaliasguard`]; read by
     /// [`Heritage::guard`](crate::p3_dataflow::heritage::Heritage).
     pub index_alias_guard: int4,
+    /// (kuna) `option arrayextent off|bound|on`: how far the open range at an
+    /// indexed stack base reaches past upstream's four elements. Levels in
+    /// [`crate::p6_variables::kuna_arrayextent`]; read by `gather_open`.
+    pub array_extent: int4,
     /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
     /// `RulePropagateCopy` marker propagation that would leave an address-tied
     /// `COPY` output holding a call's return value with no readers, so a
@@ -1259,6 +1314,9 @@ pub struct ArchContext {
     /// selector. Checked during [`lowered-switch detection`](crate::kuna_loweredswitch::ActionLowerSwitchDetect::detect).
     pub switch_selector_guard: bool,
     pub cond_fold: int4,
+    /// (kuna) `condstmts`: most statements a folded condition operand may print
+    /// before its test; negative = off.  See [`crate::p8_structure::kuna_condstmts`].
+    pub cond_stmts: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
@@ -1616,6 +1674,11 @@ impl ArchContext {
             // (kuna) `option retpushedhalf` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             ret_pushed_half: true,
+            // (kuna) `option retsysreg` default-on; the real value is copied
+            // from the engine Architecture in `build_arch_handle`.
+            ret_sys_reg: true,
+            retsysreg_userops: Vec::new(),
+            retsysreg_cop_userops: Vec::new(),
             // (kuna) `option noreturnretuse` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             noreturn_ret_use: true,
@@ -1634,6 +1697,10 @@ impl ArchContext {
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
             source_is_rust: false,
+            source_is_go: false,
+            // (kuna) `option reloadarg` default-on; the real value is copied
+            // from the engine Architecture in `build_arch_handle`.
+            reload_arg: true,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
             // (kuna, Phase 3) ghidra-mode-only; never set on the standalone path.
@@ -1664,6 +1731,9 @@ impl ArchContext {
             rodata_string: false,        // (kuna) rodatastring
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
             call_target_type: false,     // (kuna) option calltargettype
+            float_globals: None,         // (kuna) option floatglobals
+            float_globals_pending: false,
+            float_globals_wanted: std::cell::Cell::new(false),
             struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode::Locals, // (kuna) option structsynth, default `locals`; the real value is copied from the engine Architecture in `build_arch_handle`
             struct_synth_shard: None,
             struct_merge: crate::p5_types::kuna_structmerge::StructMergeMode::Off, // (kuna) option structmerge, default `off`; the real value is copied from the engine Architecture in `build_arch_handle`
@@ -1671,6 +1741,7 @@ impl ArchContext {
             field_type: false, // (kuna) option fieldtype, copied from Architecture
             codescalar: false,           // (kuna) option codescalar
             bool_byte: true, // (kuna) option boolbyte (default on)
+            float_bits: true, // (kuna) option floatbits (default on)
             unknown_byte_is_char: false, // (kuna) realtypes + C output
             int_promotion: true,         // (kuna) LangCaps::integer_promotion (C)
             char_byte: true, // (kuna) option charbyte
@@ -1709,6 +1780,7 @@ impl ArchContext {
             // calleepop only refines a guess the solver already had to make, so
             // the hand-built-fixture seam carries the same default.
             callee_pop: true,
+            callee_pop_slot: true,
             callee_proto_stack: true,
             // argclobber only drops a trailing argument the callee's own
             // recovered prototype says it never reads, and declines outright
@@ -1726,10 +1798,14 @@ impl ArchContext {
             vararg_floats: Default::default(),
             narrow_ext: crate::kuna_narrowext::Rules::default(),
             pass_through: true, // (kuna) option passthrough (default on)
+            mixed_tail_ret: false, // (kuna) option mixedtailret (default off)
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,
             hidden_ret_arg: true,
+            callee_read_arg: true,       // calleereadarg (default-on)
+            zero_fill_return: true,
+            zero_call_regs: true,
             callee_preserves: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)
@@ -1738,6 +1814,7 @@ impl ArchContext {
             stack_arg_gap: true,         // stackarggap (DIV-140 default-on)
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             vararg_forward: true,        // varargforward (default-on)
+            vararg_shared_float: false,  // varargsharedfloat (default-off)
             callee_arity: true,          // calleearity (DIV-102 default-on)
             callee_arity_fwd: true,      // calleearityfwd (default-on)
             callee_arity_live: true,     // calleearitylive (default-on)
@@ -1750,6 +1827,7 @@ impl ArchContext {
             cond_exe_ret_use: true,      // condexeretuse (default-on)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
+            array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
@@ -1776,6 +1854,7 @@ impl ArchContext {
             peb_names: false,
             switch_selector_guard: false, // switchselector (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
+            cond_stmts: -1,              // condstmts (-1 = off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
@@ -2125,6 +2204,13 @@ impl ArchContext {
     ) -> Option<(String, int4, Option<std::rc::Rc<crate::dtype::Datatype>>)> {
         self.effective_global_query(addr)
             .and_then(|gq| gq.name_for_varnode(addr, size, usepoint))
+    }
+
+    /// The first offset and size of the smallest global Symbol whose storage
+    /// holds `addr`, if any.
+    pub(crate) fn global_symbol_extent(&self, addr: &Address) -> Option<(u64, int4)> {
+        self.effective_global_query(addr)
+            .and_then(|gq| gq.find_container_entry(addr, 1, &Address::default()).map(|e| (e.first, e.size)))
     }
 
     /// Like [`name_for_global_varnode`](Self::name_for_global_varnode) but also

@@ -1,5 +1,5 @@
 //! Parameter assertions must preserve the value read at function entry.
-mod common;
+use crate::common;
 
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};

@@ -179,7 +179,7 @@ pub enum RefKind {
 /// The keystone populates only [`RefKind::Call`] and [`RefKind::Code`] (control
 /// flow); the data kinds and `op_index` are present for faithfulness (so the
 /// type never changes if operand markup is ever revisited) — design §2.2.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reference {
     /// Source VMA (the referencing instruction).
     pub from: u64,

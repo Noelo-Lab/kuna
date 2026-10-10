@@ -13,8 +13,8 @@
 // lose the first message one side sends (as a data channel may as it opens),
 // and some pairs of pages can be made unable to link directly.
 //
-// Used by decompile2-collab-sync.mjs (scripted cases) and
-// decompile2-collab-fuzz.mjs (random runs).
+// Used by decompile-collab-sync.mjs (scripted cases) and
+// decompile-collab-fuzz.mjs (random runs).
 import { Session } from '../decompile/session.js';
 import { Sync } from '../decompile/collab/sync.js';
 import { Group } from '../decompile/collab/group.js';

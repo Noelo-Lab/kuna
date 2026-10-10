@@ -2005,7 +2005,62 @@ mod tests {
         // (GH-846)
         // and kuna-condexeretuse / a use a re-tested condition rules out does
         // not reject an ARM return value (GH-874)
-        assert_eq!(count, 441, "corpus file count drifted");
+        // and kuna-calleeretpreserves-mips + -mipsbe / a pointer gcc keeps in
+        // $v1 across a callee that never writes it survives the call (GH-878)
+        // and kuna-calleereadarg + -arm + -a64 / a call argument the
+        // caller also tests is kept when the callee reads it (GH-881)
+        // and kuna-retsysreg + -a64 + -mips / a register set for a system
+        // register is not the high word of the return (GH-885)
+        // and gh831-riscv-fpmove + gh831-riscv32-fpmove / RISC-V fmv.x.* and
+        // fcvt.w* read and write the real registers (GH-831)
+        // and kuna-condstmts / a folded condition operand prints at most the
+        // capped number of statements before its test
+        // and gh873-zerofillreturn-a64 / the zero fill above a returned
+        // AArch64 vector lane is no part of the value (GH-873)
+        // and kuna-floatglobals / a float parameter stored into a global the
+        // program only moves through float registers is a float (GH-888)
+        // and kuna-arrayextent / an indexed stack array covers the slots its
+        // index reaches past four elements (GH-867)
+        // and kuna-pointer-arguments / standalone printing has no batch contract
+        // and kuna-floatbits / a float helper that only works on the bits of
+        // its float-register input is a float on both sides (GH-890)
+        // and kuna-indexedstoreguard / an indexed stack store of any width
+        // keeps a later read of a slot it may overwrite from seeing the
+        // slot's earlier value
+        // and kuna-zeroloopfield / a field stored after the loop that zeroes
+        // its request prints after that loop
+        // and kuna-indexedstoreguard-a64 / the guarded slots of an AArch64
+        // long or int array past four elements stay elements of the array
+        // and kuna-syscallregs-mips-a3 + -ppc-cr0 / the MIPS a3 and PowerPC
+        // cr0 error flag a system call leaves (GH-857)
+        // and kuna-widestrings32 / a 4-byte wide literal argument prints as
+        // L"..." (GH-845)
+        // and gh839-reloadarg + -a64 / a register popped from a slot that holds
+        // the caller's incoming rax is no argument of the call after it, and
+        // a saved frame pointer read from the frame still is (GH-839)
+        // and gh841-varargsharedfloat-ppc / a 32-bit PowerPC -O0 variadic
+        // double that also feeds an earlier argument (GH-841)
+        // and kuna-floateq / an integer == or != on the bits of a float
+        // compares the bits, not the float values (GH-890)
+        // and kuna-pointerwalk-budget-mips / a pointer built through nested
+        // choices does not stall the stack-store guard's walks
+        // and kuna-pointerwalk-memo / those walks give what an exhaustive
+        // walk gives
+        // and kuna-ucomiss-unordered / an x86 float compare flag read by
+        // seta/setae/setbe/setb keeps its unordered case
+        // and kuna-thunkentry / the target of a jmp thunk is a function entry
+        // and kuna-armwalkmode / a bl target keeps A32 after a blx to Thumb
+        // and kuna-sparc-zeropair / a SPARC int's return 0 is not the second
+        // argument shifted into the high word (#796)
+        // and kuna-msvcsig / an MSVC-mangled import gets its declared prototype
+        // and kuna-rust-switch-labels / a Rust match arm is signed by its
+        // scrutinee's type (GH-883)
+        // and kuna-aifbracket / an AIF candidate that rejoins the function around
+        // it is not a function (GH-299)
+        // and kuna-aifnoppad / no AIF entry starts on nop padding (GH-299)
+        // and gh847-zerocallregs / a register a -fzero-call-used-regs epilogue
+        // clears is not returned (GH-847)
+        assert_eq!(count, 493, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

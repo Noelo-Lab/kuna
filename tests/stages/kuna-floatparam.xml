@@ -15,9 +15,10 @@
     convention passes in a general register: fs(unsigned long a0, ..) moved
     the double from xmm0 (d0) to rdi (x0). The register makes it a float.
 
-    The refusals: fy copies its double into a global, which another function
-    may read as an integer, and bits hands the double back in rax (x0). Both
-    keep their integer type.
+    The refusals: bits hands the double back in rax (x0) and keeps its integer
+    type. fy copies its double into a global: with floatglobals off every
+    global refuses, and fy keeps its integer type; on, the whole-object scan
+    finds nothing else touching the global and fy takes the double.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -37,6 +38,11 @@ c3
   <com>load function fr</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option floatglobals off</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option floatglobals on</com>
   <com>load function fy</com>
   <com>decompile</com>
   <com>print C</com>
@@ -58,6 +64,11 @@ c3
   <com>load function fr</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option floatglobals off</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option floatglobals on</com>
   <com>load function fy</com>
   <com>decompile</com>
   <com>print C</com>
@@ -76,6 +87,11 @@ c3
   <com>load function fr</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option floatglobals off</com>
+  <com>load function fy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option floatglobals on</com>
   <com>load function fy</com>
   <com>decompile</com>
   <com>print C</com>
@@ -93,4 +109,5 @@ c3
 <stringmatch name="FLOATPARAM #4: two floats stored into an array are floats" min="3" max="3">void sink\(float4 a0,float4 a1,float4 \*a2\)</stringmatch>
 <stringmatch name="FLOATPARAM #5: a double copied into a global keeps its integer type" min="3" max="3">void fy\(unsigned long a0,</stringmatch>
 <stringmatch name="FLOATPARAM #6: bits handed back in an integer register stay an integer" min="2" max="2">unsigned long bits\(unsigned long a0\)</stringmatch>
+<stringmatch name="FLOATPARAM #7: a double copied into a global nothing else reads as an integer is a double" min="3" max="3">void fy\(float8 a0,</stringmatch>
 </decompilertest>

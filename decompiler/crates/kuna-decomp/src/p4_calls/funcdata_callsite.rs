@@ -53,6 +53,8 @@ pub struct PendingCallFixup {
     pub body: Option<crate::p4_calls::kuna_calleearitybody::PendingBodyArgs>,
     /// The forwarded-register extension candidate (`passthrough`).
     pub pass_through: Option<crate::p4_calls::kuna_passthrough::PendingPassThrough>,
+    /// The callee-read extension candidate (`calleereadarg`).
+    pub read_arg: Option<crate::p4_calls::kuna_calleereadarg::PendingReadArg>,
 }
 
 /// C++ `FuncCallSpecs::checkInputTrialUse` (`fspec.cc:5592`).
@@ -253,10 +255,18 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
             );
             if realistic || solid {
                 let mut trial = data.get_call_specs(idx).active_input().get_trial(i).clone();
-                let only = data.ancestor_op_use(maxancestor, vn, op, &mut trial, 0, 0);
+                let only = data.ancestor_op_use(maxancestor, vn, op, &mut trial, 0, 0)
+                    || crate::p4_calls::kuna_varargsharedfloat::feeds_earlier_argument(
+                        data,
+                        idx,
+                        vn,
+                        &mut trial,
+                        maxancestor,
+                    );
                 *data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i) = trial;
                 if only {
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_active();
+                    crate::p4_calls::kuna_reloadarg::note(data, idx, i, ancestor.solid_loads());
                     crate::p4_calls::kuna_varargforward::narrow_undeclared_upper(data, idx, i);
                     if data
                         .get_call_specs_mut(idx)
@@ -446,12 +456,14 @@ pub fn build_input_from_trials(
     }
     // (kuna) `calleearityfwd` / `calleearitylive`: capture the retry candidate
     // while the trials and the CALL's pre-rewrite inputs are both still there.
+    let read_arg = crate::p4_calls::kuna_calleereadarg::capture(fc, data);
     let pending = if newparam.len() < 2 {
         PendingCallFixup {
             rescue: crate::p4_calls::kuna_calleearityfwd::capture_empty_call(fc, data),
             extend: None,
             body: crate::p4_calls::kuna_calleearitybody::capture_lone_call(fc, data),
             pass_through,
+            read_arg,
         }
     } else {
         PendingCallFixup {
@@ -459,6 +471,7 @@ pub fn build_input_from_trials(
             extend: crate::p4_calls::kuna_calleearitylive::capture_partial_call(fc, data),
             body: None,
             pass_through,
+            read_arg,
         }
     };
     let _ = data.op_set_all_input(op, &newparam);
@@ -589,7 +602,14 @@ pub fn build_output_from_trials(
         // that render as locals the function never assigns.
         let entry = fc.get_entry_address().clone();
         let order = crate::kuna_bejoin::call_join_order(data, fc.get_active_output());
-        if crate::kuna_rustabi::build_call_output_pair(op, data, &finalvn, Some(&entry), order) {
+        if crate::kuna_rustabi::build_call_output_pair(
+            op,
+            data,
+            crate::kuna_rustabi::call_model(fc.proto()),
+            &finalvn,
+            Some(&entry),
+            order,
+        ) {
             return;
         }
         // STUB(W4 translate-on-handle): leave the trials in place rather than

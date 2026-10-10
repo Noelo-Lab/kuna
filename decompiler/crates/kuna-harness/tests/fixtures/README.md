@@ -6,7 +6,7 @@ corpus function — the `print raw` of the recovered basic-block CFG taken at
 the structural differential; see `src/liftdiff.rs` for the grammar and the comparison
 model, and `src/corpus.rs` for the pinned `CASES` table, the bootstrap, the extractor,
 and the `run_self_test()` aggregate. The differential is driven from two front-ends
-that share that one driver: the `cargo test -p kuna-harness --test lift_diff` gate and
+that share that one driver: the `cargo test -p kuna-harness --test integration lift_diff::` gate and
 the `cargo run -p kuna-lift-diff -- --self-test` binary (the declared item gate).
 
 **Block model (since the round-1 F1 repair):** the structural model keys blocks by

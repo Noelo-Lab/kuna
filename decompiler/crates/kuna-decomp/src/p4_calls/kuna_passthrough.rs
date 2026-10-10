@@ -178,6 +178,9 @@ pub struct PassThroughClaim {
     /// Some op of the function reads or writes the range itself, so heritage
     /// visits it with the option off too.
     pub body_touches: bool,
+    /// A RETURN reached from no call hands back the function's own value in the
+    /// range beside the tail calls (`mixedtailret`).
+    pub beside_own: bool,
 }
 
 /// How many bytes of `[addr, addr+size)` the callee of `fc` takes as a
@@ -245,7 +248,7 @@ fn return_only(proto: &crate::fspec::FuncProto, addr: &Address, size: int4) -> b
 /// overwrite. A variadic callee's recovered list can stop on a tail
 /// register its body saves (gnulib `open_safer(char const *,int,...)` saves only
 /// `rdx`), so the caller's side is what says the tail is optional.
-fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
+pub(crate) fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
     let fc = data.get_call_specs(idx);
     let proto = fc.proto();
     let mut cur = data.op_previous_op(fc.get_op());
@@ -295,6 +298,19 @@ fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
 /// `version_etc(FILE *,char const *,char const *,char const *,...)` would come
 /// out with fourteen parameters.
 fn reads_the_vararg_count(data: &Funcdata) -> bool {
+    vararg_count_read(data, true)
+}
+
+/// [`reads_the_vararg_count`] without a read that only stores the register:
+/// clang's `push %rax` reserves an aligned stack slot, and is no
+/// `test %al,%al`. Read by [`crate::p4_calls::kuna_calleereadarg`].
+pub(crate) fn tests_the_vararg_count(data: &Funcdata) -> bool {
+    vararg_count_read(data, false)
+}
+
+/// Does the entry block read the return-only register before writing it,
+/// counting a read by a `STORE` of its value only with `stores`?
+fn vararg_count_read(data: &Funcdata, stores: bool) -> bool {
     if data.bblocks_get_size() == 0 {
         return false;
     }
@@ -307,6 +323,9 @@ fn reads_the_vararg_count(data: &Funcdata) -> bool {
             return false;
         }
         for i in 0..o.num_input() {
+            if !stores && i == 2 && o.code() == OpCode::CPUI_STORE {
+                continue;
+            }
             let Some(v) = o.get_in(i).and_then(|v| data.vbank().get(v)) else { continue };
             if !return_only(proto, v.get_addr(), v.get_size()) {
                 continue;
@@ -334,7 +353,7 @@ fn is_register(addr: &Address) -> bool {
 }
 
 /// Does any Varnode of the function share a byte with `[addr, addr+size)`?
-fn touched(data: &Funcdata, addr: &Address, size: int4) -> bool {
+pub(crate) fn touched(data: &Funcdata, addr: &Address, size: int4) -> bool {
     touched_by(data, addr, size, false)
 }
 
@@ -443,9 +462,9 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
     if variadic {
         return;
     }
-    let returned_call_result = stated_tail_return(data).map(|(pieces, producers)| {
+    let returned_call_result = stated_tail_return(data).map(|(pieces, producers, beside_own)| {
         let pieces: Vec<_> = pieces.into_iter().map(|(a, s)| (touched(data, &a, s), a, s)).collect();
-        (pieces, producers)
+        (pieces, producers, beside_own)
     });
     let vararg: Vec<OpId> = (0..data.num_calls())
         .filter(|&i| set_up_as_variadic(data, i))
@@ -488,7 +507,14 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
             match claims.iter_mut().find(|c| c.addr == addr && c.size == size) {
                 Some(c) => c.arg_owners.push(op),
                 None => {
-                    claims.push(PassThroughClaim { addr, size, arg_owners: vec![op], ret_owners: Vec::new(), body_touches: false })
+                    claims.push(PassThroughClaim {
+                        addr,
+                        size,
+                        arg_owners: vec![op],
+                        ret_owners: Vec::new(),
+                        body_touches: false,
+                        beside_own: false,
+                    })
                 }
             }
         }
@@ -571,7 +597,14 @@ pub(crate) fn producing_call(data: &Funcdata, ret: OpId) -> Option<OpId> {
 /// (%rdi),%rax; ...; jmp g` returns what `g` does. An argument register is not
 /// relaxed: ARM `mov r0,#5; b g` is how a `void` function calls `g(5)` as often
 /// as how an `int` one returns it.
-fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId>)> {
+///
+/// Under `mixedtailret`, a RETURN reached from no call is no refusal when at
+/// least one RETURN is such a tail call and the value it returns in that one
+/// register is the one the function wrote and branched on to choose between
+/// them ([`crate::p4_calls::kuna_mixedtailret::returns_decided_value`]); the
+/// register may then be touched anywhere. An argument register is taken only
+/// when no claimed callee reads it.
+fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId>, bool)> {
     if data.get_func_proto().is_output_locked() || data.get_active_output().is_none() {
         return None;
     }
@@ -586,8 +619,16 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     let mut storage: Option<(Address, int4)> = None;
     let mut producers: Vec<OpId> = Vec::new();
     let mut paths: Vec<(OpId, OpId)> = Vec::new();
+    let mut own: Vec<OpId> = Vec::new();
+    let beside_own = data.get_arch().mixed_tail_ret;
     for &r in &rets {
-        let call = producing_call(data, r)?;
+        let Some(call) = producing_call(data, r) else {
+            if !beside_own {
+                return None;
+            }
+            own.push(r);
+            continue;
+        };
         let idx = (0..data.num_calls()).find(|&i| data.get_call_specs(i).get_op() == call)?;
         let fc = data.get_call_specs(idx);
         if fc.proto().is_output_locked() || !fc.is_output_active() {
@@ -606,14 +647,23 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     let (addr, size) = storage?;
     let pieces = register_pieces(data, &addr, size)?;
     let proto = data.get_func_proto();
+    let mixed = !own.is_empty();
     let free = |(a, s): &(Address, int4)| {
         proto.characterize_as_output(a, *s) != crate::fspec::Containment::NoContainment
-            && (!touched_by(data, a, *s, true) || return_only(proto, a, *s))
+            && (mixed || !touched_by(data, a, *s, true) || return_only(proto, a, *s))
     };
     if !pieces.iter().all(free) || paths.iter().any(|&(call, ret)| touched_after(data, call, ret, &pieces)) {
         return None;
     }
-    Some((pieces, producers))
+    if mixed {
+        let argument = pieces.iter().any(|(a, s)| !return_only(proto, a, *s));
+        if (argument && crate::p4_calls::kuna_mixedtailret::feeds_tail_call(data, &producers, &pieces))
+            || !own.iter().all(|&r| crate::p4_calls::kuna_mixedtailret::returns_decided_value(data, r, &pieces, &paths))
+        {
+            return None;
+        }
+    }
+    Some((pieces, producers, mixed))
 }
 
 /// Does an op between `call` and `ret`, on the path [`producing_call`] walks,
@@ -683,9 +733,9 @@ fn register_pieces(data: &Funcdata, addr: &Address, size: int4) -> Option<Vec<(A
 fn claim_tail_return(
     data: &mut Funcdata,
     claims: &mut Vec<PassThroughClaim>,
-    ret: (Vec<(bool, Address, int4)>, Vec<OpId>),
+    ret: (Vec<(bool, Address, int4)>, Vec<OpId>, bool),
 ) {
-    let (pieces, producers) = ret;
+    let (pieces, producers, beside_own) = ret;
     let rets: Vec<OpId> = data
         .obank()
         .iter_code(OpCode::CPUI_RETURN)
@@ -709,13 +759,17 @@ fn claim_tail_return(
             active.get_trial_mut(t).set_slot(slot);
         }
         match claims.iter_mut().find(|c| c.addr == addr && c.size == size) {
-            Some(c) => c.ret_owners.extend(producers.iter().copied()),
+            Some(c) => {
+                c.ret_owners.extend(producers.iter().copied());
+                c.beside_own |= beside_own;
+            }
             None => claims.push(PassThroughClaim {
                 addr,
                 size,
                 arg_owners: Vec::new(),
                 ret_owners: producers.clone(),
                 body_touches,
+                beside_own,
             }),
         }
     }
@@ -777,7 +831,10 @@ fn is_tail_return_piece(data: &Funcdata, addr: &Address, size: int4) -> bool {
 /// the RETURN through an ordinary INDIRECT instead, and keeping the other
 /// register alone would return half the callee's value as the whole of the
 /// function's. And the claim yields to a value the function computes itself in
-/// another storage class ([`returns_own_value`]). Inert with the option off.
+/// another storage class ([`returns_own_value`]), unless the claim also
+/// covers a value the function returns itself
+/// ([`crate::p4_calls::kuna_mixedtailret::claimed_beside_own`]). Inert with the
+/// option off.
 pub fn keep_tail_return_whole(data: &Funcdata, active: &mut crate::fspec::ParamActive) {
     if !data.get_arch().pass_through {
         return;
@@ -785,7 +842,8 @@ pub fn keep_tail_return_whole(data: &Funcdata, active: &mut crate::fspec::ParamA
     let claimed: Vec<int4> = (0..active.get_num_trials())
         .filter(|&i| is_tail_return_piece(data, active.get_trial(i).get_address(), active.get_trial(i).get_size()))
         .collect();
-    if claimed.iter().any(|&i| !active.get_trial(i).is_active()) || returns_own_value(data, active, &claimed) {
+    let own = !crate::p4_calls::kuna_mixedtailret::claimed_beside_own(data) && returns_own_value(data, active, &claimed);
+    if claimed.iter().any(|&i| !active.get_trial(i).is_active()) || own {
         for i in claimed {
             active.get_trial_mut(i).mark_inactive();
         }
@@ -1071,7 +1129,7 @@ pub fn extension(have: &[Address], stated: &[Address], offered: &[Address]) -> V
 
 /// The low `width` bytes of `vn`, as a `SUBPIECE` inserted before `op`: what
 /// `buildInputFromTrials` does for a trial narrower than its Varnode.
-fn truncate_before(data: &mut Funcdata, vn: VarnodeId, width: int4, op: OpId) -> Option<VarnodeId> {
+pub(crate) fn truncate_before(data: &mut Funcdata, vn: VarnodeId, width: int4, op: OpId) -> Option<VarnodeId> {
     let (vaddr, vsize) = data.vbank().get(vn).map(|v| (v.get_addr().clone(), v.get_size()))?;
     let big_endian = data.get_arch().manage().get_default_code_space().map(|s| s.is_big_endian()).unwrap_or(false);
     let outaddr = if big_endian { &vaddr + ((vsize - width) as i64) } else { vaddr };

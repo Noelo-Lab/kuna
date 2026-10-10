@@ -859,6 +859,7 @@ fn export(
         // every function of the export.
         single_target: false,
         want_tokens: false,
+        want_pointer_arguments: false,
     };
 
     let (mut writer, (mut type_blocks, retries)) = std::thread::scope(
@@ -1261,6 +1262,7 @@ mod tests {
             object_location: None,
             callee_hints: hints,
             synth: None,
+            pointerargs: None,
             detail: None,
         }
     }

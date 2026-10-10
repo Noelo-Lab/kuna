@@ -195,6 +195,15 @@ pub trait FlowEnvironment {
     /// p-code, returning the instruction length in bytes.
     fn translate(&self) -> &dyn Translate;
 
+    fn arm_decode_mode(&self, _addr: &Address) -> Option<super::kuna_armflowcontext::ArmDecodeMode> {
+        None
+    }
+
+    fn preserve_arm_decode_mode(
+        &self, _addr: &Address,
+        _mode: super::kuna_armflowcontext::ArmDecodeMode, _entry: bool,
+    ) {}
+
     /// Resolve an [`OpCode`] to its behavioral-class [`TypeOp`]
     /// (C++ `glb->inst[opc]`).  // STUB(W6)
     ///
@@ -332,11 +341,9 @@ pub trait FlowEnvironment {
         false
     }
 
-    /// (kuna) GH-6882: is `op` a SPARC struct-return `unimp`-after-call trap
-    /// BRANCHIND to drop as a fall-through no-op? (C++ `kunaIsSparcStructRetTrap`).
-    /// // STUB(W4).
-    fn is_sparc_struct_ret_trap(&self, _fd: &Funcdata, _op: OpId) -> bool {
-        false
+    /// Return the trap producer for a SPARC struct-return marker branch when enabled.
+    fn sparc_struct_ret_trap_producer(&self, _fd: &Funcdata, _op: OpId) -> Option<OpId> {
+        None
     }
 
     /// (kuna `fastfailnoreturn`) Is `op` the CALLIND half of a Windows `int 0x29`
@@ -345,6 +352,23 @@ pub trait FlowEnvironment {
     /// reports `false` (upstream behavior: the interrupt is an ordinary modelled
     /// call, so the cspec's `extrapop` raises the stack pointer by 8 at every site).
     fn is_fastfail_callind(&self, _fd: &Funcdata, _op: OpId) -> bool {
+        false
+    }
+
+    /// (kuna `msvcsig`) The import slot the CALLIND `op` calls through, when that
+    /// slot carries a locked MSVC prototype, so the call is direct from the flow
+    /// on. See [`kuna_msvcimportcall`](crate::kuna_msvcimportcall). The default
+    /// shell reports `None` (upstream behavior: `ActionDeindirect` resolves it
+    /// later and the function restarts).
+    fn msvc_import_slot(&self, _fd: &Funcdata, _op: OpId) -> Option<Address> {
+        None
+    }
+
+    /// (kuna `msvcsig`) Does `entry` carry a locked MSVC prototype? Such a callee's
+    /// copied prototype gets the stack adjustment its parameter list implies, as
+    /// `ActionDefaultParams` gives a declared callee it seeds itself
+    /// (`calleeprotostack`). The default shell reports `false`.
+    fn msvc_locked_entry(&self, _entry: &Address) -> bool {
         false
     }
 
@@ -587,6 +611,7 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     funcbound_cutoffs: std::collections::BTreeSet<Address>,
     /// Addresses to which there is flow — the work stack (C++ `addrlist`).
     addrlist: Vec<Address>,
+    arm_context: bool,
     /// List of BRANCHIND ops (preparing for jump table recovery) (C++ `tablelist`).
     tablelist: Vec<OpId>,
     /// List of p-code ops that need injection (C++ `injectlist`).
@@ -707,6 +732,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             outofbounds: std::collections::BTreeSet::new(),
             funcbound_cutoffs: std::collections::BTreeSet::new(),
             addrlist: Vec::new(),
+            arm_context: env.arm_decode_mode(&entry).is_some(),
             tablelist: Vec::new(),
             injectlist: Vec::new(),
             visited: BTreeMap::new(),
@@ -1376,8 +1402,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 }
                 OpCode::CPUI_BRANCHIND => {
                     // (kuna) GH-6882: SPARC struct-return `unimp` after a call.
-                    if self.env.is_sparc_struct_ret_trap(&self.data, curop) {
-                        //   -- STUB(W3-funcdata): op_destroy_raw deferred (loss).
+                    if let Some(producer) = self.env.sparc_struct_ret_trap_producer(&self.data, curop) {
+                        crate::kuna_sparcstructret::neutralize_trap_producer(&mut self.data, producer)?;
                         self.data.op_destroy_raw(curop)?;
                         op = None;
                         *isfallthru = true;
@@ -1720,6 +1746,10 @@ following this call as a branch"
             crate::overrides::flow_type::NONE
         };
 
+        let mode = self.arm_context.then(|| self.env.arm_decode_mode(curaddr)).flatten();
+        if curaddr == self.data.get_address() {
+            if let Some(mode) = mode { self.env.preserve_arm_decode_mode(curaddr, mode, true); }
+        }
         let mut emit = FlowEmit::new(&mut self.data, self.env);
         let decoded = match self.env.mapped_flow_image() {
             Some(image) => self.env.translate().one_instruction_checked(&mut emit, curaddr, image),
@@ -1735,6 +1765,9 @@ following this call as a branch"
                     // is infallible, so the error was captured; re-raise it here, at
                     // the same point the C++ exception would propagate.
                     return Err(err);
+                }
+                if let Some(mode) = mode {
+                    self.env.preserve_arm_decode_mode(curaddr, mode, false);
                 }
             }
             Err(err) => {
@@ -2726,6 +2759,9 @@ truncating the fall-through here"
             .map(|o| o.get_addr().clone())
             .unwrap_or_default();
         let mut direct = self.data.get_override().find_indirect_override(&op_addr).cloned();
+        if direct.is_none() {
+            direct = self.env.msvc_import_slot(&self.data, op);
+        }
 
         // C++ flow.cc:730-731: `if (fc != 0 && fc->getEntryAddress() ==
         // res->getEntryAddress()) res->setAddress(Address());` — while weaving a
@@ -2896,6 +2932,12 @@ truncating the fall-through here"
                         {
                             fc.proto_mut().set_model(Some(evalfp));
                         }
+                    }
+                    if self.env.msvc_locked_entry(&entry) {
+                        crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
+                            self.data.get_arch().callee_proto_stack,
+                            fc.proto_mut(),
+                        );
                     }
                 }
             }

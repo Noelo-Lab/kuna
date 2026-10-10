@@ -27,7 +27,7 @@ use kuna_decomp::op::pcodeop_flags;
 use kuna_decomp::context::{ArchContext, OpId, TypeOp};
 
 use kuna_decomp::kuna_inferfuncentry::kuna_is_function_entry;
-use kuna_decomp::kuna_sparcstructret::kuna_is_sparc_struct_ret_trap;
+use kuna_decomp::kuna_sparcstructret::kuna_sparc_struct_ret_trap_producer;
 use kuna_decomp::kuna_v850indbranch::kuna_is_v850_indirect_jmp;
 
 fn build_manager() -> AddrSpaceManager {
@@ -120,7 +120,7 @@ fn flowpack_sparc_userop_id_truncates_high_bits_and_matches() {
     let branchind = make_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x1000, 1, false);
     // (uint4)0x1_0000_0007 == 7 -> resolver(7) == IllegalInstructionTrap.
     assert!(
-        kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver),
+        kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some(),
         "low-32-bits-7 user-op id must truncate to 7 and match the trap"
     );
 }
@@ -134,7 +134,7 @@ fn flowpack_sparc_userop_id_high_bits_only_does_not_alias_into_trap() {
     let callother = make_op(&mut fd, OpCode::CPUI_CALLOTHER, 0x1000, 1, true);
     set_const_input(&mut fd, callother, 0, 0x1_0000_0000u64);
     let branchind = make_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x1000, 1, false);
-    assert!(!kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver));
+    assert!(!kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some());
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +156,7 @@ fn flowpack_sparc_walk_passes_nontrap_callother_to_reach_trap() {
     let branchind = make_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x1000, 1, false);
     // Walk: BRANCHIND -> other(id9, no match, keep going) -> trap(id7, match).
     assert!(
-        kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver),
+        kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some(),
         "the walk must pass a non-matching CALLOTHER and still reach the trap"
     );
 }
@@ -171,7 +171,7 @@ fn flowpack_sparc_nearest_trap_matches_before_instruction_start() {
     let near_trap = make_op(&mut fd, OpCode::CPUI_CALLOTHER, 0x1000, 1, false);
     set_const_input(&mut fd, near_trap, 0, 7);
     let branchind = make_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x1000, 1, false);
-    assert!(kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver));
+    assert!(kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some());
 }
 
 // ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ fn flowpack_sparc_lone_branchind_at_deadlist_head_no_panic_false() {
     // A single BRANCHIND, instruction-start, dead-list head, no CALLOTHER.
     let branchind = make_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x1000, 1, true);
     set_const_input(&mut fd, branchind, 0, 0x40);
-    assert!(!kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver));
+    assert!(!kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some());
 }
 
 #[test]
@@ -201,7 +201,7 @@ fn flowpack_sparc_walk_to_deadlist_head_non_start_terminates() {
     set_const_input(&mut fd, first, 0, 1);
     let branchind = make_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x1000, 1, false);
     set_const_input(&mut fd, branchind, 0, 1);
-    assert!(!kuna_is_sparc_struct_ret_trap(&fd, branchind, true, resolver));
+    assert!(!kuna_sparc_struct_ret_trap_producer(&fd, branchind, true, resolver).is_some());
 }
 
 // ---------------------------------------------------------------------------

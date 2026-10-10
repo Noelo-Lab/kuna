@@ -5,7 +5,7 @@
 //! for arguments, and their compilers for return values (`narrowext compiler`).
 //! With the compiler spec's own extension a negative result read as a large
 //! positive one, or the rest of its register as an unassigned piece.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 
@@ -243,6 +243,7 @@ fn compile_and_run(stem: &str, program: &str, compilers: &[&str]) -> Result<(), 
             std::fs::write(&src, program).unwrap();
             let out = Command::new(cc)
                 .args(["-std=gnu11", "-w", "-fwrapv", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                .args(common::CC_GCC15_DEMOTE)
                 .output()
                 .expect("spawn the C compiler");
             if !out.status.success() {

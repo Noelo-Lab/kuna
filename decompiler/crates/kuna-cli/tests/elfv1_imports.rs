@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{Object as _, ObjectSection as _};
 use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope};

@@ -40,6 +40,26 @@
 //! a call site ([`reads_as_argument`]), so that argument is not also a returned
 //! half.
 //!
+//! MIPS and PowerPC kernels also report a failure outside the result: MIPS sets
+//! `a3` to 0 or 1, PowerPC the summary-overflow bit of `cr0`, and the C library
+//! tests it right after the instruction. A new op after the call defines that
+//! register with the opaque `syscall_error()` ([`define_error_flag`]), so the
+//! test reads the kernel's flag instead of the function's entry `a3`, which
+//! otherwise becomes a phantom parameter. It is an ordinary write, so heritage
+//! treats it as any other, and dead-code removal drops it where nothing reads
+//! the register. Each flag is its own value: two are never merged or folded
+//! into one, and a copy of the op keeps it free of side effects.
+//!
+//! That phantom `a3` used to pull a MIPS wrapper's real parameters in with it,
+//! `a0`..`a2` taking the positions before it, although the call read none of
+//! them. So a MIPS system call also reads, written or not, up to as many
+//! argument registers as the kernel's entry point for its constant number
+//! takes ([`mips_args`]), and all four of `a0`..`a3` when the table does not
+//! know the number: a wrapper that hands its parameters to the kernel in place
+//! keeps them. Such a register is read only while no call can have changed it
+//! on the way from the entry or from its write ([`reaches_without_call`]), so
+//! no value from before a call is printed as an argument.
+//!
 //! # When it acts
 //!
 //! Not every handler returns a result. A bare-metal RTOS uses the same
@@ -52,13 +72,14 @@
 //!
 //! # What it does not model
 //!
-//! A wrapper that hands its own incoming arguments to the kernel untouched
-//! shows only the leading registers it sets: nothing says how many of them the
-//! kernel reads, and taking all of them would give a zero-argument call phantom
-//! parameters. The other registers a kernel writes -- the MIPS `a3` error flag
-//! and `v1`, the PowerPC `cr0` error bit -- are not modelled either: an
-//! INDIRECT placed before heritage reads as an earlier heritage pass, which
-//! turns off the call and return guards for that register's whole range.
+//! Outside MIPS, a wrapper that hands its own incoming arguments to the kernel
+//! untouched shows only the leading registers it sets: nothing says how many
+//! of them the kernel reads, and taking all of them would give a zero-argument
+//! call phantom parameters. A MIPS call with no known number takes `a0`..`a3`
+//! even when it reads fewer, so a test of its flag still reads as a fourth
+//! parameter there, and arguments past `a3` that o32 passes on the stack are
+//! not read. The MIPS `v1` a few calls return a second value in is
+//! not modelled.
 //!
 //! A `CALLOTHER` a compiler spec has specialized with its own
 //! `<callotherfixup>` is left alone.
@@ -73,10 +94,17 @@ use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyRes
 use crate::context::{BlockId, OpId};
 use crate::funcdata::Funcdata;
 use crate::kuna_x64syscall::overlaps;
+use crate::op::{pcodeop_flags, PcodeOpBank};
+use crate::userop::BUILTIN_SYSCALL_ERROR;
+use crate::varnode::VarnodeBank;
 
 /// How many basic blocks one register's walk may visit before it gives up and
 /// leaves the register unread.
 const BLOCK_WALK_LIMIT: usize = 256;
+
+/// The argument registers a MIPS system call with no known number reads:
+/// `a0`..`a3`.
+const MIPS_UNKNOWN_ARGS: usize = 4;
 
 /// (kuna) When the system call gets its register effects: `syscallregs
 /// off|auto|on`.
@@ -180,6 +208,16 @@ impl SyscallFamily {
         }
     }
 
+    /// The register the kernel flags a failure in besides the result: `a3` is 0
+    /// or 1 on MIPS, and the summary-overflow bit of `cr0` is set on PowerPC.
+    pub fn error_flag(self) -> Option<&'static str> {
+        match self {
+            SyscallFamily::Mips => Some("a3"),
+            SyscallFamily::PowerPc => Some("cr0"),
+            _ => None,
+        }
+    }
+
     /// The registers the call may read, number register first. `wide` selects
     /// the 64-bit MIPS ABIs, whose fifth and sixth arguments are `t0`/`t1`.
     pub fn inputs(self, wide: bool) -> &'static [&'static str] {
@@ -196,8 +234,10 @@ impl SyscallFamily {
 
 /// The family's registers, resolved against the loaded language.
 struct SyscallStorage {
+    family: SyscallFamily,
     result: (Address, int4),
     inputs: Vec<(Address, int4)>,
+    error: Option<(Address, int4)>,
 }
 
 /// Resolve every register `family` names, or `None` when one is missing.
@@ -214,7 +254,8 @@ fn resolve(data: &Funcdata, family: SyscallFamily) -> Option<SyscallStorage> {
         .iter()
         .map(|nm| reg(nm))
         .collect::<Option<Vec<_>>>()?;
-    Some(SyscallStorage { result, inputs })
+    let error = family.error_flag().and_then(reg);
+    Some(SyscallStorage { family, result, inputs, error })
 }
 
 /// Is `op` a `CALLOTHER` of the family's system-call user-op?
@@ -236,6 +277,21 @@ fn is_syscall(data: &Funcdata, op: OpId) -> bool {
     u32::try_from(index).is_ok_and(|i| data.get_arch().syscall_regs_userops.contains(&i))
 }
 
+/// Is `op` the `syscall_error()` this pass placed after a system call?
+pub fn is_error_flag(data: &Funcdata, op: OpId) -> bool {
+    is_error_flag_op(data.obank(), data.vbank(), op)
+}
+
+/// [`is_error_flag`] over the op and varnode banks alone.
+pub fn is_error_flag_op(obank: &PcodeOpBank, vbank: &VarnodeBank, op: OpId) -> bool {
+    obank.get(op).is_some_and(|o| {
+        o.code() == OpCode::CPUI_CALLOTHER
+            && o.get_in(0)
+                .and_then(|v| vbank.get(v))
+                .is_some_and(|v| v.is_constant() && v.get_offset() == BUILTIN_SYSCALL_ERROR as u64)
+    })
+}
+
 /// Is `op` a system call this pass has not rewritten: the user-op index, at
 /// most the instruction's immediate, and no output?
 fn is_bare_syscall(data: &Funcdata, op: OpId) -> bool {
@@ -255,13 +311,14 @@ enum Scan {
 
 /// Scan `ops` backward for the last write of `reg`, stopping at a call, whose
 /// effect on the register is not visible here. Another system call writes the
-/// result register and nothing else, whether or not it has been rewritten yet.
+/// result register, and its error flag as a value the function did not set,
+/// whether or not it has been rewritten yet.
 fn scan_back(
     data: &Funcdata,
     ops: &[OpId],
     reg: &Address,
     size: int4,
-    result: &(Address, int4),
+    regs: &SyscallStorage,
 ) -> Scan {
     for &op in ops.iter().rev() {
         let Some(o) = data.obank().get(op) else {
@@ -271,9 +328,15 @@ fn scan_back(
             return Scan::Clobbered;
         }
         if is_syscall(data, op) {
-            if overlaps(&result.0, result.1, reg, size) {
+            if overlaps(&regs.result.0, regs.result.1, reg, size) {
                 return Scan::Written;
             }
+            if regs.error.as_ref().is_some_and(|(a, s)| overlaps(a, *s, reg, size)) {
+                return Scan::Clobbered;
+            }
+            continue;
+        }
+        if is_error_flag(data, op) {
             continue;
         }
         let written = o
@@ -289,25 +352,39 @@ fn scan_back(
 
 /// Does every path from the function entry to `op` write `reg`, with no call
 /// between the write and `op`?
-///
-/// A must-define dataflow over the raw blocks that reach `op`: a block decides
-/// for itself when it writes the register or makes a call, and otherwise
-/// inherits from all of its predecessors; the entry decides no. Every block
-/// starts at yes and only falls to no, so a loop is decided by the paths into
-/// it. More than [`BLOCK_WALK_LIMIT`] blocks answers no.
 fn written_on_every_path(
     data: &Funcdata,
     op: OpId,
     reg: &Address,
     size: int4,
-    result: &(Address, int4),
+    regs: &SyscallStorage,
+) -> bool {
+    reaches_without_call(data, op, reg, size, regs, false)
+}
+
+/// Does `reg` reach `op` on every path from the function entry either written
+/// or, when `from_entry`, still holding the function's incoming value, with no
+/// call between that write or the entry and `op`?
+///
+/// A must-define dataflow over the raw blocks that reach `op`: a block decides
+/// for itself when it writes the register or makes a call, and otherwise
+/// inherits from all of its predecessors; the entry decides `from_entry`.
+/// Every block starts at yes and only falls to no, so a loop is decided by the
+/// paths into it. More than [`BLOCK_WALK_LIMIT`] blocks answers no.
+fn reaches_without_call(
+    data: &Funcdata,
+    op: OpId,
+    reg: &Address,
+    size: int4,
+    regs: &SyscallStorage,
+    from_entry: bool,
 ) -> bool {
     let Some(start) = data.obank().get(op).and_then(|o| o.get_parent()) else {
         return false;
     };
     let ops = data.bb_ops(start);
     let at = ops.iter().position(|&o| o == op).unwrap_or(ops.len());
-    match scan_back(data, &ops[..at], reg, size, result) {
+    match scan_back(data, &ops[..at], reg, size, regs) {
         Scan::Written => return true,
         Scan::Clobbered => return false,
         Scan::Reached => {}
@@ -329,11 +406,11 @@ fn written_on_every_path(
         work.extend(preds(b));
     }
     if blocks.is_empty() {
-        return false;
+        return from_entry;
     }
     let local: Vec<Scan> = blocks
         .iter()
-        .map(|&b| scan_back(data, &data.bb_ops(b), reg, size, result))
+        .map(|&b| scan_back(data, &data.bb_ops(b), reg, size, regs))
         .collect();
     let mut out = vec![true; blocks.len()];
     let mut changed = true;
@@ -348,7 +425,11 @@ fn written_on_every_path(
                 Scan::Clobbered => false,
                 Scan::Reached => {
                     let mut ps = preds(blocks[i]).peekable();
-                    ps.peek().is_some() && ps.all(|p| out[index[&p]])
+                    if ps.peek().is_some() {
+                        ps.all(|p| out[index[&p]])
+                    } else {
+                        from_entry
+                    }
                 }
             };
             if !now {
@@ -360,23 +441,138 @@ fn written_on_every_path(
     preds(start).all(|p| out[index[&p]])
 }
 
+/// How the ops of one block, read backward from a point, define `reg`: a
+/// constant, something else, or nothing.
+enum Def {
+    Constant(u64),
+    Other,
+    None,
+}
+
+/// Scan `ops` backward for the last write of `reg`; a call is [`Def::Other`].
+fn last_def(data: &Funcdata, ops: &[OpId], reg: &Address, size: int4) -> Def {
+    for &o in ops.iter().rev() {
+        let Some(oo) = data.obank().get(o) else {
+            continue;
+        };
+        if oo.is_call() {
+            return Def::Other;
+        }
+        let Some(out) = oo.get_out().and_then(|v| data.vbank().get(v)) else {
+            continue;
+        };
+        if !overlaps(out.get_addr(), out.get_size(), reg, size) {
+            continue;
+        }
+        if out.get_addr() != reg || out.get_size() != size {
+            return Def::Other;
+        }
+        let ins = (0..oo.num_input())
+            .map(|i| {
+                oo.get_in(i)
+                    .and_then(|v| data.vbank().get(v))
+                    .filter(|v| v.is_constant())
+                    .map(|v| v.get_offset())
+            })
+            .collect::<Option<Vec<u64>>>();
+        let value = match (oo.code(), ins.as_deref()) {
+            (OpCode::CPUI_COPY, Some([c])) => *c,
+            (OpCode::CPUI_INT_ADD, Some([a, b])) => a.wrapping_add(*b),
+            (OpCode::CPUI_INT_OR, Some([a, b])) => a | b,
+            _ => return Def::Other,
+        };
+        return Def::Constant(value & kuna_base::address::calc_mask(size));
+    }
+    Def::None
+}
+
+/// Fold one block's [`Def`] into the constant seen so far: `Some(true)` when it
+/// writes that constant, `Some(false)` when it does not write the register,
+/// `None` when it writes something else.
+fn agree(value: &mut Option<u64>, def: Def) -> Option<bool> {
+    match def {
+        Def::Constant(c) if value.is_none_or(|v| v == c) => {
+            *value = Some(c);
+            Some(true)
+        }
+        Def::None => Some(false),
+        _ => None,
+    }
+}
+
+/// The constant `reg` holds at `op`: every write of it that reaches `op`, with
+/// no call in between, writes the same constant (`li`, or `addiu`/`ori` from
+/// the zero register). More than [`BLOCK_WALK_LIMIT`] blocks answers no.
+fn constant_at(data: &Funcdata, op: OpId, reg: &Address, size: int4) -> Option<u64> {
+    let start = data.obank().get(op)?.get_parent()?;
+    let ops = data.bb_ops(start);
+    let at = ops.iter().position(|&o| o == op)?;
+    let mut value = None;
+    if agree(&mut value, last_def(data, &ops[..at], reg, size))? {
+        return value;
+    }
+    let graph = data.bblocks_ref();
+    let preds = |b: BlockId| (0..graph.block(b).size_in()).map(move |i| graph.block(b).get_in(i));
+    let mut seen: Vec<BlockId> = Vec::new();
+    let mut work: Vec<BlockId> = preds(start).collect();
+    if work.is_empty() {
+        return None;
+    }
+    while let Some(b) = work.pop() {
+        if seen.contains(&b) {
+            continue;
+        }
+        if seen.len() == BLOCK_WALK_LIMIT {
+            return None;
+        }
+        seen.push(b);
+        if !agree(&mut value, last_def(data, &data.bb_ops(b), reg, size))? {
+            let mut ps = preds(b).peekable();
+            ps.peek()?;
+            work.extend(ps);
+        }
+    }
+    value
+}
+
+/// How many argument registers a MIPS system call at `op` reads at least: the
+/// kernel's count for its constant number ([`mips_args`]), or all of
+/// `a0`..`a3` when the table does not know the number (one computed at run
+/// time, as in a dispatcher like the C library's `syscall`), since such a
+/// function hands its own `a3` to the kernel.
+fn mips_floor(data: &Funcdata, op: OpId, number: &(Address, int4)) -> usize {
+    constant_at(data, op, &number.0, number.1)
+        .and_then(mips_args::mips_arg_count)
+        .unwrap_or(MIPS_UNKNOWN_ARGS)
+}
+
 /// The registers the call at `op` reads: the number register, then each
 /// argument register in order up to the first one the function does not write
 /// on every path to it. Nothing when the number register is not written so.
+/// A MIPS call goes on up to [`mips_floor`] argument registers, each one only
+/// while it reaches the call unchanged from the function's entry or from a
+/// write on every path with no call in between: a wrapper hands its own
+/// parameters to the kernel in place, but a register a call may have changed
+/// holds no value the function knows.
 fn read_set(data: &Funcdata, op: OpId, regs: &SyscallStorage) -> Vec<(Address, int4)> {
-    let written = |(addr, size): &&(Address, int4)| {
-        written_on_every_path(data, op, addr, *size, &regs.result)
-    };
+    let written =
+        |(addr, size): &&(Address, int4)| written_on_every_path(data, op, addr, *size, regs);
     let Some((number, args)) = regs.inputs.split_first() else {
         return Vec::new();
     };
     if !written(&number) {
         return Vec::new();
     }
-    std::iter::once(number)
-        .chain(args.iter().take_while(written))
-        .cloned()
-        .collect()
+    let mut count = args.iter().take_while(written).count();
+    if regs.family == SyscallFamily::Mips {
+        let floor = mips_floor(data, op, number).min(args.len());
+        while count < floor
+            && reaches_without_call(data, op, &args[count].0, args[count].1, regs, true)
+        {
+            count += 1;
+        }
+    }
+    std::iter::once(number).chain(&args[..count]).cloned().collect()
 }
 
 /// Give one matched `CALLOTHER` its register effects.
@@ -388,6 +584,30 @@ fn rewrite(data: &mut Funcdata, op: OpId, regs: &SyscallStorage) -> KunaResult<(
         data.op_insert_input(op, vn, base + i as int4)?;
     }
     data.new_varnode_out(regs.result.1, &regs.result.0, op)?;
+    if let Some((addr, size)) = &regs.error {
+        define_error_flag(data, op, addr, *size)?;
+    }
+    Ok(())
+}
+
+/// Write the error-flag register right after the system call at `op` with an
+/// opaque `syscall_error()`. Without the call flag the op has no side effect,
+/// so it dies with its last reader.
+fn define_error_flag(data: &mut Funcdata, op: OpId, addr: &Address, size: int4) -> KunaResult<()> {
+    let pc = data
+        .obank()
+        .get(op)
+        .map(|o| o.get_addr().clone())
+        .ok_or_else(|| KunaError::lowlevel("syscallregs: stale system call"))?;
+    let flag = data.new_op(1, pc);
+    data.op_set_opcode_code(flag, OpCode::CPUI_CALLOTHER);
+    if let Some(o) = data.obank_mut().get_mut(flag) {
+        o.clear_flag(pcodeop_flags::call);
+    }
+    let id = data.new_constant(4, BUILTIN_SYSCALL_ERROR as u64);
+    data.op_set_input(flag, id, 0)?;
+    data.new_varnode_out(size, addr, flag)?;
+    data.op_insert_after(flag, op);
     Ok(())
 }
 
@@ -536,6 +756,8 @@ pub fn userop_ids(
         .map(|u| vec![u.get_index() as uint4])
         .unwrap_or_default()
 }
+
+mod mips_args;
 
 #[cfg(test)]
 mod tests;

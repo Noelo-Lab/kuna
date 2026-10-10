@@ -1592,6 +1592,11 @@ pub struct PrintC {
     local_name_standalones: std::collections::HashSet<crate::context::HighVariableId>,
     /// Final C declarations, including storage and symbol overrides.
     pointer_decls: crate::kuna_pointerargs::Declarations,
+    /// Pointer-argument facts are recorded only for a buffered driver that asked
+    /// ([`set_record_pointer_arguments`](Self::set_record_pointer_arguments)).
+    record_pointer_arguments: bool,
+    pointer_record: Option<crate::kuna_pointerargs::Record>,
+    pointer_candidate: Option<crate::kuna_pointerargs::Candidate>,
     /// (kuna `signedness`) The declared-signedness decision for the function
     /// being emitted: which integer locals the operation set says to declare
     /// signed or unsigned, and which of those declarations actually got written
@@ -1639,6 +1644,9 @@ impl PrintC {
             local_name_aliases: std::collections::HashMap::new(),
             local_name_standalones: std::collections::HashSet::new(),
             pointer_decls: crate::kuna_pointerargs::Declarations::default(),
+            record_pointer_arguments: false,
+            pointer_record: None,
+            pointer_candidate: None,
             sign_plan: crate::kuna_typeround::SignPlan::default(),
             cast_implied: crate::kuna_castimplied::ImpliedCasts::default(),
             stmt_op: None,
@@ -2155,6 +2163,16 @@ impl PrintC {
                 if entry.visited != 0 {
                     return;
                 }
+                if std::ptr::eq(entry.tok, &tokens::ADDRESSOF)
+                    && self.pointer_candidate.as_ref().is_some_and(|c| Some(op_key(c.address_op)) == entry.op)
+                {
+                    if let (Some(mut candidate), PrintEmit::NoMarkup(emit), Some(record)) = (
+                        self.pointer_candidate.take(), &mut self.emit, self.pointer_record.as_mut(),
+                    ) {
+                        candidate.call.position = emit.position();
+                        record.calls.push(candidate.call);
+                    }
+                }
                 self.emit.tag_op(entry.tok.print1, SyntaxHighlight::NoColor, &op_markup);
                 self.emit.spaces(entry.tok.spacing, entry.tok.bump);
             }
@@ -2304,6 +2322,43 @@ enum PartialEntry {
 }
 
 impl PrintC {
+    /// A plain render starts this function's record when asked to. A markup pass
+    /// keeps the plain render's record of the same function (provenance and
+    /// token renders follow it), never another function's.
+    fn begin_pointer_record(&mut self, fd: &Funcdata) {
+        self.pointer_candidate = None;
+        if !self.emit.emits_markup() {
+            self.pointer_record = (self.record_pointer_arguments
+                && self.out_lang == crate::kuna_lang::OutLang::C)
+                .then(|| crate::kuna_pointerargs::Record::new(fd))
+                .flatten();
+        } else if self.pointer_record.as_ref().is_some_and(|r| {
+            Some(&r.entry) != crate::kuna_pointerargs::entry(fd.get_address()).as_ref()
+        }) {
+            self.pointer_record = None;
+        }
+    }
+
+    /// Record pointer-argument facts during the next plain C render, discarding
+    /// any record a previous render left behind.
+    pub fn set_record_pointer_arguments(&mut self, on: bool) {
+        self.record_pointer_arguments = on;
+        self.pointer_record = None;
+    }
+
+    /// The facts recorded by the last plain render, whose text was `untrimmed`,
+    /// positioned against that text with its leading newlines removed. Stops
+    /// recording until the next [`set_record_pointer_arguments`](Self::set_record_pointer_arguments).
+    pub fn take_pointer_arguments(
+        &mut self,
+        untrimmed: &str,
+    ) -> Option<crate::kuna_pointerargs::Record> {
+        self.record_pointer_arguments = false;
+        let mut record = self.pointer_record.take()?;
+        record.trim_lines(untrimmed);
+        Some(record)
+    }
+
     /// C++ `PrintC::docFunction` (printc.cc:2790), transcribed faithfully and
     /// driven over a real [`Funcdata`] + [`Architecture`]: emit the signature
     /// shell (real return type from the recovered proto), then the **structured
@@ -2482,9 +2537,7 @@ impl PrintC {
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
         self.pointer_decls.clear();
-        if self.out_lang == crate::kuna_lang::OutLang::C {
-            arch.kuna_pointerargs.borrow_mut().definition(fd);
-        }
+        self.begin_pointer_record(fd);
         // (kuna `signedness`) Round the declared signedness of this function's
         // integer locals from the operations applied to them.  Computed before
         // any declaration is written and consumed by
@@ -2863,6 +2916,23 @@ impl PrintC {
                         let (front, back) = declarator_parts(ty, self.rt_ctx);
                         self.cast_implied.record_param(name, format!("{front}{back}"));
                         self.pointer_decls.record(name, &front, &back, false);
+                        if !self.emit.emits_markup() && self.emit_fd.is_some() && !proto.is_dotdotdot()
+                            && crate::kuna_pointerargs::byte_pointer(ty)
+                        {
+                            let slot = self
+                                .pointer_record
+                                .as_mut()
+                                .filter(|r| Some(&r.entry) == crate::kuna_pointerargs::entry(fd.get_address()).as_ref())
+                                .and_then(|r| r.parameters.get_mut(i as usize));
+                            if let (Some(slot), Some(address)) =
+                                (slot, crate::kuna_pointerargs::entry(&param.get_address()))
+                            {
+                                *slot = Some(crate::kuna_pointerargs::Parameter {
+                                    storage: (address, param.get_size()),
+                                    spelling: format!("{front}{back}"),
+                                });
+                            }
+                        }
                         // C++ `pushTypeStart(type, noident)`: the separating token is
                         // `type_expr_nospace` only when there is no identifier AND no
                         // declarator modifier (`noident && typestack.size()==1`); else
@@ -4784,42 +4854,8 @@ impl PrintC {
             self.emit_default_case_label(case.label, &case_markup);
         } else {
             // case <label>: — one line per index targeting this case.
-            let jt_index = fd.sblocks_ref().block(blk).switch_jt_index();
-            let nlabels = match (jt_index, case.basicblock) {
-                (Some(j), Some(bb)) => {
-                    fd.get_jump_table(j as int4).num_indices_by_block(fd, bb).unwrap_or(1).max(1)
-                }
-                _ => 1,
-            };
-            for i in 0..nlabels {
-                let val = match (jt_index, case.basicblock) {
-                    (Some(j), Some(bb)) => {
-                        let ind = fd
-                            .get_jump_table(j as int4)
-                            .get_index_by_block(fd, bb, i)
-                            .unwrap_or(0);
-                        fd.get_jump_table(j as int4).get_label_by_index(ind)
-                    }
-                    _ => case.label,
-                };
-                let sz = self.switch_var_size(fd, blk);
-                let val = match jt_index {
-                    Some(j) if fd.get_jump_table(j as int4).kuna_lowered_var().is_none() => val & calc_mask(sz),
-                    _ => val,
-                };
-                let signed = jt_index
-                    .map(|j| {
-                        let jt = fd.get_jump_table(j as int4);
-                        match jt.get_indirect_op().and_then(|op| lowered_switch_label_form(fd, arch, op)) {
-                            Some((signed, _)) => signed,
-                            None if jt.kuna_lowered_var().is_some() => jt.kuna_has_signed_labels(),
-                            None => jt
-                                .get_indirect_op()
-                                .and_then(|op| native_switch_label_signedness(fd, arch, op))
-                                .unwrap_or(jt.kuna_has_signed_labels()),
-                        }
-                    })
-                    .unwrap_or(false);
+            for i in 0..self.switch_case_label_count(fd, blk, &case) {
+                let (val, sz, signed) = self.switch_case_label(fd, arch, blk, &case, i);
                 self.emit_numeric_case_label(
                     val,
                     sz,
@@ -4828,7 +4864,60 @@ impl PrintC {
                 );
             }
         }
-        let _ = arch;
+    }
+
+    /// How many labels a non-default case arm prints: one per jump-table index
+    /// that targets its block.
+    pub(crate) fn switch_case_label_count(
+        &self,
+        fd: &Funcdata,
+        blk: BlockId,
+        case: &crate::block::CaseOrder,
+    ) -> int4 {
+        match (fd.sblocks_ref().block(blk).switch_jt_index(), case.basicblock) {
+            (Some(j), Some(bb)) => {
+                fd.get_jump_table(j as int4).num_indices_by_block(fd, bb).unwrap_or(1).max(1)
+            }
+            _ => 1,
+        }
+    }
+
+    /// The `i`th label of a non-default case arm as the value, byte size and
+    /// signedness it prints with. Both output languages print labels from this,
+    /// so a label always names the value the printed selector holds.
+    pub(crate) fn switch_case_label(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        blk: BlockId,
+        case: &crate::block::CaseOrder,
+        i: int4,
+    ) -> (uintb, int4, bool) {
+        let jt_index = fd.sblocks_ref().block(blk).switch_jt_index();
+        let val = match (jt_index, case.basicblock) {
+            (Some(j), Some(bb)) => {
+                let jt = fd.get_jump_table(j as int4);
+                jt.get_label_by_index(jt.get_index_by_block(fd, bb, i).unwrap_or(0))
+            }
+            _ => case.label,
+        };
+        let sz = self.switch_var_size(fd, blk);
+        let Some(j) = jt_index else {
+            return (val, sz, false);
+        };
+        let jt = fd.get_jump_table(j as int4);
+        let val = if jt.kuna_lowered_var().is_none() { val & calc_mask(sz) } else { val };
+        let text_signed = self.lang().caps.signed_text_byte;
+        let lowered = jt.get_indirect_op().and_then(|op| lowered_switch_label_form(fd, arch, op, text_signed));
+        let signed = match lowered {
+            Some((signed, _)) => signed,
+            None if jt.kuna_lowered_var().is_some() => jt.kuna_has_signed_labels(),
+            None => jt
+                .get_indirect_op()
+                .and_then(|op| native_switch_label_signedness(fd, arch, op, text_signed))
+                .unwrap_or(jt.kuna_has_signed_labels()),
+        };
+        (val, sz, signed)
     }
 
     fn emit_default_case_label(&mut self, value: uintb, markup: &MarkupRef) {
@@ -5603,7 +5692,8 @@ impl PrintC {
                     self.emit.open_group()
                 };
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
-                    let cast = lowered_switch_label_form(fd, arch, op).and_then(|(_, cast)| cast);
+                    let cast = lowered_switch_label_form(fd, arch, op, self.lang().caps.signed_text_byte)
+                        .and_then(|(_, cast)| cast);
                     if let Some(ct) = &cast {
                         self.push_cast_open(ct, op);
                     }
@@ -7022,19 +7112,14 @@ impl PrintC {
             }
             for i in 1..nin {
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
-                    let cast = if self.out_lang == crate::kuna_lang::OutLang::C {
+                    self.pointer_candidate = if self.pointer_record.is_some() && !self.emit.emits_markup() {
                         let view = PointerView { pc: self, fd };
-                        crate::kuna_pointerargs::argument_cast(&view, fd, arch, op, i)
+                        crate::kuna_pointerargs::argument(&view, fd, arch, op, i)
                     } else {
                         None
                     };
-                    if let Some(ct) = &cast {
-                        self.push_cast_open(ct, op);
-                    }
                     self.push_vn_ir(fd, arch, vn, op);
-                    if let Some(ct) = &cast {
-                        self.push_cast_close(ct);
-                    }
+                    self.pointer_candidate = None;
                 }
             }
         } else {
@@ -10538,7 +10623,7 @@ impl crate::kuna_pointerargs::PrintedPointers for PointerView<'_> {
         front + &back
     }
 
-    fn address(&self, high: crate::context::HighVariableId) -> Option<String> {
+    fn address(&self, high: crate::context::HighVariableId) -> Option<(String, String)> {
         use crate::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
         let h = self.fd.high_bank().get(high)?;
         if h
@@ -10551,7 +10636,7 @@ impl crate::kuna_pointerargs::PrintedPointers for PointerView<'_> {
         if offset > 0 {
             return None;
         }
-        self.pc.pointer_decls.address(&name)
+        self.pc.pointer_decls.address(&name).map(|ty| (name, ty))
     }
 }
 
@@ -10936,6 +11021,7 @@ fn lowered_switch_label_form(
     fd: &Funcdata,
     arch: &Architecture,
     op: OpId,
+    signed_text_byte: bool,
 ) -> Option<(bool, Option<std::rc::Rc<crate::dtype::Datatype>>)> {
     use crate::dtype::type_metatype::{TYPE_INT, TYPE_UINT};
     if !arch.lowered_switch_exact {
@@ -10953,7 +11039,7 @@ fn lowered_switch_label_form(
     }
     if let Some(ct) = switch_variable_type(fd, arch, op) {
         if ct.get_size() == sz && matches!(ct.get_metatype(), TYPE_INT | TYPE_UINT) {
-            return Some((ct.get_metatype() == TYPE_INT, None));
+            return Some((printed_integer_signedness(&ct, signed_text_byte) == Some(true), None));
         }
     }
     let signed = jt.kuna_has_signed_labels();
@@ -10993,13 +11079,26 @@ fn switch_variable_type(fd: &Funcdata, arch: &Architecture, op: OpId) -> Option<
 }
 
 /// Native labels follow the selector's declared type, or its expression type.
-fn native_switch_label_signedness(fd: &Funcdata, arch: &Architecture, op: OpId) -> Option<bool> {
-    use crate::dtype::type_metatype::{TYPE_ENUM_INT, TYPE_ENUM_UINT, TYPE_INT, TYPE_UINT};
+fn native_switch_label_signedness(
+    fd: &Funcdata,
+    arch: &Architecture,
+    op: OpId,
+    signed_text_byte: bool,
+) -> Option<bool> {
     let vn = fd.vbank().get(fd.obank().get(op)?.get_in(0)?)?;
     let ct = switch_variable_type(fd, arch, op)
         .filter(|ct| ct.get_size() == vn.get_size())
         .unwrap_or_else(|| vn.get_type_read_facing(op).clone());
+    printed_integer_signedness(&ct, signed_text_byte)
+}
+
+/// Whether the output language spells the integer type `ct` signed; `None` for
+/// a non-integer. A text byte is signed exactly when `signed_text_byte` says so
+/// (C's `char`, Rust's `u8`).
+fn printed_integer_signedness(ct: &crate::dtype::Datatype, signed_text_byte: bool) -> Option<bool> {
+    use crate::dtype::type_metatype::{TYPE_ENUM_INT, TYPE_ENUM_UINT, TYPE_INT, TYPE_UINT};
     match ct.get_metatype() {
+        TYPE_INT if ct.is_char_print() && ct.is_core_type() => Some(signed_text_byte),
         TYPE_INT | TYPE_ENUM_INT => Some(true),
         TYPE_UINT | TYPE_ENUM_UINT => Some(false),
         _ => None,

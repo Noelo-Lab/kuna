@@ -1056,11 +1056,13 @@ impl Action for ActionFuncLink {
             ActionFuncLink::func_link_input(i, data);
             ActionFuncLink::func_link_output(i, data);
         }
+        crate::p4_calls::kuna_calleereadarg::record_variadic_setups(data);
         crate::p4_calls::kuna_passthrough::claim_untouched_registers(data);
         for i in 0..size {
             crate::kuna_armfloatargs::link_call_inputs(data, i);
         }
         crate::p4_calls::kuna_voidret::plant(data);
+        crate::kuna_retcallhalf::plant(data);
         crate::kuna_floatreg::note_float_pairs(data);
         0
     }
@@ -1232,6 +1234,9 @@ impl Action for ActionActiveParam {
         // (kuna) `passthrough`: call sites that may still take a register the
         // function forwards untouched, extended after every other rule.
         let mut pending_pass = Vec::new();
+        // (kuna) `calleereadarg`: call sites whose callee reads a register the
+        // caller's scoring refused.
+        let mut pending_read = Vec::new();
 
         // INDEX-BASED (CORRECTION-7 #3): keep the call specs ON `data.qlst` so
         // each sub-function's input-trial ancestor walk can look up the *other*
@@ -1287,6 +1292,9 @@ impl Action for ActionActiveParam {
                 // can hold `&mut FuncCallSpecs` and `&mut Funcdata` at once, then
                 // put it back at the same index so the qlst stays index-stable for
                 // the remaining iterations.
+                if data.get_call_specs(idx).active_input().needs_final_check() {
+                    crate::p4_calls::kuna_reloadarg::recheck(data, idx, aliascheck.as_mut());
+                }
                 let mut fc = data.replace_call_specs(idx);
                 if fc.get_active_input().needs_final_check() {
                     final_input_check(&mut fc, data);
@@ -1325,6 +1333,9 @@ impl Action for ActionActiveParam {
                 if let Some(p) = fixup.pass_through {
                     pending_pass.push(p);
                 }
+                if let Some(p) = fixup.read_arg {
+                    pending_read.push(p);
+                }
                 fc.clear_active_input();
                 data.restore_call_specs_at(idx, fc);
                 self.base.count += 1;
@@ -1341,6 +1352,9 @@ impl Action for ActionActiveParam {
         // (kuna) `calleearitybody`: last, so a site a sibling could speak for is
         // already non-empty and is left alone.
         crate::p4_calls::kuna_calleearitybody::recover_pending(data, &pending_body);
+        // (kuna) `calleereadarg`: after every rule that settles a list from the
+        // trials, so it only ever adds the registers the callee reads.
+        crate::p4_calls::kuna_calleereadarg::extend_pending(data, &pending_read);
         // (kuna) `passthrough`: last of all, so it only ever adds to a final list.
         crate::p4_calls::kuna_passthrough::extend_pending(data, &pending_pass);
         0
@@ -1708,8 +1722,11 @@ impl Action for ActionReturnRecovery {
         }
 
         if active.is_fully_checked() {
+            crate::p4_calls::kuna_zerocallregs::drop_epilogue_zeros(data, &mut active, &return_ops);
             crate::p4_calls::kuna_passthrough::keep_tail_return_whole(data, &mut active);
+            crate::p4_calls::kuna_zerofillreturn::drop_zero_fill(data, &mut active, &return_ops);
             crate::kuna_armfloatreturn::narrow_returns(data, &mut active);
+            crate::kuna_retsysreg::drop_set_aside(data, &mut active, &return_ops);
             let own_input = crate::kuna_retcallhalf::accept(data, &mut active, &return_ops);
             let manager_rc = data.get_arch().manage.clone();
             let _ = data.get_func_proto().derive_output_map(&mut active, &manager_rc);

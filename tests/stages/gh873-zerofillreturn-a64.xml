@@ -1,0 +1,144 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    GH-873 (kuna): an AArch64 function returning a double in d0 prints as
+    `undefined16 f(..)` with `v1._8_8_ = 0; return v1._0_16_;`.  The AArch64
+    cspec's floating output entries are the 16-byte q0..q3, and SLEIGH lifts
+    a scalar or 64-bit vector write (`fmov d0,#1.5`, `ldr d0,[x1]`,
+    `movi d0,#0`, `add v0.2s,..`) as the low lane plus a COPY of zero into
+    each higher lane of the register (zext_zd).  The zero reaches the RETURN
+    as a second q0 trial, ancestorOpUse accepts a constant, and the output
+    fill-in joins both halves.  The fill need not come from the instruction
+    that wrote the returned value: `fmadd` has no fill in this SLEIGH spec.
+
+    Stage / sub-stage: P4 "output-prototype".  The P0 assertion
+    `option zerofillreturn on|off` decides whether a return trial above the
+    low lane of a q register, whose value at every RETURN is the zero fill a
+    narrow write left (marked on the p-code as lifted), is retired.
+
+    Chunk 0x100000, clang 14 -O2 for aarch64-linux-gnu:
+      double scale(int a, const double *g) { return *g * 1.5 + a; }
+            (fmov d0,#1.5 fills; fmadd d0 writes the value without a fill)
+      double zero(void) { return 0.0; }                     movi d0,#0
+      double pick(double a, int k) { if (k) return a * 3; return a + 1; }
+            (fcsel: the fill reaches the RETURN through a MULTIEQUAL)
+      struct dd { double x, y; };
+      struct dd pair(double a, int k) { struct dd r = { a * k, a + k }; return r; }
+            (homogeneous aggregate in d0 and d1)
+      int32x2_t add2(int32x2_t a, int32x2_t b) { return a + b; }  add v0.2s
+            (control: a 64-bit vector built lane by lane, left as it was)
+      int32x4_t comb(int32x2_t a, int32x2_t b)
+            { return (int32x4_t){a[0] + b[0], a[1] + b[1], 0, 0}; }
+            (control: the upper half is `mov v0.d[1],v2.d[0]` of a
+            `movi v2.2d,#0`, a 128-bit value, not a fill)
+    Chunk 0x101000, gcc 14.2 -O2 aarch64-linux-gnu, the same scale and zero
+    (ldr d0,[x1] fills, then fmadd).
+    Chunk 0x102000, hand assembled control `ins0`:
+      movi v0.2d,#0; mov v0.d[0],x0; ret
+            (a 128-bit zero write whose low lane is replaced: heritage splits
+            it into the same two lanes, so it must keep its 16 bytes)
+
+    Pass 1 (`option zerofillreturn off`) reproduces the BUG: scale, zero,
+    pick and the gcc pair print `undefined16`, zero as `ZEXT816(0)`, pair
+    returns q0 with an upper half of 0 instead of d1.
+    Pass 2 (`option zerofillreturn on`, the shipped default) is the FIX:
+    `double` returns, `return 0.0;`, pair joins d0 and d1; add2, comb and ins0
+    print the same in both passes.
+-->
+<bytechunk space="ram" offset="0x100000">
+0100621e00106f1e220040fd4004401f
+c0035fd600e4002fc0035fd60110611e
+02106e1e1f0000710108611e0028621e
+000c611ec0035fd60100621e2208601e
+2128601e4040601ec0035fd62084a00e
+c0035fd602e4006f2084a00e4004186e
+c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x101000">
+200040fd1e106f1e1f00621e007c5e1f
+c0035fd61f2003d51f2003d51f2003d5
+00e4002fc0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x102000">
+00e4006f001c084ec0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="scale"/>
+<symbol space="ram" offset="0x100014" name="zero"/>
+<symbol space="ram" offset="0x10001c" name="pick"/>
+<symbol space="ram" offset="0x100038" name="pair"/>
+<symbol space="ram" offset="0x10004c" name="add2"/>
+<symbol space="ram" offset="0x100054" name="comb"/>
+<symbol space="ram" offset="0x101000" name="gscale"/>
+<symbol space="ram" offset="0x101020" name="gzero"/>
+<symbol space="ram" offset="0x102000" name="ins0"/>
+</binaryimage>
+<script>
+  <com>option zerofillreturn off</com>
+  <com>lo fu scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu comb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gscale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ins0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option zerofillreturn on</com>
+  <com>lo fu scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu comb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gscale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ins0</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="zerofillreturn #1: option off returns q0 for the double of clang and gcc scale (bug reproduced)" min="2" max="2">undefined16 g?scale\(</stringmatch>
+<stringmatch name="zerofillreturn #2: option off prints return 0.0 as ZEXT816(0) (bug reproduced)" min="2" max="2">return ZEXT816\(0\);</stringmatch>
+<stringmatch name="zerofillreturn #3: option off returns q0 for the two-exit double (bug reproduced)" min="1" max="1">undefined16 pick\(</stringmatch>
+<stringmatch name="zerofillreturn #4: the zero fill is joined to the low lane in 7 functions with the option off (bug reproduced) and only in the 3 controls with it on" min="10" max="10">_8_8_ = 0;</stringmatch>
+<stringmatch name="zerofillreturn #5: option on returns the double of clang and gcc scale" min="2" max="2">float8 g?scale\(int4 a0,</stringmatch>
+<stringmatch name="zerofillreturn #6: option on prints return 0.0" min="2" max="2">return 0\.0;</stringmatch>
+<stringmatch name="zerofillreturn #7: option on returns the double on both exits of pick" min="1" max="1">float8 pick\(</stringmatch>
+<stringmatch name="zerofillreturn #8: option on returns the aggregate in d0 and d1" min="1" max="1">_8_8_ = \(float8\)a1 \+ a0;</stringmatch>
+<stringmatch name="zerofillreturn #9: a 64-bit vector built lane by lane prints the same in both passes" min="2" max="2">undefined16 add2\(</stringmatch>
+<stringmatch name="zerofillreturn #10: a 128-bit value built with a lane insert keeps 16 bytes in both passes" min="2" max="2">undefined16 comb\(</stringmatch>
+<stringmatch name="zerofillreturn #11: a 128-bit zero write whose low lane is replaced keeps 16 bytes in both passes" min="2" max="2">undefined16 ins0\(</stringmatch>
+</decompilertest>

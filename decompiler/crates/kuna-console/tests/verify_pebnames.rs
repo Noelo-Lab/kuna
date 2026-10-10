@@ -14,7 +14,7 @@
 //!   `option pebnames on`: an x86-64 `gs:` reader and an x86 `fs:` reader stay
 //!   untyped, while the same bytes under the Windows spec are typed.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

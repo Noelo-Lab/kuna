@@ -1,5 +1,5 @@
 //! Recompile stores whose pointers resolve after their memory SSA guards exist.
-mod common;
+use crate::common;
 use common::process;
 use std::collections::BTreeSet;
 use std::process::Command;
@@ -54,6 +54,7 @@ fn late_resolved_stores_remain_visible_to_calls_and_aliasing_loads() {
                         "-DSTORECOPY_HARNESS",
                         "-DSTORECOPY_DRIVER",
                     ])
+                    .args(common::CC_GCC15_DEMOTE)
                     .arg(&src)
                     .arg(&source)
                     .arg("-o")

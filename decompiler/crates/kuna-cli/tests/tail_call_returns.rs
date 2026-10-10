@@ -4,7 +4,7 @@
 //! the return register before the call (`mov (%rdi),%rax; mov %eax,%edi; jmp
 //! getk`), which the call overwrites. A write to an argument register that is
 //! also the return register (ARM `mov r0,#5; b getk`) is not relaxed.
-mod common;
+use crate::common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,

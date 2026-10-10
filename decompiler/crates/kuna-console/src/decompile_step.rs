@@ -182,6 +182,13 @@ pub fn decompile_one_prefollowed(
     // RETURN, which distinguishes it from the incoming return address and from
     // ordinary RET/RET-immediate instructions. Seed the derived CALLs first so
     // an explicit flow assertion at the same address remains authoritative.
+    let probe = if (arch.entry_ret_dispatch || arch.push_immediate_ret)
+        && arch.get_description().starts_with("ARM:")
+    {
+        let scope = arch.translate().decode_context_scope();
+        if let Some(scope) = &scope { let _ = scope.protect_variable(b"TMode"); }
+        scope
+    } else { None };
     let entry_chain = if arch.entry_ret_dispatch {
         crate::kuna_retcallchain::kuna_entry_chain_sites(
             arch.translate(),
@@ -201,6 +208,7 @@ pub fn decompile_one_prefollowed(
     } else {
         None
     };
+    drop(probe);
     let has_derived_flow = !entry_chain.is_empty() || push_immediate_ret.is_some();
     let mut flow_overrides = entry_chain
         .iter()
@@ -252,6 +260,36 @@ pub fn decompile_one_prefollowed(
         seed.mapped_params,
         prefollowed,
     );
+    // (kuna `floatglobals`) A float vote asked about a global before the
+    // whole-program scan ran: take it once for the run, and drive again. One
+    // function of a large image does not pay for it, and refuses the global.
+    if arch.kuna_float_globals.is_none()
+        && result.as_ref().is_ok_and(|fd| fd.get_arch().float_globals_wanted.get())
+    {
+        let input = arch.kuna_float_scan.clone().filter(|input| {
+            arch.kuna_float_scan_batch || input.code_bytes() <= kuna_decomp::kuna_floatglobals::SINGLE_FUNCTION_SCAN_BYTES
+        });
+        match input {
+            None => arch.kuna_float_globals = Some(Rc::new(kuna_decomp::kuna_floatglobals::FloatGlobals::new())),
+            Some(input) => {
+                let found = kuna_analysis::listing::kuna_floatglobals::scan(arch, &input);
+                arch.kuna_float_globals = Some(Rc::new(found));
+                result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
+                    arch,
+                    name,
+                    entry.clone(),
+                    size,
+                    seed.mapped_symbols,
+                    seed.usepoint_symbols,
+                    seed.dynamic_symbols,
+                    seed.pending_proto,
+                    &flow_overrides,
+                    proto_overrides,
+                    seed.mapped_params,
+                );
+            }
+        }
+    }
     // A parked override the drive contradicts is withdrawn, and the function is
     // driven again without it. See [`audit_parked_format_sites`].
     let dropped: Vec<u64> = match &result {
@@ -315,7 +353,7 @@ pub fn decompile_one_prefollowed(
         result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
             arch,
             name,
-            redo_entry,
+            redo_entry.clone(),
             size,
             seed.mapped_symbols,
             seed.usepoint_symbols,
@@ -325,6 +363,33 @@ pub fn decompile_one_prefollowed(
             &last_overrides,
             seed.mapped_params,
         );
+    }
+    // (kuna `callerreads`) A `void` function decompiled alone whose callers read
+    // a return register after the call is driven again returning it. A batch
+    // settles the same question from the callers it decompiles (`voidret`).
+    let read = match &result {
+        Ok(fd) if !arch.kuna_float_scan_batch => kuna_decomp::kuna_callerreads::read(arch, fd),
+        _ => None,
+    };
+    if let Some(storage) = read {
+        kuna_decomp::kuna_callerreads::force(arch, &redo_entry, storage);
+        let redo = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
+            arch,
+            name,
+            redo_entry.clone(),
+            size,
+            seed.mapped_symbols,
+            seed.usepoint_symbols,
+            seed.dynamic_symbols,
+            seed.pending_proto,
+            &flow_overrides,
+            &last_overrides,
+            seed.mapped_params,
+        );
+        kuna_decomp::kuna_callerreads::release(arch, &redo_entry);
+        if redo.as_ref().is_ok_and(kuna_decomp::kuna_callerreads::returns_value) {
+            result = redo;
+        }
     }
     arch.format_override_callpoints.clear();
     arch.readonlypropagate = saved_readonlypropagate;
