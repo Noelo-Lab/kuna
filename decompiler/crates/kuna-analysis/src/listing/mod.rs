@@ -39,6 +39,7 @@ pub mod kuna_floatglobals;
 pub mod kuna_pdecode;
 pub mod kuna_rawdiscover;
 pub mod kuna_tailcallentry;
+pub mod kuna_thunkentry;
 mod kuna_walkcontext;
 mod kuna_fingerprintcontext;
 mod kuna_flowmode;

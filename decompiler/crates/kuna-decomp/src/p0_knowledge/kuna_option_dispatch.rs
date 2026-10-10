@@ -770,6 +770,7 @@ kuna_options! { self, p1;
     "unmappedentry" => {
         on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
     },
+    "thunkentry" => on_off!(analysis_thunkentry, "Jump-thunk target function entries"),
     "ppclocalentry" => {
         on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
     },

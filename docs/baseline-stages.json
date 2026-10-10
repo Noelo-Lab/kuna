@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2438,
-    2438
+    2443,
+    2443
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -840,6 +840,11 @@
     "data:KUNA-STRUCTDEFS #3: the tag gets the forward declaration the project header gives it",
     "data:KUNA-STRUCTDEFS #4: the signature is unchanged by the flip",
     "data:KUNA-STRUCTDEFS #5: the body is unchanged by the flip",
+    "data:KUNA-THUNKENTRY #1: every thunk is a function in all four passes",
+    "data:KUNA-THUNKENTRY #2: sum and start are missing only from pass 1 (fast, option off)",
+    "data:KUNA-THUNKENTRY #3: leaf is a function only with the option on, in fast and aggressive mode",
+    "data:KUNA-THUNKENTRY #4: leaf decompiles to its own body",
+    "data:KUNA-THUNKENTRY #5: the catalog documents it as a default-on P1 code/data-partition option",
     "data:KUNA-UNMAPPEDENTRY #1: the option parses and round-trips in both directions, and is inert on the XML path -- the source form x <= 8 renders identically in all three passes",
     "data:KUNA-UNMAPPEDENTRY #2: the catalog documents it as a default-on P1 code/data-partition correctness fix, live-toggled back on",
     "data:KUNA-UNMAPPEDENTRY #3: the catalog row carries the correctness-fix change_kind an agent reads to judge the flip",

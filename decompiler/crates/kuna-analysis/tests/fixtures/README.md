@@ -1328,3 +1328,16 @@ an arbitrary NOP count for measuring whole-image Listing setup independently
 of the selected function. Regenerate with
 `python3 listing_fallthrough.py x86_64 2048 listing_fallthrough_x86_64.elf`
 and the corresponding `aarch64` command.
+
+### MSVC incremental-link thunk table
+
+`thunk_table_pe_i386.exe` (1,536 bytes, PE32/i386, SHA-256
+`62bed72199b0d6587b9ee6b66b62084319534542f5eb64de7720840bcaeb4214`) is a clean-room
+reduction of an MSVC `/INCREMENTAL` image (GH-992): three 5-byte `jmp rel32` thunks
+at `0x401000`/`0x401005`/`0x40100a`, then `sum`@`0x401010` (`push ebp` frame),
+`leaf`@`0x401030` (no frame) and `start`@`0x401040`. The entry point and every call go
+to a thunk. `pe32.inc`/`pe32_end.inc` are a minimal PE32 writer for `nasm -f bin`.
+Rebuild from this directory with nasm 2.15:
+`nasm -f bin -I . -o thunk_table_pe_i386.exe thunk_table_pe_i386.asm`.
+Used by `tests/stages/kuna-thunkentry.xml` and `kuna-cli/tests/thunk_entries_cli.rs`
+(`--option thunkentry`).

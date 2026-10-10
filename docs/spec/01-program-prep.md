@@ -4108,6 +4108,41 @@ cross-reference is filed in both directions either way. PPC64-only, and inert on
 an image whose symbols carry no local-entry annotation. Off restores the previous,
 husk-producing discovery set exactly.
 
+(kuna) `thunkentry` (default-on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_thunkentry.rs (thunk_entries)`)
+answers the opposite question about a *jump* target: whether it is a function
+although no CALL reaches it. A function whose whole body is one direct `jmp` is a
+thunk, and the walk attributed the routine it jumps to to the thunk, because only a
+CALL target becomes an entry. MSVC `/INCREMENTAL` routes the image entry and every
+call through a table of 5-byte `jmp rel32` thunks at the start of `.text`, so on
+such an image the walk found the thunks and none of the bodies, `fast` listed no
+real function at all, and the last thunk's extent ran over every body after it.
+The pass reads the completed walk and promotes the target of a walk entry that
+opens with a direct unconditional jump to a decoded instruction when three
+conditions hold. No decoded instruction falls through into the target and no
+conditional branch targets it, so the target is not the middle of a straight-line
+run or a loop head. The address right after the thunk's jump holds no ordinary
+code: it is undecoded, a function entry, another direct jump (the next thunk of a
+table), or the target itself; a function that opens with a jump over its own loop
+body to the loop condition fails here, because the walk decoded that body as a
+branch target of the condition. And the thunk is itself an entry, including one the
+pass promoted, so a thunk-to-thunk chain resolves; the chain is followed at most
+four jumps from a walk entry, so an obfuscator's chain of tens of thousands of
+jumps adds four entries rather than one per jump. The second condition reads the
+growing entry set, so acceptance runs over a worklist to its least fixpoint. The
+promoted targets join `fast_funcdisc` and `funcdisc_recursive`, wherever the walk's
+own set is committed, and nothing else: they are branch successors of the thunks,
+so the walk decoded them either way and no instruction or Listing consumer changes.
+x86 only. Measured on five x64 MSVC `/INCREMENTAL` images scored against their own
+`.pdb` (kept where kuna cannot read it), all 84 added entries are real function
+starts, no real body is split and no entry is lost. On 88 crackmes that carry a thunk
+table it adds 5,087 entries in `fast` mode and removes none; 98% of them start at a
+thunk or right after padding or a `ret`, and the rest checked by hand are function
+starts after a thunk table or after a Delphi `jmp`-over-`ret` prologue. On 464
+stripped x86-64 ELFs and 12 i386 PEs without incremental linking it adds and removes
+nothing, so their output is unchanged (`decompile-all` is byte-identical on `gzip`,
+`dash`, `diff` and two of the PEs). Off restores the previous discovery set exactly.
+
 A context painter applies the ARM/MIPS decode-mode paints per address before each
 decode, so a Thumb or MIPS16 body disassembles in the right ISA. Each instruction
 is decoded by driving `Translate::one_instruction` with a capturing p-code sink
