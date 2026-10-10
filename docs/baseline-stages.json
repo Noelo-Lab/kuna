@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2506,
-    2506
+    2517,
+    2517
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -252,6 +252,17 @@
     "data:CNORM-WARNSTYLE #3: banner WARNINGs appear only in the banner pass (indirect-jump + read-only)",
     "data:CNORM-WARNSTYLE #4: a condition-block warning rides to the header flush point after the brace",
     "data:CNORM-WARNSTYLE #5: the slug never fires inside the comma-separated header parens",
+    "data:CONDITIONAL-TAIL #10: the taken block survives explicit leaf inlining",
+    "data:CONDITIONAL-TAIL #11: the inlined zero-key tail returns its second input",
+    "data:CONDITIONAL-TAIL #1: on and direct preserve incoming argument order on the taken edge",
+    "data:CONDITIONAL-TAIL #2: the fall-through swaps only the first two arguments",
+    "data:CONDITIONAL-TAIL #3: disabled, unknown and mid-function edges still clip",
+    "data:CONDITIONAL-TAIL #4: an interior declared entry remains local",
+    "data:CONDITIONAL-TAIL #5: no call to the interior entry",
+    "data:CONDITIONAL-TAIL #6: a backward conditional tail returns the stated callee result",
+    "data:CONDITIONAL-TAIL #7: the no-return taken edge calls its declared leaf",
+    "data:CONDITIONAL-TAIL #8: value-returning fall-through paths survive",
+    "data:CONDITIONAL-TAIL #9: actual extent clipping keeps its warnings",
     "data:CONSTPTRDECLARED-MSP430 #1: the enum return is not a register address",
     "data:CONSTPTRDECLARED-MSP430 #2: the enum return prints its enumerator",
     "data:CONSTPTRDECLARED-RV #1: no constant becomes a CSR address",
