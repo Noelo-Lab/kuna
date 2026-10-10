@@ -905,6 +905,19 @@ takes `extra_pool_rules`); the engine currently always passes an empty list
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
 (Architecture::build_action)`).
 
+**Binary64 sign-word operations.** (kuna) Before its commute logic,
+`RuleConcatCommute` recognizes the exact binary64 sign-word idioms in
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_floatnegpiece.rs`.
+`PIECE(FLOAT_NEG(SUBPIECE(x,4)), SUBPIECE(x,0))` becomes `FLOAT_NEG(x)`;
+the corresponding `FLOAT_ABS` pattern becomes `FLOAT_ABS(x)`. Negating or
+clearing the binary32 high word's sign bit changes exactly the binary64 sign
+bit, without numerically converting the word. Both slices must be four bytes
+at significant-value offsets four and zero, independent of memory byte order,
+and must share the same eight-byte source typed as an eight-byte float.
+Different sources, changed low slices, wider floats, incompatible types and
+other unary operations decline. These are strict value-correctness repairs
+with no inference option; they add no floating-status or exception model.
+
 **Ordered floating-point condition negation.** The shared
 `decompiler/crates/kuna-num/src/opcodes.rs (get_booleanflip)` table returns no
 single-opcode complement for `FLOAT_LESS` or `FLOAT_LESSEQUAL`: when either

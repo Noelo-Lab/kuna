@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2506,
-    2506
+    2514,
+    2514
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -2327,6 +2327,10 @@
     "data:sparc-callreturn #7: no call result is dropped",
     "data:sparc-callreturn #8: widen still returns a long long",
     "data:sparc-callreturn #9: widen does not lose its low word",
+    "data:sparc-double-abs #1 restores absolute value",
+    "data:sparc-double-abs #2 has no numeric high-word conversion",
+    "data:sparc-double-sign #1 restores unary negation",
+    "data:sparc-double-sign #2 has no numeric high-word conversion",
     "data:sparc-zeropair #1: no function returns its second argument in the high word",
     "data:sparc-zeropair #2: keep_zero returns an int",
     "data:sparc-zeropair #3: same returns an int, 1 or 0",
@@ -2340,6 +2344,10 @@
     "data:sparc64-callreturn #4: f3 subtracts the second atoi result (O2 and O0)",
     "data:sparc64-callreturn #5: fd stores dd's fd0 result (O2 and O0)",
     "data:sparc64-callreturn #6: no call result is dropped",
+    "data:sparc64-double-abs #1 restores absolute value",
+    "data:sparc64-double-abs #2 has no numeric high-word conversion",
+    "data:sparc64-double-sign #1 restores unary negation",
+    "data:sparc64-double-sign #2 has no numeric high-word conversion",
     "data:stack double after seven ints is read whole",
     "data:stack double is not split across a realigned slot",
     "data:stackarggap #1: option off invents a fourth and fifth argument to reach a stack slot (bug reproduced)",
