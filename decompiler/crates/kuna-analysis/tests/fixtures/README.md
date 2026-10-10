@@ -1342,3 +1342,16 @@ Rebuild from this directory with nasm 2.15:
 `nasm -f bin -I . -o thunk_table_pe_i386.exe thunk_table_pe_i386.asm`.
 Used by `tests/stages/kuna-thunkentry.xml` and `kuna-cli/tests/thunk_entries_cli.rs`
 (`--option thunkentry`).
+
+### AIF fragment of a known function
+
+`aifbracket_pe_i386.exe` (2,048 bytes, PE32/i386, SHA-256
+`e31f558b5ea6e9cf90810d398f0eac449c3e9a9768d182e9d78869c1df7c21f9`) is a clean-room
+reduction of the GH-299 mid-body AIF entry: `start`@`0x401000` calls 22 leaf functions
+(`mov eax,[esp+4]; add eax,imm8; ret`) and `dispatch`@`0x4011f0`, whose block
+`.case`@`0x4011fd` is reached only through `jmp dword [ebp+12]` and opens with the leaves'
+prologue before jumping back to `dispatch`'s `.join`@`0x401206`. `shared`@`0x401210`, behind
+a pointer in `.rdata` and after int3 padding, also jumps to `.join`. With `aifbracket` off the
+gap walk lists `sub_4011fd`; on, only `shared` stays. Rebuild from this directory with
+nasm 2.15: `nasm -f bin -I . -o aifbracket_pe_i386.exe aifbracket_pe_i386.asm`. Used by
+`tests/stages/kuna-aifbracket.xml`.

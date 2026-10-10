@@ -108,6 +108,7 @@ use kuna_sleigh::translate::Translate;
 
 use crate::listing::{decode::{decode_one_with_assembly, Decoded}, FlowKind, Listing};
 
+pub mod kuna_aifbracket;
 pub mod kuna_aifcorroborate;
 pub mod kuna_aifstrict;
 pub mod kuna_poolentry;
@@ -809,10 +810,11 @@ pub fn run_aif(
     exec_ranges: &[(u64, u64)],
     aifstrict: bool,
     aifcorroborate: bool,
+    aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
 ) -> Vec<u64> {
     let _probe = arm_gap_probe_scope(translate);
     let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
-    run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate)
+    run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate, aifbracket)
 }
 
 /// Retain pre-frame validation extents while admitting starts only in current gaps.
@@ -823,11 +825,12 @@ pub(crate) fn run_aif_after_frames(
     code_space: Rc<AddrSpace>,
     aifstrict: bool,
     aifcorroborate: bool,
+    aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
 ) -> Vec<u64> {
     let _probe = arm_gap_probe_scope(translate);
     let mut decoder = GapDecoder::new(translate, code_space, listing.exec_ranges());
     decoder.prior_partition = Some(prior);
-    run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate)
+    run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate, aifbracket)
 }
 
 /// Probe ARM gaps without publishing their modes; local IT state remains active.
@@ -844,8 +847,18 @@ fn run_aif_with_decoder(
     decoder: &mut GapDecoder,
     aifstrict: bool,
     aifcorroborate: bool,
+    aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
 ) -> Vec<u64> {
-    aif_candidates(listing, listing, decoder, aifstrict, aifcorroborate, &BTreeMap::new(), None, None)
+    let gap_walk = GapWalk { strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket };
+    aif_candidates(listing, listing, decoder, gap_walk, &BTreeMap::new(), None, None)
+}
+
+/// The per-run AIF gap-walk policy flags.
+#[derive(Clone, Copy)]
+struct GapWalk<'e> {
+    strict: bool,
+    corroborate: bool,
+    bracket: Option<&'e kuna_aifbracket::BracketEvidence>,
 }
 
 /// Frame-prefix probes skip claimed spans and gaps containing no frame roots.
@@ -854,12 +867,13 @@ fn aif_candidates(
     listing: &Listing,
     corpus: &Listing,
     decoder: &mut GapDecoder,
-    aifstrict: bool,
-    aifcorroborate: bool,
+    policy: GapWalk<'_>,
     frames: &BTreeMap<u64, u32>,
     roots: Option<&BTreeSet<u64>>,
     mut bodies: Option<&mut BTreeMap<u64, ProbedBody>>,
 ) -> Vec<u64> {
+    let GapWalk { strict: aifstrict, corroborate: aifcorroborate, bracket } = policy;
+    let bracket = bracket.filter(|_| roots.is_none());
     if corpus.function_count() < MINIMUM_FUNCTION_COUNT || corpus.num_instructions() == 0 {
         return Vec::new();
     }
@@ -919,7 +933,15 @@ fn aif_candidates(
         let probe_here =
             !aifstrict || kuna_aifstrict::probe_allowed(listing, gap_start);
         if probe_here && listing.is_undefined(gap_start) && !claimed.contains(&gap_start) {
-            match probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate)
+            // (kuna, `aifbracket`) A fragment of the enclosing known function is
+            // refused but, like an `aifcorroborate` refusal, consumes its body.
+            let probe = match probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate) {
+                Probe::Accept(body) if bracket.is_some_and(|evidence| {
+                    kuna_aifbracket::rejects(listing, decoder, evidence, gap_start, &body)
+                }) => Probe::Uncorroborated(body),
+                other => other,
+            };
+            match probe
             {
                 Probe::Accept(body) => {
                     if let Some(bodies) = &mut bodies {
@@ -1182,7 +1204,8 @@ fn reconcile_frame_prefixes(
 ) -> BTreeMap<u64, u64> {
     let mut accepted = roots.clone();
     let mut replacements = BTreeMap::new();
-    let prefixes = aif_candidates(listing, corpus, decoder, strict, corroborate, &claimed, Some(roots), Some(bodies));
+    let policy = GapWalk { strict, corroborate, bracket: None };
+    let prefixes = aif_candidates(listing, corpus, decoder, policy, &claimed, Some(roots), Some(bodies));
     for prefix in prefixes {
         if !listing.is_undefined(prefix) {
             continue;

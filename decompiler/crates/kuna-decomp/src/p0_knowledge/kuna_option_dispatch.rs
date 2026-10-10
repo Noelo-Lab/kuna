@@ -1042,6 +1042,9 @@ kuna_options! { self, p1;
     "aifcorroborate" => {
         on_off!(analysis_aifcorroborate, "AIF accept corroboration test (GH-313)")
     },
+    "aifbracket" => {
+        on_off!(analysis_aifbracket, "AIF bracketed-candidate reject (GH-299)")
+    },
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
     },

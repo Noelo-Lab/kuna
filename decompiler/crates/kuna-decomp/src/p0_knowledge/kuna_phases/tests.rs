@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_279() {
-    assert_eq!(kuna_num_settables(), 279);
-    assert_eq!(SETTABLE_TABLE.len(), 279);
+fn settable_count_is_280() {
+    assert_eq!(kuna_num_settables(), 280);
+    assert_eq!(SETTABLE_TABLE.len(), 280);
 }
 
 #[test]
-fn tier_counts_are_96_core_109_transform_74_analysis() {
+fn tier_counts_are_96_core_109_transform_75_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_96_core_109_transform_74_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (96, 109, 74));
+    assert_eq!((core, transform, analysis), (96, 109, 75));
 }
 
 #[test]
@@ -426,6 +426,10 @@ fn option_values_live_value_present_for_110() {
         // with no codegen live reader (read console-side via kuna_live_value), like
         // `aifstrict` above. Default-OFF, carried by the `aggressive` preset.
         "aifcorroborate",
+        // (kuna, GH-299) The AIF bracketed-candidate reject — an analysis-tier gate
+        // with no codegen live reader (read console-side via kuna_live_value), like
+        // `aifcorroborate` above. Default-ON, inert without `aif`.
+        "aifbracket",
         // (kuna) Tail-call function-entry recovery — an analysis-pass gate with no
         // codegen live reader (read console-side via kuna_live_value), same as the
         // gates around it. Default-off, ARM-only.
@@ -978,7 +982,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 257 -> 258: +1 for `bejoin`.
     // +1 for `coldentry`; its P1 row sits mid-table beside `fdeinterior`.
     // +1 for `thunkentry`; its P1 row sits mid-table beside `unmappedentry`.
-    assert_eq!(json.matches("},\n").count(), 278);
+    assert_eq!(json.matches("},\n").count(), 279);
 }
 
 #[test]

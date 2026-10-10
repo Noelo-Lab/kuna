@@ -2055,7 +2055,9 @@ mod tests {
         // and kuna-msvcsig / an MSVC-mangled import gets its declared prototype
         // and kuna-rust-switch-labels / a Rust match arm is signed by its
         // scrutinee's type (GH-883)
-        assert_eq!(count, 486, "corpus file count drifted");
+        // and kuna-aifbracket / an AIF candidate that rejoins the function around
+        // it is not a function (GH-299)
+        assert_eq!(count, 487, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

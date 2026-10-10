@@ -902,6 +902,9 @@ fn descend(
                         &exec,
                         fingerprint_contexts.as_ref(),
                         frame_partition.as_ref(),
+                        arch.analysis_aifbracket
+                            .then(|| crate::aif::kuna_aifbracket::BracketEvidence::from_object(file, &exec))
+                            .as_ref(),
                     );
                     pending_focus.extend(found.into_iter().rev());
                     continue;
@@ -1216,6 +1219,7 @@ const AIF_MIN_FUNCTIONS: usize = 20;
 /// The gap-walk fingerprints each candidate against the prologues of the already
 /// -discovered functions, so only the two leading instructions of each are
 /// rendered here.
+#[allow(clippy::too_many_arguments)]
 fn gap_entries(
     arch: &Architecture,
     translate: &dyn Translate,
@@ -1225,6 +1229,7 @@ fn gap_entries(
     exec: &[(u64, u64)],
     contexts: Option<&super::kuna_fingerprintcontext::FingerprintContexts>,
     frame: Option<&super::Listing>,
+    bracket: Option<&crate::aif::kuna_aifbracket::BracketEvidence>,
 ) -> Vec<u64> {
     if funcs.len() < AIF_MIN_FUNCTIONS || partition.is_empty() {
         return Vec::new();
@@ -1235,12 +1240,12 @@ fn gap_entries(
     if let Some(prior) = frame {
         crate::aif::run_aif_after_frames(
             &listing, prior, translate, Rc::clone(code_space),
-            arch.analysis_aifstrict, arch.analysis_aifcorroborate,
+            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket,
         )
     } else {
         crate::aif::run_aif(
             &listing, translate, Rc::clone(code_space), listing.exec_ranges(),
-            arch.analysis_aifstrict, arch.analysis_aifcorroborate,
+            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket,
         )
     }
 }
