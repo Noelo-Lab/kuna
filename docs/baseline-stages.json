@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2467,
-    2467
+    2476,
+    2476
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1254,6 +1254,15 @@
     "data:RETURNPIECE #7: an argument in the high half beside a computed low half",
     "data:RETURNPIECE #8: the control whose high half is the first argument is unchanged",
     "data:RETURNPIECE #9: no function returns only four of the eight bytes it computes",
+    "data:RUST SWITCH LABELS #1: every function prints a Rust match",
+    "data:RUST SWITCH LABELS #2: every signed first arm is negative",
+    "data:RUST SWITCH LABELS #3: every signed last arm is negative",
+    "data:RUST SWITCH LABELS #4: unsigned and text 8-bit high labels stay positive",
+    "data:RUST SWITCH LABELS #5: only the unsigned 16-bit selector keeps 0xfff3",
+    "data:RUST SWITCH LABELS #6: only the unsigned 32-bit selector keeps 0xfffffff3",
+    "data:RUST SWITCH LABELS #7: only the unsigned 64-bit selector keeps its high label",
+    "data:RUST SWITCH LABELS #8: a char selector spells u8 with unsigned arms",
+    "data:RUST SWITCH LABELS #9: the same char selector is signed in C",
     "data:RUSTABI #10: and its call keeps no output in either pass",
     "data:RUSTABI #11: the one-byte discriminant write is a genuine element access and keeps its subscript",
     "data:RUSTABI #1: by default the producer collapses to the one-bit discriminant and the EDX payload is deleted",
