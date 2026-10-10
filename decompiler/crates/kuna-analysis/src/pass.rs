@@ -360,6 +360,10 @@ pub struct AnalysisOutput {
     /// flow-follower walks past the call into the NEXT function and absorbs it
     /// (the boundary-overrun class, ~50% of kuna's Ghidra GED gap).
     pub no_fallthru_calls: Vec<u64>,
+    /// (kuna `callerreads`) Every direct call of the Listing walk as `(callee
+    /// entry, return address)`; the decompile step decodes a `void` function's
+    /// callers from there.
+    pub call_returns: Vec<(u64, u64)>,
     /// Extra read-only address ranges (e.g. `.got` after relocation).
     pub readonly: Vec<(u64, u64)>,
     /// (kuna) Address ranges holding an **external reference** — an import slot
@@ -610,6 +614,7 @@ impl AnalysisOutput {
         self.entry_names.extend(other.entry_names);
         self.noreturn.extend(other.noreturn);
         self.no_fallthru_calls.extend(other.no_fallthru_calls);
+        self.call_returns.extend(other.call_returns);
         self.readonly.extend(other.readonly);
         self.externref.extend(other.externref);
         self.strings.extend(other.strings);

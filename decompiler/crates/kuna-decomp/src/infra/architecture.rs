@@ -382,9 +382,16 @@ pub struct Architecture {
     pub kuna_float_scan: Option<Rc<crate::kuna_floatglobals::FloatScan>>,
     /// (kuna `floatglobals`) The scan's answer, once a function asked for it.
     pub kuna_float_globals: Option<Rc<crate::kuna_floatglobals::FloatGlobals>>,
-    /// (kuna `floatglobals`) The run decompiles more than one function, so the
-    /// whole-program scan is paid for whatever the image's size.
+    /// (kuna `floatglobals`, `callerreads`) The run decompiles more than one
+    /// function, so the whole-program scan is paid for whatever the image's
+    /// size, and the callers a batch decompiles answer for their callees.
     pub kuna_float_scan_batch: bool,
+    /// (kuna `callerreads`) Let a function decompiled alone return what a
+    /// direct caller reads after the call (`kuna_callerreads`).
+    pub caller_reads: bool,
+    /// (kuna `callerreads`) Every direct call the Listing walked, as `(callee
+    /// entry, address the call returns to)`, sorted. Empty without the Listing.
+    pub kuna_call_returns: Vec<(u64, u64)>,
     /// (kuna `boolbyte`) Offer `bool` as a `getLocalType` candidate for a byte
     /// whose every read is a truth test.  Implementation:
     /// [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
@@ -2597,6 +2604,8 @@ impl Architecture {
             kuna_float_scan: None,
             kuna_float_globals: None,
             kuna_float_scan_batch: false,
+            caller_reads: true, // (kuna) option callerreads; reset_defaults sets the shipped default
+            kuna_call_returns: Vec::new(),
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             float_bits: false, // (kuna) option floatbits; reset_defaults sets the shipped default
             partial_concat: true,
@@ -3108,6 +3117,7 @@ impl Architecture {
         self.cast_widen = crate::kuna_castwiden::CastWidenMode::Literal; // (kuna) option castwiden default `literal`: a 64-bit widening C's usual arithmetic or assignment conversion performs prints no cast, and an 8-byte literal beside one prints its L/UL suffix; 5/675 datatest assertions (upstream's pinned form) opt out per test, 18 stage assertions of other options moved to the new form, 444-slice typesweep identical, casts 35,588 -> 34,062 on the castbench shared set with 0 functions more; docs/features/castwiden/default-on-evaluation.md
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.float_globals = true; // (kuna) option floatglobals default-on
+        self.caller_reads = true; // (kuna) option callerreads default-on: inert without the Listing, so 0/675 datatest assertions move
         self.call_target_type = false; // (kuna) option calltargettype: default-OFF in the catalog because the XML datatest corpus pins the upstream `code *` spellings and applies no mode; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for every real binary
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.float_bits = true; // (kuna) option floatbits default-on: a float helper that only bit-ops its float-register input into its float-register return types float on both sides

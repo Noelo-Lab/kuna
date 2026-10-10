@@ -1371,3 +1371,14 @@ six nops, with a prologue nothing else shares) are only found by the gap walk. W
 `sub_401239` and `sub_40124c`. Rebuild from this directory with nasm 2.15:
 `nasm -f bin -I . -o aifnoppad_pe_i386.exe aifnoppad_pe_i386.asm`. Used by
 `tests/stages/kuna-aifnoppad.xml`.
+
+### Return values a caller reads
+
+`callerreads_x86_64_gcc_O2` (16,280 bytes, PIE x86-64, not stripped) is built from
+`callerreads.c` with gcc 11.4: `gcc -O2 -o callerreads_x86_64_gcc_O2 callerreads.c`.
+`triple` stores `a * 3` to `gi` from `eax` and returns it, `keep` loads `*p` into `eax`,
+stores it to `gj` and `x + 1` to `gi` and returns it, `same` tail-calls `strcmp`, and
+`scale` stores `a * 5` from `eax` without returning it. `main` reads `eax` after the first
+three calls and ignores it after `scale`. With `callerreads` off a single-function
+decompile prints all four `void`; on, `triple`, `keep` and `same` return `int` and `scale`
+stays `void`. Used by `tests/stages/kuna-callerreads.xml`.

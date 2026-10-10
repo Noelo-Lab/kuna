@@ -1408,6 +1408,13 @@ printf-heavy whole binary (DIV-66). That cost is the reason the typing now
 happens at load instead, and the reason `full` — the loop — remains a per-run
 opt-in rather than the default.
 
+The step's last drive answers for a function decompiled alone (`callerreads`,
+chapter [04](04-calls-and-prototypes.md)): when the finished function returns
+`void` and a direct caller reads one of its return registers after the call, the
+step forces that return and drives the function once more, keeping the redo only
+when it returns a value. A batch skips it, since the callers it decompiles settle
+the same question.
+
 (kuna) **Surface defaults.** The drivers inject their defaults before the option
 pass, from one shared table
 (`decompiler/crates/kuna-cli/src/decompile_all.rs (driver_default_options)`), and

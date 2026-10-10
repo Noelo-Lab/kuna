@@ -1081,6 +1081,14 @@ pub fn run_listing_consumers(
         out.push(("tailcallentry", tce_out));
     }
 
+    // (kuna `callerreads`) Where each direct call returns to, for the decompile
+    // step to read a `void` function's callers from.
+    if arch.analysis_listing && arch.caller_reads && listing.has_refs() {
+        let mut cr_out = AnalysisOutput::default();
+        cr_out.call_returns = crate::listing::kuna_callerreads::call_returns(&listing);
+        out.push(("callerreads", cr_out));
+    }
+
     // (kuna `thunkentry`) The targets of the walk's jump thunks join the walk's own
     // function set wherever that set is committed (`funcdisc_recursive`,
     // `fast_funcdisc`). See `listing/kuna_thunkentry.rs`.

@@ -6283,9 +6283,9 @@ from a variable that happens to sit there; with a caller reading the register
 that question is settled, and the refusal printed `void f(int a0) { gi = a0 *
 3; }` beside `printf("%d\n", f(2))`, and gnulib's `xmalloc` (`p = malloc(n);
 if (!p) xalloc_die(); return p;`) as `void` beside every caller using its
-pointer. Single-function decompiles have no caller to settle it and keep
-upstream's answer. A load or store through the value and a call reading it still
-refuse it. So a function that leaves its caller's register in place stays
+pointer. A single-function decompile asks its callers' machine code instead
+(`callerreads`, below). A load or store through the value and a call reading it
+still refuse it. So a function that leaves its caller's register in place stays
 `void`, and so does one that uses the register as scratch: a stream pointer in
 a `getc` loop, or a message handed to an `error(nonzero, ...)` whose
 fall-through is pruned into a RETURN.
@@ -6575,3 +6575,57 @@ global; e2fsck's `ext2fs_iblk_set` and `set_undo_io_backup_file`
 goes from `char` to `unsigned long`, its reader only renumbered; and dash's
 `hashvar` and bash -O0's `pshash_getbucket`, which compute a pointer in 32 bits,
 return 64-bit values (a `char *` for bash).
+
+### A function decompiled alone returns what its callers read (`kuna_callerreads.rs`)
+
+`kuna decompile` decompiles one function, so no caller of it is decompiled
+beside it and the ledger above has nothing to settle: `int f(int a) { gi = a *
+3; return gi; }`, compiled to `lea (%rdi,%rdi,2),%eax; mov %eax,gi(%rip); ret`,
+printed `void f(int a0)` while `kuna decompile` of its `main` printed
+`printf("%d\n",f(2))`. The function alone cannot tell the two readings apart,
+because `void f(int a) { gi = a * 3; }` compiles to the same three
+instructions. Its callers can, and the machine code after each call says what
+they do with the register.
+
+With `option callerreads on` (the default), the Listing files, for every direct
+call it walked, the callee's entry and the address the call returns to
+(`decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs
+(call_returns)`), and the commit parks the sorted pairs on the architecture
+(`Architecture::kuna_call_returns`). After the single-function decompile step's
+drives (chapter [00](00-overview.md)), a function recovered `void` with a model,
+no declared prototype, no locked output and a live RETURN is checked by
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callerreads.rs (read)`. It
+decodes up to 32 of its callers from the addresses their calls return to, with
+the bounded read-before-write walk `calleedeadarg` takes of a callee's entry
+(`kuna_calleedeadarg.rs (probe_entry)`): every path, up to 192 instructions,
+ending at the next call, return or indirect branch. A caller reads the result
+when a path reads the low byte of one of the model's output registers before
+writing it (`CalleeEntryDead::low_read_width`). The register zeroing idioms
+(`xor %eax,%eax`), a register compared with itself, a push of several registers
+at once, and a walk that met an instruction it could not decode or ran past its
+budget do not count.
+The ABI leaves the output registers clobbered by the call, so a read there is the
+call's result. The storage is the first output register a caller reads, at the
+widest width the callers read it from its least significant end, rounded up to a
+power of two (`mov %eax,%esi` reads four bytes, `test %al,%al` one, `mov
+%rax,%rdi` eight); callers that read different registers refuse the function.
+
+The step then forces that storage the way `decompile-all` does
+(`kuna_callerreads.rs (force)` files it in `Ledger::forced`, which
+`kuna_voidret.rs (seed)` reads) and drives the function once more, so the forced
+scoring above decides: a value also stored to a global, branched on, or left in
+another register is returned, and so is a call's result, while a load or store
+through the value or a call reading it still refuses it. The forcing is undone
+after the drive, and the redo is kept only when the function then returns a
+value; otherwise the first decompile stands. A batch run skips the check
+(`Architecture::kuna_float_scan_batch`), because its callers answer for their
+callees through the ledger, and a run without the Listing (the XML corpora, a raw
+image) has no call to read. A function nothing calls directly, or whose callers
+all ignore the register, stays `void`, as in `decompile-all`. Over every function
+of gzip, dash and diff at -O2 (941), 17 change, each from `void` to the value its
+callers use: dash's `ckmalloc`, `ckrealloc` and diff's `xrealloc` return their
+pointer, `findkwd`, `stnputs`, `pstrcmp`, `xvsnprintf` and `shell_quote_length`
+return what they tail-call or call, and nine PLT stubs return the import's result
+(`v1 = (*dat_17e58)(); return v1;` for `lseek`). Each prints the signature
+`decompile-all` prints. Only a function whose callers read it pays for a second
+drive.

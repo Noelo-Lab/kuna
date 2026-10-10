@@ -1104,6 +1104,10 @@ Three tiers:
 | a signed char or short result is zero-extended where the callee sign-extends it | [`narrowext`](#narrowext) |
 | a declared int parameter used as a 64-bit value prints (unsigned long)(unsigned int)x | [`narrowext`](#narrowext) |
 | a narrow result or parameter prints as CONCAT31(v1,f()) or CONCAT44(v1,x) with an unassigned v1 | [`narrowext`](#narrowext) |
+| a function that stores its return value to a global prints void | [`callerreads`](#callerreads) |
+| kuna decompile prints void f while main prints f(2) as a value | [`callerreads`](#callerreads) |
+| a wrapper that returns a call's result prints void in a single-function decompile | [`callerreads`](#callerreads) |
+| kuna decompile and decompile-all disagree on whether a function returns a value | [`callerreads`](#callerreads) |
 | a double return becomes SUB84 or zero | [`armfloatreturn`](#armfloatreturn) |
 | an ARM hard-float function loses its d0 parameter | [`armfloatreturn`](#armfloatreturn) |
 | a caller reads an undefined floating result | [`armfloatreturn`](#armfloatreturn) |
@@ -3355,6 +3359,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (`abi`). Set `compiler` for a clang-built x86-64 binary whose functions read a declared `unsigned char`, `short` or `bool` parameter as a 32-bit value, which prints as `CONCAT31(v1,c)` with an unassigned `v1`, or for a MIPS or Apple arm64 binary whose callers read a narrow result as a whole register, which prints as `CONCAT31(v1,fc(k))` with an unassigned `v1` on MIPS or `(unsigned int)(unsigned char)esc(k)` on Apple arm64: every GCC and LLVM callee extends the value and every caller relies on it, but no ABI document says so, so it is not the default. Set `off` to get the compiler spec's extension back, for example when comparing with Ghidra. A narrow value the code compares or computes with as a whole register prints the extension it performs, `(long)k`, where the spec's zero extension folded away.
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · gh-816
 - **Example:** `option narrowext compiler`
+
+### `callerreads` -- on | off, default `on`
+
+- **Symptoms:** a function that stores its return value to a global prints void; kuna decompile prints void f while main prints f(2) as a value; a wrapper that returns a call's result prints void in a single-function decompile; kuna decompile and decompile-all disagree on whether a function returns a value.
+- **What it does:** Let a function decompiled alone return what its callers read after the call. `int f(int a) { gi = a * 3; return gi; }` and `void f(int a) { gi = a * 3; }` both compile to `lea (%rdi,%rdi,2),%eax; mov %eax,gi(%rip); ret`, and upstream's onlyOpUse refuses a return value the function also stores, branches on, or takes straight from a call, so `kuna decompile ./rv f` printed `void f(int a0)` beside `printf("%d\n",f(2))` in the same binary's `main`. `decompile-all` settles this from the callers it decompiles (`kuna_voidret`); a single-function decompile had none. When on, the Listing files the address each direct call returns to, and for a function recovered `void` with no declared or locked output and a live RETURN, `kuna_callerreads::read` decodes up to 32 of its callers from those addresses with `calleedeadarg`'s bounded walk and asks whether a path reads the low byte of one of the model's return registers before writing it. If every caller that reads one reads the same register, the function is decompiled again with its return forced there at the widest width they read, scored the way `decompile-all` scores a forced return, and the redo is kept only when it returns a value. Off in a batch run and inert without the Listing.
+- **When to flip:** On by default: a function whose callers use its result returns it in `kuna decompile` even when it also stores the value to a global, tests it, or returns a tail call's result, and prints what `decompile-all` prints. Turn it off to see the function's own recovery, which reads such a function as `void`.
+- **Where / provenance:** P4/output-prototype · kuna · correctness-fix · gh-843
+- **Example:** `option callerreads off`
 
 ### `armfloatreturn` -- on | off, default `off`
 
