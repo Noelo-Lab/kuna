@@ -1116,6 +1116,12 @@ Three tiers:
 | return ZEXT816(0) where the source returns 0.0 | [`zerofillreturn`](#zerofillreturn) |
 | a caller casts an AArch64 call result to double: (double)f(x) | [`zerofillreturn`](#zerofillreturn) |
 | a struct of two doubles or a complex double returned in d0 and d1 prints as q0 with an upper half of zero | [`zerofillreturn`](#zerofillreturn) |
+| a function built with -fzero-call-used-regs returns a constant 0 on every path | [`zerocallregs`](#zerocallregs) |
+| an int-returning function prints as double with return 0.0 | [`zerocallregs`](#zerocallregs) |
+| a double-returning function prints as unsigned long f(void) { return 0; } | [`zerocallregs`](#zerocallregs) |
+| a long return prints as undefined16 whose upper half is 0 | [`zerocallregs`](#zerocallregs) |
+| a void function prints return 0 | [`zerocallregs`](#zerocallregs) |
+| xor and pxor of every scratch register right before ret | [`zerocallregs`](#zerocallregs) |
 | missing floating argument | [`armfloatargs`](#armfloatargs) |
 | double input split into two words | [`armfloatargs`](#armfloatargs) |
 | caller and callee disagree on mixed argument contract | [`armfloatargs`](#armfloatargs) |
@@ -3377,6 +3383,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default. Flip OFF to restore upstream Ghidra's 16-byte q0 return (`undefined16`, `v1._8_8_ = 0`, `return ZEXT816(0)`) on AArch64, or to bisect a return width. What it cannot tell apart: a 128-bit vector whose upper half a 64-bit write zeroed (gcc -O2's `fmov d0,d0` for `(float64x2_t){x, 0}`, `fmov d0,x0` for `(uint64x2_t){x, 0}`, `ldr d0,[x0]` for a 64-bit load combined with zero) has the same p-code as a returned double and now returns 8 bytes; and a d1 the function computes and only returns joins d0 even when the source discards it (an asm-forced evaluation). A complex return whose d1 is the unchanged incoming argument or a callee's result keeps the 16-byte q0. Inert on every other processor (no other compiler spec has a floating output entry that a narrow write fills).
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · gh-873
 - **Example:** `option zerofillreturn off`
+
+### `zerocallregs` -- on | off, default `on`
+
+- **Symptoms:** a function built with -fzero-call-used-regs returns a constant 0 on every path; an int-returning function prints as double with return 0.0; a double-returning function prints as unsigned long f(void) { return 0; }; a long return prints as undefined16 whose upper half is 0; a void function prints return 0; xor and pxor of every scratch register right before ret.
+- **What it does:** Leave the registers a `-fzero-call-used-regs` epilogue clears out of the return value. gcc's `-fzero-call-used-regs=all` (openssh's hardened builds; the kernel uses `used-gpr`) ends every function by clearing each call-used register that is not live at the return -- `xor %edx,%edx`, `xor %ecx,%ecx`, `pxor %xmm0,%xmm0` .. `pxor %xmm15,%xmm15`, then `ret` -- so the register that carries the result is the one the run leaves alone. ActionReturnRecovery scores every output register at the RETURN and a cleared one holds a value the function wrote, so it is accepted: `int put(int *p,int v)`, which returns its callee's `eax`, printed `double put(..)` with `return 0.0;` from the cleared `xmm0`, a `double` returner printed `unsigned long f(void) { return 0; }` from the cleared `rax`, a `long` an `undefined16` whose upper half is the cleared `rdx`, and a `void` function `return 0`. Before the output fill-in, for each live RETURN the pass walks back from the return instruction over the instructions of its block that only clear registers: the last value each leaves in every register it writes is a zero (a value XORed or subtracted with itself, or a constant zero, through copies, extensions and slices), apart from one-byte flags computed by comparisons, and a write a later write of the same instruction covers is heritage's slicing of the old value. The run counts as the epilogue only when one of its instructions clears nothing but registers no output entry names (`rcx`, `rsi`, `r8`, `xmm2`), to a zero nothing after that instruction reads. An active trial is then retired when, at a RETURN with such a run, its value is a zero the run itself wrote, and at no other RETURN with a run it holds anything else; a RETURN without a run (a tail call) has no say. The x87 `fldz`/`fstp` block `=all` puts first is no clearing instruction, so it stops the walk and a body's own `xor %eax,%eax` before it is still returned. A declared or DWARF output, and storage the callers forced through `voidret`, is never touched.
+- **When to flip:** On by default: the flip moves 0 of 675 datatest assertions and leaves output byte-identical on binaries built without the flag (gzip, dash, diff, grep, bzip2). Flip OFF to restore the return a cleared register decided. What it cannot tell apart: under `=all-gpr` or `=all-arg` a `return 0` the compiler puts right before the run reads the same as the run's own first clear, and the function returns `void` (its callers still force the value back through `voidret` when they read it). A function that only forwards an unresolved call's result returns `void`, as the same code built without the flag does, until a caller reads it.
+- **Where / provenance:** P4/output-prototype · kuna · correctness-fix · GH-847
+- **Example:** `option zerocallregs off`
 
 ### `armfloatargs` -- on | off, default `off`
 

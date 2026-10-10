@@ -1033,6 +1033,10 @@ pub struct ArchContext {
     /// returned vector register (`zerofillreturn`).  Read by
     /// [`crate::p4_calls::kuna_zerofillreturn::drop_zero_fill`].
     pub zero_fill_return: bool,
+    /// (kuna) drop the registers a `-fzero-call-used-regs` epilogue clears
+    /// from the return value (`zerocallregs`).  Read by
+    /// [`crate::p4_calls::kuna_zerocallregs::drop_epilogue_zeros`].
+    pub zero_call_regs: bool,
     /// (kuna) narrow a call's `killedbycall` set to the registers a bounded
     /// decode of the callee's own body proves it writes (`calleepreserves`).
     /// Read by `Heritage::guard_calls` through
@@ -1797,6 +1801,7 @@ impl ArchContext {
             hidden_ret_arg: true,
             callee_read_arg: true,       // calleereadarg (default-on)
             zero_fill_return: true,
+            zero_call_regs: true,
             callee_preserves: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)

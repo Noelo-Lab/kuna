@@ -1,0 +1,158 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-847 (kuna): gcc -fzero-call-used-regs ends every function by clearing
+    the call-used registers that are not live at the return (xor %edx,%edx,
+    xor %ecx,%ecx, .., pxor %xmm0,%xmm0 .. pxor %xmm15,%xmm15, then ret), so
+    the register that carries the result is the one it leaves alone.  Return
+    recovery scored the cleared registers as returned values: a function that
+    returns its callee's eax printed `double put(..)` with `return 0.0;`, a
+    double returner `return 0` from the cleared rax, a void function
+    `return 0`, and a long an undefined16 whose upper half is the cleared rdx.
+    Stage / sub-stage: P4 "output-prototype".  The P0 assertion
+    `option zerocallregs on|off` decides whether an output trial whose value
+    at the RETURN is a zero the clearing run before the return wrote is
+    retired before the output fill-in.
+    Chunk 0x100000: gcc 11.4 -O2 -fno-inline -fzero-call-used-regs=all
+    -fcf-protection=none -c, all functions static noinline:
+      int check(int *p) { return *p > 10 ? -5 : 0; }
+      int put(int *p, int v) { int r = check(p); if (r) return r; *p = v; return 0; }
+      double scale(int x) { return x * 2.0; }
+      void setg(int *g, int x) { *g = x * 3; }
+      int zero(int *g) { *g += 1; return 0; }
+            (control: its xor %eax,%eax precedes the x87 fldz/fstp block)
+      zero_call_used_regs("all-gpr") long addg(long a, long b) { return a + b; }
+      zero_call_used_regs("all-gpr") double scaleg(int x) { return x * 2.0; }
+      zero_call_used_regs("skip") struct pr { long a, b; } zpair(void)
+            { struct pr p = {0, 0}; return p; }
+            (control: xor %eax,%eax; xor %edx,%edx; ret clears no register
+            outside the output entries, so it is no epilogue)
+    Pass 1 (`option zerocallregs off`) reproduces the BUG: put returns the
+    cleared xmm0, scale and scaleg the cleared rax, setg returns 0, and addg
+    joins the cleared rdx above its long.
+    Pass 2 (`option zerocallregs on`, the shipped default) is the FIX: put
+    returns nothing (its result is an unresolved call's, as without the
+    epilogue), scale and scaleg return their double, setg is void and addg
+    returns its long; zero and zpair print the same in both passes.
+-->
+<bytechunk space="ram" offset="0x100000">
+31c0833f0a0f9ec08d4480fbd9eed9ee
+d9eed9eed9eed9eed9eed9eeddd8ddd8
+ddd8ddd8ddd8ddd8ddd8ddd831d231c9
+31f631ff660fefc0660fefc9660fefd2
+660fefdb660fefe4660fefed660feff6
+660fefff4531c04531c94531d24531db
+66450fefc066450fefc966450fefd266
+450fefdb66450fefe466450fefed6645
+0feff666450fefffc30f1f8000000000
+5589f5534889fbe864ffffff85c07502
+892b5b5dd9eed9eed9eed9eed9eed9ee
+d9eed9eeddd8ddd8ddd8ddd8ddd8ddd8
+ddd8ddd831d231c931f631ff660fefc0
+660fefc9660fefd2660fefdb660fefe4
+660fefed660feff6660fefff4531c045
+31c94531d24531db66450fefc066450f
+efc966450fefd266450fefdb66450fef
+e466450fefed66450feff666450fefff
+c366662e0f1f8400000000000f1f4000
+660fefc0f20f2ac7f20f58c0d9eed9ee
+d9eed9eed9eed9eed9eed9eeddd8ddd8
+ddd8ddd8ddd8ddd8ddd8ddd831c031d2
+31c931f631ff660fefc9660fefd2660f
+efdb660fefe4660fefed660feff6660f
+efff4531c04531c94531d24531db6645
+0fefc066450fefc966450fefd266450f
+efdb66450fefe466450fefed66450fef
+f666450fefffc3660f1f840000000000
+8d04768907d9eed9eed9eed9eed9eed9
+eed9eed9eeddd8ddd8ddd8ddd8ddd8dd
+d8ddd8ddd831c031d231c931f631ff66
+0fefc0660fefc9660fefd2660fefdb66
+0fefe4660fefed660feff6660fefff45
+31c04531c94531d24531db66450fefc0
+66450fefc966450fefd266450fefdb66
+450fefe466450fefed66450feff66645
+0fefffc366662e0f1f84000000000090
+83070131c0d9eed9eed9eed9eed9eed9
+eed9eed9eeddd8ddd8ddd8ddd8ddd8dd
+d8ddd8ddd831d231c931f631ff660fef
+c0660fefc9660fefd2660fefdb660fef
+e4660fefed660feff6660fefff4531c0
+4531c94531d24531db66450fefc06645
+0fefc966450fefd266450fefdb66450f
+efe466450fefed66450feff666450fef
+ffc366662e0f1f8400000000000f1f00
+488d043731d231c931f631ff4531c045
+31c94531d24531dbc30f1f8000000000
+660fefc0f20f2ac7f20f58c031c031d2
+31c931f631ff4531c04531c94531d245
+31dbc366662e0f1f8400000000006690
+31c031d2c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="check"/>
+<symbol space="ram" offset="0x100090" name="put"/>
+<symbol space="ram" offset="0x100130" name="scale"/>
+<symbol space="ram" offset="0x1001c0" name="setg"/>
+<symbol space="ram" offset="0x100250" name="zero"/>
+<symbol space="ram" offset="0x1002e0" name="addg"/>
+<symbol space="ram" offset="0x100300" name="scaleg"/>
+<symbol space="ram" offset="0x100330" name="zpair"/>
+</binaryimage>
+<script>
+  <com>option zerocallregs off</com>
+  <com>lo fu put</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu setg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu addg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scaleg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zpair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option zerocallregs on</com>
+  <com>lo fu put</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu setg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu addg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scaleg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zpair</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="zerocallregs #1: option off returns the cleared xmm0 from put (bug reproduced)" min="1" max="1">float8 put\(</stringmatch>
+<stringmatch name="zerocallregs #2: option off prints return 0.0 on both paths of put (bug reproduced)" min="2" max="2">return 0\.0;</stringmatch>
+<stringmatch name="zerocallregs #3: option off returns the cleared rax from scale and scaleg (bug reproduced)" min="2" max="2">unsigned long scaleg?\(void\)</stringmatch>
+<stringmatch name="zerocallregs #4: option off returns 0 from the void setg (bug reproduced)" min="1" max="1">unsigned long setg\(</stringmatch>
+<stringmatch name="zerocallregs #5: option off joins the cleared rdx above the long of addg (bug reproduced)" min="1" max="1">undefined16 addg\(</stringmatch>
+<stringmatch name="zerocallregs #6: option on returns nothing from put" min="1" max="1">void put\(</stringmatch>
+<stringmatch name="zerocallregs #7: option on returns the double of scale and scaleg" min="2" max="2">float8 scaleg?\(int4 a0\)</stringmatch>
+<stringmatch name="zerocallregs #8: option on makes setg void" min="1" max="1">void setg\(</stringmatch>
+<stringmatch name="zerocallregs #9: option on returns the long of addg" min="1" max="1">int8 addg\(int8 a0,int8 a1\)</stringmatch>
+<stringmatch name="zerocallregs #10: the return 0 before the x87 block of zero is kept in both passes" min="2" max="2">unsigned long zero\(</stringmatch>
+<stringmatch name="zerocallregs #11: a zero pair returned without the epilogue is kept in both passes" min="2" max="2">undefined16 zpair\(void\)</stringmatch>
+</decompilertest>

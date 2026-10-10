@@ -6037,6 +6037,73 @@ elsewhere. The stage test
 `tests/stages/gh873-zerofillreturn-a64.xml` runs clang and gcc AArch64 code
 with the option off and on.
 
+### (kuna) `zerocallregs` — the registers a zeroing epilogue clears
+
+gcc's `-fzero-call-used-regs` (openssh-portable's hardened builds use `=all`,
+the Linux kernel `=used-gpr`) ends every function by clearing the call-used
+registers it chose that are not live at the return. With `=all` on x86-64 that
+is eight `fldz` and eight `fstp %st(0)` to empty the x87 stack, then `xor
+%edx,%edx`, `xor %ecx,%ecx`, `xor %esi,%esi`, `xor %edi,%edi`, `pxor %xmm0,%xmm0`
+.. `pxor %xmm7,%xmm7`, `xor %r8d,%r8d` .. `xor %r11d,%r11d`, `pxor %xmm8,%xmm8`
+.. `pxor %xmm15,%xmm15`, in register order, right before `ret`. A register that
+carries the result is live at the return, so the run leaves exactly that
+register alone: `rax` in a function returning an `int`, `xmm0` in one returning
+a `double`, both `rax` and `rdx` for a pair, and none in a `void` function.
+`ActionReturnRecovery` scores each output register at the RETURN, a cleared
+register holds a value the function wrote, and the fill-in takes it. `int
+put(int *p, int v) { int r = check(p); if (r) return r; *p = v; return 0; }`
+printed `double put(..)` with `return 0.0;` on both paths from the cleared
+`xmm0` (its `rax` is the unresolved result of `check`), a `double` returner
+printed `unsigned long f(void) { return 0; }` from the cleared `rax` and lost
+its parameter to dead code, a `long` printed `undefined16` whose upper half was
+the cleared `rdx`, and a `void` function printed `return 0`.
+
+`zerocallregs` (default on;
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_zerocallregs.rs`) runs in
+`ActionReturnRecovery` once the trials are fully checked, first among the
+passes that retire trials before the output fill-in, while the p-code is still
+heritage's lift. For each live RETURN whose return instruction makes no call,
+it walks back over the instructions of its block that only clear registers. An
+instruction clears registers when the last value it leaves in every register it
+writes is a provable zero, apart from one-byte flags computed by a comparison,
+and it clears at least one register wider than a flag. A provable zero is a
+constant zero, a value XORed or subtracted with itself (the operands compared as
+`zeroidiomuse` compares them), or a copy, extension, concatenation or slice of
+zeros; a slice lying wholly in the zero half of a PIECE counts too, which is
+how heritage reads `edx` back out of the `rdx` a 32-bit `xor` rebuilt around
+it. A register write a later write of the same instruction covers is heritage
+slicing the old value and does not count. The x87 instructions write the stack
+registers with copies of each other and are no clearing instruction, so `=all`'s
+x87 block stops the walk.
+
+The run is taken for the epilogue only when one of its instructions clears
+nothing but registers that no output entry of the prototype model names
+(`rcx`, `rsi`, `r8`, `xmm2`), to a zero that no op after that instruction reads.
+`xor %eax,%eax; xor %edx,%edx; ret` returns a zero pair; `xor %r8d,%r8d; mov
+%r8d,%eax; ret` returns the zero `r8d` was cleared to; and AArch64's `movi
+d0,#0` also clears the SVE bytes above `q0`, which are no output entry but are
+written by the same instruction as `q0`. An active trial is then marked
+inactive when, at every RETURN that has such a run, its value is a zero whose
+ops all lie inside that run. A RETURN with no run, such as a tail call, which
+gcc does not precede with the clears, has no say, and a trial that holds
+anything else at any RETURN with a run keeps its score. The callers' storage
+that `voidret` forces, and a declared or DWARF output, are never touched.
+
+What remains is what the same code returns when built without the flag: the
+computed `eax`, `xmm0` or `rdx:rax`, and nothing for a function whose result is
+an unresolved call's, which `voidret` settles from the callers that read it
+(`put` returns `int` again once `main` passes its result to `printf`). On
+openssh-portable's `sftp` 91 of 533 functions change, 75 of them DWARF-`void`
+functions that printed a return value; binaries built without the flag do not
+change. The binary cannot tell everything apart: under `=all-gpr` or `=all-arg`
+a `return 0` whose `xor %eax,%eax` the compiler places right before the run
+reads the same as the run's own first clear, so such a function returns `void`
+unless a caller reads its result. Under `=all` the x87 block separates the two,
+and a `void` function's `rax` is cleared after it. The stage test
+`tests/stages/gh847-zerocallregs.xml` decompiles gcc 11 `-O2
+-fzero-call-used-regs=all` code, two of its functions cleared `=all-gpr`, with
+the option off and on.
+
 ### ARM scalar VFP contracts
 
 The ARM default model (`ARM.cspec`) lists the VFP registers only as the 4-byte
