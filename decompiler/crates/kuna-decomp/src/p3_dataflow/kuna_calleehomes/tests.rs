@@ -433,6 +433,66 @@ fn caller_stack_reads_and_direct_stack_variables_observe_home_cells() {
 }
 
 #[test]
+fn unresolved_caller_memory_accesses_block_even_without_stack_ancestry() {
+    for code in [OpCode::CPUI_LOAD, OpCode::CPUI_STORE] {
+        for from_global in [false, true] {
+            let mut fx = Fx::new();
+            let marker = fx.marker();
+            let space_id = fx
+                .fd
+                .get_arch()
+                .manage()
+                .get_default_data_space()
+                .unwrap()
+                .get_index();
+            let space = fx.constant(4, space_id as u64);
+            let pointer = if from_global {
+                let address = fx.constant(8, 0x8000);
+                fx.emit(OpCode::CPUI_LOAD, &[space, address], Some(Out::Unique(8)))
+                    .1
+                    .unwrap()
+            } else {
+                fx.fd
+                    .new_varnode(8, &Address::new(Rc::clone(&fx.reg), 0x80), None)
+            };
+            assert!(!super::stack_derived(&fx.fd, pointer));
+            assert!(super::frame_range(&fx.fd, pointer, 8).is_none());
+            if code == OpCode::CPUI_LOAD {
+                fx.emit(code, &[space, pointer], Some(Out::Unique(8)));
+            } else {
+                let value = fx.constant(8, 0);
+                fx.emit(code, &[space, pointer, value], None);
+            }
+            assert!(!caller_home_unobserved(&fx.fd, marker, HOME as u64, 8));
+        }
+    }
+}
+
+#[test]
+fn literal_global_memory_accesses_remain_disjoint_from_home_cells() {
+    for code in [OpCode::CPUI_LOAD, OpCode::CPUI_STORE] {
+        let mut fx = Fx::new();
+        let marker = fx.marker();
+        let space_id = fx
+            .fd
+            .get_arch()
+            .manage()
+            .get_default_data_space()
+            .unwrap()
+            .get_index();
+        let space = fx.constant(4, space_id as u64);
+        let pointer = fx.constant(8, 0x8000);
+        if code == OpCode::CPUI_LOAD {
+            fx.emit(code, &[space, pointer], Some(Out::Unique(8)));
+        } else {
+            let value = fx.constant(8, 0);
+            fx.emit(code, &[space, pointer, value], None);
+        }
+        assert!(caller_home_unobserved(&fx.fd, marker, HOME as u64, 8));
+    }
+}
+
+#[test]
 fn caller_forwarding_or_storing_a_home_address_is_an_escape() {
     let mut fx = Fx::new();
     let marker = fx.marker();

@@ -332,6 +332,19 @@ pub(crate) fn caller_home_unobserved(
             };
             let derived = stack_derived(fd, pointer);
             let pointer_range = frame_range(fd, pointer, width);
+            let literal_global =
+                fd.vbank()
+                    .get(pointer)
+                    .is_some_and(|value| value.is_constant())
+                    && op
+                        .get_in(0)
+                        .and_then(|id| fd.vbank().get(id))
+                        .is_some_and(|space| {
+                            space.is_constant()
+                                && fd.get_arch().manage().get_default_data_space().is_some_and(
+                                    |data| space.get_offset() == data.get_index() as u64,
+                                )
+                        });
             let access_space =
                 crate::p3_dataflow::ruleaction_4::RuleLoadVarnode::check_spacebase(fd, id)
                     .map(|(space, _)| space);
@@ -347,7 +360,7 @@ pub(crate) fn caller_home_unobserved(
                         return false;
                     }
                 }
-            } else if derived {
+            } else if derived || !literal_global {
                 return false;
             }
             if derived

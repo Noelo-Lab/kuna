@@ -2194,7 +2194,11 @@ reads, pointer escapes and observations through other calls. The current
 callee's own home loads are expected and do not substitute for that caller proof.
 Other calls require the strict summary path, which checks lost provenance and
 unresolved frame fragments even when the other callee has no homes of its own.
-It does not recursively discharge further home escapes. Unknown calls, ambiguous
+It does not recursively discharge further home escapes. Caller loads and stores
+through unresolved pointers also decline when stack ancestry has been lost;
+loading a pointer from a global does not prove that it cannot designate a home.
+Literal global memory addresses retain their disjoint treatment.
+Unknown calls, ambiguous
 addresses and exhausted budgets decline. Home write effects remain present for overlapping-frame
 preservation checks. Other positive stack slots and unknown pointer-sized stores
 retain the existing conservative treatment.

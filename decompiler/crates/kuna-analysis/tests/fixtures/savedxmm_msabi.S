@@ -22,7 +22,11 @@ SAVED_XMM_FUNCTION:
     leaq 0x20(%rsp), %rcx
     leaq rect_source(%rip), %rdx
     call fixture_copy_rect@PLT
-#ifdef SAVED_XMM_READ_HOME
+#ifdef SAVED_XMM_READ_EXTERNAL_HOME
+    movq fixture_escaped_home(%rip), %rax
+    movq 0(%rax), %rax
+    movss 0(%rax), %xmm0
+#elif defined(SAVED_XMM_READ_HOME)
     movq 0(%rsp), %rax
     movss 0(%rax), %xmm0
 #else
@@ -37,7 +41,7 @@ SAVED_XMM_FUNCTION:
     ret
 .size SAVED_XMM_FUNCTION, .-SAVED_XMM_FUNCTION
 
-#ifdef SAVED_XMM_READ_HOME
+#if defined(SAVED_XMM_READ_HOME) || defined(SAVED_XMM_READ_EXTERNAL_HOME)
 .globl fixture_copy_rect
 .type fixture_copy_rect,@function
 fixture_copy_rect:
@@ -71,6 +75,10 @@ fixture_probe:
     movdqa .Lseed7(%rip), %xmm7
     movdqa .Lseed8(%rip), %xmm8
     movdqa .Lseed9(%rip), %xmm9
+#ifdef SAVED_XMM_READ_EXTERNAL_HOME
+    leaq -0x90(%rsp), %rax
+    movq %rax, fixture_escaped_home(%rip)
+#endif
     call SAVED_XMM_PROBE_TARGET
     movdqu %xmm6, 0(%r12)
     movdqu %xmm7, 16(%r12)

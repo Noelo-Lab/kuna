@@ -23,7 +23,7 @@ uintptr_t volatile fixture_escaped_home;
 uint32_t volatile fixture_escaped_frame_low;
 #endif
 
-#ifndef SAVED_XMM_READ_HOME
+#if !defined(SAVED_XMM_READ_HOME) && !defined(SAVED_XMM_READ_EXTERNAL_HOME)
 __attribute__((ms_abi, noinline))
 void fixture_copy_rect(Rect *destination, const Rect *source) {
 #ifdef SAVED_XMM_ESCAPE_FRAME_LOW

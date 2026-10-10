@@ -298,6 +298,7 @@ fn saved_xmm_spills_are_not_emitted_as_live_locals() {
     for compiler in &compilers {
         for define in [
             "-DSAVED_XMM_READ_HOME",
+            "-DSAVED_XMM_READ_EXTERNAL_HOME",
             "-DSAVED_XMM_ESCAPE_HOME",
             "-DSAVED_XMM_ESCAPE_FRAME_LOW",
         ] {
