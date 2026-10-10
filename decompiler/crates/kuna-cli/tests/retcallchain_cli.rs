@@ -49,7 +49,11 @@ fn decompile(assertion: Option<&str>) -> String {
 }
 
 /// The three callees the chain reaches, by the global each `ret` pops.
-const CALLS: [&str; 3] = ["(*dat_804a000)()", "(*dat_804a004)()", "(*dat_804a008)()"];
+const CALLS: [&str; 3] = [
+    "(*(void (*)(void))dat_804a000)()",
+    "(*(void (*)(void))dat_804a004)()",
+    "(*(void (*)(void))dat_804a008)()",
+];
 
 /// Unasserted entry chains are recovered by the same strict detector.
 #[test]

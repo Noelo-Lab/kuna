@@ -382,7 +382,10 @@ fn clobbers_cycles_indirect_calls_and_void_callees_are_not_evidence() {
     }
     // Neither is passthrough's evidence, but `consumer` reads r0 after the call.
     let text = run("indirect", true, None);
-    assert!(function(&text, "wrapper").contains("return (*a3)();"), "{text}");
+    assert!(
+        function(&text, "wrapper").contains("return (*(unsigned int (*)(void))a3)();"),
+        "{text}"
+    );
     let text = run("overwrite", true, None);
     assert!(function(&text, "wrapper").contains("return 7;"), "{text}");
     assert!(

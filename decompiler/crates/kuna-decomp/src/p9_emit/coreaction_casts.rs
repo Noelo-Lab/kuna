@@ -376,6 +376,7 @@ pub(crate) fn get_input_cast(
             let curtype = data.vn_high_type_read_facing(invn, op);
             strat
                 .cast_standard(&reqtype, &curtype, false, true)
+                .or_else(|| crate::kuna_calltargettype::uncallable_target_cast(data, op, slot, &curtype))
                 .or_else(|| crate::kuna_truncarg::narrowed_arg_cast(data, strat, op, slot))
         }
     }

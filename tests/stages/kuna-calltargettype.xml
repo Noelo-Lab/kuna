@@ -45,13 +45,15 @@
     is cast to int (*)(unsigned int) where it was cast to void * (asserts 6 to
     8). The cast count does not change.
 
-    Every pass leaves these alone (asserts 9 to 16): twice calls one local with
-    one and with two arguments; chosen's local receives the address of r1, whose
-    own prototype C would have to match; sorter hands its local to qsort, whose
-    comparator slot has the header's own type; and fstore passes the float it
-    loaded, which recovery holds as an unsigned int in xmm0. A type built from
-    that unsigned int would pass it in edi and read the result from eax, so the
-    call keeps void * rather than compile to one that computes something else.
+    Every pass leaves these locals void * (asserts 9 to 16): twice calls one
+    local with one and with two arguments; chosen's local receives the address
+    of r1, whose own prototype C would have to match; sorter hands its local to
+    qsort, whose comparator slot has the header's own type. Pass 2 casts the
+    local at each of those calls to the call's own type instead (asserts 20 to
+    23). fstore passes the float it loaded, which recovery holds as an unsigned
+    int in xmm0. A type built from that unsigned int would pass it in edi and
+    read the result from eax, so that call keeps void * in every pass rather
+    than compile to one that computes something else.
 
     Pass 3 (ctypes off, calltargettype on) prints the upstream spelling it
     always printed: the option needs C's own spelling, so it does nothing there
@@ -166,8 +168,8 @@ c3
 <stringmatch name="CALLTARGETTYPE #6: on declares the field temporary from its call" min="2" max="2">int \(\*v1\)\(unsigned int\); // tmp</stringmatch>
 <stringmatch name="CALLTARGETTYPE #7: on casts the field to the call type where off cast it to void *" min="2" max="2">v1 = \(int \(\*\)\(unsigned int\)\)\*a0;</stringmatch>
 <stringmatch name="CALLTARGETTYPE #8: off casts the field to void *, as twice does in both ctypes passes" min="6" max="6">v1 = \(void \*\)\*a0;</stringmatch>
-<stringmatch name="CALLTARGETTYPE #9: calls of two arities keep the local untyped" min="6" max="6">v2 = \(\*v1\)\(a1\);</stringmatch>
-<stringmatch name="CALLTARGETTYPE #10: the two calls are unchanged" min="6" max="6">return \(\*v1\)\(a1,a1\) \+ v2;</stringmatch>
+<stringmatch name="CALLTARGETTYPE #9: off and ctypes off call the local of two arities bare" min="4" max="4">v2 = \(\*v1\)\(a1\);</stringmatch>
+<stringmatch name="CALLTARGETTYPE #10: off and ctypes off make the second call bare too" min="4" max="4">return \(\*v1\)\(a1,a1\) \+ v2;</stringmatch>
 <stringmatch name="CALLTARGETTYPE #11: a local holding a function address keeps void *" min="4" max="4">void \*v2; // ram 0x200100 \| rbp</stringmatch>
 <stringmatch name="CALLTARGETTYPE #12: the address is still stored into it" min="6" max="6">v2 = (c_)?r1;</stringmatch>
 <stringmatch name="CALLTARGETTYPE #13: a local handed to a library callback slot keeps void *" min="4" max="4">v1 = \*\(void \*\*\)\(.*0x200200\);</stringmatch>
@@ -177,4 +179,8 @@ c3
 <stringmatch name="CALLTARGETTYPE #17: ctypes off keeps the upstream table call" min="2" max="2">\(\*\*\(code \*\*\)\(a0 \* 8UL \+ 0x200000\)\)\(\);</stringmatch>
 <stringmatch name="CALLTARGETTYPE #18: ctypes off keeps code * temporaries" min="4" max="4">code \*v1; // tmp</stringmatch>
 <stringmatch name="CALLTARGETTYPE #19: ctypes off builds no function type" min="0" max="0">int4 \(\*</stringmatch>
+<stringmatch name="CALLTARGETTYPE #20: on casts the local of two arities to each call's own type" min="2" max="2">v2 = \(\*\(long \(\*\)\(unsigned long\)\)v1\)\(a1\);</stringmatch>
+<stringmatch name="CALLTARGETTYPE #21: on casts the second call to its two-argument type" min="2" max="2">return \(\*\(long \(\*\)\(unsigned long,unsigned long\)\)v1\)\(a1,a1\) \+ v2;</stringmatch>
+<stringmatch name="CALLTARGETTYPE #22: on casts the local holding a function address at each call" min="4" max="4">\(\*\(int \(\*\)\(unsigned int,unsigned long\)\)v2\)\(a1,[12]\)</stringmatch>
+<stringmatch name="CALLTARGETTYPE #23: on casts the local handed to qsort at its call" min="2" max="2">\(int\)\(\*\(int \(\*\)\(unsigned int \*,void \*\)\)v1\)\(a0,&amp;a0\[1\]\)</stringmatch>
 </decompilertest>
