@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_282() {
-    assert_eq!(kuna_num_settables(), 282);
-    assert_eq!(SETTABLE_TABLE.len(), 282);
+fn settable_count_is_283() {
+    assert_eq!(kuna_num_settables(), 283);
+    assert_eq!(SETTABLE_TABLE.len(), 283);
 }
 
 #[test]
-fn tier_counts_are_97_core_109_transform_76_analysis() {
+fn tier_counts_are_98_core_109_transform_76_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_97_core_109_transform_76_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (97, 109, 76));
+    assert_eq!((core, transform, analysis), (98, 109, 76));
 }
 
 #[test]
@@ -649,6 +649,7 @@ fn option_values_live_value_present_for_110() {
                             | "mixedtailret"
                             | "calleereadarg"
                             | "zerofillreturn"
+                            | "zerocallregs"
                             | "calleepreserves"
                             | "calleeretpreserves"
                             | "calleescratchbody"
@@ -985,7 +986,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 257 -> 258: +1 for `bejoin`.
     // +1 for `coldentry`; its P1 row sits mid-table beside `fdeinterior`.
     // +1 for `thunkentry`; its P1 row sits mid-table beside `unmappedentry`.
-    assert_eq!(json.matches("},\n").count(), 281);
+    // +1 for `zerocallregs`; its P4 row sits mid-table beside `zerofillreturn`.
+    assert_eq!(json.matches("},\n").count(), 282);
 }
 
 #[test]
