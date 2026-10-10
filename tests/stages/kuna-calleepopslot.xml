@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    A slot pushed in front of one call and popped by a later one keeps the
+    callee-pop guess right (`option calleepopslot on|off`).
+
+    Issue: GH Noelo-Lab/kuna#991. MSVC builds a class returned by value in the
+    stack slot that is then the by-value argument of the next call, and that
+    callee pops it. 0x401000 is
+      void F(void) { Arr a, r; Note(1); a = Load(0x2a0017); Note(0x40000001); }
+    where `Load` (__cdecl) returns a 4-byte class through a hidden pointer and
+    `Arr::operator=(Arr)` is __thiscall and pops the hidden return pointer and
+    the slot (`ret 8`). All three are MSVC-mangled imports from arr.dll; the
+    class size is not in the name, so `msvcsig` declares `Note` only.
+
+    Stage / sub-stage: P6 stack-pointer-flow (`StackSolver::build`'s guessed
+    equation for an unknown extrapop, `p6_variables/kuna_calleepopslot.rs`).
+
+    P0 assertion: `option calleepopslot on|off` (on by default, under
+    `calleepop`).
+
+    The fixture `calleepopslot_i386.exe` is the issue's clean-room repro,
+    assembled from `calleepopslot_i386.asm` (see the fixtures README).
+
+    Pass 1 (`option calleepopslot off`) reproduces the BUG: the push run in front
+    of `Load` reaches the slot, `add esp,8` covers only two of its three slots,
+    so `Load` is credited with popping all three. The hidden return pointer for
+    `operator=` then lands on the local `r` (`v1 = &v1;`) and `operator=` has no
+    arguments.
+    Pass 2 (default) is the FIX: the push after `add esp,8` sits above `Load`'s
+    own result, so `Load` popped nothing, and the run in front of `operator=`
+    continues past `Load` to the slot, so `operator=` pops 12. `operator=` takes
+    the hidden return pointer and `Note(0x40000001)` keeps its argument.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleepopslot_i386.exe</com>
+  <com>option calleepopslot off</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleepopslot_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLEEPOPSLOT #1: off lands the hidden return pointer on the local" min="1" max="1">v1 = &amp;v1;</stringmatch>
+<stringmatch name="CALLEEPOPSLOT #2: off leaves operator= without arguments" min="1" max="1">operator=\(\);</stringmatch>
+<stringmatch name="CALLEEPOPSLOT #3: on passes the hidden return pointer to operator=" min="1" max="1">operator=\(v1\);</stringmatch>
+<stringmatch name="CALLEEPOPSLOT #4: the first Note keeps its argument in both passes" min="2" max="2">Note\(1\);</stringmatch>
+<stringmatch name="CALLEEPOPSLOT #5: the second Note keeps its argument in both passes" min="2" max="2">Note\(0x40000001\);</stringmatch>
+</decompilertest>

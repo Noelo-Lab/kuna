@@ -296,6 +296,12 @@ kuna_options! { self, p1;
         self.callee_pop = val;
         Ok(msg)
     },
+    "calleepopslot" => {
+        let (val, msg) =
+            crate::p6_variables::kuna_calleepopslot::OptionCalleePopSlot.apply(p1)?;
+        self.callee_pop_slot = val;
+        Ok(msg)
+    },
     "calleeprotostack" => {
         let (val, msg) =
             crate::p4_calls::kuna_calleeprotostack::OptionCalleeProtoStack.apply(p1)?;

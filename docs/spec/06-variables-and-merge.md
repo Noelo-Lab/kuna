@@ -2245,6 +2245,48 @@ outgoing-argument slot that lands inside the caller's `localrange` once the
 frame is the right size is scored no-use by `checkInputTrialUse` (§4.4) and the
 argument is dropped, which is visible on deep-frame MSVC CRT helpers.
 
+The push run is read wrong when a slot outlives the call it was pushed in
+front of (option `calleepopslot`, default on, consulted only under
+`calleepop`). MSVC builds a class returned by value directly in the stack slot
+that is then the by-value argument of the next call: `push ecx` reserves the
+slot, a `__cdecl` callee writes it through a hidden pointer, the caller's
+`add esp,8` removes only that callee's two arguments, and a later `__thiscall`
+callee pops the slot together with its own arguments (`ret 8`). The run in
+front of the first call reaches the slot and the cleanup covers two of its
+three slots, so the bounded veto does not fire and the first callee is
+credited with popping all three; for the second call the cleanup and its one
+push cancel, so its return-address slot is the first call's result itself and
+the guess gives up at `4`. The class size is not in the mangled name, so a
+demangled prototype cannot settle the second cleanup either.
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_calleepopslot.rs
+(guess_extra_pop)` reads the caller's stack depth for consistency instead.
+A push through a stack-pointer value strictly above the call's own result —
+which only a raise followed by a push produces — vetoes a callee pop: had the
+callee popped the run, that push would land above it, on the caller's frame.
+The push must come before any other call in the block, since a later call's
+own pop (a declared one included) would move it. An epilogue raises the stack
+pointer too, so the veto is declined when the run
+ended at a saved register, when a slot up to the push is first popped into a
+register, and when the store is only a later call's return address. A
+return-address slot that is an earlier reference is walked from that
+reference, but only when stack activity continues from the call's result, so a
+cleanup after the call would be seen, and only when no cleanup is deferred past
+the next call: MSVC cleans two `__cdecl` calls with one `add esp,8` after the
+second, so a raise after the next call that — taking that call to pop nothing,
+which only lowers the reach — lands above this call's result keeps the `4`.
+And when the walk reaches a slot that nothing has pushed since the call right
+before returned, and the caller never raised the stack pointer to it
+afterwards, the walk continues in that call's
+frame, provided its pop is *settled* — an exact extrapop, or the
+return-address-only guess of a call with nothing pushed for it or whose pushes
+the caller cleans up. `StackSolver::build` records each settled pop as it
+builds the equations. A slot found there counts only when its push precedes
+that call (earlier in its block, or in a dominating block); a guessed callee
+pop is never settled, so a wrong guess is not carried into the next call, and
+the walk continues past one call only. A push of a register's input value
+still ends the run, so a slot reserved with `push ecx` before a function's
+first call is still not counted for the call that pops it.
+
 A declared struct parameter split across registers and the entry stack can be
 spilled contiguously beside its incoming stack tail. The spill then crosses
 entry SP=0, so the ordinary local-only range cannot describe the whole object.

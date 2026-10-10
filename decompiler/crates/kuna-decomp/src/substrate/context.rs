@@ -965,6 +965,10 @@ pub struct ArchContext {
     /// [`StackSolver::build`](crate::coreaction_stackptr) through
     /// [`crate::p6_variables::kuna_calleepop::guess_extra_pop`].
     pub callee_pop: bool,
+    /// (kuna) keep the `calleepop` guess right for a slot pushed in front of one
+    /// call and popped by a later one (`calleepopslot`).  Read by
+    /// [`crate::p6_variables::kuna_calleepopslot::guess_extra_pop`].
+    pub callee_pop_slot: bool,
     /// (kuna) `calleeprotostack` — a declared callee's locked prototype states
     /// its stack contract.  See [`crate::p4_calls::kuna_calleeprotostack`].
     pub callee_proto_stack: bool,
@@ -1768,6 +1772,7 @@ impl ArchContext {
             // calleepop only refines a guess the solver already had to make, so
             // the hand-built-fixture seam carries the same default.
             callee_pop: true,
+            callee_pop_slot: true,
             callee_proto_stack: true,
             // argclobber only drops a trailing argument the callee's own
             // recovered prototype says it never reads, and declines outright

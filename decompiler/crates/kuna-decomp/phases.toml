@@ -2673,6 +2673,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "calleepopslot"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "stack-pointer-flow"
+strength = "HARD"
+rewind = "P6"
+issue = "GH-991"
+summary = "Keep the calleepop guess right when a stack slot is pushed in front of one call and popped by a later one. MSVC builds a class returned by value in the slot that is then the by-value argument of the next call: `push ecx` reserves it, a __cdecl callee writes it through a hidden pointer and the caller's `add esp,8` removes only that callee's two arguments, and a later __thiscall callee pops the slot with its own arguments (`ret 8`). The push run in front of the first call reaches the slot and the cleanup covers two of its three slots, so the bounded caller-cleanup veto does not fire and the first callee is credited with popping all three; for the second call the cleanup and its one push cancel, so its return-address slot is the first call's result and the guess gives up at 4. With the option on, a push through a stack-pointer value strictly above the call's own result (a raise followed by a push) vetoes a callee pop, since under that pop the push would land above the run on the caller's frame; the push must come before any other call -- declined when the run ended at a saved register, when a slot up to the push is popped into a register first, and when the store is only a later call's return address (an epilogue). A return-address slot that is an earlier reference is walked when stack activity continues from the call's result and no cleanup is deferred past the next call (a raise after the next call that, taking that call to pop nothing, lands above this call's result keeps 4). And a walk that reaches a slot nothing pushed since the call right before returned, and that the caller never raised the stack pointer to afterwards, continues in that call's frame when its pop is settled (an exact extrapop, or a return-address-only guess with nothing pushed for it or caller-cleaned), counting a slot there only when its push precedes that call. Consulted only where calleepop already is."
+use_when = "On by default: the flip moves 0 of 675 datatest assertions and is inert on any spec that states its own extrapop. Flip OFF to restore calleepop's plain push-run reading. With it off, an MSVC x86 PE whose function builds a by-value class in an outgoing slot drops the stack arguments of every later call in that function, prints return addresses as data and turns pushed arguments into assignments. Still not counted: a slot reserved with `push ecx` before the function's first call, which reads as a saved register."
+example = "option calleepopslot off"
+source_decompiler = "kuna"
+inspiration = "upstream StackSolver::build (coreaction.cc:162) guessed equation + MSVC by-value class return slots"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "after an msvc c++ call that takes a class by value every later call in the function loses its stack arguments|return addresses print as constants stored to stack locals in an x86 windows pe|a pushed argument becomes an assignment to a local before the call|a __thiscall import that pops a by-value class argument is called with no arguments"
+live_field = "callee_pop_slot"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "cookiescramble"
 values = "on|off"
 default = "on"
