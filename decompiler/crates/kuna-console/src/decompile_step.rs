@@ -353,7 +353,7 @@ pub fn decompile_one_prefollowed(
         result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
             arch,
             name,
-            redo_entry,
+            redo_entry.clone(),
             size,
             seed.mapped_symbols,
             seed.usepoint_symbols,
@@ -363,6 +363,33 @@ pub fn decompile_one_prefollowed(
             &last_overrides,
             seed.mapped_params,
         );
+    }
+    // (kuna `callerreads`) A `void` function decompiled alone whose callers read
+    // a return register after the call is driven again returning it. A batch
+    // settles the same question from the callers it decompiles (`voidret`).
+    let read = match &result {
+        Ok(fd) if !arch.kuna_float_scan_batch => kuna_decomp::kuna_callerreads::read(arch, fd),
+        _ => None,
+    };
+    if let Some(storage) = read {
+        kuna_decomp::kuna_callerreads::force(arch, &redo_entry, storage);
+        let redo = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
+            arch,
+            name,
+            redo_entry.clone(),
+            size,
+            seed.mapped_symbols,
+            seed.usepoint_symbols,
+            seed.dynamic_symbols,
+            seed.pending_proto,
+            &flow_overrides,
+            &last_overrides,
+            seed.mapped_params,
+        );
+        kuna_decomp::kuna_callerreads::release(arch, &redo_entry);
+        if redo.as_ref().is_ok_and(kuna_decomp::kuna_callerreads::returns_value) {
+            result = redo;
+        }
     }
     arch.format_override_callpoints.clear();
     arch.readonlypropagate = saved_readonlypropagate;

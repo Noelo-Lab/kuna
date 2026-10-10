@@ -693,6 +693,7 @@ kuna_options! { self, p1;
     "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
     "calltargettype" => on_off!(call_target_type, "indirect-call target types"),
     "floatglobals" => on_off!(float_globals, "float typing of globals moved only through float registers"),
+    "callerreads" => on_off!(caller_reads, "return recovery from what the callers read"),
     "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
     "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
     "floatbits" => on_off!(float_bits, "float typing of helpers that work on a float's bits"),

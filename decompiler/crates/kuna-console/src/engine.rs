@@ -2969,6 +2969,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // silently re-enables a pass id that does not exist.
         "noreturn_discstrict" => arch.analysis_noreturn_discstrict,
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
+        "callerreads" => arch.caller_reads,
         "fid" => arch.analysis_fid,
         // (kuna) MSVC RTTI / vftable recovery — a standalone load-time pass whose
         // class-name + RTTI_* labels are computed at LOAD but COMMITTED only when
@@ -4565,6 +4566,15 @@ fn commit_analysis_output(
         sites.sort_unstable();
         sites.dedup();
         prog.arch_mut().error_noreturn_callsites = sites;
+    }
+
+    // (kuna `callerreads`) Park where each direct call returns to. Empty without
+    // the Listing, so the datatest/console parity paths are unaffected.
+    if !out.call_returns.is_empty() {
+        let mut sites = out.call_returns.clone();
+        sites.sort_unstable();
+        sites.dedup();
+        prog.arch_mut().kuna_call_returns = sites;
     }
 
     // 3a''. (kuna `formatstring static`) Park the per-call-site printf/scanf

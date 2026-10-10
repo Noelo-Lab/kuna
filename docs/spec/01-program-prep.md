@@ -4285,6 +4285,17 @@ stripped x86-64 ELFs and 12 i386 PEs without incremental linking it adds and rem
 nothing, so their output is unchanged (`decompile-all` is byte-identical on `gzip`,
 `dash`, `diff` and two of the PEs). Off restores the previous discovery set exactly.
 
+(kuna) `callerreads` (default-on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs (call_returns)`)
+reads the completed walk for the decompiler rather than for the inventory: every
+Call cross-reference, paired with the address its calling instruction falls through
+to, as `(callee entry, return address)`, sorted and de-duplicated
+(`AnalysisOutput::call_returns`). The commit parks the list on the architecture,
+and a single-function decompile of a function recovered `void` decodes its callers
+from those addresses to see whether they read its return register (chapter
+[04](04-calls-and-prototypes.md)). It adds no entry and no decode to the walk; off,
+nothing is filed.
+
 A context painter applies the ARM/MIPS decode-mode paints per address before each
 decode, so a Thumb or MIPS16 body disassembles in the right ISA. Each instruction
 is decoded by driving `Translate::one_instruction` with a capturing p-code sink

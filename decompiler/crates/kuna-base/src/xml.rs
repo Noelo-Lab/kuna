@@ -2058,7 +2058,7 @@ mod tests {
         // and kuna-aifbracket / an AIF candidate that rejoins the function around
         // it is not a function (GH-299)
         // and kuna-aifnoppad / no AIF entry starts on nop padding (GH-299)
-        assert_eq!(count, 489, "corpus file count drifted");
+        assert_eq!(count, 490, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

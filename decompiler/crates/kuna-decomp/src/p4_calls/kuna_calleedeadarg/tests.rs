@@ -296,3 +296,39 @@ fn a_constant_writing_idiom_is_not_a_live_read() {
     }));
     assert!(!is_value_erasing(&with(OpCode::CPUI_INT_OR, konst(0xffff_ffff, 8))));
 }
+
+/// [`CalleeEntryDead::low_read_width`] measures a read from the register's
+/// least significant end: `mov %eax,%esi` reads four bytes of `rax`, `test
+/// %al,%al` one, and a read of `ah` alone does not read the low byte at all.
+/// On a big-endian register file the low end is the last byte.
+#[test]
+fn a_read_is_measured_from_the_low_end() {
+    let space = |big: bool| {
+        Rc::new(kuna_base::space::AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "register",
+            big,
+            8,
+            1,
+            3,
+            kuna_base::space::addrspace_flags::hasphysical,
+            1,
+            1,
+        ))
+    };
+    let summary = |off: u64, sz: int4| CalleeEntryDead {
+        reg_idx: 3,
+        reads_live: vec![(3, off, sz)],
+        live_read_bytes: (off..off + sz as u64).map(|b| (3, b)).collect(),
+        complete: true,
+        ..CalleeEntryDead::default()
+    };
+    let le = Address::new(space(false), 0);
+    assert_eq!(summary(0, 4).low_read_width(&le, 8), Some(4));
+    assert_eq!(summary(0, 1).low_read_width(&le, 8), Some(1));
+    assert_eq!(summary(0, 8).low_read_width(&le, 8), Some(8));
+    assert_eq!(summary(1, 1).low_read_width(&le, 8), None);
+    let be = Address::new(space(true), 0x18);
+    assert_eq!(summary(0x1c, 4).low_read_width(&be, 8), Some(4));
+    assert_eq!(summary(0x18, 4).low_read_width(&be, 8), None);
+}

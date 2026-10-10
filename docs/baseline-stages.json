@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2487,
-    2487
+    2495,
+    2495
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -154,6 +154,14 @@
     "data:CALLEESCRATCHBODY #5: both passes, so g keeps the convention's answer unchanged",
     "data:CALLEEVOTE #1: the lone field stays raw offset arithmetic in both passes",
     "data:CALLEEVOTE #2: no record is synthesized without a closed caller set",
+    "data:CALLERREADS #1: with the option off a value stored to a global and returned prints void",
+    "data:CALLERREADS #2: with the option off a loaded value stored to two globals and returned prints void",
+    "data:CALLERREADS #3: with the option off a tail call's result prints void",
+    "data:CALLERREADS #4: a value its caller reads is returned though it is also stored",
+    "data:CALLERREADS #5: the stored global and the return are the same value",
+    "data:CALLERREADS #6: a loaded value its caller reads is returned",
+    "data:CALLERREADS #7: a tail call whose result the caller reads is returned",
+    "data:CALLERREADS #8: a function whose caller ignores the register stays void",
     "data:CALLOVERLAP #1: off, the call is emitted with no arguments at all (the CVTSI2SD result never reaches it)",
     "data:CALLOVERLAP #2: off, f loses its own parameter list because the argument chain dies with the trial",
     "data:CALLOVERLAP #3: off, the call result is read from a local that nothing ever assigns",
