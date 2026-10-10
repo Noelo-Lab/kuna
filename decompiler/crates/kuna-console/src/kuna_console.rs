@@ -307,6 +307,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "rawdiscover" => on_off(conf.analysis_rawdiscover),
         "gopclntab" => on_off(conf.analysis_gopclntab),
         "aifbracket" => on_off(conf.analysis_aifbracket),
+        "aifnoppad" => on_off(conf.analysis_aifnoppad),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested
         // state (the live spec-selection gate is the load-time env var, but the
         // catalog `current` mirrors the `option macho-arm64e on|off` request).

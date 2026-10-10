@@ -34,6 +34,7 @@ pub(crate) fn run(
             arch.analysis_aifstrict,
             arch.analysis_aifcorroborate,
             bracket,
+            arch.analysis_aifnoppad,
         )
     } else {
         super::run_aif(
@@ -44,6 +45,7 @@ pub(crate) fn run(
             arch.analysis_aifstrict,
             arch.analysis_aifcorroborate,
             bracket,
+            arch.analysis_aifnoppad,
         )
     };
     let mut pool_entries = Vec::new();

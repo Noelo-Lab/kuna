@@ -2999,6 +2999,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // `run_aif`. Registered here so the fail-open `_ => true` never silently
         // re-enables a pass id that does not exist.
         "aifbracket" => arch.analysis_aifbracket,
+        // (kuna, GH-299) The AIF filler reject, shaping the `aif` accept list the
+        // same way; registered for the same fail-open reason.
+        "aifnoppad" => arch.analysis_aifnoppad,
         // (kuna) Tail-call function-entry recovery — default-OFF (discovers more
         // functions, so it changes emitted C by construction). Listing consumer;
         // the live gate is the pre-invocation check in `run_listing_consumers`.

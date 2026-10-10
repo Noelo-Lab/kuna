@@ -1355,3 +1355,18 @@ a pointer in `.rdata` and after int3 padding, also jumps to `.join`. With `aifbr
 gap walk lists `sub_4011fd`; on, only `shared` stays. Rebuild from this directory with
 nasm 2.15: `nasm -f bin -I . -o aifbracket_pe_i386.exe aifbracket_pe_i386.asm`. Used by
 `tests/stages/kuna-aifbracket.xml`.
+
+### AIF candidates on nop padding
+
+`aifnoppad_pe_i386.exe` (2,048 bytes, PE32/i386, SHA-256
+`0f1d68cb4dccae8c032fcf70640f38c95afab3a0516988c2a3c9dbd3a1e54259`) is a clean-room
+reduction of the GH-299 padding entries: `start`@`0x401000` calls five stubs that open with
+nine nops (so `nop, nop` is a shared prologue fingerprint), 16 hot-patchable leaves
+(`mov edi,edi; push ebp; ...`), `relay`@`0x401220` and `hot`@`0x401230`. `relay` ends with
+`ret 4` at `0x401228`, and eight nops pad to `hot`. `dead`@`0x401239` (unreferenced, opens
+with `mov edi,edi` right after `hot`'s return) and `lone`@`0x40124c` (unreferenced, behind
+six nops, with a prologue nothing else shares) are only found by the gap walk. With
+`aifnoppad` off it lists `sub_401228` and `sub_401248` on the padding; on, it lists
+`sub_401239` and `sub_40124c`. Rebuild from this directory with nasm 2.15:
+`nasm -f bin -I . -o aifnoppad_pe_i386.exe aifnoppad_pe_i386.asm`. Used by
+`tests/stages/kuna-aifnoppad.xml`.

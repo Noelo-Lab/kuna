@@ -4587,6 +4587,37 @@ without losing or gaining a true function start; most of the mid-body entries th
 remain never touch decoded code — the tail of a function that ends in its own return
 — and are outside what a flow-join proof can see.
 
+(kuna, GH-299) No gap entry starts on filler: `aifnoppad` (default-on;
+`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifnoppad.rs`). The holes
+between functions are mostly alignment padding, which the fingerprint test normally
+refuses because no four discovered functions open with two `nop`s. Some images do
+have them — Wine's exported unimplemented-function stubs open with nine `nop`s — and
+then the `nop` run between each relay thunk's `ret` and the next thunk's
+hot-patchable `mov edi,edi` entry passes both tests (a fingerprint match, and a valid
+subroutine that falls through into decoded code) and becomes a function of its own
+in front of one kuna already has; zero halfwords around ARM literal pools are
+accepted the same way, and an accepted zero run swallows the function behind it. A
+candidate whose first instruction is filler is therefore classified by the run of
+filler it opens. Zero fill (x86 `add [eax],al`, A32 `andeq r0,r0,r0`, Thumb
+`movs r0,r0`) is never probed. Padding — `nop` of any width, `int3`, a self-`lea`,
+or a register self-move on a 32-bit target — is not probed when the run ends
+exactly at a known function entry; when it ends at undecoded code the candidate is
+probed as before, but an accept is planted on the first instruction after the
+padding, since that is where the function the walk just validated begins. Padding
+is never refused outright in front of undecoded code because it is also a
+legitimate first instruction: symbol tables start 903 functions with `nop` in the
+i386 PE corpus and 56 in the ARM one (Wine's stubs, an empty `-O0` function's
+`nop; bx lr`), and `-fpatchable-function-entry` starts every function with one.
+`mov edi,edi` is never padding — it is the MSVC hot-patch prologue that opens 7,827
+true starts in the PE corpus — and neither is any self-move on a 64-bit target,
+where a 32-bit one zero-extends its register. A refusal is a plain reject, not a
+body claim, so the cursor moves on through the filler. Like `aifbracket` it runs
+only in the plain gap walk. Scored against unstripped twins in the default mode it
+loses no true function start on any corpus and gains 50 on the i386 PEs (the
+function behind padding, now at its own address) and 38 on the ARM ELFs (the
+function a zero run used to swallow); it removes 7,446 non-start PE entries and a
+net 77 mid-body ARM ones, and leaves i386 and x86-64 ELFs unchanged.
+
 (kuna, GH-313) Upstream applies a **second** fingerprint test that kuna's port
 dropped. Its analyzer refuses a candidate twice — once on the shared-prologue count
 alone, and again after the validity walk, where a routine that adds no information
