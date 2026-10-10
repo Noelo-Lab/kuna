@@ -22,7 +22,7 @@
 use std::path::PathBuf;
 
 use kuna_console::assertions::{self, Body, Directive, Outcome};
-use kuna_console::engine::{bootstrap_from_object, ConsoleProgram, EntrySelector};
+use kuna_console::engine::{bootstrap_from_file, bootstrap_from_object, ConsoleProgram, EntrySelector};
 use kuna_console::project::decompile_targets;
 
 const TARGET: &str = "authenticate";
@@ -812,4 +812,167 @@ fn a_renamed_stack_local_does_not_get_a_second_symbol() {
     all_applied(&report);
     assert_eq!(code.matches("char credbuf [8];").count(), 1, "the slot is not declared once:\n{code}");
     assert!(!code.contains(" v2 ["), "a second Symbol took the slot:\n{code}");
+}
+
+#[test]
+fn a_one_formal_custom_input_carries_the_getter_result() {
+    let root = repo_root();
+    let xml = root.join("tests/stages/kuna-custom-call-storage.xml");
+    let mut prog = bootstrap_from_file(
+        xml.to_str().unwrap(),
+        "",
+        &[root.join("specs").to_str().unwrap().to_string()],
+    )
+    .expect("bootstrap authored x86 fixture with built processor specs");
+    prog.set_assertions(vec![
+        directive(
+            "prototype probe int4 MSABI probe(void *object)",
+            Body::Prototype {
+                func: "probe".into(),
+                decl: "int4 MSABI probe(void *object)".into(),
+            },
+        ),
+        directive(
+            "prototype getter int4 MSABI getter(void *object)",
+            Body::Prototype {
+                func: "getter".into(),
+                decl: "int4 MSABI getter(void *object)".into(),
+            },
+        ),
+        directive(
+            "prototype mapper int4 MSABI mapper(int4 raw_type)",
+            Body::Prototype {
+                func: "mapper".into(),
+                decl: "int4 MSABI mapper(int4 raw_type)".into(),
+            },
+        ),
+        directive(
+            "param mapper::0 %EDX int4 raw_type",
+            Body::Param {
+                func: Some("mapper".into()),
+                index: 0,
+                storage: "%EDX".into(),
+                decl: "int4 raw_type".into(),
+            },
+        ),
+    ]);
+    assertions::apply_program_scoped(&mut prog);
+    let entry = prog
+        .resolve_entry(&EntrySelector::Name("probe".into()))
+        .unwrap();
+    let funcs = decompile_targets(&mut prog, vec![entry], false, false, false);
+    all_applied(&prog.assertion_outcomes());
+    let code = funcs[0].code.as_deref().unwrap_or_default();
+    let forwards_getter = code.contains("mapper(getter(object))")
+        || code
+            .lines()
+            .filter_map(|line| line.split_once(" = getter(object);"))
+            .any(|(name, _)| code.contains(&format!("return mapper({});", name.trim())));
+    assert!(forwards_getter, "wrong custom argument:\n{code}");
+}
+
+#[test]
+fn callable_types_keep_distinct_explicit_input_and_output_storage() {
+    use kuna_base::address::Address;
+    use kuna_console::grammar::{parse_protopieces, DataOrg};
+    use kuna_decomp::fspec::{parameter_pieces_flags, ParameterPieces};
+    use std::rc::Rc;
+
+    let prog = load();
+    let arch = prog.arch();
+    let (addr_size, word_size) = arch.data_org();
+    let model = arch.get_model("MSABI").cloned().expect("x86 MSABI model");
+    let mut pieces = parse_protopieces(
+        "int4 mapper(int4 raw_type);",
+        arch.types(),
+        DataOrg {
+            addr_size,
+            word_size,
+        },
+    )
+    .unwrap();
+    let piece = |name: &str, ty: Rc<kuna_decomp::dtype::Datatype>| {
+        let reg = arch.get_register_varnode(name.as_bytes()).unwrap();
+        ParameterPieces {
+            addr: Address::new(reg.space.unwrap(), reg.offset),
+            type_: Some(ty),
+            flags: parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::NAMELOCK,
+        }
+    };
+    let mut previous: Option<Rc<kuna_decomp::dtype::Datatype>> = None;
+    for name in ["ECX", "EDX", "R8D", "ECX", "EDX"] {
+        let input = piece(name, Rc::clone(&pieces.intypes[0]));
+        pieces.input_storage = vec![(0, input.clone())];
+        let code = arch
+            .types_impl()
+            .get_type_code_proto_model(&pieces, Rc::clone(&model))
+            .unwrap();
+        let proto = code.get_code_prototype().unwrap();
+        assert_eq!(proto.num_params(), 1);
+        assert_eq!(
+            proto.get_param(0).unwrap().get_address(),
+            input.addr,
+            "input {name}"
+        );
+        assert!(proto.is_input_locked());
+        if let Some(previous) = previous {
+            let structural = previous.compare(&code, 10).unwrap();
+            let dependency = previous.compare_dependency(&code).unwrap();
+            assert_ne!(structural, 0);
+            assert_ne!(previous.compare(&code, 0).unwrap(), 0);
+            assert_ne!(dependency, 0);
+            assert_eq!(structural, -code.compare(&previous, 10).unwrap());
+            assert_eq!(dependency, -code.compare_dependency(&previous).unwrap());
+        }
+        previous = Some(code);
+    }
+    let repeated = arch
+        .types_impl()
+        .get_type_code_proto_model(&pieces, Rc::clone(&model))
+        .unwrap();
+    assert!(Rc::ptr_eq(previous.as_ref().unwrap(), &repeated));
+    for name in ["EAX", "EBX", "R9D", "EAX", "EBX"] {
+        let output = piece(name, Rc::clone(pieces.outtype.as_ref().unwrap()));
+        pieces.output_storage = Some(output.clone());
+        let code = arch
+            .types_impl()
+            .get_type_code_proto_model(&pieces, Rc::clone(&model))
+            .unwrap();
+        let proto = code.get_code_prototype().unwrap();
+        assert_eq!(
+            proto.get_output().get_address(),
+            output.addr,
+            "output {name}"
+        );
+        assert!(proto.is_output_locked());
+    }
+    pieces.outtype = None;
+    pieces.output_storage = None;
+    let code = arch
+        .types_impl()
+        .get_type_code_proto_model(&pieces, Rc::clone(&model))
+        .unwrap();
+    let proto = code.get_code_prototype().unwrap();
+    assert_eq!(
+        proto.get_param(0).unwrap().get_address(),
+        pieces.input_storage[0].1.addr
+    );
+    assert!(!proto.is_output_locked());
+    pieces.intypes.clear();
+    pieces.innames.clear();
+    pieces.input_storage.clear();
+    let output = piece(
+        "EBX",
+        arch.types()
+            .get_base(4, kuna_decomp::dtype::type_metatype::TYPE_INT)
+            .unwrap(),
+    );
+    pieces.output_storage = Some(output.clone());
+    let code = arch
+        .types_impl()
+        .get_type_code_proto_model(&pieces, model)
+        .unwrap();
+    let proto = code.get_code_prototype().unwrap();
+    assert_eq!(proto.get_output().get_address(), output.addr);
+    assert!(proto.is_output_locked());
 }

@@ -210,6 +210,12 @@ assembled synthetic examples; it contains no bytes from the reported binary.
 local preserves the incoming parameter, its entry comparisons, and the value
 passed to a callee across repeated decompilation. Its instructions are synthetic.
 
+`kuna-custom-call-storage.xml` checks an authored MSABI caller whose getter
+return is passed in EDX to a callee with one explicit formal. Repeated builds
+retain that value and the one-formal signature; the ordinary two-slot prototype
+passes the same value as argument two. The assertion API and callable-type
+interning controls are in `kuna-console/tests/verify_assertplane.rs`.
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Authored one-formal custom-storage call transport, P5 callable types.
+    probe preserves its object in RCX and moves getter's EAX return into EDX
+    before calling mapper. mapper reads EDX only. The explicit slot-0 storage
+    must override MSABI's normal ECX slot without introducing a dummy receiver.
+    This is a correctness fix; the ordinary two-slot declaration is a control.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+534883ec204889cbe8f30000004889d989c2e8e90100004883c4205bc3
+</bytechunk>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+8b4110c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100200" readonly="true">
+8d4203c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="probe"/>
+<symbol space="ram" offset="0x100100" name="getter"/>
+<symbol space="ram" offset="0x100200" name="mapper"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 MSABI probe(void *object);</com>
+  <com>parse line extern int4 MSABI getter(void *object);</com>
+  <com>parse line extern int4 MSABI mapper(int4 raw_type);</com>
+  <com>map param mapper::0 %EDX int4 raw_type</com>
+  <com>lo fu probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mapper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern int4 MSABI mapper(void *unused_receiver,int4 raw_type);</com>
+  <com>lo fu probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CUSTOM-CALL-STORAGE #1: getter supplies the one-formal call across rebuilds" min="2" max="2">return mapper\(raw_type\);</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #2: the callee has exactly one formal" min="1" max="1">^int4 mapper\(int4 raw_type\)$</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #3: the callee reads its declared input" min="1" max="1">return raw_type \+ 3;</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #4: the ordinary two-slot control passes getter as argument two" min="1" max="1">return mapper\(object,raw_type\);</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #5: the custom call never reads the receiver as an integer" min="0" max="0">mapper\(\(int4\)object\)</stringmatch>
+<stringmatch name="CUSTOM-CALL-STORAGE #6: all three caller runs retain the getter result" min="3" max="3">raw_type = getter\(object\);</stringmatch>
+</decompilertest>
