@@ -124,6 +124,9 @@ mod fid_cli;
 #[path = "float_unordered_compare.rs"]
 mod float_unordered_compare;
 
+#[path = "float_precision.rs"]
+mod float_precision;
+
 #[path = "function_boundary_return_cli.rs"]
 mod function_boundary_return_cli;
 

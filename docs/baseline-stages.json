@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2506,
-    2506
+    2513,
+    2513
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -470,6 +470,13 @@
     "data:FLOATPARAM #5: a double copied into a global keeps its integer type",
     "data:FLOATPARAM #6: bits handed back in an integer register stay an integer",
     "data:FLOATPARAM #7: a double copied into a global nothing else reads as an integer is a double",
+    "data:FLOATPRECISION #1: scalar subtraction and addition stay double",
+    "data:FLOATPRECISION #2: original float grouping survives",
+    "data:FLOATPRECISION #3: conversion-only roundtrip simplifies",
+    "data:FLOATPRECISION #4: widened multiplication keeps intermediate range",
+    "data:FLOATPRECISION #5: widened division keeps intermediate range",
+    "data:FLOATPRECISION #6: packed low lane stays double until its store",
+    "data:FLOATPRECISION #7: packed high lane stays double until its store",
     "data:FLOATRET #10: a float handed on to an integer parameter keeps its bits",
     "data:FLOATRET #1: a NaN returned in s0 is a float",
     "data:FLOATRET #2: and prints as NAN, not its bits",

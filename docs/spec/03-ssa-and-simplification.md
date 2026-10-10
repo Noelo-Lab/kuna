@@ -1644,6 +1644,16 @@ the `decompiler/crates/kuna-decomp/src/substrate/transform.rs
 lives. `subflow.rs (SubfloatFlow)` (trigger `RuleSubfloatConvert`, group
 `floatprecision`) does the same for a float value carried in a wider float
 container, converting constant encodings between formats along the way.
+The trace refuses to lower `FLOAT_ADD`, `FLOAT_SUB`, `FLOAT_MULT` or
+`FLOAT_DIV` below their operand width (`SubfloatFlow::exceeds_precision`).
+Inputs widened from a smaller format do not prove that arithmetic in the
+wider format can be replaced: lowering an intermediate introduces an earlier
+rounding and changes overflow and underflow. Binary32 inputs widened for
+subtraction and addition in binary64 therefore keep their widenings and final
+narrowing, printing `(float)((double)accum + ((double)neg_theta - (double)local_axis))`.
+Conversion-only round trips and arithmetic already performed in binary32
+retain their existing simplifications and grouping. This is a correctness
+constraint on both forward and backward traces, including divided SIMD lanes.
 `subflow.rs (SplitDatatype)` (triggers `RuleSplitCopy`/`RuleSplitLoad`/
 `RuleSplitStore`, cleanup pool) splits a whole-struct COPY/LOAD/STORE into
 per-field transfers using recovered types — described with the type system in
