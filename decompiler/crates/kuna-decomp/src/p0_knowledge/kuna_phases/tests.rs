@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_278() {
-    assert_eq!(kuna_num_settables(), 278);
-    assert_eq!(SETTABLE_TABLE.len(), 278);
+fn settable_count_is_279() {
+    assert_eq!(kuna_num_settables(), 279);
+    assert_eq!(SETTABLE_TABLE.len(), 279);
 }
 
 #[test]
-fn tier_counts_are_96_core_109_transform_73_analysis() {
+fn tier_counts_are_96_core_109_transform_74_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_96_core_109_transform_73_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (96, 109, 73));
+    assert_eq!((core, transform, analysis), (96, 109, 74));
 }
 
 #[test]
@@ -482,6 +482,9 @@ fn option_values_live_value_present_for_110() {
         // at the analysis COMMIT boundary (console-side via kuna_live_value), like
         // `cppproto` above. Three-valued, default `proven`.
         "cppsig",
+        // (kuna) The MSVC declaration arm of the demangled signatures -- the same
+        // commit-boundary gate as `cppsig`, read console-side. Default-on.
+        "msvcsig",
         // (kuna) Full-depth DWARF type resolution — a LOAD-time gate read from the
         // `KUNA_TYPEDEPTH` env var (the types are mapped inside `load file`), so
         // like `macho-arm64e` above it has no codegen live_value. Default-on.
@@ -975,7 +978,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 257 -> 258: +1 for `bejoin`.
     // +1 for `coldentry`; its P1 row sits mid-table beside `fdeinterior`.
     // +1 for `thunkentry`; its P1 row sits mid-table beside `unmappedentry`.
-    assert_eq!(json.matches("},\n").count(), 277);
+    assert_eq!(json.matches("},\n").count(), 278);
 }
 
 #[test]

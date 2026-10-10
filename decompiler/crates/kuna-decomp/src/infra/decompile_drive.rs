@@ -381,6 +381,20 @@ impl FlowEnvironment for ArchFlowEnv {
         )
     }
 
+    fn msvc_import_slot(&self, fd: &Funcdata, op: crate::context::OpId) -> Option<Address> {
+        let locked = &self.arch().msvcsig_import_slots;
+        if locked.is_empty() {
+            return None;
+        }
+        crate::kuna_msvcimportcall::locked_import_slot(fd, op, locked)
+    }
+    fn msvc_locked_entry(&self, entry: &Address) -> bool {
+        let locked = &self.arch().msvcsig_import_slots;
+        !locked.is_empty()
+            && entry
+                .get_space()
+                .is_some_and(|space| locked.contains(&(space.get_index(), entry.get_offset())))
+    }
     fn is_fastfail_callind(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
         // (kuna `fastfailnoreturn`) wire the `int 0x29` predicate.  The gate is the
         // architecture-owned `fastfail_noreturn` flag (`option fastfailnoreturn

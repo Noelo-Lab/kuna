@@ -355,6 +355,23 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `msvcsig`) The import slot the CALLIND `op` calls through, when that
+    /// slot carries a locked MSVC prototype, so the call is direct from the flow
+    /// on. See [`kuna_msvcimportcall`](crate::kuna_msvcimportcall). The default
+    /// shell reports `None` (upstream behavior: `ActionDeindirect` resolves it
+    /// later and the function restarts).
+    fn msvc_import_slot(&self, _fd: &Funcdata, _op: OpId) -> Option<Address> {
+        None
+    }
+
+    /// (kuna `msvcsig`) Does `entry` carry a locked MSVC prototype? Such a callee's
+    /// copied prototype gets the stack adjustment its parameter list implies, as
+    /// `ActionDefaultParams` gives a declared callee it seeds itself
+    /// (`calleeprotostack`). The default shell reports `false`.
+    fn msvc_locked_entry(&self, _entry: &Address) -> bool {
+        false
+    }
+
     /// (kuna `int3pad`) Is `op` the CALLIND half of a decoded `int3`, and if so
     /// how long is the pad and does the flow end there?  See
     /// [`kuna_int3pad`](crate::kuna_int3pad).  The default shell reports `None`
@@ -2742,6 +2759,9 @@ truncating the fall-through here"
             .map(|o| o.get_addr().clone())
             .unwrap_or_default();
         let mut direct = self.data.get_override().find_indirect_override(&op_addr).cloned();
+        if direct.is_none() {
+            direct = self.env.msvc_import_slot(&self.data, op);
+        }
 
         // C++ flow.cc:730-731: `if (fc != 0 && fc->getEntryAddress() ==
         // res->getEntryAddress()) res->setAddress(Address());` — while weaving a
@@ -2912,6 +2932,12 @@ truncating the fall-through here"
                         {
                             fc.proto_mut().set_model(Some(evalfp));
                         }
+                    }
+                    if self.env.msvc_locked_entry(&entry) {
+                        crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
+                            self.data.get_arch().callee_proto_stack,
+                            fc.proto_mut(),
+                        );
                     }
                 }
             }

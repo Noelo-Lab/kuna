@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2448,
-    2448
+    2456,
+    2456
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -989,6 +989,14 @@
     "data:MSVCFTOL #3: on, the second conversion casts the field it actually reads",
     "data:MSVCFTOL #4: on, both conversions truncate at the helper's real 64-bit width",
     "data:MSVCFTOL #5: on, the call is replaced by an injection",
+    "data:MSVCSIG #1: off drops this from the __thiscall import call",
+    "data:MSVCSIG #2: off hands MakeStack's pushes to the copy constructor",
+    "data:MSVCSIG #3: on passes this to the __thiscall import",
+    "data:MSVCSIG #4: on types the caller's parameter as the class pointer",
+    "data:MSVCSIG #5: on gives the copy constructor its slot and its source",
+    "data:MSVCSIG #6: the hidden return pointer is MakeStack's argument in both passes",
+    "data:MSVCSIG #7: on types the hidden return pointer",
+    "data:MSVCSIG #8: the cdecl import keeps its argument in both passes",
     "data:MSVCSTACKGUARD-RETURN #1: option off retains the raw checker call in both generic-policy passes",
     "data:MSVCSTACKGUARD-RETURN #2: option off retains the cookie read in both generic-policy passes",
     "data:MSVCSTACKGUARD-RETURN #3: option on keeps failure one and success zero with generic preservation off and on",

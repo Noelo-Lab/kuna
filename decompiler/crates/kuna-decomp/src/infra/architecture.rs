@@ -1947,6 +1947,19 @@ pub struct Architecture {
     /// `inferred` also decides the ambiguous ones from class evidence, `off`
     /// restores name-only demangling. See [`crate::kuna_cppsig`].
     pub analysis_cppsig: crate::kuna_cppsig::CppSigMode,
+    /// (kuna) Gate the MSVC arm of the demangled signatures (`msvcsig`); default
+    /// **on**. An MSVC name states its calling convention, return type and
+    /// parameters, so the arm applies them to the defined functions AND the PE
+    /// imports that carry one, under the stated convention's prototype model on
+    /// 32-bit x86. Off restores the `cppsig` reading of MSVC names (defined
+    /// symbols only, default model, no return type, `__thiscall` refused). Read at
+    /// the analysis commit, and only while `cppsig` is not `off`.
+    pub analysis_msvcsig: bool,
+    /// (kuna `msvcsig`) The entries, as `(space index, offset)`, whose MSVC
+    /// prototype the analysis commit locked onto the FunctionSymbol. A call
+    /// through one of these import slots is made direct while the flow is
+    /// followed ([`crate::kuna_msvcimportcall`]). Empty unless `msvcsig` applied.
+    pub msvcsig_import_slots: std::collections::BTreeSet<(int4, uintb)>,
     /// (kuna) Gate the call-fixup pass (`callfixup`); default on.
     pub analysis_callfixup: bool,
     /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
@@ -2304,6 +2317,12 @@ pub struct Architecture {
     /// the callee's parameter storage under the declared convention instead of
     /// the architecture default.  Empty when no declaration named one.
     declared_proto_models: std::collections::BTreeMap<String, Rc<ProtoModel>>,
+    /// The calling convention a function was declared under, by entry address
+    /// (`(space index, offset)`): the twin of [`Self::declared_proto_models`] for a
+    /// declaration whose function shares its name with others, such as the
+    /// overloads a demangled MSVC import set carries. A name-keyed declaration
+    /// for the same function wins.
+    declared_proto_models_at: std::collections::BTreeMap<(int4, uintb), Rc<ProtoModel>>,
     /// The default prototype model (C++ `defaultfp`).  `None` until a cspec is
     /// parsed (or a default is seeded by [`build_default_proto`]).
     defaultfp: Option<Rc<ProtoModel>>,
@@ -2820,6 +2839,8 @@ impl Architecture {
             analysis_dwarfstructs: false,
             analysis_dwarfvariants: false,
             analysis_cppsig: crate::kuna_cppsig::CppSigMode::Off,
+            analysis_msvcsig: false,
+            msvcsig_import_slots: std::collections::BTreeSet::new(),
             analysis_callfixup: false,
             analysis_addrtable: false,
             analysis_operand_refs: false,
@@ -2865,6 +2886,7 @@ impl Architecture {
             print: PrintC::new(),
             proto_models: std::collections::BTreeMap::new(),
             declared_proto_models: std::collections::BTreeMap::new(),
+            declared_proto_models_at: std::collections::BTreeMap::new(),
             defaultfp: None,
             evalfp_current: None,
             evalfp_current_spec: None,
@@ -3188,6 +3210,7 @@ impl Architecture {
         // unqualified global), measured at precision 1.0000 on google/leveldb.
         // Real-object path only, so every parity gate is byte-identical.
         self.analysis_cppsig = crate::kuna_cppsig::CppSigMode::Proven;
+        self.analysis_msvcsig = true; // (kuna) the MSVC declaration arm default-ON: an MSVC name states the convention, return type and parameters outright, and PE imports are where it carries them. Real-object path only, so every parity gate is byte-identical
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
         self.analysis_operand_refs = false; // Ghidra ScalarOperandAnalyzer !isElf default-off
@@ -3946,18 +3969,20 @@ impl Architecture {
         // function, the parked pieces carry that name, and the read side
         // (`ArchContext::callee_proto_model`) is address-keyed — so the join
         // happens here, once per drive, rather than at every call site.
-        ctx.callee_proto_models = if self.declared_proto_models.is_empty() {
-            Vec::new()
-        } else {
-            ctx.callee_protos
-                .iter()
-                .filter_map(|(space_index, offset, pieces)| {
-                    self.declared_proto_models
-                        .get(&pieces.name)
-                        .map(|m| (*space_index, *offset, Rc::clone(m)))
-                })
-                .collect()
-        };
+        ctx.callee_proto_models =
+            if self.declared_proto_models.is_empty() && self.declared_proto_models_at.is_empty() {
+                Vec::new()
+            } else {
+                ctx.callee_protos
+                    .iter()
+                    .filter_map(|(space_index, offset, pieces)| {
+                        self.declared_proto_models
+                            .get(&pieces.name)
+                            .or_else(|| self.declared_proto_models_at.get(&(*space_index, *offset)))
+                            .map(|m| (*space_index, *offset, Rc::clone(m)))
+                    })
+                    .collect()
+            };
         // Carry the constant-pointer-inference config (C++ `glb->infer_pointers` /
         // `infer_funcentry`) and the ordered inferable-pointer spaces (C++
         // `glb->inferPtrSpaces`, built by cacheAddrSpaceProperties) so
@@ -4914,6 +4939,14 @@ impl Architecture {
     /// The calling convention `name` was declared under, or `None`.
     pub fn function_prototype_model(&self, name: &str) -> Option<&Rc<ProtoModel>> {
         self.declared_proto_models.get(name)
+    }
+
+    /// Record the calling convention the function at `addr` was declared under
+    /// (see [`Self::declared_proto_models_at`]).
+    pub fn set_function_prototype_model_at(&mut self, addr: &Address, model: Rc<ProtoModel>) {
+        if let Some(space) = addr.get_space() {
+            self.declared_proto_models_at.insert((space.get_index(), addr.get_offset()), model);
+        }
     }
 
     /// Register a prototype model under its name (C++ `protoModels[name] =`).
