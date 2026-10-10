@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2487,
-    2487
+    2498,
+    2498
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -2477,6 +2477,17 @@
     "data:x64syscall #7: on and abi save the pointer value before the system call",
     "data:x64syscall #8: on and abi combine the saved value with the reloaded buffer",
     "data:x64syscall #9: off keeps the old pointer value motion",
+    "data:zerocallregs #10: the return 0 before the x87 block of zero is kept in both passes",
+    "data:zerocallregs #11: a zero pair returned without the epilogue is kept in both passes",
+    "data:zerocallregs #1: option off returns the cleared xmm0 from put (bug reproduced)",
+    "data:zerocallregs #2: option off prints return 0.0 on both paths of put (bug reproduced)",
+    "data:zerocallregs #3: option off returns the cleared rax from scale and scaleg (bug reproduced)",
+    "data:zerocallregs #4: option off returns 0 from the void setg (bug reproduced)",
+    "data:zerocallregs #5: option off joins the cleared rdx above the long of addg (bug reproduced)",
+    "data:zerocallregs #6: option on returns nothing from put",
+    "data:zerocallregs #7: option on returns the double of scale and scaleg",
+    "data:zerocallregs #8: option on makes setg void",
+    "data:zerocallregs #9: option on returns the long of addg",
     "data:zerofillreturn #10: a 128-bit value built with a lane insert keeps 16 bytes in both passes",
     "data:zerofillreturn #11: a 128-bit zero write whose low lane is replaced keeps 16 bytes in both passes",
     "data:zerofillreturn #1: option off returns q0 for the double of clang and gcc scale (bug reproduced)",

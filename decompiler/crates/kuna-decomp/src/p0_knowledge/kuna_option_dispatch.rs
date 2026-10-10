@@ -326,6 +326,12 @@ kuna_options! { self, p1;
         self.callee_read_arg = val;
         Ok(msg)
     },
+    "zerocallregs" => {
+        let (val, msg) =
+            crate::p4_calls::kuna_zerocallregs::OptionZeroCallRegs.apply(p1)?;
+        self.zero_call_regs = val;
+        Ok(msg)
+    },
     "zerofillreturn" => {
         let (val, msg) =
             crate::p4_calls::kuna_zerofillreturn::OptionZeroFillReturn.apply(p1)?;

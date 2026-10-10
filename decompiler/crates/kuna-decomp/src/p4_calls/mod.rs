@@ -11,6 +11,7 @@ pub mod kuna_calleedeadarg;
 pub mod kuna_hiddenretarg; // (kuna) a value left in the hidden-return register is no argument a callee cannot take
 pub mod kuna_calleereadarg; // (kuna) keep a refused argument the callee's own body reads
 pub mod kuna_zerofillreturn; // (kuna) the zero a narrow write leaves in a returned q register's upper half is no part of the value
+pub mod kuna_zerocallregs; // (kuna) a register a -fzero-call-used-regs epilogue clears is no part of the return value
 pub mod kuna_calleepreserves; // (kuna) the decoded callee's writes narrow the cspec killedbycall set
 pub mod kuna_callretpair; // (kuna) complete the two-register CALL output arm on any image, not just a Rust one
 pub mod kuna_calleeprotostack; // (kuna) a declared callee's prototype states its stack contract
