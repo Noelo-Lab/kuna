@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2443,
-    2443
+    2448,
+    2448
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -43,6 +43,11 @@
     "data:ARMFUNCMODE #6: an unsymbolized A32 helper an A32 export calls stays A32",
     "data:ARMFUNCMODE #7: a Thumb static behind an A32 helper that calls a noreturn function keeps Thumb",
     "data:ARMFUNCMODE #8: a Thumb static behind an A32 literal pool keeps Thumb",
+    "data:ARMWALKMODE #1: off, the A32 helper after the blx target decodes as Thumb",
+    "data:ARMWALKMODE #2: default, the bl target keeps A32 in both call orders",
+    "data:ARMWALKMODE #3: default, the blx target decodes as Thumb and returns 7",
+    "data:ARMWALKMODE #4: default, the entry passes the Thumb result to the A32 helper",
+    "data:ARMWALKMODE #5: default, a pointer-only Thumb function keeps the mode a blx below it wrote",
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
     "data:ARRAYCOVERWIDTH #2: and so does bank B's",
     "data:ARRAYCOVERWIDTH #3: the swap's first leg carries the transfer width on both sides",
