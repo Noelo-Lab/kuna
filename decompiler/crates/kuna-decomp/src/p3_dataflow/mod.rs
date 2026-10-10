@@ -36,6 +36,7 @@ pub mod kuna_calloverlap;
 pub mod kuna_indexaliasguard;
 pub mod kuna_stackeffects;
 pub mod kuna_calleememory;
+mod kuna_calleeflags;
 pub(crate) mod kuna_calleehomes;
 pub(crate) mod kuna_partialglobalload;
 pub(crate) mod kuna_stackstoreguard;

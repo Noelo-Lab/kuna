@@ -2487,6 +2487,36 @@ home reloads survive known disjoint
 field writes without guessing from a pointee layout. Unknown or overlapping
 actual addresses decline; other spill invalidation stays unchanged.
 
+An exact pointer-width spill wholly below the callee's entry stack pointer can
+also retain its origin across an incoming-pointer write, conditional on the
+same physical disjointness proof for that cell and every write footprint.
+This does not declare negative frame bytes unobservable: an argument can point
+at the callee's spill, and an overlapping or unresolved actual address rejects
+the summary before its effects or return states are used. Partial frame stores
+still invalidate the entire pointer spill. Conditions from every visited path
+share the existing bounded metadata budget with home-spill conditions.
+
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_calleeflags.rs` distinguishes
+one-byte comparison/carry results from address fragments. Instruction-local
+scratch feeding only those Boolean results retains its exact frame origin;
+this covers the parity calculation accompanying a stack adjustment. Every use
+before a scratch definition is replaced must have the exact width and lead to
+a proved Boolean result. Memory uses, partial overlaps, unrelated register
+results and unpublished scratch with no such use retain the loss marker.
+Partial overwrites of pointer registers remain losses even for Boolean results.
+Frame-derived flags retain their origin in the abstract state: copying one to
+memory, exposing it through modeled return storage, or using it in an unproved
+calculation still rejects observation proofs. Internally overwritten flags do
+not cause the entire leaf summary to lose its frame provenance.
+
+A leaf that loads its return target from entry-frame byte zero also requires
+every incoming-pointer write to be disjoint from that exact return slot. The
+architecture must declare the corresponding stack return address. An argument
+can designate the return slot while missing every private spill; its write
+could then transfer control outside the analyzed leaf. Unknown addresses and
+even partial overlaps therefore reject the entire summary, including write
+preservation queries. Register-link returns do not acquire a stack-slot rule.
+
 The driver takes the summaries before heritage and re-seeds them after reflow;
 each target is cached per image. Decode errors, nested or indirect calls,
 user operations, indirect or internal p-code branches, unresolved memory
