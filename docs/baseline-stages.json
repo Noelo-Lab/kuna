@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2506,
-    2506
+    2516,
+    2516
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -554,7 +554,7 @@
     "data:GH271 #5: the early-exit guard keeps the JNC sense, not the inverted form the truncated CFG structured to",
     "data:GH275 #1: default (spillargtrial off) drops the first call's second argument to the caller-save spill",
     "data:GH275 #2: spillargtrial reload recovers the first call's second argument",
-    "data:GH275 #3: spillargtrial reload binds the second call's argument to the register, not a spurious stack local",
+    "data:GH275 #3: wide-slice reduction binds the second call's argument directly in both passes",
     "data:GH2786 #1: nested float negation parenthesized (default-flip fix)",
     "data:GH2786 #2: the mis-parsing predecrement token is gone",
     "data:GH403 #1: the truncated conditional branch never renders the condition-less `} while ;`",
@@ -806,7 +806,7 @@
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
     "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, noreturn_extern, noreturn_externmatch, earlyreturn, switchreturn, condfold, securitycheck, structsynth, protoorder, calleevote)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist, orchain, endptrbound, loweredswitchheads, structsynth, structmerge, structheadless)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist, orchain, endptrbound, loweredswitchheads, structsynth, structmerge, structheadless, devectorize)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip, +outline, +spillargtrial, +securitycheck, +msvcstackguard, +nulterminator, +stackaddrargtrial, +jumptablemax)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: phase list shows Band B membership",
@@ -1924,6 +1924,11 @@
     "data:cspecprotos #4: the registered __thiscall model resolves and recovers ECX as the first parameter",
     "data:cspecprotos #5: the member access is now a parameter dereference",
     "data:cspecprotos #6: the stack argument shifts to the second slot behind the this-pointer",
+    "data:devectorize #1: option off keeps the eight lane accumulators (bug reproduced)",
+    "data:devectorize #2: option off guards the stride-eight loop on 8 <= length (bug reproduced)",
+    "data:devectorize #3: option off hands the remainder over at length & ~7 (bug reproduced)",
+    "data:devectorize #4: both passes keep the scalar byte loop body, once each",
+    "data:devectorize #5: three loops in all: two in the compiler's shape, one after the re-roll",
     "data:double is stored in its declared field",
     "data:earlyreturn #1: OFF keeps the diamond's else-arm, ON hoists it away (else appears once, in the OFF pass only)",
     "data:earlyreturn #2: ON logs the const-guard hoist exactly once",
@@ -2475,6 +2480,11 @@
     "data:whiledo-complex #3: the bound check is a proper if statement in the loop body",
     "data:whiledo-complex #4: the loop exit is a proper break statement",
     "data:whiledo-complex #5: the bound-check return is a statement, not condition text",
+    "data:wide-slice #1: option off declares six artificial 13-byte locals (bug reproduced)",
+    "data:wide-slice #2: option off reads the 13-byte temporaries through SUB13x slices on ten lines (bug reproduced)",
+    "data:wide-slice #3: default on sums both low byte lanes as direct masked additions",
+    "data:wide-slice #4: default on sums all four middle byte lanes as direct shifted masked additions",
+    "data:wide-slice #5: default on sums both top byte lanes as direct shifted additions",
     "data:word conversion reaches return",
     "data:x64syscall #1: with the option off the user-op reads nothing, so it prints with empty parens in both syscall-bearing functions -- the bug",
     "data:x64syscall #2: and nothing redefines RAX, so kernel_call returns the RAX:RDX pair it was handed instead of a result",
