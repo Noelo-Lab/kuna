@@ -552,6 +552,11 @@ mod tests {
             // which record the other is answered with. Full evaluation:
             // docs/features/fieldtype/default-on-evaluation.md.
             "fieldtype",
+            // `bytearrayc` changes the C emitted for mapped global integer
+            // accesses. This PR adds focused compiler fixtures, not the broad
+            // preset sweep or speed measurement needed before changing the
+            // default output for every aggressive-mode decompile.
+            "bytearrayc",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();
