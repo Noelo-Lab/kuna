@@ -621,6 +621,9 @@ pub struct Architecture {
     /// (kuna GH-1282) Fold `(b<<k) s>> k` boolean sign-extension-mask idioms
     /// (C++ `fold_boolean_mask`).
     pub fold_boolean_mask: bool,
+    /// Keep mapped global array bases separate from negative element offsets
+    /// (option `globalarrayanchor`).
+    pub global_array_anchor: bool,
     /// (kuna) Fold an exact one-byte modular cancellation around a bounded
     /// left shift (option `cancelbytearithmetic`).
     pub cancel_byte_arithmetic: bool,
@@ -2655,6 +2658,7 @@ impl Architecture {
             sparc_struct_return: false,
             ov_less_simplify: false,
             fold_boolean_mask: false,
+            global_array_anchor: false,
             cancel_byte_arithmetic: false,
             simd_lane_fold: false,
             const_space_load_fold: false,
@@ -3765,6 +3769,7 @@ impl Architecture {
         // reads `data.get_arch().<flag>`; the rule is registered `enabled=false`
         // so the live flag drives both the DIV default and the toggle).
         ctx.fold_boolean_mask = self.fold_boolean_mask; // GH-1282 booleanmask
+        ctx.global_array_anchor = self.global_array_anchor;
         ctx.cancel_byte_arithmetic = self.cancel_byte_arithmetic; // cancelbytearithmetic
         ctx.simd_lane_fold = self.simd_lane_fold; // simdlane
         ctx.const_space_load_fold = self.const_space_load_fold; // constspaceload

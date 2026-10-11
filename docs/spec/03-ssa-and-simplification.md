@@ -1806,6 +1806,40 @@ DIV-2/DIV-3 rows of `docs/history.md` carry the ablation evidence). With a
 gate off, the rule returns 0 unconditionally and output is byte-identical to
 upstream. Full option metadata: [docs/options.md](../options.md).
 
+**globalarrayanchor** —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalarrayanchor.rs
+(preserve_array_base)`.
+With `option globalarrayanchor on` (default off), constant collection defers
+combining an exact mapped array base with a negative whole-element displacement
+in an element-scaled LOAD/STORE address. This leaves the declared base available to
+constant-pointer recovery; the subsequent pointer rules can render the bias in
+the index. The displacement magnitude must not exceed the declared array size,
+and every variable coefficient must be an element-size multiple. No nearby-symbol
+search is performed. Ordinary arithmetic, unmapped addresses, unaligned byte
+offsets, shared address trees and non-byte-addressed access spaces retain normal
+folding. Pointer-typed variable terms also decline.
+
+The check follows single-use additions, same-width copies and casts to the
+LOAD/STORE address root, so multiple indices are judged as one expression (at
+most 64 outward nodes and 256 inward nodes). Unused pure COPY/CAST readers do not
+count as sharing; auto-live outputs and indirect-source operations still do.
+Only unshared constants eligible for pointer inference in the unique compatible
+access space are held. Literal COPY/OR expressions may supply the base before
+ordinary constant folding finishes. Byte-array symbols, including mapped string
+arrays, accept coefficient one as an element index; access width does not
+change the test.
+
+The guard is inactive without a scheduled constant-pointer action,
+constant-pointer inference or type recovery,
+from the fourth constant-pointer pass, or once recovery has checked and declined
+the base after it folds to a constant varnode. The guard does not suppress
+COPY propagation or constant OR folding in the ordinary rule pools. An all-constant inner addition also defers folding when the full
+memory address meets the same test; unrelated constant expressions still fold.
+The option is a readability choice: the disabled form still computes the
+original machine address. The catalog default is off; aggressive enables it,
+including auto when the input size selects aggressive. An explicit
+`option globalarrayanchor off` after mode selection restores ordinary folding.
+
 **addcarrychain** (GH-8913) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_addcarrychain.rs
 (RuleAddCarryChain)`, oppool1, fires on PIECE. Pattern: the reassembly of an

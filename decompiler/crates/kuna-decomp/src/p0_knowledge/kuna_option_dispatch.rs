@@ -95,6 +95,7 @@ kuna_options! { self, p1;
     "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
     "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
     "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
+    "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
     "cancelbytearithmetic" => {
         let (val, msg) =
             crate::p3_dataflow::kuna_cancelbytearithmetic::OptionCancelByteArithmetic

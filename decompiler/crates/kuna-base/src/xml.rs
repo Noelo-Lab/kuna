@@ -2060,7 +2060,8 @@ mod tests {
         // and kuna-aifnoppad / no AIF entry starts on nop padding (GH-299)
         // and gh847-zerocallregs / a register a -fzero-call-used-regs epilogue
         // clears is not returned (GH-847)
-        assert_eq!(count, 491, "corpus file count drifted");
+        // and kuna-globalarrayanchor{,-a64} / a negative element bias keeps the mapped array base
+        assert_eq!(count, 493, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

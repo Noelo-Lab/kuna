@@ -1,0 +1,101 @@
+<decompilertest>
+<!-- Independent AArch64 controls compiled from indexed loads/stores. -->
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<bytechunk space="ram" offset="0x400000" readonly="true">0800009008d1039108a5208b1fe11f78c0035fd6</bytechunk>
+<symbol space="ram" offset="0x400000" name="negative"/>
+<bytechunk space="ram" offset="0x400014" readonly="true">0800009008d1039108a5208b00e15f78c0035fd6</bytechunk>
+<symbol space="ram" offset="0x400014" name="negative_load"/>
+<bytechunk space="ram" offset="0x400028" readonly="true">0800009008d103916900805208a5208b08a5218b09e11f78c0035fd6</bytechunk>
+<symbol space="ram" offset="0x400028" name="two_indices"/>
+<bytechunk space="ram" offset="0x400074" readonly="true">08000090085104916901805208a1208b09f11f38c0035fd6</bytechunk>
+<symbol space="ram" offset="0x400074" name="byte_index"/>
+<bytechunk space="ram" offset="0x40008c" readonly="true">0800009008910491a901805208a9208b09c11fb8c0035fd6</bytechunk>
+<symbol space="ram" offset="0x40008c" name="word_index"/>
+<bytechunk space="ram" offset="0x4000f4" readonly="false">0000000000000000000000000000000000000000000000000000000000000000</bytechunk>
+<bytechunk space="ram" offset="0x400114" readonly="false">00000000000000000000000000000000</bytechunk>
+<bytechunk space="ram" offset="0x400124" readonly="false">00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000</bytechunk>
+<bytechunk space="ram" offset="0x400164" readonly="false">0000000000000000000000000000000000000000000000000000000000000000</bytechunk>
+<bytechunk space="ram" offset="0x410000" readonly="true">0800009008f1009108a1208b00f15f38c0035fd6</bytechunk>
+<symbol space="ram" offset="0x410000" name="wide_byte"/>
+<bytechunk space="ram" offset="0x410014" readonly="true">080000900831019108a5208b00e15f78c0035fd6</bytechunk>
+<symbol space="ram" offset="0x410014" name="wide_short"/>
+<bytechunk space="ram" offset="0x410028" readonly="true">0800009008b1019108a9208b00c15fb8c0035fd6</bytechunk>
+<symbol space="ram" offset="0x410028" name="float_bits"/>
+<bytechunk space="ram" offset="0x41003c" readonly="false">00000000000000000000000000000000</bytechunk>
+<bytechunk space="ram" offset="0x41004c" readonly="false">0000000000000000000000000000000000000000000000000000000000000000</bytechunk>
+<bytechunk space="ram" offset="0x41006c" readonly="false">00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000</bytechunk>
+<bytechunk space="ram" offset="0x420000" readonly="true">0800009008a100910845208b00e15f78c0035fd6</bytechunk>
+<symbol space="ram" offset="0x420000" name="wide_index_u32"/>
+<bytechunk space="ram" offset="0x420014" readonly="true">080400510900009029a1009120596878c0035fd6</bytechunk>
+<symbol space="ram" offset="0x420014" name="wrapped_index_u32"/>
+<bytechunk space="ram" offset="0x420028" readonly="false">0000000000000000000000000000000000000000000000000000000000000000</bytechunk>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>map address 0x4000f4 unsigned short flags[16]</com>
+<com>map address 0x400114 unsigned char bytes[16]</com>
+<com>map address 0x400124 unsigned int words[16]</com>
+<com>map address 0x400164 unsigned short other[16]</com>
+<com>parse line extern void negative(short slot);</com>
+<com>parse line extern unsigned short negative_load(short slot);</com>
+<com>parse line extern void two_indices(short slot, short delta);</com>
+<com>parse line extern void byte_index(short slot);</com>
+<com>parse line extern void word_index(short slot);</com>
+<com>map address 0x41003c char signed_bytes[16]</com>
+<com>map address 0x41004c short signed_flags[16]</com>
+<com>map address 0x41006c float floats[16]</com>
+<com>parse line extern unsigned int wide_byte(short slot);</com>
+<com>parse line extern unsigned int wide_short(short slot);</com>
+<com>parse line extern unsigned int float_bits(short slot);</com>
+<com>map address 0x420028 unsigned short index_flags[16]</com>
+<com>parse line extern unsigned short wide_index_u32(unsigned int slot);</com>
+<com>parse line extern unsigned short wrapped_index_u32(unsigned int slot);</com>
+<com>option globalarrayanchor off</com>
+<com>lo fu negative</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option globalarrayanchor on</com>
+<com>lo fu negative</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu negative_load</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu two_indices</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu byte_index</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu word_index</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu wide_byte</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu wide_short</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu float_bits</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu wide_index_u32</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu wrapped_index_u32</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="disabled retains biased literal" min="1" max="1">slot \* 2L \+ 0x4000f2</stringmatch>
+<stringmatch name="enabled short store retains base" min="1" max="1">flags\[slot \+ -1L\] = 0;</stringmatch>
+<stringmatch name="enabled short load retains base" min="1" max="1">return flags\[slot \+ -1L\];</stringmatch>
+<stringmatch name="two signed indices retain base" min="1" max="1">flags\[.*slot.*delta.*-1L\] = 3;</stringmatch>
+<stringmatch name="byte array retains base" min="1" max="1">bytes\[slot \+ -1L\] = 0xb;</stringmatch>
+<stringmatch name="word array retains base and store width" min="1" max="1">words\[slot \+ -1L\] = 0xd;</stringmatch>
+<stringmatch name="byte load stays zero extended" min="1" max="1">return \(unsigned char\)signed_bytes\[slot \+ -1L\];</stringmatch>
+<stringmatch name="halfword load stays zero extended" min="1" max="1">return \(unsigned short\)signed_flags\[slot \+ -1L\];</stringmatch>
+<stringmatch name="float load retains its raw bits" min="1" max="1">return.*union.*float.*unsigned int.*\.from = floats\[slot \+ -1L\].*\.to;</stringmatch>
+<stringmatch name="unsigned index extends before wide bias" min="1" max="1">return index_flags\[slot - 1UL\];</stringmatch>
+<stringmatch name="unsigned index wraps before extension" min="1" max="1">return index_flags\[slot - 1\];</stringmatch>
+</decompilertest>

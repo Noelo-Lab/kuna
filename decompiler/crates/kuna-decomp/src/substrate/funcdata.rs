@@ -357,6 +357,8 @@ pub struct Funcdata {
     /// up to seven passes.  A pass that wants a decided pointer picture reads
     /// this instead.
     kuna_infertypes_settled: bool,
+    /// Scheduled constant-pointer pass count for the opt-in array-base guard.
+    pub(crate) kuna_global_array_anchor_passes: Option<u8>,
     /// (kuna `calltargettype`) The function-pointer type each indirect call
     /// states, for a call whose target is cast at the call: the cast names it.
     kuna_call_target_types: std::collections::HashMap<OpId, std::rc::Rc<crate::dtype::Datatype>>,
@@ -643,6 +645,7 @@ impl Funcdata {
             high_level_index: 0,
             cast_phase_index: 0,
             min_laned_size,
+            kuna_global_array_anchor_passes: None,
             laned_map: std::collections::BTreeMap::new(),
             size: sz,
             glb,

@@ -416,6 +416,8 @@ Three tiers:
 | acting on an almostregion inline-candidate report by hand or with an llm | [`outline`](#outline) |
 | an unprototyped call loses a local output pointer | [`stackaddrargtrial`](#stackaddrargtrial) |
 | a post-call word or halfword output folds to its initializer | [`stackaddrargtrial`](#stackaddrargtrial) |
+| negative index displacement hides a declared global array | [`globalarrayanchor`](#globalarrayanchor) |
+| indexed stores use an address immediately before an array | [`globalarrayanchor`](#globalarrayanchor) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -2007,6 +2009,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Enable when an unprototyped call loses a local output pointer and subsequent loads incorrectly fold to the pre-call initializer. This is evidence of intent, not a declared prototype: a live stack address can also be incidental, so the option is off by default. Supply a prototype when the interface is known.
 - **Where / provenance:** P4/active-input-trial-scoring · kuna · opt-in-tool · kuna-stack-address-argument
 - **Example:** `option stackaddrargtrial on`
+
+### `globalarrayanchor` -- on | off, default `off`
+
+- **Symptoms:** negative index displacement hides a declared global array; indexed stores use an address immediately before an array.
+- **What it does:** Keep an exact mapped global array base visible when a scaled memory index carries a negative element displacement.
+- **When to flip:** Enable when an indexed access is rendered with a literal address before the declared array or with a synthetic symbol instead of its declared array.
+- **Where / provenance:** P3/simplification-quiescence · kuna · opt-in-tool · mapped-array-negative-index-bias
+- **Example:** `option globalarrayanchor on`
 
 ## Analysis & loader passes
 

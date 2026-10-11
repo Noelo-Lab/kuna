@@ -2034,6 +2034,12 @@ and `printc.rs (print_unicode)` emits the named C escapes then falls to `print_c
 (not in the loadimage) can be registered under a constant-space hash address
 and resolve through the same cache.
 
+When `globalarrayanchor` is enabled, `ActionConstantPtr` records its per-function
+pass count for the P3 folding guard (§3.5). Reset activates this count only for
+a scheduled action with the option on; functions without that action leave the
+guard inactive. The fourth pass releases its hold on unresolved array-base
+constants.
+
 The probe's entry condition is a **type**, not a detected string boundary: the
 manager reads from whatever address it is handed, so the whole question is
 whether the constant arrived carrying a character-pointer type. Type inference

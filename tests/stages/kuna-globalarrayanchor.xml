@@ -1,0 +1,124 @@
+<decompilertest>
+<!-- Independent synthetic witness; no existing public issue number.
+     P3 simplification quiescence, P0 option globalarrayanchor (default off).
+     The disabled/inference-off assertion retains the numeric base; enabled
+     LOAD/STORE assertions preserve the declared array and element bias. -->
+<binaryimage arch="sparc:BE:32:default:default">
+<!-- Independent assembly: mapped flags + (slot * 2) - 2; six instructions. -->
+<bytechunk space="ram" offset="0x10000" readonly="true">0300100082106018912a20018200400881c3e008c0307ffe</bytechunk>
+<symbol space="ram" offset="0x10000" name="clear_slot"/>
+<bytechunk space="ram" offset="0x400018" readonly="false">00000000</bytechunk>
+<bytechunk space="ram" offset="0x10100" readonly="true">0300140082106020912a20018200400881c3e008c0307ffe</bytechunk>
+<symbol space="ram" offset="0x10100" name="clear_neighbor"/>
+<bytechunk space="ram" offset="0x10200" readonly="true">0300100082106018912a20018200400881c3e008c0304000</bytechunk>
+<symbol space="ram" offset="0x10200" name="clear_unbiased"/>
+<bytechunk space="ram" offset="0x10300" readonly="true">0300180082106018912a20018200400881c3e008c0307ffe</bytechunk>
+<symbol space="ram" offset="0x10300" name="clear_unmapped"/>
+<bytechunk space="ram" offset="0x500018" readonly="false">000000000000000000000000</bytechunk>
+<bytechunk space="ram" offset="0x600018" readonly="false">00000000</bytechunk>
+<bytechunk space="ram" offset="0x10400" readonly="true">0300100082106018912a20018200400881c3e008c0287fff</bytechunk>
+<symbol space="ram" offset="0x10400" name="clear_byte"/>
+<bytechunk space="ram" offset="0x10500" readonly="true">0300100082106018912a20019000400881c3e00890023ffe</bytechunk>
+<symbol space="ram" offset="0x10500" name="calculate"/>
+<bytechunk space="ram" offset="0x10600" readonly="true">0300100082106018912a20018200400881c3e008d0507ffe</bytechunk>
+<symbol space="ram" offset="0x10600" name="read_slot"/>
+<bytechunk space="ram" offset="0x10700" readonly="true">0300100082106018912a20018200400881c3e008c0306002</bytechunk>
+<symbol space="ram" offset="0x10700" name="clear_positive"/>
+<bytechunk space="ram" offset="0x10800" readonly="true">0300100082106018912a20018200400881c3e008c0307ffa</bytechunk>
+<symbol space="ram" offset="0x10800" name="clear_far"/>
+<bytechunk space="ram" offset="0x10900" readonly="true">03001000821060188200400881c3e008c0307ffe</bytechunk>
+<symbol space="ram" offset="0x10900" name="clear_unscaled"/>
+<bytechunk space="ram" offset="0x10a00" readonly="true">0300100082106018912a20018200400882007ffe932a60018200400981c3e008c0304000</bytechunk>
+<symbol space="ram" offset="0x10a00" name="clear_two_indices"/>
+<bytechunk space="ram" offset="0x10b00" readonly="true">0300000082106018912a20018200400881c3e008c0307ffe</bytechunk>
+<symbol space="ram" offset="0x10b00" name="clear_low"/>
+<bytechunk space="ram" offset="0x18" readonly="false">00000000</bytechunk>
+<bytechunk space="ram" offset="0x10c00" readonly="true">03001000821060288200400881c3e008c0287fff</bytechunk>
+<symbol space="ram" offset="0x10c00" name="clear_byte_array"/>
+<bytechunk space="ram" offset="0x400028" readonly="false">00000000</bytechunk>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>parse line extern void clear_slot(short slot);</com>
+<com>map address 0x400018 short flags[2]</com>
+<com>map address 0x500018 double neighbor</com>
+<com>map address 0x500020 short neighboring_flags[2]</com>
+<com>parse line extern void clear_neighbor(short slot);</com>
+<com>parse line extern void clear_unbiased(short slot);</com>
+<com>parse line extern void clear_unmapped(short slot);</com>
+<com>parse line extern void clear_byte(short slot);</com>
+<com>parse line extern unsigned int calculate(unsigned int slot);</com>
+<com>parse line extern short read_slot(short slot);</com>
+<com>parse line extern void clear_positive(short slot);</com>
+<com>parse line extern void clear_far(short slot);</com>
+<com>parse line extern void clear_unscaled(short slot);</com>
+<com>parse line extern void clear_two_indices(short first, short second);</com>
+<com>map address 0x18 short low_flags[2]</com>
+<com>parse line extern void clear_low(short slot);</com>
+<com>map address 0x400028 char bytes[4]</com>
+<com>parse line extern void clear_byte_array(short slot);</com>
+<com>option globalarrayanchor off</com>
+<com>lo fu clear_slot</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option globalarrayanchor on</com>
+<com>lo fu clear_slot</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clear_neighbor</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clear_unbiased</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clear_unmapped</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clear_byte</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu calculate</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu read_slot</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clear_positive</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clear_far</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clear_unscaled</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clear_two_indices</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clear_low</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clear_byte_array</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option inferconstptr off</com>
+<com>lo fu clear_slot</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="disabled anchor or pointer inference retains folded literal" min="2" max="2">\*\(unsigned short \*\)\(slot \* 2 \+ 0x400016\) = 0;</stringmatch>
+<stringmatch name="enabled retains declared array" min="1" max="1">^  flags\[slot \+ -1\] = 0;</stringmatch>
+<stringmatch name="adjacent object does not steal array reference" min="1" max="1">neighboring_flags\[slot \+ -1\] = 0;</stringmatch>
+<stringmatch name="unbiased indexing stays unchanged" min="1" max="1">^  flags\[slot\] = 0;</stringmatch>
+<stringmatch name="unmapped base is not guessed" min="1" max="1">\*\(unsigned short \*\)\(slot \* 2 \+ 0x600016\) = 0;</stringmatch>
+<stringmatch name="partial element bias stays a byte access" min="1" max="1">\*\(char \*\)\(slot \* 2 \+ 0x400017\) = 0;</stringmatch>
+<stringmatch name="ordinary arithmetic still folds" min="1" max="1">return slot \* 2 \+ 0x400016;</stringmatch>
+<stringmatch name="load retains declared array" min="1" max="1">return flags\[slot \+ -1\];</stringmatch>
+<stringmatch name="positive displacement stays symbolic" min="1" max="1">flags\[slot \+ 1\] = 0;</stringmatch>
+<stringmatch name="oversized negative displacement is not anchored" min="1" max="1">slot \* 2 \+ 0x400012</stringmatch>
+<stringmatch name="unscaled short index is not anchored" min="1" max="1">\(slot \+ 0x400016\)</stringmatch>
+<stringmatch name="two indices retain the array anchor" min="1" max="1">flags\[.*first.*second.*\] = 0;</stringmatch>
+<stringmatch name="low address outside pointer inference range still folds" min="1" max="1">slot \* 2 \+ 0x16</stringmatch>
+<stringmatch name="byte arrays accept unscaled element indices" min="1" max="1">bytes\[slot \+ -1\] = '\\0';</stringmatch>
+</decompilertest>

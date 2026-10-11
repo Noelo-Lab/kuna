@@ -140,6 +140,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("switchguardbound", "on"), // speed-expensive
     ("unrolledguard", "on"),    // speed-expensive
     ("stackalias", "on"),
+    ("globalarrayanchor", "on"),
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("regionedgeorder", "on"),
     ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
@@ -367,7 +368,14 @@ mod tests {
             "aggressive must NOT enable dwarf_lines (buries `-g` output in /* src.c:N */)"
         );
         // Representative members that MUST be on.
-        for want in ["listing", "aif", "switchguardbound", "returndup", "sparcstructret"] {
+        for want in [
+            "listing",
+            "aif",
+            "switchguardbound",
+            "returndup",
+            "sparcstructret",
+            "globalarrayanchor",
+        ] {
             assert!(
                 agg.iter().any(|(o, v)| *o == want && *v == "on"),
                 "aggressive must enable `{want}`"
