@@ -72,6 +72,33 @@ The JSON exposes `object_401017_1` and `object_40102c_1`, both at stack offset -
 
 The authored native code and the actual generated C return 67 under GCC and Clang at both `-O0` and `-O2`.
 
+## Reproducing detached member emission
+
+This neutral tree fixture keeps one frame range live through both node-pointer and pointer-slot accesses. Run from the repository root with an unpatched `kuna` executable on `PATH` and matching x86 specs in `specs/`:
+
+```sh
+fixture=/tmp/tree_range_members.c
+curl -fsSL https://raw.githubusercontent.com/mgostIH/kuna/b04a033ae586c506916c5703074bb4585c3d0838/decompiler/crates/kuna-analysis/tests/fixtures/tree_range_members.c -o "$fixture"
+image=/tmp/kuna-member-tree-range.elf
+gcc -O2 -no-pie -fno-stack-protector -fcf-protection=none "$fixture" -o "$image"
+tree_range_addr=$(nm -n "$image" | awk '$3 == "tree_range" { print $1 }')
+consume_range_addr=$(nm -n "$image" | awk '$3 == "consume_range" { print $1 }')
+tree_range_addr=$(printf '%x' "0x$tree_range_addr")
+consume_range_addr=$(printf '%x' "0x$consume_range_addr")
+kuna decompile "$image" tree_range \
+  --target x86:LE:64:default:windows --mode reliable --json --assert-strict \
+  --option structdefs on --option stackviews on --option stackalias off \
+  --sleighpath specs \
+  --assert 'typedef struct Node { struct Node *left; struct Node *parent; struct Node *right; unsigned char color; bool sentinel; unsigned char padding[2]; int key; int tag; };' \
+  --assert 'typedef struct Tree { Node *head; unsigned long long size; };' \
+  --assert 'typedef struct Range { Node *first; Node *last; };' \
+  --assert "prototype 0x${tree_range_addr} void tree_range(Tree *tree,int key,int tag)" \
+  --assert "prototype 0x${consume_range_addr} void consume_range(Tree *tree,const Range *range)" \
+  | jq -r '.functions[0].code | split("\n")[] | select(test("->sentinel|&v5->left"))'
+```
+
+On the unpatched emitter, this prints member expressions such as `v1 = v3->sentinel;` while `v3` is declared `uint8`, and `&v5->left` while `v5` is `Node **`. GCC reports `invalid type argument of '->'`; Clang reports that the member-reference base is not a pointer or a structure. The fix emits `v1 = ((Node *)v3)->sentinel;` and `&((Node *)v5)->left`. The focused integration test compiles and executes the generated C with GCC and Clang at `-O0` and `-O2`, with stack views enabled and disabled.
+
 ## Conservative callee memory proofs
 
 A declared `const` pointer is not evidence that the callee neither writes nor
