@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2506,
-    2506
+    2513,
+    2513
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -32,6 +32,13 @@
     "data:ARM LSL signed consumers #3: preserve arithmetic right shift of the sign bit",
     "data:ARM POP #1: returns the value in r0",
     "data:ARM POP #2: no jump-as-call return",
+    "data:ARM constant LSL #1: convert signed operands before shifting",
+    "data:ARM constant LSL #2: restore signed results for signed consumers",
+    "data:ARM constant LSL #3: preserve the locked signed parameter",
+    "data:ARM constant LSL #4: leave the healthy unsigned shift alone",
+    "data:ARM constant LSL #5: do not shift a signed variable in place",
+    "data:ARM constant LSL #6: keep arithmetic right shift",
+    "data:ARM constant LSL #7: constants need no register-count guard",
     "data:ARM-FLOAT-ARGS #1: off retains the integer-typed VFP bits",
     "data:ARM-FLOAT-ARGS #2: on recovers the floating width and core input",
     "data:ARM-FLOAT-ARGS #3: the variadic destination keeps the source values",

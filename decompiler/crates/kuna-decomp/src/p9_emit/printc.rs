@@ -5481,12 +5481,14 @@ impl PrintC {
             (Some(a), Some(b)) if a == b => {}
             _ => return false,
         }
-        // The compound form has no place for ARM's zero-on-overshift arm.
+        // Compound assignment cannot guard an overshift or cast its signed shiftee.
         if opc == OpCode::CPUI_INT_LEFT
             && self.out_lang == crate::kuna_lang::OutLang::C
             && !self.context.is_set(modifiers::NEGATETOKEN)
-            && crate::p9_emit::kuna_armregistershift::plan_arm_register_lsl(fd, arch, op)
+            && (crate::p9_emit::kuna_armregistershift::plan_arm_register_lsl(fd, arch, op)
                 .is_some()
+                || crate::p9_emit::kuna_armconstantshift::plan_arm_constant_lsl(fd, arch, op)
+                    .is_some())
         {
             return false;
         }
@@ -5832,6 +5834,12 @@ impl PrintC {
                 self.emit_arm_register_lsl(fd, arch, op, plan);
                 return;
             }
+            if tok.print1 == "<<" {
+                if let Some(plan) = crate::p9_emit::kuna_armconstantshift::plan_arm_constant_lsl(fd, arch, op) {
+                    self.emit_arm_constant_lsl(fd, arch, op, plan);
+                    return;
+                }
+            }
         }
         let tok = if self.context.is_set(modifiers::NEGATETOKEN) {
             self.context.unset_mod(modifiers::NEGATETOKEN);
@@ -5925,6 +5933,27 @@ impl PrintC {
             self.push_atom(&Atom::syntax("0", TagType::Syntax, SyntaxHighlight::const_color));
         } else {
             self.push_atom(&Atom::syntax("0u", TagType::Syntax, SyntaxHighlight::const_color));
+        }
+    }
+
+    /// Emit each fixed-shift operand once, converting the shiftee before LSL.
+    fn emit_arm_constant_lsl(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        plan: crate::p9_emit::kuna_armconstantshift::ArmConstantLslPlan,
+    ) {
+        if let Some(result_type) = &plan.signed_result_type {
+            self.push_cast_open(result_type, op);
+        }
+        self.push_op(&tokens::SHIFT_LEFT, Some(op_key(op)));
+        self.push_cast_open(&plan.unsigned_type, op);
+        self.push_vn_ir(fd, arch, plan.lhs, op);
+        self.push_cast_close(&plan.unsigned_type);
+        self.push_vn_ir(fd, arch, plan.count, op);
+        if let Some(result_type) = &plan.signed_result_type {
+            self.push_cast_close(result_type);
         }
     }
 

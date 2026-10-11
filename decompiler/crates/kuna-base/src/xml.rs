@@ -2048,6 +2048,7 @@ mod tests {
         // walk gives
         // and kuna-ucomiss-unordered / an x86 float compare flag read by
         // seta/setae/setbe/setb keeps its unordered case
+        // and kuna-arm-constant-shift / a signed fixed ARM LSL is defined in C
         // and kuna-thunkentry / the target of a jmp thunk is a function entry
         // and kuna-armwalkmode / a bl target keeps A32 after a blx to Thumb
         // and kuna-sparc-zeropair / a SPARC int's return 0 is not the second
@@ -2060,7 +2061,7 @@ mod tests {
         // and kuna-aifnoppad / no AIF entry starts on nop padding (GH-299)
         // and gh847-zerocallregs / a register a -fzero-call-used-regs epilogue
         // clears is not returned (GH-847)
-        assert_eq!(count, 491, "corpus file count drifted");
+        assert_eq!(count, 492, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

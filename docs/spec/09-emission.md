@@ -981,6 +981,40 @@ and emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml`; signe
 comparison and ASR consumers are in
 `tests/stages/kuna-arm-register-shift-signed.xml`.
 
+**(kuna) Fixed ARM LSL with a signed operand in C.** A constant-count 32-bit
+`INT_LEFT` still computes the low 32 bits when its declared operand is signed.
+C11 instead makes a negative signed shiftee or signed overflow undefined,
+including when the function converts the result to unsigned on return.
+`p9_emit/kuna_armconstantshift.rs (plan_arm_constant_lsl)` selects ARM shifts
+with a constant count below 32, equal four-byte input/output widths, and a
+signed integer or signed enum shiftee. The C printer casts that operand to
+`uint4` before the shift, preserving locked declarations. If the output type
+is signed, it casts the whole unsigned shift back to `int4` to preserve signed
+comparisons and arithmetic right shifts. That signed conversion and negative
+arithmetic right shift retain C11's implementation-defined semantics, as in
+the register-count renderer; GCC and Clang implement the ARM interpretation.
+Each operand prints once, so a call result or volatile load needs no
+repeatability restriction. Signed compound assignment is declined so this
+conversion remains on the assignment's right-hand side. Unsigned shiftees,
+other widths, out-of-range constants, other architectures and other output
+languages retain their existing rendering. Count zero is ordinarily removed
+before emission. This is an unconditional correctness repair without a new
+option. `tests/stages/kuna-arm-constant-shift.xml` pins the casts and signed
+consumers; `kuna-cli/tests/arm_constant_shift.rs` compiles the unchanged bodies
+as C11 at `-O0` and `-O2`, with and without UBSan, and compares counts 0, 1, 2,
+3 and 31 against an independent unsigned 64-bit model truncated to 32 bits.
+The runtime checks cover both return signs, ASR, signed comparisons, a stored
+result, a repeated shift in a loop, a signed call result, a volatile load and
+variable-count controls.
+
+A whole four-byte signed mapped symbol printed by an implied volatile-read
+annotation also qualifies, even when the userop output metadata is unsigned.
+The planner follows only the `NO_OPERATOR` annotation form and requires an
+exact whole-symbol type match; it preserves the single volatile read. Runtime
+signed-comparison probes pass the shifted result to a typed comparison helper
+so the comparison cannot canonicalize the shift into signed multiplication.
+Defining signed multiplication on overflow is outside this repair.
+
 **Every label labels a statement.** Label placement in the printed C is valid
 C99/C11/C17 and does not rely on C23. In those dialects a label is part of a
 labeled statement, so `case 2:`, `default:` or `label_10ad:` directly before a
