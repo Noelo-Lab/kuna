@@ -470,7 +470,7 @@ fn arm_exports_are_proven_and_pointer_only_thumb_keeps_its_mode() {
         (
             "arm_interwork_stubs_o0_le32",
             "0x398",
-            "(0xb <= a0) ? a0 + -10 : a0 << 1",
+            "(0xb <= a0) ? a0 + -10 : (int)((unsigned int)a0 << 1)",
         ),
         ("arm_interwork_stubs_o2_le32", "0x304", "v1 = a0 + -10;"),
     ] {
@@ -522,7 +522,7 @@ fn static_thumb_functions_after_an_arm_export_keep_their_mode() {
         for extra in VALUES {
             let first = run(&["decompile", lib, ternary, "--addr"], extra);
             assert!(
-                first.contains("a0 = (0xb <= a0) ? a0 + -10 : a0 << 1;"),
+                first.contains("a0 = (0xb <= a0) ? a0 + -10 : (int)((unsigned int)a0 << 1);"),
                 "{name} {extra:?}: {first}"
             );
             let second = run(&["decompile", lib, popcount.0, "--addr"], extra);
