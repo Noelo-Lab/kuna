@@ -298,6 +298,19 @@ pub struct LocKey {
     create_index: uint4,
 }
 
+impl LocKey {
+    /// Use the captured fields with definition-index ordering.
+    fn to_def_key(self) -> DefKey {
+        DefKey {
+            addr: self.addr,
+            size: self.size,
+            flagclass: self.flagclass,
+            seqnum: self.seqnum,
+            create_index: self.create_index,
+        }
+    }
+}
+
 impl PartialEq for LocKey {
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other) == std::cmp::Ordering::Equal
@@ -520,10 +533,8 @@ pub struct Varnode {
     /// *dataType; ... } temp` — the `dataType` field).  Set/read only by
     /// `ActionInferTypes`; `None` outside a propagation pass.
     temp_type: Option<Rc<Datatype>>,
-    /// Cached key into the loc tree (replaces the C++ `lociter`)
+    /// Cached snapshot for both index orders (C++ `lociter` / `defiter`).
     lociter: Option<LocKey>,
-    /// Cached key into the def tree (replaces the C++ `defiter`)
-    defiter: Option<DefKey>,
     /// Every op reading this varnode as input (C++ `list<PcodeOp *> descend`)
     descend: DescendVec,
     /// Addresses covered by def->use of this Varnode (STUB(W7))
@@ -561,7 +572,6 @@ impl Varnode {
             type_: dt,
             temp_type: None,
             lociter: None,
-            defiter: None,
             descend: SmallVec::new(),
             cover: None,
             consumed: u64::MAX, // ~((uintb)0)
@@ -1655,18 +1665,6 @@ impl VarnodeBank {
         }
     }
 
-    /// Build the definition-tree key for the varnode at `id`.
-    fn def_key_of(&self, id: VarnodeId) -> DefKey {
-        let vn = &self.arena[id];
-        DefKey {
-            addr: AddrKey::of(&vn.loc),
-            size: vn.size,
-            flagclass: flag_class_of(vn.flags),
-            seqnum: vn.def_seqnum.as_ref().map(SeqKey::of).unwrap_or_default(),
-            create_index: vn.create_index,
-        }
-    }
-
     /// Create a \e free Varnode and insert it into both trees (C++ `create`).
     pub fn create(&mut self, s: int4, m: Address, ct: Rc<Datatype>) -> VarnodeId {
         let mut vn = Varnode::new(s, m, ct);
@@ -1675,9 +1673,8 @@ impl VarnodeBank {
         let id = self.arena.insert(vn);
         // Frees can always be inserted without duplication.
         let lk = self.loc_key_of(id);
-        let dk = self.def_key_of(id);
+        let dk = lk.to_def_key();
         self.arena[id].lociter = Some(lk);
-        self.arena[id].defiter = Some(dk);
         self.loc_tree.insert(lk, id);
         self.def_tree.insert(dk, id);
         id
@@ -1702,7 +1699,7 @@ impl VarnodeBank {
             return Err(KunaError::lowlevel("Deleting integrated varnode"));
         }
         let lk = self.arena[vn].lociter.take().expect("destroy: missing lociter");
-        let dk = self.arena[vn].defiter.take().expect("destroy: missing defiter");
+        let dk = lk.to_def_key();
         self.loc_tree.remove(&lk);
         self.def_tree.remove(&dk);
         self.arena.remove(vn);
@@ -1738,9 +1735,8 @@ impl VarnodeBank {
         }
         self.arena[vn].set_flags(varnode_flags::insert);
         self.arena[vn].lociter = Some(lk);
-        let dk = self.def_key_of(vn);
+        let dk = lk.to_def_key();
         self.def_tree.insert(dk, vn); // new in def_tree
-        self.arena[vn].defiter = Some(dk);
         Ok(vn)
     }
 
@@ -1759,7 +1755,7 @@ impl VarnodeBank {
         }
         // Erase the free version of the varnode from both trees.
         let lk = self.arena[vn].lociter.take().expect("set_input: missing lociter");
-        let dk = self.arena[vn].defiter.take().expect("set_input: missing defiter");
+        let dk = lk.to_def_key();
         self.loc_tree.remove(&lk);
         self.def_tree.remove(&dk);
         self.arena[vn].set_input_flag(); // Set the input flag
@@ -1785,7 +1781,7 @@ impl VarnodeBank {
             return Err(KunaError::lowlevel("Assignment to constant"));
         }
         let lk = self.arena[vn].lociter.take().expect("set_def: missing lociter");
-        let dk = self.arena[vn].defiter.take().expect("set_def: missing defiter");
+        let dk = lk.to_def_key();
         self.loc_tree.remove(&lk);
         self.def_tree.remove(&dk);
         self.arena[vn].set_def(Some(def.id)); // Change the varnode to be defined
@@ -1796,7 +1792,7 @@ impl VarnodeBank {
     /// Convert a Varnode to be \e free (C++ `makeFree`).
     pub fn make_free(&mut self, vn: VarnodeId) {
         let lk = self.arena[vn].lociter.take().expect("make_free: missing lociter");
-        let dk = self.arena[vn].defiter.take().expect("make_free: missing defiter");
+        let dk = lk.to_def_key();
         self.loc_tree.remove(&lk);
         self.def_tree.remove(&dk);
 
@@ -1808,9 +1804,8 @@ impl VarnodeBank {
 
         // Re-insert as free varnode.
         let lk = self.loc_key_of(vn);
-        let dk = self.def_key_of(vn);
+        let dk = lk.to_def_key();
         self.arena[vn].lociter = Some(lk);
-        self.arena[vn].defiter = Some(dk);
         self.loc_tree.insert(lk, vn);
         self.def_tree.insert(dk, vn);
     }

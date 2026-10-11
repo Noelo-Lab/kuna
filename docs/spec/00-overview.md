@@ -2713,6 +2713,13 @@ follows it are the same search, because the `insert` flag set afterwards is
 outside the `(input|written)` mask the key is built from and so cannot move the
 entry.
 
+Each Varnode retains one `LocKey` snapshot for both indexes. `DefKey` contains
+the same captured fields but compares them in definition-first order, so the
+bank derives a `DefKey` from the stored `LocKey` when updating the definition
+tree instead of retaining a second full key in every Varnode. Transitions remove
+both entries before changing key-relevant state, then store the new snapshot
+when reinserting the Varnode.
+
 Read-only block queries walk the stored Varnode descendants without copying
 them. Common-subexpression lookup returns the first eligible equal op in that
 sequence; earliest-use lookup instead compares block-local op order. The common
