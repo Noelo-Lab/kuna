@@ -241,3 +241,10 @@ the `calleeretpreserves off` pass restores the undefined return.
 `kuna-cli/tests/direct_call_return.rs` checks native and recompiled emitted C
 at `-O0` and `-O2`, real return-register writes, unknown returning calls and an
 incomplete helper. These are authored MSABI probes in an ELF container.
+
+`kuna-arm-conditional-switch.xml` pins authored A32 `SUBS`/`ADDPL PC`
+branch tables, including case bodies that share a saved-frame epilogue, with
+`tailcalljump` on and off. Unconditional `ADD PC`, healthy `ADDLS PC`, and a
+real indirect function-pointer call are controls. `kuna-cli/tests/arm_conditional_switch.rs`
+compiles the untouched emitted bodies with GCC and Clang at `-O0` and `-O2`
+with undefined-behavior checks and exercises every case and signed boundaries.

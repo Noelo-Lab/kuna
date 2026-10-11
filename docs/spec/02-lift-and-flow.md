@@ -1394,7 +1394,14 @@ the case targets.
    (JumpBasicModel::calc_range)` seeds a range from what the Varnode itself
    proves (a constant; a boolean output = {0,1}; an AND-mask bound + power-of-2
    stride from the non-zero mask) and intersects every matching guard range;
-   ranges still larger than 0x10000 are assumed positive.
+   ranges still larger than 0x10000 are assumed positive. After that existing
+   domain narrowing, matching guards are intersected again by
+   `decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchguardrange.rs (intersect)`.
+   Two circular guard ranges whose first intersection needed two intervals may
+   now intersect as one interval. This retains both bounds of a guarded A32 `ADDPL pc,pc,index,lsl #2`
+   table instead of dropping its branch bodies into an unresolved interior call.
+   ARM's lifted PC+8 base, the predicate's fallthrough, and actual indirect calls
+   retain their existing flow semantics.
    `find_smallest_normal` picks the candidate with the smallest reaching range
    as the normalized variable — refusing a 1-byte, 256-value candidate unless a
    table LOAD lies between it and the branch (a bare byte is not evidence of a
