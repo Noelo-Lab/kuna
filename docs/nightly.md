@@ -78,6 +78,16 @@ Any regression fails the `decbench` job (and so the night), with the report sayi
 why. The next night compares against this one, so an intended trade-off shows red for
 one night only.
 
+## Cost
+
+Measured on the `ubuntu-26.04` runner (AMD EPYC 7763, 4 vCPU): the `decbench` job
+takes about 30 minutes, of which 3 are a cold build, 2 setup (Rust Joern, decbench,
+the sample download), 22 the one-at-a-time A/B timing (~660 s of CPU per build), and
+3 scoring. The `tests` job runs beside it. Timing against a near-identical build came
+out at -0.1% (95% CI -1.1% .. +0.8%), so the A/B resolves changes of about 1%. The
+per-function scores from that run matched a run on a different machine and Python
+version exactly.
+
 ## History
 
 Each night's artifact carries `history.jsonl`: the previous night's lines plus its
