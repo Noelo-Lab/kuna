@@ -327,3 +327,6 @@ mod zero_extended_returns;
 
 #[path = "zext_pair_returns.rs"]
 mod zext_pair_returns;
+
+#[path = "common_allocation_cli.rs"]
+mod common_allocation_cli;
