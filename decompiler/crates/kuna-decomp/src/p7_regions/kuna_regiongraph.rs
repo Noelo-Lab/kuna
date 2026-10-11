@@ -1250,8 +1250,7 @@ pub fn kuna_immediate_dominators(
                 continue;
             }
             let mut new_idom: Option<KunaNodeId> = None;
-            let preds: Vec<KunaNodeId> = g.get_preds(b)?.to_vec();
-            for pred in preds {
+            for &pred in g.get_preds(b)? {
                 if !po_num.contains_key(&pred) {
                     continue; // Unreachable predecessor
                 }
