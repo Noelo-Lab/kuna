@@ -147,7 +147,17 @@ pub(crate) fn prepare_hints(
         checks.reaches.dedup();
         return checks;
     }
-    let locked = locked_byte_ranges(fd, space);
+    let mut locked = locked_byte_ranges(fd, space);
+    locked.retain(|_, (lo, hi)| {
+        !state.hints_mut().iter().any(|h| {
+            h.range_type == RangeType::Open
+                && h.highind >= 0
+                && h.type_.get_metatype() != type_metatype::TYPE_UNKNOWN
+                && h.type_.get_align_size() > 1
+                && h.sstart <= *lo
+                && *hi <= hint_end(h)
+        })
+    });
     let mut stores = effects.stores;
     stores.extend(locked.keys().copied());
     let guarded: Vec<OpId> = stores.into_iter().collect();

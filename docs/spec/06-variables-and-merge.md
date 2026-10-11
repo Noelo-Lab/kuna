@@ -1210,7 +1210,10 @@ write, byte indexing, interior call arguments and whole-frame copy on one
 backing array. Dynamic stack, unproven ranges and stores wider than one byte
 do not contribute this evidence. The existing locked-type, float, analyzed
 frame and 256-byte limits still apply; adjacent storage outside the span is
-not included solely because its address is taken.
+not included solely because its address is taken. This additional evidence
+does not replace a known wider-element indexed hint that already holds the
+whole span: bytewise clearing an `int` array accesses its representation,
+and its later integer indexing remains evidence for the integer array.
 
 A wider store is not coalesced: its open hint already carries its element type.
 But a guard of an `int`, `short` or `long` store keeps slots out to its
