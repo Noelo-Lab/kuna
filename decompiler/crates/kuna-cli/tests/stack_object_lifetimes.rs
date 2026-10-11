@@ -254,6 +254,9 @@ fn execute_with_context(
             common::process::required_output(
                 Command::new(compiler)
                     .args(["-std=c11", level, "-fstrict-aliasing"])
+                    // Preserve the legacy probes' warning policy; explicit
+                    // strict checks below still make this diagnostic an error.
+                    .arg("-Wno-error=incompatible-pointer-types")
                     .args(strict)
                     .args(initialized)
                     .arg(&source)

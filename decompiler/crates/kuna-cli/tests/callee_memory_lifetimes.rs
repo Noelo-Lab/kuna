@@ -116,6 +116,9 @@ int callee_const_write(const struct CalleePair *p) { ((struct CalleePair *)p)->f
             let binary = source.with_extension(format!("{compiler}{}", &level[1..]));
             let mut compile = Command::new(compiler);
             compile.args(["-std=c11", level, "-fstrict-aliasing"]);
+            // These memory-effect probes accept backing-union pointer warnings.
+            // GCC 14+ makes that diagnostic an error unless explicitly demoted.
+            compile.arg("-Wno-error=incompatible-pointer-types");
             if stack_abi == Some(true) {
                 compile.args([
                     "-m32",
