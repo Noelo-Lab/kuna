@@ -73,6 +73,13 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
 
+      # decbench strips every binary before a decompiler sees it; the runner's
+      # x86-only strip cannot read the ARM firmware in the sample.
+      - name: Install multi-architecture binutils
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q binutils-multiarch
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: decompiler
