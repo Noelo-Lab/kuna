@@ -2380,11 +2380,13 @@ impl Sleigh {
         emit: &mut dyn AssemblyEmit,
         baseaddr: &Address,
     ) -> KunaResult<i32> {
-        let mut mnemonic = String::new();
-        let mut body = String::new();
-        let length = self.print_assembly_into(baseaddr, &mut mnemonic, &mut body)?;
-        emit.dump(baseaddr, &mnemonic, &body);
-        Ok(length)
+        let (mut mnemonic, mut body) = std::mem::take(&mut *self.assembly_buffers.borrow_mut());
+        let result = self.print_assembly_into(baseaddr, &mut mnemonic, &mut body);
+        if result.is_ok() {
+            emit.dump(baseaddr, &mnemonic, &body);
+        }
+        *self.assembly_buffers.borrow_mut() = (mnemonic, body);
+        result
     }
 
     /// Disassemble into reusable caller-owned strings.
