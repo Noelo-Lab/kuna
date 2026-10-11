@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2506,
-    2506
+    2509,
+    2509
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1273,6 +1273,9 @@
     "data:RETURNPIECE #7: an argument in the high half beside a computed low half",
     "data:RETURNPIECE #8: the control whose high half is the first argument is unchanged",
     "data:RETURNPIECE #9: no function returns only four of the eight bytes it computes",
+    "data:RUST LOWERED LABELS #1: both option paths retain the first unsigned high-bit pattern",
+    "data:RUST LOWERED LABELS #2: both option paths retain the second unsigned high-bit pattern",
+    "data:RUST LOWERED LABELS #3: lowered matches are emitted in both passes",
     "data:RUST SWITCH LABELS #1: every function prints a Rust match",
     "data:RUST SWITCH LABELS #2: every signed first arm is negative",
     "data:RUST SWITCH LABELS #3: every signed last arm is negative",
