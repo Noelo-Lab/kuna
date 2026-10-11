@@ -382,9 +382,16 @@ pub struct Architecture {
     pub kuna_float_scan: Option<Rc<crate::kuna_floatglobals::FloatScan>>,
     /// (kuna `floatglobals`) The scan's answer, once a function asked for it.
     pub kuna_float_globals: Option<Rc<crate::kuna_floatglobals::FloatGlobals>>,
-    /// (kuna `floatglobals`) The run decompiles more than one function, so the
-    /// whole-program scan is paid for whatever the image's size.
+    /// (kuna `floatglobals`, `callerreads`) The run decompiles more than one
+    /// function, so the whole-program scan is paid for whatever the image's
+    /// size, and the callers a batch decompiles answer for their callees.
     pub kuna_float_scan_batch: bool,
+    /// (kuna `callerreads`) Let a function decompiled alone return what a
+    /// direct caller reads after the call (`kuna_callerreads`).
+    pub caller_reads: bool,
+    /// (kuna `callerreads`) Every direct call the Listing walked, as `(callee
+    /// entry, address the call returns to)`, sorted. Empty without the Listing.
+    pub kuna_call_returns: Vec<(u64, u64)>,
     /// (kuna `boolbyte`) Offer `bool` as a `getLocalType` candidate for a byte
     /// whose every read is a truth test.  Implementation:
     /// [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
@@ -821,6 +828,10 @@ pub struct Architecture {
     /// callee pops, instead of guessing that it pops none (option
     /// `calleepop`).  See [`crate::p6_variables::kuna_calleepop`].
     pub callee_pop: bool,
+    /// (kuna) Keep the `calleepop` guess right for a slot pushed in front of
+    /// one call and popped by a later one (option `calleepopslot`).  See
+    /// [`crate::p6_variables::kuna_calleepopslot`].
+    pub callee_pop_slot: bool,
     /// (kuna) Read a declared callee's stack contract off its locked prototype
     /// (`calleeprotostack`).  See [`crate::p4_calls::kuna_calleeprotostack`].
     pub callee_proto_stack: bool,
@@ -859,6 +870,10 @@ pub struct Architecture {
     /// (kuna) Drop the zero fill a narrow write leaves in the upper half of a
     /// returned vector register (option `zerofillreturn`).
     pub zero_fill_return: bool,
+    /// (kuna) Drop the registers a `-fzero-call-used-regs` epilogue clears from
+    /// the return value (option `zerocallregs`).  See
+    /// [`crate::p4_calls::kuna_zerocallregs`].
+    pub zero_call_regs: bool,
     /// (kuna) Narrow a call's `killedbycall` set to the registers a bounded
     /// decode of the callee's own body proves it writes (option
     /// `calleepreserves`).  See [`crate::p4_calls::kuna_calleepreserves`].
@@ -1552,6 +1567,15 @@ pub struct Architecture {
     /// the claim that the target is a function is withheld. Off restores the
     /// previous (phantom-producing) discovery set exactly.
     pub analysis_unmappedentry: bool,
+    /// (kuna) Make the target of a jump thunk a function entry (`thunkentry`);
+    /// default **on**. The Listing walk makes a function only at a CALL target,
+    /// so the routine behind a function whose whole body is one direct `jmp`
+    /// (an MSVC `/INCREMENTAL` thunk) was attributed to the thunk. On, the
+    /// target of such a jump becomes a function of the walk's committed set
+    /// when it is not fallen into, not a conditional-branch target, and the
+    /// address after the thunk's jump holds no ordinary code. x86 only. Off
+    /// restores the previous discovery set exactly.
+    pub analysis_thunkentry: bool,
     /// (kuna) Refuse a function entry at a PPC64 ELFv2 **local entry point**
     /// (`ppclocalentry`); default **on**. The OpenPOWER ELFv2 ABI gives a
     /// function two entries — the symbol's `st_value` (which materialises the
@@ -1658,6 +1682,12 @@ pub struct Architecture {
     /// and an entry AT an FDE start is always kept. Off restores the previous
     /// discovery set exactly; inert on any image with no `.eh_frame` FDEs.
     pub analysis_fdeinterior: bool,
+    /// (kuna) Add the extra entry points of a multi-entry `.cold` fragment
+    /// (`coldentry`); default **on**. An address strictly inside a single-function
+    /// FDE body that a `jmp`/`jcc rel32` from outside the body targets, and that
+    /// follows a no-fall-through instruction, is a function of its own. Off
+    /// restores the previous discovery set exactly; x86/x86-64 ELF only.
+    pub analysis_coldentry: bool,
     /// (kuna) Reject a discovered function entry that falls strictly inside a
     /// single-function `.pdata` `RUNTIME_FUNCTION` body (`pdatainterior`);
     /// default **on**. The PE half of [`Self::analysis_fdeinterior`] and the same
@@ -1752,6 +1782,10 @@ pub struct Architecture {
     /// (kuna) `armfuncmode`: paint `TMode=0` at each even function symbol of an
     /// ARM ELF without mapping symbols; default on.
     pub analysis_armfuncmode: bool,
+    /// (kuna) `armwalkmode`: the Listing walk decodes each reached instruction in
+    /// the ARM mode its control flow carries, on an image whose metadata states
+    /// no mode; default on.
+    pub analysis_armwalkmode: bool,
     /// (kuna) Gate the entry-reachable Thumb context walk (`entrythumbflow`) for a
     /// mixed ARM image whose container entry carries the Thumb bit but whose
     /// machine word makes no whole-image mode claim; default on. The walk decodes
@@ -1934,6 +1968,19 @@ pub struct Architecture {
     /// `inferred` also decides the ambiguous ones from class evidence, `off`
     /// restores name-only demangling. See [`crate::kuna_cppsig`].
     pub analysis_cppsig: crate::kuna_cppsig::CppSigMode,
+    /// (kuna) Gate the MSVC arm of the demangled signatures (`msvcsig`); default
+    /// **on**. An MSVC name states its calling convention, return type and
+    /// parameters, so the arm applies them to the defined functions AND the PE
+    /// imports that carry one, under the stated convention's prototype model on
+    /// 32-bit x86. Off restores the `cppsig` reading of MSVC names (defined
+    /// symbols only, default model, no return type, `__thiscall` refused). Read at
+    /// the analysis commit, and only while `cppsig` is not `off`.
+    pub analysis_msvcsig: bool,
+    /// (kuna `msvcsig`) The entries, as `(space index, offset)`, whose MSVC
+    /// prototype the analysis commit locked onto the FunctionSymbol. A call
+    /// through one of these import slots is made direct while the flow is
+    /// followed ([`crate::kuna_msvcimportcall`]). Empty unless `msvcsig` applied.
+    pub msvcsig_import_slots: std::collections::BTreeSet<(int4, uintb)>,
     /// (kuna) Gate the call-fixup pass (`callfixup`); default on.
     pub analysis_callfixup: bool,
     /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
@@ -2159,6 +2206,21 @@ pub struct Architecture {
     /// two u-boot A32 images DIV-20 exists for. Inert without `aif`, so every parity
     /// gate is byte-identical.
     pub analysis_aifcorroborate: bool,
+    /// (kuna, GH-299) Gate the AIF bracketed-candidate reject (`aifbracket`);
+    /// default **on**. A gap candidate whose speculative body falls through or
+    /// jumps into a decoded non-entry instruction of the function enclosing it is
+    /// a fragment of that function, and is refused unless an inbound reference,
+    /// a terminal-opened hole start, alignment padding, or a return or jump just
+    /// before it says a function starts there. Zero true function starts lost over
+    /// 98 ARM ELFs and 43 i386 PEs while removing 1,291 to 2,874 mid-body entries
+    /// per corpus. Inert without `aif`, so every parity gate is byte-identical.
+    pub analysis_aifbracket: bool,
+    /// (kuna, GH-299) Gate the AIF filler reject (`aifnoppad`); default **on**. A
+    /// gap candidate that opens with zero fill, or with alignment padding in front
+    /// of a known function entry, is not probed, and an accept that opens with
+    /// padding is planted after it. Inert without `aif`, so every parity gate is
+    /// byte-identical.
+    pub analysis_aifnoppad: bool,
     /// (kuna) Gate tail-call function-entry recovery (`tailcallentry`); default
     /// **off**. The recursive-descent Listing walk treats every non-CALL flow
     /// target as a same-function successor, so a routine reached only by a tail
@@ -2291,6 +2353,12 @@ pub struct Architecture {
     /// the callee's parameter storage under the declared convention instead of
     /// the architecture default.  Empty when no declaration named one.
     declared_proto_models: std::collections::BTreeMap<String, Rc<ProtoModel>>,
+    /// The calling convention a function was declared under, by entry address
+    /// (`(space index, offset)`): the twin of [`Self::declared_proto_models`] for a
+    /// declaration whose function shares its name with others, such as the
+    /// overloads a demangled MSVC import set carries. A name-keyed declaration
+    /// for the same function wins.
+    declared_proto_models_at: std::collections::BTreeMap<(int4, uintb), Rc<ProtoModel>>,
     /// The default prototype model (C++ `defaultfp`).  `None` until a cspec is
     /// parsed (or a default is seeded by [`build_default_proto`]).
     defaultfp: Option<Rc<ProtoModel>>,
@@ -2542,6 +2610,8 @@ impl Architecture {
             kuna_float_scan: None,
             kuna_float_globals: None,
             kuna_float_scan_batch: false,
+            caller_reads: true, // (kuna) option callerreads; reset_defaults sets the shipped default
+            kuna_call_returns: Vec::new(),
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             float_bits: false, // (kuna) option floatbits; reset_defaults sets the shipped default
             partial_concat: true,
@@ -2638,6 +2708,7 @@ impl Architecture {
             cast_object: false, // (kuna) option castobject; reset_defaults sets the shipped default
             mul_blob: true,
             callee_pop: true,
+            callee_pop_slot: true,
             callee_proto_stack: true,
             arg_clobber: true, // (kuna) option argclobber; reset_defaults sets the shipped default
             arm_float_args: false, // (kuna) option armfloatargs
@@ -2649,6 +2720,7 @@ impl Architecture {
             hidden_ret_arg: true,
             callee_read_arg: true,
             zero_fill_return: true,
+            zero_call_regs: true,
             callee_preserves: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,
@@ -2760,6 +2832,7 @@ impl Architecture {
             analysis_win32sigs: false,
             analysis_declaredlibcproto: false,
             analysis_unmappedentry: false,
+            analysis_thunkentry: false,
             analysis_ppclocalentry: false,
             analysis_flowmode: false,
             analysis_flowmode_aftercall: false,
@@ -2775,6 +2848,7 @@ impl Architecture {
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
             analysis_fdeinterior: false,
+            analysis_coldentry: false,
             analysis_pdatainterior: false,
             analysis_pdbinterior: false,
             analysis_funcstart_patterns: false,
@@ -2784,6 +2858,7 @@ impl Architecture {
             analysis_poolentry: false,
             analysis_arm_markers: false,
             analysis_armfuncmode: false,
+            analysis_armwalkmode: false,
             analysis_entrythumbflow: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
@@ -2806,6 +2881,8 @@ impl Architecture {
             analysis_dwarfstructs: false,
             analysis_dwarfvariants: false,
             analysis_cppsig: crate::kuna_cppsig::CppSigMode::Off,
+            analysis_msvcsig: false,
+            msvcsig_import_slots: std::collections::BTreeSet::new(),
             analysis_callfixup: false,
             analysis_addrtable: false,
             analysis_operand_refs: false,
@@ -2828,6 +2905,8 @@ impl Architecture {
             analysis_aif: false,
             analysis_aifstrict: false,
             analysis_aifcorroborate: false,
+            analysis_aifbracket: true,
+            analysis_aifnoppad: true,
             analysis_tailcallentry: false,
             analysis_gopclntab: false,
             analysis_objc: false,
@@ -2851,6 +2930,7 @@ impl Architecture {
             print: PrintC::new(),
             proto_models: std::collections::BTreeMap::new(),
             declared_proto_models: std::collections::BTreeMap::new(),
+            declared_proto_models_at: std::collections::BTreeMap::new(),
             defaultfp: None,
             evalfp_current: None,
             evalfp_current_spec: None,
@@ -2968,10 +3048,12 @@ impl Architecture {
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
         self.callee_proto_stack = true; // (kuna) default-on (0/675 ablation): a locked callee prototype states how much it pops and how much of the caller's stack it can reach
         self.callee_pop = true; // (kuna) default-on (0/675 ablation): an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
+        self.callee_pop_slot = true; // (kuna) default-on (0/675 ablation): the calleepop guess follows a slot pushed in front of one call and popped by a later one
         self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
         self.hidden_ret_arg = true; // (kuna) default-on (0/675 ablation): a hidden-return register trial the callee never takes, or a null-page constant, is no argument
         self.callee_read_arg = true; // (kuna) default-on: a register argument the caller also tests is kept when the callee's own body reads it (0/675 ablation)
         self.zero_fill_return = true; // (kuna) default-on (0/675 ablation): the zero a narrow write leaves in a returned q register's upper half is no part of the value
+        self.zero_call_regs = true; // (kuna) default-on (0/675 ablation): a register a -fzero-call-used-regs epilogue clears before the return is no part of the value
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
         self.callee_ret_preserves = true; // (kuna) DIV-PENDING default-on: a fully decoded callee body that never writes the call's return register also answers for that register, so an MSVC /GS `main` returns the zero it set instead of the cookie check's invented result (0/675 ablation)
         self.callee_scratch_body = true; // (kuna) DIV-149 default-on: a decoded callee that clobbers only SCRATCH registers still counts as a body for calleepreserves, so the value a caller sets before MSVC's out-of-line stack probe survives it (0/675 ablation)
@@ -3044,6 +3126,7 @@ impl Architecture {
         self.cast_widen = crate::kuna_castwiden::CastWidenMode::Literal; // (kuna) option castwiden default `literal`: a 64-bit widening C's usual arithmetic or assignment conversion performs prints no cast, and an 8-byte literal beside one prints its L/UL suffix; 5/675 datatest assertions (upstream's pinned form) opt out per test, 18 stage assertions of other options moved to the new form, 444-slice typesweep identical, casts 35,588 -> 34,062 on the castbench shared set with 0 functions more; docs/features/castwiden/default-on-evaluation.md
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.float_globals = true; // (kuna) option floatglobals default-on
+        self.caller_reads = true; // (kuna) option callerreads default-on: inert without the Listing, so 0/675 datatest assertions move
         self.call_target_type = false; // (kuna) option calltargettype: default-OFF in the catalog because the XML datatest corpus pins the upstream `code *` spellings and applies no mode; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for every real binary
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.float_bits = true; // (kuna) option floatbits default-on: a float helper that only bit-ops its float-register input into its float-register return types float on both sides
@@ -3108,6 +3191,8 @@ impl Architecture {
         // (kuna) Unmapped-CALL-target entry suppression -- default-ON (it only ever
         // withholds an entry the walk already refused to decode).
         self.analysis_unmappedentry = true;
+        // (kuna) Jump-thunk target function entries -- default-ON (x86 only).
+        self.analysis_thunkentry = true;
         // (kuna) PPC64 ELFv2 local-entry entry suppression -- default-ON (it only
         // ever withholds the duplicate second entry over a function whose global
         // entry is already a seed, so no body can be lost).
@@ -3135,6 +3220,7 @@ impl Architecture {
         self.analysis_eh_frame_full = false;
         // (kuna) DIV-61 `.eh_frame` FDE-interior entry suppression — default-ON.
         self.analysis_fdeinterior = true;
+        self.analysis_coldentry = true;
         // (kuna) `.pdata` RUNTIME_FUNCTION-interior entry suppression — default-ON.
         self.analysis_pdatainterior = true;
         // (kuna) PDB-procedure-interior entry suppression — default-ON.
@@ -3146,6 +3232,7 @@ impl Architecture {
         self.analysis_poolentry = false; // (kuna) ARM literal-pool inference default-off
         self.analysis_arm_markers = true;
         self.analysis_armfuncmode = true; // (kuna) even ARM function symbol = A32 when no mapping symbols
+        self.analysis_armwalkmode = true; // (kuna) ARM walk decodes in the mode its control flow carries
         self.analysis_entrythumbflow = true; // (kuna) entry-reachable Thumb context default-on; inert without a Thumb-bit entry
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
@@ -3171,6 +3258,7 @@ impl Architecture {
         // unqualified global), measured at precision 1.0000 on google/leveldb.
         // Real-object path only, so every parity gate is byte-identical.
         self.analysis_cppsig = crate::kuna_cppsig::CppSigMode::Proven;
+        self.analysis_msvcsig = true; // (kuna) the MSVC declaration arm default-ON: an MSVC name states the convention, return type and parameters outright, and PE imports are where it carries them. Real-object path only, so every parity gate is byte-identical
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
         self.analysis_operand_refs = false; // Ghidra ScalarOperandAnalyzer !isElf default-off
@@ -3193,6 +3281,10 @@ impl Architecture {
         // (kuna, GH-313) AIF corroboration test — default-OFF (it REMOVES entries),
         // carried by the `aggressive` preset.
         self.analysis_aifcorroborate = false;
+        // (kuna, GH-299) AIF bracketed-candidate reject -- default-ON; inert without `aif`.
+        self.analysis_aifbracket = true;
+        // (kuna, GH-299) AIF filler reject -- default-ON; inert without `aif`.
+        self.analysis_aifnoppad = true;
         self.analysis_tailcallentry = false; // tail-call function-entry recovery default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
@@ -3735,6 +3827,7 @@ impl Architecture {
         ctx.cast_object = self.cast_object; // castobject
         ctx.mul_blob = self.mul_blob; // (kuna) mulblob
         ctx.callee_pop = self.callee_pop; // calleepop
+        ctx.callee_pop_slot = self.callee_pop_slot; // calleepopslot
         ctx.callee_proto_stack = self.callee_proto_stack; // calleeprotostack
         ctx.arg_clobber = self.arg_clobber; // argclobber
         ctx.pass_through = self.pass_through; // passthrough
@@ -3743,6 +3836,7 @@ impl Architecture {
         ctx.hidden_ret_arg = self.hidden_ret_arg; // hiddenretarg
         ctx.callee_read_arg = self.callee_read_arg; // calleereadarg
         ctx.zero_fill_return = self.zero_fill_return; // zerofillreturn
+        ctx.zero_call_regs = self.zero_call_regs; // zerocallregs
         ctx.callee_preserves = self.callee_preserves; // calleepreserves
         ctx.callee_ret_preserves = self.callee_ret_preserves; // calleeretpreserves
         ctx.callee_scratch_body = self.callee_scratch_body; // calleescratchbody
@@ -3931,18 +4025,20 @@ impl Architecture {
         // function, the parked pieces carry that name, and the read side
         // (`ArchContext::callee_proto_model`) is address-keyed — so the join
         // happens here, once per drive, rather than at every call site.
-        ctx.callee_proto_models = if self.declared_proto_models.is_empty() {
-            Vec::new()
-        } else {
-            ctx.callee_protos
-                .iter()
-                .filter_map(|(space_index, offset, pieces)| {
-                    self.declared_proto_models
-                        .get(&pieces.name)
-                        .map(|m| (*space_index, *offset, Rc::clone(m)))
-                })
-                .collect()
-        };
+        ctx.callee_proto_models =
+            if self.declared_proto_models.is_empty() && self.declared_proto_models_at.is_empty() {
+                Vec::new()
+            } else {
+                ctx.callee_protos
+                    .iter()
+                    .filter_map(|(space_index, offset, pieces)| {
+                        self.declared_proto_models
+                            .get(&pieces.name)
+                            .or_else(|| self.declared_proto_models_at.get(&(*space_index, *offset)))
+                            .map(|m| (*space_index, *offset, Rc::clone(m)))
+                    })
+                    .collect()
+            };
         // Carry the constant-pointer-inference config (C++ `glb->infer_pointers` /
         // `infer_funcentry`) and the ordered inferable-pointer spaces (C++
         // `glb->inferPtrSpaces`, built by cacheAddrSpaceProperties) so
@@ -4899,6 +4995,14 @@ impl Architecture {
     /// The calling convention `name` was declared under, or `None`.
     pub fn function_prototype_model(&self, name: &str) -> Option<&Rc<ProtoModel>> {
         self.declared_proto_models.get(name)
+    }
+
+    /// Record the calling convention the function at `addr` was declared under
+    /// (see [`Self::declared_proto_models_at`]).
+    pub fn set_function_prototype_model_at(&mut self, addr: &Address, model: Rc<ProtoModel>) {
+        if let Some(space) = addr.get_space() {
+            self.declared_proto_models_at.insert((space.get_index(), addr.get_offset()), model);
+        }
     }
 
     /// Register a prototype model under its name (C++ `protoModels[name] =`).

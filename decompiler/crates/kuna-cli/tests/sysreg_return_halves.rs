@@ -2,7 +2,7 @@
 //! fpscr`, `msr cpsr_c`, `msr basepri`) is not the high word of its return:
 //! `bl g; mov r1,#0x3000000; vmsr fpscr,r1; pop {r11,pc}` returns `g()`, not
 //! `CONCAT44(0x3000000,g())`.
-mod common;
+use crate::common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,

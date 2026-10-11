@@ -5,8 +5,9 @@
 import assert from 'node:assert/strict';
 import { compileQuery } from '../assets/js/fnfilter.js';
 import {
-  stringGroup, showText, stringKey, usersOf, renderStringRow, renderStringList, ROW_CAP,
+  stringGroup, showText, stringKey, usersOf, renderStringRow, renderStringList, stringRefsModel, ROW_CAP,
 } from '../decompile/strings-view.js';
+import { renderRefsDialog } from '../decompile/xrefs-view.js';
 
 const checks = [];
 const use = (name, address_hex, at_hex, via = null) => ({ name, address_hex, at_hex, kind: via ? 'read' : 'data', instruction: '', via });
@@ -52,7 +53,23 @@ assert.ok(!unused.includes('<a '), 'an unused string has no links');
 assert.match(unused, /0x318 · \.interp/, 'it says where it is instead');
 assert.match(renderStringRow(str('wide', '0x10', [], { encoding: 'utf16' })), /wide text \(UTF-16\)/);
 assert.match(renderStringRow(flag, { selected: true }), /class="str sel"/);
+assert.match(row, /data-act="str-refs"/, 'a used string offers every use');
+assert.ok(!unused.includes('str-refs'), 'an unused one does not');
 checks.push('users + row');
+
+// ── every use (x) ──────────────────────────────────────────────────────────
+const refs = stringRefsModel(flag, { nameOf: (a, n) => (a === '0x1209' ? 'check_flag' : n) });
+assert.equal(refs.title, 'Uses of "flag{str1ngs_4re_3asy}"');
+assert.equal(refs.sub, 'text at 2004 in .rodata');
+assert.deepEqual(refs.sections[0].rows.map((r) => [r.fn, r.site, r.name, r.how]),
+  [['0x1209', '0x1229', 'check_flag', 'reads the pointer secret'], ['0x1209', '0x1253', 'check_flag', 'reads the pointer secret']], 'one row per use, through its pointer');
+assert.deepEqual(stringRefsModel(nope).sections[0].rows.map((r) => [r.name, r.how, r.kind]), [['check', '', 'data'], ['main', '', 'data']]);
+assert.deepEqual(stringRefsModel(str('x', '0x1', [use(null, null, '0x5000')])).sections[0].rows.map((r) => [r.fn, r.name]), [['0x5000', '0x5000']],
+  'a use outside any function opens at the instruction');
+assert.equal(stringRefsModel(interp).sections[0].rows.length, 0);
+assert.match(stringRefsModel(str('a'.repeat(100), '0x1')).title, /^Uses of "a{57}…"$/, 'a long text is cut short');
+assert.match(renderRefsDialog(stringRefsModel(str('<img src=x>', '0x3000', [use('<b>f</b>', '0x1', '0x2')]))), /&lt;img src=x&gt;.*&lt;b&gt;f/s, 'the dialog escapes the text');
+checks.push('every use');
 
 // ── escaping ───────────────────────────────────────────────────────────────
 const evil = str('<img src=x onerror=alert(1)>"\'&', '0x3000', [use('<b>f</b>', '0x1"', '0x2"', { name: '<i>p</i>', address_hex: '0x4' })]);

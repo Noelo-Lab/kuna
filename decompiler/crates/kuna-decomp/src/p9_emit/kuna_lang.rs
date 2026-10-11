@@ -430,6 +430,8 @@ pub struct LangCaps {
     /// A sub-`int` integer operand is promoted to `int` before arithmetic and
     /// when passed as an argument.
     pub integer_promotion: bool,
+    /// A text byte (`char`) is a signed integer type.
+    pub signed_text_byte: bool,
 }
 
 /// The per-language surface vocabulary.
@@ -555,6 +557,7 @@ pub static LANG_C: LangProfile = LangProfile {
         paren_conditions: true,
         integer_suffixes: true,
         integer_promotion: true,
+        signed_text_byte: true,
     },
     forms: LangForms {
         proto: ProtoForm::CPrefixReturn,

@@ -73,6 +73,10 @@ and 18 tags**.
    `kuna-slacomp`, and `kuna-ghidra` for:
    - Linux `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` (native,
      on the `ubuntu-24.04-arm` runner)
+   - Linux `x86_64-unknown-linux-musl` — a fully static build (no glibc
+     dependency, runs on any Linux). kuna pulls in no C via a `cc`-crate
+     dependency, so the musl target links self-contained; `rustup target add`
+     is the only extra setup.
    - macOS `aarch64-apple-darwin` and `x86_64-apple-darwin` (the latter
      cross-compiled on the arm64 runner)
    - Windows `x86_64-pc-windows-msvc`

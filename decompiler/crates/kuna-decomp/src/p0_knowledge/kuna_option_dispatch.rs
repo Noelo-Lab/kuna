@@ -301,6 +301,12 @@ kuna_options! { self, p1;
         self.callee_pop = val;
         Ok(msg)
     },
+    "calleepopslot" => {
+        let (val, msg) =
+            crate::p6_variables::kuna_calleepopslot::OptionCalleePopSlot.apply(p1)?;
+        self.callee_pop_slot = val;
+        Ok(msg)
+    },
     "calleeprotostack" => {
         let (val, msg) =
             crate::p4_calls::kuna_calleeprotostack::OptionCalleeProtoStack.apply(p1)?;
@@ -323,6 +329,12 @@ kuna_options! { self, p1;
         let (val, msg) =
             crate::p4_calls::kuna_calleereadarg::OptionCalleeReadArg.apply(p1)?;
         self.callee_read_arg = val;
+        Ok(msg)
+    },
+    "zerocallregs" => {
+        let (val, msg) =
+            crate::p4_calls::kuna_zerocallregs::OptionZeroCallRegs.apply(p1)?;
+        self.zero_call_regs = val;
         Ok(msg)
     },
     "zerofillreturn" => {
@@ -692,6 +704,7 @@ kuna_options! { self, p1;
     "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
     "calltargettype" => on_off!(call_target_type, "indirect-call target types"),
     "floatglobals" => on_off!(float_globals, "float typing of globals moved only through float registers"),
+    "callerreads" => on_off!(caller_reads, "return recovery from what the callers read"),
     "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
     "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
     "floatbits" => on_off!(float_bits, "float typing of helpers that work on a float's bits"),
@@ -775,6 +788,7 @@ kuna_options! { self, p1;
     "unmappedentry" => {
         on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
     },
+    "thunkentry" => on_off!(analysis_thunkentry, "Jump-thunk target function entries"),
     "ppclocalentry" => {
         on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
     },
@@ -821,6 +835,9 @@ kuna_options! { self, p1;
     "eh_frame_full" => {
         on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
     },
+    "coldentry" => {
+        on_off!(analysis_coldentry, "Multi-entry .cold fragment entry discovery")
+    },
     "fdeinterior" => {
         on_off!(analysis_fdeinterior, ".eh_frame FDE-interior entry suppression")
     },
@@ -850,6 +867,7 @@ kuna_options! { self, p1;
     },
     "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
     "armfuncmode" => on_off!(analysis_armfuncmode, "A32 mode at even ARM function symbols"),
+    "armwalkmode" => on_off!(analysis_armwalkmode, "ARM decode mode carried along the Listing walk"),
     "entrythumbflow" => {
         on_off!(analysis_entrythumbflow, "Entry-reachable Thumb context walk")
     },
@@ -967,6 +985,7 @@ kuna_options! { self, p1;
         self.analysis_cppsig = mode;
         Ok(msg)
     },
+    "msvcsig" => on_off!(analysis_msvcsig, "MSVC declaration arm of the demangled signatures"),
     "typedepth" => {
         let val = on_or_off(p1)?;
         self.analysis_typedepth = val;
@@ -1040,6 +1059,12 @@ kuna_options! { self, p1;
     },
     "aifcorroborate" => {
         on_off!(analysis_aifcorroborate, "AIF accept corroboration test (GH-313)")
+    },
+    "aifbracket" => {
+        on_off!(analysis_aifbracket, "AIF bracketed-candidate reject (GH-299)")
+    },
+    "aifnoppad" => {
+        on_off!(analysis_aifnoppad, "AIF padding/zero-fill candidate reject (GH-299)")
     },
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")

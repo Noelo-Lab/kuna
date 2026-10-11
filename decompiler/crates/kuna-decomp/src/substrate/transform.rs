@@ -1349,7 +1349,7 @@ impl TransformManager {
                 };
                 self.var_mut(rvn).replacement = Some(replacement);
                 fd.kuna_inherit_storage_slice(replacement, vn, lsb_byte_pos, byte_size);
-                fd.transfer_varnode_properties(vn, replacement, byte_pos);
+                fd.transfer_varnode_properties(vn, replacement, lsb_byte_pos);
                 Ok(())
             }
             tvar_type::constant_iop => {

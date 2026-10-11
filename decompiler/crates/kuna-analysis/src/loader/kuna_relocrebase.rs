@@ -440,6 +440,8 @@ pub fn retain_in_image(out: &mut AnalysisOutput, view: &RebasedView) {
     out.cpp_dwarf.prototypes.retain(|(a, _)| keep(*a));
     out.cpp_sig.proven.retain(|(a, _)| keep(*a));
     out.cpp_sig.inferred.retain(|(a, _)| keep(*a));
+    out.cpp_sig.msvc.retain(|(a, _, _)| keep(*a));
+    out.cpp_sig.msvc_legacy.retain(|(a, _)| keep(*a));
 }
 
 #[cfg(test)]

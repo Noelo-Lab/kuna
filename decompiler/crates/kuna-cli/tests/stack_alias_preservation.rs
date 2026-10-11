@@ -1,5 +1,5 @@
 //! Physical writes remain observable through an escaped stack pointer (#810).
-mod common;
+use crate::common;
 
 use std::process::Command;
 use std::time::Duration;

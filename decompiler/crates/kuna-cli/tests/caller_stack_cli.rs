@@ -1,5 +1,5 @@
 //! Rebuilt code must address the physical caller area, including after O2.
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

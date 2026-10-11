@@ -67,9 +67,7 @@ pub(super) fn indexed_enabled(
         })
 }
 
-/// The elements the stack layout gives an array whose window value-set
-/// analysis did not lock (`MapState::gatherOpen` and `MapState::addGuard`
-/// assume `[0,3]`).
+/// The fallback element count for an unbounded provisional STORE window.
 const UNLOCKED_ELEMENTS: u128 = 4;
 
 /// The bytes `[lo, last]` each indexed STORE may write by its pointer's own
@@ -86,14 +84,11 @@ fn store_bound(
         .or_insert_with(|| crate::p6_variables::kuna_storereach::store_window(fd, guard.op, &guard.spc))
 }
 
-/// Can `guard`'s STORE, writing `store_size` bytes, write any byte of
-/// `[lo, lo + size)` of the array it indexes? It writes no byte outside its
-/// pointer's bound, when the index has one. Within that, an unanalyzed guard
-/// may write anywhere and a range-locked guard writes its window; any other
-/// writes from its window's start to the bound's end or, with no bound, no
-/// further than the elements the stack layout gives an array whose window is
-/// not locked (a pointer walking down from its base, as an `alloca` probe
-/// does, writes only the base).
+/// Can this STORE overlap `[lo, lo + size)`? Unanalyzed guards may write
+/// anywhere; locked ranges and independently bounded pointers retain their
+/// inferred window. Otherwise, cover four elements from the greater of the
+/// pointer base and inferred minimum, clipped to the inferred maximum. A range
+/// entirely before the base retains its original start.
 pub(super) fn window_overlaps(
     guard: &super::heritage::LoadGuard,
     store_size: int4,
@@ -107,7 +102,18 @@ pub(super) fn window_overlaps(
     let (first, last) = match (guard.analysis_state, bound) {
         (0, _) => (0, u128::MAX),
         (2, _) | (_, Some(_)) => (min, window_last),
-        _ => (min, window_last.min(min + UNLOCKED_ELEMENTS * width - 1)),
+        _ => {
+            let base = guard.pointer_base as u128;
+            let start = if base <= window_last {
+                min.max(base)
+            } else {
+                min
+            };
+            (
+                start,
+                window_last.min(start + UNLOCKED_ELEMENTS * width - 1),
+            )
+        }
     };
     let (first, last) = match bound {
         Some((b_lo, b_last)) => (first.max(b_lo as u128), last.min(b_last as u128)),
@@ -257,3 +263,7 @@ pub(super) fn keeps_store_indirect_whole(
                 })
         })
 }
+
+#[cfg(test)]
+#[path = "kuna_stackstoreguard/tests.rs"]
+mod tests;

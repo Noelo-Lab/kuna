@@ -1,0 +1,132 @@
+<decompilertest>
+<!--
+    Rust match-arm labels follow the scrutinee's printed type, P9 emission;
+    no option (strict bug fix, GH-883). The bytes are the native jump tables of
+    kuna-native-switch-labels.xml (signed and unsigned 8/16/32/64-bit selectors,
+    a signed short read through a pointer, and a sign-extended short), plus
+    text8: a copy of signed8 at 0x100500 whose selector is declared char.
+
+    The C switch printer signs its labels by the selector type, but the Rust
+    match printer computed its own labels from the jump table alone. Before the
+    fix every arm printed unsigned (`0xfff3 =>` on an i16, a pattern rustc
+    rejects as out of range), and the sign-extended short kept the widened
+    `0xfffffff3`. Both printers now share one label decision. A char spells u8
+    in Rust, so text8 keeps unsigned patterns in Rust while its C switch, on a
+    signed char, keeps `case -0xd:`. Lowered-switch recovery is off so these
+    are native-table cases.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4088f8040d3c02770a0fb6c0ff24c530001000b821000000c3b80b000000c3b816000000c3b821000000c30f1f44000019001000000000001f001000000000002500100000000000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="signed8"/>
+<bytechunk space="ram" offset="0x100080" readonly="true">
+6689f86683c00d6683f802770a0fb7c0ff24c5b0001000b821000000c3b80b000000c3b816000000c3b821000000c3909d00100000000000a300100000000000a900100000000000
+</bytechunk>
+<symbol space="ram" offset="0x100080" name="signed16"/>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+89f883c00d83f8027707ff24c530011000b821000000c3b80b000000c3b816000000c3b821000000c30f1f800000000017011000000000001d011000000000002301100000000000
+</bytechunk>
+<symbol space="ram" offset="0x100100" name="signed32"/>
+<bytechunk space="ram" offset="0x100180" readonly="true">
+4889f84883c00d4883f8027707ff24c5b0011000b821000000c3b80b000000c3b816000000c3b821000000c30f1f40009a01100000000000a001100000000000a601100000000000
+</bytechunk>
+<symbol space="ram" offset="0x100180" name="signed64"/>
+<bytechunk space="ram" offset="0x100200" readonly="true">
+4088f82cf33c02770a0fb6c0ff24c530021000b821000000c3b80b000000c3b816000000c3b821000000c30f1f44000019021000000000001f021000000000002502100000000000
+</bytechunk>
+<symbol space="ram" offset="0x100200" name="unsigned8"/>
+<bytechunk space="ram" offset="0x100280" readonly="true">
+6689f86683e8f36683f802770a0fb7c0ff24c5b0021000b821000000c3b80b000000c3b816000000c3b821000000c3909d02100000000000a302100000000000a9021000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x100280" name="unsigned16"/>
+<bytechunk space="ram" offset="0x100300" readonly="true">
+89f883c00d83f8027707ff24c530031000b821000000c3b80b000000c3b816000000c3b821000000c30f1f800000000017031000000000001d031000000000002303100000000000
+</bytechunk>
+<symbol space="ram" offset="0x100300" name="unsigned32"/>
+<bytechunk space="ram" offset="0x100380" readonly="true">
+4889f84883c00d4883f8027707ff24c5b0031000b821000000c3b80b000000c3b816000000c3b821000000c30f1f40009a03100000000000a003100000000000a603100000000000
+</bytechunk>
+<symbol space="ram" offset="0x100380" name="unsigned64"/>
+<bytechunk space="ram" offset="0x100400" readonly="true">
+668b076683c00d6683f802770a0fb7c0ff24c530041000b821000000c3b80b000000c3b816000000c3b821000000c3901d0410000000000023041000000000002904100000000000
+</bytechunk>
+<symbol space="ram" offset="0x100400" name="signed16_load"/>
+<bytechunk space="ram" offset="0x100480" readonly="true">
+0fbfc783c00d83f8027707ff24c5b0041000b821000000c3b80b000000c3b816000000c3b821000000c3660f1f44000098041000000000009e04100000000000a404100000000000
+</bytechunk>
+<symbol space="ram" offset="0x100480" name="signed16_widen"/>
+<bytechunk space="ram" offset="0x100500" readonly="true">
+4088f8040d3c02770a0fb6c0ff24c530051000b821000000c3b80b000000c3b816000000c3b821000000c30f1f44000019051000000000001f051000000000002505100000000000
+</bytechunk>
+<symbol space="ram" offset="0x100500" name="text8"/>
+</binaryimage>
+<script>
+  <com>option loweredswitch off</com>
+  <com>parse line extern int4 signed8(int1 selector);</com>
+  <com>parse line extern int4 signed16(int2 selector);</com>
+  <com>parse line extern int4 signed32(int4 selector);</com>
+  <com>parse line extern int4 signed64(int8 selector);</com>
+  <com>parse line extern int4 unsigned8(uint1 selector);</com>
+  <com>parse line extern int4 unsigned16(uint2 selector);</com>
+  <com>parse line extern int4 unsigned32(uint4 selector);</com>
+  <com>parse line extern int4 unsigned64(uint8 selector);</com>
+  <com>parse line extern int4 signed16_load(int2 *selector);</com>
+  <com>parse line extern int4 signed16_widen(int2 selector);</com>
+  <com>parse line extern int4 text8(char selector);</com>
+  <com>option setlanguage rust-language</com>
+  <com>lo fu signed8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu signed16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu signed32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu signed64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu unsigned8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu unsigned16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu unsigned32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu unsigned64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu signed16_load</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu signed16_widen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu text8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option setlanguage c-language</com>
+  <com>lo fu text8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RUST SWITCH LABELS #1: every function prints a Rust match" min="11" max="11">match \*?selector \{</stringmatch>
+<stringmatch name="RUST SWITCH LABELS #2: every signed first arm is negative" min="6" max="6">-0xd =></stringmatch>
+<stringmatch name="RUST SWITCH LABELS #3: every signed last arm is negative" min="6" max="6">-0xb =></stringmatch>
+<stringmatch name="RUST SWITCH LABELS #4: unsigned and text 8-bit high labels stay positive" min="2" max="2">0xf3 =></stringmatch>
+<stringmatch name="RUST SWITCH LABELS #5: only the unsigned 16-bit selector keeps 0xfff3" min="1" max="1">0xfff3 =></stringmatch>
+<stringmatch name="RUST SWITCH LABELS #6: only the unsigned 32-bit selector keeps 0xfffffff3" min="1" max="1">0xfffffff3 =></stringmatch>
+<stringmatch name="RUST SWITCH LABELS #7: only the unsigned 64-bit selector keeps its high label" min="1" max="1">0xfffffffffffffff3 =></stringmatch>
+<stringmatch name="RUST SWITCH LABELS #8: a char selector spells u8 with unsigned arms" min="1" max="1">unsafe fn text8\(mut selector: u8\) -> i32
+\{
+match selector \{
+0xf3 =></stringmatch>
+<stringmatch name="RUST SWITCH LABELS #9: the same char selector is signed in C" min="1" max="1">text8\(char selector\)
+\{
+switch\(selector\) \{
+case -0xd:</stringmatch>
+</decompilertest>

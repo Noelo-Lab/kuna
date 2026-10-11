@@ -2615,11 +2615,13 @@ impl ConsoleProgram {
         // load it swept the whole image on every binary and was discarded whenever
         // the gate was off (the default). See `passes::run_deferred_entry_passes`.
         let want_funcstart_patterns = self.arch().analysis_funcstart_patterns;
+        let want_coldentry = self.arch().analysis_coldentry;
         if (want_listing
             || want_fast_funcdisc
             || want_operand_refs
             || want_wide32_alone
-            || want_funcstart_patterns)
+            || want_funcstart_patterns
+            || want_coldentry)
             && self.analysis_image.is_some()
         {
             let analysis_target = self.arch.arch_id().to_string();
@@ -2637,16 +2639,16 @@ impl ConsoleProgram {
                     // in `merged` before `committed_entry_seeds` is read below, which
                     // is what hands the load-time inventory to the Listing walk as
                     // extra roots (`armdiscseed`).
-                    if want_funcstart_patterns {
+                    if want_funcstart_patterns || want_coldentry {
+                        let arch = self.arch();
                         let entry_out = kuna_analysis::passes::run_deferred_entry_passes(
                             &bytes,
                             &image,
-                            self.arch(),
+                            arch,
+                            &|id| analysis_pass_enabled(arch, id),
                         );
-                        for (id, out) in entry_out {
-                            if analysis_pass_enabled(self.arch(), id) {
-                                merged.merge(out);
-                            }
+                        for (_, out) in entry_out {
+                            merged.merge(out);
                         }
                     }
                     // Deferred Listing build + consumer/fast-inventory run, gated
@@ -2681,6 +2683,7 @@ impl ConsoleProgram {
                             &noreturn_seed_addrs,
                             &[],
                             &committed_entry_seeds,
+                            &merged.fde_interior_entries,
                             &plan,
                         );
                         for (id, out) in consumer_out {
@@ -2725,6 +2728,10 @@ impl ConsoleProgram {
             &mut merged.entries,
             &fde_bodies,
         );
+        // (kuna, `coldentry`) The FDE-interior entries a multi-entry `.cold`
+        // fragment is jumped into at, added past the suppression above.
+        let cold_entries = std::mem::take(&mut merged.fde_interior_entries);
+        merged.entries.extend(cold_entries);
         // (kuna, `pdbinterior`) The same rejection inside PDB procedures, on its own
         // terms: see `suppress_pdb_interior_entries`.
         suppress_pdb_interior_entries(self.arch(), &code_space, &mut merged);
@@ -2904,6 +2911,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // strictly inside one. Default-ON; with the gate off the fact stream is
         // dropped here and the discovery set is exactly what it was before.
         "fdeinterior" => arch.analysis_fdeinterior,
+        "coldentry" => arch.analysis_coldentry,
         "pdatainterior" => arch.analysis_pdatainterior,
         // (kuna) PDB-procedure-interior entry suppression — the extents come out of
         // the `.pdb`, so switching `pdb` off withdraws them too.
@@ -2961,6 +2969,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // silently re-enables a pass id that does not exist.
         "noreturn_discstrict" => arch.analysis_noreturn_discstrict,
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
+        "callerreads" => arch.caller_reads,
         "fid" => arch.analysis_fid,
         // (kuna) MSVC RTTI / vftable recovery — a standalone load-time pass whose
         // class-name + RTTI_* labels are computed at LOAD but COMMITTED only when
@@ -2986,6 +2995,14 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // Registered here so the fail-open `_ => true` never silently re-enables a
         // pass id that does not exist.
         "aifcorroborate" => arch.analysis_aifcorroborate,
+        // (kuna, GH-299) The AIF bracketed-candidate reject — like `aifstrict` it
+        // has no fact stream of its own, shaping the `aif` accept list inside
+        // `run_aif`. Registered here so the fail-open `_ => true` never silently
+        // re-enables a pass id that does not exist.
+        "aifbracket" => arch.analysis_aifbracket,
+        // (kuna, GH-299) The AIF filler reject, shaping the `aif` accept list the
+        // same way; registered for the same fail-open reason.
+        "aifnoppad" => arch.analysis_aifnoppad,
         // (kuna) Tail-call function-entry recovery — default-OFF (discovers more
         // functions, so it changes emitted C by construction). Listing consumer;
         // the live gate is the pre-invocation check in `run_listing_consumers`.
@@ -4313,12 +4330,13 @@ fn commit_analysis_output(
     //     shape as `cppproto` above, but the gate is three-valued, so the mode
     //     selects WHICH certainty tiers survive: `proven` only the prototypes the
     //     mangling entails, `inferred` those plus the class-evidence inferences,
-    //     `off` neither.
+    //     `off` neither. `msvcsig` picks which reading of an MSVC name applies.
     let cppsig_mode = prog.arch().analysis_cppsig;
     let cppsig_protos = if cppsig_mode.enabled() {
         kuna_analysis::demangle::kuna_cppsig::select(
             std::mem::take(&mut out.cpp_sig),
             cppsig_mode.inferred(),
+            prog.arch().analysis_msvcsig,
         )
     } else {
         Vec::new()
@@ -4548,6 +4566,15 @@ fn commit_analysis_output(
         sites.sort_unstable();
         sites.dedup();
         prog.arch_mut().error_noreturn_callsites = sites;
+    }
+
+    // (kuna `callerreads`) Park where each direct call returns to. Empty without
+    // the Listing, so the datatest/console parity paths are unaffected.
+    if !out.call_returns.is_empty() {
+        let mut sites = out.call_returns.clone();
+        sites.sort_unstable();
+        sites.dedup();
+        prog.arch_mut().kuna_call_returns = sites;
     }
 
     // 3a''. (kuna `formatstring static`) Park the per-call-site printf/scanf
@@ -4858,9 +4885,32 @@ fn commit_analysis_output(
     //     carries a DECLARATION (which can disagree with the code a compiler
     //     actually emitted), DWARF carries ground truth, so wherever both reach a
     //     function the DWARF signature must be the one that survives. Empty when
-    //     `--option cppsig off`.
-    for (addr, pieces) in cppsig_protos {
+    //     `--option cppsig off`. An MSVC declaration laid out for a named
+    //     convention is parked with that model, and dropped where the spec does
+    //     not register it as a model of its own (only an alias of the default),
+    //     since its storage would then be the default's. It is also locked onto
+    //     the symbol, as a `prototype` directive is, because a call through a PE
+    //     import slot reads the symbol's prototype, not the parked pieces; and
+    //     the address is recorded so the flow can make such a call direct.
+    for sig in cppsig_protos {
+        let kuna_analysis::demangle::kuna_cppsig::SelectedSig { addr, pieces, model, msvc } = sig;
         let a = Address::new(Rc::clone(code_space), addr);
+        let model = match model {
+            Some(name) => {
+                let model = prog.arch().get_model(name).filter(|m| m.get_alias_parent().is_none()).cloned();
+                let Some(model) = model else { continue };
+                prog.arch_mut().set_function_prototype_model_at(&a, Rc::clone(&model));
+                Some(model)
+            }
+            None => None,
+        };
+        if msvc {
+            let target = crate::assertions::ProtoTarget::At(a.clone(), String::new());
+            crate::assertions::lock_prototype_on_symbol(prog, &target, &pieces, model.as_ref());
+            if let Some(space) = a.get_space() {
+                prog.arch_mut().msvcsig_import_slots.insert((space.get_index(), addr));
+            }
+        }
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
 

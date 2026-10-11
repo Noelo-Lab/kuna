@@ -1,5 +1,5 @@
 //! A default target selected before BRANCHIND must remain the switch default.
-mod common;
+use crate::common;
 use common::process;
 
 use std::path::PathBuf;

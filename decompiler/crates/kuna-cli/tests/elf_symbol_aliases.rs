@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 #[path = "../../kuna-analysis/tests/fixtures/arm_aliases.rs"]
 mod fixture;
 use object::{Object, ObjectSymbol};

@@ -1,0 +1,92 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!--
+Independent assembly regression.
+Stage: P0 declaration parsing.
+Strict correctness fix; no option. Every assertion checks the corrected behavior.
+.text
+.global mmio_select
+.type mmio_select,@function
+mmio_select:
+ save %sp, -96, %sp
+ sethi %hi(0x20000), %l0
+ cmp %i0, 0
+ be .Lzero
+ mov 23, %l1
+ cmp %i0, 1
+ be .Lzero
+ mov 41, %l1
+ mov 59, %l1
+.Lzero:
+ st %i1, [%l0]
+ st %l1, [%l0+4]
+ st %l1, [%l0+8]
+ mov %i1, %o0
+ call notify
+ nop
+ ret
+ restore
+.size mmio_select, .-mmio_select
+
+.global notify
+.type notify,@function
+notify:
+ retl
+ nop
+.size notify, .-notify
+
+.text
+.global cursor_order
+.type cursor_order,@function
+cursor_order:
+ save %sp, -96, %sp
+ sethi %hi(0x21000), %l0
+ ld [%l0], %l1
+ ld [%l0], %l2
+ sll %l1, 2, %l1
+ sll %l2, 2, %l2
+ ld [%i0+%l1], %l3
+ ld [%i1+%l2], %l4
+ st %l3, [%i2]
+ st %l4, [%i2+4]
+ ret
+ restore
+.size cursor_order, .-cursor_order
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+9de3bfa02100008080a6200002800006a210201780a6200102800003a2102029
+a210203bf2240000e2242004e224200890100019400000040100000081c7e008
+81e8000081c3e00801000000
+</bytechunk>
+<bytechunk space="ram" offset="0x11000" readonly="true">
+9de3bfa021000084e2040000e4040000a32c6002a52ca002e6060011e8064012
+e6268000e826a00481c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="mmio_select"/>
+<symbol space="ram" offset="0x10044" name="notify"/>
+<symbol space="ram" offset="0x11000" name="cursor_order"/>
+</binaryimage>
+<script>
+  <com>parse line extern void mmio_select(int choice, int payload);</com>
+  <com>map address 0x20000 volatile int payload_register</com>
+  <com>map address 0x20004 volatile int configuration</com>
+  <com>map address 0x20008 volatile int mirror</com>
+  <com>parse line extern void notify(int value);</com>
+  <com>parse line extern void cursor_order(int *first, int *second, int *output);</com>
+  <com>map address 0x21000 volatile int cursor</com>
+  <com>lo fu mmio_select</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cursor_order</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="selected local reaches first device write" min="1" max="1">payload_register = payload;</stringmatch>
+<stringmatch name="selected local reaches configuration" min="1" max="1">configuration = v1;</stringmatch>
+<stringmatch name="mirror receives the local without a device read" min="1" max="1">mirror = v1;</stringmatch>
+<stringmatch name="first cursor snapshot is explicit" min="1" max="1">v1 = cursor;</stringmatch>
+<stringmatch name="second cursor snapshot is explicit" min="1" max="1">v2 = cursor;</stringmatch>
+<stringmatch name="first index uses first snapshot" min="1" max="1">\*output = first\[v1\];</stringmatch>
+<stringmatch name="second index uses second snapshot" min="1" max="1">v2 = second\[v2\];</stringmatch>
+</decompilertest>

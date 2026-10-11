@@ -469,7 +469,13 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   non-empty section out above `0x400000` (`RELOC_BASE`, matching CLE so addresses
   line up with angr's), apply the relocations, rebase defined symbols, and bind
   each undefined extern to a synthetic call target in an extern area above the
-  sections so calls render by name. The relocation encoder handles generic
+  sections so calls render by name. An adjacent SPARC `sethi`/`jmpl` pair
+  carrying `HI22`/`LO10` relocations to the same symbol with zero addends also
+  identifies that symbol as code, even when the ELF marks it `STT_NOTYPE`.
+  The jump must use the register written by `sethi` and discard the link or
+  write `%o7`; an ordinary address materialization or data load does not qualify.
+  This lets existing tail-call recovery resolve a named external destination
+  and preserve its delay-slot arguments. The relocation encoder handles generic
   absolute, relative, PLT-relative, and image-offset fields at 8/16/32/64 bits in
   the object's byte order, plus the instruction fields and ABI formulas for ARM
   `CALL`/`JUMP24`/Thumb branches/`REL32`/`PREL31`, AArch64 branch/page/low-12
@@ -2591,12 +2597,89 @@ moves.
   from class evidence mined out of the binary's own symbols: a scope that owns a
   constructor, a destructor, a cv-qualified member or a `_ZTV`/`_ZTI`/`_ZTS` symbol
   is a class, so its members take `this`; a scope with no such witness is a
-  namespace, so its functions do not. A 32-bit MSVC `__thiscall` member is refused
-  under every mode — that ABI passes `this` in ECX rather than as ordinary argument
-  0, and selecting the registered `__thiscall` prototype model (04 §4.1) is the
-  follow-up. Like the DWARF arm the pass runs at `load file`, so both certainty
-  tiers are computed there and stashed apart, and the mode selects which of them
-  the analysis commit applies.
+  namespace, so its functions do not. This reading refuses a 32-bit MSVC
+  `__thiscall` member — that ABI passes `this` in ECX rather than as ordinary
+  argument 0 — and reads an MSVC name only off a defined symbol; the MSVC arm
+  below replaces it for MSVC names unless `msvcsig` is off. Like the DWARF arm the
+  pass runs at `load file`, so both certainty tiers are computed there and stashed
+  apart, and the mode selects which of them the analysis commit applies.
+- **MSVC declarations** (`msvcsig`, `on|off`, default `on`, applied only while
+  `cppsig` is not `off`;
+  `decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_msvcsig.rs`, the
+  signature half of Ghidra's `MicrosoftDemanglerAnalyzer`) reads an MSVC-mangled
+  name as the full declaration it is, and reads it off the **PE imports** as well
+  as off defined symbols. The Itanium reading above sees only `file.symbols()` and
+  `file.dynamic_symbols()`, and a PE import lives in the import table, so a call
+  through the IAT to `?IsValid@Arr@@QAEHXZ` was named `Arr::IsValid` and had no
+  prototype: the `this` that MSVC passes in ECX was dropped, a hidden return
+  pointer was left as the call's only argument, and the arguments a callee did
+  not claim were handed to the next call (a copy constructor took the four pushes
+  meant for the call after it). Unlike an Itanium name an MSVC name states the
+  access specifier, `static`, the calling convention, the return type and every
+  parameter type, so the arm decides five things from it. The **convention**: on
+  32-bit x86 (a PE or COFF image) the stated `__cdecl`, `__stdcall`, `__thiscall`
+  or `__fastcall` names the prototype model the pieces are laid out for, so a
+  member takes `this` in ECX and a `__cdecl` callee leaves its arguments for the
+  caller to pop; any other platform keeps its one default convention, and a
+  convention with no model of its own in the spec (only an alias of the default)
+  drops the declaration at the commit. **`this`**: a member that is not `static`
+  takes one as argument 0. The **return type** is applied, which Itanium cannot
+  offer; a constructor or destructor states none and keeps return recovery. The
+  **hidden return pointer**: a class, struct or union returned by value comes back
+  through a pointer the caller passes after `this`, and the callee returns that
+  pointer in EAX — but not always, since MSVC returns a trivially copyable
+  aggregate of 1, 2, 4 or 8 bytes from a free or `static` function in EDX:EAX and
+  the name gives neither the size nor the triviality. The pointer is placed only
+  where it is certain: for every non-static member (which always returns a class
+  indirectly), and for any function whose class the image proves non-trivial by
+  defining or importing its destructor (`??1`), a vftable (`??_7`), a deleting
+  destructor (`??_G`/`??_E`) or a constructor that takes arguments (`??0`, a copy,
+  move or user constructor) — a trivial special member is never emitted, so its
+  symbol cannot exist. A default constructor is not a witness, because one that
+  only runs member initializers is emitted for a class MSVC still returns in
+  registers; and a free function returning a class with no witness is refused.
+  The **parameters**: a primitive (at the MSVC width: `long` is 4 bytes, `wchar_t`
+  2, `long double` 8), a pointer, a reference or a function pointer is placed. A
+  class, struct, union or enum passed **by value** has a width the name does not
+  give — MSVC copies it into the outgoing argument area at its own size — so on an
+  **import** declared `__cdecl` the parameters before it are placed and the rest of
+  the list is left open, the way a variadic declaration leaves it (the caller pops,
+  so the open tail claims nothing about the stack), and everywhere else the
+  declaration is refused: a callee-pops convention would claim a stack adjustment
+  that depends on the missing size, and a defined function would lose the
+  parameters its own body recovers. Each declaration is checked whole before any
+  type is built, so a refused one leaves nothing in the type factory. Overloaded
+  operators, which the Itanium reading refuses for its bracket-depth parse, are
+  read here (`operator<<`, `operator()`, `operator new`, conversions), since the
+  parameter list is found by matching parentheses from the end and an MSVC name
+  states its `this` outright; special names (`` `vftable' ``, adjustor thunks),
+  data symbols, function templates and the `__vectorcall`/`__clrcall` conventions
+  are refused. At the commit an MSVC prototype is parked by entry address on every
+  address the import resolver names (the IAT slot and each `FF 25` thunk), its
+  model is recorded against that address
+  (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
+  (Architecture::set_function_prototype_model_at)`), and it is also locked onto the
+  function symbol as the prototype-bearing `TypeCode` a `--assert prototype`
+  directive would lock (04 §4.1). The lock is what reaches a 32-bit IAT call:
+  `ActionDefaultParams` sees the target of a `call [abs32]` as a temporary its
+  flow has not linked to the slot yet, and `ActionDeindirect` later merges the
+  prototype `query_function` reads off the symbol, so a prototype parked only as
+  pieces is not seen there. The commit also records each locked address, and the
+  flow makes a call through one of those slots direct before the spec is built
+  (02 §2.1), so the locked prototype is copied in at flow instead of costing the
+  function a restart. Measured on the local RE-challenge corpus, 175 distinct
+  32-bit and 229 distinct 64-bit MSVC PE images that import MSVC-mangled names
+  (the `msvcp` iostream and string API in most): calls printed with no arguments
+  fall from 13,819 to 11,302 and from 18,858 to 17,355, 5.4% and 8.3% of the
+  functions change, and total decompile CPU time moves by +0.3% and -0.5%.
+  LOSS: a parameter after a by-value class is not placed, and where MSVC
+  constructs that class in its
+  outgoing slot through a pointer — a copy constructor, or a call returning into
+  the slot — the call-site recovery refuses every slot above the one whose address
+  was taken, so those arguments render as stores before the call
+  (`MakeStack(a1)`, after `Arr::Arr((Arr *)&v1,a2)`, keeps only its hidden return
+  pointer). `--option msvcsig off` restores the Itanium-arm reading of MSVC names
+  exactly.
 - **Source-language detection**
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
   (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) runs once,
@@ -3373,6 +3456,33 @@ without `.eh_frame` FDEs, which covers essentially the whole bare-metal ARM
 population (they unwind through `.ARM.exidx`), so the ARM entry-recall options
 compose with it unchanged.
 
+**(kuna) Except where a `.cold` fragment is entered more than once**
+(`coldentry`, default-**on**;
+`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_coldentry.rs`). GCC's
+hot/cold splitting moves a function's unlikely blocks into a separate `foo.cold`
+fragment with its own FDE, and when several unlikely paths are split out they are
+laid back to back in that ONE fragment, each reached by its own `jmp`/`jcc rel32`
+from the hot body. The FDE oracle names only the fragment's first address, so every
+later path is strictly inside an FDE body: no metadata oracle names it, and the hot
+function's decompile inlines it through the jump. Ghidra makes each of those jump
+targets a function, since it is reached from outside every body that holds it; on
+Ubuntu 22.04's stripped `/bin/bash` that is 18 entries in `[0x30c3d, 0x312b3]`.
+An address `t` strictly inside a single-function FDE body (the `fdeinterior`
+eligibility above) is added when (1) a direct `jmp rel32`/`jcc rel32` outside the
+body targets it — found by a byte scan of the executable sections for the `E9` /
+`0F 8x` encodings and confirmed by decoding the source; (2) a linear decode of the
+body from its start lands on `t`; and (3) the instruction before `t` is `ud2`,
+`ret`, `hlt` or a direct `jmp`, so nothing inside the fragment flows into it. Guard
+3 keeps an ordinary function's shared tail (reached by its own fall-through as well
+as another function's jump) whole; an indirect `jmp` does not satisfy it, since the
+block after one is a switch case as often as an entry. Candidates are pre-filtered
+on the bytes before `t` and a body is decoded only up to its last surviving
+candidate, so the pass costs one scan of the executable bytes plus short decodes
+(about 2 ms on `bash`). It decodes through the engine `Translate`, so it runs as a
+deferred entry pass at the commit point, and its entries join the inventory *after*
+the `fdeinterior` filter (which would otherwise reject every one of them by
+construction). x86/x86-64 ELF only; inert without `.eh_frame`.
+
 **(kuna) `.pdata` interiors are not function starts either** (`pdatainterior`,
 default-**on**, DIV-155;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_pdatainterior.rs`). The
@@ -3906,6 +4016,69 @@ a refusal cannot omit it from the documentation checks. A compatibility test
 pins the existing order and spellings; the scheduling and fallback policies do
 not depend on this representation.
 
+(kuna) **The ARM decode mode the walk carries** (`armwalkmode`, default on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_armwalkmode.rs (ArmWalkMode)`,
+driven by `decompiler/crates/kuna-analysis/src/listing/walk.rs (walk_carried)`).
+ARM `TMode` chooses the instruction set an address decodes in, and an
+interworking call (`blx imm`) runs a SLEIGH `globalset` that writes the
+callee's mode into the `ContextDatabase` from its target up to the next address
+where the mode was set explicitly. A stripped image has no such address, so
+once the walk decoded a caller of a Thumb helper, every address above the
+helper read as Thumb, and the walk decoded an A32 function placed there in
+Thumb even when an A32 `bl` called it: in GH-780's 136-byte image the A32
+helper at `0x2000080`, called after a `blx` to a Thumb helper at `0x2000040`,
+decompiled to `halt_missing()` with a Thumb decode starting at `0x2000082`.
+Ghidra's disassembler instead carries the context along the flow it follows
+and applies a `globalset` to its target.
+
+With the option on, the walk carries a mode the way the instruction set does,
+starting from code whose mode the image states: an even `e_entry` and each even
+function symbol, which the ELF for the ARM architecture makes A32. An
+instruction decoded in a carried mode passes it to its branch targets and its
+fall-through, and a direct call passes its target the mode it commits there
+(`blx imm` switches) or else its own (`bl`); the first call to reach a target
+decides. Each such instruction decodes through a context read override
+(`Translate::set_context_read_override`), so the database's partition is not
+touched while it decodes. A function entry nothing carries a mode to (a
+prologue-pattern, pointer, callback or gap seed) and everything reached from
+it read the database exactly as before, including what the walk's own `blx`
+writes put there, so a Thumb function reached only through a pointer table
+keeps the Thumb a `blx` below it wrote.
+
+The instruction after a call or a user-defined p-code operation (`svc`,
+`bkpt`, a barrier, a coprocessor access) is where a carried mode can run into
+the next function, when the call or operation does not come back at its site.
+The walk therefore holds each such address until it has walked every function
+its worklist holds, so a function a call reaches decodes in its call's mode
+before a fall-through can claim its first instruction. An address still
+undecoded then carries the mode on when the database holds that mode there,
+after an operation or an indirect call, or when the callee reaches a return
+instruction or an indirect branch through decoded code; resuming one address
+can decode the return another callee needs, so the walk repeats until no held
+address qualifies, and only then lets the rest read the database. A local
+function such as `b .` that never returns therefore leaves the bytes after its
+calls to the database. The fall-through of an ordinary instruction and a
+branch target are still trusted, so code a compiler leaves unreachable after
+`__builtin_unreachable()` without a call can still carry the mode into what
+follows it.
+
+When the walk ends, every instruction it decoded in a carried mode whose span
+the database holds in the other mode is painted with that mode
+(`set_variable_region` over runs of adjacent instructions), so the decompiler
+and every later walk read the instructions this walk found. The address after
+each painted run is then marked as set with the mode it already holds: a
+`blx` write at or inside the run, from a later walk or the decompiler, stops
+at the run's end instead of filling the code placed after it, and one written
+before the run stops at its start. Nothing else changes value.
+The option applies to a linked ARM ELF with an even `e_entry`, no mapping
+symbol, no odd (Thumb) function symbol, no Cortex-M vector table, no
+`armfuncmode` extent and build attributes that allow A32 code
+(`decompiler/crates/kuna-analysis/src/loader/kuna_armfloatabi.rs (thumb_only)`),
+and not under an explicit `--isa`. Where metadata paints a mode, the walk reads
+those paints as before. The parallel walk
+declines every ARM image already (its decodes commit context), and the
+validated-frame walk of `armframes` keeps its own context lifecycle.
+
 (kuna) **Flow-proven ARM decode-mode paints** (`flowmode`, values `on`,
 `aftercall` and `off`, default `off`;
 `decompiler/crates/kuna-analysis/src/listing/kuna_flowmode.rs (disagreeing_runs)`).
@@ -3916,7 +4089,9 @@ address where the mode was set explicitly. A stripped image has no such address,
 so once the walk decodes a caller of a Thumb helper, every address above the
 helper holds Thumb: a `bl` to the A32 helper at `0x2000080`, two instructions
 after a `blx` to a Thumb helper at `0x2000040`, decompiled to `halt_missing()`
-with a Thumb decode starting at `0x2000082`.
+with a Thumb decode starting at `0x2000082`. That is the walk `armwalkmode off`
+runs; with it on (the default), the walk itself already decodes such code in
+the mode its flow carries, and this proof finds nothing left to paint there.
 
 The walk itself is not changed: its instructions, functions and references, and
 every context write it makes, stay as they are. After it, kuna decodes again the
@@ -4075,6 +4250,52 @@ cross-reference is filed in both directions either way. PPC64-only, and inert on
 an image whose symbols carry no local-entry annotation. Off restores the previous,
 husk-producing discovery set exactly.
 
+(kuna) `thunkentry` (default-on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_thunkentry.rs (thunk_entries)`)
+answers the opposite question about a *jump* target: whether it is a function
+although no CALL reaches it. A function whose whole body is one direct `jmp` is a
+thunk, and the walk attributed the routine it jumps to to the thunk, because only a
+CALL target becomes an entry. MSVC `/INCREMENTAL` routes the image entry and every
+call through a table of 5-byte `jmp rel32` thunks at the start of `.text`, so on
+such an image the walk found the thunks and none of the bodies, `fast` listed no
+real function at all, and the last thunk's extent ran over every body after it.
+The pass reads the completed walk and promotes the target of a walk entry that
+opens with a direct unconditional jump to a decoded instruction when three
+conditions hold. No decoded instruction falls through into the target and no
+conditional branch targets it, so the target is not the middle of a straight-line
+run or a loop head. The address right after the thunk's jump holds no ordinary
+code: it is undecoded, a function entry, another direct jump (the next thunk of a
+table), or the target itself; a function that opens with a jump over its own loop
+body to the loop condition fails here, because the walk decoded that body as a
+branch target of the condition. And the thunk is itself an entry, including one the
+pass promoted, so a thunk-to-thunk chain resolves; the chain is followed at most
+four jumps from a walk entry, so an obfuscator's chain of tens of thousands of
+jumps adds four entries rather than one per jump. The second condition reads the
+growing entry set, so acceptance runs over a worklist to its least fixpoint. The
+promoted targets join `fast_funcdisc` and `funcdisc_recursive`, wherever the walk's
+own set is committed, and nothing else: they are branch successors of the thunks,
+so the walk decoded them either way and no instruction or Listing consumer changes.
+x86 only. Measured on five x64 MSVC `/INCREMENTAL` images scored against their own
+`.pdb` (kept where kuna cannot read it), all 84 added entries are real function
+starts, no real body is split and no entry is lost. On 88 crackmes that carry a thunk
+table it adds 5,087 entries in `fast` mode and removes none; 98% of them start at a
+thunk or right after padding or a `ret`, and the rest checked by hand are function
+starts after a thunk table or after a Delphi `jmp`-over-`ret` prologue. On 464
+stripped x86-64 ELFs and 12 i386 PEs without incremental linking it adds and removes
+nothing, so their output is unchanged (`decompile-all` is byte-identical on `gzip`,
+`dash`, `diff` and two of the PEs). Off restores the previous discovery set exactly.
+
+(kuna) `callerreads` (default-on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs (call_returns)`)
+reads the completed walk for the decompiler rather than for the inventory: every
+Call cross-reference, paired with the address its calling instruction falls through
+to, as `(callee entry, return address)`, sorted and de-duplicated
+(`AnalysisOutput::call_returns`). The commit parks the list on the architecture,
+and a single-function decompile of a function recovered `void` decodes its callers
+from those addresses to see whether they read its return register (chapter
+[04](04-calls-and-prototypes.md)). It adds no entry and no decode to the walk; off,
+nothing is filed.
+
 A context painter applies the ARM/MIPS decode-mode paints per address before each
 decode, so a Thumb or MIPS16 body disassembles in the right ISA. Each instruction
 is decoded by driving `Translate::one_instruction` with a capturing p-code sink
@@ -4084,6 +4305,29 @@ classified by a lifted transliteration of the S2 flow rules
 load-bearing gotchas are worth restating: a constant-space branch operand is
 p-code-relative (an intra-instruction branch), never a VMA; fall-through is decided
 by the *last* op only; and delay slots are already folded into the reported length.
+
+The instruction model stores records in 1,024-row chunks, with a B-tree of
+`(address, row number)` pairs for ordered lookup
+(`decompiler/crates/kuna-analysis/src/listing/kuna_insnstore.rs (InstructionStore)`).
+A partly filled tree node reserves small row numbers rather than full instruction
+records, and growing the walk allocates at most one more chunk without copying a
+whole-image buffer. Every record retains its flow targets, assembly and lazy
+p-code fields. Exact, range and interior queries still borrow the original
+record in address order. Replacing an address reuses its row; ARM frame-preserving
+rebuilds clone the records and index before extending them. Serial and parallel
+walks use the same store. This changes allocation and lookup layout, not the
+instruction partition or the facts any consumer receives.
+
+After loading, committing analysis and applying caller assertions, the in-process
+CLI returns unused glibc heap pages before selecting and decompiling functions
+(`decompiler/crates/kuna-cli/src/kuna_allocrelease.rs (after_analysis)`). Dropping
+the Listing ends its ownership, but small tree and string allocations can leave
+resident pages in allocator arenas. A single `malloc_trim(0)` at this boundary
+releases free pages without discarding live program facts or imposing a memory
+budget. This applies on GNU/Linux; other platforms retain their allocator's
+ordinary release policy. It reduces post-analysis residency, while the chunked
+instruction store reduces the construction peak on every platform. Worker
+admission still uses the measured high-water mark, not the trimmed current RSS.
 
 Three things the walk deliberately does **not** always produce. First, the human
 assembly text on each instruction: capturing it means a *second* full SLEIGH parse
@@ -4116,12 +4360,25 @@ pointer-only entries `fast_funcdisc` exists to find.
 
 Second, the cross-reference model itself, on the same reasoning and the same
 gate. An edge is filed for every control-flow successor of every instruction, a
-plain fall-through included, so the two direction maps together hold rather more
-entries than the instruction model does — and each is a `Vec` of its own inside a
-B-tree, which is several times the per-edge cost of an instruction. The model has
-exactly two readers, `noreturn_disc` and `tailcallentry`, and both are `listing`
-consumers, so a `fast_funcdisc`-only walk — again, the whole-binary export's path
-on any image `--mode auto` resolves to `fast` — builds neither map and every xref
+plain fall-through included. The walk collects each edge once in a contiguous
+buffer, including edges whose destination is not decoded. After the walk, it
+sorts and deduplicates that buffer by `(source, target, kind)` and makes one copy
+sorted by `(target, source, kind)`
+(`decompiler/crates/kuna-analysis/src/listing/kuna_compactrefs.rs (ReferenceIndex)`).
+Stable sorting preserves the first edge's operand metadata when duplicates are
+removed. Incoming and outgoing queries binary-search the corresponding buffer
+and borrow the matching slice; source iteration skips adjacent equal sources.
+There is no separate map node or growable vector for each instruction's
+fall-through. The reference model keeps the same edges, ordering, distinct-site
+counts and absence queries as the former bucket maps. Serial walks, decode-lane
+merges and ARM frame-preserving rebuilds all use this representation. During
+index construction, the deduplicated buffer is trimmed to its length before it
+is copied, and the copy is sorted in place, its keys being unique; every rebuild
+still owns its instruction partition.
+
+The readers, including `noreturn_disc`, `tailcallentry` and static format-string
+analysis, are `listing` consumers, so a `fast_funcdisc`-only walk — again, the whole-binary export's path
+on any image `--mode auto` resolves to `fast` — builds neither reference buffer and every xref
 query answers "none" for every address. What must hold is that nothing else about
 the walk changes, and nothing does: the reference filing is a pure sink, so the
 instructions decoded, the functions discovered and the executable ranges are
@@ -4309,13 +4566,68 @@ the cursor past the accepted body — a phantom accepted one halfword inside a l
 pool consumes the real function behind it. Off restores the byte-granular cursor
 exactly.
 
-The complementary reject the issue asks for — refuse a candidate bracketed by a known
-function — is deliberately absent. The Listing's function model is entry-ordered and
-carries no extents, so "this hole lies inside one body" can only be approximated by
-the interval between known entries, and on a sparsely discovered image that
-approximation swallows whole unexplored regions rather than one body's interior. It
-is the `fdeinterior` question (§1.5) asked of an image that has no unwind extents to
-answer it with, and the answer needs real per-instruction walk ownership.
+(kuna, GH-299) The complementary reject the issue asks for — refuse a candidate
+bracketed by a known function — is `aifbracket` (default-on;
+`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifbracket.rs`). Some holes
+are not gaps between functions but blocks inside a function the walk already knows,
+behind a dispatch it could not follow, an undecodable instruction, or a call it
+believes does not return; a block there that opens with a common prologue and
+branches back into the function's decoded code passes both acceptance tests, since
+the validity walk counts that branch as adding information. The Listing's function
+model is entry-ordered and carries no extents, so "this hole lies inside one body"
+cannot be read off the interval between known entries — on a sparsely discovered
+image nearly every hole lies between two of them, and an interval test swallows
+whole unexplored regions. It is the `fdeinterior` question (§1.5) asked of an image
+with no unwind extents, and the candidate's own speculative body answers it instead:
+an accept is a fragment of its enclosing function when that body falls through or
+jumps (not calls) into an instruction the walk decoded that is not a function entry
+and lies in the same entry interval as the candidate. A fragment is refused unless
+boundary evidence says a function starts there anyway: the walk files a reference to
+it, or an aligned pointer-sized word in an allocated section holds its address; it
+lies within the first word of a hole that a return, a direct unconditional jump or a
+no-return call opens (the word admits the function behind a one-word A32 literal
+pool); or the instruction ending exactly at it is alignment padding (`nop`, `int3`,
+a self-move or self-`lea`), a return or an unconditional jump. A hole a computed jump
+opens has no such boundary, which is exactly the unresolved-switch case. Like an
+`aifcorroborate` refusal, a refused fragment still consumes its body so the cursor
+does not resume inside it. The refusal runs only in the plain gap walk (both the
+Listing and the reference-walk callers); the frame-prefix reconciliation, which
+replaces one accepted root by another, is untouched. Scored against unstripped twins
+it removes 1,291 to 2,874 mid-body entries per corpus and mode (ARM ELF, i386 PE)
+without losing or gaining a true function start; most of the mid-body entries that
+remain never touch decoded code — the tail of a function that ends in its own return
+— and are outside what a flow-join proof can see.
+
+(kuna, GH-299) No gap entry starts on filler: `aifnoppad` (default-on;
+`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifnoppad.rs`). The holes
+between functions are mostly alignment padding, which the fingerprint test normally
+refuses because no four discovered functions open with two `nop`s. Some images do
+have them — Wine's exported unimplemented-function stubs open with nine `nop`s — and
+then the `nop` run between each relay thunk's `ret` and the next thunk's
+hot-patchable `mov edi,edi` entry passes both tests (a fingerprint match, and a valid
+subroutine that falls through into decoded code) and becomes a function of its own
+in front of one kuna already has; zero halfwords around ARM literal pools are
+accepted the same way, and an accepted zero run swallows the function behind it. A
+candidate whose first instruction is filler is therefore classified by the run of
+filler it opens. Zero fill (x86 `add [eax],al`, A32 `andeq r0,r0,r0`, Thumb
+`movs r0,r0`) is never probed. Padding — `nop` of any width, `int3`, a self-`lea`,
+or a register self-move on a 32-bit target — is not probed when the run ends
+exactly at a known function entry; when it ends at undecoded code the candidate is
+probed as before, but an accept is planted on the first instruction after the
+padding, since that is where the function the walk just validated begins. Padding
+is never refused outright in front of undecoded code because it is also a
+legitimate first instruction: symbol tables start 903 functions with `nop` in the
+i386 PE corpus and 56 in the ARM one (Wine's stubs, an empty `-O0` function's
+`nop; bx lr`), and `-fpatchable-function-entry` starts every function with one.
+`mov edi,edi` is never padding — it is the MSVC hot-patch prologue that opens 7,827
+true starts in the PE corpus — and neither is any self-move on a 64-bit target,
+where a 32-bit one zero-extends its register. A refusal is a plain reject, not a
+body claim, so the cursor moves on through the filler. Like `aifbracket` it runs
+only in the plain gap walk. Scored against unstripped twins in the default mode it
+loses no true function start on any corpus and gains 50 on the i386 PEs (the
+function behind padding, now at its own address) and 38 on the ARM ELFs (the
+function a zero run used to swallow); it removes 7,446 non-start PE entries and a
+net 77 mid-body ARM ones, and leaves i386 and x86-64 ELFs unchanged.
 
 (kuna, GH-313) Upstream applies a **second** fingerprint test that kuna's port
 dropped. Its analyzer refuses a candidate twice — once on the shared-prologue count
@@ -4964,8 +5276,8 @@ admit recovered frames share one context lifecycle
   below its corpus threshold, or enabled. Repeated queries and later
   decompilation therefore see the same unrelated instruction streams.
 
-Initial Listing discovery retains its existing context behavior and optional
-`flowmode` proof policy. Already established Listing bodies are retained during
+Initial Listing discovery keeps its own context behavior, `armwalkmode`'s
+carried modes and the optional `flowmode` proof policy. Already established Listing bodies are retained during
 a recovery rebuild. Provisional
 bodies contradicted by direct interworking, including calls into instruction
 interiors, are invalidated using the recorded call mode. Inventory rebuilds

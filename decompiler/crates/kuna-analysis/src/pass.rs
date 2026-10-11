@@ -316,6 +316,11 @@ pub struct AnalysisOutput {
     /// [`crate::entry::kuna_pdatainterior`] (`.pdata` records), so the list is
     /// empty whenever their gates are off and the suppression is a no-op.
     pub fde_bodies: Vec<(u64, u64)>,
+    /// (kuna) Function entries strictly inside an FDE body that the image itself
+    /// enters from outside it — the extra entry points of a multi-entry `.cold`
+    /// fragment. Added after the [`Self::fde_bodies`] suppression. Produced only by
+    /// [`crate::entry::kuna_coldentry`] (`coldentry`).
+    pub fde_interior_entries: Vec<u64>,
     /// (kuna) PDB procedure extents that describe exactly one function, as
     /// `[start, end)`, sorted and disjoint. Applied after [`Self::fde_bodies`],
     /// only where a function is committed at `start` (a `static` function has an
@@ -355,6 +360,10 @@ pub struct AnalysisOutput {
     /// flow-follower walks past the call into the NEXT function and absorbs it
     /// (the boundary-overrun class, ~50% of kuna's Ghidra GED gap).
     pub no_fallthru_calls: Vec<u64>,
+    /// (kuna `callerreads`) Every direct call of the Listing walk as `(callee
+    /// entry, return address)`; the decompile step decodes a `void` function's
+    /// callers from there.
+    pub call_returns: Vec<(u64, u64)>,
     /// Extra read-only address ranges (e.g. `.got` after relocation).
     pub readonly: Vec<(u64, u64)>,
     /// (kuna) Address ranges holding an **external reference** — an import slot
@@ -529,6 +538,8 @@ impl AnalysisOutput {
         self.cpp_dwarf.prototypes.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_sig.proven.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_sig.inferred.iter_mut().for_each(|(_, p)| fix_proto(p));
+        self.cpp_sig.msvc.iter_mut().for_each(|(_, p, _)| fix_proto(p));
+        self.cpp_sig.msvc_legacy.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.format_sites.iter_mut().for_each(|f| fix_proto(&mut f.pieces));
     }
 }
@@ -554,6 +565,16 @@ pub struct CppSigFacts {
     /// `_ZTV`/`_ZTI`/`_ZTS` symbol is a class; one with no such witness is a
     /// namespace).
     pub inferred: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    /// (kuna `msvcsig`) The MSVC-mangled declarations read with their calling
+    /// convention, return type and hidden return pointer, from defined symbols and
+    /// from PE imports. The third field names the prototype model the pieces were
+    /// laid out for (`__thiscall`, `__cdecl`, ...) on a 32-bit x86 image, where the
+    /// convention decides the storage; `None` elsewhere.
+    pub msvc: Vec<(u64, kuna_decomp::fspec::PrototypePieces, Option<&'static str>)>,
+    /// (kuna `msvcsig off`) The same defined MSVC symbols read the way `cppsig`
+    /// read them before the MSVC arm existed, applied in place of [`Self::msvc`]
+    /// when that gate is off.
+    pub msvc_legacy: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
 }
 
 /// (kuna `cppproto`) The DWARF facts recovered by resolving a subprogram DIE
@@ -588,10 +609,12 @@ impl AnalysisOutput {
         self.typed_data.extend(other.typed_data);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
+        self.fde_interior_entries.extend(other.fde_interior_entries);
         self.pdb_bodies.extend(other.pdb_bodies);
         self.entry_names.extend(other.entry_names);
         self.noreturn.extend(other.noreturn);
         self.no_fallthru_calls.extend(other.no_fallthru_calls);
+        self.call_returns.extend(other.call_returns);
         self.readonly.extend(other.readonly);
         self.externref.extend(other.externref);
         self.strings.extend(other.strings);
@@ -611,6 +634,8 @@ impl AnalysisOutput {
         self.cpp_dwarf.prototypes.extend(other.cpp_dwarf.prototypes);
         self.cpp_sig.proven.extend(other.cpp_sig.proven);
         self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
+        self.cpp_sig.msvc.extend(other.cpp_sig.msvc);
+        self.cpp_sig.msvc_legacy.extend(other.cpp_sig.msvc_legacy);
         self.format_sites.extend(other.format_sites);
         self.libctypes_glibc |= other.libctypes_glibc;
         self.libctypes_refused |= other.libctypes_refused;

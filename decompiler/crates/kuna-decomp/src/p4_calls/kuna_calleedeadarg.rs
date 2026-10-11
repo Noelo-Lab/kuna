@@ -366,6 +366,31 @@ impl CalleeEntryDead {
             || (stores && self.stored_read_bytes.contains(&(self.reg_idx, low)))
     }
 
+    /// How many bytes of `[addr, addr+size)`, counted from its least
+    /// significant end, the widest counted read of that end consumes, rounded
+    /// up to a power of two. `None` unless [`Self::reads_low_byte`] holds.
+    pub fn low_read_width(&self, addr: &Address, size: int4) -> Option<int4> {
+        if !self.reads_low_byte(addr, size, true) {
+            return None;
+        }
+        let (off, end) = (addr.get_offset(), addr.get_offset().wrapping_add(size as u64));
+        let low = if addr.is_big_endian() { end - 1 } else { off };
+        let width = self
+            .reads_live
+            .iter()
+            .filter(|&&(idx, roff, rsz)| idx == self.reg_idx && roff <= low && low < roff + rsz as u64)
+            .map(|&(_, roff, rsz)| {
+                if addr.is_big_endian() {
+                    end - roff.max(off)
+                } else {
+                    (roff + rsz as u64).min(end) - off
+                }
+            })
+            .max()
+            .unwrap_or(1);
+        Some((width as u32).next_power_of_two().min(size as u32) as int4)
+    }
+
     /// Mark byte `b` of the register file written before every read of it, so
     /// a test can stand up a partial write followed by a wide read.
     #[cfg(test)]

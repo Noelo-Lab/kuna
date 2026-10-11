@@ -1,7 +1,7 @@
 //! Pushed scratch storage, partial reads, snapshots and overlapping byte copies (#810).
 #[path = "common/arm_images.rs"]
 mod arm_images;
-mod common;
+use crate::common;
 
 use std::process::Command;
 use std::time::Duration;

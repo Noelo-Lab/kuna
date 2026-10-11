@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,
@@ -633,6 +633,7 @@ fn leaf_callees_with_conditional_code_take_zero_for_unread_words() {
 /// Compile `sources` with the host compiler and return what the program prints.
 fn compile_and_run(sources: &[std::path::PathBuf], executable: &std::path::Path) -> String {
     let compile = Command::new("cc")
+        .args(common::CC_GCC15_DEMOTE)
         .args(["-std=c11", "-O0", "-w", "-o"])
         .arg(executable)
         .args(sources)

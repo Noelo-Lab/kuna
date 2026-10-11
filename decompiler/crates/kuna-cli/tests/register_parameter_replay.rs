@@ -1,5 +1,5 @@
 //! A later same-width register local cannot replace the incoming parameter.
-mod common;
+use crate::common;
 
 use std::process::Command;
 

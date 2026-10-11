@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: the target of a jump thunk is a function entry
+    (`option thunkentry on|off`, default-ON).
+
+    Issue:      kuna GH-992 - functions behind `jmp rel32` thunks are never
+                function starts (MSVC /INCREMENTAL).  The Listing walk makes a
+                function only at a CALL target, so a routine reached only
+                through a `jmp` thunk was attributed to the thunk.
+    Stage:      P1 code/data partition - the Listing walk's committed function
+                set (`listing/kuna_thunkentry.rs`, folded into `fast_funcdisc`
+                and `funcdisc_recursive`).
+    P0 assert:  `option thunkentry on|off`.
+
+    The XML wrapper only provides the harness architecture.  Every pass clears
+    it and loads `thunk_table_pe_i386.exe` (source `thunk_table_pe_i386.asm`
+    beside it): three 5-byte `jmp rel32` thunks at 0x401000 / 0x401005 /
+    0x40100a, then sum at 0x401010 (push ebp frame), leaf at 0x401030 (no
+    frame) and start at 0x401040.  The entry point and every call go to a
+    thunk; nothing calls a body directly.
+
+    Pass 1 (`mode fast`, `option thunkentry off`) reproduces the bug: the
+    inventory is the three thunks and no body.
+    Pass 2 (`mode fast`, shipped default) lists sum, leaf and start, and leaf
+    decompiles to its own body.
+    Pass 3 (`mode aggressive`, `option thunkentry off`) finds sum and start
+    only through the prologue scan; leaf, which has no prologue, is missing.
+    Pass 4 (`mode aggressive`, shipped default) finds leaf too.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thunk_table_pe_i386.exe</com>
+  <com>mode fast</com>
+  <com>option thunkentry off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thunk_table_pe_i386.exe</com>
+  <com>mode fast</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function sub_401030</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thunk_table_pe_i386.exe</com>
+  <com>mode aggressive</com>
+  <com>option thunkentry off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thunk_table_pe_i386.exe</com>
+  <com>mode aggressive</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>phase catalog thunkentry</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-THUNKENTRY #1: every thunk is a function in all four passes" min="12" max="12">0x40100[05a] sub_40100[05a]</stringmatch>
+<stringmatch name="KUNA-THUNKENTRY #2: sum and start are missing only from pass 1 (fast, option off)" min="6" max="6">0x4010[14]0 sub_4010[14]0</stringmatch>
+<stringmatch name="KUNA-THUNKENTRY #3: leaf is a function only with the option on, in fast and aggressive mode" min="2" max="2">0x401030 sub_401030</stringmatch>
+<stringmatch name="KUNA-THUNKENTRY #4: leaf decompiles to its own body" min="1" max="1">return a0 \+ 7;</stringmatch>
+<stringmatch name="KUNA-THUNKENTRY #5: the catalog documents it as a default-on P1 code/data-partition option" min="1" max="1">"option": "thunkentry", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
+</decompilertest>

@@ -1,5 +1,5 @@
 //! Register-local assertions select a definition identity, not a register slot (#809).
-mod common;
+use crate::common;
 
 fn run(extra: &[&str], json: bool) -> String {
     let (code, rejected) = run_function("register_names", extra, json);

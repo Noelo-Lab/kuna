@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "kuna-sleigh"
 description = "kuna Rust port: SLEIGH .sla reader + instruction decode runtime (no compiler)"
 version.workspace = true
@@ -13,3 +14,7 @@ kuna-num.workspace = true
 
 [lints]
 workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

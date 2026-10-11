@@ -1,6 +1,7 @@
 # SLEIGH compiler, sharing the runtime symbol and template types.
 
 [package]
+autotests = false
 name = "kuna-slacomp"
 description = "kuna Rust port: SLEIGH compiler (.slaspec -> .sla), the sleigh_opt replacement"
 version.workspace = true
@@ -26,3 +27,11 @@ workspace = true
 [[bin]]
 name = "slacomp"
 path = "src/bin/slacomp.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[[test]]
+name = "compiler_parity"
+path = "tests/compiler_parity.rs"

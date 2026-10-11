@@ -1,5 +1,5 @@
 //! An OS system call may replace a writable global through its buffer argument.
-mod common;
+use crate::common;
 
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{

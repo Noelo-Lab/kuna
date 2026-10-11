@@ -29,6 +29,25 @@ bytes and its PC write preserves interworking. Other PC loads retain their
 existing branch behavior; an explicitly prepared LR retains the indirect-call
 form. This is a SLEIGH correctness repair, without an inference option.
 
+The SPARC floating-to-integer constructors use the integer result width:
+`fdtoi` and `fqtoi` write one 32-bit word through `fsrd`, while `fstox` and
+`fqtox` write 64 bits through `fdrd`. Scalar destinations preserve odd register numbers;
+double destinations use the V9 encoding that maps an odd encoded field into
+the upper register bank. The rules apply in both language variants. See the
+[SPARC V9 instruction mapping](https://docs.oracle.com/cd/E19963-01/html/821-1607/sparcv9-32853.html).
+This is a SLEIGH correctness repair, without an inference option.
+
+Generic ARM `MCR`/`MRC` and `MCR2`/`MRC2` transfers pass the encoded
+`CRn` and `CRm` numbers to their opaque coprocessor intrinsics as four-byte
+constants. A32 and Thumb constructors use unattached numeric aliases of the token
+fields, retaining the `cr0`–`cr15` attachments for assembly spelling. The CPU
+source of `MCR` remains live register data; `MRC` still writes its CPU
+destination, including the Thumb APSR flag destination. Coprocessor number,
+opcode fields, condition handling, and instruction spelling are preserved.
+This repairs selector identity without an option and does not emulate CP15,
+interpret processor-specific registers, or change named CP15 intrinsics,
+coprocessor data processing, or double-register transfers.
+
 Ordinary ARM flow establishes a `TMode` write boundary at the function entry.
 A backward interworking call may publish the callee's mode up to that boundary,
 but cannot repaint the caller. After a successful instruction, a mode commit
@@ -365,7 +384,31 @@ calls, with identical observable result — the analysis path locks callee
 signatures before flow runs). A CALLIND keeps its computed target as input 0
 (`setup_callind_specs`) unless a previous decompilation pass planted an
 indirect override (de-indirection), which converts it to a direct CALL before
-the spec is built. `flow.rs (FlowInfo::check_for_flow_modification)` then
+the spec is built. (kuna `msvcsig`) One more CALLIND is made direct there: a
+call through an import slot whose MSVC-declared prototype the analysis commit
+locked onto the import symbol (01, `msvcsig`)
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_msvcimportcall.rs
+(locked_import_slot)`). The target must be the word the call's own instruction
+reads from a constant address (the folded `COPY` of a memory varnode, or a
+`LOAD` through a constant pointer, through temporary copies), that address must
+be in the slot set the commit recorded and painted external by `peimportcall`,
+and the FunctionSymbol there must carry an input-locked prototype. Left to
+`ActionDeindirect`, such a call is resolved only after the default-model
+prototype it was given has been merged against a locked `__thiscall` or
+`__cdecl` one, which fails and restarts the function to plant exactly this
+override; resolving it here removes that restart, which on a 32-bit MSVC C++
+image nearly every function paid. Other import calls are unchanged: one whose
+symbol carries only parked pieces (the Win32 and libc tables) still waits for
+`ActionDeindirect`. A call to any address that set names, direct or made direct
+here, copies the locked prototype at flow and so never reaches the
+`ActionDefaultParams` arm that gives a declared callee the stack adjustment its
+parameter list implies (`calleeprotostack`, 04); the copy applies that rule
+itself
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeprotostack.rs
+(resolve_declared_extra_pop)`), so a
+`__thiscall` or `__stdcall` import pops what its declaration says instead of
+what the push run in front of it suggests.
+`flow.rs (FlowInfo::check_for_flow_modification)` then
 applies the callee's flow effects: an *inline* callee queues the op for
 injection; a *no-return* callee gets an artificial halt planted directly after
 the call plus the `"Subroutine does not return"` warning, so flow never runs
@@ -2014,17 +2057,16 @@ after a returning callee that happens to share a listed name.
 
 **(kuna) SPARC struct return — `option sparcstructret`, default off,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_sparcstructret.rs
-(kuna_is_sparc_struct_ret_trap)` (from Ghidra issue GH-6882).** The SPARC ABI
-plants an `unimp <structsize>` word after a call to a struct-returning
-function; the SLEIGH spec lifts it to an `IllegalInstructionTrap` CALLOTHER
-feeding a BRANCHIND, which jump-table recovery can never resolve — so the
-function loses its tail to a non-returning CALLIND. The predicate, consulted in
-the BRANCHIND arm of `xref_control_flow`, identifies the idiom *positionally*
-(pre-SSA the input is not def-linked): walk backwards over the dead list within
-the same instruction looking for a CALLOTHER whose user op is named
-`IllegalInstructionTrap`. On a match the BRANCHIND is destroyed and the
-instruction falls through. Kept opt-in per program: globally it would convert a
-*real* trap into silent fall-through on other targets.
+(kuna_sparc_struct_ret_trap_producer)` (from Ghidra issue GH-6882).** The SPARC ABI
+places an `unimp <structsize>` word after a call to a struct-returning function.
+SLEIGH lifts this marker to an `IllegalInstructionTrap` CALLOTHER feeding a
+BRANCHIND. With the option enabled, flow classification recognizes the named
+trap within the same instruction and removes the branch so execution falls
+through. When the producer has an output, it becomes an inert COPY, retaining
+its instruction-start operation until SSA so raw flow targets remain valid.
+If the producer cannot be rewritten, the branch is still removed, preserving
+the previous drop-only behavior. The option remains off by default because
+interpreting a real trap as an ABI marker would suppress its trap effect.
 
 **Emulate-function hooks.** `kuna_emulatefunction.rs (EmulateFunction)` is the
 lightweight emulator behind every address enumeration in §2.3: a memory state

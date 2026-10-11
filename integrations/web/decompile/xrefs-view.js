@@ -89,7 +89,7 @@ function lineRow(r) {
 }
 
 function siteRow(r) {
-  const how = r.kind === 'call' ? 'calls' : HOW[r.kind] || r.kind || '';
+  const how = r.how || (r.kind === 'call' ? 'calls' : HOW[r.kind] || r.kind || '');
   return `<li class="xr-row" tabindex="-1" data-fn="${escapeHtml(r.fn)}" data-site="${escapeHtml(r.site)}" title="${escapeHtml(r.instruction || '')}">` +
     `<span class="xr-at">${escapeHtml(r.siteLabel)}</span><span class="xr-how">${escapeHtml(how)}</span>` +
     `<span class="xr-name">${escapeHtml(r.name)}</span><code class="xr-code">${escapeHtml(r.instruction || '')}</code></li>`;
@@ -98,8 +98,9 @@ function siteRow(r) {
 /**
  * The cross-references dialog: `{title, sections: [{heading, rows, kind:
  * 'lines'|'sites', loading, empty, note}]}`. Line rows: `{line, how, text}`;
- * site rows: `{fn, site, siteLabel, name, kind, instruction}` (`fn` is the
- * function to open, `site` the instruction to show in it).
+ * site rows: `{fn, site, siteLabel, name, kind, how?, instruction}` (`fn` is the
+ * function to open, `site` the instruction to show in it, `how` replaces the
+ * words for `kind`).
  */
 export function renderRefsDialog(model) {
   const sections = model.sections.map((s) => {

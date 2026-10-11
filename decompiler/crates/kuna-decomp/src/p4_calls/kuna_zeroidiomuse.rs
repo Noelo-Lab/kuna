@@ -82,6 +82,11 @@ pub fn op_discards_operand(data: &Funcdata, op: OpId) -> bool {
     same_value(data, a, b, MAX_DEPTH)
 }
 
+/// [`same_value`] to the depth `op_discards_operand` uses.
+pub(crate) fn same_value_at(data: &Funcdata, a: VarnodeId, b: VarnodeId) -> bool {
+    same_value(data, a, b, MAX_DEPTH)
+}
+
 /// Can `a` and `b` be proven to hold the same value without evaluating
 /// anything? Identity, equal constants, or the same pure reshaping op over
 /// operands that are themselves the same value.

@@ -2472,6 +2472,7 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
         for level in ["-O0", "-O2"] {
             let compiled = Command::new(cc)
                 .args(["-std=gnu11", "-w", "-fno-pie", "-no-pie", level])
+                .args(common::CC_GCC15_DEMOTE)
                 .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                 .output()
                 .expect("spawn the C compiler");
@@ -2510,6 +2511,7 @@ fn compile_and_run_each(tag: &str, src: &str) -> Vec<(String, String)> {
     for cc in round_trip_compilers() {
         let exe = dir.join(format!("rt-{cc}"));
         let built = Command::new(cc)
+            .args(common::CC_GCC15_DEMOTE)
             .args(["-std=gnu11", "-w", "-Werror=int-conversion", "-Werror=implicit-function-declaration", "-o"])
             .arg(&exe)
             .arg(&file)
@@ -2857,6 +2859,7 @@ fn compile_pair_and_run_each(tag: &str, lib: &str, main: &str) -> Vec<(String, S
     for cc in round_trip_compilers() {
         let exe = dir.join(format!("rt-{cc}"));
         let built = Command::new(cc)
+            .args(common::CC_GCC15_DEMOTE)
             .args(["-std=gnu11", "-w", "-Werror=int-conversion", "-Werror=implicit-function-declaration", "-o"])
             .arg(&exe)
             .arg(&main_file)
@@ -3589,6 +3592,7 @@ fn a_float_pointee_keeps_the_callers_integer_stores_round_trip() {
         .unwrap();
         let cc = Command::new("cc")
             .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+            .args(common::CC_GCC15_DEMOTE)
             .output()
             .expect("spawn cc");
         assert!(
@@ -4776,6 +4780,7 @@ fn a_sign_contested_synthesized_field_round_trips_through_the_printed_c() {
     .unwrap();
     let cc = Command::new("cc")
         .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+        .args(common::CC_GCC15_DEMOTE)
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed f did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
@@ -4834,6 +4839,7 @@ fn a_float_and_integer_union_field_round_trips_through_the_printed_c() {
     .unwrap();
     let cc = Command::new("cc")
         .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+        .args(common::CC_GCC15_DEMOTE)
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed vread did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
@@ -4890,6 +4896,7 @@ fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
         .unwrap();
         let cc = Command::new("cc")
             .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+            .args(common::CC_GCC15_DEMOTE)
             .output()
             .expect("spawn cc");
         assert!(cc.status.success(), "the printed f did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
@@ -4995,6 +5002,7 @@ int main(void) {
                 .unwrap();
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .args(common::CC_GCC15_DEMOTE)
                     .output()
                     .expect("spawn the C compiler");
                 assert!(
@@ -5166,6 +5174,7 @@ int main(void) {
                 let exe = dir.join("rt");
                 std::fs::write(&src, format!("{PRELUDE}{printed}\n{MAIN}")).unwrap();
                 let mut cmd = Command::new(cc);
+                cmd.args(common::CC_GCC15_DEMOTE);
                 cmd.args(["-std=gnu11", "-w", "-Werror=int-conversion", "-o", exe.to_str().unwrap()]);
                 if clang {
                     cmd.arg("-DNO_CELL");
@@ -5339,6 +5348,7 @@ int main(void) {
                     .unwrap();
                     let out = Command::new(cc)
                         .args(["-std=gnu11", level, "-w", "-Wno-error=int-conversion", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                        .args(common::CC_GCC15_DEMOTE)
                         .output()
                         .expect("spawn the C compiler");
                     assert!(
@@ -5588,6 +5598,7 @@ int main(void) {
                     )
                     .unwrap();
                     let out = Command::new(cc)
+                        .args(common::CC_GCC15_DEMOTE)
                         .args([
                             "-std=gnu11", level, "-w", "-fno-strict-aliasing", "-fwrapv", "-Wno-error=int-conversion", "-Werror=incompatible-pointer-types",
                             "-o", exe.to_str().unwrap(), src.to_str().unwrap(),
@@ -5902,6 +5913,7 @@ int main(void) {
                     .unwrap();
                     let out = Command::new(cc)
                         .args(["-std=gnu11", "-w", "-Wno-error=int-conversion", level])
+                        .args(common::CC_GCC15_DEMOTE)
                         .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                         .output()
                         .expect("spawn the C compiler");
@@ -6113,6 +6125,7 @@ int main(void) {
                     .unwrap();
                     let out = Command::new(cc)
                         .args(["-std=gnu11", "-w", "-Wno-error=int-conversion", level])
+                        .args(common::CC_GCC15_DEMOTE)
                         .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                         .output()
                         .expect("spawn the C compiler");
@@ -6336,6 +6349,7 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
             .unwrap();
             let cc = Command::new("cc")
                 .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), c.to_str().unwrap()])
+                .args(common::CC_GCC15_DEMOTE)
                 .output()
                 .expect("spawn cc");
             assert!(
@@ -6461,6 +6475,7 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
             .unwrap();
             let cc = Command::new("cc")
                 .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), c.to_str().unwrap()])
+                .args(common::CC_GCC15_DEMOTE)
                 .output()
                 .expect("spawn cc");
             assert!(
@@ -6584,6 +6599,7 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
             .unwrap();
             let cc = Command::new("cc")
                 .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), c.to_str().unwrap()])
+                .args(common::CC_GCC15_DEMOTE)
                 .output()
                 .expect("spawn cc");
             assert!(
@@ -6748,7 +6764,12 @@ fn check_globalref_round_trip(run_native: bool) {
             for n in &names {
                 args.push(format!("-Wl,--defsym,{n}=0x{}", &n[4..]));
             }
-            let built = Command::new(cc).args(&args).current_dir(&out).output().expect("spawn cc");
+            let built = Command::new(cc)
+                .args(&args)
+                .args(common::CC_GCC15_DEMOTE)
+                .current_dir(&out)
+                .output()
+                .expect("spawn cc");
             assert!(
                 built.status.success(),
                 "{arm}/{cc}: the printed callers did not compile:\n{}\n{printed}",
@@ -6855,6 +6876,7 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
         .unwrap();
         let cc = Command::new("cc")
             .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+            .args(common::CC_GCC15_DEMOTE)
             .output()
             .expect("spawn cc");
         assert!(cc.status.success(), "{name}: the printed C did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
@@ -6951,6 +6973,7 @@ int main(void) {
     std::fs::write(&src, harness.replace("@PRINTED@", &stdout)).unwrap();
     let cc = Command::new("cc")
         .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+        .args(common::CC_GCC15_DEMOTE)
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed functions did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
@@ -7047,6 +7070,7 @@ int main(void) {
     std::fs::write(&src, harness.replace("@PRINTED@", &printed)).unwrap();
     let cc = Command::new("cc")
         .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+        .args(common::CC_GCC15_DEMOTE)
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed functions did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
@@ -7435,6 +7459,7 @@ int main(void) {
                     .unwrap();
                     let out = Command::new(cc)
                         .args(["-std=gnu11", "-w", "-Wno-error=int-conversion", level])
+                        .args(common::CC_GCC15_DEMOTE)
                         .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                         .output()
                         .expect("spawn the C compiler");
@@ -7677,7 +7702,12 @@ fn check_elemptr_round_trip(run_native: bool) {
                 for n in &names {
                     args.push(format!("-Wl,--defsym,{n}=0x{}", &n[4..]));
                 }
-                let built = Command::new(cc).args(&args).current_dir(&out).output().expect("spawn cc");
+                let built = Command::new(cc)
+                    .args(&args)
+                    .args(common::CC_GCC15_DEMOTE)
+                    .current_dir(&out)
+                    .output()
+                    .expect("spawn cc");
                 assert!(
                     built.status.success(),
                     "{build} {arm}/{cc}: the printed witnesses did not compile:\n{}\n{printed}",
@@ -7839,6 +7869,7 @@ fn check_narrowload_round_trip(
                         "harness.c",
                         "printed.c",
                     ])
+                    .args(common::CC_GCC15_DEMOTE)
                     .current_dir(&out)
                     .output()
                     .expect("spawn cc");
@@ -8084,6 +8115,7 @@ int main(void) {
                 .unwrap();
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .args(common::CC_GCC15_DEMOTE)
                     .output()
                     .expect("spawn the C compiler");
                 assert!(
@@ -8185,6 +8217,7 @@ fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
             args.extend(kept.iter().map(|k| format!("-DGLOBALSTORE_KEEP_{k}")));
             let out = Command::new(cc)
                 .args(&args)
+                .args(common::CC_GCC15_DEMOTE)
                 .args(["-o", exe.to_str().unwrap(), printed.to_str().unwrap(), harness.to_str().unwrap()])
                 .output()
                 .expect("spawn the C compiler");
@@ -8215,16 +8248,16 @@ fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
 /// `add_one` and `triple_plus` are left out: kuna drops a half of the first
 /// (on either endianness), and in the second cannot follow MIPS's unrelocated
 /// call. SPARC `triple_plus` reads the `%o0:%o1` pair its call to `triple`
-/// returns (#862). SPARC `keep_zero` is left out: `restore` hands the
-/// second argument back in `%o1`, and the pair still prints that argument
-/// shifted into the high word, as it did before the join order was fixed.
+/// returns (#862). On SPARC `restore` hands the second argument back in `%o1`,
+/// and `keep_zero` and `same` printed it shifted into the high word on their
+/// `return 0` path (#796).
 #[test]
 fn a_big_endian_register_pair_round_trips_through_the_printed_c() {
     const ALL: &[&str] = &["wide_mul", "add_one", "triple", "triple_plus", "same", "keep_zero"];
     let cases: [(&str, bool, &[&str]); 6] = [
         ("bejoin_ppc32_be.o", true, ALL),
         ("bejoin_arm32_be.o", true, ALL),
-        ("bejoin_sparc32_be.o", true, &["wide_mul", "add_one", "triple", "triple_plus", "same"]),
+        ("bejoin_sparc32_be.o", true, ALL),
         ("bejoin_mips32_be.o", true, &["wide_mul", "triple", "same", "keep_zero"]),
         ("bejoin_ppc32_le.o", false, ALL),
         ("bejoin_arm32_le.o", false, ALL),
@@ -8299,6 +8332,7 @@ fn bejoin_round_trip(label: &str, src_text: &str, printed: &str) {
             std::fs::write(&src, src_text).unwrap();
             let out = Command::new(cc)
                 .args(["-std=gnu11", "-w", "-fwrapv", "-Wno-error=int-conversion", level])
+                .args(common::CC_GCC15_DEMOTE)
                 .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                 .output()
                 .expect("spawn the C compiler");
@@ -8474,18 +8508,21 @@ fn bejoin_stubs(printed: &str) -> (String, String) {
 /// in the ABI's order it keeps the wrong one, and printed `both` as `v1 <<
 /// 0x20`, `bound`'s pair returns with their halves swapped, and the byte
 /// readers as `char`. These stay joined as before and keep the first
-/// register. Every function is compiled with gcc and clang at -O0 and -O2 and
-/// run against the source. Left out: `hi_only` returns `(u64)x << 32` with the
+/// register. `zero_after` and `one_after` keep the second argument in `%i1`
+/// after passing it to a call, and their `return 0` printed it shifted into
+/// the high word, folded into the pair before the repair read it (#796).
+/// Every function is compiled with gcc and clang at -O0 and -O2 and run
+/// against the source. Left out: `hi_only` returns `(u64)x << 32` with the
 /// same zero in `$3` as the `int` functions and prints as its high word, as
-/// before; `pgetc_like` and `expand` print a pair of the value and `%i1`, as
-/// before, since the window's leftover folds before it can be dropped.
+/// before; `pgetc_like`, `expand` and -O0 `one_after` print a pair of the
+/// value and a value they also used in `%i1`, as before.
 #[test]
 fn a_big_endian_function_returning_one_register_keeps_it() {
     let sp = specs();
     let cases: [(&str, &[&str]); 5] = [
         ("bejoin_zero_mips32_O0.o", &["realeof", "both"]),
-        ("bejoin_window_sparc32_O0.o", &["mark"]),
-        ("bejoin_window_sparc32_O2.o", &["back4"]),
+        ("bejoin_window_sparc32_O0.o", &["mark", "zero_after"]),
+        ("bejoin_window_sparc32_O2.o", &["back4", "zero_after", "one_after"]),
         ("bejoin_narrow_sparc32_O0.o", &["bound", "ibyte", "ubyte", "ihalf", "ibyte_leaf"]),
         ("bejoin_narrow_sparc32_O2.o", &["bound", "ibyte", "ubyte", "ihalf", "ibyte_leaf"]),
     ];
@@ -8513,6 +8550,10 @@ fn a_big_endian_function_returning_one_register_keeps_it() {
                 "mark" => "  for (int n = 0; n < 8; n++) {\n    char buf[8] = \"abcdefg\";\n    \
                            bad += (long long)mark(buf, n) != (long long)(n + 1) || buf[n] != 0 || buf[0] != 0;\n  }\n",
                 "back4" => "  for (int i = 5; i < 29; i++)\n    bad += (long long)back4(text + i) != (long long)ref_back4(text + i);\n",
+                "zero_after" => "  for (int i = 0; i < 10; i++)\n    for (int j = 0; j < 10; j++)\n      \
+                                 bad += (long long)zero_after(xs[i], xs[j]) != 0LL;\n",
+                "one_after" => "  for (int i = 0; i < 10; i++)\n    for (int j = 0; j < 10; j++)\n      \
+                                bad += (long long)one_after(xs[i], xs[j]) != (long long)(xs[i] > 0);\n",
                 "bound" => "  for (int i = 0; i < 16; i++)\n    for (int n = 0; n < 10; n++) {\n      \
                             int s[4] = {(i & 1) ? 15 : 3, (i >> 1) & 1, 1000 + i, (i >> 2) & 1};\n      \
                             unsigned int v = (unsigned int)xs[n] >> 2;\n      \

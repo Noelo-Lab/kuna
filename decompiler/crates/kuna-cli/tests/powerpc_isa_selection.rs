@@ -1,6 +1,6 @@
 //! A failed generic PowerPC decode explains the ISA override without guessing it.
 
-mod common;
+use crate::common;
 
 use object::write::{Object, Symbol, SymbolSection};
 use object::{

@@ -3,7 +3,7 @@
 //! and copying its register pieces to memory is not lost. On AArch64, where
 //! only Windows variadic functions split one, a struct that no longer fits in
 //! the registers left goes wholly on the stack.
-mod common;
+use crate::common;
 use object::write::{Object, StandardSection, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, FileFlags, SymbolFlags, SymbolKind, SymbolScope,

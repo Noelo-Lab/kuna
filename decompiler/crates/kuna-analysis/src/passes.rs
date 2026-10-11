@@ -217,7 +217,9 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // NOT registered here. It is a DEFERRED pass, run at the commit point by
         // [`run_deferred_entry_passes`] where its (default-OFF) gate is finally in
         // effect, rather than swept at load on every binary and discarded. See
-        // `entry::FuncStartPatternPass`.
+        // `entry::FuncStartPatternPass`. The multi-entry `.cold` fragment pass
+        // (`coldentry`) is deferred the same way, because it decodes through the
+        // engine `Translate`, which has no program image until the commit point.
         // S1 ARM/Thumb decode-mode markers: paint the SLEIGH `TMode` context
         // variable from ARM mapping symbols (`$t`/`$a`) + the STT_FUNC odd-address
         // (LSB=1 ⇒ Thumb) convention, so Thumb code decodes as Thumb. The kuna
@@ -516,13 +518,16 @@ fn listing_seeds_for_language(
 /// resolves each name from the fully merged `entry_names`, so where a pass's
 /// entries land in the merge order does not change what is installed.
 fn deferred_entry_passes() -> Vec<Box<dyn AnalysisPass>> {
-    vec![Box::new(crate::entry::FuncStartPatternPass)]
+    vec![
+        Box::new(crate::entry::FuncStartPatternPass),
+        Box::new(crate::entry::kuna_coldentry::ColdEntryPass),
+    ]
 }
 
 /// Run the [`deferred_entry_passes`] over the stashed image at the commit point,
 /// keyed by [`AnalysisPass::id`] (the same per-pass-split shape as
 /// [`run_default_analyses_per_pass`], so the console applies the identical
-/// `analysis_pass_enabled` filter).
+/// `analysis_pass_enabled` filter). Only the passes `enabled` accepts by id run.
 ///
 /// The object view is built exactly as [`run_default_analyses_per_pass`] builds
 /// it, `relocrebase` rebasing included: a relocatable object is laid out
@@ -533,6 +538,7 @@ pub fn run_deferred_entry_passes(
     bytes: &[u8],
     image: &ObjectLoadImage,
     arch: &Architecture,
+    enabled: &dyn Fn(&str) -> bool,
 ) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
         return Vec::new();
@@ -549,6 +555,7 @@ pub fn run_deferred_entry_passes(
     };
     let mut split: Vec<(&'static str, AnalysisOutput)> = deferred_entry_passes()
         .iter()
+        .filter(|pass| enabled(pass.id()))
         .map(|pass| {
             let mut out = pass.run(&ctx);
             if let Some(view) = &view {
@@ -647,6 +654,7 @@ pub fn run_listing_consumers(
     noreturn_seeds: &[u64],
     callfixup_seeds: &[u64],
     committed_entries: &[u64],
+    cold_entries: &[u64],
     plan: &crate::listing::WalkPlan,
 ) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(file) = crate::loadimage_object::parse_object(bytes) else {
@@ -665,6 +673,10 @@ pub fn run_listing_consumers(
         return Vec::new();
     }
     let mut seeds = listing_seeds_for_language(&file, bytes, Some(arch.get_description()));
+    let bracket_evidence = std::cell::OnceCell::new();
+    let bracket = |exec: &[(u64, u64)]| arch.analysis_aifbracket.then(|| {
+        bracket_evidence.get_or_init(|| crate::aif::kuna_aifbracket::BracketEvidence::from_object(&file, exec))
+    });
     // (kuna, recursive-descent discovery) When the prologue-pattern pass is active
     // (`funcstart_patterns`, default-ON for non-x86-64 on `decompile-all`, DIV-20),
     // seed the recursive-descent walk with its `<patternpairs>` function starts too — not
@@ -694,6 +706,20 @@ pub fn run_listing_consumers(
         // functions than `kuna functions` reported.
         seeds.extend(
             committed_entries
+                .iter()
+                .copied()
+                .filter(|&vma| crate::entry::in_executable_section(&execs, vma)),
+        );
+        seeds.sort_unstable();
+        seeds.dedup();
+    }
+    // (kuna `coldentry`) The extra entries of a multi-entry `.cold` fragment are
+    // roots on every architecture: nothing else makes them walk functions, so
+    // without them `noreturn_propagate` never concludes their no-return.
+    if !cold_entries.is_empty() {
+        let execs = crate::entry::executable_sections(&file);
+        seeds.extend(
+            cold_entries
                 .iter()
                 .copied()
                 .filter(|&vma| crate::entry::in_executable_section(&execs, vma)),
@@ -863,7 +889,7 @@ pub fn run_listing_consumers(
                         } else { Vec::new() };
                         let mut checked = crate::aif::kuna_entrychecks::run(
                             &listing, Some(&original), arch, translate,
-                            std::rc::Rc::clone(code_space), pointers,
+                            std::rc::Rc::clone(code_space), pointers, bracket(listing.exec_ranges()),
                         );
                         drop(probe);
                         checked.entries.retain(|root| !rejected.contains(root));
@@ -1026,6 +1052,7 @@ pub fn run_listing_consumers(
             let mut aif_out = AnalysisOutput::default();
             let checked = frame_aif.unwrap_or_else(|| crate::aif::kuna_entrychecks::run(
                 &listing, None, arch, translate, std::rc::Rc::clone(code_space), ptrentry_out.clone(),
+                bracket(listing.exec_ranges()),
             ));
             aif_out.entries = checked.entries;
             if !checked.pool_entries.is_empty() {
@@ -1054,6 +1081,25 @@ pub fn run_listing_consumers(
         out.push(("tailcallentry", tce_out));
     }
 
+    // (kuna `callerreads`) Where each direct call returns to, for the decompile
+    // step to read a `void` function's callers from.
+    if arch.analysis_listing && arch.caller_reads && listing.has_refs() {
+        let mut cr_out = AnalysisOutput::default();
+        cr_out.call_returns = crate::listing::kuna_callerreads::call_returns(&listing);
+        out.push(("callerreads", cr_out));
+    }
+
+    // (kuna `thunkentry`) The targets of the walk's jump thunks join the walk's own
+    // function set wherever that set is committed (`funcdisc_recursive`,
+    // `fast_funcdisc`). See `listing/kuna_thunkentry.rs`.
+    let walk_committed = (arch.analysis_listing && arch.analysis_funcstart_patterns)
+        || arch.analysis_fast_funcdisc;
+    let thunk_targets = if arch.analysis_thunkentry && walk_committed {
+        crate::listing::kuna_thunkentry::thunk_entries(&file, &listing)
+    } else {
+        Vec::new()
+    };
+
     // (kuna, recursive-descent discovery) Promote the walk's discovered functions — the
     // CALL targets it followed from the (prologue-seeded) roots — to committed function
     // entries. This is the commit step that turns the `walk.rs` two-level worklist
@@ -1063,7 +1109,9 @@ pub fn run_listing_consumers(
     // `analysis_funcstart_patterns` flag, so x86-64 (funcstart_patterns off) is byte-identical.
     if arch.analysis_listing && arch.analysis_funcstart_patterns {
         let mut rd_out = AnalysisOutput::default();
-        rd_out.entries = listing.functions().map(|(&vma, _)| vma).collect();
+        rd_out.entries =
+            listing.functions().map(|(&vma, _)| vma).chain(thunk_targets.iter().copied()).collect();
+        rd_out.entries.sort_unstable();
         out.push(("funcdisc_recursive", rd_out));
     }
     if !ptrentry_out.is_empty() {
@@ -1077,6 +1125,7 @@ pub fn run_listing_consumers(
             .functions()
             .map(|(&vma, _)| vma)
             .chain(fast_pointer_seeds)
+            .chain(thunk_targets)
             .collect();
         fast_out.entries.sort_unstable();
         fast_out.entries.dedup();

@@ -14,6 +14,7 @@
 //! drive pins that the query really fired (and that AArch64, whose cspec has no
 //! fixup at all, still issues none).
 
+#[path = "ghidra_sim/mod.rs"]
 mod ghidra_sim;
 
 use std::cell::RefCell;

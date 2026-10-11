@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A function decompiled alone returns what its callers read after the call
+    (option callerreads, kuna_callerreads.rs). Issue #843.
+
+    The script loads callerreads_x86_64_gcc_O2 (gcc -O2, source callerreads.c
+    beside it). triple is `gi = a * 3; return gi;`, compiled to
+    `lea (%rdi,%rdi,2),%eax; mov %eax,gi(%rip); ret`, the same code as a
+    function that only stores. keep loads `*p` into eax, stores it to gj and
+    `x + 1` to gi, and returns it. same tail-calls strcmp. Upstream's onlyOpUse
+    refuses a return value the function also stores or that comes straight from
+    a call, so each prints void, while main reads eax after each call. scale
+    stores `a * 5` from eax too, but main ignores its result.
+
+    Pass 1 (option off) reproduces the defect: every function prints void.
+    Pass 2 (the default) decodes main from the address each call returns to,
+    which the Listing files, finds eax read before it is written, and forces
+    the return the way decompile-all does: triple, keep and same return int.
+    scale stays void.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/callerreads_x86_64_gcc_O2</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>option callerreads off</com>
+  <com>load function triple</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function same</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callerreads on</com>
+  <com>load function triple</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function same</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="CALLERREADS #1: with the option off a value stored to a global and returned prints void" min="1" max="1">void triple\(int4 a0\)</stringmatch>
+<stringmatch name="CALLERREADS #2: with the option off a loaded value stored to two globals and returned prints void" min="1" max="1">void keep\(int4 \*a0\)</stringmatch>
+<stringmatch name="CALLERREADS #3: with the option off a tail call's result prints void" min="1" max="1">void same\(</stringmatch>
+<stringmatch name="CALLERREADS #4: a value its caller reads is returned though it is also stored" min="1" max="1">int4 triple\(int4 a0\)</stringmatch>
+<stringmatch name="CALLERREADS #5: the stored global and the return are the same value" min="1" max="1">return a0 \* 3;</stringmatch>
+<stringmatch name="CALLERREADS #6: a loaded value its caller reads is returned" min="1" max="1">int4 keep\(int4 \*a0\)</stringmatch>
+<stringmatch name="CALLERREADS #7: a tail call whose result the caller reads is returned" min="1" max="1">int4 same\(</stringmatch>
+<stringmatch name="CALLERREADS #8: a function whose caller ignores the register stays void" min="2" max="2">void scale\(int4 a0\)</stringmatch>
+</decompilertest>

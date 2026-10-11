@@ -18,7 +18,7 @@
 
 #![cfg(unix)]
 
-mod common;
+use crate::common;
 
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;

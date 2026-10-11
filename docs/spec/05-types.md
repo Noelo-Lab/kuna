@@ -34,6 +34,17 @@ is created, and every phase from lift to emission reads it. What lives in
 `p5_types` is the *inference* — the passes that decide which type a Varnode
 carries.
 
+The qualifier representation in
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_typequal.rs` distinguishes a
+volatile pointee from a volatile pointer object. Type ordering prefers the
+qualified form when its underlying type otherwise compares equal, allowing
+pointer copies and pointer arithmetic to retain the pointee qualification.
+Loads and value copies drop outer storage qualifiers while retaining pointee
+qualification: volatile storage does not make the local receiving its value
+volatile.
+The same module recovers declared pointer types through bounded address
+expressions for volatile-read preservation before inference runs (chapter 03).
+
 **The metatype lattice.** Every type reduces to one of 18 meta-types
 (`decompiler/crates/kuna-decomp/src/substrate/dtype.rs (type_metatype)`),
 transcribed with explicit discriminants because **the numeric order is the
@@ -192,6 +203,13 @@ x87 extended format and annotate the storage in a comment
 all means the target aliases it to `double` (MSVC, ARM32), which is the fallback
 `setup_sizes` applies. Consumers must therefore treat a long-double width as an
 approximation to name, never as a layout guarantee.
+
+SPARC32 objects of size eight have alignment eight in `SparcV9_32.cspec`.
+This places a `double` after five consecutive `short` fields at offset 16,
+with total struct size 24. Argument passing does not follow that alignment:
+the calling convention's `<join stackalign="false"/>` rule (chapter 04) keeps
+a stack-passed `double` in the next free word, so after seven `int` arguments
+it is the two words at `%fp+96`.
 
 The `long` fallback is not neutral. With no `<long_size>`, `setup_sizes` makes
 `long` 8 bytes whenever `int` is 4 (upstream's LP64 assumption), so every ILP32

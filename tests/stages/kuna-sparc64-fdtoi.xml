@@ -1,0 +1,31 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:64:default:default">
+<!--
+Independent assembly regression. P2 SLEIGH lift, strict correctness fix.
+An odd fdtoi destination must name the scalar word, not a V9 double register.
+.text
+.global fdtoi64
+.type fdtoi64,@function
+fdtoi64:
+ fdtoi %f0, %f3
+ sethi %hi(0x20000), %g1
+ st %f3, [%g1]
+ ldsw [%g1], %o0
+ retl
+ nop
+.size fdtoi64, .-fdtoi64
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+87a01a4003000080c7204000d040400081c3e00801000000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="fdtoi64"/>
+</binaryimage>
+<script>
+  <com>parse line extern int fdtoi64(double x);</com>
+  <com>lo fu fdtoi64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SPARC64 odd destination conversion reaches return" min="1" max="1">return \(int4\)x;</stringmatch>
+</decompilertest>

@@ -4,7 +4,7 @@
 //! aggregate.  A non-variadic callee keeps `d0`.  An image that states the base
 //! standard with an FPU (`-mfloat-abi=softfp`), or no convention, keeps the
 //! default layout, so its tail call to the variadic callee still returns it.
-mod common;
+use crate::common;
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, RelocationFlags, SectionKind, SymbolFlags, SymbolKind,

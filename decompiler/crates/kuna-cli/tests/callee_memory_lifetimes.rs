@@ -1,5 +1,5 @@
 //! Callee bodies, rather than const pointee declarations, bound frame observers.
-mod common;
+use crate::common;
 
 use std::process::Command;
 use std::time::Duration;

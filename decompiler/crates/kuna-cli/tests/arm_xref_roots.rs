@@ -1,5 +1,5 @@
 //! Synthetic ARM callers with unique prologues must retain their calls and owners.
-mod common;
+use crate::common;
 
 use serde_json::Value;
 use std::path::PathBuf;

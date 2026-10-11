@@ -1,0 +1,104 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default">
+<!--
+    Issue #796: on SPARC a function returning one int printed as a long long
+    whose high word is its second argument when the int it returns is a
+    literal zero.
+
+        keep_zero:  long long keep_zero(uint4 *a0,uint4 a1)
+                    { *a0 = a1; return (uint8)a1 << 0x20; }
+        same:       if (a0 == a1) return 1; return (uint8)a1 << 0x20;
+
+    restore copies %i1 back into %o1 on every return, so %o1 passes ancestor
+    realism and return recovery joins %o0:%o1, first register low.  The
+    uncomputed-half repair drops the %o1 half when it is the untouched
+    argument, but the rule pool had already folded PIECE(a1, 0) into
+    ZEXT(a1) << 32, which the repair did not read.  A nonzero literal stays
+    a PIECE and was already repaired (keep_five).  The repair now also reads
+    the folded form, for a pair joined first register low on an ABI that
+    returns the first register high, where that form is never a 64-bit value
+    the function returns.
+
+    Stage: P4 calls and prototypes (the uncomputed half of a recovered return
+    pair, ActionOutputPrototype).
+    No option: a strict fix (the repair reads the form the rules give its pair).
+    Source (clang 14 -fintegrated-as -fno-pic, sparc-linux-gnu):
+        at 0x10000 (-O2):
+        int keep_zero(int *p, int b) { *p = b; return 0; }
+        unsigned same(unsigned a, unsigned b) { return a == b; }
+        int flag_zero(int *p, int b) { if (b) *p = b; return 0; }
+        int keep_five(int *p, int b) { *p = b; return 5; }
+        long long ll_const(void) { return 0x100000002LL; }
+        unsigned long long ull_arg(unsigned a) { return a; }
+        long long ll_mul(int a, int b) { return (long long)a * b; }
+        at 0x20000 (-O0): keep_zero, flag_zero and ull_arg as above.
+    Assert #1: no function returns its second argument shifted into the high
+    word.  Asserts #2-#4: keep_zero, same and flag_zero return an int, at -O2
+    and -O0, and return 0 on the path that returns 0.  Assert #5: keep_five
+    keeps its literal.  Assert #6: the 64-bit returns keep their width.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+9de3bfa0b4100000f226000081c7e00891e8001a9de3bfa080a6001902800004
+0100000081c7e00891e8000081c7e00891e820019de3bfa080a6600002800003
+01000000f226000081c7e00891e800009de3bfa0b4102005f226000081c7e008
+91e8001a9de3bfa0b010200181c7e00893e820029de3bfa0b2100000b4100018
+b010001981c7e00893e8001a9de3bfa0b25e4018b140000081c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="keep_zero"/>
+<symbol space="ram" offset="0x10014" name="same"/>
+<symbol space="ram" offset="0x10034" name="flag_zero"/>
+<symbol space="ram" offset="0x10050" name="keep_five"/>
+<symbol space="ram" offset="0x10064" name="ll_const"/>
+<symbol space="ram" offset="0x10074" name="ull_arg"/>
+<symbol space="ram" offset="0x1008c" name="ll_mul"/>
+<bytechunk space="ram" offset="0x20000" readonly="true">
+9de3bf98f027bffcf227bff8f207bff8f007bffcf226000081c7e00891e80000
+9de3bf98f027bffcf227bff8f007bff880a62000028000080100000010800002
+01000000f207bff8f007bffc10800002f226000081c7e00891e800009de3bfa0
+f027bffcf207bffc81c7e00891e80000
+</bytechunk>
+<symbol space="ram" offset="0x20000" name="keep_zero_O0"/>
+<symbol space="ram" offset="0x20020" name="flag_zero_O0"/>
+<symbol space="ram" offset="0x2005c" name="ull_arg_O0"/>
+</binaryimage>
+<script>
+  <com>lo fu keep_zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu same</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu flag_zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep_five</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ll_const</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ull_arg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ll_mul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep_zero_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu flag_zero_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ull_arg_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="sparc-zeropair #1: no function returns its second argument in the high word" min="0" max="0">a1 &lt;&lt; 0x20</stringmatch>
+<stringmatch name="sparc-zeropair #2: keep_zero returns an int" min="2" max="2">unsigned int keep_zero(_O0)?\(uint4 \*a0,uint4 a1\)</stringmatch>
+<stringmatch name="sparc-zeropair #3: same returns an int, 1 or 0" min="1" max="1">unsigned int same\(uint4 a0,uint4 a1\)</stringmatch>
+<stringmatch name="sparc-zeropair #4: flag_zero returns an int" min="2" max="2">unsigned int flag_zero(_O0)?\(uint4 \*a0,uint4 a1\)</stringmatch>
+<stringmatch name="sparc-zeropair #4b: every path that returns 0 returns 0" min="5" max="5">return 0;</stringmatch>
+<stringmatch name="sparc-zeropair #5: keep_five keeps its literal" min="1" max="1">return 5;</stringmatch>
+<stringmatch name="sparc-zeropair #6: the 64-bit returns keep their width" min="4" max="4">(unsigned long long|int8) (ll_const|ull_arg|ll_mul)(_O0)?\(</stringmatch>
+</decompilertest>

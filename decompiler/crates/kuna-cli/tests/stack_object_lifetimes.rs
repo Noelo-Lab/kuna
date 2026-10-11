@@ -1,5 +1,5 @@
 //! Shared storage keeps incompatible object views and old escaped pointers coherent.
-mod common;
+use crate::common;
 
 use std::process::Command;
 use std::time::Duration;

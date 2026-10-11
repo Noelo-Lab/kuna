@@ -2048,7 +2048,19 @@ mod tests {
         // walk gives
         // and kuna-ucomiss-unordered / an x86 float compare flag read by
         // seta/setae/setbe/setb keeps its unordered case
-        assert_eq!(count, 486, "corpus file count drifted");
+        // and kuna-thunkentry / the target of a jmp thunk is a function entry
+        // and kuna-armwalkmode / a bl target keeps A32 after a blx to Thumb
+        // and kuna-sparc-zeropair / a SPARC int's return 0 is not the second
+        // argument shifted into the high word (#796)
+        // and kuna-msvcsig / an MSVC-mangled import gets its declared prototype
+        // and kuna-rust-switch-labels / a Rust match arm is signed by its
+        // scrutinee's type (GH-883)
+        // and kuna-aifbracket / an AIF candidate that rejoins the function around
+        // it is not a function (GH-299)
+        // and kuna-aifnoppad / no AIF entry starts on nop padding (GH-299)
+        // and gh847-zerocallregs / a register a -fzero-call-used-regs epilogue
+        // clears is not returned (GH-847)
+        assert_eq!(count, 507, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

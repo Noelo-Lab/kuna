@@ -8,7 +8,7 @@
 //! extends it, which an Apple arm64 caller does not below 32 bits.  A declared
 //! or DWARF-described prototype of a function or of a direct callee follows the
 //! same soft-float convention on ARM.
-mod common;
+use crate::common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolFlags, SymbolKind,

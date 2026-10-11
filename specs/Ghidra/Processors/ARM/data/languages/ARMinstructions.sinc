@@ -52,7 +52,9 @@ define token instrArm (32)
     Rd2=(12,15)
     CRd=(12,15)
     CRn=(16,19)
+    CRnNum=(16,19)
     CRm=(0,3)
+    CRmNum=(0,3)
     RdHi=(16,19)
     RdLo=(12,15)
     smRd=(16,19)
@@ -3052,12 +3054,12 @@ ArmPCRelImmed12: reloff		is U23=0 & immed & rotate
 
 ###### must come first cond=15
 @if defined(VERSION_5)
-:mcr2 cpn,opc1,Rd,CRn,CRm,opc2 is $(AMODE) & ARMcond=0 & cond=15 & c2427=14 & opc1 & c2020=0 & CRn & Rd & cpn & opc2 & c0404=1 & CRm
+:mcr2 cpn,opc1,Rd,CRn,CRm,opc2 is $(AMODE) & ARMcond=0 & cond=15 & c2427=14 & opc1 & c2020=0 & CRn & Rd & cpn & opc2 & c0404=1 & CRm & CRnNum & CRmNum
 {
   t_cpn:4 = cpn;
   t_op1:4 = opc1;
   t_op2:4 = opc2;
-  coprocessor_moveto(t_cpn,t_op1,t_op2,Rd,CRn,CRm);
+  coprocessor_moveto(t_cpn,t_op1,t_op2,Rd,CRnNum:4,CRmNum:4);
 }
 @endif # VERSION_5
 ###### must come first cond=15
@@ -3536,13 +3538,13 @@ ArmPCRelImmed12: reloff		is U23=0 & immed & rotate
 
 # ===== END mcr 
 
-:mcr^COND cpn,opc1,Rd,CRn,CRm,opc2 is $(AMODE) & ARMcond=1 & COND & c2427=14 & opc1 & c2020=0 & CRn & Rd & cpn & opc2 & c0404=1 & CRm
+:mcr^COND cpn,opc1,Rd,CRn,CRm,opc2 is $(AMODE) & ARMcond=1 & COND & c2427=14 & opc1 & c2020=0 & CRn & Rd & cpn & opc2 & c0404=1 & CRm & CRnNum & CRmNum
 {
   build COND;
   t_cpn:4 = cpn;
   t_op1:4 = opc1;
   t_op2:4 = opc2;
-  coprocessor_moveto(t_cpn,t_op1,t_op2,Rd,CRn,CRm);
+  coprocessor_moveto(t_cpn,t_op1,t_op2,Rd,CRnNum:4,CRmNum:4);
 }
 
 ##### must come first cond=15
@@ -3716,12 +3718,12 @@ ArmPCRelImmed12: reloff		is U23=0 & immed & rotate
 @if defined(VERSION_5)
 
 
-:mrc2 cpn,opc1,Rd,CRn,CRm,opc2 is $(AMODE) & ARMcond=0 & cond=15 & c2427=14 & opc1 & c2020=1 & CRn & Rd & cpn & opc2 & c0404=1 & CRm
+:mrc2 cpn,opc1,Rd,CRn,CRm,opc2 is $(AMODE) & ARMcond=0 & cond=15 & c2427=14 & opc1 & c2020=1 & CRn & Rd & cpn & opc2 & c0404=1 & CRm & CRnNum & CRmNum
 {
   t_cpn:4 = cpn;
   t_op1:4 = opc1;
   t_op2:4 = opc2;
-  Rd = coprocessor_movefromRt(t_cpn,t_op1,t_op2,CRn,CRm);
+  Rd = coprocessor_movefromRt(t_cpn,t_op1,t_op2,CRnNum:4,CRmNum:4);
 }
 @endif # VERSION_5
 
@@ -4250,13 +4252,13 @@ ArmPCRelImmed12: reloff		is U23=0 & immed & rotate
 
 # ===== End mrc
 
-:mrc^COND cpn,opc1,Rd,CRn,CRm,opc2 is $(AMODE) & ARMcond=1 & COND & c2427=14 & opc1 & c2020=1 & CRn & Rd & cpn & opc2 & c0404=1 & CRm
+:mrc^COND cpn,opc1,Rd,CRn,CRm,opc2 is $(AMODE) & ARMcond=1 & COND & c2427=14 & opc1 & c2020=1 & CRn & Rd & cpn & opc2 & c0404=1 & CRm & CRnNum & CRmNum
 {
   build COND;
   t_cpn:4 = cpn;
   t_op1:4 = opc1;
   t_opc2:4 = opc2;
-  Rd = coprocessor_movefromRt(t_cpn,t_op1,t_opc2,CRn,CRm);
+  Rd = coprocessor_movefromRt(t_cpn,t_op1,t_opc2,CRnNum:4,CRmNum:4);
 }
 
 

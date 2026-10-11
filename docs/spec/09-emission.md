@@ -5,6 +5,18 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p9_emit
 ```
 
+C declarators preserve explicit type qualification. Qualifiers on a base or a
+named typedef precede its name; qualifiers on a pointer follow its own `*`.
+The declarator walk keeps those layers through arrays and function pointers,
+so `volatile uint4 *p` and `uint4 * volatile p` remain distinct. This applies to
+parameters, return types, declarations, and casts with either internal or target
+C scalar names. A named typedef is printed by its alias rather than expanding
+its inherited qualifiers.
+When an access needs a cast for its width, the cast retains the pointee's
+qualification. Value conversions ignore qualifiers (`cast.rs (cast_standard)`),
+so a store through `volatile float *p` prints `*p = x;` with no cast; only a
+pointer conversion that drops a `volatile` pointee still needs one.
+
 This phase renders the finished decompilation: it inserts the explicit
 cast/field-access operations a C compiler would need to *see* the recovered
 types (§9.1), then walks the structured block tree of chapter 08 and the SSA
@@ -1000,6 +1012,11 @@ keeps `case 0xfff3:`. This applies to byte and wider integer selectors too:
 positive high-bit labels cannot match a signed byte or short after C integer
 promotion. Synthetic lowered switches retain their recorded label signedness
 and the existing `loweredswitchexact` selector-type and cast reconciliation.
+The Rust back-end's `match` arms take their value, width and signedness from
+the same decision (`printc.rs (switch_case_label)`), so a `match` on an `i16`
+selector emits `-0xd =>` where it once printed `0xfff3 =>`, a pattern rustc
+rejects as out of range for `i16`, and a sign-extended `i16` selector no
+longer carries the widened `0xfffffff3`.
 
 **(kuna) Dynamic ARM LSL in C.** ARM register-controlled `LSL` uses the low
 eight bits of its count, so counts 32 through 255 must produce zero for a
@@ -2382,7 +2399,9 @@ What differs, and why each is a language fact rather than a preference:
   `default`; and a wildcard must come last, so the default arm is hoisted (safe,
   because the remaining patterns are disjoint integer literals). Multi-label arms
   are free — `emit_switch_case` already enumerates one `case N:` per jump-table
-  index for a shared block, and the same list joins with ` | `. Note the ordinary
+  index for a shared block, and the same list joins with ` | `. Each pattern is
+  the label C prints, signed to the scrutinee's type and masked to its width,
+  since rustc rejects a pattern outside that type's range. Note the ordinary
   `case A: case B: body` shape is ONE recovered case with two indices, not a
   fall-through chain.
 - **Selection expressions** the `iteregion` recovery renders `dest = if c { A }

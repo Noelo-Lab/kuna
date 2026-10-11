@@ -5,7 +5,7 @@
 //! keeps a value left in the register out of the call, and a count of one
 //! (`crset 6`) keeps another call's result in it. A constant moved into `d0`
 //! prints as a `double`.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{
@@ -412,6 +412,7 @@ int main(void) {{
     for cc in &compilers {
         for level in ["-O0", "-O2"] {
             let compile = Command::new(cc)
+                .args(common::CC_GCC15_DEMOTE)
                 .args(["-std=gnu11", "-w", level, "-o"])
                 .arg(&exe)
                 .arg(&src)

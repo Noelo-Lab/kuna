@@ -2,7 +2,7 @@
 //! GCC's O0 helper uses home spills; Clang's O0 helper uses private frame spills.
 #![cfg(all(target_arch = "x86_64", target_os = "linux"))]
 
-mod common;
+use crate::common;
 
 use object::{Object, ObjectSymbol};
 use serde_json::Value;

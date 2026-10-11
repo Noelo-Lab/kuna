@@ -1,5 +1,5 @@
 //! Cached integer snapshots keep float bit patterns at stack-view float uses.
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

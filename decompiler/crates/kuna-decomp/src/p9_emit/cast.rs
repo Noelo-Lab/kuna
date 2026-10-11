@@ -702,17 +702,20 @@ impl CastStrategy for CastStrategyC {
             }
             let req_ptr_to = reqbase.get_ptr_to().expect("TYPE_PTR has ptrto");
             let cur_ptr_to = curbase.get_ptr_to().expect("TYPE_PTR has ptrto");
+            if crate::kuna_typequal::discards_volatile(&req_ptr_to, &cur_ptr_to) {
+                return Some(Rc::clone(reqtype));
+            }
             reqbase = req_ptr_to;
             curbase = cur_ptr_to;
             care_uint_int = true;
             isptr = true;
         }
-        // Strip typedefs.
-        while let Some(td) = reqbase.get_typedef() {
+        // Strip typedefs and qualifier layers.
+        while let Some(td) = reqbase.qualified_base().or_else(|| reqbase.get_typedef()) {
             let td = Rc::clone(td);
             reqbase = td;
         }
-        while let Some(td) = curbase.get_typedef() {
+        while let Some(td) = curbase.qualified_base().or_else(|| curbase.get_typedef()) {
             let td = Rc::clone(td);
             curbase = td;
         }

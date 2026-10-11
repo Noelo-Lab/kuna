@@ -357,7 +357,7 @@ impl FlowEnvironment for ArchFlowEnv {
         )
     }
 
-    fn is_sparc_struct_ret_trap(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
+    fn sparc_struct_ret_trap_producer(&self, fd: &Funcdata, op: crate::context::OpId) -> Option<crate::context::OpId> {
         // (kuna) GH-6882: wire the ported `kunaIsSparcStructRetTrap` predicate.
         // The gate is the architecture-owned `sparc_struct_return` flag (`option
         // sparcstructret on|off`, default off / upstream byte-identical); the
@@ -367,9 +367,9 @@ impl FlowEnvironment for ArchFlowEnv {
         if !arch.sparc_struct_return {
             // Fast-path the default-off gate without touching the IR (matches the
             // predicate's leading `if (!gate) return false`).
-            return false;
+            return None;
         }
-        crate::kuna_sparcstructret::kuna_is_sparc_struct_ret_trap(
+        crate::kuna_sparcstructret::kuna_sparc_struct_ret_trap_producer(
             fd,
             op,
             arch.sparc_struct_return,
@@ -381,6 +381,20 @@ impl FlowEnvironment for ArchFlowEnv {
         )
     }
 
+    fn msvc_import_slot(&self, fd: &Funcdata, op: crate::context::OpId) -> Option<Address> {
+        let locked = &self.arch().msvcsig_import_slots;
+        if locked.is_empty() {
+            return None;
+        }
+        crate::kuna_msvcimportcall::locked_import_slot(fd, op, locked)
+    }
+    fn msvc_locked_entry(&self, entry: &Address) -> bool {
+        let locked = &self.arch().msvcsig_import_slots;
+        !locked.is_empty()
+            && entry
+                .get_space()
+                .is_some_and(|space| locked.contains(&(space.get_index(), entry.get_offset())))
+    }
     fn is_fastfail_callind(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
         // (kuna `fastfailnoreturn`) wire the `int 0x29` predicate.  The gate is the
         // architecture-owned `fastfail_noreturn` flag (`option fastfailnoreturn

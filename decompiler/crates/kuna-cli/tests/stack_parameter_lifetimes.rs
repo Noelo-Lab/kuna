@@ -1,5 +1,5 @@
 //! Incoming parameters and reused frame objects have separate value identities.
-mod common;
+use crate::common;
 
 use serde_json::Value;
 use std::process::Command;

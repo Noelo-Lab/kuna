@@ -140,6 +140,7 @@ fn c_caps_describe_c() {
     assert!(c.paren_conditions);
     assert!(c.integer_suffixes);
     assert!(c.integer_promotion);
+    assert!(c.signed_text_byte);
     assert!(!c.labeled_loop_break);
     assert!(!c.labeled_block_break);
 }

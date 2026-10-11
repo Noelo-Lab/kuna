@@ -18,7 +18,7 @@
 //!
 //! To regenerate the corpus input files for the C++ harness:
 //!   KUNA_XML_VERIFY_DUMP=/tmp/corpus cargo test -p kuna-base \
-//!       --test verify_w1_base_xml -- --ignored dump_corpus
+//!       --test integration -- --ignored verify_w1_base_xml::dump_corpus
 
 use kuna_base::xml::{xml_escape, xml_parse, xml_tree, Attributes, ContentHandler, Element};
 

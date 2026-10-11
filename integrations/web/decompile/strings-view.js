@@ -6,6 +6,7 @@
 // string names that pointer. DOM-free: app.js
 // mounts the HTML and owns the clicks.
 import { escapeHtml } from '../assets/js/highlight-c.js';
+import { bare } from './addr.js';
 
 export const STRING_GROUPS = [
   ['used', 'Used by the code', true],
@@ -84,9 +85,34 @@ export function renderStringRow(s, { nameOf = (a, n) => n || a, selected = false
     }).join(', ')
     : `<span class="d2muted">${escapeHtml(where)}</span>`;
   const goes = users.length ? `Go to where ${nameOf(users[0].address_hex, users[0].name) || users[0].at_hex} uses it` : 'Show its bytes';
+  const list = users.length ? ' <button class="d2-link sr" data-act="str-refs" title="Every place that uses it (x)">all uses</button>' : '';
   return `<div class="str${selected ? ' sel' : ''}" data-addr="${escapeHtml(s.address_hex)}">` +
-    `<button class="sx" title="${escapeHtml(`${s.text}\n${where}\n${goes}`)}">${escapeHtml(showText(s.text))}</button>` +
-    `<div class="su">${sub}</div></div>`;
+    `<button class="sx" title="${escapeHtml(`${s.text}\n${where}\n${goes}\nPress x for every place that uses it`)}">${escapeHtml(showText(s.text))}</button>` +
+    `<div class="su">${sub}${list}</div></div>`;
+}
+
+/**
+ * The cross-references dialog's model for string `s`: every instruction that
+ * uses it, with the pointer read when the use goes through one.
+ */
+export function stringRefsModel(s, { nameOf = (a, n) => n || a } = {}) {
+  const rows = (s.uses || []).map((u) => {
+    const at = String(u.at_hex).toLowerCase();
+    const fn = String(u.address_hex || at).toLowerCase();
+    const via = u.via ? u.via.name || u.via.address_hex : null;
+    return {
+      fn, site: at, siteLabel: bare(at), name: nameOf(fn, u.name) || at, kind: u.kind,
+      how: via ? `reads the pointer ${via}` : '',
+      instruction: u.instruction || '',
+    };
+  });
+  const text = showText(s.text);
+  const where = [bare(s.address_hex), s.section].filter(Boolean).join(' in ');
+  return {
+    title: `Uses of "${text.length > 60 ? text.slice(0, 57) + '…' : text}"`,
+    sub: `text at ${where}`,
+    sections: [{ heading: 'Used by', kind: 'sites', rows, empty: 'Nothing in the program uses it directly.' }],
+  };
 }
 
 /**

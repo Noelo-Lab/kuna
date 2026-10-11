@@ -1,0 +1,57 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: an AIF gap candidate that is a fragment of the known
+    function around it is not a function (`option aifbracket on|off`,
+    default-ON).
+
+    Issue:      kuna GH-299 - aif plants mid-function entries on a large i386
+                PE, a third of them inside a function kuna already knows.
+    Stage:      P1 code/data partition - the AIF gap-walk accept
+                (`analyzers/aif/kuna_aifbracket.rs`).
+    P0 assert:  `option aifbracket on|off`.
+
+    The XML wrapper only provides the harness architecture.  Every pass clears
+    it and loads `aifbracket_pe_i386.exe` (source `aifbracket_pe_i386.asm`
+    beside it): 22 leaf functions with one prologue, `dispatch` at 0x4011f0
+    whose block at 0x4011fd is reached only through `jmp dword [ebp+12]` and
+    jumps back to `dispatch`'s tail, and `shared` at 0x401210, a real function
+    behind a pointer after int3 padding that jumps to the same tail.
+
+    Pass 1 (`mode aggressive`, `option aifbracket off`) reproduces the bug:
+    the inventory lists sub_4011fd inside `dispatch`.
+    Pass 2 (`mode aggressive`, shipped default) drops it and keeps sub_401210.
+    Pass 3 (`mode aggressive`, `option aif off`) shows sub_401210 is the gap
+    walk's own find, so pass 2 kept an AIF accept rather than missing one.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/aifbracket_pe_i386.exe</com>
+  <com>mode aggressive</com>
+  <com>option aifbracket off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/aifbracket_pe_i386.exe</com>
+  <com>mode aggressive</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/aifbracket_pe_i386.exe</com>
+  <com>mode aggressive</com>
+  <com>option aif off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>phase catalog aifbracket</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-AIFBRACKET #1: dispatch is a function in all three passes" min="3" max="3">0x4011f0 sub_4011f0</stringmatch>
+<stringmatch name="KUNA-AIFBRACKET #2: the fragment inside dispatch is a function only with the option off" min="1" max="1">0x4011fd sub_4011fd</stringmatch>
+<stringmatch name="KUNA-AIFBRACKET #3: the pointer-referenced routine after padding stays an AIF function" min="2" max="2">0x401210 sub_401210</stringmatch>
+<stringmatch name="KUNA-AIFBRACKET #4: the catalog documents it as a default-on P1 code/data-partition option" min="1" max="1">"option": "aifbracket", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
+</decompilertest>

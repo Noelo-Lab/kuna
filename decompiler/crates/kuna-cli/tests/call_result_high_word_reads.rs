@@ -2,7 +2,7 @@
 //! gets that result from the call. `bl full; uxtb r0,r1` overwrites `r0`
 //! unread, and the read of `r1` printed as a local nothing assigns beside a
 //! bare `full(a0);`, so the printed C computed garbage.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
@@ -207,6 +207,7 @@ fn a_callee_result_read_only_through_its_high_word_round_trips_through_the_print
                 std::fs::write(&src, format!("{PRELUDE}{text}\n{SOURCE}\n{MAIN}")).unwrap();
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", "-fwrapv", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .args(common::CC_GCC15_DEMOTE)
                     .output()
                     .expect("spawn the C compiler");
                 assert!(

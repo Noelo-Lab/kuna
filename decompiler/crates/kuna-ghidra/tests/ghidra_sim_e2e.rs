@@ -38,6 +38,7 @@
 //! workspace suite to keep `make rust-test` lean, and run explicitly (release)
 //! by the CI gates job and `make test-ghidra`.
 
+#[path = "ghidra_sim/mod.rs"]
 mod ghidra_sim;
 
 use std::cell::RefCell;

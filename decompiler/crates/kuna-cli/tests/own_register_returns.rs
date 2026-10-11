@@ -5,7 +5,7 @@
 //! the printed C and compared with the source, as is a RISC-V 32 shift whose
 //! zero-shift path moves only the high word back; the 128-bit AArch64 and
 //! x86-64 returns print as a byte container, so those are checked by their text.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{
@@ -291,6 +291,7 @@ int main(void) {{
         for cc in &compilers {
             for level in ["-O0", "-O2"] {
                 let compile = Command::new(cc)
+                    .args(common::CC_GCC15_DEMOTE)
                     .args(["-std=gnu11", "-w", level, "-o"])
                     .arg(&exe)
                     .arg(&src)
@@ -376,6 +377,7 @@ int main(void) {{
     for cc in &compilers {
         for level in ["-O0", "-O2"] {
             let compile = Command::new(cc)
+                .args(common::CC_GCC15_DEMOTE)
                 .args(["-std=gnu11", "-w", level, "-o"])
                 .arg(&exe)
                 .arg(&src)

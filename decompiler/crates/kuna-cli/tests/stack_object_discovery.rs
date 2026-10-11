@@ -1,5 +1,5 @@
 //! Discovered logical selectors round-trip through assertions and batch workers.
-mod common;
+use crate::common;
 
 use serde_json::Value;
 use std::process::Command;

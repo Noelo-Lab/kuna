@@ -80,6 +80,7 @@
 //! intermediate `::` scopes are created, not correctness of the base name.
 
 pub mod kuna_cppsig;
+mod kuna_msvcsig;
 
 /// `GnuDemangler.GLOBAL_PREFIX` (`GnuDemangler.java:35`).
 const GLOBAL_PREFIX: &str = "_GLOBAL_";

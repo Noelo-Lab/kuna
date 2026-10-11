@@ -104,7 +104,7 @@ pub const RETURN_ADDRESS_ONLY: int4 = 4;
 
 /// Most argument bytes a single call is credited with, so a malformed frame
 /// cannot walk the whole stack.
-const MAX_ARG_BYTES: int4 = 256;
+pub(crate) const MAX_ARG_BYTES: int4 = 256;
 
 /// The guessed extrapop for a call whose model leaves it unknown.
 ///
@@ -166,7 +166,7 @@ pub fn guess_extra_pop(
 /// imports were never marked up (a raw `.text` blob, or `peimportcall` off) has
 /// no imported callees by this test, which leaves the whole function at
 /// upstream's answer.
-fn is_imported(data: &Funcdata, entry: &Address) -> bool {
+pub(crate) fn is_imported(data: &Funcdata, entry: &Address) -> bool {
     // A call whose target was never resolved carries the invalid Address, whose
     // space pointer is the sentinel — the property query would dereference it.
     let size = match entry.get_space() {
@@ -190,20 +190,26 @@ fn is_imported(data: &Funcdata, entry: &Address) -> bool {
 /// The bound matters in the other direction too: a mid-function `pop reg` also
 /// raises the stack pointer, and restoring one saved register does not account
 /// for a multi-argument run.
-fn caller_cleans_up(
+pub(crate) fn caller_cleans_up(
     data: &Funcdata,
     spacebase: &Address,
     call_out: VarnodeId,
     argbytes: int4,
 ) -> bool {
+    caller_raise(data, spacebase, call_out) >= argbytes
+}
+
+/// The highest stack-pointer value, relative to `call_out`, that the caller
+/// reaches after the call (see [`caller_cleans_up`]); 0 when it never rises.
+pub(crate) fn caller_raise(data: &Funcdata, spacebase: &Address, call_out: VarnodeId) -> int4 {
     let step = match data.vbank().get(call_out).map(|v| v.get_size()) {
         Some(s) if s > 0 => s,
-        _ => return false,
+        _ => return 0,
     };
     let mut high: int4 = if is_argument_push(data, call_out) { step } else { 0 };
     let descend: Vec<_> = match data.vbank().get(call_out) {
         Some(v) => v.descend_iter().collect(),
-        None => return false,
+        None => return 0,
     };
     for op in descend {
         let o = match data.obank().get(op) {
@@ -226,7 +232,7 @@ fn caller_cleans_up(
             high = reached;
         }
     }
-    high >= argbytes
+    high
 }
 
 /// Split a spacebase reference into `(base, constant offset)` when it is
@@ -234,7 +240,7 @@ fn caller_cleans_up(
 /// stack pointer.  `c` is not necessarily negative: the additive normalization
 /// re-bases a run of pushes onto whichever earlier Varnode survived, so a call
 /// preceded by an `add esp,#k` cleanup lands at a positive offset from it.
-fn decompose(
+pub(crate) fn decompose(
     data: &Funcdata,
     spacebase: &Address,
     vn: VarnodeId,
@@ -257,7 +263,7 @@ fn decompose(
 
 /// The spacebase reference defined as `INT_ADD(base, #off)`, if the function
 /// has one.
-fn child_at(
+pub(crate) fn child_at(
     data: &Funcdata,
     spacebase: &Address,
     base: VarnodeId,
@@ -285,7 +291,7 @@ fn child_at(
 ///
 /// A slot with no STORE through it is neither (a bare frame allocation), and
 /// ends the run the same way a save does.
-fn is_argument_push(data: &Funcdata, slot: VarnodeId) -> bool {
+pub(crate) fn is_argument_push(data: &Funcdata, slot: VarnodeId) -> bool {
     let descend: Vec<_> = match data.vbank().get(slot) {
         Some(v) => v.descend_iter().collect(),
         None => return false,
@@ -312,14 +318,14 @@ fn is_argument_push(data: &Funcdata, slot: VarnodeId) -> bool {
 }
 
 /// Is `vn` a reference to the stack pointer itself?
-fn at_address(data: &Funcdata, vn: Option<VarnodeId>, spacebase: &Address) -> bool {
+pub(crate) fn at_address(data: &Funcdata, vn: Option<VarnodeId>, spacebase: &Address) -> bool {
     vn.and_then(|v| data.vbank().get(v))
         .map(|v| crate::coreaction_stackptr::addr_eq(v.get_addr(), spacebase))
         .unwrap_or(false)
 }
 
 /// The signed value of a constant Varnode, sign-extended from its own size.
-fn const_signed(data: &Funcdata, vn: Option<VarnodeId>) -> Option<int4> {
+pub(crate) fn const_signed(data: &Funcdata, vn: Option<VarnodeId>) -> Option<int4> {
     let v = vn.and_then(|v| data.vbank().get(v))?;
     if !v.is_constant() {
         return None;
