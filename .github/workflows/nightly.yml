@@ -1,0 +1,219 @@
+name: Nightly
+
+# Once a night on main:
+#   tests     -- the Tests workflow, called whole, so the nightly runs exactly the
+#                gates every push runs (parity, stages, spec, CLI, workspace suite).
+#   decbench  -- a fixed sample of the published decbench dataset (the `optimized`
+#                config) decompiled by tonight's build and by last night's build on
+#                the same runner, one binary at a time (the speed A/B), then scored
+#                with decbench (GED + type_match) and compared with last night's
+#                scores per function.
+#   report    -- one verdict for the night.
+# The design, the statistics, and how to read the report: docs/nightly.md.
+#
+# A pull request that edits the harness runs the decbench job (not the tests) so a
+# change to it is proven on a real runner before it merges; only main's runs ever
+# become the next night's baseline.
+
+on:
+  schedule:
+    # 07:17 UTC: after the 06:00 release, off the top of the hour.
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+    inputs:
+      binaries:
+        description: Sample size, in binaries of the optimized config
+        default: "96"
+  pull_request:
+    paths:
+      - .github/workflows/nightly.yml
+      - scripts/nightly/**
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: always
+  # Every input that can move a score is pinned, so a night-to-night change is
+  # kuna's. Bumping one resets the score comparison for a night (the report says so).
+  DATASET_REVISION: 815eb96f130b6d2ef7fa600e04669bf20139bf27
+  DECBENCH_REVISION: 14e14b87429043aa06f64e067847ac0a925e41a6
+  RUST_JOERN_REVISION: 9fd97f50885202596b125ebd2504e64910874bcb
+  SAMPLE_BINARIES: ${{ inputs.binaries || '96' }}
+  SAMPLE_SEED: kuna-nightly-v1
+
+jobs:
+  tests:
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/tests.yml
+
+  decbench:
+    name: decbench sample
+    runs-on: ubuntu-26.04
+    timeout-minutes: 240
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DECBENCH_NO_CACHE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # scripts/version.sh counts commits
+
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      # decbench strips every binary before a decompiler sees it; the runner's
+      # x86-only strip cannot read the ARM firmware in the sample.
+      - name: Install multi-architecture binutils
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q binutils-multiarch
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: decompiler
+          key: nightly
+
+      - name: Build kuna and compile the SLEIGH specs
+        run: make binaries specs
+
+      # Tomorrow's speed baseline: the binary and spec tree exactly as built here.
+      - name: Package tonight's build
+        run: |
+          mkdir -p build
+          cp decompiler/target/release/kuna build/
+          tar -czf build/specs.tgz specs
+          echo "$(bash scripts/version.sh) (${GITHUB_SHA::10})" | tee build/LABEL
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kuna-nightly-build
+          path: build/
+          retention-days: 14
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: .github/workflows/nightly.yml
+
+      - name: Restore the Rust Joern library
+        id: joern
+        uses: actions/cache@v4
+        with:
+          path: rust-joern-lib
+          key: rust-joern-${{ env.RUST_JOERN_REVISION }}-${{ runner.os }}
+
+      - name: Build Rust Joern
+        if: steps.joern.outputs.cache-hit != 'true'
+        run: |
+          git clone --quiet https://github.com/Noelo-Lab/rust-joern "$RUNNER_TEMP/rust-joern"
+          git -C "$RUNNER_TEMP/rust-joern" checkout --quiet "$RUST_JOERN_REVISION"
+          (cd "$RUNNER_TEMP/rust-joern" && cargo build --release --lib)
+          mkdir -p rust-joern-lib
+          cp "$RUNNER_TEMP/rust-joern/target/release/librust_joern.so" rust-joern-lib/
+
+      - name: Install decbench
+        run: |
+          git clone --quiet https://github.com/Noelo-Lab/decbench "$RUNNER_TEMP/decbench"
+          git -C "$RUNNER_TEMP/decbench" checkout --quiet "$DECBENCH_REVISION"
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet "$RUNNER_TEMP/decbench" \
+            "git+https://github.com/Noelo-Lab/rust-joern@$RUST_JOERN_REVISION"
+          echo "RUST_JOERN_LIBRARY=$PWD/rust-joern-lib/librust_joern.so" >> "$GITHUB_ENV"
+          echo "RUST_JOERN_REV=$RUST_JOERN_REVISION" >> "$GITHUB_ENV"
+
+      - name: Fetch last night's results and build
+        run: bash scripts/nightly/previous.sh prev base
+
+      - name: Restore the dataset sample
+        uses: actions/cache@v4
+        with:
+          path: nightly-data
+          key: decbench-data-${{ env.DATASET_REVISION }}-${{ env.SAMPLE_SEED }}-${{ env.SAMPLE_BINARIES }}
+
+      - name: Sample the dataset
+        run: |
+          python3 -m scripts.nightly.dataset --revision "$DATASET_REVISION" \
+            --binaries "$SAMPLE_BINARIES" --seed "$SAMPLE_SEED" \
+            --data nightly-data --sample-out out/sample.json
+
+      - name: Decompile (tonight vs last night) and score
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" -m scripts.nightly.bench \
+            --sample out/sample.json --data nightly-data \
+            --kuna build/kuna --specs specs --label "$(cat build/LABEL)" \
+            --baseline-kuna base/kuna --baseline-specs base/specs \
+            --baseline-label "$(cat base/LABEL)" \
+            --decbench-root "$RUNNER_TEMP/decbench" --out out --jobs "$(nproc)"
+
+      - name: Compare with last night
+        run: |
+          set +e
+          python3 -m scripts.nightly.compare --current out/results.json \
+            --previous prev/results.json --history prev/history.jsonl \
+            --history-out out/history.jsonl --report out/report.md \
+            --summary-json out/summary.json --fail-on-regression \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            > /dev/null
+          rc=$?
+          cat out/report.md >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('out/results.json') != ''
+        with:
+          name: decbench-nightly
+          path: |
+            out/results.json
+            out/history.jsonl
+            out/report.md
+            out/summary.json
+            out/sample.json
+          retention-days: 90
+
+      - name: Runner disk and timing
+        if: always()
+        run: |
+          df -h .
+          python3 -c "import json; m = json.load(open('out/results.json'))['meta']; print({k: m[k] for k in ('timing_seconds', 'scoring_seconds', 'cpu_model')})" || true
+
+  report:
+    name: nightly verdict
+    needs: [tests, decbench]
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: decbench-nightly
+          path: nightly
+
+      - name: Summarize
+        env:
+          TESTS: ${{ needs.tests.result }}
+          DECBENCH: ${{ needs.decbench.result }}
+        run: |
+          regressions=$(python3 -c "import json; print('; '.join(json.load(open('nightly/summary.json'))['regressions']) or 'none')" 2>/dev/null || echo "no decbench result")
+          {
+            echo "## Nightly verdict"
+            echo
+            echo "| check | result |"
+            echo "|---|---|"
+            echo "| tests (all gates) | $TESTS |"
+            echo "| decbench sample | $DECBENCH |"
+            echo "| decbench regressions | $regressions |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$TESTS" = success ] && [ "$DECBENCH" = success ]
