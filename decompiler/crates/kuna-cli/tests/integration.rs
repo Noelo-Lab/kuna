@@ -7,6 +7,9 @@ mod ambiguous_selector_cli;
 #[path = "argument_errors_cli.rs"]
 mod argument_errors_cli;
 
+#[path = "conditional_register_lifetimes.rs"]
+mod conditional_register_lifetimes;
+
 #[path = "arm_float_arguments.rs"]
 mod arm_float_arguments;
 

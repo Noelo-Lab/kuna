@@ -536,6 +536,33 @@ parameter in one variable, and if the reload that follows a call clobbering the
 same storage is called redundant and silenced, the emitted C returns the call's
 result on a path where the binary returns the parameter.
 
+The copy marker also runs
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_undefinedcopy.rs` for trim
+copies whose source is an INDIRECT creation explicitly marked as killed by a
+call, rather than a possible return value. Predicated loads can leave such a
+source on an unused phi edge: `if (valid) p = load(); if (valid && pending) use(p)`
+does not read the old register when `valid` is false. Materializing the phi edge
+as an unconditional `p = undefined_register` introduces a C read that the
+instructions never perform.
+
+A bounded CFG walk starts at the creation, propagates its value through COPY,
+CAST, selected MULTIEQUAL inputs and non-creating INDIRECT operations, and
+tracks zero/nonzero facts for copies, extensions, zero comparisons and boolean
+operators, using the [p-code boolean domain](https://ghidra.re/ghidra_docs/languages/html/pcoderef.html)
+of 0 and 1 for boolean operations. Each phi selects its incoming edge from the
+state before the block's phis; branch flips are respected, and definitions replace earlier facts on loop
+iterations. At block entry, facts for dominated definitions that must execute
+again are discarded, except for the selected phi inputs carrying the preceding
+iteration. This closes loops without retaining unrelated dead branch facts.
+A reachable non-transfer use rejects suppression, as does any
+address-tied or persistent destination. Only when no such use is reachable is
+the temporary COPY marked non-printing. The SSA graph, guarded definitions,
+memory operations and genuine undefined paths remain intact. Unsupported
+control flow, 1,024 distinct states or exhaustion of a shared 16,384-step budget
+retain the original copies. The authored conditional-register regression checks
+unchanged C at O0/O2 with uninitialized diagnostics, 32-bit runtime model checks,
+and controls whose undefined values really reach their returns.
+
 The pairs of one group are tested together (`funcdata_merge.rs
 (MergeContext::redundant_copies)`): the high's other writes are listed by block
 once, the answers of each earlier COPY's dominator walks longer than eight
