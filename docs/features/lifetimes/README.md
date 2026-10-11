@@ -85,6 +85,60 @@ The focused regressions live in `saved_xmm_msabi.rs`,
 `kuna_calleehomes/tests.rs` and `kuna_calleememory.rs`. The native saved-XMM test
 compares original assembly with generated C using GCC and Clang at O0 and O2.
 
+## Reproducing disjoint private spills
+
+This neutral x86-64 Linux input uses a Win64 helper. The assembly saves XMM6–XMM9
+in the caller's frame, then passes a separate 16-byte rectangle to a helper
+whose four writes do not overlap those saves. The checked-in source files are
+[`savedxmm_msabi.S`](../../../decompiler/crates/kuna-analysis/tests/fixtures/savedxmm_msabi.S)
+and [`savedxmm_msabi.c`](../../../decompiler/crates/kuna-analysis/tests/fixtures/savedxmm_msabi.c).
+With Clang and matching x86-64 specs, build and decompile it with:
+
+```sh
+cargo build --manifest-path decompiler/Cargo.toml -p kuna-cli
+kuna_bin=decompiler/target/debug/kuna
+image=/tmp/savedxmm-clang-o0
+clang -std=c11 -O0 -no-pie \
+  -Wl,--section-start=.saved_xmm_rect=0x700000 \
+  decompiler/crates/kuna-analysis/tests/fixtures/savedxmm_msabi.S \
+  decompiler/crates/kuna-analysis/tests/fixtures/savedxmm_msabi.c \
+  -o "$image"
+"$image"
+symbol() { nm -n "$image" | awk -v wanted="$1" '$3 == wanted { print "0x" $1; exit }'; }
+target_addr=$(symbol fixture_spills_rect)
+copy_addr=$(symbol fixture_copy_rect)
+rect_addr=$(symbol rect_source)
+"$kuna_bin" decompile "$image" fixture_spills_rect \
+  --target x86:LE:64:default:windows --mode reliable --json --assert-strict \
+  --option stackviews on --option structdefs on --sleighpath specs \
+  --assert 'typedef struct Rect { float x; float y; float width; float height; };' \
+  --assert "prototype $target_addr float fixture_spills_rect(void)" \
+  --assert "prototype $copy_addr void fixture_copy_rect(Rect *destination,const Rect *source)" \
+  --assert "data $rect_addr Rect rect_source"
+```
+
+On the alias-only baseline, the emitted function contains sixteen referenced
+`unsigned int` locals for the save lanes, including:
+
+```c
+unsigned int v18; // stack - 0x48 | xmm6_da
+unsigned int v19; // stack - 0x44 | xmm6_db
+/* ... */
+unsigned int v32; // stack - 0x10 | xmm9_dc
+unsigned int v33; // stack - 0xc | xmm9_dd
+```
+
+With the private-spill proof, those locals and their copy assignments disappear
+from emitted code; the caller-owned rectangle remains:
+
+```c
+Rect v1 [2]; // stack - 0x68 | xmm0_da
+fixture_copy_rect(v1,&rect_source);
+return v1[0].x + v1[0].y;
+```
+
+The native fixture checks all sixteen seeded XMM values and the 3.75 result.
+
 ## Performance scope
 
 Earlier release measurements against upstream `919984b8` found small default-mode
