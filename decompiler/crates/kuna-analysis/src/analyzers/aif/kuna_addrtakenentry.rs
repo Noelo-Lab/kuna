@@ -28,10 +28,19 @@
 //!   section), are padding or zero fill, and that instruction does not fall
 //!   through;
 //! - it is code that ends like a function: decoded inside its gap, every path
-//!   ends in a return, a computed jump, a trap, a call followed by padding, or a
-//!   jump to a known function entry; no path falls out of the gap into other
-//!   code or jumps into the middle of decoded code; and it does not open with
-//!   zero fill or `int3`.
+//!   ends in a return, a computed jump, a trap (`int3`, `ud2`), a call followed
+//!   by padding, or a jump to a known function entry; no path falls out of the
+//!   gap into other code or jumps into the middle of decoded code; no `ret` is
+//!   reached with the stack above the entry (a frame torn down that the routine
+//!   never built); it does not open with `int3`, and no instruction of it is
+//!   zero fill or `hlt` — the
+//!   shape of a data table in `.text` (a MinGW delay-import descriptor decodes
+//!   to `add [rax],eax ; add [rax],al ; ... ; ret 0`);
+//! - it is not a label of a function that takes it: inside a taker's region
+//!   that holds a register- or memory-indirect `jmp`, an address before more of
+//!   the region's code, or right after such a jump when its own code dispatches
+//!   again, is a computed-`goto` or threaded-interpreter label, not a registered
+//!   function.
 //!
 //! The accepted entries re-seed the walk, so their callees and the addresses
 //! their own code takes are found too; acceptance repeats over the rebuilt
@@ -69,9 +78,13 @@ pub(crate) struct AddrTaken {
 }
 
 impl AddrTaken {
-    /// `None` off x86-64.
+    /// `None` off x86-64, and on a Go binary: its `pclntab` already names every
+    /// function, so a candidate could only re-seed a known one, and the wider walk
+    /// then turns the calls into the middle of `runtime.duffzero` into entries.
     pub(crate) fn new(file: &object::File, bytes: &[u8]) -> Option<AddrTaken> {
-        if file.architecture() != object::Architecture::X86_64 {
+        if file.architecture() != object::Architecture::X86_64
+            || crate::sourcelang::detect_compiler(file, bytes).is_golang()
+        {
             return None;
         }
         let texts = crate::entry::executable_sections(file);
@@ -79,23 +92,29 @@ impl AddrTaken {
         Some(AddrTaken { texts, relocated })
     }
 
-    /// The candidates over `listing`, address-sorted: every undecoded executable
-    /// address a decoded instruction materializes, and every pre-record relocated
-    /// code pointer.
-    fn candidates(&self, listing: &Listing) -> Vec<u64> {
-        let mut out: Vec<u64> = self.relocated.clone();
+    /// The candidates over `listing`, each with the decoded instructions that
+    /// take it: every undecoded executable address a decoded instruction
+    /// materializes, and every pre-record relocated code pointer (taken by none).
+    /// Also returns the decoded register- or memory-indirect `jmp`s, sorted.
+    fn candidates(&self, listing: &Listing) -> (BTreeMap<u64, Vec<u64>>, Vec<u64>) {
+        let mut out: BTreeMap<u64, Vec<u64>> = self
+            .relocated
+            .iter()
+            .filter(|&&t| listing.is_undefined(t))
+            .map(|&t| (t, Vec::new()))
+            .collect();
+        let mut dispatches = Vec::new();
         for (&at, insn) in listing.instructions() {
             let Some(bytes) = self.bytes(at, insn.len) else { continue };
-            if let Some(target) = materialized(at, bytes) {
-                if target != at.wrapping_add(u64::from(insn.len)) {
-                    out.push(target);
+            if is_indirect_jmp(bytes) {
+                dispatches.push(at);
+            } else if let Some(target) = materialized(at, bytes) {
+                if target != at.wrapping_add(u64::from(insn.len)) && listing.is_undefined(target) {
+                    out.entry(target).or_default().push(at);
                 }
             }
         }
-        out.retain(|&t| listing.is_undefined(t));
-        out.sort_unstable();
-        out.dedup();
-        out
+        (out, dispatches)
     }
 
     fn bytes(&self, at: u64, len: u32) -> Option<&[u8]> {
@@ -111,7 +130,7 @@ impl AddrTaken {
         translate: &dyn Translate,
         code_space: Rc<AddrSpace>,
     ) -> Vec<u64> {
-        let candidates = self.candidates(listing);
+        let (candidates, dispatches) = self.candidates(listing);
         if candidates.is_empty() {
             return Vec::new();
         }
@@ -119,21 +138,29 @@ impl AddrTaken {
         let mut decoder = GapDecoder::new(translate, code_space, ranges);
         let mut claimed: BTreeMap<u64, Claimed> = BTreeMap::new();
         let mut accepted: BTreeSet<u64> = BTreeSet::new();
-        for target in candidates {
+        for (target, takers) in candidates {
             let Some(&(lo, hi)) = ranges.iter().find(|&&(lo, hi)| target >= lo && target < hi) else {
                 continue;
             };
-            if splits_claimed(&claimed, target) {
+            let label = own_label(listing, &dispatches, &claimed, lo, target, &takers);
+            if splits_claimed(&claimed, target) || label == Some(Label::Between) {
                 continue;
             }
             let Some(padded) = isolated(listing, &mut decoder, &claimed, lo, target) else {
                 continue;
             };
             let gap_hi = listing.next_instruction_start_after(target).map_or(hi, |n| n.min(hi));
-            if let Some(body) = routine(listing, &mut decoder, &accepted, target, gap_hi, padded) {
-                accepted.insert(target);
-                claimed.extend(body);
+            let Some(body) = routine(listing, &mut decoder, &accepted, target, gap_hi, padded) else {
+                continue;
+            };
+            let dispatches_again = || {
+                body.iter().any(|(&at, c)| self.bytes(at, (c.end - at) as u32).is_some_and(is_indirect_jmp))
+            };
+            if label == Some(Label::AfterDispatch) && dispatches_again() {
+                continue;
             }
+            accepted.insert(target);
+            claimed.extend(body);
         }
         accepted.into_iter().collect()
     }
@@ -197,6 +224,77 @@ fn materialized(at: u64, bytes: &[u8]) -> Option<u64> {
         }
         _ => None,
     }
+}
+
+/// Where a candidate sits in a function that takes it and dispatches through a
+/// register- or memory-indirect `jmp` (see [`own_label`]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Label {
+    /// Before more of that function's decoded code: one of its blocks.
+    Between,
+    /// Right after its dispatch jump: one of its blocks if the candidate's own
+    /// code dispatches again; a function the `jmp` tail-calls if it does not.
+    AfterDispatch,
+}
+
+/// Whether `target` may be a label of a function that takes it: the target lies
+/// in a taker's function region (up to the next known entry), the region holds a
+/// register- or memory-indirect `jmp` (`dispatches`), and the target sits before
+/// more of the region's decoded code or right after such a jump. That is the
+/// computed-goto and threaded-interpreter shape — `lea rax,[label]` and later
+/// `jmp rax` — whose labels sit between the function's blocks (clang `-O0`) or
+/// after the dispatch jump (gcc), fall through into nothing and end in another
+/// dispatch, a jump back or a return, as a function would. A lazy-binding stub
+/// stores the address of a fallback that follows it and tail-calls through
+/// `jmp rax` too, so right after the jump only a candidate that dispatches again
+/// is refused.
+fn own_label(
+    listing: &Listing,
+    dispatches: &[u64],
+    claimed: &BTreeMap<u64, Claimed>,
+    lo: u64,
+    target: u64,
+    takers: &[u64],
+) -> Option<Label> {
+    let prev = listing
+        .instruction_before(target)
+        .filter(|insn| insn.addr >= lo && claimed.range(insn.addr..target).next().is_none())
+        .map(|insn| insn.addr);
+    let next = listing.next_instruction_start_after(target);
+    let mut label = None;
+    for &taker in takers {
+        let Some(entry) = listing.function_containing(taker).map(|f| f.entry) else { continue };
+        let hi = listing.next_function_after(entry).map_or(u64::MAX, |f| f.entry);
+        if target < entry || target >= hi {
+            continue;
+        }
+        let first = dispatches.partition_point(|&at| at < entry);
+        if !dispatches.get(first).is_some_and(|&at| at < hi) {
+            continue;
+        }
+        if next.is_some_and(|at| at < hi) {
+            return Some(Label::Between);
+        }
+        if prev.is_some_and(|at| at >= entry && dispatches.binary_search(&at).is_ok()) {
+            label = Some(Label::AfterDispatch);
+        }
+    }
+    label
+}
+
+/// Whether the decoded instruction `bytes` is a register- or memory-indirect
+/// near `jmp` (`ff /4`), after any prefixes and a REX byte, through anything but
+/// a fixed RIP-relative slot: `jmp [rip+slot]` is a tail call through an import
+/// or a pointer, not a dispatch.
+fn is_indirect_jmp(bytes: &[u8]) -> bool {
+    let mut i = 0;
+    while bytes.get(i).is_some_and(|b| matches!(b, 0x66 | 0x67 | 0xF0 | 0xF2 | 0xF3 | 0x26 | 0x2E | 0x36 | 0x3E | 0x64 | 0x65)) {
+        i += 1;
+    }
+    if bytes.get(i).is_some_and(|&rex| rex & 0xF0 == 0x40) {
+        i += 1;
+    }
+    bytes.get(i) == Some(&0xFF) && bytes.get(i + 1).is_some_and(|&m| (m >> 3) & 7 == 4 && m & 0xC7 != 0x05)
 }
 
 /// Whether `target` lies strictly inside an instruction a routine accepted this
@@ -263,8 +361,8 @@ fn routine(
     }
     let is_entry = |at: u64| listing.function_at(at).is_some() || accepted.contains(&at);
     let mut body: BTreeMap<u64, Claimed> = BTreeMap::new();
-    let mut work: Vec<(u64, bool)> = vec![(target, false)];
-    while let Some((at, after_call)) = work.pop() {
+    let mut work: Vec<(u64, bool, Option<i64>)> = vec![(target, false, Some(0))];
+    while let Some((at, after_call, depth)) = work.pop() {
         if body.contains_key(&at) {
             continue;
         }
@@ -275,8 +373,15 @@ fn routine(
         if after_call && (is_padding(&insn, true) || is_trap(&insn)) {
             continue;
         }
+        if is_zero_fill(&insn) || insn.mnemonic.eq_ignore_ascii_case("hlt") {
+            return None;
+        }
         let end = at.checked_add(u64::from(insn.len)).filter(|&end| end <= gap_hi)?;
         body.insert(at, Claimed { end, falls: insn.fall_through.is_some() });
+        if insn.is_terminal && depth.is_some_and(|d| d > 0) {
+            return None;
+        }
+        let depth = depth.and_then(|d| stack_step(&insn).map(|step| d + step));
         if insn.is_terminal || insn.kind == FlowKind::ComputedJump || is_trap(&insn) {
             continue;
         }
@@ -286,7 +391,7 @@ fn routine(
                     return None;
                 }
             } else if to >= target && to < gap_hi {
-                work.push((to, false));
+                work.push((to, false, depth));
             } else if !is_entry(to) {
                 return None;
             }
@@ -295,7 +400,7 @@ fn routine(
             if fall >= gap_hi {
                 return None;
             }
-            work.push((fall, insn.is_call));
+            work.push((fall, insn.is_call, depth));
         }
     }
     let mut last_end = 0;
@@ -308,9 +413,44 @@ fn routine(
     Some(body)
 }
 
-/// `int3`, `ud2` and `hlt`: flow does not continue past them.
+/// How far `insn` moves the stack pointer up (a pop is `+8`), `Some(0)` when it
+/// does not write `RSP`, and `None` when it writes it in a way not followed
+/// (`leave`, `mov rsp,r11`, `and rsp,-16`). A routine whose `ret` is reached
+/// with the stack above its entry tore down a frame it never built: it is the
+/// epilogue of the function around it, not a function.
+fn stack_step(insn: &ProbedInsn) -> Option<i64> {
+    let m = &*insn.mnemonic;
+    let operands: String = insn.operands.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_ascii_lowercase();
+    if m.eq_ignore_ascii_case("push") || m.eq_ignore_ascii_case("pushfq") {
+        return Some(-8);
+    }
+    if m.eq_ignore_ascii_case("pop") || m.eq_ignore_ascii_case("popfq") {
+        return Some(8);
+    }
+    let Some(source) = operands.strip_prefix("rsp,") else {
+        return (!m.eq_ignore_ascii_case("leave")).then_some(0);
+    };
+    let imm = |text: &str| {
+        let (negative, digits) = text.strip_prefix('-').map_or((false, text), |rest| (true, rest));
+        let value = i64::from_str_radix(digits.strip_prefix("0x")?, 16).ok()?;
+        Some(if negative { -value } else { value })
+    };
+    if m.eq_ignore_ascii_case("add") {
+        imm(source)
+    } else if m.eq_ignore_ascii_case("sub") {
+        imm(source).map(|v| -v)
+    } else if m.eq_ignore_ascii_case("lea") {
+        imm(source.strip_prefix("[rsp+")?.strip_suffix(']')?)
+    } else if m.eq_ignore_ascii_case("cmp") || m.eq_ignore_ascii_case("test") {
+        Some(0)
+    } else {
+        None
+    }
+}
+
+/// `int3` and `ud2`: flow does not continue past them.
 fn is_trap(insn: &ProbedInsn) -> bool {
-    ["int3", "ud2", "hlt"].iter().any(|m| insn.mnemonic.eq_ignore_ascii_case(m))
+    ["int3", "ud2"].iter().any(|m| insn.mnemonic.eq_ignore_ascii_case(m))
 }
 
 #[cfg(test)]
@@ -349,6 +489,18 @@ mod tests {
         assert_eq!(materialized(0x1000, &[0x68, 0x00, 0x10, 0x40, 0x00]), Some(0x401000));
         // lea eax,[rip+0x10]: a 32-bit lea keeps the low half
         assert_eq!(materialized(0x1_0000_1000, &[0x8d, 0x05, 0x10, 0x00, 0x00, 0x00]), Some(0x1016));
+    }
+
+    #[test]
+    fn indirect_jumps_are_read_off_the_opcode() {
+        assert!(super::is_indirect_jmp(&[0xff, 0xe0])); // jmp rax
+        assert!(super::is_indirect_jmp(&[0x41, 0xff, 0xe3])); // jmp r11
+        assert!(super::is_indirect_jmp(&[0x3e, 0xff, 0xe0])); // notrack jmp rax
+        assert!(super::is_indirect_jmp(&[0xff, 0x24, 0xc5, 0, 0, 0, 0])); // jmp [rax*8+disp]
+        assert!(!super::is_indirect_jmp(&[0xff, 0xd0])); // call rax
+        assert!(!super::is_indirect_jmp(&[0x0f, 0x0b])); // ud2
+        assert!(!super::is_indirect_jmp(&[0xe9, 0, 0, 0, 0])); // jmp rel32
+        assert!(!super::is_indirect_jmp(&[0x48, 0xff, 0x25, 0, 0, 0, 0])); // jmp [rip+slot]
     }
 
     #[test]

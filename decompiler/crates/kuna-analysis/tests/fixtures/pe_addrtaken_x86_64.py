@@ -28,12 +28,21 @@ Layout (ImageBase 0x140000000; `.pdata` describes only `_start`):
     0x140001050  runon     xor eax,eax, then straight into _start
                            ^ lea'd, but runs into other code: NOT a function
     0x140001052  _start    the only .pdata record; calls register, the
-                           handler through g_sink and pre_a through the table,
-                           and lea's runon, handler+3 (an interior address)
-                           and blob
-    after it     payload   xor eax,eax ; ret — relocated, but past the last
+                           handler through g_sink, pre_a through the table and
+                           interp, and lea's runon, handler+3 (an interior
+                           address), desc and blob
+    0x1400010a0  desc      01 00 00 00 2c c7 00 00 c2 00 00, a MinGW
+                           delay-import descriptor's shape: lea'd after a ret,
+                           decodes to add [rax],eax ; add [rax],al ; ... ;
+                           ret 0. NOT a function
+    0x1400010b0  interp    sub rsp,0x28 ; lea rax,[label] ; jmp rax — called
+                           by _start
+    0x1400010c0  label     add rsp,0x28 ; ret — lea'd by interp, right after
+                           its dispatch jump, and tears down interp's frame:
+                           gcc's computed-goto return block, NOT a function
+    0x1400010d0  payload   xor eax,eax ; ret — relocated, but past the last
                            record: left out, as before
-                 blob      a UTF-16 string lea'd by _start: NOT a function
+    0x1400010e0  blob      a UTF-16 string lea'd by _start: NOT a function
   .rdata  RVA 0x2000   pre_a, pre_b, str16, payload (all DIR64-relocated)
   .pdata  RVA 0x3000   one record for _start
   .xdata  RVA 0x4000   one UNWIND_INFO (UWOP_ALLOC_SMALL 0x28)
@@ -66,6 +75,11 @@ REGISTER = 0x1030
 HANDLER = 0x1040
 RUNON = 0x1050
 START = 0x1052
+DESC = 0x10A0
+INTERP = 0x10B0
+LABEL = 0x10C0
+PAYLOAD = 0x10D0
+BLOB = 0x10E0
 G_SINK = DATA_RVA
 TABLE = RDATA_RVA
 
@@ -119,24 +133,29 @@ def build_text():
     emit(b"\x48\x8d\x0d" + rel32(here() + 7, STR16))           # lea rcx,[str16]
     emit(b"\x48\x8d\x15" + rel32(here() + 7, RUNON))           # lea rdx,[runon]
     emit(b"\x4c\x8d\x05" + rel32(here() + 7, HANDLER + 3))     # lea r8,[handler+3]
-    blob_lea = len(t)
-    emit(b"\x4c\x8d\x0d\x00\x00\x00\x00")                      # lea r9,[blob] (patched)
+    emit(b"\x4c\x8d\x0d" + rel32(here() + 7, BLOB))           # lea r9,[blob]
+    emit(b"\x48\x8d\x05" + rel32(here() + 7, DESC))           # lea rax,[desc]
     emit(b"\xb9\x05\x00\x00\x00")                              # mov ecx,5
     emit(b"\xff\x15" + rel32(here() + 6, G_SINK))              # call [g_sink]
     emit(b"\xff\x15" + rel32(here() + 6, TABLE))               # call [table]
+    emit(b"\xe8" + rel32(here() + 5, INTERP))                   # call interp
     emit(b"\x48\x83\xc4\x28")                   # add rsp,0x28
     emit(b"\xc3")                               # ret
     labels["start_end"] = here()
-    while here() % 16:
-        emit(b"\xcc")
+    at(DESC)
+    emit(bytes([0x01, 0x00, 0x00, 0x00, 0x2c, 0xc7, 0x00, 0x00, 0xc2, 0x00, 0x00]))
+    at(INTERP)
+    emit(b"\x48\x83\xec\x28")                   # sub rsp,0x28
+    emit(b"\x48\x8d\x05" + rel32(here() + 7, LABEL))          # lea rax,[label]
+    emit(b"\xff\xe0")                           # jmp rax
+    at(LABEL)
+    emit(b"\x48\x83\xc4\x28")                   # add rsp,0x28
+    emit(b"\xc3")                               # ret
+    at(PAYLOAD)
     labels["payload"] = here()
     emit(b"\x31\xc0\xc3")                       # xor eax,eax ; ret
-    while here() % 16:
-        emit(b"\xcc")
-    labels["blob"] = here()
+    at(BLOB)
     emit("blob".encode("utf-16-le") + b"\0\0")
-    lea_end = TEXT_RVA + blob_lea + 7
-    t[blob_lea + 3:blob_lea + 7] = rel32(lea_end, labels["blob"])
     return bytes(t), labels
 
 

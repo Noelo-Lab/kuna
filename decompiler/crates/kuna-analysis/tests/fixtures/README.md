@@ -1388,15 +1388,17 @@ stays `void`. Used by `tests/stages/kuna-callerreads.xml`.
 ### Functions reached only through a pointer the program takes
 
 `pe_addrtaken_x86_64.exe` (4,096 bytes, PE32+/x86-64, SHA-256
-`b495c1fe3995967c59fd9c87cf337dd8c5ec1055a9f3a0bdd191e0c384a5d495`) is a clean-room
+`76d162509b080bba63ccb999d857d7c4a3d3313c401effc5b202121aac8067b8`) is a clean-room
 reduction of the GH-1039 witness. `.pdata` describes only `_start`@`0x140001052`, which
 calls `register`@`0x140001030`. `register` stores `lea rax,[0x140001040]` to a global and
 `_start` calls the handler at `0x140001040` through it; `pre_a`@`0x140001000` and
 `pre_b`@`0x140001010` are named only by relocated `.rdata` words ahead of the first
 `RUNTIME_FUNCTION`. The look-alikes: a UTF-16 string at `0x140001020` (relocated and
 lea'd), `runon`@`0x140001050` (lea'd, falls into `_start`), the interior address
-`0x140001043`, a relocated stub past the last record at `0x140001090` and a lea'd string
-at `0x1400010a0`. With `addrtakenentry` off the inventory is `_start` and `register`; on,
-it adds `pre_a`, `pre_b` and the handler and nothing else. Regenerate from this directory
+`0x140001043`, a lea'd data blob shaped like a MinGW delay-import descriptor at
+`0x1400010a0`, the computed-goto return block `0x1400010c0` (`add rsp,0x28 ; ret`) that
+`interp`@`0x1400010b0` takes and jumps to through `rax`, a relocated stub past the last record at `0x1400010d0` and a lea'd
+string at `0x1400010e0`. With `addrtakenentry` off the inventory is `_start`, `register`
+and `interp`; on, it adds `pre_a`, `pre_b` and the handler and nothing else. Regenerate from this directory
 with `python3 pe_addrtaken_x86_64.py`. Used by `tests/stages/kuna-addrtakenentry.xml` and
 the `kuna_pereloccode` unit tests.

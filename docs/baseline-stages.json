@@ -863,7 +863,7 @@
     "data:JUMPTABLEMAX #2: every case of the table is a case label",
     "data:JUMPTABLEMAX #3: `option jumptablemax 2` refuses the four-case table and the dispatch prints as a call",
     "data:JUMPTABLEMAX #4: the lower cap prints no case label, so the one `case 0:` is the default pass",
-    "data:KUNA-ADDRTAKENENTRY #1: _start and register are functions in all four passes",
+    "data:KUNA-ADDRTAKENENTRY #1: _start, register and interp are functions in all four passes",
     "data:KUNA-ADDRTAKENENTRY #2: pre_a, pre_b and the handler are functions only with the option on",
     "data:KUNA-ADDRTAKENENTRY #3: no look-alike is a function",
     "data:KUNA-ADDRTAKENENTRY #4: the handler decompiles to its own body",

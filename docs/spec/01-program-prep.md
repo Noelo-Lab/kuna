@@ -4358,44 +4358,73 @@ bytes. Or, on a PE, a base-relocated word holds it and it lies before the first
 `RUNTIME_FUNCTION` of its executable section — the span the relocation oracle's
 hull guard leaves out (`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_pereloccode.rs (pre_record_code_pointers)`).
 Either may still name a label or data, so a candidate becomes an entry only when
-three things hold. It is undecoded executable memory: no decoded instruction covers
+four things hold. It is undecoded executable memory: no decoded instruction covers
 it, so no flow the walk followed reaches it. It starts where a function starts: the
 decoded instruction before it (or one this pass accepted, in address order) does
 not fall through, and only padding or zero fill lies between the two, or between
-the candidate and the start of its section. And it ends like a function: decoded
+the candidate and the start of its section. It ends like a function: decoded
 inside its gap, every path ends in a return, a computed jump, a trap (`int3`,
-`ud2`, `hlt`), a call followed by padding, or a jump to a known function entry; no
-path falls out of the gap into other code or jumps into the middle of decoded
-code, it does not open with zero fill or `int3`, and an address in the middle of a
-padding run is not a function that opens with a `nop`. The accepted entries
-re-seed the walk, which resumes from the Listing it already has
-(`decompiler/crates/kuna-analysis/src/listing/mod.rs (Listing::resume)`) and moves
-its instruction store rather than copying it, so their callees and the addresses
-their own code takes are found too; acceptance repeats for at most four rounds. The
-walk's closure does not depend on the order it reaches addresses in, so the resumed
-Listing is the one a fresh build from the grown seed set makes. Like `thunkentry`
-it applies wherever the walk's own set is committed (`fast_funcdisc`,
-`funcdisc_recursive`), so `reliable` mode on x86-64 is unchanged. Measured with each
-stripped image scored against its own symbols: on 7 x64 MSVC PEs scored against
-their `.pdb`, 283 true starts are gained and none is lost, no entry lands inside a
-sized function body, and of the 870 other entries 696 are the `/INCREMENTAL` jump
-thunks the pointers name — the same thunks kuna already lists where they are
-called — and the rest are 16-aligned starts in spans the `.pdb` has no symbol for;
-115 MinGW x64 PEs gain 2 true starts; 830 x86-64 ELFs (663 decbench twins and 167
-crackmes, PIE and non-PIE) are unchanged, because `.eh_frame` already names every
-function a pointer reaches, except one Go binary where two call targets inside
-`duffzero` become entries through a function the oracle re-seeded. On
-`jormungandr.exe` the 612 relocated pointers into the UTF-16 locale table that sits
-before its first record are all refused: the strings run into other code. Over 583
-x64 PE crackmes 1,296 entries are added and 29 removed; 27 of the removals are Aggressive
+`ud2`), a call followed by padding, or a jump to a known function entry; no path
+falls out of the gap into other code or jumps into the middle of decoded code; no
+`ret` is reached with the stack pointer above where it entered, which is a frame
+torn down that the routine never built; it does not open with `int3`, an address in
+the middle of a padding run is not a function that opens with a `nop`, and no
+instruction of it is zero fill or `hlt`. That last test is what refuses a data
+table in `.text`: MinGW's `dlltool` puts each `__DELAY_IMPORT_DESCRIPTOR_*` there,
+`__tailMerge` takes its address with `lea`, and it sits after a `ret` and decodes to
+`add [rax],eax ; add [rax],al ; ... ; ret 0`. And it is not a label of a function
+that takes it. A computed `goto` or a threaded interpreter takes its labels with
+`lea` and reaches them through `jmp rax` or `jmp [table+rax*8]`; the labels sit
+between the function's blocks (clang `-O0`) or right after the dispatch jump (gcc),
+fall through into nothing and end in another dispatch, a jump back or a return,
+just as a function would. So inside a taker's function region (up to the next known
+entry) that holds such a jump — a register- or memory-indirect `jmp`, but not `jmp
+[rip+slot]`, which is a tail call through an import — a candidate is refused when
+more of the region's decoded code follows it, or when it sits right after the jump
+and its own code dispatches again. A return block right after the jump is refused
+by the stack test: gcc places the `return` label there, and it pops the frame
+with `add rsp,0x38` before its `ret`. A candidate right after the jump that neither dispatches nor tears down a
+frame is kept, because that is a lazy-binding stub's fallback: the stub stores
+`lea rax,[fallback]` or `GetProcAddress`'s result and tail-calls through `jmp rax`.
+The accepted entries re-seed the walk, which resumes from the Listing it
+already has (`decompiler/crates/kuna-analysis/src/listing/mod.rs (Listing::resume)`)
+and moves its instruction store rather than copying it, so their callees and the
+addresses their own code takes are found too; acceptance repeats for at most four
+rounds. The walk's closure does not depend on the order it reaches addresses in, so
+the resumed Listing is the one a fresh build from the grown seed set makes. Like
+`thunkentry` it applies wherever the walk's own set is committed (`fast_funcdisc`,
+`funcdisc_recursive`), so `reliable` mode on x86-64 is unchanged.
+
+Measured with each stripped image scored against its own symbols: on 7 x64 MSVC PEs
+scored against their `.pdb`, 283 true starts are gained and none is lost, no entry
+lands inside a sized function body, and of the 870 other entries 696 are the
+`/INCREMENTAL` jump thunks the pointers name — the same thunks kuna already lists
+where they are called — and the rest are 16-aligned starts in spans the `.pdb` has
+no symbol for; 115 MinGW x64 PEs gain 2 true starts; 830 x86-64 ELFs (663 decbench
+twins and 167 crackmes, PIE and non-PIE) are unchanged, because `.eh_frame` already
+names every function a pointer reaches. Without `.eh_frame` (`-fno-asynchronous-unwind-tables`
+and a stripped `.eh_frame`) a signal handler, a `qsort` comparator and an `atexit`
+callback are found, and twelve gcc/clang `-O0`/`-O2`/`-Os` builds of a computed-`goto`
+interpreter, PIE and non-PIE, are unchanged. On `jormungandr.exe` the 612 relocated
+pointers into the UTF-16 locale table that sits before its first record are all
+refused: the strings run into other code. On Wine's PE DLLs, the ones that
+delay-load a DLL included, every new entry is a symbol-table start. Over 583 x64 PE
+crackmes 1,292 entries are added and 29 removed; 27 of the removals are Aggressive
 Instruction Finder entries a few bytes into a function whose real start the pointer
 names, and the other two, in two builds of one Rust crackme, are a true start the
-gap walk now plants four bytes late over the richer Listing. x86-64 only:
-on i386 every address is an absolute immediate, and the same shape names a MinGW
-SJLJ landing pad — it sits after its function's `ret` and alignment padding, and
-the function stores its address with `mov [ebp-0x1c],imm` — so 40 i386 PEs would
-gain 210 true starts but lose 574 and grow 4,974 mid-body entries. Off restores the
-previous discovery set exactly.
+gap walk now plants four bytes late over the richer Listing.
+
+x86-64 only, and not on a Go binary. A Go binary's `pclntab` already names every
+function (`gopclntab`), so a candidate could only re-seed a known one, and the
+wider walk then turns calls into the middle of `runtime.duffzero` into entries. On
+i386 every address is an absolute immediate, and the same shape names a MinGW SJLJ
+landing pad — it sits after its function's `ret` and alignment padding, and the
+function stores its address with `mov [ebp-0x1c],imm` — so 40 i386 PEs would gain
+210 true starts but lose 574 and grow 4,974 mid-body entries. Two shapes still pass,
+both hand-written assembly rather than compiler output: a pushed return address
+(`lea rsi,[cont] ; push rsi ; jmp f`) makes `cont` a function, and a lea'd data
+table in `.text` whose first byte is `0xc3` reads as an empty function. Off restores
+the previous discovery set exactly.
 
 (kuna) `callerreads` (default-on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs (call_returns)`)

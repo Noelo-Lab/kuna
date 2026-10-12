@@ -1597,8 +1597,9 @@ pub struct Architecture {
     /// (PE) that a relocated word before the section's first `.pdata` record
     /// holds, was folded into the function before it. On, such a target joins the
     /// walk's committed set when it is undecoded, follows a non-falling
-    /// instruction and padding only, and its own flow ends like a function's.
-    /// x86 only. Off restores the previous discovery set exactly.
+    /// instruction and padding only, is not a label of the function taking it,
+    /// and its own flow ends like a function's. x86-64 only, and not on a Go
+    /// binary. Off restores the previous discovery set exactly.
     pub analysis_addrtakenentry: bool,
     /// (kuna) Refuse a function entry at a PPC64 ELFv2 **local entry point**
     /// (`ppclocalentry`); default **on**. The OpenPOWER ELFv2 ABI gives a
@@ -3225,7 +3226,7 @@ impl Architecture {
         self.analysis_unmappedentry = true;
         // (kuna) Jump-thunk target function entries -- default-ON (x86 only).
         self.analysis_thunkentry = true;
-        // (kuna) Address-taken code function entries -- default-ON (x86 only).
+        // (kuna) Address-taken code function entries -- default-ON (x86-64 only).
         self.analysis_addrtakenentry = true;
         // (kuna) PPC64 ELFv2 local-entry entry suppression -- default-ON (it only
         // ever withholds the duplicate second entry over a function whose global
