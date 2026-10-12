@@ -81,6 +81,8 @@ struct StackSolver {
     soln: Vec<int4>,
     /// Number of variables missing an equation (C++ `missedvariables`).
     missedvariables: int4,
+    /// (kuna) `calleepopslot`: the pops settled so far, by INDIRECT output.
+    settled: crate::kuna_calleepopslot::SettledPops,
 }
 
 impl StackSolver {
@@ -92,6 +94,7 @@ impl StackSolver {
             companion: Vec::new(),
             soln: Vec::new(),
             missedvariables: 0,
+            settled: crate::kuna_calleepopslot::SettledPops::new(),
         }
     }
 
@@ -305,6 +308,7 @@ impl StackSolver {
                                 callee = Some(fc_idx);
                                 let extrapop = data.get_call_specs(fc_idx).get_extra_pop();
                                 if extrapop != EXTRAPOP_UNKNOWN {
+                                    self.settled.insert(vn, extrapop);
                                     self.eqs.push(StackEqn {
                                         var1: i as int4,
                                         var2: idx,
@@ -324,9 +328,19 @@ impl StackSolver {
                         let out = data.obank().get(op).and_then(|o| o.get_out());
                         if let (Some(sp), Some(out), Some(fc_idx)) = (othervn, out, callee) {
                             let entry = data.get_call_specs(fc_idx).get_entry_address().clone();
-                            rhs = crate::kuna_calleepop::guess_extra_pop(
-                                data, &spacebase, &entry, sp, out,
-                            );
+                            if data.get_arch().callee_pop_slot {
+                                let (guess, settles) = crate::kuna_calleepopslot::guess_extra_pop(
+                                    data, &spacebase, &entry, sp, out, &self.settled,
+                                );
+                                rhs = guess;
+                                if settles {
+                                    self.settled.insert(out, guess);
+                                }
+                            } else {
+                                rhs = crate::kuna_calleepop::guess_extra_pop(
+                                    data, &spacebase, &entry, sp, out,
+                                );
+                            }
                         }
                     }
                     self.guess.push(StackEqn { var1: i as int4, var2: idx, rhs });

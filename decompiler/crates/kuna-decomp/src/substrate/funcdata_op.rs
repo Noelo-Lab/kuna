@@ -93,9 +93,33 @@ impl Funcdata {
     /// exactly as the op.rs bank tests call `change_opcode` with an explicit
     /// `TypeOp`).  STUB(W6): `glb->inst[opc]`.
     pub fn op_set_opcode(&mut self, op: OpId, t_op: TypeOp) {
+        if self.op_is_call_or_store(op)
+            || matches!(t_op.get_opcode(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_STORE)
+        {
+            self.affecting_ops_changed();
+        }
+        if t_op.get_opcode() != OpCode::CPUI_COPY {
+            if let Some(output) = self
+                .obank()
+                .get(op)
+                .and_then(|operation| operation.get_out())
+            {
+                let projection = if matches!(
+                    t_op.get_opcode(),
+                    OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT | OpCode::CPUI_PIECE
+                ) {
+                    self.kuna_call_transport_projection_size(output)
+                } else {
+                    None
+                };
+                self.kuna_forget_call_transport(output);
+                if let Some(size) = projection {
+                    self.kuna_mark_call_transport_projection(output, size);
+                }
+            }
+        }
         self.obank_mut().change_opcode(op, t_op);
     }
-
     /// `data.opSetOpcode(op, opc)` taking a bare [`OpCode`] and resolving it
     /// through the W6 `inst[]` boundary (`w6_type_op`).  Convenience for in-crate
     /// callers that do not carry a resolved [`TypeOp`] (e.g. the stack-pointer
@@ -308,6 +332,7 @@ impl Funcdata {
             vbank.set_def(vn, def, &mut replace)?
         };
         self.kuna_rekey_storage_sources(original_vn, vn);
+        self.kuna_forget_call_transport(vn);
         if refresh {
             self.set_varnode_properties(vn);
         } else {
@@ -875,6 +900,12 @@ impl Funcdata {
         let fl = self.obank().get(op).expect("clone_op").get_flags()
             & (pcodeop_flags::startmark | pcodeop_flags::startbasic);
         self.obank_mut().get_mut(newop).expect("clone_op").set_flag(fl);
+        let exact = self.obank().get(op).expect("clone_op").get_addlflags()
+            & crate::op::pcodeop_addlflags::kuna_exactfloat;
+        self.obank_mut().get_mut(newop).expect("clone_op").set_additional_flag(exact);
+        if crate::kuna_syscallregs::is_error_flag(self, op) {
+            self.obank_mut().get_mut(newop).expect("clone_op").clear_flag(pcodeop_flags::call);
+        }
         let outvn = self.obank().get(op).expect("clone_op").get_out();
         if let Some(outvn) = outvn {
             let newout = self.clone_varnode(outvn);

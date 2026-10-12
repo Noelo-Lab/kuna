@@ -1,0 +1,104 @@
+<decompilertest>
+<binaryimage arch="MIPS:LE:32:default:default">
+<!--
+    kuna GH-878: a pointer gcc keeps in $v1 across a call to a callee that
+    never writes $v1 printed as a local nothing assigns (or, in decompile-all,
+    as the high word of the call's result), and the function lost the
+    parameter it came from.
+
+    Stage / sub-stage: P3 call guard (Heritage::guardCalls), the callee-body
+    write probe (p4_calls/kuna_rustabi.rs probe_callee_return_writes) and its
+    consumers p4_calls/kuna_calleeretpreserves.rs and kuna_calleepreserves.rs.
+    P0 assertions: option calleeretpreserves and option calleepreserves
+    (both on is the shipped default).
+
+    Two defects. The probe never finished a MIPS or ARM body: every `jr ra`
+    and `bx lr` runs the setISAMode user op, which stopped the walk, so no
+    body there proved a register untouched. It now reads through that user op.
+    And a callee that writes any return register ($v0) gave no answer for the
+    other ($v1); it now answers per register, for a return register no
+    argument travels in.
+
+    Source (mipsel-linux-gnu-gcc 10.3 -O2, linked -nostdlib -static):
+        long G[4];
+        int hk(int x)    { return (int)G[2] + x; }      lui v0; lw v0; jr ra; addu v0,a0,v0
+        int pick(int x)  { if (x > 3) return (int)G[2] + x; return (int)G[1] - x; }
+                                                         two returns, both write only v0
+        void setg(int x) { G[1] = x; }                  lui v0; jr ra; sw a0,(v0)
+        long long wide(int x) { return (long long)G[3] * x; }   mult; mflo v0; jr ra; mfhi v1
+        int afterstore2(long *p) { int r = hk(5);   G[0] = p[0]; return r; }
+        int afterbranch(long *p) { int r = pick(5); G[0] = p[0]; return r; }
+        int aftervoid(long *p, int q) { setg(q); G[0] = p[0]; return q; }
+        int hiword(void) { return (int)(wide(3) >> 32); }
+    Each after* caller is `move v1,a0; jal f; ...; lw a0,0(v1)`: gcc -fipa-ra
+    knows f never writes $v1 and keeps p there across the call.
+
+    Pass 1 (both options off) pins the bug: $v1 is an unassigned local and the
+    parameter is gone. Pass 2 (on) reads p through a0. aftervoid is kept by
+    calleepreserves (setg stores and writes only $v0), the other two by
+    calleeretpreserves. hiword is the control: wide writes $v1, so the read of
+    $v1 stays the high word of its result in both passes. Pass 3 declares
+    hk as returning int, as DWARF does: the declaration leaves $v1 out of the
+    call's output, and afterstore2 still reads p.
+-->
+<bytechunk space="ram" offset="0x400150" readonly="true">
+4100023c9802428c0800e003211082000400822805004010000000004100023c9402428c0800e003231044004100023c9802428c0800e00321108200
+4100023c0800e003940244ac4100023c9c02428c18008200121000000800e00310180000e0ffbd27251880001c00bfaf5400100c050004240000648c
+4100033c1c00bf8f2000bd270800e003900264ace0ffbd27251880001c00bfaf5800100c050004240000648c4100033c1c00bf8f2000bd270800e003
+900264ace0ffbd27251880001c00bfaf6300100c2520a000251080000000658c4100033c1c00bf8f2000bd270800e003900265ace0ffbd2725288000
+1c00bfaf6600100c030004244100043c0000a58c1c00bf8f2000bd270800e003900285ace0ffbd271c00bfaf6600100c030004241c00bf8f25106000
+0800e0032000bd2700000000
+</bytechunk>
+<symbol space="ram" offset="0x400150" name="hk"/>
+<symbol space="ram" offset="0x400160" name="pick"/>
+<symbol space="ram" offset="0x40018c" name="setg"/>
+<symbol space="ram" offset="0x400198" name="wide"/>
+<symbol space="ram" offset="0x4001b0" name="afterstore2"/>
+<symbol space="ram" offset="0x4001dc" name="afterbranch"/>
+<symbol space="ram" offset="0x400208" name="aftervoid"/>
+<symbol space="ram" offset="0x400238" name="afterwide"/>
+<symbol space="ram" offset="0x400264" name="hiword"/>
+</binaryimage>
+<script>
+  <com>option calleeretpreserves off</com>
+  <com>option calleepreserves off</com>
+  <com>lo fu afterstore2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu afterbranch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu aftervoid</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hiword</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleeretpreserves on</com>
+  <com>option calleepreserves on</com>
+  <com>lo fu afterstore2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu afterbranch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu aftervoid</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hiword</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern int4 hk(int4 x);</com>
+  <com>lo fu afterstore2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLEERETPRESERVES-MIPS #1: off, $v1 is a pointer local nothing assigns" min="3" max="3">^  unsigned int \*v1; // v1$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPS #2: off, the store reads through it" min="3" max="3">dat_410290 = \*v1;</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPS #3: off, the callers lose the parameter" min="2" max="2">^void after(store2|branch)\(void\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPS #4: on, the store reads p, also with hk declared int" min="4" max="4">dat_410290 = \*a0;</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPS #5: on, the callers take p, also with hk declared int" min="3" max="3">^void after(store2|branch)\(unsigned int \*a0\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPS #6: on, a void leaf keeps $v1 too" min="1" max="1">^unsigned int aftervoid\(unsigned int \*a0,unsigned int a1\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPS #7: a callee that writes $v1 still returns it, in both passes" min="2" max="2">return \(int4\)\(\(uint8\)wide\(3\) &gt;&gt; 0x20\);</stringmatch>
+</decompilertest>

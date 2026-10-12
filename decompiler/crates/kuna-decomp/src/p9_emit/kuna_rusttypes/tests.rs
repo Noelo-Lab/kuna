@@ -75,16 +75,24 @@ fn unknown_widths_rust_can_name_are_unsigned() {
 
 /// A Rust `char` is a 4-byte Unicode scalar value with a validity invariant. A
 /// decompiled byte is not one, and spelling it `char` would be a claim the
-/// recovery cannot support.
+/// recovery cannot support. A declared `signed char` is not the target's text
+/// type, and keeps its sign.
 #[test]
 fn text_types_spell_as_unsigned_integers_not_char() {
-    let mut c = Datatype::new_with_align(1, -1, type_metatype::TYPE_INT);
-    c.name = "char".to_string();
-    c.display_name = "char".to_string();
-    c.flags |= crate::dtype::flags::chartype;
-    let c = Rc::new(c);
+    let character = |name: &str, core: bool| {
+        let mut c = Datatype::new_with_align(1, -1, type_metatype::TYPE_INT);
+        c.name = name.to_string();
+        c.display_name = name.to_string();
+        c.flags |= crate::dtype::flags::chartype;
+        if core {
+            c.flags |= crate::dtype::flags::coretype;
+        }
+        Rc::new(c)
+    };
+    let c = character("char", true);
     assert!(c.is_char_print());
     assert_eq!(spell(&c), "u8");
+    assert_eq!(spell(&character("signed char", false)), "i8");
 }
 
 /// The inversion that makes `TypeSpeller::declarator` return a String rather

@@ -1,0 +1,90 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7:default">
+<!--
+    GH-881 part B on 32-bit ARM: a call argument the caller also tests is
+    dropped.  The ARM sibling of kuna-calleereadarg.xml.
+
+        int fwd(int *p) { int x = *p; if (x > 5) return x; return ext(x); }
+
+    clang -O2 for armv7a loads x into r0, compares it, returns it with a
+    conditional `bxgt lr` and tail-calls ext with it in the same register
+    (ldr r0,[r0]; cmp r0,#5; bxgt lr; b ext), and kuna printed `ext();`.
+    Funcdata::onlyOpUse refuses the r0 trial because the value also feeds the
+    compare and the other path's RETURN.
+
+    Stage / sub-stage: P4 active input-trial scoring, option calleereadarg
+    off|on.  ext reads r0 on entry, so pass 2 keeps the argument.
+
+    Two controls with a tested value left in an argument register:
+      neg      tests r0 and calls g, which reads no argument register: g().
+      negpush  tests r2 and calls bar, whose clang -Oz prologue pushes the dead
+               r2 and r3 to reserve stack (push {r2, r3, r4, lr}).  That reads
+               r3, the last argument register, which is what a register-save
+               prologue does too, so it is no evidence: bar() in both passes.
+      pick     leaves its tested z in r1 and tail-calls show(11).  show is
+               gcc -Os: push {r0, r1, r4, lr} reserves stack with the dead r1
+               beside its one parameter, which it also reads with mov r4, r0.
+               A register stored only by an instruction that stores several is
+               no evidence: show(0xb) in both passes.
+
+    Pass 1 (`option calleereadarg off`) reproduces the BUG: ext() in fwd.
+    Pass 2 (`option calleereadarg on`, the default) is the FIX: ext(*a0), and
+    the controls are unchanged.
+-->
+<bytechunk space="ram" offset="0x10000">
+000180e0010080e21eff2fe100f020e30c109fe5002091e5012082e2002081e5
+1eff2fe10001010000f020e300f020e31c402de90d00a0e1f4ffffeb1c80bde8
+000090e5050050e31eff2fc1ebffffea00482de9000090e5020070e3ebffff1b
+0400a0e30088bde800f020e300f020e300482de9002090e5032092e2020052e3
+eaffffcb0400a0e30088bde800f020e313402de90040a0e10d00a0e1dbffffeb
+00009de5040080e01680bde800f020e3001090e5050051e30100a0c11eff2fc1
+0b00a0e3f1ffffea
+</bytechunk>
+<bytechunk space="ram" offset="0x10100">
+00000000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="ext"/>
+<symbol space="ram" offset="0x10010" name="g"/>
+<symbol space="ram" offset="0x10030" name="bar"/>
+<symbol space="ram" offset="0x10040" name="fwd"/>
+<symbol space="ram" offset="0x10050" name="neg"/>
+<symbol space="ram" offset="0x10070" name="negpush"/>
+<symbol space="ram" offset="0x10090" name="show"/>
+<symbol space="ram" offset="0x100b0" name="pick"/>
+<symbol space="ram" offset="0x10100" name="gv"/>
+</binaryimage>
+<script>
+  <com>option calleereadarg off</com>
+  <com>lo fu fwd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu neg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu negpush</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleereadarg on</com>
+  <com>lo fu fwd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu neg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu negpush</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleereadarg-arm #1: off, fwd's tail call loses the argument it also compares and returns (bug reproduced)" min="1" max="1">  ext\(\); // tail-call</stringmatch>
+<stringmatch name="calleereadarg-arm #2: on, fwd tail-calls ext with the value it compares" min="1" max="1">  ext\(\*a0\); // tail-call</stringmatch>
+<stringmatch name="calleereadarg-arm #3: a callee that reads no argument register gets no argument in BOTH passes" min="2" max="2">  g\(\);</stringmatch>
+<stringmatch name="calleereadarg-arm #4: a push of the dead r2/r3 that reaches the last argument register is no evidence, so bar gets no argument in BOTH passes" min="2" max="2">  bar\(\);</stringmatch>
+<stringmatch name="calleereadarg-arm #5: a dead register gcc pushes beside a parameter to reserve stack is no evidence, so show keeps one argument in BOTH passes" min="2" max="2">return show\(0xb\); // tail-call</stringmatch>
+</decompilertest>

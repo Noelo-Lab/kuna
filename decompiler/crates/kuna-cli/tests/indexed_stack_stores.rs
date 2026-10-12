@@ -1,5 +1,5 @@
 //! Authored ARM loops: computed stack stores feed direct reads and calls.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{

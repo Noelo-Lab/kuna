@@ -68,6 +68,9 @@ pub(super) struct ContextPainter {
     /// The decode-mode paints to apply, collected from the marker scans. Empty on
     /// any language with no decode-mode context (e.g. x86-64) ⇒ a no-op painter.
     paints: Vec<ContextPaint>,
+    /// (kuna `armfuncmode`) The sorted `[start, end)` extents the pass paints
+    /// A32 from function-symbol evidence; empty when it paints nothing.
+    a32_extents: Vec<(u64, u64)>,
 }
 
 impl ContextPainter {
@@ -80,6 +83,15 @@ impl ContextPainter {
         // ARM `$t`/`$a` mapping symbols + STT_FUNC-LSB → `TMode` (Thumb). The scan
         // is ARM-gated; on a non-ARM object it returns an empty output.
         paints.extend(scan_arm_markers(file).context_paints);
+        let mut a32_extents = Vec::new();
+        if arch.analysis_armfuncmode && !arch.input_arm_isa_override {
+            let funcmode = crate::loader::kuna_armfuncmode::arm_func_mode_paints(file);
+            a32_extents = funcmode
+                .iter()
+                .filter_map(|paint| Some((paint.addr, paint.end.filter(|_| paint.value == 0)?)))
+                .collect();
+            paints.extend(funcmode);
+        }
         // ARM Cortex-M: a stripped bare-metal firmware image carries none of the
         // `$t`/FUNC-LSB markers `scan_arm_markers` reads. When a hardware vector
         // table is detected, the whole image is Thumb-only, so region-paint
@@ -95,7 +107,7 @@ impl ContextPainter {
         // MIPS STT_FUNC-LSB / `STO_MIPS_MIPS16` `st_other` → `ISA_MODE` (MIPS16e /
         // microMIPS). The scan is MIPS-gated; empty on a non-MIPS object.
         paints.extend(scan_mips_isa_markers(file).context_paints);
-        ContextPainter { paints }
+        ContextPainter { paints, a32_extents }
     }
 
     /// A painter with nothing to paint, for a caller that has no `object::File`
@@ -104,7 +116,7 @@ impl ContextPainter {
     /// carries no `$t` markers and no vector table, and `--isa arm|thumb` has
     /// already painted whatever whole-image mode the caller asserted.
     pub(super) fn empty() -> Self {
-        ContextPainter { paints: Vec::new() }
+        ContextPainter { paints: Vec::new(), a32_extents: Vec::new() }
     }
 
     /// `true` iff there is nothing to paint (x86-64 / any language with no
@@ -126,6 +138,10 @@ impl ContextPainter {
     ///
     /// Gate-safe: an unregistered context variable (a faithful no-op for a
     /// language that does not define it) is swallowed via the dropped `Result`.
+    pub(super) fn a32_extents(&self) -> &[(u64, u64)] {
+        &self.a32_extents
+    }
+
     pub(super) fn paint_all(&self, arch: &Architecture, code_space: &Rc<AddrSpace>) {
         for paint in &self.paints {
             let begin = Address::new(Rc::clone(code_space), paint.addr);

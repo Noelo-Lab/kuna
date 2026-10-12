@@ -105,13 +105,14 @@
 //!    payload half has a descendant.
 //! 3. **The callee's body.** [`probe_callee_return_writes`] decodes the direct
 //!    callee, bounded, and reports the processor-space writes it can *prove*. If
-//!    that proof covers every path to a `RETURN` and never touches the payload
-//!    register, the caller's read is a clobber and **the pair is vetoed**.
+//!    that proof covers every path to a `RETURN` or a known terminal direct call
+//!    and never touches the payload register, the caller's read is a clobber and
+//!    **the pair is vetoed**.
 //!
 //! The third is the only one that looks at the callee, and it is one-sided: it
-//! can refute a pair, never confirm one. A callee containing any call, indirect
-//! branch, undecodable byte, or more instructions than the budget yields no
-//! proof, and the seam falls back on 1 and 2.
+//! can refute a pair, never confirm one. A callee containing an unknown or
+//! returning call, an indirect branch, an undecodable byte, or more instructions
+//! than the budget yields no proof, and the seam falls back on 1 and 2.
 //!
 //! **So `ScalarPair` at the consumer means "no counter-example", not "the callee
 //! returns a pair".** That positive fact is not derivable at this point in the
@@ -143,7 +144,7 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::space::VarnodeStorage;
+use kuna_base::space::{spacetype, VarnodeStorage};
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
@@ -371,9 +372,9 @@ fn pair_pieces(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<(VarnodeId,
 /// The register writes a bounded decode of one callee body proves.
 ///
 /// Completeness is the load-bearing property: it says the walk
-/// reached a `RETURN` on every path it followed, inside the instruction budget,
-/// without meeting anything that could write an arbitrary register (a nested
-/// call, an unresolved indirect branch, an undecodable byte). Only then does an
+/// reached a `RETURN` or a known no-return direct call on every path it followed,
+/// inside the instruction budget, without meeting an unknown or returning nested
+/// call, an unresolved indirect branch, or an undecodable byte. Only then does an
 /// *absent* write mean the callee never performs it. An incomplete walk still
 /// retains positive writes and STORE spaces recovered before the unresolved
 /// edge; those facts remain valid even though absence no longer proves
@@ -392,6 +393,13 @@ pub struct CalleeReturnWrites {
     complete: bool,
     /// How many machine instructions the walk decoded.  One is a bare `ret`.
     instructions: u32,
+    call_facts: Vec<(Address, bool)>,
+    /// The registers a decoded return instruction wrote and then transferred
+    /// through, as `(space index, offset, size)`: the program counter.
+    return_targets: Vec<(int4, u64, int4)>,
+    /// Did the walk read through a `setISAMode` user op?  See
+    /// [`Self::proves_untouched_for`].
+    through_mode_switch: bool,
 }
 
 impl CalleeReturnWrites {
@@ -413,6 +421,19 @@ impl CalleeReturnWrites {
             .writes
             .iter()
             .any(|&(widx, woff, wsz)| widx == idx && woff < end && off < woff + wsz as u64)
+    }
+
+    /// [`Self::proves_untouched`] for a call whose convention is `model`.
+    ///
+    /// A walk that completed only by reading through an ARM or MIPS `setISAMode`
+    /// does not answer for a register `model` passes arguments in. Every ARM
+    /// return switches the instruction set, so on ARM such a walk is the only
+    /// kind there is, and there the return and argument registers are the same
+    /// ones: a value an earlier call's argument left in `r1` that survives a
+    /// leaf reaches the next call as a value the caller wrote, and the caller-side
+    /// argument recovery reads it as one more argument than the callee takes.
+    pub fn proves_untouched_for(&self, model: Option<&crate::fspec::ProtoModel>, addr: &Address, size: int4) -> bool {
+        self.proves_untouched(addr, size) && !(self.through_mode_switch && passes_arguments_in(model, addr, size))
     }
 
     /// The processor-space ranges the walk recorded before it stopped, as
@@ -441,6 +462,17 @@ impl CalleeReturnWrites {
         self.instructions
     }
 
+    /// Does `[off, off+sz)` in space `idx` overlap a register a decoded return
+    /// instruction wrote and transferred through?  That is the program counter
+    /// (ARM's `pc`, x86's `RIP`), which every return writes, so a write to it
+    /// says nothing about the body, even where a compiler spec lists it as
+    /// preserved.
+    pub fn is_return_target(&self, idx: int4, off: u64, sz: int4) -> bool {
+        self.return_targets
+            .iter()
+            .any(|&(ridx, roff, rsz)| ridx == idx && roff < off + sz as u64 && off < roff + rsz as u64)
+    }
+
     /// Assemble a summary from its parts, for tests that pin a seam's reading of
     /// one rather than the walk that produced it.
     #[cfg(test)]
@@ -449,7 +481,30 @@ impl CalleeReturnWrites {
         store_spaces: Vec<int4>,
         complete: bool,
     ) -> Self {
-        CalleeReturnWrites { writes, store_spaces, complete, instructions: 2 }
+        CalleeReturnWrites {
+            writes,
+            store_spaces,
+            complete,
+            instructions: 2,
+            call_facts: Vec::new(),
+            return_targets: Vec::new(),
+            through_mode_switch: false,
+        }
+    }
+
+    /// This summary, as a walk that read through a `setISAMode` would leave it.
+    #[cfg(test)]
+    pub fn through_a_mode_switch(mut self) -> Self {
+        self.through_mode_switch = true;
+        self
+    }
+
+    /// This summary, with a return instruction that wrote `(idx, off, size)` and
+    /// transferred through it.
+    #[cfg(test)]
+    pub fn returning_through(mut self, idx: int4, off: u64, size: int4) -> Self {
+        self.return_targets.push((idx, off, size));
+        self
     }
 
     /// As [`from_parts`](Self::from_parts), with the decoded instruction count
@@ -461,8 +516,32 @@ impl CalleeReturnWrites {
         complete: bool,
         instructions: u32,
     ) -> Self {
-        CalleeReturnWrites { writes, store_spaces, complete, instructions }
+        CalleeReturnWrites {
+            writes,
+            store_spaces,
+            complete,
+            instructions,
+            call_facts: Vec::new(),
+            return_targets: Vec::new(),
+            through_mode_switch: false,
+        }
     }
+}
+
+/// Does the convention `model` pass an argument in any byte of
+/// `[addr, addr+size)`?  Asked of the model, not of one prototype: the reader
+/// at risk is the NEXT call, whose own prototype is not known here.  No model,
+/// or one with no input list, answers yes.
+pub fn passes_arguments_in(model: Option<&crate::fspec::ProtoModel>, addr: &Address, size: int4) -> bool {
+    match model.and_then(|m| m.input_opt()) {
+        Some(input) => input.characterize_as_param(addr, size) != crate::fspec::Containment::NoContainment,
+        None => true,
+    }
+}
+
+/// The convention `proto` was built from, when it has one.
+pub fn call_model(proto: &crate::fspec::FuncProto) -> Option<&crate::fspec::ProtoModel> {
+    proto.has_model().then(|| proto.model().as_ref())
 }
 
 /// How many machine instructions the callee probe decodes before giving up.
@@ -478,17 +557,33 @@ const MAX_PROBE_INSTRUCTIONS: u32 = 192;
 /// shape the probe is looking for.
 const MAX_PROBE_WRITES: usize = 512;
 
+/// The user-op ids [`probe_callee_return_writes`] reads through rather than
+/// stopping at.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ProbeUserOps {
+    /// The `swi` user-op id, when a Windows `int 0x29` ends the path.
+    pub fastfail_swi: Option<u32>,
+    /// The `setISAMode` user-op id, when the language defines one.
+    pub mode_switch: Option<u32>,
+}
+
 /// Recording sink for [`probe_callee_return_writes`] (the probe's `PcodeEmit`).
 #[derive(Default)]
 struct ProbeEmit {
     writes: Vec<(int4, u64, int4)>,
+    return_targets: Vec<(int4, u64, int4)>,
     store_spaces: Vec<int4>,
     targets: Vec<Address>,
     ends_flow: bool,
+    calls: Vec<Address>,
+    internal_branch: bool,
     unresolved: bool,
     /// The `swi` user-op id, when a Windows `int 0x29` is known to end the path
     /// (`option fastfailnoreturn`, the gate the flow builder already applies).
     fastfail_swi: Option<u32>,
+    /// The `setISAMode` user-op id (ARM, MIPS), which writes nothing.
+    mode_switch: Option<u32>,
+    mode_switched: bool,
     /// Constants a `COPY` placed into an internal temp inside this instruction,
     /// as `(offset, size, value)`.  `INT imm8` lifts the vector through one.
     temp_consts: Vec<(u64, int4, u64)>,
@@ -497,6 +592,20 @@ struct ProbeEmit {
 }
 
 impl ProbeEmit {
+    fn resolve_calls(&mut self, no_return: &impl Fn(&Address) -> bool) -> Vec<(Address, bool)> {
+        let mut facts = Vec::new();
+        for target in self.calls.drain(..) {
+            let terminal = no_return(&target);
+            facts.push((target, terminal));
+            if terminal && !self.internal_branch {
+                self.ends_flow = true;
+            } else {
+                self.unresolved = true;
+            }
+        }
+        facts
+    }
+
     /// The constant `v` holds: itself when it is one, or the value a `COPY`
     /// earlier in this instruction placed in it.
     fn const_value(&self, v: &kuna_num::pcoderaw::VarnodeData) -> Option<u64> {
@@ -570,9 +679,16 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
             // `swi` CALLOTHER and the CALLIND reading its `intloc` are the end of
             // the walk rather than a transfer to code it cannot read.  Same gate
             // and same shape as the flow builder's
-            // [`kuna_fastfailnoreturn`](crate::kuna_fastfailnoreturn).
+            // [`kuna_fastfailnoreturn`](crate::kuna_fastfailnoreturn).  ARM's and
+            // MIPS's `setISAMode` only marks the mode bit of a PC write the same
+            // instruction then transfers through (`bx lr`, `pop {..,pc}`, `jr ra`).
             OpCode::CPUI_CALLOTHER => {
-                if !self.note_fastfail_swi(outvar, vars) {
+                let mode_switch = outvar.is_none()
+                    && self.mode_switch.is_some()
+                    && vars.first().map(|v| v.offset) == self.mode_switch.map(u64::from);
+                if mode_switch {
+                    self.mode_switched = true;
+                } else if !self.note_fastfail_swi(outvar, vars) {
                     self.unresolved = true;
                 }
             }
@@ -592,10 +708,26 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
                     self.unresolved = true;
                 }
             }
-            // Anything else that transfers control to code the walk is not
-            // reading can write any register at all.
-            OpCode::CPUI_CALL | OpCode::CPUI_BRANCHIND => self.unresolved = true,
-            OpCode::CPUI_RETURN => self.ends_flow = true,
+            OpCode::CPUI_CALL => {
+                match vars.first().and_then(|v| v.space.as_ref()) {
+                    Some(sp) if sp.get_type() == spacetype::IPTR_PROCESSOR => {
+                        self.calls.push(Address::new(Rc::clone(sp), vars[0].offset));
+                    }
+                    _ => self.unresolved = true,
+                }
+            }
+            OpCode::CPUI_BRANCHIND => self.unresolved = true,
+            OpCode::CPUI_RETURN => {
+                self.ends_flow = true;
+                if let Some(v) = vars.first() {
+                    if let Some(sp) = v.space.as_ref().filter(|sp| sp.get_type() == spacetype::IPTR_PROCESSOR) {
+                        let target = (sp.get_index(), v.offset, v.size as int4);
+                        if self.writes.contains(&target) {
+                            self.return_targets.push(target);
+                        }
+                    }
+                }
+            }
             // The `<spaceid>` operand's offset IS the space-manager index
             // (`Varnode::getSpaceFromConst`).
             OpCode::CPUI_STORE => {
@@ -609,7 +741,9 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
                     // The walk reads every op of the instruction regardless, so
                     // ignoring it over-approximates the writes -- the safe
                     // direction -- and must NOT end the machine-level flow.
-                    Some(sp) if sp.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT => {}
+                    Some(sp) if sp.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT => {
+                        self.internal_branch = true;
+                    }
                     Some(sp) => {
                         self.targets.push(Address::new(Rc::clone(sp), vars[0].offset));
                         if opc == OpCode::CPUI_BRANCH {
@@ -629,22 +763,30 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
 /// and the IR at that seam cannot supply).
 ///
 /// The walk starts at `entry`, follows fall-through and resolved machine branch
-/// targets, and stops a path at a `RETURN`. It declares itself **incomplete**
-/// -- proving nothing -- on a nested call, an unresolved indirect branch, an
+/// targets, and stops a path at a `RETURN` or a known unconditional no-return
+/// direct call. It declares itself **incomplete** -- proving nothing -- on an
+/// unknown or returning nested call, an unresolved indirect branch, an
 /// undecodable instruction, or the instruction budget, because past any of those
 /// the callee could write any register. Positive register writes and STORE
 /// spaces recovered before that point are retained; only conclusions from their
-/// absence require completeness.
+/// absence require completeness. A `CALLOTHER` is such an edge too, except the
+/// two user ops `userops` names: `__fastfail`'s `swi`, which ends the path, and
+/// the `setISAMode` an ARM or MIPS return switches the instruction set with,
+/// which writes nothing.
 pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>(
     tr: &T,
     entry: &Address,
-    fastfail_swi: Option<u32>,
+    userops: ProbeUserOps,
+    no_return: impl Fn(&Address) -> bool,
 ) -> CalleeReturnWrites {
     let mut res = CalleeReturnWrites {
         writes: Vec::new(),
         store_spaces: Vec::new(),
         complete: true,
         instructions: 0,
+        call_facts: Vec::new(),
+        return_targets: Vec::new(),
+        through_mode_switch: false,
     };
     let Some(entry_space) = entry.get_space() else {
         res.complete = false;
@@ -670,7 +812,11 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
             break;
         }
         budget -= 1;
-        let mut emit = ProbeEmit { fastfail_swi, ..ProbeEmit::default() };
+        let mut emit = ProbeEmit {
+            fastfail_swi: userops.fastfail_swi,
+            mode_switch: userops.mode_switch,
+            ..ProbeEmit::default()
+        };
         let len = match tr.one_instruction(&mut emit, &at) {
             Ok(n) if n > 0 => n,
             _ => {
@@ -678,8 +824,15 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
                 break;
             }
         };
+        res.call_facts.extend(emit.resolve_calls(&no_return));
         res.instructions += 1;
         res.writes.append(&mut emit.writes);
+        res.through_mode_switch |= emit.mode_switched;
+        for t in emit.return_targets.drain(..) {
+            if !res.return_targets.contains(&t) {
+                res.return_targets.push(t);
+            }
+        }
         for sp in emit.store_spaces.drain(..) {
             if !res.store_spaces.contains(&sp) {
                 res.store_spaces.push(sp);
@@ -733,6 +886,7 @@ pub enum CallPairRepr {
 /// header.
 pub fn classify_call_output_pair(
     data: &Funcdata,
+    model: Option<&crate::fspec::ProtoModel>,
     finalvn: &[VarnodeId],
     callee_entry: Option<&Address>,
 ) -> CallPairRepr {
@@ -765,7 +919,7 @@ pub fn classify_call_output_pair(
     // the callee body that proves the second register is never written.
     if let Some(entry) = callee_entry {
         if let Some(w) = data.kuna_callee_ret_writes(entry) {
-            if w.proves_untouched(&second_addr, second_size) {
+            if w.proves_untouched_for(model, &second_addr, second_size) {
                 return CallPairRepr::CalleeScalar;
             }
         }
@@ -811,7 +965,13 @@ pub fn seed_callee_write_probe(
     arch: &mut crate::architecture::Architecture,
     data: &mut Funcdata,
 ) {
-    let fastfail_swi = fastfail_swi_userop(arch);
+    let userops = ProbeUserOps {
+        fastfail_swi: fastfail_swi_userop(arch),
+        mode_switch: arch
+            .userops
+            .get_op_by_name(MODE_SWITCH_USEROP.as_bytes())
+            .map(|uo| uo.get_index() as u32),
+    };
     let mut entries: Vec<Address> = Vec::new();
     for i in 0..data.num_calls() {
         let e = data.get_call_specs(i).get_entry_address().clone();
@@ -823,8 +983,11 @@ pub fn seed_callee_write_probe(
     for e in entries {
         let Some(sp) = e.get_space() else { continue };
         let key = (sp.get_index(), e.get_offset());
-        if !arch.kuna_callee_write_cache.contains_key(&key) {
-            let probed = probe_callee_return_writes(arch.translate(), &e, fastfail_swi);
+        let no_return = |target: &Address| crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, target);
+        let reusable = arch.kuna_callee_write_cache.get(&key)
+            .is_some_and(|w| w.call_facts.iter().all(|(target, terminal)| no_return(target) == *terminal));
+        if !reusable {
+            let probed = probe_callee_return_writes(arch.translate(), &e, userops, no_return);
             arch.kuna_callee_write_cache.insert(key, Rc::new(probed));
         }
         if let Some(w) = arch.kuna_callee_write_cache.get(&key) {
@@ -832,6 +995,9 @@ pub fn seed_callee_write_probe(
         }
     }
 }
+
+/// The user op ARM's and MIPS's SLEIGH call inside every interworking PC write.
+const MODE_SWITCH_USEROP: &str = "setISAMode";
 
 /// The `swi` user-op id, when a Windows `int 0x29` in a probed callee body is
 /// known to end the path rather than to call somewhere the walk cannot read.
@@ -873,6 +1039,7 @@ fn fastfail_swi_userop(arch: &crate::architecture::Architecture) -> Option<u32> 
 pub fn build_call_output_pair(
     callop: OpId,
     data: &mut Funcdata,
+    model: Option<&crate::fspec::ProtoModel>,
     finalvn: &[VarnodeId],
     callee_entry: Option<&Address>,
     order: (int4, int4),
@@ -880,7 +1047,7 @@ pub fn build_call_output_pair(
     if !live(data) && !crate::p4_calls::kuna_callretpair::live(data) {
         return false;
     }
-    if classify_call_output_pair(data, finalvn, callee_entry) != CallPairRepr::ScalarPair {
+    if classify_call_output_pair(data, model, finalvn, callee_entry) != CallPairRepr::ScalarPair {
         return false;
     }
     let (lo, hi) = (finalvn[order.0 as usize], finalvn[order.1 as usize]);

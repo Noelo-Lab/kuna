@@ -1186,7 +1186,7 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
         });
     }
 
-    let funcs = decompile_all::decompile_entries(&mut prog, args, targets);
+    let funcs = decompile_all::decompile_entries(&mut prog, args, targets, false);
     let assertions = prog.assertion_outcomes();
     let mut failure = funcs.iter().find_map(|f| {
         f.error.as_ref().map(|reason| {

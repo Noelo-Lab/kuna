@@ -18,6 +18,7 @@
 //! stride the assertion exists to fold away), and an x86-32 one that the
 //! syscall pass's ABI registers are already in the cache the probe reads.
 
+#[path = "ghidra_sim/mod.rs"]
 mod ghidra_sim;
 
 use std::cell::RefCell;

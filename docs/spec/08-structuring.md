@@ -380,6 +380,54 @@ by a pass that runs after structuring can still vanish (`newbury::main` emits
 four `WARNING:` lines at `off` and three at `on`). Those are kuna
 annotations, never a correctness signal, and the emitted C is unaffected.
 
+**`condstmts` — a cap on what a folded operand prints before its test.** The
+opposite pressure: Ghidra's own non-complex budget can let a block fold whose
+operand then prints a long comma chain. `bb_is_complex` scores a block with the
+`calc_explicit` approximation while the function is structured inside the main
+loop, before `ActionAssignHigh`; values that merging later makes explicit — a
+load kept in a callee-saved register across a call, a copy into a merged
+variable — are free in that score and cost one comma element each in the
+emitted C. The structure is not rebuilt after `ActionMarkImplied` (the final
+`ActionBlockStructure` returns at once when the tree already exists), so the
+fold stands. The witness is four byte loads feeding a compare against a call's
+result: it scores as one statement and prints as
+`(v1 = *a2, v2 = a2[1], v3 = a2[2], v4 = a2[3], f(a0) == ...)`.
+
+With `option condstmts N`, `p8_structure/kuna_condstmts.rs (record_hits)`
+runs at that final `ActionBlockStructure`, where implied flags are final. It
+walks the tree for the comma-printed positions — every leaf under the right
+operand of a `BlockCondition` and under the condition of a `BlockWhileDo`
+without overflow syntax — and measures each leaf with `kuna_condfold.rs
+(printed_shape)`, the printer's own skip rules. A leaf printing more than `N`
+statements before its terminal `CBRANCH` has its block start recorded on the
+`Funcdata`. `infra/decompile_drive.rs
+(decompile_func_full_with_override_dyn_prefollowed)` then analyzes that
+function again from scratch with the recorded starts as a seed (kept across
+`Funcdata::clear`, so an in-pipeline restart keeps it), at most twice, keeping
+the last successful result. During the re-analysis
+`kuna_condstmts.rs (complex_blocks)` adds every seeded block to both engines'
+complex set, so `rule_block_or`/`try_block_or` decline the fold and
+`rule_block_while_do` gives the loop overflow syntax. Re-analysing, rather than
+restructuring in place at the final pass, is deliberate: by then
+`ActionPreferComplement` and the structurers' own branch negations have already
+rewritten `CBRANCH` polarity for the first tree, and a fresh collapse over those
+ops re-orients unrelated `if`s and loses unrelated folds. The cost is a second
+analysis of each affected function, and only those. Once highs exist (a tree
+rebuilt after a late structure reset), `complex_blocks` also includes every
+block that measures over the cap directly. The cap also bounds `condfold`:
+`kuna_condstmts.rs (condfold_budget)` passes `min(condfold budget, N + 1)` to
+`compute_condfold_sets`, since that budget counts the terminal `CBRANCH`.
+
+The cap only removes folds, and can therefore only add statements and, where a
+declined fold leaves two edges into one block, a goto. Default `3`: 0/675
+datatest assertions change, and over 3,293 functions in six x86-64 binaries two
+functions change (one of them gains two gotos) at no measurable cost outside
+the re-analysed functions. At `2`, eight functions change and gotos rise by
+four, but the affected functions are large enough that the second analysis
+costs +8% (grep) and +26% (libselinux) of whole-binary time. `off` makes
+`record_hits`, the seed and the budget clamp inert, so the output is
+byte-identical to the uncapped form. Witness: `tests/stages/kuna-condstmts.xml`.
+
 **Goto selection (the pathological case).** When the cascade stalls with more
 than one component live, `blockaction.rs (CollapseStructure::select_goto)`
 marks one edge unstructured and the cascade retries. Which edge matters

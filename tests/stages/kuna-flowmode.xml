@@ -7,16 +7,18 @@
 
     The XML wrapper only provides the harness architecture. The script loads
     two stripped fixtures (one generator beside them) with the Listing walk on,
-    as every CLI surface runs it on ARM. In each, an A32 entry at 0x2000000
-    calls a Thumb helper at 0x2000040 (`movs r0,#7; bx lr`) with `blx` and an
-    A32 helper at 0x2000080 (`add r0,r0,#1; bx lr`) with `bl`. No symbol or
-    mapping symbol names either mode. Decoding the `blx` writes Thumb into the
-    context database from 0x2000040 to the end of the address space, so the
-    walk leaves the A32 helper in Thumb, and the decompiler prints
+    as every CLI surface runs it on ARM, and with `armwalkmode` off, so the
+    walk reads every address's mode from the database its own `blx` writes
+    fill (`kuna-armwalkmode.xml` covers the default). In each, an A32 entry
+    at 0x2000000 calls a Thumb helper at 0x2000040 (`movs r0,#7; bx lr`) with
+    `blx` and an A32 helper at 0x2000080 (`add r0,r0,#1; bx lr`) with `bl`.
+    No symbol or mapping symbol names either mode. Decoding the `blx` writes
+    Thumb into the context database from 0x2000040 to the end of the address
+    space, so the walk leaves the A32 helper in Thumb, and the decompiler prints
     `halt_missing()` for it (a Thumb decode starting at 0x2000082).
 
-    Pass 1, `arm_interwork_bl_first_le32` (the `bl` comes first), the default
-    (off): the A32 helper prints `halt_missing()`.
+    Pass 1, `arm_interwork_bl_first_le32` (the `bl` comes first), flowmode
+    off (its default): the A32 helper prints `halt_missing()`.
 
     Pass 2, the same image, option on: the entry's even address proves A32
     and its first call, the `bl`, proves the A32 helper, which makes no call
@@ -41,6 +43,7 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_bl_first_le32</com>
   <com>option listing on</com>
+  <com>option armwalkmode off</com>
   <com>read symbols</com>
   <com>load addr 0x2000080</com>
   <com>decompile</com>
@@ -48,6 +51,7 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_bl_first_le32</com>
   <com>option listing on</com>
+  <com>option armwalkmode off</com>
   <com>option flowmode on</com>
   <com>read symbols</com>
   <com>load addr 0x2000080</com>
@@ -56,6 +60,7 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_le32</com>
   <com>option listing on</com>
+  <com>option armwalkmode off</com>
   <com>option flowmode on</com>
   <com>read symbols</com>
   <com>load addr 0x2000080</com>
@@ -64,6 +69,7 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_le32</com>
   <com>option listing on</com>
+  <com>option armwalkmode off</com>
   <com>option flowmode aftercall</com>
   <com>read symbols</com>
   <com>load addr 0x2000080</com>

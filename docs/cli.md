@@ -383,7 +383,11 @@ comment on its prototype and one at each cut edge, naming the address the edge l
 for. That holds for a conditional branch over the end as much as for fall-through
 past it — including a branch to the exclusive end itself, which is what a
 tail-clipped `if (err) goto fail;` looks like. A correct boundary ends in a return
-and produces no warning, so that comment is the signal to widen the range.
+or a recognized tail transfer and produces no warning. With `tailcalljump on`
+or `direct`, a terminal conditional branch to a separately known function entry
+outside the declared extent is a tail call on its taken path. Unknown targets
+and mid-function addresses still clip and warn, so that comment is the signal
+to review the range.
 
 A declaration also survives the whole-binary filter. Unfiltered `decompile-all`,
 `decompile-project` and the browser inventory decompile only entries inside a
@@ -1156,6 +1160,14 @@ the run from 1,036 decompiled functions to 307 — **5,943,701 bytes / 11.5 s do
 to 876,577 bytes / 2.5 s**, with the answer still inside it. Adding `--min-size
 256 --sort size --limit 10` brings it to 115,667 bytes / 1.8 s.
 
+Buffered `decompile-all`, `decompile-project` and `decompile-graph` make scalar address arguments
+compatible with character-pointer parameters declared by other successful
+functions in the same output. This conversion adds a cast without narrowing
+the local variable. It also applies to filtered selections, `--jobs`, and
+`--option protoorder off`; the option below controls inference. A callee omitted
+from the output supplies no declaration for this conversion. Standalone and
+streamed output do not perform this batch reconciliation.
+
 ### `--option protoorder` — decompile callees first (on by default)
 
 `decompile-all` used to decompile in address order, so each function was typed
@@ -1482,9 +1494,10 @@ the end of that segment rather than to the end of a `.text` — looser, but stil
 upper bound, where every entry used to report `0` and `--min-size 1` discarded the
 whole binary. A caller needing the exact body must still decompile.
 
-Per-function `code` matches `kuna decompile ... --option listing on` byte-for-byte on
-x86-64 (elsewhere, see the injected defaults below), `error` isolates a single failed
-function, and `variables` (params in ABI order + DWARF/stack locals) feed type-recovery
+Per-function `code` can include whole-batch inference and pointer-argument casts
+that standalone `kuna decompile` cannot derive (elsewhere, see the injected
+defaults below). `error` isolates a single failed function, and `variables`
+(params in ABI order + DWARF/stack locals) feed type-recovery
 scoring. `--no-vars` leaves `variables` empty but still emits function line mappings.
 
 `types` is the layout side of the same record: one object per composite, enum or

@@ -1,0 +1,134 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!-- Independent call-escaped frame-storage regression.
+     P6 stack-frame-layout; option callarrayextent off|on (default off).
+     The caller passes fp-48 to a ten-word writer and reads fp-40.
+     Off: two-word array and an independent uninitialized return scalar.
+     On: shared frame-bounded storage, with the return at element 2.
+     Assemble decompiler/crates/kuna-cli/tests/fixtures/escaped_output.s with llvm-mc -triple=sparc
+     -filetype=obj, then resolve its R_SPARC_WDISP30 call relocations.
+     A frame capacity of 12 words is not the source array's exact length of 10.
+     separate_word keeps a caller-defined scalar out of the inferred array.
+     overlapping_output preserves an indexed parent that ends at the call output.
+     looping_output carries the output pointer through a loop and declines.
+     lower_scalar_output and parent_tail_scalar keep adjacent initialized locals.
+     duplicate_arg_output declines conflicting pointee types on the same address.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">9de3bf609007bfd0921000184000000501000000f007bfd881c7e00881e80000821020008528600286024001c62200028200600180a0600a06bffffb0100000081c3e008010000009de3bf609007bff840000009010000009007bfd0921000187ffffff001000000f007bfd881c7e00881e80000c022000081c3e008010000009de3bf60f027bff89007bff07ffffffa01000000f007bff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1000" name="escaped_output"/>
+<symbol space="ram" offset="0x1020" name="fill_words"/>
+<symbol space="ram" offset="0x1048" name="bounded_output"/>
+<symbol space="ram" offset="0x1074" name="touch_word"/>
+<symbol space="ram" offset="0x1080" name="separate_word"/>
+<bytechunk space="ram" offset="0x1100" readonly="true">9de3bf30a007bfa4a2102000a52c6002f0240012a204600180a4600b06bffffc01000000900420044000000b01000000a6100008900420049207bfd04000001101000000f007bfd8b006001381c7e00881e8000082102000841020008728a002c6020003820040038400a00180a0a00a06bffffb0100000081c3e008901000018210200085286002c60200028600c001c62240028200600180a0600a06bffffa0100000081c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1100" name="overlapping_output"/>
+<symbol space="ram" offset="0x1154" name="observe_words"/>
+<symbol space="ram" offset="0x1180" name="copy_words"/>
+<bytechunk space="ram" offset="0x1200" readonly="true">9de3bf30a007bfa4a2102000a52c6002f0240012a204600180a4600d06bffffc01000000900420047fffffcb01000000a6100008a8102000aa102000ae07bfd090042004921000177fffffce01000000ec07bfd8aa054016ae05e004a805200180a5200206bffff701000000b005401381c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1200" name="looping_output"/>
+<bytechunk space="ram" offset="0x1300" readonly="true">9de3bf609007bfcc7fffff5b01000000f027bfcc9007bfd0921000187fffff4101000000e007bfd8f007bfccb006001081c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1300" name="lower_scalar_output"/>
+<bytechunk space="ram" offset="0x1380" readonly="true">9de3bf30a007bfa4a2102000a52c6002f0240012a204600180a4600b06bffffc01000000f027bfd4900420049207bfd07fffff7401000000e407bfd8f007bfd4b006001281c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1380" name="parent_tail_scalar"/>
+<bytechunk space="ram" offset="0x1400" readonly="true">9de3bf609007bfd0921000084000000d01000000f007bfd881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1400" name="duplicate_arg_output"/>
+<bytechunk space="ram" offset="0x1440" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1440" name="mixed_words"/>
+</binaryimage>
+<script>
+  <com>parse line extern uint4 escaped_output(uint4 seed);</com>
+  <com>parse line extern void fill_words(uint4 *out, uint4 seed);</com>
+  <com>parse line extern uint4 bounded_output(uint4 seed);</com>
+  <com>parse line extern void touch_word(uint4 *out);</com>
+  <com>load function escaped_output</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callarrayextent on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function bounded_output</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 separate_word(uint4 seed);</com>
+  <com>load function separate_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 overlapping_output(uint4 seed);</com>
+  <com>parse line extern uint4 observe_words(uint4 *in);</com>
+  <com>parse line extern void copy_words(uint4 *in, uint4 *out);</com>
+  <com>load function overlapping_output</com>
+  <com>option callarrayextent off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callarrayextent on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 looping_output(uint4 seed);</com>
+  <com>load function looping_output</com>
+  <com>option callarrayextent off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callarrayextent on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 lower_scalar_output(uint4 seed);</com>
+  <com>load function lower_scalar_output</com>
+  <com>option callarrayextent off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callarrayextent on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 parent_tail_scalar(uint4 seed);</com>
+  <com>load function parent_tail_scalar</com>
+  <com>option callarrayextent off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callarrayextent on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 duplicate_arg_output(uint4 seed);</com>
+  <com>parse line extern void mixed_words(uint4 *out,uint8 *other);</com>
+  <com>load function duplicate_arg_output</com>
+  <com>option callarrayextent off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callarrayextent on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>phase catalog callarrayextent</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALL-ARRAY-EXTENT #1: off retains the short array" min="1" max="1">uint4 escaped_output\(uint4 seed\)
+\{
+  uint4 v1 \[2\];</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #2: off returns an independent scalar" min="1" max="1">fill_words\(v1,seed\);
+  return v2;</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #3: on reserves shared frame capacity" min="1" max="1">uint4 v1 \[12\];</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #4: on reads the third helper output" min="2" max="2">return v[0-9]+\[2\];</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #5: discoverable opt-in" min="1" max="1">"option": "callarrayextent", "values": \["on", "off"\], "default": "off", "current": "on", "destructive_as_default": true</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #6: another address-taken slot bounds capacity" min="1" max="1">uint4 v[0-9]+ \[10\];</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #7: caller-defined scalar blocks frame-wide coalescing" min="1" max="1">uint4 separate_word\(uint4 seed\)
+\{
+  uint4 v1 \[2\]; // stack - 0x10
+  uint4 v2; // i0 \| o0 \| stack - 0x8
+
+  v2 = seed;</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #8: caller-defined scalar remains separate" min="1" max="1">touch_word\(v1\);
+  return v2;</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #9: off splits the later copy output" min="1" max="1">copy_words\(&amp;v[0-9]+\[1\],v[0-9]+\);
+  return v[0-9]+ \+ v[0-9]+;</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #10: indexed parent retains room for every store" min="1" max="1">uint4 v[0-9]+ \[23\];</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #11: return reads the copied word in shared storage" min="1" max="1">return v[0-9]+\[(13|0xd)\] \+ v[0-9]+;</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #12: loop-carried pointer declines" min="2" max="2">uint4 v[0-9]+ \[13\];</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #13: lower initialized scalar remains separate" min="2" max="2">uint4 lower_scalar_output\(uint4 seed\)
+\{
+  uint4 v1; // i0 \| o0 \| stack - 0x34</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #14: lower scalar does not block output repair" min="1" max="1">fill_words\(v2,seed\);
+  return v1 \+ v2\[2\];</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #15: initialized scalar after parent declines" min="2" max="2">uint4 v2; // stack - 0x30
+  int4 v3; // l1
+  uint4 v4; // i0 \| o0 \| stack - 0x2c</stringmatch>
+<stringmatch name="CALL-ARRAY-EXTENT #16: conflicting duplicate pointees decline" min="2" max="2">mixed_words\(v1,\(uint8 \*\)v1\);
+  return v2;</stringmatch>
+</decompilertest>

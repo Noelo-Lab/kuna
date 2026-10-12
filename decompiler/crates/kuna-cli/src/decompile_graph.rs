@@ -34,7 +34,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use kuna_console::classify::Classifier;
 use kuna_console::engine::{ConsoleProgram, EntryProvenance, FunctionEntry};
-use kuna_console::project::{decompile_targets, FuncResult};
+use kuna_console::project::{decompile_targets_with, DecompileOptions, FuncResult};
 use object::{Object, ObjectSegment};
 
 use crate::decompile_all::{
@@ -187,13 +187,13 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
         )?
         .results
     } else {
-        decompile_targets(
-            &mut prog,
-            targets,
-            /* no_vars= */ false,
-            /* want_proto= */ true,
-            /* want_provenance= */ false,
-        )
+        let opts = DecompileOptions {
+            want_proto: true,
+            single_target: targets.len() == 1,
+            want_pointer_arguments: true,
+            ..DecompileOptions::default()
+        };
+        decompile_targets_with(&mut prog, targets, &opts)
     };
     for result in &results {
         if let Some(error) = &result.error {

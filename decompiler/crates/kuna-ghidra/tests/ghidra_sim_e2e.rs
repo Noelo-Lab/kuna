@@ -38,6 +38,7 @@
 //! workspace suite to keep `make rust-test` lean, and run explicitly (release)
 //! by the CI gates job and `make test-ghidra`.
 
+#[path = "ghidra_sim/mod.rs"]
 mod ghidra_sim;
 
 use std::cell::RefCell;
@@ -607,13 +608,24 @@ const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 0, 0];
 // round trip only because ghidra mode has no p-code cache.  The gate short-
 // circuits before any decode, so `calltrampoline off` is the 1862 this pin held
 // before the option existed.
-const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 2121;
+// (kuna `calleereadarg`) RAISED the total 2121 -> 2142 and left the DISTINCT
+// count at 1044, unmoved, with every rendered pin above it unchanged. The option
+// asks the bounded entry walk of each function's OWN body (one with a call to
+// extend), to tell a variadic caller by its register-save prologue, and the
+// walk is a cache miss for an entry no earlier caller probed. No new
+// instruction address is read. Measured both arms on this tree: the option off
+// by default gives 2121.
+const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 2142;
 const PIN_FAILLOG_DECODED_INSTS: usize = 1044;
 // Whole-session getMappedSymbols traffic: Phase 2 pinned this at 0 (the
 // providers did not exist); Phase 3 pins the real query-through traffic —
 // every distinct global address the pipeline probes, answered once (holes and
 // symbol ranges negative/positive-cache the rest).
-const PIN_FAILLOG_GETMAPPED_TOTAL: u64 = 1448;
+// The callee write probe also queries host no-return facts for nested calls:
+// strrchr and __ctype_b_loc recur after flushNative; strcmp,
+// __explicit_bzero_chk and fseeko are queried once. The rendered-C and
+// instruction-query pins above stay unchanged.
+const PIN_FAILLOG_GETMAPPED_TOTAL: u64 = 1455;
 
 /// The CLI arm of the differential runs `formatstring off`, like for like with
 /// the wire session (see `PIN_FAILLOG_DIFF_FLOOR`).

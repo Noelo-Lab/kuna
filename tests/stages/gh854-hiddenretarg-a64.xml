@@ -1,0 +1,203 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    GH-854 (kuna): on AArch64 a value a function leaves in x8 before a call is
+    printed as that call's first argument.  x8 is the indirect-result register,
+    the cspec's `hiddenret` input entry, so checkInputTrialUse scores a value
+    the caller wrote there and never read again as the hidden return-buffer
+    pointer of a struct-returning callee, and its own resource section sorts
+    it ahead of x0.  x8 is also a scratch register, so a syscall number or any
+    leftover value becomes the call's first argument.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring".  The P0 assertion
+    `option hiddenretarg on|off` decides whether that trial is scored no-use
+    when the callee never takes x8 (no path reads it before writing it, none
+    leaves for unread code with it unwritten) or x8 holds a constant in the
+    null page (below 0x1000).
+
+    The fixture, hand assembled:
+      f     mov x8,#0x38; mov x0,#3; bl foo   foo is `add x0,x0,#1; ret`
+      f2    add x8,x1,#1; mov x0,#3; bl foo   not a constant: the callee alone
+      g     mov x8,#0x38; svc #0; bl lib      lib calls foo before anything
+                                              else, so its body proves
+                                              nothing: the constant alone
+      g2    mov x8,x1; svc #0; bl cancel      the glibc helper shape: cancel
+                                              writes x8 before its own svc and
+                                              returns without reading it
+      use   mov x8,sp; mov w0,#7; bl mk       the control: mk stores through
+                                              x8, a real hidden return
+      use2  mov x8,sp; mov w0,#9; bl mkthunk  mkthunk is `b mk`, a tail call
+                                              into a body that reads x8
+
+    A second chunk holds clang -O0 code for
+      static int report(int code, int line, int msg);   (calls nothing)
+      static int corrupt(int line) { return report(11, line, 7); }
+      static unsigned pagecount(void *p) { return ((unsigned *)p)[16]; }
+      int cursor(void *bt, unsigned pg) { if (pg <= 1) { if (pg < 1)
+        return corrupt(4321); if (pagecount(bt) == 0) pg = 0; }
+        return (int)pg; }
+    where `w8 = pg - 1` reaches both calls.  pagecount never takes x8, and
+    the value vetoed there must not become corrupt's argument instead.  A
+    third chunk holds callees that DO take x8: `helper` is `svc #0; ret`
+    (the kernel reads the caller's syscall number) and `cnt` loops on x8.
+    A fourth holds `phibuf`, which computes `add x8,sp,#16` once, calls the
+    leaf `pleaf` on one path, recomputes it and joins into `pmk`, a callee
+    whose body calls out first.  The frame address is a leftover at pleaf
+    and the real result buffer at pmk, so dropping it at pleaf must not
+    drop it at pmk.
+
+    Pass 1 (`option hiddenretarg off`) reproduces the BUG: `foo(0x38,3)`,
+    `foo(a1 + 1,3)`, `lib(0x38)` and `cancel(a1...)`.
+    Pass 2 (`option hiddenretarg on`, the shipped default) is the FIX: no call
+    carries x8, while both struct returns keep their result buffer.
+-->
+<bytechunk space="ram" offset="0x100000">
+fd7bbfa9080780d2600080d203000094
+fd7bc1a8c0035fd600040091c0035fd6
+fd7bbfa928040091600080d2fbffff97
+fd7bc1a8c0035fd6fd7bbfa9080780d2
+010000d403000094fd7bc1a8c0035fd6
+fd7bbfa9f1ffff97fd7bc1a8c0035fd6
+fd7bbfa9e80301aa010000d403000094
+fd7bc1a8c0035fd660000837480c80d2
+010000d4c0035fd6ffc300d1fd7b02a9
+fd830091e8030091e000805205000094
+e00740f9fd7b42a9ffc30091c0035fd6
+007c4093000100f9000500f9c0035fd6
+ffc300d1fd7b02a9fd830091e8030091
+2001805205000094e00740f9fd7b42a9
+ffc30091c0035fd6f2ffff17
+</bytechunk>
+<bytechunk space="ram" offset="0x101000">
+ffc300d1fd7b02a9fd830091e00b00f9
+e10f00b9e80f40b90805007128020054
+01000014e80f40b908050071c2000054
+01000014201c825211000094a0c31fb8
+0b000014e00b40f91800009480000035
+01000014ff0f00b90100001401000014
+e80f40b9a8c31fb801000014a0c35fb8
+fd7b42a9ffc30091c0035fd6ff8300d1
+fd7b01a9fd430091a0c31fb8a1c35fb8
+60018052e20080520a000094fd7b41a9
+ff830091c0035fd6ff4300d1e00700f9
+e80740f9004140b9ff430091c0035fd6
+ff4300d1e00f00b9e10b00b9e20700b9
+e80f40b969008052087d091be90b40b9
+0801090be90740b90001090bff430091
+c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x102000">
+010000d4c0035fd6fd7bbfa9080880d2
+200080d2fbffff97fd7bc1a8c0035fd6
+000080d20000018b080500f1c1ffff54
+c0035fd6fd7bbfa9480180d2610080d2
+f8ffff97fd7bc1a8c0035fd6
+</bytechunk>
+<bytechunk space="ram" offset="0x103000">
+00040091c0035fd6fd7bbfa9fdffff97
+fd7bc1a8c0035fd6fd7bbca9fd030091
+e843009180000034e00301aaf5ffff97
+e8430091e00301aaf4ffff97e01340f9
+fd7bc4a8c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+<symbol space="ram" offset="0x100018" name="foo"/>
+<symbol space="ram" offset="0x100020" name="f2"/>
+<symbol space="ram" offset="0x100038" name="g"/>
+<symbol space="ram" offset="0x100050" name="lib"/>
+<symbol space="ram" offset="0x100060" name="g2"/>
+<symbol space="ram" offset="0x100078" name="cancel"/>
+<symbol space="ram" offset="0x100088" name="use"/>
+<symbol space="ram" offset="0x1000b0" name="mk"/>
+<symbol space="ram" offset="0x1000c0" name="use2"/>
+<symbol space="ram" offset="0x1000e8" name="mkthunk"/>
+<symbol space="ram" offset="0x101000" name="cursor"/>
+<symbol space="ram" offset="0x10107c" name="corrupt"/>
+<symbol space="ram" offset="0x1010a8" name="pagecount"/>
+<symbol space="ram" offset="0x1010c0" name="report"/>
+<symbol space="ram" offset="0x102000" name="helper"/>
+<symbol space="ram" offset="0x102008" name="call_helper"/>
+<symbol space="ram" offset="0x102020" name="cnt"/>
+<symbol space="ram" offset="0x102034" name="call_cnt"/>
+<symbol space="ram" offset="0x103000" name="pleaf"/>
+<symbol space="ram" offset="0x103008" name="pmk"/>
+<symbol space="ram" offset="0x103018" name="phibuf"/>
+</binaryimage>
+<script>
+  <com>option hiddenretarg off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cursor</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu call_helper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu call_cnt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu phibuf</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option hiddenretarg on</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cursor</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu call_helper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu call_cnt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu phibuf</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="hiddenretarg #1: option off passes a constant left in x8 as foo's first argument (bug reproduced)" min="1" max="1">foo\(0x38,3\);</stringmatch>
+<stringmatch name="hiddenretarg #2: option off passes a computed value left in x8 as foo's first argument (bug reproduced)" min="1" max="1">foo\(a1 \+ 1,3\);</stringmatch>
+<stringmatch name="hiddenretarg #3: option on drops x8 at both calls to the leaf foo" min="2" max="2">foo\(3\);</stringmatch>
+<stringmatch name="hiddenretarg #4: option off passes the syscall number to a callee whose body proves nothing (bug reproduced)" min="1" max="1">lib\(0x38\)</stringmatch>
+<stringmatch name="hiddenretarg #5: option on drops the null-page constant from the call to lib" min="1" max="1">lib\((a0)?\)</stringmatch>
+<stringmatch name="hiddenretarg #6: option off passes g2's x1 through x8 to cancel (bug reproduced)" min="1" max="1">cancel\(a1</stringmatch>
+<stringmatch name="hiddenretarg #7: a callee that stores through x8 keeps its result buffer in both passes" min="2" max="2">mk\([a-z][a-z0-9]*,7\);</stringmatch>
+<stringmatch name="hiddenretarg #8: a tail call into a body that stores through x8 keeps its result buffer in both passes" min="2" max="2">mkthunk\([a-z][a-z0-9]*,9\);</stringmatch>
+<stringmatch name="hiddenretarg #9: a value vetoed from one call does not become another call's argument" min="2" max="2">return corrupt\(0x10e1\);</stringmatch>
+<stringmatch name="hiddenretarg #10: a callee whose svc reads the caller's x8 keeps the syscall number" min="2" max="2">helper\(0x40,1\);</stringmatch>
+<stringmatch name="hiddenretarg #11: a callee that reads x8 keeps a null-page constant there" min="2" max="2">cnt\(10,</stringmatch>
+<stringmatch name="hiddenretarg #12: a frame address dropped at one call keeps its place as a later call's result buffer" min="2" max="2">pmk\([a-z][a-z0-9]*,a1\);</stringmatch>
+</decompilertest>

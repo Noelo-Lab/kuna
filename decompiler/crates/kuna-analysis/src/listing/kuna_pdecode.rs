@@ -50,8 +50,9 @@ use kuna_sleigh::translate::Translate;
 use super::context::ContextPainter;
 use super::decode::decode_one;
 use super::model::{DiscoveredFunction, Insn, InsnLite, Reference};
+use super::kuna_insnstore::InstructionStore;
 use super::walk::{
-    self, CallbackEvidence, CallbackSink, InsnSink, RefBuckets, StepCtx, Successors, WalkPolicy,
+    self, CallbackEvidence, CallbackSink, InsnSink, RefCollector, StepCtx, Successors, WalkPolicy,
     WalkState,
 };
 use super::ListingDetail;
@@ -103,19 +104,12 @@ const MAX_ROUNDS: usize = 1024;
 /// Differences the self-check prints before it stops listing them.
 const SELFCHECK_REPORT: usize = 20;
 
-/// Resident bytes one instruction costs in the serial `BTreeMap<u64, Insn>`,
-/// measured on the fast (no-assembly, no-refs) path of a 20.2 M instruction
-/// x86-64 image: 6.02 GB of VmHWM against 20,218,436 instructions, the map
-/// dominating. Used to price the reconciled map out of
-/// [`lane_peak_excess_bytes`], which is meant to report what the LANES added and
-/// not what the walk would have held anyway.
-///
-/// It is the density of ONE walk shape. A `listing on` walk (`--mode
-/// aggressive|reliable`, `--option listing on`) carries disassembly text and the
-/// reference model, and its map measures ~713 B an instruction — so subtracting
-/// this price there books several GB of genuinely serial map as lane cost. That
-/// is why the subtraction is capped at [`lane_footprint`]: the lanes cannot have
-/// added more than the lanes hold.
+/// Historic no-assembly/no-reference serial-map density on a 20.2 M
+/// instruction x86-64 image. The chunked instruction store is smaller; keeping
+/// this subtraction conservative under-reports lane excess and prices workers
+/// high rather than admitting more workers from an uncalibrated density.
+/// Full-detail walks also carry strings and reference buffers, so the excess
+/// remains capped by the memory the lanes themselves can hold.
 const SERIAL_MAP_BYTES_PER_INSN: u64 = 298;
 
 /// Resident bytes one lane's rebuilt SLEIGH engine holds (~48 MB for x86-64's
@@ -460,9 +454,8 @@ impl Crossing {
 /// The decoded records of one interval: a flat, append-only list plus the
 /// membership test [`super::walk::step`] asks.
 ///
-/// Flat rather than a `BTreeMap` because the merge wants one sorted run per
-/// interval and the shard wants 112 bytes a record rather than a B-tree node's
-/// share of 298.
+/// Flat because the merge wants one sorted run per interval. Only the merged
+/// model needs an ordered address index and lazily populated p-code fields.
 #[derive(Default)]
 struct LaneInsns {
     seen: HashSet<u64>,
@@ -503,7 +496,7 @@ impl CallbackSink for LaneCallbacks {
 struct IntervalState {
     insns: LaneInsns,
     funcs: BTreeMap<u64, DiscoveredFunction>,
-    refs: RefBuckets,
+    refs: RefCollector,
     callbacks: LaneCallbacks,
     /// The outer worklist's `visited_funcs`, per interval. Complete, because an
     /// entry belongs to exactly one interval.
@@ -519,7 +512,7 @@ impl IntervalState {
         IntervalState {
             insns: LaneInsns::default(),
             funcs: BTreeMap::new(),
-            refs: RefBuckets::new(want_refs),
+            refs: RefCollector::new(want_refs),
             callbacks: LaneCallbacks::default(),
             visited: BTreeSet::new(),
             roots: Vec::new(),
@@ -1149,10 +1142,9 @@ fn reconcile(
     seeds: &[u64],
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
 ) -> Result<(WalkState, u64), Refusal> {
-    let mut insns: BTreeMap<u64, Insn> = BTreeMap::new();
+    let mut insns = InstructionStore::default();
     let mut funcs: BTreeMap<u64, DiscoveredFunction> = BTreeMap::new();
-    let mut refs_to: BTreeMap<u64, Vec<Reference>> = BTreeMap::new();
-    let mut refs_from: BTreeMap<u64, Vec<Reference>> = BTreeMap::new();
+    let mut refs: Vec<Reference> = Vec::new();
     let mut callbacks: BTreeMap<u64, u64> = BTreeMap::new();
 
     // The seed pass first, so a seeded entry keeps its name/from_symbol even
@@ -1184,17 +1176,9 @@ fn reconcile(
         for (entry, record) in shard.funcs {
             funcs.entry(entry).or_insert(record);
         }
-        let (to, from) = shard.refs.into_parts();
-        for (key, bucket) in to {
-            shard_bytes =
-                shard_bytes.saturating_add(bytes_of(bucket.len(), size_of::<Reference>()));
-            refs_to.entry(key).or_default().extend(bucket);
-        }
-        for (key, bucket) in from {
-            shard_bytes =
-                shard_bytes.saturating_add(bytes_of(bucket.len(), size_of::<Reference>()));
-            refs_from.entry(key).or_default().extend(bucket);
-        }
+        let edges = shard.refs.into_edges();
+        shard_bytes = shard_bytes.saturating_add(bytes_of(edges.capacity(), size_of::<Reference>()));
+        refs.extend(edges);
         for (target, source) in shard.callbacks.refs {
             callbacks.entry(target).and_modify(|p| *p = (*p).min(source)).or_insert(source);
         }
@@ -1209,8 +1193,7 @@ fn reconcile(
     Ok((
         WalkState {
             insns,
-            refs_to,
-            refs_from,
+            refs,
             funcs,
             stack_callback_refs: evidence.into_refs(),
             mode_runs: Vec::new(),
@@ -1265,33 +1248,14 @@ pub(super) fn compare(parallel: &WalkState, serial: &WalkState) -> usize {
         }
     }
 
-    for (name, a, b) in [
-        ("refs_to", &parallel.refs_to, &serial.refs_to),
-        ("refs_from", &parallel.refs_from, &serial.refs_from),
-    ] {
-        let by_source = name == "refs_to";
-        let mut left = a.clone();
-        let mut right = b.clone();
-        super::finalize_refs(&mut left, by_source);
-        super::finalize_refs(&mut right, by_source);
-        let mut buckets: BTreeSet<u64> = left.keys().copied().collect();
-        buckets.extend(right.keys().copied());
-        for key in buckets {
-            let (l, r) = (left.get(&key), right.get(&key));
-            let same = match (l, r) {
-                (Some(l), Some(r)) => {
-                    l.len() == r.len()
-                        && l.iter()
-                            .zip(r.iter())
-                            .all(|(x, y)| x.from == y.from && x.to == y.to && x.kind == y.kind)
-                }
-                (None, None) => true,
-                _ => false,
-            };
-            if !same {
-                report(format!("{name}[{key:#x}] differs"));
-            }
-        }
+    let left = super::kuna_compactrefs::ReferenceIndex::new(parallel.refs.clone());
+    let right = super::kuna_compactrefs::ReferenceIndex::new(serial.refs.clone());
+    for (edge, in_lanes) in left.differences(&right) {
+        let side = if in_lanes { "lanes" } else { "serial walk" };
+        report(format!(
+            "ref {:#x} -> {:#x} ({:?}) only in the {side}",
+            edge.from, edge.to, edge.kind
+        ));
     }
 
     if parallel.stack_callback_refs != serial.stack_callback_refs {
@@ -1463,13 +1427,11 @@ mod tests {
             (0x3000, 0x2000, RefKind::Call),
         ];
         // One walk that filed everything...
-        let mut single = RefBuckets::new(true);
+        let mut single = RefCollector::new(true);
         for &(from, to, kind) in &edges {
             single.file(from, to, kind);
         }
-        let (mut want_to, mut want_from) = single.into_parts();
-        super::super::finalize_refs(&mut want_to, true);
-        super::super::finalize_refs(&mut want_from, false);
+        let want = super::super::kuna_compactrefs::ReferenceIndex::new(single.into_edges());
 
         // ...against three shards that each filed a slice of it.
         let mut shards: Vec<IntervalState> =
@@ -1478,17 +1440,8 @@ mod tests {
             shards[i % 3].refs.file(from, to, kind);
         }
         let (st, _) = reconcile(shards, &[], &BTreeMap::new()).expect("no collision");
-        let (mut got_to, mut got_from) = (st.refs_to, st.refs_from);
-        super::super::finalize_refs(&mut got_to, true);
-        super::super::finalize_refs(&mut got_from, false);
-
-        let flat = |m: &BTreeMap<u64, Vec<Reference>>| {
-            m.iter()
-                .map(|(k, v)| (*k, v.iter().map(|r| (r.from, r.to, r.kind)).collect::<Vec<_>>()))
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(flat(&got_to), flat(&want_to));
-        assert_eq!(flat(&got_from), flat(&want_from));
+        let got = super::super::kuna_compactrefs::ReferenceIndex::new(st.refs);
+        assert_eq!(got, want);
     }
 
     #[test]

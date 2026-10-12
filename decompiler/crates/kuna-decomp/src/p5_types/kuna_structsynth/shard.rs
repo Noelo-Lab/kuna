@@ -603,6 +603,13 @@ pub fn renaming(own: &[Answer], serial: &[Answer]) -> Option<Vec<(String, String
 /// one inside a string or character literal, whose bytes a rename must not
 /// touch and whose meaning it cannot know.
 pub fn rename_identifiers(text: &str, map: &[(String, String)], keep: &[String]) -> Option<String> {
+    rename_identifiers_with(text, map, keep, |_, _, _| {})
+}
+
+pub fn rename_identifiers_with(
+    text: &str, map: &[(String, String)], keep: &[String],
+    mut renamed: impl FnMut(usize, usize, &str),
+) -> Option<String> {
     const PREFIX: &[u8] = b"struct_";
     let bytes = text.as_bytes();
     let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
@@ -667,6 +674,7 @@ pub fn rename_identifiers(text: &str, map: &[(String, String)], keep: &[String])
             Some((_, to)) => {
                 out.push_str(&text[last..i]);
                 out.push_str(to);
+                renamed(i, end, to);
                 last = end;
             }
             None if keep.iter().any(|k| k == name) => {}

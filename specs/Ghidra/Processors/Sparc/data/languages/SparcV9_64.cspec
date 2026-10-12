@@ -140,6 +140,11 @@
         <register name="sp"/>
         <register name="didrestore"/>
       </unaffected>
+      <killedbycall>
+        <register name="o0"/>
+        <register name="fd0"/>
+        <register name="fd2"/>
+      </killedbycall>
       <localrange>
         <range space="stack" first="0xfff0bdc1" last="0xffffffff"/>
         <range space="stack" first="0x0" last="0x8ae"/>   <!-- Stack bias of 7FF + 0xb0 window size -->

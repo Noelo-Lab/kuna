@@ -1979,7 +1979,98 @@ mod tests {
         // and kuna-bejoin + kuna-bejoin-sparc + kuna-bejoin-sparc64 +
         // kuna-bejoin-mips + kuna-bejoin-avr / a two-register value is joined
         // in the ABI's order when its low word is returned on purpose
-        assert_eq!(count, 407, "corpus file count drifted");
+        // and gh840-varargbits-x86 + gh840-varargbits-a64 / an integer passed
+        // in a variadic float register prints as a reinterpretation
+        // and kuna-stackguard-tailcall / a canary checked right before a tail
+        // call loses its entry-side load with the check (GH-866)
+        // and gh876-varargupper-x86 / an int forwarded in its own register to a
+        // variadic call drops the undeclared upper half (GH-876)
+        // and kuna-zextword / a zero-extended word return keeps its register
+        // where every 32-bit return is sign-extended (GH-865)
+        // and kuna-sparc-callreturn + kuna-sparc64-callreturn / a SPARC call's
+        // result is its output, not the argument register (#862)
+        // and kuna-calltargettype + kuna-calltargettype-a64 +
+        // kuna-calltargettype-armhf / an indirect call's target takes the
+        // function-pointer type the call states (GH-869)
+        // and kuna-ilp32long-mips + kuna-ilp32long-ppc / long is 4 bytes on
+        // the ILP32 MIPS and PowerPC compiler specs
+        // and kuna-floatparam / a parameter passed in a float register is a
+        // float of its width (GH-888)
+        // and gh854-hiddenretarg-a64 + -a64apple + -a64win / a value left in
+        // the AArch64 hidden-return register x8 is no call argument (GH-854)
+        // and kuna-callretpairhalf / a caller that reads only the high word of
+        // a callee's 64-bit result gets the pair from the call (#851)
+        // and kuna-constptrdeclared-{riscv,x86,msp430} / a constant in a
+        // declared non-pointer return or argument is not inferred as a pointer
+        // (GH-846)
+        // and kuna-condexeretuse / a use a re-tested condition rules out does
+        // not reject an ARM return value (GH-874)
+        // and kuna-calleeretpreserves-mips + -mipsbe / a pointer gcc keeps in
+        // $v1 across a callee that never writes it survives the call (GH-878)
+        // and kuna-calleereadarg + -arm + -a64 / a call argument the
+        // caller also tests is kept when the callee reads it (GH-881)
+        // and kuna-retsysreg + -a64 + -mips / a register set for a system
+        // register is not the high word of the return (GH-885)
+        // and gh831-riscv-fpmove + gh831-riscv32-fpmove / RISC-V fmv.x.* and
+        // fcvt.w* read and write the real registers (GH-831)
+        // and kuna-condstmts / a folded condition operand prints at most the
+        // capped number of statements before its test
+        // and gh873-zerofillreturn-a64 / the zero fill above a returned
+        // AArch64 vector lane is no part of the value (GH-873)
+        // and kuna-floatglobals / a float parameter stored into a global the
+        // program only moves through float registers is a float (GH-888)
+        // and kuna-arrayextent / an indexed stack array covers the slots its
+        // index reaches past four elements (GH-867)
+        // and kuna-pointer-arguments / standalone printing has no batch contract
+        // and kuna-floatbits / a float helper that only works on the bits of
+        // its float-register input is a float on both sides (GH-890)
+        // and kuna-indexedstoreguard / an indexed stack store of any width
+        // keeps a later read of a slot it may overwrite from seeing the
+        // slot's earlier value
+        // and kuna-zeroloopfield / a field stored after the loop that zeroes
+        // its request prints after that loop
+        // and kuna-indexedstoreguard-a64 / the guarded slots of an AArch64
+        // long or int array past four elements stay elements of the array
+        // and kuna-syscallregs-mips-a3 + -ppc-cr0 / the MIPS a3 and PowerPC
+        // cr0 error flag a system call leaves (GH-857)
+        // and kuna-widestrings32 / a 4-byte wide literal argument prints as
+        // L"..." (GH-845)
+        // and gh839-reloadarg + -a64 / a register popped from a slot that holds
+        // the caller's incoming rax is no argument of the call after it, and
+        // a saved frame pointer read from the frame still is (GH-839)
+        // and gh841-varargsharedfloat-ppc / a 32-bit PowerPC -O0 variadic
+        // double that also feeds an earlier argument (GH-841)
+        // and kuna-floateq / an integer == or != on the bits of a float
+        // compares the bits, not the float values (GH-890)
+        // and kuna-pointerwalk-budget-mips / a pointer built through nested
+        // choices does not stall the stack-store guard's walks
+        // and kuna-pointerwalk-memo / those walks give what an exhaustive
+        // walk gives
+        // and kuna-ucomiss-unordered / an x86 float compare flag read by
+        // seta/setae/setbe/setb keeps its unordered case
+        // and kuna-conditional-register / an unused guarded path does not emit
+        // a transfer from a call-clobbered register
+        // and kuna-arm-conditional-switch / a guarded A32 PC table retains its
+        // bounded case bodies after positive-domain narrowing
+        // and kuna-arm-constant-shift / a signed fixed ARM LSL is defined in C
+        // and kuna-thunkentry / the target of a jmp thunk is a function entry
+        // and kuna-armwalkmode / a bl target keeps A32 after a blx to Thumb
+        // and kuna-sparc-zeropair / a SPARC int's return 0 is not the second
+        // argument shifted into the high word (#796)
+        // and kuna-msvcsig / an MSVC-mangled import gets its declared prototype
+        // and kuna-rust-switch-labels / a Rust match arm is signed by its
+        // scrutinee's type (GH-883)
+        // and kuna-aifbracket / an AIF candidate that rejoins the function around
+        // it is not a function (GH-299)
+        // and kuna-aifnoppad / no AIF entry starts on nop padding (GH-299)
+        // and gh847-zerocallregs / a register a -fzero-call-used-regs epilogue
+        // clears is not returned (GH-847)
+        // and kuna-signed-float-trunc{,64} / signed float conversions remain signed
+        // before assignments to unsigned merged variables
+        // and kuna-globalarrayanchor{,-a64} / a negative element bias keeps the mapped array base
+        // and kuna-switchguardreload / kuna-switchunrolledsense: a guarded
+        // relative table is not read past its guard (GH-1028)
+        assert_eq!(count, 511, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

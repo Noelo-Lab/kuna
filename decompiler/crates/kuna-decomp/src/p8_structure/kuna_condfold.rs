@@ -408,7 +408,7 @@ pub const MAX_JOIN_TOTAL_STMTS: int4 = 4;
 /// skips (a mid-block conditional jump or a `BRANCHIND`; angr's
 /// `_build_multistatementexpr_statements` refuses the same shapes, and a `goto` is not
 /// an expression).
-fn printed_shape(data: &Funcdata, ops: &[OpId]) -> Option<PrintedShape> {
+pub(crate) fn printed_shape(data: &Funcdata, ops: &[OpId]) -> Option<PrintedShape> {
     let tail = *ops.last()?;
     // The block must end in a conditional branch (this is the `orblock` of a 2-out
     // short-circuit schema; the caller already checked `size_out() == 2`).

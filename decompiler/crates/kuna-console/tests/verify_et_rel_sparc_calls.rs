@@ -60,8 +60,12 @@ fn sparc_calls_and_split_immediates_resolve_to_their_targets() {
 
     let caller = code_for("report_total");
     assert!(
-        caller.contains("counter_bump(a0);"),
+        caller.contains("counter_bump(a0)"),
         "WDISP30 call lost its local callee:\n{caller}"
+    );
+    assert!(
+        caller.contains("printf(0x400040,counter_bump(a0));"),
+        "counter_bump's %o0 result did not reach printf's second argument:\n{caller}"
     );
     assert!(
         caller.contains("printf(0x400040"),

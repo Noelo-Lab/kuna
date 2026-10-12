@@ -337,10 +337,8 @@ export function buildIndex(fnData, segs = lineSegments(fnData).segs, { inferred 
   (inferred || []).forEach((row, i) => {
     const insn = fnData.instructions[i];
     if (!row?.inferred || !insn) return;
-    for (const line of row.lines) {
-      addToMap(lineToInferred, line, insn.address_hex);
-      inferredLine.set(insn.address_hex, line);
-    }
+    for (const line of row.lines) addToMap(lineToInferred, line, insn.address_hex);
+    inferredLine.set(insn.address_hex, row.lines);
   });
   const sorted = new Map();
   for (const [line, set] of lineToInsns) sorted.set(line, order(set));
@@ -403,11 +401,68 @@ function tokenHtml(t, ctx) {
     `${t.fallback ? ' data-fb="1"' : ''}>${escapeHtml(t.text)}</span>`;
 }
 
+const plainHtml = (s, text) => (s.cls ? `<span class="${s.cls}">${escapeHtml(text)}</span>` : escapeHtml(text));
+
+/**
+ * One line's segments as HTML. With a `plan` (wrap-c.js `wrapPlan` of the
+ * line's text) each row is a `.wl` block carrying its indent as `--i`, so a
+ * row that is still wider than the pane soft-wraps under a hanging indent;
+ * the plan's breaks start rows, its drops leave brackets out. A break that
+ * would fall inside a token is left out.
+ */
+export function lineHtml(line, ctx = {}, plan = null) {
+  if (!plan) return line.map((s) => (s.tok ? tokenHtml(s.tok, ctx) : plainHtml(s, s.text))).join('');
+  const { breaks = [], drops = new Set() } = plan;
+  const rows = [];
+  let row = { indent: 0, html: '' };
+  let lead = true;
+  let off = 0;
+  let b = 0;
+  let eat = 0;
+  const newRow = (k) => {
+    rows.push(row);
+    row = { indent: k.indent, html: '' };
+    eat = k.eat;
+  };
+  for (const s of line) {
+    const start = off;
+    off += s.text.length;
+    while (b < breaks.length && breaks[b].at < start) b++;
+    if (s.tok) {
+      if (b < breaks.length && breaks[b].at === start) newRow(breaks[b++]);
+      let text = '';
+      for (let i = 0; i < s.text.length; i++) {
+        if (eat) { eat--; continue; }
+        if (!drops.has(start + i)) text += s.text[i];
+      }
+      lead = false;
+      if (text) row.html += tokenHtml(text === s.tok.text ? s.tok : { ...s.tok, text }, ctx);
+      continue;
+    }
+    let piece = '';
+    for (let i = 0; i < s.text.length; i++) {
+      if (b < breaks.length && breaks[b].at === start + i) {
+        if (piece) row.html += plainHtml(s, piece);
+        piece = '';
+        newRow(breaks[b++]);
+      }
+      if (eat) { eat--; continue; }
+      if (lead && s.text[i] === ' ') { row.indent++; continue; }
+      lead = false;
+      if (!drops.has(start + i)) piece += s.text[i];
+    }
+    if (piece) row.html += plainHtml(s, piece);
+  }
+  rows.push(row);
+  return rows.map((r) => `<span class="wl" style="--i:${r.indent}">${r.html}</span>`).join('');
+}
+
 /**
  * The C pane's HTML: one `.d2-cl#c-L<n>` row per line with a line-number and
  * address gutter, tokens as `.t` spans carrying their kind, symbol, address,
  * callee, global address and type. The preamble's rows are `.d2-ty`, under a
- * heading that folds them. `ctx`: `{index, segs, preamble, fnByName, globalsByName}`.
+ * heading that folds them. `ctx`: `{index, segs, preamble, fnByName, globalsByName,
+ * planOf}` (`planOf(i)`: how line i wraps, or null).
  */
 export function renderC(fnData, ctx = {}) {
   const segs = ctx.segs || lineSegments(fnData).segs;
@@ -429,12 +484,8 @@ export function renderC(fnData, ctx = {}) {
     const band = addrs.length ? bandOf(n) : null;
     out += `<div class="d2-cl${i < preamble ? ' d2-ty' : ''}" id="c-L${n}" role="option" data-line="${n}"` +
       `${attr('data-addrs', addrs.join(' '))}${attr('data-band', band)}>` +
-      `<span class="ln">${n}</span><span class="la">${escapeHtml(bare(addrs[0]))}</span><span class="ct">`;
-    for (const s of line) {
-      if (s.tok) out += tokenHtml(s.tok, ctx);
-      else out += s.cls ? `<span class="${s.cls}">${escapeHtml(s.text)}</span>` : escapeHtml(s.text);
-    }
-    out += '</span></div>';
+      `<span class="ln">${n}</span><span class="la">${escapeHtml(bare(addrs[0]))}</span><span class="ct">` +
+      `${lineHtml(line, ctx, i < preamble ? null : ctx.planOf?.(i) || null)}</span></div>`;
   });
   return out + '</div>';
 }

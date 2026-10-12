@@ -1,14 +1,17 @@
 //! ARM/Thumb interworking: a `blx` selects Thumb for its own target only, a `bl`
-//! keeps its caller's mode, and neither leaks into the other helper (GH-780,
-//! option `flowmode`, off by default). Under `flowmode on` nothing after an
-//! unconditional call or a user-defined operation is proven; `flowmode
-//! aftercall` continues past a call whose callee returns. Images outside the
-//! option's scope keep what the walk alone gives them.
+//! keeps its caller's mode, and neither leaks into the other helper (GH-780).
+//! By default the Listing walk carries each mode along its control flow
+//! (option `armwalkmode`). With `armwalkmode off` the walk reads every mode
+//! from the database its `blx` writes fill, which the `flowmode` tests start
+//! from: under `flowmode on` nothing after an unconditional call or a
+//! user-defined operation is proven; `flowmode aftercall` continues past a call
+//! whose callee returns. Images outside the options' scope keep what the walk
+//! alone gives them.
 
 #[path = "common/arm_images.rs"]
 #[allow(dead_code)]
 mod arm_images;
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -136,11 +139,12 @@ fn decompile(path: &PathBuf, addr: u64, mode: &str) -> String {
 }
 
 fn decompile_off(path: &PathBuf, addr: u64) -> String {
-    decompile_with(path, addr, &["--option", "flowmode", "off"])
+    decompile_with(path, addr, &[&WALK_OFF[..], &["--option", "flowmode", "off"]].concat())
 }
 
-const ON: [&str; 3] = ["--option", "flowmode", "on"];
-const AFTERCALL: [&str; 3] = ["--option", "flowmode", "aftercall"];
+const WALK_OFF: [&str; 3] = ["--option", "armwalkmode", "off"];
+const ON: [&str; 6] = ["--option", "armwalkmode", "off", "--option", "flowmode", "on"];
+const AFTERCALL: [&str; 6] = ["--option", "armwalkmode", "off", "--option", "flowmode", "aftercall"];
 const VALUES: [&[&str]; 3] = [&[], &ON, &AFTERCALL];
 
 /// The body `decompile-all` printed for `name`.
@@ -179,8 +183,24 @@ fn a_blx_target_mode_does_not_reach_the_arm_callee_of_an_earlier_bl() {
     }
     let off = decompile_off(&path, ARM_HELPER);
     assert!(off.contains("halt_missing"), "flowmode off: {off}");
-    assert_eq!(decompile_with(&path, ARM_HELPER, &[]), off);
+    assert_eq!(decompile_with(&path, ARM_HELPER, &WALK_OFF), off);
     std::fs::remove_file(path).unwrap();
+}
+
+/// Both call orders by default: the walk carries the entry's A32 mode to the
+/// `bl` target and the `blx` commit's Thumb to its own target only.
+#[test]
+fn the_walk_carries_each_callee_mode_by_default() {
+    for (stem, code) in [("walk-blx-bl", blx_then_bl()), ("walk-bl-blx", bl_then_blx())] {
+        let path = stripped(stem, &code);
+        for mode in ["reliable", "auto"] {
+            assert_helpers(&path, &["--mode", mode]);
+        }
+        let entry = decompile(&path, 0x10000, "reliable");
+        assert!(entry.contains("sub_10080(") && entry.contains("sub_10040()"), "{entry}");
+        assert!(decompile_off(&path, ARM_HELPER).contains("halt_missing"), "{stem}");
+        std::fs::remove_file(path).unwrap();
+    }
 }
 
 /// `entry: blx thumb_helper; bl arm_helper; pop {pc}` (GH-780): the `bl`
@@ -217,6 +237,7 @@ fn a_call_proven_to_return_carries_the_mode_on_to_the_next_call() {
         code[0x20 + i * 4..0x24 + i * 4].copy_from_slice(&word.to_le_bytes());
     }
     let path = stripped("returns-chain", &code);
+    assert_helpers(&path, &[]);
     assert_helpers(&path, &AFTERCALL);
     let off = decompile_off(&path, ARM_HELPER);
     assert!(off.contains("halt_missing"), "flowmode off: {off}");
@@ -247,6 +268,9 @@ fn the_instruction_after_a_call_that_never_returns_is_not_proven() {
     let path = stripped("noreturn", &code);
     let after = decompile_off(&path, 0x10058);
     assert!(after.contains("return 9;"), "{after}");
+    assert_eq!(decompile_with(&path, 0x10058, &[]), after);
+    let arm_last = decompile_with(&path, 0x10050, &[]);
+    assert!(!arm_last.contains("halt_"), "{arm_last}");
     for extra in [&ON[..], &AFTERCALL[..]] {
         assert_eq!(decompile_with(&path, 0x10058, extra), after, "{extra:?}");
         assert_eq!(
@@ -275,11 +299,11 @@ fn two_proven_modes_for_one_address_paint_nothing() {
         let off = decompile_with(
             &path,
             addr,
-            &["--mode", "auto", "--option", "flowmode", "off"],
+            &["--mode", "auto", "--option", "armwalkmode", "off", "--option", "flowmode", "off"],
         );
         for extra in [
-            &["--mode", "auto", "--option", "flowmode", "on"][..],
-            &["--mode", "auto", "--option", "flowmode", "aftercall"],
+            &["--mode", "auto", "--option", "armwalkmode", "off", "--option", "flowmode", "on"][..],
+            &["--mode", "auto", "--option", "armwalkmode", "off", "--option", "flowmode", "aftercall"],
         ] {
             assert_eq!(decompile_with(&path, addr, extra), off, "{extra:?}");
         }
@@ -408,37 +432,40 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// A stripped armel shared object (`arm_funcmode_helper_*.c`) whose A32
+/// export `a_func` follows the Thumb `t_entry` and calls the unsymbolized A32
+/// static helper at 0x1020c with `bl`: the helper stays A32 by default and
+/// with `armfuncmode` off.
+#[test]
+fn an_unsymbolized_a32_helper_after_an_a32_export_keeps_its_mode() {
+    let path = fixture("arm_funcmode_helper_o2_le32.so");
+    let lib = path.to_str().unwrap();
+    for extra in [&[][..], &["--option", "armfuncmode", "off"][..]] {
+        let mut args = vec!["decompile", lib, "0x1020c", "--addr"];
+        args.extend_from_slice(extra);
+        let helper = kuna(&args);
+        assert!(helper.contains("return a0 * 5 + a1 * 7 + 3;"), "{extra:?}: {helper}");
+    }
+}
+
 /// Stripped armel shared objects (`arm_interwork_stubs_le32.c`) whose every
 /// export has an even address (the Thumb ones are A32 linker stubs), so no
-/// symbol paints Thumb: the A32 `arm_export`, which calls three functions, is
-/// proven by its own symbol only under `aftercall`, where it keeps A32 over
-/// the Thumb a `blx` below it writes, and the Thumb `t_ptr_only`, reached
-/// only through a pointer table, keeps the walk's Thumb.
+/// symbol paints Thumb: the A32 `arm_export`, which calls three functions,
+/// keeps A32 over the Thumb a `blx` below it writes by default, where the walk
+/// carries its symbol's mode past each call that returns, and with the walk's
+/// own modes off only under `flowmode aftercall`. The Thumb `t_ptr_only`,
+/// reached only through a pointer table, keeps the walk's Thumb.
 #[test]
 fn arm_exports_are_proven_and_pointer_only_thumb_keeps_its_mode() {
     let path = fixture("arm_interwork_stubs_o0_le32");
     let lib = path.to_str().unwrap();
-    let arm = kuna(&[
-        "decompile",
-        lib,
-        "arm_export",
-        "--option",
-        "flowmode",
-        "aftercall",
-    ]);
-    assert!(arm.contains("return v1 + v2 + sub_294(a0);"), "{arm}");
-    let off = kuna(&[
-        "decompile",
-        lib,
-        "arm_export",
-        "--option",
-        "flowmode",
-        "off",
-    ]);
-    assert!(off.contains("halt_missing"), "flowmode off: {off}");
-    assert_eq!(kuna(&["decompile", lib, "arm_export"]), off);
-    let on = kuna(&["decompile", lib, "arm_export", "--option", "flowmode", "on"]);
-    assert_eq!(on, off);
+    for extra in [&[][..], &AFTERCALL[..]] {
+        let arm = run(&["decompile", lib, "arm_export"], extra);
+        assert!(arm.contains("return v1 + v2 + sub_294(a0);"), "{extra:?}: {arm}");
+    }
+    let off = run(&["decompile", lib, "arm_export", "--option", "flowmode", "off"], &WALK_OFF);
+    assert!(off.contains("halt_missing"), "armwalkmode and flowmode off: {off}");
+    assert_eq!(run(&["decompile", lib, "arm_export"], &ON), off);
     for (name, pointer_only, ternary) in [
         (
             "arm_interwork_stubs_o0_le32",
@@ -450,6 +477,25 @@ fn arm_exports_are_proven_and_pointer_only_thumb_keeps_its_mode() {
         let path = fixture(name);
         let pointer = kuna(&["decompile", path.to_str().unwrap(), pointer_only, "--addr"]);
         assert!(pointer.contains(ternary), "{name}: {pointer}");
+    }
+}
+
+/// The gcc-built interworking objects whose static helpers sit in the Thumb a
+/// `blx` below them wrote: by default every function decompiles without a bad
+/// decode, including the Thumb bodies after an A32 export a later `blx` write
+/// at that export would otherwise reach; with `armwalkmode off` some do not.
+#[test]
+fn whole_binary_decompile_of_gcc_interworking_objects_has_no_bad_decode() {
+    for name in [
+        "arm_interwork_stubs_o0_le32",
+        "arm_interwork_stubs_o2_le32",
+        "arm_noreturn_site_le32",
+    ] {
+        let path = fixture(name);
+        let lib = path.to_str().unwrap();
+        let all = kuna(&["decompile-all", lib]);
+        assert!(!all.contains("halt_"), "{name}: {all}");
+        assert!(run(&["decompile-all", lib], &WALK_OFF).contains("halt_"), "{name}");
     }
 }
 

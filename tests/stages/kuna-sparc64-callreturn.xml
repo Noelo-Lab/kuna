@@ -1,0 +1,82 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:64:default">
+<!--
+    Issue #862, SPARC V9 (64-bit): the same dropped call result as
+    kuna-sparc-callreturn.xml.  SparcV9_64.cspec now kills o0, fd0 and fd2
+    (its output registers) at every call.
+
+        f1:  atoi(a0); a0 = (int4)a0 + 1; return a0;
+        fd:  dd(); *a2 = a0;
+
+    Stage: P4 calls and prototypes (call output trials).  No option.
+    Source (clang 14 -fintegrated-as -fno-pic, sparcv9-linux-gnu; the calls
+    are relocated to undefined stubs at 0x80000+), -O2 at 0x10000 and -O0
+    (names suffixed _O0) at 0x20000:
+        int f1(const char *s) { return atoi(s) + 1; }
+        char *f2(const char *s) { char *p = getenv(s); return p ? p + 1 : 0; }
+        int f3(const char *a, const char *b) { int x = atoi(a); int y = atoi(b); return x - y; }
+        void fd(double x, double *p) { *p = dd(x); }
+    Asserts #1-#5: each call's result is used where the code uses it.
+    Assert #6: no call prints as a bare statement with its result dropped.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+9de3bf504001bfff90100018b0022001b13e200081c7e00881e800009de3bf50
+4001c03890100018b002200180a22000b164700081c7e00881e800009de3bf50
+4001bff090100018b01000084001bfed90100019b0260008b13e200081c7e008
+81e800009de3bf504001c06601000000c13e400081c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="f1"/>
+<symbol space="ram" offset="0x1001c" name="f2"/>
+<symbol space="ram" offset="0x1003c" name="f3"/>
+<symbol space="ram" offset="0x10064" name="fd"/>
+<bytechunk space="ram" offset="0x20000" readonly="true">
+9de3bf40f077a7f740017ffed05fa7f7b0022001b13e200081c7e00881e80000
+9de3bf30f077a7f740018036d05fa7f7d077a7eff05fa7ef80a6200002680008
+010000001080000201000000f05fa7efb006200110800005f077a7e7b0102000
+10800002f077a7e7f05fa7e781c7e00881e800009de3bf30f077a7f7f277a7ef
+40017fe0d05fa7f7d027a7eb40017fddd05fa7efd027a7e7f007a7ebf207a7e7
+b0260019b13e200081c7e00881e800009de3bf40c13fa7f7f277a7ef40018051
+c11fa7f7f05fa7efc13e000081c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x20000" name="f1_O0"/>
+<symbol space="ram" offset="0x20020" name="f2_O0"/>
+<symbol space="ram" offset="0x20074" name="f3_O0"/>
+<symbol space="ram" offset="0x200b0" name="fd_O0"/>
+<symbol space="ram" offset="0x80000" name="atoi"/>
+<symbol space="ram" offset="0x80100" name="getenv"/>
+<symbol space="ram" offset="0x80200" name="dd"/>
+</binaryimage>
+<script>
+  <com>lo fu f1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f1_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f2_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f3_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fd_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="sparc64-callreturn #1: f1 returns atoi's result plus one (O2 and O0)" min="2" max="2">return atoi\(a0\) \+ 1;</stringmatch>
+<stringmatch name="sparc64-callreturn #2: f2 tests getenv's result (O2 and O0)" min="2" max="2">v1 = getenv\(a\d\);</stringmatch>
+<stringmatch name="sparc64-callreturn #3: f3 keeps the first atoi result (O2 and O0)" min="2" max="2">v1 = atoi\(a0\);</stringmatch>
+<stringmatch name="sparc64-callreturn #4: f3 subtracts the second atoi result (O2 and O0)" min="2" max="2">return v1 - atoi\((a1|v2)\);</stringmatch>
+<stringmatch name="sparc64-callreturn #5: fd stores dd's fd0 result (O2 and O0)" min="2" max="2">= dd\(</stringmatch>
+<stringmatch name="sparc64-callreturn #6: no call result is dropped" min="0" max="0">^\s*(atoi|getenv|dd)\(</stringmatch>
+</decompilertest>

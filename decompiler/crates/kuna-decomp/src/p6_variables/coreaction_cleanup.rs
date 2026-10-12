@@ -1520,7 +1520,11 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
     if crate::p6_variables::kuna_pointeevalue::load_crosses_write(data, vn) {
         return false;
     }
-    if (data.obank().get(def).map(|o| o.is_call()).unwrap_or(false) || opc == OpCode::CPUI_LOAD)
+    // (kuna syscallregs) a system call's error flag reads like the call it
+    // follows, so it is printed ahead of any later call as well.
+    if (data.obank().get(def).map(|o| o.is_call()).unwrap_or(false)
+        || opc == OpCode::CPUI_LOAD
+        || crate::kuna_syscallregs::is_error_flag(data, def))
         && has_cover
     {
         for callop in crate::kuna_syscallregs::memory_calls(data).into_iter()
@@ -1990,6 +1994,7 @@ impl Action for ActionCopyMarker {
         data.with_covermerge(|merge, data| {
             merge.mark_internal_copies(data);
         });
+        crate::p6_variables::kuna_undefinedcopy::mark(data);
         0
     }
 }
@@ -2863,10 +2868,8 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 // Reuse the containing entry's Symbol (the parameter / mapped
                 // local).  `resolve_default_name`'s namerec rename
                 // (coreaction.cc:3087-3094) still applies for an undefined-named
-                // whole-symbol cover: rerun it so a promoted scalar stack local
-                // renders `v1` rather than `$$undefNNN`.  It re-queries the same
-                // entry via `findOverlap`; for a non-conflicting hit the two queries
-                // agree.
+                // whole-symbol cover. Keep the selected entry's identity across
+                // naming; another register lifetime may occupy the same storage.
                 // lookForFuncParamNames override (coreaction.cc:2992): a sub-function's
                 // locked parameter name for this argument high wins over the `vN`
                 // default for an undefined whole-symbol cover (the spill struct local
@@ -2878,7 +2881,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                             None => rec,
                         });
                 let resolved = data.get_scope_local_mut().and_then(|lm| {
-                    lm.resolve_default_name_override(&v_addr, v_size, &mut base, rec_name.as_deref())
+                    lm.resolve_default_name_for_link(&info, v_size, &mut base, rec_name.as_deref())
                 });
                 let (sym_name, sym_off, sym_type) = match resolved {
                     Some(t) => t,

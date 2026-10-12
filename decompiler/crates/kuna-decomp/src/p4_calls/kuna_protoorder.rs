@@ -581,14 +581,19 @@ fn family_refuses(data: &Funcdata, vn: VarnodeId, reading: Reading, ct: &Datatyp
     let mut regions: Option<Vec<(i64, Option<i64>)>> = None;
     let family = value_family(data, vn);
     let members: std::collections::HashSet<VarnodeId> = family.iter().copied().collect();
+    let mut globals: Vec<(Address, int4)> = Vec::new();
     for &v in &family {
         let Some(node) = data.vbank().get(v) else { continue };
+        let float_global = float_vote && node.is_persist() && node.get_size() == ct.get_size();
         if node.is_type_lock()
-            || node.is_persist()
+            || (node.is_persist() && !float_global)
             || inside_a_frame_aggregate(data, node, &mut regions)
             || (v != vn && addresses_a_frame_object(data, v))
         {
             return true;
+        }
+        if float_global {
+            globals.push((node.get_addr().clone(), node.get_size()));
         }
         if float_vote && node.is_input() && !a_float_can_arrive_in(data, node) {
             return true;
@@ -652,7 +657,13 @@ fn family_refuses(data: &Funcdata, vn: VarnodeId, reading: Reading, ct: &Datatyp
         }
     }
     match class {
-        Some(Class::Float) => integer_seen || bits_seen || handed_on || (loaded_elsewhere && !float_seen),
+        Some(Class::Float) => {
+            integer_seen
+                || bits_seen
+                || handed_on
+                || (loaded_elsewhere && !float_seen)
+                || globals.iter().any(|(at, size)| !crate::kuna_floatglobals::float_only(data, at, *size))
+        }
         Some(Class::Pointer) => float_seen || integer_seen || pointee_refuses(data, &family, ct, 0),
         _ => float_seen,
     }
@@ -1106,6 +1117,20 @@ fn printed_reader_class(data: &Funcdata, call: OpId, slot: int4) -> Option<Class
     data.kuna_callee_param_float(key, index).map(|f| if f { Class::Float } else { Class::Integer })
 }
 
+/// The width of the float the call `call` reads at argument `slot`: a declared
+/// parameter's, or the type the callee's own decompile stated for its parameter
+/// at that position.  `None` where neither is a float, or no width is known.
+pub(crate) fn float_read_width(data: &Funcdata, call: OpId, slot: int4) -> Option<int4> {
+    let float = |t: &Datatype| (t.get_metatype() == type_metatype::TYPE_FLOAT).then(|| t.get_size());
+    let fc = data.get_call_specs(data.get_call_specs_index(call)?);
+    if let Some(param) = fc.proto().get_param(slot - 1).filter(|p| p.is_type_locked()) {
+        return param.get_type().and_then(|t| float(t));
+    }
+    let index = (slot - 1) as usize;
+    data.kuna_protoorder_types(fc.get_entry_address())
+        .and_then(|s| s.inputs.get(index).and_then(|(_, _, t)| float(t)))
+}
+
 /// Does the call `call` read its argument `slot` as an integer or a pointer, by
 /// its declaration or the type the callee's own decompile stated?
 pub(crate) fn reads_other_than_a_float(data: &Funcdata, call: OpId, slot: int4) -> bool {
@@ -1454,20 +1479,7 @@ fn entry_facts(
     if reg_idx < 0 {
         return None;
     }
-    let sp = entry.get_space()?;
-    let key = (sp.get_index(), entry.get_offset());
-    if let Some(d) = arch.kuna_callee_dead_cache.get(&key) {
-        return Some(Rc::clone(d));
-    }
-    let follow = crate::kuna_armfloatargs::applies(arch);
-    let probed = Rc::new(crate::kuna_calleedeadarg::probe_entry(
-        arch.translate(),
-        entry,
-        reg_idx,
-        follow,
-    ));
-    arch.kuna_callee_dead_cache.insert(key, Rc::clone(&probed));
-    Some(probed)
+    crate::kuna_calleedeadarg::probe_cached(arch, entry, reg_idx)
 }
 
 /// Where the model would put ONE more parameter past the ones in `pieces` --
@@ -1675,6 +1687,7 @@ pub fn park_recovered(
         Some(model) if model != storage => return Err(Decline::NonCanonicalStorage),
         Some(_) => {}
     }
+    pieces.output_storage = crate::kuna_vfpvariadic::parked_output(data.get_arch(), &pieces);
     arch.set_function_prototype_pieces_at(entry, pieces.clone());
     Ok(Recovered { pieces, trimmed })
 }

@@ -1,0 +1,50 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue `kuna-condstmts` (P8, sub-stage goto-quality).
+
+    ruleBlockOr folds a condition block into a `&&`/`||` operand when
+    BlockBasic::isComplex calls it simple.  That verdict is taken before
+    variables are merged, so a block whose loads later become explicit prints
+    as a long comma chain inside the `if`.
+
+    gcc -O1 x86-64 of:
+
+      int f(int *a, unsigned char *k)
+      { if (a[0] == 3 && a[6] == 10) {
+          unsigned char b0 = k[0], b1 = k[1], b2 = k[2], b3 = k[3];
+          if (check(a) == (b0 | b1 << 8 | b2 << 16 | (unsigned)b3 << 24)) {
+            a[8] = 1; say(1); return 1; } }
+        a[8] = 0; say(0); return 2; }
+
+    The four byte loads sit in callee-saved registers across the call to
+    `check`, so all four print as statements.
+
+    Pass 1 (default, option condstmts 3): the block printing four statements
+    before its test is not folded; the loads are statements inside the first
+    `if` -> assertions #1, #2.
+    Pass 2 (option condstmts off): the fold stands and the loads print as a
+    five-element comma chain in the condition -> assertion #3.
+-->
+<bytechunk space="ram" offset="0x401000">
+89f8c3c341564155415455534889fb833f037506837f180a741fc7432000000000bf00000000e8d8ffffffb8020000005b5d415c415d415ec3440fb6
+2e0fb66e01440fb67602440fb66603e8b0ffffff400fb6edc1e508450fb6f641c1e6104409f5450fb6ed4409ed41c1e4184409e539e875a6c7432001
+000000bf01000000e87effffffb801000000eba4
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="check"/>
+<symbol space="ram" offset="0x401003" name="say"/>
+<symbol space="ram" offset="0x401004" name="f"/>
+</binaryimage>
+<script>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condstmts off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="condstmts #1: the default declines the fold, so the outer test is the two plain comparisons (pass 1 only)" min="1" max="1">if \(\(\*a0 == 3\) &amp;&amp; \(a0\[6\] == 10\)\) \{</stringmatch>
+<stringmatch name="condstmts #2: the default prints the loads as statements of their own (pass 1 only)" min="1" max="1">v1 = \*a1;</stringmatch>
+<stringmatch name="condstmts #3: off, the loads fold into a comma chain inside the condition (pass 2 only)" min="1" max="1">v1 = \*a1, v2 = a1\[1\], v3 = a1\[2\], v4 = a1\[3\], </stringmatch>
+</decompilertest>

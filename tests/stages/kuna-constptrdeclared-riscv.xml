@@ -1,0 +1,47 @@
+<decompilertest>
+<binaryimage arch="RISCV:LE:64:RV64GC:gcc">
+<!--
+    kuna: a constant returned from a function whose declared return type is
+    not a pointer is not inferred as a pointer.  RISC-V lists the 2-byte
+    csreg space among the spaces a constant may point into, so a short
+    return of 1000 matched the CSR pmpaddr56 (csreg 0x3e8) and printed as
+    return (short)&pmpaddr56.
+
+    Stage / sub-stage: P5 const-pointer (p9_emit/coreaction_render.rs,
+    ActionConstantPtr check_copy).  No option: the declared return type
+    rules the constant out.  rl is the control: an 8-byte return never
+    matches the 2-byte space and printed 1000 before and after.
+
+    Source (clang -target riscv64-linux-gnu -march=rv64gc -O2, bytes verbatim):
+
+        short rq(int k) { return k > 0 ? 1000 : -1000; }
+        unsigned short ru(int k) { if (k > 5) return 0x3e8; return 7; }
+        long rl(int k) { return k > 0 ? 1000 : -1000; }
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+aa851305803e6344b000130580c18280aa8515461305803e6343b6001d458280
+aa851305803e6344b000130580c18280
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="rq"/>
+<symbol space="ram" offset="0x10010" name="ru"/>
+<symbol space="ram" offset="0x10020" name="rl"/>
+</binaryimage>
+<script>
+  <com>parse line extern int2 rq(int4 k);</com>
+  <com>parse line extern uint2 ru(int4 k);</com>
+  <com>parse line extern int8 rl(int4 k);</com>
+  <com>lo fu rq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ru</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CONSTPTRDECLARED-RV #1: no constant becomes a CSR address" min="0" max="0">pmpaddr</stringmatch>
+<stringmatch name="CONSTPTRDECLARED-RV #2: the short, unsigned short and long returns print 1000" min="3" max="3">return 1000;</stringmatch>
+<stringmatch name="CONSTPTRDECLARED-RV #3: the other arms are unchanged" min="2" max="2">return -1000;</stringmatch>
+</decompilertest>

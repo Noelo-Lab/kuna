@@ -235,13 +235,15 @@ pub struct RelocLayout {
     /// (see [`crate::loader::kuna_relocrebase`]) — sections are laid out
     /// non-contiguously, so there is no single global offset.
     pub section_vma: HashMap<SectionIndex, u64>,
-    /// The undefined-symbol -> synthetic extern-slot map, keyed by the parsed
+    /// The undefined/COMMON symbol -> synthetic address map, keyed by the parsed
     /// object's own [`SymbolIndex`].  Same purpose as [`Self::section_vma`], for
     /// the externs.
     pub extern_addr: HashMap<SymbolIndex, u64>,
     /// The half-open `[lo, hi)` extent of the synthetic extern area, `None` when
     /// the object referenced no undefined symbol.
     pub extern_range: Option<(u64, u64)>,
+    /// Half-open extent of allocated ELF COMMON storage, separate from extern slots.
+    pub common_range: Option<(u64, u64)>,
     /// Public object-coordinate map for selectors and machine-readable output.
     pub section_info: Vec<RelocSectionInfo>,
     /// Defined and undefined callable symbols with their original provenance.
@@ -337,6 +339,11 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
     let mut extern_cursor = align_up(cursor.wrapping_add(0x1000), 0x1000);
     let mut extern_of: HashMap<SymbolIndex, u64> = HashMap::new();
     let mut extern_order: Vec<(SymbolIndex, u64)> = Vec::new();
+    let mut common_allocator = super::kuna_commonalloc::CommonAllocator::new(
+        extern_cursor,
+        file.symbols().filter(|symbol| symbol.section() == SymbolSection::Undefined).count(),
+        file.is_64(),
+    );
     // Externs reached through a PLT-relative relocation (`R_X86_64_PLT32`) or a
     // branch/call instruction field are *code targets* — even when the undefined
     // symbol is `STT_NOTYPE` (object `SymbolKind::Unknown`), which gcc emits for
@@ -364,6 +371,15 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         };
         // Collect first so the `laid` buffer can be borrowed mutably below.
         let relocs: Vec<(u64, object::Relocation)> = sec.relocations().collect();
+        if matches!(architecture, Architecture::Sparc | Architecture::Sparc32Plus)
+            && sec.kind() == SectionKind::Text
+        {
+            code_externs.extend(super::kuna_sparc_relcode::code_targets(
+                &laid[li].data,
+                &relocs,
+                little_endian,
+            ));
+        }
         for (offset, reloc) in relocs {
             let r_type = match reloc.flags() {
                 RelocationFlags::Elf { r_type } => Some(r_type),
@@ -420,6 +436,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                             &mut extern_of,
                             &mut extern_order,
                             &mut extern_cursor,
+                            &mut common_allocator,
                             architecture,
                         )
                     }
@@ -539,6 +556,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         section_vma: vma_of,
         extern_addr: extern_of,
         extern_range,
+        common_range: common_allocator.range(),
         section_info,
         symbol_info,
     }
@@ -559,7 +577,8 @@ fn symbol_binding<'data, S: ObjectSymbol<'data>>(sym: &S) -> String {
 
 /// Resolve a relocation's target symbol to a load address.  A defined symbol maps
 /// to `section_load_vma + st_value`; an *undefined* symbol is bound to a fresh
-/// synthetic extern slot (allocated on first reference and reused after).
+/// synthetic extern slot. ELF COMMON symbols use separate size/alignment-aware
+/// storage; both address bindings are reused on subsequent references.
 /// Absolute symbols pass through.  `None` for a symbol in a non-laid section
 /// (e.g. a `.debug_*`-only symbol) — the caller warns and skips.
 fn resolve_symbol(
@@ -569,6 +588,7 @@ fn resolve_symbol(
     extern_of: &mut HashMap<SymbolIndex, u64>,
     extern_order: &mut Vec<(SymbolIndex, u64)>,
     extern_cursor: &mut u64,
+    common_allocator: &mut super::kuna_commonalloc::CommonAllocator,
     architecture: Architecture,
 ) -> Option<ResolvedRelocationTarget> {
     let sym = file.symbol_by_index(idx).ok()?;
@@ -587,10 +607,17 @@ fn resolve_symbol(
                     thumb: None,
                 });
             }
-            let a = *extern_cursor;
-            *extern_cursor = extern_cursor.wrapping_add(16);
+            let is_elf_common = sym.section() == SymbolSection::Common
+                && file.format() == object::BinaryFormat::Elf;
+            let a = if is_elf_common {
+                common_allocator.allocate(sym.size(), sym.address())?
+            } else {
+                let a = *extern_cursor;
+                *extern_cursor = extern_cursor.wrapping_add(16);
+                extern_order.push((idx, a));
+                a
+            };
             extern_of.insert(idx, a);
-            extern_order.push((idx, a));
             Some(ResolvedRelocationTarget {
                 address: a,
                 thumb: None,
@@ -1379,6 +1406,91 @@ mod tests {
             slot,
             "the patched branch must reach the named slot"
         );
+    }
+
+    #[test]
+    fn sparc_split_relocation_names_only_matching_jmpl_targets() {
+        for (name, high, low, same_symbol, addend, expected) in [
+            ("tail", 0x03000000u32, 0x81c06000u32, true, 0, true),
+            ("call", 0x03000000, 0x9fc06000, true, 0, true),
+            ("load", 0x03000000, 0xc2006000, true, 0, false),
+            ("address", 0x03000000, 0x82106000, true, 0, false),
+            ("other_register", 0x03000000, 0x81c0a000, true, 0, false),
+            ("register_jump", 0x03000000, 0x81c04000, true, 0, false),
+            ("zero_register", 0x01000000, 0x81c02000, true, 0, false),
+            ("other_symbol", 0x03000000, 0x81c06000, false, 0, false),
+            ("interior_target", 0x03000000, 0x81c06000, true, 4, false),
+        ] {
+            let mut object =
+                write::Object::new(BinaryFormat::Elf, Architecture::Sparc, Endianness::Big);
+            let text = object.section_id(write::StandardSection::Text);
+            let code: Vec<u8> = high
+                .to_be_bytes()
+                .into_iter()
+                .chain(low.to_be_bytes())
+                .collect();
+            object.append_section_data(text, &code, 4);
+            let target = add_symbol(
+                &mut object,
+                b"provider",
+                write::SymbolSection::Undefined,
+                0,
+                SymbolKind::Unknown,
+            );
+            let high_target = if same_symbol {
+                target
+            } else {
+                add_symbol(
+                    &mut object,
+                    b"other",
+                    write::SymbolSection::Undefined,
+                    0,
+                    SymbolKind::Unknown,
+                )
+            };
+            add_elf_relocation(&mut object, text, 0, high_target, object::elf::R_SPARC_HI22);
+            object
+                .add_relocation(
+                    text,
+                    write::Relocation {
+                        offset: 4,
+                        symbol: target,
+                        addend,
+                        flags: RelocationFlags::Elf {
+                            r_type: object::elf::R_SPARC_LO10,
+                        },
+                    },
+                )
+                .expect("add low relocation");
+            let bytes = object.write().expect("write SPARC object");
+            let file = object::File::parse(&*bytes).expect("parse SPARC object");
+            let layout = layout_relocatable(&file, &ElfFormat);
+            assert_eq!(
+                layout
+                    .funcsyms
+                    .iter()
+                    .any(|(_, symbol)| symbol == b"provider"),
+                expected,
+                "{name}",
+            );
+            if expected {
+                assert!(
+                    layout.diagnostics.is_empty(),
+                    "{name}: {:?}",
+                    layout.diagnostics
+                );
+                let slot = layout
+                    .funcsyms
+                    .iter()
+                    .find(|(_, symbol)| symbol == b"provider")
+                    .unwrap()
+                    .0;
+                let patched = &layout.segments[0].1;
+                let high = u32::from_be_bytes(patched[..4].try_into().unwrap());
+                let low = u32::from_be_bytes(patched[4..8].try_into().unwrap());
+                assert_eq!(((high & 0x3fffff) << 10 | low & 0x3ff) as u64, slot);
+            }
+        }
     }
 
     #[test]

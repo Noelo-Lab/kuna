@@ -109,6 +109,9 @@ impl Rule for RuleBoolNegate {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        if crate::kuna_floatnegation::fold_guarded_negate(data, op) {
+            return 1;
+        }
         let vn = data.obank().get(op).expect("RuleBoolNegate: stale op").get_in(0).unwrap();
         let v = data.vbank().get(vn).expect("RuleBoolNegate: stale vn");
         if !v.is_written() {

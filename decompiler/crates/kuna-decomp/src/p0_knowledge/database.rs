@@ -2368,9 +2368,8 @@ impl Database {
         out
     }
 
-    /// The `(name, type, addr, all_flags)` specs for every Symbol mapped into a
-    /// scope's space (the console-mapped `map addr` symbols), so they can be
-    /// re-created in a freshly-built `Funcdata` (see `ScopeLocal::mapped_symbol_specs`).
+    /// The `(name, type, addr, all_flags)` specs for non-parameter Symbols mapped into
+    /// a scope's space, for a freshly-built `Funcdata` (`ScopeLocal::mapped_symbol_specs`).
     pub fn scope_space_symbol_specs(
         &self,
         scope: ScopeId,
@@ -2390,6 +2389,9 @@ impl Database {
             }
             let sym = entry.symbol;
             let symbol = &self.symbols[sym];
+            if symbol.get_category() == symbol_category::FUNCTION_PARAMETER {
+                continue;
+            }
             let ct = match &symbol.dtype {
                 Some(c) => Rc::clone(c),
                 None => continue,
@@ -2440,7 +2442,7 @@ impl Database {
         out
     }
 
-    /// The `(name, type, addr, all_flags)` specs for every **addr-tied** (empty-
+    /// The `(name, type, addr, all_flags)` specs for every **addr-tied** non-parameter (empty-
     /// `uselimit`) Symbol mapped into this scope in a space OTHER than
     /// `skip_space_index`.  The console `map addr <ramaddr> <type> <name>` form
     /// (C++ `IfcMapaddress` with `dcp->fd != 0`) adds a global RAM/data Symbol into
@@ -2481,7 +2483,9 @@ impl Database {
                 let symbol = &self.symbols[sym];
                 // Only addr-tied (usepoint-independent) symbols here; usepoint-scoped
                 // ones go through `scope_usepoint_symbol_specs` with their use address.
-                if (symbol.flags & varnode_flags::addrtied) == 0 {
+                if (symbol.flags & varnode_flags::addrtied) == 0
+                    || symbol.get_category() == symbol_category::FUNCTION_PARAMETER
+                {
                     continue;
                 }
                 let ct = match &symbol.dtype {
@@ -2495,7 +2499,7 @@ impl Database {
     }
 
     /// The `(name, type, addr, all_flags, usepoint)` specs for every **usepoint-
-    /// scoped** Symbol mapped into this scope (across ALL spaces): a non-addr-tied
+    /// scoped** non-parameter Symbol mapped into this scope (across ALL spaces): a non-addr-tied
     /// SymbolEntry whose `uselimit` restricts it to a code-address range (e.g. the
     /// `type varnode %EAX(pc) int4 tmp` directive's register Symbol).  Unlike
     /// [`scope_space_symbol_specs`] (which carries the addr-tied stack `map addr`
@@ -2526,7 +2530,9 @@ impl Database {
                 // addr-tied / empty-uselimit symbols are usepoint-independent and
                 // already carried by `scope_space_symbol_specs` for the stack space;
                 // here we only carry the genuinely usepoint-scoped ones.
-                if (symbol.flags & varnode_flags::addrtied) != 0 || entry.uselimit.empty() {
+                if (symbol.flags & varnode_flags::addrtied) != 0 || entry.uselimit.empty()
+                    || symbol.get_category() == symbol_category::FUNCTION_PARAMETER
+                {
                     continue;
                 }
                 let ct = match &symbol.dtype {

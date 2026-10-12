@@ -16,6 +16,7 @@ use crate::funcdata::Funcdata;
 pub struct StorageSource {
     pub address: Address,
     pub size: int4,
+    pub write_address: Option<Address>,
 }
 
 pub type StorageComment = (String, Rc<AddrSpace>, u64);
@@ -181,9 +182,12 @@ pub fn high_comment(
         {
             address = &address - symbol_offset as i64;
         }
-        if let Some((text, space, offset)) = storage_comment(fd, arch, &address, varnode.get_size())
-        {
-            homes.entry(text).or_insert((space, offset));
+        if !fd.kuna_is_call_transport(id) {
+            if let Some((text, space, offset)) =
+                storage_comment(fd, arch, &address, varnode.get_size())
+            {
+                homes.entry(text).or_insert((space, offset));
+            }
         }
         for source in fd.kuna_storage_sources(id) {
             if let Some((text, space, offset)) =

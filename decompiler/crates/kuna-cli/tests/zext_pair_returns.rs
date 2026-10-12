@@ -3,7 +3,7 @@
 //! gets the zero-extension the binary performs. Narrowed to the low word it
 //! printed as `int`, and `(unsigned long long)ins16(0x7fff, 0)` became
 //! `0xffffffff80000000` where the source returns `0x80000000`.
-mod common;
+use crate::common;
 use common::process;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
@@ -334,6 +334,7 @@ fn a_zero_extended_pair_return_round_trips_through_the_printed_c() {
             std::fs::write(&src, format!("{PRELUDE}{text}\n{WIDTHS}")).unwrap();
             let out = Command::new(compilers[0])
                 .args(["-std=gnu11", "-w", "-m32", "-fsyntax-only", src.to_str().unwrap()])
+                .args(common::CC_GCC15_DEMOTE)
                 .output()
                 .expect("spawn the C compiler");
             assert!(
@@ -352,6 +353,7 @@ fn a_zero_extended_pair_return_round_trips_through_the_printed_c() {
                 std::fs::write(&src, format!("#include <stdio.h>\n{PRELUDE}{text}\n{SOURCE}\n{MAIN}")).unwrap();
                 let out = Command::new(cc)
                     .args(["-std=gnu11", "-w", "-fwrapv", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .args(common::CC_GCC15_DEMOTE)
                     .output()
                     .expect("spawn the C compiler");
                 assert!(

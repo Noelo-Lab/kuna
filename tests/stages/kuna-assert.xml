@@ -8,6 +8,8 @@
         routes to the EXISTING stores (option database, symbol DB + namelock);
       - the applied assertions have exactly the effect of the legacy surfaces
         they wrap (compareform option; rename+namelock);
+      - the renamed parameter is declared in the signature as well as read in
+        the body, including after the console rebuilds its prototype store;
       - `kassert list` reports each assertion with its strength and its
         COMPUTED MINIMAL REWIND SCOPE (P3 for the canonicalization config,
         P9 for the cosmetic name) - the observable half of scoped re-run.
@@ -26,11 +28,12 @@
   <com>kassert P3 comparison-canonicalization original</com>
   <com>kassert P9 naming-policy x xvar hint</com>
   <com>decompile</com>
+  <com>decompile</com>
   <com>print C</com>
   <com>kassert list</com>
   <com>quit</com>
 </script>
-<stringmatch name="KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)" min="1" max="1">if \(xvar &lt;= 8\)</stringmatch>
+<stringmatch name="KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)" min="2" max="2">^int4 gh558\(int4 xvar\)$|^  if \(xvar &lt;= 8\)$</stringmatch>
 <stringmatch name="KUNA-ASSERT #2: kassert list reports the P3 config assertion with rewind scope" min="1" max="1">\[gh558\] P3/comparison-canonicalization original  strength=HARD  rewind-&gt;P3</stringmatch>
 <stringmatch name="KUNA-ASSERT #3: kassert list reports the cosmetic P9 assertion as HINT via HARD mechanism" min="1" max="1">\[gh558\] P9/naming-policy x xvar  strength=HINT \(applied via HARD mechanism\)  rewind-&gt;P9</stringmatch>
 </decompilertest>

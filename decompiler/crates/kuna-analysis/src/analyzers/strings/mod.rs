@@ -45,6 +45,7 @@ pub mod kuna_ptrslot;
 pub mod kuna_stringinv;
 pub mod kuna_utf8strings;
 pub mod kuna_widestrings;
+pub mod kuna_widestrings32;
 
 use object::read::{Object, ObjectSection};
 use object::SectionKind;

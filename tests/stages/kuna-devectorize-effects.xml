@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    De-vectorized reduction side effects, `option devectorize off|on`.
+    Hand-written variants of the clang -O3 -fno-unroll-loops x86-64 byte sum
+    (four bytes per iteration, four dword lanes, fold, remainder loop) whose
+    two exits disagree on a global store at 0x3000. sum_flag stores 1 on the
+    early return after the fold and 2 after the remainder loop. sum_count
+    counts the remainder iterations in r9d, zeroed on both loop entries, and
+    stores the count after the remainder loop only. Re-rolling either into a
+    scalar loop from zero would change the stored value whenever the guard
+    takes the vector arm.
+
+    Pass 1 (`option devectorize off`) and pass 2 (`option devectorize on`)
+    both keep the guard's vector arm in both functions (assertion #1) and the
+    early return's store of 1 (assertion #2).
+
+    This self-contained regression embeds 250 bytes of x86-64 code loaded at
+    0x1000 and 0x1100.
+-->
+<bytechunk space="ram" offset="0x1000">
+85f6740d89f183fe04730931d231c0eb4731c0c389ca83e2fc660fefc031c0
+660fefc9660f6e1407660f60d0660f61d0660ffeca4883c0044839c275e666
+0f70c1ee660ffec1660f70c855660ffec8660f7ec84839ca741b0fb6341701
+f04883c2014839d175f1c704250030000002000000c3c70425003000000100
+0000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1100">
+85f6741089f183fe04730c31d231c04531c9eb4a31c0c389ca83e2fc660fef
+c031c0660fefc9660f6e1407660f60d0660f61d0660ffeca4883c0044839c2
+75e6660f70c1ee660ffec1660f70c855660ffec8660f7ec84531c94839ca74
+1c0fb6341701f04183c1014883c2014839d175ed44890c2500300000c3c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="sum_flag"/>
+<symbol space="ram" offset="0x1100" name="sum_count"/>
+</binaryimage>
+<script>
+  <com>parse line extern unsigned int sum_flag(unsigned char *bytes, unsigned int length);</com>
+  <com>parse line extern unsigned int sum_count(unsigned char *bytes, unsigned int length);</com>
+  <com>option devectorize off</com>
+  <com>lo fu sum_flag</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option devectorize on</com>
+  <com>lo fu sum_flag</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="devectorize effects #1: both passes keep the vector arm of both functions" min="4" max="4">&amp; 0xfffffffc</stringmatch>
+<stringmatch name="devectorize effects #2: both passes keep the early return's store of 1" min="2" max="2">dat_3000 = 1;</stringmatch>
+</decompilertest>

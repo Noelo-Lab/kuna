@@ -2541,3 +2541,71 @@ mod w10_printc_cast_render {
         assert_eq!(render_cast(&fd, op, false), "(int8)0x2a");
     }
 }
+
+/// Pointer-argument records belong to one plain render of one function: a
+/// markup pass over another function, or a render nobody asked to record,
+/// never hands back a stale record.
+mod pointer_argument_records {
+    use super::*;
+    use crate::context::ArchContext;
+    use crate::funcdata::Funcdata;
+    use kuna_base::address::Address;
+    use kuna_base::space::{
+        addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
+    };
+    use std::rc::Rc;
+
+    fn fd_at(offset: u64) -> Funcdata {
+        let mut m = AddrSpaceManager::new();
+        m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+        let ram = Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            2,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        ));
+        m.insert_space(Rc::clone(&ram)).unwrap();
+        let glb = Rc::new(ArchContext::new(m));
+        Funcdata::new("f", "f", glb, Address::new(ram, offset), 0x1000, 0x20).unwrap()
+    }
+
+    #[test]
+    fn records_only_on_request_and_never_for_another_function() {
+        let (a, b) = (fd_at(0x1000), fd_at(0x2000));
+        let mut print = PrintC::new();
+        print.begin_pointer_record(&a);
+        assert!(print.take_pointer_arguments("").is_none(), "not requested");
+
+        print.set_record_pointer_arguments(true);
+        print.begin_pointer_record(&a);
+        print.set_markup(true);
+        print.begin_pointer_record(&a);
+        let record = print.take_pointer_arguments("").expect("same function keeps its record");
+        assert_eq!(record.entry, ("ram".to_string(), 0x1000));
+
+        print.set_markup(false);
+        print.set_record_pointer_arguments(true);
+        print.begin_pointer_record(&a);
+        print.set_markup(true);
+        print.begin_pointer_record(&b);
+        assert!(print.take_pointer_arguments("").is_none(), "markup pass over another function");
+
+        print.set_markup(false);
+        print.set_record_pointer_arguments(true);
+        print.begin_pointer_record(&a);
+        print.take_pointer_arguments("");
+        print.begin_pointer_record(&b);
+        assert!(print.take_pointer_arguments("").is_none(), "taking stops recording");
+
+        print.set_record_pointer_arguments(true);
+        print.begin_pointer_record(&a);
+        print.set_record_pointer_arguments(true);
+        assert!(print.take_pointer_arguments("").is_none(), "a new request drops the old record");
+    }
+}

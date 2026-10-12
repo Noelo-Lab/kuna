@@ -1,0 +1,31 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v5t:default">
+<!--
+    Kuna #849 signed consumers: converting the LSL shiftee to uint4 makes
+    counts 0..31 defined, but the guarded conditional must still deliver the
+    original signed result when its value is consumed by signed code.
+
+    ShiftNegative tests the ARM N/V signed comparison after a register LSL.
+    ShiftArithmetic consumes the same result with ASR #31, which distinguishes
+    a signed result (-1 for a set sign bit) from an unsigned 0/1 result.
+-->
+<bytechunk space="ram" offset="0x10000">0110a0e31120a0e1000052e30100a0b30000a0a31eff2fe1</bytechunk>
+<bytechunk space="ram" offset="0x10100">0110a0e31120a0e1c20fa0e11eff2fe1</bytechunk>
+<symbol space="ram" offset="0x10000" name="ShiftNegative"/>
+<symbol space="ram" offset="0x10100" name="ShiftArithmetic"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 ShiftNegative(uint4 count);</com>
+  <com>parse line extern int4 ShiftArithmetic(uint4 count);</com>
+  <com>load function ShiftNegative</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftArithmetic</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ARM LSL signed consumers #1: cast the defined unsigned shift back to its signed p-code result type" min="2" max="2">\(int4\)\s*\(\s*\(uint4\)</stringmatch>
+<stringmatch name="ARM LSL signed consumers #2: preserve the signed comparison with zero" min="1" max="1">(&lt;\s*0|&lt;=\s*-1)</stringmatch>
+<stringmatch name="ARM LSL signed consumers #3: preserve arithmetic right shift of the sign bit" min="1" max="1">&gt;&gt;\s*(31|0x1f)</stringmatch>
+</decompilertest>

@@ -1205,10 +1205,17 @@ pub fn kuna_banner_text() -> String {
 /// every setOptions after `reset_wire_defaults` — the reset-then-apply
 /// contract): Ghidra-convention fallback naming plus the CLI `aggressive`
 /// ENGINE-TIER preset.  See the build_architecture doc comment for why.
+/// `calltargettype` stays off: its function-pointer types are anonymous
+/// `<type metatype="code">` elements, which `PcodeDataTypeManager.decodeDataType`
+/// reads back as `undefined1`, so a retyped local would reach the program as
+/// `undefined1 *` where it is `code *` today.
 fn apply_ghidra_mode_defaults(arch: &mut Architecture) {
     arch.name_style_ghidra = true;
     if let Some(overrides) = kuna_decomp::modes::mode_overrides("aggressive") {
         for (name, value) in overrides {
+            if *name == "calltargettype" {
+                continue;
+            }
             if kuna_decomp::options::KUNA_OPTION_NAMES.contains(name) {
                 // Engine-tier knob: apply.  Unknown/analysis-tier names have
                 // no engine seam in ghidra mode and are skipped.

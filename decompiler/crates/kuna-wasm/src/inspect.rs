@@ -15,7 +15,7 @@ use kuna_console::inspect::{
 };
 use kuna_console::project::FuncResult;
 
-use crate::json::{arr, assertions_json, json_object_location, json_str, json_str_array, Obj};
+use crate::json::{arr, assertions_json, hex_str, json_object_location, json_str, json_str_array, Obj};
 
 /// The largest `read` a caller may ask for.
 pub const READ_MAX: u64 = 64 * 1024;
@@ -180,6 +180,7 @@ fn function_json(prog: &ConsoleProgram, f: &FuncResult, kind: &str, sections: &[
     let instructions = arr(rows.iter().map(|r| {
         let address = prog.output_code_offset(r.addr);
         let lines = lines_at.get(&address).map(Vec::as_slice).unwrap_or(&[]);
+        let flow = prog.insn_flow(r.addr);
         Obj::new()
             .addr("address", address)
             .num("offset", address as i128 - entry_out)
@@ -190,6 +191,11 @@ fn function_json(prog: &ConsoleProgram, f: &FuncResult, kind: &str, sections: &[
             .str("text", &r.text())
             .opt_num("file_offset", file_offset(sections, r.addr))
             .raw("lines", &arr(lines.iter().map(usize::to_string)))
+            .opt_str("flow", flow.as_ref().map(|f| f.kind.as_str()))
+            .raw(
+                "targets_hex",
+                &arr(flow.iter().flat_map(|f| &f.targets).map(|&t| hex_str(prog.output_code_offset(t)))),
+            )
             .end()
     }));
     Obj::new()

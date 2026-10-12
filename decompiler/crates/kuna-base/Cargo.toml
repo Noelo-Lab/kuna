@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "kuna-base"
 description = "kuna Rust port: foundation layer (addresses, spaces, marshaling, raw p-code)"
 version.workspace = true
@@ -13,3 +14,7 @@ flate2.workspace = true
 
 [lints]
 workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

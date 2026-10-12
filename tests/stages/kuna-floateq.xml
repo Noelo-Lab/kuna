@@ -1,0 +1,152 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-890. Stage P9, cast insertion (coreaction_casts.rs, get_input_cast_equal).
+
+    An integer == or != on the bits of a float-typed value printed as a C
+    float comparison: (v.u == 0x80000000u) printed a0 == -0.0, true for +0.0
+    too; (v.u & 0x7fffffff) == 0x7fc00000 printed ABS(a0) == NAN, never true;
+    and an == of two floats' bits printed a0 == a1, false for equal NaNs and
+    true for -0.0 against 0.0. The ordered integer compares already
+    reinterpreted the float. Now the equality compares the bits as an integer
+    too, through the union reinterpretation, with the constant in hex, unless
+    a float comparison is exact: against a normal number or an infinity whose
+    literal C reads back as that value (the bits of 1.0f keep a0 == 1.0), or
+    against +0.0 when the other side is an ABS (ABS(a0) == 0.0). A FLOAT_EQUAL
+    or FLOAT_NOTEQUAL stays a == b.
+
+    The XML wrapper only provides the harness architecture. The script loads
+    floateq.c (source beside the fixtures) built by gcc -O2 and clang -O2 for
+    x86-64, clang -O2 for AArch64 and clang -O2 for Cortex-M4F hard-float,
+    whose doubles are soft-float and are not loaded.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floateq_x86_64_gcc_O2.o</com>
+  <com>read symbols</com>
+  <com>load function fq_negzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_qnan</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_dnegzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_dqnan</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_abszero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_feq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_dfne</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floateq_x86_64_clang_O2.o</com>
+  <com>read symbols</com>
+  <com>load function fq_negzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_qnan</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_dnegzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_dqnan</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_abszero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_feq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_dfne</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floateq_a64_O2.o</com>
+  <com>read symbols</com>
+  <com>load function fq_negzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_qnan</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_dnegzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_dqnan</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_abszero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_feq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_dfne</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floateq_m4f_O2.o</com>
+  <com>read symbols</com>
+  <com>load function fq_negzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_qnan</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_abszero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fq_feq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FLOATEQ #1: the bits of -0.0 compare as an integer" min="4" max="4">\{ \.from = a0 \}\)\.to [!=]= 0x80000000\)</stringmatch>
+<stringmatch name="FLOATEQ #2: the quiet NaN pattern compares as an integer" min="4" max="4">\{ \.from = ABS\(a0\) \}\)\.to [!=]= 0x7fc00000\)</stringmatch>
+<stringmatch name="FLOATEQ #3: two floats' bits both reinterpret" min="4" max="4">\{ \.from = a0 \}\)\.to [!=]= \(\(union \{ float from; unsigned int to; \}\)\{ \.from = a1 \}\)\.to\)</stringmatch>
+<stringmatch name="FLOATEQ #4: the bits of a double's -0.0 compare as an integer" min="3" max="3">\(\(union \{ double from; unsigned long long to; \}\)\{ \.from = a0 \}\)\.to [!=]= 0x8000000000000000\)</stringmatch>
+<stringmatch name="FLOATEQ #5: a double's quiet NaN pattern compares as an integer" min="3" max="3">\(\(union \{ double from; unsigned long long to; \}\)\{ \.from = ABS\(a0\) \}\)\.to [!=]= 0x7ff8000000000000\)</stringmatch>
+<stringmatch name="FLOATEQ #6: no float comparison with -0.0 or NAN is left" min="0" max="0">[!=]= (-0\.0|-?NAN)\b</stringmatch>
+<stringmatch name="FLOATEQ #7: the bits of 1.0f keep the exact float comparison" min="4" max="4">if \(a0 [!=]= 1\.0\)</stringmatch>
+<stringmatch name="FLOATEQ #10: the magnitude's bits against zero keep the exact float comparison" min="4" max="4">if \(ABS\(a0\) [!=]= 0\.0\)</stringmatch>
+<stringmatch name="FLOATEQ #8: a float == stays a float comparison" min="4" max="4">\(?a0 == a1\)?( &amp; 1)?;</stringmatch>
+<stringmatch name="FLOATEQ #9: a double != stays a float comparison" min="3" max="3">\(?a0 != a1\)?( &amp; 1)?;</stringmatch>
+</decompilertest>

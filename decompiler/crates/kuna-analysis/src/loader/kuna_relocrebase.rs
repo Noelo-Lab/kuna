@@ -129,6 +129,9 @@ pub fn rebased_view(file: &object::File, bytes: &[u8]) -> Option<RebasedView> {
     if let Some((lo, hi)) = layout.extern_range {
         ranges.push((lo, hi));
     }
+    if let Some(range) = layout.common_range {
+        ranges.push(range);
+    }
     Some(RebasedView { bytes: out, ranges })
 }
 
@@ -429,6 +432,7 @@ pub fn retain_in_image(out: &mut AnalysisOutput, view: &RebasedView) {
     out.readonly.retain(keep_range);
     out.externref.retain(keep_range);
     out.strings.retain(|s| keep(s.addr));
+    out.wide_strings32.retain(|s| keep(s.addr));
     out.context_paints.retain(|p| keep(p.addr));
     out.tracked_regs.retain(|t| keep(t.func_addr));
     out.locals.retain(|l| keep(l.func_addr));
@@ -439,6 +443,8 @@ pub fn retain_in_image(out: &mut AnalysisOutput, view: &RebasedView) {
     out.cpp_dwarf.prototypes.retain(|(a, _)| keep(*a));
     out.cpp_sig.proven.retain(|(a, _)| keep(*a));
     out.cpp_sig.inferred.retain(|(a, _)| keep(*a));
+    out.cpp_sig.msvc.retain(|(a, _, _)| keep(*a));
+    out.cpp_sig.msvc_legacy.retain(|(a, _)| keep(*a));
 }
 
 #[cfg(test)]

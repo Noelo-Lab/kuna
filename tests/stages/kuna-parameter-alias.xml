@@ -1,0 +1,34 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    P0 prototype/symbol replay, P5 type seeding and P9 naming/declarations.
+    An authored MSABI function compares its incoming EDX parameter with 7 and 11,
+    then reuses EDX for the values 42 and 41 passed to sink. A usepoint-scoped
+    type/name assertion on the later definition must not replace the input.
+    Before the fix the assertion is accepted, but the comparisons read an
+    uninitialized v1 while the signature still declares property. No option is
+    needed for this correctness fix. The second rebuild checks persistence.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4883ec2883fa07740c83fa0b7516ba29000000eb05ba2a000000e80c000000
+4883c428c331c04883c428c389d0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="probe"/>
+<symbol space="ram" offset="0x10002b" name="sink"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 MSABI probe(void *popup,int4 property);</com>
+  <com>parse line extern int4 MSABI sink(void *popup,int4 cleared);</com>
+  <com>lo fu probe</com>
+  <com>type varnode %EDX(0x10000e) int4 cleared_property</com>
+  <com>decompile</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PARAMETER-ALIAS #1: the input stays in the signature" min="1" max="1">^int4 probe\(void \*popup,int4 property\)$</stringmatch>
+<stringmatch name="PARAMETER-ALIAS #2: entry comparisons read the input" min="2" max="2">if \(property != (7|0xb)\)</stringmatch>
+<stringmatch name="PARAMETER-ALIAS #3: the later local retains both assigned values" min="2" max="2">cleared_property = (0x29|0x2a);</stringmatch>
+<stringmatch name="PARAMETER-ALIAS #4: the call reads the later local" min="1" max="1">return sink\(popup,cleared_property\);</stringmatch>
+<stringmatch name="PARAMETER-ALIAS #5: no detached entry local appears" min="0" max="0">int4 (v[0-9]+|property_[0-9]+);</stringmatch>
+</decompilertest>

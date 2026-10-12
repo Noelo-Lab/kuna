@@ -1,6 +1,6 @@
 //! Linux pipe effects stay in the same order through emitted C.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::path::Path;
 use std::process::Command;

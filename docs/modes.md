@@ -67,25 +67,30 @@ future-proofs the preset: if the defaults later drift more aggressive,
 
 ## `aggressive`
 
-`aggressive` flips **every** on/off off-by-default option on, with the exclusions
-listed below. It carries 28 of the 36 such options; the five *multi-valued*
-default-off options (`condfold`, `rustabi`, `calloverlap`, `spillargtrial`,
-`outline`) are out of reach by construction, since a preset can only pin a single
-"on". `AGGRESSIVE_OVERRIDES` in `p0_knowledge/modes.rs` is the authority — the
+`aggressive` enables binary default-OFF options, subject to the exclusions
+listed below. Multi-valued options fall outside this automatic binary-option
+inclusion rule. `AGGRESSIVE_OVERRIDES` in `p0_knowledge/modes.rs` is the authority — the
 invariant test `aggressive_carries_every_default_off_option` makes an omission a
 build failure. The options it enables:
 
 - **transform tier**: `switchmodbound`, `constselectjump`,
   `switchguardbound` (speed-costly),
   `unrolledguard` (speed-costly), `stackalias`, `sparcstructret`,
-  `regionedgeorder`, `returndup`, `orchain`, `iteexpr`, `ctypes`,
+  `globalarrayanchor` (retain mapped array bases in negatively biased element indices),
+  `regionedgeorder`, `returndup`, `orchain`, `iteexpr`,
+  `devectorize` (a proven vectorized integer reduction re-rolled into its scalar
+  loop; off by default only because the rewrite hides the stride and the
+  duplicated body), `ctypes`,
+  `calltargettype` (an indirect call's target takes the function-pointer type
+  the call states, so the call compiles as C),
   `cortexmpriv` (DIV-99 - fold the Cortex-M `isCurrentModePrivileged()` guard;
   ARM-Cortex-M-gated by construction, so it is a measured no-op everywhere else)
 - **analysis tier**: `listing` (the master gate that enables the
   Listing-consuming passes — `fid`, `aif`, the discovered-no-return family),
   `fast_funcdisc`, `eh_frame_full`, `funcstart_patterns`, `addrtable`,
-  `operand_refs`, `fid`, `rtti`, `itaniumrtti`, `aif`, `aifstrict`, `objc`,
-  `pdb`, `macho-arm64e`
+  `operand_refs`, `widestrings32` (4-byte `wchar_t`/`char32_t` literals),
+  `fid`, `rtti`, `itaniumrtti`, `aif`, `aifstrict`, `objc`, `pdb`,
+  `macho-arm64e`
 - **analysis tier, ARM entry discovery** (DIV-93): `cortexmvectors`, `ptrentry`,
   `tailcallentry`, `poolentry` — the four-step sequence that takes stripped ARM
   entry recall from 88.63% to 93.31% over the 110 non-x86-64 decbench twins while
@@ -167,8 +172,8 @@ really returns a 16-byte value in `rax:rdx` and forwards the high half into the
 next call keeps its argument. Flip `--option argclobber off` to keep every
 argument the register model produced, phantom or not.
 
-Separately, six default-off options remain unevaluated for preset membership:
-`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector`, `msvcstackguard`
+Separately, these default-off options remain unevaluated for preset membership:
+`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector`, `msvcstackguard`,
 and `stackaddrargtrial`. Each needs the sweep and speed evidence that would
 justify a preset change. The stack-address option has focused tests and a local
 speed measurement, but no broad sweep; the MSVC option still needs a corpus with

@@ -1,6 +1,6 @@
-//! A scalar local passed to a character-pointer callee printed earlier in a
-//! callee-first run keeps its own type and width and is cast at the call.
-mod common;
+//! A scalar address matches its character-pointer callee in a buffered batch,
+//! independently of inference, address order, or worker assignment.
+use crate::common;
 use common::process;
 
 use object::write::{Object, Symbol, SymbolSection};
@@ -137,14 +137,92 @@ int main(void) {
         assert!(printed.contains("sink((unsigned char *)&"), "{printed}");
         assert!(printed.contains("unsigned long v"), "{printed}");
         round_trip("void sink(unsigned char *);", &printed, main);
-        // Without the callee-first order no declaration is known at the call.
         let mut off = vec!["--option", "protoorder", "off"];
         off.extend_from_slice(&assert);
-        let printed = decompile(&input, &off);
+        let serial = decompile(&input, &off);
+        assert!(serial.contains("sink((unsigned char *)&"), "{serial}");
+        assert!(serial.contains("unsigned long v"), "{serial}");
+        round_trip("void sink(unsigned char *);", &serial, main);
+        for extra in [
+            vec!["--functions", "change,sink"],
+            vec!["--functions", "change,sink", "--option", "protoorder", "types"],
+            vec!["--option", "protoorder", "off", "--jobs", "2", "--jobs-chunk", "1"],
+        ] {
+            let mut args = extra;
+            if !args.contains(&"--jobs") {
+                args.extend_from_slice(&assert);
+            }
+            let printed = decompile(&input, &args);
+            assert!(printed.contains("sink((unsigned char *)&"), "{printed}");
+            round_trip("void sink(unsigned char *);", &printed, main);
+            if args.contains(&"--jobs") {
+                assert_eq!(printed, decompile(&input, &["--option", "protoorder", "off"]),
+                    "worker scheduling changed the buffered C");
+            }
+        }
+        for jobs in ["1", "2"] {
+            let dir = common::scratch_file("pointer-project", "dir");
+            let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+                .args(["decompile-project", input.to_str().unwrap(), "-o", dir.to_str().unwrap(),
+                    "--functions", "change,sink", "--option", "protoorder", "off", "--jobs", jobs,
+                    "--jobs-chunk", "1"])
+                .output().unwrap();
+            assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+            let files: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect();
+            let c = files.iter().find(|p| p.extension().is_some_and(|e| e == "c")).unwrap();
+            let printed = std::fs::read_to_string(c).unwrap();
+            assert!(printed.contains("sink((unsigned char *)&"), "{printed}");
+            let printed = printed.lines().filter(|line| !line.starts_with("#include"))
+                .collect::<Vec<_>>().join("\n");
+            round_trip("void sink(unsigned char *);", &printed, main);
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+        let mut caller_only = vec!["--functions", "change"];
+        caller_only.extend_from_slice(&assert);
+        let printed = decompile(&input, &caller_only);
         assert!(printed.contains("sink(&v"), "{printed}");
-        assert!(printed.contains("unsigned long v"), "{printed}");
         std::fs::remove_file(input).unwrap();
     }
+}
+
+/// Every buffered document reconciles: `decompile-graph` prints the call as
+/// `decompile-all` does, serially and with workers. A streamed export writes
+/// each body before its callees are final, so it records nothing to apply.
+#[test]
+fn every_buffered_document_prints_the_same_call() {
+    let sink: Func = ("sink", vec![0x80, 0x37, 1, 0xc3], None);
+    let change: Func = (
+        "change",
+        vec![0x57, 0x48, 0x89, 0xe7, 0xe8, 0, 0, 0, 0, 0x58, 0xc3],
+        Some((4, "sink")),
+    );
+    let input = object(&[change, sink]);
+    let all = decompile(&input, &["--option", "protoorder", "off"]);
+    assert!(all.contains("sink((unsigned char *)&"), "{all}");
+    for jobs in ["1", "2"] {
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(["decompile-graph", input.to_str().unwrap(), "--jobs", jobs, "--jobs-chunk", "1"])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let graph = String::from_utf8(out.stdout).unwrap();
+        assert!(graph.contains("sink((unsigned char *)&"), "--jobs {jobs}: {graph}");
+    }
+    let dir = common::scratch_file("pointer-stream", "dir");
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["decompile-project", input.to_str().unwrap(), "-o", dir.to_str().unwrap(), "--stream"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let c = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.extension().is_some_and(|e| e == "c"))
+        .unwrap();
+    let streamed = std::fs::read_to_string(c).unwrap();
+    assert!(streamed.contains("sink(&v"), "{streamed}");
+    std::fs::remove_dir_all(dir).unwrap();
+    std::fs::remove_file(input).unwrap();
 }
 
 #[test]

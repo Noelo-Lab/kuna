@@ -225,8 +225,9 @@ impl TypeSpeller for RustSpeller {
     ) -> Option<Cow<'static, str>> {
         let size = dt.get_size();
         let name: Option<&'static str> = match dt.get_metatype() {
-            // A recovered text byte is a byte, not a Rust `char`.
-            type_metatype::TYPE_INT if dt.is_char_print() => int_name(size, false),
+            // A recovered text byte is a byte, not a Rust `char`; a declared
+            // `signed char` is not the target's text type and keeps its sign.
+            type_metatype::TYPE_INT if dt.is_char_print() && dt.is_core_type() => int_name(size, false),
             type_metatype::TYPE_INT => int_name(size, true),
             type_metatype::TYPE_UINT => int_name(size, false),
             type_metatype::TYPE_FLOAT => float_name(size),

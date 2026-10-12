@@ -183,6 +183,9 @@ pub(crate) struct PoolConfig<'a> {
     /// Ask each worker for [`FuncResult::callee_hints`] — the `--stream`
     /// scheduler's frontier, and the only reason a worker reports one.
     pub(crate) want_callee_hints: bool,
+    /// Ask each worker for [`FuncResult::pointerargs`]; the parent reconciles
+    /// the complete result set.
+    pub(crate) want_pointer_arguments: bool,
     pub(crate) max_fn_seconds: u64,
     pub(crate) full_load: bool,
     /// How long the PARENT's own load took.  The stall watchdog cannot fire
@@ -1044,6 +1047,9 @@ impl Worker {
         if cfg.want_callee_hints {
             cmd.arg("--jobs-callees");
         }
+        if cfg.want_pointer_arguments {
+            cmd.arg("--jobs-pointerargs");
+        }
         if cfg.full_load {
             cmd.arg("--jobs-full-load");
         }
@@ -1600,6 +1606,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         object_location: t.object_location.clone(),
         callee_hints: Vec::new(),
         synth: None,
+        pointerargs: None,
         detail: None,
     }
 }
@@ -2033,6 +2040,7 @@ mod tests {
             }),
             callee_hints: vec![0x401200, 0x401340, 0xffff_ffff_ffff_fff0],
             synth: None,
+            pointerargs: None,
             detail: None,
         }
     }
@@ -2048,6 +2056,8 @@ mod tests {
             && a.aliases == b.aliases
             && a.object_location == b.object_location
             && a.callee_hints == b.callee_hints
+            && a.pointerargs == b.pointerargs
+            && a.synth == b.synth
             && a.line_mappings == b.line_mappings
             && a.globals == b.globals
             && a.types.len() == b.types.len()
@@ -2088,7 +2098,20 @@ mod tests {
     fn result_frames_round_trip_byte_exactly() {
         let dir = ScratchDir::create().unwrap();
         let path = dir.path().join("r.bin").to_string_lossy().into_owned();
-        let a = sample_result();
+        let mut a = sample_result();
+        a.synth = Some(Default::default());
+        a.pointerargs = Some(kuna_decomp::kuna_pointerargs::Record {
+            entry: ("ram".into(), a.byte_address),
+            parameters: vec![None, Some(kuna_decomp::kuna_pointerargs::Parameter {
+                storage: (("register".into(), 0x38), 8), spelling: "unsigned char *".into(),
+            })],
+            calls: vec![kuna_decomp::kuna_pointerargs::Call {
+                callee: ("ram".into(), 0x1000), index: 1,
+                storage: (("register".into(), 0x38), 8), actual: "unsigned long *".into(),
+                position: kuna_decomp::kuna_pointerargs::Position { line: 3, column: 7 },
+                expression: "&v1".into(),
+            }],
+        });
         let b = FuncResult {
             name: "sub_1234".into(),
             address: 0x1234,
@@ -2105,6 +2128,7 @@ mod tests {
             object_location: None,
             callee_hints: Vec::new(),
             synth: None,
+            pointerargs: None,
             detail: None,
         };
         {
@@ -2112,7 +2136,17 @@ mod tests {
             w.push(&a).unwrap();
             w.push(&b).unwrap();
         }
-        let decoded = decode_results(&std::fs::read(&path).unwrap()).unwrap();
+        let full = std::fs::read(&path).unwrap();
+        let first_end = RESULT_MAGIC.len() + 5
+            + u32::from_le_bytes(full[RESULT_MAGIC.len() + 1..RESULT_MAGIC.len() + 5].try_into().unwrap()) as usize;
+        for cut in RESULT_MAGIC.len()..first_end {
+            assert!(decode_results(&full[..cut]).unwrap().is_empty());
+        }
+        let mut malformed = full.clone();
+        let marker = malformed.windows(3).position(|w| w == b"&v1").unwrap();
+        malformed[marker] = 0xff;
+        assert!(decode_results(&malformed).unwrap().is_empty());
+        let decoded = decode_results(&full).unwrap();
         assert_eq!(decoded.len(), 2);
         assert!(same(&decoded[0], &a));
         assert!(same(&decoded[1], &b));
@@ -2125,7 +2159,7 @@ mod tests {
     }
 
     #[test]
-    fn result_encoding_matches_the_version_four_wire_layout() {
+    fn result_encoding_matches_the_version_six_wire_layout() {
         let dir = ScratchDir::create().unwrap();
         let path = dir.path().join("wire.bin").to_string_lossy().into_owned();
         let result = FuncResult {
@@ -2144,14 +2178,15 @@ mod tests {
             object_location: None,
             callee_hints: Vec::new(),
             synth: None,
+            pointerargs: None,
             detail: None,
         };
-        let expected = b"KUNAJOBRES04\x01\x3f\0\0\0\
+        let expected = b"KUNAJOBRES06\x01\x40\0\0\0\
             \x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0\
             \xff\xff\xff\xff\xff\xff\xff\xff\
             \x01\0\0\0f\0\x01\x01\0\0\0e\0\0\
             \0\0\0\0\0\0\0\0\0\0\0\0\
-            \0\0\0\0\0\0\0\0\0\0\0\0\0";
+            \0\0\0\0\0\0\0\0\0\0\0\0\0\0";
         ResultWriter::create(&path).unwrap().push(&result).unwrap();
         assert_eq!(std::fs::read(path).unwrap(), expected);
         let decoded = decode_results(expected).unwrap();
@@ -2541,6 +2576,7 @@ mod tests {
             object_location: None,
             callee_hints: Vec::new(),
             synth: None,
+            pointerargs: None,
             detail: None,
         };
         let results = vec![
@@ -2571,6 +2607,7 @@ mod tests {
             want_provenance: false,
             want_types: false,
             want_callee_hints: false,
+            want_pointer_arguments: false,
             max_fn_seconds,
             full_load: false,
             load_seconds,

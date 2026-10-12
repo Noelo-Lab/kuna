@@ -24,80 +24,80 @@ context MXL=2
 context reserved=0
 # golden lift ram:0x0 80 (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)
 insn ram:0x0 2
-  COPY (unique,0x2600,8) (const,0xffffffffffffffc0,8)
-  INT_ADD (register,0x2010,8) (register,0x2010,8) (unique,0x2600,8)
+  COPY (unique,0x2400,8) (const,0xffffffffffffffc0,8)
+  INT_ADD (register,0x2010,8) (register,0x2010,8) (unique,0x2400,8)
 insn ram:0x2 2
-  COPY (unique,0x2c00,8) (const,0x38,8)
-  INT_ADD (unique,0x2c200,8) (unique,0x2c00,8) (register,0x2010,8)
-  STORE - (const,ram,8) (unique,0x2c200,8) (register,0x2008,8)
+  COPY (unique,0x2a00,8) (const,0x38,8)
+  INT_ADD (unique,0x2c000,8) (unique,0x2a00,8) (register,0x2010,8)
+  STORE - (const,ram,8) (unique,0x2c000,8) (register,0x2008,8)
 insn ram:0x4 2
-  COPY (unique,0x2c00,8) (const,0x20,8)
-  INT_ADD (unique,0x2c200,8) (unique,0x2c00,8) (register,0x2010,8)
-  STORE - (const,ram,8) (unique,0x2c200,8) (register,0x2090,8)
+  COPY (unique,0x2a00,8) (const,0x20,8)
+  INT_ADD (unique,0x2c000,8) (unique,0x2a00,8) (register,0x2010,8)
+  STORE - (const,ram,8) (unique,0x2c000,8) (register,0x2090,8)
 insn ram:0x6 2
-  COPY (unique,0x2c00,8) (const,0x30,8)
-  INT_ADD (unique,0x2c200,8) (unique,0x2c00,8) (register,0x2010,8)
-  STORE - (const,ram,8) (unique,0x2c200,8) (register,0x2040,8)
+  COPY (unique,0x2a00,8) (const,0x30,8)
+  INT_ADD (unique,0x2c000,8) (unique,0x2a00,8) (register,0x2010,8)
+  STORE - (const,ram,8) (unique,0x2c000,8) (register,0x2040,8)
 insn ram:0x8 2
-  COPY (unique,0x2c00,8) (const,0x28,8)
-  INT_ADD (unique,0x2c200,8) (unique,0x2c00,8) (register,0x2010,8)
-  STORE - (const,ram,8) (unique,0x2c200,8) (register,0x2048,8)
+  COPY (unique,0x2a00,8) (const,0x28,8)
+  INT_ADD (unique,0x2c000,8) (unique,0x2a00,8) (register,0x2010,8)
+  STORE - (const,ram,8) (unique,0x2c000,8) (register,0x2048,8)
 insn ram:0xa 2
   COPY (register,0x2040,8) (register,0x2058,8)
 insn ram:0xc 2
-  COPY (unique,0x1d00,8) (const,0x4,8)
-  COPY (register,0x2090,8) (unique,0x1d00,8)
+  COPY (unique,0x1b00,8) (const,0x4,8)
+  COPY (register,0x2090,8) (unique,0x1b00,8)
 insn ram:0xe 2
-  COPY (unique,0x2500,8) (const,0x8,8)
-  INT_ADD (register,0x2048,8) (register,0x2010,8) (unique,0x2500,8)
+  COPY (unique,0x2300,8) (const,0x8,8)
+  INT_ADD (register,0x2048,8) (register,0x2010,8) (unique,0x2300,8)
 insn ram:0x10 4
   COPY (register,0x2008,8) (const,0x14,8)
   CALL - (ram,0xe12,8)
 insn ram:0x14 2
   COPY (register,0x2090,8) (register,0x2050,8)
 insn ram:0x16 2
-  INT_NOTEQUAL (unique,0x2a700,1) (register,0x2050,8) (const,0x0,8)
-  CBRANCH - (ram,0x30,8) (unique,0x2a700,1)
+  INT_NOTEQUAL (unique,0x2a500,1) (register,0x2050,8) (const,0x0,8)
+  CBRANCH - (ram,0x30,8) (unique,0x2a500,1)
 insn ram:0x18 2
-  COPY (unique,0x1d00,8) (const,0x10,8)
-  COPY (register,0x2050,8) (unique,0x1d00,8)
+  COPY (unique,0x1b00,8) (const,0x10,8)
+  COPY (register,0x2050,8) (unique,0x1b00,8)
 insn ram:0x1a 2
-  COPY (unique,0x1d00,8) (const,0x1,8)
-  COPY (register,0x2078,8) (unique,0x1d00,8)
+  COPY (unique,0x1b00,8) (const,0x1,8)
+  COPY (register,0x2078,8) (unique,0x1b00,8)
 insn ram:0x1c 2
-  COPY (unique,0x1d00,8) (const,0x7,8)
-  COPY (register,0x2070,8) (unique,0x1d00,8)
+  COPY (unique,0x1b00,8) (const,0x7,8)
+  COPY (register,0x2070,8) (unique,0x1b00,8)
 insn ram:0x1e 2
   INT_SUB (register,0x2070,8) (register,0x2070,8) (register,0x2078,8)
 insn ram:0x20 2
-  INT_NOTEQUAL (unique,0x2a700,1) (register,0x2070,8) (const,0x0,8)
-  CBRANCH - (ram,0x1e,8) (unique,0x2a700,1)
+  INT_NOTEQUAL (unique,0x2a500,1) (register,0x2070,8) (const,0x0,8)
+  CBRANCH - (ram,0x1e,8) (unique,0x2a500,1)
 insn ram:0x22 2
-  COPY (unique,0x2b00,8) (const,0x30,8)
-  INT_ADD (unique,0x2b600,8) (unique,0x2b00,8) (register,0x2010,8)
-  LOAD (register,0x2040,8) (const,ram,8) (unique,0x2b600,8)
+  COPY (unique,0x2900,8) (const,0x30,8)
+  INT_ADD (unique,0x2b400,8) (unique,0x2900,8) (register,0x2010,8)
+  LOAD (register,0x2040,8) (const,ram,8) (unique,0x2b400,8)
 insn ram:0x24 2
-  COPY (unique,0x2b00,8) (const,0x28,8)
-  INT_ADD (unique,0x2b600,8) (unique,0x2b00,8) (register,0x2010,8)
-  LOAD (register,0x2048,8) (const,ram,8) (unique,0x2b600,8)
+  COPY (unique,0x2900,8) (const,0x28,8)
+  INT_ADD (unique,0x2b400,8) (unique,0x2900,8) (register,0x2010,8)
+  LOAD (register,0x2048,8) (const,ram,8) (unique,0x2b400,8)
 insn ram:0x26 2
-  COPY (unique,0x2b00,8) (const,0x38,8)
-  INT_ADD (unique,0x2b600,8) (unique,0x2b00,8) (register,0x2010,8)
-  LOAD (register,0x2008,8) (const,ram,8) (unique,0x2b600,8)
+  COPY (unique,0x2900,8) (const,0x38,8)
+  INT_ADD (unique,0x2b400,8) (unique,0x2900,8) (register,0x2010,8)
+  LOAD (register,0x2008,8) (const,ram,8) (unique,0x2b400,8)
 insn ram:0x28 2
   COPY (register,0x2050,8) (register,0x2090,8)
 insn ram:0x2a 2
-  COPY (unique,0x2b00,8) (const,0x20,8)
-  INT_ADD (unique,0x2b600,8) (unique,0x2b00,8) (register,0x2010,8)
-  LOAD (register,0x2090,8) (const,ram,8) (unique,0x2b600,8)
+  COPY (unique,0x2900,8) (const,0x20,8)
+  INT_ADD (unique,0x2b400,8) (unique,0x2900,8) (register,0x2010,8)
+  LOAD (register,0x2090,8) (const,ram,8) (unique,0x2b400,8)
 insn ram:0x2c 2
-  COPY (unique,0x2600,8) (const,0x40,8)
-  INT_ADD (register,0x2010,8) (register,0x2010,8) (unique,0x2600,8)
+  COPY (unique,0x2400,8) (const,0x40,8)
+  INT_ADD (register,0x2010,8) (register,0x2010,8) (unique,0x2400,8)
 insn ram:0x2e 2
   RETURN - (register,0x2008,8)
 insn ram:0x30 4
-  COPY (unique,0xf00,8) (const,0xffffffffffffffa1,8)
-  COPY (register,0x2090,8) (unique,0xf00,8)
+  COPY (unique,0xd00,8) (const,0xffffffffffffffa1,8)
+  COPY (register,0x2090,8) (unique,0xd00,8)
 insn ram:0x34 2
   BRANCH - (ram,0x22,8)
 lifterror baddata ram:0x36 r0x00000036: Unable to resolve constructor

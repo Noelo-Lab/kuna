@@ -16,6 +16,18 @@ hand-off, the front-ends, the IR containers, the knowledge plane, the two
 pipeline non-linear. The algorithms themselves live in chapters 01–09; this is how
 they are hosted, ordered, configured, and restarted.
 
+C declarations supplied through the console or strict CLI assertions retain a
+`volatile` qualifier on the type layer where it was written. `const` and
+`restrict` are accepted and dropped, so they leave emitted C unchanged; the type
+layer can carry them, but no declaration attaches them. Specifier qualifiers attach to the base before declarator
+modifiers are applied; qualifiers following `*` attach to that pointer, including
+in parameters and return types. A qualified type retains its underlying shape
+for existing type consumers and an interned link to its unqualified type for
+identity and spelling. Typedefs retain their own names and inherit the underlying
+qualification. Kuna's type encoder preserves anonymous qualified layers in a
+`qualified` element with a qualifier bit mask and an underlying type reference;
+unqualified types keep their existing encoding.
+
 The object-file bootstrap records an explicit ARM/Thumb input selection in
 `Architecture::input_arm_isa_override`. This is an input fact, separate from
 analysis options: metadata painters preserve it when discovery or graph/xref
@@ -1396,6 +1408,13 @@ printf-heavy whole binary (DIV-66). That cost is the reason the typing now
 happens at load instead, and the reason `full` — the loop — remains a per-run
 opt-in rather than the default.
 
+The step's last drive answers for a function decompiled alone (`callerreads`,
+chapter [04](04-calls-and-prototypes.md)): when the finished function returns
+`void` and a direct caller reads one of its return registers after the call, the
+step forces that return and drives the function once more, keeping the redo only
+when it returns a value. A batch skips it, since the callers it decompiles settle
+the same question.
+
 (kuna) **Surface defaults.** The drivers inject their defaults before the option
 pass, from one shared table
 (`decompiler/crates/kuna-cli/src/decompile_all.rs (driver_default_options)`), and
@@ -1467,8 +1486,13 @@ at every group/sub-action boundary and repeat gate
 (`decompiler/crates/kuna-decomp/src/infra/action.rs (ActionGroup::apply,
 Action::perform, ActionRestartGroup::apply)`), every 1024 op-visits inside the
 rule-pool loop (`decompiler/crates/kuna-decomp/src/infra/action.rs
-(POOL_DEADLINE_STRIDE)`), and at the heritage loop
-(`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`). On expiry the
+(POOL_DEADLINE_STRIDE)`), at the heritage loop
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`) and before each
+address the written-slot guard guards, every 256 new values a pointer walk of
+`stackstoreguard` visits, and again after the final layout checks: the drive
+publishes its deadline to
+`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (deadline_passed)`,
+so a walk inside one pass gives up rather than run past it. On expiry the
 containers stop scheduling work and unwind; the driver converts that into the
 function's `error` record and the batch continues. A function whose drive
 completes before expiry is byte-identical with or without a budget, and the
@@ -1957,6 +1981,15 @@ lowering) and applied by
 | `volatile <addr>+<size>` | `volatile` | P1 code-data-partition |
 | `bytes <addr> <hex\|@FILE>` | `override bytes` | P1 code-data-partition |
 
+`map address` retains an object's outer `volatile` qualifier and marks a
+global object's entire byte range volatile, so `--assert 'data 0x20000 volatile int cursor'`
+has the same access semantics as a separate volatile range assertion.
+Declarator binding matters: `volatile int *p` qualifies the pointed-to data,
+while `int *volatile p` qualifies the mapped pointer itself. An array inherits
+its element qualifier. Function-local mappings carry the symbol attribute only;
+the global property map does not describe stack-local storage. Volatility remains
+a storage property.
+
 Four application points, and the ordering between them is forced rather than
 stylistic. **Image-scoped** directives state what memory holds before anything
 reads it. `bytes` replaces the mapped bytes at an address with the caller's own
@@ -2020,6 +2053,36 @@ printer chose instead of by a hand-written varnode specifier. `linkSymbol`'s
 `query_container_for_link(addr, usepoint)` then binds it on the second pass, and
 `assertions::carried_usepoint_symbols` carries it across the in-process surface's
 IR rebuild.
+
+When a Varnode is created at an isolated local's mapped definition,
+`Funcdata::set_varnode_properties` applies its exact, locked type before
+inference propagates competing types. The lookup includes the definition
+usepoint, so an input or a later reuse of the same register is not locked by
+that assertion. A simplification that moves the existing output preserves
+its type lock; ordinary recovered local types remain inference hints.
+
+A parameter edit also crosses the prototype store. The standalone engine keeps
+its parameter Symbol separate from its prototype entry, so replaying only the
+Symbol can leave the old name or type in the signature while the body reads an
+uninitialized local. `kuna_hightarget.rs (carried_parameter_maps)` matches locked
+parameter Symbols by category, slot and input storage, and carries their edited
+names and types through the existing parameter-map seed. When any parameter
+changes, the complete input list keeps its recovered slots, storage and parameter
+properties. The declared output and calling convention remain the original
+prototype's. Both the in-process second pass and the console rebuild consume
+these maps; the console retains them for subsequent decompiles. Ordinary local
+Symbols continue to use their scoped storage maps. Parameter Symbols are
+excluded from those generic maps: replaying one as a locked local can split it
+from the forced prototype input, leaving a branch condition or return reading
+an uninitialized local even when the signature carries the edited name.
+
+A printed register alias of a later value uses the local-symbol channel instead.
+It may share an input parameter's register only when equal storage widths and
+disjoint CFG covers establish separate lifetimes. Replay must preserve both
+Symbols: parameter creation checks the entry usepoint, type seeding checks each
+Varnode's definition usepoint, and naming and declaration emission retain the
+selected Symbol identity. Renaming the later local then changes its assignments
+and call uses while entry comparisons continue to read the declared input.
 
 Three properties of that mapping are load-bearing, each measured on
 `sub_1005350` of the `graphy` VM:
@@ -2502,6 +2565,15 @@ record is honest.
 
 ## 0.3 The IR substrate
 
+When `TransformManager` materializes a lane of an existing varnode, storage
+addresses follow the target's byte order, but consumption masks always follow
+bit significance. `create_var_replacement` preserves the lane's original
+least-significant-byte offset before computing its big-endian storage address,
+and passes that preserved offset to `transfer_varnode_properties`. Using the
+address offset here would swap the masks of a register pair and allow live
+pointer, loop-bound or floating point values to be replaced with zero. This
+applies to integer and FPU lanes.
+
 Partition lookup in `decompiler/crates/kuna-base/src/partmap.rs
 (PartMap::get_value_mut)` returns the value at the greatest split point no
 larger than the query, or the default value before the first split. Mutable
@@ -2597,6 +2669,14 @@ Every cross-arena mutation routes through `Funcdata` — Rust cannot hold two
 C++ splits between `Funcdata` and `BlockBasic` are all `Funcdata` methods here
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (bb_insert_op,
 bb_remove_op)`).
+
+Call/store membership and operation positions carry a per-function revision
+(`Funcdata::affecting_ops_revision`). Moving or removing a call/store, changing
+its opcode, renumbering operations, mutating the basic-block graph, or changing
+the call-specification list advances it. Chapter 06's intersection cache checks
+this revision before reusing its saved call/store positions or crossing verdicts;
+the merge engine can be temporarily borrowed out of the function while these
+mutations occur, so invalidation is checked on the next query.
 
 **Phi arity tracks in-degree, and the marker run is not a place to look it up.**
 A basic block's MULTIEQUALs carry one input per in-edge, in edge order, so CFG

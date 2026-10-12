@@ -780,12 +780,13 @@ impl TypeModifier {
         model: &str,
     ) -> KunaResult<Rc<Datatype>> {
         match self {
-            TypeModifier::Pointer { .. } => {
+            TypeModifier::Pointer { flags } => {
                 // PointerModifier::modType (grammar.cc:679-686).
                 let base = base.ok_or_else(|| {
                     KunaError::lowlevel("grammar: pointer modifier requires a base type")
                 })?;
-                factory.get_type_pointer(org.addr_size, base, org.word_size)
+                let pointer = factory.get_type_pointer(org.addr_size, base, org.word_size)?;
+                factory.get_qualified_type(pointer, type_qualifiers(*flags))
             }
             TypeModifier::Array { arraysize, .. } => {
                 // ArrayModifier::modType (grammar.cc:688-693).
@@ -873,6 +874,15 @@ pub mod flags {
     pub const F_ENUM: uint4 = 2048;
 }
 
+/// Only `volatile` reaches the type: `const` and `restrict` are accepted and dropped.
+fn type_qualifiers(flags: uint4) -> u8 {
+    if flags & self::flags::F_VOLATILE != 0 {
+        kuna_decomp::kuna_typequal::VOLATILE
+    } else {
+        0
+    }
+}
+
 /// A declarator: a base type plus an ordered list of modifications and an
 /// identifier (C++ `TypeDeclarator`, `grammar.hh:168-190`).
 #[derive(Debug, Clone)]
@@ -950,11 +960,17 @@ impl TypeDeclarator {
     /// C++ `TypeDeclarator::buildType` (`grammar.cc:769-780`): apply the
     /// modifications to the basetype in **reverse** order of binding.
     pub fn build_type(&self, factory: &dyn TypeFactory, org: &DataOrg) -> KunaResult<Rc<Datatype>> {
-        let mut restype = self.basetype.clone();
+        let mut restype = self.qualified_basetype(factory)?;
         for m in self.mods.iter().rev() {
             restype = Some(m.mod_type(restype, factory, org, &self.model)?);
         }
         restype.ok_or_else(|| KunaError::lowlevel("grammar: declarator has no base type"))
+    }
+
+    fn qualified_basetype(&self, factory: &dyn TypeFactory) -> KunaResult<Option<Rc<Datatype>>> {
+        self.basetype.clone()
+            .map(|base| factory.get_qualified_type(base, type_qualifiers(self.flags)))
+            .transpose()
     }
 
     /// C++ `TypeDeclarator::getPrototype` (`grammar.cc:794-822`).
@@ -991,7 +1007,7 @@ impl TypeDeclarator {
 
         // Construct the output type: apply every modification EXCEPT the leading
         // function modifier (grammar.cc:812-820).
-        let mut outtype = self.basetype.clone();
+        let mut outtype = self.qualified_basetype(factory)?;
         for m in self.mods.iter().skip(1).rev() {
             outtype = Some(m.mod_type(outtype, factory, org, &self.model)?);
         }
@@ -2655,6 +2671,16 @@ pub fn parse_type(
     factory: &dyn TypeFactory,
     org: DataOrg,
 ) -> KunaResult<(Rc<Datatype>, String)> {
+    let (ty, name, _) = parse_type_with_volatile(input, factory, org)?;
+    Ok((ty, name))
+}
+
+/// Parse a mapped object's type while retaining its outer volatile qualifier.
+pub fn parse_type_with_volatile(
+    input: &str,
+    factory: &dyn TypeFactory,
+    org: DataOrg,
+) -> KunaResult<(Rc<Datatype>, String, bool)> {
     let mut parser = CParse::new(factory, org, 4096);
     if !parser.parse_stream(input.as_bytes().to_vec(), DocType::ParameterDeclaration)? {
         return Err(KunaError::parse(parser.get_error().to_string()));
@@ -2672,7 +2698,14 @@ pub fn parse_type(
     }
     let name = decl.get_identifier().to_string();
     let ty = decl.build_type(factory, &org)?;
-    Ok((ty, name))
+    let qualifiers = decl.mods.iter()
+        .find_map(|m| match m {
+            TypeModifier::Pointer { flags } => Some(*flags),
+            TypeModifier::Function { .. } => Some(0),
+            TypeModifier::Array { .. } => None,
+        })
+        .unwrap_or(decl.flags);
+    Ok((ty, name, qualifiers & flags::F_VOLATILE != 0))
 }
 
 /// C++ `parse_protopieces(PrototypePieces &pieces,istream &s,Architecture *glb)`

@@ -84,7 +84,7 @@ fn rejected_padding_does_not_retain_the_scanned_image() {
     for size in [4096, 65536] {
         let (engine, space, listing) = padding_fixture(size, 20);
         let mut decoder = GapDecoder::new(&engine, space, listing.exec_ranges());
-        let entries = run_aif_with_decoder(&listing, &mut decoder, true, false);
+        let entries = run_aif_with_decoder(&listing, &mut decoder, true, false, None, false);
         assert!(entries.is_empty(), "padding is not a function");
         assert!(
             decoder.decoded_addresses.len() > size / 8,
@@ -103,7 +103,7 @@ fn aif_activation_boundary_does_not_hide_the_gap_scan() {
     for count in [19, 20, 21] {
         let (engine, space, listing) = padding_fixture(4096, count);
         let mut decoder = GapDecoder::new(&engine, space, listing.exec_ranges());
-        assert!(run_aif_with_decoder(&listing, &mut decoder, true, false).is_empty());
+        assert!(run_aif_with_decoder(&listing, &mut decoder, true, false, None, false).is_empty());
         assert_eq!(decoder.decoded_addresses.is_empty(), count < 20);
     }
 }
@@ -232,7 +232,7 @@ fn retiring_and_span_scanning_preserve_entries_and_first_decode_order() {
                 let mut reference = GapDecoder::new(&old, old_space, old_listing.exec_ranges());
                 let mut candidate = GapDecoder::new(&new, new_space, new_listing.exec_ranges());
                 let want = legacy_walk(&old_listing, &mut reference, strict, corroborate);
-                let got = run_aif_with_decoder(&new_listing, &mut candidate, strict, corroborate);
+                let got = run_aif_with_decoder(&new_listing, &mut candidate, strict, corroborate, None, false);
                 assert_eq!(
                     got, want,
                     "{kind}, strict={strict}, corroborate={corroborate}"
@@ -400,4 +400,89 @@ fn cached_prefix_replays_deferred_branches_and_call_information() {
             assert!(candidate.validation_steps < reference.validation_steps / 30);
         }
     }
+}
+
+#[test]
+fn unchanged_frame_evidence_does_not_decode_or_validate_the_gap_again() {
+    let (engine, space, listing) = hidden_fixture("call");
+    let root = BASE + 0x404;
+    let mut decoder = GapDecoder::new(&engine, Rc::clone(&space), listing.exec_ranges());
+    let body = check_valid_subroutine_strict(&mut decoder, &listing, root, root, u64::MAX).unwrap();
+    let mut frames = ArmFrames::default();
+    let spans = body
+        .into_iter()
+        .map(|at| (at, decoder.probe(at).unwrap().len))
+        .collect();
+    frames.validated(root, spans, &mut decoder);
+    let roots = BTreeSet::from([root]);
+    let replacements = frames.reconcile(&listing, &listing, &mut decoder, &roots, &[], true, false);
+    assert_eq!(replacements, BTreeMap::from([(root, BASE + 0x400)]));
+    assert!(!decoder.decoded_addresses.is_empty());
+
+    let mut repeated = GapDecoder::new(&engine, space, listing.exec_ranges());
+    assert_eq!(
+        frames.reconcile(&listing, &listing, &mut repeated, &roots, &[], true, false),
+        replacements
+    );
+    assert!(
+        repeated.decoded_addresses.is_empty(),
+        "unchanged evidence rescanned the gap"
+    );
+    assert_eq!(
+        repeated.validation_steps, 0,
+        "unchanged evidence revalidated frame bodies"
+    );
+}
+
+#[test]
+fn expanded_fingerprints_reuse_only_context_neutral_frame_instructions() {
+    let (engine, space, listing) = hidden_fixture("call");
+    let root = BASE + 0x404;
+    let mut decoder = GapDecoder::new(&engine, Rc::clone(&space), listing.exec_ranges());
+    decoder.full_capture = Some(Default::default());
+    let body = check_valid_subroutine_strict(&mut decoder, &listing, root, root, u64::MAX).unwrap();
+    let reusable: BTreeSet<_> = body
+        .iter()
+        .copied()
+        .filter(|&at| decoder.probe(at).unwrap().reusable.is_some())
+        .collect();
+    assert!(
+        !reusable.is_empty(),
+        "the fixture must exercise certified reuse"
+    );
+    let spans = body
+        .iter()
+        .map(|&at| (at, decoder.probe(at).unwrap().len))
+        .collect();
+    let mut frames = ArmFrames::default();
+    frames.validated(root, spans, &mut decoder);
+    let unrelated = Listing::from_model_for_test(
+        listing
+            .instructions()
+            .map(|(_, insn)| {
+                let mut insn = insn.clone();
+                insn.mnemonic = "unrelated".into();
+                insn
+            })
+            .collect(),
+        listing.functions().map(|(_, func)| func.clone()).collect(),
+        Vec::new(),
+        listing.exec_ranges().to_vec(),
+    );
+    let roots = BTreeSet::from([root]);
+    assert!(frames
+        .reconcile(&listing, &unrelated, &mut decoder, &roots, &[], true, false)
+        .is_empty());
+    let mut expanded = GapDecoder::new(&engine, space, listing.exec_ranges());
+    assert_eq!(
+        frames.reconcile(&listing, &listing, &mut expanded, &roots, &[], true, false),
+        BTreeMap::from([(root, BASE + 0x400)])
+    );
+    assert!(
+        expanded
+            .decoded_addresses
+            .iter()
+            .all(|at| !reusable.contains(at)),
+        "corpus growth redecoded a validated frame body"
+    );
 }

@@ -14,7 +14,9 @@
 //! Apple arm64 callee sign-extends a signed value narrower than 32 bits that the
 //! model zero-extends.  A declared function or direct-callee prototype that
 //! names no convention is laid out under the soft-float model on an ARM image
-//! that states the soft-float convention and no floating-point hardware.
+//! that states the soft-float convention and no floating-point hardware, and a
+//! variadic one returns under the base standard on an ARM image that states the
+//! VFP variant.
 use crate::{
     context::ArchContext,
     dtype::{type_class, type_metatype, TypeFactory},
@@ -133,14 +135,25 @@ pub fn declares_a_float(pieces: &PrototypePieces) -> bool {
 /// or `None` for the default one: the soft-float model, on an image that states
 /// the soft-float convention and no floating-point hardware ([`without_fpu`]),
 /// when the default model would put a parameter or the return value of `pieces`
-/// in its floating-point registers.
+/// in its floating-point registers; the default model with the base standard's
+/// variadic return rules for a variadic declaration on an ARM image that states
+/// the VFP variant ([`crate::kuna_vfpvariadic`]).
 pub fn undeclared_model(arch: &ArchContext, pieces: &PrototypePieces) -> Option<Rc<ProtoModel>> {
+    if arch.vfp_variadic && crate::kuna_vfpvariadic::moves_return(pieces) {
+        return arch
+            .variadic_declarations
+            .get_or_init(|| crate::kuna_vfpvariadic::model(arch.default_fp()?, arch.manage()))
+            .clone();
+    }
     let soft = arch.soft_float_declarations.as_ref()?;
     soft_layout(soft, arch.default_fp()?, pieces, arch.types()?, arch.manage())
 }
 
 /// [`undeclared_model`] for the architecture a declaration is parked on.
 pub fn undeclared_model_for(arch: &Architecture, pieces: &PrototypePieces) -> Option<Rc<ProtoModel>> {
+    if crate::kuna_vfpvariadic::moves_return(pieces) && crate::kuna_vfpvariadic::applies(arch) {
+        return crate::kuna_vfpvariadic::declarations(arch);
+    }
     if !may_use_float_storage(pieces) || !without_fpu(arch) {
         return None;
     }

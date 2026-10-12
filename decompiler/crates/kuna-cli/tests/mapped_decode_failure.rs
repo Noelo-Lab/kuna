@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 #[path = "common/arm_images.rs"]
 #[allow(dead_code)]
 mod arm_images;

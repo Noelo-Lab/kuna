@@ -12,7 +12,7 @@ use std::rc::Rc;
 use kuna_base::address::Address;
 use kuna_base::types::int4;
 use kuna_base::space::{
-    addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
+    addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, JoinSpace, UniqueSpace, VarnodeStorage,
 };
 
 use crate::context::{ArchContext, TypeOp};
@@ -300,4 +300,74 @@ fn the_high_half_of_one_register_is_never_returned_alone() {
     let ret = live_return(&mut fd, bl, whole);
     assert!(!strip_uncomputed_return_piece(&mut fd), "nothing is dropped from a value built in one register");
     assert_eq!(fd.obank().get(ret).unwrap().get_in(1), Some(whole), "the return keeps all eight bytes");
+}
+
+// --- a literal zero low half the rules folded into the pair ------------------
+
+/// A function with a big-endian register pair `breg:0x100` (first, high per
+/// the ABI) and `breg:0x104`, the return value joined first register low as
+/// `0x104:0x100`, and `return ZEXT(hi) << 32` at that join.
+fn folded_zero_pair(hi_computed: bool) -> (Funcdata, OpId, VarnodeId) {
+    let mut m = build_manager();
+    m.insert_space(Rc::new(AddrSpace::new(spacetype::IPTR_PROCESSOR, "breg", true, 8, 1, 3, 0, 1, 1))).unwrap();
+    m.insert_space(Rc::new(JoinSpace::new(4, false))).unwrap();
+    let breg = Rc::clone(m.get_space_by_name("breg").unwrap());
+    let piece = |off| VarnodeStorage { space: Some(Rc::clone(&breg)), offset: off, size: 4 };
+    let join = m.find_add_join(&[piece(0x104), piece(0x100)], 0).unwrap().get_unified().get_addr();
+    let glb = Rc::new(ArchContext::new(m));
+    let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+    let mut fd = Funcdata::new("func", "func", glb, Address::new(Rc::clone(&ram), 0x1000), 0x1000_0000, 0x40).unwrap();
+    let root = fd.bblocks_ref().root.expect("bblocks root");
+    let bl = fd.bblocks_mut().new_block_basic(root);
+    let arg = fd.new_varnode(4, &Address::new(Rc::clone(&breg), 0x104), None);
+    let hi = if hi_computed {
+        let k = fd.new_constant(4, 3);
+        live_def(&mut fd, bl, OpCode::CPUI_INT_MULT, &[arg, k], 0x3200, 4)
+    } else {
+        arg
+    };
+    let ext = live_def(&mut fd, bl, OpCode::CPUI_INT_ZEXT, &[hi], 0x3100, 8);
+    let op = fd.new_op(2, Address::new(Rc::clone(&ram), 0x1fe0));
+    fd.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_LEFT, 0, "INT_LEFT"));
+    let sa = fd.new_constant(4, 32);
+    fd.op_set_input(op, ext, 0).expect("wire input");
+    fd.op_set_input(op, sa, 1).expect("wire input");
+    fd.op_insert(op, bl, None);
+    let whole = fd.new_varnode_out(8, &join, op).expect("varnode out");
+    let ret = live_return(&mut fd, bl, whole);
+    (fd, ret, whole)
+}
+
+#[test]
+fn the_folded_form_of_a_zero_low_half_is_read_as_the_pair() {
+    let (fd, _, whole) = folded_zero_pair(false);
+    let def = fd.vbank().get(whole).and_then(|v| v.get_def()).unwrap();
+    let (hi, lo_size, out) = zero_low_pair(&fd, def).expect("ZEXT(hi) << 32 is PIECE(hi, 0:4)");
+    assert_eq!((fd.vbank().get(hi).unwrap().get_size(), lo_size, out), (4, 4, whole));
+}
+
+#[test]
+fn a_leftover_beside_a_folded_zero_is_dropped_from_a_pair_joined_against_the_abi() {
+    let (mut fd, ret, whole) = folded_zero_pair(false);
+    fd.kuna_set_pairs_first_low(true);
+    assert!(strip_uncomputed_return_piece(&mut fd));
+    let kept = fd.obank().get(ret).unwrap().get_in(1).unwrap();
+    assert_ne!(kept, whole);
+    let v = fd.vbank().get(kept).unwrap();
+    assert!(v.is_constant() && v.get_offset() == 0 && v.get_size() == 4, "the RETURN returns the 4-byte zero");
+}
+
+#[test]
+fn a_folded_zero_is_left_alone_where_the_pair_joins_in_the_abis_order() {
+    let (mut fd, ret, whole) = folded_zero_pair(false);
+    assert!(!strip_uncomputed_return_piece(&mut fd), "the folded form can be the value");
+    assert_eq!(fd.obank().get(ret).unwrap().get_in(1), Some(whole));
+}
+
+#[test]
+fn a_computed_high_half_beside_a_folded_zero_keeps_the_pair() {
+    let (mut fd, ret, whole) = folded_zero_pair(true);
+    fd.kuna_set_pairs_first_low(true);
+    assert!(!strip_uncomputed_return_piece(&mut fd));
+    assert_eq!(fd.obank().get(ret).unwrap().get_in(1), Some(whole));
 }

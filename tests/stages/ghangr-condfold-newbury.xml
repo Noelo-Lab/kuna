@@ -105,6 +105,7 @@ b801000000c3662e0f1f840000000000b802000000c3662e0f1f840000000000b803000000c3662e
 <symbol space="ram" offset="0x100060" name="f"/>
 </binaryimage>
 <script>
+  <com>option condstmts off</com>
   <com>option condfold off</com>
   <com>lo fu f</com>
   <com>decompile</com>

@@ -1,0 +1,73 @@
+<decompilertest>
+<binaryimage arch="RISCV:LE:32:default">
+<!--
+    GH-831 (RV32 sibling of gh831-riscv-fpmove.xml).
+
+    fmv.x.w, fcvt.w.d, fcvt.wu.d, fcvt.w.s and fcvt.wu.s wrote their result
+    through rdW, which exports a temporary copy of the integer register, so
+    on RV32 too the destination was never written: a0 kept its old value
+    (the call's own a0, or nothing at all).
+
+    Stage / sub-stage: P2 p-code lift (RISC-V SLEIGH spec fix, no option).
+
+    Source (clang -O2 -mno-relax -fno-optimize-sibling-calls
+    -target riscv32-linux-gnu -march=rv32gc -mabi=ilp32d -c, the .text bytes
+    verbatim below):
+
+        static double gd(int k) { return k; }            (noinline)
+        static float gf(int k) { return k; }             (noinline)
+        int fbits(float f) { int l; memcpy(&l, &f, 4); return l; }
+        int fwplus(int k) { float t = gf(k); int b;
+                            memcpy(&b, &t, 4); return b + 1; }
+        int cvtcall(int k) { return (int)gd(k) + 3; }
+        unsigned cvtwu(double d) { return (unsigned)d; }
+        int cvtws(float f) { return (int)f; }
+        unsigned cvtwus(float f) { return (unsigned)f; }
+
+    #1-#2: fmv.x.w results are the FP register's bits.  #3-#5: each fcvt.w*
+    result reaches a0.  #6: no conversion function is void.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+530505e08280411106c697000000e7804001530505e00505b240410182805375
+05d08280411106c697000000e7804001531505c20d05b24041018280530505d2
+8280531515c28280531505c08280531515c08280
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="fbits"/>
+<symbol space="ram" offset="0x10006" name="fwplus"/>
+<symbol space="ram" offset="0x1001e" name="gf"/>
+<symbol space="ram" offset="0x10024" name="cvtcall"/>
+<symbol space="ram" offset="0x1003c" name="gd"/>
+<symbol space="ram" offset="0x10042" name="cvtwu"/>
+<symbol space="ram" offset="0x10048" name="cvtws"/>
+<symbol space="ram" offset="0x1004e" name="cvtwus"/>
+</binaryimage>
+<script>
+  <com>parse line extern float8 gd(int4 k);</com>
+  <com>parse line extern float4 gf(int4 k);</com>
+  <com>parse line extern int4 fbits(float4 f);</com>
+  <com>lo fu fbits</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fwplus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cvtcall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cvtwu</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cvtws</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cvtwus</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="GH831 rv32 #1: fmv.x.w of a parameter is its bits" min="1" max="1">return .*\{ \.from = f \}\)\.to;</stringmatch>
+<stringmatch name="GH831 rv32 #2: fmv.x.w moves the call result's bits" min="1" max="1">return .*\{ \.from = gf\(a0\) \}\)\.to \+ 1;</stringmatch>
+<stringmatch name="GH831 rv32 #3: fcvt.w.d converts the call result" min="1" max="1">return \(int4\)gd\(a0\) \+ 3;</stringmatch>
+<stringmatch name="GH831 rv32 #4: fcvt.w.s writes a0" min="1" max="1">return \(int4\)a0;</stringmatch>
+<stringmatch name="GH831 rv32 #5: fcvt.wu.d and fcvt.wu.s write a0" min="2" max="2">return \(int4\)\(int8\)a0;</stringmatch>
+<stringmatch name="GH831 rv32 #6: no conversion function lost its result" min="0" max="0">^void cvtw</stringmatch>
+</decompilertest>

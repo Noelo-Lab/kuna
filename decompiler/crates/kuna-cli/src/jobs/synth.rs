@@ -222,7 +222,15 @@ fn rename_result(
     let text = |s: &str| shard::rename_identifiers(s, &map, held);
     let mut out = r.clone();
     out.code = match r.code.as_deref() {
-        Some(code) => Some(text(code)?),
+        Some(code) => {
+            let mut edits = Vec::new();
+            let renamed = shard::rename_identifiers_with(code, &map, held,
+                |start, end, to| edits.push((start, end, to.to_string())))?;
+            if let Some(record) = &mut out.pointerargs {
+                record.renamed(code, &edits);
+            }
+            Some(renamed)
+        },
         None => None,
     };
     out.proto = match r.proto.as_deref() {

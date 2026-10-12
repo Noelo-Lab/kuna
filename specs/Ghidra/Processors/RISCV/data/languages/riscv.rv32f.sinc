@@ -45,17 +45,19 @@
 
 
 # fcvt.w.s d,S,m c0000053 fff0007f SIMPLE (0, 0) 
-:fcvt.w.s rdW,frs1S,FRM is frs1S & FRM & rdW & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x60 & op2024=0x0
+:fcvt.w.s rd,frs1S,FRM is frs1S & FRM & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x60 & op2024=0x0
 {
-	rdW = trunc(frs1S);
+	local tmp:4 = trunc(frs1S);
+	assignW(rd, tmp);
 }
 
 
 # fcvt.wu.s d,S,m c0100053 fff0007f SIMPLE (0, 0) 
-:fcvt.wu.s rdW,frs1S,FRM is frs1S & FRM & rdW & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x60 & op2024=0x1
+:fcvt.wu.s rd,frs1S,FRM is frs1S & FRM & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct7=0x60 & op2024=0x1
 {
-	#TODO  unsigned
-	rdW = trunc(frs1S);
+	local wide:8 = trunc(frs1S);
+	local tmp:4 = wide:4;
+	assignW(rd, tmp);
 }
 
 
@@ -203,11 +205,9 @@ fliConstS: "nan"             is op1519=31 { export 31:$(SFLEN); }
 }
 
 # fmv.x.w d,S e0000053 fff0707f SIMPLE (0, 0) 
-:fmv.x.w rdW,frs1S is frs1S & rdW & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x0 & funct7=0x70 & op2024=0x0
+:fmv.x.w rd,frs1S is frs1S & rd & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x0 & funct7=0x70 & op2024=0x0
 {
-	local tmpreg:4 = &frs1S;
-	local tmp:4 = *[register]:4 tmpreg;
-	rdW = tmp;
+	assignW(rd, frs1S);
 }
 
 

@@ -54,16 +54,12 @@
 //! # What is deliberately NOT here
 //!
 //! The issue's first direction — reject a candidate bracketed by a known function —
-//! was implemented and **measured out**. On the Listing's entry-ordered function
-//! model, "the hole lies inside one body" can only be approximated as "no known
-//! entry lies in `(hole_start, next_code]`", and on a sparsely discovered image
-//! that approximation swallows whole unexplored regions: u-boot A32 has 314
-//! discovered entries for 2,836 real functions, and the predicate costs it 195 of
-//! 1,759 recovered functions (O2-noinline) — while cutting the corpus-wide mid-body
-//! count to 3,128. Tightening it to "the hole is the first break in the enclosing
-//! function's decoded body" still costs 185. A32 recovery is AIF's entire remaining
-//! justification (DIV-20), so neither form ships. The suppression needs real
-//! per-instruction walk ownership, not an entry interval.
+//! is [`super::kuna_aifbracket`]. Approximated from the Listing's entry-ordered
+//! function model ("no known entry lies in `(hole_start, next_code]`") it swallows
+//! whole unexplored regions on a sparsely discovered image: u-boot A32 has 314
+//! discovered entries for 2,836 real functions, and that predicate costs it 195 of
+//! 1,759 recovered functions (O2-noinline). `aifbracket` proves the bracket from the
+//! candidate's own flow instead, and keeps every candidate with boundary evidence.
 
 use crate::listing::Listing;
 

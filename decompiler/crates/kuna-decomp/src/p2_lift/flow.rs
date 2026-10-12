@@ -195,6 +195,15 @@ pub trait FlowEnvironment {
     /// p-code, returning the instruction length in bytes.
     fn translate(&self) -> &dyn Translate;
 
+    fn arm_decode_mode(&self, _addr: &Address) -> Option<super::kuna_armflowcontext::ArmDecodeMode> {
+        None
+    }
+
+    fn preserve_arm_decode_mode(
+        &self, _addr: &Address,
+        _mode: super::kuna_armflowcontext::ArmDecodeMode, _entry: bool,
+    ) {}
+
     /// Resolve an [`OpCode`] to its behavioral-class [`TypeOp`]
     /// (C++ `glb->inst[opc]`).  // STUB(W6)
     ///
@@ -332,11 +341,9 @@ pub trait FlowEnvironment {
         false
     }
 
-    /// (kuna) GH-6882: is `op` a SPARC struct-return `unimp`-after-call trap
-    /// BRANCHIND to drop as a fall-through no-op? (C++ `kunaIsSparcStructRetTrap`).
-    /// // STUB(W4).
-    fn is_sparc_struct_ret_trap(&self, _fd: &Funcdata, _op: OpId) -> bool {
-        false
+    /// Return the trap producer for a SPARC struct-return marker branch when enabled.
+    fn sparc_struct_ret_trap_producer(&self, _fd: &Funcdata, _op: OpId) -> Option<OpId> {
+        None
     }
 
     /// (kuna `fastfailnoreturn`) Is `op` the CALLIND half of a Windows `int 0x29`
@@ -345,6 +352,23 @@ pub trait FlowEnvironment {
     /// reports `false` (upstream behavior: the interrupt is an ordinary modelled
     /// call, so the cspec's `extrapop` raises the stack pointer by 8 at every site).
     fn is_fastfail_callind(&self, _fd: &Funcdata, _op: OpId) -> bool {
+        false
+    }
+
+    /// (kuna `msvcsig`) The import slot the CALLIND `op` calls through, when that
+    /// slot carries a locked MSVC prototype, so the call is direct from the flow
+    /// on. See [`kuna_msvcimportcall`](crate::kuna_msvcimportcall). The default
+    /// shell reports `None` (upstream behavior: `ActionDeindirect` resolves it
+    /// later and the function restarts).
+    fn msvc_import_slot(&self, _fd: &Funcdata, _op: OpId) -> Option<Address> {
+        None
+    }
+
+    /// (kuna `msvcsig`) Does `entry` carry a locked MSVC prototype? Such a callee's
+    /// copied prototype gets the stack adjustment its parameter list implies, as
+    /// `ActionDefaultParams` gives a declared callee it seeds itself
+    /// (`calleeprotostack`). The default shell reports `false`.
+    fn msvc_locked_entry(&self, _entry: &Address) -> bool {
         false
     }
 
@@ -361,7 +385,7 @@ pub trait FlowEnvironment {
         None
     }
 
-    /// (kuna) tee-O2 tail-jump: is the direct `CPUI_BRANCH` `op`, whose target is
+    /// (kuna) Is the direct BRANCH or bounded CBRANCH `op`, whose target is
     /// `dest`, an `-O2` tail call to another known function's entry (and so should
     /// be recovered as a `CALL` + `RETURN` rather than flow-followed into the
     /// callee)?  See [`kuna_tailcalljump`](crate::kuna_tailcalljump).
@@ -587,6 +611,7 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     funcbound_cutoffs: std::collections::BTreeSet<Address>,
     /// Addresses to which there is flow — the work stack (C++ `addrlist`).
     addrlist: Vec<Address>,
+    arm_context: bool,
     /// List of BRANCHIND ops (preparing for jump table recovery) (C++ `tablelist`).
     tablelist: Vec<OpId>,
     /// List of p-code ops that need injection (C++ `injectlist`).
@@ -659,11 +684,12 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     injecting_entry: Option<Address>,
 }
 
-/// Apply explicit-flow precedence before consulting either inferred tail-call
-/// rule. The closures keep both classifiers lazy: an applied `BRANCH` fact does
-/// not merely discard their answers, it prevents them from running at all.
+/// Apply explicit-flow and declared-extent precedence before consulting either
+/// inferred tail-call rule. The closures keep both classifiers lazy: an applied
+/// `BRANCH` fact or an in-extent target prevents them from running at all.
 pub(crate) fn select_inferred_tail_call<J, F>(
     branch_override_applied: bool,
+    dest_inside_declared_extent: bool,
     tailcalljump: J,
     tailcallframe: F,
 ) -> Option<&'static str>
@@ -671,7 +697,7 @@ where
     J: FnOnce() -> bool,
     F: FnOnce() -> bool,
 {
-    if branch_override_applied {
+    if branch_override_applied || dest_inside_declared_extent {
         return None;
     }
     if tailcalljump() {
@@ -706,6 +732,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             outofbounds: std::collections::BTreeSet::new(),
             funcbound_cutoffs: std::collections::BTreeSet::new(),
             addrlist: Vec::new(),
+            arm_context: env.arm_decode_mode(&entry).is_some(),
             tablelist: Vec::new(),
             injectlist: Vec::new(),
             visited: BTreeMap::new(),
@@ -1325,6 +1352,13 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         } else {
                             *isfallthru = true; // relative branch is to end of instruction
                         }
+                    } else if cursor.is_none()
+                        && self.data.get_size() > 0
+                        && self.tail_call_kind(curop, &destaddr) == Some("tailcalljump")
+                    {
+                        self.recover_conditional_tail_call(curop, &destaddr)?;
+                        *isfallthru = true;
+                        break;
                     } else {
                         // (kuna overlapbranch) stage the machine-level conditional
                         // target for the fall-through overlap check.
@@ -1375,8 +1409,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 }
                 OpCode::CPUI_BRANCHIND => {
                     // (kuna) GH-6882: SPARC struct-return `unimp` after a call.
-                    if self.env.is_sparc_struct_ret_trap(&self.data, curop) {
-                        //   -- STUB(W3-funcdata): op_destroy_raw deferred (loss).
+                    if let Some(producer) = self.env.sparc_struct_ret_trap_producer(&self.data, curop) {
+                        crate::kuna_sparcstructret::neutralize_trap_producer(&mut self.data, producer)?;
                         self.data.op_destroy_raw(curop)?;
                         op = None;
                         *isfallthru = true;
@@ -1529,6 +1563,22 @@ following this call as a branch"
         Ok(())
     }
 
+    /// Keep the false edge at the next instruction and call only on the taken
+    /// edge. Relative targets keep both synthetic blocks at the branch site.
+    fn recover_conditional_tail_call(&mut self, branch: OpId, dest: &Address) -> KunaResult<()> {
+        let (skip, taken, call) =
+            crate::kuna_tailcalljump::conditional_tail_branches(&mut self.data, branch, dest)?;
+        self.recover_tail_call(call, dest, "tailcalljump")?;
+        let halt = self.dead_next(call).expect("conditional tail: missing return");
+        let end = self.data.obank().get(halt).expect("conditional tail: stale return").get_time();
+        let from = self.data.obank().get(skip).expect("conditional tail: stale skip").get_time();
+        let target = self.data.new_constant(4, end.wrapping_add(1).wrapping_sub(from) as u64);
+        self.data.op_set_input(skip, target, 0)?;
+        self.op_mark_start_basic(skip);
+        self.op_mark_start_basic(taken);
+        Ok(())
+    }
+
     /// (kuna `tailcalljump`) The destination of the computed jump `op` when its
     /// recovered table `jt_idx` names exactly one address and the environment
     /// accepts that address as a tail-call target.
@@ -1536,6 +1586,9 @@ following this call as a branch"
         let dest = crate::kuna_tailcalljump::kuna_sole_table_destination(
             self.data.get_jump_table(jt_idx as int4),
         )?;
+        if self.is_inside_declared_extent(&dest) {
+            return None;
+        }
         let outside = dest < self.baddr || self.eaddr < dest;
         self.env.is_tail_call_table(&self.data, op, &dest, outside).then_some(dest)
     }
@@ -1608,8 +1661,10 @@ following this call as a branch"
         }
     }
 
-    /// (kuna) Which tail-jump rule, if either, claims this direct `CPUI_BRANCH`?
+    /// Which tail-jump rule, if either, claims this direct machine branch?
     ///
+    /// A target inside the current function's declared extent is
+    /// intraprocedural, so neither inference rule is consulted there. Else,
     /// [`kuna_tailcalljump`](crate::kuna_tailcalljump) is asked first, so a
     /// branch to a known function entry keeps the existing decision and the
     /// existing `tailcalljump:` warning text; [`kuna_tailcallframe`](
@@ -1625,9 +1680,18 @@ following this call as a branch"
             .get_addr();
         select_inferred_tail_call(
             self.applied_branch_overrides.contains(site),
+            self.is_inside_declared_extent(dest),
             || self.env.is_tail_call_branch(&self.data, op, dest),
             || self.env.is_frame_teardown_tail_call(&self.data, op, dest),
         )
+    }
+
+    /// Is `addr` part of this function's caller-declared extent?  `get_size()`
+    /// is nonzero only when `function bounds` / `--define-function START-END`
+    /// supplied an explicit size; the `baddr`/`eaddr` pair is the same range the
+    /// flow follower enforces (inclusive at the end).
+    fn is_inside_declared_extent(&self, addr: &Address) -> bool {
+        self.data.get_size() > 0 && self.baddr <= *addr && *addr <= self.eaddr
     }
 
     /// Generate p-code for a single machine instruction and process discovered
@@ -1705,6 +1769,10 @@ following this call as a branch"
             crate::overrides::flow_type::NONE
         };
 
+        let mode = self.arm_context.then(|| self.env.arm_decode_mode(curaddr)).flatten();
+        if curaddr == self.data.get_address() {
+            if let Some(mode) = mode { self.env.preserve_arm_decode_mode(curaddr, mode, true); }
+        }
         let mut emit = FlowEmit::new(&mut self.data, self.env);
         let decoded = match self.env.mapped_flow_image() {
             Some(image) => self.env.translate().one_instruction_checked(&mut emit, curaddr, image),
@@ -1720,6 +1788,9 @@ following this call as a branch"
                     // is infallible, so the error was captured; re-raise it here, at
                     // the same point the C++ exception would propagate.
                     return Err(err);
+                }
+                if let Some(mode) = mode {
+                    self.env.preserve_arm_decode_mode(curaddr, mode, false);
                 }
             }
             Err(err) => {
@@ -1962,14 +2033,20 @@ truncating the fall-through here"
     /// it is the entry of another known function (so the walk has run off the end
     /// of the current function)?  Gated by `option funcboundflow`
     /// (`funcbound_flow_enabled`); when on, resolves `next` against the symbol
-    /// table via [`query_call`](FlowEnvironment::query_call) and excludes the
-    /// current function's own entry.  A foreign entry whose instruction is a
+    /// table via [`query_call`](FlowEnvironment::query_call), excludes the
+    /// current function's own entry, and keeps entries inside an explicit
+    /// function extent in the same flow. A foreign entry whose instruction is a
     /// real `RETURN` is admitted; processing that one instruction terminates the
-    /// walk naturally and cannot consume anything beyond it.  See
+    /// walk naturally and cannot consume anything beyond it. See
     /// [`kuna_funcboundflow`].
     fn is_funcbound_fallthru(&self, next: &Address) -> bool {
         // Fast-path the default-off gate: no symbol-table lookup per instruction.
         if !self.env.funcbound_flow_enabled() {
+            return false;
+        }
+        // A caller-declared extent is authoritative and this common in-range
+        // case needs no symbol-table lookup or one-instruction probe.
+        if self.is_inside_declared_extent(next) {
             return false;
         }
         let next_is_known_function = self.env.query_call(next).is_some();
@@ -2118,6 +2195,16 @@ truncating the fall-through here"
             }
             let backaddr = self.addrlist.last().expect("fallthru: addrlist back").clone();
             if bound <= backaddr {
+                if bound == backaddr
+                    && (bound != self.eaddr || self.seen_instruction(&backaddr))
+                {
+                    if startbasic {
+                        let op = self.target(&backaddr)?;
+                        self.op_mark_start_basic(op);
+                    }
+                    self.addrlist.pop();
+                    break;
+                }
                 if bound == self.eaddr {
                     if backaddr <= self.eaddr {
                         // (kuna) `eaddr` is the last IN-BODY byte, so an
@@ -2137,15 +2224,6 @@ truncating the fall-through here"
                     self.unprocessed.push(backaddr);
                     self.addrlist.pop();
                     return Ok(());
-                }
-                if bound == backaddr {
-                    // Hit the bound exactly.
-                    if startbasic {
-                        let op = self.target(&backaddr)?;
-                        self.op_mark_start_basic(op);
-                    }
-                    self.addrlist.pop();
-                    break;
                 }
                 if !self.set_fallthru_bound(&mut bound)? {
                     return Ok(()); // Reset bound
@@ -2704,6 +2782,9 @@ truncating the fall-through here"
             .map(|o| o.get_addr().clone())
             .unwrap_or_default();
         let mut direct = self.data.get_override().find_indirect_override(&op_addr).cloned();
+        if direct.is_none() {
+            direct = self.env.msvc_import_slot(&self.data, op);
+        }
 
         // C++ flow.cc:730-731: `if (fc != 0 && fc->getEntryAddress() ==
         // res->getEntryAddress()) res->setAddress(Address());` — while weaving a
@@ -2874,6 +2955,12 @@ truncating the fall-through here"
                         {
                             fc.proto_mut().set_model(Some(evalfp));
                         }
+                    }
+                    if self.env.msvc_locked_entry(&entry) {
+                        crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
+                            self.data.get_arch().callee_proto_stack,
+                            fc.proto_mut(),
+                        );
                     }
                 }
             }

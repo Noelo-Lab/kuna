@@ -1,0 +1,76 @@
+<decompilertest>
+<binaryimage arch="MIPS:LE:32:default:default">
+<!--
+    kuna: a register a MIPS function sets for coprocessor 0 is not the high
+    word of its return; a prefetch, cache op or coprocessor 2 move of it is
+    no such write.
+
+    Stage / sub-stage: P4 return recovery, the output trials of the
+    function's own RETURN (ActionReturnRecovery, p4_calls/kuna_retsysreg.rs).
+    P0 assertion: option retsysreg on|off (default on).
+
+    Source (mipsel-linux-gnu-gcc -O2, bytes verbatim; 0x1000 and 0x1100):
+
+        typedef unsigned int u32; typedef unsigned long long u64;
+        u64 pk(u32 *p) { u32 q = p[1]; __builtin_prefetch((void*)q);
+          return ((u64)q << 32) | p[0]; }
+        u64 pkw(u32 *p, u32 n) { u32 q = p[n]; __builtin_prefetch((void*)q, 1);
+          return ((u64)q << 32) | p[0]; }
+        cch, syn, cop2: pk with cache 0x15,0(q), synci 0(q) and mtc2 q,$1
+        int st(int a) { int r = a * 3; register int v asm("$3") = 0x1001;
+          __asm volatile("mtc0 %0, $12" :: "r"(v)); return r; }
+
+    pk is lw v1,4(a0); lw v0,0(a0); jr ra; pref 6,0(v1).
+    st is sll v0,a0,1; li v1,0x1001; addu v0,v0,a0; jr ra; mtc0 v1,$12.
+
+    The bug: v1 joined v0 as a 64-bit return whose high word is the Status
+    operand.  The fix returns the 32-bit value from st.  pk, pkw, cch, syn
+    and cop2 keep the pair: a prefetch or cache op takes an address, which
+    the high word can be, and coprocessor 2 takes data.  The last pass sets
+    option retsysreg off and prints st with the pair again.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+0400838c0000828c0800e003000066cc802805000000828c212885000000a38c
+0800e003000067cc
+</bytechunk>
+<bytechunk space="ram" offset="0x1100" readonly="true">
+0400838c000075bc0800e0030000828c0400838c00007f040800e0030000828c
+0400838c000883480800e0030000828c0400838c001083440800e0030000828c
+4010040001100324211044000800e00300608340
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="pk"/>
+<symbol space="ram" offset="0x1010" name="pkw"/>
+<symbol space="ram" offset="0x1100" name="cch"/>
+<symbol space="ram" offset="0x1110" name="syn"/>
+<symbol space="ram" offset="0x1120" name="cop2"/>
+<symbol space="ram" offset="0x1140" name="st"/>
+</binaryimage>
+<script>
+  <com>lo fu pk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pkw</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu syn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cop2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu st</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option retsysreg off</com>
+  <com>lo fu st</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RETSYSREG MIPS #1: a Status write through v1 beside a computed v0 is not returned" min="1" max="1">(int4|int) st\((int4|int) a0\)</stringmatch>
+<stringmatch name="RETSYSREG MIPS #2: a prefetch, cache op or mtc2 on the high word keeps the pair" min="5" max="5">(uint8|unsigned long long) (pk|pkw|cch|syn|cop2)\(</stringmatch>
+<stringmatch name="RETSYSREG MIPS #3: with retsysreg off st returns the pair again" min="1" max="1">return CONCAT44\(0x1001,a0 \* 3\);</stringmatch>
+</decompilertest>

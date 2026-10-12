@@ -94,16 +94,10 @@
       v4 \+= \*a0;
       gi = v2;</stringmatch>
 <stringmatch name="globalloadguard #3: load drops the store before the branch that loads" min="1" max="1">\{
-  // a0: [^\n]+$
-  // a1: [^\n]+$
-  // a2: [^\n]+$
   if \(a2\)
     a1 = \*a0 \+ 1;
   gi = a1;</stringmatch>
 <stringmatch name="globalloadguard #4: global keeps the store before the branch that loads" min="1" max="1">\{
-  // a0: [^\n]+$
-  // a1: [^\n]+$
-  // a2: [^\n]+$
   gi = a1;
   if \(a2\)
     a1 = \*a0 \+ 1;

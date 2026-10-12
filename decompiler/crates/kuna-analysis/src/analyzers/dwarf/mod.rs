@@ -576,7 +576,7 @@ fn build_datatype_at(
             }
             match die.encoding {
                 Some(gimli::DW_ATE_signed_char) | Some(gimli::DW_ATE_unsigned_char) => {
-                    types.get_type_char(size).ok()
+                    char_datatype(types, size, &die.name, encoding_signed(die.encoding))
                 }
                 Some(gimli::DW_ATE_boolean) => types.get_base(size, type_metatype::TYPE_BOOL).ok(),
                 Some(gimli::DW_ATE_float) => types.get_base(size, type_metatype::TYPE_FLOAT).ok(),
@@ -758,6 +758,29 @@ fn aggregate_name<'a>(die: &'a DieSnap, alias: Option<&'a str>, fallback: &'a st
         &die.name
     } else {
         alias.unwrap_or(fallback)
+    }
+}
+
+/// A DWARF character base type. `signed char` and `unsigned char` are distinct C
+/// types whose sign is stated, so they become character types of that sign
+/// (Ghidra's `schar`/`uchar`): they still print as characters and copy as
+/// strings, but extend, compare and convert by their own sign. Plain `char`
+/// (and any other spelling, such as Fortran's `character`) keeps the core
+/// `char` type, whose sign is the target's whatever the encoding says.
+fn char_datatype(
+    types: &dyn TypeFactory,
+    size: i32,
+    name: &str,
+    signed: Option<bool>,
+) -> Option<Rc<Datatype>> {
+    let meta = match (name, signed) {
+        ("signed char", Some(true)) => Some(type_metatype::TYPE_INT),
+        ("unsigned char", Some(false)) => Some(type_metatype::TYPE_UINT),
+        _ => None,
+    };
+    match meta {
+        Some(m) if size == 1 => types.get_type_char_signed(name, m).ok(),
+        _ => types.get_type_char(size).ok(),
     }
 }
 
@@ -1302,6 +1325,48 @@ mod tests {
         assert_eq!(meta(50), (type_metatype::TYPE_INT, false), "a 4-byte enum stays int");
     }
 
+
+    /// `signed char` and `unsigned char` are character types of the sign DWARF
+    /// states; plain `char` stays the core `char` whatever its encoding (AArch64
+    /// and ARM state it `DW_ATE_unsigned_char`), so a string stays `char *`.
+    #[test]
+    fn a_character_type_keeps_its_stated_sign_and_plain_char_stays_char() {
+        let types = factory();
+        for (name, size, meta, ch) in [
+            ("uint1", 1, type_metatype::TYPE_UINT, false),
+            ("int1", 1, type_metatype::TYPE_INT, false),
+            ("char", 1, type_metatype::TYPE_INT, true),
+        ] {
+            types.set_core_type(name, size, meta, ch).unwrap();
+        }
+        types.cache_core_types().unwrap();
+        let mut dies: BTreeMap<usize, DieSnap> = BTreeMap::new();
+        let cases = [
+            ("char", gimli::DW_ATE_signed_char),
+            ("char", gimli::DW_ATE_unsigned_char),
+            ("signed char", gimli::DW_ATE_signed_char),
+            ("unsigned char", gimli::DW_ATE_unsigned_char),
+            ("character(kind=1)", gimli::DW_ATE_unsigned_char),
+        ];
+        for (off, (name, encoding)) in cases.iter().enumerate() {
+            let mut d = DieSnap::new(gimli::DW_TAG_base_type, 1);
+            d.name = (*name).into();
+            d.byte_size = Some(1);
+            d.encoding = Some(*encoding);
+            dies.insert(off, d);
+        }
+        let built = |off: usize| {
+            let mut walk = TypeWalk::with_gate(true);
+            let t = build_datatype(Some(off), &dies, &types, 1, &mut walk, false).expect("builds");
+            (t.get_metatype(), t.is_char_print(), t.is_core_type(), t.get_name().to_string())
+        };
+        let plain = (type_metatype::TYPE_INT, true, true, "char".to_string());
+        assert_eq!(built(0), plain, "x86 plain char");
+        assert_eq!(built(1), plain, "ARM plain char");
+        assert_eq!(built(2), (type_metatype::TYPE_INT, true, false, "signed char".into()), "signed char");
+        assert_eq!(built(3), (type_metatype::TYPE_UINT, true, false, "unsigned char".into()), "unsigned char");
+        assert_eq!(built(4), plain, "Fortran character");
+    }
 
     /// Parse the DWARF snapshot of a fixture and return the subprogram DIEs that
     /// are *defined* (low_pc + not a declaration), as (name, low_pc).

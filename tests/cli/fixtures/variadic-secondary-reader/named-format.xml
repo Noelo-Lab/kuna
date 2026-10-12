@@ -1,0 +1,58 @@
+<decompilertest>
+<!-- A read-only prefix does not make a writable conversion or terminator immutable. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100200">4883ec288b1183c2018911488d0dee010000e8e90000004883c428c3</bytechunk>
+<bytechunk space="ram" offset="0x100300">4889d0c3</bytechunk>
+<symbol space="ram" offset="0x100200" name="stored_tail"/>
+<symbol space="ram" offset="0x100300" name="render_tail"/>
+<bytechunk space="ram" offset="0x100220">4883ec288b1183c2018911488d0dee010000e8d90000004883c428c3</bytechunk>
+<bytechunk space="ram" offset="0x100310">4889d0c3</bytechunk>
+<symbol space="ram" offset="0x100220" name="stored_nul"/>
+<symbol space="ram" offset="0x100310" name="render_nul"/>
+<bytechunk space="ram" offset="0x100240">4883ec288b1183c2018911488d0dbe010000e8c90000004883c428c3</bytechunk>
+<bytechunk space="ram" offset="0x100320">4889d0c3</bytechunk>
+<symbol space="ram" offset="0x100240" name="stored_immutable"/>
+<symbol space="ram" offset="0x100320" name="render_immutable"/>
+<bytechunk space="ram" offset="0x100400" readonly="true">25</bytechunk>
+<bytechunk space="ram" offset="0x100401">6900</bytechunk>
+<bytechunk space="ram" offset="0x100410" readonly="true">256900</bytechunk>
+<bytechunk space="ram" offset="0x100420" readonly="true">2569</bytechunk>
+<bytechunk space="ram" offset="0x100422">00</bytechunk>
+</binaryimage>
+<script>
+<com>parse line extern uint8 MSABI stored_tail(int4 *value);</com>
+<com>parse line extern uint8 MSABI render_tail(char *format, ...);</com>
+<com>parse line extern uint8 MSABI stored_nul(int4 *value);</com>
+<com>parse line extern uint8 MSABI render_nul(char *format, ...);</com>
+<com>parse line extern uint8 MSABI stored_immutable(int4 *value);</com>
+<com>parse line extern uint8 MSABI render_immutable(char *format, ...);</com>
+<com>map addr r0x100410 char named_format[3]</com>
+<com>map addr r0x100400 char tail_format[3]</com>
+<com>map addr r0x100420 char nul_format[3]</com>
+<com>option varargforward off</com>
+<com>lo fu stored_tail</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu stored_nul</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu stored_immutable</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option varargforward on</com>
+<com>lo fu stored_tail</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu stored_nul</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu stored_immutable</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="Writable conversion declines format evidence" min="2" max="2">return render_tail\("%i"\);</stringmatch>
+<stringmatch name="Writable terminator declines format evidence" min="2" max="2">return render_nul\("%i"\);</stringmatch>
+<stringmatch name="Immutable format off reproduces omission" min="1" max="1">return render_immutable\("%i"\);</stringmatch>
+<stringmatch name="Immutable format on recovers stored value" min="1" max="1">return render_immutable\("%i",[^;]+\);</stringmatch>
+</decompilertest>

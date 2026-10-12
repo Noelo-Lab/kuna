@@ -4,7 +4,7 @@
 //! value, and the callee's integer result left in `r0`, `rax`, `x0` or `$v0` is
 //! not returned. A zero is not such a value: `-fzero-call-used-regs` writes one
 //! into every call-used register a forwarder does not return in.
-mod common;
+use crate::common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolFlags, SymbolKind,

@@ -236,12 +236,26 @@ pub struct Funcdata {
     /// (kuna `stackstoreguard`) What the latest `restructure_varnode` pass says
     /// the final layout must satisfy (`p6_variables/kuna_storereach.rs`).
     store_reach_checks: std::cell::RefCell<crate::p6_variables::kuna_storereach::ReachChecks>,
+    /// (kuna `stackstoreguard`) The STOREs of any width heritage guarded a
+    /// written stack range against (`p3_dataflow/kuna_stackstoreguard.rs`).
+    indexed_guard_stores: std::cell::RefCell<std::collections::BTreeSet<OpId>>,
+    /// (kuna `stackstoreguard`) The INDIRECTs heritage placed for those STOREs.
+    indexed_guard_indirects: std::cell::RefCell<std::collections::BTreeSet<OpId>>,
+    /// (kuna `stackstoreguard`) Every signed stack range a layout pass found
+    /// only the guard keeps (`p6_variables/kuna_storereach.rs`).
+    guard_only_seen: std::cell::RefCell<Vec<(kuna_base::types::intb, kuna_base::types::intb)>>,
     /// (kuna `stackstoreguard`) Set when the guard is off for this function.
     /// Survives `clear()`.
     stack_store_guard_withdrawn: std::cell::Cell<bool>,
     /// (kuna `stackstoreguard`) Set when the final layout spoiled what the
     /// guard needs; the drive then analyzes the function again without it.
     stack_store_guard_spoiled: std::cell::Cell<bool>,
+    /// (kuna `condstmts`) Block start addresses structured as complex from the
+    /// first structuring on; set by the drive and kept across `clear()`.
+    kuna_condstmts_seed: std::collections::BTreeSet<Address>,
+    /// (kuna `condstmts`) Block start addresses the final structure folded into a
+    /// condition operand over the cap.
+    kuna_condstmts_hits: std::collections::BTreeSet<Address>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -252,6 +266,10 @@ pub struct Funcdata {
     vbank: VarnodeBank,
     /// Machine homes retained when equivalent values replace their Varnodes.
     kuna_storage_sources: std::collections::HashMap<VarnodeId, Vec<crate::kuna_varsources::StorageSource>>,
+    kuna_call_transport: std::collections::HashSet<VarnodeId>,
+    kuna_call_transport_projections: std::collections::HashMap<VarnodeId, int4>,
+    kuna_denied_storage_writes: std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+    kuna_meaningful_storage_writes: std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
     /// Container of PcodeOp objects for \b this function (C++ `obank`)
     obank: PcodeOpBank,
     /// Unstructured basic blocks (C++ `bblocks`)
@@ -296,6 +314,8 @@ pub struct Funcdata {
     /// [`Self::ensure_covermerge`].  `pub(crate)` so the `funcdata_merge` bridge
     /// module can take/replace it.
     pub(crate) covermerge: Option<crate::merge::Merge>,
+    /// Revision of the call/store set and its basic-block positions.
+    affecting_ops_revision: u64,
     /// Overrides of data-flow, prototypes, etc. that are local to \b this function
     /// (C++ `Override localoverride`, `funcdata.hh:99`).  The console
     /// `override flow|prototype|...` commands write here (C++ `dcp->fd->getOverride()`),
@@ -339,6 +359,11 @@ pub struct Funcdata {
     /// up to seven passes.  A pass that wants a decided pointer picture reads
     /// this instead.
     kuna_infertypes_settled: bool,
+    /// Scheduled constant-pointer pass count for the opt-in array-base guard.
+    pub(crate) kuna_global_array_anchor_passes: Option<u8>,
+    /// (kuna `calltargettype`) The function-pointer type each indirect call
+    /// states, for a call whose target is cast at the call: the cast names it.
+    kuna_call_target_types: std::collections::HashMap<OpId, std::rc::Rc<crate::dtype::Datatype>>,
     /// (kuna) Why the decompile pipeline aborted for this function, when it did.
     ///
     /// A caught per-function abort (`LOSS-131`) unwinds and discards the
@@ -395,6 +420,11 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
     >,
+    /// (kuna `hiddenretarg`) The values a veto removed from a call's
+    /// hidden-return register, as the leaves
+    /// [`crate::kuna_hiddenretarg::value_leaves`] finds. Cleared with the
+    /// Varnodes on a restart.
+    kuna_hiddenret_vetoed: std::collections::HashSet<VarnodeId>,
     /// (kuna `armfloatargs`) The same probe of this function's own body, read by
     /// its own input recovery ([`crate::kuna_armfloatargs::mark_own_reads`]).
     kuna_own_entry_dead: Option<std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>>,
@@ -438,10 +468,22 @@ pub struct Funcdata {
     /// (kuna `voidret`) A reader keeps this function's float return as another
     /// type, so the float-register vote on the return is withdrawn.
     kuna_float_return_withdrawn: bool,
+    /// (kuna `floatbits`) An inference pass typed this function's return a
+    /// float because its float-register input reaches it only through bit ops.
+    kuna_float_bits_return: bool,
     /// (kuna `voidret`) The `void` callees' results this function's return would be.
     kuna_forced_claims: Vec<((int4, kuna_base::types::uintb), (Address, int4))>,
+    /// (kuna `voidret`) The storage this function's callers read of the word it
+    /// returns zero-extended, wider than the word.
+    kuna_wide_return: Option<(Address, int4)>,
+    /// (kuna `voidret`) The zero-extended word the RETURN pull trimmed the return
+    /// to, and whether its sign bit may be set.
+    kuna_zext_word: Option<(Address, int4, bool)>,
     /// (kuna `voidret`) What each callee's last decompile recovered it returns.
     kuna_callee_returns: std::collections::BTreeMap<(int4, kuna_base::types::uintb), crate::kuna_voidret::Returns>,
+    /// (kuna `floatbits`) The callees whose float return the bits of a
+    /// float-register input made one.
+    kuna_callee_float_bits: std::collections::BTreeSet<(int4, kuna_base::types::uintb)>,
     /// (kuna `voidret`) Per callee, whether each parameter its last decompile
     /// recovered is a float (`Some(true)`), an integer or pointer (`Some(false)`).
     kuna_callee_params: std::collections::BTreeMap<(int4, kuna_base::types::uintb), Vec<Option<bool>>>,
@@ -454,6 +496,9 @@ pub struct Funcdata {
     /// (kuna `voidret`) Whether `ancestor_op_use` is scoring that storage, where a
     /// call's result used only on the way to the RETURN counts as the return value.
     kuna_forced_scoring: bool,
+    /// (kuna `varargsharedfloat`) The call whose other active argument slots a
+    /// scored value may also reach.
+    kuna_shared_float_call: Option<OpId>,
     /// (kuna `callrettype`) The extensions the return trimming narrowed the
     /// returned value back through ([`crate::kuna_callrettype::note_returned_extension`]).
     kuna_callret_returned: Vec<(bool, int4)>,
@@ -466,6 +511,9 @@ pub struct Funcdata {
     /// writes the return register, which carries no argument, just before them
     /// (`xor %eax,%eax` is SysV's vector-register count).
     kuna_passthrough_vararg_calls: Vec<crate::context::OpId>,
+    /// (kuna `calleereadarg`) The CALL ops set up as variadic calls, recorded
+    /// before heritage whatever `passthrough` decides.
+    kuna_readarg_vararg_calls: Vec<crate::context::OpId>,
     /// (kuna `passthrough`) Is this function itself variadic -- does its entry
     /// block read the return register, which carries no argument, before it
     /// writes it (`test %al,%al` in a SysV register-save prologue)?
@@ -599,6 +647,7 @@ impl Funcdata {
             high_level_index: 0,
             cast_phase_index: 0,
             min_laned_size,
+            kuna_global_array_anchor_passes: None,
             laned_map: std::collections::BTreeMap::new(),
             size: sz,
             glb,
@@ -613,11 +662,20 @@ impl Funcdata {
             cast_objects: std::cell::RefCell::new(Vec::new()),
             store_reach_committed: std::cell::Cell::new(false),
             store_reach_checks: std::cell::RefCell::new(Default::default()),
+            indexed_guard_stores: std::cell::RefCell::new(Default::default()),
+            indexed_guard_indirects: std::cell::RefCell::new(Default::default()),
+            guard_only_seen: std::cell::RefCell::new(Vec::new()),
             stack_store_guard_withdrawn: std::cell::Cell::new(false),
             stack_store_guard_spoiled: std::cell::Cell::new(false),
+            kuna_condstmts_seed: std::collections::BTreeSet::new(),
+            kuna_condstmts_hits: std::collections::BTreeSet::new(),
             jumpvec: Vec::new(),
             vbank,
             kuna_storage_sources: std::collections::HashMap::new(),
+            kuna_call_transport: std::collections::HashSet::new(),
+            kuna_call_transport_projections: std::collections::HashMap::new(),
+            kuna_denied_storage_writes: std::collections::HashMap::new(),
+            kuna_meaningful_storage_writes: std::collections::HashMap::new(),
             obank: PcodeOpBank::new(),
             bblocks,
             sblocks,
@@ -625,10 +683,12 @@ impl Funcdata {
             heritage: crate::heritage::Heritage::new(),
             qlst: Vec::new(),
             covermerge: None,
+            affecting_ops_revision: 0,
             localoverride: crate::overrides::Override::new(),
             union_map: std::collections::BTreeMap::new(),
             pending_comments: Vec::new(),
             kuna_infertypes_settled: false,
+            kuna_call_target_types: std::collections::HashMap::new(),
             kuna_pipeline_failure: None,
             kuna_rejected_flow: Vec::new(),
             kuna_directive_symbols: Vec::new(),
@@ -637,6 +697,7 @@ impl Funcdata {
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
             kuna_callee_entry_dead: std::collections::HashMap::new(),
+            kuna_hiddenret_vetoed: std::collections::HashSet::new(),
             kuna_own_entry_dead: None,
             kuna_callee_entry_through: std::collections::HashMap::new(),
             kuna_callee_forward: std::collections::HashMap::new(),
@@ -647,15 +708,21 @@ impl Funcdata {
             kuna_forced_return: Vec::new(),
             kuna_forced_return_planted: Vec::new(),
             kuna_float_return_withdrawn: false,
+            kuna_float_bits_return: false,
             kuna_callee_returns: std::collections::BTreeMap::new(),
+            kuna_callee_float_bits: std::collections::BTreeSet::new(),
             kuna_callee_params: std::collections::BTreeMap::new(),
             kuna_callee_return_storage: std::collections::BTreeMap::new(),
             kuna_forced_claims: Vec::new(),
+            kuna_wide_return: None,
+            kuna_zext_word: None,
             kuna_float_pair_halves: std::collections::BTreeSet::new(),
             kuna_forced_scoring: false,
+            kuna_shared_float_call: None,
             kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
+            kuna_readarg_vararg_calls: Vec::new(),
             kuna_passthrough_variadic: false,
             kuna_moved_back_returns: Vec::new(),
             kuna_pairs_first_low: false,
@@ -883,6 +950,16 @@ impl Funcdata {
         self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
     }
 
+    /// (kuna `hiddenretarg`) Remember the leaves of a value vetoed from a call.
+    pub fn kuna_note_hiddenret_vetoed(&mut self, leaves: &[VarnodeId]) {
+        self.kuna_hiddenret_vetoed.extend(leaves.iter().copied());
+    }
+
+    /// (kuna `hiddenretarg`) Was `vn` part of a value vetoed from a call?
+    pub fn kuna_hiddenret_vetoed(&self, vn: VarnodeId) -> bool {
+        self.kuna_hiddenret_vetoed.contains(&vn)
+    }
+
     /// (kuna `armfloatargs`) Record the entry-liveness probe of this function's
     /// own body.
     pub fn kuna_set_own_entry_dead(&mut self, dead: std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>) {
@@ -1013,6 +1090,43 @@ impl Funcdata {
         &self.kuna_forced_claims
     }
 
+    /// (kuna `voidret`) Record the storage this function's callers read of the
+    /// word it returns zero-extended.
+    pub fn kuna_set_wide_return(&mut self, wide: Option<(Address, int4)>) {
+        self.kuna_wide_return = wide;
+    }
+
+    /// (kuna `voidret`) The storage this function's callers read of the word it
+    /// returns zero-extended, wider than the word.
+    pub fn kuna_wide_return(&self) -> Option<&(Address, int4)> {
+        self.kuna_wide_return.as_ref()
+    }
+
+    /// (kuna `voidret`) Note the zero-extended word the RETURN pull trims the
+    /// return to, and whether its sign bit may be set at any RETURN.
+    pub fn kuna_note_zext_word(&mut self, addr: Address, size: int4, sign: bool) {
+        let before = self.kuna_zext_word.as_ref().is_some_and(|(a, s, b)| *a == addr && *s == size && *b);
+        self.kuna_zext_word = Some((addr, size, sign || before));
+    }
+
+    /// (kuna `voidret`) The zero-extended word the RETURN pull trimmed the return
+    /// to, and whether its sign bit may be set.
+    pub fn kuna_zext_word(&self) -> Option<&(Address, int4, bool)> {
+        self.kuna_zext_word.as_ref()
+    }
+
+    /// (kuna `floatbits`) Seed the callees whose float return the bits of a
+    /// float-register input made one.
+    pub fn kuna_set_callee_float_bits(&mut self, callees: std::collections::BTreeSet<(int4, kuna_base::types::uintb)>) {
+        self.kuna_callee_float_bits = callees;
+    }
+
+    /// (kuna `floatbits`) Did the callee keyed `key` return a float for the
+    /// bits of its float-register input?
+    pub fn kuna_callee_float_bits(&self, key: (int4, kuna_base::types::uintb)) -> bool {
+        self.kuna_callee_float_bits.contains(&key)
+    }
+
     /// (kuna `voidret`) What the callee at `key` was last recovered to return.
     pub fn kuna_callee_returns(&self, key: (int4, kuna_base::types::uintb)) -> Option<crate::kuna_voidret::Returns> {
         self.kuna_callee_returns.get(&key).copied()
@@ -1066,6 +1180,18 @@ impl Funcdata {
         self.kuna_float_return_withdrawn
     }
 
+    /// (kuna `floatbits`) Note that an inference pass typed the return a float
+    /// for the bits of a float-register input.
+    pub fn kuna_note_float_bits_return(&mut self) {
+        self.kuna_float_bits_return = true;
+    }
+
+    /// (kuna `floatbits`) Did an inference pass of this decompile type the
+    /// return a float for the bits of a float-register input?
+    pub fn kuna_float_bits_return(&self) -> bool {
+        self.kuna_float_bits_return
+    }
+
     /// (kuna `voidret`) Record that the RETURN read of one piece of that storage
     /// was planted.
     pub fn kuna_note_forced_return_planted(&mut self, addr: Address, size: int4) {
@@ -1085,6 +1211,18 @@ impl Funcdata {
     /// (kuna `voidret`) Whether the forced return storage is being scored.
     pub fn kuna_forced_scoring(&self) -> bool {
         self.kuna_forced_scoring
+    }
+
+    /// (kuna `varargsharedfloat`) Let the scored value reach `call`'s other
+    /// active argument slots (see the field).
+    pub fn kuna_set_shared_float_call(&mut self, call: Option<OpId>) {
+        self.kuna_shared_float_call = call;
+    }
+
+    /// (kuna `varargsharedfloat`) The call set by
+    /// [`Self::kuna_set_shared_float_call`].
+    pub fn kuna_shared_float_call(&self) -> Option<OpId> {
+        self.kuna_shared_float_call
     }
 
     /// (kuna `callrettype`) The loader's data ranges recorded by the seed.
@@ -1318,6 +1456,16 @@ impl Funcdata {
     /// (kuna `passthrough`) The CALL ops set up as variadic calls.
     pub fn kuna_passthrough_vararg_calls(&self) -> &[crate::context::OpId] {
         &self.kuna_passthrough_vararg_calls
+    }
+
+    /// (kuna `calleereadarg`) Record the CALL ops set up as variadic calls.
+    pub fn kuna_set_readarg_vararg_calls(&mut self, ops: Vec<crate::context::OpId>) {
+        self.kuna_readarg_vararg_calls = ops;
+    }
+
+    /// (kuna `calleereadarg`) The CALL ops set up as variadic calls.
+    pub fn kuna_readarg_vararg_calls(&self) -> &[crate::context::OpId] {
+        &self.kuna_readarg_vararg_calls
     }
 
     /// (kuna `passthrough`) Record whether this function is itself variadic.
@@ -1591,6 +1739,7 @@ impl Funcdata {
     /// `qlst.push_back(res)` in `FlowInfo::setupCallSpecs`).  Returns its index
     /// (the \e fspec handle).
     pub fn push_call_specs(&mut self, fc: FuncCallSpecs) -> int4 {
+        self.affecting_ops_changed();
         self.qlst.push(fc);
         (self.qlst.len() - 1) as int4
     }
@@ -1598,6 +1747,7 @@ impl Funcdata {
     /// Remove all call specifications (C++ `Funcdata::clearCallSpecs`,
     /// `funcdata.cc:462`).
     pub fn clear_call_specs(&mut self) {
+        self.affecting_ops_changed();
         self.qlst.clear();
     }
 
@@ -1607,11 +1757,13 @@ impl Funcdata {
     /// holds a `FuncCallSpecs *` and mutates `data` through it; the borrow checker
     /// forces the take/restore dance here.
     pub fn take_call_specs(&mut self) -> Vec<FuncCallSpecs> {
+        self.affecting_ops_changed();
         std::mem::take(&mut self.qlst)
     }
 
     /// Restore the `qlst` taken by [`Self::take_call_specs`].
     pub fn restore_call_specs(&mut self, qlst: Vec<FuncCallSpecs>) {
+        self.affecting_ops_changed();
         self.qlst = qlst;
     }
 
@@ -1626,12 +1778,14 @@ impl Funcdata {
     /// re-established before the next outer-loop iteration, and the spec just
     /// finalized is never looked up cross-call (its trials are resolved).
     pub fn replace_call_specs(&mut self, index: int4) -> FuncCallSpecs {
+        self.affecting_ops_changed();
         self.qlst.remove(index as usize)
     }
 
     /// Re-insert a call spec spliced out by [`Self::replace_call_specs`] at the
     /// same position, restoring index stability for the remaining iterations.
     pub fn restore_call_specs_at(&mut self, index: int4, fc: FuncCallSpecs) {
+        self.affecting_ops_changed();
         self.qlst.insert(index as usize, fc);
     }
 
@@ -1641,6 +1795,7 @@ impl Funcdata {
     /// identity (not the vector position; see [`Self::get_call_specs_index`]),
     /// erasing the entry does not invalidate the remaining annotation Varnodes.
     pub fn delete_call_spec(&mut self, index: int4) {
+        self.affecting_ops_changed();
         self.qlst.remove(index as usize);
     }
 
@@ -1653,6 +1808,7 @@ impl Funcdata {
     /// remaining annotation Varnodes.  A no-op if the op has no registered spec.
     pub fn delete_call_specs(&mut self, op: OpId) {
         if let Some(idx) = self.qlst.iter().position(|fc| fc.get_op() == op) {
+            self.affecting_ops_changed();
             self.qlst.remove(idx);
         }
     }
@@ -1919,6 +2075,57 @@ impl Funcdata {
     /// (kuna `stackstoreguard`) What the latest pass recorded.
     pub(crate) fn store_reach_checks(&self) -> crate::p6_variables::kuna_storereach::ReachChecks {
         self.store_reach_checks.borrow().clone()
+    }
+
+    /// (kuna `stackstoreguard`) Record a STORE heritage guarded a written
+    /// stack range against, and the INDIRECT it placed.
+    pub(crate) fn note_indexed_guard_store(&self, store: OpId, indirect: OpId) {
+        self.indexed_guard_stores.borrow_mut().insert(store);
+        self.indexed_guard_indirects.borrow_mut().insert(indirect);
+    }
+
+    /// (kuna `stackstoreguard`) The INDIRECTs heritage placed for those STOREs.
+    pub(crate) fn indexed_guard_indirects(&self) -> std::collections::BTreeSet<OpId> {
+        self.indexed_guard_indirects.borrow().clone()
+    }
+
+    /// (kuna `stackstoreguard`) Add the stack ranges a layout pass found only
+    /// the guard keeps, and return every one found since the analysis began.
+    pub(crate) fn note_guard_only(
+        &self,
+        ranges: Vec<(kuna_base::types::intb, kuna_base::types::intb)>,
+    ) -> Vec<(kuna_base::types::intb, kuna_base::types::intb)> {
+        let mut seen = self.guard_only_seen.borrow_mut();
+        seen.extend(ranges);
+        seen.sort_unstable();
+        seen.dedup();
+        seen.clone()
+    }
+
+    /// (kuna `stackstoreguard`) The STOREs heritage guarded written stack
+    /// ranges against.
+    pub(crate) fn indexed_guard_stores(&self) -> std::collections::BTreeSet<OpId> {
+        self.indexed_guard_stores.borrow().clone()
+    }
+
+    /// (kuna `condstmts`) Block starts to structure as complex.
+    pub fn condstmts_seed(&self) -> &std::collections::BTreeSet<Address> {
+        &self.kuna_condstmts_seed
+    }
+
+    /// (kuna `condstmts`) Install the block starts to structure as complex.
+    pub fn set_condstmts_seed(&mut self, seed: std::collections::BTreeSet<Address>) {
+        self.kuna_condstmts_seed = seed;
+    }
+
+    /// (kuna `condstmts`) Block starts the final structure folded over the cap.
+    pub fn condstmts_hits(&self) -> &std::collections::BTreeSet<Address> {
+        &self.kuna_condstmts_hits
+    }
+
+    /// (kuna `condstmts`) Record a block start folded over the cap.
+    pub fn add_condstmts_hit(&mut self, addr: Address) {
+        self.kuna_condstmts_hits.insert(addr);
     }
 
     /// (kuna `stackstoreguard`) Turn the guard off for the rest of this
@@ -2499,6 +2706,18 @@ impl Funcdata {
     pub fn kuna_infertypes_settled(&self) -> bool {
         self.kuna_infertypes_settled
     }
+    /// (kuna `calltargettype`) Forget every recorded call target type.
+    pub fn kuna_clear_call_target_types(&mut self) {
+        self.kuna_call_target_types.clear();
+    }
+    /// (kuna `calltargettype`) Record the type the indirect call `op` states.
+    pub fn kuna_set_call_target_type(&mut self, op: OpId, ty: std::rc::Rc<crate::dtype::Datatype>) {
+        self.kuna_call_target_types.insert(op, ty);
+    }
+    /// (kuna `calltargettype`) The type the indirect call `op` states, if recorded.
+    pub fn kuna_call_target_type(&self, op: OpId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+        self.kuna_call_target_types.get(&op).cloned()
+    }
     /// Toggle whether normalization transforms will be performed
     /// (C++ `setNormalization`).
     pub fn set_normalization(&mut self, val: bool) {
@@ -2569,7 +2788,10 @@ impl Funcdata {
     }
 
     pub fn kuna_storage_sources(&self, vn: VarnodeId) -> &[crate::kuna_varsources::StorageSource] {
-        self.kuna_storage_sources.get(&vn).map(Vec::as_slice).unwrap_or(&[])
+        self.kuna_storage_sources
+            .get(&vn)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// Retain homes of an equivalent value without following computational inputs.
@@ -2577,7 +2799,11 @@ impl Funcdata {
         let Some(size) = self.vbank.get(original).map(|v| v.get_size()) else {
             return;
         };
-        if self.vbank.get(destination).is_some_and(|v| v.get_size() == size) {
+        if self
+            .vbank
+            .get(destination)
+            .is_some_and(|v| v.get_size() == size)
+        {
             self.kuna_inherit_storage_slice(destination, original, 0, size);
         }
     }
@@ -2590,14 +2816,19 @@ impl Funcdata {
         byte_offset: int4,
         byte_size: int4,
     ) {
-        use kuna_base::space::spacetype;
         use crate::kuna_varsources::StorageSource;
+        use kuna_base::space::spacetype;
 
-        if !self.glb.name_style_angr || destination == original || byte_offset < 0 || byte_size <= 0 {
+        if !self.glb.name_style_angr || destination == original || byte_offset < 0 || byte_size <= 0
+        {
             return;
         }
-        let Some(from) = self.vbank.get(original) else { return };
-        let Some(to) = self.vbank.get(destination) else { return };
+        let Some(from) = self.vbank.get(original) else {
+            return;
+        };
+        let Some(to) = self.vbank.get(destination) else {
+            return;
+        };
         if from.is_constant()
             || to.is_constant()
             || from.is_annotation()
@@ -2608,11 +2839,47 @@ impl Funcdata {
             return;
         }
         let original_size = from.get_size();
+        let original_address = from.get_addr().clone();
+        let original_space_type = from.get_space().get_type();
+        let write_address = from
+            .get_def()
+            .and_then(|id| self.obank.get(id))
+            .map(|op| op.get_addr().clone());
         let mut sources = self.kuna_storage_sources(original).to_vec();
-        if matches!(from.get_space().get_type(),
-            spacetype::IPTR_PROCESSOR | spacetype::IPTR_SPACEBASE | spacetype::IPTR_JOIN)
+        if self.kuna_has_local_storage_use(original) {
+            self.kuna_mark_meaningful_storage_write(original);
+        }
+        let transport = self.kuna_is_call_transport(original);
+        if transport {
+            self.kuna_record_call_transport(original);
+        }
+        let projection = self.kuna_is_call_transport_projection(original, byte_offset, byte_size);
+        if projection {
+            self.kuna_mark_call_transport_projection(original, byte_size);
+            if let Some(input) = self
+                .vbank
+                .get(original)
+                .and_then(|v| v.get_def())
+                .and_then(|op| self.obank.get(op))
+                .and_then(|op| op.get_in(0))
+            {
+                if self.kuna_is_call_transport(input) {
+                    self.kuna_record_call_transport(input);
+                }
+            }
+        }
+        if !transport
+            && !projection
+            && matches!(
+                original_space_type,
+                spacetype::IPTR_PROCESSOR | spacetype::IPTR_SPACEBASE | spacetype::IPTR_JOIN
+            )
         {
-            sources.push(StorageSource { address: from.get_addr().clone(), size: original_size });
+            sources.push(StorageSource {
+                address: original_address,
+                size: original_size,
+                write_address,
+            });
         }
         let mut sliced = Vec::with_capacity(sources.len());
         for source in sources {
@@ -2628,7 +2895,11 @@ impl Funcdata {
             if address.renormalize(byte_size, self.glb.manage()).is_err() {
                 continue;
             }
-            sliced.push(StorageSource { address, size: byte_size });
+            sliced.push(StorageSource {
+                address,
+                size: byte_size,
+                write_address: source.write_address,
+            });
         }
         self.kuna_extend_storage_sources(destination, sliced);
     }
@@ -2641,13 +2912,25 @@ impl Funcdata {
         let mut sources = sources.into_iter().peekable();
         if !self.glb.name_style_angr
             || sources.peek().is_none()
-            || self.vbank.get(destination).is_none_or(|v| v.is_constant() || v.is_annotation())
+            || self
+                .vbank
+                .get(destination)
+                .is_none_or(|v| v.is_constant() || v.is_annotation())
         {
             return;
         }
         let homes = self.kuna_storage_sources.entry(destination).or_default();
         for source in sources {
-            if !homes.iter().any(|home| home.address == source.address && home.size == source.size) {
+            if Self::kuna_storage_write_matches(&self.kuna_denied_storage_writes, &source)
+                && !Self::kuna_storage_write_matches(&self.kuna_meaningful_storage_writes, &source)
+            {
+                continue;
+            }
+            if !homes.iter().any(|home| {
+                home.address == source.address
+                    && home.size == source.size
+                    && home.write_address == source.write_address
+            }) {
                 homes.push(source);
             }
         }
@@ -2655,10 +2938,171 @@ impl Funcdata {
 
     pub(crate) fn kuna_forget_storage_sources(&mut self, vn: VarnodeId) {
         self.kuna_storage_sources.remove(&vn);
+        self.kuna_call_transport.remove(&vn);
+        self.kuna_call_transport_projections.remove(&vn);
     }
 
-    pub(crate) fn kuna_rekey_storage_sources(&mut self, original: VarnodeId, destination: VarnodeId) {
+    pub(crate) fn kuna_was_call_transport(&self, vn: VarnodeId) -> bool {
+        self.kuna_call_transport.contains(&vn)
+    }
+
+    pub(crate) fn kuna_mark_call_transport(&mut self, vn: VarnodeId) {
+        if self.glb.name_style_angr && self.vbank.get(vn).is_some() {
+            self.kuna_call_transport.insert(vn);
+            if let Some(size) = self.vbank.get(vn).map(|v| v.get_size()) {
+                self.kuna_deny_storage_write(vn, size);
+            }
+        }
+    }
+
+    pub(crate) fn kuna_forget_call_transport(&mut self, vn: VarnodeId) {
+        self.kuna_call_transport.remove(&vn);
+        self.kuna_call_transport_projections.remove(&vn);
+    }
+
+    pub(crate) fn kuna_call_transport_projection_size(&self, vn: VarnodeId) -> Option<int4> {
+        self.kuna_call_transport_projections.get(&vn).copied()
+    }
+
+    pub(crate) fn kuna_mark_call_transport_projection(&mut self, vn: VarnodeId, size: int4) {
+        self.kuna_call_transport_projections
+            .entry(vn)
+            .and_modify(|current| *current = (*current).max(size))
+            .or_insert(size);
+        self.kuna_deny_storage_write(vn, size);
+    }
+
+    fn kuna_deny_storage_write(&mut self, vn: VarnodeId, size: int4) {
+        let Some(value) = self.vbank.get(vn) else {
+            return;
+        };
+        let Some(operation) = value.get_def().and_then(|id| self.obank.get(id)) else {
+            return;
+        };
+        let Some(pc_space) = operation.get_addr().get_space() else {
+            return;
+        };
+        let key = (
+            pc_space.get_index(),
+            operation.get_addr().get_offset(),
+            value.get_space().get_index(),
+        );
+        let offset = value.get_offset()
+            + if value.get_addr().is_big_endian() {
+                (value.get_size() - size) as u64
+            } else {
+                0
+            };
+        let ranges = self.kuna_denied_storage_writes.entry(key).or_default();
+        if ranges.iter().any(|range| *range == (offset, size)) {
+            return;
+        }
+        ranges.push((offset, size));
+        for sources in self.kuna_storage_sources.values_mut() {
+            sources.retain(|source| {
+                !Self::kuna_storage_write_matches(&self.kuna_denied_storage_writes, source)
+                    || Self::kuna_storage_write_matches(
+                        &self.kuna_meaningful_storage_writes,
+                        source,
+                    )
+            });
+        }
+    }
+
+    pub(crate) fn kuna_mark_meaningful_storage_write(&mut self, vn: VarnodeId) {
+        let Some(value) = self.vbank.get(vn) else {
+            return;
+        };
+        if value.get_space().get_type() == kuna_base::space::spacetype::IPTR_INTERNAL
+            || value.is_constant()
+            || value.is_annotation()
+        {
+            return;
+        }
+        let Some(operation) = value.get_def().and_then(|id| self.obank.get(id)) else {
+            return;
+        };
+        let Some(pc_space) = operation.get_addr().get_space() else {
+            return;
+        };
+        let key = (
+            pc_space.get_index(),
+            operation.get_addr().get_offset(),
+            value.get_space().get_index(),
+        );
+        let range = (value.get_offset(), value.get_size());
+        let ranges = self.kuna_meaningful_storage_writes.entry(key).or_default();
+        if !ranges.contains(&range) {
+            ranges.push(range);
+        }
+    }
+
+    pub(crate) fn kuna_storage_write_has_local_use(&self, vn: VarnodeId, size: int4) -> bool {
+        let Some(value) = self.vbank.get(vn) else {
+            return false;
+        };
+        let Some(operation) = value.get_def().and_then(|id| self.obank.get(id)) else {
+            return false;
+        };
+        let offset = if value.get_addr().is_big_endian() {
+            value.get_size() - size
+        } else {
+            0
+        };
+        let source = crate::kuna_varsources::StorageSource {
+            address: value.get_addr() + offset as i64,
+            size,
+            write_address: Some(operation.get_addr().clone()),
+        };
+        Self::kuna_storage_write_matches(&self.kuna_meaningful_storage_writes, &source)
+    }
+
+    fn kuna_storage_write_matches(
+        denied: &std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+        source: &crate::kuna_varsources::StorageSource,
+    ) -> bool {
+        let Some(pc) = source.write_address.as_ref() else {
+            return false;
+        };
+        let Some(pc_space) = pc.get_space() else {
+            return false;
+        };
+        let Some(storage_space) = source.address.get_space() else {
+            return false;
+        };
+        let key = (
+            pc_space.get_index(),
+            pc.get_offset(),
+            storage_space.get_index(),
+        );
+        denied.get(&key).is_some_and(|ranges| {
+            ranges.iter().any(|(offset, size)| {
+                *offset as u128 <= source.address.get_offset() as u128
+                    && source.address.get_offset() as u128 + source.size as u128
+                        <= *offset as u128 + *size as u128
+            })
+        })
+    }
+
+    pub(crate) fn kuna_rekey_storage_sources(
+        &mut self,
+        original: VarnodeId,
+        destination: VarnodeId,
+    ) {
         if original != destination {
+            if let Some(size) = self.kuna_call_transport_projections.remove(&original) {
+                self.kuna_mark_call_transport_projection(destination, size);
+            }
+            if self.kuna_call_transport.remove(&original)
+                && self
+                    .vbank
+                    .get(destination)
+                    .and_then(|v| v.get_def())
+                    .and_then(|op| self.obank.get(op))
+                    .is_none_or(|op| op.code() == kuna_num::opcodes::OpCode::CPUI_COPY)
+            {
+                self.kuna_mark_call_transport(destination);
+            }
             if let Some(sources) = self.kuna_storage_sources.remove(&original) {
                 self.kuna_extend_storage_sources(destination, sources);
             }
@@ -2702,6 +3146,7 @@ impl Funcdata {
     }
     /// Mutably borrow the basic blocks container.
     pub fn bblocks_mut(&mut self) -> &mut BlockGraph {
+        self.affecting_ops_changed();
         &mut self.bblocks
     }
     /// Get the control-flow structuring hierarchy (C++ `getStructure`).
@@ -2916,8 +3361,8 @@ impl Funcdata {
         self.get_scope_local()?.container_entry_key(&addr, &usepoint)
     }
 
-    /// Seed unmapped Varnodes with local/global symbol flags and exact global
-    /// types, preserving existing mapped properties. In high-level mode, create
+    /// Seed unmapped Varnodes with symbol flags, isolated local type locks and
+    /// exact global types, preserving existing mapped properties. In high-level mode, create
     /// a missing cover and mark its HighVariable cover dirty when necessary.
     /// (C++ `Funcdata::setVarnodeProperties`, `funcdata_varnode.cc:25`).
     pub fn set_varnode_properties(&mut self, vn: VarnodeId) {
@@ -2965,6 +3410,18 @@ impl Funcdata {
                     v.set_flags_pub(vflags & !varnode_flags::typelock);
                 }
             }
+            let local_type = self.get_scope_local().filter(|lm| lm.has_isolated_symbols())
+                .and_then(|lm| {
+                    let entry = lm.query_container_for_link(&addr, &usepoint)?;
+                    if !entry.is_isolated { return None; }
+                    self.get_arch().types()
+                        .and_then(|types| lm.build_localtype_seed_at(&addr, size, &usepoint, types))
+                });
+            if let Some(dt) = local_type {
+                if let Some(v) = self.vbank_mut().get_mut(vn) {
+                    v.update_type_locked(dt, true, true);
+                }
+            }
             // C++ `Varnode::setSymbolProperties` (varnode.cc:429) -> `entry->updateType`
             // (database.cc:136): a type-locked covering Symbol forces its
             // `getSizedType` onto the Varnode via `updateType(dt, lock=true,
@@ -2972,8 +3429,8 @@ impl Funcdata {
             // the prior flag-only stand-in deferred: it seeds `ActionInferTypes` from
             // the mapped global's data-type (e.g. `octint4` for `globaloct`), so the
             // forced display format propagates through the store's COPY to the stored
-            // constant (`globaloct = 05555`).  The local `ScopeLocal` half (recovered
-            // stack locals) remains the naming wave's seam.
+            // constant (`globaloct = 05555`). Ordinary recovered local types
+            // remain the inference/naming wave's seam.
             if let Some((symtype, off)) =
                 self.get_arch().sized_type_for_global_varnode(&addr, size, &usepoint)
             {
@@ -3043,6 +3500,20 @@ impl Funcdata {
     // links + order) and the block arena (the BasicData head/tail/len).  The op
     // membership links are the third intrusive list of ADR 0001.
 
+    pub(crate) fn affecting_ops_revision(&self) -> u64 {
+        self.affecting_ops_revision
+    }
+
+    pub(crate) fn affecting_ops_changed(&mut self) {
+        self.affecting_ops_revision = self.affecting_ops_revision.wrapping_add(1);
+    }
+
+    pub(crate) fn op_is_call_or_store(&self, op: OpId) -> bool {
+        self.obank.get(op).is_some_and(|o| {
+            o.is_call() || o.get_opcode().is_some_and(|t| t.get_opcode() == OpCode::CPUI_STORE)
+        })
+    }
+
     /// First op in basic block `bl` (C++ `BlockBasic::beginOp()` front /
     /// `firstOp`), `None` when empty.
     pub fn bb_op_head(&self, bl: BlockId) -> Option<OpId> {
@@ -3094,6 +3565,9 @@ impl Funcdata {
     /// set the midpoint (overflow-aware).  The BRANCHIND `f_switch_out` mark is
     /// applied via the block flags.
     pub fn bb_insert_op(&mut self, op: OpId, bl: BlockId, before: Option<OpId>) {
+        if self.op_is_call_or_store(op) {
+            self.affecting_ops_changed();
+        }
         self.obank.get_mut(op).expect("bb_insert_op: stale op").set_parent(Some(bl));
 
         // Determine the predecessor `prev` of the insertion point.  Inserting
@@ -3156,6 +3630,9 @@ impl Funcdata {
     /// `block.cc:2296`).  `op` \e must be in `bl`.  Clears the op's parent and
     /// splices it out of the per-op intrusive list, fixing head/tail/len.
     pub fn bb_remove_op(&mut self, bl: BlockId, op: OpId) {
+        if self.op_is_call_or_store(op) {
+            self.affecting_ops_changed();
+        }
         self.obank.get_mut(op).expect("bb_remove_op: stale op").set_parent(None);
         let (prev, next) = self.obank.get(op).expect("bb_remove_op").basic_neighbours();
         match prev {
@@ -3178,6 +3655,7 @@ impl Funcdata {
     ///
     /// `step = (~0 / op.size()) - 1`; each op gets `count += step`.
     pub fn bb_set_order(&mut self, bl: BlockId) {
+        self.affecting_ops_changed();
         let n = self.bb_op_len(bl);
         if n == 0 {
             return;
@@ -3288,6 +3766,8 @@ impl Funcdata {
         self.high_level_index = 0;
         self.cast_phase_index = 0;
         self.min_laned_size = self.glb.get_minimum_laned_register_size();
+        self.kuna_hiddenret_vetoed.clear();
+        self.kuna_condstmts_hits.clear();
 
         // localmap->clearUnlocked(); localmap->resetLocalWindow();  -- STUB(W4)
         // clearActiveOutput() (funcdata.cc): drop the output-trial state.
@@ -3299,6 +3779,11 @@ impl Funcdata {
         self.obank.clear();
         self.vbank.clear();
         self.kuna_storage_sources.clear();
+        self.kuna_call_transport.clear();
+        self.kuna_call_transport_projections.clear();
+        self.kuna_denied_storage_writes.clear();
+        self.kuna_meaningful_storage_writes.clear();
+        self.kuna_call_target_types.clear();
         // clearCallSpecs() (funcdata.cc:104): drop the call-spec list so a restart
         // (which re-follows flow and rebuilds qlst) does not keep stale ops.
         self.clear_call_specs();
@@ -3322,13 +3807,18 @@ impl Funcdata {
         self.slot_evidence.borrow_mut().clear();
         self.kuna_passthrough_claims.clear();
         self.kuna_passthrough_vararg_calls.clear();
+        self.kuna_readarg_vararg_calls.clear();
         self.kuna_passthrough_variadic = false;
         self.kuna_moved_back_returns.clear();
         self.store_reach_committed.set(false);
         *self.store_reach_checks.borrow_mut() = Default::default();
+        self.indexed_guard_stores.borrow_mut().clear();
+        self.indexed_guard_indirects.borrow_mut().clear();
+        self.guard_only_seen.borrow_mut().clear();
         self.kuna_forced_return_planted.clear();
         self.kuna_float_pair_halves.clear();
         self.kuna_forced_claims.clear();
+        self.kuna_zext_word = None;
         self.kuna_pairs_first_low = false;
     }
 

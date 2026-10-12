@@ -41,6 +41,32 @@
       parameter_source: push rbx; mov rbx,rdi; mov eax,[rbx];
         add eax,[rbx+4]; pop rbx; ret
 
+      The outgoing_* callers all preserve rbx/r14 and call_sink stores its
+      second argument at [rdi+8]. Their relevant value instructions are:
+
+      outgoing_only: mov r14d,[rbx]; mov esi,r14d; call call_sink;
+        mov [rbx+4],r14d
+      outgoing_definition: mov esi,[rbx]; mov r14d,esi; call call_sink;
+        mov [rbx+4],r14d
+      outgoing_rmw: mov r14d,[rbx]; mov esi,r14d; imul esi,esi,7;
+        xor esi,0x13579bd; inc esi; mov r14d,esi; call call_sink;
+        mov [rbx+4],r14d
+      outgoing_local_use: mov r14d,[rbx]; mov esi,r14d; mov [rbx+12],esi;
+        call call_sink; mov [rbx+4],r14d
+      outgoing_indirect: mov rax,rsi; mov r14d,[rbx]; mov esi,r14d;
+        call rax; mov [rbx+4],r14d
+      durable_call_result: call make_value; mov r14d,eax;
+        mov esi,r14d; mov rdi,rbx; call call_sink;
+        mov esi,r14d; mov rdi,rbx; call call_sink
+      make_value: mov eax,[rdi]; ret
+      stack_outgoing: push rbx; sub rsp,16; mov rbx,rdi; lea rdi,[rsp+15];
+        call write_byte; movzx esi,byte ptr [rsp+15]; mov rdi,rbx;
+        call call_sink; add rsp,16; pop rbx; ret
+      write_byte: mov byte ptr [rdi],7; ret
+      outgoing_independent_write: mov r14d,[rbx]; mov esi,r14d; call call_sink;
+        mov esi,[rbx+16]; imul esi,esi,5; xor esi,0x2468ace; inc esi;
+        mov r14d,esi; mov rdi,rbx; call call_sink; mov [rbx+4],r14d
+
     Before the fix copy_home v1 had no comment, merged_homes reported no
     registers, and joined_home / joined_helper had no source for the pair.
     The load's source is eax alone: the derived ecx value is a different
@@ -50,8 +76,18 @@
     The byte loads are narrowed when their zero extensions become implied
     casts; their homes must remain visible at the byte width. CMOV merges
     arithmetic results already held in eax / r13d, without borrowing edi from
-    the arithmetic input. Parameters retain the ABI home plus register copies,
-    including when an explicit prototype supplies the parameter name.
+    the arithmetic input. Parameters have no source comments, including when
+    an explicit prototype supplies the parameter name.
+
+    Outgoing argument-only copies do not add local homes: both the direct and
+    indirect calls must leave the local attributed to r14d alone. ESI remains
+    a home when it holds a load result, a read-modify-write computation, or a
+    copied value also used by a local store. A callee-saved r14d copy from a
+    call result remains a durable home across calls even when every later use
+    forwards it to an argument. Reloading a helper-written stack byte only to
+    pass it in esi does not add sil or esi to the stack variable's homes.
+    A later independent computation in esi must retain that home after an
+    earlier argument-only write to the same register.
 -->
 <bytechunk space="ram" offset="0x1000">
 8b471885c074088d4801890689c8c331c0c366662e0f1f8400000000000f1f00
@@ -65,7 +101,22 @@ c975ee4489c0c3660f1f8400000000005385ff74048b06eb058b5e0489d88902
 48830701c366662e0f1f8400000000004157440fb67f034589f841c1e7180fb6
 4f02c1e1104109cf0fb64f01c1e1084109cf0fb60f4109cf4489064489f8415f
 c366662e0f1f8400000000000f1f400041554189fd418d45ff4183c50183fe05
-440f45e844892a4489e8415dc30f1f00534889fb8b030343045bc3
+440f45e844892a4489e8415dc30f1f00534889fb8b030343045bc30f1f440000
+4156534883ec084889fb448b334489f6e8eb0000004489730431c04883c4085b
+415ec366662e0f1f84000000000066904156534883ec084889fb8b334189f6e8
+bc0000004489730431c04883c4085b415ec366662e0f1f8400000000000f1f00
+4156534883ec084889fb448b334489f66bf60781f6bd793501ffc64189f6e87d
+0000004489730431c04883c4085b415ec366662e0f1f8400000000000f1f4000
+4156534883ec084889fb448b334489f689730ce8480000004489730431c04883
+c4085b415ec3662e0f1f8400000000004156534883ec084889fb4889f0448b33
+4489f6ffd04489730431c04883c4085b415ec366662e0f1f8400000000006690
+897708c366662e0f1f840000000000904156534883ec084889fbe83100000041
+89c64489f64889dfe8d3ffffff4489f64889dfe8c8ffffff31c04883c4085b41
+5ec366662e0f1f8400000000000f1f008b07c366662e0f1f8400000000006690
+534883ec104889fb488d7c240fe81e0000000fb674240f4889dfe881ffffff48
+83c4105bc366662e0f1f840000000000c60707c366662e0f1f84000000000090
+4156534883ec084889fb448b334489f6e84bffffff8b73106bf60581f6ce8a46
+02ffc64189f64889dfe832ffffff4489730431c04883c4085b415ec3
 </bytechunk>
 <symbol space="ram" offset="0x1000" name="copy_home"/>
 <symbol space="ram" offset="0x1020" name="loop_home"/>
@@ -79,6 +130,17 @@ c366662e0f1f8400000000000f1f400041554189fd418d45ff4183c50183fe05
 <symbol space="ram" offset="0x1110" name="byte_source"/>
 <symbol space="ram" offset="0x1150" name="cmov_source"/>
 <symbol space="ram" offset="0x1170" name="parameter_source"/>
+<symbol space="ram" offset="0x1180" name="outgoing_only"/>
+<symbol space="ram" offset="0x11b0" name="outgoing_definition"/>
+<symbol space="ram" offset="0x11e0" name="outgoing_rmw"/>
+<symbol space="ram" offset="0x1220" name="outgoing_local_use"/>
+<symbol space="ram" offset="0x1250" name="outgoing_indirect"/>
+<symbol space="ram" offset="0x1280" name="call_sink"/>
+<symbol space="ram" offset="0x1290" name="durable_call_result"/>
+<symbol space="ram" offset="0x12d0" name="make_value"/>
+<symbol space="ram" offset="0x12e0" name="stack_outgoing"/>
+<symbol space="ram" offset="0x1310" name="write_byte"/>
+<symbol space="ram" offset="0x1320" name="outgoing_independent_write"/>
 </binaryimage>
 <script>
   <com>option namestyle angr</com>
@@ -123,6 +185,30 @@ c366662e0f1f8400000000000f1f400041554189fd418d45ff4183c50183fe05
   <com>lo fu parameter_source</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu outgoing_only</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu outgoing_definition</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu outgoing_rmw</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu outgoing_local_use</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu outgoing_indirect</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu durable_call_result</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_outgoing</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu outgoing_independent_write</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option namestyle ghidra</com>
   <com>lo fu arithmetic_home</com>
   <com>decompile</com>
@@ -143,7 +229,17 @@ c366662e0f1f8400000000000f1f400041554189fd418d45ff4183c50183fe05
 <stringmatch name="varsources #12: a narrowed byte retains both copied register homes" min="1" max="1">^  (uint1|unsigned char) v1; // r15b \| r8b$</stringmatch>
 <stringmatch name="varsources #13: all peer byte loads retain their low register home" min="3" max="3">^  (uint1|unsigned char) v[234]; // cl$</stringmatch>
 <stringmatch name="varsources #14: CMOV merges the computed eax and r13d values" min="1" max="1">^  (int4|int) v1; // eax \| r13d$</stringmatch>
-<stringmatch name="varsources #15: the CMOV input parameter keeps its own edi and r13d homes" min="1" max="1">^  // a0: edi \| r13d$</stringmatch>
-<stringmatch name="varsources #16: a copied parameter includes the ABI and callee-saved register" min="1" max="1">^  // a0: rbx \| rdi$</stringmatch>
-<stringmatch name="varsources #17: explicit parameter names retain their register union" min="1" max="1">^  // cursor: rbx \| rdi$</stringmatch>
+<stringmatch name="varsources #15: default parameter names have no source comments" min="0" max="0">^  // a[0-9]+:</stringmatch>
+<stringmatch name="varsources #16: explicitly named parameters have no source comments" min="0" max="0">^  // cursor:</stringmatch>
+<stringmatch name="varsources #17: direct and indirect argument-only copies do not add ESI" min="2" max="2">^  (uint4|unsigned int) v1; // r14d$</stringmatch>
+<stringmatch name="varsources #18: genuine definitions and local register uses retain ESI" min="4" max="4">^  (int4|uint4|int|unsigned int) v1; // esi \| r14d$</stringmatch>
+<stringmatch name="varsources #19: the indirect-call regression actually passes the local" min="1" max="1">\(\*a1\)\(a0,v1\);</stringmatch>
+<stringmatch name="varsources #20: the positive read-modify-write result is an emitted local" min="1" max="1">v1 = \(\*a0 \* 7 \^ 0x13579bdU\) \+ 1;</stringmatch>
+<stringmatch name="varsources #21: a durable call result keeps EAX and R14D but not its outgoing ESI copies" min="1" max="1">^  (uint4|unsigned int) v1; // eax \| r14d$</stringmatch>
+<stringmatch name="varsources #22: a stack byte reloaded solely for an argument keeps only its stack home" min="1" max="1">^  (char|int1|uint1|unsigned char) v1; // stack - 0x9$</stringmatch>
+<stringmatch name="varsources #23: the durable result is forwarded across two calls" min="1" max="1">v1 = make_value\(a0\);
+call_sink\(a0,v1\);
+call_sink\(a0,v1\);</stringmatch>
+<stringmatch name="varsources #24: an independent value follows earlier argument setup in the same register" min="1" max="1">call_sink\(a0,\*a0\);
+v1 = \(a0\[4\] \* 5 \^ 0x2468aceU\) \+ 1;</stringmatch>
 </decompilertest>

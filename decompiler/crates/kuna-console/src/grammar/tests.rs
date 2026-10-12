@@ -12,6 +12,26 @@ use super::{
     GrammarLexer, GrammarToken,
 };
 
+#[test]
+fn mapped_object_volatile_qualifiers_follow_declarator_binding() {
+    let f = factory();
+    for (source, expected) in [
+        ("volatile int4 word", true),
+        ("int4 volatile word", true),
+        ("volatile int4 words[2]", true),
+        ("volatile int4 *pointer", false),
+        ("int4 *volatile pointer", true),
+        ("volatile int4 *pointers[2]", false),
+        ("int4 *volatile pointers[2]", true),
+        ("int4 (*volatile pointer)[2]", true),
+        ("volatile int4 (*pointer)[2]", false),
+        ("int4 word", false),
+    ] {
+        let (_, _, volatile) = super::parse_type_with_volatile(source, &f, org()).unwrap();
+        assert_eq!(volatile, expected, "{source}");
+    }
+}
+
 // -- test helpers -----------------------------------------------------------
 
 /// Build a factory wired with the alignment map, a max base size of 8, and the
@@ -1160,6 +1180,10 @@ fn two_conventions_in_one_declaration_are_rejected() {
 /// compiler spec: an address-space manager, `__cdecl` as the default model, and
 /// the named models in `registered`.
 fn factory_with_models(registered: &[&str]) -> TypeFactoryImpl {
+    factory_with_model_resources(registered, false)
+}
+
+fn factory_with_model_resources(registered: &[&str], with_storage: bool) -> TypeFactoryImpl {
     use kuna_base::space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace};
     use kuna_decomp::fspec::ProtoModel;
     use std::rc::Rc;
@@ -1185,6 +1209,19 @@ fn factory_with_models(registered: &[&str]) -> TypeFactoryImpl {
         let mut m = ProtoModel::new(&mgr);
         m.set_name(name);
         m.build_param_list("standard").unwrap();
+        if with_storage {
+            use kuna_decomp::dtype::type_class;
+            use kuna_decomp::fspec::ParamEntry;
+            let ram = mgr.get_default_data_space().unwrap();
+            let entry = |group, offset| ParamEntry::seed(
+                group, type_class::TYPECLASS_GENERAL, Rc::clone(ram), offset,
+                8, 1, 0, 0, true, false, &[], &mgr,
+            ).unwrap();
+            m.output_mut().push_entry(entry(0, 0x1000));
+            for i in 0..4 {
+                m.input_mut().push_entry(entry(i, 0x2000 + i as u64 * 8));
+            }
+        }
         Rc::new(m)
     };
     let dflt = model("__cdecl");
@@ -1550,4 +1587,111 @@ fn anonymous_member_records_stay_distinct() {
     assert_eq!(sizes, [4, 8, 4, 2]);
     assert!(parse("struct Bad { struct { struct Missing m; } inner; };").is_err());
     parse("struct Again { struct { uint2 z; } first; };").unwrap();
+}
+
+#[test]
+fn callback_declarations_keep_their_stored_prototypes() {
+    use kuna_decomp::kuna_langc::C_SPELLER;
+    use kuna_decomp::kuna_langtypes::{SpellCtx, TypeSpeller};
+
+    let f = factory_with_model_resources(&[], true);
+    for (source, expected) in [
+        ("uint4 (*x)(void)", "uint4 (*x)(void)"),
+        ("int4 (*x)(int2,uint4 *)", "int4 (*x)(int2,uint4 *)"),
+        ("void (*x)(int4,...)", "void (*x)(int4,...)"),
+        ("int4 (**x)(void)", "int4 (**x)(void)"),
+        ("int4 (*x[2])(void)", "int4 (*x[2])(void)"),
+        ("int4 *(*x)(void)", "int4 *(*x)(void)"),
+        ("int4 (*(*x)(void))[3]", "int4 (*(*x)(void))[3]"),
+        ("int4 (*x)(void (*)(int4))", "int4 (*x)(void (*)(int4))"),
+        ("int4 (*(*x)(int4))(int2)", "int4 (*(*x)(int4))(int2)"),
+    ] {
+        let (ty, name) = parse_type(source, &f, org()).expect("callback declarator parses");
+        let (front, back) = C_SPELLER.declarator(&SpellCtx::OFF, &ty);
+        let sep = if front.ends_with('*') || front.ends_with('(') { "" } else { " " };
+        let printed = format!("{front}{sep}{name}{back}");
+        assert_eq!(printed, expected, "{source}");
+        let (again, _) = parse_type(&printed, &f, org()).expect("printed declaration parses");
+        assert_eq!(ty.compare(&again, 10).unwrap(), 0, "{source}");
+        let (front, back) = C_SPELLER.declarator(&SpellCtx::OFF, &again);
+        assert_eq!(format!("{front}{sep}{name}{back}"), expected);
+    }
+}
+
+#[test]
+fn unprototyped_code_keeps_its_existing_spelling() {
+    use kuna_decomp::kuna_langc::C_SPELLER;
+    use kuna_decomp::kuna_langtypes::{SpellCtx, TypeSpeller};
+
+    let f = factory_with_code();
+    let (ty, _) = parse_type("code *x", &f, org()).unwrap();
+    assert_eq!(C_SPELLER.declarator(&SpellCtx::OFF, &ty), ("code *".into(), "".into()));
+}
+
+#[test]
+fn named_callback_typedef_keeps_its_declared_name() {
+    use kuna_decomp::kuna_langc::C_SPELLER;
+    use kuna_decomp::kuna_langtypes::{SpellCtx, TypeSpeller};
+
+    let f = factory_with_model_resources(&[], true);
+    super::parse_c("typedef uint4 (*Callback)(void);", &f, org(), &[], |_, _| Ok(())).unwrap();
+    let (ty, name) = parse_type("Callback x", &f, org()).unwrap();
+    assert_eq!(name, "x");
+    assert_eq!(C_SPELLER.declarator(&SpellCtx::OFF, &ty), ("Callback".into(), "".into()));
+}
+
+#[test]
+fn qualified_declarations_roundtrip_without_moving_qualifiers() {
+    use kuna_decomp::kuna_langc::C_SPELLER;
+    use kuna_decomp::kuna_langtypes::{SpellCtx, TypeSpeller};
+    use std::rc::Rc;
+
+    let f = factory_with_model_resources(&[], true);
+    for declaration in ["typedef uint4 *Ptr;", "typedef volatile uint4 Register;"] {
+        super::parse_c(declaration, &f, org(), &[], |_, _| Ok(())).unwrap();
+    }
+    for (source, expected) in [
+        ("volatile uint4 *x", "volatile uint4 *x"),
+        ("uint4 * volatile x", "uint4 * volatile x"),
+        ("const uint4 *x", "uint4 *x"),
+        ("uint4 * restrict x", "uint4 *x"),
+        ("uint4 * volatile const x", "uint4 * volatile x"),
+        ("volatile uint4 * const *x", "volatile uint4 **x"),
+        ("volatile uint4 (*x)[3]", "volatile uint4 (*x)[3]"),
+        ("uint4 (* volatile x)[3]", "uint4 (* volatile x)[3]"),
+        ("uint4 * volatile x[3]", "uint4 * volatile x[3]"),
+        ("uint4 (* volatile x)(const uint4 *)", "uint4 (* volatile x)(uint4 *)"),
+        ("volatile Ptr x", "volatile Ptr x"),
+        ("Register *x", "Register *x"),
+    ] {
+        let (ty, name) = parse_type(source, &f, org()).unwrap();
+        let (front, back) = C_SPELLER.declarator(&SpellCtx::OFF, &ty);
+        let sep = if front.ends_with('*') || front.ends_with('(') { "" } else { " " };
+        let printed = format!("{front}{sep}{name}{back}");
+        assert_eq!(printed, expected, "{source}");
+        let (again, _) = parse_type(&printed, &f, org()).unwrap();
+        assert!(Rc::ptr_eq(&ty, &again), "qualified types must intern: {source}");
+        assert_eq!(ty.compare(&again, 10).unwrap(), 0);
+    }
+    let pointee = parse_type("volatile uint4 *", &f, org()).unwrap().0;
+    let pointer = parse_type("uint4 * volatile", &f, org()).unwrap().0;
+    assert_eq!(pointee.c_qualifiers(), 0);
+    assert_eq!(pointer.get_ptr_to().unwrap().c_qualifiers(), 0);
+    assert_ne!(pointee.compare(&pointer, 10).unwrap(), 0);
+    assert!(!Rc::ptr_eq(&pointee, &pointer));
+}
+
+#[test]
+fn prototype_return_qualifiers_and_typedefs_survive() {
+    use kuna_decomp::kuna_langc::C_SPELLER;
+    use kuna_decomp::kuna_langtypes::{SpellCtx, TypeSpeller};
+    let f = factory();
+    let pieces = parse_protopieces("extern volatile uint4 *read(volatile uint4 *p);", &f, org()).unwrap();
+    for ty in [pieces.outtype.as_ref().unwrap(), &pieces.intypes[0]] {
+        assert_eq!(C_SPELLER.declarator(&SpellCtx::OFF, ty), ("volatile uint4 *".into(), "".into()));
+    }
+    super::parse_c("typedef volatile uint4 Register;", &f, org(), &[], |_, _| Ok(())).unwrap();
+    let alias = f.find_by_name("Register").unwrap().unwrap();
+    assert!(kuna_decomp::kuna_typequal::is_volatile(&alias));
+    assert_eq!(C_SPELLER.declarator(&SpellCtx::OFF, &alias), ("Register".into(), "".into()));
 }

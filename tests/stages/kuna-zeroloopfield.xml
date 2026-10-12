@@ -1,0 +1,79 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A request built on the frame by a zeroing loop and then field stores must
+    print each field store after its loop.
+
+    The code is x86-64 at its link address (-nostdlib -static
+    -Ttext=0x401000, -fcf-protection=none), gcc 11 -O2
+    -fstack-protector-strong:
+
+        struct hdr { unsigned len; unsigned short type, flags;
+                     unsigned seq, pid; };
+        struct req { struct hdr n; struct ghdr g; char buf[4096]; };
+        extern int fam;
+        int nl(int argc, char **argv) {
+          struct req req = { .n = { .type = fam, .flags = 1, .len = 0x14 },
+                             .g = { .cmd = 3, .ver = 1 } };
+          if (argc > 0) { ... parse(argc, argv, &req.n, 3) ...
+                          talk(rth, &req.n, &ans) ... }
+          struct req req2 = { .n = { .type = fam, .flags = 0x301,
+                              .len = 0x14 }, .g = { .cmd = 3, .ver = 1 } };
+          if (sendit(rth, &req2, req2.n.len) < 0) return -1;
+          return show(rth, 0); }
+
+    Each request is zeroed with `rep stos` and then gets `fam` stored into its
+    type.  The register holding `fam` must not be merged into req2 across
+    req2's zeroing loop: the call-crossing test refuses that merge when the
+    register's live range holds a STORE that may write req2, and its walk
+    (`Cover::intersect_op_set`) skipped the set's block after every block it
+    shared with the range, so it never saw the loop's STORE.  The C then
+    printed req2's type before the loop that clears it, and req's type was
+    copied out of req2.  With stackstoreguard's indexed-store guards this is
+    the shape of iproute2 `ip` -O2 0x64ca0.  Pass 2 (stackstoreguard off)
+    prints what main prints.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+554881ec0010000048830c24004881ec0010000048830c24004883ec60b90202
+00008b15d80f000064488b042528000000488984245820000031c0488d6c2420
+4189f84889eff348abb901000000c744242014000000668954242466894c2426
+c70700000000bf0301000066897c24304585c00f8e7f000000b9030000004889
+ea4489c7e8f000000085c07423488b94245820000064482b1425280000000f85
+d00000004881c4602000005dc30f1f00488d5424184889ee488d3d610f0000e8
+ce0000004189c0b8feffffff4585c078bc488b7c241831f6e8e2000000488b7c
+24188944240ce8e70000008b44240ceb9c0f1f8000000000488dbc2440100000
+b902020000488d2d140f0000f348ab6689942444100000ba03010000b8010300
+006689942450100000488db42440100000ba14000000c7842440100000140000
+006689842446100000c707000000004889efe85200000085c0780f31f64889ef
+e85a000000e923ffffffb8ffffffffe919ffffffe864000000554889e5897dfc
+488975f0488955e8894df8b8000000005dc3554889e548897df8488975f04889
+55e8b8000000005dc3554889e548897df8488975f08955ecb8000000005dc355
+4889e548897df8488975f0b8000000005dc3554889e548897df8905dc3554889
+e5ebfe
+</bytechunk>
+<bytechunk space="ram" offset="0x402000">
+10000000
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="nl"/>
+<symbol space="ram" offset="0x401179" name="parse"/>
+<symbol space="ram" offset="0x401192" name="talk"/>
+<symbol space="ram" offset="0x4011a9" name="sendit"/>
+<symbol space="ram" offset="0x4011bf" name="show"/>
+<symbol space="ram" offset="0x4011d2" name="use"/>
+<symbol space="ram" offset="0x4011dd" name="__stack_chk_fail"/>
+</binaryimage>
+<script>
+  <com>lo fu nl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option stackstoreguard off</com>
+  <com>lo fu nl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="zeroloopfield #1: nl stores req2's type after the loop that zeroes req2" min="1" max="1">^    v\d+\._6_2_ = 0x301;$
+^    v\d+\._4_2_ = \(int2\)v\d+;$</stringmatch>
+<stringmatch name="zeroloopfield #2: no request field is copied out of another request" min="0" max="0">\._4_2_ = v\d+\._4_2_;</stringmatch>
+<stringmatch name="zeroloopfield #3: off stores both types from the temporary loaded before the loops, as main does" min="1" max="1">^  v\d+\._4_2_ = v\d+; // branch-flip$</stringmatch>
+</decompilertest>

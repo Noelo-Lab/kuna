@@ -753,9 +753,27 @@ impl Funcdata {
     /// The bank refuses to destroy an integrated varnode (one with a def or
     /// descendants); that condition is the C++ `LowlevelError`.
     pub fn delete_varnode(&mut self, vn: VarnodeId) -> KunaResult<()> {
+        self.purge_high_on_free(vn);
         self.vbank_mut().destroy(vn)?;
         self.kuna_forget_storage_sources(vn);
         Ok(())
+    }
+
+    /// C++ `~Varnode()` (varnode.cc:629): detach the varnode from its HighVariable and
+    /// drop the high if it is left unattached.
+    ///
+    /// `vbank.destroy()` runs `delete vn`, which fires this purge in C++; the Rust bank
+    /// has no destructor, so every path that models `delete vn` runs it explicitly here
+    /// before the varnode is freed.  Without it a destroyed varnode lingers in its
+    /// HighVariable's `inst` list and a later naming pass (`get_name_representative`)
+    /// derefs the freed vn.
+    fn purge_high_on_free(&mut self, vn: VarnodeId) {
+        if let Some(high) = self.vbank().get(vn).and_then(|v| v.get_high()) {
+            self.high_remove_member(high, vn);
+            if self.high_bank().is_unattached(high) {
+                self.high_bank_mut().erase(high);
+            }
+        }
     }
 
     /// Create a new Varnode which is a \e clone of the given Varnode
@@ -772,7 +790,14 @@ impl Funcdata {
             (v.get_size(), v.get_addr().clone(), Rc::clone(v.get_type()), v.get_flags())
         };
         let cloned = self.clone_varnode_fields(size, addr, ct, flags);
+        let transport = self.kuna_is_call_transport(vn);
         self.kuna_inherit_storage(cloned, vn);
+        if transport {
+            self.kuna_mark_call_transport(cloned);
+        }
+        if let Some(size) = self.kuna_call_transport_projection_size(vn) {
+            self.kuna_mark_call_transport_projection(cloned, size);
+        }
         cloned
     }
 
@@ -785,6 +810,12 @@ impl Funcdata {
         };
         let cloned = self.clone_varnode_fields(size, addr, ct, flags);
         self.kuna_extend_storage_sources(cloned, src.kuna_storage_sources(vn).iter().cloned());
+        if src.kuna_is_call_transport(vn) {
+            self.kuna_mark_call_transport(cloned);
+        }
+        if let Some(size) = src.kuna_call_transport_projection_size(vn) {
+            self.kuna_mark_call_transport_projection(cloned, size);
+        }
         cloned
     }
 
@@ -847,17 +878,8 @@ impl Funcdata {
             self.vbank_mut().make_free(vn);
         }
         // ~Varnode(): if (high != 0) { high->remove(this); if (high->isUnattached())
-        //   delete high; }  (varnode.cc:629).  vbank.destroy() runs `delete vn`,
-        // which fires this purge in C++; the Rust bank has no destructor, so it
-        // is done explicitly here before the varnode is freed.  Without it a
-        // destroyed varnode lingers in its HighVariable's `inst` list and a later
-        // naming pass (get_name_representative) derefs the freed vn.
-        if let Some(high) = self.vbank().get(vn).and_then(|v| v.get_high()) {
-            self.high_remove_member(high, vn);
-            if self.high_bank().is_unattached(high) {
-                self.high_bank_mut().erase(high);
-            }
-        }
+        //   delete high; }  (varnode.cc:629).  See `purge_high_on_free`.
+        self.purge_high_on_free(vn);
         self.vbank_mut().destroy_descend(vn);
         self.delete_varnode(vn)
     }
@@ -2133,7 +2155,9 @@ impl Funcdata {
             let curtrial = fc.active_input().get_trial_for_input_varnode(j);
             if curtrial.is_checked() {
                 if curtrial.is_active() {
-                    return false;
+                    // (kuna) `varargsharedfloat`: see
+                    // [`crate::p4_calls::kuna_varargsharedfloat`].
+                    return op == opmatch && self.kuna_shared_float_call() == Some(op);
                 }
             } else if TraverseNode::is_alternate_path_valid(vn, fl, self.vbank(), self.obank()) {
                 return false;
@@ -2158,28 +2182,66 @@ impl Funcdata {
         trial: &crate::fspec::ParamTrial,
         main_flags: kuna_base::types::uint4,
     ) -> bool {
+        use crate::p4_calls::kuna_condexeretuse as retest;
+        let mut entered = Vec::new();
+        let noting = retest::applies(self, opmatch);
+        if self.only_op_use_walk(invn, opmatch, trial, main_flags, noting.then_some(&mut entered), false) {
+            return true;
+        }
+        noting
+            && retest::any_retest_merge(self, &entered)
+            && self.only_op_use_walk(invn, opmatch, trial, main_flags, None, true)
+    }
+
+    /// One `only_op_use` walk. `entered` collects the two-input MULTIEQUALs the
+    /// walk passes through, with the Varnode it reached each by; `by_merge`
+    /// skips the uses a merge block that re-tests its condition rules out, and
+    /// then passes only if the walk still reached `opmatch`'s trial slot
+    /// (`condexeretuse`, see [`crate::p4_calls::kuna_condexeretuse`]).
+    fn only_op_use_walk(
+        &mut self,
+        invn: VarnodeId,
+        opmatch: OpId,
+        trial: &crate::fspec::ParamTrial,
+        main_flags: kuna_base::types::uint4,
+        mut entered: Option<&mut Vec<(OpId, VarnodeId)>>,
+        by_merge: bool,
+    ) -> bool {
         use crate::expression::{traverse_flags, TraverseNode};
         use crate::context::OpId as OId;
+        use crate::p4_calls::kuna_condexeretuse as retest;
         let mut res = true;
-        // varlist holds (vn, flags); invn marked to prevent infinite loops.
-        let mut varlist: Vec<(VarnodeId, kuna_base::types::uint4)> = Vec::with_capacity(64);
+        // varlist holds (vn, flags, forced); invn marked to prevent infinite loops.
+        let mut varlist: Vec<(VarnodeId, kuna_base::types::uint4, Option<retest::Forced>)> =
+            Vec::with_capacity(64);
+        let mut reach = retest::Reach::default();
         self.vbank_mut().get_mut(invn).expect("onlyOpUse: stale invn").set_mark();
-        varlist.push((invn, main_flags));
+        varlist.push((invn, main_flags, None));
         let active_output = self.get_active_output().is_some();
+        let forced_return = crate::p4_calls::kuna_voidret::scoring_return(self, opmatch);
+        let mut reached_match = false;
         let mut i = 0;
         while i < varlist.len() {
-            let (vn, base_flags) = varlist[i];
+            let (vn, base_flags, forced) = varlist[i];
             // Snapshot the descend list (we mutate marks while iterating).
             let descend: Vec<OId> = match self.vbank().get(vn) {
                 Some(v) => v.descend_iter().collect(),
                 None => Vec::new(),
             };
             for op in descend {
+                if forced.is_some_and(|f| retest::cannot_arrive(self, f, op, &mut reach)) {
+                    continue;
+                }
                 // (kuna) `zeroidiomuse` — an `INT_XOR`/`INT_SUB` of a value with
                 // itself is `0` whatever the value is, so it neither observes the
                 // Varnode nor carries it onward.  See
                 // [`crate::p4_calls::kuna_zeroidiomuse`].
                 if crate::p4_calls::kuna_zeroidiomuse::op_discards_operand(self, op) {
+                    continue;
+                }
+                // (kuna) `voidret` — a forced return value may also be stored
+                // and branched on.  See [`crate::p4_calls::kuna_voidret::returned_use`].
+                if forced_return && crate::p4_calls::kuna_voidret::returned_use(self, op, vn) {
                     continue;
                 }
                 let o = match self.obank().get(op) {
@@ -2189,6 +2251,7 @@ impl Funcdata {
                 let code = o.code();
                 if op == opmatch {
                     if o.get_in(trial.get_slot()) == Some(vn) {
+                        reached_match = true;
                         continue;
                     }
                 }
@@ -2332,12 +2395,24 @@ impl Funcdata {
                 let subvn = self.obank().get(op).and_then(|o| o.get_out());
                 if let Some(subvn) = subvn {
                     if self.vbank().get(subvn).map(|v| v.is_persist()).unwrap_or(false) {
+                        if forced_return {
+                            continue;
+                        }
                         res = false;
                         break;
                     }
+                    if let Some(e) = entered.as_deref_mut().filter(|_| code == OpCode::CPUI_MULTIEQUAL) {
+                        e.push((op, vn));
+                    }
+                    let carry = if by_merge { retest::carried(self, op, vn, forced) } else { None };
                     if !self.vbank().get(subvn).map(|v| v.is_mark()).unwrap_or(true) {
-                        varlist.push((subvn, cur_flags));
+                        varlist.push((subvn, cur_flags, carry));
                         self.vbank_mut().get_mut(subvn).expect("onlyOpUse: subvn").set_mark();
+                    } else if by_merge
+                        && varlist.iter().any(|&(v, _, f)| v == subvn && f.is_some() && f != carry)
+                    {
+                        res = false;
+                        break;
                     }
                 }
             }
@@ -2346,12 +2421,12 @@ impl Funcdata {
             }
             i += 1;
         }
-        for (vn, _) in &varlist {
+        for (vn, _, _) in &varlist {
             if let Some(v) = self.vbank_mut().get_mut(*vn) {
                 v.clear_mark();
             }
         }
-        res
+        res && (!by_merge || reached_match)
     }
 
     /// Test whether a Varnode's data-flow ancestry makes it a realistic
@@ -2641,6 +2716,8 @@ pub(crate) struct AncestorRealistic {
     /// (kuna) `condexeret`: storage whose function input fails the walk even
     /// when it is directwrite.
     forbidden: Vec<(Address, int4)>,
+    /// (kuna) The LOADs the walk took as solid movement.
+    solid_loads: Vec<OpId>,
 }
 
 impl AncestorRealistic {
@@ -2658,7 +2735,21 @@ impl AncestorRealistic {
             collect_inputs: false,
             collected: Vec::new(),
             forbidden: Vec::new(),
+            solid_loads: Vec::new(),
         }
+    }
+
+    /// (kuna) The LOADs the last [`Self::execute`] stopped at as solid
+    /// movement, read by [`crate::p4_calls::kuna_reloadarg`].
+    pub(crate) fn solid_loads(&self) -> &[OpId] {
+        &self.solid_loads
+    }
+
+    fn solid_at(&mut self, fd: &Funcdata, op: Option<OpId>) -> AncestorCmd {
+        if let Some(op) = op.filter(|&o| fd.obank().get(o).is_some_and(|o| o.code() == OpCode::CPUI_LOAD)) {
+            self.solid_loads.push(op);
+        }
+        AncestorCmd::PopSolid
     }
 
     /// (kuna) `condexeret`: the op that read the non-directwrite function input
@@ -2844,7 +2935,7 @@ impl AncestorRealistic {
                             if c == Some(OpCode::CPUI_COPY) || c == Some(OpCode::CPUI_SUBPIECE) {
                                 curop = d;
                             } else {
-                                break;
+                                return self.solid_at(fd, Some(d));
                             }
                         }
                         None => break,
@@ -2906,7 +2997,7 @@ impl AncestorRealistic {
                     } else if opc == Some(OpCode::CPUI_PIECE) {
                         curvn = fd.obank().get(op2).and_then(|o| o.get_in(1)).unwrap_or(curvn);
                     } else {
-                        break;
+                        return self.solid_at(fd, Some(op2));
                     }
                 }
                 AncestorCmd::PopSolid
@@ -2952,7 +3043,14 @@ impl AncestorRealistic {
                 }
                 AncestorCmd::PopSolid
             }
-            _ => AncestorCmd::PopSolid,
+            // (kuna syscallregs) the error flag a system call leaves is the
+            // kernel's clobber, like a register value through a call.
+            OpCode::CPUI_CALLOTHER
+                if self.trial_killed_by_call && crate::kuna_syscallregs::is_error_flag(fd, op) =>
+            {
+                AncestorCmd::PopFail
+            }
+            _ => self.solid_at(fd, Some(op)),
         }
     }
 
@@ -3037,6 +3135,7 @@ impl AncestorRealistic {
         self.set_cond_exe_effect = false;
         self.input_fail_reader = None;
         self.collected.clear();
+        self.solid_loads.clear();
         // If the parameter itself is an input, we don't consider this realistic
         // (unless we are re-testing a conditional-execution trial).
         let in_slot = fd.obank().get(op).and_then(|o| o.get_in(slot));
@@ -3346,6 +3445,29 @@ mod tests {
         assert_eq!(fd.num_varnodes(), 1);
         fd.delete_varnode(vn).unwrap();
         assert_eq!(fd.num_varnodes(), 0);
+    }
+
+    /// `delete_varnode` models the C++ `delete vn`, which runs `~Varnode()` and with it
+    /// the detach from the HighVariable (varnode.cc:629).  Skipping it leaves the freed id
+    /// in the high's `inst` list for the naming pass to deref.
+    #[test]
+    fn delete_varnode_detaches_high() {
+        let mut fd = build_fd();
+        let r = ram(&fd);
+        fd.set_high_level();
+        let vn = fd.new_varnode(4, &Address::new(r, 0x40), None);
+        let high = fd
+            .vbank()
+            .get(vn)
+            .unwrap()
+            .get_high()
+            .expect("a varnode created with the high layer on has a high");
+        assert_eq!(fd.high_bank().get(high).unwrap().num_instances(), 1);
+        fd.delete_varnode(vn).unwrap();
+        assert!(
+            fd.high_bank().get(high).is_none(),
+            "the high is unattached once its last member is freed"
+        );
     }
 
     #[test]

@@ -140,6 +140,11 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
     // types the indirect-call target Varnode `code *v1` (and lets the printer render
     // `(*v1)(...)` rather than treating the funcptr as a plain integer).
     if opcode == OpCode::CPUI_CALLIND && slot == 0 {
+        // (kuna `calltargettype`) A target cast at the call is cast to the
+        // function-pointer type the call itself states.
+        if let Some(ct) = data.kuna_call_target_type(op) {
+            return ct;
+        }
         if let Some(tlst) = arch.types() {
             let code = tlst.get_type_code().unwrap_or_else(|_| {
                 Rc::new(Datatype::new(0, type_metatype::TYPE_CODE))
@@ -250,15 +255,22 @@ fn call_input_type_local(
             return None;
         }
     }
-    if recovered {
-        if let Some(ct) = crate::kuna_varargfloat::argument_vote(data, fc, op, slot) {
-            return Some(ct);
-        }
+    let vararg = if recovered {
+        crate::kuna_varargfloat::argument_vote(data, fc, op, slot)
+    } else {
+        crate::kuna_varargfloat::argument_requirement(data, fc, op, slot)
+    };
+    if vararg.is_some() {
+        return vararg;
     }
-    if !recovered || proto.is_input_locked() {
+    if !recovered {
+        return crate::kuna_floatreg::argument_requirement(data, fc, op, slot);
+    }
+    if proto.is_input_locked() {
         return None;
     }
     crate::kuna_protoorder::call_argument_vote(data, op, fc, slot, arg_size)
+        .or_else(|| crate::kuna_floatreg::argument_vote(data, fc, op, slot))
 }
 
 /// The locked-output arm of `TypeOpCall::getOutputLocal` (typeop.cc:722-738) /
@@ -357,6 +369,10 @@ fn get_local_type(data: &Funcdata, vn: VarnodeId) -> (Rc<Datatype>, bool) {
 fn build_localtypes(data: &mut Funcdata) {
     let order: Vec<VarnodeId> = data.vbank().iter_loc().collect();
     let mut elem_cache = crate::kuna_elemptr::Cache::default();
+    let float_bits = crate::kuna_floatbits::Plan::of(data);
+    if float_bits.types_a_return() {
+        data.kuna_note_float_bits_return();
+    }
     if data.get_arch().elem_ptr {
         data.kuna_elemptr_begin_pass();
     }
@@ -381,11 +397,12 @@ fn build_localtypes(data: &mut Funcdata) {
         // The seed is consulted only when the Varnode is itself not type-locked
         // (a type-locked Varnode already carries its own definitive type via the
         // getLocalType `isTypeLock` fast-path).
+        let usepoint = data.vn_use_point(vn);
         let seed = if !vn_type_lock {
             data.get_scope_local().and_then(|lm| {
                 data.get_arch()
                     .types()
-                    .and_then(|t| lm.build_localtype_seed(&vn_addr, vn_size, t))
+                    .and_then(|t| lm.build_localtype_seed_at(&vn_addr, vn_size, &usepoint, t))
             })
         } else {
             None
@@ -478,7 +495,10 @@ fn build_localtypes(data: &mut Funcdata) {
         let ct = if from_seed {
             ct
         } else {
-            crate::kuna_floatreg::float_register_vote(data, vn, &ct).unwrap_or(ct)
+            crate::kuna_floatreg::float_register_vote(data, vn, &ct)
+                .or_else(|| crate::kuna_floatreg::float_input_vote(data, vn, &ct))
+                .or_else(|| float_bits.vote(data, vn, &ct))
+                .unwrap_or(ct)
         };
         let ct = if from_seed {
             ct
@@ -721,7 +741,7 @@ fn propagate_from_pointer(
         return None;
     }
     if ptrto.get_size() == sz {
-        return Some(ptrto);
+        return Some(crate::kuna_typequal::unqualified_value(ptrto));
     }
     // Size mismatch: only propagate (partial) enumerations.
     if dt.is_pointer_rel() {
@@ -830,7 +850,7 @@ fn propagate_type(
             if invn_is_spacebase {
                 spacebase_pointer(data, alttype.get_size())
             } else {
-                Some(alttype)
+                Some(crate::kuna_typequal::unqualified_value(alttype))
             }
         }
         OpCode::CPUI_INDIRECT => {
@@ -848,7 +868,7 @@ fn propagate_type(
             if invn_is_spacebase {
                 spacebase_pointer(data, alttype.get_size())
             } else {
-                Some(alttype)
+                Some(crate::kuna_typequal::unqualified_value(alttype))
             }
         }
         // TypeOpEqual / TypeOpNotEqual / TypeOpIntLess / TypeOpIntLessEqual all

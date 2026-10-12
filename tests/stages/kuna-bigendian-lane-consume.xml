@@ -1,0 +1,183 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!--
+Independent assembly regression.
+Stage: P3 lane transformation.
+Strict correctness fix; no option. Every assertion checks the corrected behavior.
+.text
+.global saved_output
+.type saved_output,@function
+saved_output:
+ save %sp, -128, %sp
+ st %i2, [%fp+76]
+ st %i0, [%fp-32]
+ st %i1, [%fp-28]
+ ldd [%fp-32], %o2
+ ld [%fp+76], %i0
+ st %o2, [%i0]
+ ret
+ restore
+.size saved_output, .-saved_output
+
+.text
+.global short_induction
+.type short_induction,@function
+short_induction:
+ save %sp, -128, %sp
+ st %g0, [%fp-32]
+ st %g0, [%fp-28]
+ sll %i2, 16, %l3
+ clr %l2
+.Ltest:
+ sll %l2, 16, %l0
+ cmp %l3, %l0
+ ble .Lexit
+ sra %l0, 14, %o5
+ ld [%i1+%o5], %o0
+ call provider
+ nop
+ ba .Ltest
+ inc %l2
+.Lexit:
+ ldd [%fp-32], %o2
+ ret
+ restore
+.size short_induction, .-short_induction
+
+.text
+.global float_recurrence
+.type float_recurrence,@function
+float_recurrence:
+ save %sp, -128, %sp
+ st %i0, [%fp-8]
+ ld [%fp-8], %f8
+ st %i0, [%fp-16]
+ st %i1, [%fp-12]
+ mov 3, %l0
+.Literate:
+ st %f8, [%fp-8]
+ call transform
+ ld [%fp-8], %o0
+ ld [%fp-12], %f25
+ fmuls %f0, %f25, %f23
+ ld [%fp-16], %f28
+ dec %l0
+ cmp %l0, 0
+ bg .Literate
+ fadds %f23, %f28, %f8
+ sethi %hi(scale_value), %l1
+ ld [%l1+%lo(scale_value)], %f22
+ fmuls %f8, %f22, %f10
+ st %f10, [%i2]
+ fsubd %f20, %f18, %f8
+ fsubd %f20, %f18, %f22
+ ret
+ restore
+.global transform
+.type transform,@function
+transform:
+ retl
+ nop
+.size transform, .-transform
+.size float_recurrence, .-float_recurrence
+
+.section .rodata
+.p2align 2
+scale_value:
+ .float 7.0
+
+.text
+.global retained_scale
+.type retained_scale,@function
+retained_scale:
+ save %sp, -128, %sp
+ st %i0, [%fp-8]
+ ld [%fp-8], %f30
+ fmovs %f30, %f26
+ fstod %f26, %f26
+ fdivd %f26, %f26, %f22
+ sethi %hi(scale), %l0
+ ld [%l0+%lo(scale)], %f22
+ fmuls %f23, %f22, %f8
+ fstod %f8, %f24
+ std %f24, [%i2+8]
+ st %f22, [%fp-16]
+ cmp %i1, 0
+ be .Lfallback
+ nop
+.Lmultiply:
+ fmuls %f30, %f22, %f15
+ st %f15, [%i2]
+ ret
+ restore
+.Lfallback:
+ ba .Lmultiply
+ ld [%fp-16], %f22
+.size retained_scale, .-retained_scale
+
+.section .rodata
+.p2align 2
+scale:
+ .float 13.0
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+9de3bf80f427a04cf027bfe0f227bfe4d41fbfe0f007a04cd426000081c7e008
+81e80000
+</bytechunk>
+<bytechunk space="ram" offset="0x11000" readonly="true">
+9de3bf80c027bfe0c027bfe4a72ea010a4100000a12ca01080a4c01004800007
+9b3c200ed006400d40007bf60100000010bffff9a404a001d41fbfe081c7e008
+81e80000
+</bytechunk>
+<bytechunk space="ram" offset="0x12000" readonly="true">
+9de3bf80f027bff8d107bff8f027bff0f227bff4a0102003d127bff840000011
+d007bff8f307bff4afa00939f907bff0a024200180a4200014bffff891a5c83c
+23000048ed04606895a20936d526800091a508d2ada508d281c7e00881e80000
+81c3e00801000000
+</bytechunk>
+<bytechunk space="ram" offset="0x12068" readonly="true">
+40e00000
+</bytechunk>
+<bytechunk space="ram" offset="0x13000" readonly="true">
+9de3bf80f027bff8fd07bff8b5a0003eb5a0193aada689da2100004ced042054
+91a5c936b1a01928f13ea008ed27bff080a6600002800006010000009fa78936
+df26800081c7e00881e8000010bffffced07bff0
+</bytechunk>
+<bytechunk space="ram" offset="0x13054" readonly="true">
+41500000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="saved_output"/>
+<symbol space="ram" offset="0x11000" name="short_induction"/>
+<symbol space="ram" offset="0x30000" name="provider"/>
+<symbol space="ram" offset="0x12000" name="float_recurrence"/>
+<symbol space="ram" offset="0x12060" name="transform"/>
+<symbol space="ram" offset="0x13000" name="retained_scale"/>
+</binaryimage>
+<script>
+  <com>parse line extern void saved_output(int first, int second, int *output);</com>
+  <com>parse line extern void short_induction(int unused, int **items, short count);</com>
+  <com>parse line extern int provider(int *item);</com>
+  <com>parse line extern void float_recurrence(float seed, float factor, float *output);</com>
+  <com>parse line extern float transform(float value);</com>
+  <com>parse line extern void retained_scale(float value, int choice, float *output);</com>
+  <com>lo fu saved_output</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu short_induction</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu float_recurrence</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu retained_scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="saved pointer reaches store" min="1" max="1">\*output = first;</stringmatch>
+<stringmatch name="induction limit keeps count" min="1" max="1">count \* 0x10000 \+ v1 \* -0x10000</stringmatch>
+<stringmatch name="recurrence starts at seed" min="1" max="1">value = seed;</stringmatch>
+<stringmatch name="recurrence keeps its previous value" min="1" max="1">value = transform\(value\) \* factor \+ seed;</stringmatch>
+<stringmatch name="scale survives the join" min="1" max="1">\*output = value \* dat_13054;</stringmatch>
+<stringmatch name="no fabricated zero multiplication" min="0" max="0">\* 0\.0</stringmatch>
+</decompilertest>

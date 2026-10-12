@@ -91,6 +91,9 @@ pub const ATTRIB_AFTER_BYTES: AttributeId = AttributeId::new("afterbytes", 156);
 pub const ATTRIB_AFTER_STORAGE: AttributeId = AttributeId::new("afterstorage", 157);
 /// Marshalling attribute "fillalternate" (modelrules.cc:27).
 pub const ATTRIB_FILL_ALTERNATE: AttributeId = AttributeId::new("fillalternate", 158);
+/// (kuna) `<join stackalign="false">`: the stack spill of a join ignores the
+/// data-type alignment and takes the next free slot.
+pub const ATTRIB_STACKALIGN: AttributeId = AttributeId::new("stackalign", 4002);
 
 // Borrowed from fspec.cc / architecture.cc (their kuna ids are not yet defined;
 // the modelrules decode references them, so they are carried here with their
@@ -179,6 +182,7 @@ pub fn register_ids(reg: &mut kuna_base::marshal::IdRegistry) {
         &ATTRIB_AFTER_BYTES,
         &ATTRIB_AFTER_STORAGE,
         &ATTRIB_FILL_ALTERNATE,
+        &ATTRIB_STACKALIGN,
         &ATTRIB_MAXSIZE,
         &ATTRIB_MINSIZE,
         &ATTRIB_STRATEGY,
@@ -883,6 +887,8 @@ pub enum AssignAction {
         consume_most_sig: bool,
         enforce_alignment: bool,
         justify_right: bool,
+        /// (kuna) Whether the stack spill honors the data-type alignment.
+        stack_align: bool,
         /// Indices of joinable register entries (C++ `tiles`).
         tiles: Vec<usize>,
         /// Index of the stack entry (C++ `stackEntry`).
@@ -1104,7 +1110,7 @@ impl AssignAction {
         resource: &ParamListStandard,
         manager: &AddrSpaceManager,
     ) -> KunaResult<AssignActionResponse> {
-        let (resource_type, is_big_endian, consume_from_stack, consume_most_sig, enforce_alignment, justify_right, tiles, stack_entry) =
+        let (resource_type, is_big_endian, consume_from_stack, consume_most_sig, enforce_alignment, justify_right, stack_align, tiles, stack_entry) =
             match self {
                 AssignAction::MultiSlotAssign {
                     resource_type,
@@ -1113,6 +1119,7 @@ impl AssignAction {
                     consume_most_sig,
                     enforce_alignment,
                     justify_right,
+                    stack_align,
                     tiles,
                     stack_entry,
                 } => (
@@ -1122,6 +1129,7 @@ impl AssignAction {
                     *consume_most_sig,
                     *enforce_alignment,
                     *justify_right,
+                    *stack_align,
                     tiles,
                     *stack_entry,
                 ),
@@ -1177,7 +1185,7 @@ impl AssignAction {
             let addr = entries[se].get_addr_by_slot_justify(
                 &mut tmp_status[grp],
                 size_left,
-                align,
+                if stack_align { align } else { 1 },
                 justify_right,
                 manager,
             )?; // Consume all the space we need
@@ -1742,6 +1750,7 @@ impl AssignAction {
                 enforce_alignment,
                 justify_right,
                 consume_from_stack,
+                stack_align,
                 ..
             } => {
                 let elem_id = decoder.open_element_id(&ELEM_JOIN)?;
@@ -1764,6 +1773,8 @@ impl AssignAction {
                         *enforce_alignment = decoder.read_bool()?;
                     } else if attrib_id == ATTRIB_STACKSPILL {
                         *consume_from_stack = decoder.read_bool()?;
+                    } else if attrib_id == ATTRIB_STACKALIGN {
+                        *stack_align = decoder.read_bool()?;
                     }
                 }
                 decoder.close_element(elem_id)?;
@@ -1926,6 +1937,7 @@ fn new_multi_slot_assign_default(resource: &ParamListStandard) -> AssignAction {
         consume_most_sig,
         enforce_alignment: false,
         justify_right,
+        stack_align: true,
         tiles: Vec::new(),
         stack_entry: None,
     }

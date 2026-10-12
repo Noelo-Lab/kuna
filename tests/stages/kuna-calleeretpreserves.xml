@@ -87,6 +87,20 @@ b809000000c3
 <bytechunk space="ram" offset="0x1640">
 b809000000c3
 </bytechunk>
+<!-- Authored direct-call checker: j sets EAX=5; the returning helper leaves
+     it alone, while its failure arm calls cookie_failure and never returns. -->
+<bytechunk space="ram" offset="0x1700">
+4883ec28b805000000e8320000004883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1740">
+4883c1014885c97401c34883ec28e82d000000cc
+</bytechunk>
+<bytechunk space="ram" offset="0x1780">
+b83c000000bf4b0000000f050f0b
+</bytechunk>
+<symbol space="ram" offset="0x1700" name="j"/>
+<symbol space="ram" offset="0x1740" name="checked_helper"/>
+<symbol space="ram" offset="0x1780" name="cookie_failure"/>
 <symbol space="ram" offset="0x1000" name="f"/>
 <symbol space="ram" offset="0x1400" name="g"/>
 <symbol space="ram" offset="0x1500" name="h"/>
@@ -119,6 +133,25 @@ b809000000c3
   <com>lo fu i</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option calleepreserves off</com>
+  <com>parse line extern unsigned long long j(unsigned long long cookie);</com>
+  <com>parse line extern void checked_helper(unsigned long long cookie);</com>
+  <com>lo fu j</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option noreturn cookie_failure true</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleeretpreserves off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleeretpreserves on</com>
+  <com>option noreturn cookie_failure false</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option noreturn cookie_failure true</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="CALLEERETPRESERVES #1: off, the zero set before the cookie check is gone and f returns nothing" min="1" max="1">^void f\(int8 a0\)$</stringmatch>
@@ -129,4 +162,7 @@ b809000000c3
 <stringmatch name="CALLEERETPRESERVES #6: both passes, the stub call keeps the convention's answer" min="2" max="2">^  sub_1410\(\);$</stringmatch>
 <stringmatch name="CALLEERETPRESERVES #7: a tailcallee RAX write never preserves the caller's seven" min="0" max="0">^  return 7;$</stringmatch>
 <stringmatch name="CALLEERETPRESERVES #8: both direct- and tailcallee RAX writers keep the call in both passes" min="4" max="4">^  sub_1[56]40\(\);$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #9: only a known terminal failure call preserves j's five" min="2" max="2">^  return 5;$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #10: unknown, unmarked and option-off keep the undefined return" min="3" max="3">^  return v1;$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #11: every pass retains the direct helper call" min="5" max="5">^  checked_helper\(cookie\);$</stringmatch>
 </decompilertest>

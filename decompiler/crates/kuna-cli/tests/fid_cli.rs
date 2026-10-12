@@ -2,7 +2,7 @@
 
 use std::process::Command;
 
-mod common;
+use crate::common;
 
 fn archive_member(archive: &mut Vec<u8>, name: &str, bytes: &[u8]) {
     let header = format!(

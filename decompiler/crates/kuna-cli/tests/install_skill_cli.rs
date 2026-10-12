@@ -3,7 +3,7 @@
 //! Every run isolates agent configuration in a scratch directory, so nothing
 //! here touches the real agent configuration.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

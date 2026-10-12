@@ -55,6 +55,10 @@
     Pass 1 (`option calleearity off`) reproduces the BUG: site B renders as
     `callee()` while site A keeps its argument.
     Pass 2 (`option calleearity on`) is the FIX: both sites pass an argument.
+
+    `calleereadarg` is off in pass 1: the callee reads rdi on entry, so that
+    rule keeps site B's argument by itself and would hide the bug.  Pass 2 is
+    the shipped default, with both rules on.
 -->
 <bytechunk space="ram" offset="0x100000">
 4889f84883c001c30f1f84000000000053bf28000000e8e5ffffff4889c3488d
@@ -64,10 +68,12 @@
 <symbol space="ram" offset="0x100010" name="caller"/>
 </binaryimage>
 <script>
+  <com>option calleereadarg off</com>
   <com>option calleearity off</com>
   <com>lo fu caller</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option calleereadarg on</com>
   <com>option calleearity on</com>
   <com>decompile</com>
   <com>print C</com>

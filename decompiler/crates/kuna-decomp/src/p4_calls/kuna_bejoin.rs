@@ -2340,7 +2340,7 @@ fn moves_register_window(data: &Funcdata, copy: OpId) -> bool {
 /// `restore` in its delay slot (`didrestore = 0; ...; if (didrestore == 0)
 /// goto next; return [o7]`), and return recovery settles the prototype before
 /// the rule pool folds it away, so its `%o1` is whatever the call was passed.
-fn never_reached(data: &Funcdata, retop: OpId) -> bool {
+pub(crate) fn never_reached(data: &Funcdata, retop: OpId) -> bool {
     let Some(bl) = data.obank().get(retop).and_then(|o| o.get_parent()) else { return false };
     let block = data.bblocks_ref().block(bl);
     if block.size_in() == 0 {

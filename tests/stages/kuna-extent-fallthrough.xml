@@ -1,0 +1,34 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v5t">
+<!--
+    Kuna #850: an asserted outer function contains a separately discovered
+    interior entry.
+    The first instruction falls through to that entry, then the body returns 7:
+
+      0x10000 outer:    mov r1,r1
+      0x10004 interior: mov r0,#7
+      0x10008            bx lr
+
+    The outer extent is [0x10000,0x1000c), so funcboundflow must keep decoding
+    at 0x10004 even though function discovery knows an entry there. P0 assertion:
+    `option funcboundflow on|off`. The default-on pass reproduces the pre-fix
+    truncation; the off pass is the control. Assertion #1 fails before the fix
+    and requires both passes to return the same value. Stage: P2 flow
+    classification.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">0110a0e10700a0e31eff2fe1</bytechunk>
+</binaryimage>
+<script>
+  <com>function bounds 0x10000 0x1000c as outer</com>
+  <com>function bounds 0x10004 0x1000c as interior</com>
+  <com>parse line extern int outer(int input);</com>
+  <com>lo fu outer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option funcboundflow off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="EXTENT-FALLTHROUGH #1: both passes decode the body inside the asserted outer extent" min="2" max="2">return 7;</stringmatch>
+</decompilertest>

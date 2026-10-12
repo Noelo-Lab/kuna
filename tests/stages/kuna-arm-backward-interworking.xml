@@ -1,0 +1,18 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8">
+<!-- Authored A32 push; backward BLX to Thumb; A32 pop. -->
+<bytechunk space="ram" offset="0x1380">7047</bytechunk>
+<bytechunk space="ram" offset="0x1600">10402de95dfffffa1080bde81eff2fe11eff2fe1</bytechunk>
+<symbol space="ram" offset="0x1380" name="thumb_helper"/>
+<symbol space="ram" offset="0x1600" name="arm_caller"/>
+</binaryimage>
+<script>
+  <com>function bounds 0x1600 0x160c as arm_caller</com>
+  <com>load function arm_caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="backward BLX #1: retains the call" min="1" max="1">thumb_helper\(</stringmatch>
+<stringmatch name="backward BLX #2: no invented store" min="0" max="0">\*[a-zA-Z_][a-zA-Z_0-9]* =</stringmatch>
+<stringmatch name="backward BLX #3: no decode halt" min="0" max="0">halt_|Bad instruction</stringmatch>
+</decompilertest>

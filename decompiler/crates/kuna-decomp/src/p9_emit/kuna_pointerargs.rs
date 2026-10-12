@@ -1,5 +1,4 @@
-//! Cast the address of a scalar local passed where a callee printed earlier in
-//! the same callee-first batch declares a character pointer.
+//! Match scalar addresses to character-pointer declarations in a completed C batch.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -10,7 +9,212 @@ use crate::funcdata::Funcdata;
 use kuna_base::address::Address;
 use kuna_num::opcodes::OpCode;
 
-/// The declared type of each scalar parameter and local the printer wrote.
+pub type Entry = (String, u64);
+pub type Storage = (Entry, i32);
+
+pub fn entry(addr: &Address) -> Option<Entry> {
+    Some((addr.get_space()?.get_name().to_string(), addr.get_offset()))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Parameter {
+    pub storage: Storage,
+    pub spelling: String,
+}
+
+/// One-based line and UTF-8 byte column. The printer records positions in its
+/// own output; [`PrintC::take_pointer_arguments`](crate::printc::PrintC::take_pointer_arguments)
+/// rebases them onto the trimmed text, so a taken record always addresses `code`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Position {
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Call {
+    pub callee: Entry,
+    pub index: usize,
+    pub storage: Storage,
+    pub actual: String,
+    pub position: Position,
+    pub expression: String,
+}
+
+/// Facts from the same successful render as the function's code. A prototype
+/// slot without a parameter stays `None`; no inferred declaration crosses a batch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Record {
+    pub entry: Entry,
+    pub parameters: Vec<Option<Parameter>>,
+    pub calls: Vec<Call>,
+}
+
+impl Record {
+    pub(crate) fn new(fd: &Funcdata) -> Option<Self> {
+        let proto = fd.get_func_proto();
+        let slots = if proto.has_store() { proto.num_params().max(0) as usize } else { 0 };
+        Some(Self {
+            entry: entry(fd.get_address())?,
+            parameters: vec![None; slots],
+            calls: Vec::new(),
+        })
+    }
+
+    pub(crate) fn trim_lines(&mut self, untrimmed: &str) {
+        let skip = untrimmed.len() - untrimmed.trim_start_matches('\n').len();
+        for call in &mut self.calls {
+            call.position.line = call.position.line.saturating_sub(skip);
+        }
+    }
+
+    /// Structure renaming preserves lines, but can move later columns. The
+    /// identifier edits of one text never overlap.
+    pub fn renamed(&mut self, original: &str, edits: &[(usize, usize, String)]) {
+        if self.calls.is_empty() || edits.is_empty() {
+            return;
+        }
+        let mut spans: Vec<_> = edits
+            .iter()
+            .map(|(start, end, to)| (*start, *end, to.len() as isize - (end - start) as isize))
+            .collect();
+        spans.sort_unstable_by_key(|&(start, ..)| start);
+        let mut shift = vec![0isize];
+        for &(.., delta) in &spans {
+            shift.push(shift.last().unwrap() + delta);
+        }
+        let starts: Vec<_> = std::iter::once(0)
+            .chain(original.match_indices('\n').map(|(i, _)| i + 1))
+            .collect();
+        for call in &mut self.calls {
+            let Some(&line_start) = call.position.line.checked_sub(1).and_then(|l| starts.get(l))
+            else {
+                continue;
+            };
+            let at = line_start + call.position.column;
+            let first = spans.partition_point(|&(start, ..)| start < line_start);
+            let last = spans.partition_point(|&(_, end, _)| end <= at).max(first);
+            call.position.column =
+                call.position.column.saturating_add_signed(shift[last] - shift[first]);
+        }
+    }
+}
+
+/// Only equal, unambiguous declarations in the final result set may decide.
+pub type Definitions = BTreeMap<Entry, Option<Vec<Option<Parameter>>>>;
+
+pub fn definitions<'a>(records: impl IntoIterator<Item = &'a Record>) -> Definitions {
+    let mut out = Definitions::new();
+    for r in records {
+        out.entry(r.entry.clone())
+            .and_modify(|old| {
+                if old.as_ref() != Some(&r.parameters) {
+                    *old = None;
+                }
+            })
+            .or_insert_with(|| Some(r.parameters.clone()));
+    }
+    out
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Insertion {
+    pub position: Position,
+    pub expression: String,
+    pub spelling: String,
+}
+
+pub fn insertions(record: &Record, definitions: &Definitions) -> Vec<Insertion> {
+    let mut out: Vec<_> = record
+        .calls
+        .iter()
+        .filter_map(|call| {
+            let target = definitions
+                .get(&call.callee)?
+                .as_ref()?
+                .get(call.index)?
+                .as_ref()?;
+            (target.storage == call.storage && target.spelling != call.actual).then(|| Insertion {
+                position: call.position,
+                expression: call.expression.clone(),
+                spelling: target.spelling.clone(),
+            })
+        })
+        .collect();
+    out.sort_by_key(|edit| edit.position);
+    out
+}
+
+/// The cast text and the sites [`apply`] left uncast.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Applied {
+    pub code: String,
+    pub skipped: Vec<(Insertion, &'static str)>,
+}
+
+/// Validate every emitter-recorded site before editing; no text search or
+/// inference from a function's name participates in the conversion. A site
+/// that does not validate stays uncast: the rest of the document is unaffected.
+/// `edits` must be sorted by position, as [`insertions`] returns them.
+pub fn apply(code: &str, edits: &[Insertion]) -> Applied {
+    let starts: Vec<_> = std::iter::once(0)
+        .chain(code.match_indices('\n').map(|(i, _)| i + 1))
+        .collect();
+    let mut sites: Vec<(usize, &Insertion)> = Vec::with_capacity(edits.len());
+    let mut skipped = Vec::new();
+    for edit in edits {
+        match site(code, &starts, edit) {
+            Err(reason) => skipped.push((edit.clone(), reason)),
+            Ok(at) if sites
+                .last()
+                .is_some_and(|&(previous, prior)| previous + prior.expression.len() > at) =>
+            {
+                skipped.push((edit.clone(), "pointer argument emission positions overlap"));
+            }
+            Ok(at) => sites.push((at, edit)),
+        }
+    }
+    let mut out = String::with_capacity(
+        code.len() + sites.iter().map(|(_, e)| e.spelling.len() + 2).sum::<usize>(),
+    );
+    let mut previous = 0;
+    for &(at, edit) in &sites {
+        out.push_str(&code[previous..at]);
+        out.push('(');
+        out.push_str(&edit.spelling);
+        out.push(')');
+        previous = at;
+    }
+    out.push_str(&code[previous..]);
+    Applied { code: out, skipped }
+}
+
+fn site(code: &str, starts: &[usize], edit: &Insertion) -> Result<usize, &'static str> {
+    if edit.spelling.contains(['\n', '\r']) {
+        return Err("pointer argument type contains a line break");
+    }
+    edit.position
+        .line
+        .checked_sub(1)
+        .and_then(|line| {
+            let start = *starts.get(line)?;
+            let end = starts.get(line + 1).map_or(code.len(), |end| end - 1);
+            let at = start.checked_add(edit.position.column)?;
+            (at.checked_add(edit.expression.len())? <= end).then_some(at)
+        })
+        .filter(|&at| {
+            code.get(at..).is_some_and(|s| {
+                !edit.expression.is_empty()
+                    && s.starts_with(&edit.expression)
+                    && s[edit.expression.len()..]
+                        .chars()
+                        .next()
+                        .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '$')
+            })
+        })
+        .ok_or("pointer argument emission position does not match its expression")
+}
+
 #[derive(Default)]
 pub(crate) struct Declarations(BTreeMap<String, String>);
 
@@ -38,90 +242,28 @@ fn pointer_to(base: &str) -> String {
 
 pub(crate) trait PrintedPointers {
     fn spell(&self, ty: &Rc<Datatype>) -> String;
-    fn address(&self, high: HighVariableId) -> Option<String>;
+    fn address(&self, high: HighVariableId) -> Option<(String, String)>;
 }
 
-/// A printed parameter's storage, size and declared type.
-type Parameter = (Address, i32, Rc<Datatype>);
-
-/// The parameter declarations of the functions a callee-first batch has
-/// printed so far, keyed by entry point.
-#[derive(Default)]
-pub struct Batch {
-    active: bool,
-    declarations: BTreeMap<(i32, u64), Vec<Parameter>>,
+pub(crate) struct Candidate {
+    pub address_op: OpId,
+    pub call: Call,
 }
 
-impl Batch {
-    pub fn start(&mut self) {
-        *self = Self {
-            active: true,
-            ..Self::default()
-        };
-    }
-
-    pub fn stop(&mut self) {
-        *self = Self::default();
-    }
-
-    pub(crate) fn definition(&mut self, fd: &Funcdata) {
-        if !self.active {
-            return;
-        }
-        let proto = fd.get_func_proto();
-        let params = (0..proto.num_params())
-            .filter_map(|i| {
-                let param = proto.get_param(i)?;
-                Some((
-                    param.get_address(),
-                    param.get_size(),
-                    param.get_type()?.clone(),
-                ))
-            })
-            .collect();
-        self.declarations.insert(entry(fd.get_address()), params);
-    }
-
-    fn target(
-        &self,
-        callee: &Address,
-        index: usize,
-        storage: &(Address, i32),
-    ) -> Option<Rc<Datatype>> {
-        if !self.active {
-            return None;
-        }
-        let (addr, size, ty) = self.declarations.get(&entry(callee))?.get(index)?;
-        (addr == &storage.0 && *size == storage.1).then(|| ty.clone())
-    }
-}
-
-fn entry(addr: &Address) -> (i32, u64) {
-    (
-        addr.get_space().map_or(-1, |sp| sp.get_index()),
-        addr.get_offset(),
-    )
-}
-
-/// The character pointer to cast argument `slot` of `call` to, if any.
-///
-/// Only a declaration already printed in this batch, at the same position and
-/// finalized storage, decides; varargs and per-call overrides never do. An
-/// argument that differs from it only in the signedness of a byte keeps its
-/// own type.
-pub(crate) fn argument_cast(
+pub(crate) fn argument(
     p: &dyn PrintedPointers,
     fd: &Funcdata,
     arch: &crate::architecture::Architecture,
     call: OpId,
     slot: i32,
-) -> Option<Rc<Datatype>> {
+) -> Option<Candidate> {
     let op = fd.obank().get(call)?;
     if op.code() != OpCode::CPUI_CALL || slot < 1 {
         return None;
     }
     let fc = fd.get_call_specs(fd.get_call_specs_index(call)?);
     if fc.format_arity().is_some()
+        || fc.is_dotdotdot()
         || fd
             .get_override()
             .find_proto_override(op.get_addr())
@@ -130,19 +272,22 @@ pub(crate) fn argument_cast(
         return None;
     }
     let index = (slot - 1) as usize;
-    let storage = fc.final_input_storage().get(index)?.clone();
-    let target = arch
-        .kuna_pointerargs
-        .borrow()
-        .target(fc.get_entry_address(), index, &storage)?;
-    if !byte_pointer(&target) {
+    let (storage, size) = fc.final_input_storage().get(index)?;
+    let (address_op, name, actual) = pointer_type(p, fd, op.get_in(slot)?, 0)?;
+    if byte_spellings(p, arch).any(|b| pointer_to(&b) == actual) {
         return None;
     }
-    let actual = pointer_type(p, fd, op.get_in(slot)?, 0)?;
-    if actual == p.spell(&target) || byte_spellings(p, arch).any(|b| pointer_to(&b) == actual) {
-        return None;
-    }
-    Some(target)
+    Some(Candidate {
+        address_op,
+        call: Call {
+            callee: entry(fc.get_entry_address())?,
+            index,
+            storage: (entry(storage)?, *size),
+            actual,
+            position: Position::default(),
+            expression: format!("&{name}"),
+        },
+    })
 }
 
 fn pointer_type(
@@ -150,15 +295,16 @@ fn pointer_type(
     fd: &Funcdata,
     vn: VarnodeId,
     depth: usize,
-) -> Option<String> {
+) -> Option<(OpId, String, String)> {
     if depth == 16 {
         return None;
     }
     let v = fd.vbank().get(vn)?;
-    if !v.is_implied() {
+    if !v.is_implied() || v.has_implied_field() {
         return None;
     }
-    let op = fd.obank().get(v.get_def()?)?;
+    let id = v.get_def()?;
+    let op = fd.obank().get(id)?;
     match op.code() {
         OpCode::CPUI_COPY => pointer_type(p, fd, op.get_in(0)?, depth + 1),
         OpCode::CPUI_PTRSUB => {
@@ -166,13 +312,13 @@ fn pointer_type(
             if base.get_metatype() != type_metatype::TYPE_SPACEBASE {
                 return None;
             }
-            p.address(fd.vbank().get(op.get_in(1)?)?.get_high()?)
+            let (name, ty) = p.address(fd.vbank().get(op.get_in(1)?)?.get_high()?)?;
+            Some((id, name, ty))
         }
         _ => None,
     }
 }
 
-/// Every spelling a one-byte integer or undefined byte takes in this run.
 fn byte_spellings<'a>(
     p: &'a dyn PrintedPointers,
     arch: &'a crate::architecture::Architecture,
@@ -191,9 +337,7 @@ fn byte_spellings<'a>(
         .chain(factory.into_iter().flatten().map(move |ty| p.spell(&ty)))
 }
 
-/// C character pointers may access an object's representation without
-/// changing its effective type; an undefined byte prints as one.
-fn byte_pointer(ty: &Rc<Datatype>) -> bool {
+pub(crate) fn byte_pointer(ty: &Rc<Datatype>) -> bool {
     ty.get_metatype() == type_metatype::TYPE_PTR
         && ty.get_ptr_to().is_some_and(|p| {
             p.get_size() == 1
@@ -205,3 +349,6 @@ fn byte_pointer(ty: &Rc<Datatype>) -> bool {
                 )
         })
 }
+
+#[cfg(test)]
+mod tests;

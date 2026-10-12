@@ -122,7 +122,7 @@ use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
-use kuna_base::types::int4;
+use kuna_base::types::{int4, uint4};
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
@@ -185,6 +185,27 @@ pub struct CalleeEntryDead {
     /// direction deletes arguments; [`Self::proves_input`] reads this one
     /// instead.
     reads_live: Vec<(int4, u64, int4)>,
+    /// The individual register bytes the reads in [`Self::reads_live`] found
+    /// unwritten. A read is recorded whole when ANY byte of it is unwritten, so
+    /// `mov 0x8(%rbx),%cl; lea -0x4(%rcx),%edx` records all of `rcx` although
+    /// only the bytes above `cl` were never written. Two more reads are left out
+    /// because they consume no value: a register compared with itself
+    /// (`sbb %ecx,%ecx` sets its flags from `ecx < ecx`), and a register stored
+    /// by an instruction that stores several (`push {r0, r1, r4, lr}`, which gcc
+    /// emits to reserve stack with dead registers). Read by
+    /// [`Self::reads_low_byte`].
+    live_read_bytes: ByteSet,
+    /// The register bytes left out of [`Self::live_read_bytes`] because the
+    /// read only stored them with a single store. A variadic callee whose
+    /// register save gcc bounds to the `va_arg`s it can reach stores just those
+    /// (`str x2, [sp, #24]`), and only where a caller marks its variadic calls
+    /// (SysV's `xor %eax,%eax`) is a store alone evidence. Read by
+    /// [`Self::reads_low_byte`].
+    stored_read_bytes: ByteSet,
+    /// Did some path reach an instruction the walk could not decode? A body
+    /// decoded in the wrong instruction set reads registers at random before it
+    /// breaks. Read by [`Self::reads_low_byte`].
+    undecodable: bool,
     /// For every path terminator — a `RETURN` as much as a nested call or an
     /// unresolved branch — the register bytes already written on the way to it.
     /// A range is only dead if it is fully written before EVERY one of them, and
@@ -222,6 +243,11 @@ pub struct CalleeEntryDead {
     /// bytes written before its branch when the probe was asked to follow them.
     /// Read only by [`Self::returns_untouched`].
     skipped: Option<Box<CalleeEntryDead>>,
+    /// The bytes written where a path reached a system-call user op (`svc`),
+    /// whose kernel reads registers no p-code input names. Kept when the walk
+    /// is abandoned, since each one is positive evidence. Read by
+    /// [`Self::traps_unwritten`].
+    trap_cuts: Vec<ByteSet>,
     /// Did the walk cover every path with nothing abandoned?
     complete: bool,
 }
@@ -313,6 +339,66 @@ impl CalleeEntryDead {
             .any(|&(ridx, roff, rsz)| ridx == idx && roff < end && off < roff + rsz as u64)
     }
 
+    /// Does some path read the LOW byte of `[addr, addr+size)` before writing
+    /// it, for a value that can reach something?
+    ///
+    /// [`Self::proves_input`] narrowed to the byte every integer or pointer
+    /// argument occupies, so a wide read of a register whose low byte the
+    /// callee wrote first (`mov 0x8(%rbx),%cl; lea -0x4(%rcx),%edx`) is not an
+    /// input, and without the reads [`Self::live_read_bytes`] leaves out. A
+    /// read that only stores the register counts with `stores`. A walk that met
+    /// an undecodable instruction answers `false`. Read by
+    /// [`crate::p4_calls::kuna_calleereadarg`].
+    pub fn reads_low_byte(&self, addr: &Address, size: int4, stores: bool) -> bool {
+        if !self.complete || self.undecodable || size <= 0 {
+            return false;
+        }
+        let Some(sp) = addr.get_space() else { return false };
+        if self.reg_idx < 0 || sp.get_index() != self.reg_idx {
+            return false;
+        }
+        let low = if addr.is_big_endian() {
+            addr.get_offset().wrapping_add(size as u64 - 1)
+        } else {
+            addr.get_offset()
+        };
+        self.live_read_bytes.contains(&(self.reg_idx, low))
+            || (stores && self.stored_read_bytes.contains(&(self.reg_idx, low)))
+    }
+
+    /// How many bytes of `[addr, addr+size)`, counted from its least
+    /// significant end, the widest counted read of that end consumes, rounded
+    /// up to a power of two. `None` unless [`Self::reads_low_byte`] holds.
+    pub fn low_read_width(&self, addr: &Address, size: int4) -> Option<int4> {
+        if !self.reads_low_byte(addr, size, true) {
+            return None;
+        }
+        let (off, end) = (addr.get_offset(), addr.get_offset().wrapping_add(size as u64));
+        let low = if addr.is_big_endian() { end - 1 } else { off };
+        let width = self
+            .reads_live
+            .iter()
+            .filter(|&&(idx, roff, rsz)| idx == self.reg_idx && roff <= low && low < roff + rsz as u64)
+            .map(|&(_, roff, rsz)| {
+                if addr.is_big_endian() {
+                    end - roff.max(off)
+                } else {
+                    (roff + rsz as u64).min(end) - off
+                }
+            })
+            .max()
+            .unwrap_or(1);
+        Some((width as u32).next_power_of_two().min(size as u32) as int4)
+    }
+
+    /// Mark byte `b` of the register file written before every read of it, so
+    /// a test can stand up a partial write followed by a wide read.
+    #[cfg(test)]
+    pub(crate) fn with_written_byte(mut self, b: u64) -> Self {
+        self.live_read_bytes.remove(&(self.reg_idx, b));
+        self
+    }
+
     /// How many low bytes of `[addr, addr+size)` the reads [`Self::proves_input`]
     /// counts consume: the widest such read, measured from `addr`.
     ///
@@ -395,6 +481,49 @@ impl CalleeEntryDead {
             && self.leaves_untouched(idx, off, end)
     }
 
+    /// Does no path read `[addr, addr+size)` before writing it, or leave for
+    /// code the walk did not read with any of those bytes still unwritten? A
+    /// RETURN hands the register back unread, so it needs no write first.
+    pub fn never_takes(&self, addr: &Address, size: int4) -> bool {
+        let Some(sp) = addr.get_space() else { return false };
+        let (idx, off) = (self.reg_idx, addr.get_offset());
+        let end = off.wrapping_add(size.max(0) as u64);
+        size > 0
+            && end > off
+            && !self.cuts.is_empty()
+            && sp.get_index() == idx
+            && self.takes_none(idx, off, end)
+    }
+
+    /// Does some path reach a system call with a byte of `[addr, addr+size)`
+    /// still holding the caller's value, so the kernel may read it?
+    pub fn traps_unwritten(&self, addr: &Address, size: int4) -> bool {
+        let Some(sp) = addr.get_space() else { return false };
+        let (idx, off) = (self.reg_idx, addr.get_offset());
+        let end = off.wrapping_add(size.max(0) as u64);
+        sp.get_index() == idx
+            && self.trap_cuts.iter().any(|c| (off..end).any(|b| !c.contains(&(idx, b))))
+    }
+
+    /// [`Self::never_takes`] over register bytes `[off, end)`, including the
+    /// paths past a conditional return handed to [`Self::skipped`].
+    fn takes_none(&self, idx: int4, off: u64, end: u64) -> bool {
+        let overlaps = |reads: &[(int4, u64, int4)]| {
+            reads
+                .iter()
+                .any(|&(ridx, roff, rsz)| ridx == idx && roff < end && off < roff + rsz as u64)
+        };
+        let written = |c: &ByteSet| (off..end).all(|b| c.contains(&(idx, b)));
+        self.complete
+            && !self.lost
+            && !overlaps(&self.reads)
+            && !overlaps(&self.return_reads)
+            && !(off..end).any(|b| self.cond_written.contains(&(idx, b)))
+            && self.opaque_cuts.iter().all(written)
+            && self.named_cuts.iter().all(|(_, c)| written(c))
+            && self.skipped.as_deref().map_or(true, |s| s.takes_none(idx, off, end))
+    }
+
     /// Does every path this walk covered, and every path past a conditional
     /// return it handed to [`Self::skipped`], end at a return without reading
     /// or conditionally writing register bytes `[off, end)`?
@@ -422,6 +551,16 @@ impl CalleeEntryDead {
         self
     }
 
+    /// Record one system-call terminator, for the same reason.
+    #[cfg(test)]
+    pub(crate) fn with_trap_cut(mut self, written: Vec<(int4, u64)>) -> Self {
+        let cut: ByteSet = written.into_iter().collect();
+        self.opaque_cuts.push(cut.clone());
+        self.cuts.push(cut.clone());
+        self.trap_cuts.push(cut);
+        self
+    }
+
     /// Record one direct-call terminator, for the same reason.
     #[cfg(test)]
     pub(crate) fn with_named_cut(mut self, target: Address, written: Vec<(int4, u64)>) -> Self {
@@ -441,6 +580,10 @@ impl CalleeEntryDead {
         CalleeEntryDead {
             reg_idx,
             reads_live: reads.clone(),
+            live_read_bytes: reads
+                .iter()
+                .flat_map(|&(idx, off, sz)| (off..off + sz.max(0) as u64).map(move |b| (idx, b)))
+                .collect(),
             reads,
             cuts: cuts.into_iter().map(|c| c.into_iter().collect()).collect(),
             opaque_cuts: Vec::new(),
@@ -450,8 +593,28 @@ impl CalleeEntryDead {
             cond_written: ByteSet::new(),
             lost: false,
             skipped: None,
+            trap_cuts: Vec::new(),
+            stored_read_bytes: ByteSet::new(),
+            undecodable: false,
             complete,
         }
+    }
+
+    /// Turn the read of byte `b` into one that only stored it.
+    #[cfg(test)]
+    pub(crate) fn with_stored_byte(mut self, b: u64) -> Self {
+        if self.live_read_bytes.remove(&(self.reg_idx, b)) {
+            self.stored_read_bytes.insert((self.reg_idx, b));
+        }
+        self
+    }
+
+    /// Record that some path met an undecodable instruction, so a consumer
+    /// can unit-test its refusal without a translator.
+    #[cfg(test)]
+    pub(crate) fn with_undecodable(mut self) -> Self {
+        self.undecodable = true;
+        self
     }
 }
 
@@ -719,7 +882,7 @@ fn takes(stated: &crate::kuna_protoorder::RecoveredTypes, &(ridx, off, sz): &Reg
 }
 
 /// The entry-liveness probe of `entry`, from the run's cache or taken now.
-fn probe_cached(
+pub(crate) fn probe_cached(
     arch: &mut crate::architecture::Architecture,
     entry: &Address,
     reg_idx: int4,
@@ -728,7 +891,11 @@ fn probe_cached(
     let key = (sp.get_index(), entry.get_offset());
     if !arch.kuna_callee_dead_cache.contains_key(&key) {
         let follow = crate::kuna_armfloatargs::applies(arch);
-        let probed = probe_entry(arch.translate(), entry, reg_idx, follow);
+        let traps = crate::kuna_syscallregs::userop_ids(
+            &arch.userops,
+            crate::kuna_syscallregs::SyscallFamily::from_archid(&arch.archid),
+        );
+        let probed = probe_entry_with(arch.translate(), entry, reg_idx, follow, &traps);
         arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
     }
     arch.kuna_callee_dead_cache.get(&key).cloned()
@@ -835,6 +1002,18 @@ pub fn probe_entry<T: kuna_sleigh::translate::Translate + ?Sized>(
     reg_idx: int4,
     follow: bool,
 ) -> CalleeEntryDead {
+    probe_entry_with(tr, entry, reg_idx, follow, &[])
+}
+
+/// [`probe_entry`], recording where a path reaches one of the system-call user
+/// ops `traps` ([`CalleeEntryDead::traps_unwritten`]).
+pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
+    tr: &T,
+    entry: &Address,
+    reg_idx: int4,
+    follow: bool,
+    traps: &[uint4],
+) -> CalleeEntryDead {
     let mut res = CalleeEntryDead { reg_idx, complete: true, ..CalleeEntryDead::default() };
     let Some(entry_space) = entry.get_space() else {
         res.complete = false;
@@ -846,15 +1025,17 @@ pub fn probe_entry<T: kuna_sleigh::translate::Translate + ?Sized>(
     }
     let start = vec![Frame { at: entry.clone(), written: ByteSet::new() }];
     let mut skips = Vec::new();
-    walk(tr, &mut res, start, if follow { Skips::Aside(&mut skips) } else { Skips::Dropped });
+    walk(tr, &mut res, start, if follow { Skips::Aside(&mut skips) } else { Skips::Dropped }, traps);
     if res.complete && !skips.is_empty() {
         let mut late = CalleeEntryDead { reg_idx, complete: true, ..CalleeEntryDead::default() };
-        walk(tr, &mut late, skips, Skips::Walked);
+        walk(tr, &mut late, skips, Skips::Walked, traps);
         res.skipped = Some(Box::new(late));
     }
     if !res.complete {
         res.reads.clear();
         res.reads_live.clear();
+        res.live_read_bytes.clear();
+        res.stored_read_bytes.clear();
         res.cuts.clear();
         res.opaque_cuts.clear();
         res.named_cuts.clear();
@@ -882,6 +1063,7 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
     res: &mut CalleeEntryDead,
     mut todo: Vec<Frame>,
     mut skips: Skips<'_>,
+    traps: &[uint4],
 ) {
     let mut visited: HashMap<(int4, u64), ByteSet> = HashMap::new();
     let mut budget = MAX_PROBE_INSTRUCTIONS;
@@ -912,13 +1094,14 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
             Ok(n) if n > 0 => n,
             // Undecodable: the path ends where the walk cannot see.
             _ => {
+                res.undecodable = true;
                 res.opaque_cuts.push(frame.written.clone());
                 res.cuts.push(frame.written);
                 continue;
             }
         };
         let skip = if follow { Some(&mut found) } else { None };
-        match step_instruction(res, &emit, frame.written, &frame.at, len, skip) {
+        match step_instruction(res, &emit, frame.written, &frame.at, len, skip, traps) {
             Some(next) => todo.extend(next),
             None => break,
         }
@@ -1015,6 +1198,26 @@ fn is_value_erasing(op: &RawOp) -> bool {
     }
 }
 
+/// Does this op compare a value with itself, so its result is the same
+/// whatever the value is? x86 `sbb %ecx,%ecx` computes its carry and overflow
+/// from `ecx < ecx` and `sborrow(ecx,ecx)` and its result from `ecx - ecx`.
+fn compares_with_itself(op: &RawOp) -> bool {
+    let [a, b] = op.ins.as_slice() else { return false };
+    let same = a.size == b.size
+        && a.offset == b.offset
+        && matches!((a.space.as_ref(), b.space.as_ref()), (Some(x), Some(y)) if x.get_index() == y.get_index());
+    same && matches!(
+        op.opc,
+        OpCode::CPUI_INT_LESS
+            | OpCode::CPUI_INT_SLESS
+            | OpCode::CPUI_INT_LESSEQUAL
+            | OpCode::CPUI_INT_SLESSEQUAL
+            | OpCode::CPUI_INT_EQUAL
+            | OpCode::CPUI_INT_NOTEQUAL
+            | OpCode::CPUI_INT_SBORROW
+    )
+}
+
 /// Run one decoded instruction's p-code against the incoming written set.
 ///
 /// Records every read-before-write into `res`, and returns the frames the walk
@@ -1028,18 +1231,29 @@ fn step_instruction(
     at: &Address,
     len: i32,
     skip: Option<&mut Vec<Frame>>,
+    traps: &[uint4],
 ) -> Option<Vec<Frame>> {
     let incoming = written.clone();
     let mut cur = written;
     let mut targets: Vec<Address> = Vec::new();
     let mut before: Vec<ByteSet> = Vec::new();
     let mut ends_flow = false;
+    let multi_store = emit
+        .ops
+        .iter()
+        .filter(|o| {
+            o.opc == OpCode::CPUI_STORE
+                && o.ins.get(2).and_then(|v| v.space.as_ref()).is_some_and(|s| s.get_index() == res.reg_idx)
+        })
+        .count()
+        >= 2;
     for (k, op) in emit.ops.iter().enumerate() {
         // Reads. An instruction that branches inside itself is scored against
         // the set it was entered with, since a conditionally-executed write
         // earlier in the same instruction may not have run.
         let base = if emit.internal_flow { &incoming } else { &cur };
         let value_erasing = is_value_erasing(op);
+        let formal = value_erasing || compares_with_itself(op);
         for (i, v) in op.ins.iter().enumerate() {
             if skip_input(op.opc, i) {
                 continue;
@@ -1053,6 +1267,15 @@ fn step_instruction(
                 res.reads.push((idx, off, sz));
                 if !value_erasing {
                     res.reads_live.push((idx, off, sz));
+                }
+                let stored = op.opc == OpCode::CPUI_STORE && i == 2;
+                if !formal && !(stored && multi_store) {
+                    let into = if stored { &mut res.stored_read_bytes } else { &mut res.live_read_bytes };
+                    for b in off..off + v.size as u64 {
+                        if !base.contains(&(idx, b)) {
+                            into.insert((idx, b));
+                        }
+                    }
                 }
             }
         }
@@ -1074,6 +1297,11 @@ fn step_instruction(
                 return Some(Vec::new());
             }
             OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCHIND => {
+                if op.opc == OpCode::CPUI_CALLOTHER
+                    && op.ins.first().is_some_and(|v| traps.contains(&(v.offset as uint4)))
+                {
+                    res.trap_cuts.push(cur.clone());
+                }
                 let returns = op.opc == OpCode::CPUI_CALLOTHER
                     && !emit.internal_flow
                     && note_returning_user_op(res, &emit.ops[k + 1..]);
@@ -1195,11 +1423,24 @@ pub fn seed_callee_entry_dead(
     // consult it and the decode is pure cost.
     let clobber_veto = arch.arg_clobber && !arch.kuna_protoorder_types.is_empty();
     let pass_through = arch.pass_through && !arch.kuna_protoorder_types.is_empty();
+    let reg_idx =
+        arch.manage().get_space_by_name("register").map(|s| s.get_index()).unwrap_or(-1);
+    if reg_idx < 0 {
+        return;
+    }
+    let hidden_ret = arch.hidden_ret_arg && {
+        let proto = data.get_func_proto();
+        proto.has_model()
+            && crate::p4_calls::kuna_hiddenretarg::has_register_hidden_return(proto.model(), reg_idx)
+    };
+    let read_arg = arch.callee_read_arg;
     if !arch.callee_dead_arg
         && !clobber_veto
         && !(arch.callee_arity && arch.callee_arity_live)
         && !body_arity
         && !pass_through
+        && !hidden_ret
+        && !read_arg
     {
         return;
     }
@@ -1207,13 +1448,10 @@ pub fn seed_callee_entry_dead(
     // a function with fewer than two calls can never produce one — and probing
     // its callees would be pure cost.  This matters most in ghidra mode, where a
     // decode is a round trip to the host.  `calleearitybody` is the exception:
-    // its whole subject is the callee that is called ONCE.
-    if data.num_calls() < 2 && !body_arity && !pass_through {
-        return;
-    }
-    let reg_idx =
-        arch.manage().get_space_by_name("register").map(|s| s.get_index()).unwrap_or(-1);
-    if reg_idx < 0 {
+    // its whole subject is the callee that is called ONCE, and so is a model
+    // with a hidden-return register, whose veto needs no earlier call.  So is
+    // `calleereadarg`, which reads the probe at any one call.
+    if data.num_calls() < 2 && !body_arity && !pass_through && !hidden_ret && !read_arg {
         return;
     }
     let mut through_memo = ThroughMemo::new();
@@ -1222,7 +1460,10 @@ pub fn seed_callee_entry_dead(
     // writes before reading is not a parameter it can be carrying, which is what
     // says a claim across that slot would materialize one
     // ([`crate::p4_calls::kuna_passthrough`]'s `no_hole_before`).
-    if pass_through && !data.get_address().is_invalid() {
+    // `calleereadarg` asks it too, of a function with a call to extend: one
+    // that reads its last argument register on entry may be variadic, and is
+    // left alone.
+    if (pass_through || (read_arg && data.num_calls() > 0)) && !data.get_address().is_invalid() {
         entries.push(data.get_address().clone());
     }
     for i in 0..data.num_calls() {

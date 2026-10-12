@@ -5,6 +5,12 @@
   <global>
     <range space="ram"/>
   </global>
+  <data_organization>
+     <pointer_size value="4"/>
+     <integer_size value="4"/>
+     <long_size value="4"/>
+     <long_long_size value="8"/>
+  </data_organization>
 
   <stackpointer register="sp" space="ram"/>
 

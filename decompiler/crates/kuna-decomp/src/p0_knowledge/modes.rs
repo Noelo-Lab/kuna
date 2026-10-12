@@ -140,11 +140,15 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("switchguardbound", "on"), // speed-expensive
     ("unrolledguard", "on"),    // speed-expensive
     ("stackalias", "on"),
+    ("globalarrayanchor", "on"),
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("regionedgeorder", "on"),
     ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
     ("orchain", "on"),   // the returndup gate DIV-69 measured; must follow returndup
     ("iteexpr", "on"), // angr-style ?: recovery over computed-expression arms (readability)
+    // Recover the scalar loop for readability. Kept in aggressive mode because
+    // this hides the compiler's vector stride and duplicated loop body.
+    ("devectorize", "on"),
     // (kuna) Valid per-architecture C type spelling. The shipped catalog default
     // is OFF because 42 XML datatest assertions pin the Ghidra spellings, and the
     // parity harness applies no mode -- so preset membership is what makes valid C
@@ -185,6 +189,11 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // -0.12% on a 1,027-function binary whose output is byte-identical on both
     // arms, +5.3% on the witness binary where 1 of 144 functions changes.
     ("ptrdepthcap", "on"),
+    // (kuna, GH-869) Give an indirect call's target the function-pointer type
+    // the call states. Shipped default OFF because the XML datatest corpus pins
+    // the upstream `code *` spellings and applies no mode; preset membership is
+    // what makes a call through a table entry or a local compile as C by default.
+    ("calltargettype", "on"),
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),
@@ -193,6 +202,11 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("funcstart_patterns", "on"),
     ("addrtable", "on"),
     ("operand_refs", "on"),
+    // (kuna) The 4-byte string width: an int table of character codes is
+    // byte-for-byte a wide literal, so it ships off and plants only what the image
+    // backs as a string (an operand or pointer at the start that no code indexes,
+    // a 4-byte mergeable string section).
+    ("widestrings32", "on"),
     ("fid", "on"),
     ("rtti", "on"),          // PE-only; no-op off-PE
     ("itaniumrtti", "on"),   // ELF-only, and inert without __cxxabiv1 typeinfo relocs
@@ -357,7 +371,14 @@ mod tests {
             "aggressive must NOT enable dwarf_lines (buries `-g` output in /* src.c:N */)"
         );
         // Representative members that MUST be on.
-        for want in ["listing", "aif", "switchguardbound", "returndup", "sparcstructret"] {
+        for want in [
+            "listing",
+            "aif",
+            "switchguardbound",
+            "returndup",
+            "sparcstructret",
+            "globalarrayanchor",
+        ] {
             assert!(
                 agg.iter().any(|(o, v)| *o == want && *v == "on"),
                 "aggressive must enable `{want}`"
@@ -459,10 +480,34 @@ mod tests {
         /// it on that correct `int` prints as a wrong `long long` (GH-904). In
         /// the preset it would be the default output under 500 KiB, which is
         /// exactly what it is opt-in to avoid.
+        /// `armframes` expands ARM reference coverage with validated frame roots.
+        /// On a stripped 400,556-byte BusyBox it grows the reachable walk from
+        /// 2,271 instructions to about 74,000 and raises query time from 0.78 s
+        /// to 2.05 s. This cost keeps recovery opt-in in every mode.
+        ///
+        /// `mixedtailret` returns a value a function tested beside a tail call,
+        /// and a `void` guard that leaves the tested value in the return
+        /// register compiles to the same bytes (clang's ARM `thr`/`keep`), so
+        /// in the preset it would give such guards a return they do not have.
+        ///
+        /// `varargsharedfloat` reads a PowerPC register choice that only -O0
+        /// code preserves: on clang -O2 and -Os batteries it adds 23 arguments
+        /// the source never passed for 11 it restores.
+        ///
+        /// `callarrayextent` preserves call-written aliases by declaring the
+        /// available frame region as an array, but a pointer parameter does not
+        /// establish the source array's exact length. Keep that representation
+        /// choice per-run rather than enabling it in a preset.
+        ///
+        /// `armconstshift` makes signed ARM constant shifts defined C at the
+        /// cost of a cast pair on every sign-bit test (`x << 0x18 < 0`), which
+        /// firmware uses for nearly every register flag check.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
-              "structdefs", "indirectonly", "protoorder", "bejoin"];
+              "structdefs", "indirectonly", "protoorder", "bejoin", "armframes",
+              "mixedtailret", "varargsharedfloat", "callarrayextent",
+              "armconstshift"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open
@@ -528,6 +573,11 @@ mod tests {
             // which record the other is answered with. Full evaluation:
             // docs/features/fieldtype/default-on-evaluation.md.
             "fieldtype",
+            // `bytearrayc` changes the C emitted for mapped global integer
+            // accesses. This PR adds focused compiler fixtures, not the broad
+            // preset sweep or speed measurement needed before changing the
+            // default output for every aggressive-mode decompile.
+            "bytearrayc",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

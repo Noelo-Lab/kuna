@@ -53,6 +53,8 @@ pub struct PendingCallFixup {
     pub body: Option<crate::p4_calls::kuna_calleearitybody::PendingBodyArgs>,
     /// The forwarded-register extension candidate (`passthrough`).
     pub pass_through: Option<crate::p4_calls::kuna_passthrough::PendingPassThrough>,
+    /// The callee-read extension candidate (`calleereadarg`).
+    pub read_arg: Option<crate::p4_calls::kuna_calleereadarg::PendingReadArg>,
 }
 
 /// C++ `FuncCallSpecs::checkInputTrialUse` (`fspec.cc:5592`).
@@ -96,9 +98,13 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
     // (kuna) The registers a variadic call's caller counts as filled (`al`, CR6).
     let counted =
         crate::p4_calls::kuna_varargretreg::counted_float_arguments(data, data.get_call_specs(idx));
+    let format_arguments = crate::p4_calls::kuna_varargformat::arguments(data, data.get_call_specs(idx));
     let num_trials = data.get_call_specs_mut(idx).get_active_input().get_num_trials();
     for i in 0..num_trials {
-        if data.get_call_specs_mut(idx).get_active_input().get_trial(i).is_checked() {
+        if data.get_call_specs(idx).active_input().get_trial(i).is_checked() {
+            if !data.get_call_specs(idx).active_input().get_trial(i).is_active() {
+                crate::p4_calls::kuna_varargformat::activate_trial(data, idx, i, &format_arguments);
+            }
             continue;
         }
         let slot = data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_slot();
@@ -249,10 +255,19 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
             );
             if realistic || solid {
                 let mut trial = data.get_call_specs(idx).active_input().get_trial(i).clone();
-                let only = data.ancestor_op_use(maxancestor, vn, op, &mut trial, 0, 0);
+                let only = data.ancestor_op_use(maxancestor, vn, op, &mut trial, 0, 0)
+                    || crate::p4_calls::kuna_varargsharedfloat::feeds_earlier_argument(
+                        data,
+                        idx,
+                        vn,
+                        &mut trial,
+                        maxancestor,
+                    );
                 *data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i) = trial;
                 if only {
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_active();
+                    crate::p4_calls::kuna_reloadarg::note(data, idx, i, ancestor.solid_loads());
+                    crate::p4_calls::kuna_varargforward::narrow_undeclared_upper(data, idx, i);
                     if data
                         .get_call_specs_mut(idx)
                         .get_active_input()
@@ -261,9 +276,15 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                     {
                         data.get_call_specs_mut(idx).get_active_input().mark_needs_final_check();
                     }
-                } else {
+                } else if !crate::p4_calls::kuna_varargformat::activate_trial(
+                    data, idx, i, &format_arguments,
+                ) {
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
+                    crate::p4_calls::kuna_varargforward::narrow_undeclared_upper(data, idx, i);
                 }
+            } else if crate::p4_calls::kuna_varargformat::activate_trial(
+                data, idx, i, &format_arguments,
+            ) {
             } else if vn_is_input {
                 // Not likely a parameter but maybe
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
@@ -272,6 +293,10 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
             }
         }
+
+        // (kuna) `hiddenretarg`: an active hidden-return register is no argument
+        // when no callee could be returning through it.
+        crate::p4_calls::kuna_hiddenretarg::rescore_active_trial(data, idx, i);
 
         // If definitely not used, free up the dataflow.
         if data.get_call_specs_mut(idx).get_active_input().get_trial(i).is_definitely_not_used() {
@@ -431,12 +456,14 @@ pub fn build_input_from_trials(
     }
     // (kuna) `calleearityfwd` / `calleearitylive`: capture the retry candidate
     // while the trials and the CALL's pre-rewrite inputs are both still there.
+    let read_arg = crate::p4_calls::kuna_calleereadarg::capture(fc, data);
     let pending = if newparam.len() < 2 {
         PendingCallFixup {
             rescue: crate::p4_calls::kuna_calleearityfwd::capture_empty_call(fc, data),
             extend: None,
             body: crate::p4_calls::kuna_calleearitybody::capture_lone_call(fc, data),
             pass_through,
+            read_arg,
         }
     } else {
         PendingCallFixup {
@@ -444,6 +471,7 @@ pub fn build_input_from_trials(
             extend: crate::p4_calls::kuna_calleearitylive::capture_partial_call(fc, data),
             body: None,
             pass_through,
+            read_arg,
         }
     };
     let _ = data.op_set_all_input(op, &newparam);
@@ -534,6 +562,9 @@ pub fn build_output_from_trials(
     data: &mut Funcdata,
     trialvn: &[Option<VarnodeId>],
 ) {
+    if crate::p4_calls::kuna_callretpair::build_partial_pair(fc, data, trialvn) {
+        return;
+    }
     let op = fc.get_op();
     let mut finalvn: Vec<VarnodeId> = Vec::new();
     let num_trials = fc.get_active_output().get_num_trials();
@@ -571,7 +602,14 @@ pub fn build_output_from_trials(
         // that render as locals the function never assigns.
         let entry = fc.get_entry_address().clone();
         let order = crate::kuna_bejoin::call_join_order(data, fc.get_active_output());
-        if crate::kuna_rustabi::build_call_output_pair(op, data, &finalvn, Some(&entry), order) {
+        if crate::kuna_rustabi::build_call_output_pair(
+            op,
+            data,
+            crate::kuna_rustabi::call_model(fc.proto()),
+            &finalvn,
+            Some(&entry),
+            order,
+        ) {
             return;
         }
         // STUB(W4 translate-on-handle): leave the trials in place rather than

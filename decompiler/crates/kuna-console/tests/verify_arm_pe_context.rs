@@ -1,6 +1,6 @@
 //! ARM PE input-context regression coverage.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

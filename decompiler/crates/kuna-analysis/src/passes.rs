@@ -217,7 +217,9 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // NOT registered here. It is a DEFERRED pass, run at the commit point by
         // [`run_deferred_entry_passes`] where its (default-OFF) gate is finally in
         // effect, rather than swept at load on every binary and discarded. See
-        // `entry::FuncStartPatternPass`.
+        // `entry::FuncStartPatternPass`. The multi-entry `.cold` fragment pass
+        // (`coldentry`) is deferred the same way, because it decodes through the
+        // engine `Translate`, which has no program image until the commit point.
         // S1 ARM/Thumb decode-mode markers: paint the SLEIGH `TMode` context
         // variable from ARM mapping symbols (`$t`/`$a`) + the STT_FUNC odd-address
         // (LSB=1 ⇒ Thumb) convention, so Thumb code decodes as Thumb. The kuna
@@ -228,6 +230,10 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // this is a strict no-op for every non-ARM binary (the parity gates are
         // structurally untouched). Always-on, like noreturn/libproto/entry.
         Box::new(crate::loader::arm_markers::ArmMarkerPass),
+        // (kuna `armfuncmode`) `TMode=0` at each even function symbol of an ARM
+        // image without mapping symbols, so a Thumb paint stops at the next A32
+        // function.
+        Box::new(crate::loader::kuna_armfuncmode::ArmFuncModePass),
         // S1 MIPS `$gp` recovery: seed `t9 = func_entry` as a tracked register
         // value at each MIPS function entry (the PIC `jalr t9` ABI convention), so
         // a PIC prologue's `addu gp,gp,t9` folds to the real `$gp` and
@@ -512,13 +518,16 @@ fn listing_seeds_for_language(
 /// resolves each name from the fully merged `entry_names`, so where a pass's
 /// entries land in the merge order does not change what is installed.
 fn deferred_entry_passes() -> Vec<Box<dyn AnalysisPass>> {
-    vec![Box::new(crate::entry::FuncStartPatternPass)]
+    vec![
+        Box::new(crate::entry::FuncStartPatternPass),
+        Box::new(crate::entry::kuna_coldentry::ColdEntryPass),
+    ]
 }
 
 /// Run the [`deferred_entry_passes`] over the stashed image at the commit point,
 /// keyed by [`AnalysisPass::id`] (the same per-pass-split shape as
 /// [`run_default_analyses_per_pass`], so the console applies the identical
-/// `analysis_pass_enabled` filter).
+/// `analysis_pass_enabled` filter). Only the passes `enabled` accepts by id run.
 ///
 /// The object view is built exactly as [`run_default_analyses_per_pass`] builds
 /// it, `relocrebase` rebasing included: a relocatable object is laid out
@@ -529,6 +538,7 @@ pub fn run_deferred_entry_passes(
     bytes: &[u8],
     image: &ObjectLoadImage,
     arch: &Architecture,
+    enabled: &dyn Fn(&str) -> bool,
 ) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
         return Vec::new();
@@ -545,6 +555,7 @@ pub fn run_deferred_entry_passes(
     };
     let mut split: Vec<(&'static str, AnalysisOutput)> = deferred_entry_passes()
         .iter()
+        .filter(|pass| enabled(pass.id()))
         .map(|pass| {
             let mut out = pass.run(&ctx);
             if let Some(view) = &view {
@@ -643,6 +654,7 @@ pub fn run_listing_consumers(
     noreturn_seeds: &[u64],
     callfixup_seeds: &[u64],
     committed_entries: &[u64],
+    cold_entries: &[u64],
     plan: &crate::listing::WalkPlan,
 ) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(file) = crate::loadimage_object::parse_object(bytes) else {
@@ -661,6 +673,10 @@ pub fn run_listing_consumers(
         return Vec::new();
     }
     let mut seeds = listing_seeds_for_language(&file, bytes, Some(arch.get_description()));
+    let bracket_evidence = std::cell::OnceCell::new();
+    let bracket = |exec: &[(u64, u64)]| arch.analysis_aifbracket.then(|| {
+        bracket_evidence.get_or_init(|| crate::aif::kuna_aifbracket::BracketEvidence::from_object(&file, exec))
+    });
     // (kuna, recursive-descent discovery) When the prologue-pattern pass is active
     // (`funcstart_patterns`, default-ON for non-x86-64 on `decompile-all`, DIV-20),
     // seed the recursive-descent walk with its `<patternpairs>` function starts too — not
@@ -690,6 +706,20 @@ pub fn run_listing_consumers(
         // functions than `kuna functions` reported.
         seeds.extend(
             committed_entries
+                .iter()
+                .copied()
+                .filter(|&vma| crate::entry::in_executable_section(&execs, vma)),
+        );
+        seeds.sort_unstable();
+        seeds.dedup();
+    }
+    // (kuna `coldentry`) The extra entries of a multi-entry `.cold` fragment are
+    // roots on every architecture: nothing else makes them walk functions, so
+    // without them `noreturn_propagate` never concludes their no-return.
+    if !cold_entries.is_empty() {
+        let execs = crate::entry::executable_sections(&file);
+        seeds.extend(
+            cold_entries
                 .iter()
                 .copied()
                 .filter(|&vma| crate::entry::in_executable_section(&execs, vma)),
@@ -784,45 +814,114 @@ pub fn run_listing_consumers(
             );
         }
     }
-    // (kuna, Stage-2 ARM discovery) Raw, UNPAIRED Thumb-prologue gap seeding — the
-    // angr `CFGFast._func_addrs_from_prologues()` mirror. After the first walk, scan
-    // for canonical LR-saving Thumb prologues (`PUSH {..,lr}` / `PUSH.W {..,lr}`)
-    // that landed in an UNDEFINED gap (never epilogue-paired by `<patternpairs>`,
-    // never reached by a direct BL, and skipped by AIF's cursor-advancing gap-walk),
-    // validate each with `check_valid_subroutine`, and RE-SEED the walk with the
-    // survivors so it expands each into a full function + discovers its callees. The
-    // guards (gap-only via the walk's coverage, `check_valid_subroutine`, and the
-    // body-claim dedup) keep precision (angr measured the raw prologues at ~93%).
-    // Gated by the same `funcstart_patterns` flag (ARM-only inside
-    // `raw_thumb_prologue_seeds`), so x86-64 (funcstart_patterns off) is unchanged
-    // and every non-ARM binary is a strict no-op. betaflight STM32F405: recovers the
-    // ~483 PUSH-prologue functions the `<patternpairs>` matcher structurally misses.
-    if arch.analysis_listing && arch.analysis_funcstart_patterns {
+    let mut frame_aif: Option<crate::aif::kuna_entrychecks::CheckedAif> = None;
+    let mut frame_pointers = None;
+    let mut inventory_context_paints = Vec::new();
+    // Recover validated LR-saving ARM/Thumb frames in gaps before fingerprinting.
+    if arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes {
         if let Some(code_space) = arch.manage().get_default_code_space() {
-            let raw = crate::aif::raw_thumb_prologue_seeds(
+            let mut frame_cache = crate::aif::raw_arm_frames(
                 &file,
                 &listing,
+                arch,
                 translate,
                 std::rc::Rc::clone(code_space),
                 listing.exec_ranges(),
+                false,
+            );
+            if !frame_cache.roots.is_empty() {
+                let mut frames: std::collections::BTreeSet<u64> = frame_cache.roots.iter().copied().collect();
+                let mut rejected = std::collections::BTreeSet::new();
+                let independent_seeds = seeds.clone();
+                let original = listing;
+                loop {
+                    seeds = independent_seeds.iter().copied().chain(frames.iter().copied())
+                        .chain(frame_pointers.iter().flatten().copied())
+                        .chain(frame_aif.iter().flat_map(|checked| checked.entries.iter().copied())).collect();
+                    seeds.sort_unstable();
+                    seeds.dedup();
+                    let frame_context = translate.context_scope();
+                    let mut modes = crate::listing::kuna_framemode::FrameModes::preserving(
+                        &frames.iter().copied().chain(frame_aif.iter()
+                            .flat_map(|checked| checked.entries.iter().copied())).collect::<Vec<_>>(),
+                        &original,
+                    );
+                    if arch.input_arm_isa_override { modes.retain_decoded_modes(); }
+                    listing = crate::listing::Listing::build_tracking_frames(
+                        &file, image, arch, translate, &seeds, &funcsym_seeds,
+                        &seed_names, detail, plan, Some(&mut modes),
+                    );
+                    let replacements = crate::aif::arm_frame_prefixes(
+                        &mut frame_cache, &original, &listing, &frames, &[], frame_context.as_ref(),
+                        arch, translate, std::rc::Rc::clone(code_space),
+                    );
+                    let stale = if replacements.is_empty() { modes.stale().clone() }
+                        else { std::collections::BTreeSet::new() };
+                    if !replacements.is_empty() || !stale.is_empty() {
+                        rejected.extend(stale);
+                        frames.retain(|root| !replacements.contains_key(root) && !rejected.contains(root));
+                        frames.extend(replacements.into_values().filter(|root| !rejected.contains(root)));
+                        frame_aif = None;
+                        frame_pointers = None;
+                        continue;
+                    }
+                    if frame_pointers.is_none() {
+                        let probe = translate.context_scope();
+                        let found = crate::aif::code_pointer_table_seeds(
+                            &file, &listing, translate, std::rc::Rc::clone(code_space),
+                            listing.exec_ranges(),
+                        );
+                        drop(probe);
+                        let added = !found.is_empty();
+                        frame_pointers = Some(found);
+                        if added {
+                            continue;
+                        }
+                    }
+                    if arch.analysis_aif && frame_aif.is_none() {
+                        let probe = translate.context_scope();
+                        if let Some(scope) = &probe { let _ = scope.protect_variable(b"TMode"); }
+                        let pointers = if arch.analysis_ptrentry {
+                            crate::aif::kuna_ptrentry::pointer_entry_seeds(
+                                &file, &listing, translate, std::rc::Rc::clone(code_space),
+                                listing.exec_ranges(),
+                            )
+                        } else { Vec::new() };
+                        let mut checked = crate::aif::kuna_entrychecks::run(
+                            &listing, Some(&original), arch, translate,
+                            std::rc::Rc::clone(code_space), pointers, bracket(listing.exec_ranges()),
+                        );
+                        drop(probe);
+                        checked.entries.retain(|root| !rejected.contains(root));
+                        let added = !checked.entries.is_empty();
+                        frame_aif = Some(checked);
+                        if added {
+                            continue;
+                        }
+                    }
+                    inventory_context_paints = modes.decoded_paints();
+                    if let Some(context) = frame_context {
+                        context.commit();
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    if arch.analysis_listing && arch.analysis_funcstart_patterns && !arch.analysis_armframes {
+        if let Some(code_space) = arch.manage().get_default_code_space() {
+            let raw = crate::aif::raw_thumb_prologue_seeds(
+                &file, &listing, translate, std::rc::Rc::clone(code_space), listing.exec_ranges(),
             );
             if !raw.is_empty() {
                 let before = seeds.len();
                 seeds.extend(raw);
                 seeds.sort_unstable();
                 seeds.dedup();
-                // Only re-walk when the scan genuinely added new seeds.
                 if seeds.len() != before {
                     listing = crate::listing::Listing::build_with_meta_planned(
-                        &file,
-                        image,
-                        arch,
-                        translate,
-                        &seeds,
-                        &funcsym_seeds,
-                        &seed_names,
-                        detail,
-                        plan,
+                        &file, image, arch, translate, &seeds, &funcsym_seeds,
+                        &seed_names, detail, plan,
                     );
                 }
             }
@@ -844,7 +943,7 @@ pub fn run_listing_consumers(
     // `code_pointer_table_seeds`), so x86-64 (funcstart_patterns off) is byte-identical
     // and every non-ARM binary is a strict no-op. Measured recovery (real, ground-truth
     // functions, zero false starts): cf2 +3, usart-stdio +1, betaflight +8.
-    if arch.analysis_listing && arch.analysis_funcstart_patterns {
+    if arch.analysis_listing && arch.analysis_funcstart_patterns && frame_pointers.is_none() {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let ptr = crate::aif::code_pointer_table_seeds(
                 &file,
@@ -892,7 +991,9 @@ pub fn run_listing_consumers(
     // property of the wiring. ARM-only inside `pointer_entry_seeds`, so every
     // non-ARM object is a strict no-op.
     let mut ptrentry_out: Vec<u64> = Vec::new();
-    if arch.analysis_listing && arch.analysis_ptrentry {
+    if let Some(checked) = &frame_aif {
+        ptrentry_out.clone_from(&checked.pointer_entries);
+    } else if arch.analysis_listing && arch.analysis_ptrentry {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             ptrentry_out = crate::aif::kuna_ptrentry::pointer_entry_seeds(
                 &file,
@@ -949,39 +1050,15 @@ pub fn run_listing_consumers(
     if arch.analysis_listing && arch.analysis_aif {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let mut aif_out = AnalysisOutput::default();
-            aif_out.entries = crate::aif::run_aif(
-                &listing,
-                translate,
-                std::rc::Rc::clone(code_space),
-                listing.exec_ranges(),
-                arch.analysis_aifstrict,
-                arch.analysis_aifcorroborate,
-            );
-            // (kuna, `poolentry`) Reference-driven ARM literal-pool inference over
-            // the COMPLETED walk, driving two consumers: the additive recall half
-            // emits an entry at each pool end, and the subtractive precision half
-            // drops an AIF accept that lies inside an inferred pool (the
-            // `pool_word + 2` phantom) — but only when the pool end carries a
-            // replacement entry, which makes that removal a MOVE. Computed here,
-            // after `run_aif` and after `ptrentry`'s targets exist, so the additive
-            // fact never re-seeds the walk and the removal is a partition of a list
-            // rather than a Listing rebuild. See `aif::kuna_poolentry`.
-            if arch.analysis_poolentry {
-                let res = crate::aif::kuna_poolentry::run_pool_pass(
-                    arch,
-                    &listing,
-                    translate,
-                    std::rc::Rc::clone(code_space),
-                    listing.exec_ranges(),
-                    &aif_out.entries,
-                    &ptrentry_out,
-                );
-                aif_out.entries = res.kept_aif;
-                if !res.added.is_empty() {
-                    let mut pool_out = AnalysisOutput::default();
-                    pool_out.entries = res.added;
-                    out.push(("poolentry", pool_out));
-                }
+            let checked = frame_aif.unwrap_or_else(|| crate::aif::kuna_entrychecks::run(
+                &listing, None, arch, translate, std::rc::Rc::clone(code_space), ptrentry_out.clone(),
+                bracket(listing.exec_ranges()),
+            ));
+            aif_out.entries = checked.entries;
+            if !checked.pool_entries.is_empty() {
+                let mut pool_out = AnalysisOutput::default();
+                pool_out.entries = checked.pool_entries;
+                out.push(("poolentry", pool_out));
             }
             out.push(("aif", aif_out));
         }
@@ -1004,6 +1081,25 @@ pub fn run_listing_consumers(
         out.push(("tailcallentry", tce_out));
     }
 
+    // (kuna `callerreads`) Where each direct call returns to, for the decompile
+    // step to read a `void` function's callers from.
+    if arch.analysis_listing && arch.caller_reads && listing.has_refs() {
+        let mut cr_out = AnalysisOutput::default();
+        cr_out.call_returns = crate::listing::kuna_callerreads::call_returns(&listing);
+        out.push(("callerreads", cr_out));
+    }
+
+    // (kuna `thunkentry`) The targets of the walk's jump thunks join the walk's own
+    // function set wherever that set is committed (`funcdisc_recursive`,
+    // `fast_funcdisc`). See `listing/kuna_thunkentry.rs`.
+    let walk_committed = (arch.analysis_listing && arch.analysis_funcstart_patterns)
+        || arch.analysis_fast_funcdisc;
+    let thunk_targets = if arch.analysis_thunkentry && walk_committed {
+        crate::listing::kuna_thunkentry::thunk_entries(&file, &listing)
+    } else {
+        Vec::new()
+    };
+
     // (kuna, recursive-descent discovery) Promote the walk's discovered functions — the
     // CALL targets it followed from the (prologue-seeded) roots — to committed function
     // entries. This is the commit step that turns the `walk.rs` two-level worklist
@@ -1013,7 +1109,9 @@ pub fn run_listing_consumers(
     // `analysis_funcstart_patterns` flag, so x86-64 (funcstart_patterns off) is byte-identical.
     if arch.analysis_listing && arch.analysis_funcstart_patterns {
         let mut rd_out = AnalysisOutput::default();
-        rd_out.entries = listing.functions().map(|(&vma, _)| vma).collect();
+        rd_out.entries =
+            listing.functions().map(|(&vma, _)| vma).chain(thunk_targets.iter().copied()).collect();
+        rd_out.entries.sort_unstable();
         out.push(("funcdisc_recursive", rd_out));
     }
     if !ptrentry_out.is_empty() {
@@ -1027,6 +1125,7 @@ pub fn run_listing_consumers(
             .functions()
             .map(|(&vma, _)| vma)
             .chain(fast_pointer_seeds)
+            .chain(thunk_targets)
             .collect();
         fast_out.entries.sort_unstable();
         fast_out.entries.dedup();
@@ -1040,6 +1139,11 @@ pub fn run_listing_consumers(
         let mut mode_out = AnalysisOutput::default();
         mode_out.context_paints = mode_paints;
         out.push(("flowmode", mode_out));
+    }
+    if !inventory_context_paints.is_empty() {
+        let mut modes = AnalysisOutput::default();
+        modes.inventory_context_paints = inventory_context_paints;
+        out.push(("armframes", modes));
     }
     sanitize_all_names(&mut out);
     out
@@ -1090,6 +1194,31 @@ pub fn run_operand_refs(
         crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
     }
     out.sanitize_names(symbolnamechars_mode());
+    out
+}
+
+/// (kuna `widestrings32`) The 4-byte string width alone, for a run with
+/// `operand_refs` off: the same linear decode [`run_operand_refs`] does, for the
+/// operand targets and table uses the facts weigh, without that pass's own facts.
+/// Takes the same rebased view of a relocatable object.
+pub fn run_wide_strings32(bytes: &[u8], image: &ObjectLoadImage, arch: &Architecture) -> AnalysisOutput {
+    let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
+        return AnalysisOutput::default();
+    };
+    let view = crate::loader::kuna_relocrebase::rebased_view(&raw, bytes);
+    let (file, bytes) = crate::loader::kuna_relocrebase::select(raw, bytes, &view);
+    let ctx = AnalysisCtx {
+        file: &file,
+        bytes,
+        image,
+        arch,
+        listing: None,
+        image_path: image_on_disk_path(image),
+    };
+    let mut out = crate::operand_refs::wide_strings32_alone(&ctx);
+    if let Some(view) = &view {
+        crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
+    }
     out
 }
 

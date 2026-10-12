@@ -1,7 +1,7 @@
 //! `syscallregs auto`, the default, gives an inline `svc` its result register
 //! on an image built for an operating system's user space, and leaves the `svc`
 //! of an image that says nothing about its system alone.
-mod common;
+use crate::common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,

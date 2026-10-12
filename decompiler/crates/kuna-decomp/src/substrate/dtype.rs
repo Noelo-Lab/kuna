@@ -905,6 +905,8 @@ pub struct Datatype {
     /// creating an owning recursive Rc cycle. This cell is installed before
     /// interning, so dependency ordering remains stable.
     record_completion: Option<Rc<RefCell<std::rc::Weak<Datatype>>>>,
+    pub(crate) qualified_base: Option<Rc<Datatype>>,
+    pub(crate) qualifiers: u8,
 }
 
 impl Datatype {
@@ -930,6 +932,8 @@ impl Datatype {
             align_size: s,
             kind: DatatypeKind::Base,
             record_completion: None,
+            qualified_base: None,
+            qualifiers: 0,
         }
     }
 
@@ -1503,6 +1507,24 @@ impl Datatype {
     /// type-2/type-3 and route to a `// STUB(W6)` `Err`.  `level` is the
     /// recursion budget the overrides decrement.
     pub fn compare(&self, op: &Datatype, level: int4) -> KunaResult<int4> {
+        if self.qualified_base.is_some()
+            || op.qualified_base.is_some()
+            || self.typedef_imm.is_some()
+            || op.typedef_imm.is_some()
+        {
+            let left_qualifiers = crate::kuna_typequal::effective_qualifiers(self);
+            let right_qualifiers = crate::kuna_typequal::effective_qualifiers(op);
+            if left_qualifiers != 0 || right_qualifiers != 0 {
+                let left = crate::kuna_typequal::unqualified_shape(self);
+                let right = crate::kuna_typequal::unqualified_shape(op);
+                let order = left.compare(right, level)?;
+                return Ok(if order != 0 {
+                    order
+                } else {
+                    (right_qualifiers as int4) - (left_qualifiers as int4)
+                });
+            }
+        }
         match &self.kind {
             // Kinds whose C++ compare is exactly the base body (this also covers
             // TypeChar/TypeUnicode, which are TypeBase subclasses that do not
@@ -1722,16 +1744,16 @@ impl Datatype {
         if res != 2 {
             return Ok(res);
         }
-        level -= 1;
-        if level < 0 {
-            if self.id == op.get_id() {
-                return Ok(0);
-            }
-            return Ok(if self.id < op.get_id() { -1 } else { 1 });
-        }
         // compareBasic == 2 implies both protos are present.
         let proto = proto.ok_or_else(|| Datatype::code_invariant_err("compare"))?;
         let op_proto = op_proto.ok_or_else(|| Datatype::code_invariant_err("compare"))?;
+        level -= 1;
+        if level < 0 {
+            if self.id == op.get_id() {
+                return Self::compare_code_storage(proto, op_proto);
+            }
+            return Ok(if self.id < op.get_id() { -1 } else { 1 });
+        }
         let nump = proto.num_params();
         for i in 0..nump {
             let param = proto
@@ -1749,12 +1771,16 @@ impl Datatype {
         }
         let otype = proto.get_output_type();
         let opotype = op_proto.get_output_type();
-        match (otype, opotype) {
-            (None, None) => Ok(0),
-            (None, Some(_)) => Ok(1),
-            (Some(_), None) => Ok(-1),
-            (Some(o), Some(oo)) => o.compare(oo, level),
+        let res = match (otype, opotype) {
+            (None, None) => 0,
+            (None, Some(_)) => 1,
+            (Some(_), None) => -1,
+            (Some(o), Some(oo)) => o.compare(oo, level)?,
+        };
+        if res != 0 {
+            return Ok(res);
         }
+        Self::compare_code_storage(proto, op_proto)
     }
 
     /// `TypePartialStruct/TypePartialUnion/TypePartialEnum::compare` body — these
@@ -2045,6 +2071,32 @@ impl Datatype {
         Ok(2) // Carry on with comparison of parameters
     }
 
+    /// Distinguish identical C signatures whose argument or return storage differs.
+    fn compare_code_storage(
+        proto: &crate::fspec::FuncProto,
+        op_proto: &crate::fspec::FuncProto,
+    ) -> KunaResult<int4> {
+        for i in -1..proto.num_params() {
+            let (a, b) = if i < 0 {
+                (proto.get_output(), op_proto.get_output())
+            } else {
+                (
+                    proto
+                        .get_param(i)
+                        .ok_or_else(|| Datatype::code_invariant_err("compareStorage"))?,
+                    op_proto
+                        .get_param(i)
+                        .ok_or_else(|| Datatype::code_invariant_err("compareStorage"))?,
+                )
+            };
+            let storage = a.get_address().cmp(&b.get_address()).then(a.get_size().cmp(&b.get_size()));
+            if storage != std::cmp::Ordering::Equal {
+                return Ok(if storage == std::cmp::Ordering::Less { -1 } else { 1 });
+            }
+        }
+        Ok(0)
+    }
+
     /// Transcribe the C++ `spaceid` tie-break shared by `TypePointer::compare`
     /// and `TypePointer::compareDependency` (type.cc:1082-1086, 1102-1106).
     ///
@@ -2141,6 +2193,17 @@ impl Datatype {
     /// (`TypeStruct`/`TypeUnion`/…/`TypePointerRel`/`TypeSpacebase`) are
     /// type-2/type-3.
     pub fn compare_dependency(&self, op: &Datatype) -> KunaResult<int4> {
+        if self.qualified_base.is_some() || op.qualified_base.is_some() {
+            if self.qualifiers != op.qualifiers {
+                return Ok((self.qualifiers as int4) - (op.qualifiers as int4));
+            }
+            return Ok(match (&self.qualified_base, &op.qualified_base) {
+                (Some(left), Some(right)) => Self::compare_dependency_ptr(left, right),
+                (Some(_), None) => 1,
+                (None, Some(_)) => -1,
+                _ => 0,
+            });
+        }
         match &self.kind {
             DatatypeKind::Base | DatatypeKind::Void | DatatypeKind::Unknown => {
                 Ok(self.compare_dependency_base(op))
@@ -2372,12 +2435,16 @@ impl Datatype {
         }
         let otype = proto.get_output_type();
         let opotype = op_proto.get_output_type();
-        match (otype, opotype) {
-            (None, None) => Ok(0),
-            (None, Some(_)) => Ok(1),
-            (Some(_), None) => Ok(-1),
-            (Some(o), Some(oo)) => Ok(Datatype::compare_dependency_ptr(o, oo)),
+        let res = match (otype, opotype) {
+            (None, None) => 0,
+            (None, Some(_)) => 1,
+            (Some(_), None) => -1,
+            (Some(o), Some(oo)) => Datatype::compare_dependency_ptr(o, oo),
+        };
+        if res != 0 {
+            return Ok(res);
         }
+        Self::compare_code_storage(proto, op_proto)
     }
 
     /// `TypeSpacebase::compareDependency` body (type.cc:3504-3514): base step,
@@ -3860,6 +3927,13 @@ pub trait TypeFactory {
     fn get_base_named(&self, s: int4, m: type_metatype, n: &str) -> KunaResult<Rc<Datatype>>;
     /// Get a character data-type by size (C++ `getTypeChar(int4)`).
     fn get_type_char(&self, s: int4) -> KunaResult<Rc<Datatype>>;
+    /// (kuna) A named 1-byte character data-type of the sign `m` states
+    /// (`TYPE_INT` or `TYPE_UINT`): Ghidra's `schar`/`uchar`, which print as
+    /// characters but extend, compare and convert by their own sign. The
+    /// default body errs; the concrete `TypeFactoryImpl` overrides it.
+    fn get_type_char_signed(&self, _name: &str, _m: type_metatype) -> KunaResult<Rc<Datatype>> {
+        Err(KunaError::lowlevel("signed character types are not supported by this factory"))
+    }
     /// Get an "anonymous" function data-type (C++ `getTypeCode(void)`).
     fn get_type_code(&self) -> KunaResult<Rc<Datatype>>;
     /// Create a `TypeCode` carrying a specific function prototype (C++
@@ -3900,6 +3974,14 @@ pub trait TypeFactory {
 
     /// Construct an absolute pointer data-type (C++ `getTypePointer`).
     fn get_type_pointer(&self, s: int4, pt: Rc<Datatype>, ws: uint4) -> KunaResult<Rc<Datatype>>;
+
+    fn get_qualified_type(&self, base: Rc<Datatype>, qualifiers: u8) -> KunaResult<Rc<Datatype>> {
+        Ok(crate::kuna_typequal::qualified_type(base, qualifiers))
+    }
+
+    fn has_volatile_types(&self) -> bool {
+        true
+    }
     /// Construct a named pointer data-type (C++ `getTypePointer(...,const string&)`).
     fn get_type_pointer_named(
         &self,
@@ -4268,6 +4350,7 @@ pub const ATTRIB_VARLENGTH: kuna_base::marshal::AttributeId =
 /// Register the wire type-vocabulary ids (for XML-form documents; the packed
 /// wire form matches by number and needs no registry).
 pub fn register_type_wire_ids(reg: &mut kuna_base::marshal::IdRegistry) {
+    reg.register_element(&crate::kuna_typequal::ELEM_QUALIFIED);
     reg.register_element(&ELEM_CORETYPES);
     reg.register_element(&ELEM_DEF);
     reg.register_element(&ELEM_TYPEREF);
@@ -4403,6 +4486,13 @@ impl Datatype {
             ELEM_VAL, ELEM_VOID,
         };
         use kuna_base::marshal::ATTRIB_OFFSET;
+        if let Some(base) = &self.qualified_base {
+            encoder.open_element(&crate::kuna_typequal::ELEM_QUALIFIED);
+            encoder.write_unsigned_integer(&kuna_base::marshal::ATTRIB_VALUE, self.qualifiers as u64);
+            base.encode_ref(encoder)?;
+            encoder.close_element(&crate::kuna_typequal::ELEM_QUALIFIED);
+            return Ok(());
+        }
         let elem_type = &crate::prettyprint::ids::ELEM_TYPE;
         // The typedef indirection (every C++ subclass override's first check,
         // except the partial/relative kinds which never typedef).
@@ -4758,6 +4848,7 @@ impl FactoryStore {
 /// flag (the only thing `calcTruncate` reads from the `Architecture`) is carried
 /// as `truncate_big_endian`, set from the default data space when known.
 pub struct TypeFactoryImpl {
+    has_volatile_types: Cell<bool>,
     /// Size of the core "int" data-type (C++ `sizeOfInt`).
     size_of_int: Cell<int4>,
     /// Size of the core "long" data-type (C++ `sizeOfLong`).
@@ -4833,6 +4924,7 @@ impl TypeFactoryImpl {
     /// type.cc:3565-3578): all sizes 0, the cache cleared.
     pub fn new() -> TypeFactoryImpl {
         TypeFactoryImpl {
+            has_volatile_types: Cell::new(false),
             size_of_int: Cell::new(0),
             size_of_long: Cell::new(0),
             size_of_char: Cell::new(0),
@@ -4986,12 +5078,11 @@ impl TypeFactoryImpl {
         if self.size_of_pointer.get() == 0 {
             self.size_of_pointer.set(default_data_addr_size);
         }
-        // (kuna) Fill the widths the cspec left unset.  37 of the 107 vendored
-        // cspecs carry no `<data_organization>` at all (every PowerPC 32-bit one
-        // among them) and several carry only a subset, so these defaults are the
-        // common case, not the exception.  The existing `size_of_long` fallback
-        // above is deliberately untouched: it is read by type inference, not just
-        // by rendering, so correcting it is a separate behavior change.
+        // (kuna) Fill the widths the cspec left unset.  30 of the 111 vendored
+        // cspecs carry no `<data_organization>` at all and many carry only a
+        // subset, so these defaults are the common case, not the exception.  The
+        // `size_of_long` fallback above is kept as upstream has it; an ILP32 cspec
+        // states its 4-byte `long_size` instead of relying on it.
         if self.size_of_short.get() == 0 {
             self.size_of_short.set(2);
         }
@@ -5432,6 +5523,8 @@ impl TypeFactoryImpl {
         res.id = id; // and new id
         res.flags &= !flags::coretype; // Not a core type
         res.typedef_imm = Some(Rc::clone(ct));
+        res.qualified_base = None;
+        res.qualifiers = 0;
         // A typedef has its own identity/spelling, not the tag's completion key.
         res.record_completion = if ct.is_incomplete() && ct.record_completion.is_some() {
             Some(Rc::new(RefCell::new(std::rc::Weak::new())))
@@ -5739,6 +5832,15 @@ impl TypeFactoryImpl {
             let ct = self.get_type_void_impl()?;
             decoder.close_element(elem_id)?;
             return Ok(ct);
+        }
+        if elem_id == crate::kuna_typequal::ELEM_QUALIFIED.get_id() {
+            let qualifiers = decoder.read_unsigned_integer_id(&kuna_base::marshal::ATTRIB_VALUE)?;
+            if qualifiers == 0 || qualifiers & !7 != 0 {
+                return Err(KunaError::decoder("Invalid C type qualifiers"));
+            }
+            let base = self.decode_type(decoder)?;
+            decoder.close_element(elem_id)?;
+            return self.get_qualified_type(base, qualifiers as u8);
         }
         if elem_id == ELEM_DEF.get_id() {
             let ct = self.decode_typedef(decoder)?;
@@ -6296,9 +6398,8 @@ impl TypeFactoryImpl {
     /// `TypeFactory::getTypeCode(const PrototypePieces&)`, type.cc:4476-4482).
     ///
     /// `setPrototype` (type.cc:3177-3190) turns on `variable_length`, builds a
-    /// fresh [`FuncProto`](crate::fspec::FuncProto), seeds the internal store
-    /// (`setInternal(sig.model, voidtype)`), recomputes storage from the pieces
-    /// (`updateAllTypes(sig)`), and locks input + output.  The C++ `sig.model` is
+    /// fresh [`FuncProto`](crate::fspec::FuncProto), assigns model storage and
+    /// preserves explicit storage via `seed_locked_from_pieces`. The C++ `sig.model` is
     /// the prototype model the declarator resolved (`decl->getModel(glb)`); a
     /// parsed function-pointer field carries no model name, so it resolves to
     /// `glb->defaultfp`, wired in via [`Self::set_proto_models`].
@@ -6348,13 +6449,8 @@ impl TypeFactoryImpl {
         // setPrototype(this, proto, voidtype):
         //   flags |= variable_length;
         tc.flags |= flags::variable_length;
-        //   proto = new FuncProto(); proto->setInternal(sig.model, voidtype);
         let mut fp = crate::fspec::FuncProto::new();
-        fp.set_internal(model, voidtype);
-        //   proto->updateAllTypes(sig); setInputLock(true); setOutputLock(true);
-        fp.update_all_types(proto, self, &manager_rc)?;
-        fp.set_input_lock(true);
-        fp.set_output_lock(true);
+        fp.seed_locked_from_pieces(proto, model, voidtype, self, &manager_rc)?;
         tc.kind = DatatypeKind::Code { proto: Some(Rc::new(fp)) };
 
         // markComplete(): clear type_incomplete.
@@ -7115,6 +7211,20 @@ impl TypeFactory for TypeFactoryImpl {
     fn get_type_char(&self, s: int4) -> KunaResult<Rc<Datatype>> {
         self.get_type_char_sized(s)
     }
+    fn get_type_char_signed(&self, name: &str, m: type_metatype) -> KunaResult<Rc<Datatype>> {
+        let submeta = match m {
+            type_metatype::TYPE_INT => sub_metatype::SUB_INT_CHAR,
+            type_metatype::TYPE_UINT => sub_metatype::SUB_UINT_CHAR,
+            _ => return Err(KunaError::lowlevel("a character type is signed or unsigned")),
+        };
+        let mut tc = Datatype::new(1, m);
+        tc.name = name.to_string();
+        tc.display_name = name.to_string();
+        tc.flags |= flags::chartype;
+        tc.submeta = submeta;
+        tc.id = Datatype::hash_name(name);
+        self.find_add(tc)
+    }
     fn get_type_code(&self) -> KunaResult<Rc<Datatype>> {
         self.get_type_code_impl()
     }
@@ -7146,6 +7256,20 @@ impl TypeFactory for TypeFactoryImpl {
     ) -> KunaResult<Rc<Datatype>> {
         self.get_type_pointer_strip_array_impl(s, pt, ws)
     }
+    fn get_qualified_type(&self, base: Rc<Datatype>, qualifiers: u8) -> KunaResult<Rc<Datatype>> {
+        if qualifiers == 0 {
+            return Ok(base);
+        }
+        if qualifiers & crate::kuna_typequal::VOLATILE != 0 {
+            self.has_volatile_types.set(true);
+        }
+        self.find_add((*crate::kuna_typequal::qualified_type(base, qualifiers)).clone())
+    }
+
+    fn has_volatile_types(&self) -> bool {
+        self.has_volatile_types.get()
+    }
+
     fn get_type_pointer(&self, s: int4, pt: Rc<Datatype>, ws: uint4) -> KunaResult<Rc<Datatype>> {
         self.get_type_pointer_impl(s, pt, ws)
     }

@@ -26,12 +26,13 @@
 //!
 //! [`kuna_should_bound_at_entry`] is the *decision* only: has fall-through
 //! reached the entry of another known function (so the walk has run off the end
-//! of the current function)?  One entry instruction is safe to share: an
-//! unconditional `RETURN` with no other control transfer.  Admitting that single
-//! instruction cannot consume any following function because the instruction
-//! has no successor.  This matters for tiny, separately callable `ret` functions
-//! which also serve as a preceding function's shared epilogue.  Every other
-//! foreign entry remains a hard bound.
+//! of the current function)?  The flow caller first gives an explicit current
+//! extent precedence over a discovered interior entry. One entry instruction
+//! is safe to share: an unconditional `RETURN` with no other control transfer.
+//! Admitting that single instruction cannot consume any following function
+//! because it has no successor. This matters for tiny, separately callable
+//! `ret` functions which also serve as a preceding function's shared epilogue.
+//! Every other foreign entry remains a hard bound.
 //! The truncation itself — planting a no-return artificial `RETURN` in place of
 //! the fall-through edge — is driven by `flow.rs` at the fall-through-push site
 //! of `process_instruction`, mirroring the `check_for_flow_modification`
@@ -117,7 +118,9 @@ pub fn kuna_should_bound_at_entry(
         return false;
     }
     // the fall-through target must be another function's entry
-    next_is_known_function && !next_is_self && !next_is_unconditional_return
+    next_is_known_function
+        && !next_is_self
+        && !next_is_unconditional_return
 }
 
 #[cfg(test)]

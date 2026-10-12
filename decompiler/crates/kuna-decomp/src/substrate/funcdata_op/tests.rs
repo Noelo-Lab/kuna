@@ -89,6 +89,170 @@ fn mk_vn(fd: &mut Funcdata, off: u64) -> VarnodeId {
     fd.vbank_mut().create(4, Address::new(ram, off), dt(4))
 }
 
+/// A call-boundary stack value followed by a cursor PHI, with a warm crossing cache.
+fn cursor_cache_fixture() -> (Funcdata, OpId, OpId, VarnodeId, VarnodeId, OpId) {
+    use crate::fspec::FuncCallSpecs;
+    use crate::varnode::varnode_flags;
+    use kuna_base::space::{IopSpace, SpacebaseSpace};
+
+    let mut manager = build_manager();
+    manager.insert_space(Rc::new(IopSpace::new(3))).unwrap();
+    let ram = Rc::clone(manager.get_space_by_name("ram").unwrap());
+    let stack = Rc::new(SpacebaseSpace::new("stack", 4, 8, &ram, 1, true, false));
+    manager.insert_space(Rc::clone(&stack)).unwrap();
+    let glb = Rc::new(ArchContext::new(manager));
+    let mut fd = Funcdata::new(
+        "walk",
+        "walk",
+        glb,
+        Address::new(Rc::clone(&ram), 0x1000),
+        0x10000000,
+        0x100,
+    )
+    .unwrap();
+    let entry = mk_block(&mut fd);
+    let head = mk_block(&mut fd);
+    let tail = mk_block(&mut fd);
+    let exit = mk_block(&mut fd);
+    for (index, block) in [entry, head, tail, exit].into_iter().enumerate() {
+        fd.bblocks_mut().block_mut(block).set_index(index as int4);
+    }
+    fd.bblocks_mut().add_edge(entry, head);
+    fd.bblocks_mut().add_edge(head, tail);
+    fd.bblocks_mut().add_edge(head, exit);
+    fd.bblocks_mut().add_edge(tail, head);
+
+    let source = mk_op(&mut fd, 2, 0x1000, OpCode::CPUI_INT_XOR);
+    let a = fd.new_constant(8, 0x1234);
+    let b = fd.new_constant(8, 0x5678);
+    fd.op_set_input(source, a, 0).unwrap();
+    fd.op_set_input(source, b, 1).unwrap();
+    let saved = fd.new_unique_out(8, source).unwrap();
+    fd.op_insert_end(source, entry);
+
+    let call = mk_op(&mut fd, 1, 0x1008, OpCode::CPUI_CALL);
+    fd.op_set_opcode(call, crate::typeop::type_op_for(OpCode::CPUI_CALL));
+    let target = fd.new_constant(8, 0x2000);
+    fd.op_set_input(call, target, 0).unwrap();
+    fd.op_insert_end(call, entry);
+    fd.push_call_specs(FuncCallSpecs::new(
+        call,
+        Address::new(Rc::clone(&ram), 0x2000),
+    ));
+
+    let indirect = mk_op(&mut fd, 2, 0x1008, OpCode::CPUI_INDIRECT);
+    fd.op_set_opcode(indirect, crate::typeop::type_op_for(OpCode::CPUI_INDIRECT));
+    fd.op_set_input(indirect, saved, 0).unwrap();
+    let iop = fd.new_varnode_iop(call);
+    fd.op_set_input(indirect, iop, 1).unwrap();
+    let affected = fd
+        .new_varnode_out(8, &Address::new(stack, 0xfffffffffffffff0), indirect)
+        .unwrap();
+    fd.vbank_mut()
+        .get_mut(affected)
+        .unwrap()
+        .set_flags_pub(varnode_flags::addrtied | varnode_flags::addrforce);
+    fd.op_insert_before(indirect, call);
+
+    let begin_op = mk_op(&mut fd, 1, 0x1010, OpCode::CPUI_COPY);
+    let pointer = fd.new_constant(8, 0x4000);
+    fd.op_set_input(begin_op, pointer, 0).unwrap();
+    let begin = fd.new_unique_out(8, begin_op).unwrap();
+    fd.op_insert_end(begin_op, entry);
+
+    let phi = mk_op(&mut fd, 2, 0x1020, OpCode::CPUI_MULTIEQUAL);
+    fd.op_set_opcode(phi, crate::typeop::type_op_for(OpCode::CPUI_MULTIEQUAL));
+    let cursor = fd.new_unique_out(8, phi).unwrap();
+    fd.op_insert_begin(phi, head);
+    let increment = mk_op(&mut fd, 2, 0x1030, OpCode::CPUI_INT_ADD);
+    let stride = fd.new_constant(8, 8);
+    fd.op_set_input(increment, cursor, 0).unwrap();
+    fd.op_set_input(increment, stride, 1).unwrap();
+    let next = fd.new_unique_out(8, increment).unwrap();
+    fd.op_insert_end(increment, tail);
+    fd.op_set_input(phi, begin, 0).unwrap();
+    fd.op_set_input(phi, next, 1).unwrap();
+    fd.bb_set_order(entry);
+    fd.set_high_level();
+    let saved_high = fd.vbank().get(saved).unwrap().get_high().unwrap();
+    let affected_high = fd.vbank().get(affected).unwrap().get_high().unwrap();
+    fd.with_covermerge(|merge, data| {
+        assert!(!crate::merge::MergeIntersect::intersection(
+            data,
+            merge.test_cache_mut(),
+            saved_high,
+            affected_high
+        ));
+        assert!(merge.test_cache_mut().affecting_ops_mut().is_populated());
+    });
+    (fd, call, phi, begin, cursor, indirect)
+}
+
+#[test]
+fn call_position_cache_cannot_drop_a_loop_cursor_definition() {
+    let (mut fd, call, phi, begin, cursor, _) = cursor_cache_fixture();
+    let block = fd.obank().get(call).unwrap().get_parent().unwrap();
+    let pad = mk_op(&mut fd, 1, 0x1004, OpCode::CPUI_COPY);
+    let constant = fd.new_constant(8, 7);
+    fd.op_set_input(pad, constant, 0).unwrap();
+    fd.new_unique_out(8, pad).unwrap();
+    fd.op_insert_before(pad, call);
+    fd.bb_set_order(block);
+    let values: Vec<_> = fd.vbank().iter_loc().collect();
+    for value in values {
+        crate::merge::MergeContext::vn_set_cover_dirty(&mut fd, value);
+    }
+    fd.with_covermerge(|merge, data| merge.merge_marker(data))
+        .unwrap();
+    let high = fd.vbank().get(cursor).unwrap().get_high();
+    assert_eq!(fd.vbank().get(begin).unwrap().get_high(), high);
+    for slot in 0..2 {
+        let input = fd.obank().get(phi).unwrap().get_in(slot).unwrap();
+        assert_eq!(fd.vbank().get(input).unwrap().get_high(), high);
+    }
+}
+
+#[test]
+fn call_position_cache_keeps_real_crossings_and_removed_call_controls() {
+    use crate::fspec::FuncCallSpecs;
+    let (mut fd, call, _, _, _, indirect) = cursor_cache_fixture();
+    let input = fd.obank().get(indirect).unwrap().get_in(0).unwrap();
+    let output = fd.obank().get(indirect).unwrap().get_out().unwrap();
+    let a = fd.vbank().get(input).unwrap().get_high().unwrap();
+    let b = fd.vbank().get(output).unwrap().get_high().unwrap();
+    let crossing = mk_op(&mut fd, 1, 0x1004, OpCode::CPUI_CALL);
+    fd.op_set_opcode(crossing, crate::typeop::type_op_for(OpCode::CPUI_CALL));
+    let target = fd.new_constant(8, 0x3000);
+    fd.op_set_input(crossing, target, 0).unwrap();
+    fd.op_insert_before(crossing, call);
+    let entry = Address::new(ram_space(&fd), 0x3000);
+    fd.push_call_specs(FuncCallSpecs::new(crossing, entry));
+    fd.with_covermerge(|merge, data| {
+        assert!(crate::merge::MergeIntersect::intersection(
+            data,
+            merge.test_cache_mut(),
+            a,
+            b
+        ));
+        assert!(crate::merge::MergeIntersect::intersection(
+            data,
+            merge.test_cache_mut(),
+            a,
+            b
+        ));
+    });
+    fd.delete_call_specs(crossing);
+    fd.op_destroy(crossing);
+    fd.with_covermerge(|merge, data| {
+        assert!(!crate::merge::MergeIntersect::intersection(
+            data,
+            merge.test_cache_mut(),
+            a,
+            b
+        ));
+    });
+}
+
 // --- op creation / SeqNum allocation ------------------------------------------
 
 #[test]
@@ -395,6 +559,31 @@ fn op_insert_end_no_branch_appends() {
 }
 
 // --- boolean-flip list tracing ------------------------------------------------
+
+#[test]
+fn normalize_flip_preserves_unordered_float_conditions() {
+    for code in [OpCode::CPUI_FLOAT_LESS, OpCode::CPUI_FLOAT_LESSEQUAL] {
+        let mut fd = build_fd();
+        let compare = mk_op(&mut fd, 2, 0x100, code);
+        let a = mk_vn(&mut fd, 0x10);
+        let b = mk_vn(&mut fd, 0x20);
+        fd.op_set_input(compare, a, 0).unwrap();
+        fd.op_set_input(compare, b, 1).unwrap();
+        let condition = fd.new_unique_out(1, compare).unwrap();
+        let branch = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_CBRANCH);
+        let target = fd.new_constant(8, 0x200);
+        fd.op_set_input(branch, target, 0).unwrap();
+        fd.op_set_input(branch, condition, 1).unwrap();
+        fd.obank_mut().get_mut(branch).unwrap().set_flag(pcodeop_flags::boolean_flip);
+
+        assert!(!fd.op_normalize_flip(branch).unwrap());
+        let op = fd.obank().get(compare).unwrap();
+        assert_eq!(op.code(), code);
+        assert_eq!(op.get_in(0), Some(a));
+        assert_eq!(op.get_in(1), Some(b));
+        assert!(fd.obank().get(branch).unwrap().is_boolean_flip());
+    }
+}
 
 #[test]
 fn op_flip_in_place_test_int_equal_normalizes_to_one() {
@@ -1020,4 +1209,80 @@ fn cse_query_checks_identifiers_before_walking_empty_descendants() {
             .or_else(|| panic.downcast_ref::<&str>().copied()).unwrap();
         assert_eq!(message, expected);
     }
+}
+
+#[test]
+fn isolated_local_type_lock_follows_its_definition_without_typing_register_reuse() {
+    let mut manage = build_manager();
+    for (index, name, kind) in [
+        (3, "register", spacetype::IPTR_PROCESSOR),
+        (4, "stack", spacetype::IPTR_SPACEBASE),
+    ] {
+        manage
+            .insert_space(Rc::new(AddrSpace::new(
+                kind,
+                name,
+                false,
+                8,
+                1,
+                index,
+                addrspace_flags::hasphysical,
+                1,
+                1,
+            )))
+            .unwrap();
+    }
+    let types = crate::dtype::TypeFactoryImpl::new();
+    types.set_default_alignment_map();
+    types.set_max_basetype_size(8);
+    let mut arch = ArchContext::new(manage);
+    arch.types = Some(Rc::new(types));
+    let ram = Rc::clone(arch.manage().get_space_by_name("ram").unwrap());
+    let reg = Rc::clone(arch.manage().get_space_by_name("register").unwrap());
+    let mut fd = Funcdata::new(
+        "func",
+        "func",
+        Rc::new(arch),
+        Address::new(Rc::clone(&ram), 0x1000),
+        0,
+        0x40,
+    )
+    .unwrap();
+    let storage = Address::new(reg, 0x10);
+    let point = Address::new(ram, 0x1010);
+    let scope = fd.get_scope_local_mut().unwrap();
+    let ct = Rc::new(Datatype::new_with_align(4, 4, type_metatype::TYPE_UINT));
+    let symbol = scope
+        .add_symbol("local", Rc::clone(&ct), &storage, &point)
+        .unwrap();
+    scope.set_attribute(symbol, crate::varnode::varnode_flags::typelock);
+    scope.set_symbol_isolated(symbol, true);
+
+    let input = fd.new_varnode(4, &storage, None);
+    let input = fd.set_input_varnode(input).unwrap();
+    assert!(!fd.vbank().get(input).unwrap().is_type_lock());
+
+    let op = mk_op(&mut fd, 1, 0x1010, OpCode::CPUI_COPY);
+    let local = fd.new_varnode_out(4, &storage, op).unwrap();
+    let local_vn = fd.vbank().get(local).unwrap();
+    assert!(local_vn.is_type_lock());
+    assert_eq!(local_vn.get_type().get_metatype(), type_metatype::TYPE_UINT);
+
+    let later = mk_op(&mut fd, 1, 0x1020, OpCode::CPUI_COPY);
+    let reused = fd.new_varnode_out(4, &storage, later).unwrap();
+    assert!(!fd.vbank().get(reused).unwrap().is_type_lock());
+    assert_eq!(
+        fd.vbank().get(reused).unwrap().get_type().get_metatype(),
+        type_metatype::TYPE_UNKNOWN
+    );
+    assert!(!fd.vbank().get(input).unwrap().is_type_lock());
+
+    let rewritten = mk_op(&mut fd, 1, 0x1030, OpCode::CPUI_COPY);
+    fd.op_move_output(rewritten, local).unwrap();
+    let moved = fd.obank().get(rewritten).unwrap().get_out().unwrap();
+    assert!(fd.vbank().get(moved).unwrap().is_type_lock());
+    assert_eq!(
+        fd.vbank().get(moved).unwrap().get_type().get_metatype(),
+        type_metatype::TYPE_UINT
+    );
 }

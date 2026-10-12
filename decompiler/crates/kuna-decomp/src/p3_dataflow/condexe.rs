@@ -121,7 +121,13 @@ impl ConditionalExecution {
     /// Set up for testing ConditionalExecution on multiple iblocks (C++
     /// `ConditionalExecution::ConditionalExecution(Funcdata*)`, `condexe.cc:431`).
     pub fn new(fd: &Funcdata) -> ConditionalExecution {
-        let mut ce = ConditionalExecution {
+        let mut ce = ConditionalExecution::blank();
+        ce.build_heritage_array(fd); // Cache an array depending on the particular heritage pass
+        ce
+    }
+
+    fn blank() -> ConditionalExecution {
+        ConditionalExecution {
             cbranch: None,
             initblock: None,
             iblock: None,
@@ -135,9 +141,25 @@ impl ConditionalExecution {
             replacement: BTreeMap::new(),
             pullback: Vec::new(),
             heritageyes: Vec::new(),
-        };
-        ce.build_heritage_array(fd); // Cache an array depending on the particular heritage pass
-        ce
+        }
+    }
+
+    /// (kuna) The out block `iblock` branches to on every execution that entered
+    /// it through in-edge `inslot`, when `iblock` re-tests the condition of the
+    /// block both of its in-edges lead back to: the control-flow half of
+    /// [`verify`](Self::verify), without the removability of `iblock`'s ops.
+    pub fn forced_out_block(fd: &Funcdata, iblock: BlockId, inslot: int4) -> Option<BlockId> {
+        let mut ce = ConditionalExecution::blank();
+        ce.iblock = Some(iblock);
+        if !ce.test_iblock(fd) || !ce.find_init_pre(fd) || !ce.verify_same_condition(fd) {
+            return None;
+        }
+        let init = fd.bblocks_ref().block(ce.initblock?);
+        if init.get_out(0) == init.get_out(1) {
+            return None;
+        }
+        let camethruposta_slot = if ce.init2a_true { 1 - ce.prea_inslot } else { ce.prea_inslot };
+        Some(fd.bblocks_ref().block(iblock).get_out(if inslot == camethruposta_slot { 0 } else { 1 }))
     }
 
     /// Calculate boolean array of all address spaces that have had a heritage

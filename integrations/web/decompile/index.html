@@ -8,7 +8,7 @@
 <meta name="color-scheme" content="dark light">
 <meta name="robots" content="noindex">
 <link rel="icon" type="image/png" href="../assets/img/favicon.png">
-<link rel="stylesheet" href="./decompile2.css">
+<link rel="stylesheet" href="./decompile.css">
 <script>
   // Before the page draws: the theme, and whether hints show (off unless
   // ?student=true, or the student turned them on themselves); see prefs.js.
@@ -141,7 +141,7 @@
           <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5 13.5 5 6 12.5 3 13l.5-3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>Rename</button>
         <button class="d2-btn ghost" id="protobtn" title="Change what the function takes and returns">
           <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5 13.5 5 6 12.5 3 13l.5-3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>Signature</button>
-        <button class="d2-btn ghost" id="explainbtn" hidden aria-controls="rail" aria-expanded="false">Explain</button>
+        <button class="d2-btn ghost" id="explainbtn" hidden aria-controls="rail" aria-expanded="false" title="Explain (E)">Explain</button>
       </div>
 
       <div class="d2-viewbar" id="tabbar" hidden>
@@ -209,6 +209,7 @@
 <div id="d2pop" hidden></div>
 <div id="d2toasts" aria-live="polite"></div>
 <dialog id="help" aria-labelledby="helptitle"></dialog>
+<dialog id="xrefs" aria-labelledby="xrefstitle"></dialog>
 
 <script type="module" src="./app.js"></script>
 </body>

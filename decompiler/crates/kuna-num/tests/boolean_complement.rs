@@ -6,6 +6,8 @@ fn undefined_complements_preserve_both_reorder_states() {
         OpCode::CPUI_COPY,
         OpCode::CPUI_INT_ADD,
         OpCode::CPUI_FLOAT_ADD,
+        OpCode::CPUI_FLOAT_LESS,
+        OpCode::CPUI_FLOAT_LESSEQUAL,
         OpCode::CPUI_MAX,
     ] {
         for initial in [false, true] {

@@ -1,0 +1,189 @@
+<decompilertest>
+<!--
+    GH-839 (kuna): "clang -O2: a variadic tail call after push %rax/pop %rcx
+    gains the popped rcx and rdx as arguments"
+    https://github.com/Noelo-Lab/kuna/issues/839
+    Image (x86-64, linked flat at 0x100000; the callees pr, h, g, hl, q6, init,
+    use, use3 and __printf_chk are symbols with no bytes):
+      clang 14 -O2 of
+        int a2(int k) { return pr("%d", h(k)); }
+        int a3(int k) { return pr("%f", g(k)); }
+        int a4(int k, int x, int y) { return pr("%d %d %d", h(k), x, y); }
+        long sp6(long a,long b,long c,long d,long e,long f) {
+          long r = hl(a); long s = hl(r); long t = q6(r, b, c, d, e, f);
+          return t + q6(s, a, b, c, d, e) + f; }
+      hand-assembled
+        a5: push %rax; call h; ...; pop %r8; jmp pr   (the slot comes back in r8)
+        a6: push %rax; mov %rsp,%rdi; call init; ...; pop %rdx; jmp pr
+      gcc 11 -O2 -fno-omit-frame-pointer of
+        void fa1(void){ use(__builtin_frame_address(1)); }
+        void fa2(int k){ printf("%d %p\n", k, __builtin_frame_address(1)); }
+        void fa3(void){ use3(__builtin_frame_address(0),
+                             __builtin_frame_address(1), __builtin_return_address(0)); }
+        void fa4(void){ void *p = __builtin_frame_address(1); use(0); use(p); }
+      hand-assembled (q declared long q(long a, ...))
+        q:  lea 1(%rcx),%rax; ret
+        f1: push %rax; call h; mov $10,%ecx; pop %rdx; jmp q
+        f4: the same with call q; add $1,%rax; ret
+    Stage model: P4 call recovery, input-trial scoring.  clang keeps the stack
+    aligned around the one call with push %rax and takes the slot back with
+    pop %rcx before the variadic tail call.  ActionActiveParam scores the
+    register trials before the stack is heritaged, so rcx is a raw LOAD that
+    the ancestor walk took as solid movement; the trial went active and
+    fillinMap filled rdx in below it.  The slot only gives back the caller's
+    incoming rax, which no prototype passes.  `option reloadarg` re-traces
+    such a trial once the frame is heritaged.
+    Pass 1 (default, reloadarg on) and pass 2 (reloadarg off):
+    #1/#2: pass 1 prints a2, a5 and a3 with the format and the one value.
+    #3: pass 2 reproduces the bug: pr("%d",(uint8)v1,v3,v2).
+    #4-#6: a4 keeps its three varargs, sp6 the parameter it reloads into r8,
+    a6 the slot init wrote through &slot, in both passes.
+    #7-#9: the caller's saved rbp that __builtin_frame_address(1) reads from
+    the frame is callee-saved, not scratch: fa1-fa4 keep it in both passes.
+    #10: f1/f4 keep the junk rdx because the real rcx argument sits above it.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">
+50e8da010000488d3d4d02000089c631c059e9b9010000660f1f840000000000
+50e8ca010000488d3d24020000b00159e99b01000066662e0f1f840000000000
+55535089d389f5e894010000488d3d0102000089c689ea89d931c04883c4085b
+5de96a010000662e0f1f840000000000554157415641554154534883ec184c89
+4c24104c89c54889cb48890c244989d54989f74989fce8650100004989c64889
+c7e85a01000048894424084c89f74c89fe4c89ea4889d94989e84c8b7424104d
+89f1e8490100004889c3488b7c24084c89e64c89fa4c89e94c8b04244989e9e8
+2c0100004c01f34801d84883c4185b415c415d415e415f5dc350e8e100000048
+8d3d5701000089c631c04158e9bf000000504889e7e806010000488d3d3f0100
+0089c631c05ae9a50000000f1f440000554889e5488b7d005de9f20000006690
+5589fa488d351d010000bf0100000031c04889e5488b4d005de9f20000006690
+554889e5488b5508488b75004889ef5de9cb00000066662e0f1f840000000000
+5531ff4889e541544883ec084c8b6500e89b0000004c89e74c8b65f8c9e98e00
+0000488d4101c350e833000000b90a0000005aebed50e825000000b90a000000
+5ae8dcffffff4883c001c30f1f440000
+</bytechunk>
+<bytechunk space="ram" offset="0x100251" readonly="true">
+256600256420256420256400256400256420256c640025642025700a00
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="a2"/>
+<symbol space="ram" offset="0x100020" name="a3"/>
+<symbol space="ram" offset="0x100040" name="a4"/>
+<symbol space="ram" offset="0x100070" name="sp6"/>
+<symbol space="ram" offset="0x1000f9" name="a5"/>
+<symbol space="ram" offset="0x100111" name="a6"/>
+<symbol space="ram" offset="0x100130" name="fa1"/>
+<symbol space="ram" offset="0x100140" name="fa2"/>
+<symbol space="ram" offset="0x100160" name="fa3"/>
+<symbol space="ram" offset="0x100180" name="fa4"/>
+<symbol space="ram" offset="0x1001a2" name="q"/>
+<symbol space="ram" offset="0x1001a7" name="f1"/>
+<symbol space="ram" offset="0x1001b5" name="f4"/>
+<symbol space="ram" offset="0x1001d0" name="pr"/>
+<symbol space="ram" offset="0x1001e0" name="h"/>
+<symbol space="ram" offset="0x1001f0" name="g"/>
+<symbol space="ram" offset="0x100200" name="hl"/>
+<symbol space="ram" offset="0x100210" name="q6"/>
+<symbol space="ram" offset="0x100220" name="init"/>
+<symbol space="ram" offset="0x100230" name="use"/>
+<symbol space="ram" offset="0x100240" name="use3"/>
+<symbol space="ram" offset="0x100250" name="__printf_chk"/>
+</binaryimage>
+<script>
+  <com>parse line extern int pr(char *f, ...);</com>
+  <com>parse line extern int h(int k);</com>
+  <com>parse line extern double g(int k);</com>
+  <com>parse line extern long hl(long k);</com>
+  <com>parse line extern long q6(long a,long b,long c,long d,long e,long f);</com>
+  <com>parse line extern int init(long *p);</com>
+  <com>parse line extern int __printf_chk(int flag,char *f, ...);</com>
+  <com>parse line extern int a2(int k);</com>
+  <com>parse line extern int a3(int k);</com>
+  <com>parse line extern int a4(int k,int x,int y);</com>
+  <com>parse line extern long sp6(long a,long b,long c,long d,long e,long f);</com>
+  <com>parse line extern int a5(int k);</com>
+  <com>parse line extern int a6(int k);</com>
+  <com>parse line extern long q(long a, ...);</com>
+  <com>lo fu a2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sp6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option reloadarg off</com>
+  <com>lo fu a2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sp6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH839 #1: reloadarg on, a2 and a5 pass pr the format and h's result only" min="2" max="2">return pr\("%d",\(uint8\)v1\); // tail-call</stringmatch>
+<stringmatch name="GH839 #2: reloadarg on, a3 passes pr the format and g's double only" min="1" max="1">return pr\("%f",v1\); // tail-call</stringmatch>
+<stringmatch name="GH839 #3: reloadarg off, a2 passes the popped rcx and the rdx hole" min="1" max="1">return pr\("%d",\(uint8\)v1,v3,v2\); // tail-call</stringmatch>
+<stringmatch name="GH839 #4: a4 keeps its three variadic arguments" min="2" max="2">return pr\("%d %d %d",\(uint8\)v1,x,\(uint8\)\(uint4\)y\);</stringmatch>
+<stringmatch name="GH839 #5: sp6 keeps the parameter it reloads from its frame into r8" min="2" max="2">return q6\(a_00,a,b,c,d,e\) \+ v1 \+ f;</stringmatch>
+<stringmatch name="GH839 #6: a6 keeps the slot init wrote through its pointer" min="2" max="2">return pr\("%d %ld",\(uint8\)v1,v3\);</stringmatch>
+<stringmatch name="GH839 #7: fa1 and fa4 pass the saved frame pointer" min="4" max="4">  use\(v1\); // tail-call</stringmatch>
+<stringmatch name="GH839 #8: fa2 prints the saved frame pointer" min="2" max="2">__printf_chk\(1,"%d %p\\n",a0 &amp; 0xffffffff,v1\);</stringmatch>
+<stringmatch name="GH839 #9: fa3 passes both frame addresses and the return address" min="2" max="2">use3\(&amp;Stackfffffffffffffff8,v1,v2\);</stringmatch>
+<stringmatch name="GH839 #10: f1 and f4 keep the junk rdx below the real rcx" min="4" max="4">q\([^;]*,a1,v1,10\)</stringmatch>
+</decompilertest>

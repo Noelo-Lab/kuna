@@ -354,6 +354,8 @@ pub fn get_opcode(nm: &str) -> Option<OpCode> {
 /// Return an opcode with the complementary result, or `CPUI_MAX` if undefined.
 /// For supported operations, write whether inputs must be swapped to `reorder`.
 /// Leave `reorder` unchanged when no complement is defined.
+/// Ordered float comparisons have no single-opcode complement: unordered
+/// operands make both `a < b` and `b <= a` false.
 pub fn get_booleanflip(opc: OpCode, reorder: &mut bool) -> OpCode {
     match opc {
         OpCode::CPUI_INT_EQUAL => {
@@ -391,14 +393,6 @@ pub fn get_booleanflip(opc: OpCode, reorder: &mut bool) -> OpCode {
         OpCode::CPUI_FLOAT_NOTEQUAL => {
             *reorder = false;
             OpCode::CPUI_FLOAT_EQUAL
-        }
-        OpCode::CPUI_FLOAT_LESS => {
-            *reorder = true;
-            OpCode::CPUI_FLOAT_LESSEQUAL
-        }
-        OpCode::CPUI_FLOAT_LESSEQUAL => {
-            *reorder = true;
-            OpCode::CPUI_FLOAT_LESS
         }
         _ => OpCode::CPUI_MAX,
     }
@@ -576,17 +570,16 @@ mod tests {
             (OpCode::CPUI_BOOL_NEGATE, OpCode::CPUI_COPY, false),
             (OpCode::CPUI_FLOAT_EQUAL, OpCode::CPUI_FLOAT_NOTEQUAL, false),
             (OpCode::CPUI_FLOAT_NOTEQUAL, OpCode::CPUI_FLOAT_EQUAL, false),
-            (OpCode::CPUI_FLOAT_LESS, OpCode::CPUI_FLOAT_LESSEQUAL, true),
-            (OpCode::CPUI_FLOAT_LESSEQUAL, OpCode::CPUI_FLOAT_LESS, true),
         ];
         for (opc, flip, expect_reorder) in cases {
             let mut reorder = !expect_reorder; // must be overwritten
             assert_eq!(get_booleanflip(opc, &mut reorder), flip);
             assert_eq!(reorder, expect_reorder, "reorder flag for {opc:?}");
         }
-        // Non-comparison ops return CPUI_MAX and leave reorder untouched.
-        let mut reorder = true;
-        assert_eq!(get_booleanflip(OpCode::CPUI_INT_ADD, &mut reorder), OpCode::CPUI_MAX);
-        assert!(reorder);
+        for opc in [OpCode::CPUI_INT_ADD, OpCode::CPUI_FLOAT_LESS, OpCode::CPUI_FLOAT_LESSEQUAL] {
+            let mut reorder = true;
+            assert_eq!(get_booleanflip(opc, &mut reorder), OpCode::CPUI_MAX);
+            assert!(reorder);
+        }
     }
 }

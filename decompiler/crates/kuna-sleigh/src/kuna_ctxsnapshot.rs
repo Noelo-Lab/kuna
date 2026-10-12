@@ -1,7 +1,7 @@
 //! (kuna) A value-exact, `Send` copy of a [`ContextDatabase`]'s read surface.
 //!
-//! A `ContextDatabase` cannot be cloned faithfully: `FreeArray`'s `Clone`
-//! deliberately zeroes the explicit-set mask, and `encode`/`decode` carries
+//! Ordinary partition cloning is not a faithful database copy: `FreeArray`'s
+//! `Clone` deliberately zeroes the explicit-set mask, and `encode`/`decode` carries
 //! neither the mask nor the default blob. What a second decoder actually needs
 //! is narrower than either -- it only ever READS context -- so what is copied
 //! here is exactly the read surface: the default blob plus the blob at every

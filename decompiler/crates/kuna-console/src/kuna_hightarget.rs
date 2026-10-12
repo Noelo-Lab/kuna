@@ -65,7 +65,57 @@ use kuna_decomp::context::HighVariableId;
 use kuna_decomp::database::{symbol_category, SymbolId};
 use kuna_decomp::dtype::Datatype;
 use kuna_decomp::funcdata::{DirectiveSymbol, Funcdata};
+use kuna_decomp::fspec::{parameter_pieces_flags, ParameterPieces};
 use kuna_decomp::varnode::varnode_flags;
+
+/// Carry edited parameter Symbols through the separate prototype store on an IR rebuild.
+/// The complete input list is needed to retain recovered slots when locking the inputs.
+pub fn carried_parameter_maps(fd: &Funcdata) -> Vec<(int4, String, ParameterPieces)> {
+    let Some(scope) = fd.get_scope_local() else { return Vec::new() };
+    let proto = fd.get_func_proto();
+    if !proto.has_store() {
+        return Vec::new();
+    }
+    let usepoint = &fd.get_address().clone() + -1;
+    let mut changed = false;
+    let mut maps = Vec::new();
+    for slot in 0..proto.num_params() {
+        let Some(param) = proto.get_param(slot) else { continue };
+        let addr = param.get_address();
+        let mut name = kuna_decomp::database::kuna_materialized_param_name(
+            fd.get_arch().name_style_angr, slot, param.get_name(),
+        );
+        let mut dtype = param.get_type().cloned();
+        if let Some(entry) = scope.query_container_for_link(&addr, &usepoint) {
+            let symbol = scope.database().symbol(entry.symbol);
+            if entry.category == symbol_category::FUNCTION_PARAMETER
+                && entry.entry_addr == addr
+                && symbol.get_category_index() as int4 == slot
+                && (symbol.flags & (varnode_flags::namelock | varnode_flags::typelock)) != 0
+            {
+                changed |= symbol.name != name
+                    || match (&dtype, &symbol.dtype) {
+                        (Some(a), Some(b)) => !Rc::ptr_eq(a, b),
+                        _ => false,
+                    };
+                name = symbol.name.clone();
+                dtype = symbol.dtype.clone();
+            }
+        }
+        let mut flags = parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::NAMELOCK;
+        for (present, flag) in [
+            (param.is_size_type_locked(), parameter_pieces_flags::SIZELOCK),
+            (param.is_this_pointer(), parameter_pieces_flags::ISTHIS),
+            (param.is_indirect_storage(), parameter_pieces_flags::INDIRECTSTORAGE),
+            (param.is_hidden_return(), parameter_pieces_flags::HIDDENRETPARM),
+            (proto.has_custom_storage(), parameter_pieces_flags::CUSTOM_STORAGE),
+        ] {
+            if present { flags |= flag; }
+        }
+        maps.push((slot, name, ParameterPieces { addr, type_: dtype, flags }));
+    }
+    if changed { maps } else { Vec::new() }
+}
 
 /// The storage a printed local occupies, in the shape `Scope::addSymbol` takes.
 pub struct PrintedLocal {
@@ -277,15 +327,29 @@ fn resolve_printed_local(
             "Not addressable storage: {name} (a decompiler temporary has no stable location)"
         ));
     }
-    // One Symbol, two variables is the other way this ends in invalid C.  The
-    // naming pass has a usepoint-blind arm as well (`ScopeLocal::name_for_varnode`
-    // is a bare `find_overlap`), so when a SECOND high holds the same register at
-    // the same width -- a copy the merge did not coalesce -- both take the mapped
-    // Symbol's name and the printer declares it twice.  Sub-register neighbours
-    // (`al`, `eax` inside `rax`) are not this: they overlap at a different width,
-    // resolve their own names, and are the ordinary case the witness exercises.
-    // Only a high the printer would DECLARE counts: an unnamed high sharing the
-    // storage emits no declaration, and fauxware's `int v1; // eax` has one.
+    let usepoint = match def.filter(|_| written).and_then(|op| fd.obank().get(op)) {
+        Some(op) => op.get_addr().clone(),
+        None => &fd.get_address().clone() + -1,
+    };
+    let proto = fd.get_func_proto();
+    let params: Vec<_> = if proto.has_store() {
+        (0..proto.num_params()).filter_map(|i| proto.get_param(i))
+            .map(|p| (p.get_address(), p.get_size())).collect()
+    } else {
+        Vec::new()
+    };
+    for (at, width) in params {
+        if at.overlap(0, &addr, size) < 0 && addr.overlap(0, &at, width) < 0 {
+            continue;
+        }
+        let input = fd.vbank().find_input(width, &at).and_then(|v| fd.vbank().get(v)?.get_high());
+        if at != addr || width != size || !written
+            || !input.is_some_and(|i| disjoint_parameter_input(fd, ids[0], i, &addr, size))
+        {
+            return Err(format!("Storage of {name} overlaps a live parameter"));
+        }
+    }
+    // Ordinary named locals sharing this storage retain conservative rejection.
     let rivals: Vec<_> = fd
         .high_bank()
         .iter()
@@ -301,7 +365,7 @@ fn resolve_printed_local(
             .vbank()
             .get(rep)
             .is_some_and(|v| v.get_addr() == &addr && v.get_size() == size);
-        if shared {
+        if shared && !(written && disjoint_parameter_input(fd, ids[0], rival, &addr, size)) {
             return Err(format!("Storage of {name} is shared by another variable"));
         }
     }
@@ -319,23 +383,46 @@ fn resolve_printed_local(
             earlier.printed
         ));
     }
-    // The scope already owns this storage, so the high is a stack local or a
-    // parameter the by-name query missed.  Mapping a second Symbol over storage
-    // a Symbol already covers would put two entries on one stack slot, so this is
-    // a miss.
+    // Keep an existing Symbol at this usepoint; later register lifetimes can differ.
     if fd
         .get_scope_local()
-        .is_some_and(|lm| lm.containing_symbol_for_storage(&addr).is_some())
+        .is_some_and(|lm| lm.query_container_for_link(&addr, &usepoint).is_some())
     {
         return Ok(None);
     }
-    // C++ `Varnode::getUsePoint` (varnode.cc:715), which `Funcdata::linkSymbol`
-    // passes to the local-scope container query.
-    let usepoint = match def.filter(|_| written).and_then(|op| fd.obank().get(op)) {
-        Some(op) => op.get_addr().clone(),
-        None => &fd.get_address().clone() + -1,
-    };
     Ok(Some(PrintedLocal { addr, size, usepoint, dtype }))
+}
+
+/// A later register local may reuse an input's storage only with disjoint CFG covers.
+fn disjoint_parameter_input(
+    fd: &mut Funcdata,
+    local: HighVariableId,
+    rival: HighVariableId,
+    addr: &Address,
+    size: int4,
+) -> bool {
+    let proto = fd.get_func_proto();
+    if !proto.has_store() || !(0..proto.num_params()).any(|i| {
+        proto.get_param(i).is_some_and(|p| p.get_address() == *addr && p.get_size() == size)
+    }) {
+        return false;
+    }
+    let Some(input) = fd.high_bank().get(rival) else { return false };
+    if !(0..input.num_instances()).any(|i| {
+        fd.vbank().get(input.get_instance(i)).is_some_and(|v| {
+            v.is_input() && v.get_addr() == addr && v.get_size() == size
+        })
+    }) {
+        return false;
+    }
+    fd.high_update_cover(local);
+    fd.high_update_cover(rival);
+    let (Some(a), Some(b)) = (fd.high_bank().get_cover(local), fd.high_bank().get_cover(rival)) else {
+        return false;
+    };
+    a.iter().any(|(_, block)| !block.empty())
+        && b.iter().any(|(_, block)| !block.empty())
+        && a.intersect(b) < 2
 }
 
 /// A Symbol covers `ct.get_size()` bytes from the storage address, so a type

@@ -1,0 +1,166 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    kuna: a register the function sets for a system register is not the
+    high word of its return.
+
+    Stage / sub-stage: P4 return recovery, the output trials of the
+    function's own RETURN (ActionReturnRecovery, p4_calls/kuna_retsysreg.rs).
+    P0 assertion: option retsysreg on|off (default on).
+
+    Source (clang -target armv7a-linux-gnueabihf -marm -O2 -fno-inline at
+    0x1000, clang -target thumbv7em-none-eabihf -mcpu=cortex-m4 -O2
+    -fno-inline at 0x1800; bytes verbatim below, call relocations applied):
+
+        typedef unsigned long long u64;
+        int g(void);  u64 g64(void);
+        int keepc(void) { int r = g();
+          __asm volatile("vmsr fpscr, %0" :: "r"(0x3000000)); return r; }
+        int comp(int a) { int r = a * 3;
+          __asm volatile("vmsr fpscr, %0" :: "r"(0x3000000)); return r; }
+        int compm(int a) { int r = a * 3;
+          __asm volatile("msr cpsr_c, %0" :: "r"(0x13)); return r; }
+        u64 callhi(void) { u64 v = g64() | 0xff00000000ULL;
+          __asm volatile("vmsr fpscr, %0" :: "r"((unsigned)(v >> 32)));
+          return v; }
+        u64 mcrr_ret(u64 x) { u64 v = x * 7;
+          __asm volatile("mcrr p15, 0, %Q0, %R0, c2" :: "r"(v)); return v; }
+
+        Thumb: keepc_t is keepc again; raise_bp is FreeRTOS's
+        ulPortRaiseBASEPRI (mrs r0,basepri; mov.w r1,#0x50; msr basepri,r1;
+        isb; dsb; bx lr); lock_prim is mrs r0,primask; movs r1,#1;
+        msr primask,r1; bx lr.
+
+    At 0x1100 and 0x1200 (armv7a -marm -O2) and 0x1900 (Thumb), hint and
+    cache-op controls and a CP15 control-register write:
+
+        u64 pk(u32 *p) { u32 q = p[1]; __builtin_prefetch((void*)q);
+          return ((u64)q << 32) | p[0]; }     (pld [r1]; pk_t is Thumb)
+        cln, inv, pli: the same with mcr p15,0,r1,c7,c10,1 (clean data
+          cache line), mcr p15,0,r1,c7,c6,1 (invalidate it) and pli [r1]
+        int ctlk(int a) { int r = a * 3; register int v asm("r1") = 0x1005;
+          __asm volatile("mcr p15, 0, %0, c1, c0, 0" :: "r"(v)); return r; }
+
+    keepc is bl g; mov r1,#0x3000000; vmsr fpscr,r1; pop {r11,pc}.
+
+    The bug: return recovery takes a register copied into fpscr or cpsr, or
+    handed to a CALLOTHER such as setBasePriority, for one used only by the
+    RETURN, so r1 joined r0 as a 64-bit return whose high word is the system
+    register's operand: CONCAT44(0x3000000,g()), CONCAT44(0x50,v1).
+
+    The fix: a second return register whose value is handed to a system
+    register is not returned.  comp, compm, raise_bp and lock_prim return
+    the 32-bit value; keepc and keepc_t return nothing, as a bare
+    bl g; pop {r11,pc} does until a caller reads the result.  callhi (the
+    high word of g64's own result) and mcrr_ret (both words written to one
+    64-bit register) keep the pair, and so do pk, pk_t, cln, inv and pli: a
+    preload or a cache op takes an address, which the high word can be, and
+    sets no processor state.  ctlk, an SCTLR write, returns the 32-bit
+    value.  The last pass sets option retsysreg off and prints comp and
+    raise_bp with the pair again.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+0c009fe500009fe7000090e5800080e01eff2fe1080000000c009fe500009fe7
+001090e5000090e51eff2fe10800000000482de9f1ffffeb0314a0e3101ae1ee
+0088bde8800080e00314a0e3101ae1ee1eff2fe1800080e01310a0e301f021e1
+1eff2fe100482de9eaffffebff1081e3101ae1ee0088bde80720a0e3811161e0
+902280e0013080e00200a0e1022f43ec0310a0e11eff2fe1
+</bytechunk>
+<bytechunk space="ram" offset="0x1100" readonly="true">
+041090e500f0d1f5000090e51eff2fe1
+</bytechunk>
+<bytechunk space="ram" offset="0x1200" readonly="true">
+041090e53a1f07ee000090e51eff2fe1041090e5361f07ee000090e51eff2fe1
+041090e500f0d1f4000090e51eff2fe1041090e5101f01ee000090e51eff2fe1
+800080e0051001e3101f01ee1eff2fe1
+</bytechunk>
+<bytechunk space="ram" offset="0x1900" readonly="true">
+416891f800f000687047
+</bytechunk>
+<bytechunk space="ram" offset="0x1800" readonly="true">
+40f20000c0f20000006800eb4000704780b56f46fff7f4ff4ff04071e1ee101a
+80bdeff311804ff0500181f31188bff36f8fbff34f8f7047eff31080012181f3
+10887047
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="g"/>
+<symbol space="ram" offset="0x1018" name="g64"/>
+<symbol space="ram" offset="0x1030" name="keepc"/>
+<symbol space="ram" offset="0x1044" name="comp"/>
+<symbol space="ram" offset="0x1054" name="compm"/>
+<symbol space="ram" offset="0x1064" name="callhi"/>
+<symbol space="ram" offset="0x1078" name="mcrr_ret"/>
+<symbol space="ram" offset="0x1100" name="pk"/>
+<symbol space="ram" offset="0x1200" name="cln"/>
+<symbol space="ram" offset="0x1210" name="inv"/>
+<symbol space="ram" offset="0x1220" name="pli"/>
+<symbol space="ram" offset="0x1240" name="ctlk"/>
+<symbol space="ram" offset="0x1900" name="pk_t"/>
+<symbol space="ram" offset="0x1800" name="gt"/>
+<symbol space="ram" offset="0x1810" name="keepc_t"/>
+<symbol space="ram" offset="0x1822" name="raise_bp"/>
+<symbol space="ram" offset="0x1838" name="lock_prim"/>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x1800] [ram,0x1844]</com>
+  <com>set context TMode 1 [ram,0x1900] [ram,0x190a]</com>
+  <com>lo fu keepc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu comp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu compm</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu callhi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mcrr_ret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keepc_t</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu raise_bp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lock_prim</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pk_t</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cln</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu inv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pli</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ctlk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option retsysreg off</com>
+  <com>lo fu comp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu raise_bp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RETSYSREG #1: a system register operand is a returned high word only with retsysreg off" min="2" max="2">CONCAT44\((0x3000000|0x13|0x50|1),</stringmatch>
+<stringmatch name="RETSYSREG #7: with retsysreg off comp and raise_bp return the pair again" min="2" max="2">return CONCAT44\((0x3000000,a0 \* 3|0x50,v1)\);</stringmatch>
+<stringmatch name="RETSYSREG #2: a value computed in r0 is returned alone" min="2" max="2">(int4|int) (comp|compm)\((int4|int) a0\)</stringmatch>
+<stringmatch name="RETSYSREG #3: the old BASEPRI and PRIMASK are returned alone" min="2" max="2">(uint4|unsigned int) (raise_bp|lock_prim)\(void\)</stringmatch>
+<stringmatch name="RETSYSREG #4: a call's untouched result beside an fpscr write is not returned" min="2" max="2">void (keepc|keepc_t)\(void\)</stringmatch>
+<stringmatch name="RETSYSREG #5: the high word of a call's own result keeps the pair" min="1" max="1">return g64\(\) \| 0xff00000000;</stringmatch>
+<stringmatch name="RETSYSREG #6: both words written to one 64-bit register keep the pair" min="1" max="1">(uint8|unsigned long long) mcrr_ret\(</stringmatch>
+<stringmatch name="RETSYSREG #8: a preload or cache op on the high word keeps the pair" min="5" max="5">(uint8|unsigned long long) (pk|pk_t|cln|inv|pli)\(</stringmatch>
+<stringmatch name="RETSYSREG #9: an SCTLR write through r1 beside a computed r0 is not returned" min="1" max="1">(int4|int) ctlk\((int4|int) a0\)</stringmatch>
+</decompilertest>

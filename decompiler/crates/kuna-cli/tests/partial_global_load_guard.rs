@@ -1,5 +1,5 @@
 //! Partial writes must reach a pointer read before a later whole-object write.
-mod common;
+use crate::common;
 use common::process;
 use std::process::Command;
 
@@ -112,6 +112,7 @@ fn partial_global_writes_reach_aliasing_loads_before_whole_writes() {
                             "-fno-strict-aliasing",
                             "-DPARTIAL_GLOBAL_HARNESS",
                         ])
+                        .args(common::CC_GCC15_DEMOTE)
                         .arg(&emitted)
                         .arg(&source)
                         .arg("-o")

@@ -1,0 +1,66 @@
+<decompilertest>
+<!--
+    GH-839 (kuna): the AArch64 guard for `option reloadarg`.
+    clang 14 -O2 for aarch64-linux-gnu of
+      void fa1(void){ use(__builtin_frame_address(1)); }
+      void fa2(int k){ printf("%d %p\n", k, __builtin_frame_address(1)); }
+      void fa3(void){ use3(__builtin_frame_address(0),
+                           __builtin_frame_address(1), __builtin_return_address(0)); }
+      void fa4(void){ void *p = __builtin_frame_address(1); use(0); use(p); }
+    relocated flat at 0x100000 (the format string at 0x100100; use, printf and
+    use3 are symbols with no bytes).  Each function reads the caller's frame
+    pointer with ldr xN,[x29], a LOAD from the frame whose slot holds the
+    incoming x29.  x29 is callee-saved, so the value is real and both passes
+    (reloadarg on, then off) must pass it.
+-->
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">
+fd7bbfa9fd030091a00340f9fd7bc1a87c000014fd7bbfa9fd030091a20340f9
+e103002a0000009000000491fd7bc1a878000014fd7bbfa9fd030091a10340f9
+ff2003d5e0031daae2031eaafd7bc1a874000014fd7bbea9f30b00f9fd030091
+e0031faab30340f966000094e00313aaf30b40f9fd7bc2a862000014
+</bytechunk>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+25642025700a00
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="fa1"/>
+<symbol space="ram" offset="0x100014" name="fa2"/>
+<symbol space="ram" offset="0x100034" name="fa3"/>
+<symbol space="ram" offset="0x100054" name="fa4"/>
+<symbol space="ram" offset="0x100200" name="use"/>
+<symbol space="ram" offset="0x100210" name="printf"/>
+<symbol space="ram" offset="0x100220" name="use3"/>
+</binaryimage>
+<script>
+  <com>parse line extern int printf(char *f, ...);</com>
+  <com>lo fu fa1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option reloadarg off</com>
+  <com>lo fu fa1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fa4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH839-A64 #1: fa1 and fa4 pass the saved frame pointer" min="4" max="4">  use\(v1\); // tail-call</stringmatch>
+<stringmatch name="GH839-A64 #2: fa2 prints the saved frame pointer" min="2" max="2">printf\("%d %p\\n",a0 &amp; 0xffffffff,v1\);</stringmatch>
+<stringmatch name="GH839-A64 #3: fa3 passes the saved frame pointer" min="2" max="2">use3\(&amp;Stackfffffffffffffff0,v1\);</stringmatch>
+</decompilertest>

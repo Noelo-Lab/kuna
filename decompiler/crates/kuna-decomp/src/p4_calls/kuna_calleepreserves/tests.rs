@@ -215,3 +215,70 @@ fn a_body_that_departs_from_nothing_narrows_nothing() {
     let edx = Address::new(space(&fd, "ram"), 0x08);
     assert!(!callee_preserves_range(&fd, &fc, &edx, 4));
 }
+
+/// A walk that finished only by reading through an ARM or MIPS `setISAMode`
+/// keeps no argument register across the call (on ARM the scratch registers are
+/// the argument registers), and still keeps a killed register no argument
+/// travels in, such as ARM's `r12`.
+#[test]
+fn a_mode_switched_walk_keeps_no_argument_register() {
+    use crate::dtype::type_class;
+    use crate::fspec::ParamEntry;
+    let mut fd = build_fd(true);
+    let (mut fc, entry) = build_call(&mut fd, 0x2000);
+    let ram = space(&fd, "ram");
+    let mut model = ProtoModel::new(fd.get_arch().manage());
+    model.build_param_list("standard").unwrap();
+    let arg = ParamEntry::seed(
+        0,
+        type_class::TYPECLASS_GENERAL,
+        Rc::clone(&ram),
+        0x08,
+        4,
+        1,
+        0,
+        0,
+        true,
+        false,
+        &[],
+        fd.get_arch().manage(),
+    )
+    .unwrap();
+    model.input_mut().push_entry(arg);
+    model.input_mut().finish_decode();
+    for (off, ty) in [
+        (0x10u64, effect_type::UNAFFECTED),
+        (0x08, effect_type::KILLEDBYCALL),
+        (0x0c, effect_type::KILLEDBYCALL),
+    ] {
+        let mut vd = kuna_num::pcoderaw::VarnodeData::default();
+        vd.space = Some(Rc::clone(&ram));
+        vd.offset = off;
+        vd.size = 4;
+        model.push_effect(EffectRecord::from_varnode(vd, ty));
+    }
+    fc.proto_mut().set_model(Some(Rc::new(model)));
+    let body = || CalleeReturnWrites::from_parts(vec![(ram.get_index(), 0x10, 4)], Vec::new(), true);
+    let argument = Address::new(Rc::clone(&ram), 0x08);
+    let scratch = Address::new(Rc::clone(&ram), 0x0c);
+    fd.kuna_set_callee_ret_writes(&entry, Rc::new(body()));
+    assert!(callee_preserves_range(&fd, &fc, &argument, 4), "a walk that needed no switch");
+    fd.kuna_set_callee_ret_writes(&entry, Rc::new(body().through_a_mode_switch()));
+    assert!(!callee_preserves_range(&fd, &fc, &argument, 4));
+    assert!(callee_preserves_range(&fd, &fc, &scratch, 4));
+}
+
+/// `ARM.cspec` lists `pc` as preserved, and every `bx lr` writes it: the
+/// program counter a return wrote is not a departure from the convention.
+#[test]
+fn the_program_counter_a_return_writes_is_no_departure() {
+    let mut fd = build_fd(true);
+    let (fc, entry) = build_call(&mut fd, 0x2000);
+    let ram = space(&fd, "ram").get_index();
+    fd.kuna_set_callee_ret_writes(
+        &entry,
+        Rc::new(CalleeReturnWrites::from_parts(vec![(ram, 0x10, 4)], Vec::new(), true).returning_through(ram, 0x10, 4)),
+    );
+    let edx = Address::new(space(&fd, "ram"), 0x08);
+    assert!(!callee_preserves_range(&fd, &fc, &edx, 4));
+}

@@ -1335,3 +1335,138 @@ fn make_local_name_unique_among_skips_names_held_off_the_symbol_table() {
         ["object_00".to_string(), "object_01".to_string()].into();
     assert_eq!(sl.make_local_name_unique_among("object", &taken), "object_02");
 }
+
+#[test]
+fn parameter_entry_does_not_adopt_a_later_register_local() {
+    let mut scope = scope_local();
+    let spc = Rc::clone(scope.get_space_id());
+    let addr = Address::new(Rc::clone(&spc), 0x10);
+    let entry = Address::new(Rc::clone(&spc), 0x1000);
+    let later = Address::new(Rc::clone(&spc), 0x1020);
+    let local = scope
+        .add_symbol("cleared", base(4, type_metatype::TYPE_UINT), &addr, &later)
+        .unwrap();
+    let param = scope
+        .add_param_symbol(
+            1,
+            "property",
+            base(4, type_metatype::TYPE_INT),
+            &addr,
+            &entry,
+        )
+        .unwrap()
+        .expect("the input needs its own Symbol");
+    assert_ne!(param, local);
+    assert_eq!(
+        scope.symbol_category(local),
+        crate::database::symbol_category::NO_CATEGORY
+    );
+    assert_eq!(
+        scope.symbol_category(param),
+        crate::database::symbol_category::FUNCTION_PARAMETER
+    );
+    assert_eq!(
+        scope
+            .query_container_for_link(&addr, &entry)
+            .unwrap()
+            .symbol,
+        param
+    );
+    assert_eq!(
+        scope
+            .query_container_for_link(&addr, &later)
+            .unwrap()
+            .symbol,
+        local
+    );
+    assert!(scope
+        .add_param_symbol(
+            1,
+            "property",
+            base(4, type_metatype::TYPE_INT),
+            &addr,
+            &entry
+        )
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn parameter_entry_reuses_a_whole_scope_storage_lock() {
+    let mut scope = scope_local();
+    let spc = Rc::clone(scope.get_space_id());
+    let addr = Address::new(Rc::clone(&spc), 0x10);
+    let entry = Address::new(Rc::clone(&spc), 0x1000);
+    let dtype = base(4, type_metatype::TYPE_INT);
+    let host = scope
+        .add_symbol(
+            "host_value",
+            Rc::clone(&dtype),
+            &addr,
+            &Address::new_invalid(),
+        )
+        .unwrap();
+    assert!(scope
+        .add_param_symbol(1, "property", dtype, &addr, &entry)
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        scope.symbol_category(host),
+        crate::database::symbol_category::FUNCTION_PARAMETER
+    );
+    assert_eq!(
+        scope
+            .query_container_for_link(&addr, &entry)
+            .unwrap()
+            .symbol,
+        host
+    );
+}
+
+#[test]
+fn selected_register_entry_retains_its_name_and_type() {
+    let mut scope = scope_local();
+    let spc = Rc::clone(scope.get_space_id());
+    let addr = Address::new(Rc::clone(&spc), 0x10);
+    let entry = Address::new(Rc::clone(&spc), 0x1000);
+    let later = Address::new(Rc::clone(&spc), 0x1020);
+    let missing = Address::new(Rc::clone(&spc), 0x1040);
+    let input_type = base(4, type_metatype::TYPE_INT);
+    let local_type = base(4, type_metatype::TYPE_UINT);
+    let param = scope
+        .add_param_symbol(1, "property", Rc::clone(&input_type), &addr, &entry)
+        .unwrap()
+        .unwrap();
+    let local = scope
+        .add_symbol("", Rc::clone(&local_type), &addr, &later)
+        .unwrap();
+    for sym in [param, local] {
+        scope.set_attribute(sym, crate::varnode::varnode_flags::typelock);
+    }
+    let selected = scope.query_container_for_link(&addr, &later).unwrap();
+    let mut counter = 1;
+    let (name, _, ty) = scope
+        .resolve_default_name_for_link(&selected, 4, &mut counter, None)
+        .unwrap();
+    assert_eq!(name, "v1");
+    assert_eq!(ty.unwrap().get_metatype(), type_metatype::TYPE_UINT);
+    assert_eq!(scope.database().symbol(param).get_name(), "property");
+    let types = factory();
+    assert_eq!(
+        scope
+            .build_localtype_seed_at(&addr, 4, &entry, &types)
+            .unwrap()
+            .get_metatype(),
+        type_metatype::TYPE_INT
+    );
+    assert_eq!(
+        scope
+            .build_localtype_seed_at(&addr, 4, &later, &types)
+            .unwrap()
+            .get_metatype(),
+        type_metatype::TYPE_UINT
+    );
+    assert!(scope
+        .build_localtype_seed_at(&addr, 4, &missing, &types)
+        .is_none());
+}

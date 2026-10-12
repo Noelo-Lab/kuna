@@ -21,6 +21,7 @@ export const DEFAULT_PREFS = Object.freeze({
   asmSpelling: 'easy',
   cLineNumbers: true,
   cLineAddrs: false,
+  cWrap: true,
   hoverDelay: 450,
   rail: true,
   theme: 'dark',

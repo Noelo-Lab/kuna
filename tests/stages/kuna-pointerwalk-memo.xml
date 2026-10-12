@@ -1,0 +1,71 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The stackstoreguard walks back along a pointer's definitions must give
+    what an exhaustive walk gives, however many paths lead to a Varnode.
+    f is clang 14 -O2 (-fno-stack-protector -fcf-protection=none
+    -fno-jump-tables, linked -nostdlib -static -Ttext=0x403000 with stub
+    callees e0 to e7 and ext): five switches of eight cases on s0 to s4,
+    each case calling e0 to e7 and every other one stepping p, then
+    p[j & 7] stored through:
+
+        unsigned char buf[16]; buf[0] = a; unsigned char *p = buf;
+        switch ((unsigned)(s0) % 8) { case 0: e0(s0); break;
+            case 1: e1(s0); p++; break; ... default: e7(s0); p++; break; }
+        ... the same for s1 to s4 ...
+        p[i & 7] = j; if (buf[0]) return ext(buf[0]) + 1; return 5;
+
+    The pointer resolves only after more than 4,096 values; a walk that
+    gave up after 4,096 split buf into a char and a char[15] and indexed
+    past the char.  Stage: P6 layout (stackstoreguard).  The walk remembers each
+    Varnode at each depth, so it resolves, as on main.
+-->
+<bytechunk space="ram" offset="0x403000" readonly="true">
+55415741564154534883ec104589ce4589c74189cc89d540883c2489f083e007
+83f8027e1b83f8047f3083f803744183f804755a4889e389f7e8e2020000eb63
+85c0743583f801744e83f80275404889e389f7e8a8020000eb4983f805742683
+f806752a4889e389f7e8d2020000eb3389f7e899020000eb254889e389f7e85d
+020000eb1e89f7e8a4020000eb1089f7e8bb020000eb0789f7e852020000488d
+5c240189e883e00783f8027e1883f8047f2a83f803743883f804754e89efe85d
+020000eb5985c0742f83f801744583f802753789efe826020000eb4283f80574
+2083f806752489efe853020000eb2f89efe81a020000eb2289efe8e1010000eb
+1d89efe828020000eb1089efe83f020000eb0789efe8d60100004883c3014489
+e083e00783f8027e1983f8047f2c83f803743b83f80475544489e7e8e0010000
+eb6085c0743283f801744b83f802753c4489e7e8a8010000eb4883f805742383
+f80675284489e7e8d4010000eb344489e7e89a010000eb264489e7e860010000
+eb204489e7e8a6010000eb124489e7e8bc010000eb084489e7e8520100004883
+c3014489f883e00783f8027e1983f8047f2c83f803743b83f80475544489ffe8
+5c010000eb6085c0743283f801744b83f802753c4489ffe824010000eb4883f8
+05742383f80675284489ffe850010000eb344489ffe816010000eb264489ffe8
+dc000000eb204489ffe822010000eb124489ffe838010000eb084489ffe8ce00
+00004883c301448b7c24488b6c24404489f083e00783f8027e1983f8047f2c83
+f803743b83f80475544489f7e8cf000000eb6085c0743283f801744b83f80275
+3c4489f7e897000000eb4883f805742383f80675284489f7e8c3000000eb3444
+89f7e889000000eb264489f7e84f000000eb204489f7e895000000eb124489f7
+e8ab000000eb084489f7e8410000004883c30183e50744883c2b0fb63c2485ff
+740ae89900000083c001eb05b8050000004883c4105b415c415e415f5dc36690
+89f8c3662e0f1f8400000000000f1f008d4701c3662e0f1f8400000000006690
+8d4702c3662e0f1f84000000000066908d4703c3662e0f1f8400000000006690
+8d4704c3662e0f1f84000000000066908d4705c3662e0f1f8400000000006690
+8d4706c3662e0f1f84000000000066908d4707c3662e0f1f8400000000006690
+8d047fc3
+</bytechunk>
+<symbol space="ram" offset="0x403000" name="f"/>
+<symbol space="ram" offset="0x4032e0" name="e0"/>
+<symbol space="ram" offset="0x4032f0" name="e1"/>
+<symbol space="ram" offset="0x403300" name="e2"/>
+<symbol space="ram" offset="0x403310" name="e3"/>
+<symbol space="ram" offset="0x403320" name="e4"/>
+<symbol space="ram" offset="0x403330" name="e5"/>
+<symbol space="ram" offset="0x403340" name="e6"/>
+<symbol space="ram" offset="0x403350" name="e7"/>
+<symbol space="ram" offset="0x403360" name="ext"/>
+</binaryimage>
+<script>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="POINTERWALK-MEMO #1: buf is one array of sixteen bytes" min="1" max="1">^\s*char v\d+ \[16\]; // </stringmatch>
+</decompilertest>

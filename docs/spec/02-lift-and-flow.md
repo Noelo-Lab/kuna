@@ -29,6 +29,42 @@ bytes and its PC write preserves interworking. Other PC loads retain their
 existing branch behavior; an explicitly prepared LR retains the indirect-call
 form. This is a SLEIGH correctness repair, without an inference option.
 
+The SPARC floating-to-integer constructors use the integer result width:
+`fdtoi` and `fqtoi` write one 32-bit word through `fsrd`, while `fstox` and
+`fqtox` write 64 bits through `fdrd`. Scalar destinations preserve odd register numbers;
+double destinations use the V9 encoding that maps an odd encoded field into
+the upper register bank. The rules apply in both language variants. See the
+[SPARC V9 instruction mapping](https://docs.oracle.com/cd/E19963-01/html/821-1607/sparcv9-32853.html).
+This is a SLEIGH correctness repair, without an inference option.
+
+Generic ARM `MCR`/`MRC` and `MCR2`/`MRC2` transfers pass the encoded
+`CRn` and `CRm` numbers to their opaque coprocessor intrinsics as four-byte
+constants. A32 and Thumb constructors use unattached numeric aliases of the token
+fields, retaining the `cr0`–`cr15` attachments for assembly spelling. The CPU
+source of `MCR` remains live register data; `MRC` still writes its CPU
+destination, including the Thumb APSR flag destination. Coprocessor number,
+opcode fields, condition handling, and instruction spelling are preserved.
+This repairs selector identity without an option and does not emulate CP15,
+interpret processor-specific registers, or change named CP15 intrinsics,
+coprocessor data processing, or double-register transfers.
+
+Ordinary ARM flow establishes a `TMode` write boundary at the function entry.
+A backward interworking call may publish the callee's mode up to that boundary,
+but cannot repaint the caller. After a successful instruction, a mode commit
+that reached the instruction's own address is bounded by restoring its original
+mode there, preserving the call's fall-through. Other context fields, including
+Thumb IT state, retain their normal effects. Direct and indirect branches retain
+their existing target-mode selection. This strict correctness repair applies
+without Listing or frame discovery and adds no option.
+
+ARM return-dispatch probes preceding flow run in a decode context scope with
+`TMode` writes masked. Rejected probe chains cannot change the entry mode before
+the real walk establishes its boundary; local IT state remains active in a probe.
+The scope journals only touched context partitions, restoring their values and
+explicit-set masks and removing new split points on exit. Opening a scope does
+not copy the image's context database. No scope is opened when both
+`entryretdispatch` and `pushimmediateret` are disabled.
+
 Option defaults and flip guidance for every option named below live in the
 generated catalog ([docs/options.md](../options.md)); the rows are defined in
 `decompiler/crates/kuna-decomp/phases.toml` and the intentional
@@ -87,14 +123,26 @@ route through `flow.rs (FlowInfo::handle_out_of_bounds)`, which under the defaul
 flow options continues rather than failing the decompile — `errorreinterpreted`-style
 hard failure needs `error_outofbounds`.
 
+When fall-through reaches an instruction already recorded in `visited`, it joins
+that instruction's existing block, including when the instruction starts exactly
+at the inclusive `eaddr`. Only an unseen instruction at `eaddr` is decoded as the
+last in-range instruction. Decoding a previously visited final `RET` again would
+replace its address-to-op record and make earlier return edges target the later
+predecessor's body. In a switch with a return-only entry and a last case sharing
+that `RET`, this incorrectly moves the last case's write after the switch and
+executes it for the return-only entry and out-of-range selectors as well.
+`tests/stages/kuna-switch-return-paths.xml` and the CLI native round trip pin
+this join across both structurers and the return-duplication settings.
+
 Continuing quietly would be the wrong contract for a *declared* bound, because the
 caller cannot otherwise tell a correct boundary from one that truncated the body:
 both just produce a shorter function. So the out-of-bounds handler emits the C++
 diagnostics — a `Funcdata::warning` at each cut edge and, once per function, the
 `Function flows out of bounds` `Funcdata::warning_header` — which the emitter
 renders as comments on the prototype and the offending statement. A correctly
-declared function ends in a return and never leaves its range, so a warning here
-means the declared end is wrong.
+declared function ends in a return or a recognized tail transfer. A known callee
+outside the extent can be recovered under `tailcalljump` without following its
+body; an unrecognized edge still clips and warns, so its declared end needs review.
 
 Warning is only half of continuing, though, because the cut edge still needs a
 head: the target was never decoded, so it has no op, and until DIV-121 the block
@@ -231,8 +279,29 @@ root node; each child node is reset before it is allocated. The state arena and
 its allocation capacities are retained across instructions. Simultaneously
 live main-instruction, `inst_next2`, and delay-slot resolutions hold distinct
 contexts, and a guard returns each context after successful translation or an
-error. This is scratch reuse only: instruction results and addresses are not
-cached, and the bytes and painted context are resolved on every translation.
+error. The engine stores no instruction-result cache; ordinary translations
+resolve the bytes and painted context on every call.
+
+Speculative consumers can open a `Translate::context_scope` to decode against a
+private context database and cache. Dropping the scope restores both; committing
+it retains the changes. Copies preserve explicit write boundaries and tracked
+registers, so later context writes behave as they would in the original database.
+Nested scopes restore their parent, and `probe_original` temporarily restores
+the context saved before the outer walk. A scope can protect one variable while
+allowing other instruction-local state changes
+(`decompiler/crates/kuna-sleigh/src/kuna_contextscope.rs`). Stateless translators
+return no scope.
+
+The optional `Translate::one_instruction_reusable` contract also returns a context
+key when the result can be retained by an analysis consumer. SLEIGH certifies only
+lifts without context commits or delay slots and with exactly one parser-context
+query across lifting and assembly rendering. Nested reads, including
+`inst_next2`, decline reuse. The consumer must retain the same image, translator
+and instruction address and compare every effective context word, including
+read overrides, before replaying p-code; other translators decline by default.
+Changing an override invalidates a key when it changes the decoded context;
+equivalent database and override values still match. This certificate does not suppress any
+translation or context effects inside SLEIGH itself.
 
 **Instruction-byte window.** A parser context buffers a fixed 16 bytes of the
 instruction stream, the longest encoding any supported processor admits. Reads
@@ -316,7 +385,31 @@ calls, with identical observable result — the analysis path locks callee
 signatures before flow runs). A CALLIND keeps its computed target as input 0
 (`setup_callind_specs`) unless a previous decompilation pass planted an
 indirect override (de-indirection), which converts it to a direct CALL before
-the spec is built. `flow.rs (FlowInfo::check_for_flow_modification)` then
+the spec is built. (kuna `msvcsig`) One more CALLIND is made direct there: a
+call through an import slot whose MSVC-declared prototype the analysis commit
+locked onto the import symbol (01, `msvcsig`)
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_msvcimportcall.rs
+(locked_import_slot)`). The target must be the word the call's own instruction
+reads from a constant address (the folded `COPY` of a memory varnode, or a
+`LOAD` through a constant pointer, through temporary copies), that address must
+be in the slot set the commit recorded and painted external by `peimportcall`,
+and the FunctionSymbol there must carry an input-locked prototype. Left to
+`ActionDeindirect`, such a call is resolved only after the default-model
+prototype it was given has been merged against a locked `__thiscall` or
+`__cdecl` one, which fails and restarts the function to plant exactly this
+override; resolving it here removes that restart, which on a 32-bit MSVC C++
+image nearly every function paid. Other import calls are unchanged: one whose
+symbol carries only parked pieces (the Win32 and libc tables) still waits for
+`ActionDeindirect`. A call to any address that set names, direct or made direct
+here, copies the locked prototype at flow and so never reaches the
+`ActionDefaultParams` arm that gives a declared callee the stack adjustment its
+parameter list implies (`calleeprotostack`, 04); the copy applies that rule
+itself
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeprotostack.rs
+(resolve_declared_extra_pop)`), so a
+`__thiscall` or `__stdcall` import pops what its declaration says instead of
+what the push run in front of it suggests.
+`flow.rs (FlowInfo::check_for_flow_modification)` then
 applies the callee's flow effects: an *inline* callee queues the op for
 injection; a *no-return* callee gets an artificial halt planted directly after
 the call plus the `"Subroutine does not return"` warning, so flow never runs
@@ -474,9 +567,12 @@ most 8 cross-flow restarts before keeping the last analyzed IR.
 (kuna_is_tail_call_branch)`.** At `-O2` a "call X then return" tail compiles to
 a direct `jmp X`. Decision rule: a `CPUI_BRANCH` whose direct machine-address target is the
 entry of a *known function* (including a PLT thunk) that is not the current
-function's own entry is a tail call, unless an exact-address `flow ... branch`
-override was applied at that instruction, turning its call into this branch. The
-explicit classification owns precedence over the inferred call and is resolved
+function's own entry is a tail call, unless the target lies inside the current
+function's caller-declared extent or an exact-address `flow ... branch` override
+was applied at that instruction, turning its call into this branch. The explicit
+extent makes an independently discovered interior entry an intraprocedural
+destination; a genuine veneer target outside its declared extent remains a tail
+call. The flow override owns precedence over the inferred call and is resolved
 before either `tailcalljump` or `tailcallframe` is consulted. An override at
 another instruction, of another kind, or refused does not suppress recovery; a
 `branch` override on an instruction that already branches (a tail `jmp`) has no
@@ -491,6 +587,28 @@ an indirect GOT jump; jump-table recovery fails on it and the function renders
 a `(*dat_...)(...)` computed call with a `"Treating indirect jump as call"`
 warning. Two datatests (Long double #1/#2) opt out per-test.
 
+**Bounded conditional tails.** With an explicit extent, a machine-address
+`CPUI_CBRANCH` to another known function's entry outside that extent is the
+conditional form of the same direct tail. Both `on` and `direct` recover it
+when the branch is the instruction's last p-code op. The taken path receives a
+CALL with normal callee prototype and flow-effect setup, followed by RETURN
+(or the callee's no-return halt); the false path skips that block and continues
+at the next instruction. Each path keeps its own register state, so argument
+swaps on the false path cannot change the taken call's inputs. The local taken
+block has a stable, effect-free COPY before the call so its relative branch
+target survives explicit callee inlining or call-fixup injection; ordinary
+dataflow cleanup removes that unused copy.
+
+An entry inside the asserted extent stays local, and a target that is unknown,
+mid-function, self-directed, or a relative p-code destination is never recovered
+by this rule. It does not infer conditional tails from frame teardown. A
+conditional with remaining p-code in its instruction keeps the original flow,
+as does an unbounded conditional. `off` retains clipping for an out-of-extent
+conditional even when its target is declared. A false edge that itself crosses
+the bound still receives the missing halt and out-of-bounds warning.
+`tests/stages/kuna-conditional-tail.xml` pins argument order, both direct modes,
+backward value-returning tails, no-return callees, inlining, and these refusals.
+
 `option tailcalljump` takes three values. `off` disables the rule, `direct`
 applies it to direct jumps only, and `on` (the default) also applies it to a
 computed jump with exactly one destination. A linker veneer or long-branch
@@ -504,7 +622,7 @@ the address is another known function's entry and one of two things holds
 
 - the address lies outside the function's declared extent, where following
   it can only end in `halt_missing()`; or
-- the call states everything the callee's body would
+- no explicit caller extent is supplied and the call states everything the callee's body would
   (`kuna_tailcalljump.rs (tail_call_states_the_body)`). The callee's prototype
   is stated: input-locked on its symbol, or parked as pieces by a
   declaration, DWARF, a library signature or a demangled C++ name, which
@@ -588,14 +706,16 @@ a back-edge, as in `tailcalljump`) nor an address this function has already
 decoded (already-decoded blocks are live flow, whatever the stack looks like).
 The rewrite is the one `tailcalljump` already drives in the BRANCH arm of
 `flow.rs (FlowInfo::xref_control_flow)`; `flow.rs (FlowInfo::tail_call_kind)`
-asks `tailcalljump` first, so a known target keeps that path and that warning
-text, and a `tailcallframe: recovered tail call` warning attributes the calls
-this rule introduces. Byte-identical on both parity corpora, whose bytechunks
-carry no such shape. **Known limit:** the evidence is the frame, not the function
-bound — a kuna `FunctionSymbol` has no extent, so the rule cannot ask whether
-`dest` is still inside the caller, and a jump that tears the frame down
-*completely* before branching to a shared return sequence in the same function is
-recovered as a tail call. That shape is not optimizer output: a shared return
+checks the caller-declared extent before asking either tail-call rule, then asks
+`tailcalljump` first for eligible targets. A known eligible target keeps that
+path and warning text, and a `tailcallframe: recovered tail call` warning
+attributes calls introduced by the frame rule. Byte-identical on both parity
+corpora, whose bytechunks carry no such shape. **Known limit:** without a
+caller-declared extent, frame evidence cannot distinguish an external callee
+from an in-function target after a complete frame teardown. A jump that tears
+the frame down *completely* before branching to a shared return sequence in the
+same function can still be recovered as a tail call. That shape is not optimizer
+output: a shared return
 sequence must be shared including its teardown, so the jump is emitted part-way
 through the epilogue and the exact-cancellation test rejects it (gcc and clang at
 `-O1/-O2/-O3/-Os` emit `add rsp,0x68; jmp <shared tail>` against a `-0x70`
@@ -652,9 +772,12 @@ body into the current one (the following function is then emitted twice: once
 correctly, once as a garbage tail of its predecessor). Decision rule: a
 fall-through whose target is the entry of another *known* function
 (`query_call(next).is_some()`), and is not the current function's own entry, has
-run off the end of the current function, **except when the complete instruction
-at that foreign entry describes an unconditional `CPUI_RETURN` with no other
-control-transfer op**. Such a return is admitted as a shared epilogue: it has no
+run off the end of the current function, unless the current function carries an
+explicit extent that contains the target. That caller assertion keeps an
+independently discovered interior entry in the same flow. Apart from that
+extent rule, the bound is omitted only when the complete instruction at the
+foreign entry describes an unconditional `CPUI_RETURN` with no other
+control-transfer op. Such a return is admitted as a shared epilogue: it has no
 successor, so decoding it cannot consume any instruction beyond the separately
 callable function. Direct and computed branches, and conditional returns, are
 not part of the exception because they can still reach more code and cross a
@@ -998,7 +1121,9 @@ the raw blocks that reach the instruction: a block decides for itself when it
 writes the register or makes a call, otherwise it takes the conjunction of its
 predecessors, and the entry decides no. Every block starts at yes and only
 falls, so a loop is decided by the paths into it, and more than 256 blocks
-answers no. Another system call writes the result register and nothing else.
+answers no. Another system call writes the result register, and on MIPS and
+PowerPC its error flag (below) as a value the function did not set, so a flag
+left by an earlier system call is not an argument the function wrote.
 
 The register pair goes away as a consequence. The low half is now the call's
 output, and the high half is an argument the call reads. Return recovery's
@@ -1007,6 +1132,78 @@ output, and the high half is an argument the call reads. Return recovery's
 argument is not also a returned half, even when the function throws the result
 away and the kernel-preserved argument register still reaches the `RETURN`. It
 stays free to be the next call's argument.
+
+MIPS and PowerPC kernels also report a failure outside the result: MIPS sets
+`a3` to 1 (0 on success) and PowerPC sets the summary-overflow bit of `cr0`, and
+the C library tests it right after the instruction (`movz` or `bnez` on `a3`;
+`bns`, or `mfcr` and a mask). So on those two families the rewrite also inserts,
+right after the system call, `a3 = syscall_error()` or `cr0 = syscall_error()`
+(`kuna_syscallregs.rs (define_error_flag)`): a `CALLOTHER` of the built-in user
+op `BUILTIN_SYSCALL_ERROR` (`decompiler/crates/kuna-decomp/src/p2_lift/userop.rs`)
+whose only input is that user-op id, with its call flag cleared. It is an
+ordinary write placed before heritage, so heritage treats it like any other
+register write (an `INDIRECT` there would not work, see below), and with no
+side effect dead-code removal drops it wherever nothing reads the register. A
+copy made when a block is duplicated (`funcdata_block.rs
+(CloneBlockOps::build_op_clone)`, `funcdata_op.rs (Funcdata::clone_op)`) clears
+the call flag that setting its opcode restores, so a copy dies the same way.
+The test after the call then
+reads the kernel's flag. Before, it read the function's entry `a3`, which became
+a phantom fourth parameter, or a `cr0` nothing set, printed as an uninitialized
+local; where the function had itself loaded `a3` as the fourth system-call
+argument, the test even folded to a constant, and glibc's MIPS `lutimes` always
+returned -1. The whole `cr0` field takes the opaque value: the Linux system-call
+ABI lists `cr0` as volatile across `sc`, its summary-overflow bit being the error
+condition, so code after the call cannot rely on its other bits.
+
+Three later consumers keep the flag tied to its own call. Every flag has the
+same input, the user-op id, but not the same value, so the test of whether two
+values are the same (`expression.rs (functional_equality_level)`) answers no for
+it, as it does for a call: `(e1 | e2) != 0` over two calls' flags is not folded
+to one of them, and the flags of two branches are not merged into a new
+`syscall_error()` after the join, which as a new op would also have regained the
+call flag and printed as a bare statement. Chapter 04's
+`AncestorRealistic` treats the flag reaching a later call's killed-by-call
+argument register like a value carried through a call, so it is not that call's
+argument. Chapter 06's implied-variable check treats its definition like a
+call's output: when its range crosses a call or another system call it is
+printed at its definition, so a `syscall_error()` never appears after a later
+system call it does not belong to.
+
+On MIPS the phantom `a3` had also pulled a wrapper's real parameters in with
+it: parameter recovery fills the positions before the last input it finds, so a
+`read` wrapper that hands its three parameters to the kernel in place printed
+`(a0,a1,a2,a3)` although the call read none of them, and without the phantom it
+printed `(void)`. So a MIPS system call goes on reading argument registers,
+written or not, up to as many as the kernel's entry point for its number takes
+(`kuna_syscallregs.rs (mips_floor)`), each one only while, on every path to the
+instruction, it holds the function's incoming value with no call on the path or
+a value the function wrote after the path's last call
+(`kuna_syscallregs.rs (reaches_without_call)`). The o32 ABI does not preserve
+`a0`..`a3` across a call, while kuna's call model carries them through it, so a
+register that crossed a call would print the value from before the call:
+`foo(1,2,3,4)` followed by a `reboot` that sets `a0`..`a2` printed the 4 set up
+for `foo` as reboot's fourth argument. The first register that fails ends the
+list, which then reads exactly what the written-registers rule reads. The
+number is the constant that every write of `v0` reaching the instruction, with
+no call in between, writes
+(`kuna_syscallregs.rs (constant_at)`). The count comes from one table sorted by
+number (`kuna_syscallregs/mips_args.rs`), since the three ABIs number their
+calls in disjoint ranges (o32 from 4000, n64 from 5000, n32 from 6000). It is
+built from the kernel's own `syscall_o32.tbl`, `syscall_n64.tbl` and
+`syscall_n32.tbl` and the parameter lists of the entry points they name, an o32
+64-bit parameter taking an even-aligned register pair; o32 reads at most four
+registers and n32/n64 six. These are the kernel's counts, not the documented
+wrappers': `faccessat` takes three registers, `ppoll` one more than its
+wrapper. A number the table does not know, one computed at run time as in the
+C library's `syscall` dispatcher, reads all of `a0`..`a3`: such a function
+hands its own `a3` to the kernel, and taking fewer would drop a real parameter.
+Where it does not, its flag test still reads as a fourth parameter, as it did
+before. A call that sets up fewer registers than the kernel's entry takes, with
+no call before it, shows the rest as the function's parameters, since the
+kernel does read them: a `write` that sets `a0` and `a1` also passes the `a2`
+its caller left. PowerPC keeps the written-registers rule: its flag is not an
+argument register, so no phantom pulled parameters in there.
 
 The same policy gives the recognized system call unknown effects on writable
 memory. `kuna_syscallregs.rs (guard_memory)`, called by chapter 03's
@@ -1021,19 +1218,22 @@ Registers, unique temporaries, read-only ranges, unrelated user ops, and
 compiler-spec injected system calls keep their existing effects. `off`, and
 `auto` on an unclassified image, retain the original memory model too.
 
-What it does not model. Arguments the function hands the kernel untouched are
-not read, since nothing says how many of them the kernel reads, and taking all
-of them would give a zero-argument call phantom parameters; the list stops at
+What it does not model. Outside MIPS, arguments the function hands the kernel
+untouched are not read, since nothing says how many of them the kernel reads,
+and taking all of them would give a zero-argument call phantom parameters; the list stops at
 the first of them, so a later argument the function does write is not shown
 either, and a pass-through wrapper prints its call with the number alone. When
 that leaves a written register out, return recovery can still take it as the
-high half of a returned pair, as the vendored model does. The registers a kernel
-writes besides the result (the MIPS `a3` error flag and `v1`, the PowerPC `cr0`
-error bit) also keep their pre-call values. An `INDIRECT` creation for them was
-tried and rejected: `Heritage::collect` reads a marker op already in a range as
-evidence of an earlier heritage pass and clears the range's new-addresses
-property, which turns off the call, store and return guards for that register.
-On MIPS, every call in a function with a `syscall` then lost its `a3` argument.
+high half of a returned pair, as the vendored model does. The MIPS `v1` that a
+few calls return a second value in keeps its pre-call value, and the o32
+arguments past `a3`, which the kernel reads from the stack, are not read. An
+`INDIRECT` creation was tried for the error flag first and rejected: `Heritage::collect`
+reads a marker op already in a range as evidence of an earlier heritage pass and
+clears the range's new-addresses property, which turns off the call, store and
+return guards for that register. On MIPS, every call in a function with a
+`syscall` then lost its `a3` argument. An image whose handler preserves `a3` or
+`cr0` under `on` reads the opaque flag where it kept its own value, the same
+caveat as for the result register.
 `option syscallregs off` restores the vendored zero-effect `CALLOTHER`.
 
 Exercised by `tests/stages/kuna-syscallregs-arm.xml`, `-aarch64.xml`,
@@ -1044,6 +1244,16 @@ byte chunk. The ARM test adds a call whose result is discarded, a call followed
 by a use of the kept `r1`, and a call that writes `r1` but not `r0`; the RISC-V
 test adds a loop that passes `a1`/`a2` through and keeps scratch values in
 `a3`/`a4`, none of which takes an argument position.
+`tests/stages/kuna-syscallregs-mips-a3.xml` (a clang `movz` and a gcc branch on
+`a3`, the latter followed by a call while `a3` still holds the flag) and
+`-ppc-cr0.xml` (an `mfcr` and a `bns` test, and a compare of the result as the
+control) check the error flag under `on` and the phantom parameter or the
+uninitialized `cr0` under `off`. The MIPS test adds a test of two calls' flags
+(`e1 | e2`), a `read` wrapper that hands its three parameters over in place, and
+a `reboot` after a call whose `a3` is not read;
+the PowerPC test adds a flag that each branch sets and that is saved across a
+call after the join. In `-mips.xml`, `number` makes a `write` (4004) with two
+registers set, so it also passes the kernel the `a2` its caller left.
 `tests/stages/kuna-syscallregs-cortexm.xml` is the bare-metal control: FreeRTOS's
 `xPortRaisePrivilege` keeps its returned `r0` under `auto` and `off`.
 `decompiler/crates/kuna-cli/tests/syscall_regs_cli.rs` loads the ARM witness as
@@ -1202,12 +1412,28 @@ the case targets.
    circular value range the guarded Varnode must lie in for control to reach
    the switch. A guard applies to a candidate if they are literally the same
    Varnode, quasi-copies of one base value, duplicate calculations, or loads of
-   the same location (`jumptable.rs (GuardRecord::value_match)`).
+   the same location (`jumptable.rs (GuardRecord::value_match)`). Two LOADs
+   read the same location when their addresses are one Varnode or one base plus
+   equal constants, or when the addresses are computed by the same pure ops
+   from the same Varnodes and no STORE, CALL, CALLIND or CALLOTHER lies between
+   the loads on a chain of single-predecessor blocks
+   (`jumptable.rs (GuardRecord::no_write_between)`). gcc's compact selector
+   `cmp byte [rax+rcx],N; ja; movzx edi,byte [rax+rcx]` guards one load and
+   indexes the table with the other; without that match the byte's full 256
+   rows were emulated and the next table's rows were read with this table's
+   base, sending flow into instruction interiors (#1028).
 3. **Range.** For each meld candidate, `jumptable.rs
    (JumpBasicModel::calc_range)` seeds a range from what the Varnode itself
    proves (a constant; a boolean output = {0,1}; an AND-mask bound + power-of-2
    stride from the non-zero mask) and intersects every matching guard range;
-   ranges still larger than 0x10000 are assumed positive.
+   ranges still larger than 0x10000 are assumed positive. After that existing
+   domain narrowing, matching guards are intersected again by
+   `decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchguardrange.rs (intersect)`.
+   Two circular guard ranges whose first intersection needed two intervals may
+   now intersect as one interval. This retains both bounds of a guarded A32 `ADDPL pc,pc,index,lsl #2`
+   table instead of dropping its branch bodies into an unresolved interior call.
+   ARM's lifted PC+8 base, the predicate's fallthrough, and actual indirect calls
+   retain their existing flow semantics.
    `find_smallest_normal` picks the candidate with the smallest reaching range
    as the normalized variable — refusing a 1-byte, 256-value candidate unless a
    table LOAD lies between it and the branch (a bare byte is not evidence of a
@@ -1409,7 +1635,13 @@ exclude a row the table still lists. Otherwise, when the fresh
 model's own values rebuild the whole table row for row (`jumptable.rs
 (JumpBasicModel::rebuilds_rows)`), the labels come from those values; this
 covers a fresh normalized variable that is offset from the flow-time one. When
-neither holds — typically because the fresh
+neither holds, the normalized variable first moves away from the branch, to
+the first common Varnode behind it whose range is bounded and that labels the
+rows (`jumptable.rs (JumpBasicModel::label_by_deeper_variable)`): a guard on a
+reloaded map entry can make that entry the smallest range late, while the
+flow-time rows were labelled by the selector in front of the map, whose own
+guard the late search no longer finds behind the retry loop. When no such
+variable exists — typically because the fresh
 variable is a mapped selector, an index already looked up in a byte map in
 front of the target table — the basic model first tries the guard-bound
 recovery paths (`switchmodbound`, `switchguardbound`, `switchsharedcase`,
@@ -1454,10 +1686,28 @@ as default and collapsing the CBRANCH to a constant predicate). Once a fold
 has set the default, a later fold must target the same block, as must every
 fold on a table whose labels rely on its current default; a fold clears
 the structuring so the new edge is re-structured, and the constant-predicate
-residue is severed on the re-run by `ActionDeterminedBranch`. Before
-structuring, any table still without a default marks its most-targeted
-out-edge as the default (`decompiler/crates/kuna-decomp/src/p8_structure/blockaction.rs
-(ActionBlockStructure)` via `funcdata_block.rs (Funcdata::install_switch_defaults)`).
+residue is severed on the re-run by `ActionDeterminedBranch`.
+
+The default-path model (JumpBasic2) handles surviving guards differently
+(`jumptable.rs (JumpBasicModel::fold_in_guards)`). Its final table row is the
+constant destination selected on the alternate path, and its `NO_LABEL` means
+that destination is the default, not an unresolved user command. The fold
+marks that row's existing out-edge as default and clears the guard record
+without rewriting the CBRANCH. Normalization and ordinary dead-code removal
+can eliminate empty selection blocks, while guarded statements and loop
+conditions remain. Sending this shape through the basic guard fold instead
+can add another default edge back into the selector block, leaving the real
+default row labelled with the sentinel and invalid commands looping or
+returning no value. A default that shares an ordinary case body uses that
+same out-edge; the most-targeted-edge heuristic is not required to recognize
+a distinct default destination.
+
+Flow-time `jumptable.rs (JumpTable::switch_over)` initially chooses the
+most-targeted out-edge as default only when at least two rows share it.
+Before structuring, `decompiler/crates/kuna-decomp/src/p8_structure/blockaction.rs
+(ActionBlockStructure)` calls `funcdata_block.rs (Funcdata::install_switch_defaults)`
+to mark the selected default edge in the basic-block graph, from which each
+structured `CaseOrder` receives its default classification.
 
 **Table lifetime.** A `JumpTable` is only as alive as the BRANCHIND it points
 at, so removing that op has to remove the table. `funcdata_block.rs
@@ -1792,7 +2042,15 @@ is never changed, only what counts as a bound.
   predecessor's guard as a function of its MULTIEQUAL input (same
   first-routing-flip evaluation as `switchguardbound`, trampoline blocks
   peeled up to 4 deep) and re-binds the table to the *union* — the max — of
-  the per-path prefixes.
+  the per-path prefixes. The lockstep walk also records nothing when the
+  copies of one check branch with opposite senses (one `ja default`, the other
+  `jbe dispatch`, as in libselinux `getprocattrcon_raw`), and a byte index then
+  kept its full 256-row range, which is not over-sized, so the fallback never
+  ran. `jumptable.rs (JumpBasicModel::check_unrolled_guard_by_edge)` pulls
+  each edge's check back under that edge's own toward-switch sense until it
+  reaches the edge's input to one MULTIEQUAL of the dispatch block, and records
+  the union of the per-edge ranges as an unrolled guard on the MULTIEQUAL
+  output (#1028).
 
 **(angr) `unrolledguard`, default off** — despite the name, not a guard
 analysis: a partial-flow tolerance in `flow.rs (FlowInfo::collect_edges)` for
@@ -1852,17 +2110,16 @@ after a returning callee that happens to share a listed name.
 
 **(kuna) SPARC struct return — `option sparcstructret`, default off,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_sparcstructret.rs
-(kuna_is_sparc_struct_ret_trap)` (from Ghidra issue GH-6882).** The SPARC ABI
-plants an `unimp <structsize>` word after a call to a struct-returning
-function; the SLEIGH spec lifts it to an `IllegalInstructionTrap` CALLOTHER
-feeding a BRANCHIND, which jump-table recovery can never resolve — so the
-function loses its tail to a non-returning CALLIND. The predicate, consulted in
-the BRANCHIND arm of `xref_control_flow`, identifies the idiom *positionally*
-(pre-SSA the input is not def-linked): walk backwards over the dead list within
-the same instruction looking for a CALLOTHER whose user op is named
-`IllegalInstructionTrap`. On a match the BRANCHIND is destroyed and the
-instruction falls through. Kept opt-in per program: globally it would convert a
-*real* trap into silent fall-through on other targets.
+(kuna_sparc_struct_ret_trap_producer)` (from Ghidra issue GH-6882).** The SPARC ABI
+places an `unimp <structsize>` word after a call to a struct-returning function.
+SLEIGH lifts this marker to an `IllegalInstructionTrap` CALLOTHER feeding a
+BRANCHIND. With the option enabled, flow classification recognizes the named
+trap within the same instruction and removes the branch so execution falls
+through. When the producer has an output, it becomes an inert COPY, retaining
+its instruction-start operation until SSA so raw flow targets remain valid.
+If the producer cannot be rewritten, the branch is still removed, preserving
+the previous drop-only behavior. The option remains off by default because
+interpreting a real trap as an ABI marker would suppress its trap effect.
 
 **Emulate-function hooks.** `kuna_emulatefunction.rs (EmulateFunction)` is the
 lightweight emulator behind every address enumeration in §2.3: a memory state
@@ -2161,3 +2418,38 @@ appending a register-carried byte through a specialized grow helper, a two-byte
 literal append whose returned reference is used, an unprovable register-count
 append, a collapse whose continuation zeroes the changed registers, and 29 near
 misses, one defect each, that must stay unrolled in both passes.
+
+### ARM CPSR control fields (GH-848)
+
+ARM-state `MRS CPSR` combines modeled NZCVQ flags with
+`readCPSRControl()` state. Before ARMv6, the helper supplies bits 0 through 26,
+including the architecturally reserved status bits 19:16. On ARMv6 and later,
+`GE1` through `GE4` supply bits 19:16 directly and those bits are excluded from
+the helper value. `MSR CPSR` sends selected non-flag control bits to
+`writeCPSRControl(value, mask)`; on ARMv6 and later, selected GE bits update the
+modeled `GE1` through `GE4` fields instead. The helper accesses explicit
+architectural state, including the IRQ/FIQ and processor-mode control byte; it
+does not change the host process interrupt state. An execution adapter must
+provide processor-version and privilege-appropriate reads and masked writes.
+Register and immediate MSR update NZCVQ only when the flag byte is selected,
+preserving arithmetic flags across control-only writes.
+
+### RISC-V moves and conversions from FP to integer registers (GH-831)
+
+`fmv.x.d` copies the 64-bit pattern of its FP source into the integer
+destination. `fmv.x.w` copies the low 32 bits of the FP register and, on RV64,
+sign-extends them to the register width. `fcvt.w.d`, `fcvt.wu.d`, `fcvt.w.s`
+and `fcvt.wu.s` write their 32-bit result the same way. The unsigned forms
+convert to a 64-bit integer and keep its low 32 bits, so a source in
+[2^31, 2^32) gets its unsigned value, which a 32-bit signed conversion cannot
+represent.
+The FP operand is read as a value. Reading it through a register-space pointer
+to the operand's address would read the temporary that the operand table
+exports, at register offset 0x900, which prints as `dat_900`. The result is
+written to `rd` with `assignW`. A destination table that exports a temporary
+copy of the register would drop the write, which made these conversions
+produce no value at all. The fix is in the RISC-V SLEIGH sources, so
+`riscv.lp64d.sla`, `riscv.ilp32d.sla` and `andestar_v5.sla` must be rebuilt.
+Exercised by `tests/stages/gh831-riscv-fpmove.xml` (RV64: a call result moved
+by `fmv.x.d` and `fmv.x.w`, and all four conversions) and
+`tests/stages/gh831-riscv32-fpmove.xml` (the RV32 forms).

@@ -1,0 +1,80 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The ARM decode mode the Listing walk carries along its control flow
+    (`option armwalkmode on|off`, default on, GH-780).
+
+    The XML wrapper only provides the harness architecture. Every pass clears
+    it and loads a synthetic stripped ARM32 ELF from `arm_interwork_le32.py`
+    with the Listing walk on, as every CLI surface runs it on ARM. An A32
+    entry at 0x2000000 calls a Thumb helper at 0x2000040 (`movs r0,#7; bx lr`)
+    with `blx` and an A32 helper at 0x2000080 (`add r0,r0,#1; bx lr`) with
+    `bl`. No symbol or mapping symbol names either mode.
+
+    Pass 1, `arm_interwork_le32` (the issue's layout, `blx` first), option
+    off: the `blx` writes Thumb into the context database from 0x2000040 to
+    the end of the address space, the walk decodes the A32 helper in it, and
+    the decompiler prints `halt_missing()` (a Thumb decode starting at
+    0x2000082).
+
+    Pass 2, the same image, default: the `bl` target keeps the caller's A32
+    mode, so the A32 helper returns `a0 + 1`, the `blx` target still decodes
+    as Thumb and returns 7, and the entry passes the Thumb result to the A32
+    helper.
+
+    Pass 3, `arm_interwork_bl_first_le32` (the two calls swapped), default:
+    the A32 helper returns `a0 + 1`.
+
+    Pass 4, `arm_pointer_thumb_exe_le32` (gcc -O0, stripped), default: the
+    Thumb `t_ptr` at 0x10172 is reached only through a pointer table, so no
+    flow carries a mode to it, and it keeps the Thumb a `blx` below it wrote.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_le32</com>
+  <com>option listing on</com>
+  <com>option armwalkmode off</com>
+  <com>read symbols</com>
+  <com>load addr 0x2000080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_le32</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2000080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2000040</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2000000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_bl_first_le32</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2000080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_pointer_thumb_exe_le32</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load addr 0x10172</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ARMWALKMODE #1: off, the A32 helper after the blx target decodes as Thumb" min="1" max="1">halt_missing</stringmatch>
+<stringmatch name="ARMWALKMODE #2: default, the bl target keeps A32 in both call orders" min="2" max="2">return a0 \+ 1;</stringmatch>
+<stringmatch name="ARMWALKMODE #3: default, the blx target decodes as Thumb and returns 7" min="1" max="1">return 7;</stringmatch>
+<stringmatch name="ARMWALKMODE #4: default, the entry passes the Thumb result to the A32 helper" min="1" max="1">sub_2000080\(sub_2000040\(\)\)</stringmatch>
+<stringmatch name="ARMWALKMODE #5: default, a pointer-only Thumb function keeps the mode a blx below it wrote" min="1" max="1">v2 \+= sub_10158\(v1\);</stringmatch>
+</decompilertest>

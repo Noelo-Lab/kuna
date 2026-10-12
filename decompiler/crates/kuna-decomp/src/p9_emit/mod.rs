@@ -14,6 +14,7 @@ pub mod cast;
 pub mod stringmanage;
 pub mod kuna_naming;
 pub mod kuna_varsources;
+mod kuna_calltransport;
 pub mod kuna_arraynotation;
 pub mod kuna_declhightype;
 pub mod kuna_castsign; // (kuna) signed declarations for frame locals and the readers signedness vetoes
@@ -29,6 +30,9 @@ pub mod kuna_labelstmt; // (kuna) every printed C label labels a statement
 pub mod kuna_warnstyle;
 pub mod kuna_infloopstyle;
 pub mod kuna_arraycoverwidth;
+pub mod kuna_bytearrayc;
+pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled LSL
+mod kuna_armconstantshift;
 pub mod kuna_emptystrconst;
 pub mod kuna_truncarg;
 pub mod kuna_pointerargs; // (kuna) a scalar's address passed to a character-pointer parameter

@@ -181,6 +181,7 @@ fn intersect_op_set_skips_boundary_ops() {
         block_index: 2,
         point: op_point(u),
         order: u,
+        store: false,
     };
     let populate = move || vec![entry(10), entry(15), entry(20)];
     let mut op_set = PcodeOpSet::new(Box::new(populate), Box::new(affects));
@@ -204,6 +205,29 @@ fn intersect_op_set_skips_boundary_ops() {
     assert!(seen.contains(&ffi(15)), "interior op must be tested, saw {seen:?}");
     assert!(!seen.contains(&ffi(10)), "start-boundary op must be skipped");
     assert!(!seen.contains(&ffi(20)), "tail-boundary op must be skipped");
+}
+
+/// `intersect_op_set` tests a STORE in the set's block right after a block
+/// the cover and the set share: block 2 holds only an op outside the cover,
+/// block 3 an op inside it. A CALL there keeps upstream's walk, which skips it.
+#[test]
+fn intersect_op_set_tests_a_store_in_the_block_after_a_shared_one() {
+    let mut cover = single_block_cover_range(2, op_point(10), op_point(20));
+    cover.merge(&single_block_cover_range(3, op_point(5), op_point(30)));
+    let entry = |blk: int4, u: uintm, store: bool| PcodeOpSetEntry {
+        id: OpId::from(KeyData::from_ffi(u64::from(u) + 1)),
+        block_index: blk,
+        point: op_point(u),
+        order: u,
+        store,
+    };
+    let rep_addr = kuna_base::address::Address::new_invalid();
+    for store in [true, false] {
+        let populate = move || vec![entry(2, 25, store), entry(3, 15, store)];
+        let mut op_set = PcodeOpSet::new(Box::new(populate), Box::new(|_, _| true));
+        op_set.populate();
+        assert_eq!(cover.intersect_op_set(&op_set, &rep_addr), store);
+    }
 }
 
 /// Build a one-block cover [start,stop] at the given index through the public

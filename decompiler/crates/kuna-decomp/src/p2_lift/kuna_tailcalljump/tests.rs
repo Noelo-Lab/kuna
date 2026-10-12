@@ -95,6 +95,7 @@ fn without_a_branch_override_tailcalljump_claims_first() {
     assert_eq!(
         crate::flow::select_inferred_tail_call(
             false,
+            false,
             || kuna_is_tail_call_branch(&fd, op, true, true, false),
             || {
                 frame_consulted.set(true);
@@ -129,6 +130,44 @@ fn indirect_branch_returns_false() {
     // A BRANCHIND (indirect jump) is not a direct tail-call jmp.
     let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x18d0);
     assert!(!kuna_is_tail_call_branch(&fd, op, true, true, false));
+}
+
+#[test]
+fn conditional_tail_requires_a_bound_and_another_known_entry() {
+    let mut fd = build_fd();
+    let op = build_branch_op(&mut fd, OpCode::CPUI_CBRANCH, 0x18d0);
+    assert!(kuna_is_tail_call_branch(&fd, op, true, true, false));
+    assert!(!kuna_is_tail_call_branch(&fd, op, false, true, false));
+    assert!(!kuna_is_tail_call_branch(&fd, op, true, false, false));
+    assert!(!kuna_is_tail_call_branch(&fd, op, true, true, true));
+    assert_eq!(
+        crate::flow::select_inferred_tail_call(
+            false,
+            true,
+            || kuna_is_tail_call_branch(&fd, op, true, true, false),
+            || panic!("an interior entry must never consult frame teardown"),
+        ),
+        None,
+    );
+    let mut unbounded = Funcdata::new(
+        "unbounded", "unbounded", Rc::clone(fd.get_arch()), fd.get_address().clone(), 0x1000_0000, 0,
+    ).unwrap();
+    let op = build_branch_op(&mut unbounded, OpCode::CPUI_CBRANCH, 0x18d0);
+    assert!(!kuna_is_tail_call_branch(&unbounded, op, true, true, false));
+}
+
+#[test]
+fn conditional_tail_staging_accepts_a_free_condition_input() {
+    let mut fd = build_fd();
+    let ram = proc_space(&fd);
+    let branch = fd.new_op(2, Address::new(ram.clone(), 0x1000));
+    fd.op_set_opcode_code(branch, OpCode::CPUI_CBRANCH);
+    let dest = Address::new(ram.clone(), 0x18d0);
+    let target = fd.new_code_ref(&dest);
+    let condition = fd.new_varnode(1, &Address::new(ram, 0x2000), None);
+    fd.op_set_input(branch, target, 0).unwrap();
+    fd.op_set_input(branch, condition, 1).unwrap();
+    conditional_tail_branches(&mut fd, branch, &dest).unwrap();
 }
 
 #[test]

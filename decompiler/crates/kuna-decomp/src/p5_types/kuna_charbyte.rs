@@ -351,9 +351,10 @@ pub fn seed_char(data: &mut Funcdata, bytes: &[VarnodeId]) {
             }
             _ => continue,
         };
+        let usepoint = data.vn_use_point(vn);
         let locked = data
             .get_scope_local()
-            .and_then(|lm| lm.build_localtype_seed(&addr, size, tlst))
+            .and_then(|lm| lm.build_localtype_seed_at(&addr, size, &usepoint, tlst))
             .is_some();
         if !locked {
             if let Some(v) = data.vbank_mut().get_mut(vn) {

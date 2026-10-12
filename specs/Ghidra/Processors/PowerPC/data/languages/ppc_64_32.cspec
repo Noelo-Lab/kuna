@@ -12,6 +12,9 @@
   </global>
   <data_organization>
 	<pointer_size value="4"/>
+	<integer_size value="4"/>
+	<long_size value="4"/>
+	<long_long_size value="8"/>
   </data_organization>
   <aggressivetrim signext="true"/>  <!-- Pointers are 4-bytes but are held in 8-byte registers -->
   <stackpointer register="r1" space="ram"/>

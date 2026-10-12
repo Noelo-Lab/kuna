@@ -85,6 +85,16 @@ fn arm32_is_ilp32() {
     assert_eq!((w.0, w.1, w.2, w.3, w.4, w.5), (1, 2, 4, 4, 8, 4), "arm integer widths");
 }
 
+/// MIPS o32 and 32-bit PowerPC System V are ILP32 too. Their cspecs used to
+/// leave `long_size` out, and the `setup_sizes` fallback for that is 8 bytes.
+#[test]
+fn mips32_and_ppc32_are_ilp32() {
+    for fixture in ["mips_gp_le32", "bejoin_mips32_be.o", "bejoin_ppc32_be.o", "bejoin_ppc32_le.o"] {
+        let w = widths_of(fixture);
+        assert_eq!((w.0, w.1, w.2, w.3, w.4, w.5), (1, 2, 4, 4, 8, 4), "{fixture} integer widths");
+    }
+}
+
 /// A cspec that declares no `<long_double_size>` must fall back to `double`
 /// rather than to 0 — otherwise a float speller would match size 0 and a
 /// `long double` would become unspellable on every such target. This asserts the

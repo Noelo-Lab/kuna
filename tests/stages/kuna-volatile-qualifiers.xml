@@ -1,0 +1,31 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v5t">
+<!-- Authored ARM: ldr r1,[r0]; ldr r0,[r0]; add r0,r1,r0; bx lr. -->
+<bytechunk space="ram" offset="0x1000">001090e5000090e5000081e01eff2fe1</bytechunk>
+<bytechunk space="ram" offset="0x1010">001090e5000090e5000081e01eff2fe1</bytechunk>
+<bytechunk space="ram" offset="0x1020">001090e5001090e50000a0e31eff2fe1</bytechunk>
+<symbol space="ram" offset="0x1000" name="ReadTwice"/>
+<symbol space="ram" offset="0x1010" name="ReadPointer"/>
+<symbol space="ram" offset="0x1020" name="UnusedReads"/>
+</binaryimage>
+<script>
+<com>set context TMode 0 [ram,0x1000] [ram,0x1030]</com>
+<com>parse line extern uint4 ReadTwice(volatile uint4 *control);</com>
+<com>load function ReadTwice</com>
+<com>decompile</com>
+<com>print C</com>
+<com>parse line extern uint4 ReadPointer(uint4 * volatile control);</com>
+<com>load function ReadPointer</com>
+<com>decompile</com>
+<com>print C</com>
+<com>parse line extern uint4 UnusedReads(volatile uint4 *control);</com>
+<com>load function UnusedReads</com>
+<com>decompile</com>
+<com>print C</com>
+</script>
+<stringmatch name="volatile pointee survives" min="1" max="1">ReadTwice\(volatile uint4 \*control\)</stringmatch>
+<stringmatch name="volatile pointer stays on pointer" min="1" max="1">ReadPointer\(uint4 \* volatile control\)</stringmatch>
+<stringmatch name="volatile reads remain separate" min="2" max="2">return \*control \+ \*control;</stringmatch>
+<stringmatch name="unused volatile pointee survives" min="1" max="1">UnusedReads\(volatile uint4 \*control\)</stringmatch>
+<stringmatch name="unused volatile reads remain" min="2" max="2">= \*control;</stringmatch>
+</decompilertest>

@@ -785,6 +785,9 @@ impl Rule for RuleConcatCommute {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        if crate::p3_dataflow::kuna_floatnegpiece::recover(data, op) {
+            return 1;
+        }
         let outsz = size_of(data, out_vn(data, op));
         // FIXME precision for constants
         if outsz as usize > std::mem::size_of::<uintb>() {

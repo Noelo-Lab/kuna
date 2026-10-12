@@ -1,6 +1,6 @@
 #![cfg(all(target_arch = "x86_64", target_os = "linux"))]
 
-mod common;
+use crate::common;
 
 use common::process;
 use std::path::{Path, PathBuf};
@@ -90,6 +90,7 @@ fn a_computed_global_write_stays_after_observations_and_on_its_paths() {
                     build(
                         Command::new(out_cc)
                             .args([out_level, "-w", "-fwrapv", "-DGLOBALORDER_HARNESS"])
+                            .args(common::CC_GCC15_DEMOTE)
                             .arg(fixture())
                             .arg(&source)
                             .arg(&sample)
@@ -153,6 +154,7 @@ fn switch_global_stores_keep_their_actual_access_sequence() {
                     build(
                         Command::new(out_cc)
                             .args([out_level, "-w", "-fwrapv"])
+                            .args(common::CC_GCC15_DEMOTE)
                             .arg(&trace)
                             .arg(&source)
                             .arg("-o")
@@ -206,6 +208,7 @@ fn computed_multi_global_writes_keep_the_instruction_order() {
                     build(
                         Command::new(out_cc)
                             .args([out_level, "-w", "-fwrapv", "-DGLOBALORDER_MULTIGLOBAL"])
+                            .args(common::CC_GCC15_DEMOTE)
                             .arg(&trace)
                             .arg(&source)
                             .arg(&sample)

@@ -1307,10 +1307,9 @@ impl ScopeLocal {
     /// otherwise find do not exist; this method creates them so the body Varnodes
     /// bind to the parameter names (`ptr`/`a`/`b`) instead of the raw registers.
     ///
-    /// Idempotent: if a Symbol already overlaps the parameter's storage (a console
-    /// `map addr`, a seeded host local, or a prior call) it is not re-created; it
-    /// is categorized as this parameter slot only when its storage matches the
-    /// parameter's EXACTLY (see below).
+    /// Reuse only a Symbol containing the parameter at its entry usepoint. A later
+    /// register local can share the storage without representing the input.
+    /// Categorize a reused Symbol by slot only when its storage matches exactly.
     /// Returns the new `SymbolId`, or `None` when an existing symbol was reused.
     pub fn add_param_symbol(
         &mut self,
@@ -1323,10 +1322,8 @@ impl ScopeLocal {
         if addr.is_invalid() || ct.get_size() < 1 {
             return Ok(None);
         }
-        // C++ `linkSymbol`/`queryProperties` would find any existing overlapping
-        // entry; only create when none exists (the `entry == 0` arm of
-        // `setInput`/`linkSymbol`).
-        if let Some(eref) = self.db.find_overlap(self.scope, addr, ct.get_size()) {
+        // A register local mapped at a later definition must not replace the input.
+        if let Some(eref) = self.db.find_container(self.scope, addr, ct.get_size(), restricted_usepoint) {
             // (kuna, ghidra Phase 4) An EXACT-storage match is this parameter's
             // own symbol under another guise — a host local seeded at the very
             // same address and width, or a prior call's creation — so it carries
@@ -1614,6 +1611,7 @@ impl ScopeLocal {
             return Ok(overlap_problems); // No references to stack at all
         }
 
+        crate::p6_variables::kuna_arrayextent::settle(state, &self.space, types);
         let mut cur: RangeHint = state.next().clone();
         let mut cur_end = cur.sstart.wrapping_add(cur.size as int8);
         while state.get_next() {
@@ -1805,6 +1803,29 @@ impl ScopeLocal {
             (entry.symbol, entry.get_addr().get_offset(), entry.get_offset(), entry.get_size())
         };
         let sym_off = (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
+        self.resolve_entry_name(sym, sym_off, entry_size, size, base, override_name)
+    }
+
+    /// Keep the usepoint-selected Symbol identity when assigning or reading its name.
+    pub fn resolve_default_name_for_link(
+        &mut self,
+        entry: &LinkEntryInfo,
+        size: int4,
+        base: &mut int4,
+        override_name: Option<&str>,
+    ) -> Option<(String, int4, Option<Rc<Datatype>>)> {
+        self.resolve_entry_name(entry.symbol, entry.sym_off, entry.entry_size, size, base, override_name)
+    }
+
+    fn resolve_entry_name(
+        &mut self,
+        sym: crate::database::SymbolId,
+        sym_off: int4,
+        entry_size: int4,
+        size: int4,
+        base: &mut int4,
+        override_name: Option<&str>,
+    ) -> Option<(String, int4, Option<Rc<Datatype>>)> {
         // C++ adds the Varnode to `namerec` only when `sym->isNameUndefined() &&
         // high->getSymbolOffset() < 0` — i.e. an undefined name on a high that
         // represents the WHOLE symbol (not a member access).  Here the whole-symbol
@@ -2227,6 +2248,28 @@ impl ScopeLocal {
         types: &dyn TypeFactory,
     ) -> Option<Rc<Datatype>> {
         let eref = self.db.find_overlap(self.scope, addr, size)?;
+        self.build_localtype_seed_from_entry(eref, addr, size, types)
+    }
+
+    /// Resolve a live Varnode's locked type at its definition usepoint.
+    pub fn build_localtype_seed_at(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+        types: &dyn TypeFactory,
+    ) -> Option<Rc<Datatype>> {
+        let eref = self.db.find_container(self.scope, addr, 1, usepoint)?;
+        self.build_localtype_seed_from_entry(eref, addr, size, types)
+    }
+
+    fn build_localtype_seed_from_entry(
+        &self,
+        eref: crate::database::EntryRef,
+        addr: &Address,
+        size: int4,
+        types: &dyn TypeFactory,
+    ) -> Option<Rc<Datatype>> {
         let entry = self.db.entry(self.scope, eref);
         let entry_off = entry.get_offset();
         let entry_addr_off = entry.get_addr().get_offset();
@@ -2576,6 +2619,9 @@ pub struct MapState {
     /// (kuna `stackstoreguard`) The sorted signed offsets where an open range
     /// absorbs every unlocked hint that starts inside a hint it already absorbed.
     absorbing_bases: Vec<intb>,
+    /// (kuna `arrayextent`) The arrays `extend_unbounded` lengthened, settled
+    /// once the hints are sorted.
+    extended: Vec<crate::p6_variables::kuna_arrayextent::Extended>,
 }
 
 impl MapState {
@@ -2602,6 +2648,7 @@ impl MapState {
             checker: AliasChecker::new(),
             terminator_stores: std::collections::BTreeMap::new(),
             absorbing_bases: Vec::new(),
+            extended: Vec::new(),
         }
     }
 
@@ -2858,6 +2905,22 @@ impl MapState {
     /// absorbed, instead of ending there.
     pub fn set_absorbing_bases(&mut self, bases: Vec<intb>) {
         self.absorbing_bases = bases;
+    }
+
+    /// (kuna `stackstoreguard`) Does an open range starting at `sstart` absorb
+    /// the hints inside what it absorbed?
+    pub fn is_absorbing(&self, sstart: intb) -> bool {
+        self.absorbing_bases.binary_search(&sstart).is_ok()
+    }
+
+    /// (kuna `arrayextent`) Record the arrays `extend_unbounded` lengthened.
+    pub(crate) fn set_extended(&mut self, extended: Vec<crate::p6_variables::kuna_arrayextent::Extended>) {
+        self.extended = extended;
+    }
+
+    /// (kuna `arrayextent`) Take the recorded lengthened arrays.
+    pub(crate) fn take_extended(&mut self) -> Vec<crate::p6_variables::kuna_arrayextent::Extended> {
+        std::mem::take(&mut self.extended)
     }
 
     /// (kuna `nulterminator`) Record one constant COPY into `(start, size)`;

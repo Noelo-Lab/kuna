@@ -126,6 +126,9 @@ pub const BUILTIN_WCSNCPY: uint4 = 0x10000005;
 /// (kuna) Built-in id for memset, GH-9230 constant-fill recovery
 /// (`userop.cc:36`; a kuna anchor edit — see UPSTREAM.md *Divergence*).
 pub const BUILTIN_MEMSET: uint4 = 0x10000006;
+/// (kuna) Built-in id for `syscall_error`, the failure flag a MIPS or PowerPC
+/// kernel leaves after a system call (`syscallregs`).
+pub const BUILTIN_SYSCALL_ERROR: uint4 = 0x10000007;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
@@ -980,6 +983,9 @@ impl UserOpManage {
                     Some(Rc::clone(&ptr_type)),
                     &[Some(ptr_type), Some(Rc::clone(&int_type)), Some(int_type)],
                 )
+            }
+            BUILTIN_SYSCALL_ERROR => {
+                UserPcodeOp::new_unspecialized(b"syscall_error", BUILTIN_SYSCALL_ERROR as int4)
             }
             _ => return Err(KunaError::lowlevel("Bad built-in userop id")),
         };

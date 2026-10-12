@@ -1,6 +1,6 @@
 //! A 64-bit parameter passed in a register pair stays whole when one of its
 //! registers is reused before a call that still reads the parameter.
-mod common;
+use crate::common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,

@@ -103,8 +103,9 @@
 //! before P8 structures it.
 //!
 //! The prologue init is released the same way `stackguard` releases the glibc
-//! canary init: [`collect_cookie_slots`] resolves the addrtied stack storage the
-//! scrambled cookie was written to, and
+//! canary init:
+//! [`collect_value_slots`](crate::kuna_stackguard::collect_value_slots)
+//! resolves the addrtied stack storage the scrambled cookie was written to, and
 //! [`release_canary_slots`](crate::kuna_stackguard::release_canary_slots)
 //! clears its `addrforce` (plus `ScopeLocal::markNotMapped` on the slot) so the
 //! store, the cookie read and the entry-side scramble die through the ordinary
@@ -132,7 +133,7 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
-use crate::kuna_stackguard::release_canary_slots;
+use crate::kuna_stackguard::{collect_value_slots, release_canary_slots};
 
 /// How far the structural derivation recurses before giving up.
 const WALK_DEPTH: int4 = 32;
@@ -431,65 +432,6 @@ fn cookie_cancel(
     Some(inits)
 }
 
-/// The addrtied stack storage the scrambled cookie was written to.
-///
-/// A forward fixpoint from each entry-side scramble's output over the
-/// value-preserving readers — `COPY`/`CAST` (the store into the frame slot),
-/// `INDIRECT` (the slot carried across a call), and a `MULTIEQUAL` only when
-/// EVERY input is already known to hold the scramble.  Every addrtied member of
-/// the resulting set is the `/GS` cookie slot; nothing else can join it, so the
-/// liveness release below cannot reach an unrelated local.
-fn collect_cookie_slots(
-    inits: &[OpId],
-    data: &Funcdata,
-    slots: &mut Vec<(Address, int4)>,
-) {
-    let mut set: BTreeSet<VarnodeId> = BTreeSet::new();
-    let mut work: Vec<VarnodeId> = Vec::new();
-    for &op in inits {
-        if let Some(out) = data.obank().get(op).and_then(|o| o.get_out()) {
-            if set.insert(out) {
-                work.push(out);
-            }
-        }
-    }
-    while let Some(vn) = work.pop() {
-        let readers: Vec<OpId> = match data.vbank().get(vn) {
-            Some(v) => v.descend_iter().collect(),
-            None => continue,
-        };
-        for r in readers {
-            let Some(rop) = data.obank().get(r) else { continue };
-            let joins = match rop.code() {
-                OpCode::CPUI_COPY | OpCode::CPUI_CAST => true,
-                // INDIRECT's in(0) is the value; in(1) is the blocking op.
-                OpCode::CPUI_INDIRECT => rop.get_in(0) == Some(vn),
-                OpCode::CPUI_MULTIEQUAL => {
-                    (0..rop.num_input()).all(|i| rop.get_in(i).is_some_and(|x| set.contains(&x)))
-                }
-                _ => false,
-            };
-            if !joins {
-                continue;
-            }
-            let Some(out) = rop.get_out() else { continue };
-            if set.insert(out) {
-                work.push(out);
-            }
-        }
-    }
-    for vn in set {
-        let Some(v) = data.vbank().get(vn) else { continue };
-        if !v.is_addr_tied() {
-            continue;
-        }
-        let key = (v.get_addr().clone(), v.get_size());
-        if !slots.contains(&key) {
-            slots.push(key);
-        }
-    }
-}
-
 /// Classify the exact direct, unread-output, one-cookie-cancel call this pass strips.
 fn cookie_check_op(
     data: &Funcdata,
@@ -620,7 +562,7 @@ impl Action for ActionStripMsvcStackGuard {
             return 0;
         }
         let mut slots: Vec<(Address, int4)> = Vec::new();
-        collect_cookie_slots(&inits, data, &mut slots);
+        collect_value_slots(&inits, data, &mut slots);
         data.delete_call_specs(op);
         data.op_destroy(op);
         // The check is gone; release the entry-side scramble's frame slot so the

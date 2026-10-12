@@ -1,0 +1,180 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    calltargettype (GH-869): the target of an indirect call takes the
+    function-pointer type the call states.
+
+    Stage: P5 type recovery, after every variable has its final type and just
+    before casts are decided. P0 assertion: option calltargettype on|off.
+
+    Source, built twice: gcc 11 -O1 at 0x100000 and clang 14 -O2 at 0x100100
+    (clang's symbols prefixed c_), both -fno-pic -fcf-protection=none, with the
+    tables tbl at 0x200000, tbl2 at 0x200100, ctab at 0x200200 and ftab at
+    0x200300, and a one-byte qsort stub at 0x100300:
+
+        typedef void (*fp)(void);
+        typedef int (*fp2)(int, long);
+        typedef int (*cmpf)(const void *, const void *);
+        typedef float (*f1)(float);
+        struct ops { int (*op)(int); void *d; };
+        extern fp tbl[];
+        extern fp2 tbl2[];
+        extern cmpf ctab[];
+        extern f1 ftab[];
+        int r1(int a, long b) { return a + (int)b; }
+        void call(unsigned i) { tbl[i](); }
+        int call2(unsigned i, int x) { return tbl2[i](x, 7) + 1; }
+        int calls(struct ops *o, int v) { return o->op(v) * 2; }
+        long twice(long (**t)(), long a)
+        { long (*f)() = t[0]; return f(a) + f(a, a); }
+        int chosen(int c, int x)
+        { int (*f)(int, long) = c ? r1 : tbl2[0]; return f(x, 1) + f(x, 2); }
+        int sorter(int *a, unsigned long n, unsigned w)
+        { cmpf c = ctab[w];
+          if (c(a, a + 1) > 0) qsort(a, n, sizeof *a, c); return a[0]; }
+        void fstore(unsigned i, float *p) { p[0] = ftab[i & 1](p[1]); }
+
+    Pass 1 (ctypes on, option calltargettype off, the shipped catalog default)
+    is the bug: the prototype-less code pointer every target is typed as prints
+    void *, so call, call2 and calls each call a void * (asserts 1, 3), which no
+    C compiler accepts. Pass 2 (ctypes on, calltargettype on, what the
+    aggressive preset selects) types each target from its call: the table entry
+    is loaded through void (**)(void) (assert 2), the local holding a table
+    entry is declared int (*)(unsigned int,unsigned long) and loaded through a
+    pointer to it (asserts 4, 5), and the field read through an integer pointer
+    is cast to int (*)(unsigned int) where it was cast to void * (asserts 6 to
+    8). The cast count does not change.
+
+    Every pass leaves these alone (asserts 9 to 16): twice calls one local with
+    one and with two arguments; chosen's local receives the address of r1, whose
+    own prototype C would have to match; sorter hands its local to qsort, whose
+    comparator slot has the header's own type; and fstore passes the float it
+    loaded, which recovery holds as an unsigned int in xmm0. A type built from
+    that unsigned int would pass it in edi and read the result from eax, so the
+    call keeps void * rather than compile to one that computes something else.
+
+    Pass 3 (ctypes off, calltargettype on) prints the upstream spelling it
+    always printed: the option needs C's own spelling, so it does nothing there
+    (asserts 17 to 19). Every assertion holds for the gcc and the clang build.
+
+    Assertions span the combined output of the three passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+8d0437c34883ec0889ffff14fd000020004883c408c34883ec0889f289f8be07
+00000089d7ff14c50001200083c0014883c408c34883ec084889f889f7ff1001
+c04883c408c3415455534889f54c8b274889f7b80000000041ffd44889c34889
+ee4889efb80000000041ffd44801d85b5d415cc3415455534189f485ffbd0000
+1000480f442d76001000be010000004489e7ffd589c3be020000004489e7ffd5
+01d85b5d415cc3415455534889fb4889f589d24c8b24d500022000488d770441
+ffd485c07f078b035b5d415cc34c89e1ba040000004889ee4889dfe820020000
+ebe4534889f3f30f10460483e701ff14fd00032000f30f11035bc30f1f440000
+8d043ec3662e0f1f840000000000669089f8ff24c5000020000f1f8000000000
+5089f089f9be0700000089c7ff14cd0001200083c00159c30f1f840000000000
+504889f889f7ff1001c059c30f1f400041574156534889f34c8b3f4889f731c0
+41ffd74989c64889df4889de31c041ffd74c01f05b415e415fc3660f1f440000
+5541565389f3bd0001100085ff7507488b2d6aff0f00be0100000089dfffd541
+89c6be0200000089dfffd54401f05b415e5dc3662e0f1f8400000000000f1f00
+41574156534989f64889fb89d04c8b3cc500022000488d770441ffd785c07e13
+ba040000004889df4c89f64c89f9e80d0100008b035b415e415fc30f1f440000
+534889f383e701f30f104604ff14fd00032000f30f11035bc3662e0f1f840000
+000000662e0f1f840000000000662e0f1f840000000000662e0f1f8400000000
+00662e0f1f840000000000662e0f1f840000000000662e0f1f84000000000066
+2e0f1f840000000000662e0f1f840000000000662e0f1f840000000000662e0f
+1f840000000000662e0f1f840000000000662e0f1f840000000000662e0f1f84
+0000000000662e0f1f840000000000662e0f1f840000000000662e0f1f840000
+000000662e0f1f840000000000662e0f1f840000000000662e0f1f8400000000
+00662e0f1f840000000000662e0f1f840000000000662e0f1f84000000000090
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x200000">
+0000000000000000000000000000000000000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="r1"/>
+<symbol space="ram" offset="0x100004" name="call"/>
+<symbol space="ram" offset="0x100016" name="call2"/>
+<symbol space="ram" offset="0x100034" name="calls"/>
+<symbol space="ram" offset="0x100046" name="twice"/>
+<symbol space="ram" offset="0x100074" name="chosen"/>
+<symbol space="ram" offset="0x1000a7" name="sorter"/>
+<symbol space="ram" offset="0x1000e2" name="fstore"/>
+<symbol space="ram" offset="0x100100" name="c_r1"/>
+<symbol space="ram" offset="0x100110" name="c_call"/>
+<symbol space="ram" offset="0x100120" name="c_call2"/>
+<symbol space="ram" offset="0x100140" name="c_calls"/>
+<symbol space="ram" offset="0x100150" name="c_twice"/>
+<symbol space="ram" offset="0x100180" name="c_chosen"/>
+<symbol space="ram" offset="0x1001c0" name="c_sorter"/>
+<symbol space="ram" offset="0x100200" name="c_fstore"/>
+<symbol space="ram" offset="0x100300" name="qsort"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>option calltargettype off</com>
+<com>lo fu call</com><com>decompile</com><com>print C</com>
+<com>lo fu call2</com><com>decompile</com><com>print C</com>
+<com>lo fu calls</com><com>decompile</com><com>print C</com>
+<com>lo fu twice</com><com>decompile</com><com>print C</com>
+<com>lo fu chosen</com><com>decompile</com><com>print C</com>
+<com>lo fu sorter</com><com>decompile</com><com>print C</com>
+<com>lo fu fstore</com><com>decompile</com><com>print C</com>
+<com>lo fu c_call</com><com>decompile</com><com>print C</com>
+<com>lo fu c_call2</com><com>decompile</com><com>print C</com>
+<com>lo fu c_calls</com><com>decompile</com><com>print C</com>
+<com>lo fu c_twice</com><com>decompile</com><com>print C</com>
+<com>lo fu c_chosen</com><com>decompile</com><com>print C</com>
+<com>lo fu c_sorter</com><com>decompile</com><com>print C</com>
+<com>lo fu c_fstore</com><com>decompile</com><com>print C</com>
+<com>option ctypes on</com>
+<com>option calltargettype on</com>
+<com>lo fu call</com><com>decompile</com><com>print C</com>
+<com>lo fu call2</com><com>decompile</com><com>print C</com>
+<com>lo fu calls</com><com>decompile</com><com>print C</com>
+<com>lo fu twice</com><com>decompile</com><com>print C</com>
+<com>lo fu chosen</com><com>decompile</com><com>print C</com>
+<com>lo fu sorter</com><com>decompile</com><com>print C</com>
+<com>lo fu fstore</com><com>decompile</com><com>print C</com>
+<com>lo fu c_call</com><com>decompile</com><com>print C</com>
+<com>lo fu c_call2</com><com>decompile</com><com>print C</com>
+<com>lo fu c_calls</com><com>decompile</com><com>print C</com>
+<com>lo fu c_twice</com><com>decompile</com><com>print C</com>
+<com>lo fu c_chosen</com><com>decompile</com><com>print C</com>
+<com>lo fu c_sorter</com><com>decompile</com><com>print C</com>
+<com>lo fu c_fstore</com><com>decompile</com><com>print C</com>
+<com>option ctypes off</com>
+<com>option calltargettype on</com>
+<com>lo fu call</com><com>decompile</com><com>print C</com>
+<com>lo fu call2</com><com>decompile</com><com>print C</com>
+<com>lo fu calls</com><com>decompile</com><com>print C</com>
+<com>lo fu twice</com><com>decompile</com><com>print C</com>
+<com>lo fu chosen</com><com>decompile</com><com>print C</com>
+<com>lo fu sorter</com><com>decompile</com><com>print C</com>
+<com>lo fu fstore</com><com>decompile</com><com>print C</com>
+<com>lo fu c_call</com><com>decompile</com><com>print C</com>
+<com>lo fu c_call2</com><com>decompile</com><com>print C</com>
+<com>lo fu c_calls</com><com>decompile</com><com>print C</com>
+<com>lo fu c_twice</com><com>decompile</com><com>print C</com>
+<com>lo fu c_chosen</com><com>decompile</com><com>print C</com>
+<com>lo fu c_sorter</com><com>decompile</com><com>print C</com>
+<com>lo fu c_fstore</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="CALLTARGETTYPE #1: off calls a table entry through void **" min="2" max="2">\(\*\*\(void \*\*\)\(a0 \* 8UL \+ 0x200000\)\)\(\);</stringmatch>
+<stringmatch name="CALLTARGETTYPE #2: on loads the table entry through void (**)(void)" min="2" max="2">\(\*\*\(void \(\*\*\)\(void\)\)\(a0 \* 8UL \+ 0x200000\)\)\(\);</stringmatch>
+<stringmatch name="CALLTARGETTYPE #3: off declares the called temporaries void *" min="4" max="4">void \*v1; // tmp</stringmatch>
+<stringmatch name="CALLTARGETTYPE #4: on declares the local from its call" min="2" max="2">int \(\*v1\)\(unsigned int,unsigned long\); // tmp</stringmatch>
+<stringmatch name="CALLTARGETTYPE #5: on loads the local through a pointer to its type" min="2" max="2">v1 = \*\(int \(\*\*\)\(unsigned int,unsigned long\)\)\(\(a0 &amp; 0xffffffff\) \* 8 \+ 0x200100\);</stringmatch>
+<stringmatch name="CALLTARGETTYPE #6: on declares the field temporary from its call" min="2" max="2">int \(\*v1\)\(unsigned int\); // tmp</stringmatch>
+<stringmatch name="CALLTARGETTYPE #7: on casts the field to the call type where off cast it to void *" min="2" max="2">v1 = \(int \(\*\)\(unsigned int\)\)\*a0;</stringmatch>
+<stringmatch name="CALLTARGETTYPE #8: off casts the field to void *, as twice does in both ctypes passes" min="6" max="6">v1 = \(void \*\)\*a0;</stringmatch>
+<stringmatch name="CALLTARGETTYPE #9: calls of two arities keep the local untyped" min="6" max="6">v2 = \(\*v1\)\(a1\);</stringmatch>
+<stringmatch name="CALLTARGETTYPE #10: the two calls are unchanged" min="6" max="6">return \(\*v1\)\(a1,a1\) \+ v2;</stringmatch>
+<stringmatch name="CALLTARGETTYPE #11: a local holding a function address keeps void *" min="4" max="4">void \*v2; // ram 0x200100 \| rbp</stringmatch>
+<stringmatch name="CALLTARGETTYPE #12: the address is still stored into it" min="6" max="6">v2 = (c_)?r1;</stringmatch>
+<stringmatch name="CALLTARGETTYPE #13: a local handed to a library callback slot keeps void *" min="4" max="4">v1 = \*\(void \*\*\)\(.*0x200200\);</stringmatch>
+<stringmatch name="CALLTARGETTYPE #14: a float held as an integer in xmm0 keeps the call untyped" min="4" max="4">void \*v2; // tmp</stringmatch>
+<stringmatch name="CALLTARGETTYPE #15: the float call prints as it did" min="6" max="6">\*a1 = \(\*v2\)\(v1\);</stringmatch>
+<stringmatch name="CALLTARGETTYPE #16: no integer function type is built over xmm0" min="0" max="0">unsigned int \(\*v2\)\(unsigned int\)</stringmatch>
+<stringmatch name="CALLTARGETTYPE #17: ctypes off keeps the upstream table call" min="2" max="2">\(\*\*\(code \*\*\)\(a0 \* 8UL \+ 0x200000\)\)\(\);</stringmatch>
+<stringmatch name="CALLTARGETTYPE #18: ctypes off keeps code * temporaries" min="4" max="4">code \*v1; // tmp</stringmatch>
+<stringmatch name="CALLTARGETTYPE #19: ctypes off builds no function type" min="0" max="0">int4 \(\*</stringmatch>
+</decompilertest>

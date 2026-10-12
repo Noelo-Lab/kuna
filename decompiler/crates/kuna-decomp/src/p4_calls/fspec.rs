@@ -984,6 +984,8 @@ pub mod param_trial_flags {
     /// Solid movement into the Varnode.
     pub const ANCESTOR_SOLID: uint4 = 0x400;
     pub const STACK_ADDRESS: uint4 = 0x800;
+    /// (kuna) Solid only through a reload from the caller's frame.
+    pub const FRAME_RELOAD: uint4 = 0x1000;
 }
 
 /// A register or memory location that may be used to pass a parameter or return
@@ -1149,6 +1151,8 @@ impl ParamTrial {
     /// Record opt-in evidence that this input carries a stack address.
     pub fn set_stack_address(&mut self) { self.flags |= param_trial_flags::STACK_ADDRESS; }
     pub fn has_stack_address(&self) -> bool { self.flags & param_trial_flags::STACK_ADDRESS != 0 }
+    pub fn set_frame_reload(&mut self) { self.flags |= param_trial_flags::FRAME_RELOAD; }
+    pub fn has_frame_reload(&self) -> bool { self.flags & param_trial_flags::FRAME_RELOAD != 0 }
 
     /// Does this show solid movement into the Varnode (C++ `hasAncestorSolid`)?
     pub fn has_ancestor_solid(&self) -> bool {
@@ -3742,6 +3746,13 @@ impl ParamListStandard {
     /// entries are present (the C++ ordering: rules come after entries).
     pub fn push_model_rule(&mut self, rule: ModelRule) {
         self.model_rules.push(rule);
+    }
+
+    /// (kuna) Put `rules` ahead of the decoded ones, for a model derived from
+    /// another.  `rules` carry no `fillinOutputMap` action, so the fallback
+    /// [`Self::initialize`] chose stands.
+    pub(crate) fn kuna_prepend_model_rules(&mut self, rules: Vec<ModelRule>) {
+        self.model_rules.splice(0..0, rules);
     }
 
     /// Append the synthetic `pointermax` ConvertToPointer rule (C++
@@ -7963,6 +7974,7 @@ impl FuncCallSpecs {
         if !self.is_input_locked() {
             return Ok(());
         }
+        let variadic = crate::p4_calls::kuna_varargtransfer::pending_trials(data, self);
         let stackref = self.get_spacebase_relative(data);
         let mut placeholder = if self.stack_placeholder_slot >= 0 {
             data.obank()
@@ -8003,6 +8015,15 @@ impl FuncCallSpecs {
                 noplacehold = false;
                 placeholder = None; // with a locked stack param, no placeholder needed
             }
+        }
+        for (mut trial, vn) in variadic {
+            trial.set_slot(newinput.len() as int4);
+            trial.set_entry(None, -1);
+            trial.set_fixed_position(-1);
+            newinput.push(Some(vn));
+            let index = self.activeinput.get_num_trials();
+            self.activeinput.register_trial(trial.get_address(), trial.get_size());
+            *self.activeinput.get_trial_mut(index) = trial;
         }
         if let Some(ph) = placeholder {
             // Still need a placeholder: add it at the end of the parameters.

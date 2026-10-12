@@ -13,6 +13,9 @@
 <compiler_spec>
   <data_organization>
 	<pointer_size value="4"/>
+    <integer_size value="4"/>
+    <long_size value="4"/>
+    <long_long_size value="8"/>
     <float_size value="4" />
     <double_size value="8" />
     <long_double_size value="8" />

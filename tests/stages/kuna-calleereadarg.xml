@@ -1,0 +1,123 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-881 part B / GH-866: a call argument the caller also tests is dropped.
+
+        int t9(int *p) { int x = *p + 2; if (x) return ext(x) + 1; return 5; }
+
+    gcc -O2 computes x straight into the argument register and tests it there
+    (lea 0x2(%rax),%edi; test %edi,%edi; je; call ext), and kuna printed
+    `return ext() + 1;`.  gcc's `int fwd(int *p) { int x = *p; if (x > 5)
+    return x; return ext(x); }` loads x into edi, compares it, returns it on
+    one path and tail-calls ext on the other, and printed `ext()` the same way.
+    Funcdata::onlyOpUse (funcdata_varnode.cc:1851) refuses a value that also
+    feeds a CBRANCH or the other path's RETURN, so checkInputTrialUse leaves the
+    edi trial inactive and nothing active keeps it in the list.
+
+    Stage / sub-stage: P4 active input-trial scoring.  The P0 assertion
+    `option calleereadarg on|off` decides whether a call's settled argument
+    list gains a refused register the caller wrote because the callee's own
+    body (the bounded entry decode calleedeadarg takes, cached per callee)
+    reads that register on entry.
+
+    The fixture is hand-assembled SysV x86-64 (the gcc -O2 code for t9 and fwd
+    with ext defined in the same image), plus two controls that keep the same
+    caller shape:
+      neg   leaves its tested x in edi and calls g, which reads no register:
+            g() in both passes.
+      negv  leaves its tested x in esi and tail-calls vlog, whose variadic
+            register-save prologue reads every argument register through r9:
+            vlog(msg) in both passes.  Reading the last argument register is
+            no evidence of an argument, and the caller's xor %eax,%eax sets
+            the call up as variadic; either declines it.
+      sbbpick  leaves a tested sum in ecx and tail-calls cmpf, whose
+            sbb %ecx,%ecx computes its result and flags from ecx compared
+            with itself, which reads no value: cmpf(p[0],p[1]) in both passes.
+      k1d   is clang -O2 g3(1, 0, x): clang leaves esi alone because g3 never
+            reads it, so esi still holds the caller's own q.  g3 reads edx,
+            but the gap in front of it is the caller's incoming register,
+            which the callee does not read either, so nothing is added:
+            g3(1) in both passes.
+
+    Pass 1 (`option calleereadarg off`) reproduces the BUG: ext() at both t9
+    and fwd.  Pass 2 (`option calleereadarg on`, the default) is the FIX:
+    ext(x) at both, and the two controls are unchanged.
+-->
+<bytechunk space="ram" offset="0x401000">
+8d44bf01c366662e0f1f84000000000083055101000001c30f1f840000000000
+4881ecd80000004889742428488954243048894c24384c894424404c894c2448
+84c074370f294424500f294c24600f295424700f299c24800000000f29a42490
+0000000f29ac24a00000000f29b424b00000000f29bc24c00000000fb6070105
+e40000004881c4d8000000c30f1f40008b078d780285ff74114883ec08e85eff
+ffff4883c40883c001c3b805000000c38b3f83ff057f05e944ffffff89f8c390
+8b078d780285ff740d4883ec08e83effffff4883c408b804000000c30f1f4000
+8b078d700285f6740e488d3d7000000031c0e929ffffffc30f1f840000000000
+31c039f70f97c019c909c8c30f1f40008b57088b0e01d183f9057f078b77048b
+3febdd89c8c3662e0f1f8400000000008d0c7f8d049201c8c30f1f8000000000
+538b1783c20274114889f3bf01000000e8dbffffff03035bc3b8050000005bc3
+6869000f1f44000000000000
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="ext"/>
+<symbol space="ram" offset="0x401010" name="g"/>
+<symbol space="ram" offset="0x401020" name="vlog"/>
+<symbol space="ram" offset="0x401090" name="t9"/>
+<symbol space="ram" offset="0x4010b0" name="fwd"/>
+<symbol space="ram" offset="0x4010c0" name="neg"/>
+<symbol space="ram" offset="0x4010e0" name="negv"/>
+<symbol space="ram" offset="0x401100" name="cmpf"/>
+<symbol space="ram" offset="0x401110" name="sbbpick"/>
+<symbol space="ram" offset="0x401130" name="g3"/>
+<symbol space="ram" offset="0x401140" name="k1d"/>
+<symbol space="ram" offset="0x401160" name="msg"/>
+<symbol space="ram" offset="0x401168" name="gv"/>
+</binaryimage>
+<script>
+  <com>option calleereadarg off</com>
+  <com>lo fu t9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fwd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu neg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu negv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sbbpick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k1d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleereadarg on</com>
+  <com>lo fu t9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fwd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu neg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu negv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sbbpick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k1d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleereadarg #1: off, t9's tested argument is dropped (bug reproduced)" min="1" max="1">return ext\(\) \+ 1;</stringmatch>
+<stringmatch name="calleereadarg #2: off, fwd's tail call loses the argument it also compares and returns (bug reproduced)" min="1" max="1">return ext\(\); // tail-call</stringmatch>
+<stringmatch name="calleereadarg #3: on, t9 passes the value it tests because ext reads edi" min="1" max="1">return ext\(v[0-9]+ \+ 2\) \+ 1;</stringmatch>
+<stringmatch name="calleereadarg #4: on, fwd tail-calls ext with the value it compares and returns" min="1" max="1">return ext\(v[0-9]+\); // tail-call</stringmatch>
+<stringmatch name="calleereadarg #5: a callee that reads no register gets no argument in BOTH passes" min="2" max="2">  g\(\);</stringmatch>
+<stringmatch name="calleereadarg #6: a variadic register-save prologue is no evidence, so vlog keeps one argument in BOTH passes" min="2" max="2">vlog\(msg\); // tail-call</stringmatch>
+<stringmatch name="calleereadarg #7: a register a callee subtracts from itself (sbb %ecx,%ecx) is no evidence, so cmpf keeps two arguments in BOTH passes" min="2" max="2">return cmpf\(v[0-9]+,v[0-9]+\); // tail-call</stringmatch>
+<stringmatch name="calleereadarg #8: the caller's own incoming register left in an argument slot the callee never reads is no gap to fill, so g3 keeps one argument in BOTH passes" min="2" max="2">v[0-9]+ = g3\(1\);</stringmatch>
+</decompilertest>

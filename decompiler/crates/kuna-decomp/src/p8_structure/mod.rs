@@ -5,6 +5,7 @@
 
 pub mod blockaction;
 pub mod kuna_condfold;
+pub mod kuna_condstmts;
 pub mod kuna_crossjumpreverter;
 pub mod kuna_dedupitetail;
 pub mod kuna_gotolabel;

@@ -1167,6 +1167,9 @@ impl MergeContext for Funcdata {
     }
     fn symbol_set_merge_problems(&mut self, _symbol: u64) {}
     fn symbol_merge_warning(&mut self, _symbol: u64, _m: int4, _s: int4, _c: int4) {}
+    fn affecting_ops_revision(&self) -> u64 {
+        Funcdata::affecting_ops_revision(self)
+    }
     fn populate_affecting_ops(&self, op_set: &mut PcodeOpSet) {
         // C++ `StackAffectingOps::populate` (merge.cc:63): add every CALL op,
         // then every still-valid store-guard STORE; finalize; then `affectsTest`
@@ -1180,7 +1183,7 @@ impl MergeContext for Funcdata {
             let op = self.get_call_specs(i).get_op();
             let (block_index, point) = self.op_cover_point(op);
             let order = self.op_order(op);
-            op_set.add_op_entry(PcodeOpSetEntry { id: op, block_index, point, order });
+            op_set.add_op_entry(PcodeOpSetEntry { id: op, block_index, point, order, store: false });
         }
 
         // store-guard arm: every store-guard whose op is still a live STORE
@@ -1201,7 +1204,7 @@ impl MergeContext for Funcdata {
             }
             let (block_index, point) = self.op_cover_point(op);
             let order = self.op_order(op);
-            op_set.add_op_entry(PcodeOpSetEntry { id: op, block_index, point, order });
+            op_set.add_op_entry(PcodeOpSetEntry { id: op, block_index, point, order, store: self.stack_store_guard() });
             guard_ranges.push((
                 op,
                 Rc::clone(&guard.spc),

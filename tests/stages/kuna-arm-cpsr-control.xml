@@ -1,0 +1,45 @@
+<decompilertest>
+<!-- Kuna GH-848, ARM MRS/MSR CPSR: P1 instruction semantics and P2 lifting.
+     Strict architectural correctness fix, no P0 option. Before the fix the
+     first two functions returned 0 with no status writes. The fixture checks
+     IRQ-bit reads, register/immediate writes, and NZCVQ preservation/update.
+     readCPSRControl/writeCPSRControl operate on architectural state supplied
+     by an execution adapter; they do not alter host interrupts. -->
+<binaryimage arch="ARM:LE:32:v5t">
+<bytechunk space="ram" offset="0x1000" readonly="true">00000fe1801080e301f021e1800000e21eff2fe100100fe18020c1e3002082e102f021e1800001e21eff2fe19ff021e300000fe1ff0000e21eff2fe10120a0e3000052e300f021e10700a0030300a0131eff2fe102f128e30700a0430300a0531eff2fe1</bytechunk>
+</binaryimage>
+<script>
+  <com>function bounds 0x1000 0x1014 as mask_irq</com>
+  <com>parse line extern unsigned int mask_irq(void);</com>
+  <com>function bounds 0x1014 0x102c as restore_irq</com>
+  <com>parse line extern unsigned int restore_irq(unsigned int mask);</com>
+  <com>function bounds 0x102c 0x103c as immediate_irq</com>
+  <com>parse line extern unsigned int immediate_irq(void);</com>
+  <com>function bounds 0x103c 0x1054 as control_flags</com>
+  <com>parse line extern unsigned int control_flags(unsigned int mask);</com>
+  <com>function bounds 0x1054 0x1064 as immediate_flags</com>
+  <com>parse line extern unsigned int immediate_flags(void);</com>
+  <com>load function mask_irq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function restore_irq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function immediate_irq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function control_flags</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function immediate_flags</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="CPSR: reads retain architectural control state" min="3" max="3">readCPSRControl\(\)</stringmatch>
+<stringmatch name="CPSR: writes retain architectural side effects" min="5" max="5">writeCPSRControl\(</stringmatch>
+<stringmatch name="CPSR: two helpers return the incoming IRQ bit" min="2" max="2">return .* &amp; 0x80;</stringmatch>
+<stringmatch name="CPSR: immediate control write selects one byte" min="1" max="1">writeCPSRControl\(0x9f,0xff\);</stringmatch>
+<stringmatch name="CPSR: register control write keeps NZCVQ" min="1" max="1">return 3;</stringmatch>
+<stringmatch name="CPSR: immediate flag write updates NZCVQ" min="1" max="1">return 7;</stringmatch>
+<stringmatch name="CPSR: no constant-zero IRQ returns" min="0" max="0">return 0;</stringmatch>
+</decompilertest>

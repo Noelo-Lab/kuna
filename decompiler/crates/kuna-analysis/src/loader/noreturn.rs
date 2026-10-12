@@ -251,6 +251,12 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
     out
 }
 
+/// (kuna `armfuncmode`) The addresses (Thumb bit cleared) of the image's
+/// functions and PLT stubs the base ELF list names as never returning.
+pub(crate) fn known_noreturn_addrs(file: &object::File) -> std::collections::BTreeSet<u64> {
+    scan_noreturn(file, &[], Compiler::Unknown).noreturn.iter().map(|fact| fact.addr & !1).collect()
+}
+
 impl AnalysisPass for NoReturnKnownPass {
     fn phase(&self) -> Phase {
         Phase::P1

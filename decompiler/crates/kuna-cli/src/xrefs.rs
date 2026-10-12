@@ -25,6 +25,8 @@
 //! row per reference under a `#` header line.
 
 
+use std::collections::BTreeMap;
+
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
 use kuna_console::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
 
@@ -72,6 +74,18 @@ struct XrefArgs {
 struct Target {
     addr: u64,
     name: Option<String>,
+}
+
+/// Canonical names are stable throughout one read-only reference query.
+struct EntryNames {
+    entries: BTreeMap<u64, String>,
+    arm: bool,
+}
+impl EntryNames {
+    fn at(&self, address: u64) -> Option<(u64, &str)> {
+        let address = if self.arm { address & !1 } else { address };
+        self.entries.get(&address).map(|name| (address, name.as_str()))
+    }
 }
 
 /// The operand resolved to an address, before the walk that names it.
@@ -217,6 +231,10 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     let prog = load_program(&load, DriverDefaults::Query)?;
 
     let entries = prog.function_entries_canonical();
+    let names = EntryNames {
+        entries: entries.iter().map(|entry| (entry.addr.get_offset(), entry.name.clone())).collect(),
+        arm: prog.description().starts_with("ARM"),
+    };
     let inventory: Vec<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
     let seeds = kuna_analysis::listing::xrefs::discovery_seeds(
         &file,
@@ -238,7 +256,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         &resolution.focus(),
     );
 
-    let target = resolve_target(&prog, &index, resolution.settle(&index)?);
+    let target = resolve_target(&prog, &index, &names, resolution.settle(&index)?);
     let rows = match args.direction {
         // `--to` answers for the callable, not the literal address: an import
         // reached through a veneer and an IAT/GOT slot is one thing under two
@@ -246,7 +264,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         // distinction the caller asked about (`XrefIndex::refs_to_unified`).
         Direction::To => index.refs_to_unified(target.addr),
         Direction::From => {
-            if index.is_function_entry(target.addr) || prog.find_entry_at(target.addr).is_some() {
+            if index.is_function_entry(target.addr) || names.at(target.addr).is_some() {
                 index.refs_from_function(target.addr)
             } else {
                 index.refs_from_instruction(target.addr).iter().collect()
@@ -259,9 +277,9 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         .collect();
 
     Ok(if args.json {
-        format!("{}\n", dumps_indent2(&result_json(args, &prog, &index, &target, &rows)))
+        format!("{}\n", dumps_indent2(&result_json(args, &prog, &index, &names, &target, &rows)))
     } else {
-        render_text(args, &prog, &index, &target, &rows)
+        render_text(args, &prog, &index, &names, &target, &rows)
     })
 }
 
@@ -328,16 +346,16 @@ fn target_address(prog: &ConsoleProgram, spec: &str) -> Result<Resolution, Strin
 /// Attach the display name to an address the spec already resolved: whatever the
 /// lookup itself knew, else the program's best name for the address, else the
 /// spec's own fallback (a symbol names its address even when nothing else does).
-fn resolve_target(prog: &ConsoleProgram, index: &XrefIndex, spec: TargetSpec) -> Target {
+fn resolve_target(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, spec: TargetSpec) -> Target {
     let TargetSpec { addr, name, fallback } = spec;
-    Target { addr, name: name.or_else(|| name_at(prog, index, addr)).or(fallback) }
+    Target { addr, name: name.or_else(|| name_at(prog, index, names, addr)).or(fallback) }
 }
 
 /// The program's best name for `vma`: the canonical function entry there, then a
 /// function symbol, then a named global data object. `None` when nothing names it.
-fn name_at(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<String> {
-    prog.find_entry_at(vma)
-        .map(|e| e.name)
+fn name_at(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, vma: u64) -> Option<String> {
+    names.at(vma)
+        .map(|(_, name)| name.to_string())
         .or_else(|| prog.function_named_at(vma))
         // The walk discovers functions the engine's inventory does not carry (it
         // follows the call graph out of its seeds), and a row that names one must
@@ -356,15 +374,15 @@ fn name_at(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<String>
 /// The function `vma` lies in, as `(entry, name)`: the walk's own attribution
 /// first (it knows which entry's descent reached the instruction), then the
 /// engine's inventory for an address the walk never decoded.
-fn owning_function(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<(u64, String)> {
-    let entry = crate::function_info::owning_function(prog, index, vma)?;
-    Some((entry, function_name(prog, index, entry)))
+fn owning_function(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, vma: u64) -> Option<(u64, String)> {
+    let entry = index.function_containing(vma).or_else(|| names.at(vma).map(|(address, _)| address))?;
+    Some((entry, function_name(prog, index, names, entry)))
 }
 
 /// The display name for a function entry, falling back to the engine's own
 /// placeholder (`sub_<addr>`) so a row is never nameless.
-fn function_name(prog: &ConsoleProgram, index: &XrefIndex, entry: u64) -> String {
-    name_at(prog, index, entry).unwrap_or_else(|| default_function_name(prog, entry))
+fn function_name(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, entry: u64) -> String {
+    name_at(prog, index, names, entry).unwrap_or_else(|| default_function_name(prog, entry))
 }
 
 // --- rendering ---------------------------------------------------------------
@@ -387,6 +405,7 @@ fn result_json(
     args: &XrefArgs,
     prog: &ConsoleProgram,
     index: &XrefIndex,
+    names: &EntryNames,
     target: &Target,
     rows: &[&Xref],
 ) -> Json {
@@ -407,11 +426,11 @@ fn result_json(
                     ("to_address_hex".into(), Json::Str(format!("0x{:x}", r.to))),
                     (
                         "from_function".into(),
-                        optional_function_json(owning_function(prog, index, r.from)),
+                        optional_function_json(owning_function(prog, index, names, r.from)),
                     ),
                     (
                         "to_function".into(),
-                        optional_function_json(owning_function(prog, index, r.to)),
+                        optional_function_json(owning_function(prog, index, names, r.to)),
                     ),
                     ("instruction".into(), Json::Str(r.instruction.clone())),
                 ])
@@ -436,7 +455,7 @@ fn result_json(
                             .into_iter()
                             .map(|a| {
                                 function_json(
-                                    &name_at(prog, index, a).unwrap_or_else(|| format!("0x{a:x}")),
+                                    &name_at(prog, index, names, a).unwrap_or_else(|| format!("0x{a:x}")),
                                     a,
                                 )
                             })
@@ -459,6 +478,7 @@ fn render_text(
     args: &XrefArgs,
     prog: &ConsoleProgram,
     index: &XrefIndex,
+    names: &EntryNames,
     target: &Target,
     rows: &[&Xref],
 ) -> String {
@@ -481,7 +501,7 @@ fn render_text(
         let _ = writeln!(
             out,
             "# same import at 0x{a:x} ({}) - a forwarding veneer and the pointer slot it jumps through",
-            name_at(prog, index, a).unwrap_or_else(|| "-".into())
+            name_at(prog, index, names, a).unwrap_or_else(|| "-".into())
         );
     }
     for r in rows {
@@ -492,7 +512,7 @@ fn render_text(
                     "0x{:x}\t{}\t{}\t{}",
                     r.from,
                     r.kind.as_str(),
-                    site_label(prog, index, r.from),
+                    site_label(prog, index, names, r.from),
                     r.instruction
                 );
             }
@@ -502,7 +522,7 @@ fn render_text(
                     "0x{:x}\t{}\t{}\t@0x{:x}\t{}",
                     r.to,
                     r.kind.as_str(),
-                    name_at(prog, index, r.to).unwrap_or_else(|| "-".into()),
+                    name_at(prog, index, names, r.to).unwrap_or_else(|| "-".into()),
                     r.from,
                     r.instruction
                 );
@@ -521,8 +541,8 @@ fn aliases(index: &XrefIndex, target: &Target) -> Vec<u64> {
 
 /// `name+0xoff` for an address inside a known function; the bare address when
 /// nothing owns it.
-fn site_label(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> String {
-    match owning_function(prog, index, vma) {
+fn site_label(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, vma: u64) -> String {
+    match owning_function(prog, index, names, vma) {
         Some((entry, name)) if entry == vma => name,
         Some((entry, name)) if entry < vma => format!("{name}+0x{:x}", vma - entry),
         Some((entry, name)) => format!("{name}-0x{:x}", entry - vma),

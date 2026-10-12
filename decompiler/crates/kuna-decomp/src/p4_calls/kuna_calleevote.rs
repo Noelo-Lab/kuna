@@ -285,6 +285,29 @@ pub(crate) fn same_type(a: &Datatype, b: &Datatype) -> bool {
     }
 }
 
+/// Are `a` and `b` the same pointer chain down to a one-byte character, the
+/// sign of that character alone differing (`char *`, `unsigned char *`)?
+/// Callers that disagree only there agree on plain `char`.
+fn same_but_character_sign(a: &Datatype, b: &Datatype) -> bool {
+    match (a.get_ptr_to(), b.get_ptr_to()) {
+        (Some(pa), Some(pb)) => a.get_size() == b.get_size() && same_but_character_sign(&pa, &pb),
+        (None, None) => [a, b].iter().all(|t| {
+            t.get_size() == 1
+                && t.is_char_print()
+                && matches!(t.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT)
+        }),
+        _ => false,
+    }
+}
+
+/// Does the pointer chain `ct` end at the target's own `char`?
+fn points_at_plain_char(ct: &Datatype) -> bool {
+    match ct.get_ptr_to() {
+        Some(p) => points_at_plain_char(&p),
+        None => ct.get_size() == 1 && ct.is_char_print() && ct.is_core_type(),
+    }
+}
+
 /// Is `ct`, the type the function input `vn` carries, the one its callers
 /// stated for it?
 pub fn took_stated_type(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
@@ -446,20 +469,30 @@ pub fn decide_ledger_under(
             }
             let mut agreed: Option<Rc<Datatype>> = None;
             let mut frame = false;
+            let mut mixed = false;
             let all = sites.iter().all(|s| {
                 let Some(Some(a)) = s.args.get(j) else { return false };
                 if a.addr != p.addr || a.size != p.size || !committed(&a.ct) {
                     return false;
                 }
                 frame |= a.frame;
-                match &agreed {
-                    None => {
-                        agreed = Some(Rc::clone(&a.ct));
-                        true
+                let take = match &agreed {
+                    None => Some(true),
+                    Some(t) if same_type(t, &a.ct) => Some(false),
+                    Some(t) if same_but_character_sign(t, &a.ct) => {
+                        mixed = true;
+                        Some(points_at_plain_char(&a.ct))
                     }
-                    Some(t) => same_type(t, &a.ct),
+                    Some(_) => None,
+                };
+                match take {
+                    Some(true) => agreed = Some(Rc::clone(&a.ct)),
+                    Some(false) => {}
+                    None => return false,
                 }
+                true
             });
+            let all = all && !(mixed && !agreed.as_deref().is_some_and(points_at_plain_char));
             if trace {
                 let seen: Vec<String> = sites.iter().map(|s| match s.args.get(j) {
                     Some(Some(a)) => {

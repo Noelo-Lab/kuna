@@ -36,6 +36,7 @@
 //!   * There is NO symbol scope (Phase 3): unresolved refs degrade to
 //!     placeholders, which is the accepted phase-2 quality.
 
+#[path = "ghidra_sim/mod.rs"]
 mod ghidra_sim;
 
 use std::cell::RefCell;

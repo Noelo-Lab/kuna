@@ -39,6 +39,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "partialconcat" => on_off!(partial_concat, "Partial scalar concatenation rendering"),
+    "armconstshift" => on_off!(arm_constant_shift, "ARM constant-shift C11 conversion"),
     "arraynotation" => {
         let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;
         self.print_mut().options.set_array_notation(val);
@@ -70,6 +71,11 @@ kuna_options! { self, p1;
         self.print_mut().options.set_array_cover_width(val);
         Ok(msg)
     },
+    "bytearrayc" => {
+        let value = on_or_off(p1)?;
+        self.print_mut().options.bytearray_c = value;
+        Ok(format!("Standard C byte-array transfers turned {}", if value { "on" } else { "off" }))
+    },
     "emptystrconst" => {
         let (val, msg) = crate::kuna_emptystrconst::OptionEmptyStrConst.apply(p1)?;
         self.print_mut().options.set_empty_str_const(val);
@@ -95,6 +101,7 @@ kuna_options! { self, p1;
     "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
     "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
     "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
+    "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
     "cancelbytearithmetic" => {
         let (val, msg) =
             crate::p3_dataflow::kuna_cancelbytearithmetic::OptionCancelByteArithmetic
@@ -205,6 +212,8 @@ kuna_options! { self, p1;
     "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
     "retinputhalf" => on_off!(ret_input_half, "Returned input-parameter half retention"),
     "retpushedhalf" => on_off!(ret_pushed_half, "Push-only register placement rejection"),
+    "retsysreg" => on_off!(ret_sys_reg, "System-register operand high-word rejection"),
+    "reloadarg" => on_off!(reload_arg, "Frame-reload scratch-register argument rejection"),
     "noreturnretuse" => on_off!(noreturn_ret_use, "No-return call argument use in return trials"),
     "zeroidiomuse" => on_off!(zero_idiom_use, "Self-cancelling zeroing-idiom use in input trials"),
     "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
@@ -294,6 +303,12 @@ kuna_options! { self, p1;
         self.callee_pop = val;
         Ok(msg)
     },
+    "calleepopslot" => {
+        let (val, msg) =
+            crate::p6_variables::kuna_calleepopslot::OptionCalleePopSlot.apply(p1)?;
+        self.callee_pop_slot = val;
+        Ok(msg)
+    },
     "calleeprotostack" => {
         let (val, msg) =
             crate::p4_calls::kuna_calleeprotostack::OptionCalleeProtoStack.apply(p1)?;
@@ -304,6 +319,30 @@ kuna_options! { self, p1;
         let (val, msg) =
             crate::p4_calls::kuna_calleedeadarg::OptionCalleeDeadArg.apply(p1)?;
         self.callee_dead_arg = val;
+        Ok(msg)
+    },
+    "hiddenretarg" => {
+        let (val, msg) =
+            crate::p4_calls::kuna_hiddenretarg::OptionHiddenRetArg.apply(p1)?;
+        self.hidden_ret_arg = val;
+        Ok(msg)
+    },
+    "calleereadarg" => {
+        let (val, msg) =
+            crate::p4_calls::kuna_calleereadarg::OptionCalleeReadArg.apply(p1)?;
+        self.callee_read_arg = val;
+        Ok(msg)
+    },
+    "zerocallregs" => {
+        let (val, msg) =
+            crate::p4_calls::kuna_zerocallregs::OptionZeroCallRegs.apply(p1)?;
+        self.zero_call_regs = val;
+        Ok(msg)
+    },
+    "zerofillreturn" => {
+        let (val, msg) =
+            crate::p4_calls::kuna_zerofillreturn::OptionZeroFillReturn.apply(p1)?;
+        self.zero_fill_return = val;
         Ok(msg)
     },
     "argclobber" => {
@@ -327,6 +366,11 @@ kuna_options! { self, p1;
     "passthrough" => {
         let (val, msg) = crate::p4_calls::kuna_passthrough::OptionPassThrough.apply(p1)?;
         self.pass_through = val;
+        Ok(msg)
+    },
+    "mixedtailret" => {
+        let (val, msg) = crate::p4_calls::kuna_mixedtailret::OptionMixedTailRet.apply(p1)?;
+        self.mixed_tail_ret = val;
         Ok(msg)
     },
     "calleepreserves" => {
@@ -377,6 +421,7 @@ kuna_options! { self, p1;
         self.vararg_forward = val;
         Ok(msg)
     },
+    "varargsharedfloat" => on_off!(vararg_shared_float, "variadic doubles that also feed an earlier argument"),
     "calleearity" => {
         let (val, msg) =
             crate::p4_calls::kuna_calleearity::OptionCalleeArity.apply(p1)?;
@@ -426,12 +471,20 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "condexeret" => on_off!(cond_exe_ret, "return-trial retry after conditional-execution removal"),
+    "condexeretuse" => on_off!(cond_exe_ret_use, "return-value uses ruled out by a re-tested condition"),
     "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
     "stackstoreguard" => on_off!(stack_store_guard, "Stack-derived store heritage guards"),
     "indexaliasguard" => {
         let (val, msg) =
             crate::p3_dataflow::kuna_indexaliasguard::OptionIndexAliasGuard.apply(p1)?;
         self.index_alias_guard = val;
+        Ok(msg)
+    },
+    "callarrayextent" => on_off!(call_array_extent, "Call-escaped frame array extent"),
+    "arrayextent" => {
+        let (val, msg) =
+            crate::p6_variables::kuna_arrayextent::OptionArrayExtent.apply(p1)?;
+        self.array_extent = val;
         Ok(msg)
     },
     "tiedstorekeep" => {
@@ -446,6 +499,8 @@ kuna_options! { self, p1;
     "splitstorekeep" => {
         on_off!(split_store_keep, "Refinement-split stack store mark")
     },
+    "wideslice" => on_off!(wide_slice_reduce, "Wide SSA slice reduction"),
+    "devectorize" => on_off!(devectorize_reduction, "Vectorized reduction re-roll"),
     "regionstructure" => {
         let (val, msg) =
             crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
@@ -483,6 +538,12 @@ kuna_options! { self, p1;
         let (val, msg) =
             crate::p8_structure::kuna_condfold::OptionCondFold.apply(p1)?;
         self.cond_fold = val;
+        Ok(msg)
+    },
+    "condstmts" => {
+        let (val, msg) =
+            crate::p8_structure::kuna_condstmts::OptionCondStmts.apply(p1)?;
+        self.cond_stmts = val;
         Ok(msg)
     },
     "gotoreduce" => {
@@ -646,8 +707,12 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
+    "calltargettype" => on_off!(call_target_type, "indirect-call target types"),
+    "floatglobals" => on_off!(float_globals, "float typing of globals moved only through float registers"),
+    "callerreads" => on_off!(caller_reads, "return recovery from what the callers read"),
     "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
     "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
+    "floatbits" => on_off!(float_bits, "float typing of helpers that work on a float's bits"),
     "charbyte" => on_off!(char_byte, "char-pointer byte typing"),
     "castarith" => on_off!(cast_arith, "pointer arithmetic in pointer terms"),
     "castindex" => on_off!(cast_index, "variable indexes and pointer differences in pointer terms"),
@@ -721,10 +786,14 @@ kuna_options! { self, p1;
     "widestrings" => {
         on_off!(analysis_widestrings, "UTF-16LE width of the string-literal pass")
     },
+    "widestrings32" => {
+        on_off!(analysis_widestrings32, "UTF-32 width of the string-literal pass")
+    },
     "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
     "unmappedentry" => {
         on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
     },
+    "thunkentry" => on_off!(analysis_thunkentry, "Jump-thunk target function entries"),
     "ppclocalentry" => {
         on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
     },
@@ -771,6 +840,9 @@ kuna_options! { self, p1;
     "eh_frame_full" => {
         on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
     },
+    "coldentry" => {
+        on_off!(analysis_coldentry, "Multi-entry .cold fragment entry discovery")
+    },
     "fdeinterior" => {
         on_off!(analysis_fdeinterior, ".eh_frame FDE-interior entry suppression")
     },
@@ -782,6 +854,9 @@ kuna_options! { self, p1;
     },
     "funcstart_patterns" => {
         on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
+    },
+    "armframes" => {
+        on_off!(analysis_armframes, "Validated ARM/Thumb frame recovery")
     },
     "cortexmvectors" => {
         on_off!(analysis_cortexmvectors, "Widened ARM Cortex-M vector-table signature")
@@ -796,6 +871,8 @@ kuna_options! { self, p1;
         )
     },
     "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
+    "armfuncmode" => on_off!(analysis_armfuncmode, "A32 mode at even ARM function symbols"),
+    "armwalkmode" => on_off!(analysis_armwalkmode, "ARM decode mode carried along the Listing walk"),
     "entrythumbflow" => {
         on_off!(analysis_entrythumbflow, "Entry-reachable Thumb context walk")
     },
@@ -913,6 +990,7 @@ kuna_options! { self, p1;
         self.analysis_cppsig = mode;
         Ok(msg)
     },
+    "msvcsig" => on_off!(analysis_msvcsig, "MSVC declaration arm of the demangled signatures"),
     "typedepth" => {
         let val = on_or_off(p1)?;
         self.analysis_typedepth = val;
@@ -986,6 +1064,12 @@ kuna_options! { self, p1;
     },
     "aifcorroborate" => {
         on_off!(analysis_aifcorroborate, "AIF accept corroboration test (GH-313)")
+    },
+    "aifbracket" => {
+        on_off!(analysis_aifbracket, "AIF bracketed-candidate reject (GH-299)")
+    },
+    "aifnoppad" => {
+        on_off!(analysis_aifnoppad, "AIF padding/zero-fill candidate reject (GH-299)")
     },
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")

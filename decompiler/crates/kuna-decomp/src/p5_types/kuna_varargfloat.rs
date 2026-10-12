@@ -12,6 +12,7 @@ use crate::{
     fspec::FuncCallSpecs,
     funcdata::Funcdata,
 };
+use kuna_num::opcodes::OpCode;
 use std::rc::Rc;
 
 /// The `double` vote on argument `slot` of `op`, when it lies past the declared
@@ -42,6 +43,41 @@ pub fn argument_vote(
         .types()?
         .get_base(8, type_metatype::TYPE_FLOAT)
         .ok()
+}
+
+/// The type C requires of that argument: `double`, when [`argument_vote`] gives
+/// one and the value is an integer. No integer travels in a floating-point
+/// register, so its bits got there by a reinterpretation, and the cast this
+/// requirement adds prints as one. A struct or a pointer there gets none, nor
+/// does an implied `CAST` of one, which the cast pass would retype in place.
+pub fn argument_requirement(
+    data: &Funcdata,
+    fc: &FuncCallSpecs,
+    op: OpId,
+    slot: i32,
+) -> Option<Rc<Datatype>> {
+    let ct = argument_vote(data, fc, op, slot)?;
+    let vn = data.obank().get(op)?.get_in(slot)?;
+    integer_bits(data, op, vn).then_some(ct)
+}
+
+/// Is the argument `vn` of the call `op` an integer whose bits a cast to a
+/// float would reinterpret?  An implied `CAST` folded into the argument counts
+/// only when its own source is integer bits or already a float.
+pub(crate) fn integer_bits(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
+    let decl = data.get_arch().decl_high_type;
+    let bits = |v| crate::kuna_bitcast::reinterprets_to_float(data, decl, v);
+    let Some(node) = data.vbank().get(vn) else { return false };
+    let folded = node
+        .get_def()
+        .and_then(|d| data.obank().get(d))
+        .filter(|d| d.code() == OpCode::CPUI_CAST && node.is_implied() && data.lone_descend(vn) == Some(op))
+        .and_then(|d| d.get_in(0));
+    let source_ok = folded.is_none_or(|src| {
+        bits(src)
+            || data.vbank().get(src).is_some_and(|s| s.get_type().get_metatype() == type_metatype::TYPE_FLOAT)
+    });
+    bits(vn) && source_ok
 }
 
 fn spells_as_a_float(data: &Funcdata, vn: VarnodeId) -> bool {

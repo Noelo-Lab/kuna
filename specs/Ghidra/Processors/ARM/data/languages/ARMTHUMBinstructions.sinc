@@ -83,7 +83,9 @@ define token instrThumb (16)
   
   thCRd=(12,15)
   thCRn=(0,3)
+  thCRnNum=(0,3)
   thCRm=(0,3)
+  thCRmNum=(0,3)
 
   hrn0002=(0,2)
   hrm0305=(3,5)
@@ -2597,22 +2599,22 @@ macro th_set_carry_for_lsr(op1,shift_count) {
 
 @endif # VERSION_6T2 || VERSION_7
 @ifndef CDE
-:mcr^ItCond thcpn,thc0507,Rt1215,thCRn,thCRm,thopcode2 is TMode=1 & ItCond & op8=0xee & thc0507 & thc0404=0 & thCRn; Rt1215 & thcpn & thopcode2 & thc0404=1 & thCRm
+:mcr^ItCond thcpn,thc0507,Rt1215,thCRn,thCRm,thopcode2 is TMode=1 & ItCond & op8=0xee & thc0507 & thc0404=0 & thCRn & thCRnNum; Rt1215 & thcpn & thopcode2 & thc0404=1 & thCRm & thCRmNum
 {
   build ItCond;
   t_cpn:4 = thcpn;
   t_op1:4 = thc0507;
   t_op2:4 = thopcode2;
-  coprocessor_moveto(t_cpn,t_op1,t_op2,Rt1215,thCRn,thCRm);
+  coprocessor_moveto(t_cpn,t_op1,t_op2,Rt1215,thCRnNum:4,thCRmNum:4);
 }
 
-:mcr2^ItCond thcpn,thc0507,Rt1215,thCRn,thCRm,thopcode2 is TMode=1 & ItCond & op8=0xfe & thc0507 & thc0404=0 & thCRn; Rt1215 & thcpn & thopcode2 & thc0404=1 & thCRm
+:mcr2^ItCond thcpn,thc0507,Rt1215,thCRn,thCRm,thopcode2 is TMode=1 & ItCond & op8=0xfe & thc0507 & thc0404=0 & thCRn & thCRnNum; Rt1215 & thcpn & thopcode2 & thc0404=1 & thCRm & thCRmNum
 {
   build ItCond;
   t_cpn:4 = thcpn;
   t_op1:4 = thc0507;
   t_op2:4 = thopcode2;
-  coprocessor_moveto(t_cpn,t_op1,t_op2,Rt1215,thCRn,thCRm);
+  coprocessor_moveto(t_cpn,t_op1,t_op2,Rt1215,thCRnNum:4,thCRmNum:4);
 }
 @endif # CDE
 
@@ -2714,39 +2716,39 @@ macro th_set_carry_for_lsr(op1,shift_count) {
 }
 
 @ifndef CDE
-:mrc^ItCond thcpn,thc0507,Rt1215,thCRn,thCRm,thopcode2 is TMode=1 & ItCond & op8=0xee & thc0507 & thc0404=1 & thCRn; Rt1215 & thcpn & thopcode2 & thc0404=1 & thCRm
+:mrc^ItCond thcpn,thc0507,Rt1215,thCRn,thCRm,thopcode2 is TMode=1 & ItCond & op8=0xee & thc0507 & thc0404=1 & thCRn & thCRnNum; Rt1215 & thcpn & thopcode2 & thc0404=1 & thCRm & thCRmNum
 {
   build ItCond;
   t_cpn:4 = thcpn;
   t_op1:4 = thc0507;
   t_op2:4 = thopcode2;
-  Rt1215 = coprocessor_movefromRt(t_cpn,t_op1,t_op2,thCRn,thCRm);
+  Rt1215 = coprocessor_movefromRt(t_cpn,t_op1,t_op2,thCRnNum:4,thCRmNum:4);
 }
-:mrc^ItCond thcpn,thc0507,"APSR_nzcv",thCRn,thCRm,thopcode2 is TMode=1 & ItCond & op8=0xee & thc0507 & thc0404=1 & thCRn; Rt1215=15 & thcpn & thopcode2 & thc0404=1 & thCRm
+:mrc^ItCond thcpn,thc0507,"APSR_nzcv",thCRn,thCRm,thopcode2 is TMode=1 & ItCond & op8=0xee & thc0507 & thc0404=1 & thCRn & thCRnNum; Rt1215=15 & thcpn & thopcode2 & thc0404=1 & thCRm & thCRmNum
 {
   build ItCond;
   t_cpn:4 = thcpn;
   t_op1:4 = thc0507;
   t_op2:4 = thopcode2;
-  local tmp:4 = coprocessor_movefromRt(t_cpn,t_op1,t_op2,thCRn,thCRm);
+  local tmp:4 = coprocessor_movefromRt(t_cpn,t_op1,t_op2,thCRnNum:4,thCRmNum:4);
   writeAPSR_nzcv(tmp);
 }
 
-:mrc2^ItCond thcpn,thc0507,Rt1215,thCRn,thCRm,thopcode2 is TMode=1 & ItCond & op8=0xfe & thc0507 & thc0404=1 & thCRn; Rt1215 & thcpn & thopcode2 & thc0404=1 & thCRm
+:mrc2^ItCond thcpn,thc0507,Rt1215,thCRn,thCRm,thopcode2 is TMode=1 & ItCond & op8=0xfe & thc0507 & thc0404=1 & thCRn & thCRnNum; Rt1215 & thcpn & thopcode2 & thc0404=1 & thCRm & thCRmNum
 {
   build ItCond;
   t_cpn:4 = thcpn;
   t_op1:4 = thc0507;
   t_op2:4 = thopcode2;
-  Rt1215 = coprocessor_movefromRt(t_cpn,t_op1,t_op2,thCRn,thCRm);
+  Rt1215 = coprocessor_movefromRt(t_cpn,t_op1,t_op2,thCRnNum:4,thCRmNum:4);
 }
-:mrc2^ItCond thcpn,thc0507,"APSR_nzcv",thCRn,thCRm,thopcode2 is TMode=1 & ItCond & op8=0xfe & thc0507 & thc0404=1 & thCRn; Rt1215=15 & thcpn & thopcode2 & thc0404=1 & thCRm
+:mrc2^ItCond thcpn,thc0507,"APSR_nzcv",thCRn,thCRm,thopcode2 is TMode=1 & ItCond & op8=0xfe & thc0507 & thc0404=1 & thCRn & thCRnNum; Rt1215=15 & thcpn & thopcode2 & thc0404=1 & thCRm & thCRmNum
 {
   build ItCond;
   t_cpn:4 = thcpn;
   t_op1:4 = thc0507;
   t_op2:4 = thopcode2;
-  local tmp:4 = coprocessor_movefromRt(t_cpn,t_op1,t_op2,thCRn,thCRm);
+  local tmp:4 = coprocessor_movefromRt(t_cpn,t_op1,t_op2,thCRnNum:4,thCRmNum:4);
   writeAPSR_nzcv(tmp);
 }
 @endif #CDE

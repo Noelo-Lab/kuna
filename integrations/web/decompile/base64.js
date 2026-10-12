@@ -1,5 +1,5 @@
 // base64.js — a program pasted as base64 text. DOM-free, so
-// test/decompile2-base64.mjs runs it under plain Node.
+// test/decompile-base64.mjs runs it under plain Node.
 
 const DATA_URL = /^data:[^,]*;base64,/i;
 const BODY = /^[A-Za-z0-9+/]+$/;

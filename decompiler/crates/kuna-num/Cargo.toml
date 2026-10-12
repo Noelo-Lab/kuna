@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "kuna-num"
 description = "kuna Rust port: numeric semantics (multiprecision, IEEE float emulation, circular ranges)"
 version.workspace = true
@@ -12,3 +13,7 @@ kuna-base.workspace = true
 
 [lints]
 workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

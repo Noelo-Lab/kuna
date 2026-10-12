@@ -1,0 +1,30 @@
+<decompilertest>
+<binaryimage arch="TI_MSP430:LE:16:default:default">
+<!--
+    kuna: a constant returned from a function whose declared return type is
+    an enum is not inferred as a pointer.  On MSP430 an enum is as wide as
+    a pointer, and 296 (0x128) is the address of the flash control register
+    FCTL1, so f1 printed return (State)&FCTL1 instead of the enumerator.
+
+    Stage / sub-stage: P5 const-pointer (p9_emit/coreaction_render.rs,
+    ActionConstantPtr check_copy).  No option.
+
+    Bytes (MSP430, hand-assembled):
+
+        c000: 3c40 2801    mov #0x128, r12
+        c004: 3041         ret
+-->
+<bytechunk space="RAM" offset="0xc000" readonly="true">3c4028013041</bytechunk>
+<symbol space="RAM" offset="0xc000" name="f1"/>
+</binaryimage>
+<script>
+  <com>parse line enum State { IDLE = 0, BUSY = 296 };</com>
+  <com>parse line extern State f1(int2 k);</com>
+  <com>lo fu f1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CONSTPTRDECLARED-MSP430 #1: the enum return is not a register address" min="0" max="0">FCTL1</stringmatch>
+<stringmatch name="CONSTPTRDECLARED-MSP430 #2: the enum return prints its enumerator" min="1" max="1">return BUSY;</stringmatch>
+</decompilertest>

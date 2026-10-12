@@ -17,6 +17,7 @@ pub mod kuna_callretfold;
 pub mod kuna_foldcallretphi;
 pub mod kuna_indirectonly;
 pub mod dynamic;
+pub mod kuna_undefinedcopy;
 pub mod kuna_dynamichashmax;
 pub mod coreaction_stackptr;
 pub mod kuna_paramcopyhoist;
@@ -24,10 +25,12 @@ pub mod kuna_tiedphitrim;
 pub mod kuna_globalvalue;
 pub mod kuna_globalorder;
 pub mod kuna_calleepop;
+pub mod kuna_calleepopslot;
 pub mod kuna_cookiescramble;
 pub mod kuna_nulterminator;
 pub mod kuna_endptrbound;
 pub(crate) mod kuna_storereach;
+pub mod kuna_arrayextent;
 pub mod kuna_castobject;
 pub mod kuna_impliedrefs;
 pub mod kuna_bytehonest;
@@ -37,3 +40,5 @@ pub mod kuna_pointeevalue;
 pub mod kuna_loadorder;
 
 pub(crate) mod kuna_wrappedstackaggregate;
+
+pub(crate) mod kuna_callarrayextent;
