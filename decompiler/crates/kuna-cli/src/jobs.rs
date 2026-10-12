@@ -96,10 +96,12 @@ const RUN_RERUN_FAILURES: usize = 16;
 /// Test-only fault injection, comma-separated: `panic:<addr>` panics a worker
 /// as it starts the target at `<addr>`, `panic-once:<addr>` only the first time
 /// in a run, `stall:<addr>` wedges it there until the stall watchdog kills it,
-/// `spawn:<n>` refuses every worker spawn after the first `n`, `synth:serial`
-/// names synthesized structures by the one-worker serial path, `synth:force`
-/// renames no function and `synth:noinstall` makes a worker refuse the
-/// replayed structures.  `<addr>` is a byte address (`0x` hex or
+/// `spawn:<n>` refuses every worker spawn after the first `n`, `load-abort:<n>`
+/// aborts the first `n` worker loads of the run (`*` every one) the way a
+/// refused allocation does, before the worker reaches its first chunk,
+/// `synth:serial` names synthesized structures by the one-worker serial path,
+/// `synth:force` renames no function and `synth:noinstall` makes a worker
+/// refuse the replayed structures.  `<addr>` is a byte address (`0x` hex or
 /// decimal), or `*` for every target.
 pub(crate) const JOBS_FAULT_ENV: &str = "KUNA_JOBS_FAULT";
 
@@ -723,6 +725,7 @@ impl Pool<'_> {
             }
             let solo = self.serve(worker, std::slice::from_ref(&chunk[p]));
             if !solo.ending.started() {
+                self.gate.failed();
                 let cause = solo.results[0].error.clone().unwrap_or_default();
                 let why = format!("its re-run could not start ({cause})");
                 kept.push(indices[p]);
@@ -827,9 +830,8 @@ enum Ending {
     NotRun,
     /// The worker exited, or the stall watchdog killed it, first.  `started`:
     /// it had opened this chunk's result file, which it does after its load,
-    /// its spec and its rehydration, just before its first target.  `warm`: it
-    /// had finished a chunk before this one.
-    Died { stalled: bool, started: bool, warm: bool },
+    /// its spec and its rehydration, just before its first target.
+    Died { stalled: bool, started: bool },
 }
 
 impl Ending {
@@ -895,14 +897,15 @@ impl Reruns {
 /// own; the bystanders follow in [`spread`] order.  A stalled suspect is not
 /// re-run: it already ran past four times the per-function budget, and a second
 /// attempt would cost the same stall window again.  A worker that never opened
-/// this chunk ran none of it, so its targets are all bystanders if it had served
-/// a chunk before — and none are re-run if it had not, because then it may have
-/// died in its own load.
+/// this chunk ran none of it, so its targets are all bystanders — including when
+/// it died in its own load, which the parent has already survived on the same
+/// binary: there the usual cause is the machine (an allocation refused while N
+/// workers load at once), and a load that fails every time is bounded by the
+/// re-run gate instead.
 fn retry_order(ending: Ending, delivered: &[bool]) -> Reruns {
-    let Ending::Died { stalled, started, warm } = ending else { return Reruns::default() };
+    let Ending::Died { stalled, started } = ending else { return Reruns::default() };
     let missing: Vec<usize> = (0..delivered.len()).filter(|&p| !delivered[p]).collect();
     let (suspect, rest) = match (started, missing.split_first()) {
-        (false, _) if !warm => return Reruns::default(),
         (false, _) => (None, &missing[..]),
         (true, None) => return Reruns::default(),
         (true, Some((&first, rest))) => ((!stalled).then_some(first), rest),
@@ -953,11 +956,12 @@ impl ChunkReruns {
 }
 
 /// The run-wide check on re-running, asked each time a re-run would start: no
-/// while [`RUN_RERUN_FAILURES`] or more re-runs have failed and they outnumber
-/// every record the workers delivered, planned or re-run.  Workers that die
-/// whatever they are given deliver nothing, so they pay a bounded number of
-/// extra loads; since held-back re-runs cannot fail, deliveries catch up and
-/// re-running resumes in a run whose workers mostly work.
+/// while [`RUN_RERUN_FAILURES`] or more re-runs have failed or could not start
+/// and they outnumber every record the workers delivered, planned or re-run.
+/// Workers that die whatever they are given deliver nothing, so they pay a
+/// bounded number of extra loads; since held-back re-runs cannot fail,
+/// deliveries catch up and re-running resumes in a run whose workers mostly
+/// work.
 #[derive(Default)]
 struct RetryGate {
     failed: AtomicUsize,
@@ -1150,7 +1154,6 @@ impl Worker {
         len: usize,
     ) -> (Vec<FuncResult>, String, Ending) {
         self.functions_done += len;
-        let warm = self.warm;
         let out_path = scratch.join(result_name(idx));
         let assigned = writeln!(self.stdin, "{idx}").and_then(|()| self.stdin.flush());
         let outcome = match assigned {
@@ -1176,12 +1179,12 @@ impl Worker {
             Wait::Stalled => (
                 produced,
                 format!("{STALLED} ({}s); the worker was killed", cfg.max_fn_seconds),
-                Ending::Died { stalled: true, started, warm },
+                Ending::Died { stalled: true, started },
             ),
             Wait::Failed(why) => (
                 produced,
                 format!("{CHUNK_FAILED} ({why})"),
-                Ending::Died { stalled: false, started, warm },
+                Ending::Died { stalled: false, started },
             ),
         }
     }
@@ -1735,6 +1738,8 @@ pub(crate) fn ack_chunk(idx: usize) {
 pub(crate) struct Faults {
     at: Vec<(Fault, Option<u64>)>,
     spawn_after: Option<usize>,
+    /// `load-abort:<n>`: how many worker loads abort (`usize::MAX` for `*`).
+    load_aborts: usize,
     /// `synth:serial`: name the synthesized structures by the one-worker serial
     /// path even when the replay holds, so a test can reach it.
     synth_serial: bool,
@@ -1780,6 +1785,10 @@ impl Faults {
                 let fault = match kind.trim() {
                     "spawn" => {
                         faults.spawn_after = Some(arg.parse().ok()?);
+                        return Some(());
+                    }
+                    "load-abort" => {
+                        faults.load_aborts = if arg == "*" { usize::MAX } else { arg.parse().ok()? };
                         return Some(());
                     }
                     "synth" if arg == "serial" => {
@@ -1838,6 +1847,21 @@ impl Faults {
                     }
                 }
             }
+        }
+    }
+
+    /// Worker side, once its load is done: abort as an allocation failure does
+    /// if this is one of the first `load-abort` loads of the run, counted with
+    /// marker files in the pool's shared scratch directory.
+    pub(crate) fn after_load(&self, scratch: &Path) {
+        let fire = self.load_aborts == usize::MAX
+            || (0..self.load_aborts).any(|k| {
+                let marker = scratch.join(format!("fault-load-{k}"));
+                std::fs::OpenOptions::new().write(true).create_new(true).open(marker).is_ok()
+            });
+        if fire {
+            eprintln!("{JOBS_FAULT_ENV}: injected load abort");
+            std::alloc::handle_alloc_error(std::alloc::Layout::new::<[u8; 1 << 20]>());
         }
     }
 
@@ -2374,8 +2398,8 @@ mod tests {
         }
     }
 
-    fn died(stalled: bool, started: bool, warm: bool) -> Ending {
-        Ending::Died { stalled, started, warm }
+    fn died(stalled: bool, started: bool) -> Ending {
+        Ending::Died { stalled, started }
     }
 
     fn reruns(suspect: Option<usize>, bystanders: &[usize]) -> Reruns {
@@ -2385,49 +2409,43 @@ mod tests {
     /// The re-run policy, case by case.  A crash re-runs the function it
     /// happened in first and then everything that never started; a stall
     /// re-runs only what never started; a worker that ran none of the chunk
-    /// re-runs all of it, unless it may have died in its own load.
+    /// re-runs all of it, its own load included.
     #[test]
     fn a_dead_worker_reruns_its_suspect_first_and_its_bystanders_after() {
         let prefix = [true, true, false, false, false];
-        assert_eq!(retry_order(died(false, true, true), &prefix), reruns(Some(2), &[3, 4]));
-        assert_eq!(retry_order(died(false, true, false), &prefix), reruns(Some(2), &[3, 4]));
+        assert_eq!(retry_order(died(false, true), &prefix), reruns(Some(2), &[3, 4]));
         assert_eq!(
-            retry_order(died(true, true, true), &prefix),
+            retry_order(died(true, true), &prefix),
             reruns(None, &[3, 4]),
             "a stalled suspect already ran four budgets; only its bystanders are re-run"
         );
-        assert!(retry_order(died(true, true, false), &[false]).is_empty());
+        assert!(retry_order(died(true, true), &[false]).is_empty());
         assert_eq!(
-            retry_order(died(false, true, false), &[false]),
+            retry_order(died(false, true), &[false]),
             reruns(Some(0), &[]),
             "a planned singleton that crashed is run once more on a fresh worker"
         );
 
         let untouched = [false; 5];
-        assert_eq!(
-            retry_order(died(false, false, true), &untouched),
-            reruns(None, &[0, 4, 2, 1, 3]),
-            "a warm worker that died between chunks ran none of this one"
-        );
         let everything = reruns(None, &[0, 4, 2, 1, 3]);
-        assert_eq!(retry_order(died(true, false, true), &untouched), everything);
-        assert!(
-            retry_order(died(false, false, false), &untouched).is_empty(),
-            "a worker that never finished a chunk may have died in its load"
+        assert_eq!(
+            retry_order(died(false, false), &untouched),
+            everything,
+            "a worker that died before its first target, in its load or between chunks, ran none of this one"
         );
-        assert!(retry_order(died(true, false, false), &untouched).is_empty());
+        assert_eq!(retry_order(died(true, false), &untouched), everything);
 
         for ending in [Ending::Finished, Ending::NotRun] {
             assert!(retry_order(ending, &untouched).is_empty(), "{ending:?} re-runs nothing");
         }
-        assert!(retry_order(died(false, true, true), &[true; 4]).is_empty());
+        assert!(retry_order(died(false, true), &[true; 4]).is_empty());
 
         // A re-run counts as run only once its worker reached the target; one
         // that did not ends its chunk's re-runs instead of spawning for the rest.
         assert!(Ending::Finished.started());
-        assert!(died(false, true, false).started() && died(true, true, true).started());
+        assert!(died(false, true).started() && died(true, true).started());
         assert!(!Ending::NotRun.started());
-        assert!(!died(false, false, false).started() && !died(true, false, true).started());
+        assert!(!died(false, false).started() && !died(true, false).started());
     }
 
     /// Bystanders are visited in bit-reversed order, so any prefix of the visit

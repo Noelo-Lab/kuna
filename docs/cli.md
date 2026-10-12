@@ -121,7 +121,7 @@ the directories it looked in.
 | `KUNA_DECODE_SELFCHECK` | `1` runs both walks, compares them field by field and returns the serial result; `abort` panics on a difference. Keeps the runtime's panic report, as `KUNA_DECODE_STATS` does. |
 | `KUNA_DECODE_STATS` | `1` prints one line of lane/interval/round/crossing/decode counts and the walk, merge and lane-memory figures. It also keeps the runtime's panic report for a lane fault, which the fallback otherwise silences. |
 | `KUNA_DECODE_FAULT` | Test-only: `<n>` panics lane `n` once, `spawn:<n>` makes lane `n`'s spawn fail — the two fallback paths. |
-| `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), and `spawn:<n>` refuses every worker spawn after the first `n` — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
+| `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
 
 An override wins over both layouts, and one pointing at nothing is reported as
 such rather than silently re-probed.
@@ -1758,12 +1758,15 @@ Behaviors specific to `decompile-all`:
     chunk: the one that was running first, on a fresh worker, so its `error`
     record is the failure it repeats on its own, then the rest. Without this, one
     panicking function took its whole chunk with it (26 to 512 functions wide on
-    a large binary). Three failures are not re-run: a function the stall
-    watchdog killed (it already ran four times past its budget, and a second try
-    costs the same window again); the functions of a worker that died before it
-    finished any chunk or opened this one, because its load may be what failed;
-    and a chunk no worker ran at all, because a spawn was refused or its spec
-    could not be written.
+    a large binary). A worker that died in its own program load, before its
+    first function, is no exception: the parent has already loaded the same
+    binary, and what kills a worker there is the machine — every worker loads at
+    once, and an allocation refused then aborts it (`exit code: 0xc0000409` on
+    Windows, `signal: 6 (SIGABRT)` elsewhere) — so its chunk is re-run like any
+    other. Two failures are not re-run: a function the stall watchdog killed (it
+    already ran four times past its budget, and a second try costs the same
+    window again); and a chunk no worker ran at all, because a spawn was refused
+    or its spec could not be written.
 
     The cost is one extra worker load for every function that fails again on
     its own, because its crash takes the re-run's worker with it; functions that
@@ -1778,8 +1781,9 @@ Behaviors specific to `decompile-all`:
     most two extra stall windows, and once 8 of its re-runs (not counting the
     function that was running) have failed again and they outnumber the ones
     that came back. And no re-run starts while 16 or more re-runs have failed
-    and they outnumber every result the workers delivered, which is what workers
-    that die on everything look like; the run says so once, and re-running
+    or could not start and they outnumber every result the workers delivered,
+    which is what workers that die on everything look like; the run says so
+    once, and re-running
     resumes when deliveries catch up, so a burst of crashes among the large
     functions a run starts with does not switch it off. Functions left behind
     keep their `error`, with `; not re-run: <why>` appended. The closing lines

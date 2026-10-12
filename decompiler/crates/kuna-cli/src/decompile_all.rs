@@ -656,14 +656,17 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
     let scratch = args.jobs_worker.as_deref().expect("worker mode");
     let assignments = jobs::listen_for_assignments(scratch);
 
+    let dir = std::path::Path::new(scratch);
+    let faults = jobs::Faults::from_env();
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
     if !args.jobs_objects {
         kuna_decomp::kuna_elemptr::without_objects(prog.arch_mut());
     }
-    let inventory = std::path::Path::new(scratch).join(jobs::INVENTORY_FILE);
+    let inventory = dir.join(jobs::INVENTORY_FILE);
     if !args.jobs_full_load && inventory.is_file() {
         seed_worker_inventory(&mut prog, &inventory.to_string_lossy())?;
     }
+    faults.after_load(dir);
     if args.max_fn_seconds > 0 {
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
@@ -687,8 +690,6 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
     prog.arch_mut().struct_synth_shard = synth_hook.clone();
     let converge = args.jobs_synth == Some(jobs::SynthWorker::Serial);
 
-    let dir = std::path::Path::new(scratch);
-    let faults = jobs::Faults::from_env();
     while let Ok(assignment) = assignments.recv() {
         // The type block is rendered ONCE, when the parent retires this worker:
         // the factory accumulates over every chunk served, so only its final

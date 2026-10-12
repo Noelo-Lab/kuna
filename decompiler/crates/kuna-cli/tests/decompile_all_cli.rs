@@ -4419,6 +4419,53 @@ fn jobs_rerunning_a_dead_worker_never_loops() {
     assert_eq!(got.matches(run_stopped).count(), total - reruns, "{got}");
 }
 
+/// A worker that dies in its own load has opened no chunk. An allocation
+/// refused while N workers load at once does that: Rust aborts, which Windows
+/// reports as `0xc0000409`. That worker's whole chunk used to be recorded as
+/// failed and never re-run, although the parent and every other worker load the
+/// same binary fine (the shape of issue #1039's 188 lost functions, each of which
+/// decompiled cleanly on its own). The chunk is now re-run
+/// on a fresh worker and nothing is lost. A load that fails every time costs one
+/// extra load per chunk until 16 re-runs have failed with nothing delivered.
+#[test]
+fn jobs_a_worker_that_dies_in_its_load_loses_nothing() {
+    let serial = fauxware_serial_json();
+    let total = json_records(&serial).len();
+    let loads = |stderr: &str| stderr.matches("KUNA_JOBS_FAULT: injected load abort").count();
+
+    let (got, stderr, ok) = fauxware_pooled_with_fault("load-abort:1", "0");
+    assert!(ok, "{stderr}");
+    assert_eq!(got, serial, "a recovered run must be the serial document");
+    assert_eq!(loads(&stderr), 1, "{stderr}");
+    assert_eq!(recovered_count(&stderr), Some(total), "{stderr}");
+    assert!(!stderr.contains("have no result"), "nothing was lost:\n{stderr}");
+
+    let aborted = "\"error\": \"worker chunk failed (worker exited: signal: 6";
+    let (got, stderr, ok) = fauxware_pooled_with_fault("load-abort:*", "0");
+    assert!(!ok, "{stderr}");
+    let records = json_records(&got);
+    assert_eq!(records.len(), total, "{got}");
+    for r in &records {
+        assert!(r.contains(aborted) && r.contains("; not re-run: its re-run could not start"), "{r}");
+    }
+    assert_eq!(loads(&stderr), 2, "the chunk's worker, then one re-run that could not start:\n{stderr}");
+
+    let bin = fauxware();
+    let sp = specs();
+    let args = [
+        "decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath",
+        sp.as_str(), "--jobs", "2", "--jobs-chunk", "1",
+    ];
+    let cap = Duration::from_secs(240);
+    let (got, stderr, ok) = run_kuna_env_with_timeout(&args, &[("KUNA_JOBS_FAULT", "load-abort:*")], cap)
+        .expect("workers that die in every load wedged the pool");
+    assert!(!ok, "{stderr}");
+    assert_eq!(json_records(&got).len(), total, "{got}");
+    let reruns = loads(&stderr) - total;
+    assert!((16..=17).contains(&reruns), "16 or 17 re-runs that could not start, not {reruns}:\n{stderr}");
+    assert_eq!(stderr.matches("are not re-run while that lasts").count(), 1, "{stderr}");
+}
+
 // --- `--jobs N`: the decode lanes --------------------------------------------
 
 /// Run `kuna` with extra environment, for the decode-lane knobs.

@@ -1767,16 +1767,24 @@ work, the thread that served the chunk re-runs each of those targets once as a
 chunk of its own (`decompiler/crates/kuna-cli/src/jobs.rs (retry_order)`): the
 function that was running goes first, onto the fresh worker the thread starts
 next, so the `error` record it ends with is what it does alone, and the targets
-that never started follow. Three failures are not re-run, each because a re-run
-would repeat a cost no single target caused or one already paid. A function the
-stall watchdog killed has already run four times past its budget, and the
-in-process watchdog's verdict on such a function is final too. A worker that
-never finished a chunk and never opened this one ran none of it and may have died
-in its own program load, which every re-run would repeat; the worker opens the
-chunk's result file just before its first target, so the file's existence is what
-separates the two. And a chunk no worker ran, because its spec could not be
-written or no worker could be spawned, failed for a reason no target has. A
-re-run is never itself re-run. The cost is one extra worker load for every
+that never started follow. A worker that died before opening its chunk (the
+result file it creates just before its first target is what tells) ran none of
+it, and every target of the chunk is re-run the same way, whether it died
+between chunks or in its own program load. A load death used to forfeit the
+whole chunk unretried, on the theory that every re-run would repeat it, but the
+parent has already completed that load on the same binary, and the deaths that
+actually occur there are the machine's: a pool's memory peaks while its workers
+load at once, and an allocation refused then aborts the worker, which Windows
+reports as `0xc0000409` (the shape of issue #1039's report: 188 functions of a
+17,837-function export lost to that exit code, each of which decompiled on its
+own). A load that fails every
+time is bounded by the pool-wide check below instead, as a re-run that could not
+start counts against it. Two failures are not re-run, each because a re-run would
+repeat a cost no single target caused or one already paid. A function the stall
+watchdog killed has already run four times past its budget, and the in-process
+watchdog's verdict on such a function is final too. And a chunk no worker ran,
+because its spec could not be written or no worker could be spawned, failed for a
+reason no target has. A re-run is never itself re-run. The cost is one extra worker load for every
 function that fails again on its own, since its crash takes the re-run's worker
 with it, and the stopping rules only cap that cost where re-running is futile.
 Chunks are cut from a size-sorted order and functions that crash alike sit side
@@ -1795,7 +1803,8 @@ the ones recovered (`decompiler/crates/kuna-cli/src/jobs.rs (ChunkReruns)`); the
 function that was running only counts toward the stalls, since it is expected to
 crash again. And a pool-wide check (`decompiler/crates/kuna-cli/src/jobs.rs
 (RetryGate)`), asked each time a re-run would start, holds it back while sixteen
-or more re-runs have failed and they outnumber every record the workers
+or more re-runs have failed or could not start and they outnumber every record
+the workers
 delivered, planned or re-run: workers that die on everything deliver nothing and
 so pay a bounded number of extra loads, and since a held-back re-run cannot
 fail, a run whose workers mostly work catches up and resumes re-running, even
