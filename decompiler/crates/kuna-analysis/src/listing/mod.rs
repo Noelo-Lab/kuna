@@ -30,6 +30,7 @@
 
 pub mod classify;
 mod kuna_compactrefs;
+mod kuna_insnindex;
 mod kuna_insnstore;
 pub mod context;
 pub mod decode;

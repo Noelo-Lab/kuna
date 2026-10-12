@@ -45,6 +45,12 @@ knows about the outside world it reads from the knowledge plane (§0.4) that the
 first tier populated. The analysis tier, symmetrically, never touches the
 per-function IR.
 
+The Listing keeps instruction records in bounded 1,024-row chunks and groups
+their private address-index rows into 4 KiB pages. Exact lookups binary-search
+within a page; range queries visit only intersecting pages and trim their boundary
+rows. The index key remains independent of mutable instruction addresses, and
+cloned Listings retain independent records.
+
 (kuna) The hand-off is a three-step *stash → flags → gated commit* protocol, and
 the order is load-bearing:
 
