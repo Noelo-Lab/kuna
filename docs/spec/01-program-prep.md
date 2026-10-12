@@ -5125,14 +5125,16 @@ on a stripped U-Boot this dropped `invalidate_dcache_range`, reached by `b` from
 newly recovered caller. And the prefix scan below can replace a root with
 literal-pool words in front of it that happen to decode as straight-line code,
 which dense Thumb encodings do readily. So a root the frameless walk already has
-is never replaced by a prefix, and after the last rebuild every frameless entry the
-recovered inventory lacks is published unless the final Listing contradicts it:
+is replaced by a prefix only when it lies inside one of the prefix's instructions,
+as the false `PUSH.W` halfword of a `LDR.W` does, and after the last rebuild every
+frameless entry the recovered inventory lacks is published unless the evidence
+contradicts it:
 the entry is data or lies inside a decoded instruction; a fall-through or a
 conditional branch runs into it; its first instruction is predicated, with a flow to
 its own fall-through, which no function entry can be because the condition flags
 are undefined there (literal-pool words in front of an A32 frame decode this way);
-an accepted body of the post-frame gap walk runs into it, or a body that walk refused
-covers it; or non-call flow from it reaches decoded code that is no function entry,
+an accepted body of the post-frame gap walk runs into it, a body that walk refused
+covers it, or a later interworking call contradicted its decode mode; or non-call flow from it reaches decoded code that is no function entry,
 as a switch case does when its function's computed jump stayed unresolved. A
 shrink-wrapped `cmp; ble` prefix still replaces a push the gap walk had reported,
 because the push then has a fall-through predecessor. Over the 98 stripped ARM
@@ -5142,7 +5144,7 @@ the option dropped 1,756 symbol starts the default inventory found and now drops
 words in front of them. It keeps 1,738 of the 1,746 starts it adds. Entries without
 a matching symbol go from 8,528 to 8,583, 54 of them on three Cortex-M images where
 no frame validates and the option now reproduces the default inventory exactly.
-Computing the frameless inventory adds about 14% to frame recovery on the 5.4 MB
+Computing the frameless inventory adds about 12% to frame recovery on the 5.4 MB
 U-Boot image.
 The shared
 `raw_arm_prologue_seeds` scan matches unconditional A32 `STMDB SP!, {…,lr}`

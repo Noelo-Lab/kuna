@@ -843,7 +843,7 @@ pub fn run_listing_consumers(
                     arch, translate, code_space, bracket(listing.exec_ranges()),
                 );
                 let mut frames: std::collections::BTreeSet<u64> = frame_cache.roots.iter().copied().collect();
-                prior.restore(&mut frames, &frame_cache.replaced);
+                prior.restore(&mut frames, &frame_cache);
                 let mut rejected = std::collections::BTreeSet::new();
                 let independent_seeds = seeds.clone();
                 let original = listing;
@@ -868,7 +868,7 @@ pub fn run_listing_consumers(
                         &mut frame_cache, &original, &listing, &frames, &[], frame_context.as_ref(),
                         arch, translate, std::rc::Rc::clone(code_space),
                     );
-                    replacements.retain(|root, _| !prior.walked.contains(root));
+                    replacements.retain(|&root, &mut prefix| !prior.shields(root, prefix, &frame_cache));
                     let stale = if replacements.is_empty() { modes.stale().clone() }
                         else { std::collections::BTreeSet::new() };
                     if !replacements.is_empty() || !stale.is_empty() {
@@ -917,10 +917,11 @@ pub fn run_listing_consumers(
                         .flat_map(|checked| checked.entries.iter().chain(&checked.pool_entries)
                             .chain(&checked.pointer_entries))
                         .copied().collect();
-                    let straight_line = frame_aif.as_ref().map(|checked| &checked.straight_line);
+                    let refuted: std::collections::BTreeSet<u64> = frame_aif.iter()
+                        .flat_map(|checked| checked.straight_line.iter().copied())
+                        .chain(rejected.iter().copied()).collect();
                     retained_entries = prior.retained(
-                        &found, straight_line.unwrap_or(&std::collections::BTreeSet::new()), &listing,
-                        translate, std::rc::Rc::clone(code_space),
+                        &found, &refuted, &listing, translate, std::rc::Rc::clone(code_space),
                     );
                     inventory_context_paints = modes.decoded_paints();
                     if let Some(context) = frame_context {

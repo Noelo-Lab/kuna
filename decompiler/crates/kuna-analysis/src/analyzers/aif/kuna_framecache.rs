@@ -98,6 +98,17 @@ impl ArmFrames {
         })
     }
 
+    /// True iff `root` lies strictly inside an instruction of the body the last
+    /// reconciliation validated for `prefix`.
+    pub(crate) fn splits(&self, root: u64, prefix: u64) -> bool {
+        let Some(scan) = &self.prefixes else { return false };
+        scan.bodies.get(&prefix).is_some_and(|body| {
+            body.range(..root).any(|at| {
+                scan.instructions.get(at).is_some_and(|insn| root < at + u64::from(insn.len))
+            })
+        })
+    }
+
     pub(super) fn reconcile(
         &mut self,
         listing: &Listing,

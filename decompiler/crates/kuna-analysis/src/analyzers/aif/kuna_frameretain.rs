@@ -1,25 +1,25 @@
 //! Keep the inventory that `armframes` starts from. Frame recovery re-walks the
 //! Listing from new roots, and a root's walk absorbs a routine it reaches by a
-//! tail branch; its AIF prefix scan can also trade a root for literal-pool bytes
+//! tail branch; its AIF prefix scan can also trade a root for literal-pool words
 //! in front of it. Neither is evidence against an entry the frameless inventory
 //! reports, so that inventory is computed first and survives unless the
 //! frame-expanded Listing contradicts an entry.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use kuna_base::space::AddrSpace;
 use kuna_decomp::architecture::Architecture;
 use kuna_sleigh::translate::Translate;
 
-use super::{kuna_aifbracket::BracketEvidence, GapDecoder, MAX_FOLLOW_INSNS};
+use super::{kuna_aifbracket::BracketEvidence, kuna_framecache::ArmFrames, GapDecoder, MAX_FOLLOW_INSNS};
 use crate::listing::{FlowKind, Listing, RefKind};
 
 /// The frameless inventory: the walk after the Thumb prologue scan (`walked`)
 /// plus the AIF, pool and pointer entries over it (`entries`, a superset).
 pub(crate) struct Prior {
-    pub walked: BTreeSet<u64>,
-    pub entries: BTreeSet<u64>,
+    walked: BTreeSet<u64>,
+    entries: BTreeSet<u64>,
 }
 
 /// Compute the inventory the default pipeline reports, without keeping its walk
@@ -65,28 +65,39 @@ pub(crate) fn prior_inventory(
 }
 
 impl Prior {
-    /// Undo prefix replacements of walked roots: a prefix in front of a walked
-    /// entry is no stronger evidence than the walk that found it.
-    pub(crate) fn restore(&self, frames: &mut BTreeSet<u64>, replaced: &BTreeMap<u64, u64>) {
-        for (&root, &prefix) in replaced {
-            if !self.walked.contains(&root) {
+    /// True iff a walked `root` keeps its place against `prefix`. A prefix in
+    /// front of a walked entry is no stronger evidence than the walk that found
+    /// it, and dense Thumb encodings decode literal-pool words as such a prefix;
+    /// only a root inside one of the prefix's instructions yields.
+    pub(crate) fn shields(&self, root: u64, prefix: u64, frames: &ArmFrames) -> bool {
+        self.walked.contains(&root) && !frames.splits(root, prefix)
+    }
+
+    /// Undo the prefix replacements of `frames`' first reconciliation that
+    /// [`Self::shields`] refuses.
+    pub(crate) fn restore(&self, roots: &mut BTreeSet<u64>, frames: &ArmFrames) {
+        for (&root, &prefix) in &frames.replaced {
+            if !self.shields(root, prefix, frames) {
                 continue;
             }
-            frames.insert(root);
-            let orphan = replaced.iter().all(|(other, &to)| to != prefix || self.walked.contains(other));
+            roots.insert(root);
+            let orphan = frames.replaced.iter()
+                .all(|(&other, &to)| to != prefix || self.shields(other, to, frames));
             if orphan && !self.entries.contains(&prefix) {
-                frames.remove(&prefix);
+                roots.remove(&prefix);
             }
         }
     }
 
     /// The prior entries missing from `found` that the final Listing does not
-    /// contradict, that do not start predicated, and that neither an accepted AIF
-    /// body (`straight_line`) runs into nor flow from joins a walked function's interior.
+    /// contradict, that do not start predicated, that the post-frame passes did
+    /// not refute (`refuted`: a contradicted decode mode, or an accepted AIF body
+    /// running into the entry or a refused one covering it), and from which no
+    /// flow joins a walked function's interior.
     pub(crate) fn retained(
         &self,
         found: &BTreeSet<u64>,
-        straight_line: &BTreeSet<u64>,
+        refuted: &BTreeSet<u64>,
         listing: &Listing,
         translate: &dyn Translate,
         code_space: Rc<AddrSpace>,
@@ -99,7 +110,7 @@ impl Prior {
             .copied()
             .filter(|&entry| {
                 !found.contains(&entry)
-                    && !straight_line.contains(&entry)
+                    && !refuted.contains(&entry)
                     && listing.function_at(entry).is_none()
                     && !contradicted(listing, entry)
                     && !predicated(&mut decoder, listing, entry)

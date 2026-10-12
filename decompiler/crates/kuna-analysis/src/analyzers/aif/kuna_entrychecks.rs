@@ -12,7 +12,8 @@ pub(crate) struct CheckedAif {
     pub entries: Vec<u64>,
     pub pool_entries: Vec<u64>,
     pub pointer_entries: Vec<u64>,
-    /// Addresses accepted post-frame AIF bodies run into by straight-line flow.
+    /// Addresses accepted post-frame AIF bodies run into by straight-line flow,
+    /// and every address of a body that gap walk refused.
     pub straight_line: std::collections::BTreeSet<u64>,
 }
 
