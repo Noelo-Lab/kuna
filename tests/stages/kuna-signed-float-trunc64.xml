@@ -1,0 +1,26 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:64:default:default">
+<!-- Independent FDTOX unsigned join and FSTOI feeding a widened return. -->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+9de3bf7031000080c51e200081a80a42194800050100000081a01040c13fa7f7f25fa7f7b136700381c7e00881e80000
+</bytechunk>
+<bytechunk space="ram" offset="0x10100" readonly="true">
+9de3bf7031000080c106200881a84a20194800050100000081a01a21c127a7fbf207a7fbb1366003b136200081c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="merged64"/>
+<symbol space="ram" offset="0x10100" name="widened"/>
+</binaryimage>
+<script>
+<com>parse line extern unsigned long long merged64(double x, unsigned long long fallback);</com>
+<com>parse line extern unsigned long long widened(float value, unsigned int prior);</com>
+<com>map address r0x20000 double limit</com>
+<com>map address r0x20008 float limit32</com>
+<com>lo fu merged64</com><com>decompile</com><com>print C</com>
+<com>lo fu widened</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="64-bit unsigned merge retains signed conversion" min="1" max="1">fallback = \(uint8\)\(int8\)x;</stringmatch>
+<stringmatch name="64-bit logical shift retains unsigned destination" min="1" max="1">return fallback &gt;&gt; 3;</stringmatch>
+<stringmatch name="widened result retains 32-bit signed conversion" min="1" max="1">prior = \(uint4\)\(int4\)value;</stringmatch>
+<stringmatch name="widened return preserves logical shift" min="1" max="1">return prior &gt;&gt; 3;</stringmatch>
+</decompilertest>

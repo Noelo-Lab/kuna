@@ -2060,7 +2060,9 @@ mod tests {
         // and kuna-aifnoppad / no AIF entry starts on nop padding (GH-299)
         // and gh847-zerocallregs / a register a -fzero-call-used-regs epilogue
         // clears is not returned (GH-847)
-        assert_eq!(count, 491, "corpus file count drifted");
+        // and kuna-signed-float-trunc{,64} / signed float conversions remain signed
+        // before assignments to unsigned merged variables
+        assert_eq!(count, 493, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
