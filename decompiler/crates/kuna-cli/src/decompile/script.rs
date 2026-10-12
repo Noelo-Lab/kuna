@@ -127,7 +127,9 @@ pub(super) fn build_script_for_input(
     // install `--define-function <start>` performs — skipped when the caller
     // already declared that start, whose extent a second bare declaration would
     // clear.
+    // Asked before that install, which makes the address an entry.
     if let Some(vma) = selected_vma(target, by_address) {
+        lines.push(format!("function containing {vma:#x}"));
         if !func_decls.iter().any(|decl| decl.start == vma) {
             lines.push(format!("function symbol {vma:#x}"));
         }

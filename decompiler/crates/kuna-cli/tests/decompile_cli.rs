@@ -941,6 +941,58 @@ fn a_prototype_address_that_starts_no_function_is_rejected() {
     );
 }
 
+/// `--addr` inside a function discovery found (issue #1039 section 3) still
+/// decompiles from where it points, but no longer silently: stderr names the
+/// containing function and the offset, and the `--json` record carries the
+/// same fact as `interior_to` (`null` for an entry). A `--define-function` at the
+/// address makes it an entry, and `decompile-all --addr` answers the same way.
+#[test]
+fn an_address_inside_a_function_is_decompiled_with_a_note_naming_it() {
+    let bin = fauxware();
+    let sp = specs();
+    let run = |extra: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(extra)
+            .args(["--sleighpath", sp.as_str()])
+            .output()
+            .expect("failed to spawn the kuna binary");
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert_eq!(out.status.code(), Some(0), "{extra:?}: {stderr}");
+        (String::from_utf8_lossy(&out.stdout).into_owned(), stderr)
+    };
+    let note = "note: 0x400668 is interior to authenticate (0x400664+0x4), not an entry kuna \
+                discovered; decompiled from 0x400668 as asked (--define-function 0x400668 \
+                declares a function there)";
+    let interior = r#""interior_to": {
+        "name": "authenticate",
+        "address": 4195940,
+        "address_hex": "0x400664",
+        "offset": 4
+      }"#;
+
+    let (c, stderr) = run(&["decompile", &bin, "0x400668", "--addr"]);
+    assert!(c.contains("sub_400668("), "{c}");
+    assert!(stderr.contains(note), "{stderr}");
+
+    let (doc, stderr) = run(&["decompile", &bin, "0x400668", "--addr", "--json"]);
+    assert!(doc.contains(interior), "{doc}");
+    assert!(stderr.contains(note), "{stderr}");
+
+    let (doc, stderr) = run(&["decompile-all", &bin, "--addr", "0x400668", "--addr", "0x400664", "--json"]);
+    assert!(doc.contains(interior) && doc.contains(r#""interior_to": null"#), "{doc}");
+    assert_eq!(stderr.matches("is interior to").count(), 1, "{stderr}");
+
+    let (doc, stderr) = run(&["decompile", &bin, "0x400664", "--addr", "--json"]);
+    assert!(doc.contains(r#""interior_to": null"#), "{doc}");
+    assert!(!stderr.contains("interior"), "{stderr}");
+
+    let (doc, _) = run(&["decompile", &bin, "authenticate", "--json"]);
+    assert!(!doc.contains("interior_to"), "a by-name record is an entry by construction: {doc}");
+
+    let (_, stderr) = run(&["decompile", &bin, "0x400668", "--addr", "--define-function", "0x400668"]);
+    assert!(!stderr.contains("interior"), "a declared entry is not interior: {stderr}");
+}
+
 #[test]
 fn unavailable_output_directory_fails_before_the_console_starts() {
     let scratch = tempfile::tempdir().unwrap();

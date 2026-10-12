@@ -537,6 +537,8 @@ struct DecompileOutcome {
     /// which function it is about -- `--addr` selection names an address, and
     /// the transcript is where the resolved name lives on this surface.
     name: String,
+    /// The function an `--addr` selection lands inside, when not at an entry.
+    interior: Option<crate::interior::Interior>,
 }
 
 /// Run the decompile and return its [`DecompileOutcome`].
@@ -698,6 +700,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                     failure: None,
                     assertions: assertion_outcomes(&stdout_text, &args.assertions, selected),
                     name: args.target.clone(),
+                    interior: None,
                 });
             }
             return Err((
@@ -745,6 +748,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             failure,
             assertions: assertion_outcomes(&stdout_text, &args.assertions, selected),
             name: decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone()),
+            interior: crate::interior::from_transcript(&stdout_text),
         })
     };
 
@@ -784,6 +788,9 @@ pub fn run(args: &DecompileArgs) -> i32 {
             // survived (DIV-45): a closed reader is not evidence the decompile
             // worked.  Emitting first keeps the stdout-then-stderr order.
             let written = crate::output::emit(&text);
+            if let Some(interior) = &out.interior {
+                eprintln!("{}", crate::interior::note(interior));
+            }
             // (kuna outlang) The Rust back-end's unrepresentable gotos, counted
             // off the rendered text: this surface drives `decomp_dbg` as a
             // subprocess, so an in-engine counter would never reach it.
@@ -1036,8 +1043,10 @@ fn usage() {
          \x20                     [--raw-image --target T --base VMA]\n\
          \n\
          Decompile ONE function.  The target is a name, or an address with --addr\n\
-         (a `0x`-prefixed target implies it).  --json emits the decompile-all record\n\
-         for that one function ({{binary,count,functions:[{{name,address,code,variables,..}}]}});\n\
+         (a `0x`-prefixed target implies it); an address inside another function is\n\
+         decompiled as asked, with a note naming that function.  --json emits the\n\
+         decompile-all record for that one function\n\
+         ({{binary,count,functions:[{{name,address,code,variables,..}}]}});\n\
          without it, the C text alone.\n\
          \n\
          --option NAME VALUE (repeatable) flips one phase-model decision for this run;\n\
@@ -1148,6 +1157,7 @@ fn run_json(req: &JsonRequest) -> i32 {
                 &args.options,
                 Some(&message),
                 &[],
+                &Default::default(),
             ),
             Some(message),
         ),
@@ -1170,6 +1180,7 @@ fn run_json(req: &JsonRequest) -> i32 {
 fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String>), String> {
     let mut prog = decompile_all::load_program(args, DriverDefaults::Decompile)?;
     let targets = decompile_all::resolve_targets(&prog, args)?;
+    let interior = crate::interior::selections(&prog, args);
     if targets.is_empty() {
         // Two different answers, and the caller acts on the difference: a binary
         // that yielded NOTHING is the whole-binary discovery failure (which names
@@ -1210,6 +1221,7 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
         &args.options,
         failure.as_deref(),
         &assertions,
+        &interior,
     );
     if failure.is_none() && args.assert_strict && rejected {
         failure = Some(format!("--assert directive rejected in {}", args.binary));
@@ -1962,7 +1974,7 @@ Execution error: No symbol named: v9
         assert_eq!(script, concat!(
                 "load raw x86:LE:64:default 0x4000 0x4000 \"/tmp/raw image.bin\"\n",
                 "option errortoomanyinstructions off\noption listing on\nread symbols\n",
-                "function symbol 0x4000\nload addr 0x4000\ndecompile\n",
+                "function containing 0x4000\nfunction symbol 0x4000\nload addr 0x4000\ndecompile\n",
                 "openfile write \"/tmp/out dir/kuna.c\"\nprint C\nprint raw\nclosefile\n",
                 "openfile write \"/tmp/out dir/regions.txt\"\nregion blocks\nregion tree\nclosefile\nquit\n",
             ));

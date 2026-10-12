@@ -16,6 +16,7 @@ mod assertdecl;
 mod funcdecl;
 mod function_info;
 mod image;
+mod interior;
 mod jobs;
 mod jsonfmt;
 mod kuna_allocrelease;

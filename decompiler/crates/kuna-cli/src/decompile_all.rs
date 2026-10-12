@@ -619,6 +619,7 @@ pub fn run(argv: &[String]) -> i32 {
                     run_error.as_deref(),
                     filters.narrows().then_some(run.discovered),
                     &run.assertions,
+                    &run.interior,
                 )
             } else {
                 render_c(&run.funcs)
@@ -1196,6 +1197,8 @@ struct AllRun {
     discovered: usize,
     /// One row per `--assert` directive: what became of it.
     assertions: Vec<kuna_console::assertions::Outcome>,
+    /// What each `--addr` target lands inside, when not at an entry.
+    interior: crate::interior::Interiors,
 }
 
 /// Load + analyze the binary once, narrow the target list, then decompile what
@@ -1208,6 +1211,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
     let load_seconds = load_started.elapsed().as_secs_f64();
     let targets = resolve_targets(&prog, args)?;
+    let interior = crate::interior::selections(&prog, args);
     let discovered = targets.len();
     let targets = if filters.narrows() {
         filters.select(&prog, &args.binary, args.slice_pref(), targets, false)?.0
@@ -1244,7 +1248,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
             synth,
             callee_first,
         )?;
-        return Ok(AllRun { funcs: pooled.results, discovered, assertions });
+        return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior });
     }
     if explicit && prog.arch().protoorder.is_on() && !whole {
         eprintln!(
@@ -1258,7 +1262,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     } else {
         decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true)
     };
-    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes() })
+    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior })
 }
 
 /// Arm the per-function watchdog and run the decompile loop over `targets` — the
@@ -1649,17 +1653,16 @@ pub(crate) fn resolve_targets_allow_bodyless(
     resolve_targets_with_policy(prog, args, false)
 }
 
-fn resolve_targets_with_policy(
+/// The `--addr` selections, resolved in order through the program's shared
+/// selector model. `args.entry_seeds` is deliberately not here: a raw image's
+/// `--entry` loaded the image, and selecting on it would hide everything
+/// discovery found from it.
+pub(crate) fn resolve_addr_selectors(
     prog: &ConsoleProgram,
     args: &Args,
     require_body: bool,
 ) -> Result<Vec<FunctionEntry>, String> {
     let mut targets: Vec<FunctionEntry> = Vec::new();
-
-    // Resolve every address form through the program's shared selector model.
-    // `args.entry_seeds` is deliberately not here: a raw image's `--entry`
-    // loaded the image, and selecting on it would hide everything discovery
-    // found from it.
     for selector in &args.addrs {
         let selector = match (args.raw_image, selector) {
             (true, EntrySelector::Numeric(entry)) => EntrySelector::Numeric(
@@ -1676,6 +1679,15 @@ fn resolve_targets_with_policy(
         };
         targets.push(entry.map_err(|error| error.to_string())?);
     }
+    Ok(targets)
+}
+
+fn resolve_targets_with_policy(
+    prog: &ConsoleProgram,
+    args: &Args,
+    require_body: bool,
+) -> Result<Vec<FunctionEntry>, String> {
+    let mut targets = resolve_addr_selectors(prog, args, require_body)?;
 
     // `--functions a,b,c`: intersect names with the enumerated set.  An ALIAS
     // resolves too — collapsing the enumeration must not make a name that used
@@ -1960,8 +1972,9 @@ pub(crate) fn render_result_json(
     options: &[(String, String)],
     error: Option<&str>,
     assertions: &[kuna_console::assertions::Outcome],
+    interior: &crate::interior::Interiors,
 ) -> String {
-    render_selected_json(binary, funcs, options, error, None, assertions)
+    render_selected_json(binary, funcs, options, error, None, assertions, interior)
 }
 
 /// [`render_result_json`] plus the inventory `total` a NARROWED whole-binary run
@@ -1979,11 +1992,12 @@ pub(crate) fn render_selected_json(
     error: Option<&str>,
     total: Option<usize>,
     assertions: &[kuna_console::assertions::Outcome],
+    interior: &crate::interior::Interiors,
 ) -> String {
     let language = last_option_value(options, "setlanguage").unwrap_or("c-language");
     format!(
         "{}\n",
-        dumps_indent2(&result_json(binary, funcs, language, error, total, assertions))
+        dumps_indent2(&result_json(binary, funcs, language, error, total, assertions, interior))
     )
 }
 
@@ -2052,6 +2066,7 @@ fn result_json(
     error: Option<&str>,
     total: Option<usize>,
     assertions: &[kuna_console::assertions::Outcome],
+    interior: &crate::interior::Interiors,
 ) -> Json {
     let functions = Json::Array(
         funcs
@@ -2061,7 +2076,7 @@ fn result_json(
                 let line_mappings =
                     Json::Array(f.line_mappings.iter().map(line_mapping_json).collect());
                 let types = Json::Array(f.types.iter().map(type_json).collect());
-                Json::Object(vec![
+                let mut record = vec![
                     ("name".into(), Json::Str(f.name.clone())),
                     ("address".into(), Json::Number(f.address.to_string())),
                     ("address_hex".into(), Json::Str(format!("0x{:x}", f.address))),
@@ -2093,7 +2108,11 @@ fn result_json(
                     // the composites this function's C names, as records.
                     // Always present, `[]` unless the option is on.
                     ("types".into(), types),
-                ])
+                ];
+                if let Some(inside) = interior.get(&f.byte_address) {
+                    record.push(("interior_to".into(), crate::interior::json(inside.as_ref())));
+                }
+                Json::Object(record)
             })
             .collect(),
     );
@@ -2287,7 +2306,7 @@ mod provenance_json_tests {
             detail: None,
         };
 
-        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[]));
+        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[], &Default::default()));
         assert!(rendered.contains("\"address\": 4198400"));
         assert!(rendered.contains("\"code\": \"int f(int x)\\n{\\n  return x;\\n}\""));
         assert!(rendered.contains("\"line_mappings\": ["));
@@ -3044,10 +3063,10 @@ mod discovery_tests {
             failed.contains("\"error\": \"no functions discovered in fixture\""),
             "{failed}"
         );
-        let decompiled = render_result_json("fixture", &[], &[], Some("boom"), &[]);
+        let decompiled = render_result_json("fixture", &[], &[], Some("boom"), &[], &Default::default());
         assert!(decompiled.contains("\"error\": \"boom\""), "{decompiled}");
         assert!(
-            render_result_json("fixture", &[], &[], None, &[]).contains("\"error\": null")
+            render_result_json("fixture", &[], &[], None, &[], &Default::default()).contains("\"error\": null")
         );
     }
 
@@ -3059,8 +3078,8 @@ mod discovery_tests {
             ("setlanguage".into(), "rust-language".into()),
             ("setlanguage".into(), "c-language".into()),
         ];
-        assert!(render_result_json("f", &[], &options, None, &[]).contains("\"c-language\""));
-        assert!(render_result_json("f", &[], &[], None, &[]).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &options, None, &[], &Default::default()).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &[], None, &[], &Default::default()).contains("\"c-language\""));
     }
 }
 

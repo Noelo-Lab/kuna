@@ -1439,6 +1439,44 @@ impl IfaceCommandAction for IfcKunaFunctionSymbol {
     }
 }
 
+/// `function containing <addr>`: name the inventory entry whose extent holds
+/// `addr` when no entry starts there, so an addressed `kuna decompile` can say
+/// that it is decompiling from inside another function.
+pub struct IfcKunaFunctionContaining;
+
+impl IfaceCommandAction for IfcKunaFunctionContaining {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        let display = read_vma(&s.read_token())
+            .ok_or_else(|| IfaceError::parse("Missing address"))?;
+        let dcp = dcp_mut(status)?;
+        let prog = dcp
+            .conf
+            .as_mut()
+            .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        let vma = prog
+            .input_code_offset(display)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        let line = match prog.entry_containing(vma) {
+            Some(owner) => {
+                let entry = owner.addr.get_offset();
+                format!(
+                    "{display:#x} is interior to {} at {:#x} (+{:#x})\n",
+                    owner.name,
+                    prog.output_code_offset(entry),
+                    prog.output_code_offset(vma) - prog.output_code_offset(entry),
+                )
+            }
+            None => format!("{display:#x} is interior to no function\n"),
+        };
+        status.out(&line);
+        Ok(())
+    }
+
+    fn module(&self) -> String {
+        DECOMPILE_MODULE.to_string()
+    }
+}
+
 /// (kuna) `map prototype <func> <C declaration>`: bind a declared signature to
 /// the function NAMED by `<func>`.
 ///
@@ -1520,6 +1558,7 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
     // exposes as `--define-function`.
     status.register_com(Box::new(IfcKunaFunctionBounds), &["function", "bounds"]);
     status.register_com(Box::new(IfcKunaFunctionSymbol), &["function", "symbol"]);
+    status.register_com(Box::new(IfcKunaFunctionContaining), &["function", "containing"]);
     // (kuna) Not a C++ command either: `parse line extern` binds a prototype by
     // the name in the declaration, which is the wrong key for an override that
     // exists because the function has no name worth keeping.

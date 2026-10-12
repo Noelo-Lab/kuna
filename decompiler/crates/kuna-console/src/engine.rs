@@ -1137,6 +1137,18 @@ impl ConsoleProgram {
             .find(|e| e.addr.get_offset() == want)
     }
 
+    /// The inventory entry whose extent holds `vma` when `vma` is not itself an
+    /// entry: what an address selection lands inside when discovery found no
+    /// function starting there (`docs/cli.md`, `interior_to`).
+    pub fn entry_containing(&self, vma: u64) -> Option<FunctionEntry> {
+        let want = self.thumb_normalized(vma);
+        let entries = self.function_entries_canonical();
+        let below = entries.partition_point(|e| e.addr.get_offset() <= want);
+        let owner = entries.get(below.checked_sub(1)?)?;
+        let start = owner.addr.get_offset();
+        (start < want && want - start < owner.size).then(|| owner.clone())
+    }
+
     /// Resolve a selector without guessing between object-file coordinates.
     ///
     /// Numeric resolution checks the mapped synthetic address space first. On
