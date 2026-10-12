@@ -692,7 +692,10 @@ impl GuardRecord {
     /// (C++ `GuardRecord::valueMatch`, `jumptable.cc:638`).
     ///
     /// Returns 0 (clearly different), 1 (clearly the same value), or 2 (same
-    /// value pending no writes between their defining ops).
+    /// value pending no writes between their defining ops).  (kuna) Two LOADs
+    /// through addresses computed the same way from the same Varnodes, such
+    /// as a guard's `cmp byte [rax+rcx]` and the index's `movzx [rax+rcx]`,
+    /// also return 2 when no STORE or call lies between them.
     pub fn value_match(
         &self,
         fd: &Funcdata,
@@ -744,40 +747,78 @@ impl GuardRecord {
         }
         let ptr = fd.obank().get(load_op).unwrap().get_in(1).unwrap();
         let ptr2 = fd.obank().get(load_op2).unwrap().get_in(1).unwrap();
-        if ptr == ptr2 {
+        if Self::offset_pointers_match(fd, ptr, ptr2)
+            || (same_value_through(fd, ptr, ptr2, SAME_VALUE_DEPTH, false)
+                && Self::no_write_between(fd, load_op, load_op2))
+        {
             return 2;
         }
-        if !fd.vbank().get(ptr).unwrap().is_written() {
-            return 0;
+        0
+    }
+
+    /// The pointer forms upstream accepts for two LOADs of one value: the same
+    /// Varnode, or the same base plus equal constants.
+    fn offset_pointers_match(fd: &Funcdata, ptr: VarnodeId, ptr2: VarnodeId) -> bool {
+        if ptr == ptr2 {
+            return true;
         }
-        if !fd.vbank().get(ptr2).unwrap().is_written() {
-            return 0;
+        let def = |vn: VarnodeId| {
+            fd.vbank()
+                .get(vn)
+                .and_then(|v| v.get_def())
+                .and_then(|op| fd.obank().get(op))
+                .filter(|op| op.code() == OpCode::CPUI_INT_ADD)
+        };
+        let (Some(addop), Some(addop2)) = (def(ptr), def(ptr2)) else {
+            return false;
+        };
+        let (Some(constvn), Some(constvn2)) = (addop.get_in(1), addop2.get_in(1)) else {
+            return false;
+        };
+        addop.get_in(0) == addop2.get_in(0) && matching_constants(fd, constvn, constvn2)
+    }
+
+    /// (kuna) Whether one of LOADs `a` and `b` reaches the other with no
+    /// intervening STORE or call, through blocks with a single predecessor:
+    /// two reads of equal addresses then hold one value.
+    fn no_write_between(fd: &Funcdata, a: OpId, b: OpId) -> bool {
+        Self::reaches_without_write(fd, a, b) || Self::reaches_without_write(fd, b, a)
+    }
+
+    fn reaches_without_write(fd: &Funcdata, first: OpId, last: OpId) -> bool {
+        let Some(mut bl) = fd.obank().get(last).and_then(|op| op.get_parent()) else {
+            return false;
+        };
+        let mut stop = Some(last);
+        for _ in 0..NO_WRITE_BLOCKS {
+            let ops = fd.bb_ops(bl);
+            let end = stop
+                .and_then(|s| ops.iter().position(|&op| op == s))
+                .unwrap_or(ops.len());
+            for &op in ops[..end].iter().rev() {
+                if op == first {
+                    return true;
+                }
+                let writes = fd.obank().get(op).is_none_or(|o| {
+                    matches!(
+                        o.code(),
+                        OpCode::CPUI_STORE
+                            | OpCode::CPUI_CALL
+                            | OpCode::CPUI_CALLIND
+                            | OpCode::CPUI_CALLOTHER
+                    )
+                });
+                if writes {
+                    return false;
+                }
+            }
+            if fd.bblocks_ref().block(bl).size_in() != 1 {
+                return false;
+            }
+            bl = fd.bblocks_ref().block(bl).get_in(0);
+            stop = None;
         }
-        let addop = fd.vbank().get(ptr).unwrap().get_def().unwrap();
-        if fd.obank().get(addop).unwrap().code() != OpCode::CPUI_INT_ADD {
-            return 0;
-        }
-        let constvn = fd.obank().get(addop).unwrap().get_in(1).unwrap();
-        if !fd.vbank().get(constvn).unwrap().is_constant() {
-            return 0;
-        }
-        let addop2 = fd.vbank().get(ptr2).unwrap().get_def().unwrap();
-        if fd.obank().get(addop2).unwrap().code() != OpCode::CPUI_INT_ADD {
-            return 0;
-        }
-        let constvn2 = fd.obank().get(addop2).unwrap().get_in(1).unwrap();
-        if !fd.vbank().get(constvn2).unwrap().is_constant() {
-            return 0;
-        }
-        if fd.obank().get(addop).unwrap().get_in(0) != fd.obank().get(addop2).unwrap().get_in(0) {
-            return 0;
-        }
-        if fd.vbank().get(constvn).unwrap().get_offset()
-            != fd.vbank().get(constvn2).unwrap().get_offset()
-        {
-            return 0;
-        }
-        2
+        false
     }
 
     /// Return 1 if the two given PcodeOps produce exactly the same value, 0
@@ -1999,11 +2040,19 @@ const GUARD_EVALUATION_OPS: usize = 32;
 /// (kuna) The deepest op chain [`same_value`] compares.
 const SAME_VALUE_DEPTH: u32 = 6;
 
+/// (kuna) The most blocks [`GuardRecord::no_write_between`] walks back.
+const NO_WRITE_BLOCKS: usize = 8;
+
 /// (kuna) Whether `a` and `b` hold the same value: the same varnode, equal
 /// constants, or outputs of the same pure op over inputs holding the same
 /// values, at most `depth` ops deep.  Two LOADs through equal addresses are
 /// taken to read the same value, as [`GuardRecord::value_match`] takes them.
 fn same_value(fd: &Funcdata, a: VarnodeId, b: VarnodeId, depth: u32) -> bool {
+    same_value_through(fd, a, b, depth, true)
+}
+
+/// (kuna) [`same_value`], comparing two LOADs only when `loads` is set.
+fn same_value_through(fd: &Funcdata, a: VarnodeId, b: VarnodeId, depth: u32, loads: bool) -> bool {
     if a == b {
         return true;
     }
@@ -2025,9 +2074,10 @@ fn same_value(fd: &Funcdata, a: VarnodeId, b: VarnodeId, depth: u32) -> bool {
     depth > 0
         && oa.code() == ob.code()
         && EmulateFunction::is_pure(oa.code())
+        && (loads || oa.code() != OpCode::CPUI_LOAD)
         && oa.num_input() == ob.num_input()
         && (0..oa.num_input()).all(|slot| match (oa.get_in(slot), ob.get_in(slot)) {
-            (Some(x), Some(y)) => same_value(fd, x, y, depth - 1),
+            (Some(x), Some(y)) => same_value_through(fd, x, y, depth - 1, loads),
             _ => false,
         })
 }
@@ -2243,7 +2293,11 @@ impl JumpBasicModel {
                 loop {
                     if fd.bblocks_ref().block(bl).size_in() != 1 {
                         if fd.bblocks_ref().block(bl).size_in() > 1 {
+                            let recorded = self.selectguards.len();
                             self.check_unrolled_guard(fd, bl, maxpullback, usenzmask);
+                            if self.selectguards.len() == recorded {
+                                self.check_unrolled_guard_by_edge(fd, bl, maxpullback, usenzmask);
+                            }
                         }
                         return;
                     }
@@ -2693,6 +2747,92 @@ impl JumpBasicModel {
         }
     }
 
+    /// (kuna) Bound the MULTIEQUAL that merges the switch variable from the
+    /// predecessors of `bl` when each predecessor ends in its own copy of the
+    /// bound check, whatever its branch sense: the check on each incoming edge
+    /// is pulled back to that edge's MULTIEQUAL input, and the output gets the
+    /// union of the per-edge ranges.  Gated by `option switchmultipred`.
+    fn check_unrolled_guard_by_edge(
+        &mut self,
+        fd: &Funcdata,
+        bl: BlockId,
+        maxpullback: int4,
+        usenzmask: bool,
+    ) {
+        if !fd.get_arch().switch_multi_pred {
+            return;
+        }
+        let size_in = fd.bblocks_ref().block(bl).size_in();
+        let mut chains: Vec<Vec<(VarnodeId, CircleRange)>> = Vec::with_capacity(size_in as usize);
+        let mut guard0 = None;
+        for edge in 0..size_in {
+            let Some((cbranch, outslot)) = Self::guard_cbranch_for_edge(fd, bl, edge) else {
+                return;
+            };
+            let Some(op) = fd.obank().get(cbranch) else {
+                return;
+            };
+            let Some(mut vn) = op.get_in(1) else {
+                return;
+            };
+            let mut rng = CircleRange::new_bool((outslot == 1) != op.is_boolean_flip());
+            let mut chain = Vec::new();
+            for _ in 0..maxpullback {
+                let Some(def) = fd.vbank().get(vn).and_then(|v| v.get_def()) else {
+                    break;
+                };
+                match circlerange_pull_back(fd, &mut rng, def, usenzmask) {
+                    Some(newvn) if !rng.is_empty() => vn = newvn,
+                    _ => break,
+                }
+                chain.push((vn, rng.clone()));
+            }
+            if edge == 0 {
+                let parent = op.get_parent().unwrap();
+                let indpath = if fd.bblocks_ref().block(parent).get_flip_path() {
+                    1 - outslot
+                } else {
+                    outslot
+                };
+                guard0 = Some((cbranch, indpath));
+            }
+            chains.push(chain);
+        }
+        let Some((cbranch, indpath)) = guard0 else {
+            return;
+        };
+        for &(vn0, _) in &chains[0] {
+            for op in fd.descend_snapshot(vn0) {
+                let Some(multi) = fd.obank().get(op) else {
+                    continue;
+                };
+                if multi.code() != OpCode::CPUI_MULTIEQUAL
+                    || multi.get_parent() != Some(bl)
+                    || multi.num_input() != size_in
+                    || multi.get_in(0) != Some(vn0)
+                {
+                    continue;
+                }
+                let mut merged = CircleRange::new_empty();
+                let covered = chains.iter().enumerate().all(|(edge, chain)| {
+                    let input = multi.get_in(edge as int4);
+                    chain
+                        .iter()
+                        .find(|(vn, _)| Some(*vn) == input)
+                        .is_some_and(|(_, rng)| merged.circle_union(rng) == 0)
+                });
+                let Some(out) = multi.get_out() else {
+                    continue;
+                };
+                if covered && !merged.is_empty() {
+                    self.selectguards
+                        .push(GuardRecord::new(fd, cbranch, cbranch, indpath, merged, out, true));
+                    return;
+                }
+            }
+        }
+    }
+
     /// Recover details of the model from the BRANCHIND (C++
     /// `JumpBasic::recoverModel`, `jumptable.cc:1565`).
     ///
@@ -2717,7 +2857,9 @@ impl JumpBasicModel {
         self.find_normalized(fd, parent, -1, matchsize, maxtablesize, indop)?;
         self.skip_stranding_variable(fd, indop, matchsize, maxtablesize);
         let unbounded = self.jrange().get_size() > maxtablesize as uintb;
-        self.rows_rejected = !unbounded && !self.can_label_rows(fd, indop);
+        self.rows_rejected = !unbounded
+            && !self.can_label_rows(fd, indop)
+            && !self.label_by_deeper_variable(fd, indop, maxtablesize);
         if unbounded || self.rows_rejected {
             // (kuna) GH-9191: the basic model could not bound the table.  When
             // `option switchmodbound on`, look for a modulo/and-mask bound on the
@@ -4161,6 +4303,40 @@ impl JumpBasicModel {
         }
         self.varnode_index = index;
         self.jrange = Some(jrange);
+    }
+
+    /// (kuna) Move the normalized variable away from the BRANCHIND, to the
+    /// first variable behind it with a bounded range that labels the
+    /// flow-time rows ([`Self::can_label_rows`]).  A guard on a reloaded map
+    /// entry ([`GuardRecord::value_match`]) can make that entry the smallest
+    /// range at a late re-recovery, while the flow-time rows were labelled by
+    /// the selector in front of the map, whose own guard the re-recovery no
+    /// longer finds.  Whether one was found; otherwise the model is unchanged.
+    fn label_by_deeper_variable(&mut self, fd: &Funcdata, indop: OpId, maxtablesize: uint4) -> bool {
+        let index = self.varnode_index;
+        let jrange = self.jrange().clone_box();
+        for i in index + 1..self.path_meld.num_common_varnode() {
+            let vn = self.path_meld.get_varnode(i);
+            let mut rng = CircleRange::new_empty();
+            self.calc_range(fd, vn, &mut rng);
+            if !(1..=maxtablesize as uintb).contains(&rng.get_size()) {
+                continue;
+            }
+            let earliest = self.path_meld.get_earliest_op(i);
+            self.varnode_index = i;
+            let jr = self.jrange_range_mut();
+            jr.set_range(rng);
+            jr.set_start_vn(vn);
+            if let Some(op) = earliest {
+                jr.set_start_op(op);
+            }
+            if self.can_label_rows(fd, indop) {
+                return true;
+            }
+        }
+        self.varnode_index = index;
+        self.jrange = Some(jrange);
+        false
     }
 
     /// Whether a switch over the normalized variable may label a case with a

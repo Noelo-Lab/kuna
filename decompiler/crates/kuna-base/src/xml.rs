@@ -2060,7 +2060,9 @@ mod tests {
         // and kuna-aifnoppad / no AIF entry starts on nop padding (GH-299)
         // and gh847-zerocallregs / a register a -fzero-call-used-regs epilogue
         // clears is not returned (GH-847)
-        assert_eq!(count, 491, "corpus file count drifted");
+        // and kuna-switchguardreload / kuna-switchunrolledsense: a guarded
+        // relative table is not read past its guard (GH-1028)
+        assert_eq!(count, 493, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
