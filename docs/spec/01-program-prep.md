@@ -4366,8 +4366,9 @@ the candidate and the start of its section. It ends like a function: decoded
 inside its gap, every path ends in a return, a computed jump, a trap (`int3`,
 `ud2`), a call followed by padding, or a jump to a known function entry; no path
 falls out of the gap into other code or jumps into the middle of decoded code; no
-`ret` is reached with the stack pointer above where it entered, which is a frame
-torn down that the routine never built; it does not open with `int3`, an address in
+`ret` is reached with the stack pointer above where it entered, and no `leave` on a
+path that never set the frame pointer — either is a frame torn down that the
+routine never built; it does not open with `int3`, an address in
 the middle of a padding run is not a function that opens with a `nop`, and no
 instruction of it is zero fill or `hlt`. That last test is what refuses a data
 table in `.text`: MinGW's `dlltool` puts each `__DELAY_IMPORT_DESCRIPTOR_*` there,
@@ -4380,12 +4381,13 @@ fall through into nothing and end in another dispatch, a jump back or a return,
 just as a function would. So inside a taker's function region (up to the next known
 entry) that holds such a jump — a register- or memory-indirect `jmp`, but not `jmp
 [rip+slot]`, which is a tail call through an import — a candidate is refused when
-more of the region's decoded code follows it, or when it sits right after the jump
-and its own code dispatches again. A return block right after the jump is refused
-by the stack test: gcc places the `return` label there, and it pops the frame
-with `add rsp,0x38` before its `ret`. A candidate right after the jump that neither dispatches nor tears down a
-frame is kept, because that is a lazy-binding stub's fallback: the stub stores
-`lea rax,[fallback]` or `GetProcAddress`'s result and tail-calls through `jmp rax`.
+more of the region's decoded code follows it, or when its own code dispatches. A
+return block is refused by the frame test: gcc `-O2` places the `return` label
+right after the jump and pops the frame with `add rsp,0x38` before its `ret`, and
+gcc `-O0` places it after the shared `jmp *%rax` and ends it with `leave`. A
+candidate after the function's code that neither dispatches nor tears down a frame
+is kept, because that is a lazy-binding stub's fallback: the stub stores `lea
+rax,[fallback]` or `GetProcAddress`'s result and tail-calls through `jmp rax`.
 The accepted entries re-seed the walk, which resumes from the Listing it
 already has (`decompiler/crates/kuna-analysis/src/listing/mod.rs (Listing::resume)`)
 and moves its instruction store rather than copying it, so their callees and the

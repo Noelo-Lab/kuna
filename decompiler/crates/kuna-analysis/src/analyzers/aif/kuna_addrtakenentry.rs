@@ -31,16 +31,16 @@
 //!   ends in a return, a computed jump, a trap (`int3`, `ud2`), a call followed
 //!   by padding, or a jump to a known function entry; no path falls out of the
 //!   gap into other code or jumps into the middle of decoded code; no `ret` is
-//!   reached with the stack above the entry (a frame torn down that the routine
-//!   never built); it does not open with `int3`, and no instruction of it is
-//!   zero fill or `hlt` — the
+//!   reached with the stack above the entry and no `leave` without a frame
+//!   pointer the path set (a frame torn down that the routine never built); it
+//!   does not open with `int3`, and no instruction of it is zero fill or `hlt`
+//!   — the
 //!   shape of a data table in `.text` (a MinGW delay-import descriptor decodes
 //!   to `add [rax],eax ; add [rax],al ; ... ; ret 0`);
 //! - it is not a label of a function that takes it: inside a taker's region
 //!   that holds a register- or memory-indirect `jmp`, an address before more of
-//!   the region's code, or right after such a jump when its own code dispatches
-//!   again, is a computed-`goto` or threaded-interpreter label, not a registered
-//!   function.
+//!   the region's code, or one whose own code dispatches, is a computed-`goto`
+//!   or threaded-interpreter label, not a registered function.
 //!
 //! The accepted entries re-seed the walk, so their callees and the addresses
 //! their own code takes are found too; acceptance repeats over the rebuilt
@@ -142,7 +142,7 @@ impl AddrTaken {
             let Some(&(lo, hi)) = ranges.iter().find(|&&(lo, hi)| target >= lo && target < hi) else {
                 continue;
             };
-            let label = own_label(listing, &dispatches, &claimed, lo, target, &takers);
+            let label = own_label(listing, &dispatches, target, &takers);
             if splits_claimed(&claimed, target) || label == Some(Label::Between) {
                 continue;
             }
@@ -156,7 +156,7 @@ impl AddrTaken {
             let dispatches_again = || {
                 body.iter().any(|(&at, c)| self.bytes(at, (c.end - at) as u32).is_some_and(is_indirect_jmp))
             };
-            if label == Some(Label::AfterDispatch) && dispatches_again() {
+            if label == Some(Label::After) && dispatches_again() {
                 continue;
             }
             accepted.insert(target);
@@ -232,34 +232,21 @@ fn materialized(at: u64, bytes: &[u8]) -> Option<u64> {
 enum Label {
     /// Before more of that function's decoded code: one of its blocks.
     Between,
-    /// Right after its dispatch jump: one of its blocks if the candidate's own
-    /// code dispatches again; a function the `jmp` tail-calls if it does not.
-    AfterDispatch,
+    /// After all of it: one of its blocks if the candidate's own code dispatches;
+    /// a function the `jmp` tail-calls if it does not.
+    After,
 }
 
 /// Whether `target` may be a label of a function that takes it: the target lies
-/// in a taker's function region (up to the next known entry), the region holds a
-/// register- or memory-indirect `jmp` (`dispatches`), and the target sits before
-/// more of the region's decoded code or right after such a jump. That is the
-/// computed-goto and threaded-interpreter shape — `lea rax,[label]` and later
-/// `jmp rax` — whose labels sit between the function's blocks (clang `-O0`) or
-/// after the dispatch jump (gcc), fall through into nothing and end in another
-/// dispatch, a jump back or a return, as a function would. A lazy-binding stub
-/// stores the address of a fallback that follows it and tail-calls through
-/// `jmp rax` too, so right after the jump only a candidate that dispatches again
-/// is refused.
-fn own_label(
-    listing: &Listing,
-    dispatches: &[u64],
-    claimed: &BTreeMap<u64, Claimed>,
-    lo: u64,
-    target: u64,
-    takers: &[u64],
-) -> Option<Label> {
-    let prev = listing
-        .instruction_before(target)
-        .filter(|insn| insn.addr >= lo && claimed.range(insn.addr..target).next().is_none())
-        .map(|insn| insn.addr);
+/// in a taker's function region (up to the next known entry) and the region holds
+/// a register- or memory-indirect `jmp` (`dispatches`). That is the computed-goto
+/// and threaded-interpreter shape — `lea rax,[label]` and later `jmp rax` — whose
+/// labels sit between the function's blocks (clang `-O0`) or after the dispatch
+/// jump (gcc), fall through into nothing and end in another dispatch, a jump back
+/// or a return, as a function would. A lazy-binding stub stores the address of a
+/// fallback that follows it and tail-calls through `jmp rax` too, so after the
+/// function's code only a candidate that dispatches itself is refused.
+fn own_label(listing: &Listing, dispatches: &[u64], target: u64, takers: &[u64]) -> Option<Label> {
     let next = listing.next_instruction_start_after(target);
     let mut label = None;
     for &taker in takers {
@@ -275,9 +262,7 @@ fn own_label(
         if next.is_some_and(|at| at < hi) {
             return Some(Label::Between);
         }
-        if prev.is_some_and(|at| at >= entry && dispatches.binary_search(&at).is_ok()) {
-            label = Some(Label::AfterDispatch);
-        }
+        label = Some(Label::After);
     }
     label
 }
@@ -361,8 +346,8 @@ fn routine(
     }
     let is_entry = |at: u64| listing.function_at(at).is_some() || accepted.contains(&at);
     let mut body: BTreeMap<u64, Claimed> = BTreeMap::new();
-    let mut work: Vec<(u64, bool, Option<i64>)> = vec![(target, false, Some(0))];
-    while let Some((at, after_call, depth)) = work.pop() {
+    let mut work: Vec<(u64, bool, Stack)> = vec![(target, false, Stack { depth: Some(0), frame: Frame::None })];
+    while let Some((at, after_call, stack)) = work.pop() {
         if body.contains_key(&at) {
             continue;
         }
@@ -378,10 +363,10 @@ fn routine(
         }
         let end = at.checked_add(u64::from(insn.len)).filter(|&end| end <= gap_hi)?;
         body.insert(at, Claimed { end, falls: insn.fall_through.is_some() });
-        if insn.is_terminal && depth.is_some_and(|d| d > 0) {
+        if insn.is_terminal && stack.depth.is_some_and(|d| d > 0) {
             return None;
         }
-        let depth = depth.and_then(|d| stack_step(&insn).map(|step| d + step));
+        let stack = stack.step(&insn)?;
         if insn.is_terminal || insn.kind == FlowKind::ComputedJump || is_trap(&insn) {
             continue;
         }
@@ -391,7 +376,7 @@ fn routine(
                     return None;
                 }
             } else if to >= target && to < gap_hi {
-                work.push((to, false, depth));
+                work.push((to, false, stack));
             } else if !is_entry(to) {
                 return None;
             }
@@ -400,7 +385,7 @@ fn routine(
             if fall >= gap_hi {
                 return None;
             }
-            work.push((fall, insn.is_call, depth));
+            work.push((fall, insn.is_call, stack));
         }
     }
     let mut last_end = 0;
@@ -413,11 +398,58 @@ fn routine(
     Some(body)
 }
 
+/// What a path through a candidate routine knows about its stack: how far `RSP`
+/// is above the entry (`None` once it is written in a way not followed), and
+/// whether the path set the frame pointer.
+#[derive(Clone, Copy)]
+struct Stack {
+    depth: Option<i64>,
+    frame: Frame,
+}
+
+/// Whether a path set `RBP` as a frame pointer, and at what depth.
+#[derive(Clone, Copy)]
+enum Frame {
+    None,
+    At(Option<i64>),
+}
+
+impl Stack {
+    /// The stack after `insn`, or `None` when `insn` is a `leave` on a path that
+    /// never set the frame pointer: like a `ret` above the entry, that tears down
+    /// a frame the routine did not build.
+    fn step(self, insn: &ProbedInsn) -> Option<Stack> {
+        let m = &*insn.mnemonic;
+        let writes_rbp = insn.operands.trim_start().to_ascii_lowercase().starts_with("rbp,");
+        if m.eq_ignore_ascii_case("leave") {
+            let Frame::At(at) = self.frame else { return None };
+            return Some(Stack { depth: at.map(|d| d + 8), frame: Frame::None });
+        }
+        let frame = if m.eq_ignore_ascii_case("enter") {
+            Frame::At(self.depth.map(|d| d - 8))
+        } else if m.eq_ignore_ascii_case("pop") && insn.operands.trim().eq_ignore_ascii_case("rbp") {
+            Frame::None
+        } else if writes_rbp && !m.eq_ignore_ascii_case("cmp") && !m.eq_ignore_ascii_case("test") {
+            let mov_rsp = m.eq_ignore_ascii_case("mov")
+                && insn.operands.chars().filter(|c| !c.is_whitespace()).collect::<String>().eq_ignore_ascii_case("rbp,rsp");
+            Frame::At(if mov_rsp { self.depth } else { None })
+        } else {
+            self.frame
+        };
+        let depth = if m.eq_ignore_ascii_case("enter") {
+            None
+        } else {
+            self.depth.and_then(|d| stack_step(insn).map(|step| d + step))
+        };
+        Some(Stack { depth, frame })
+    }
+}
+
 /// How far `insn` moves the stack pointer up (a pop is `+8`), `Some(0)` when it
 /// does not write `RSP`, and `None` when it writes it in a way not followed
-/// (`leave`, `mov rsp,r11`, `and rsp,-16`). A routine whose `ret` is reached
-/// with the stack above its entry tore down a frame it never built: it is the
-/// epilogue of the function around it, not a function.
+/// (`mov rsp,r11`, `and rsp,-16`). A routine whose `ret` is reached with the
+/// stack above its entry tore down a frame it never built: it is the epilogue of
+/// the function around it, not a function.
 fn stack_step(insn: &ProbedInsn) -> Option<i64> {
     let m = &*insn.mnemonic;
     let operands: String = insn.operands.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_ascii_lowercase();
@@ -428,7 +460,7 @@ fn stack_step(insn: &ProbedInsn) -> Option<i64> {
         return Some(8);
     }
     let Some(source) = operands.strip_prefix("rsp,") else {
-        return (!m.eq_ignore_ascii_case("leave")).then_some(0);
+        return Some(0);
     };
     let imm = |text: &str| {
         let (negative, digits) = text.strip_prefix('-').map_or((false, text), |rest| (true, rest));
@@ -489,6 +521,36 @@ mod tests {
         assert_eq!(materialized(0x1000, &[0x68, 0x00, 0x10, 0x40, 0x00]), Some(0x401000));
         // lea eax,[rip+0x10]: a 32-bit lea keeps the low half
         assert_eq!(materialized(0x1_0000_1000, &[0x8d, 0x05, 0x10, 0x00, 0x00, 0x00]), Some(0x1016));
+    }
+
+    fn insn(mnemonic: &str, operands: &str) -> super::ProbedInsn {
+        super::ProbedInsn {
+            len: 1, kind: crate::listing::FlowKind::Fallthrough, is_call: false, is_terminal: false,
+            fall_through: None, flows: Vec::new(), mnemonic: std::rc::Rc::from(mnemonic),
+            operands: operands.to_string(), reusable: None,
+        }
+    }
+
+    fn walk(insns: &[(&str, &str)]) -> Option<Option<i64>> {
+        let mut stack = super::Stack { depth: Some(0), frame: super::Frame::None };
+        for (m, o) in insns {
+            stack = stack.step(&insn(m, o))?;
+        }
+        Some(stack.depth)
+    }
+
+    /// gcc `-O0`'s computed-goto exit label reads the frame and `leave`s it
+    /// without having built it; a function that builds its frame balances.
+    #[test]
+    fn a_frame_torn_down_but_never_built_is_refused() {
+        assert_eq!(walk(&[("MOV", "RAX,qword ptr [RBP + -0x30]"), ("LEAVE", "")]), None);
+        assert_eq!(walk(&[("POP", "RBP")]), Some(Some(8)));
+        assert_eq!(walk(&[("ADD", "RSP,0x38")]), Some(Some(0x38)));
+        assert_eq!(
+            walk(&[("PUSH", "RBP"), ("MOV", "RBP,RSP"), ("SUB", "RSP,0x20"), ("LEAVE", "")]),
+            Some(Some(0))
+        );
+        assert_eq!(walk(&[("SUB", "RSP,0x28"), ("ADD", "RSP,0x28")]), Some(Some(0)));
     }
 
     #[test]
