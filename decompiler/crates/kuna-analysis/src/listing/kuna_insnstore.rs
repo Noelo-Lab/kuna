@@ -7,7 +7,7 @@ use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::ops::RangeBounds;
 
-use super::model::Insn;
+use super::model::{Insn, Mnemonic, MnemonicPool};
 
 const CHUNK_ROWS: usize = 1024;
 
@@ -15,6 +15,7 @@ const CHUNK_ROWS: usize = 1024;
 pub(super) struct InstructionStore {
     index: BTreeMap<u64, usize>,
     chunks: Vec<Vec<Insn>>,
+    mnemonics: MnemonicPool,
 }
 
 impl Clone for InstructionStore {
@@ -30,11 +31,16 @@ impl Clone for InstructionStore {
                     copy
                 })
                 .collect(),
+            mnemonics: self.mnemonics.clone(),
         }
     }
 }
 
 impl InstructionStore {
+    pub(super) fn intern_mnemonic(&mut self, text: &str) -> Mnemonic {
+        self.mnemonics.intern(text)
+    }
+
     pub fn insert(&mut self, address: u64, insn: Insn) -> Option<Insn> {
         match self.index.entry(address) {
             Entry::Occupied(entry) => {
@@ -120,7 +126,7 @@ mod tests {
                 ..FlowType::default()
             },
             flows: vec![addr.wrapping_add(17)],
-            mnemonic: format!("op_{addr}"),
+            mnemonic: format!("op_{addr}").into(),
             operands: format!("target_{addr}"),
             pcode: Some(vec![RawOp {
                 opcode: OpCode::CPUI_RETURN,

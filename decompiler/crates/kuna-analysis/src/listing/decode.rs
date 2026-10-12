@@ -20,7 +20,7 @@ use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::translate::{AssemblyEmit, PcodeEmit, Translate};
 
-use super::model::RawOp;
+use super::model::{Mnemonic, RawOp};
 
 /// A capturing [`PcodeEmit`] that records the emitted ops (opcode + first input)
 /// for one instruction. Only `in0` is kept — enough for the classifier and a
@@ -136,6 +136,22 @@ pub struct Decoded {
     pub stored_scalar_values: Vec<u64>,
 }
 
+/// The Listing walk's decode product. It interns the mnemonic directly from
+/// the assembly callback while retaining the operand body as owned text.
+pub(super) struct DecodedListing {
+    pub(super) len: u32,
+    pub(super) ops: Vec<RawOp>,
+    pub(super) mnemonic: Mnemonic,
+    pub(super) operands: String,
+    pub(super) stored_scalar_values: Vec<u64>,
+}
+
+struct CapturedInstruction {
+    len: u32,
+    ops: Vec<RawOp>,
+    stored_scalar_values: Vec<u64>,
+}
+
 /// Decode the instruction at `vma` (in `code_space`) by driving `translate`.
 ///
 /// Returns `Err` for an undecodable address (`KunaError::Unimpl` / `BadData`
@@ -147,11 +163,14 @@ pub struct Decoded {
 ///
 /// `want_assembly` selects whether the assembly TEXT is captured at all.
 /// `print_assembly` is a **second, full SLEIGH parse** of the same bytes, so it
-/// roughly doubles the per-instruction decode cost and adds two heap `String`s per
-/// instruction. Only the text-reading consumers need it (`noreturn_propagate`,
-/// `tailcallentry` and `poolentry` off [`super::Insn`], and the AIF prologue
-/// fingerprinter); pass `false` wherever only `len`/`ops` are read and the two
-/// text fields come back empty. `want_stored_scalars` selects the narrow x86
+/// roughly doubles the per-instruction decode cost. This public helper returns
+/// both text fields as owned `String`s; the Listing walk uses
+/// [`decode_one_listing`] to intern its repeated mnemonic text directly from the
+/// assembly callback while retaining operands as a `String`. Only the
+/// text-reading consumers need assembly (`noreturn_propagate`, `tailcallentry`
+/// and `poolentry` off [`super::Insn`], and the AIF prologue fingerprinter); pass
+/// `false` wherever only `len`/`ops` are read and the two public text fields come
+/// back empty. `want_stored_scalars` selects the narrow x86
 /// callback provenance described by [`Decoded::stored_scalar_values`]; it is
 /// false for every caller except the x86 fast-discovery Listing walk.
 pub fn decode_one(
@@ -161,27 +180,111 @@ pub fn decode_one(
     want_assembly: bool,
     want_stored_scalars: bool,
 ) -> KunaResult<Decoded> {
+    let mut asm = AsmCapture::default();
+    let captured = capture_instruction(
+        translate,
+        vma,
+        code_space,
+        want_assembly,
+        want_stored_scalars,
+        &mut asm,
+    )?;
+    Ok(Decoded {
+        len: captured.len,
+        ops: captured.ops,
+        mnemonic: asm.mnemonic,
+        operands: asm.operands,
+        stored_scalar_values: captured.stored_scalar_values,
+    })
+}
+
+/// Decode for the Listing walker, interning mnemonic text in the serial store
+/// or current parallel lane as soon as the assembly callback provides it.
+pub(super) fn decode_one_listing(
+    translate: &dyn Translate,
+    vma: u64,
+    code_space: &Rc<AddrSpace>,
+    want_assembly: bool,
+    want_stored_scalars: bool,
+    intern: &mut impl FnMut(&str) -> Mnemonic,
+) -> KunaResult<DecodedListing> {
+    let mut asm = InterningAsmCapture::new(intern);
+    let captured = capture_instruction(
+        translate,
+        vma,
+        code_space,
+        want_assembly,
+        want_stored_scalars,
+        &mut asm,
+    )?;
+    Ok(DecodedListing {
+        len: captured.len,
+        ops: captured.ops,
+        mnemonic: asm.mnemonic,
+        operands: asm.operands,
+        stored_scalar_values: captured.stored_scalar_values,
+    })
+}
+
+fn capture_instruction(
+    translate: &dyn Translate,
+    vma: u64,
+    code_space: &Rc<AddrSpace>,
+    want_assembly: bool,
+    want_stored_scalars: bool,
+    asm: &mut dyn AssemblyEmit,
+) -> KunaResult<CapturedInstruction> {
     let addr = Address::new(Rc::clone(code_space), vma);
 
-    let mut cap = OpCapture { want_stored_scalars, ..OpCapture::default() };
+    let mut cap = OpCapture {
+        want_stored_scalars,
+        ..OpCapture::default()
+    };
     let len = translate.one_instruction(&mut cap, &addr)?;
 
-    let mut asm = AsmCapture::default();
     if want_assembly {
         // The mnemonic is non-essential to flow; if the disassembly emit errs we
         // keep the (possibly empty) captured string rather than failing the decode.
-        let _ = translate.print_assembly(&mut asm, &addr);
+        let _ = translate.print_assembly(asm, &addr);
     }
 
     cap.stored_scalar_values.sort_unstable();
     cap.stored_scalar_values.dedup();
-    Ok(Decoded {
+    Ok(CapturedInstruction {
         len: len.max(0) as u32,
         ops: cap.ops,
-        mnemonic: asm.mnemonic,
-        operands: asm.operands,
         stored_scalar_values: cap.stored_scalar_values,
     })
+}
+
+struct InterningAsmCapture<'a, F> {
+    intern: &'a mut F,
+    mnemonic: Mnemonic,
+    operands: String,
+}
+
+impl<'a, F> InterningAsmCapture<'a, F>
+where
+    F: FnMut(&str) -> Mnemonic,
+{
+    fn new(intern: &'a mut F) -> Self {
+        Self {
+            intern,
+            mnemonic: Mnemonic::default(),
+            operands: String::new(),
+        }
+    }
+}
+
+impl<F> AssemblyEmit for InterningAsmCapture<'_, F>
+where
+    F: FnMut(&str) -> Mnemonic,
+{
+    fn dump(&mut self, _addr: &Address, mnemonic: &str, body: &str) {
+        self.mnemonic = (self.intern)(mnemonic);
+        self.operands.clear();
+        self.operands.push_str(body);
+    }
 }
 
 /// AIF needs both flow and text for each new speculative decode. The combined
@@ -302,6 +405,17 @@ mod tests {
         let decoded = decode_one(&sleigh, 0x1000, &ram, true, true).unwrap();
         assert_eq!(decoded.mnemonic, "PUSH");
         assert_eq!(decoded.stored_scalar_values, vec![0x2000]);
+
+        let mut pool = super::super::model::MnemonicPool::default();
+        let listed = decode_one_listing(&sleigh, 0x1000, &ram, true, true, &mut |text| {
+            pool.intern(text)
+        })
+        .unwrap();
+        assert_eq!(listed.len, decoded.len);
+        assert_eq!(listed.mnemonic.as_str(), decoded.mnemonic.as_str());
+        assert_eq!(listed.operands, decoded.operands);
+        assert_eq!(listed.ops.len(), decoded.ops.len());
+        assert_eq!(listed.stored_scalar_values, decoded.stored_scalar_values);
     }
 
     #[test]

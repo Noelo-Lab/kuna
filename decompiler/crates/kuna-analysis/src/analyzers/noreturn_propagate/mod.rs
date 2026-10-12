@@ -741,7 +741,7 @@ mod tests {
             fall_through: ft,
             flow,
             flows,
-            mnemonic: String::new(),
+            mnemonic: String::new().into(),
             operands: String::new(),
             pcode: None,
         }
@@ -892,7 +892,7 @@ mod tests {
             fall_through,
             flow,
             flows,
-            mnemonic: String::new(),
+            mnemonic: String::new().into(),
             operands: String::new(),
             pcode: None,
         }

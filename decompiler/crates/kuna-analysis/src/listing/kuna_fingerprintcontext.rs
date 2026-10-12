@@ -110,12 +110,8 @@ impl FingerprintContexts {
                 translate.print_assembly(&mut mnemonic, &addr)
             }));
             if matches!(rendered, Ok(Ok(n)) if n > 0 && n as u32 == len) {
-                listing
-                    .insns
-                    .get_mut(&at)
-                    .unwrap()
-                    .mnemonic
-                    .clone_from(&mnemonic.0);
+                let interned = listing.insns.intern_mnemonic(&mnemonic.0);
+                listing.insns.get_mut(&at).unwrap().mnemonic = interned;
             }
         }
     }

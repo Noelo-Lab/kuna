@@ -11,8 +11,115 @@
 //! derived once from the emitted p-code by [`super::classify::classify`], the
 //! lifted copy of `p2_lift/flow.rs::xref_control_flow`.
 
+use std::collections::HashSet;
+use std::fmt;
+use std::ops::Deref;
+use std::sync::Arc;
+
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
+
+/// Immutable instruction text shared by records decoded on the same lane.
+///
+/// `Insn` and `InsnLite` expose this as a string-like value, while a lane-local
+/// pool keeps repeated spellings from owning a separate allocation for every
+/// instruction. The allocation strategy stays private to the Listing model.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Mnemonic(Option<Arc<str>>);
+
+impl Mnemonic {
+    /// The decoded mnemonic text, or the empty string when assembly was not
+    /// captured.
+    pub fn as_str(&self) -> &str {
+        self.0.as_deref().unwrap_or("")
+    }
+
+    fn from_arc(text: Arc<str>) -> Self {
+        if text.is_empty() {
+            Self::default()
+        } else {
+            Self(Some(text))
+        }
+    }
+}
+
+impl Default for Mnemonic {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
+impl Deref for Mnemonic {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl AsRef<str> for Mnemonic {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for Mnemonic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl fmt::Debug for Mnemonic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self.as_str(), f)
+    }
+}
+
+impl From<&str> for Mnemonic {
+    fn from(text: &str) -> Self {
+        if text.is_empty() {
+            Self::default()
+        } else {
+            Self(Some(Arc::from(text)))
+        }
+    }
+}
+
+impl From<String> for Mnemonic {
+    fn from(text: String) -> Self {
+        if text.is_empty() {
+            Self::default()
+        } else {
+            Self(Some(Arc::from(text)))
+        }
+    }
+}
+
+impl PartialEq<&str> for Mnemonic {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+/// One mnemonic dictionary per serial walk or parallel decode lane.
+#[derive(Clone, Default)]
+pub(super) struct MnemonicPool {
+    values: HashSet<Arc<str>>,
+}
+
+impl MnemonicPool {
+    pub(super) fn intern(&mut self, text: &str) -> Mnemonic {
+        if text.is_empty() {
+            return Mnemonic::default();
+        }
+        if let Some(value) = self.values.get(text) {
+            return Mnemonic::from_arc(Arc::clone(value));
+        }
+        let value: Arc<str> = Arc::from(text);
+        self.values.insert(Arc::clone(&value));
+        Mnemonic::from_arc(value)
+    }
+}
 
 /// One decoded machine instruction. Owned; produced by the walker.
 ///
@@ -32,7 +139,7 @@ pub struct Insn {
     /// Static control targets (`getFlows`): branch/call destination VMAs.
     pub flows: Vec<u64>,
     /// The decoded mnemonic (from a capturing `AssemblyEmit`).
-    pub mnemonic: String,
+    pub mnemonic: Mnemonic,
     /// The decoded operand body — the `body` half of `AssemblyEmit::dump`
     /// (`MOV EDI,0x2` ⇒ mnemonic `MOV`, operands `EDI,0x2`). Populated on the
     /// real-ELF Listing path alongside `mnemonic`; the `noreturn_error` consumer
@@ -71,7 +178,7 @@ pub struct InsnLite {
     /// Static control targets (`getFlows`): branch/call destination VMAs.
     pub flows: Vec<u64>,
     /// The decoded mnemonic (empty when the walk captured no assembly).
-    pub mnemonic: String,
+    pub mnemonic: Mnemonic,
     /// The decoded operand body (empty when the walk captured no assembly).
     pub operands: String,
 }
@@ -97,6 +204,61 @@ const _: fn() = || {
     fn send<T: Send>() {}
     send::<InsnLite>();
 };
+
+#[cfg(test)]
+mod mnemonic_tests {
+    use super::{Mnemonic, MnemonicPool};
+    use std::sync::Arc;
+
+    #[test]
+    fn a_lane_reuses_spellings_and_owns_them_after_the_pool_drops() {
+        let (first, second) = {
+            let mut pool = MnemonicPool::default();
+            (pool.intern("MOV"), pool.intern("MOV"))
+        };
+
+        assert_eq!(first, second);
+        assert_eq!(first, "MOV");
+        assert!(Arc::ptr_eq(
+            first.0.as_ref().expect("nonempty mnemonic has shared text"),
+            second
+                .0
+                .as_ref()
+                .expect("nonempty mnemonic has shared text"),
+        ));
+        assert_eq!(first.as_str(), "MOV");
+    }
+
+    #[test]
+    fn different_lanes_do_not_share_a_global_pool() {
+        let mut first_lane = MnemonicPool::default();
+        let mut second_lane = MnemonicPool::default();
+        let first = first_lane.intern("BL");
+        let second = second_lane.intern("BL");
+
+        assert_eq!(first, second);
+        assert!(!Arc::ptr_eq(
+            first.0.as_ref().unwrap(),
+            second.0.as_ref().unwrap(),
+        ));
+    }
+
+    #[test]
+    fn empty_text_has_no_allocation_and_owned_unicode_roundtrips() {
+        let mut pool = MnemonicPool::default();
+        let from_str = Mnemonic::from("");
+        let from_string = Mnemonic::from(String::new());
+        let interned = pool.intern("");
+        assert_eq!(from_str, Mnemonic::default());
+        assert_eq!(from_string, Mnemonic::default());
+        assert_eq!(interned, Mnemonic::default());
+        assert!(interned.0.is_none());
+
+        let text = "指令_非常に長い_instruction".repeat(4);
+        let mnemonic = Mnemonic::from(text.clone());
+        assert_eq!(mnemonic.as_str(), text);
+    }
+}
 
 /// Faithful projection of Ghidra's `FlowType` predicate set.
 ///

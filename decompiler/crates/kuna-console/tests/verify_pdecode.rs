@@ -65,7 +65,7 @@ fn partition(listing: &Listing) -> Partition {
                 i.fall_through,
                 i.flow,
                 i.flows.clone(),
-                i.mnemonic.clone(),
+                i.mnemonic.to_string(),
                 i.operands.clone(),
             )
         })
