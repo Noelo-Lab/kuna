@@ -168,8 +168,14 @@ fn basic(data: &Funcdata, b: BlockId) -> bool {
     matches!(data.bblocks_ref().block(b).kind(), BlockKind::Basic(_))
 }
 
+/// An op in [`PURE`] whose output is not global storage the caller can observe.
+fn effect_free(data: &Funcdata, o: OpId, codes: &[OpCode]) -> bool {
+    let o = op(data, o);
+    codes.contains(&o.code()) && o.get_out().is_none_or(|v| !data.vbank().get(v).is_some_and(|n| n.is_persist()))
+}
+
 fn pure_block(data: &Funcdata, b: BlockId) -> bool {
-    basic(data, b) && data.bb_ops(b).iter().all(|&o| PURE.contains(&op(data, o).code()))
+    basic(data, b) && data.bb_ops(b).iter().all(|&o| effect_free(data, o, PURE))
 }
 
 fn phis(data: &Funcdata, b: BlockId) -> Vec<OpId> {
@@ -235,21 +241,24 @@ fn element_load(data: &Funcdata, v: VarnodeId, width: i64) -> Option<OpId> {
     }
 }
 
-/// Byte index, in significance order, of `v`'s low byte within the LOAD it was
-/// sliced from.
-fn sliced(data: &Funcdata, v: VarnodeId) -> Option<(OpId, i64)> {
+/// Where `v`'s low bytes come from: the LOAD, the byte index in significance
+/// order of `v`'s low byte within it, and how many of `v`'s bytes are that
+/// LOAD's bytes.
+fn sliced(data: &Funcdata, v: VarnodeId) -> Option<(OpId, i64, i64)> {
     let (id, o) = def(data, v)?;
     match o.code() {
-        CPUI_LOAD => Some((id, 0)),
+        CPUI_LOAD => Some((id, 0, size(data, v))),
         CPUI_COPY | CPUI_INT_ZEXT => sliced(data, o.get_in(0)?),
         CPUI_INT_RIGHT => {
             let bits = constant(data, o.get_in(1)?)?;
-            let (load, n) = sliced(data, o.get_in(0)?)?;
-            (bits % 8 == 0).then(|| (load, n + (bits / 8) as i64))
+            let (load, n, k) = sliced(data, o.get_in(0)?)?;
+            let b = (bits / 8) as i64;
+            (bits % 8 == 0 && b < k).then_some((load, n + b, k - b))
         }
         CPUI_SUBPIECE => {
-            let (load, n) = sliced(data, o.get_in(0)?)?;
-            Some((load, n + constant(data, o.get_in(1)?)? as i64))
+            let (load, n, k) = sliced(data, o.get_in(0)?)?;
+            let c = constant(data, o.get_in(1)?)? as i64;
+            (c < k).then(|| (load, n + c, (k - c).min(size(data, v))))
         }
         _ => None,
     }
@@ -264,13 +273,14 @@ fn lane(data: &Funcdata, v: VarnodeId) -> Option<(OpId, i64, i64)> {
         CPUI_INT_AND => {
             let mask = constant(data, o.get_in(1)?)?;
             let e = (1..=width.min(8)).find(|&e| mask == u64::MAX >> (64 - 8 * e))?;
-            let (load, n) = sliced(data, o.get_in(0)?)?;
-            Some((load, n, e))
+            let (load, n, k) = sliced(data, o.get_in(0)?)?;
+            (e <= k).then_some((load, n, e))
         }
         CPUI_INT_ZEXT => {
             let inner = o.get_in(0)?;
-            let (load, n) = sliced(data, inner)?;
-            Some((load, n, size(data, inner)))
+            let (load, n, k) = sliced(data, inner)?;
+            let e = size(data, inner);
+            (e <= k).then_some((load, n, e))
         }
         CPUI_INT_RIGHT => {
             let bits = constant(data, o.get_in(1)?)? as i64;
@@ -281,8 +291,9 @@ fn lane(data: &Funcdata, v: VarnodeId) -> Option<(OpId, i64, i64)> {
         }
         CPUI_LOAD => Some((id, 0, width)),
         CPUI_SUBPIECE => {
-            let (load, n) = sliced(data, o.get_in(0)?)?;
-            Some((load, n + constant(data, o.get_in(1)?)? as i64, width))
+            let (load, n, k) = sliced(data, o.get_in(0)?)?;
+            let c = constant(data, o.get_in(1)?)? as i64;
+            (c + width <= k).then_some((load, n + c, width))
         }
         _ => None,
     }
@@ -398,7 +409,8 @@ fn fold_leaves(data: &Funcdata, v: VarnodeId, b: BlockId, out: &mut Vec<VarnodeI
     }
 }
 
-/// The lower bound on `len` that the guard proves on the edge into the arm.
+/// The lower bound on `len` that the guard proves on the edge into the arm; a
+/// signed compare proves nothing against a negative constant.
 fn guard_bound(data: &Funcdata, g: BlockId, arm: BlockId, len: VarnodeId) -> Option<u64> {
     let (t, _) = taken(data, g)?;
     let (_, cond) = def(data, op(data, data.bb_op_tail(g)?).get_in(1)?)?;
@@ -407,13 +419,17 @@ fn guard_bound(data: &Funcdata, g: BlockId, arm: BlockId, len: VarnodeId) -> Opt
         CPUI_INT_LESSEQUAL | CPUI_INT_SLESSEQUAL => false,
         _ => return None,
     };
+    let signed = matches!(cond.code(), CPUI_INT_SLESS | CPUI_INT_SLESSEQUAL);
     let (x, y) = (cond.get_in(0)?, cond.get_in(1)?);
     let arm_on_true = t == arm;
+    let bound = |k: VarnodeId, c: u64, extra: bool| {
+        let shift = 64 - 8 * size(data, k).min(8) as u32;
+        let negative = signed && ((c << shift) as i64) < 0;
+        (!negative).then(|| c.checked_add(extra as u64)).flatten()
+    };
     match (constant(data, x), constant(data, y)) {
-        // c < len / c <= len holds on the arm
-        (Some(c), None) if strip(data, y, true) == len && arm_on_true => Some(c + strict as u64),
-        // len < c / len <= c fails on the arm
-        (None, Some(c)) if strip(data, x, true) == len && !arm_on_true => Some(c + !strict as u64),
+        (Some(c), None) if strip(data, y, true) == len && arm_on_true => bound(x, c, strict),
+        (None, Some(c)) if strip(data, x, true) == len && !arm_on_true => bound(y, c, !strict),
         _ => None,
     }
 }
@@ -437,6 +453,16 @@ fn returned_from(data: &Funcdata, r: BlockId, pred: BlockId) -> Option<VarnodeId
 
 /// Match the vectorized reduction whose scalar remainder loop is block `h`;
 /// on success, the guard block and the index of its edge into the vector arm.
+/// In order it proves: the scalar body steps `j` by one and adds the element at
+/// `base + j*E` to `sum`; it loops while `j' != length`; it is entered with
+/// zeros from the else arm and with `(length & -S, fold)` from the vector arm,
+/// every other phi agreeing on both; the fold block adds each accumulator once
+/// and returns early iff `length & -S == length`; the vector loop steps `i` by
+/// S and every other phi accumulates one lane, the lanes tiling S elements; the
+/// guard enters the arm only when `length >= S`; both exits hand back their
+/// sums, or a shared join merges them slot for slot; no block involved writes
+/// global storage; and nothing defined in the arm is read outside it except on
+/// a phi slot the edge removal deletes.
 fn match_reduction(data: &Funcdata, h: BlockId) -> Option<(BlockId, int4)> {
     let blocks = data.bblocks_ref();
     let hb = blocks.block(h);
@@ -445,7 +471,6 @@ fn match_reduction(data: &Funcdata, h: BlockId) -> Option<(BlockId, int4)> {
     }
     let back = (0..3).find(|&k| hb.get_in(k) == h)?;
 
-    // The scalar body: j steps by one, sum accumulates the element at base + j*E.
     let (mut j, mut sum) = (None, None);
     for p in phis(data, h) {
         let (out, next) = (op(data, p).get_out()?, op(data, p).get_in(back)?);
@@ -475,7 +500,6 @@ fn match_reduction(data: &Funcdata, h: BlockId) -> Option<(BlockId, int4)> {
     }
     let base = addr.base?;
 
-    // The scalar exit: back iff j' != length.
     let (_, cond) = def(data, op(data, data.bb_op_tail(h)?).get_in(1)?)?;
     let len = [cond.get_in(0)?, cond.get_in(1)?]
         .into_iter()
@@ -486,7 +510,6 @@ fn match_reduction(data: &Funcdata, h: BlockId) -> Option<(BlockId, int4)> {
         return None;
     }
 
-    // The two entries: zeros from the else arm, (length & -S, fold) from the vector arm.
     let (mut else_k, mut vec_k) = (None, None);
     for k in (0..3).filter(|&k| k != back) {
         let (ji, si) = (op(data, j_phi).get_in(k)?, op(data, s_phi).get_in(k)?);
@@ -506,7 +529,6 @@ fn match_reduction(data: &Funcdata, h: BlockId) -> Option<(BlockId, int4)> {
         }
     }
 
-    // The fold block: sums the accumulators, returns early iff length & -S == length.
     let xb = blocks.block(x);
     if !pure_block(data, x) || xb.size_in() != 1 {
         return None;
@@ -517,7 +539,6 @@ fn match_reduction(data: &Funcdata, h: BlockId) -> Option<(BlockId, int4)> {
     }
     let v = xb.get_in(0);
 
-    // The vector loop: i steps by S, every other phi accumulates one lane.
     let vb = blocks.block(v);
     if !pure_block(data, v) || vb.size_in() != 2 {
         return None;
@@ -589,7 +610,6 @@ fn match_reduction(data: &Funcdata, h: BlockId) -> Option<(BlockId, int4)> {
         return None;
     }
 
-    // The guard: branches into the preheader (or the loop itself) iff length >= S.
     let (g, arm_entry, pre) = if blocks.block(pre).size_out() == 1 {
         if !pure_block(data, pre) || blocks.block(pre).size_in() != 1 {
             return None;
@@ -617,7 +637,6 @@ fn match_reduction(data: &Funcdata, h: BlockId) -> Option<(BlockId, int4)> {
         return None;
     }
 
-    // Both exits hand back their sums; a shared join merges them slot for slot.
     let mut arm: Vec<BlockId> = pre.into_iter().chain([v, x]).collect();
     if r == rs {
         let (sx, sh) = (blocks.block(r).get_in_index(x), blocks.block(r).get_in_index(h));
@@ -634,15 +653,13 @@ fn match_reduction(data: &Funcdata, h: BlockId) -> Option<(BlockId, int4)> {
         if blocks.block(r).size_in() != 1 || !pure_block(data, r) || returned_from(data, r, x)? != sum_v {
             return None;
         }
-        let simple = |o: OpId| matches!(op(data, o).code(), CPUI_MULTIEQUAL | CPUI_COPY | CPUI_RETURN);
+        let simple = |o: OpId| effect_free(data, o, &[CPUI_MULTIEQUAL, CPUI_COPY, CPUI_RETURN]);
         if !data.bb_ops(rs).into_iter().all(simple) || returned_from(data, rs, h)? != s_next {
             return None;
         }
         arm.push(r);
     }
 
-    // Nothing defined in the arm is read outside it except on a phi slot the
-    // edge removal deletes.
     for &b in &arm {
         for o in data.bb_ops(b) {
             let Some(out) = op(data, o).get_out() else { continue };

@@ -25,7 +25,7 @@
 //! Offsets are significance offsets, independent of memory endianness.
 
 use crate::action::{ActionGroupList, Rule};
-use crate::context::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 use crate::dtype::type_metatype as Meta;
 use crate::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode::{self, *};
@@ -46,7 +46,7 @@ fn size(data: &Funcdata, vn: VarnodeId) -> i32 {
 
 fn set_op(data: &mut Funcdata, op: OpId, code: OpCode, inputs: &[VarnodeId]) {
     data.op_set_all_input(op, inputs).expect("wide-slice inputs");
-    data.op_set_opcode(op, TypeOp::new(code, 0, format!("{code:?}")));
+    data.op_set_opcode(op, crate::typeop::seam_type_op_for(code));
 }
 
 fn insert(data: &mut Funcdata, before: OpId, code: OpCode, width: i32, inputs: &[VarnodeId]) -> VarnodeId {

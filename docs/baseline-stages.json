@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2516,
-    2516
+    2518,
+    2518
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1929,6 +1929,8 @@
     "data:devectorize #3: option off hands the remainder over at length & ~7 (bug reproduced)",
     "data:devectorize #4: both passes keep the scalar byte loop body, once each",
     "data:devectorize #5: three loops in all: two in the compiler's shape, one after the re-roll",
+    "data:devectorize effects #1: both passes keep the vector arm of both functions",
+    "data:devectorize effects #2: both passes keep the early return's store of 1",
     "data:double is stored in its declared field",
     "data:earlyreturn #1: OFF keeps the diamond's else-arm, ON hoists it away (else appears once, in the OFF pass only)",
     "data:earlyreturn #2: ON logs the const-guard hoist exactly once",

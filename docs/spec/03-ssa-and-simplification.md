@@ -1930,17 +1930,27 @@ lanes tile exactly S elements for a power-of-two S the guard bounds; the fold
 adds every accumulator once; the scalar loop starts at `length & -S` with the
 fold, or at zero with zero, steps one element and exits at `length`; both exits
 hand back their sums (the early return and the scalar exit, or a shared join
-whose other phis agree slot for slot); every block of the arm is free of side
-effects; and nothing defined in the arm is read outside it except on a phi slot
-of the join. Integer addition is associative and commutative modulo 2^(8Z), so
+whose other phis agree slot for slot); no block of the arm, the remainder loop,
+the else block or the scalar exit writes global storage, so nothing the
+remainder loop computes besides the sum can be observed; and nothing defined in
+the arm is read outside it except on a phi slot of the join. A lane must lie
+inside the bytes of the load it is sliced from, and a signed guard against a
+negative constant proves no lower bound. Integer addition is associative and commutative modulo 2^(8Z), so
 the scalar loop from zero computes the same value on every input; the guard's
 vector edge is removed (`remove_branch`) and the arm is collected as
 unreachable. The option ships off because the rewrite erases the stride, the
 handoff alignment and the duplicated body, which a reader of the binary may
-want; floats, saturating and sign-extended lanes are not matched.
+want; like every on/off default-off option it is in the `aggressive` preset,
+so `--mode auto` turns it on for inputs under the aggressive size threshold.
+Floats, saturating and sign-extended lanes are not matched, and neither is a
+vector loop the compiler also unrolled (two vector iterations per trip with an
+odd-trip epilogue, clang 14's x86-64 `-O2`/`-O3` default) nor any gcc 11 shape
+measured.
 `tests/stages/kuna-devectorize.xml` runs the byte-sum witness in both passes
 (off: the guard, eight accumulators, fold and remainder loop; on: one
-`do { v1 += bytes[v2]; ... } while (length != v2)`).
+`do { v1 += bytes[v2]; ... } while (length != v2)`);
+`tests/stages/kuna-devectorize-effects.xml` keeps the vector arm of two
+hand-written sums whose exits disagree on a global store.
 
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs

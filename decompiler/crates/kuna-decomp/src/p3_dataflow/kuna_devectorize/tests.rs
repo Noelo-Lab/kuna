@@ -102,6 +102,33 @@ fn every_zero_extended_lane_form_names_its_bytes() {
 }
 
 #[test]
+fn lanes_never_read_past_the_slice_they_come_from() {
+    let (mut fd, anchor) = fixture();
+    let addr = input(&mut fd, 8, 0x200);
+    let word = load(&mut fd, anchor, 4, addr);
+    let zero = fd.new_constant(4, 0);
+    let two = fd.new_constant(4, 2);
+    let k16 = fd.new_constant(4, 16);
+    let byte = fd.new_constant(4, 0xff);
+    let half = fd.new_constant(4, 0xffff);
+
+    let low_byte = build(&mut fd, anchor, CPUI_SUBPIECE, 1, &[word, zero]);
+    let widened = build(&mut fd, anchor, CPUI_INT_ZEXT, 4, &[low_byte]);
+    let masked = build(&mut fd, anchor, CPUI_INT_AND, 4, &[widened, half]);
+    assert_eq!(lane_of(&fd, masked), None);
+
+    let low_half = build(&mut fd, anchor, CPUI_SUBPIECE, 2, &[word, zero]);
+    let padded = build(&mut fd, anchor, CPUI_INT_ZEXT, 4, &[low_half]);
+    let gone = build(&mut fd, anchor, CPUI_INT_RIGHT, 4, &[padded, k16]);
+    let zero_lane = build(&mut fd, anchor, CPUI_INT_AND, 4, &[gone, byte]);
+    assert_eq!(lane_of(&fd, zero_lane), None);
+    let past = build(&mut fd, anchor, CPUI_SUBPIECE, 2, &[padded, two]);
+    assert_eq!(lane_of(&fd, past), None);
+    let inside = build(&mut fd, anchor, CPUI_INT_AND, 4, &[padded, byte]);
+    assert_eq!(lane_of(&fd, inside), Some((word, 0, 1)));
+}
+
+#[test]
 fn addresses_split_into_base_index_scale_and_offset() {
     let (mut fd, anchor) = fixture();
     let base = input(&mut fd, 8, 0x200);

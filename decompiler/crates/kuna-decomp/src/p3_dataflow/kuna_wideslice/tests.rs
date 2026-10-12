@@ -1,5 +1,5 @@
 use super::*;
-use crate::{context::ArchContext, dtype::Datatype};
+use crate::{context::ArchContext, context::TypeOp, dtype::Datatype};
 use kuna_base::{
     address::Address,
     space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace},
