@@ -713,9 +713,9 @@ impl Pool<'_> {
             if !self.gate.allows() {
                 if self.gate.first_refusal() {
                     eprintln!(
-                        "[kuna {}] warning: {RUN_RERUN_FAILURES} or more functions have failed \
-                         again when re-run on their own, more than the workers have delivered, \
-                         so functions a worker leaves unfinished are not re-run while that lasts.",
+                        "[kuna {}] warning: {RUN_RERUN_FAILURES} or more re-runs have failed or \
+                         could not start, more than the workers have delivered, so functions a \
+                         worker leaves unfinished are not re-run while that lasts.",
                         self.tag
                     );
                 }
