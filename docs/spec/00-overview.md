@@ -2256,10 +2256,12 @@ which enumerates the inventory once for a whole batch of targets). An address
 that is itself an entry, or that no extent covers, has no answer. `kuna
 decompile` asks the console with `function containing <selector>` before
 installing the selection's symbol and reads the answer off the transcript; the
-in-process surfaces (`decompile --json`, `decompile-all`, `decompile-project`,
-`decompile-graph`) ask about the targets their selection already resolved and
-deduplicated (`decompiler/crates/kuna-cli/src/interior.rs (selections)`), and an
-unfiltered run, which selects inventory entries only, asks nothing. Each prints
+in-process surfaces (`decompile --json`, `decompile-all`, `decompile-project`)
+ask about the targets their selection already resolved and deduplicated
+(`decompiler/crates/kuna-cli/src/interior.rs (selections)`), and an unfiltered
+run, which selects inventory entries only, asks nothing. `decompile-graph` does
+not ask: it keeps only executable inventory entries, so it never decompiles an
+interior target. Each prints
 one `note:` per record on stderr naming the containing function and the offset,
 and the JSON record of such a target carries it as `interior_to`. The key exists only
 there, so `kuna decompile --json` of an entry stays byte-identical to its

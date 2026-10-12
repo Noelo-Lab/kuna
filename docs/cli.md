@@ -357,9 +357,9 @@ whole; if a function really starts there, `--define-function <addr>` makes it an
 entry and the note goes away. The exit status is unchanged. It is the address
 the selection resolves to that is checked, so the fragment's own name (`kuna
 decompile ./kuna_repro.exe sub_140001040`), a Thumb address carrying its mode bit
-and an object's `.text+0xOFF` answer the same way, and so do `decompile-all`,
-`decompile-project` and `decompile-graph` for each target selected by `--addr`
-or `--functions` — one note per record. With `--json` the record of such a
+and an object's `.text+0xOFF` answer the same way, and so do `decompile-all` and
+`decompile-project` for each target selected by `--addr` or `--functions` — one
+note per record. With `--json` the record of such a
 target carries it as `interior_to`: `{name,address,address_hex,offset}`. No other
 record has the key, so every other document is byte-for-byte what it was.
 
