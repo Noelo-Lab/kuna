@@ -842,10 +842,13 @@ kept alive by dead-code marking it fires zero times across the corpus, and the
 faithful throw is restored.)
 
 Two kuna extensions ride on the pass boundary: the per-function watchdog
-deadline is probed at each address-space iteration (§0.6 — a stripped-binary
-non-convergence spends its time inside heritage, so the pass bails here rather
-than at the next action boundary; the abandoned partial pass is never
-rendered), and after every pass `ActionHeritage` runs the lowered-switch input
+deadline is probed at each address-space iteration and before each range
+guard placement visits, and a pass whose deadline passed during placement
+returns before renaming (§0.6 — a stripped-binary non-convergence spends its
+time inside heritage, and a function that hands the addresses of thousands of
+stack locals to thousands of calls gets one INDIRECT per range per call, so
+the pass bails here rather than at the next action boundary; the abandoned
+partial pass is never rendered), and after every pass `ActionHeritage` runs the lowered-switch input
 repair (`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
 (Funcdata::kuna_repair_lowered_switch_inputs)`), which re-points a synthetic
 lowered-switch BRANCHIND whose input heritage normalized away (chapter 02). The

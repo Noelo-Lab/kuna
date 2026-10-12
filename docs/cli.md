@@ -1640,13 +1640,13 @@ Behaviors specific to `decompile-all`:
   arms only the fast whole-binary 10-second policy and leaves its other commands
   unbudgeted. A function whose decompile drive exceeds the budget is cut off
   cooperatively (deadline probes at the action/rule-pool/heritage loop
-  boundaries) and recorded as that function's `error` (`"per-function
-  decompile budget exceeded (N s)"`), the batch continuing. This is not a hard
-  process timer: it does not bound discovery, unprobed decoder work, C/variable
-  rendering, artifact construction, total export time, or memory. Driver
-  policy, not a stage-model settable — zero output change for a function whose
-  drive completes before expiry; the console / `decomp_dbg` parity path never
-  arms it.
+  boundaries, including each range heritage guards) and recorded as that
+  function's `error` (`"per-function decompile budget exceeded (N s)"`), the
+  batch continuing. This is not a hard process timer: it does not bound
+  discovery, unprobed decoder work, C/variable rendering, artifact
+  construction, total export time, or memory. Driver policy, not a stage-model
+  settable — zero output change for a function whose drive completes before
+  expiry; the console / `decomp_dbg` parity path never arms it.
 
 - **`--jobs N|auto` — the worker pool, and the decode lanes.** The per-function
   loop is ~96% of a whole-binary run's wall clock and the engine is

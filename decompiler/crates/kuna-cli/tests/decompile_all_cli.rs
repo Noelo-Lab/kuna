@@ -1125,6 +1125,31 @@ fn te_input_errors_preserve_format_and_target_diagnostics() {
     std::fs::remove_file(path).unwrap();
 }
 
+/// `big` in `tests/hang-repro/escaped_locals` hands each of 700 stack structs
+/// to a call, so heritage places one INDIRECT per stack range per call — about
+/// a million of them, 2.6 GB and 15 s even with a 1 s budget while that
+/// placement ignored the watchdog. It now stops at the deadline like every
+/// other probed loop.
+#[test]
+fn watchdog_stops_heritage_guard_placement() {
+    let bin = repo_root().join("tests/hang-repro/escaped_locals");
+    let start = Instant::now();
+    let (stdout, stderr, _) = run_kuna_with_timeout(
+        &[
+            "decompile-all", bin.to_str().unwrap(), "--functions", "big", "--json",
+            "--max-fn-seconds", "1", "--sleighpath", &specs(),
+        ],
+        Duration::from_secs(300),
+    )
+    .expect("decompile-all did not terminate within the 300s outer bound");
+    let elapsed = start.elapsed();
+    assert!(
+        stdout.contains("per-function decompile budget exceeded (1 s)"),
+        "expected the watchdog error record:\n{stdout}\n{stderr}"
+    );
+    assert!(elapsed < Duration::from_secs(10), "the 1 s watchdog took {elapsed:?} to stop big");
+}
+
 /// The past-pathological function of the stripped-ELF hang repro now
 /// CONVERGES: `sub_1bd04` @ 0x1bd04 used to spin forever (100% CPU, no output)
 /// in a condconst↔lowered-switch-repair fixpoint tug-of-war

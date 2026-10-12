@@ -946,13 +946,8 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // deadline unwound cooperatively (the action/heritage loops stop
         // scheduling work); surface it as the per-function error the batch
         // driver records, instead of printing a half-analyzed function.
-        if let Some(deadline) = arch.kuna_fn_deadline {
-            if std::time::Instant::now() >= deadline {
-                let secs = arch.kuna_fn_budget.map(|b| b.as_secs()).unwrap_or(0);
-                return Err(kuna_base::error::KunaError::lowlevel(format!(
-                    "per-function decompile budget exceeded ({secs} s)"
-                )));
-            }
+        if let Some(err) = budget_error(arch) {
+            return Err(err);
         }
         if r < 0 {
             return Ok(r); // breakpoint — propagate verbatim (no re-flow)
@@ -964,13 +959,8 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // give up once it passes, which would otherwise keep the guard.
         let spoiled =
             fd.stack_store_guard_spoiled() || crate::p6_variables::kuna_storereach::withdraw_spoiled_guard(fd);
-        if let Some(deadline) = arch.kuna_fn_deadline {
-            if std::time::Instant::now() >= deadline {
-                let secs = arch.kuna_fn_budget.map(|b| b.as_secs()).unwrap_or(0);
-                return Err(kuna_base::error::KunaError::lowlevel(format!(
-                    "per-function decompile budget exceeded ({secs} s)"
-                )));
-            }
+        if let Some(err) = budget_error(arch) {
+            return Err(err);
         }
         if spoiled {
             return Ok(total);
@@ -1340,9 +1330,11 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
             }
             Err(payload) => {
                 let msg = panic_message(payload);
-                Err(kuna_base::error::KunaError::lowlevel(format!(
-                    "decompile pipeline reached an un-ported seam (LOSS-131): {msg}"
-                )))
+                Err(budget_error(arch).unwrap_or_else(|| {
+                    kuna_base::error::KunaError::lowlevel(format!(
+                        "decompile pipeline reached an un-ported seam (LOSS-131): {msg}"
+                    ))
+                }))
             }
         }
     };
@@ -2534,6 +2526,18 @@ thread_local! {
 /// boundary interrupts, to give up early.
 pub(crate) fn deadline_passed() -> bool {
     FN_DEADLINE.with(|d| d.get().is_some_and(|d| std::time::Instant::now() >= d))
+}
+
+/// (kuna decompile-all watchdog) The per-function error for a budgeted drive
+/// whose deadline has passed: whatever the cut-off pipeline left behind is
+/// never printed.
+fn budget_error(arch: &Architecture) -> Option<KunaError> {
+    let deadline = arch.kuna_fn_deadline?;
+    if std::time::Instant::now() < deadline {
+        return None;
+    }
+    let secs = arch.kuna_fn_budget.map(|b| b.as_secs()).unwrap_or(0);
+    Some(KunaError::lowlevel(format!("per-function decompile budget exceeded ({secs} s)")))
 }
 
 /// Publishes a drive's deadline to [`deadline_passed`] and restores the one
