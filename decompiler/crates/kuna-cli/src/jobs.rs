@@ -1601,6 +1601,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         variables: Vec::new(),
         types: Vec::new(),
         globals: Vec::new(),
+        field_calls: Vec::new(),
         line_mappings: Vec::new(),
         aliases: t.aliases.clone(),
         object_location: t.object_location.clone(),
@@ -2031,6 +2032,18 @@ mod tests {
                 aggregate: true,
                 elem: true,
             }],
+            field_calls: vec![
+                kuna_decomp::kuna_calltargettype::FieldDecl {
+                    record: "struct_3".into(),
+                    field: "field_0x8".into(),
+                    declaration: Some("int (*field_0x8)(unsigned int,long)".into()),
+                },
+                kuna_decomp::kuna_calltargettype::FieldDecl {
+                    record: "struct_3".into(),
+                    field: "field_0x10".into(),
+                    declaration: None,
+                },
+            ],
             line_mappings: vec![LineMapping { line_number: 3, addresses: vec![0x401004] }],
             aliases: vec!["_main".into()],
             object_location: Some(ObjectLocation {
@@ -2056,6 +2069,7 @@ mod tests {
             && a.aliases == b.aliases
             && a.object_location == b.object_location
             && a.callee_hints == b.callee_hints
+            && a.field_calls == b.field_calls
             && a.pointerargs == b.pointerargs
             && a.synth == b.synth
             && a.line_mappings == b.line_mappings
@@ -2123,6 +2137,7 @@ mod tests {
             variables: Vec::new(),
             types: Vec::new(),
             globals: Vec::new(),
+            field_calls: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
@@ -2159,7 +2174,7 @@ mod tests {
     }
 
     #[test]
-    fn result_encoding_matches_the_version_six_wire_layout() {
+    fn result_encoding_matches_the_version_seven_wire_layout() {
         let dir = ScratchDir::create().unwrap();
         let path = dir.path().join("wire.bin").to_string_lossy().into_owned();
         let result = FuncResult {
@@ -2173,6 +2188,7 @@ mod tests {
             variables: Vec::new(),
             types: Vec::new(),
             globals: Vec::new(),
+            field_calls: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
@@ -2181,12 +2197,12 @@ mod tests {
             pointerargs: None,
             detail: None,
         };
-        let expected = b"KUNAJOBRES06\x01\x40\0\0\0\
+        let expected = b"KUNAJOBRES07\x01\x44\0\0\0\
             \x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0\
             \xff\xff\xff\xff\xff\xff\xff\xff\
             \x01\0\0\0f\0\x01\x01\0\0\0e\0\0\
             \0\0\0\0\0\0\0\0\0\0\0\0\
-            \0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+            \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
         ResultWriter::create(&path).unwrap().push(&result).unwrap();
         assert_eq!(std::fs::read(path).unwrap(), expected);
         let decoded = decode_results(expected).unwrap();
@@ -2571,6 +2587,7 @@ mod tests {
             variables: Vec::new(),
             types: Vec::new(),
             globals: Vec::new(),
+            field_calls: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,

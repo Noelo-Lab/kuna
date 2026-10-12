@@ -9,10 +9,10 @@ use std::ffi::OsString;
 use std::process::Command;
 
 use kuna_decomp::{
-    kuna_dwarfstructs, kuna_dwarfvariants, kuna_dynrelocs, kuna_i386_pie_plt, kuna_ifuncfpret,
-    kuna_libctypes, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal, kuna_relocrebase,
-    kuna_rexthunk, kuna_symbolnamebound, kuna_symbolnamechars, kuna_symbolnamerepair,
-    kuna_typedepth, options::RELOC_OBJECTS_ENV,
+    kuna_calltargettype, kuna_dwarfstructs, kuna_dwarfvariants, kuna_dynrelocs, kuna_i386_pie_plt,
+    kuna_ifuncfpret, kuna_libctypes, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal,
+    kuna_relocrebase, kuna_rexthunk, kuna_symbolnamebound, kuna_symbolnamechars,
+    kuna_symbolnamerepair, kuna_typedepth, options::RELOC_OBJECTS_ENV,
 };
 
 #[derive(Clone, Copy)]
@@ -45,6 +45,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "libctypes" => (kuna_libctypes::LIBCTYPES_ENV, LibcTypes),
         "dwarfstructs" => (kuna_dwarfstructs::DWARFSTRUCTS_ENV, DefaultOn),
         "dwarfvariants" => (kuna_dwarfvariants::DWARFVARIANTS_ENV, DefaultOn),
+        "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOff),
         "macho-arm64e" => ("KUNA_MACHO_ARM64E", Arm64e),
         _ => return None,
     })
@@ -107,6 +108,9 @@ fn settings(
         if let Some((key, encoding)) = binding(name) {
             values.insert(key, encoding.encode(value));
         }
+    }
+    if last_option_value(options, "setlanguage").is_some_and(|l| l.starts_with("rust")) {
+        values.insert(kuna_calltargettype::CALLTARGETTYPE_ENV, Some("off".into()));
     }
     if let Some(slice) = slice.filter(|s| !s.trim().is_empty()) {
         values.insert("KUNA_MACHO_SLICE", Some(slice.into()));

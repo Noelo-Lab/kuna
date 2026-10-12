@@ -838,6 +838,12 @@ pub struct ArchContext {
     /// Read by
     /// [`ActionCallTargetType`](crate::kuna_calltargettype::ActionCallTargetType).
     pub call_target_type: bool,
+    /// (kuna `calltargettype`) C output: a parameter or global takes the call's
+    /// type too, and a target whose uses disagree is cast at each call. The
+    /// Rust speller spells every pointer to code `*const ()`, so neither changes
+    /// anything there. Read by
+    /// [`retype_call_targets`](crate::kuna_calltargettype::retype_call_targets).
+    pub call_target_c: bool,
     /// (kuna `floatglobals`) The globals the program only moves through float
     /// registers, once the scan has run; read by
     /// [`float_only`](crate::kuna_floatglobals::float_only).
@@ -1736,6 +1742,7 @@ impl ArchContext {
             rodata_string: false,        // (kuna) rodatastring
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
             call_target_type: false,     // (kuna) option calltargettype
+            call_target_c: false,        // (kuna) option calltargettype, C output
             float_globals: None,         // (kuna) option floatglobals
             float_globals_pending: false,
             float_globals_wanted: std::cell::Cell::new(false),

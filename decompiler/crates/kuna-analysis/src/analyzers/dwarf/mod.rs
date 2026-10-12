@@ -241,6 +241,8 @@ struct DieSnap {
     const_value: Option<i64>,
     /// True if `DW_AT_declaration` is set (a declaration-only DIE — skip).
     declaration: bool,
+    /// (kuna `calltargettype`) `DW_AT_prototyped` on a `DW_TAG_subroutine_type`.
+    prototyped: bool,
     /// True if the DIE carries a `DW_AT_location` (a global var has a real address).
     has_location: bool,
     /// `DW_OP_addr` operand of a simple `DW_AT_location`, if that is its form.
@@ -288,6 +290,7 @@ impl DieSnap {
             array_count: None,
             const_value: None,
             declaration: false,
+            prototyped: false,
             has_location: false,
             addr_location: None,
             fbreg_location: None,
@@ -418,6 +421,9 @@ fn snapshot_unit(
         if matches!(entry.attr_value(gimli::DW_AT_declaration), Some(gimli::AttributeValue::Flag(true)))
         {
             snap.declaration = true;
+        }
+        if matches!(entry.attr_value(gimli::DW_AT_prototyped), Some(gimli::AttributeValue::Flag(true))) {
+            snap.prototyped = true;
         }
         if let Some(loc) = entry.attr_value(gimli::DW_AT_location) {
             snap.has_location = true;
@@ -644,7 +650,10 @@ fn build_datatype_at(
                 // enum size: fall back to the plain underlying integer.
                 .or_else(|| types.get_base(size, enum_fallback(size, signed)).ok())
         }
-        // Any other tag (e.g. subroutine_type) -> give up on this type cleanly.
+        gimli::DW_TAG_subroutine_type if kuna_decomp::kuna_calltargettype::dwarf_function_types() => {
+            build_subroutine(die, dies, types, word_size, walk, cpp)
+        }
+        // Any other tag -> give up on this type cleanly.
         _ => None,
     }
 }
@@ -885,6 +894,44 @@ fn build_enum(
     }
     let ct = types.get_type_enum_sized(&die.name, size, meta).ok()?;
     types.set_enum_values(&ct, nmap).ok()
+}
+
+/// (kuna `calltargettype`) The function type a `DW_TAG_subroutine_type` declares,
+/// so a pointer to it is a function pointer C can call rather than `void *`.
+/// An unprototyped `int (*)()` states no parameters (C++ states none of its
+/// types prototyped), C cannot spell a `...` with no parameter before it, and a
+/// parameter whose type cannot be built leaves nothing to state, so each keeps
+/// the `void` pointee.
+fn build_subroutine(
+    die: &DieSnap,
+    dies: &BTreeMap<usize, DieSnap>,
+    types: &dyn TypeFactory,
+    word_size: uint4,
+    walk: &mut TypeWalk,
+    cpp: bool,
+) -> Option<Rc<Datatype>> {
+    if !die.prototyped {
+        return None;
+    }
+    let mut pieces = PrototypePieces { first_var_arg_slot: -1, ..Default::default() };
+    pieces.outtype = Some(build_datatype(die.type_ref, dies, types, word_size, walk, cpp)?);
+    for &coff in &die.children {
+        let Some(child) = dies.get(&coff) else { continue };
+        match child.tag {
+            gimli::DW_TAG_formal_parameter => {
+                let ty = build_datatype(child.type_ref, dies, types, word_size, walk, cpp)?;
+                if ty.get_metatype() == type_metatype::TYPE_VOID {
+                    return None;
+                }
+                pieces.intypes.push(ty);
+                pieces.innames.push(String::new());
+            }
+            gimli::DW_TAG_unspecified_parameters if pieces.intypes.is_empty() => return None,
+            gimli::DW_TAG_unspecified_parameters => pieces.first_var_arg_slot = pieces.intypes.len() as i32,
+            _ => {}
+        }
+    }
+    types.get_type_code_proto(&pieces).ok()
 }
 
 /// Build [`PrototypePieces`] for a defined subprogram DIE (`DWARFFunction.read` +

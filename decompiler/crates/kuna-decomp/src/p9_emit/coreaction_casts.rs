@@ -376,6 +376,7 @@ pub(crate) fn get_input_cast(
             let curtype = data.vn_high_type_read_facing(invn, op);
             strat
                 .cast_standard(&reqtype, &curtype, false, true)
+                .or_else(|| crate::kuna_calltargettype::uncallable_target_cast(data, op, slot, &curtype))
                 .or_else(|| crate::kuna_truncarg::narrowed_arg_cast(data, strat, op, slot))
         }
     }
@@ -1181,7 +1182,7 @@ impl Funcdata {
             Some(t) => t as Rc<dyn crate::dtype::TypeFactory>,
             None => return 0,
         };
-        let strat = CastStrategyC::new(tlst);
+        let strat = CastStrategyC::new(tlst).with_record_identity(self.get_arch().call_target_c);
 
         let mut count: int4 = 0;
         // Follow data flow: basic blocks in dominance order, ops in block order.

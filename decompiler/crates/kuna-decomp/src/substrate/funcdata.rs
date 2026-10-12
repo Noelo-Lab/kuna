@@ -364,6 +364,7 @@ pub struct Funcdata {
     /// (kuna `calltargettype`) The function-pointer type each indirect call
     /// states, for a call whose target is cast at the call: the cast names it.
     kuna_call_target_types: std::collections::HashMap<OpId, std::rc::Rc<crate::dtype::Datatype>>,
+    kuna_field_calls: Vec<crate::kuna_calltargettype::FieldCall>,
     /// (kuna) Why the decompile pipeline aborted for this function, when it did.
     ///
     /// A caught per-function abort (`LOSS-131`) unwinds and discards the
@@ -689,6 +690,7 @@ impl Funcdata {
             pending_comments: Vec::new(),
             kuna_infertypes_settled: false,
             kuna_call_target_types: std::collections::HashMap::new(),
+            kuna_field_calls: Vec::new(),
             kuna_pipeline_failure: None,
             kuna_rejected_flow: Vec::new(),
             kuna_directive_symbols: Vec::new(),
@@ -2709,6 +2711,15 @@ impl Funcdata {
     /// (kuna `calltargettype`) Forget every recorded call target type.
     pub fn kuna_clear_call_target_types(&mut self) {
         self.kuna_call_target_types.clear();
+        self.kuna_field_calls.clear();
+    }
+    /// (kuna `calltargettype`) Record a call through a field of a synthesized record.
+    pub fn kuna_add_field_call(&mut self, call: crate::kuna_calltargettype::FieldCall) {
+        self.kuna_field_calls.push(call);
+    }
+    /// (kuna `calltargettype`) The calls through fields of synthesized records.
+    pub fn kuna_field_calls(&self) -> &[crate::kuna_calltargettype::FieldCall] {
+        &self.kuna_field_calls
     }
     /// (kuna `calltargettype`) Record the type the indirect call `op` states.
     pub fn kuna_set_call_target_type(&mut self, op: OpId, ty: std::rc::Rc<crate::dtype::Datatype>) {
