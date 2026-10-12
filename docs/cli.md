@@ -383,7 +383,11 @@ comment on its prototype and one at each cut edge, naming the address the edge l
 for. That holds for a conditional branch over the end as much as for fall-through
 past it — including a branch to the exclusive end itself, which is what a
 tail-clipped `if (err) goto fail;` looks like. A correct boundary ends in a return
-and produces no warning, so that comment is the signal to widen the range.
+or a recognized tail transfer and produces no warning. With `tailcalljump on`
+or `direct`, a terminal conditional branch to a separately known function entry
+outside the declared extent is a tail call on its taken path. Unknown targets
+and mid-function addresses still clip and warn, so that comment is the signal
+to review the range.
 
 A declaration also survives the whole-binary filter. Unfiltered `decompile-all`,
 `decompile-project` and the browser inventory decompile only entries inside a

@@ -1,0 +1,112 @@
+{
+  "opportunity": "kuna-globalarrayanchor::clear_slot",
+  "test_name": "kuna-globalarrayanchor",
+  "option": "globalarrayanchor",
+  "flag": "global_array_anchor",
+  "change_kind": "opt-in-tool",
+  "source_decompiler": "kuna",
+  "inspiration": "Independent synthetic indexed-array assembly",
+  "default_on": false,
+  "presets": [
+    "aggressive"
+  ],
+  "ablation_changed": null,
+  "parity": "OK",
+  "status": "ready_for_review",
+  "binary": "/tmp/clear-slot.bin",
+  "selector": "0x10000",
+  "func_addr": "0x10000",
+  "demo_kind": "raw-image with explicit declared array and prototype",
+  "demo_command": [
+    "decompile",
+    "/tmp/clear-slot.bin",
+    "0x10000",
+    "--addr",
+    "--raw-image",
+    "--target",
+    "sparc:BE:32:default:default",
+    "--base",
+    "0x10000",
+    "--mode",
+    "reliable",
+    "--assert-strict",
+    "--assert",
+    "prototype 0x10000 void clear_slot(short slot)",
+    "--assert",
+    "data 0x400018 short flags[2]"
+  ],
+  "speed_method": "10 interleaved samples per arm of 128 functions, warmup excluded, isolated test-profile builds; sweep and builds stopped during timing",
+  "speed_off_ms": 141.81055950029986,
+  "speed_on_ms": 147.93006700347178,
+  "speed_delta_pct": 4.315269275246725,
+  "speed_samples": 10,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_secondary": {
+    "indexed": {
+      "functions": 128,
+      "off_ms": 169.79952449764824,
+      "on_ms": 169.33896399859805,
+      "delta_pct": -0.27123780258676566,
+      "changed_functions": 128
+    }
+  },
+  "decisions": [
+    "Preserve only an exact declared array base; never choose a nearby symbol.",
+    "Defer whole-element negative displacements only while constant-pointer recovery remains active.",
+    "Catalog default OFF; aggressive enables the option with an explicit OFF override.",
+    "Treat unchanged cross-architecture outputs separately from positive synthetic trigger coverage."
+  ],
+  "validation": {
+    "stock_assertions": 675,
+    "stage_assertions": 2532,
+    "stage_files": 493,
+    "workspace": "passed",
+    "spec": "passed",
+    "tools_tests": 64,
+    "typed_cross_arch_controls": {
+      "architectures": 12,
+      "O0_O2_objects": 24,
+      "function_records_per_arm": 240,
+      "stable_changed_functions": 6
+    },
+    "additional_width_controls": {
+      "functions": 3,
+      "stable_changed_functions": 3,
+      "native_value_checks_per_variant": 48
+    },
+    "stock_configuration": "catalog defaults",
+    "public_corpus": {
+      "ELF_files": 920,
+      "architectures": 12,
+      "function_records_per_arm": 162130,
+      "selected_function_rechecked_files": 93,
+      "whole_context_files": 35,
+      "whole_context_records_per_arm": 9957,
+      "whole_context_120_files": 3,
+      "matched_whole_context_failures_per_arm": 15,
+      "stable_changed_functions": 1,
+      "stable_changed_hunks": 1,
+      "new_stable_failures": 0,
+      "unresolved_comparisons": 0,
+      "input_and_build_fingerprints": "matched before/after",
+      "classification": "exact string-array base and equivalent index displacement; switches unchanged"
+    },
+    "additional_index_controls": {
+      "duplicated_signed_index": {
+        "functions": 1,
+        "changed": 1,
+        "address_checks": 65536
+      },
+      "unsigned_width_order": {
+        "functions": 2,
+        "changed": 1,
+        "address_checks": 65544
+      }
+    },
+    "preset_precedence": "Final CLI verified reliable OFF, aggressive ON, auto-small ON, aggressive plus explicit OFF.",
+    "stage_rerun": "11/11 A64 fixture; fresh re-recorded baseline and full comparison 2532/2532 after two unsigned-index tests."
+  },
+  "ablation_status": "No global stock-corpus option flip recorded; catalog default remains OFF. Aggressive promotion uses whole-function public corpus OFF/ON comparison and typed positive controls."
+}

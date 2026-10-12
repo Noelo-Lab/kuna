@@ -1,0 +1,5 @@
+function 0x10000-0x10014=CopyFiveWords
+prototype 0x10000 void CopyFiveWords(void)
+data 0x11000 unsigned int source_words[5]
+data 0x11014 unsigned char mutable_tile_fallback[20]
+readonly 0x10014+8

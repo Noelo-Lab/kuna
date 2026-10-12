@@ -245,6 +245,18 @@ peeled in parallel first — different word sizes or different address spaces
 force a cast, `void *` never does, and once inside a pointer the signedness
 care is always on.
 
+`FLOAT_TRUNC` converts a floating value to a signed integer of its output
+width. If a merged variable is unsigned (including an unsigned enum), cast
+insertion keeps a signed conversion temporary before converting its integer
+bits to that variable's type. Boolean destinations retain their existing
+conversion of the truncated signed value to a truth value. An unsigned
+destination must not turn the floating conversion itself into a C
+floating-to-unsigned cast: negative values in the signed range would
+then acquire undefined behavior. Ordinary signed destinations retain their
+existing conversion. This correctness repair is architecture independent and
+needs no option; it does not model floating exception state or define C casts
+outside the signed integer's representable range.
+
 **Integer promotion.** C silently promotes small integers, so many extensions
 must *not* print. The strategy classifies a sub-`int` value's promotion as
 unsigned, signed, either, or unknown (`cast.rs
@@ -1128,6 +1140,46 @@ whole-container operand reads `return v1._0_16_ << 0x40;` under
 shifts a member of an array. What this does **not** fix is that container type
 itself. Recovering it needs either a scalar wide-integer type or a mid-end fold
 of the `CONCAT88(0,x) << 64` idiom; neither is done here.
+
+**Standard C for mapped byte arrays.** `bytearrayc` (default **off**,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_bytearrayc.rs`) provides a C11
+rendering choice for direct integer accesses of two, four or eight bytes within
+a mapped global array of one-byte integer elements. A one-byte access retains
+its subscript; a whole one-element byte array explicitly uses element zero.
+Partial and whole-array covers use the same checked interval:
+the offset plus access size must fit within the mapped object. This does not
+change the declared array type or the recovered operations.
+
+Reads call an emitted `kuna_bytearray_load<bits>_<le|be>` helper through the
+address of the first byte, then convert to the read-facing integer type. Stores
+call the matching `kuna_bytearray_store<bits>_<le|be>` helper with the value
+expression evaluated once. Same-width integer casts into an array view use
+scalar bits instead of an invalid C array cast. The helper reads or writes exactly the requested
+bytes through character pointers; it neither dereferences a wider pointer nor
+requires alignment or an effective integer type for the mapped object. Explicit
+unsigned shifts encode the target storage space's byte order, independently of
+the host byte order. A read used in a store argument completes before the store
+helper starts, preserving overlapping copies. Each width/endian pair has guarded
+static inline definitions so independently emitted functions can share one C
+translation unit. The preamble includes `<stdint.h>` and `<limits.h>` and asserts
+that a C byte has eight bits. The `kuna_bytearray_` helper names and
+`KUNA_BYTEARRAY_C_` guards belong to this generated support surface.
+
+The option deliberately leaves volatile accesses in their existing form:
+splitting a wide device access into several volatile byte accesses changes the
+observable access width and count, while casting a byte array to a wider volatile
+pointer would invent alignment and aliasing guarantees. Their standard-C
+representation requires an additional device/type contract. Read helpers accept
+`const void *`, store helpers accept `void *`, and neither casts away a qualifier
+on a source or destination argument. This option does not repair qualifier loss
+in declaration recovery. Arrays nested in aggregates, stack/register containers,
+noninteger values, non-byte-addressed spaces and other transfer widths also
+retain their existing representation. Off retains all existing emitted C.
+The authored CLI round trips in
+`decompiler/crates/kuna-cli/tests/mapped_array_c.rs` compile unchanged emitted
+bodies at `-O0` and `-O2` with strict aliasing and UBSan, including unaligned
+transfers, overlapping stores, signed reads, const sources, both ARM endian
+variants and an unchanged named-struct control.
 
 **Leaves with no Symbol.** Not every leaf has one. When no mapped symbol covers
 the storage the leaf falls through to the upstream `pushUnnamedLocation`
@@ -2033,6 +2085,12 @@ separators, bidi markers, surrogates and private-use ranges as escape-worthy,
 and `printc.rs (print_unicode)` emits the named C escapes then falls to `print_char_hex_escape`, which emits only `\x` (zero-padded to 2/4/8 hex digits by codepoint magnitude). Internal strings
 (not in the loadimage) can be registered under a constant-space hash address
 and resolve through the same cache.
+
+When `globalarrayanchor` is enabled, `ActionConstantPtr` records its per-function
+pass count for the P3 folding guard (§3.5). Reset activates this count only for
+a scheduled action with the option on; functions without that action leave the
+guard inactive. The fourth pass releases its hold on unresolved array-base
+constants.
 
 The probe's entry condition is a **type**, not a detected string boundary: the
 manager reads from whatever address it is handed, so the whole question is

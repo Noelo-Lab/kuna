@@ -385,7 +385,7 @@ pub trait FlowEnvironment {
         None
     }
 
-    /// (kuna) tee-O2 tail-jump: is the direct `CPUI_BRANCH` `op`, whose target is
+    /// (kuna) Is the direct BRANCH or bounded CBRANCH `op`, whose target is
     /// `dest`, an `-O2` tail call to another known function's entry (and so should
     /// be recovered as a `CALL` + `RETURN` rather than flow-followed into the
     /// callee)?  See [`kuna_tailcalljump`](crate::kuna_tailcalljump).
@@ -1352,6 +1352,13 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         } else {
                             *isfallthru = true; // relative branch is to end of instruction
                         }
+                    } else if cursor.is_none()
+                        && self.data.get_size() > 0
+                        && self.tail_call_kind(curop, &destaddr) == Some("tailcalljump")
+                    {
+                        self.recover_conditional_tail_call(curop, &destaddr)?;
+                        *isfallthru = true;
+                        break;
                     } else {
                         // (kuna overlapbranch) stage the machine-level conditional
                         // target for the fall-through overlap check.
@@ -1556,6 +1563,22 @@ following this call as a branch"
         Ok(())
     }
 
+    /// Keep the false edge at the next instruction and call only on the taken
+    /// edge. Relative targets keep both synthetic blocks at the branch site.
+    fn recover_conditional_tail_call(&mut self, branch: OpId, dest: &Address) -> KunaResult<()> {
+        let (skip, taken, call) =
+            crate::kuna_tailcalljump::conditional_tail_branches(&mut self.data, branch, dest)?;
+        self.recover_tail_call(call, dest, "tailcalljump")?;
+        let halt = self.dead_next(call).expect("conditional tail: missing return");
+        let end = self.data.obank().get(halt).expect("conditional tail: stale return").get_time();
+        let from = self.data.obank().get(skip).expect("conditional tail: stale skip").get_time();
+        let target = self.data.new_constant(4, end.wrapping_add(1).wrapping_sub(from) as u64);
+        self.data.op_set_input(skip, target, 0)?;
+        self.op_mark_start_basic(skip);
+        self.op_mark_start_basic(taken);
+        Ok(())
+    }
+
     /// (kuna `tailcalljump`) The destination of the computed jump `op` when its
     /// recovered table `jt_idx` names exactly one address and the environment
     /// accepts that address as a tail-call target.
@@ -1638,7 +1661,7 @@ following this call as a branch"
         }
     }
 
-    /// (kuna) Which tail-jump rule, if either, claims this direct `CPUI_BRANCH`?
+    /// Which tail-jump rule, if either, claims this direct machine branch?
     ///
     /// A target inside the current function's declared extent is
     /// intraprocedural, so neither inference rule is consulted there. Else,
