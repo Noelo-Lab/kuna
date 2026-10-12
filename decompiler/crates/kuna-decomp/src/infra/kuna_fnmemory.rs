@@ -18,8 +18,7 @@ use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-/// Test-only: the directory standing in for `/sys/fs/cgroup`.
-pub const CGROUP_ROOT_ENV: &str = "KUNA_CGROUP_ROOT";
+use crate::kuna_hostmem::{cgroup_memory_cap, resident_bytes};
 
 /// How often an armed drive reads the resident set.
 const SAMPLE_EVERY: Duration = Duration::from_millis(50);
@@ -62,15 +61,6 @@ pub fn limit_mib() -> u64 {
 /// Can this platform read the process's resident set?
 pub fn supported() -> bool {
     resident_bytes().is_some()
-}
-
-/// The process's resident set (`VmRSS`) in bytes, or `None` where the
-/// platform does not report it.
-pub fn resident_bytes() -> Option<u64> {
-    let status = std::fs::read_to_string("/proc/self/status").ok()?;
-    let line = status.lines().find_map(|l| l.strip_prefix("VmRSS:"))?;
-    let kib: u64 = line.trim().strip_suffix("kB")?.trim().parse().ok()?;
-    Some(kib * 1024)
 }
 
 /// Arms the limit for one drive and restores the enclosing state when dropped,
@@ -165,31 +155,6 @@ pub fn limit_for_cap(cap: u64, processes: u64) -> u64 {
     usable / processes.max(1) / MIB
 }
 
-/// The smallest finite cgroup v2 `memory.max` on the path from this process's
-/// cgroup to the root, in bytes.
-pub fn cgroup_memory_cap() -> Option<u64> {
-    let root = std::env::var(CGROUP_ROOT_ENV).unwrap_or_else(|_| "/sys/fs/cgroup".into());
-    let membership = std::fs::read_to_string("/proc/self/cgroup").ok()?;
-    cap_from(&membership, |dir| std::fs::read_to_string(format!("{root}{dir}/memory.max")).ok())
-}
-
-/// [`cgroup_memory_cap`] over `/proc/self/cgroup` text, with `read_max`
-/// answering one cgroup directory's `memory.max` (`""` is the root, which has
-/// one only inside a container's cgroup namespace).
-pub fn cap_from(membership: &str, read_max: impl Fn(&str) -> Option<String>) -> Option<u64> {
-    let mut dir = membership.lines().find_map(|l| l.strip_prefix("0::"))?.trim_end_matches('/');
-    let mut cap: Option<u64> = None;
-    loop {
-        if let Some(bytes) = read_max(dir).and_then(|v| v.trim().parse::<u64>().ok()) {
-            cap = Some(cap.map_or(bytes, |c| c.min(bytes)));
-        }
-        if dir.is_empty() {
-            return cap;
-        }
-        dir = &dir[..dir.rfind('/').unwrap_or(0)];
-    }
-}
-
 /// Did the armed drive go over its limit?
 pub fn tripped() -> bool {
     tripped_limit_mib().is_some()
@@ -255,19 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn the_default_is_the_smallest_cgroup_cap_less_a_margin_per_process() {
-        let membership = "0::/user.slice/wave.slice/run-1.scope\n";
-        let caps = |dir: &str| match dir {
-            "/user.slice" => Some("max\n".to_string()),
-            "/user.slice/wave.slice" => Some("6442450944\n".to_string()),
-            "/user.slice/wave.slice/run-1.scope" => Some("34359738368\n".to_string()),
-            _ => None,
-        };
-        assert_eq!(cap_from(membership, caps), Some(6 << 30));
-        assert_eq!(cap_from(membership, |_| Some("max".into())), None);
-        assert_eq!(cap_from("1:memory:/user.slice\n", caps), None, "cgroup v1");
-        let container = |dir: &str| (dir.is_empty()).then(|| "2147483648".to_string());
-        assert_eq!(cap_from("0::/\n", container), Some(2 << 30), "a namespaced container's own cap");
+    fn the_default_is_the_cgroup_cap_less_a_margin_per_process() {
         assert_eq!(limit_for_cap(6 << 30, 1), 5529);
         assert_eq!(limit_for_cap(2 << 30, 1), 1536);
         assert_eq!(limit_for_cap(32 << 30, 3), 9830);

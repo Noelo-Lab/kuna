@@ -1428,13 +1428,16 @@ fn anomaly_lines(
 /// when an explicit `--jobs N` asks for more than that.
 ///
 /// `auto` is a promise not to wreck the machine, so it yields; an explicit
-/// number is an instruction, so it is obeyed with a warning.
+/// number is an instruction, so it is obeyed with a warning. Free memory is
+/// [`kuna_decomp::kuna_hostmem::available`]: under a cgroup v2 `memory.max`
+/// it is that cap's headroom when the cap is the tighter bound.
 fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
-    let (Some(per_worker), Some(available)) =
-        (worker_estimate(cfg.full_load), available_memory_bytes())
+    let (Some(per_worker), Some(free)) =
+        (worker_estimate(cfg.full_load), kuna_decomp::kuna_hostmem::available())
     else {
         return cfg.jobs;
     };
+    let available = free.bytes;
     // Two thirds of what is free: the parent keeps its own load on several of
     // these surfaces, and a worker's peak is an estimate, not a bound.
     let affordable = (available.saturating_mul(2) / 3 / per_worker.max(1)).max(1) as usize;
@@ -1442,19 +1445,21 @@ fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
         return cfg.jobs;
     }
     let gb = |b: u64| b as f64 / (1024.0 * 1024.0 * 1024.0);
+    let capped = if free.cgroup { " under this cgroup's memory.max" } else { "" };
     if cfg.jobs_auto {
         eprintln!(
             "[kuna {tag}] auto: {affordable} worker(s), not {} — one worker needs about {:.1} GB \
-             here and {:.1} GB is free. Pass --jobs N to override.",
+             here and {:.1} GB is free{capped}. Pass --jobs N to override.",
             cfg.jobs,
             gb(per_worker),
             gb(available)
         );
         return affordable;
     }
+    let place = if free.cgroup { capped } else { " on this machine" };
     eprintln!(
-        "[kuna {tag}] warning: {} workers at about {:.1} GB each is more than the {:.1} GB free \
-         on this machine; expect swapping or an OOM kill. {affordable} would fit.",
+        "[kuna {tag}] warning: {} workers at about {:.1} GB each is more than the {:.1} GB free\
+         {place}; expect swapping or an OOM kill. {affordable} would fit.",
         cfg.jobs,
         gb(per_worker),
         gb(available)
@@ -1473,7 +1478,7 @@ fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
 /// constant costs dominate and the ratio means nothing.
 fn worker_estimate(full_load: bool) -> Option<u64> {
     Some(worker_estimate_from(
-        peak_rss_bytes()?,
+        kuna_decomp::kuna_hostmem::peak_resident_bytes()?,
         kuna_analysis::listing::kuna_pdecode::lane_peak_excess_bytes(),
         full_load,
     ))
@@ -1492,22 +1497,6 @@ fn worker_estimate_from(parent_peak: u64, lane_excess: u64, full_load: bool) -> 
     } else {
         (parent / 4).max(FLOOR)
     }
-}
-
-/// This process's peak resident size (Linux `VmHWM`).
-fn peak_rss_bytes() -> Option<u64> {
-    proc_kb("/proc/self/status", "VmHWM:")
-}
-
-/// Memory that can be handed out without swapping (Linux `MemAvailable`).
-fn available_memory_bytes() -> Option<u64> {
-    proc_kb("/proc/meminfo", "MemAvailable:")
-}
-
-fn proc_kb(path: &str, key: &str) -> Option<u64> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let line = text.lines().find(|l| l.starts_with(key))?;
-    Some(line.split_whitespace().nth(1)?.parse::<u64>().ok()? * 1024)
 }
 
 /// Plan the chunks: which targets each worker invocation gets, in dispatch
@@ -2721,7 +2710,7 @@ mod tests {
     /// and yields to what free memory holds; an explicit count is an instruction
     /// and is obeyed with a warning.  A request the machine can hold is never
     /// touched either way.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     #[test]
     fn auto_yields_to_free_memory_and_an_explicit_count_does_not() {
         let mut c = cfg(0, 0.0);

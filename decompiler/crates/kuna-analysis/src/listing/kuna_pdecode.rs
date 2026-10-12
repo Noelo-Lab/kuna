@@ -41,6 +41,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use kuna_base::space::AddrSpace;
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::kuna_decodekit::{build_decode_engine_traced, EngineRecipe};
+use kuna_decomp::kuna_hostmem::peak_resident_bytes;
 use kuna_sleigh::kuna_ctxsnapshot::{snapshot_context, ContextValueSnapshot};
 use kuna_sleigh::kuna_sharedbytes::UnmappedTripwire;
 use kuna_sleigh::loadimage::ImageBytes;
@@ -153,13 +154,6 @@ fn lane_excess(before: u64, after: u64, insns: usize, footprint: u64) -> u64 {
 /// themselves rather than inferred from a density.
 fn lane_footprint(lanes: usize, shard_bytes: u64) -> u64 {
     (lanes as u64).saturating_mul(LANE_ENGINE_BYTES).saturating_add(shard_bytes)
-}
-
-/// This process's peak resident size (Linux `VmHWM`), or `None` elsewhere.
-fn peak_rss_bytes() -> Option<u64> {
-    let text = std::fs::read_to_string("/proc/self/status").ok()?;
-    let line = text.lines().find(|l| l.starts_with("VmHWM:"))?;
-    Some(line.split_whitespace().nth(1)?.parse::<u64>().ok()? * 1024)
 }
 
 mod refusal;
@@ -823,7 +817,7 @@ fn run(
 ) -> Result<WalkState, Refusal> {
     let ivs = &admitted.intervals;
     let lanes = admitted.lanes;
-    let peak_before = peak_rss_bytes();
+    let peak_before = peak_resident_bytes();
 
     // The pre-spawn probe (see `probe`); its kit becomes lane 0's.
     let kit0 = build_kit(admitted.seed)?;
@@ -1058,7 +1052,7 @@ fn run(
 
     // What the lanes cost the process, for the worker pool's memory model.
     let mut excess = 0u64;
-    if let (Some(before), Some(after)) = (peak_before, peak_rss_bytes()) {
+    if let (Some(before), Some(after)) = (peak_before, peak_resident_bytes()) {
         excess = lane_excess(before, after, state.insns.len(), lane_footprint(lanes, shard_bytes));
         LANE_PEAK_EXCESS.fetch_max(excess, Ordering::Relaxed);
     }

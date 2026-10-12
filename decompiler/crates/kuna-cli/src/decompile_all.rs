@@ -1300,9 +1300,9 @@ pub(crate) fn parse_max_fn_memory(v: &str) -> Result<u64, String> {
         .parse::<u64>()
         .map_err(|_| format!("invalid --max-fn-memory value {v:?} (MiB)"))?;
     if mib > 0 && !kuna_decomp::kuna_fnmemory::supported() {
-        return Err("--max-fn-memory needs the resident set, which this platform does not \
-                    report (/proc/self/status)"
-            .into());
+        return Err(
+            "--max-fn-memory needs the resident set, which this platform does not report".into()
+        );
     }
     Ok(mib)
 }

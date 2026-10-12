@@ -3924,6 +3924,55 @@ fn jobs_auto_and_the_plain_c_surface_match_serial() {
     }
 }
 
+/// `--jobs auto` sizes the pool from what a cgroup v2 `memory.max` still
+/// leaves, not from the machine's free memory: a faked 1 GiB cap whose cgroup
+/// already holds 900 MiB that reclaim cannot free has room for one worker, and
+/// the run says which bound it hit. An explicit `--jobs 3` is warned about in
+/// the same words and kept.
+#[test]
+fn jobs_auto_fits_the_cgroup_memory_cap() {
+    let Some(own) = std::fs::read_to_string("/proc/self/cgroup")
+        .ok()
+        .and_then(|m| m.lines().find_map(|l| l.strip_prefix("0::").map(str::to_string)))
+    else {
+        return;
+    };
+    let root = tempfile::tempdir().unwrap();
+    let leaf = root.path().join(own.trim_start_matches('/'));
+    std::fs::create_dir_all(&leaf).unwrap();
+    std::fs::write(leaf.join("memory.max"), "1073741824\n").unwrap();
+    std::fs::write(leaf.join("memory.current"), "943718400\n").unwrap();
+    std::fs::write(
+        leaf.join("memory.stat"),
+        "anon 734003200\nfile 209715200\nactive_file 0\ninactive_file 0\nshmem 209715200\n",
+    )
+    .unwrap();
+    let env = [("KUNA_CGROUP_ROOT", root.path().to_str().unwrap())];
+    let bin = fauxware();
+    let sp = specs();
+    let base =
+        ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
+    let (want, stderr, ok) = run_kuna_env(&base, &env);
+    assert!(ok, "{stderr}");
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    for jobs in ["auto", "3"] {
+        if jobs == "auto" && cores < 2 {
+            continue;
+        }
+        let args: Vec<&str> = base.iter().copied().chain(["--jobs", jobs]).collect();
+        let (got, stderr, ok) = run_kuna_env(&args, &env);
+        assert!(ok, "--jobs {jobs}: {stderr}");
+        assert_eq!(got, want, "--jobs {jobs} moved the document");
+        let (said, workers) = if jobs == "auto" {
+            ("GB is free under this cgroup's memory.max. Pass --jobs N", "1 worker process(es)")
+        } else {
+            ("GB free under this cgroup's memory.max; expect", "3 worker process(es)")
+        };
+        assert!(stderr.contains(said), "--jobs {jobs}: expected {said:?}:\n{stderr}");
+        assert!(stderr.contains(workers), "--jobs {jobs}: expected {workers:?}:\n{stderr}");
+    }
+}
+
 /// A sharded run names every synthesized structure as the serial run does, on
 /// both surfaces and at every job count. `structsynthchain_x86_64` takes the
 /// convergence sweep (`fb` is decided again onto `fc`'s structure while `fa`
