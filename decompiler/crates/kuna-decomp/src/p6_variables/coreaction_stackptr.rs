@@ -328,7 +328,15 @@ impl StackSolver {
                         let out = data.obank().get(op).and_then(|o| o.get_out());
                         if let (Some(sp), Some(out), Some(fc_idx)) = (othervn, out, callee) {
                             let entry = data.get_call_specs(fc_idx).get_entry_address().clone();
-                            if data.get_arch().callee_pop_slot {
+                            let frame = if data.get_arch().callee_pop_frame {
+                                let call = data.get_call_specs(fc_idx).get_op();
+                                crate::kuna_calleepopframe::guess_extra_pop(data, &spacebase, call, sp, out)
+                            } else {
+                                None
+                            };
+                            if let Some(guess) = frame {
+                                rhs = guess;
+                            } else if data.get_arch().callee_pop_slot {
                                 let (guess, settles) = crate::kuna_calleepopslot::guess_extra_pop(
                                     data, &spacebase, &entry, sp, out, &self.settled,
                                 );

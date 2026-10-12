@@ -110,6 +110,52 @@ pub(crate) fn resolve_pe_import_slots(bytes: &[u8]) -> Vec<(u64, u64)> {
     }
 }
 
+/// The function names a PE imports by name from a Microsoft C runtime DLL
+/// (`msvcrt`, `msvcr*`, the UCRT and its `api-ms-win-crt-*` forwarders,
+/// `vcruntime*`, `crtdll`). Every export of those is `__cdecl`: the caller
+/// removes the arguments. Empty for a non-PE or an unparsable import directory.
+pub(crate) fn c_runtime_import_names(bytes: &[u8]) -> Vec<String> {
+    match FileKind::parse(bytes) {
+        Ok(FileKind::Pe64) => PeFile64::parse(bytes).map(|pe| c_runtime_names(&pe)),
+        Ok(FileKind::Pe32) => PeFile32::parse(bytes).map(|pe| c_runtime_names(&pe)),
+        _ => return Vec::new(),
+    }
+    .unwrap_or_default()
+}
+
+fn c_runtime_names<Pe: ImageNtHeaders>(pe: &PeFile<Pe>) -> Vec<String> {
+    let mut names = Vec::new();
+    let Ok(Some(it)) = pe.import_table() else { return names };
+    let Ok(mut descs) = it.descriptors() else { return names };
+    while let Ok(Some(desc)) = descs.next() {
+        let dll = it.name(desc.name.get(LE)).unwrap_or(b"").to_ascii_lowercase();
+        if !is_c_runtime_dll(&dll) {
+            continue;
+        }
+        let int_rva = match desc.original_first_thunk.get(LE) {
+            0 => desc.first_thunk.get(LE),
+            oft => oft,
+        };
+        let Ok(mut thunks) = it.thunks(int_rva) else { continue };
+        while let Ok(Some(thunk)) = thunks.next::<Pe>() {
+            if let Ok(object::read::pe::Import::Name(_, n)) = it.import::<Pe>(thunk) {
+                if let Ok(name) = std::str::from_utf8(n) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+    }
+    names
+}
+
+fn is_c_runtime_dll(dll: &[u8]) -> bool {
+    dll.starts_with(b"msvcr")
+        || dll.starts_with(b"ucrtbase")
+        || dll.starts_with(b"api-ms-win-crt-")
+        || dll.starts_with(b"vcruntime")
+        || dll == b"crtdll.dll"
+}
+
 /// [`resolve_pe_import_slots`] over a typed `PeFile`: reuse the INT/IAT lockstep
 /// walk purely for its slot-VA side table, then widen each slot to its pointer.
 fn slot_ranges<Pe: ImageNtHeaders>(pe: &PeFile<Pe>, ptr: u64) -> Vec<(u64, u64)> {
@@ -524,5 +570,27 @@ mod tests {
         assert_eq!(synth_ordinal_name(b"KERNEL32.dll", 7), b"KERNEL32_Ordinal_7".to_vec());
         // No extension: the whole string is the stem.
         assert_eq!(synth_ordinal_name(b"mylib", 3), b"mylib_Ordinal_3".to_vec());
+    }
+
+    #[test]
+    fn c_runtime_names_come_from_crt_dlls_only() {
+        let path =
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/calleepopframe_pe_i386.exe");
+        let bytes = std::fs::read(path).expect("read fixture");
+        assert_eq!(c_runtime_import_names(&bytes), vec!["memset".to_string()]);
+        let crt = [
+            "msvcrt.dll",
+            "msvcr120.dll",
+            "ucrtbase.dll",
+            "api-ms-win-crt-string-l1-1-0.dll",
+            "vcruntime140.dll",
+            "crtdll.dll",
+        ];
+        for dll in crt {
+            assert!(is_c_runtime_dll(dll.as_bytes()), "{dll}");
+        }
+        for dll in ["ws2_32.dll", "advapi32.dll", "kernel32.dll", "msvcp140.dll", "ntdll.dll"] {
+            assert!(!is_c_runtime_dll(dll.as_bytes()), "{dll}");
+        }
     }
 }

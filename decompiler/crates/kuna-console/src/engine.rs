@@ -4880,6 +4880,25 @@ fn commit_analysis_output(
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
 
+    // 5d. A C runtime import is `__cdecl` even where the image's default
+    //     convention leaves the cleanup to each callee (`x86win.cspec`'s
+    //     `__stdcall`), so its signature must not be read as bytes it pops.
+    let default_pop_unknown = prog
+        .arch()
+        .default_fp()
+        .is_some_and(|m| m.get_extra_pop() == kuna_decomp::fspec::EXTRAPOP_UNKNOWN);
+    let cdecl = prog
+        .arch()
+        .get_model("__cdecl")
+        .filter(|m| m.get_alias_parent().is_none())
+        .filter(|m| m.get_extra_pop() != kuna_decomp::fspec::EXTRAPOP_UNKNOWN)
+        .cloned();
+    if let (true, Some(cdecl)) = (default_pop_unknown, cdecl) {
+        for name in &out.c_runtime_imports {
+            prog.arch_mut().set_function_prototype_model(name, Rc::clone(&cdecl));
+        }
+    }
+
     // 5b. (kuna `cppsig`) The DEMANGLED prototypes, bound by entry address like
     //     the DWARF ones below. Applied BEFORE them on purpose: a mangled symbol
     //     carries a DECLARATION (which can disagree with the code a compiler
