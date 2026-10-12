@@ -707,4 +707,5 @@ fn usage() {
     eprintln!("                         take it as pb,lp,lc (or as those two bytes, in hex).");
     eprintln!("  --raw-offsets          the range endpoints are file offsets, not addresses.");
     eprintln!("  --raw-max-size N       cap a length-less decode at N bytes (default 512 MiB).");
+    eprintln!("  --json                 emit {{binary,output,packer,..}} describing what was unpacked.");
 }
