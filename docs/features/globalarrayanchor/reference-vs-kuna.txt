@@ -1,0 +1,17 @@
+Independent synthetic SPARC32 address sequence:
+  address = 0x400018 + slot * 2
+  store_halfword(address - 2, 0)
+Declared knowledge: short flags[2] at 0x400018; short slot.
+Reference indexing: flags[slot - 1] = 0.
+
+Option disabled (aggressive, explicit OFF):
+void sub_10000(short slot)
+{
+  *(unsigned short *)(slot * 2 + 0x400016) = 0;
+}
+
+Option enabled (aggressive):
+void sub_10000(short slot)
+{
+  flags[slot + -1] = 0;
+}

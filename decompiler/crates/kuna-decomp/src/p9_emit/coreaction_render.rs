@@ -639,8 +639,9 @@ impl Action for ActionConstantPtr {
         Some(Box::new(ActionConstantPtr { base: self.base.clone(), localcount: 0 }))
     }
     /// C++ `ActionConstantPtr::reset`: `{ localcount = 0; }`.
-    fn reset(&mut self, _data: &mut Funcdata) {
+    fn reset(&mut self, data: &mut Funcdata) {
         self.localcount = 0;
+        data.kuna_global_array_anchor_passes = data.get_arch().global_array_anchor.then_some(0);
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:1183 — ActionConstantPtr::apply
@@ -652,6 +653,9 @@ impl Action for ActionConstantPtr {
             return 0;
         }
         self.localcount += 1;
+        if data.get_arch().global_array_anchor {
+            data.kuna_global_array_anchor_passes = Some(self.localcount as u8);
+        }
 
         // C++ iterates `beginLoc(cspc)..endLoc(cspc)` (the constant space) with a
         // `if (!vn->isConstant()) break;` guard for inserts past enditer.  Snapshot

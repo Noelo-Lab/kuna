@@ -329,6 +329,9 @@ impl Rule for RuleCollectTerms {
         if nonzerocount <= 1 {
             return 0;
         }
+        if crate::kuna_globalarrayanchor::preserve_array_base(data, op) {
+            return 0;
+        }
         let vn1 = termorder.term(order[lastconst]).get_varnode();
         let vn1sz = data.vbank().get(vn1).expect("RuleCollectTerms: stale lastconst vn").get_size();
         coef1 &= calc_mask(vn1sz);

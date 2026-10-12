@@ -260,8 +260,10 @@ fn shared_whole_image_and_project_paths_retain_the_recovered_body() {
 }
 
 #[test]
-fn a_declared_range_exit_at_a_known_entry_keeps_its_own_out_of_bounds_stub() {
-    let mut code = vec![0x85, 0xc0, 0x74, 5, 0xe8, 0x17, 0, 0, 0, 0xb8, 7, 0, 0, 0, 0xc3];
+fn a_declared_range_exit_at_a_known_entry_respects_tail_call_mode() {
+    let mut code = vec![
+        0x85, 0xc0, 0x74, 5, 0xe8, 0x17, 0, 0, 0, 0xb8, 7, 0, 0, 0, 0xc3,
+    ];
     code.resize(32, 0xcc);
     code.extend_from_slice(&[0x31, 0xc0, 0xc3]);
     let raw = common::scratch_file("funcbound-declared-range", "bin");
@@ -275,31 +277,64 @@ fn a_declared_range_exit_at_a_known_entry_keeps_its_own_out_of_bounds_stub() {
         "--define-function",
         "0x10020=die",
     ];
-    let raw_args = ["--raw-image", "--target", "x86:LE:32:default:gcc", "--base", "0x10000"];
+    let raw_args = [
+        "--raw-image",
+        "--target",
+        "x86:LE:32:default:gcc",
+        "--base",
+        "0x10000",
+    ];
     for (path, image) in [(&raw, &raw_args[..]), (&elf, &[][..])] {
-        let mut texts = Vec::new();
-        for value in ["on", "off"] {
-            let mut extra = image.to_vec();
-            extra.extend(bounds);
-            extra.extend(["--option", "mappedflowboundary", value]);
-            let out = decompile(path, &extra);
-            let text = String::from_utf8_lossy(&out.stdout).into_owned();
-            assert!(
-                out.status.success(),
-                "{text}\n{}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-            assert!(text.contains("if (a0)"), "{text}");
-            assert!(text.contains("die();"), "{text}");
-            assert!(text.contains("halt_missing();"), "{text}");
-            assert!(
-                text.contains("Function flow out of bounds: r0x00010002 flows to r0x00010009"),
-                "{text}"
-            );
-            assert!(!text.contains("return-dupe"), "{text}");
-            texts.push(text);
+        for (tail_mode, recovers_known_entry) in [("off", false), ("on", true), ("direct", true)] {
+            let mut texts = Vec::new();
+            for boundary_mode in ["on", "off"] {
+                let mut extra = image.to_vec();
+                extra.extend(bounds);
+                extra.extend(["--option", "tailcalljump", tail_mode]);
+                extra.extend(["--option", "mappedflowboundary", boundary_mode]);
+                let out = decompile(path, &extra);
+                let text = String::from_utf8_lossy(&out.stdout).into_owned();
+                assert!(
+                    out.status.success(),
+                    "tailcalljump {tail_mode}, mappedflowboundary {boundary_mode}:\n{text}\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                assert!(text.contains("if (a0)"), "{text}");
+                assert!(text.contains("die();"), "{text}");
+                assert!(!text.contains("return-dupe"), "{text}");
+                let lines: Vec<_> = text.lines().map(str::trim_start).collect();
+                let die_is_conditional = lines
+                    .windows(2)
+                    .any(|pair| pair[0].starts_with("if (a0)") && pair[1].starts_with("die();"));
+                assert!(die_is_conditional, "{text}");
+                let die_line = lines
+                    .iter()
+                    .position(|line| line.starts_with("die();"))
+                    .expect("die call is in the conditional body");
+                let g_line = lines.iter().position(|line| line.starts_with("g();"));
+                if recovers_known_entry {
+                    assert!(
+                        die_line < g_line.expect("known entry is recovered as a call"),
+                        "{text}"
+                    );
+                    assert!(!text.contains("halt_missing();"), "{text}");
+                    assert!(text.contains("funcboundflow:"), "{text}");
+                } else {
+                    // Keep the pre-recovery boundary behavior as an explicit
+                    // control while the new mode recovers only the known edge.
+                    assert!(text.contains("halt_missing();"), "{text}");
+                    assert!(
+                        text.contains(
+                            "Function flow out of bounds: r0x00010002 flows to r0x00010009"
+                        ),
+                        "{text}"
+                    );
+                    assert!(g_line.is_none(), "{text}");
+                }
+                texts.push(text);
+            }
+            assert_eq!(texts[0], texts[1], "tailcalljump {tail_mode}");
         }
-        assert_eq!(texts[0], texts[1]);
     }
     std::fs::remove_file(raw).unwrap();
     std::fs::remove_file(elf).unwrap();

@@ -1622,6 +1622,10 @@ impl Funcdata {
                 }
             }
         }
+        // FLOAT_TRUNC converts to a signed integer before any destination coercion.
+        force |= self.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_FLOAT_TRUNC)
+            && matches!(out_high_resolve.get_metatype(),
+                type_metatype::TYPE_UINT | type_metatype::TYPE_BOOL);
         let mut opc = OpCode::CPUI_CAST;
         if !force {
             let outct = out_high_resolve;

@@ -67,17 +67,16 @@ future-proofs the preset: if the defaults later drift more aggressive,
 
 ## `aggressive`
 
-`aggressive` flips **every** on/off off-by-default option on, with the exclusions
-listed below. It carries 28 of the 36 such options; the five *multi-valued*
-default-off options (`condfold`, `rustabi`, `calloverlap`, `spillargtrial`,
-`outline`) are out of reach by construction, since a preset can only pin a single
-"on". `AGGRESSIVE_OVERRIDES` in `p0_knowledge/modes.rs` is the authority — the
+`aggressive` enables binary default-OFF options, subject to the exclusions
+listed below. Multi-valued options fall outside this automatic binary-option
+inclusion rule. `AGGRESSIVE_OVERRIDES` in `p0_knowledge/modes.rs` is the authority — the
 invariant test `aggressive_carries_every_default_off_option` makes an omission a
 build failure. The options it enables:
 
 - **transform tier**: `switchmodbound`, `constselectjump`,
   `switchguardbound` (speed-costly),
   `unrolledguard` (speed-costly), `stackalias`, `sparcstructret`,
+  `globalarrayanchor` (retain mapped array bases in negatively biased element indices),
   `regionedgeorder`, `returndup`, `orchain`, `iteexpr`, `ctypes`,
   `calltargettype` (an indirect call's target takes the function-pointer type
   the call states, so the call compiles as C),
@@ -170,8 +169,8 @@ really returns a 16-byte value in `rax:rdx` and forwards the high half into the
 next call keeps its argument. Flip `--option argclobber off` to keep every
 argument the register model produced, phantom or not.
 
-Separately, six default-off options remain unevaluated for preset membership:
-`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector`, `msvcstackguard`
+Separately, these default-off options remain unevaluated for preset membership:
+`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector`, `msvcstackguard`,
 and `stackaddrargtrial`. Each needs the sweep and speed evidence that would
 justify a preset change. The stack-address option has focused tests and a local
 speed measurement, but no broad sweep; the MSVC option still needs a corpus with

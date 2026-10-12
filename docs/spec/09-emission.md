@@ -245,6 +245,18 @@ peeled in parallel first — different word sizes or different address spaces
 force a cast, `void *` never does, and once inside a pointer the signedness
 care is always on.
 
+`FLOAT_TRUNC` converts a floating value to a signed integer of its output
+width. If a merged variable is unsigned (including an unsigned enum), cast
+insertion keeps a signed conversion temporary before converting its integer
+bits to that variable's type. Boolean destinations retain their existing
+conversion of the truncated signed value to a truth value. An unsigned
+destination must not turn the floating conversion itself into a C
+floating-to-unsigned cast: negative values in the signed range would
+then acquire undefined behavior. Ordinary signed destinations retain their
+existing conversion. This correctness repair is architecture independent and
+needs no option; it does not model floating exception state or define C casts
+outside the signed integer's representable range.
+
 **Integer promotion.** C silently promotes small integers, so many extensions
 must *not* print. The strategy classifies a sub-`int` value's promotion as
 unsigned, signed, either, or unknown (`cast.rs
@@ -2073,6 +2085,12 @@ separators, bidi markers, surrogates and private-use ranges as escape-worthy,
 and `printc.rs (print_unicode)` emits the named C escapes then falls to `print_char_hex_escape`, which emits only `\x` (zero-padded to 2/4/8 hex digits by codepoint magnitude). Internal strings
 (not in the loadimage) can be registered under a constant-space hash address
 and resolve through the same cache.
+
+When `globalarrayanchor` is enabled, `ActionConstantPtr` records its per-function
+pass count for the P3 folding guard (§3.5). Reset activates this count only for
+a scheduled action with the option on; functions without that action leave the
+guard inactive. The fourth pass releases its hold on unresolved array-base
+constants.
 
 The probe's entry condition is a **type**, not a detected string boundary: the
 manager reads from whatever address it is handed, so the whole question is
