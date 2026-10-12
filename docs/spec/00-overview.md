@@ -2670,6 +2670,14 @@ C++ splits between `Funcdata` and `BlockBasic` are all `Funcdata` methods here
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (bb_insert_op,
 bb_remove_op)`).
 
+Call/store membership and operation positions carry a per-function revision
+(`Funcdata::affecting_ops_revision`). Moving or removing a call/store, changing
+its opcode, renumbering operations, mutating the basic-block graph, or changing
+the call-specification list advances it. Chapter 06's intersection cache checks
+this revision before reusing its saved call/store positions or crossing verdicts;
+the merge engine can be temporarily borrowed out of the function while these
+mutations occur, so invalidation is checked on the next query.
+
 **Phi arity tracks in-degree, and the marker run is not a place to look it up.**
 A basic block's MULTIEQUALs carry one input per in-edge, in edge order, so CFG
 surgery that severs an edge must drop the matching slot from every phi in the

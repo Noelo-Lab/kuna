@@ -47,3 +47,5 @@ pub mod kuna_devectorize;
 pub mod kuna_narrowload; // (kuna) a narrow LOAD keeps its own width
 pub(crate) mod kuna_volatileload;
 pub(crate) mod kuna_floatnegation;
+pub(crate) mod kuna_floatnegpiece;
+pub(crate) mod kuna_globalarrayanchor;

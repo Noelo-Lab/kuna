@@ -147,7 +147,20 @@ pub(crate) fn prepare_hints(
         checks.reaches.dedup();
         return checks;
     }
-    let guarded: Vec<OpId> = effects.stores.into_iter().collect();
+    let mut locked = locked_byte_ranges(fd, space);
+    locked.retain(|_, (lo, hi)| {
+        !state.hints_mut().iter().any(|h| {
+            h.range_type == RangeType::Open
+                && h.highind >= 0
+                && h.type_.get_metatype() != type_metatype::TYPE_UNKNOWN
+                && h.type_.get_align_size() > 1
+                && h.sstart <= *lo
+                && *hi <= hint_end(h)
+        })
+    });
+    let mut stores = effects.stores;
+    stores.extend(locked.keys().copied());
+    let guarded: Vec<OpId> = stores.into_iter().collect();
     if guarded.is_empty() {
         return checks;
     }
@@ -162,7 +175,12 @@ pub(crate) fn prepare_hints(
     }
     let resolved: Vec<Vec<(intb, Option<intb>)>> = guarded
         .iter()
-        .filter_map(|&store| store_pieces(fd, store, sb, space))
+        .filter_map(|&store| {
+            locked
+                .get(&store)
+                .map(|&(lo, hi)| vec![(lo, Some(hi))])
+                .or_else(|| store_pieces(fd, store, sb, space))
+        })
         .collect();
     let reaches: Vec<(Vec<intb>, Option<(intb, intb)>)> = resolved
         .iter()
@@ -217,6 +235,33 @@ pub(crate) fn prepare_hints(
     checks.floats.sort_unstable();
     checks.floats.dedup();
     checks
+}
+
+/// A fully bounded byte STORE needs one object even when later writes leave
+/// none of its guard INDIRECTs alive. Its range also covers interior pointers.
+fn locked_byte_ranges(fd: &Funcdata, space: &Rc<AddrSpace>) -> BTreeMap<OpId, (intb, intb)> {
+    let bits = space.get_addr_size() as int4 * 8 - 1;
+    fd.get_store_guards()
+        .iter()
+        .filter(|g| {
+            g.spc.get_index() == space.get_index()
+                && !g.dynamic_stack
+                && g.is_range_locked()
+                && g.get_step() == 1
+                && g.is_valid(fd, OpCode::CPUI_STORE)
+        })
+        .filter_map(|g| {
+            let op = fd.obank().get(g.op)?;
+            if fd.vbank().get(op.get_in(2)?)?.get_size() != 1 {
+                return None;
+            }
+            let lo = sign_extend(g.get_minimum() as intb, bits);
+            let hi = sign_extend(g.get_maximum() as intb, bits).checked_add(1)?;
+            hi.checked_sub(lo)
+                .filter(|len| (1..=MAX_REACH).contains(len))
+                .map(|_| (g.op, (lo, hi)))
+        })
+        .collect()
 }
 
 /// Raise the open hint at a guarded wider-than-byte store's base to every

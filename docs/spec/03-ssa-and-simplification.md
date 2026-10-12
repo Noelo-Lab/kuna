@@ -905,6 +905,19 @@ takes `extra_pool_rules`); the engine currently always passes an empty list
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
 (Architecture::build_action)`).
 
+**Binary64 sign-word operations.** (kuna) Before its commute logic,
+`RuleConcatCommute` recognizes the exact binary64 sign-word idioms in
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_floatnegpiece.rs`.
+`PIECE(FLOAT_NEG(SUBPIECE(x,4)), SUBPIECE(x,0))` becomes `FLOAT_NEG(x)`;
+the corresponding `FLOAT_ABS` pattern becomes `FLOAT_ABS(x)`. Negating or
+clearing the binary32 high word's sign bit changes exactly the binary64 sign
+bit, without numerically converting the word. Both slices must be four bytes
+at significant-value offsets four and zero, independent of memory byte order,
+and must share the same eight-byte source typed as an eight-byte float.
+Different sources, changed low slices, wider floats, incompatible types and
+other unary operations decline. These are strict value-correctness repairs
+with no inference option; they add no floating-status or exception model.
+
 **Ordered floating-point condition negation.** The shared
 `decompiler/crates/kuna-num/src/opcodes.rs (get_booleanflip)` table returns no
 single-opcode complement for `FLOAT_LESS` or `FLOAT_LESSEQUAL`: when either
@@ -1644,6 +1657,16 @@ the `decompiler/crates/kuna-decomp/src/substrate/transform.rs
 lives. `subflow.rs (SubfloatFlow)` (trigger `RuleSubfloatConvert`, group
 `floatprecision`) does the same for a float value carried in a wider float
 container, converting constant encodings between formats along the way.
+The trace refuses to lower `FLOAT_ADD`, `FLOAT_SUB`, `FLOAT_MULT` or
+`FLOAT_DIV` below their operand width (`SubfloatFlow::exceeds_precision`).
+Inputs widened from a smaller format do not prove that arithmetic in the
+wider format can be replaced: lowering an intermediate introduces an earlier
+rounding and changes overflow and underflow. Binary32 inputs widened for
+subtraction and addition in binary64 therefore keep their widenings and final
+narrowing, printing `(float)((double)accum + ((double)neg_theta - (double)local_axis))`.
+Conversion-only round trips and arithmetic already performed in binary32
+retain their existing simplifications and grouping. This is a correctness
+constraint on both forward and backward traces, including divided SIMD lanes.
 `subflow.rs (SplitDatatype)` (triggers `RuleSplitCopy`/`RuleSplitLoad`/
 `RuleSplitStore`, cleanup pool) splits a whole-struct COPY/LOAD/STORE into
 per-field transfers using recovered types — described with the type system in
@@ -1805,6 +1828,40 @@ per-op to the live gate on the per-function architecture snapshot (e.g. `kuna_bo
 DIV-2/DIV-3 rows of `docs/history.md` carry the ablation evidence). With a
 gate off, the rule returns 0 unconditionally and output is byte-identical to
 upstream. Full option metadata: [docs/options.md](../options.md).
+
+**globalarrayanchor** —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalarrayanchor.rs
+(preserve_array_base)`.
+With `option globalarrayanchor on` (default off), constant collection defers
+combining an exact mapped array base with a negative whole-element displacement
+in an element-scaled LOAD/STORE address. This leaves the declared base available to
+constant-pointer recovery; the subsequent pointer rules can render the bias in
+the index. The displacement magnitude must not exceed the declared array size,
+and every variable coefficient must be an element-size multiple. No nearby-symbol
+search is performed. Ordinary arithmetic, unmapped addresses, unaligned byte
+offsets, shared address trees and non-byte-addressed access spaces retain normal
+folding. Pointer-typed variable terms also decline.
+
+The check follows single-use additions, same-width copies and casts to the
+LOAD/STORE address root, so multiple indices are judged as one expression (at
+most 64 outward nodes and 256 inward nodes). Unused pure COPY/CAST readers do not
+count as sharing; auto-live outputs and indirect-source operations still do.
+Only unshared constants eligible for pointer inference in the unique compatible
+access space are held. Literal COPY/OR expressions may supply the base before
+ordinary constant folding finishes. Byte-array symbols, including mapped string
+arrays, accept coefficient one as an element index; access width does not
+change the test.
+
+The guard is inactive without a scheduled constant-pointer action,
+constant-pointer inference or type recovery,
+from the fourth constant-pointer pass, or once recovery has checked and declined
+the base after it folds to a constant varnode. The guard does not suppress
+COPY propagation or constant OR folding in the ordinary rule pools. An all-constant inner addition also defers folding when the full
+memory address meets the same test; unrelated constant expressions still fold.
+The option is a readability choice: the disabled form still computes the
+original machine address. The catalog default is off; aggressive enables it,
+including auto when the input size selects aggressive. An explicit
+`option globalarrayanchor off` after mode selection restores ordinary folding.
 
 **addcarrychain** (GH-8913) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_addcarrychain.rs

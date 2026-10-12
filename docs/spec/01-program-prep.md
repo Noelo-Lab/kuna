@@ -469,7 +469,18 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   non-empty section out above `0x400000` (`RELOC_BASE`, matching CLE so addresses
   line up with angr's), apply the relocations, rebase defined symbols, and bind
   each undefined extern to a synthetic call target in an extern area above the
-  sections so calls render by name. An adjacent SPARC `sethi`/`jmpl` pair
+  sections so calls render by name. ELF COMMON symbols instead reserve their
+  full `st_size` at the alignment carried by `st_value`, in a separate synthetic
+  area after the maximum undefined-symbol slot extent. Their addresses are
+  reused for repeated references, remain disjoint from extern slots, and do not
+  move ordinary undefined targets. The analyzer’s rebased view retains the COMMON
+  extent as a separate loaded-address range. COFF COMMON allocation is outside
+  this ELF repair. Invalid alignment, address overflow or an
+  allocation beyond the object's address width leaves the relocation unresolved,
+  rather than assigning overlapping storage. This loader correctness repair in
+  `decompiler/crates/kuna-analysis/src/loader/kuna_commonalloc.rs (CommonAllocator)`
+  needs no inference option; it retains the existing treatment of unbacked
+  synthetic storage. An adjacent SPARC `sethi`/`jmpl` pair
   carrying `HI22`/`LO10` relocations to the same symbol with zero addends also
   identifies that symbol as code, even when the ELF marks it `STT_NOTYPE`.
   The jump must use the register written by `sethi` and discard the link or

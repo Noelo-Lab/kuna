@@ -773,6 +773,8 @@ pub struct ArchContext {
     /// (C++ `fold_boolean_mask`, DIV-2 default-on).  Read by
     /// [`RuleBoolSignShift`](crate::kuna_booleanmask::RuleBoolSignShift).
     pub fold_boolean_mask: bool,
+    /// Keep mapped global array bases separate from negative element offsets.
+    pub global_array_anchor: bool,
     /// (kuna) Fold an exact one-byte modular cancellation around a bounded
     /// left shift (`option cancelbytearithmetic`).
     pub cancel_byte_arithmetic: bool,
@@ -1172,6 +1174,8 @@ pub struct ArchContext {
     /// indexed stack base reaches past upstream's four elements. Levels in
     /// [`crate::p6_variables::kuna_arrayextent`]; read by `gather_open`.
     pub array_extent: int4,
+    /// Opt-in frame-bounded arrays for call-escaped integer storage.
+    pub call_array_extent: bool,
     /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
     /// `RulePropagateCopy` marker propagation that would leave an address-tied
     /// `COPY` output holding a call's return value with no readers, so a
@@ -1717,6 +1721,7 @@ impl ArchContext {
             // registered `enabled=false` is inert there — matching the gate-off
             // unit tests (and the `infer_funcentry` stub-default convention).
             fold_boolean_mask: false,    // GH-1282 booleanmask
+            global_array_anchor: false,
             cancel_byte_arithmetic: false, // cancelbytearithmetic (the ArchSeam carries the real default)
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             simd_lane_fold: false,       // simdlane (the ArchSeam carries the real default)
@@ -1827,6 +1832,7 @@ impl ArchContext {
             cond_exe_ret_use: true,      // condexeretuse (default-on)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
+            call_array_extent: false,
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)

@@ -1,0 +1,6 @@
+typedef struct MutableTileFallbackWords { unsigned int word_00; unsigned int word_04; unsigned int word_08; unsigned int word_0c; unsigned int word_10; };
+function 0x10000-0x10014=CopyFiveWords
+prototype 0x10000 void CopyFiveWords(void)
+data 0x11000 unsigned int source_words[5]
+data 0x11014 struct MutableTileFallbackWords mutable_tile_fallback
+readonly 0x10014+8

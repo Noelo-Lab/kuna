@@ -1,0 +1,32 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!-- Independently assembled binary64 sign-word absolute value.
+.text
+.global absolute_double32
+.type absolute_double32,@function
+absolute_double32:
+ save %sp, -112, %sp
+ st %i0, [%fp-8]
+ st %i1, [%fp-4]
+ ldd [%fp-8], %f10
+ fabss %f10, %f0
+ fmovs %f11, %f1
+ ret
+ restore
+.size absolute_double32, .-absolute_double32
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+9de3bf90f027bff8f227bffcd51fbff881a0012a83a0002b81c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="absolute_double32"/>
+</binaryimage>
+<script>
+<com>parse line extern double absolute_double32(double x);</com>
+<com>lo fu absolute_double32</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="sparc-double-abs #1 restores absolute value" min="1" max="1">return ABS\(x\);</stringmatch>
+<stringmatch name="sparc-double-abs #2 has no numeric high-word conversion" min="0" max="0">CONCAT44|\(float\)|SUB84</stringmatch>
+</decompilertest>

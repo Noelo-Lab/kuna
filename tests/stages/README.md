@@ -94,6 +94,7 @@ writeup, not here.
 | `kuna-entryretdispatch.xml` | RE-friction need `entry-point-ret-dispatch` | S2 flow classification (proven entry `push continuation; push target; ret` links become calls) | `option entryretdispatch on\|off` |
 | `kuna-extent-fallthrough.xml` | [Kuna #850](https://github.com/Noelo-Lab/kuna/issues/850) | S2 flow classification (caller-declared extent vs discovered interior entry) | `option funcboundflow on\|off` |
 | `kuna-extent-direct-branch.xml` | [Kuna #850](https://github.com/Noelo-Lab/kuna/issues/850) | S2 flow classification (in-extent direct and recovered indirect branches vs tail-call inference; out-of-extent veneer control) | `option tailcalljump on\|off` |
+| `kuna-conditional-tail.xml` | Authored bounded conditional forwarding | P2 flow classification (a known out-of-extent entry is called only on the taken path) | `option tailcalljump on\|direct\|off` |
 | `kuna-thunkentry.xml` | [Kuna #992](https://github.com/Noelo-Lab/kuna/issues/992) | P1 code/data partition (the target of a walk entry that is one direct `jmp` becomes a function; MSVC `/INCREMENTAL` thunk table) | `option thunkentry on\|off` |
 | `kuna-aifbracket.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (an AIF gap candidate whose own flow rejoins the known function around it is refused without boundary evidence) | `option aifbracket on\|off` |
 | `kuna-aifnoppad.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (no AIF gap entry starts on nop padding: padding in front of a known function is not probed, and an accept behind padding moves to the code after it) | `option aifnoppad on\|off` |
@@ -150,6 +151,7 @@ writeup, not here.
 | `kuna-floatgrouping.xml` | kuna [GH-641](https://github.com/Noelo-Lab/kuna/issues/641) (two x86-64 functions multiplying the same three floats in opposite orders decompiled to the same C, because `CPUI_FLOAT_MULT`/`CPUI_FLOAT_ADD` pushed the associative integer `*`/`+` tokens and the printer dropped the parentheses around a same-token right operand; one of the two renderings computed a different value than the function it came from) | P9 emit, the operator-token table and the `parentheses` binary case: the two float opcodes get their own singletons carrying `left_to_right_only`, which leaves a same-token left operand bare and parenthesises a right one; correctness fix, no option | default, single pass: the right-grouped product and sum keep `a * (b * c)` / `a + (b + c)` and the flat chain matches exactly one function of each pair, where pre-fix it matched both |
 | `kuna-arm-register-shift.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) (a variable ARM LSL can emit undefined C shifts for low-eight-bit counts 32 through 255) | P9 C emission, a guarded `CPUI_INT_LEFT` with unsigned shiftee, restricted to repeatable ARM operands; correctness fix, no option | default, single pass: preserves `count & 0xff`, checks `< 32`, emits an unsigned shift plus zero fallback, and avoids compound assignment when the guard applies |
 | `kuna-arm-register-shift-signed.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) follow-up (the shift's unsigned C repair must retain the signed value consumed by ARM signed compare and ASR) | P9 C emission, signed true/false conditional arms around the guarded unsigned LSL | default: output retains signed comparison and arithmetic shift behavior |
+| `kuna-call-array-extent.xml` | Synthetic call-escaped frame storage | P6 stack-frame-layout | `option callarrayextent on\|off` |
 
 `kuna-minss-nan.xml` pins an authored scalar MINSS and ratio/clamp probe.
 P3 and P9 preserve the negation of an ordered float comparison as `!(a < b)`
@@ -213,6 +215,12 @@ assembled synthetic examples; it contains no bytes from the reported binary.
 local preserves the incoming parameter, its entry comparisons, and the value
 passed to a callee across repeated decompilation. Its instructions are synthetic.
 
+`kuna-custom-call-storage.xml` checks an authored MSABI caller whose getter
+return is passed in EDX to a callee with one explicit formal. Repeated builds
+retain that value and the one-formal signature; the ordinary two-slot prototype
+passes the same value as argument two. The assertion API and callable-type
+interning controls are in `kuna-console/tests/verify_assertplane.rs`.
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason
@@ -244,3 +252,21 @@ the `calleeretpreserves off` pass restores the undefined return.
 `kuna-cli/tests/direct_call_return.rs` checks native and recompiled emitted C
 at `-O0` and `-O2`, real return-register writes, unknown returning calls and an
 incomplete helper. These are authored MSABI probes in an ELF container.
+
+`kuna-floatprecision.xml` pins authored scalar and packed SSE binary32 inputs
+widened for binary64 subtraction/addition before one final narrowing, plus
+widened multiplication/division and float-only/conversion-only controls.
+`kuna-cli/tests/float_precision.rs` recompiles the emitted C with GCC and Clang
+at `-O0` and `-O2` and compares its bits against the assembly for cancellation,
+subnormals, overflow, signed zeros, infinities and individual NaN payloads.
+
+`kuna-arm-conditional-switch.xml` pins authored A32 `SUBS`/`ADDPL PC`
+branch tables, including case bodies that share a saved-frame epilogue, with
+`tailcalljump` on and off. Unconditional `ADD PC`, healthy `ADDLS PC`, and a
+real indirect function-pointer call are controls. `kuna-cli/tests/arm_conditional_switch.rs`
+compiles the untouched emitted bodies with GCC and Clang at `-O0` and `-O2`
+with undefined-behavior checks and exercises every case and signed boundaries.
+
+- `kuna-sparc-double-abs.xml`, `kuna-sparc64-double-abs.xml`: binary64 absolute value from a high-word `fabss`, without a numeric high-word cast.
+
+- `kuna-sparc-double-sign.xml`, `kuna-sparc64-double-sign.xml`: binary64 negation from a high-word `fnegs`, without a numeric high-word cast.

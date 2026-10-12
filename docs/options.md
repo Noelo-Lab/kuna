@@ -420,6 +420,11 @@ Three tiers:
 | acting on an almostregion inline-candidate report by hand or with an llm | [`outline`](#outline) |
 | an unprototyped call loses a local output pointer | [`stackaddrargtrial`](#stackaddrargtrial) |
 | a post-call word or halfword output folds to its initializer | [`stackaddrargtrial`](#stackaddrargtrial) |
+| a helper's stack output array is shorter than the helper writes | [`callarrayextent`](#callarrayextent) |
+| a post-call stack read is emitted as an independent uninitialized scalar | [`callarrayextent`](#callarrayextent) |
+| a stack array passed to a helper loses aliases with neighboring frame slots | [`callarrayextent`](#callarrayextent) |
+| negative index displacement hides a declared global array | [`globalarrayanchor`](#globalarrayanchor) |
+| indexed stores use an address immediately before an array | [`globalarrayanchor`](#globalarrayanchor) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -735,6 +740,9 @@ Three tiers:
 | an array-typed local is assigned at element zero for a whole-array copy | [`arraycoverwidth`](#arraycoverwidth) |
 | the same variable shows both v1._0_4_ and v1[0] for accesses of different width | [`arraycoverwidth`](#arraycoverwidth) |
 | declared char v[16] but every whole-bank access reads as one byte | [`arraycoverwidth`](#arraycoverwidth) |
+| mapped unsigned char array uses invalid ._offset_size_ members | [`bytearrayc`](#bytearrayc) |
+| wide byte-array accesses need compilable C | [`bytearrayc`](#bytearrayc) |
+| unaligned mapped integer transfer needs an alias-safe C representation | [`bytearrayc`](#bytearrayc) |
 | a pointer variable is initialised to an empty string literal and then indexed past its terminator | [`emptystrconst`](#emptystrconst) |
 | a data address visible in the disassembly appears nowhere in the emitted C | [`emptystrconst`](#emptystrconst) |
 | a blob or table pointer renders as = "" instead of its address | [`emptystrconst`](#emptystrconst) |
@@ -1219,7 +1227,7 @@ The control surface: each of these can make output worse on the wrong source sha
 ### `tailcalljump` -- on | direct | off, default `on`
 
 - **Symptoms:** leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning; jmp to a plt stub inlined into the caller instead of a named tail call; plt thunk body absorbed where func(...) is expected; a veneer renders as switch(0x...) with one case holding another function's body, or halt_missing() with a 'flows out of bounds' warning.
-- **What it does:** Recover an -O2 tail jump (a direct `jmp` to another function's entry, e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) so the callee resolves by name and its return value flows out, instead of flowing into the callee (which inlines a PLT thunk and mis-renders it as a `(*dat_...)(...)` indirect call with a 'Treating indirect jump as call' warning). A caller-declared extent containing a direct or recovered computed branch target keeps that branch intraprocedural, even if discovery knows the target as a function entry. `on` also takes a computed jump whose recovered jump table names one destination, when that destination is another known function's entry: an ARM veneer or long-branch stub (`ldr r1,[pc]; bx r1`, `ldr pc,[pc,#-4]`), an x86 `jmp *GOT` in a `-fno-plt` build, or a jump through a read-only function-pointer slot, which kuna otherwise renders as a one-case `switch` copying the callee's body in, or as `halt_missing()` when the stub's exact extent is declared. That jump becomes the same tail call when the destination lies outside the function's declared extent, or when no explicit extent is supplied and the callee's prototype is stated (declared, DWARF, a library signature, a demangled C++ name), so it fixes the call's arguments, and either that prototype states a `void` return or the function's own output is stated, so the return value reaches it. A prototype with no return type (a demangled C++ name) leaves the return unknown, not `void`. Otherwise the copied-in body stays: it states the arguments and return value a call could not. The register that carried the target address is never taken as an argument of the call. `direct` recovers only direct jumps. When it fires it logs a `tailcalljump: recovered tail call` warning at the branch site so the introduced call is observable.
+- **What it does:** Recover an -O2 tail jump (a direct `jmp` to another function's entry, e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) so the callee resolves by name and its return value flows out, instead of flowing into the callee (which inlines a PLT thunk and mis-renders it as a `(*dat_...)(...)` indirect call with a 'Treating indirect jump as call' warning). A caller-declared extent containing a direct or recovered computed branch target keeps that branch intraprocedural, even if discovery knows the target as a function entry. A terminal conditional branch to another known function entry outside an explicit extent becomes a call and return only on its taken path, under both `on` and `direct`; its false path keeps flowing normally. Unknown, mid-function and unbounded conditional targets keep the original flow and clipping policy. `on` also takes a computed jump whose recovered jump table names one destination, when that destination is another known function's entry: an ARM veneer or long-branch stub (`ldr r1,[pc]; bx r1`, `ldr pc,[pc,#-4]`), an x86 `jmp *GOT` in a `-fno-plt` build, or a jump through a read-only function-pointer slot, which kuna otherwise renders as a one-case `switch` copying the callee's body in, or as `halt_missing()` when the stub's exact extent is declared. That jump becomes the same tail call when the destination lies outside the function's declared extent, or when no explicit extent is supplied and the callee's prototype is stated (declared, DWARF, a library signature, a demangled C++ name), so it fixes the call's arguments, and either that prototype states a `void` return or the function's own output is stated, so the return value reaches it. A prototype with no return type (a demangled C++ name) leaves the return unknown, not `void`. Otherwise the copied-in body stays: it states the arguments and return value a call could not. The register that carried the target address is never taken as an argument of the call. `direct` recovers only direct jumps. When it fires it logs a `tailcalljump: recovered tail call` warning at the branch site so the introduced call is observable.
 - **When to flip:** On by default. A leaf function ends in `jmp <func>@plt` and kuna would emit `(*dat_...)(...)` + a 'Treating indirect jump as call' marker instead of `func(...)`, or a veneer (an ARM long-branch stub, an x86 `-fno-plt` `jmp *GOT`) renders as `switch(0x...)` with one case, or as `halt_missing()` with a 'flows out of bounds' warning under a declared extent. Set `direct` to keep direct-jump tail calls but follow a veneer's computed jump into its destination as before; set `off` to restore the upstream flow-into-callee rendering for both (the two affected datatests, Long double #1/#2, opt out per-test).
 - **Where / provenance:** P2/flow-classification · angr · structure-recovery · angr-tee-O2-tail-jumps
 - **Example:** `option tailcalljump direct`
@@ -2024,6 +2032,22 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P4/active-input-trial-scoring · kuna · opt-in-tool · kuna-stack-address-argument
 - **Example:** `option stackaddrargtrial on`
 
+### `callarrayextent` -- on | off, default `off` (destructive opt-in)
+
+- **Symptoms:** a helper's stack output array is shorter than the helper writes; a post-call stack read is emitted as an independent uninitialized scalar; a stack array passed to a helper loses aliases with neighboring frame slots.
+- **What it does:** Represent unlocked integer storage passed directly to declared integer-pointer parameters as one array when a later slot is read after being clobbered by the same call. Preserve a compatible multi-element parent that crosses or ends at the output base. Reserve through the next address-taken frame base or the local frame end, never crossing offset zero, and decline regions larger than 4096 bytes. Decline conflicting parameter types, type locks, incompatible hints, and caller-defined values in newly added storage. This preserves aliases across the call but estimates storage capacity, not the source array's exact length.
+- **When to flip:** A helper writes through a stack pointer, but the caller declares a short array followed by independent uninitialized scalars for the helper's output, or splits adjacent input and output storage used by one call. Opt in only when the frame region is intended to be shared storage: caller-defined neighboring values are excluded, but a pointer prototype still does not establish the exact array length. Explicit local types remain authoritative.
+- **Where / provenance:** P6/stack-frame-layout · kuna · feature · kuna-callarrayextent
+- **Example:** `option callarrayextent on`
+
+### `globalarrayanchor` -- on | off, default `off`
+
+- **Symptoms:** negative index displacement hides a declared global array; indexed stores use an address immediately before an array.
+- **What it does:** Keep an exact mapped global array base visible when a scaled memory index carries a negative element displacement.
+- **When to flip:** Enable when an indexed access is rendered with a literal address before the declared array or with a synthetic symbol instead of its declared array.
+- **Where / provenance:** P3/simplification-quiescence · kuna · opt-in-tool · mapped-array-negative-index-bias
+- **Example:** `option globalarrayanchor on`
+
 ## Analysis & loader passes
 
 Program-prep enablement: what is discovered, decoded, and named before any function is decompiled.
@@ -2679,6 +2703,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: the element-zero subscript is a false statement about the access width, and every changed line is a token-for-token substitution -- 0/675 datatest assertions move, and a whole-binary sweep over 40 images changed only the accesses whose width the subscript could not carry, with no statement added, deleted or re-anchored. Flip off to reproduce upstream Ghidra's bare whole-symbol name (and kuna's pre-existing element-zero form) when diffing against Ghidra, or when a consumer parses the subscript spelling.
 - **Where / provenance:** P9/array-cover-width · kuna · correctness-fix · repipe-16-byte-vm-state
 - **Example:** `option arraycoverwidth off`
+
+### `bytearrayc` -- on | off, default `off`
+
+- **Symptoms:** mapped unsigned char array uses invalid ._offset_size_ members; wide byte-array accesses need compilable C; unaligned mapped integer transfer needs an alias-safe C representation.
+- **What it does:** Emit standard C byte-transfer helpers for direct nonvolatile integer accesses of 2, 4 or 8 bytes within a mapped global byte array. Helpers preserve target endianness, unaligned offsets and overlapping copies without wider pointer casts. One-byte accesses retain their subscript; whole-array integer covers use the same helpers. Other types, wider values and volatile annotations retain their existing rendering. Requires C11 and fixed-width integer types.
+- **When to flip:** Opt in when recompiling mapped byte-array accesses that otherwise use artificial ._offset_size_ members. Off keeps the existing width-carrying notation. This does not supply a C representation for volatile wide accesses or vector/aggregate values.
+- **Where / provenance:** P9/array-cover-width · kuna · presentation-default · mapped-byte-array-c
+- **Example:** `option bytearrayc on`
 
 ### `emptystrconst` -- on | off, default `on`
 
