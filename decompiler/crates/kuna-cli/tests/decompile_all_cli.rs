@@ -1217,10 +1217,10 @@ fn ordinary_functions_never_trip_the_memory_limit() {
     assert!(!ok && stderr.contains("invalid --max-fn-memory value \"6G\""), "{stderr}");
 }
 
-/// Without `--max-fn-memory`, a run under a capped cgroup takes the cap less
-/// max(512 MiB, 10%), split across its decompiling processes: 512 MiB serially
-/// and 170 MiB each for two workers and their parent under a faked 1 GiB cap,
-/// also on the `kuna decompile` text surface. An explicit value wins.
+/// Without `--max-fn-memory`, a serial run under a capped cgroup takes the cap
+/// less max(512 MiB, 10%): 512 MiB under a faked 1 GiB cap, also on the `kuna
+/// decompile` text surface. A `--jobs 2` pool takes no default, and an explicit
+/// value wins.
 #[test]
 fn the_memory_limit_defaults_to_a_share_of_the_cgroup_cap() {
     let Some(own) = std::fs::read_to_string("/proc/self/cgroup")
@@ -1237,14 +1237,26 @@ fn the_memory_limit_defaults_to_a_share_of_the_cgroup_cap() {
     let bin = repo_root().join("tests/hang-repro/escaped_locals");
     let bin = bin.to_str().unwrap();
     let sp = specs();
-    for (extra, mib) in [(&[][..], 512), (&["--jobs", "2"][..], 170), (&["--max-fn-memory", "300"][..], 300)] {
-        let mut args = vec!["decompile-all", bin, "--json", "--max-fn-seconds", "0", "--sleighpath", &sp];
+    for (extra, mib) in [
+        (&[][..], 512),
+        (&["--max-fn-memory", "300"][..], 300),
+        (&["--jobs", "2", "--max-fn-seconds", "1"][..], 0),
+    ] {
+        let mut args = vec!["decompile-all", bin, "--json", "--sleighpath", &sp];
+        if !extra.contains(&"--max-fn-seconds") {
+            args.extend_from_slice(&["--max-fn-seconds", "0"]);
+        }
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna_env_with_timeout(&args, &env, Duration::from_secs(300))
             .expect("decompile-all did not terminate within the 300s outer bound");
         assert!(ok, "{extra:?}: {stderr}");
-        let error = format!("per-function memory limit exceeded ({mib} MiB)");
-        assert!(stdout.contains(&error), "{extra:?}: expected {error}:\n{stdout}");
+        if mib == 0 {
+            assert!(!stdout.contains("memory limit exceeded"), "{extra:?}: a pool has no default:\n{stdout}");
+            assert!(stdout.contains("per-function decompile budget exceeded (1 s)"), "{extra:?}:\n{stdout}");
+        } else {
+            let error = format!("per-function memory limit exceeded ({mib} MiB)");
+            assert!(stdout.contains(&error), "{extra:?}: expected {error}:\n{stdout}");
+        }
         assert!(stdout.contains("return a0 * 3 + 1;"), "{extra:?}: after must decompile:\n{stdout}");
     }
     let (_, stderr, ok) = run_kuna_env_with_timeout(

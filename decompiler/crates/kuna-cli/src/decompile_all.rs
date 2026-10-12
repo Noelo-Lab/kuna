@@ -1280,10 +1280,11 @@ pub(crate) fn arm_fn_budgets(prog: &mut ConsoleProgram, args: &Args) {
     kuna_decomp::kuna_fnmemory::set_limit_mib(args.max_fn_memory);
 }
 
-/// The memory limit (MiB) a run gets when `--max-fn-memory` is absent: a
-/// share of the cgroup memory cap it runs under, one per decompiling process
-/// (`processes`: 1, or `--jobs N` workers plus the parent), or `0` (off)
-/// outside a capped cgroup. See [`kuna_decomp::kuna_fnmemory::default_limit_mib`].
+/// The memory limit (MiB) a serial run gets when `--max-fn-memory` is absent:
+/// a `processes` share of the cgroup memory cap it runs under, or `0` (off)
+/// outside a capped cgroup. A `--jobs N` pool gets no default, since a fixed
+/// share per worker stops functions the container could have held. See
+/// [`kuna_decomp::kuna_fnmemory::default_limit_mib`].
 pub(crate) fn default_fn_memory_mib(processes: u64) -> u64 {
     if !kuna_decomp::kuna_fnmemory::supported() {
         return 0;
@@ -2713,7 +2714,7 @@ pub(crate) fn parse_args_with_filters(
     let decompiles = matches!(cmd, "decompile-all" | "decompile-project" | "decompile-graph");
     let max_fn_memory = match max_fn_memory {
         Some(mib) => mib,
-        None if decompiles => default_fn_memory_mib(if jobs > 1 { jobs as u64 + 1 } else { 1 }),
+        None if decompiles && jobs <= 1 => default_fn_memory_mib(1),
         None => 0,
     };
     // The pool re-execs this binary, so a policy it cannot express is one the
@@ -2852,8 +2853,8 @@ fn usage_decompile_all() {
          --max-fn-memory MiB stops a function once the process decompiling it\n\
          holds more than MiB resident and the function added 64 MiB or more;\n\
          that function becomes its own `error` record the same way. Omitted,\n\
-         it is the cgroup memory cap less max(512 MiB, 10%), split across the\n\
-         decompiling processes, or off outside a capped cgroup; 0 disables.\n\
+         a serial run takes the cgroup memory cap less max(512 MiB, 10%), and\n\
+         --jobs N or a run outside a capped cgroup has none; 0 disables.\n\
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
          in-process path). Output is merged in target order and is identical to\n\

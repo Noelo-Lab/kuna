@@ -1698,16 +1698,17 @@ Behaviors specific to `decompile-all`:
   one starts.
 
   The limit is per process: the serial run, each `--jobs N` worker, and the
-  `decomp_dbg` child of `kuna decompile`. Under a container memory cap, leave
-  room for the parent too: with `--jobs N`, N workers and the parent share the
-  cap, so each process needs roughly (cap minus a few hundred MiB) / (N + 1).
-  That is the **default** when the flag is absent and the process runs under a
-  finite cgroup v2 `memory.max` (the smallest one on the path to the root, as
-  `systemd-run --scope -p MemoryMax=6G` sets): the cap less max(512 MiB, 10%),
-  split across the decompiling processes (1, or N + 1 under `--jobs N`). A 6
-  GiB cap gives a serial run 5,529 MiB. Outside a capped cgroup the default is
-  off. An explicit value, `0` included, always wins, and `--jobs` workers take
-  the parent's resolved value. A function the limit never stops is unchanged.
+  `decomp_dbg` child of `kuna decompile`. Under a container memory cap with
+  `--jobs N`, N workers and the parent share the cap, so an explicit value
+  that keeps them all inside it is roughly (cap minus a few hundred MiB) /
+  (N + 1); every worker gets the value given. A serial run (`--jobs 1`) and
+  `kuna decompile` take a **default** when the flag is absent and the process
+  runs under a finite cgroup v2 `memory.max` (the smallest one on the path to
+  the root, as `systemd-run --scope -p MemoryMax=6G` sets): the cap less
+  max(512 MiB, 10%). A 6 GiB cap gives 5,529 MiB. A `--jobs N` pool, and any
+  run outside a capped cgroup, has no default: a fixed share per worker would
+  stop functions the container could have held while the other workers were
+  small. An explicit value, `0` included, always wins. A function the limit never stops is unchanged.
   It reads `/proc/self/status`, so on a platform without it a non-zero value
   is refused and there is no default. A function the limit stops usually has an
   alternative that keeps some output: `--max-size N` leaves functions over N

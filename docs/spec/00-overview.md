@@ -1509,11 +1509,12 @@ added at least 64 MiB (`kuna_fnmemory.rs (trips)`), so what the batch built
 up before a function began cannot stop it. A drive armed only by the limit
 gets a deadline a year out so the probes run. The trip holds for the rest of
 the drive, the function's `error` names the limit, and the drive releases free
-heap pages on the way out. Without the flag the driver takes a default from
-the smallest finite cgroup v2 `memory.max` on the process's path to the root,
-less max(512 MiB, 10%), split across the decompiling processes (`kuna_fnmemory.rs
-(default_limit_mib)`); outside a capped cgroup it is off, and `--jobs` workers
-and `decomp_dbg` take the parent's resolved value. A function whose drive
+heap pages on the way out. Without the flag a serial run and `kuna decompile`
+take a default from the smallest finite cgroup v2 `memory.max` on the
+process's path to the root, less max(512 MiB, 10%) (`kuna_fnmemory.rs
+(default_limit_mib)`); a `--jobs N` pool and a run outside a capped cgroup
+have none. `--jobs` workers and `decomp_dbg` take the parent's resolved
+value. A function whose drive
 completes before expiry is byte-identical with or without a budget, and the
 console/parity paths never set one. It is not a hard wall around discovery,
 unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
