@@ -36,7 +36,7 @@ use kuna_decomp::action::Rule;
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::context::{ArchContext, TypeOp, VarnodeId};
-use kuna_decomp::subflow::{RuleSubvarShift, SubvariableFlow};
+use kuna_decomp::subflow::{RuleSubvarShift, SubfloatFlow, SubvariableFlow};
 use kuna_decomp::varnode::DefOpInfo;
 
 // ---- scaffolding (mirrors subflow::tests) ----------------------------------
@@ -262,4 +262,50 @@ fn w5s3_forward_call_descendant_no_callspec_returns_false() {
         Some(false),
         "a CALL(slot=1) descendant with no call spec returns Ok(false) (no truncation)"
     );
+}
+
+#[test]
+fn subfloat_trace_keeps_wide_binary_arithmetic_from_both_directions() {
+    for code in [
+        OpCode::CPUI_FLOAT_ADD,
+        OpCode::CPUI_FLOAT_SUB,
+        OpCode::CPUI_FLOAT_MULT,
+        OpCode::CPUI_FLOAT_DIV,
+    ] {
+        let mut glb = ArchContext::new(build_manager());
+        glb.floatformats = vec![
+            kuna_num::float::FloatFormat::new(4),
+            kuna_num::float::FloatFormat::new(8),
+        ];
+        let glb = Rc::new(glb);
+        let r = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        let mut fd = Funcdata::new("func", "func", glb, Address::new(r, 0x1000), 0, 0x40).unwrap();
+        let mut widened = Vec::new();
+        for i in 0..2 {
+            let input = mk_input(&mut fd, 0x40 + i * 4, 4);
+            let widen = mk_op(&mut fd, 0x100 + i * 4, 1, OpCode::CPUI_FLOAT_FLOAT2FLOAT);
+            wire_in(&mut fd, widen, input, 0);
+            let output = mk_reg(&mut fd, 0x80 + i * 8, 8);
+            widened.push(wire_out(&mut fd, widen, output));
+        }
+        let binary = mk_op(&mut fd, 0x108, 2, code);
+        wire_in(&mut fd, binary, widened[0], 0);
+        wire_in(&mut fd, binary, widened[1], 1);
+        let output = mk_reg(&mut fd, 0x90, 8);
+        let output = wire_out(&mut fd, binary, output);
+        let narrow = mk_op(&mut fd, 0x10c, 1, OpCode::CPUI_FLOAT_FLOAT2FLOAT);
+        wire_in(&mut fd, narrow, output, 0);
+        let result = mk_reg(&mut fd, 0xa0, 4);
+        wire_out(&mut fd, narrow, result);
+
+        for root in [widened[0], output] {
+            let mut trace = SubfloatFlow::new(&mut fd, root, 4);
+            assert!(fd.get_arch().get_float_format(4).is_some());
+            assert!(!trace.do_trace(&mut fd).unwrap(), "lowered {code:?}");
+            for vn in [widened[0], widened[1], output] {
+                assert!(!fd.vbank().get(vn).unwrap().is_mark());
+                assert_eq!(fd.vbank().get(vn).unwrap().get_size(), 8);
+            }
+        }
+    }
 }

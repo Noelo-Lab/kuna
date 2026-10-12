@@ -5799,8 +5799,14 @@ impl PrintC {
                     // form.  CPUI_CAST / CPUI_FLOAT_FLOAT2FLOAT / CPUI_FLOAT_TRUNC
                     // all reduce to opTypeCast (printc.hh:332-341) — they render as
                     // a parenthesized type cast, not a functional `OPC(args)`.
+                    OpEmitKind::TypeCast if opc == OpCode::CPUI_FLOAT_FLOAT2FLOAT => {
+                        let implied = self.float_widening_is_c_promoted(fd, arch, op, read_op);
+                        self.op_type_cast_ir_with(fd, arch, op, implied)
+                    }
                     OpEmitKind::TypeCast if opc == OpCode::CPUI_CAST => {
-                        if self.widen_drops(fd, arch, op, read_op) {
+                        if self.float_widening_is_c_promoted(fd, arch, op, read_op) {
+                            self.op_type_cast_ir_with(fd, arch, op, true);
+                        } else if self.widen_drops(fd, arch, op, read_op) {
                             self.op_hidden_func_ir(fd, arch, op);
                         } else {
                             let implied = self.implied_cast_drops(fd, arch, op, read_op);
@@ -6364,6 +6370,99 @@ impl PrintC {
                 TagType::TypeToken, SyntaxHighlight::type_color));
             self.push_vn_ir(fd, arch, transfer.input, op);
         }
+    }
+
+    /// Does C's arithmetic conversion already perform this float widening?
+    ///
+    /// A `float` operand of a binary operation is converted to `double` when the
+    /// other operand is a double constant.  The native operation remains
+    /// double-width in the IR; only its redundant input cast is omitted in C.
+    /// This deliberately excludes variable-variable arithmetic, where both
+    /// explicit widenings are needed to preserve the operation's precision in
+    /// the printed expression.  Rust has no such implicit conversion and keeps
+    /// the cast.
+    fn float_widening_is_c_promoted(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        read_op: Option<OpId>,
+    ) -> bool {
+        use crate::dtype::type_metatype;
+
+        if self.out_lang != crate::kuna_lang::OutLang::C {
+            return false;
+        }
+        let Some(read_op) = read_op else { return false };
+        let Some(cast) = fd.obank().get(op) else { return false };
+        let (Some(source_id), Some(widened_id)) = (cast.get_in(0), cast.get_out()) else {
+            return false;
+        };
+        let model = crate::kuna_ctypes::CDataModel::from_types(&*arch.types());
+        let (Some(source), Some(widened)) = (
+            fd.vbank().get(source_id),
+            fd.vbank().get(widened_id),
+        ) else {
+            return false;
+        };
+        // Implied union-field values can retain the union as their def-facing
+        // type even though CPUI_FLOAT_FLOAT2FLOAT itself proves the operand is
+        // floating.  Generic CPUI_CAST still needs the explicit floating type.
+        let source_is_float = source.get_type_def_facing().get_metatype() == type_metatype::TYPE_FLOAT
+            || cast.code() == OpCode::CPUI_FLOAT_FLOAT2FLOAT;
+        if source.get_size() != model.float_size
+            || !source_is_float
+            || widened.get_size() != model.double_size
+            || widened.get_type_def_facing().get_metatype() != type_metatype::TYPE_FLOAT
+        {
+            return false;
+        }
+
+        let Some(reader) = fd.obank().get(read_op) else { return false };
+        if reader.num_input() != 2
+            || !matches!(
+                reader.code(),
+                OpCode::CPUI_FLOAT_ADD
+                    | OpCode::CPUI_FLOAT_SUB
+                    | OpCode::CPUI_FLOAT_MULT
+                    | OpCode::CPUI_FLOAT_DIV
+            )
+        {
+            return false;
+        }
+        let Some(result) = reader.get_out().and_then(|vn| fd.vbank().get(vn)) else {
+            return false;
+        };
+        if result.get_size() != model.double_size
+            || result.get_type_def_facing().get_metatype() != type_metatype::TYPE_FLOAT
+        {
+            return false;
+        }
+        let (Some(in0), Some(in1)) = (reader.get_in(0), reader.get_in(1)) else {
+            return false;
+        };
+        let other = if in0 == widened_id {
+            in1
+        } else if in1 == widened_id {
+            in0
+        } else {
+            return false;
+        };
+        let Some(other) = fd.vbank().get(other) else { return false };
+        if !other.is_constant()
+            || other.get_size() != model.double_size
+            || other.get_type_def_facing().get_metatype() != type_metatype::TYPE_FLOAT
+        {
+            return false;
+        }
+        let Some(format) = arch.translate().get_float_format(model.double_size) else {
+            return false;
+        };
+        let (_, class) = format.get_host_float(other.get_offset());
+        !matches!(
+            class,
+            kuna_num::float::floatclass::infinity | kuna_num::float::floatclass::nan
+        )
     }
 
     /// C++ `PrintC::opTypeCast` (printc.cc:468): the C cast-notation `(type)operand`
