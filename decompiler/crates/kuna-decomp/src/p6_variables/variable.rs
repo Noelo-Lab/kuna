@@ -1140,16 +1140,28 @@ pub struct HighIntersectTest {
     /// PcodeOps that may indirectly affect the intersection test (C++
     /// `affectingOps`).
     affecting_ops: PcodeOpSet,
+    /// IR revision used by the saved positions and crossing decisions.
+    affecting_ops_revision: u64,
 }
 
 impl HighIntersectTest {
     pub fn new(affecting_ops: PcodeOpSet) -> HighIntersectTest {
-        HighIntersectTest { highedgemap: BTreeMap::new(), affecting_ops }
+        HighIntersectTest { highedgemap: BTreeMap::new(), affecting_ops, affecting_ops_revision: 0 }
     }
 
     /// Clear any cached tests (C++ `clear`).
     pub fn clear(&mut self) {
         self.highedgemap.clear();
+    }
+
+    /// Discard positions and decisions collected before an IR layout change.
+    pub(crate) fn sync_affecting_ops(&mut self, revision: u64) {
+        if self.affecting_ops_revision == revision {
+            return;
+        }
+        self.clear();
+        self.affecting_ops.clear();
+        self.affecting_ops_revision = revision;
     }
 
     /// Remove cached intersection tests for a given HighVariable (C++

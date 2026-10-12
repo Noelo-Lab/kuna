@@ -127,6 +127,9 @@ mod fid_cli;
 #[path = "float_unordered_compare.rs"]
 mod float_unordered_compare;
 
+#[path = "float_precision.rs"]
+mod float_precision;
+
 #[path = "function_boundary_return_cli.rs"]
 mod function_boundary_return_cli;
 
@@ -150,6 +153,9 @@ mod limits_cli;
 
 #[path = "local_name_batch.rs"]
 mod local_name_batch;
+
+#[path = "loop_cursor_initializer.rs"]
+mod loop_cursor_initializer;
 
 #[path = "mapped_decode_failure.rs"]
 mod mapped_decode_failure;
@@ -330,3 +336,6 @@ mod zero_extended_returns;
 
 #[path = "zext_pair_returns.rs"]
 mod zext_pair_returns;
+
+#[path = "common_allocation_cli.rs"]
+mod common_allocation_cli;

@@ -1167,6 +1167,9 @@ impl MergeContext for Funcdata {
     }
     fn symbol_set_merge_problems(&mut self, _symbol: u64) {}
     fn symbol_merge_warning(&mut self, _symbol: u64, _m: int4, _s: int4, _c: int4) {}
+    fn affecting_ops_revision(&self) -> u64 {
+        Funcdata::affecting_ops_revision(self)
+    }
     fn populate_affecting_ops(&self, op_set: &mut PcodeOpSet) {
         // C++ `StackAffectingOps::populate` (merge.cc:63): add every CALL op,
         // then every still-valid store-guard STORE; finalize; then `affectsTest`

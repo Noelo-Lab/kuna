@@ -1,0 +1,26 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!-- Independent branch: FSTOI bits and an unsigned fallback join before SRL. -->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+03000080c1004000c300600481a80a21194800050100000081a01a20c1206008d00060089132200381c3e00801000000
+</bytechunk>
+<bytechunk space="ram" offset="0x10100" readonly="true">
+03000080c1004000c300600481a80a21194800050100000081a01a20c1206008d0006008913a200381c3e00801000000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="unsigned_join"/>
+<symbol space="ram" offset="0x10100" name="signed_join"/>
+</binaryimage>
+<script>
+<com>parse line extern unsigned int unsigned_join(unsigned int fallback);</com>
+<com>parse line extern int signed_join(int retained);</com>
+<com>map address r0x20000 float sample</com>
+<com>map address r0x20004 float limit</com>
+<com>lo fu unsigned_join</com><com>decompile</com><com>print C</com>
+<com>lo fu signed_join</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="unsigned merge retains signed conversion" min="1" max="1">fallback = \(uint4\)\(int4\)sample;</stringmatch>
+<stringmatch name="logical shift retains unsigned destination" min="1" max="1">return fallback &gt;&gt; 3;</stringmatch>
+<stringmatch name="signed merge retains signed conversion" min="1" max="1">retained = \(int4\)sample;</stringmatch>
+<stringmatch name="signed shift stays signed" min="1" max="1">return retained &gt;&gt; 3;</stringmatch>
+</decompilertest>
