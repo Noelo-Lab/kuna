@@ -493,7 +493,8 @@ fn usage() {
          per function, other runs to 120; a function over budget becomes its own\n\
          `error` record and the run still exits 0. --max-fn-memory MiB does the\n\
          same for a function once its process holds more than MiB resident and\n\
-         has grown during it (default 0, off).\n\
+         the function added 64 MiB or more (omitted: a share of the cgroup\n\
+         memory cap, or off; 0 disables).\n\
          --jobs N spreads the per-function decompile over N worker processes\n\
          (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
          serial). The document is identical to --jobs 1, synthesized struct_N\n\

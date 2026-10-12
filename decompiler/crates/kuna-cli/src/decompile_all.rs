@@ -71,9 +71,9 @@ pub(crate) struct Args {
     /// for an unfiltered fast whole-binary run and 120 otherwise.
     pub(crate) max_fn_seconds: u64,
     /// `--max-fn-memory N` (the decompiling surfaces): stop a function once the
-    /// process decompiling it holds more than N MiB resident and has grown
-    /// during it, recording that function's `error`; `0` (the default)
-    /// disables. See [`arm_fn_budgets`].
+    /// process decompiling it holds more than N MiB resident and the function
+    /// itself added at least 64 MiB, recording that function's `error`; `0`
+    /// disables. Omitted, [`default_fn_memory_mib`]. See [`arm_fn_budgets`].
     pub(crate) max_fn_memory: u64,
     pub(crate) options: Vec<(String, String)>,
     /// `--define-function <start[-end][=name] | @file>` (repeatable): the
@@ -1280,6 +1280,17 @@ pub(crate) fn arm_fn_budgets(prog: &mut ConsoleProgram, args: &Args) {
     kuna_decomp::kuna_fnmemory::set_limit_mib(args.max_fn_memory);
 }
 
+/// The memory limit (MiB) a run gets when `--max-fn-memory` is absent: a
+/// share of the cgroup memory cap it runs under, one per decompiling process
+/// (`processes`: 1, or `--jobs N` workers plus the parent), or `0` (off)
+/// outside a capped cgroup. See [`kuna_decomp::kuna_fnmemory::default_limit_mib`].
+pub(crate) fn default_fn_memory_mib(processes: u64) -> u64 {
+    if !kuna_decomp::kuna_fnmemory::supported() {
+        return 0;
+    }
+    kuna_decomp::kuna_fnmemory::default_limit_mib(processes)
+}
+
 /// Parse a `--max-fn-memory` value: MiB, `0` to disable. Refused where the
 /// process's resident set cannot be read, since the limit could never fire.
 pub(crate) fn parse_max_fn_memory(v: &str) -> Result<u64, String> {
@@ -2447,7 +2458,7 @@ pub(crate) fn parse_args_with_filters(
     let mut entry_seeds: Vec<EntrySelector> = Vec::new();
     let mut no_vars = false;
     let mut max_fn_seconds: Option<u64> = None;
-    let mut max_fn_memory: u64 = 0;
+    let mut max_fn_memory: Option<u64> = None;
     let mut options: Vec<(String, String)> = Vec::new();
     let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
     let mut assertions: Vec<kuna_console::assertions::Directive> = Vec::new();
@@ -2556,7 +2567,7 @@ pub(crate) fn parse_args_with_filters(
                     || cmd == "decompile-project"
                     || cmd == "decompile-graph" =>
             {
-                max_fn_memory = parse_max_fn_memory(&take(argv, &mut i, "--max-fn-memory")?)?;
+                max_fn_memory = Some(parse_max_fn_memory(&take(argv, &mut i, "--max-fn-memory")?)?);
             }
             "--filter" if triageable => {
                 let v = take(argv, &mut i, "--filter")?;
@@ -2699,6 +2710,12 @@ pub(crate) fn parse_args_with_filters(
     let whole_binary = batch && names.is_none() && addrs.is_empty();
     let max_fn_seconds = max_fn_seconds
         .unwrap_or_else(|| default_fn_budget_seconds(concrete_mode, whole_binary));
+    let decompiles = matches!(cmd, "decompile-all" | "decompile-project" | "decompile-graph");
+    let max_fn_memory = match max_fn_memory {
+        Some(mib) => mib,
+        None if decompiles => default_fn_memory_mib(if jobs > 1 { jobs as u64 + 1 } else { 1 }),
+        None => 0,
+    };
     // The pool re-execs this binary, so a policy it cannot express is one the
     // shards would silently drop rather than honour. Pool-only: on `functions`
     // the same flag buys decode lanes and no process is re-exec'd, so a raw
@@ -2833,8 +2850,10 @@ fn usage_decompile_all() {
          for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\
          budget becomes its own `error` record and the batch continues.\n\
          --max-fn-memory MiB stops a function once the process decompiling it\n\
-         holds more than MiB resident and has grown during it (default 0, off);\n\
-         that function becomes its own `error` record the same way.\n\
+         holds more than MiB resident and the function added 64 MiB or more;\n\
+         that function becomes its own `error` record the same way. Omitted,\n\
+         it is the cgroup memory cap less max(512 MiB, 10%), split across the\n\
+         decompiling processes, or off outside a capped cgroup; 0 disables.\n\
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
          in-process path). Output is merged in target order and is identical to\n\

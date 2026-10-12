@@ -48,6 +48,12 @@ fn main() -> ExitCode {
             if i < args.len() {
                 spec_roots.push(args[i].clone());
             }
+        } else if flag == "--max-fn-memory" {
+            // (kuna) `kuna decompile`'s resolved per-function memory limit (MiB).
+            i += 1;
+            if let Some(mib) = args.get(i).and_then(|v| v.trim().parse::<u64>().ok()) {
+                kuna_decomp::kuna_fnmemory::set_limit_mib(mib);
+            }
         }
         // Unknown flags are skipped (the C++ loop advances on any leading '-').
         i += 1;
@@ -64,15 +70,6 @@ fn main() -> ExitCode {
     if spec_roots.is_empty() {
         eprintln!("Could not discover root of Ghidra installation");
         return ExitCode::from(1);
-    }
-
-    // (kuna) `kuna decompile --max-fn-memory MiB` hands its per-function memory
-    // limit down here; every decompile drive this console runs arms it.
-    if let Some(mib) = std::env::var(kuna_decomp::kuna_fnmemory::ENV_VAR)
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-    {
-        kuna_decomp::kuna_fnmemory::set_limit_mib(mib);
     }
 
     // startDecompilerLibrary(...) — the id/capability bootstrap is performed

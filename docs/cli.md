@@ -121,6 +121,7 @@ the directories it looked in.
 | `KUNA_DECODE_SELFCHECK` | `1` runs both walks, compares them field by field and returns the serial result; `abort` panics on a difference. Keeps the runtime's panic report, as `KUNA_DECODE_STATS` does. |
 | `KUNA_DECODE_STATS` | `1` prints one line of lane/interval/round/crossing/decode counts and the walk, merge and lane-memory figures. It also keeps the runtime's panic report for a lane fault, which the fallback otherwise silences. |
 | `KUNA_DECODE_FAULT` | Test-only: `<n>` panics lane `n` once, `spawn:<n>` makes lane `n`'s spawn fail — the two fallback paths. |
+| `KUNA_CGROUP_ROOT` | Test-only: the directory read in place of `/sys/fs/cgroup` when the `--max-fn-memory` default looks for a cgroup memory cap. |
 | `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
 
 An override wins over both layouts, and one pointing at nothing is reported as
@@ -184,8 +185,9 @@ interactive prompts never pollute the output. `--option NAME VALUE` (repeatable)
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
 `--max-fn-memory MiB` stops the decompile once `decomp_dbg` holds more than MiB
-resident (see *Per-function memory limit* under `decompile-all`) and reports
-`per-function memory limit exceeded` instead of being killed.
+resident and the function has added 64 MiB (see *Per-function memory limit*
+under `decompile-all`, including its cgroup default) and reports `per-function
+memory limit exceeded` instead of being killed.
 
 An option **name** is checked before anything is loaded, on every surface that takes
 `--option`, and an unrecognized one exits 2 rather than running as if it had not been
@@ -1680,25 +1682,37 @@ Behaviors specific to `decompile-all`:
   settable — zero output change for a function whose drive completes before
   expiry; the console / `decomp_dbg` parity path never arms it.
 
-- **Per-function memory limit** — `--max-fn-memory MiB` (`0`, the default,
-  disables) on `decompile-all`, `decompile-project`, `decompile-graph` and
-  `kuna decompile`. Once the process decompiling a function holds more than
-  MiB resident and has grown since that function began, the function is cut off
-  at the same cooperative probes as the watchdog and recorded as its `error`
-  (`"per-function memory limit exceeded (N MiB)"`); the batch continues, and
-  the freed heap is handed back to the system before the next function. The
-  limit covers the whole process, not one function's share: the program load
-  in a serial run, each worker's own load under `--jobs N` (every worker gets
-  the same limit), and the `decomp_dbg` child under `kuna decompile`. Under a
-  container memory cap, set it some hundreds of MiB below the cap so the
-  function is stopped before the kernel kills the run. The resident set is read
-  at most every 50 ms, only while the limit is set, so a run without it is
-  unchanged; with it, a function the limit never stops is unchanged too. It
-  reads `/proc/self/status`, so on a platform without it a non-zero value is
-  refused. A function the limit stops usually has an alternative that keeps
-  some output: `--max-size N` leaves functions over N bytes out of the run,
-  and `--option maxinstruction N` truncates their flow (see *The instruction
-  budget*).
+- **Per-function memory limit** — `--max-fn-memory MiB` (`0` disables) on
+  `decompile-all`, `decompile-project`, `decompile-graph` and `kuna decompile`.
+  A function is stopped once the process decompiling it holds more than MiB
+  resident AND the function itself has added at least 64 MiB since it began;
+  it is cut off at the same cooperative probes as the watchdog and recorded as
+  its `error` (`"per-function memory limit exceeded (N MiB)"`), and the batch
+  continues. The 64 MiB floor is what keeps a long batch's creep (results it
+  holds, heap the allocator kept) from stopping an ordinary function, so the
+  process can end up to that much over the limit before a function is
+  blamed. The resident set is read when each function starts and then at most
+  every 50 ms while it runs. A function that starts within a tenth of the limit
+  first hands free heap pages back to the system (glibc `malloc_trim`) and
+  measures again, and a stopped function hands its own back before the next
+  one starts.
+
+  The limit is per process: the serial run, each `--jobs N` worker, and the
+  `decomp_dbg` child of `kuna decompile`. Under a container memory cap, leave
+  room for the parent too: with `--jobs N`, N workers and the parent share the
+  cap, so each process needs roughly (cap minus a few hundred MiB) / (N + 1).
+  That is the **default** when the flag is absent and the process runs under a
+  finite cgroup v2 `memory.max` (the smallest one on the path to the root, as
+  `systemd-run --scope -p MemoryMax=6G` sets): the cap less max(512 MiB, 10%),
+  split across the decompiling processes (1, or N + 1 under `--jobs N`). A 6
+  GiB cap gives a serial run 5,529 MiB. Outside a capped cgroup the default is
+  off. An explicit value, `0` included, always wins, and `--jobs` workers take
+  the parent's resolved value. A function the limit never stops is unchanged.
+  It reads `/proc/self/status`, so on a platform without it a non-zero value
+  is refused and there is no default. A function the limit stops usually has an
+  alternative that keeps some output: `--max-size N` leaves functions over N
+  bytes out of the run, and `--option maxinstruction N` truncates their flow
+  (see *The instruction budget*).
 
 - **`--jobs N|auto` — the worker pool, and the decode lanes.** The per-function
   loop is ~96% of a whole-binary run's wall clock and the engine is
