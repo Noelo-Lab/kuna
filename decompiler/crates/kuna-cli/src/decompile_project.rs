@@ -165,7 +165,8 @@ fn usage() {
          default to 120. --max-fn-seconds overrides that policy (0 disables).\n\
          --max-fn-memory MiB stops a function once the process decompiling it\n\
          holds more than MiB resident and the function added 64 MiB or more\n\
-         (omitted: a share of the cgroup memory cap, or off; 0 disables).\n\
+         (omitted: under a cgroup memory cap, once it grew by the cap's margin\n\
+         and the cgroup nears its cap; 0 disables).\n\
          --jobs N spreads the per-function decompile over N worker processes\n\
          (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
          serial). Without --stream the artifacts are identical to a --jobs 1 run\n\

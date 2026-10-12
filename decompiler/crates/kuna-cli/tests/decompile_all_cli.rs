@@ -1217,31 +1217,38 @@ fn ordinary_functions_never_trip_the_memory_limit() {
     assert!(!ok && stderr.contains("invalid --max-fn-memory value \"6G\""), "{stderr}");
 }
 
-/// Without `--max-fn-memory`, a serial run under a capped cgroup takes the cap
-/// less max(512 MiB, 10%): 512 MiB under a faked 1 GiB cap, also on the `kuna
-/// decompile` text surface. A `--jobs 2` pool takes no default, and an explicit
-/// value wins.
+/// Without `--max-fn-memory`, a run under a capped cgroup takes the cgroup
+/// default, the serial run, every `--jobs` worker and `kuna decompile` alike:
+/// with a margin of max(512 MiB, 10%) of the cap, a function that has grown by
+/// the margin is stopped once the cgroup holds more than its cap less it, which
+/// is 512 MiB of a faked 1 GiB cap that is already full. The same cap with room left stops nothing (`big` then runs
+/// into its 1 s watchdog instead), and an explicit value, `0` included, wins.
 #[test]
-fn the_memory_limit_defaults_to_a_share_of_the_cgroup_cap() {
+fn the_memory_limit_defaults_to_the_cgroup_cap() {
     let Some(own) = std::fs::read_to_string("/proc/self/cgroup")
         .ok()
         .and_then(|m| m.lines().find_map(|l| l.strip_prefix("0::").map(str::to_string)))
     else {
         return;
     };
-    let root = tempfile::tempdir().unwrap();
-    let leaf = root.path().join(own.trim_start_matches('/'));
-    std::fs::create_dir_all(&leaf).unwrap();
-    std::fs::write(leaf.join("memory.max"), "1073741824\n").unwrap();
-    let env = [("KUNA_CGROUP_ROOT", root.path().to_str().unwrap())];
     let bin = repo_root().join("tests/hang-repro/escaped_locals");
     let bin = bin.to_str().unwrap();
     let sp = specs();
-    for (extra, mib) in [
-        (&[][..], 512),
-        (&["--max-fn-memory", "300"][..], 300),
-        (&["--jobs", "2", "--max-fn-seconds", "1"][..], 0),
+    let watchdog = "per-function decompile budget exceeded (1 s)";
+    for (current, extra, error) in [
+        ("1073741824", &[][..], "per-function memory limit exceeded (512 MiB)"),
+        ("1073741824", &["--jobs", "2"][..], "per-function memory limit exceeded (512 MiB)"),
+        ("1073741824", &["--max-fn-memory", "300"][..], "per-function memory limit exceeded (300 MiB)"),
+        ("1073741824", &["--max-fn-memory", "0", "--max-fn-seconds", "1"][..], watchdog),
+        ("104857600", &["--max-fn-seconds", "1"][..], watchdog),
+        ("104857600", &["--jobs", "2", "--max-fn-seconds", "1"][..], watchdog),
     ] {
+        let root = tempfile::tempdir().unwrap();
+        let leaf = root.path().join(own.trim_start_matches('/'));
+        std::fs::create_dir_all(&leaf).unwrap();
+        std::fs::write(leaf.join("memory.max"), "1073741824\n").unwrap();
+        std::fs::write(leaf.join("memory.current"), format!("{current}\n")).unwrap();
+        let env = [("KUNA_CGROUP_ROOT", root.path().to_str().unwrap())];
         let mut args = vec!["decompile-all", bin, "--json", "--sleighpath", &sp];
         if !extra.contains(&"--max-fn-seconds") {
             args.extend_from_slice(&["--max-fn-seconds", "0"]);
@@ -1249,23 +1256,22 @@ fn the_memory_limit_defaults_to_a_share_of_the_cgroup_cap() {
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna_env_with_timeout(&args, &env, Duration::from_secs(300))
             .expect("decompile-all did not terminate within the 300s outer bound");
-        assert!(ok, "{extra:?}: {stderr}");
-        if mib == 0 {
-            assert!(!stdout.contains("memory limit exceeded"), "{extra:?}: a pool has no default:\n{stdout}");
-            assert!(stdout.contains("per-function decompile budget exceeded (1 s)"), "{extra:?}:\n{stdout}");
-        } else {
-            let error = format!("per-function memory limit exceeded ({mib} MiB)");
-            assert!(stdout.contains(&error), "{extra:?}: expected {error}:\n{stdout}");
+        assert!(ok, "{current} {extra:?}: {stderr}");
+        assert!(stdout.contains(error), "{current} {extra:?}: expected {error}:\n{stdout}");
+        assert!(stdout.contains("return a0 * 3 + 1;"), "{current} {extra:?}: after must decompile:\n{stdout}");
+        if error == watchdog {
+            assert!(!stdout.contains("memory limit exceeded"), "{current} {extra:?}:\n{stdout}");
         }
-        assert!(stdout.contains("return a0 * 3 + 1;"), "{extra:?}: after must decompile:\n{stdout}");
+        if current == "1073741824" && extra.is_empty() {
+            let (_, stderr, ok) = run_kuna_env_with_timeout(
+                &["decompile", bin, "big", "--sleighpath", &sp],
+                &env,
+                Duration::from_secs(300),
+            )
+            .expect("decompile did not terminate within the 300s outer bound");
+            assert!(!ok && stderr.contains(error), "{stderr}");
+        }
     }
-    let (_, stderr, ok) = run_kuna_env_with_timeout(
-        &["decompile", bin, "big", "--sleighpath", &sp],
-        &env,
-        Duration::from_secs(300),
-    )
-    .expect("decompile did not terminate within the 300s outer bound");
-    assert!(!ok && stderr.contains("per-function memory limit exceeded (512 MiB)"), "{stderr}");
 }
 
 /// The past-pathological function of the stripped-ELF hang repro now

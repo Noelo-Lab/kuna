@@ -77,21 +77,6 @@ fn cgroup_root() -> String {
     std::env::var(CGROUP_ROOT_ENV).unwrap_or_else(|_| "/sys/fs/cgroup".into())
 }
 
-/// The smallest finite cgroup v2 `memory.max` on the path from this process's
-/// cgroup to the root, in bytes.
-pub fn cgroup_memory_cap() -> Option<u64> {
-    let root = cgroup_root();
-    let membership = std::fs::read_to_string("/proc/self/cgroup").ok()?;
-    cap_from(&membership, |dir| std::fs::read_to_string(format!("{root}{dir}/memory.max")).ok())
-}
-
-/// [`cgroup_memory_cap`] over `/proc/self/cgroup` text, with `read_max`
-/// answering one cgroup directory's `memory.max` (`""` is the root, which has
-/// one only inside a container's cgroup namespace).
-pub fn cap_from(membership: &str, read_max: impl Fn(&str) -> Option<String>) -> Option<u64> {
-    cgroup_dirs(membership)?.filter_map(|dir| parse_max(read_max(dir))).min()
-}
-
 /// What the cgroups on this process's path still leave a new process: for
 /// each with a finite `memory.max`, that cap less what the cgroup holds that
 /// reclaim cannot hand back; the smallest of those.
@@ -104,23 +89,60 @@ pub fn cgroup_headroom() -> Option<u64> {
 }
 
 /// [`cgroup_headroom`] over `/proc/self/cgroup` text, with `read` answering
-/// one file of one cgroup directory. A cgroup holds `memory.current`, less its
-/// file-backed LRU pages (`active_file` + `inactive_file` in `memory.stat`),
-/// which reclaim can drop; tmpfs and shared memory sit on the anonymous lists
-/// and stay counted.
+/// one file of one cgroup directory. A cgroup's usage is
+/// [`unreclaimable_bytes`]'s, `0` when it reports none.
 pub fn headroom_from(membership: &str, read: impl Fn(&str, &str) -> Option<String>) -> Option<u64> {
     cgroup_dirs(membership)?
         .filter_map(|dir| {
             let max = parse_max(read(dir, "memory.max"))?;
-            let current = read(dir, "memory.current")
-                .and_then(|v| v.trim().parse::<u64>().ok())
-                .unwrap_or(0);
-            let reclaimable = read(dir, "memory.stat").map_or(0, |stat| {
-                stat_field(&stat, "active_file").saturating_add(stat_field(&stat, "inactive_file"))
-            });
-            Some(max.saturating_sub(current.saturating_sub(reclaimable)))
+            let used = unreclaimable(read(dir, "memory.current"), read(dir, "memory.stat"));
+            Some(max.saturating_sub(used.unwrap_or(0)))
         })
         .min()
+}
+
+/// The cgroups on this process's path with a finite `memory.max`, innermost
+/// first: each one's directory (under the cgroup root) and that cap in bytes.
+pub fn capped_cgroups() -> Vec<(String, u64)> {
+    let root = cgroup_root();
+    let Ok(membership) = std::fs::read_to_string("/proc/self/cgroup") else {
+        return Vec::new();
+    };
+    capped_from(&membership, |dir| std::fs::read_to_string(format!("{root}{dir}/memory.max")).ok())
+        .into_iter()
+        .map(|(dir, max)| (format!("{root}{dir}"), max))
+        .collect()
+}
+
+/// [`capped_cgroups`] over `/proc/self/cgroup` text, with `read_max`
+/// answering one cgroup directory's `memory.max` (`""` is the root, which has
+/// one only inside a container's cgroup namespace); directories are relative
+/// to the cgroup root.
+pub fn capped_from(membership: &str, read_max: impl Fn(&str) -> Option<String>) -> Vec<(String, u64)> {
+    cgroup_dirs(membership)
+        .into_iter()
+        .flatten()
+        .filter_map(|dir| Some((dir.to_string(), parse_max(read_max(dir))?)))
+        .collect()
+}
+
+/// What the cgroup directory `dir` holds that reclaim cannot hand back:
+/// `memory.current` less its file-backed LRU pages (`active_file` +
+/// `inactive_file` in `memory.stat`). tmpfs and shared memory sit on the
+/// anonymous lists and stay counted. `None` when `memory.current` is
+/// unreadable.
+pub fn unreclaimable_bytes(dir: &str) -> Option<u64> {
+    let read = |file: &str| std::fs::read_to_string(format!("{dir}/{file}")).ok();
+    unreclaimable(read("memory.current"), read("memory.stat"))
+}
+
+/// [`unreclaimable_bytes`] over the two files' text.
+pub fn unreclaimable(current: Option<String>, stat: Option<String>) -> Option<u64> {
+    let current = current?.trim().parse::<u64>().ok()?;
+    let reclaimable = stat.map_or(0, |stat| {
+        stat_field(&stat, "active_file").saturating_add(stat_field(&stat, "inactive_file"))
+    });
+    Some(current.saturating_sub(reclaimable))
 }
 
 /// Each cgroup directory from the process's own to the root (`""`), innermost
@@ -309,22 +331,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_cap_is_the_smallest_finite_memory_max_on_the_path() {
-        let membership = "0::/user.slice/wave.slice/run-1.scope\n";
-        let caps = |dir: &str| match dir {
-            "/user.slice" => Some("max\n".to_string()),
-            "/user.slice/wave.slice" => Some("6442450944\n".to_string()),
-            "/user.slice/wave.slice/run-1.scope" => Some("34359738368\n".to_string()),
-            _ => None,
-        };
-        assert_eq!(cap_from(membership, caps), Some(6 << 30));
-        assert_eq!(cap_from(membership, |_| Some("max".into())), None);
-        assert_eq!(cap_from("1:memory:/user.slice\n", caps), None, "cgroup v1");
-        let container = |dir: &str| (dir.is_empty()).then(|| "2147483648".to_string());
-        assert_eq!(cap_from("0::/\n", container), Some(2 << 30), "a namespaced container's own cap");
-    }
-
-    #[test]
     fn the_headroom_is_each_cap_less_what_reclaim_cannot_free() {
         const GIB: u64 = 1 << 30;
         let membership = "0::/user.slice/app.slice/run-7.scope\n";
@@ -354,6 +360,32 @@ mod tests {
         assert_eq!(headroom_from(membership, |_, _| Some("max".into())), None, "uncapped");
         let over = |_: &str, file: &str| Some(if file == "memory.max" { "100" } else { "200" }.into());
         assert_eq!(headroom_from("0::/\n", over), Some(0), "over its cap: nothing left");
+    }
+
+    #[test]
+    fn every_capped_cgroup_on_the_path_is_listed_innermost_first() {
+        let membership = "0::/user.slice/wave.slice/run-1.scope\n";
+        let caps = |dir: &str| match dir {
+            "/user.slice" => Some("max\n".to_string()),
+            "/user.slice/wave.slice" => Some("6442450944\n".to_string()),
+            "/user.slice/wave.slice/run-1.scope" => Some("34359738368\n".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            capped_from(membership, caps),
+            vec![
+                ("/user.slice/wave.slice/run-1.scope".to_string(), 32 << 30),
+                ("/user.slice/wave.slice".to_string(), 6 << 30),
+            ]
+        );
+        assert!(capped_from("1:memory:/user.slice\n", caps).is_empty(), "cgroup v1");
+        assert!(capped_from(membership, |_| Some("max".into())).is_empty());
+        let container = |dir: &str| (dir.is_empty()).then(|| "2147483648".to_string());
+        assert_eq!(capped_from("0::/\n", container), vec![(String::new(), 2 << 30)], "a namespaced container's own cap");
+        let stat = "anon 9\nfile 7\nactive_file 2\ninactive_file 3\nshmem 2\n".to_string();
+        assert_eq!(unreclaimable(Some("100\n".into()), Some(stat)), Some(95));
+        assert_eq!(unreclaimable(Some("100".into()), None), Some(100));
+        assert_eq!(unreclaimable(None, Some("active_file 1".into())), None);
     }
 
     #[test]

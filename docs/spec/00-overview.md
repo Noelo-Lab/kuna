@@ -1509,16 +1509,30 @@ added at least 64 MiB (`kuna_fnmemory.rs (trips)`), so what the batch built
 up before a function began cannot stop it. A drive armed only by the limit
 gets a deadline a year out so the probes run. The trip holds for the rest of
 the drive, the function's `error` names the limit, and the drive releases free
-heap pages on the way out. Without the flag a serial run and `kuna decompile`
-take a default from the smallest finite cgroup v2 `memory.max` on the
-process's path to the root, less max(512 MiB, 10%) (`kuna_fnmemory.rs
-(default_limit_mib)`); a `--jobs N` pool and a run outside a capped cgroup
-have none. `--jobs` workers and `decomp_dbg` take the parent's resolved
-value. The resident set is
-`decompiler/crates/kuna-decomp/src/infra/kuna_hostmem.rs (resident_bytes)`:
-`VmRSS` on Linux, and on Windows the larger of the working set and the private
-commit; a platform that reports no resident set (macOS) refuses a non-zero
-limit. A function whose drive completes before expiry is byte-identical with or without a budget, and the
+heap pages on the way out. Without the flag, a process under a finite cgroup
+v2 `memory.max` takes the cgroup default instead
+(`kuna_fnmemory.rs (use_cgroup_default)`): the serial run, every `--jobs`
+worker (the parent passes a value only when one was given) and `decomp_dbg`
+(`--max-fn-memory cgroup`). It budgets the container, not the process. With
+a margin of max(512 MiB, 10% of the cap), a drive trips once it has itself
+added the margin AND some capped cgroup on the path to the root holds more
+than its cap less the margin, counting `memory.current` without the
+file-backed LRU pages reclaim can drop (`kuna_fnmemory.rs (cgroup_trips)`,
+`decompiler/crates/kuna-decomp/src/infra/kuna_hostmem.rs
+(unreclaimable_bytes)`). The cgroup files are read only on a sample that
+finds the drive grown that much. A fixed per-process share of the cap was the
+first alternative, and it stops functions the container could have held while
+the other workers were small. A 64 MiB growth floor was the second: with
+fifteen workers in a 6 GiB scope the container sits past its limit for long
+stretches, and that floor stopped whichever medium function happened to grow
+then (13 of 29 stops on `gh` were functions that finish when nothing is
+stopped). A function that grew by less than the margin cannot be what is
+using the container's last margin up; one that grew by more is, and stopping
+it is what saves the worker the kernel would otherwise kill. A run outside a capped cgroup has no default. The resident set
+is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, and on Windows the
+larger of the working set and the private commit; a platform that reports no
+resident set (macOS) refuses a non-zero limit. A function whose drive
+completes before expiry is byte-identical with or without a budget, and the
 console/parity paths never set one. It is not a hard wall around discovery,
 unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
 construction, total project time, or memory.

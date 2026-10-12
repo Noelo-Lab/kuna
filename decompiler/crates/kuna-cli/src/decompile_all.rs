@@ -73,8 +73,8 @@ pub(crate) struct Args {
     /// `--max-fn-memory N` (the decompiling surfaces): stop a function once the
     /// process decompiling it holds more than N MiB resident and the function
     /// itself added at least 64 MiB, recording that function's `error`; `0`
-    /// disables. Omitted, [`default_fn_memory_mib`]. See [`arm_fn_budgets`].
-    pub(crate) max_fn_memory: u64,
+    /// disables. `None` (omitted) is the cgroup default. See [`arm_fn_budgets`].
+    pub(crate) max_fn_memory: Option<u64>,
     pub(crate) options: Vec<(String, String)>,
     /// `--define-function <start[-end][=name] | @file>` (repeatable): the
     /// caller-declared function boundaries, applied by [`load_program`] right
@@ -155,7 +155,7 @@ impl Args {
             entry_seeds: Vec::new(),
             no_vars: false,
             max_fn_seconds: 0,
-            max_fn_memory: 0,
+            max_fn_memory: Some(0),
             options: Vec::new(),
             func_decls: Vec::new(),
             assertions: Vec::new(),
@@ -1271,25 +1271,20 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
 
 /// Arm the per-function budgets `args` asks for: the wall-clock watchdog on the
 /// architecture, and the memory limit process-wide, since what it measures is
-/// the process's resident set.
+/// the process's resident set. With no `--max-fn-memory` the process takes the
+/// cgroup default ([`kuna_decomp::kuna_fnmemory::use_cgroup_default`]), the
+/// serial run and every `--jobs` worker alike.
 pub(crate) fn arm_fn_budgets(prog: &mut ConsoleProgram, args: &Args) {
     if args.max_fn_seconds > 0 {
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
-    kuna_decomp::kuna_fnmemory::set_limit_mib(args.max_fn_memory);
-}
-
-/// The memory limit (MiB) a serial run gets when `--max-fn-memory` is absent:
-/// a `processes` share of the cgroup memory cap it runs under, or `0` (off)
-/// outside a capped cgroup. A `--jobs N` pool gets no default, since a fixed
-/// share per worker stops functions the container could have held. See
-/// [`kuna_decomp::kuna_fnmemory::default_limit_mib`].
-pub(crate) fn default_fn_memory_mib(processes: u64) -> u64 {
-    if !kuna_decomp::kuna_fnmemory::supported() {
-        return 0;
+    match args.max_fn_memory {
+        Some(mib) => kuna_decomp::kuna_fnmemory::set_limit_mib(mib),
+        None => {
+            kuna_decomp::kuna_fnmemory::use_cgroup_default();
+        }
     }
-    kuna_decomp::kuna_fnmemory::default_limit_mib(processes)
 }
 
 /// Parse a `--max-fn-memory` value: MiB, `0` to disable. Refused where the
@@ -2712,11 +2707,7 @@ pub(crate) fn parse_args_with_filters(
     let max_fn_seconds = max_fn_seconds
         .unwrap_or_else(|| default_fn_budget_seconds(concrete_mode, whole_binary));
     let decompiles = matches!(cmd, "decompile-all" | "decompile-project" | "decompile-graph");
-    let max_fn_memory = match max_fn_memory {
-        Some(mib) => mib,
-        None if decompiles && jobs <= 1 => default_fn_memory_mib(1),
-        None => 0,
-    };
+    let max_fn_memory = if decompiles { max_fn_memory } else { Some(0) };
     // The pool re-execs this binary, so a policy it cannot express is one the
     // shards would silently drop rather than honour. Pool-only: on `functions`
     // the same flag buys decode lanes and no process is re-exec'd, so a raw
@@ -2853,8 +2844,10 @@ fn usage_decompile_all() {
          --max-fn-memory MiB stops a function once the process decompiling it\n\
          holds more than MiB resident and the function added 64 MiB or more;\n\
          that function becomes its own `error` record the same way. Omitted,\n\
-         a serial run takes the cgroup memory cap less max(512 MiB, 10%), and\n\
-         --jobs N or a run outside a capped cgroup has none; 0 disables.\n\
+         under a cgroup memory cap, with a margin of max(512 MiB, 10%), a\n\
+         function that grew by the margin is stopped once the cgroup holds more\n\
+         than the cap less it, serial or --jobs alike; outside one there is\n\
+         none; 0 disables.\n\
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
          in-process path). Output is merged in target order and is identical to\n\

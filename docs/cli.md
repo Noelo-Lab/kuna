@@ -121,7 +121,7 @@ the directories it looked in.
 | `KUNA_DECODE_SELFCHECK` | `1` runs both walks, compares them field by field and returns the serial result; `abort` panics on a difference. Keeps the runtime's panic report, as `KUNA_DECODE_STATS` does. |
 | `KUNA_DECODE_STATS` | `1` prints one line of lane/interval/round/crossing/decode counts and the walk, merge and lane-memory figures. It also keeps the runtime's panic report for a lane fault, which the fallback otherwise silences. |
 | `KUNA_DECODE_FAULT` | Test-only: `<n>` panics lane `n` once, `spawn:<n>` makes lane `n`'s spawn fail — the two fallback paths. |
-| `KUNA_CGROUP_ROOT` | Test-only: the directory read in place of `/sys/fs/cgroup` when the `--max-fn-memory` default looks for a cgroup memory cap and when `--jobs auto` reads a cgroup's headroom. |
+| `KUNA_CGROUP_ROOT` | Test-only: the directory read in place of `/sys/fs/cgroup` by the `--max-fn-memory` cgroup default and when `--jobs auto` reads a cgroup's headroom. |
 | `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
 
 An override wins over both layouts, and one pointing at nothing is reported as
@@ -1697,21 +1697,31 @@ Behaviors specific to `decompile-all`:
   measures again, and a stopped function hands its own back before the next
   one starts.
 
-  The limit is per process: the serial run, each `--jobs N` worker, and the
-  `decomp_dbg` child of `kuna decompile`. Under a container memory cap with
-  `--jobs N`, N workers and the parent share the cap, so an explicit value
-  that keeps them all inside it is roughly (cap minus a few hundred MiB) /
-  (N + 1); every worker gets the value given. A serial run (`--jobs 1`) and
-  `kuna decompile` take a **default** when the flag is absent and the process
-  runs under a finite cgroup v2 `memory.max` (the smallest one on the path to
-  the root, as `systemd-run --scope -p MemoryMax=6G` sets): the cap less
-  max(512 MiB, 10%). A 6 GiB cap gives 5,529 MiB. A `--jobs N` pool, and any
-  run outside a capped cgroup, has no default: a fixed share per worker would
-  stop functions the container could have held while the other workers were
-  small. An explicit value, `0` included, always wins. A function the limit never stops is unchanged.
-  It reads the resident set (`VmRSS` on Linux; on Windows the larger of the
-  working set and the private commit), so on a platform without one (macOS)
-  a non-zero value is refused, and outside a Linux cgroup there is no default. A function the limit stops usually has an
+  An explicit limit is per process: the serial run, each `--jobs N` worker,
+  and the `decomp_dbg` child of `kuna decompile` each get the value given.
+  When the flag is absent and the process runs under a finite cgroup v2
+  `memory.max` (`docker run --memory`, `systemd-run -p MemoryMax=6G`), every
+  one of those processes takes the **cgroup default** instead, which budgets
+  the container rather than the process. Its margin is max(512 MiB, 10% of
+  the cap): a function that has itself added the margin is stopped once a
+  capped cgroup on the path to the root holds more than its cap less the
+  margin (5,529 MiB of a 6 GiB cap, after 614 MiB of growth), counting
+  `memory.current` without the file-backed pages reclaim can drop
+  (`active_file` + `inactive_file`). Every `--jobs` worker therefore shares
+  the one budget, and a worker whose function is taking the container to its
+  cap records that function's memory `error` instead of being killed. A
+  function that grew by less than the margin is never stopped, since it
+  cannot be what is using the container's last margin up, and nor is one
+  that grows while the container has room. The cgroup is read only on a
+  50 ms sample that finds the function grown by the margin. The error names
+  the limit, as for an explicit value. A pool wider than the container can
+  hold even without its big functions (each worker's load counts) can still
+  be killed; `--jobs N` lowers it. An explicit
+  value, `0` included, always wins; outside a capped cgroup there is no
+  default, and a function the limit never stops is unchanged. It reads the
+  resident set (`VmRSS` on Linux; on Windows the larger of the working set and
+  the private commit), so on a platform without one (macOS) a non-zero value
+  is refused. A function the limit stops usually has an
   alternative that keeps some output: `--max-size N` leaves functions over N
   bytes out of the run, and `--option maxinstruction N` truncates their flow
   (see *The instruction budget*).
