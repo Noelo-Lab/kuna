@@ -1,0 +1,8 @@
+function 0x10000-0x1005c=BuildFrame
+prototype 0x10000 void BuildFrame(unsigned char *destination)
+function 0x1005c-0x10074=FillPayload
+prototype 0x1005c void FillPayload(unsigned char *payload, unsigned int length)
+function 0x10074-0x10090=PayloadSum
+prototype 0x10074 unsigned int PayloadSum(const unsigned char *payload, unsigned int length)
+function 0x10090-0x100a4=CopyFrame
+prototype 0x10090 void CopyFrame(unsigned char *destination, const unsigned char *source, unsigned int length)

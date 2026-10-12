@@ -464,7 +464,11 @@ pub trait MergeContext: HighContext {
     fn symbol_set_merge_problems(&mut self, symbol: u64);
     /// `data.warningHeader(...)` for the multi-entry merge failure.
     fn symbol_merge_warning(&mut self, symbol: u64, merge_count: int4, skip_count: int4, conflict_count: int4);
-    /// `StackAffectingOps::populate` into the cache's `PcodeOpSet`.  STUB(W7).
+    /// Revision of the call/store membership and basic-block positions.
+    fn affecting_ops_revision(&self) -> u64 {
+        0
+    }
+    /// `StackAffectingOps::populate` into the cache's `PcodeOpSet`.
     fn populate_affecting_ops(&self, op_set: &mut crate::cover::PcodeOpSet);
     /// `PieceNode::gatherPieces(pieces, vn, vn->getDef(), baseOffset, baseOffset)`:
     /// the CONCAT-tree nodes as `(node_varnode, typeOffset)` pairs (groupPartialRoot).
@@ -1002,6 +1006,7 @@ impl MergeIntersect {
         a: HighVariableId,
         b: HighVariableId,
     ) -> bool {
+        cache.sync_affecting_ops(ctx.affecting_ops_revision());
         if a == b {
             return false;
         }
