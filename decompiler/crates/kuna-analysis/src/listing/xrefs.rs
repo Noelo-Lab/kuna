@@ -72,7 +72,7 @@ use kuna_decomp::architecture::Architecture;
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::translate::{AssemblyEmit, PcodeEmit, Translate};
-use object::read::{Object, ObjectSection, ObjectSegment};
+use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol, ObjectSymbolTable};
 use object::SectionKind;
 
 use super::classify::classify;
@@ -294,9 +294,15 @@ impl XrefIndex {
     /// program reaches through a veneer, a slot, or both — see the module
     /// header. Off an alias class it is exactly `refs_to`.
     pub fn refs_to_unified(&self, vma: u64) -> Vec<&Xref> {
-        let class = self.alias_class(vma);
+        self.refs_to_class(&self.alias_class(vma))
+    }
+
+    /// [`refs_to`](Self::refs_to) over every member of `class`, minus the
+    /// members' own forwarding jumps; `class` is an [`alias_class`](Self::alias_class)
+    /// or an [`export_alias_class`](Self::export_alias_class).
+    pub fn refs_to_class(&self, class: &BTreeSet<u64>) -> Vec<&Xref> {
         if class.len() == 1 {
-            return self.refs_to(vma).iter().collect();
+            return class.iter().flat_map(|&m| self.refs_to(m)).collect();
         }
         // A veneer's own `jmp [slot]` is not a reference TO the import, it IS the
         // import's other half; counting it would make the two addresses answer
@@ -309,7 +315,7 @@ impl XrefIndex {
             .filter_map(|m| self.veneers.get(m).map(|v| (*m, v.end)))
             .collect();
         let mut rows: Vec<&Xref> = Vec::new();
-        for &member in &class {
+        for &member in class {
             for r in self.refs_to(member) {
                 if bodies.iter().any(|&(lo, hi)| r.from >= lo && r.from < hi) {
                     continue;
@@ -341,6 +347,33 @@ impl XrefIndex {
                 if class.insert(next) {
                     queue.push(next);
                 }
+            }
+        }
+        class
+    }
+
+    /// [`alias_class`](Self::alias_class) of a function this image defines,
+    /// widened by every forwarding veneer whose slot the image's own dynamic
+    /// relocations bind to that definition: a shared library calling its own
+    /// export through `name@plt` (semantic interposition) reaches the body only
+    /// through the stub and its GOT slot. The join is the relocation's symbol
+    /// value, never a shared name, and an unrelocated or undefined slot adds nothing.
+    pub fn export_alias_class(&self, file: &object::File, entry: u64) -> BTreeSet<u64> {
+        let mut class = self.alias_class(entry);
+        let (Some(relocs), Some(symbols)) = (file.dynamic_relocations(), file.dynamic_symbol_table())
+        else {
+            return class;
+        };
+        let thumb = file.architecture() == object::Architecture::Arm;
+        for (slot, reloc) in relocs {
+            if !self.veneers_of_slot.contains_key(&slot) || class.contains(&slot) {
+                continue;
+            }
+            let object::RelocationTarget::Symbol(index) = reloc.target() else { continue };
+            let Ok(symbol) = symbols.symbol_by_index(index) else { continue };
+            let value = if thumb { symbol.address() & !1 } else { symbol.address() };
+            if symbol.is_definition() && symbol.kind() == object::SymbolKind::Text && value == entry {
+                class.extend(self.alias_class(slot));
             }
         }
         class

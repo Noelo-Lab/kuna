@@ -4968,7 +4968,14 @@ is recognised only when its indirect jump reads a **decode-time constant**
 address, which is what distinguishes it from a jump table (whose address is
 computed, and which therefore lifts to a `LOAD` through a temporary); the class is
 never derived from a shared symbol name, which would fold genuinely distinct
-same-named functions together.
+same-named functions together. A shared library that calls its own export
+through `name@plt` adds a third address: callers reach the body only through the
+stub and its GOT slot. When the query selects a function **by name**, its class is
+widened by every veneer whose slot carries a dynamic relocation against a symbol
+the image defines at that body's address
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (export_alias_class)`). The
+join is again the relocation's binding, not the name, and a query by address keeps
+the plain class.
 
 (kuna) The **call** spelling of that first indirection needs a third rule, because
 it does not arrive in the shape the first one reads. `CALL qword ptr
