@@ -466,20 +466,23 @@ struct ParserWalker<'a> {
     cross: Option<&'a ParserContext>,
     table: &'a SymbolTable,
     engine: &'a Sleigh,
-    cur: WalkCursor,
+    // Read-only users borrow the current position. Navigation detaches before
+    // changing a cursor shared with the parser or builder.
+    cur: Cow<'a, WalkCursor>,
 }
 
 impl<'a> ParserWalker<'a> {
     /// C++ `ParserWalker(const ParserContext *c)`.
     fn new(ctx: &'a ParserContext, table: &'a SymbolTable, engine: &'a Sleigh) -> ParserWalker<'a> {
-        ParserWalker { ctx, cross: None, table, engine, cur: WalkCursor::new() }
+        ParserWalker { ctx, cross: None, table, engine, cur: Cow::Owned(WalkCursor::new()) }
     }
 
     /// C++ `baseState`.
     fn base_state(&mut self) {
-        self.cur.point = Some(self.ctx.base_state);
-        self.cur.depth = 0;
-        self.cur.breadcrumb[0] = 0;
+        let cur = self.cur.to_mut();
+        cur.point = Some(self.ctx.base_state);
+        cur.depth = 0;
+        cur.breadcrumb[0] = 0;
     }
 
     /// Current point index (panics on null — C++ would deref a null pointer).
@@ -492,19 +495,22 @@ impl<'a> ParserWalker<'a> {
         if self.cur.depth > MAX_DEPTH - 2 {
             return Err(KunaError::lowlevel("SLEIGH exceeded maximum parse depth"));
         }
-        self.cur.breadcrumb[self.cur.depth as usize] = i + 1;
-        self.cur.depth += 1;
-        let node = &self.ctx.state[self.point()];
-        self.cur.point = node.resolve[i as usize];
-        self.cur.breadcrumb[self.cur.depth as usize] = 0;
+        let cur = self.cur.to_mut();
+        cur.breadcrumb[cur.depth as usize] = i + 1;
+        cur.depth += 1;
+        let point = cur.point.expect("ParserWalker: point is null (C++ UB)");
+        let node = &self.ctx.state[point];
+        cur.point = node.resolve[i as usize];
+        cur.breadcrumb[cur.depth as usize] = 0;
         Ok(())
     }
 
     /// C++ `popOperand`.
     fn pop_operand_inner(&mut self) {
-        let node = &self.ctx.state[self.point()];
-        self.cur.point = node.parent;
-        self.cur.depth -= 1;
+        let parent = self.ctx.state[self.point()].parent;
+        let cur = self.cur.to_mut();
+        cur.point = parent;
+        cur.depth -= 1;
     }
 
     /// C++ `getConstructor`: identify the current node's constructor.
@@ -692,14 +698,14 @@ impl<'a> ParserWalkerChange<'a> {
         ParserWalkerChange { ctx, table, engine, cur: WalkCursor::new() }
     }
 
-    /// Read-only context view with an independent copy of the current cursor.
+    /// Read-only context view; navigation detaches from the current cursor.
     fn as_reader(&self) -> ParserWalker<'_> {
         ParserWalker {
             ctx: self.ctx,
             cross: None,
             table: self.table,
             engine: self.engine,
-            cur: self.cur.clone(),
+            cur: Cow::Borrowed(&self.cur),
         }
     }
 
@@ -1094,7 +1100,7 @@ impl<'a> SleighBuilder<'a> {
             cross: self.cross_ctx.map(|i| &*self.contexts[i].ctx),
             table: self.table,
             engine: self.engine,
-            cur: self.cur.clone(),
+            cur: Cow::Borrowed(&self.cur),
         }
     }
 

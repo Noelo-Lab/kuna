@@ -282,6 +282,14 @@ contexts, and a guard returns each context after successful translation or an
 error. The engine stores no instruction-result cache; ordinary translations
 resolve the bytes and painted context on every call.
 
+Read-only constructor and p-code-template queries borrow the parser or builder
+cursor (`decompiler/crates/kuna-sleigh/src/sleigh.rs (ParserWalker)`). Navigation
+through such a view first copies the cursor, preserving its parent's position,
+depth, and breadcrumb path. Ordinary disassembly traversal owns its cursor. A
+cross-build view reads the constructor tree, instruction bytes, and context words
+from the target context, and instruction/next/reference addresses from the caller
+context.
+
 Speculative consumers can open a `Translate::context_scope` to decode against a
 private context database and cache. Dropping the scope restores both; committing
 it retains the changes. Copies preserve explicit write boundaries and tracked
