@@ -814,6 +814,30 @@ pub fn run_listing_consumers(
             );
         }
     }
+    // (kuna `thunkentry`, `addrtakenentry`) Where the walk's own function set is
+    // committed (`funcdisc_recursive`, `fast_funcdisc`).
+    let walk_committed = (arch.analysis_listing && arch.analysis_funcstart_patterns)
+        || arch.analysis_fast_funcdisc;
+    // (kuna `addrtakenentry`) Code whose address the program takes and no flow
+    // reaches re-seeds the walk. See `aif/kuna_addrtakenentry.rs`.
+    if arch.analysis_addrtakenentry && walk_committed {
+        let evidence = crate::aif::kuna_addrtakenentry::AddrTaken::new(&file, bytes);
+        if let (Some(evidence), Some(code_space)) = (evidence, arch.manage().get_default_code_space()) {
+            for _ in 0..crate::aif::kuna_addrtakenentry::MAX_ROUNDS {
+                let accepted = evidence.accept(&listing, translate, std::rc::Rc::clone(code_space));
+                let before = seeds.len();
+                seeds.extend(accepted);
+                seeds.sort_unstable();
+                seeds.dedup();
+                if seeds.len() == before {
+                    break;
+                }
+                listing = crate::listing::Listing::build_with_meta_planned(
+                    &file, image, arch, translate, &seeds, &funcsym_seeds, &seed_names, detail, plan,
+                );
+            }
+        }
+    }
     let mut frame_aif: Option<crate::aif::kuna_entrychecks::CheckedAif> = None;
     let mut frame_pointers = None;
     let mut inventory_context_paints = Vec::new();
@@ -1114,10 +1138,7 @@ pub fn run_listing_consumers(
     }
 
     // (kuna `thunkentry`) The targets of the walk's jump thunks join the walk's own
-    // function set wherever that set is committed (`funcdisc_recursive`,
-    // `fast_funcdisc`). See `listing/kuna_thunkentry.rs`.
-    let walk_committed = (arch.analysis_listing && arch.analysis_funcstart_patterns)
-        || arch.analysis_fast_funcdisc;
+    // function set wherever that set is committed. See `listing/kuna_thunkentry.rs`.
     let thunk_targets = if arch.analysis_thunkentry && walk_committed {
         crate::listing::kuna_thunkentry::thunk_entries(&file, &listing)
     } else {

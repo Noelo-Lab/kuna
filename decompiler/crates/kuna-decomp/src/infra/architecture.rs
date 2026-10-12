@@ -1591,6 +1591,15 @@ pub struct Architecture {
     /// address after the thunk's jump holds no ordinary code. x86 only. Off
     /// restores the previous discovery set exactly.
     pub analysis_thunkentry: bool,
+    /// (kuna) Make code whose address the program takes, and that no flow
+    /// reaches, a function entry (`addrtakenentry`); default **on**. A function
+    /// called only through a pointer that a `lea`/`mov`/`push` materializes, or
+    /// (PE) that a relocated word before the section's first `.pdata` record
+    /// holds, was folded into the function before it. On, such a target joins the
+    /// walk's committed set when it is undecoded, follows a non-falling
+    /// instruction and padding only, and its own flow ends like a function's.
+    /// x86 only. Off restores the previous discovery set exactly.
+    pub analysis_addrtakenentry: bool,
     /// (kuna) Refuse a function entry at a PPC64 ELFv2 **local entry point**
     /// (`ppclocalentry`); default **on**. The OpenPOWER ELFv2 ABI gives a
     /// function two entries — the symbol's `st_value` (which materialises the
@@ -2852,6 +2861,7 @@ impl Architecture {
             analysis_declaredlibcproto: false,
             analysis_unmappedentry: false,
             analysis_thunkentry: false,
+            analysis_addrtakenentry: false,
             analysis_ppclocalentry: false,
             analysis_flowmode: false,
             analysis_flowmode_aftercall: false,
@@ -3215,6 +3225,8 @@ impl Architecture {
         self.analysis_unmappedentry = true;
         // (kuna) Jump-thunk target function entries -- default-ON (x86 only).
         self.analysis_thunkentry = true;
+        // (kuna) Address-taken code function entries -- default-ON (x86 only).
+        self.analysis_addrtakenentry = true;
         // (kuna) PPC64 ELFv2 local-entry entry suppression -- default-ON (it only
         // ever withholds the duplicate second entry over a function whose global
         // entry is already a seed, so no body can be lost).

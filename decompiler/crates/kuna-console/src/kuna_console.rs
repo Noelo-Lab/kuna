@@ -293,6 +293,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "armframes" => on_off(conf.analysis_armframes),
         "unmappedentry" => on_off(conf.analysis_unmappedentry),
         "thunkentry" => on_off(conf.analysis_thunkentry),
+        "addrtakenentry" => on_off(conf.analysis_addrtakenentry),
         "ppclocalentry" => on_off(conf.analysis_ppclocalentry),
         // (kuna `flowmode`) Valued `on|aftercall|off`, so it reports its own token.
         "flowmode" => match (conf.analysis_flowmode, conf.analysis_flowmode_aftercall) {

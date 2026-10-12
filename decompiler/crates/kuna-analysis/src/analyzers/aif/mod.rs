@@ -108,6 +108,7 @@ use kuna_sleigh::translate::Translate;
 
 use crate::listing::{decode::{decode_one_with_assembly, Decoded}, FlowKind, Listing};
 
+pub(crate) mod kuna_addrtakenentry;
 pub mod kuna_aifbracket;
 pub mod kuna_aifcorroborate;
 pub mod kuna_aifnoppad;

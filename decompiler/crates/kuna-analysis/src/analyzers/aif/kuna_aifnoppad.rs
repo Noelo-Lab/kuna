@@ -116,7 +116,7 @@ impl PaddingRuns {
 }
 
 /// Whether `insn` is an all-zero encoding.
-fn is_zero_fill(insn: &ProbedInsn) -> bool {
+pub(super) fn is_zero_fill(insn: &ProbedInsn) -> bool {
     let mnemonic = &*insn.mnemonic;
     let operands_are = |want: &str| {
         insn.operands.chars().filter(|c| !c.is_whitespace()).map(|c| c.to_ascii_lowercase()).eq(want.chars())
@@ -132,7 +132,7 @@ fn is_zero_fill(insn: &ProbedInsn) -> bool {
 
 /// Whether `insn` is alignment padding: `nop` of any width, `int3`, a `lea` of a
 /// register into itself, or a register self-move a function cannot open with.
-fn is_padding(insn: &ProbedInsn, wide: bool) -> bool {
+pub(super) fn is_padding(insn: &ProbedInsn, wide: bool) -> bool {
     let mnemonic = &*insn.mnemonic;
     if ["nop", "nop.w", "int3"].iter().any(|m| mnemonic.eq_ignore_ascii_case(m)) {
         return true;
