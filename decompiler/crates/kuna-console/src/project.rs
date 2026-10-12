@@ -88,6 +88,9 @@ pub struct FuncResult {
     /// with the declaration the project header gives each. Never serialized
     /// into `decompile-all --json`; the `decompile-project` header declares them.
     pub globals: Vec<GlobalInfo>,
+    /// (kuna `calltargettype`) The calls through fields of synthesized records,
+    /// which the project header declares where they all agree.
+    pub field_calls: Vec<kuna_decomp::kuna_calltargettype::FieldDecl>,
     pub line_mappings: Vec<LineMapping>,
     /// (kuna, issue #197) Every OTHER name this entry carries — a generic
     /// `sub_<addr>` placeholder, an ELF weak/strong twin, a PE
@@ -556,6 +559,7 @@ pub fn decompile_pulled(
                 variables: Vec::new(),
                 types: Vec::new(),
                 globals: Vec::new(),
+                field_calls: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -590,6 +594,7 @@ pub fn decompile_pulled(
                 variables: Vec::new(),
                 types: Vec::new(),
                 globals: Vec::new(),
+                field_calls: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -612,6 +617,7 @@ pub fn decompile_pulled(
                 variables: Vec::new(),
                 types: Vec::new(),
                 globals: Vec::new(),
+                field_calls: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -809,6 +815,7 @@ pub fn decompile_pulled(
                     let pointerargs = prog.arch_mut().print_mut().take_pointer_arguments(&untrimmed);
                     let code = untrimmed.trim_matches('\n').to_string();
                     let globals = kuna_decomp::decompile_drive::extract_global_objects(prog.arch());
+                    let field_calls = kuna_decomp::kuna_calltargettype::field_declarations(prog.arch(), &fd);
                     let mut variables =
                         if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
                     // (kuna `structdefs`) The layout side of the same function:
@@ -844,10 +851,10 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
-                    (code, variables, types, globals, proto, line_mappings, callee_hints, detail, pointerargs)
+                    (code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs)
                 }));
                 match rendered {
-                    Ok((code, variables, types, globals, proto, line_mappings, callee_hints, detail, pointerargs)) => sink(FuncResult {
+                    Ok((code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs)) => sink(FuncResult {
                         name,
                         address,
                         byte_address,
@@ -858,6 +865,7 @@ pub fn decompile_pulled(
                         variables,
                         types,
                         globals,
+                        field_calls,
                         line_mappings,
                         aliases,
                         object_location,
@@ -877,6 +885,7 @@ pub fn decompile_pulled(
                         variables: Vec::new(),
                         types: Vec::new(),
                         globals: Vec::new(),
+                        field_calls: Vec::new(),
                         line_mappings: Vec::new(),
                         aliases,
                         object_location,
@@ -898,6 +907,7 @@ pub fn decompile_pulled(
                 variables: Vec::new(),
                 types: Vec::new(),
                 globals: Vec::new(),
+                field_calls: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -1162,7 +1172,7 @@ fn matching_open(text: &str, open: char, close: char) -> Option<usize> {
 /// synthesized structure the document no longer names is not declared.
 pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[FuncResult]) -> String {
     let guard = sanitize_guard(file_name);
-    let types = &prune_unreferenced_synth_types(types, results);
+    let types = &declare_called_fields(&prune_unreferenced_synth_types(types, results), results);
     let shadowed = typedef_names(types);
     let mut out = String::new();
     out.push_str(&format!("#ifndef {guard}\n#define {guard}\n\n"));
@@ -1291,6 +1301,48 @@ fn global_declarations(results: &[FuncResult]) -> String {
         } else {
             let _ = writeln!(out, "extern {chosen}; /* also used as: {} */", others.join(", "));
         }
+    }
+    out
+}
+
+/// (kuna `calltargettype`) Declare each called field of a synthesized record
+/// with the function-pointer type every call through it agrees on.
+///
+/// A record `structsynth` minted is shared by every function that names it, so
+/// one function's calls cannot declare its fields; the export can, once every
+/// function has said what it calls each field as. A field the calls disagree
+/// about, or that some function's calls disagree about, keeps its type.
+fn declare_called_fields(types: &str, results: &[FuncResult]) -> String {
+    let mut agreed: BTreeMap<(&str, &str), Option<&str>> = BTreeMap::new();
+    for call in results.iter().flat_map(|r| r.field_calls.iter()) {
+        let entry = agreed.entry((call.record.as_str(), call.field.as_str())).or_insert(call.declaration.as_deref());
+        if *entry != call.declaration.as_deref() {
+            *entry = None;
+        }
+    }
+    if agreed.values().all(Option::is_none) {
+        return types.to_string();
+    }
+    let mut out = String::with_capacity(types.len());
+    let mut record: Option<&str> = None;
+    for line in types.split_inclusive('\n') {
+        if let Some(name) = line.strip_prefix("struct ").and_then(|l| l.strip_suffix(" {\n")) {
+            record = Some(name);
+        } else if line.starts_with("};") {
+            record = None;
+        } else if let Some(rec) = record {
+            let member = line.trim_end().strip_suffix(';').map(|d| {
+                let start = d.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).map_or(0, |i| i + 1);
+                &d[start..]
+            });
+            if let Some(Some(declaration)) = member.and_then(|m| agreed.get(&(rec, m))) {
+                out.push_str("    ");
+                out.push_str(declaration);
+                out.push_str(";\n");
+                continue;
+            }
+        }
+        out.push_str(line);
     }
     out
 }
@@ -1588,6 +1640,7 @@ mod tests {
             }],
             types: vec![],
             globals: vec![],
+            field_calls: Vec::new(),
             line_mappings: vec![],
             aliases: vec![],
             object_location: None,

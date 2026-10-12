@@ -667,6 +667,37 @@ impl<'a> RegionStructurer<'a> {
         self.graph.block(self.graph_id).get_block(i)
     }
 
+    /// Whether some live component can never join the others: it has no edges
+    /// left, it is not the only component, and no pending switch-loop absorb can
+    /// pick it up by address.  Every schema except
+    /// [`try_absorb_body_region`](Self::try_absorb_body_region) merges along edges
+    /// and no step adds an edge, so such a component dooms the run to
+    /// non-convergence; reporting it at once skips the remaining rounds.
+    fn has_stranded_component(&self) -> bool {
+        let n = self.size();
+        n >= 2
+            && (0..n).any(|i| {
+                let bl = self.component(i);
+                let b = self.graph.block(bl);
+                b.size_in() == 0 && b.size_out() == 0 && !self.absorbable(bl)
+            })
+    }
+
+    /// Whether an address-keyed absorb could reach `bl`: its address is in a
+    /// pending switch-loop body, or another live component shares it (a later
+    /// body set could then name it).
+    fn absorbable(&self, bl: BlockId) -> bool {
+        let Some(a) = self.component_addr(bl) else {
+            return false;
+        };
+        self.pending_inf_loops.contains(&a)
+            || self.pending_body_addrs.values().any(|body| body.contains(&a))
+            || (0..self.size()).any(|i| {
+                let c = self.component(i);
+                c != bl && self.component_addr(c) == Some(a)
+            })
+    }
+
     /// Drive the structuring to a single root.  Returns `Ok(true)` on success
     /// (one component remains), `Ok(false)` if it could not converge.
     fn structure(&mut self) -> KunaResult<bool> {
@@ -699,6 +730,12 @@ impl<'a> RegionStructurer<'a> {
             rounds += 1;
             if rounds > cap {
                 // Hang-guard: report non-convergence so the caller falls back.
+                return Ok(false);
+            }
+            if self.has_stranded_component() {
+                if std::env::var_os("KUNA_RS_DEBUG").is_some() {
+                    eprintln!("[rs] STRANDED: {} components remain (round {rounds})", self.size());
+                }
                 return Ok(false);
             }
 
@@ -3240,4 +3277,56 @@ enum LoopRefineOutcome {
     /// its body has not yet collapsed enough to expose the secondary edges) — the
     /// caller tries the next head.
     NoChange,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::block::{BlockKind, FlowBlock};
+
+    fn graph(n: usize, edges: &[(usize, usize)]) -> (BlockGraph, BlockId, Vec<BlockId>) {
+        let mut g = BlockGraph::new();
+        let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+        g.root = Some(root);
+        let b: Vec<BlockId> = (0..n).map(|_| g.new_block(root)).collect();
+        for &(s, d) in edges {
+            g.add_edge(b[s], b[d]);
+        }
+        (g, root, b)
+    }
+
+    #[test]
+    fn stranded_component_declines_before_any_fold() {
+        let (mut g, root, _) = graph(3, &[(0, 1)]);
+        let mut st = RegionStructurer::new(&mut g, root);
+        assert!(st.has_stranded_component());
+        assert!(!st.structure().unwrap());
+        assert_eq!(g.block(root).get_size(), 3);
+    }
+
+    #[test]
+    fn connected_chain_still_structures() {
+        let (mut g, root, _) = graph(3, &[(0, 1), (1, 2)]);
+        let mut st = RegionStructurer::new(&mut g, root);
+        assert!(!st.has_stranded_component());
+        assert!(st.structure().unwrap());
+        assert_eq!(g.block(root).get_size(), 1);
+    }
+
+    #[test]
+    fn pending_absorb_keeps_an_isolated_body_member_live() {
+        let (mut g, root, _) = graph(2, &[(0, 1)]);
+        let bb = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+        let leaf = g.new_block(root);
+        *g.block_mut(leaf).kind_mut() = BlockKind::Copy { copy: Some(bb) };
+        let mut st = RegionStructurer::new(&mut g, root).with_loop_refine(
+            true,
+            Vec::new(),
+            [(bb, 0x1000)].into_iter().collect(),
+        );
+        assert!(st.has_stranded_component());
+        st.pending_inf_loops.insert(0x2000);
+        st.pending_body_addrs.insert(0x2000, [0x1000].into_iter().collect());
+        assert!(!st.has_stranded_component());
+    }
 }

@@ -2460,6 +2460,27 @@ moves.
   and `DW_AT_discr_value` remain on the side table. Picking the facet from the tag
   needs a dominating-guard analysis; that is what the side table is recorded for,
   and it is not attempted here.
+- **Function-pointer types** (`calltargettype`, off in the catalog, on in the
+  `aggressive` preset) keep what a `DW_TAG_subroutine_type` says. The mapper used
+  to give up on the tag, so a pointer to one became a pointer to `void`: a
+  parameter, a record field or a local declared `int (*f)(int, long)` came out
+  `void *`, and every call through it was a call of a `void *` that no C compiler
+  accepts. With the option on, a prototyped subroutine type maps to a code type
+  whose prototype is its `DW_AT_type` (none is `void`) and its
+  `DW_TAG_formal_parameter` types, a trailing `DW_TAG_unspecified_parameters`
+  making it variadic, through `TypeFactory::get_type_code_proto`
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/mod.rs
+  (build_subroutine)`), and a pointer to it is a function pointer:
+  `unsigned long (*hasher)(void *,unsigned long);`. A type without
+  `DW_AT_prototyped` (`int (*)()` in C, and every C++ one, which never carries
+  it) states no parameters, a `...` with nothing before it has no C spelling,
+  and a parameter type the switch cannot build leaves nothing to state, so each
+  keeps the `void` pointee. The mapping happens inside `load file`, before any
+  option is applied, so the gate is the `KUNA_CALLTARGETTYPE` environment
+  variable (chapter 00) the CLI exports ahead of the load from the run's options,
+  the mode's preset included, and leaves off when the output language is Rust;
+  the browser front-end does not export it.
+  Chapter 05 covers what the option does to the calls.
 - **Full-depth DWARF types** (`typedepth`, default-on,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_typedepth.rs`) is the
   type mapper's recursion guard, and it exists because the DIE walk can be handed a

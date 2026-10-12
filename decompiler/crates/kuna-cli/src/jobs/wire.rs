@@ -14,7 +14,7 @@ use kuna_decomp::kuna_structsynth::shard::FunctionRecord;
 use super::TargetSpec;
 
 const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC3";
-pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES06";
+pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES07";
 
 /// Result-stream frame kind.  One kind today; the envelope is what lets a
 /// truncated tail be dropped rather than guessed.
@@ -320,6 +320,20 @@ impl ResultWriter {
             body.extend_from_slice(&g.size.to_le_bytes());
             body.push(u8::from(g.unknown) | u8::from(g.direct) << 1 | u8::from(g.aggregate) << 2 | u8::from(g.elem) << 3);
         }
+        // (kuna `calltargettype`) The calls through synthesized fields, for the
+        // project header the parent writes.
+        put_u32(&mut body, r.field_calls.len() as u32);
+        for f in &r.field_calls {
+            put_str(&mut body, &f.record);
+            put_str(&mut body, &f.field);
+            match &f.declaration {
+                Some(d) => {
+                    body.push(1);
+                    put_str(&mut body, d);
+                }
+                None => body.push(0),
+            }
+        }
         put_u64s(&mut body, &r.callee_hints);
         match &r.synth {
             Some(record) => {
@@ -448,6 +462,18 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
             elem: bits & 8 != 0,
         });
     }
+    let nf = r.u32()? as usize;
+    let mut field_calls = r.sized(nf);
+    for _ in 0..nf {
+        let record = r.string()?;
+        let field = r.string()?;
+        let declaration = match r.u8()? {
+            0 => None,
+            1 => Some(r.string()?),
+            _ => return None,
+        };
+        field_calls.push(kuna_decomp::kuna_calltargettype::FieldDecl { record, field, declaration });
+    }
     let callee_hints = r.u64s()?;
     let synth = match r.u8()? {
         0 => None,
@@ -471,6 +497,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         variables,
         types,
         globals,
+        field_calls,
         line_mappings,
         aliases,
         object_location,
