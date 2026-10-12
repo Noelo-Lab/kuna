@@ -1257,6 +1257,7 @@ mod tests {
             variables: Vec::new(),
             types: Vec::new(),
             globals: Vec::new(),
+            field_calls: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,

@@ -25,7 +25,7 @@
 //! row per reference under a `#` header line.
 
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
 use kuna_console::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
@@ -70,10 +70,13 @@ struct XrefArgs {
     isa: Option<kuna_console::engine::ArmIsa>,
 }
 
-/// A resolved query target: an address, plus the best name the program has for it.
+/// A resolved query target: an address, the best name the program has for it,
+/// and every address the `--to` answer is taken over (`addr` included).
 struct Target {
     addr: u64,
     name: Option<String>,
+    class: BTreeSet<u64>,
+    by_name: bool,
 }
 
 /// Canonical names are stable throughout one read-only reference query.
@@ -256,13 +259,14 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         &resolution.focus(),
     );
 
-    let target = resolve_target(&prog, &index, &names, resolution.settle(&index)?);
+    let target = resolve_target(&prog, &file, &index, &names, resolution.settle(&index)?);
+    warn_other_entries(&index, &names, &target);
     let rows = match args.direction {
         // `--to` answers for the callable, not the literal address: an import
         // reached through a veneer and an IAT/GOT slot is one thing under two
         // names, and which of the two a call site happens to reference is not a
-        // distinction the caller asked about (`XrefIndex::refs_to_unified`).
-        Direction::To => index.refs_to_unified(target.addr),
+        // distinction the caller asked about (`XrefIndex::refs_to_class`).
+        Direction::To => index.refs_to_class(&target.class),
         Direction::From => {
             if index.is_function_entry(target.addr) || names.at(target.addr).is_some() {
                 index.refs_from_function(target.addr)
@@ -346,9 +350,44 @@ fn target_address(prog: &ConsoleProgram, spec: &str) -> Result<Resolution, Strin
 /// Attach the display name to an address the spec already resolved: whatever the
 /// lookup itself knew, else the program's best name for the address, else the
 /// spec's own fallback (a symbol names its address even when nothing else does).
-fn resolve_target(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, spec: TargetSpec) -> Target {
+///
+/// A target selected by name answers for the export, so its class also takes in
+/// the PLT stubs the image's own relocations bind to it
+/// ([`XrefIndex::export_alias_class`]); one selected by address answers for that
+/// address's [`XrefIndex::alias_class`] alone.
+fn resolve_target(
+    prog: &ConsoleProgram,
+    file: &object::File,
+    index: &XrefIndex,
+    names: &EntryNames,
+    spec: TargetSpec,
+) -> Target {
     let TargetSpec { addr, name, fallback } = spec;
-    Target { addr, name: name.or_else(|| name_at(prog, index, names, addr)).or(fallback) }
+    let by_name = name.is_some() || fallback.is_some();
+    let class =
+        if by_name { index.export_alias_class(file, addr) } else { index.alias_class(addr) };
+    let name = name.or_else(|| name_at(prog, index, names, addr)).or(fallback);
+    Target { addr, name, class, by_name }
+}
+
+/// Say on stderr when the name the target was selected by also names a function
+/// outside the answered class, so a count that leaves that function's callers
+/// out is not mistaken for the whole story.
+fn warn_other_entries(index: &XrefIndex, names: &EntryNames, target: &Target) {
+    let Some(name) = target.name.as_deref().filter(|_| target.by_name) else { return };
+    let others: Vec<String> = names
+        .entries
+        .iter()
+        .filter(|&(&a, n)| n == name && !target.class.contains(&a) && index.is_function_entry(a))
+        .map(|(a, _)| format!("0x{a:x}"))
+        .collect();
+    if !others.is_empty() {
+        eprintln!(
+            "warning: {name:?} also names {}; this answer is for 0x{:x} only, query that address for the rest",
+            others.join(", "),
+            target.addr
+        );
+    }
 }
 
 /// The program's best name for `vma`: the canonical function entry there, then a
@@ -451,7 +490,7 @@ fn result_json(
                 (
                     "aliases".into(),
                     Json::Array(
-                        aliases(index, target)
+                        aliases(target)
                             .into_iter()
                             .map(|a| {
                                 function_json(
@@ -497,10 +536,18 @@ fn render_text(
     );
     // Say which other address the answer was taken over, so a count that does not
     // match a raw disassembly grep of the target explains itself on the spot.
-    for a in aliases(index, target) {
+    let import = index.alias_class(target.addr);
+    for a in aliases(target) {
+        let (what, how) = if import.contains(&a) {
+            ("import", "a forwarding veneer and the pointer slot it jumps through")
+        } else if index.veneer_slot(a).is_some() {
+            ("export", "its own PLT stub")
+        } else {
+            ("export", "the GOT slot its PLT stub jumps through")
+        };
         let _ = writeln!(
             out,
-            "# same import at 0x{a:x} ({}) - a forwarding veneer and the pointer slot it jumps through",
+            "# same {what} at 0x{a:x} ({}) - {how}",
             name_at(prog, index, names, a).unwrap_or_else(|| "-".into())
         );
     }
@@ -533,10 +580,10 @@ fn render_text(
 }
 
 /// The addresses other than the target's own that name the same callable: the
-/// pointer slot a forwarding veneer jumps through, or the veneers that jump
-/// through a slot. Empty for everything else, which is almost everything.
-fn aliases(index: &XrefIndex, target: &Target) -> Vec<u64> {
-    index.alias_class(target.addr).into_iter().filter(|&a| a != target.addr).collect()
+/// pointer slot a forwarding veneer jumps through, the veneers that jump through
+/// a slot, or an export's own PLT stub and its slot. Empty for almost everything.
+fn aliases(target: &Target) -> Vec<u64> {
+    target.class.iter().copied().filter(|&a| a != target.addr).collect()
 }
 
 /// `name+0xoff` for an address inside a known function; the bare address when
@@ -642,7 +689,8 @@ fn usage() {
          --to    everything that references the target (call sites, branches, data references).\n\
          \x20       An import is one callable under two addresses -- a forwarding veneer and the\n\
          \x20       IAT/GOT slot it jumps through -- and both answer the same; target.aliases\n\
-         \x20       names the other one.\n\
+         \x20       names the other one. A name also answers over the export's own PLT stub\n\
+         \x20       when the library calls it through one.\n\
          --from  everything the target references (its callees and the data it touches)\n\
          \n\
          --json emits {{binary,target:{{name,address,address_hex,aliases}},direction,count,\n\

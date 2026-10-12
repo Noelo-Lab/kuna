@@ -1954,6 +1954,34 @@ jump, and the name only has to point the walk at the addresses to check.
 0x140001cce	read	_pei386_runtime_relocator+0x19e	MOV R12,qword ptr [0x14000d234]
 ```
 
+### An export called through its own PLT stub
+
+A shared library built without `-fvisibility=hidden`, `-Bsymbolic` or
+`-fno-semantic-interposition` calls its own exports through `name@plt`, so the
+name is on two functions: the export's body and the stub. A name selects the body
+(it is what `kuna decompile` lifts), but nothing calls the body directly. So when
+`--to`/`--from` is given a **name**, the alias class also takes in every forwarding
+veneer whose slot the image's own dynamic relocations bind to that body (the
+relocation's symbol is defined in the image at the body's address). The callers
+through the stub are then the export's callers, and `target.aliases` lists the
+stub and its GOT slot. The join is the relocation, never the shared name. An
+**address** still answers for that address alone: `--to <body>` stays at the direct
+references, and `--to <stub>` lists only its slot as an alias.
+
+```
+# 3 references to bump @ 0x1120
+# same export at 0x1050 (bump) - its own PLT stub
+# same export at 0x4018 (-) - the GOT slot its PLT stub jumps through
+0x1137	call	bump_twice+0x7	CALL 0x1050
+0x1140	jump	bump_twice+0x10	JMP 0x1050
+0x1158	call	bump_and_read+0x8	CALL 0x1050
+```
+
+When the name also matches a function outside the answered class (for example a
+stub whose forwarding jump the walk could not decode), the answer is still for the
+selected address, and stderr says so with
+`warning: "NAME" also names 0x...; this answer is for 0x... only, query that address for the rest`.
+
 Flags: `--json`, `--kind call,jump,data,read,write` (repeatable-by-comma filter),
 plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
 

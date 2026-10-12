@@ -379,6 +379,19 @@ cast is redundant, though never wrong. Only an output language whose
 has no option because it only restores a conversion the binary performed.
 Pinned by `tests/stages/kuna-truncarg.xml`.
 
+The default arm has one more fallback, for the target of an indirect call. A
+pointer to the prototype-less `code`, or to `void`, needs no cast under
+`cast_standard`, which never casts to or from either, but C cannot call it.
+When `calltargettype` recorded the type the call states for a target it could
+not give that type -- its uses disagree, or a declaration fixes another type --
+and the target is still such a pointer,
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_calltargettype.rs
+(uncallable_target_cast)` returns that type and the target is cast to it at the
+call (chapter [05](05-types.md)), in C output only. With the same option on in
+C output, `cast_standard` also prints no cast between a record's declaration and
+its completed definition, which the factory holds as two types and C spells
+alike (`CastStrategyC::with_record_identity`).
+
 One value-changing case is still open. A 32-bit argument trimmed out of a
 64-bit register keeps its `int` type, so `sink64(a0 * 3)` with `int a0`
 reaches a callee defined as `void sink64(unsigned long a0)` sign-extended,
