@@ -629,6 +629,11 @@ pub(super) fn mint(
     types.set_fields_struct_raw(&shell, fields, Vec::new(), size, 1, 0).ok()
 }
 
+/// Is `ct` a structure this pass minted.
+pub fn is_minted(ct: &Datatype) -> bool {
+    minted_number(ct).is_some()
+}
+
 /// The number `N` of a structure this pass minted, or `None` for any other type.
 pub(super) fn minted_number(ct: &Datatype) -> Option<u32> {
     let n = ct.get_name().strip_prefix("struct_")?;

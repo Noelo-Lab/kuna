@@ -244,6 +244,12 @@ fn rename_result(
         t.name = text(&t.name)?;
         t.definition = text(&t.definition)?;
     }
+    for f in &mut out.field_calls {
+        f.record = text(&f.record)?;
+        if let Some(declaration) = &mut f.declaration {
+            *declaration = text(declaration)?;
+        }
+    }
     Some(out)
 }
 

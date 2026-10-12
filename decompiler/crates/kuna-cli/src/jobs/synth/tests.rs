@@ -131,5 +131,6 @@ fn a_structure_rename_rebases_recorded_pointer_arguments() {
     let serial = [Some(("struct_100".into(), Some(request(4))))];
     let renamed = super::rename_result(&r, Some(&own), &serial, &[]).unwrap();
     assert_eq!(renamed.code.as_deref(), Some("struct_100 *p; sink(&v1);"));
+    assert!(renamed.field_calls.iter().all(|f| f.record == "struct_100"));
     assert_eq!(renamed.pointerargs.unwrap().calls[0].position.column, 19);
 }

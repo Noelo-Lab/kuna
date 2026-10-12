@@ -1,0 +1,89 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    calltargettype (GH-869): a call through a parameter, a global or a field
+    of a synthesized record gives that storage itself the function-pointer
+    type the call states, so the call compiles without a cast. A cast at the
+    call is left for a target whose type is declared otherwise.
+
+    Stage: P5 type recovery, just before casts are decided, and the type
+    definitions P9 prints. P0 assertion: option calltargettype on|off.
+
+    Source, gcc 11 -O1 -fno-pic -fcf-protection=none, linked with text at
+    0x100000 and gfp at 0x200000:
+
+        struct ops { int tag; int (*add)(int, long); void (*done)(void); };
+        int (*gfp)(int, long);
+        int viaparam(int (*f)(int, long), int x) { return f(x, 3) + 1; }
+        int viaglobal(int x) { return gfp(x, 5) * 2; }
+        int viafield(struct ops *o, int x) { o->done(); return o->add(x, o->tag); }
+
+    Every pass runs with structsynth param, which mints struct_0 for viafield's
+    record, and structdefs on, which prints it above the body.
+
+    Pass 1 (ctypes on, option calltargettype off, the shipped catalog default)
+    is the bug: the parameter and the record's two fields are void *, so each
+    call is a call of a void * that no C compiler accepts (asserts 1, 5). Pass 2
+    (calltargettype on, what the aggressive preset selects) declares the
+    parameter and the fields with the types their calls state (asserts 2, 6,
+    7), and every call is still printed bare (asserts 3, 4, 8, 9). The global
+    gets the type in the function too; nothing in the body prints it, and no
+    cast is added at its call (assert 4).
+
+    Pass 3 declares the record, with add as void * and done as a prototype-less
+    code *, the way a declaration that does not say what it holds reaches kuna.
+    That type is declared, so done is cast at its call instead (assert 10); the
+    local add is read into takes the call's type itself (assert 11).
+
+    Pass 4 (Rust output, calltargettype off then on) spells every pointer to
+    code *const (), so the option changes nothing there (assert 12).
+
+    Assertions span the combined output of the four passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4883ec084889f889f7be03000000ffd083c0014883c408c34883ec08be050000
+00ff15d9ff0f0001c04883c408c355534883ec084889fb89f5ff571048633389
+efff53084883c4085b5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x200000">
+0000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="viaparam"/>
+<symbol space="ram" offset="0x100018" name="viaglobal"/>
+<symbol space="ram" offset="0x10002e" name="viafield"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>option structsynth param</com>
+<com>option structdefs on</com>
+<com>option calltargettype off</com>
+<com>lo fu viaparam</com><com>decompile</com><com>print C</com>
+<com>lo fu viaglobal</com><com>decompile</com><com>print C</com>
+<com>lo fu viafield</com><com>decompile</com><com>print C</com>
+<com>option calltargettype on</com>
+<com>lo fu viaparam</com><com>decompile</com><com>print C</com>
+<com>lo fu viaglobal</com><com>decompile</com><com>print C</com>
+<com>lo fu viafield</com><com>decompile</com><com>print C</com>
+<com>parse line struct ops { int4 tag; void *add; code *done; };</com>
+<com>parse line extern int4 viafield(ops *o, int4 x);</com>
+<com>lo fu viafield</com><com>decompile</com><com>print C</com>
+<com>option setlanguage rust-language</com>
+<com>option calltargettype off</com>
+<com>lo fu viaparam</com><com>decompile</com><com>print C</com>
+<com>option calltargettype on</com>
+<com>lo fu viaparam</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="CALLTARGETSTORAGE #1: off declares the parameter void *" min="1" max="1">int viaparam\(void \*a0,unsigned int a1\)</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #2: on declares the parameter with its call's type" min="1" max="1">int viaparam\(int \(\*a0\)\(unsigned int,unsigned long\),unsigned int a1\)</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #3: the parameter is called bare in every pass" min="4" max="4">return \(\*a0\)\(a1,3\) \+ 1;</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #4: the global is called bare in both passes" min="2" max="2">v1 = \(\*dat_200000\)\(a0,5\);</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #5: off declares the synthesized fields void *" min="2" max="2">^    void \*field_0x(8|10);</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #6: on declares each field with its call's type" min="1" max="1">^    void \(\*field_0x8\)\(unsigned int,long\);</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #7: on declares the field called with no argument void (*)(void)" min="1" max="1">^    void \(\*field_0x10\)\(void\);</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #8: the fields are called bare in both passes" min="2" max="2">^  \(\*a0-&gt;field_0x10\)\(\);</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #9: the field called with arguments is called bare too" min="2" max="2">^  \(\*a0-&gt;field_0x8\)\(a1,\(long\)a0-&gt;field_0x0\);</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #10: a field declared code * is cast at its call" min="1" max="1">^  \(\*\(void \(\*\)\(void\)\)o-&gt;done\)\(\);</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #11: the local a void * field is read into takes the call's type" min="1" max="1">int \(\*v2\)\(int,long\); // tmp</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #12: Rust declares the parameter alike with the option off and on" min="2" max="2">unsafe fn viaparam\(mut a0: \*mut \*const \(\), mut a1: u32\) -&gt; i32</stringmatch>
+</decompilertest>

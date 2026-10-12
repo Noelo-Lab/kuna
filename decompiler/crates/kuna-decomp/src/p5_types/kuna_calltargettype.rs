@@ -32,30 +32,34 @@
 //! overwrites is still read -- a result in `xmm0` that its recovered output
 //! does not hold.
 //!
-//! Three kinds of target are retyped:
+//! Four kinds of target are retyped:
 //!
 //! * a value of another type, which today is cast to `void *` at the call: the
 //!   cast is to the call's own type instead;
 //! * an expression (`*(void **)p`, `((void **)a0)[9]`): its value and, through
 //!   the loads and pointer arithmetic it is computed by, the pointers it is read
 //!   through, so the cast already printed on the way names the function pointer;
-//! * a local variable that holds the target, when nothing it exchanges values
-//!   with fixes another function type.
+//! * a variable that holds the target, when nothing it exchanges values with
+//!   fixes another function type: a local and, in C output, a parameter, whose
+//!   prototype slot takes the type too, and a global;
+//! * a field of a synthesized record the target is read from, which the project
+//!   header declares where every call through it agrees ([`declare_field`]).
 //!
-//! Everything else keeps the spelling it has. A variable that feeds calls of
-//! different signatures has no single type, so it is left alone rather than
-//! guessed. A parameter, a global, a variable whose address is taken, a
-//! type-locked variable and a returned one are seen by other functions, which
-//! this pass cannot reconcile; one that is also dereferenced or offset is a data
-//! pointer too. A variable that receives a function's address is left alone:
-//! the function is declared with its own recovered prototype, which C requires
-//! to match. So is one handed to a parameter declared as a pointer to code or to
-//! a library callback slot (`qsort`'s comparator, `signal`'s handler), whose
-//! header type is its own, and one stored through a pointer or copied into a
-//! variable that already has a function-pointer type other than the call's,
-//! and one compared with a function's address. An argument printed as an
-//! address computed from a base (`&v4`, `&a1[2]`) has the base's C type rather
-//! than its own, so the call's type takes `void *` there.
+//! A variable that feeds calls of different signatures has no single type, so
+//! it is left alone rather than guessed. So is one whose address is taken, a
+//! type-locked or returned one, and one that is also dereferenced or offset,
+//! which is a data pointer too. A variable that receives a function's address
+//! takes the type only when that function's declared prototype is exactly the
+//! call's type, since C requires the two to match. One handed to a parameter
+//! declared as a pointer to code or to a library callback slot (`qsort`'s
+//! comparator, `signal`'s handler), whose header type is its own, keeps its
+//! type, as does one stored through a pointer or copied into a variable that
+//! already has a function-pointer type other than the call's. An argument
+//! printed as an address computed from a base (`&v4`, `&a1[2]`) has the base's C
+//! type rather than its own, so the call's type takes `void *` there.
+//!
+//! In C output a target left with a pointer C cannot call is cast to its call's
+//! type at each call instead ([`uncallable_target_cast`]).
 //!
 //! Gated by [`ArchContext::call_target_type`](crate::context::ArchContext)
 //! (option `calltargettype on|off`), which is set only together with `ctypes`:
@@ -72,8 +76,38 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::context::{HighVariableId, OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
-use crate::fspec::{FuncProto, ProtoParameter, PrototypePieces};
+use crate::fspec::{FuncProto, ParameterPieces, ProtoParameter, PrototypePieces};
 use crate::funcdata::Funcdata;
+
+/// A call through a field of a synthesized record: the record, the field's
+/// offset, and the type the call states, or `None` when the function's calls
+/// through the field disagree (see [`declare_field`]).
+#[derive(Debug, Clone)]
+pub struct FieldCall {
+    pub record: String,
+    pub field: String,
+    pub offset: int4,
+    pub ty: Option<Rc<Datatype>>,
+}
+
+/// A [`FieldCall`] as the project header declares it: the field's name and its
+/// declaration, `void (*field_0x10)(void)`, or `None` for disagreeing calls.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldDecl {
+    pub record: String,
+    pub field: String,
+    pub declaration: Option<String>,
+}
+
+/// Carries `calltargettype` to the DWARF type mapper, which runs at `load file`
+/// before any option is applied; the CLI exports it ahead of the load.
+pub const CALLTARGETTYPE_ENV: &str = "KUNA_CALLTARGETTYPE";
+
+/// Does the DWARF mapper give a pointer to a `DW_TAG_subroutine_type` its
+/// prototype rather than a `void` pointee.
+pub fn dwarf_function_types() -> bool {
+    crate::options::env_toggle(CALLTARGETTYPE_ENV, false)
+}
 
 /// (kuna) `ActionCallTargetType` -- type each indirect call's target from the
 /// call (option `calltargettype`).
@@ -123,6 +157,17 @@ fn uncallable_pointer(ty: &Datatype) -> bool {
     })
 }
 
+/// The cast an indirect call `op` needs on its target `cur` when that is still a
+/// pointer C cannot call: the call's own type, recorded for a target whose uses
+/// disagree about it.
+pub fn uncallable_target_cast(data: &Funcdata, op: OpId, slot: int4, cur: &Datatype) -> Option<Rc<Datatype>> {
+    if slot != 0 || !data.get_arch().call_target_c || !uncallable_pointer(cur) {
+        return None;
+    }
+    data.obank().get(op).filter(|o| o.code() == OpCode::CPUI_CALLIND)?;
+    data.kuna_call_target_type(op)
+}
+
 /// Is `ty` a pointer to a function with a prototype.
 fn function_pointer(ty: &Datatype) -> bool {
     ty.get_metatype() == type_metatype::TYPE_PTR
@@ -137,13 +182,55 @@ fn code_pointer(ty: &Datatype) -> bool {
         && ty.get_ptr_to().is_some_and(|to| to.get_metatype() == type_metatype::TYPE_CODE)
 }
 
+/// Do `a` and `b` spell the same C type. A named type is its name: the factory
+/// can hold a declaration and the completed definition of one record side by
+/// side, and both are the same type to C.
 fn same_type(a: &Rc<Datatype>, b: &Rc<Datatype>) -> bool {
-    Rc::ptr_eq(a, b) || a.compare(b, 10).is_ok_and(|c| c == 0)
+    if Rc::ptr_eq(a, b) || a.compare(b, 10).is_ok_and(|c| c == 0) {
+        return true;
+    }
+    if a.get_metatype() != b.get_metatype() || a.get_size() != b.get_size() && a.get_name().is_empty() {
+        return false;
+    }
+    if !a.get_name().is_empty() {
+        return a.get_name() == b.get_name() && a.get_id() == b.get_id();
+    }
+    match a.get_metatype() {
+        type_metatype::TYPE_PTR => a.get_ptr_to().zip(b.get_ptr_to()).is_some_and(|(x, y)| same_type(&x, &y)),
+        type_metatype::TYPE_CODE => {
+            a.get_code_prototype().zip(b.get_code_prototype()).is_some_and(|(x, y)| same_prototype(x, y))
+        }
+        _ => false,
+    }
+}
+
+/// Are `a` and `b` one record: its declaration and its completed definition,
+/// which the factory holds side by side (a member pointing back at its own
+/// record names the declaration) and C spells alike.
+pub fn same_record(a: &Datatype, b: &Datatype) -> bool {
+    matches!(a.get_metatype(), type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION)
+        && a.get_metatype() == b.get_metatype()
+        && !a.get_name().is_empty()
+        && a.get_name() == b.get_name()
+        && a.get_id() == b.get_id()
+}
+
+/// Do two prototypes take and return the same C types.
+fn same_prototype(a: &FuncProto, b: &FuncProto) -> bool {
+    let same = |x: Option<&Rc<Datatype>>, y: Option<&Rc<Datatype>>| match (x, y) {
+        (Some(x), Some(y)) => same_type(x, y),
+        (x, y) => x.is_none() && y.is_none(),
+    };
+    a.num_params() == b.num_params()
+        && a.is_dotdotdot() == b.is_dotdotdot()
+        && same(a.get_output_type(), b.get_output_type())
+        && (0..a.num_params()).all(|i| same(a.get_param(i).and_then(|p| p.get_type()), b.get_param(i).and_then(|p| p.get_type())))
 }
 
 /// Can `ty` be a parameter or return type of a `size`-byte value as printed.
 fn spellable(ty: &Datatype, size: i32) -> bool {
-    if ty.get_size() != size || ty.needs_resolution() || ty.is_variable_length() {
+    let union_pointer = ty.get_metatype() == type_metatype::TYPE_PTR;
+    if ty.get_size() != size || (ty.needs_resolution() && !union_pointer) || ty.is_variable_length() {
         return false;
     }
     let scalar = match ty.get_metatype() {
@@ -200,7 +287,7 @@ fn call_type(data: &mut Funcdata, tlst: &dyn TypeFactory, op: OpId) -> Option<Rc
         }
         None => tlst.get_type_void().ok()?,
     });
-    for vn in args {
+    for (slot, vn) in (1..).zip(args) {
         let size = data.vbank().get(vn)?.get_size();
         let ty = if prints_as_address(data, vn) {
             let void = tlst.get_type_void().ok()?;
@@ -208,7 +295,8 @@ fn call_type(data: &mut Funcdata, tlst: &dyn TypeFactory, op: OpId) -> Option<Rc
         } else {
             data.vn_high_type_read_facing(vn, op)
         };
-        if !spellable(&ty, size) {
+        let resolved = ty.needs_resolution() && data.get_union_field(&ty, op, slot).is_some_and(|r| r.get_field_num() >= 0);
+        if !spellable(&ty, size) || resolved {
             return None;
         }
         pieces.intypes.push(ty);
@@ -344,9 +432,137 @@ pub fn retype_call_targets(data: &mut Funcdata) {
     for high in linked_disagree {
         chosen.remove(&high);
     }
+    if data.get_arch().call_target_c {
+        for (high, group) in &groups {
+            for (op, ty) in group {
+                if !declare_field(data, *op, ty, chosen.contains_key(high)) {
+                    data.kuna_set_call_target_type(*op, Rc::clone(ty));
+                }
+            }
+        }
+    }
     for (high, ty) in chosen {
         retype_high(data, tlst, high, &ty);
     }
+}
+
+/// The record and offset of the field the target of `op` is printed as a read
+/// of (`o->fn`), when that field is a pointer C cannot call.
+fn uncallable_field(data: &mut Funcdata, op: OpId) -> Option<(Rc<Datatype>, int4)> {
+    let target = data.obank().get(op)?.get_in(0)?;
+    let v = data.vbank().get(target).filter(|v| v.is_implied() && v.is_written())?;
+    let load = data.obank().get(v.get_def()?).filter(|o| o.code() == OpCode::CPUI_LOAD)?;
+    let (addr, at) = (load.get_in(1)?, v.get_def()?);
+    let ptrsub = data
+        .vbank()
+        .get(addr)
+        .filter(|a| a.is_implied() && a.is_written())
+        .and_then(|a| a.get_def())
+        .filter(|d| data.obank().get(*d).is_some_and(|o| o.code() == OpCode::CPUI_PTRSUB));
+    let (base, at, mut off) = match ptrsub {
+        Some(d) => {
+            let o = data.obank().get(d)?;
+            let c = data.vbank().get(o.get_in(1)?).filter(|c| c.is_constant())?;
+            (o.get_in(0)?, d, int4::try_from(c.get_offset()).ok()?)
+        }
+        None => (addr, at, 0),
+    };
+    let mut rec = data.vn_high_type_read_facing(base, at).get_ptr_to()?;
+    for _ in 0..8 {
+        if rec.get_metatype() != type_metatype::TYPE_STRUCT {
+            return None;
+        }
+        let field = (0..).map_while(|i| rec.get_field(i)).find(|f| {
+            f.offset <= off && off < f.offset + f.field_type.get_size().max(1)
+        })?;
+        if field.offset == off && uncallable_pointer(&field.field_type) {
+            return Some((rec, off));
+        }
+        off -= field.offset;
+        rec = Rc::clone(&field.field_type);
+    }
+    None
+}
+
+/// Does the call `op`, of type `ty`, print without a cast: its target is not a
+/// field read, or it is a field of a synthesized record that the calls agree
+/// on (`agreed`).
+///
+/// A target read from a record field prints as the member access, whose C type
+/// is the field's, so typing the value read changes nothing at the call; the
+/// field itself has to have the type. A synthesized record is shared by every
+/// function that took a pointer to it and never changes once minted, so each
+/// call is recorded ([`FieldCall`]) and the field is declared with the type
+/// where every call through it in the export agrees: the project header does
+/// that across functions, the `structdefs` preamble within one
+/// ([`with_declared_fields`]). Calls that disagree within the function are cast
+/// at the call, as is any call through a field of a declared record, whose
+/// declaration says `void *`.
+fn declare_field(data: &mut Funcdata, op: OpId, ty: &Rc<Datatype>, agreed: bool) -> bool {
+    let Some((rec, offset)) = uncallable_field(data, op) else { return agreed };
+    if !crate::kuna_structsynth::ledger::is_minted(&rec) {
+        return false;
+    }
+    let Some(field) = (0..).map_while(|i| rec.get_field(i)).find(|f| f.offset == offset) else { return false };
+    let (record, field) = (rec.get_name().to_string(), field.name.clone());
+    data.kuna_add_field_call(FieldCall { record, field, offset, ty: agreed.then(|| Rc::clone(ty)) });
+    agreed
+}
+
+/// The type each called field of a synthesized record is declared with in
+/// `fd`: the one its calls there agree on.
+fn agreed_fields(fd: &Funcdata) -> BTreeMap<(String, int4), Rc<Datatype>> {
+    let mut seen: BTreeMap<(String, int4), Option<Rc<Datatype>>> = BTreeMap::new();
+    for call in fd.kuna_field_calls() {
+        let entry = seen.entry((call.record.clone(), call.offset)).or_insert_with(|| call.ty.clone());
+        let same = entry.as_ref().zip(call.ty.as_ref()).is_some_and(|(a, b)| same_type(a, b));
+        if !same {
+            *entry = None;
+        }
+    }
+    seen.into_iter().filter_map(|(k, v)| Some((k, v?))).collect()
+}
+
+/// `types` with each synthesized record's called fields given the type `fd`'s
+/// calls agree on, for printing its definition.
+pub fn with_declared_fields(types: Vec<Rc<Datatype>>, fd: &Funcdata) -> Vec<Rc<Datatype>> {
+    let calls = agreed_fields(fd);
+    if calls.is_empty() {
+        return types;
+    }
+    types
+        .into_iter()
+        .map(|ct| {
+            let mut copy = (*ct).clone();
+            let crate::dtype::DatatypeKind::Struct { field, .. } = &mut copy.kind else { return ct };
+            let mut changed = false;
+            for f in field.iter_mut() {
+                if let Some(ty) = calls.get(&(ct.get_name().to_string(), f.offset)) {
+                    f.field_type = Rc::clone(ty);
+                    changed = true;
+                }
+            }
+            if changed {
+                Rc::new(copy)
+            } else {
+                ct
+            }
+        })
+        .collect()
+}
+
+/// The calls through fields of synthesized records `fd` makes, as the project
+/// header declares them.
+pub fn field_declarations(arch: &crate::architecture::Architecture, fd: &Funcdata) -> Vec<FieldDecl> {
+    let rt = crate::printc::RealTypeCtx::from_arch(arch, arch.print().out_lang());
+    fd.kuna_field_calls()
+        .iter()
+        .map(|call| FieldDecl {
+            record: call.record.clone(),
+            field: call.field.clone(),
+            declaration: call.ty.as_ref().map(|ty| crate::printc::declaration_text(ty, &call.field, rt)),
+        })
+        .collect()
 }
 
 fn instances(data: &Funcdata, high: HighVariableId) -> Vec<VarnodeId> {
@@ -383,11 +599,40 @@ fn linked_highs(data: &Funcdata, high: HighVariableId) -> BTreeSet<HighVariableI
     out
 }
 
+/// The prototype slot of the parameter `vn` is the input of, when the function's
+/// inputs are recovered rather than declared.
+fn param_slot(data: &Funcdata, vn: VarnodeId) -> Option<int4> {
+    let v = data.vbank().get(vn).filter(|v| v.is_input() && !v.is_persist())?;
+    let proto = data.get_func_proto();
+    if proto.is_input_locked() || !proto.has_store() {
+        return None;
+    }
+    (0..proto.num_params()).find(|&i| {
+        proto.get_param(i).is_some_and(|p| {
+            !p.is_type_locked()
+                && !p.is_this_pointer()
+                && !p.is_hidden_return()
+                && !p.is_indirect_storage()
+                && p.get_address() == *v.get_addr()
+                && p.get_size() == v.get_size()
+        })
+    })
+}
+
 /// May `high`, the target of exactly the calls `ops`, take the call type `ty`.
+/// A parameter or a global takes it too: the parameter is declared with it, and
+/// the global is read at it in this function.
 fn retypable(data: &mut Funcdata, high: HighVariableId, ty: &Rc<Datatype>, ops: &BTreeSet<OpId>) -> bool {
     for vn in instances(data, high) {
         let Some(v) = data.vbank().get(vn) else { return false };
-        if v.is_input() || v.is_persist() || v.is_addr_tied() || v.is_type_lock() || v.is_constant() {
+        if v.is_constant() || (v.is_type_lock() && !declares_call_type(data, vn, ty)) {
+            return false;
+        }
+        let global = v.is_persist();
+        if (global || v.is_input()) && !data.get_arch().call_target_c {
+            return false;
+        }
+        if !global && (v.is_addr_tied() || (v.is_input() && param_slot(data, vn).is_none())) {
             return false;
         }
         let def = v.get_def().filter(|_| v.is_written());
@@ -418,6 +663,41 @@ fn constant_address(data: &Funcdata, vn: VarnodeId) -> bool {
     })
 }
 
+/// The declared prototype of the function whose entry `vn`, a value formed from
+/// constants alone, names.
+fn declared_function(data: &Funcdata, vn: VarnodeId) -> Option<PrototypePieces> {
+    let v = data.vbank().get(vn)?;
+    let offset = if v.is_constant() {
+        v.get_offset()
+    } else {
+        let o = data.obank().get(v.get_def().filter(|_| v.is_written())?)?;
+        if !matches!(o.code(), OpCode::CPUI_PTRSUB | OpCode::CPUI_INT_ADD | OpCode::CPUI_COPY) {
+            return None;
+        }
+        let mut sum = 0u64;
+        for i in 0..o.num_input() {
+            sum = sum.wrapping_add(data.vbank().get(o.get_in(i)?).filter(|c| c.is_constant())?.get_offset());
+        }
+        sum
+    };
+    let space = data.get_arch().manage().get_default_code_space()?;
+    data.get_arch().callee_proto_pieces(&Address::new(Rc::clone(space), offset))
+}
+
+/// Is `vn` the address of a function declared with exactly the call type `ty`,
+/// which C then accepts into a variable of that type.
+fn declares_call_type(data: &Funcdata, vn: VarnodeId, ty: &Datatype) -> bool {
+    let Some(declared) = declared_function(data, vn) else { return false };
+    let Some(built) = ty.get_ptr_to().and_then(|t| t.get_code_prototype().cloned()) else { return false };
+    let out = declared.outtype.as_ref().zip(built.get_output_type()).is_some_and(|(a, b)| same_type(a, b));
+    out && declared.first_var_arg_slot < 0
+        && !built.is_dotdotdot()
+        && declared.intypes.len() == built.num_params() as usize
+        && declared.intypes.iter().enumerate().all(|(i, a)| {
+            built.get_param(i as int4).and_then(|p| p.get_type()).is_some_and(|b| same_type(a, b))
+        })
+}
+
 /// Does the op writing a member of `high` hand it a value C accepts into `ty`.
 fn def_agrees(data: &mut Funcdata, def: OpId, high: HighVariableId, ty: &Rc<Datatype>) -> bool {
     let Some(o) = data.obank().get(def) else { return false };
@@ -431,7 +711,7 @@ fn def_agrees(data: &mut Funcdata, def: OpId, high: HighVariableId, ty: &Rc<Data
                 }
                 let Some(v) = data.vbank().get(vn) else { return false };
                 if v.is_constant() {
-                    if v.get_offset() != 0 {
+                    if v.get_offset() != 0 && !declares_call_type(data, vn, ty) {
                         return false;
                     }
                     continue;
@@ -440,7 +720,10 @@ fn def_agrees(data: &mut Funcdata, def: OpId, high: HighVariableId, ty: &Rc<Data
                     continue;
                 }
                 if constant_address(data, vn) {
-                    return false;
+                    if !declares_call_type(data, vn, ty) {
+                        return false;
+                    }
+                    continue;
                 }
                 let other = data.vn_high_type_read_facing(vn, def);
                 if function_pointer(&other) && !same_type(&other, ty) {
@@ -449,7 +732,9 @@ fn def_agrees(data: &mut Funcdata, def: OpId, high: HighVariableId, ty: &Rc<Data
             }
             true
         }
-        OpCode::CPUI_PTRSUB | OpCode::CPUI_INT_ADD => !o.get_out().is_some_and(|out| constant_address(data, out)),
+        OpCode::CPUI_PTRSUB | OpCode::CPUI_INT_ADD => {
+            o.get_out().is_none_or(|out| !constant_address(data, out) || declares_call_type(data, out, ty))
+        }
         OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
             let Some(i) = data.get_call_specs_index(def) else { return true };
             let proto = data.get_call_specs(i).proto();
@@ -480,7 +765,7 @@ fn use_agrees(
         OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => {
             let Some(other) = o.get_in(1 - slot) else { return false };
             let constant = data.vbank().get(other).is_some_and(|v| v.is_constant() && v.get_offset() != 0);
-            !constant && !constant_address(data, other)
+            !(constant || constant_address(data, other)) || declares_call_type(data, other, ty)
         }
         OpCode::CPUI_CALLIND if slot == 0 => ops.contains(&op),
         OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
@@ -510,12 +795,23 @@ fn use_agrees(
 }
 
 /// Give every member of `high` the type `ty`, and carry it back through the
-/// loads and pointer arithmetic that compute a member inline.
+/// loads and pointer arithmetic that compute a member inline. A parameter's
+/// prototype slot takes it as well, so the declaration names it.
 fn retype_high(data: &mut Funcdata, tlst: &dyn TypeFactory, high: HighVariableId, ty: &Rc<Datatype>) {
     for vn in instances(data, high) {
-        let old = Rc::clone(data.vbank().get(vn).map(|v| v.get_type()).expect("member"));
-        data.vn_update_type(vn, Rc::clone(ty));
+        let (old, locked) = data.vbank().get(vn).map(|v| (Rc::clone(v.get_type()), v.is_type_lock())).expect("member");
+        if locked {
+            data.vn_update_type_locked(vn, Rc::clone(ty), true, true);
+        } else {
+            data.vn_update_type(vn, Rc::clone(ty));
+        }
         carry_back(data, tlst, vn, old, Rc::clone(ty));
+        if let Some(i) = param_slot(data, vn) {
+            let Some(p) = data.get_func_proto().get_param(i) else { continue };
+            let (name, addr) = (p.get_name().to_string(), p.get_address());
+            let pieces = ParameterPieces { addr, type_: Some(Rc::clone(ty)), flags: 0 };
+            data.get_func_proto_mut().set_param(i, &name, &pieces);
+        }
     }
     if let Some(&first) = instances(data, high).first() {
         let _ = data.high_get_type(first);
@@ -575,3 +871,4 @@ fn carry_back(data: &mut Funcdata, tlst: &dyn TypeFactory, vn: VarnodeId, old: R
 
 #[cfg(test)]
 mod tests;
+

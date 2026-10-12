@@ -2855,6 +2855,7 @@ impl PrintC {
         if types.is_empty() {
             return;
         }
+        let types = crate::kuna_calltargettype::with_declared_fields(types, fd);
         let text = render_type_definitions(&types, self.rt_ctx);
         for line in text.trim_end_matches('\n').split('\n') {
             self.emit.tag_line();
@@ -10934,7 +10935,8 @@ impl IntegerLiteral {
 /// factory + `promoteSize = tlst->getSizeOfInt()`, so the rebuild is exact).
 fn cast_strategy_for(arch: &Architecture) -> Option<CastStrategyC> {
     let tlst = arch.types_rc() as std::rc::Rc<dyn crate::dtype::TypeFactory>;
-    Some(CastStrategyC::new(tlst))
+    let c = arch.call_target_type && arch.ctypes && arch.print().out_lang() == crate::kuna_lang::OutLang::C;
+    Some(CastStrategyC::new(tlst).with_record_identity(c))
 }
 
 struct PointerView<'a> {

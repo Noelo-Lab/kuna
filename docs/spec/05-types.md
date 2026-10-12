@@ -1446,27 +1446,91 @@ does not hold. What receives the type then depends on the target:
 - A target whose type is `code *` or `void *` takes the call's type itself when
   every indirect call made through it states the same type -- calls that
   disagree on arity or on any type leave it alone rather than pick one -- and
-  nothing it meets fixes another type. It must not be a parameter, a global, a
-  variable whose address is taken, type-locked, returned, dereferenced or used
-  in pointer arithmetic; nothing may write an address formed from constants
-  into it (a function's address prints as the function, whose own recovered
-  prototype C requires to match) or a non-zero constant, nor may it be compared
-  with one; and no argument slot, store target, copy or call result it meets
-  may carry a different function-pointer type. An argument slot declared as a
-  pointer to code, or a library callback slot (`qsort`'s comparator,
-  `signal`'s handler, the table `kuna_callbacktype` keeps), counts as one: its
-  header type is its own. Two such values copied into each other with
-  different types both keep theirs.
+  nothing it meets fixes another type. It must not be a variable whose address
+  is taken, type-locked, returned, dereferenced or used in pointer arithmetic;
+  nothing may write a non-zero constant into it, nor may it be compared with
+  one; and no argument slot, store target, copy or call result it meets may
+  carry a different function-pointer type. An address formed from constants
+  that it receives or is compared with is a function's address, and prints as
+  the function, so C requires the function's own prototype to match: it is
+  accepted only when the function has a declared prototype (DWARF, a library
+  table, a `--assert`, read with `ArchContext::callee_proto_pieces`) that is
+  exactly the call's type (`declares_call_type`). That is dash's
+  `int (*evalfn)(union node *, int)`, which holds `evalcommand`,
+  `evalsubshell` and the other evaluators and is now declared with that type.
+  An argument slot declared as a pointer to code, or a library callback slot
+  (`qsort`'s comparator, `signal`'s handler, the table `kuna_callbacktype`
+  keeps), counts as a different type: its header type is its own. Two such
+  values copied into each other with different types both keep theirs.
+- In C output (`ArchContext::call_target_c`) the target may also be a
+  parameter or a global. A parameter is one of the function's recovered
+  inputs, not a declared prototype's, and its prototype slot takes the type as
+  well (`param_slot`), so the declaration names it:
+  `int viaparam(int (*a0)(unsigned int,unsigned long),unsigned int a1)`, and the
+  `.h` prototype of the project export with it. A global takes the type in this
+  function; it is read at that type and its call needs no cast
+  (`(*dat_17d60)()` for a PLT stub's GOT slot, unchanged text). The Rust
+  speller spells every pointer to code `*const ()`, so neither is retyped there
+  and the Rust output is unchanged.
 - When it takes the type, so do the implied values it is loaded through, one
   pointer level per `LOAD`, back over `COPY`, `PTRADD` and a zero `PTRSUB`
   while each has the type that pointed at the old one. The casts
   `ActionSetCasts` already prints on that path then name the function pointer:
   `(**(void (**)(void))&tbl[i])()`,
   `(*((void (**)(unsigned long,long))a0)[9])(...)`.
+- A target read from a record field prints as the member access `o->fn`, whose
+  C type is the field's whatever the value read is typed, so the field itself
+  has to have the type. A record `structsynth` minted is shared by every
+  function that took a pointer to it and never changes once minted, so no one
+  function can declare its field. Each call through such a field is recorded on
+  the `Funcdata` instead (`declare_field`, `FieldCall`), with the call's type,
+  or with none when the function's calls through the field disagree, and the
+  project export carries the records with each function's result
+  (`field_declarations`, `FuncResult::field_calls`, through a `--jobs` worker's
+  result frame and its structure renaming). The header then declares each field
+  every record agrees on with that type
+  (`decompiler/crates/kuna-console/src/project.rs (declare_called_fields)`):
+  `void (*field_0x10)(void);` where it printed `void *field_0x10;`, while the
+  body still reads `(*a0->field_0x10)();`. The decision depends on no function's
+  order, so a `--jobs` export writes the same header as a serial one. The
+  `structdefs` preamble declares the fields the function's own calls agree on
+  (`with_declared_fields`). A field the calls disagree about keeps `void *`, and
+  the field of a declared record keeps the type the declaration gives it.
 
-Everything else keeps the spelling it had, which for a `code *` that is never
-called directly, and for a parameter, a global, a record field or a variable
-whose calls disagree, is the `void *` above. The option takes effect only with
+In C output, a target that keeps a pointer C cannot call -- its calls disagree,
+it meets a different function-pointer type, it is also used as data, or it is
+read from a field whose declaration says `void *` or `code *` -- is cast to its
+call's type at each call. Every such call records its type per op, and
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_calltargettype.rs
+(uncallable_target_cast)`, consulted by the default arm of `get_input_cast`
+(chapter 09) when `cast_standard` asks for nothing, returns it for a slot-0
+target that is still a pointer to `void` or to prototype-less `code`:
+`(*(int (*)(unsigned int,unsigned long))v2)(a1,1)` for a local that also
+receives a function without a declared prototype, one cast per call for a
+local called with two arities. The cast changes no value: the call already
+passes every parameter in the storage the type lays it out in. A call whose
+type could not be built (a float held as an integer, an argument printed as a
+member of the union it points at) stays a call of a `void *`.
+
+The types a call states name records the way the variables passed to it do,
+and a record that points back at itself (`struct variable`, whose
+`assign_func` takes a `struct variable *`) is held twice by the factory: the
+declaration its own members point at and the completed definition. C spells
+both alike, so with the option on in C output the C cast strategy treats the
+two as one type (`CastStrategyC::with_record_identity`, `same_record`) and
+prints no cast between them -- which also drops the casts of that kind the
+output already had (`list = (word_list *)words->next;` becomes
+`list = words->next;`).
+
+DWARF states the type outright. The DWARF mapper, which runs at `load file`
+before any option is applied, maps a pointer to a prototyped
+`DW_TAG_subroutine_type` to a pointer to a function of that prototype when the
+option is on (chapter 01): diffutils' `hash_table.hasher` is
+`unsigned long (*hasher)(void *,unsigned long)` and its call compiles, and
+`ActionDeindirect` gives the call the declared prototype, so
+`(*table->comparator)(entry)` passes both of its arguments.
+
+The option takes effect only with
 `ctypes` on (`ArchContext::call_target_type` is set from both): without C's own
 spelling the target prints the upstream `code *`, which the option leaves
 alone. Shipped OFF in the catalog, because the XML datatest corpus pins the
@@ -1484,11 +1548,24 @@ the same build, the `called object is not a function` errors fall from 1,634 to
 clang 14, and the number of casts does not change (77,147). Keyed by statement,
 no statement gains an error; under gcc 15, 15 statements whose call no longer
 fails report the pre-existing assignment type error gcc 15 stopped at the call
-before. Exercised by `tests/stages/kuna-calltargettype.xml` (gcc -O1 and clang
+before. Those figures predate the parameters, globals, record fields, DWARF
+types and casts at the call above. With them, on the -O2 decbench gzip, dash,
+diff and bash under `decompile-project --mode aggressive` and gcc 11, compared
+with the build before them, the `called object is not a function` errors fall
+from 63 to 0, and the casts of `decompile-all` from 17,288 to 16,687 (38 added,
+636 removed, most by the record identity; casts on a call's target 28 to 44).
+One statement gains an error: in bash's `rl_bind_key` a register variable that
+also holds a keymap entry's function is now typed as that function pointer and
+indexed. The cost is gcc's incompatible-pointer-type warnings, 247 to 312: a
+function whose recovered prototype differs from the DWARF type of the slot it
+is passed to was passed to a `void *` before, and gcc 14 and later reject that
+by default. Exercised by `tests/stages/kuna-calltargettype.xml` (gcc -O1 and clang
 -O2 builds of a table dispatch, a local holding a table entry, a record's
 callback, a local called with two arities, a local that receives a function's
 address, a local handed to `qsort`, a float held in `xmm0` as an integer, and a
-`ctypes off` pass), and by `kuna-calltargettype-a64.xml` and
+`ctypes off` pass), by `kuna-calltargetstorage.xml` (a parameter, a global,
+the fields of a synthesized record declared from their calls, a declared
+`code *` field cast at its call, and a Rust pass), and by `kuna-calltargettype-a64.xml` and
 `kuna-calltargettype-armhf.xml` (a float call typed `float (*)(float)` in `s0`,
 an integer call, and a float held in `s0` as an integer, on AArch64 and ARMv7
 hard-float).
