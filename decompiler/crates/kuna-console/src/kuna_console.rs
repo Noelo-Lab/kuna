@@ -1463,8 +1463,7 @@ impl IfaceCommandAction for IfcKunaFunctionContaining {
             },
             selector => selector,
         };
-        let Ok(target) = prog.resolve_entry(&selector) else { return Ok(()) };
-        let vma = target.addr.get_offset();
+        let Some(vma) = prog.selection_address(&selector) else { return Ok(()) };
         let Some(Some(owner)) = prog.entries_containing(&[vma]).pop() else { return Ok(()) };
         let at = prog.output_code_offset(vma);
         let entry = prog.output_code_offset(owner.addr.get_offset());

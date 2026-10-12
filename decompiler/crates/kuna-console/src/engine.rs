@@ -1137,6 +1137,19 @@ impl ConsoleProgram {
             .find(|e| e.addr.get_offset() == want)
     }
 
+    /// The address `selector` resolves to: a mapped numeric address with its
+    /// Thumb bit folded, as [`Self::resolve_entry`] would answer it but without
+    /// building the entry, and anything else through `resolve_entry`.
+    pub fn selection_address(&self, selector: &EntrySelector) -> Option<u64> {
+        if let EntrySelector::Numeric(vma) = selector {
+            let vma = self.thumb_normalized(*vma);
+            if self.vma_is_mapped(vma) {
+                return Some(vma);
+            }
+        }
+        self.resolve_entry(selector).ok().map(|entry| entry.addr.get_offset())
+    }
+
     /// For each of `vmas`, the inventory entry whose extent holds it when it is
     /// not itself an entry: what a selection lands inside when discovery found
     /// no function starting there (`docs/cli.md`, `interior_to`). The inventory
