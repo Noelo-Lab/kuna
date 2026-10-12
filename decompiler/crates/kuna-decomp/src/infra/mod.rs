@@ -9,6 +9,7 @@ pub mod engine_translate;
 pub mod kuna_decodekit;
 pub mod remote_provider;
 pub mod decompile_drive;
+pub mod kuna_fnmemory;
 pub mod capability;
 pub mod libdecomp;
 pub mod cpool;

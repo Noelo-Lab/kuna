@@ -62,6 +62,9 @@ pub struct DecompileArgs {
     pub raw_image: bool,
     /// Address assigned to raw file offset zero.
     pub base: Option<u64>,
+    /// `--max-fn-memory MiB` (`0` off), handed to `decomp_dbg` through
+    /// [`kuna_decomp::kuna_fnmemory::ENV_VAR`].
+    pub max_fn_memory: u64,
 }
 
 /// A 0x-prefixed token auto-selects address mode (a bare hex-looking token is a
@@ -636,6 +639,11 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             }
         }
         crate::loadtime::apply_to_command(&mut cmd, &args.options, args.slice.as_deref());
+        if args.max_fn_memory > 0 {
+            cmd.env(kuna_decomp::kuna_fnmemory::ENV_VAR, args.max_fn_memory.to_string());
+        } else {
+            cmd.env_remove(kuna_decomp::kuna_fnmemory::ENV_VAR);
+        }
         let output = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -856,6 +864,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     let mut isa: Option<ArmIsa> = None;
     let mut raw_image = false;
     let mut base: Option<u64> = None;
+    let mut max_fn_memory: u64 = 0;
 
     let mut i = 0;
     while i < argv.len() {
@@ -906,6 +915,12 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
                 forwarded.push("--assert-strict".into());
             }
             "--decomp-dbg" => decomp_dbg = Some(take_value(argv, &mut i, "--decomp-dbg")?),
+            "--max-fn-memory" => {
+                let value = take_value(argv, &mut i, "--max-fn-memory")?;
+                max_fn_memory = decompile_all::parse_max_fn_memory(&value)?;
+                forwarded.push("--max-fn-memory".into());
+                forwarded.push(value);
+            }
             "--engine" => engine = Some(take_value(argv, &mut i, "--engine")?),
             "--sleighpath" => sleighpath = Some(take_value(argv, &mut i, "--sleighpath")?),
             "-h" | "--help" => {
@@ -1028,6 +1043,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         isa,
         raw_image,
         base,
+        max_fn_memory,
     }))
 }
 
@@ -1039,7 +1055,7 @@ fn usage() {
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
          \x20                     [--isa auto|arm|thumb] [--slice ARCH] [--target T] \\\n\
-         \x20                     [--sleighpath D] [--decomp-dbg P]\n\
+         \x20                     [--sleighpath D] [--decomp-dbg P] [--max-fn-memory MiB]\n\
          \x20                     [--raw-image --target T --base VMA]\n\
          \n\
          Decompile ONE function.  The target is a name, or an address with --addr\n\
@@ -1054,6 +1070,9 @@ fn usage() {
          --mode applies an option preset (`kuna modes`); omitted, `auto` picks one by\n\
          input size.  Explicit --option values win over the preset.\n\
          --language selects the output language; omitted, it follows the binary.\n\
+         --max-fn-memory MiB stops the decompile once the process doing it holds\n\
+         more than MiB resident and has grown during it (default 0, off), and\n\
+         reports that instead of being killed by the system.\n\
          \n\
          --define-function <start[-end][=name] | @file> (repeatable) declares where a\n\
          function starts and ends: start names an entry discovery missed, the\n\
@@ -1309,6 +1328,7 @@ mod tests {
             isa: None,
             raw_image: false,
             base: None,
+            max_fn_memory: 0,
         }
     }
 

@@ -146,7 +146,8 @@ pub(crate) fn emit_completion(completion: ProjectCompletion) -> i32 {
 fn usage() {
     eprintln!(
         "usage: kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..] \\\n\
-         \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
+         \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] [--stream] \\\n\
          \x20                   [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                   [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
@@ -162,6 +163,8 @@ fn usage() {
          \x20 README.md   binary metadata (size, arch, entry, sections, counts)\n\
          Unfiltered fast exports default to 10 seconds per function; other runs\n\
          default to 120. --max-fn-seconds overrides that policy (0 disables).\n\
+         --max-fn-memory MiB stops a function once the process decompiling it\n\
+         holds more than MiB resident and has grown during it (default 0, off).\n\
          --jobs N spreads the per-function decompile over N worker processes\n\
          (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
          serial). Without --stream the artifacts are identical to a --jobs 1 run\n\
@@ -206,10 +209,7 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
     // Per-function watchdog — same driver policy as `decompile-all` (10 s for
     // an unfiltered fast export, 120 s otherwise, 0 disables): a non-converging
     // function becomes its own error record instead of hanging the export.
-    if args.max_fn_seconds > 0 {
-        prog.arch_mut().kuna_fn_budget =
-            Some(std::time::Duration::from_secs(args.max_fn_seconds));
-    }
+    crate::decompile_all::arm_fn_budgets(&mut prog, args);
     // (kuna outlang) The project export is C-shaped end to end: a `.c`/`.h`
     // split, a `#include`-bearing recompile prelude, and one C prototype per
     // function. Emitting a non-C body into that skeleton would produce artifacts

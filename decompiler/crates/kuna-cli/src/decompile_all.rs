@@ -70,6 +70,11 @@ pub(crate) struct Args {
     /// stripped-ELF non-convergence hang (`tests/hang-repro/`). Defaults to 10
     /// for an unfiltered fast whole-binary run and 120 otherwise.
     pub(crate) max_fn_seconds: u64,
+    /// `--max-fn-memory N` (the decompiling surfaces): stop a function once the
+    /// process decompiling it holds more than N MiB resident and has grown
+    /// during it, recording that function's `error`; `0` (the default)
+    /// disables. See [`arm_fn_budgets`].
+    pub(crate) max_fn_memory: u64,
     pub(crate) options: Vec<(String, String)>,
     /// `--define-function <start[-end][=name] | @file>` (repeatable): the
     /// caller-declared function boundaries, applied by [`load_program`] right
@@ -150,6 +155,7 @@ impl Args {
             entry_seeds: Vec::new(),
             no_vars: false,
             max_fn_seconds: 0,
+            max_fn_memory: 0,
             options: Vec::new(),
             func_decls: Vec::new(),
             assertions: Vec::new(),
@@ -668,10 +674,7 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
         seed_worker_inventory(&mut prog, &inventory.to_string_lossy())?;
     }
     faults.after_load(dir);
-    if args.max_fn_seconds > 0 {
-        prog.arch_mut().kuna_fn_budget =
-            Some(std::time::Duration::from_secs(args.max_fn_seconds));
-    }
+    arm_fn_budgets(&mut prog, args);
     // (kuna `structsynth`) A recording worker reports every ledger lookup and
     // its own answer; a forcing one first mints the parent's replayed
     // structures, in the serial run's order, and then answers each lookup with
@@ -960,6 +963,7 @@ pub(crate) fn pool_config<'a>(
         want_callee_hints,
         want_pointer_arguments: false,
         max_fn_seconds: args.max_fn_seconds,
+        max_fn_memory: args.max_fn_memory,
         full_load: args.jobs_full_load,
         load_seconds,
         isa: args.isa.map(ArmIsa::as_str),
@@ -1265,6 +1269,32 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior })
 }
 
+/// Arm the per-function budgets `args` asks for: the wall-clock watchdog on the
+/// architecture, and the memory limit process-wide, since what it measures is
+/// the process's resident set.
+pub(crate) fn arm_fn_budgets(prog: &mut ConsoleProgram, args: &Args) {
+    if args.max_fn_seconds > 0 {
+        prog.arch_mut().kuna_fn_budget =
+            Some(std::time::Duration::from_secs(args.max_fn_seconds));
+    }
+    kuna_decomp::kuna_fnmemory::set_limit_mib(args.max_fn_memory);
+}
+
+/// Parse a `--max-fn-memory` value: MiB, `0` to disable. Refused where the
+/// process's resident set cannot be read, since the limit could never fire.
+pub(crate) fn parse_max_fn_memory(v: &str) -> Result<u64, String> {
+    let mib = v
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| format!("invalid --max-fn-memory value {v:?} (MiB)"))?;
+    if mib > 0 && !kuna_decomp::kuna_fnmemory::supported() {
+        return Err("--max-fn-memory needs the resident set, which this platform does not \
+                    report (/proc/self/status)"
+            .into());
+    }
+    Ok(mib)
+}
+
 /// Arm the per-function watchdog and run the decompile loop over `targets` — the
 /// body `decompile-all` and `kuna decompile --json` share, so the two answer with
 /// one policy as well as one schema.
@@ -1283,10 +1313,7 @@ pub(crate) fn decompile_entries(
     targets: Vec<FunctionEntry>,
     pointer_arguments: bool,
 ) -> Vec<FuncResult> {
-    if args.max_fn_seconds > 0 {
-        prog.arch_mut().kuna_fn_budget =
-            Some(std::time::Duration::from_secs(args.max_fn_seconds));
-    }
+    arm_fn_budgets(prog, args);
     let opts = DecompileOptions {
         no_vars: args.no_vars,
         want_provenance: args.json,
@@ -2420,6 +2447,7 @@ pub(crate) fn parse_args_with_filters(
     let mut entry_seeds: Vec<EntrySelector> = Vec::new();
     let mut no_vars = false;
     let mut max_fn_seconds: Option<u64> = None;
+    let mut max_fn_memory: u64 = 0;
     let mut options: Vec<(String, String)> = Vec::new();
     let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
     let mut assertions: Vec<kuna_console::assertions::Directive> = Vec::new();
@@ -2522,6 +2550,13 @@ pub(crate) fn parse_args_with_filters(
                         .parse::<u64>()
                         .map_err(|_| format!("invalid --max-fn-seconds value {v:?}"))?,
                 );
+            }
+            "--max-fn-memory"
+                if cmd == "decompile-all"
+                    || cmd == "decompile-project"
+                    || cmd == "decompile-graph" =>
+            {
+                max_fn_memory = parse_max_fn_memory(&take(argv, &mut i, "--max-fn-memory")?)?;
             }
             "--filter" if triageable => {
                 let v = take(argv, &mut i, "--filter")?;
@@ -2728,6 +2763,7 @@ pub(crate) fn parse_args_with_filters(
             entry_seeds,
             no_vars,
             max_fn_seconds,
+            max_fn_memory,
             options,
             func_decls,
             assertions,
@@ -2781,7 +2817,8 @@ fn parse_entry_selector(s: &str) -> Result<EntrySelector, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                   [--no-vars] [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
+         \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
          \x20                   [--filter REGEX] [--min-size N] [--max-size N] \\\n\
          \x20                   [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
@@ -2795,6 +2832,9 @@ fn usage_decompile_all() {
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 10\n\
          for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\
          budget becomes its own `error` record and the batch continues.\n\
+         --max-fn-memory MiB stops a function once the process decompiling it\n\
+         holds more than MiB resident and has grown during it (default 0, off);\n\
+         that function becomes its own `error` record the same way.\n\
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
          in-process path). Output is merged in target order and is identical to\n\

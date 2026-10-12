@@ -1185,7 +1185,16 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     // covers the whole drive — flow-follow (incl. the jumptable sub-pipeline)
     // and the action pipeline — and is consulted cooperatively at the action /
     // rule-pool / heritage loop boundaries.
-    arch.kuna_fn_deadline = arch.kuna_fn_budget.map(|b| std::time::Instant::now() + b);
+    //
+    // A memory limit (`--max-fn-memory`) arms too: with no wall-clock budget
+    // its deadline is a year out, so the same probes run and ask about memory.
+    let memory = crate::kuna_fnmemory::Armed::enter();
+    let now = std::time::Instant::now();
+    arch.kuna_fn_deadline = match arch.kuna_fn_budget {
+        Some(budget) => Some(now + budget),
+        None if memory.is_armed() => Some(now + MEMORY_ONLY_HORIZON),
+        None => None,
+    };
     let _deadline_scope = DeadlineScope::enter(arch.kuna_fn_deadline);
     // (ghidra-mode, Phase 4) Take the staged name recommendations UP FRONT so
     // an early flow failure can never leak them into a later drive.
@@ -2521,18 +2530,33 @@ thread_local! {
     static FN_DEADLINE: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
 }
 
-/// (kuna decompile-all watchdog) Has the running drive's per-function deadline
-/// passed? For a long walk inside one pass, which no action or heritage loop
+/// (kuna decompile-all watchdog) Has the running drive's per-function budget
+/// run out? For a long walk inside one pass, which no action or heritage loop
 /// boundary interrupts, to give up early.
 pub(crate) fn deadline_passed() -> bool {
-    FN_DEADLINE.with(|d| d.get().is_some_and(|d| std::time::Instant::now() >= d))
+    FN_DEADLINE.with(|d| d.get().is_some_and(budget_spent))
 }
 
+/// (kuna decompile-all watchdog) The one test every cooperative probe makes:
+/// the clock passed `deadline`, or the drive went over its memory limit
+/// ([`crate::kuna_fnmemory::over`]).
+pub(crate) fn budget_spent(deadline: std::time::Instant) -> bool {
+    let now = std::time::Instant::now();
+    now >= deadline || crate::kuna_fnmemory::over(now)
+}
+
+/// How far out a drive armed only by a memory limit puts its deadline, so the
+/// probes that ask about memory run without a wall-clock budget.
+const MEMORY_ONLY_HORIZON: std::time::Duration = std::time::Duration::from_secs(365 * 24 * 3600);
+
 /// (kuna decompile-all watchdog) The per-function error for a budgeted drive
-/// whose deadline has passed: whatever the cut-off pipeline left behind is
-/// never printed.
+/// whose memory limit tripped or whose deadline has passed: whatever the
+/// cut-off pipeline left behind is never printed.
 fn budget_error(arch: &Architecture) -> Option<KunaError> {
     let deadline = arch.kuna_fn_deadline?;
+    if let Some(mib) = crate::kuna_fnmemory::tripped_limit_mib() {
+        return Some(KunaError::lowlevel(format!("per-function memory limit exceeded ({mib} MiB)")));
+    }
     if std::time::Instant::now() < deadline {
         return None;
     }

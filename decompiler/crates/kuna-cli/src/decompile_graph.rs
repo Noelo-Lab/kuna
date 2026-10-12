@@ -145,10 +145,7 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
             prog.arch().print().get_name()
         ));
     }
-    if args.max_fn_seconds > 0 {
-        prog.arch_mut().kuna_fn_budget =
-            Some(std::time::Duration::from_secs(args.max_fn_seconds));
-    }
+    crate::decompile_all::arm_fn_budgets(&mut prog, args);
 
     let mut entries = prog.function_entries_canonical();
     // What a row IS never depends on what this run was asked to decompile, so
@@ -478,6 +475,7 @@ fn usage() {
     eprintln!(
         "usage: kuna decompile-graph <binary> [-o|--output FILE] [--label TEXT] \\\n\
          \x20                   [--functions a,b,..] [--addr 0xVMA].. [--max-fn-seconds N] \\\n\
+         \x20                   [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
          \x20                   [--define-function S[-E][=N]|@FILE].. \\\n\
@@ -493,7 +491,9 @@ fn usage() {
          Every function is a node; --functions/--addr narrow which of them are\n\
          decompiled, not which appear.  Unfiltered fast runs default to 10 seconds\n\
          per function, other runs to 120; a function over budget becomes its own\n\
-         `error` record and the run still exits 0.\n\
+         `error` record and the run still exits 0. --max-fn-memory MiB does the\n\
+         same for a function once its process holds more than MiB resident and\n\
+         has grown during it (default 0, off).\n\
          --jobs N spreads the per-function decompile over N worker processes\n\
          (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
          serial). The document is identical to --jobs 1, synthesized struct_N\n\

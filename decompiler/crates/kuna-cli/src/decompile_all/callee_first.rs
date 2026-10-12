@@ -44,9 +44,7 @@ pub(crate) fn decompile_callee_first(
     explicit: bool,
     base: kuna_console::project::DecompileOptions,
 ) -> Vec<FuncResult> {
-    if args.max_fn_seconds > 0 {
-        prog.arch_mut().kuna_fn_budget = Some(std::time::Duration::from_secs(args.max_fn_seconds));
-    }
+    super::arm_fn_budgets(prog, args);
     let cycles = prog.arch().protoorder.states_in_cycles();
     let graph = CallGraph::build(prog, &args.binary, args.slice_pref());
     let plan = match &graph {

@@ -1496,7 +1496,17 @@ publishes its deadline to
 so a walk inside one pass gives up rather than run past it. On expiry the
 containers stop scheduling work and unwind; the driver converts that into the
 function's `error` record (a pass panic after the deadline passed reports the
-same budget error) and the batch continues. A function whose drive
+same budget error) and the batch continues. `--max-fn-memory MiB` arms the same probes with a
+memory limit (`decompiler/crates/kuna-decomp/src/infra/kuna_fnmemory.rs`): the
+driver sets it process-wide, each drive records the resident set it starts
+from, and `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
+(budget_spent)` — the one test every probe makes — also asks whether the
+process is over the limit and has grown since the drive began, reading the
+resident set at most every 50 ms. A drive armed only by the limit gets a
+deadline a year out so the probes run. The trip holds for the rest of the
+drive, the function's `error` names the limit, and the drive releases free
+heap pages (glibc `malloc_trim`) on the way out so the next function starts
+from a lower floor. A function whose drive
 completes before expiry is byte-identical with or without a budget, and the
 console/parity paths never set one. It is not a hard wall around discovery,
 unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON

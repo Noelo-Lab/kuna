@@ -66,6 +66,15 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
+    // (kuna) `kuna decompile --max-fn-memory MiB` hands its per-function memory
+    // limit down here; every decompile drive this console runs arms it.
+    if let Some(mib) = std::env::var(kuna_decomp::kuna_fnmemory::ENV_VAR)
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+    {
+        kuna_decomp::kuna_fnmemory::set_limit_mib(mib);
+    }
+
     // startDecompilerLibrary(...) — the id/capability bootstrap is performed
     // per-program inside `engine::bootstrap_*` (the kuna IdRegistry is a value,
     // not a global), so the library "start" here is just recording the roots.

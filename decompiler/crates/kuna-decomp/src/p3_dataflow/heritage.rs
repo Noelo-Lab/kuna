@@ -4580,9 +4580,10 @@ impl Heritage {
         self.merge.clear();
     }
 
-    /// (kuna decompile-all watchdog) Has the running pass's deadline passed?
+    /// (kuna decompile-all watchdog) Has the running pass's budget run out —
+    /// its deadline passed, or its drive over the memory limit?
     fn deadline_passed(&self) -> bool {
-        self.deadline.is_some_and(|d| std::time::Instant::now() >= d)
+        self.deadline.is_some_and(crate::decompile_drive::budget_spent)
     }
 
     /// Generate a guard record for an indexed LOAD into a stack space (C++
@@ -5319,10 +5320,8 @@ impl Heritage {
             // so bail out of the pass here rather than only at the next action
             // boundary.  The abandoned pass's partial state is never printed —
             // the drive turns the expiry into a per-function `Err`.
-            if let Some(d) = deadline {
-                if std::time::Instant::now() >= d {
-                    return;
-                }
+            if self.deadline_passed() {
+                return;
             }
             if !self.infolist[i].is_heritaged() {
                 continue;

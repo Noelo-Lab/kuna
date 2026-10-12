@@ -100,9 +100,10 @@ decompiled from the stripped copy the benchmark hands each decompiler.
 
 ## `escaped_locals` — guard placement past the watchdog (#1034)
 
-`escaped_locals` (built from `escaped_locals.c`, recipe in its header; 50,400
-bytes, sha256 `ce57f13f8c560dcc…`) has one function, `big`, that hands the
-address of each of 700 stack structs to a call. Heritage guards every stack
+`escaped_locals` (built from `escaped_locals.c`, recipe in its header; 50,472
+bytes, sha256 `a906af79decc1658…`) has one function, `big`, that hands the
+address of each of 700 stack structs to a call, and an ordinary `after`
+decompiled once `big` is done. Heritage guards every stack
 range at every call (upstream `Heritage::guardCalls`), so the stack pass places
 about a million INDIRECT ops. That placement had no watchdog probe, so
 `--max-fn-seconds 1` still ran ~15 s and reached 2.6 GB before the function was
@@ -110,6 +111,9 @@ cut off; a 290 KB function of the same shape ran past a 10 s budget to 8 GB.
 The probe now sits in the per-range placement loop, and
 `watchdog_stops_heritage_guard_placement` in
 `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs` pins it.
+`memory_limit_stops_one_function_and_the_batch_continues` uses the same
+fixture for `--max-fn-memory`: `big` stops at the limit and `after` still
+decompiles.
 
 ```bash
 kuna decompile-all tests/hang-repro/escaped_locals --functions big --json --max-fn-seconds 1

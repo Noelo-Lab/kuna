@@ -189,6 +189,7 @@ pub(crate) struct PoolConfig<'a> {
     /// the complete result set.
     pub(crate) want_pointer_arguments: bool,
     pub(crate) max_fn_seconds: u64,
+    pub(crate) max_fn_memory: u64,
     pub(crate) full_load: bool,
     /// How long the PARENT's own load took.  The stall watchdog cannot fire
     /// before a worker could plausibly have finished loading, and this is the
@@ -1032,7 +1033,9 @@ impl Worker {
             .arg("--mode")
             .arg(cfg.mode)
             .arg("--max-fn-seconds")
-            .arg(cfg.max_fn_seconds.to_string());
+            .arg(cfg.max_fn_seconds.to_string())
+            .arg("--max-fn-memory")
+            .arg(cfg.max_fn_memory.to_string());
         if cfg.no_vars {
             cmd.arg("--no-vars");
         }
@@ -2644,6 +2647,7 @@ mod tests {
             want_callee_hints: false,
             want_pointer_arguments: false,
             max_fn_seconds,
+            max_fn_memory: 0,
             full_load: false,
             load_seconds,
             isa: None,

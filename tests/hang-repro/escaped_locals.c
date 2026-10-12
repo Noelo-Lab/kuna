@@ -1,6 +1,7 @@
 /* One function that hands the address of each of 700 stack structs to a call.
  * Every struct stays live across every later call, so heritage guards each
- * stack range at each call: ranges x calls INDIRECT ops (#1034).
+ * stack range at each call: ranges x calls INDIRECT ops (#1034). `after` is an
+ * ordinary function decompiled once `big` is done.
  * Build: clang -O0 -fno-pic -no-pie -nostdlib -Wl,-e,big -o escaped_locals escaped_locals.c */
 struct S { int a; long b; char c[24]; };
 
@@ -19,4 +20,8 @@ int big(void) {
     int r = 0;
     L100(1) L100(2) L100(3) L100(4) L100(5) L100(6) L100(7)
     return r;
+}
+
+int after(int x) {
+    return x * 3 + 1;
 }
