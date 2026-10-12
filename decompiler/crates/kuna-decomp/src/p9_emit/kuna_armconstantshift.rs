@@ -22,7 +22,7 @@ pub(crate) fn plan_arm_constant_lsl(
     arch: &Architecture,
     op: OpId,
 ) -> Option<ArmConstantLslPlan> {
-    if !arch.archid.starts_with("ARM:") {
+    if !arch.arm_constant_shift || !arch.archid.starts_with("ARM:") {
         return None;
     }
     let o = fd.obank().get(op)?;

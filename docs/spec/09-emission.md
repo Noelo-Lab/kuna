@@ -998,9 +998,13 @@ repeatability restriction. Signed compound assignment is declined so this
 conversion remains on the assignment's right-hand side. Unsigned shiftees,
 other widths, out-of-range constants, other architectures and other output
 languages retain their existing rendering. Count zero is ordinarily removed
-before emission. This is an unconditional correctness repair without a new
-option. `tests/stages/kuna-arm-constant-shift.xml` pins the casts and signed
-consumers; `kuna-cli/tests/arm_constant_shift.rs` compiles the unchanged bodies
+before emission. The repair runs only under option `armconstshift` (default
+off, and kept out of the `aggressive` preset): firmware tests nearly every
+register flag with a sign-bit shift such as `x << 0x18 < 0`, and the defined
+form `(int)((unsigned int)x << 0x18) < 0` adds a cast pair to each one, so the
+shipped default keeps the shorter spelling. `tests/stages/kuna-arm-constant-shift.xml`
+pins the unconverted default pass and the casts and signed consumers with the
+option on; `kuna-cli/tests/arm_constant_shift.rs` compiles the unchanged bodies
 as C11 at `-O0` and `-O2`, with and without UBSan, and compares counts 0, 1, 2,
 3 and 31 against an independent unsigned 64-bit model truncated to 32 bits.
 The runtime checks cover both return signs, ASR, signed comparisons, a stored

@@ -1131,6 +1131,9 @@ Three tiers:
 | unconditional loop prints do-while (true) at the bottom | [`infloopstyle`](#infloopstyle) |
 | prefer while (true) at the top | [`infloopstyle`](#infloopstyle) |
 | need the previous infinite-loop spelling for comparison | [`infloopstyle`](#infloopstyle) |
+| a signed ARM value is shifted left by a constant in the emitted C | [`armconstshift`](#armconstshift) |
+| UBSan reports a left shift of a negative value in recompiled ARM output | [`armconstshift`](#armconstshift) |
+| a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift) |
 
 ## Toggleable transforms
 
@@ -3415,6 +3418,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** While by default: unconditional loops print while (true) at the top. Set do to recover the previous spelling. Conditional do-while loops and Rust loop syntax keep their existing form.
 - **Where / provenance:** P9/infinite-loop-style · kuna · presentation-default · server-infinite-loop-style
 - **Example:** `option infloopstyle do`
+
+### `armconstshift` -- on | off, default `off`
+
+- **Symptoms:** a signed ARM value is shifted left by a constant in the emitted C; UBSan reports a left shift of a negative value in recompiled ARM output; a signed ARM shift overflows into the sign bit in recompiled output.
+- **What it does:** Print a fixed 32-bit ARM LSL of a signed operand as a shift of its unsigned conversion, `(int)((unsigned int)x << n)`, so the emitted C is defined for negative values and for bits shifted into or past the sign. The shiftee is converted once, the signed result type is restored only when the p-code output is signed, unsigned and register-count shifts are unchanged, and a signed variable is never shifted in place.
+- **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check.
+- **Where / provenance:** P9/cast-policy · kuna · correctness-fix · arm-fixed-signed-lsl
+- **Example:** `option armconstshift on`
 
 ## Programmatic use
 

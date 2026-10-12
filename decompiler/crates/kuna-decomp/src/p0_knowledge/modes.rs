@@ -482,11 +482,15 @@ mod tests {
         /// `varargsharedfloat` reads a PowerPC register choice that only -O0
         /// code preserves: on clang -O2 and -Os batteries it adds 23 arguments
         /// the source never passed for 11 it restores.
+        ///
+        /// `armconstshift` makes signed ARM constant shifts defined C at the
+        /// cost of a cast pair on every sign-bit test (`x << 0x18 < 0`), which
+        /// firmware uses for nearly every register flag check.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "bejoin", "armframes",
-              "mixedtailret", "varargsharedfloat"];
+              "mixedtailret", "varargsharedfloat", "armconstshift"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

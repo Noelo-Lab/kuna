@@ -733,10 +733,7 @@ fn direct_prototypes() -> Vec<String> {
 fn soft_float_arm_lays_declared_prototypes_out_in_core_registers() {
     let text = decompile_with(&arm_direct(false), &direct_prototypes());
     let s4 = function(&text, "s4");
-    assert!(
-        s4.contains("v1 = dmix(a,(int)((unsigned int)k << 1));"),
-        "{s4}"
-    );
+    assert!(s4.contains("v1 = dmix(a,k << 1);"), "{s4}");
     assert!(s4.contains("__aeabi_dmul(SUB84(v1,0),"), "{s4}");
     let s9 = function(&text, "s9");
     assert!(s9.contains("vsink(a,1.5,a);"), "{s9}");
@@ -751,10 +748,7 @@ fn soft_float_arm_lays_declared_prototypes_out_in_core_registers() {
 #[test]
 fn hard_float_arm_lays_declared_prototypes_out_in_vfp_registers() {
     let text = decompile_with(&arm_direct(true), &direct_prototypes());
-    assert!(
-        function(&text, "s4").contains("return dmix(a,(int)((unsigned int)k << 1)) * a;"),
-        "{text}"
-    );
+    assert!(function(&text, "s4").contains("return dmix(a,k << 1) * a;"), "{text}");
     assert!(function(&text, "s9").contains("vsink(a,1.5,a);"), "{text}");
 }
 
@@ -766,10 +760,7 @@ fn soft_float_arm_lays_dwarf_prototypes_out_in_core_registers() {
     assert!(dmix.contains("__aeabi_i2d(k)"), "{dmix}");
     assert!(dmix.contains(" = a;"), "{dmix}");
     let s4 = function(&text, "s4");
-    assert!(
-        s4.contains("v1 = dmix(a,(int)((unsigned int)k << 1));"),
-        "{s4}"
-    );
+    assert!(s4.contains("v1 = dmix(a,k << 1);"), "{s4}");
     assert!(
         !text.lines().filter_map(|line| line.split_once("; // "))
             .any(|(_, sources)| sources.split(" | ").any(|source| source == "r1")),
