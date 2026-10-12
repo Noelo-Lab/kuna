@@ -4456,10 +4456,15 @@ A partly filled tree node reserves small row numbers rather than full instructio
 records, and growing the walk allocates at most one more chunk without copying a
 whole-image buffer. Every record retains its flow targets, assembly and lazy
 p-code fields. Exact, range and interior queries still borrow the original
-record in address order. Replacing an address reuses its row; ARM frame-preserving
-rebuilds clone the records and index before extending them. Serial and parallel
-walks use the same store. This changes allocation and lookup layout, not the
-instruction partition or the facts any consumer receives.
+record in address order. Replacing an address reuses its row. Rebuilds that
+preserve ARM frames copy the ordered address index but share immutable record
+chunks. A shared chunk is copied only when a write reaches it through `get_mut`
+or replacement, or when the walk appends into a shared partial tail
+(`decompiler/crates/kuna-analysis/src/listing/kuna_insnstore.rs
+(InstructionChunk::clone)`). The copy retains full chunk capacity and leaves the
+prior Listing independent.
+Serial and parallel walks use the same store. This changes allocation and lookup
+layout, not the instruction partition or the facts any consumer receives.
 
 After loading, committing analysis and applying caller assertions, the in-process
 CLI returns unused glibc heap pages before selecting and decompiling functions
