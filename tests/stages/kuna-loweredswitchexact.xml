@@ -43,6 +43,9 @@
 
     The routing checks that decline a switch whose install would mis-route a value
     are exercised by the module unit tests.
+
+    g3 is also rendered as Rust with loweredswitchexact off and on. Both high-bit
+    selector values must remain representable by the emitted match scrutinee.
 -->
 <binaryimage arch="x86:LE:64:default:gcc">
 <bytechunk space="ram" offset="0x2548b" readonly="true">
@@ -113,6 +116,15 @@ b801000000488947204489c0c34531c0ebbf66662e0f1f8400000000000f1f00
   <com>lo fu rlater</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option setlanguage rust-language</com>
+  <com>option loweredswitchexact off</com>
+  <com>lo fu g3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loweredswitchexact on</com>
+  <com>lo fu g3</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="LOWEREDSWITCHEXACT #1: the shared-body case label appears only with the option on" min="1" max="1">case 0x91:</stringmatch>
@@ -124,4 +136,7 @@ b801000000488947204489c0c34531c0ebbf66662e0f1f8400000000000f1f00
 <stringmatch name="LOWEREDSWITCHEXACT #7: pass 2 keeps it for f, and both passes for the later-head rlater" min="3" max="3">hv\(7\);</stringmatch>
 <stringmatch name="LOWEREDSWITCHEXACT #8: likewise the second body's argument" min="3" max="3">hw\(8\);</stringmatch>
 <stringmatch name="LOWEREDSWITCHEXACT #9: rlater never switches on its selector with the load deleted" min="0" max="0">hw\(a1 \+ 1\);\s+return;\s+case</stringmatch>
+<stringmatch name="RUST LOWERED LABELS #1: both option paths retain the first unsigned high-bit pattern" min="2" max="2">0x81 =&gt; \{</stringmatch>
+<stringmatch name="RUST LOWERED LABELS #2: both option paths retain the second unsigned high-bit pattern" min="2" max="2">200 =&gt; \{</stringmatch>
+<stringmatch name="RUST LOWERED LABELS #3: lowered matches are emitted in both passes" min="2" max="2">match </stringmatch>
 </decompilertest>
