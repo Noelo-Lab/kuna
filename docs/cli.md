@@ -1810,14 +1810,15 @@ Behaviors specific to `decompile-all`:
     it is the tighter bound: for each capped cgroup
     on the path to the root, its `memory.max` less its `memory.current`
     without the file-backed LRU pages (`active_file` + `inactive_file`) that
-    reclaim can drop. The message then says `free under this cgroup's
+    reclaim can drop. The message then says `free under a cgroup's
     memory.max`. On Windows it is the smaller of the free physical memory and
     the commit still available, since Windows refuses an allocation past its
     commit limit (the worker then aborts with `0xc0000409`), and a worker's
     cost is priced from the larger of the parent's peak working set and its
     peak commit. On macOS it is `hw.memsize` times `kern.memorystatus_level`,
-    priced from `ru_maxrss`. Elsewhere, and under cgroup v1, `auto` is the
-    core count, untrimmed.
+    priced from `ru_maxrss`. A cgroup v1 limit is not read (only
+    `MemAvailable` applies); on other platforms `auto` is the core count,
+    untrimmed.
   - **Small runs are slower.** A worker pays a whole program load before its first
     function (17 s on that PE), so a run only wins once the work exceeds one such
     load — a few hundred functions there, and nothing at all on a handful of

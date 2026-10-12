@@ -3964,9 +3964,9 @@ fn jobs_auto_fits_the_cgroup_memory_cap() {
         assert!(ok, "--jobs {jobs}: {stderr}");
         assert_eq!(got, want, "--jobs {jobs} moved the document");
         let (said, workers) = if jobs == "auto" {
-            ("GB is free under this cgroup's memory.max. Pass --jobs N", "1 worker process(es)")
+            ("GB is free under a cgroup's memory.max. Pass --jobs N", "1 worker process(es)")
         } else {
-            ("GB free under this cgroup's memory.max; expect", "3 worker process(es)")
+            ("GB free under a cgroup's memory.max; expect", "3 worker process(es)")
         };
         assert!(stderr.contains(said), "--jobs {jobs}: expected {said:?}:\n{stderr}");
         assert!(stderr.contains(workers), "--jobs {jobs}: expected {workers:?}:\n{stderr}");

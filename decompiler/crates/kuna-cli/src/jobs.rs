@@ -1445,7 +1445,7 @@ fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
         return cfg.jobs;
     }
     let gb = |b: u64| b as f64 / (1024.0 * 1024.0 * 1024.0);
-    let capped = if free.cgroup { " under this cgroup's memory.max" } else { "" };
+    let capped = if free.cgroup { " under a cgroup's memory.max" } else { "" };
     if cfg.jobs_auto {
         eprintln!(
             "[kuna {tag}] auto: {affordable} worker(s), not {} — one worker needs about {:.1} GB \
