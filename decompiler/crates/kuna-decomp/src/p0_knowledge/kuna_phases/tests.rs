@@ -637,6 +637,10 @@ fn option_values_live_value_present_for_110() {
                             // same reason.  Its live value is
                             // `Architecture::syscall_regs`.
                             | "syscallregs"
+                            // (kuna) `bejoin` takes a MODE (`off|evidence|on`)
+                            // over an enum field, for the same reason.  Its live
+                            // value is `Architecture::be_join`.
+                            | "bejoin"
                             | "arraycoverwidth"
                             | "bytearrayc"
                             | "emptystrconst"
