@@ -118,8 +118,21 @@ constructor (`get_base`, `get_type_pointer`, `get_type_array`, …) builds a
 candidate and de-duplicates it through a `BTreeSet` ordered by
 `compare_dependency`-then-id (`TreeKey` in the same file) — the C++
 `DatatypeCompare` semantics, which is why structurally identical types are
-pointer-equal and `Rc::ptr_eq` is a valid fast-path everywhere. A 9×8 cache
-matrix holds the atomic types (sizes 0–8 × the eight meta-types from
+pointer-equal and `Rc::ptr_eq` is a valid fast-path everywhere.
+
+(kuna) Callable types build their prototype with
+`FuncProto::seed_locked_from_pieces`, preserving explicit parameter and return
+storage after the model assigns ordinary slots.
+An input-only declaration keeps its output unlocked. Both code-type comparators
+use each parameter's and the return value's storage address and size to break
+a tie between otherwise equal signatures, so an explicit slot-0 EDX declaration
+cannot reuse a cached slot-0 ECX prototype with the same C signature. Storage
+still participates when recursive type comparison reaches its depth limit.
+This matters for direct calls as well as function pointers: flow copies the
+function symbol's callable type before `ActionDefaultParams` can consult its
+parked prototype pieces.
+
+A 9×8 cache matrix holds the atomic types (sizes 0–8 × the eight meta-types from
 `TYPE_FLOAT` up), with special slots for 10- and 16-byte floats and the char
 types. Two policy knobs are read from the compiler spec's data-organization:
 the primitive sizes/alignments, and `max_basetype_size` — a `get_base` request

@@ -5007,9 +5007,20 @@ impl SubfloatFlow {
 
     /// Determine if the given binary float op exceeds our precision (C++
     /// `SubfloatFlow::exceedsPrecision`, subflow.cc:3201).
+    /// Arithmetic keeps its rounding width even when its inputs were widened.
     fn exceeds_precision(&mut self, data: &mut Funcdata, op: OpId) -> bool {
         let in0 = data.obank().get(op).expect("stale op").get_in(0).expect("in0");
         let in1 = data.obank().get(op).expect("stale op").get_in(1).expect("in1");
+        if matches!(
+            data.obank().get(op).expect("stale op").code(),
+            OpCode::CPUI_FLOAT_ADD
+                | OpCode::CPUI_FLOAT_SUB
+                | OpCode::CPUI_FLOAT_MULT
+                | OpCode::CPUI_FLOAT_DIV
+        ) {
+            return data.vbank().get(in0).expect("stale in0").get_size() > self.precision
+                || data.vbank().get(in1).expect("stale in1").get_size() > self.precision;
+        }
         let val1 = self.max_precision(data, in0);
         let val2 = self.max_precision(data, in1);
         let min = if val1 < val2 { val1 } else { val2 };
