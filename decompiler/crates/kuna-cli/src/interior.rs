@@ -6,9 +6,10 @@
 //! find prints a plausible `sub_<addr>` body that is a fragment of its
 //! neighbour, and nothing said so. Both surfaces now do: `kuna decompile` and
 //! `decompile-all --addr` print a `note:` on stderr naming the containing
-//! inventory entry and the offset, and the `--json` record of each addressed
-//! target carries the same fact as `interior_to`. A `--define-function` at the
-//! address makes it an entry, which is the way to say the fragment is meant.
+//! inventory entry and the offset, and the `--json` record of such a target
+//! carries the same fact as `interior_to` (absent everywhere else, so every
+//! other document is byte-identical). A `--define-function` at the address
+//! makes it an entry, which is the way to say the fragment is meant.
 
 use std::collections::BTreeMap;
 
@@ -25,9 +26,9 @@ pub(crate) struct Interior {
     pub(crate) entry: u64,
 }
 
-/// Each `--addr` target's containing entry, keyed by the target's byte
-/// address; `None` for a target that is itself an entry.
-pub(crate) type Interiors = BTreeMap<u64, Option<Interior>>;
+/// The `--addr` targets inside another entry's extent, keyed by the target's
+/// byte address.
+pub(crate) type Interiors = BTreeMap<u64, Interior>;
 
 /// Resolve every `--addr` selection's containing entry and note each one that
 /// lands inside another function.
@@ -35,14 +36,13 @@ pub(crate) fn selections(prog: &ConsoleProgram, args: &Args) -> Interiors {
     let mut found = Interiors::new();
     for target in resolve_addr_selectors(prog, args, false).unwrap_or_default() {
         let byte = target.addr.get_offset();
-        let interior = prog.entry_containing(byte).map(|owner| Interior {
+        let Some(owner) = prog.entry_containing(byte) else { continue };
+        let interior = Interior {
             addr: prog.output_code_offset(byte),
             owner: owner.name,
             entry: prog.output_code_offset(owner.addr.get_offset()),
-        });
-        if let Some(interior) = &interior {
-            eprintln!("{}", note(interior));
-        }
+        };
+        eprintln!("{}", note(&interior));
         found.insert(byte, interior);
     }
     found
@@ -62,17 +62,14 @@ pub(crate) fn note(i: &Interior) -> String {
     )
 }
 
-/// The record field: `null` for an entry, else the containing function.
-pub(crate) fn json(interior: Option<&Interior>) -> Json {
-    match interior {
-        None => Json::Null,
-        Some(i) => Json::Object(vec![
-            ("name".into(), Json::Str(i.owner.clone())),
-            ("address".into(), Json::Number(i.entry.to_string())),
-            ("address_hex".into(), Json::Str(format!("{:#x}", i.entry))),
-            ("offset".into(), Json::Number((i.addr - i.entry).to_string())),
-        ]),
-    }
+/// The record field: the containing function and the offset into it.
+pub(crate) fn json(i: &Interior) -> Json {
+    Json::Object(vec![
+        ("name".into(), Json::Str(i.owner.clone())),
+        ("address".into(), Json::Number(i.entry.to_string())),
+        ("address_hex".into(), Json::Str(format!("{:#x}", i.entry))),
+        ("offset".into(), Json::Number((i.addr - i.entry).to_string())),
+    ])
 }
 
 /// The `function containing` answer in a `decomp_dbg` transcript:
@@ -114,10 +111,9 @@ mod tests {
              0x140001040 declares a function there)"
         );
         assert_eq!(
-            dumps_compact(&json(Some(&interior))),
+            dumps_compact(&json(&interior)),
             r#"{"name":"sub_140001030","address":5368713264,"address_hex":"0x140001030","offset":16}"#
         );
-        assert_eq!(dumps_compact(&json(None)), "null");
     }
 
     #[test]

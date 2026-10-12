@@ -1197,7 +1197,7 @@ struct AllRun {
     discovered: usize,
     /// One row per `--assert` directive: what became of it.
     assertions: Vec<kuna_console::assertions::Outcome>,
-    /// What each `--addr` target lands inside, when not at an entry.
+    /// The `--addr` targets that land inside another function.
     interior: crate::interior::Interiors,
 }
 
@@ -2110,7 +2110,7 @@ fn result_json(
                     ("types".into(), types),
                 ];
                 if let Some(inside) = interior.get(&f.byte_address) {
-                    record.push(("interior_to".into(), crate::interior::json(inside.as_ref())));
+                    record.push(("interior_to".into(), crate::interior::json(inside)));
                 }
                 Json::Object(record)
             })

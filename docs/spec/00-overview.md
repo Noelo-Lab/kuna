@@ -2256,8 +2256,9 @@ answer. `kuna decompile` reads the answer off the transcript, and the in-process
 surfaces (`decompile --json`, `decompile-all --addr`) ask the same method
 directly (`decompiler/crates/kuna-cli/src/interior.rs (selections)`); both print
 one `note:` on stderr naming the containing function and the offset, and the
-JSON record of every addressed target carries it as `interior_to` (`null` when
-the address is an entry). The exit status and the C are unchanged. A
+JSON record of such a target carries it as `interior_to`. The key exists only
+there, so `kuna decompile --json` of an entry stays byte-identical to its
+`decompile-all` record, and the exit status and the C are unchanged. A
 `--define-function` at the address registers an entry there before the
 question is asked, which is how a caller says the fragment is meant.
 
