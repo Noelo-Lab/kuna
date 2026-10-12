@@ -286,7 +286,7 @@ fn cmd_catalog(argv: &[String]) -> Result<i32, String> {
     Ok(if check {
         catalog::cmd_check(pinned_by)
     } else if json {
-        catalog::cmd_json(option.as_deref(), pinned_by)
+        catalog::cmd_json(option.as_deref(), tier.as_deref(), pinned_by)
     } else if markdown {
         catalog::cmd_markdown(option.as_deref())
     } else {
@@ -311,7 +311,8 @@ fn usage_catalog() {
          --markdown regenerates docs/options.md (tier-grouped, symptom-indexed).\n\
          --check cross-checks the catalog against the engine's registered option\n\
          names and exits nonzero on drift; this is the CI gate.\n\
-         --option NAME reports one row; --tier keeps one tier.\n\
+         --option NAME reports one row; --tier keeps one tier, in the table and\n\
+         in --json.\n\
          \n\
          Upstream OptionDatabase names (maxinstruction, errortoomanyinstructions, ..)\n\
          are reachable through --option but are NOT catalog rows, so they do not\n\

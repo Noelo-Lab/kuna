@@ -124,16 +124,20 @@ fn arr_field(entry: &Json, key: &str) -> Vec<String> {
     Vec::new()
 }
 
-/// `--json`: byte-identical to `json.dumps(entries, indent=2)`.
-pub fn cmd_json(option: Option<&str>, pinned_by: Option<&str>) -> i32 {
+/// `--json`: byte-identical to `json.dumps(entries, indent=2)`, keeping the rows
+/// of `tier` only when one is given.
+pub fn cmd_json(option: Option<&str>, tier: Option<&str>, pinned_by: Option<&str>) -> i32 {
     match run_catalog(option, pinned_by) {
         Ok(v) => {
             // Python always re-dumps the *list* form (catalog() returns a list,
             // wrapping a single dict in `[data]`).
-            let list = match &v {
-                Json::Array(_) => v.clone(),
-                obj => Json::Array(vec![obj.clone()]),
-            };
+            let list = Json::Array(
+                entries(&v)
+                    .into_iter()
+                    .filter(|e| tier.is_none_or(|want| field(e, "tier") == Some(want)))
+                    .cloned()
+                    .collect(),
+            );
             crate::output::emit_with_status(&format!("{}\n", dumps_indent2(&list)), 0)
         }
         Err(e) => {

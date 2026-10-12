@@ -150,6 +150,26 @@ fn every_json_surface_names_its_root_in_help() {
     }
 }
 
+/// `--tier` keeps one tier in `--json` as it does in the table: it used to reach
+/// the table only, so `catalog --json --tier core` answered every row.
+#[test]
+fn catalog_tier_filters_the_json_as_it_filters_the_table() {
+    let rows = |argv: &[&str]| -> Vec<serde_json::Value> {
+        let out = run(argv);
+        assert_eq!(out.status.code(), Some(0), "{argv:?}: {}", help_text(&out));
+        serde_json::from_slice(&out.stdout).expect("a JSON array")
+    };
+    let all = rows(&["catalog", "--json"]);
+    let mut kept = 0;
+    for tier in ["transform", "analysis", "core"] {
+        let some = rows(&["catalog", "--json", "--tier", tier]);
+        assert!(!some.is_empty() && some.iter().all(|r| r["tier"] == tier), "{tier}: {some:?}");
+        kept += some.len();
+    }
+    assert_eq!(kept, all.len(), "the three tiers partition the catalog");
+    assert!(rows(&["catalog", "--json", "--option", "jumptablemax", "--tier", "core"]).is_empty());
+}
+
 /// Adding the help arm must not have swallowed a real usage error: an unknown
 /// option is still exit 2, and `--help` is not a way to smuggle one past.
 #[test]

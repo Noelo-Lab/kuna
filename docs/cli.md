@@ -3230,7 +3230,8 @@ generated from `decompiler/crates/kuna-decomp/phases.toml`) into the documented,
 assertion list. `--json` emits a JSON **array** with one object per option —
 `[{option,values,default,destructive_as_default,phase,subphase,strength,rewind,issue,summary,
 use_when,example,source_decompiler,inspiration,change_kind,tier,symptoms}]` — and `--option
-NAME` keeps that shape with one element, so a consumer reads both the same way. It and
+NAME` keeps that shape with one element, so a consumer reads both the same way. `--tier`
+filters the array exactly as it filters the table. It and
 `kuna docs --json` (`[{topic,title,summary,bytes}]`) are the two array-rooted documents;
 every other subcommand's `--json` is an object (`{binary,...}`, `{modes:[...]}`), and each
 `--help` names its root. `--markdown` output is tier-grouped and symptom-indexed; `--check`
