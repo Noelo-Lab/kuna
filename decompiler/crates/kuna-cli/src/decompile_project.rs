@@ -227,6 +227,7 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
     if targets.is_empty() {
         return Err(format!("no functions selected/discovered in {}", args.binary));
     }
+    crate::interior::selections(&prog, args, &targets);
 
     // `--jobs N`: the per-function loop fans out over worker processes, but the
     // parent's program stays loaded — the `.asm` section sweep and the README

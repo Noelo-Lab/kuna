@@ -4,18 +4,20 @@
 //! entry discovery missed gets decompiled at all, so such a selection is never
 //! refused. But the same command at an address inside a function discovery did
 //! find prints a plausible `sub_<addr>` body that is a fragment of its
-//! neighbour, and nothing said so. Both surfaces now do: `kuna decompile` and
-//! `decompile-all --addr` print a `note:` on stderr naming the containing
-//! inventory entry and the offset, and the `--json` record of such a target
-//! carries the same fact as `interior_to` (absent everywhere else, so every
-//! other document is byte-identical). A `--define-function` at the address
-//! makes it an entry, which is the way to say the fragment is meant.
+//! neighbour, and nothing said so -- nor did the `sub_<addr>` name of that
+//! fragment, which selects the same address. Every surface that takes an
+//! explicit selection now prints a `note:` on stderr naming the containing
+//! inventory entry and the offset, decided from the address the selection
+//! resolved to, and the `--json` record of such a target carries the same fact
+//! as `interior_to` (absent everywhere else, so every other document is
+//! byte-identical). A `--define-function` at the address makes it an entry,
+//! which is the way to say the fragment is meant.
 
 use std::collections::BTreeMap;
 
-use kuna_console::engine::ConsoleProgram;
+use kuna_console::engine::{ConsoleProgram, FunctionEntry};
 
-use crate::decompile_all::{resolve_addr_selectors, Args};
+use crate::decompile_all::Args;
 use crate::jsonfmt::Json;
 
 /// The containing entry of one addressed target, in the target's display units.
@@ -26,24 +28,28 @@ pub(crate) struct Interior {
     pub(crate) entry: u64,
 }
 
-/// The `--addr` targets inside another entry's extent, keyed by the target's
+/// The selected targets inside another entry's extent, keyed by the target's
 /// byte address.
 pub(crate) type Interiors = BTreeMap<u64, Interior>;
 
-/// Resolve every `--addr` selection's containing entry and note each one that
-/// lands inside another function.
-pub(crate) fn selections(prog: &ConsoleProgram, args: &Args) -> Interiors {
+/// Note each explicitly selected target (`--addr`/`--functions`, already
+/// resolved and deduplicated) that lands inside another function. An
+/// unfiltered run selects inventory entries only, so it asks nothing.
+pub(crate) fn selections(prog: &ConsoleProgram, args: &Args, targets: &[FunctionEntry]) -> Interiors {
     let mut found = Interiors::new();
-    for target in resolve_addr_selectors(prog, args, false).unwrap_or_default() {
-        let byte = target.addr.get_offset();
-        let Some(owner) = prog.entry_containing(byte) else { continue };
+    if args.addrs.is_empty() && args.names.is_none() {
+        return found;
+    }
+    let bytes: Vec<u64> = targets.iter().map(|t| t.addr.get_offset()).collect();
+    for (byte, owner) in bytes.iter().zip(prog.entries_containing(&bytes)) {
+        let Some(owner) = owner else { continue };
         let interior = Interior {
-            addr: prog.output_code_offset(byte),
+            addr: prog.output_code_offset(*byte),
             owner: owner.name,
             entry: prog.output_code_offset(owner.addr.get_offset()),
         };
         eprintln!("{}", note(&interior));
-        found.insert(byte, interior);
+        found.insert(*byte, interior);
     }
     found
 }

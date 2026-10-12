@@ -1180,7 +1180,7 @@ fn run_json(req: &JsonRequest) -> i32 {
 fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String>), String> {
     let mut prog = decompile_all::load_program(args, DriverDefaults::Decompile)?;
     let targets = decompile_all::resolve_targets(&prog, args)?;
-    let interior = crate::interior::selections(&prog, args);
+    let interior = crate::interior::selections(&prog, args, &targets);
     if targets.is_empty() {
         // Two different answers, and the caller acts on the difference: a binary
         // that yielded NOTHING is the whole-binary discovery failure (which names

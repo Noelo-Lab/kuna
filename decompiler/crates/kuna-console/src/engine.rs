@@ -1137,16 +1137,21 @@ impl ConsoleProgram {
             .find(|e| e.addr.get_offset() == want)
     }
 
-    /// The inventory entry whose extent holds `vma` when `vma` is not itself an
-    /// entry: what an address selection lands inside when discovery found no
-    /// function starting there (`docs/cli.md`, `interior_to`).
-    pub fn entry_containing(&self, vma: u64) -> Option<FunctionEntry> {
-        let want = self.thumb_normalized(vma);
+    /// For each of `vmas`, the inventory entry whose extent holds it when it is
+    /// not itself an entry: what a selection lands inside when discovery found
+    /// no function starting there (`docs/cli.md`, `interior_to`). The inventory
+    /// is enumerated once for the whole batch.
+    pub fn entries_containing(&self, vmas: &[u64]) -> Vec<Option<FunctionEntry>> {
         let entries = self.function_entries_canonical();
-        let below = entries.partition_point(|e| e.addr.get_offset() <= want);
-        let owner = entries.get(below.checked_sub(1)?)?;
-        let start = owner.addr.get_offset();
-        (start < want && want - start < owner.size).then(|| owner.clone())
+        vmas.iter()
+            .map(|&vma| {
+                let want = self.thumb_normalized(vma);
+                let below = entries.partition_point(|e| e.addr.get_offset() <= want);
+                let owner = entries.get(below.checked_sub(1)?)?;
+                let start = owner.addr.get_offset();
+                (start < want && want - start < owner.size).then(|| owner.clone())
+            })
+            .collect()
     }
 
     /// Resolve a selector without guessing between object-file coordinates.

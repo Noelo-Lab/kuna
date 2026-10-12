@@ -1211,13 +1211,13 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
     let load_seconds = load_started.elapsed().as_secs_f64();
     let targets = resolve_targets(&prog, args)?;
-    let interior = crate::interior::selections(&prog, args);
     let discovered = targets.len();
     let targets = if filters.narrows() {
         filters.select(&prog, &args.binary, args.slice_pref(), targets, false)?.0
     } else {
         targets
     };
+    let interior = crate::interior::selections(&prog, args, &targets);
     let whole = targets.len() == discovered && args.addrs.is_empty() && args.names.is_none();
     let (callee_first, explicit) = callee_first_decision(&prog, args, targets.len(), whole);
     // `--jobs N`: hand the targets to the worker pool and release the parent's
@@ -1653,16 +1653,17 @@ pub(crate) fn resolve_targets_allow_bodyless(
     resolve_targets_with_policy(prog, args, false)
 }
 
-/// The `--addr` selections, resolved in order through the program's shared
-/// selector model. `args.entry_seeds` is deliberately not here: a raw image's
-/// `--entry` loaded the image, and selecting on it would hide everything
-/// discovery found from it.
-pub(crate) fn resolve_addr_selectors(
+fn resolve_targets_with_policy(
     prog: &ConsoleProgram,
     args: &Args,
     require_body: bool,
 ) -> Result<Vec<FunctionEntry>, String> {
     let mut targets: Vec<FunctionEntry> = Vec::new();
+
+    // Resolve every address form through the program's shared selector model.
+    // `args.entry_seeds` is deliberately not here: a raw image's `--entry`
+    // loaded the image, and selecting on it would hide everything discovery
+    // found from it.
     for selector in &args.addrs {
         let selector = match (args.raw_image, selector) {
             (true, EntrySelector::Numeric(entry)) => EntrySelector::Numeric(
@@ -1679,15 +1680,6 @@ pub(crate) fn resolve_addr_selectors(
         };
         targets.push(entry.map_err(|error| error.to_string())?);
     }
-    Ok(targets)
-}
-
-fn resolve_targets_with_policy(
-    prog: &ConsoleProgram,
-    args: &Args,
-    require_body: bool,
-) -> Result<Vec<FunctionEntry>, String> {
-    let mut targets = resolve_addr_selectors(prog, args, require_body)?;
 
     // `--functions a,b,c`: intersect names with the enumerated set.  An ALIAS
     // resolves too — collapsing the enumeration must not make a name that used

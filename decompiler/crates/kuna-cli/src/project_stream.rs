@@ -793,6 +793,7 @@ fn export(
     if targets.is_empty() {
         return Err(format!("no functions selected/discovered in {}", args.binary));
     }
+    crate::interior::selections(&prog, args, &targets);
     // The scheduler's fallback cursor, the `.asm` labels and the reconciliation
     // all read one order, so the target list is sorted once here.
     targets.sort_by(|a, b| {

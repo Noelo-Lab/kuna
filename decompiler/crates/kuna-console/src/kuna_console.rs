@@ -1439,36 +1439,40 @@ impl IfaceCommandAction for IfcKunaFunctionSymbol {
     }
 }
 
-/// `function containing <addr>`: name the inventory entry whose extent holds
-/// `addr` when no entry starts there, so an addressed `kuna decompile` can say
-/// that it is decompiling from inside another function.
+/// `function containing <selector>`: name the inventory entry whose extent
+/// holds the function `selector` resolves to, when that is not itself an
+/// entry, so `kuna decompile` can say it is decompiling from inside another
+/// function. Silent otherwise: a selector that does not resolve is the `load`
+/// command's to report.
 pub struct IfcKunaFunctionContaining;
 
 impl IfaceCommandAction for IfcKunaFunctionContaining {
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let display = read_vma(&s.read_token())
-            .ok_or_else(|| IfaceError::parse("Missing address"))?;
+        s.skip_ws();
+        let token =
+            kuna_decomp::kuna_symbolnamebound::bound_scope_path(&s.read_token(), "::").into_owned();
         let dcp = dcp_mut(status)?;
         let prog = dcp
             .conf
             .as_mut()
             .ok_or_else(|| IfaceError::execution("No load image present"))?;
-        let vma = prog
-            .input_code_offset(display)
-            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-        let line = match prog.entry_containing(vma) {
-            Some(owner) => {
-                let entry = owner.addr.get_offset();
-                format!(
-                    "{display:#x} is interior to {} at {:#x} (+{:#x})\n",
-                    owner.name,
-                    prog.output_code_offset(entry),
-                    prog.output_code_offset(vma) - prog.output_code_offset(entry),
-                )
-            }
-            None => format!("{display:#x} is interior to no function\n"),
+        let selector = match crate::engine::EntrySelector::parse(&token) {
+            crate::engine::EntrySelector::Numeric(display) => match prog.input_code_offset(display) {
+                Ok(vma) => crate::engine::EntrySelector::Numeric(vma),
+                Err(_) => return Ok(()),
+            },
+            selector => selector,
         };
-        status.out(&line);
+        let Ok(target) = prog.resolve_entry(&selector) else { return Ok(()) };
+        let vma = target.addr.get_offset();
+        let Some(Some(owner)) = prog.entries_containing(&[vma]).pop() else { return Ok(()) };
+        let at = prog.output_code_offset(vma);
+        let entry = prog.output_code_offset(owner.addr.get_offset());
+        status.out(&format!(
+            "{at:#x} is interior to {} at {entry:#x} (+{:#x})\n",
+            owner.name,
+            at - entry
+        ));
         Ok(())
     }
 

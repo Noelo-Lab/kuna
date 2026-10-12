@@ -156,6 +156,7 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
     let executable: BTreeSet<u64> =
         prog.function_entries_executable().iter().map(|e| e.addr.get_offset()).collect();
     let mut targets = resolve_targets_allow_bodyless(&prog, args)?;
+    crate::interior::selections(&prog, args, &targets);
     targets.retain(|entry| {
         let selected = executable.contains(&entry.addr.get_offset());
         if !selected {
