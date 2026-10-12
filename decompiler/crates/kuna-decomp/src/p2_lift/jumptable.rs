@@ -2130,19 +2130,7 @@ impl JumpBasicModel {
             *rng = CircleRange::new(0, max_value, v.get_size(), stride);
         }
 
-        // Intersect any guard ranges which apply to -vn-.
-        let mut bits_preserved = 0;
-        let base_vn = GuardRecord::quasi_copy(fd, vn, &mut bits_preserved);
-        for guard in self.selectguards.iter() {
-            let matchval = guard.value_match(fd, vn, base_vn, bits_preserved);
-            // TODO: check aliases when matchval == 2 (upstream comment)
-            if matchval == 0 {
-                continue;
-            }
-            if rng.intersect(guard.get_range()) != 0 {
-                continue;
-            }
-        }
+        crate::kuna_switchguardrange::intersect(fd, &self.selectguards, vn, rng);
 
         // It may be assumed the switch value is positive; if the size is too big,
         // try only positive values.
@@ -2152,6 +2140,7 @@ impl JumpBasicModel {
             positive.intersect(rng);
             if !positive.is_empty() {
                 *rng = positive;
+                crate::kuna_switchguardrange::intersect(fd, &self.selectguards, vn, rng);
             }
         }
     }

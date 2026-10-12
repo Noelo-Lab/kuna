@@ -1,0 +1,32 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!-- Independently assembled binary64 sign-word negation.
+.text
+.global negate_double
+.type negate_double,@function
+negate_double:
+ save %sp, -112, %sp
+ st %i0, [%fp-8]
+ st %i1, [%fp-4]
+ ldd [%fp-8], %f10
+ fnegs %f10, %f0
+ fmovs %f11, %f1
+ ret
+ restore
+.size negate_double, .-negate_double
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+9de3bf90f027bff8f227bffcd51fbff881a000aa83a0002b81c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="negate_double"/>
+</binaryimage>
+<script>
+<com>parse line extern double negate_double(double x);</com>
+<com>lo fu negate_double</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="sparc-double-sign #1 restores unary negation" min="1" max="1">return -x;</stringmatch>
+<stringmatch name="sparc-double-sign #2 has no numeric high-word conversion" min="0" max="0">CONCAT44|\(float\)|SUB84</stringmatch>
+</decompilertest>

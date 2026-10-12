@@ -314,6 +314,8 @@ pub struct Funcdata {
     /// [`Self::ensure_covermerge`].  `pub(crate)` so the `funcdata_merge` bridge
     /// module can take/replace it.
     pub(crate) covermerge: Option<crate::merge::Merge>,
+    /// Revision of the call/store set and its basic-block positions.
+    affecting_ops_revision: u64,
     /// Overrides of data-flow, prototypes, etc. that are local to \b this function
     /// (C++ `Override localoverride`, `funcdata.hh:99`).  The console
     /// `override flow|prototype|...` commands write here (C++ `dcp->fd->getOverride()`),
@@ -678,6 +680,7 @@ impl Funcdata {
             heritage: crate::heritage::Heritage::new(),
             qlst: Vec::new(),
             covermerge: None,
+            affecting_ops_revision: 0,
             localoverride: crate::overrides::Override::new(),
             union_map: std::collections::BTreeMap::new(),
             pending_comments: Vec::new(),
@@ -1733,6 +1736,7 @@ impl Funcdata {
     /// `qlst.push_back(res)` in `FlowInfo::setupCallSpecs`).  Returns its index
     /// (the \e fspec handle).
     pub fn push_call_specs(&mut self, fc: FuncCallSpecs) -> int4 {
+        self.affecting_ops_changed();
         self.qlst.push(fc);
         (self.qlst.len() - 1) as int4
     }
@@ -1740,6 +1744,7 @@ impl Funcdata {
     /// Remove all call specifications (C++ `Funcdata::clearCallSpecs`,
     /// `funcdata.cc:462`).
     pub fn clear_call_specs(&mut self) {
+        self.affecting_ops_changed();
         self.qlst.clear();
     }
 
@@ -1749,11 +1754,13 @@ impl Funcdata {
     /// holds a `FuncCallSpecs *` and mutates `data` through it; the borrow checker
     /// forces the take/restore dance here.
     pub fn take_call_specs(&mut self) -> Vec<FuncCallSpecs> {
+        self.affecting_ops_changed();
         std::mem::take(&mut self.qlst)
     }
 
     /// Restore the `qlst` taken by [`Self::take_call_specs`].
     pub fn restore_call_specs(&mut self, qlst: Vec<FuncCallSpecs>) {
+        self.affecting_ops_changed();
         self.qlst = qlst;
     }
 
@@ -1768,12 +1775,14 @@ impl Funcdata {
     /// re-established before the next outer-loop iteration, and the spec just
     /// finalized is never looked up cross-call (its trials are resolved).
     pub fn replace_call_specs(&mut self, index: int4) -> FuncCallSpecs {
+        self.affecting_ops_changed();
         self.qlst.remove(index as usize)
     }
 
     /// Re-insert a call spec spliced out by [`Self::replace_call_specs`] at the
     /// same position, restoring index stability for the remaining iterations.
     pub fn restore_call_specs_at(&mut self, index: int4, fc: FuncCallSpecs) {
+        self.affecting_ops_changed();
         self.qlst.insert(index as usize, fc);
     }
 
@@ -1783,6 +1792,7 @@ impl Funcdata {
     /// identity (not the vector position; see [`Self::get_call_specs_index`]),
     /// erasing the entry does not invalidate the remaining annotation Varnodes.
     pub fn delete_call_spec(&mut self, index: int4) {
+        self.affecting_ops_changed();
         self.qlst.remove(index as usize);
     }
 
@@ -1795,6 +1805,7 @@ impl Funcdata {
     /// remaining annotation Varnodes.  A no-op if the op has no registered spec.
     pub fn delete_call_specs(&mut self, op: OpId) {
         if let Some(idx) = self.qlst.iter().position(|fc| fc.get_op() == op) {
+            self.affecting_ops_changed();
             self.qlst.remove(idx);
         }
     }
@@ -3132,6 +3143,7 @@ impl Funcdata {
     }
     /// Mutably borrow the basic blocks container.
     pub fn bblocks_mut(&mut self) -> &mut BlockGraph {
+        self.affecting_ops_changed();
         &mut self.bblocks
     }
     /// Get the control-flow structuring hierarchy (C++ `getStructure`).
@@ -3485,6 +3497,20 @@ impl Funcdata {
     // links + order) and the block arena (the BasicData head/tail/len).  The op
     // membership links are the third intrusive list of ADR 0001.
 
+    pub(crate) fn affecting_ops_revision(&self) -> u64 {
+        self.affecting_ops_revision
+    }
+
+    pub(crate) fn affecting_ops_changed(&mut self) {
+        self.affecting_ops_revision = self.affecting_ops_revision.wrapping_add(1);
+    }
+
+    pub(crate) fn op_is_call_or_store(&self, op: OpId) -> bool {
+        self.obank.get(op).is_some_and(|o| {
+            o.is_call() || o.get_opcode().is_some_and(|t| t.get_opcode() == OpCode::CPUI_STORE)
+        })
+    }
+
     /// First op in basic block `bl` (C++ `BlockBasic::beginOp()` front /
     /// `firstOp`), `None` when empty.
     pub fn bb_op_head(&self, bl: BlockId) -> Option<OpId> {
@@ -3536,6 +3562,9 @@ impl Funcdata {
     /// set the midpoint (overflow-aware).  The BRANCHIND `f_switch_out` mark is
     /// applied via the block flags.
     pub fn bb_insert_op(&mut self, op: OpId, bl: BlockId, before: Option<OpId>) {
+        if self.op_is_call_or_store(op) {
+            self.affecting_ops_changed();
+        }
         self.obank.get_mut(op).expect("bb_insert_op: stale op").set_parent(Some(bl));
 
         // Determine the predecessor `prev` of the insertion point.  Inserting
@@ -3598,6 +3627,9 @@ impl Funcdata {
     /// `block.cc:2296`).  `op` \e must be in `bl`.  Clears the op's parent and
     /// splices it out of the per-op intrusive list, fixing head/tail/len.
     pub fn bb_remove_op(&mut self, bl: BlockId, op: OpId) {
+        if self.op_is_call_or_store(op) {
+            self.affecting_ops_changed();
+        }
         self.obank.get_mut(op).expect("bb_remove_op: stale op").set_parent(None);
         let (prev, next) = self.obank.get(op).expect("bb_remove_op").basic_neighbours();
         match prev {
@@ -3620,6 +3652,7 @@ impl Funcdata {
     ///
     /// `step = (~0 / op.size()) - 1`; each op gets `count += step`.
     pub fn bb_set_order(&mut self, bl: BlockId) {
+        self.affecting_ops_changed();
         let n = self.bb_op_len(bl);
         if n == 0 {
             return;

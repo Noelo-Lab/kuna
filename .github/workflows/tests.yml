@@ -1,7 +1,8 @@
 name: Tests
 
 # Parity and integration gates run on every event. The workspace suite runs
-# for forks, main, manual dispatch, or an internal PR carrying full-ci.
+# for forks, main, manual dispatch, the nightly (which calls this workflow
+# whole), or an internal PR carrying full-ci.
 
 on:
   pull_request:
@@ -16,14 +17,18 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 # A new push to a PR supersedes that PR's in-flight run; runs on main are never
-# cancelled, so every commit that lands keeps a result of its own.
+# cancelled, so every commit that lands keeps a result of its own. In a called
+# workflow `github.workflow` is the CALLER's name, which keeps the nightly's call
+# out of the push runs' group: sharing it, a push landing while the nightly's run
+# waited would cancel that pending run.
 concurrency:
-  group: tests-${{ github.ref }}
+  group: tests-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 defaults:

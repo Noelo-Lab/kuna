@@ -705,3 +705,23 @@ fn dropped_model_labels_each_out_edge_by_its_table_values() {
         jt.block2addr.iter().map(|p| (p.block_position, p.address_index)).collect();
     assert_eq!(pairs, vec![(0, 0), (0, 1), (1, 2), (2, 3)]);
 }
+
+#[test]
+fn guard_range_retry_keeps_both_wrapped_bounds() {
+    let mut fd = build_fd();
+    let input = mk_input(&mut fd, 0x10);
+    let lower = mk_op(&mut fd, 2, 0x114, OpCode::CPUI_CBRANCH);
+    let upper = mk_op(&mut fd, 2, 0x10c, OpCode::CPUI_CBRANCH);
+    let guards = vec![
+        GuardRecord::new(&fd, lower, lower, 0, CircleRange::new(58, 0x8000003a, 4, 1), input, false),
+        GuardRecord::new(&fd, upper, upper, 0, CircleRange::new(0x80000000, 62, 4, 1), input, false),
+    ];
+    let mut range = CircleRange::new(0, 0, 4, 1);
+    crate::kuna_switchguardrange::intersect(&fd, &guards, input, &mut range);
+    assert_eq!((range.get_min(), range.get_end()), (58, 0x8000003a));
+    assert!(range.contains_val(0x80000000));
+    let mut model = JumpBasicModel::new();
+    model.selectguards = guards;
+    model.calc_range(&fd, input, &mut range);
+    assert_eq!((range.get_min(), range.get_end(), range.get_size()), (58, 62, 4));
+}

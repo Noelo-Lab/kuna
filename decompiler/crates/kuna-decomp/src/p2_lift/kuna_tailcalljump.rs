@@ -25,7 +25,7 @@
 //! ## What this module owns
 //!
 //! [`kuna_is_tail_call_branch`] is the *decision* only: is `op` a direct
-//! `CPUI_BRANCH` to the entry of another known function?  The rewrite
+//! `CPUI_BRANCH`, or a bounded `CPUI_CBRANCH`, to another known function?  The rewrite
 //! (`BRANCH` → `CPUI_CALL` + an artificial `RETURN`) is driven by `flow.rs` at the
 //! `CPUI_BRANCH` arm of `xref_control_flow`, mirroring the in-file
 //! `truncate_indirect_jump` / `setup_callind_specs` rewrite + halt-insert idiom.
@@ -118,11 +118,11 @@ impl TailCallJumpOption {
     }
 }
 
-/// (kuna) Is `op` a direct `jmp` that should be recovered as a tail call?
+/// Is `op` a direct jump, or a bounded conditional jump, to a known callee?
 ///
 /// Fires iff:
 ///   - `gate` is on (`glb->tail_call_jumps`);
-///   - `op->code() == CPUI_BRANCH` (a direct, non-indirect jump);
+///   - `op` is a BRANCH, or a CBRANCH in a function with declared bounds;
 ///   - `dest_is_known_function` — the branch target is the entry of a known
 ///     function (resolved via `query_call(dest)`; this includes PLT thunks);
 ///   - `!dest_is_self` — the target is NOT the current function's own entry
@@ -132,7 +132,9 @@ impl TailCallJumpOption {
 /// Without an asserted extent, a direct branch to another function's *entry* is
 /// a tail call; ordinary intraprocedural jumps target mid-function addresses
 /// (no function entry there) and so never match. An explicit outer extent takes
-/// precedence over an independently discovered interior entry.
+/// precedence over an independently discovered interior entry. Flow also refuses
+/// a conditional unless its target lies outside that extent and it is the last
+/// p-code op of the instruction.
 ///
 /// `dest_is_known_function` / `dest_is_self` are the already-resolved
 /// symbol-table queries (the v850 register-name STUB convention; `decompile_drive`
@@ -157,11 +159,41 @@ pub fn kuna_is_tail_call_branch(
         Some(o) => o,
         None => return false,
     };
-    // a direct jump only
-    if opref.code() != OpCode::CPUI_BRANCH {
-        return false;
+    match opref.code() {
+        OpCode::CPUI_BRANCH => true,
+        OpCode::CPUI_CBRANCH => data.get_size() > 0,
+        _ => false,
     }
-    true
+}
+
+/// Split a conditional tail into a taken call and a false-path skip. The taken
+/// block starts with an unused constant copy so its relative target survives
+/// call inlining or injection. The caller supplies the skip target after setup.
+pub fn conditional_tail_branches(
+    data: &mut Funcdata,
+    branch: OpId,
+    dest: &Address,
+) -> KunaResult<(OpId, OpId, OpId)> {
+    let site = data.obank().get(branch).expect("conditional tail: stale branch").get_addr().clone();
+    let skip = data.new_op(1, site.clone());
+    data.op_set_opcode_code(skip, OpCode::CPUI_BRANCH);
+    let taken = data.new_op(1, site.clone());
+    data.op_set_opcode_code(taken, OpCode::CPUI_COPY);
+    let zero = data.new_constant(1, 0);
+    data.op_set_input(taken, zero, 0)?;
+    data.new_unique_out(1, taken)?;
+    let call = data.new_op(1, site);
+    data.op_set_opcode_code(call, OpCode::CPUI_BRANCH);
+    let target = data.new_code_ref(dest);
+    data.op_set_input(call, target, 0)?;
+    let delta = data.obank().get(taken).expect("conditional tail: stale copy").get_time()
+        .wrapping_sub(data.obank().get(branch).expect("conditional tail: stale branch").get_time());
+    let target = data.new_constant(4, delta as u64);
+    data.op_set_input(branch, target, 0)?;
+    data.op_dead_insert_after(skip, branch);
+    data.op_dead_insert_after(taken, skip);
+    data.op_dead_insert_after(call, taken);
+    Ok((skip, taken, call))
 }
 
 /// (kuna) The one address every entry of a recovered, non-override jump table
