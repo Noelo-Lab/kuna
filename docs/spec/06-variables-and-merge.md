@@ -159,6 +159,20 @@ as live nowhere and an overlapping merge is accepted. This bites the trim COPYs
 joined a high — the merged variable then holds two values that are live at the
 same instant.
 
+The call/store crossing test snapshots operation identities, block indices and
+order positions in `PcodeOpSet`. Those positions are valid only for the IR
+revision at which they were collected. `MergeIntersect::intersection` checks
+`MergeContext::affecting_ops_revision` before consulting cached pairwise results.
+A changed revision clears both the saved operation set and the pairwise results;
+the next crossing query collects the current positions. Unchanged revisions
+reuse both caches. This matters even when a call's identity survives: a block
+renumber can move its old cached position inside a range whose end is that very
+call. Treating the stale position as an interior crossing can make an
+address-forced INDIRECT merge fail and stop required merging before a later
+loop PHI, leaving the emitted cursor without its live entering definition.
+Refreshing the positions preserves the boundary exclusion and the actual PHI
+dataflow. Calls genuinely inside the range still veto the merge.
+
 **What makes two Varnodes mergeable.** The gate is a three-rung test ladder in
 `decompiler/crates/kuna-decomp/src/p6_variables/merge.rs`, and the rung used
 determines how aggressive the merge may be:
@@ -1199,6 +1213,21 @@ its value instead of reinterpreting its bits, so the upstream layout stays
 (`double v1[3]; v1[0] = 3.75; ((char *)v1)[i & 7] = j; return (int)(v1[0] +
 v1[0]);`). When that layout is still wrong, the function falls back to no
 guard (below).
+
+For a byte STORE whose value-set guard has a fully locked range and unit step,
+`kuna_storereach.rs (locked_byte_ranges)` supplies that proven span even when
+no guard INDIRECT survives. A zeroing loop can cover a word header and a
+payload whose address is taken at an interior offset; a later header write
+must not let the fixed word hint discard the loop's array hint and split the
+payload into another C object. Coalescing the proven span keeps the header
+write, byte indexing, interior call arguments and whole-frame copy on one
+backing array. Dynamic stack, unproven ranges and stores wider than one byte
+do not contribute this evidence. The existing locked-type, float, analyzed
+frame and 256-byte limits still apply; adjacent storage outside the span is
+not included solely because its address is taken. This additional evidence
+does not replace a known wider-element indexed hint that already holds the
+whole span: bytewise clearing an `int` array accesses its representation,
+and its later integer indexing remains evidence for the integer array.
 
 A wider store is not coalesced: its open hint already carries its element type.
 But a guard of an `int`, `short` or `long` store keeps slots out to its

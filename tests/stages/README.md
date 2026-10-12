@@ -211,6 +211,12 @@ assembled synthetic examples; it contains no bytes from the reported binary.
 local preserves the incoming parameter, its entry comparisons, and the value
 passed to a callee across repeated decompilation. Its instructions are synthetic.
 
+`kuna-custom-call-storage.xml` checks an authored MSABI caller whose getter
+return is passed in EDX to a callee with one explicit formal. Repeated builds
+retain that value and the one-formal signature; the ordinary two-slot prototype
+passes the same value as argument two. The assertion API and callable-type
+interning controls are in `kuna-console/tests/verify_assertplane.rs`.
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason
@@ -242,3 +248,10 @@ the `calleeretpreserves off` pass restores the undefined return.
 `kuna-cli/tests/direct_call_return.rs` checks native and recompiled emitted C
 at `-O0` and `-O2`, real return-register writes, unknown returning calls and an
 incomplete helper. These are authored MSABI probes in an ELF container.
+
+`kuna-floatprecision.xml` pins authored scalar and packed SSE binary32 inputs
+widened for binary64 subtraction/addition before one final narrowing, plus
+widened multiplication/division and float-only/conversion-only controls.
+`kuna-cli/tests/float_precision.rs` recompiles the emitted C with GCC and Clang
+at `-O0` and `-O2` and compares its bits against the assembly for cancellation,
+subnormals, overflow, signed zeros, infinities and individual NaN payloads.
