@@ -121,7 +121,7 @@ the directories it looked in.
 | `KUNA_DECODE_SELFCHECK` | `1` runs both walks, compares them field by field and returns the serial result; `abort` panics on a difference. Keeps the runtime's panic report, as `KUNA_DECODE_STATS` does. |
 | `KUNA_DECODE_STATS` | `1` prints one line of lane/interval/round/crossing/decode counts and the walk, merge and lane-memory figures. It also keeps the runtime's panic report for a lane fault, which the fallback otherwise silences. |
 | `KUNA_DECODE_FAULT` | Test-only: `<n>` panics lane `n` once, `spawn:<n>` makes lane `n`'s spawn fail — the two fallback paths. |
-| `KUNA_CGROUP_ROOT` | Test-only: the directory read in place of `/sys/fs/cgroup` when the `--max-fn-memory` default looks for a cgroup memory cap. |
+| `KUNA_CGROUP_ROOT` | Test-only: the directory read in place of `/sys/fs/cgroup` when the `--max-fn-memory` default looks for a cgroup memory cap and when `--jobs auto` reads a cgroup's headroom. |
 | `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
 
 An override wins over both layouts, and one pointing at nothing is reported as
@@ -1709,8 +1709,9 @@ Behaviors specific to `decompile-all`:
   run outside a capped cgroup, has no default: a fixed share per worker would
   stop functions the container could have held while the other workers were
   small. An explicit value, `0` included, always wins. A function the limit never stops is unchanged.
-  It reads `/proc/self/status`, so on a platform without it a non-zero value
-  is refused and there is no default. A function the limit stops usually has an
+  It reads the resident set (`VmRSS` on Linux; on Windows the larger of the
+  working set and the private commit), so on a platform without one (macOS)
+  a non-zero value is refused, and outside a Linux cgroup there is no default. A function the limit stops usually has an
   alternative that keeps some output: `--max-size N` leaves functions over N
   bytes out of the run, and `--option maxinstruction N` truncates their flow
   (see *The instruction budget*).
@@ -1801,7 +1802,22 @@ Behaviors specific to `decompile-all`:
     hands over; `--jobs-full-load` puts each worker back on the parent's own load
     and its memory. `--jobs auto` takes this machine's parallelism capped at 16,
     then lowers that to what free memory holds and says so; an explicit
-    `--jobs N` is obeyed with a warning instead.
+    `--jobs N` is obeyed with a warning instead. The pool takes two thirds of
+    the free memory, at a quarter of the parent's peak resident set per worker
+    (256 MiB at least; the whole peak with `--jobs-full-load`). Free memory is
+    Linux `MemAvailable`, or, under a cgroup v2 `memory.max` (`docker run
+    --memory`, `systemd-run -p MemoryMax=`), what that cap still leaves when
+    it is the tighter bound: for each capped cgroup
+    on the path to the root, its `memory.max` less its `memory.current`
+    without the file-backed LRU pages (`active_file` + `inactive_file`) that
+    reclaim can drop. The message then says `free under this cgroup's
+    memory.max`. On Windows it is the smaller of the free physical memory and
+    the commit still available, since Windows refuses an allocation past its
+    commit limit (the worker then aborts with `0xc0000409`), and a worker's
+    cost is priced from the larger of the parent's peak working set and its
+    peak commit. On macOS it is `hw.memsize` times `kern.memorystatus_level`,
+    priced from `ru_maxrss`. Elsewhere, and under cgroup v1, `auto` is the
+    core count, untrimmed.
   - **Small runs are slower.** A worker pays a whole program load before its first
     function (17 s on that PE), so a run only wins once the work exceeds one such
     load — a few hundred functions there, and nothing at all on a handful of

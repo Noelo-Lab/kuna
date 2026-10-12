@@ -1514,8 +1514,11 @@ take a default from the smallest finite cgroup v2 `memory.max` on the
 process's path to the root, less max(512 MiB, 10%) (`kuna_fnmemory.rs
 (default_limit_mib)`); a `--jobs N` pool and a run outside a capped cgroup
 have none. `--jobs` workers and `decomp_dbg` take the parent's resolved
-value. A function whose drive
-completes before expiry is byte-identical with or without a budget, and the
+value. The resident set is
+`decompiler/crates/kuna-decomp/src/infra/kuna_hostmem.rs (resident_bytes)`:
+`VmRSS` on Linux, and on Windows the larger of the working set and the private
+commit; a platform that reports no resident set (macOS) refuses a non-zero
+limit. A function whose drive completes before expiry is byte-identical with or without a budget, and the
 console/parity paths never set one. It is not a hard wall around discovery,
 unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
 construction, total project time, or memory.
@@ -1760,6 +1763,28 @@ The seeding is strictly additive — an address this load already resolves, or a
 it already carries, is left alone — because a name is installed into the scope its
 `::` path names, and replacing one buries a name the worker derived correctly.
 `--jobs-full-load` restores the parent's exact load in every worker.
+
+The pool's width is fixed after the parent's load, the only point at which the
+parent knows what a load costs (`decompiler/crates/kuna-cli/src/jobs.rs
+(affordable_jobs)`). A worker is priced at a quarter of the parent's peak
+resident set, less what its decode lanes added (256 MiB at least; the whole
+peak under `--jobs-full-load`), and the pool may take two thirds of the memory a
+new process could still take
+(`decompiler/crates/kuna-decomp/src/infra/kuna_hostmem.rs (available)`). On
+Linux that is `MemAvailable`, or the headroom of the cgroup v2 hierarchy the
+process runs in when that is smaller: each cgroup on the path to the root with
+a finite `memory.max` leaves that cap less its `memory.current` without the
+file-backed LRU pages reclaim can drop, and the smallest such headroom bounds
+the pool (`kuna_hostmem.rs (headroom_from)`), because a container's cap kills a
+worker long before the host runs short. On Windows it is the smaller of the
+free physical memory and the commit still available under the commit limit,
+and the parent's cost is the larger of its peak working set and its peak
+commit: Windows refuses an allocation past the commit limit rather than
+overcommitting, and the worker aborts. On macOS it is the physical memory times
+the percentage the memory status reports free, and the cost is `ru_maxrss`.
+`--jobs auto` comes down to what fits and names the bound it hit; an explicit
+`--jobs N` is kept and warned about. Where neither number is known, `auto` is
+the core count.
 
 Progress is written to stderr. Its ETA is withheld until each worker has completed
 its first chunk and then uses only the rate measured after that point, so every
