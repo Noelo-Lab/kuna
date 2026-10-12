@@ -159,6 +159,20 @@ as live nowhere and an overlapping merge is accepted. This bites the trim COPYs
 joined a high — the merged variable then holds two values that are live at the
 same instant.
 
+The call/store crossing test snapshots operation identities, block indices and
+order positions in `PcodeOpSet`. Those positions are valid only for the IR
+revision at which they were collected. `MergeIntersect::intersection` checks
+`MergeContext::affecting_ops_revision` before consulting cached pairwise results.
+A changed revision clears both the saved operation set and the pairwise results;
+the next crossing query collects the current positions. Unchanged revisions
+reuse both caches. This matters even when a call's identity survives: a block
+renumber can move its old cached position inside a range whose end is that very
+call. Treating the stale position as an interior crossing can make an
+address-forced INDIRECT merge fail and stop required merging before a later
+loop PHI, leaving the emitted cursor without its live entering definition.
+Refreshing the positions preserves the boundary exclusion and the actual PHI
+dataflow. Calls genuinely inside the range still veto the merge.
+
 **What makes two Varnodes mergeable.** The gate is a three-rung test ladder in
 `decompiler/crates/kuna-decomp/src/p6_variables/merge.rs`, and the rung used
 determines how aggressive the merge may be:
@@ -535,6 +549,33 @@ inside it vetoes. Getting that range wrong is directly a wrong-value bug: a
 parameter in one variable, and if the reload that follows a call clobbering the
 same storage is called redundant and silenced, the emitted C returns the call's
 result on a path where the binary returns the parameter.
+
+The copy marker also runs
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_undefinedcopy.rs` for trim
+copies whose source is an INDIRECT creation explicitly marked as killed by a
+call, rather than a possible return value. Predicated loads can leave such a
+source on an unused phi edge: `if (valid) p = load(); if (valid && pending) use(p)`
+does not read the old register when `valid` is false. Materializing the phi edge
+as an unconditional `p = undefined_register` introduces a C read that the
+instructions never perform.
+
+A bounded CFG walk starts at the creation, propagates its value through COPY,
+CAST, selected MULTIEQUAL inputs and non-creating INDIRECT operations, and
+tracks zero/nonzero facts for copies, extensions, zero comparisons and boolean
+operators, using the [p-code boolean domain](https://ghidra.re/ghidra_docs/languages/html/pcoderef.html)
+of 0 and 1 for boolean operations. Each phi selects its incoming edge from the
+state before the block's phis; branch flips are respected, and definitions replace earlier facts on loop
+iterations. At block entry, facts for dominated definitions that must execute
+again are discarded, except for the selected phi inputs carrying the preceding
+iteration. This closes loops without retaining unrelated dead branch facts.
+A reachable non-transfer use rejects suppression, as does any
+address-tied or persistent destination. Only when no such use is reachable is
+the temporary COPY marked non-printing. The SSA graph, guarded definitions,
+memory operations and genuine undefined paths remain intact. Unsupported
+control flow, 1,024 distinct states or exhaustion of a shared 16,384-step budget
+retain the original copies. The authored conditional-register regression checks
+unchanged C at O0/O2 with uninitialized diagnostics, 32-bit runtime model checks,
+and controls whose undefined values really reach their returns.
 
 The pairs of one group are tested together (`funcdata_merge.rs
 (MergeContext::redundant_copies)`): the high's other writes are listed by block
@@ -932,6 +973,46 @@ failure mode is tolerance, not an abort — the layout keeps the conceded
 unknowns (upstream additionally emits a "Could not reconcile some variable
 overlaps" warning header; kuna stubs that diagnostic).
 
+**Call-escaped integer storage (kuna `callarrayextent`, default `off`).**
+A plain frame address passed to a declared integer-pointer parameter can
+refer to more storage than its first directly observed slot. If a later slot
+is read from an `INDIRECT` caused by that same direct call, the default layout
+can split it from the passed array and print an independent uninitialized
+scalar. `option callarrayextent on` represents the region as a single array,
+using the next address-taken frame base or the local frame end as its capacity,
+whichever comes first, and never extending past offset zero. Regions whose
+available capacity exceeds 4096 bytes decline the change.
+This is an opt-in storage representation: a pointer prototype does not prove
+the source array's length. It does not infer a callee's exact write footprint.
+
+Only unindexed addresses whose live uses are direct calls at locked, matching
+4- or 8-byte integer-pointer parameters qualify. Undeclared, variadic-format
+or overridden prototypes, other pointer uses and conflicting pointees at the
+same passed address decline.
+A frame address carried through a `MULTIEQUAL` before the call is not a direct
+call use and declines as well.
+A compatible multi-element parent that crosses the passed address or ends
+exactly there keeps its complete minimum extent: an open hint covers at least
+`highind + 1` elements, rather than one. The common allocation begins at that
+parent's base, so widening an interior or adjacent output pointer cannot
+truncate an earlier initialization loop. If its minimum extent already crosses
+the capacity bound, the change is declined. A single unindexed open scalar
+cannot seed this parent expansion, and a parent reconstructed from contiguous
+hints stops at the passed address unless the parent's own indexed extent
+already crosses it.
+
+All overlapping hints must be unlocked integer or unknown storage, with a
+matching element width and aligned element positions, wholly inside the common
+allocation. Integer arrays are allowed; floating-point values, other aggregates,
+type locks and hints crossing the allocation veto the change. Independently
+defined caller values in the newly extended tail also veto it. Existing parent
+storage retains its earlier values and aliases. The qualifying post-call read
+is still recognized relative to the original passed address, not the expanded
+parent base. Parameters and positive frame offsets are excluded. Explicit local
+types remain authoritative. The implementation is
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callarrayextent.rs`.
+
+
 **An indexed array's extent (kuna `arrayextent`, default `on`).** The [0,3]
 floor is all upstream knows about an indexed base whose guard the value-set
 refinement could not lock, and the refinement fails on ordinary loops: one that
@@ -1199,6 +1280,21 @@ its value instead of reinterpreting its bits, so the upstream layout stays
 (`double v1[3]; v1[0] = 3.75; ((char *)v1)[i & 7] = j; return (int)(v1[0] +
 v1[0]);`). When that layout is still wrong, the function falls back to no
 guard (below).
+
+For a byte STORE whose value-set guard has a fully locked range and unit step,
+`kuna_storereach.rs (locked_byte_ranges)` supplies that proven span even when
+no guard INDIRECT survives. A zeroing loop can cover a word header and a
+payload whose address is taken at an interior offset; a later header write
+must not let the fixed word hint discard the loop's array hint and split the
+payload into another C object. Coalescing the proven span keeps the header
+write, byte indexing, interior call arguments and whole-frame copy on one
+backing array. Dynamic stack, unproven ranges and stores wider than one byte
+do not contribute this evidence. The existing locked-type, float, analyzed
+frame and 256-byte limits still apply; adjacent storage outside the span is
+not included solely because its address is taken. This additional evidence
+does not replace a known wider-element indexed hint that already holds the
+whole span: bytewise clearing an `int` array accesses its representation,
+and its later integer indexing remains evidence for the integer array.
 
 A wider store is not coalesced: its open hint already carries its element type.
 But a guard of an `int`, `short` or `long` store keeps slots out to its

@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v5t:default">
+<!-- Authored A32 branch instructions, assembled from kuna-cli/tests/fixtures/arm_conditional_switch.S. -->
+<bytechunk space="ram" offset="0x10000">000050e3100000ba3d0050e30e0000ca3a0050e200f18f500b0000ea020000ea030000ea040000ea050000ea0b00a0e31eff2fe10c00a0e31eff2fe10d00a0e31eff2fe10e00a0e31eff2fe10000e0e31eff2fe1</bytechunk>
+<symbol space="ram" offset="0x10000" name="arm_switch_conditional"/>
+<bytechunk space="ram" offset="0x10054">000050e30f0000ba030050e30d0000ca00f18fe00b0000ea020000ea030000ea040000ea050000ea1500a0e31eff2fe11600a0e31eff2fe11700a0e31eff2fe11800a0e31eff2fe10000e0e31eff2fe1</bytechunk>
+<symbol space="ram" offset="0x10054" name="arm_switch_unconditional"/>
+<bytechunk space="ram" offset="0x100a4">030050e300f18f900b0000ea020000ea030000ea040000ea050000ea1f00a0e31eff2fe12000a0e31eff2fe12100a0e31eff2fe12200a0e31eff2fe10000e0e31eff2fe1</bytechunk>
+<symbol space="ram" offset="0x100a4" name="arm_switch_addls"/>
+<bytechunk space="ram" offset="0x100e8">10402de90140a0e1000050e3100000ba3d0050e30e0000ca3a0050e200f18f500b0000ea020000ea030000ea040000ea050000ea2900a0e3060000ea2a00a0e3040000ea2b00a0e3020000ea2c00a0e3000000ea0000e0e3040080e01080bde8</bytechunk>
+<symbol space="ram" offset="0x100e8" name="arm_switch_frame"/>
+<bytechunk space="ram" offset="0x10148">10402de9004090e50100a0e134ff2fe1010080e21080bde8</bytechunk>
+<symbol space="ram" offset="0x10148" name="arm_indirect_call"/>
+</binaryimage>
+<script>
+  <com>parse line typedef struct Callback { int4 (*invoke)(int4); } Callback;</com>
+  <com>parse line extern int4 arm_switch_conditional(int4 input);</com>
+  <com>parse line extern int4 arm_switch_unconditional(int4 input);</com>
+  <com>parse line extern int4 arm_switch_addls(int4 input);</com>
+  <com>parse line extern int4 arm_switch_frame(int4 input, int4 bias);</com>
+  <com>parse line extern int4 arm_indirect_call(struct Callback *target, int4 input);</com>
+  <com>option tailcalljump on</com>
+  <com>load function arm_switch_conditional</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function arm_switch_unconditional</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function arm_switch_addls</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function arm_switch_frame</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function arm_indirect_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option tailcalljump off</com>
+  <com>load function arm_switch_conditional</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function arm_switch_unconditional</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function arm_switch_addls</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function arm_switch_frame</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function arm_indirect_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ARM GUARD RANGE #1: both ADDPL tables and healthy controls recover switches" min="8" max="8">switch\s*\(</stringmatch>
+<stringmatch name="ARM GUARD RANGE #2: branch entries never become calls" min="0" max="0">jump-as-call|\(code \*\)</stringmatch>
+<stringmatch name="ARM GUARD RANGE #3: all four cases remain" min="8" max="8">case (3|0x3d|61):</stringmatch>
+<stringmatch name="ARM GUARD RANGE #4: signed lower-bound guards remain" min="6" max="6">input &lt;= -1|0 &lt;= input</stringmatch>
+<stringmatch name="ARM GUARD RANGE #5: the genuine indirect call remains" min="2" max="2">return \(\*v[0-9]+\)\(input\) \+ 1;</stringmatch>
+</decompilertest>

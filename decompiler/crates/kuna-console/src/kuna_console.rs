@@ -166,6 +166,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         });
     }
     Some(Cow::Borrowed(match option {
+        "bytearrayc" => on_off(conf.print().options.bytearray_c),
         "infloopstyle" => if conf.print().options.inf_loop_top { "while" } else { "do" },
         "loopcontinue" => on_off(conf.loop_continue),
         "compareform" => {
@@ -180,7 +181,9 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "arraynotation" => on_off(conf.print().options.array_notation()),
         "thumbfuncptr" => on_off(conf.preserve_thumb_funcptr),
         "armfloatargs" => on_off(conf.arm_float_args),
+        "callarrayextent" => on_off(conf.call_array_extent),
         "inferfuncentry" => on_off(conf.infer_funcentry),
+        "globalarrayanchor" => on_off(conf.global_array_anchor),
         "booleanmask" => on_off(conf.fold_boolean_mask),
         "ovlesssimplify" => on_off(conf.ov_less_simplify),
         "flagcompare" => on_off(conf.fold_flag_compare),

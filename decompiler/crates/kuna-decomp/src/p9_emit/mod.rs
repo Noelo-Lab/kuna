@@ -30,6 +30,7 @@ pub mod kuna_labelstmt; // (kuna) every printed C label labels a statement
 pub mod kuna_warnstyle;
 pub mod kuna_infloopstyle;
 pub mod kuna_arraycoverwidth;
+pub mod kuna_bytearrayc;
 pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled LSL
 mod kuna_armconstantshift;
 pub mod kuna_emptystrconst;

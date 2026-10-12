@@ -459,6 +459,8 @@ pub struct PrintCOptions {
     /// renders as the width-carrying `name._<off>_<size>_` field instead of a
     /// subscript / bare name (`option arraycoverwidth`).
     pub array_cover_width: bool,
+    /// Render supported mapped byte-array transfers with standard C helpers.
+    pub bytearray_c: bool,
     /// (kuna) A constant pointer whose readonly target spells a ZERO-character
     /// string declines the `""` literal and prints its address instead
     /// (`option emptystrconst`).
@@ -513,6 +515,7 @@ impl PrintCOptions {
             inf_loop_top: true,
             warn_inline: true, // (kuna) DIV-39; no upstream equivalent
             array_cover_width: true, // (kuna) no upstream equivalent
+            bytearray_c: false,
             empty_str_const: true,   // (kuna) no upstream equivalent
             struct_defs: false,      // (kuna) no upstream equivalent; opt-in
             global_ref: true,        // (kuna) no upstream equivalent
@@ -2591,6 +2594,7 @@ impl PrintC {
         let markup = MarkupRef::none();
 
         self.emit_type_definition_preamble(fd);
+        self.emit_bytearray_preamble(fd);
 
         let id1 = self.emit.begin_function();
         // emitCommentFuncHeader(fd): the header warning comments (C++
@@ -2651,6 +2655,173 @@ impl PrintC {
         // (kuna) Retire the scoped fd pointer (see the field doc): it is valid
         // only for this call's dynamic extent.
         self.emit_fd = None;
+    }
+
+    fn bytearray_access(
+        &self,
+        fd: &Funcdata,
+        vn: VarnodeId,
+    ) -> Option<crate::kuna_bytearrayc::Access> {
+        if !self.options.bytearray_c || self.out_lang != crate::kuna_lang::OutLang::C {
+            return None;
+        }
+        crate::kuna_bytearrayc::access(fd, vn)
+    }
+
+    fn emit_bytearray_preamble(&mut self, fd: &Funcdata) {
+        if !self.options.bytearray_c || self.out_lang != crate::kuna_lang::OutLang::C {
+            return;
+        }
+        let pairs: std::collections::BTreeSet<_> = fd
+            .vbank()
+            .iter_loc()
+            .filter_map(|vn| {
+                self.bytearray_access(fd, vn)
+                    .filter(|a| a.size > 1)
+                    .map(|a| (a.size, a.big))
+            })
+            .collect();
+        for (size, big) in pairs {
+            for line in crate::kuna_bytearrayc::preamble(size, big).lines() {
+                self.emit.tag_line();
+                self.emit.print(line, SyntaxHighlight::NoColor);
+            }
+        }
+    }
+
+    fn push_bytearray_address(
+        &mut self,
+        access: &crate::kuna_bytearrayc::Access,
+        op: OpId,
+        vn: VarnodeId,
+    ) {
+        self.push_atom(&Atom::with_op_vn(
+            format!("&{}[{}]", access.name, access.offset),
+            TagType::VarToken,
+            crate::printlanguage::SyntaxHighlight::var_color,
+            op_key(op),
+            vn_key(vn),
+        ));
+    }
+
+    fn push_bytearray_read(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        vn: VarnodeId,
+        op: OpId,
+    ) -> bool {
+        let Some(access) = self.bytearray_access(fd, vn) else {
+            return false;
+        };
+        if access.size == 1 {
+            self.push_atom(&Atom::with_op_vn(
+                format!("{}[0]", access.name),
+                TagType::VarToken,
+                crate::printlanguage::SyntaxHighlight::var_color,
+                op_key(op),
+                vn_key(vn),
+            ));
+            return true;
+        }
+        let ty = fd.vbank().get(vn).unwrap().get_type_read_facing(op).clone();
+        let ty = ty.get_stripped().unwrap_or(ty);
+        let cast = if matches!(
+            ty.get_metatype(),
+            crate::dtype::type_metatype::TYPE_INT | crate::dtype::type_metatype::TYPE_UINT
+        ) && ty.get_size() == access.size
+        {
+            ty.clone()
+        } else {
+            let Ok(ty) = arch
+                .types()
+                .get_base(access.size, crate::dtype::type_metatype::TYPE_UINT)
+            else {
+                return false;
+            };
+            ty
+        };
+        self.push_cast_open(&cast, op);
+        self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+        self.push_atom(&Atom::syntax(
+            crate::kuna_bytearrayc::helper(access.size, access.big, false),
+            TagType::FuncToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+        ));
+        self.push_bytearray_address(&access, op, vn);
+        self.push_cast_close(&cast);
+        true
+    }
+
+    fn emit_bytearray_store(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
+        let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()) else {
+            return false;
+        };
+        let Some(access) = self.bytearray_access(fd, out) else {
+            return false;
+        };
+        let operation = fd.obank().get(op).unwrap();
+        if matches!(operation.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST)
+            && operation
+                .get_in(0)
+                .and_then(|vn| fd.vbank().get(vn))
+                .is_some_and(|v| {
+                    matches!(
+                        v.get_type_read_facing(op).get_metatype(),
+                        type_metatype::TYPE_FLOAT
+                            | type_metatype::TYPE_PTR
+                            | type_metatype::TYPE_PTRREL
+                            | type_metatype::TYPE_STRUCT
+                            | type_metatype::TYPE_UNION
+                            | type_metatype::TYPE_CODE
+                    )
+                })
+        {
+            return false;
+        }
+        if access.size == 1 {
+            self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
+            self.push_atom(&Atom::with_op_vn(
+                format!("{}[0]", access.name),
+                TagType::VarToken,
+                crate::printlanguage::SyntaxHighlight::var_color,
+                op_key(op),
+                vn_key(out),
+            ));
+            self.push_bytearray_store_value(fd, arch, op, out);
+            return true;
+        }
+        self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+        self.push_atom(&Atom::syntax(
+            crate::kuna_bytearrayc::helper(access.size, access.big, true),
+            TagType::FuncToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+        ));
+        self.push_op(&tokens::COMMA, Some(op_key(op)));
+        self.push_bytearray_address(&access, op, out);
+        self.push_bytearray_store_value(fd, arch, op, out);
+        true
+    }
+
+    /// A same-width integer CAST changes the array view, not the stored bits.
+    fn push_bytearray_store_value(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        out: VarnodeId,
+    ) {
+        let operation = fd.obank().get(op).unwrap();
+        let input = operation.get_in(0).filter(|&vn| {
+            fd.vbank().get(vn).map(|v| v.get_size()) == fd.vbank().get(out).map(|v| v.get_size())
+        });
+        self.stmt_op = Some(op);
+        if operation.code() == OpCode::CPUI_CAST && input.is_some() {
+            self.push_vn_ir(fd, arch, input.unwrap(), op);
+        } else {
+            self.op_push_ir(fd, arch, op, None);
+        }
+        self.stmt_op = None;
     }
 
     /// (kuna `structdefs`) Emit the definitions of the composite/enum/typedef
@@ -5529,6 +5700,9 @@ impl PrintC {
     /// C++ `PrintC::emitExpression` (printc.cc:2544): if the op has an output,
     /// open an assignment to it, then push the op's expression and recurse.
     fn emit_expression_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.options.bytearray_c && self.emit_bytearray_store(fd, arch, op) {
+            return;
+        }
         // C++ `if (option_inplace_ops && emitInplaceOp(op)) return;`
         // (printc.cc:2546) — the in-place `OP=` render, kuna DIV-36 default-on
         // (`option inplaceops off` restores the upstream `out = out OP y` form).
@@ -5801,8 +5975,14 @@ impl PrintC {
                     // form.  CPUI_CAST / CPUI_FLOAT_FLOAT2FLOAT / CPUI_FLOAT_TRUNC
                     // all reduce to opTypeCast (printc.hh:332-341) — they render as
                     // a parenthesized type cast, not a functional `OPC(args)`.
+                    OpEmitKind::TypeCast if opc == OpCode::CPUI_FLOAT_FLOAT2FLOAT => {
+                        let implied = self.float_widening_is_c_promoted(fd, arch, op, read_op);
+                        self.op_type_cast_ir_with(fd, arch, op, implied)
+                    }
                     OpEmitKind::TypeCast if opc == OpCode::CPUI_CAST => {
-                        if self.widen_drops(fd, arch, op, read_op) {
+                        if self.float_widening_is_c_promoted(fd, arch, op, read_op) {
+                            self.op_type_cast_ir_with(fd, arch, op, true);
+                        } else if self.widen_drops(fd, arch, op, read_op) {
                             self.op_hidden_func_ir(fd, arch, op);
                         } else {
                             let implied = self.implied_cast_drops(fd, arch, op, read_op);
@@ -6395,6 +6575,99 @@ impl PrintC {
         }
     }
 
+    /// Does C's arithmetic conversion already perform this float widening?
+    ///
+    /// A `float` operand of a binary operation is converted to `double` when the
+    /// other operand is a double constant.  The native operation remains
+    /// double-width in the IR; only its redundant input cast is omitted in C.
+    /// This deliberately excludes variable-variable arithmetic, where both
+    /// explicit widenings are needed to preserve the operation's precision in
+    /// the printed expression.  Rust has no such implicit conversion and keeps
+    /// the cast.
+    fn float_widening_is_c_promoted(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        read_op: Option<OpId>,
+    ) -> bool {
+        use crate::dtype::type_metatype;
+
+        if self.out_lang != crate::kuna_lang::OutLang::C {
+            return false;
+        }
+        let Some(read_op) = read_op else { return false };
+        let Some(cast) = fd.obank().get(op) else { return false };
+        let (Some(source_id), Some(widened_id)) = (cast.get_in(0), cast.get_out()) else {
+            return false;
+        };
+        let model = crate::kuna_ctypes::CDataModel::from_types(&*arch.types());
+        let (Some(source), Some(widened)) = (
+            fd.vbank().get(source_id),
+            fd.vbank().get(widened_id),
+        ) else {
+            return false;
+        };
+        // Implied union-field values can retain the union as their def-facing
+        // type even though CPUI_FLOAT_FLOAT2FLOAT itself proves the operand is
+        // floating.  Generic CPUI_CAST still needs the explicit floating type.
+        let source_is_float = source.get_type_def_facing().get_metatype() == type_metatype::TYPE_FLOAT
+            || cast.code() == OpCode::CPUI_FLOAT_FLOAT2FLOAT;
+        if source.get_size() != model.float_size
+            || !source_is_float
+            || widened.get_size() != model.double_size
+            || widened.get_type_def_facing().get_metatype() != type_metatype::TYPE_FLOAT
+        {
+            return false;
+        }
+
+        let Some(reader) = fd.obank().get(read_op) else { return false };
+        if reader.num_input() != 2
+            || !matches!(
+                reader.code(),
+                OpCode::CPUI_FLOAT_ADD
+                    | OpCode::CPUI_FLOAT_SUB
+                    | OpCode::CPUI_FLOAT_MULT
+                    | OpCode::CPUI_FLOAT_DIV
+            )
+        {
+            return false;
+        }
+        let Some(result) = reader.get_out().and_then(|vn| fd.vbank().get(vn)) else {
+            return false;
+        };
+        if result.get_size() != model.double_size
+            || result.get_type_def_facing().get_metatype() != type_metatype::TYPE_FLOAT
+        {
+            return false;
+        }
+        let (Some(in0), Some(in1)) = (reader.get_in(0), reader.get_in(1)) else {
+            return false;
+        };
+        let other = if in0 == widened_id {
+            in1
+        } else if in1 == widened_id {
+            in0
+        } else {
+            return false;
+        };
+        let Some(other) = fd.vbank().get(other) else { return false };
+        if !other.is_constant()
+            || other.get_size() != model.double_size
+            || other.get_type_def_facing().get_metatype() != type_metatype::TYPE_FLOAT
+        {
+            return false;
+        }
+        let Some(format) = arch.translate().get_float_format(model.double_size) else {
+            return false;
+        };
+        let (_, class) = format.get_host_float(other.get_offset());
+        !matches!(
+            class,
+            kuna_num::float::floatclass::infinity | kuna_num::float::floatclass::nan
+        )
+    }
+
     /// C++ `PrintC::opTypeCast` (printc.cc:468): the C cast-notation `(type)operand`
     /// form shared by `opCast` / `opFloatFloat2Float` / `opFloatTrunc`
     /// (printc.hh:332-341, all `{ opTypeCast(op); }`).  The cast's target type is
@@ -6418,6 +6691,23 @@ impl PrintC {
     /// [`op_type_cast_ir`](Self::op_type_cast_ir), leaving the cast out when
     /// `implied` (kuna `castimplied`: C's own conversion performs it).
     fn op_type_cast_ir_with(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, implied: bool) {
+        if self.options.bytearray_c
+            && self
+                .stmt_op
+                .and_then(|stmt| fd.obank().get(stmt).and_then(|o| o.get_out()))
+                .and_then(|vn| self.bytearray_access(fd, vn))
+                .is_some()
+        {
+            if let Some(input) = crate::kuna_bytearrayc::integer_array_cast(fd, op) {
+                let size = fd.vbank().get(input).unwrap().get_size();
+                if let Ok(ty) = arch.types().get_base(size, type_metatype::TYPE_UINT) {
+                    self.push_cast_open(&ty, op);
+                    self.push_vn_ir(fd, arch, input, op);
+                    self.push_cast_close(&ty);
+                    return;
+                }
+            }
+        }
         // C++ `opTypeCast` (printc.cc:468-484): when the target type is a
         // pointer-to-array, a CAST that is really an address-of an array Symbol
         // renders as `&sym` (dropping the spurious `(T(*)[n])` cast) instead of the
@@ -8321,6 +8611,12 @@ impl PrintC {
         if let Some(high) = v.get_high() {
             let named = self.emitted_high_symbol(fd, high);
             if let Some((name, sym_off, sym_type)) = named {
+                if self.options.bytearray_c
+                    && fd.obank().get(op).and_then(|o| o.get_out()) != Some(vn)
+                    && self.push_bytearray_read(fd, arch, vn, op)
+                {
+                    return;
+                }
                 // Symbol-mapped struct/union member access (C++ `PrintC::
                 // pushSymbolDetail` -> `pushPartialSymbol`, printlanguage.cc:256-258
                 // + printc.cc:2019-2141).  When the mapped Symbol's data-type is a

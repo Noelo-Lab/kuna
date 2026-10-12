@@ -70,13 +70,25 @@ f30f1efa0fb605e82e0000c30f1f4000f30f1efa4889fa31c0c3
   <com>lo fu shift64</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option bytearrayc on</com>
+  <com>lo fu lo8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu hi8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu elem</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="ARRAYSUBFIELD #1: an 8-byte read at offset 0 of char[16] is a sized sub-field, not element 0" min="1" max="1">g\._0_8_</stringmatch>
 <stringmatch name="ARRAYSUBFIELD #2: an 8-byte read at offset 8 is a sized sub-field, not the ninth byte" min="1" max="1">g\._8_8_</stringmatch>
-<stringmatch name="ARRAYSUBFIELD #3: the bug: no size-blind element subscript survives on either wide read" min="0" max="0">g\[(0|8)\]</stringmatch>
-<stringmatch name="ARRAYSUBFIELD #4: a genuine one-byte in-element access KEEPS its subscript" min="1" max="1">g\[3\]</stringmatch>
+<stringmatch name="ARRAYSUBFIELD #3: the bug: no size-blind element subscript survives on either wide read" min="0" max="0">(^|[^&amp;])g\[(0|8)\]</stringmatch>
+<stringmatch name="ARRAYSUBFIELD #4: a genuine one-byte in-element access KEEPS its subscript" min="2" max="2">g\[3\]</stringmatch>
 <stringmatch name="ARRAYSUBFIELD #5: the reported reproducer writes the low half of the 16-byte return container at its real width" min="1" max="1">v1\._0_8_ = a0;</stringmatch>
 <stringmatch name="ARRAYSUBFIELD #6: and the high half likewise" min="1" max="1">v1\._8_8_ = 0;</stringmatch>
 <stringmatch name="ARRAYSUBFIELD #7: honest about what is NOT fixed: the whole-container shift is upstream-faithful and still not valid C" min="1" max="1">return v1\._0_16_ &lt;&lt; 0x40;</stringmatch>
+<stringmatch name="ARRAYSUBFIELD #8: opt-in C reads preserve the low eight bytes" min="1" max="1">kuna_bytearray_load64_le\(&amp;g\[0\]\)</stringmatch>
+<stringmatch name="ARRAYSUBFIELD #9: opt-in C reads preserve the high eight bytes" min="1" max="1">kuna_bytearray_load64_le\(&amp;g\[8\]\)</stringmatch>
 </decompilertest>

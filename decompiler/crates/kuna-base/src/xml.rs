@@ -2048,6 +2048,10 @@ mod tests {
         // walk gives
         // and kuna-ucomiss-unordered / an x86 float compare flag read by
         // seta/setae/setbe/setb keeps its unordered case
+        // and kuna-conditional-register / an unused guarded path does not emit
+        // a transfer from a call-clobbered register
+        // and kuna-arm-conditional-switch / a guarded A32 PC table retains its
+        // bounded case bodies after positive-domain narrowing
         // and kuna-arm-constant-shift / a signed fixed ARM LSL is defined in C
         // and kuna-thunkentry / the target of a jmp thunk is a function entry
         // and kuna-armwalkmode / a bl target keeps A32 after a blx to Thumb
@@ -2061,7 +2065,12 @@ mod tests {
         // and kuna-aifnoppad / no AIF entry starts on nop padding (GH-299)
         // and gh847-zerocallregs / a register a -fzero-call-used-regs epilogue
         // clears is not returned (GH-847)
-        assert_eq!(count, 492, "corpus file count drifted");
+        // and kuna-signed-float-trunc{,64} / signed float conversions remain signed
+        // before assignments to unsigned merged variables
+        // and kuna-globalarrayanchor{,-a64} / a negative element bias keeps the mapped array base
+        // and kuna-switchguardreload / kuna-switchunrolledsense: a guarded
+        // relative table is not read past its guard (GH-1028)
+        assert_eq!(count, 511, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

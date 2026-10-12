@@ -1,0 +1,104 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna #1028: a guarded relative jump table is read past its guard, into the
+    table that follows it, and the extra rows send flow into the middle of
+    instructions (halt_baddata).
+
+    reloaded() is gcc's compact selector dispatch: the guard compares the
+    byte in memory, and the index is a second load of the same address.
+
+        cmp     byte ptr [rdi+rsi], 4
+        ja      default
+        movzx   eax, byte ptr [rdi+rsi]
+        lea     rdx, [rip+table_a]
+        movsxd  rax, dword ptr [rdx+rax*4]
+        add     rax, rdx
+        notrack jmp rax
+
+    table_a (5 rows) is immediately followed by neighbour()'s own 8-row
+    relative table and then string data.  The two LOADs compute their
+    address with separate INT_ADDs, so the guard's range did not apply to
+    the index, the byte's full range (256 rows) was emulated, and neighbour's
+    rows were read with table_a's base.
+
+    Stage: P2 switch model (guard matching in GuardRecord::value_match).
+    A correctness fix, no option: two LOADs through addresses computed the
+    same way from the same Varnodes, with no STORE or call between them,
+    read one value, so the guard bounds the index to rows 0-4.
+
+    All assertions are on the default pipeline: the five legal rows are
+    recovered once each, the switch closes after row 4, nothing reaches an
+    instruction interior, and neighbour's own switch is unchanged.
+-->
+<bytechunk space="ram" offset="0x401000">
+803c370477330fb60437488d15e3000000486304824801d03effe0b81101
+0000c3b822010000c3b833010000c3b844010000c3b855010000c3b8ffff
+ffffc385f6741e0fb60783e8633c04771f488d158c0000000fb6c0486304
+824801d03effe00fb6470183e8633c0476e1b8feffffffc3b811020000c3
+b822020000c3b833020000c3b844020000c3b855020000c383fe07774848
+8d156c00000089f6486304b24801d03effe08d4731c38d87c1030000c38d
+87714d0000c38d87815e0000c38d87916f0000c38d87a1700000c38d87b1
+810000c38d87c1920000c331c0c392ffffff98ffffff9effffffa4ffffff
+aaffffff27ffffff2dffffff33ffffff39ffffff3fffffffa0ffffffa4ff
+ffffabffffffb2ffffffb9ffffffc0ffffffc7ffffffceffffff6d657373
+6167652030303a20756e657870656374656420746f6b656e20696e20696e
+7075740a6d6573736167652030313a20756e657870656374656420746f6b
+656e20696e20696e7075740a6d6573736167652030323a20756e65787065
+6374656420746f6b656e20696e20696e7075740a6d657373616765203033
+3a20756e657870656374656420746f6b656e20696e20696e7075740a6d65
+73736167652030343a20756e657870656374656420746f6b656e20696e20
+696e7075740a6d6573736167652030353a20756e65787065637465642074
+6f6b656e20696e20696e7075740a6d6573736167652030363a20756e6578
+70656374656420746f6b656e20696e20696e7075740a6d65737361676520
+30373a20756e657870656374656420746f6b656e20696e20696e7075740a
+6d6573736167652030383a20756e657870656374656420746f6b656e2069
+6e20696e7075740a6d6573736167652030393a20756e6578706563746564
+20746f6b656e20696e20696e7075740a6d6573736167652031303a20756e
+657870656374656420746f6b656e20696e20696e7075740a6d6573736167
+652031313a20756e657870656374656420746f6b656e20696e20696e7075
+740a6d6573736167652031323a20756e657870656374656420746f6b656e
+20696e20696e7075740a6d6573736167652031333a20756e657870656374
+656420746f6b656e20696e20696e7075740a6d6573736167652031343a20
+756e657870656374656420746f6b656e20696e20696e7075740a6d657373
+6167652031353a20756e657870656374656420746f6b656e20696e20696e
+7075740a6d6573736167652031363a20756e657870656374656420746f6b
+656e20696e20696e7075740a6d6573736167652031373a20756e65787065
+6374656420746f6b656e20696e20696e7075740a6d657373616765203138
+3a20756e657870656374656420746f6b656e20696e20696e7075740a6d65
+73736167652031393a20756e657870656374656420746f6b656e20696e20
+696e7075740a6d6573736167652032303a20756e65787065637465642074
+6f6b656e20696e20696e7075740a6d6573736167652032313a20756e6578
+70656374656420746f6b656e20696e20696e7075740a6d65737361676520
+32323a20756e657870656374656420746f6b656e20696e20696e7075740a
+6d6573736167652032333a20756e657870656374656420746f6b656e2069
+6e20696e7075740a6d6573736167652032343a20756e6578706563746564
+20746f6b656e20696e20696e7075740a6d6573736167652032353a20756e
+657870656374656420746f6b656e20696e20696e7075740a6d6573736167
+652032363a20756e657870656374656420746f6b656e20696e20696e7075
+740a6d6573736167652032373a20756e657870656374656420746f6b656e
+20696e20696e7075740a6d6573736167652032383a20756e657870656374
+656420746f6b656e20696e20696e7075740a6d6573736167652032393a20
+756e657870656374656420746f6b656e20696e20696e7075740a
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="reloaded"/>
+<symbol space="ram" offset="0x401090" name="neighbour"/>
+</binaryimage>
+<script>
+  <com>lo fu reloaded</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu neighbour</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SWITCHGUARDRELOAD #1: the five legal rows of the reloaded-byte switch are recovered once each" min="5" max="5">return 0x1(11|22|33|44|55);</stringmatch>
+<stringmatch name="SWITCHGUARDRELOAD #2: the switch closes after row 4, the last row the guard allows" min="1" max="1">case 4:
+return 0x155;
+default:
+return 0xffffffff;</stringmatch>
+<stringmatch name="SWITCHGUARDRELOAD #3: no row past the guard sends flow into an instruction interior" min="0" max="0">halt_baddata|Bad instruction</stringmatch>
+<stringmatch name="SWITCHGUARDRELOAD #4: the dispatch is a switch, not a computed call" min="0" max="0">jump-as-call</stringmatch>
+<stringmatch name="SWITCHGUARDRELOAD #5: the neighbouring table keeps its own eight rows" min="8" max="8">return a0 \+ 0x[0-9a-f]+1;</stringmatch>
+</decompilertest>

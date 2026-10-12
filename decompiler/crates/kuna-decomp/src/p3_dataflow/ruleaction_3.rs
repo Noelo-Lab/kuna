@@ -1593,6 +1593,11 @@ impl Rule for RuleCollapseConstants {
         if !collapsible {
             return 0;
         }
+        if op_code(data, op) == OpCode::CPUI_INT_ADD
+            && crate::kuna_globalarrayanchor::preserve_array_base(data, op)
+        {
+            return 0;
+        }
         //   op->collapse() drives the OpBehavior emulation (executeSimple) on the
         //   op's constant inputs; getArch()->getConstant wraps the result in a
         //   constant-space Address.  On any evaluation error the C++ catches the
@@ -2132,6 +2137,9 @@ impl Rule for RuleAddMultCollapse {
         let subop = vn_def(data, sub).expect("RuleAddMultCollapse: sub def");
         if op_code(data, subop) != opc {
             return 0; // Must be same exact operation
+        }
+        if opc == OpCode::CPUI_INT_ADD && crate::kuna_globalarrayanchor::preserve_array_base(data, op) {
+            return 0;
         }
         let mut c1 = op_in(data, subop, 1).expect("RuleAddMultCollapse: subop in1");
         if !vn_is_constant(data, c1) {

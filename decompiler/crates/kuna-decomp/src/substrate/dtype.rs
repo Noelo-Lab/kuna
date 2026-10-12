@@ -1744,16 +1744,16 @@ impl Datatype {
         if res != 2 {
             return Ok(res);
         }
-        level -= 1;
-        if level < 0 {
-            if self.id == op.get_id() {
-                return Ok(0);
-            }
-            return Ok(if self.id < op.get_id() { -1 } else { 1 });
-        }
         // compareBasic == 2 implies both protos are present.
         let proto = proto.ok_or_else(|| Datatype::code_invariant_err("compare"))?;
         let op_proto = op_proto.ok_or_else(|| Datatype::code_invariant_err("compare"))?;
+        level -= 1;
+        if level < 0 {
+            if self.id == op.get_id() {
+                return Self::compare_code_storage(proto, op_proto);
+            }
+            return Ok(if self.id < op.get_id() { -1 } else { 1 });
+        }
         let nump = proto.num_params();
         for i in 0..nump {
             let param = proto
@@ -1771,12 +1771,16 @@ impl Datatype {
         }
         let otype = proto.get_output_type();
         let opotype = op_proto.get_output_type();
-        match (otype, opotype) {
-            (None, None) => Ok(0),
-            (None, Some(_)) => Ok(1),
-            (Some(_), None) => Ok(-1),
-            (Some(o), Some(oo)) => o.compare(oo, level),
+        let res = match (otype, opotype) {
+            (None, None) => 0,
+            (None, Some(_)) => 1,
+            (Some(_), None) => -1,
+            (Some(o), Some(oo)) => o.compare(oo, level)?,
+        };
+        if res != 0 {
+            return Ok(res);
         }
+        Self::compare_code_storage(proto, op_proto)
     }
 
     /// `TypePartialStruct/TypePartialUnion/TypePartialEnum::compare` body — these
@@ -2065,6 +2069,32 @@ impl Datatype {
             return Ok(if myflags < opflags { -1 } else { 1 });
         }
         Ok(2) // Carry on with comparison of parameters
+    }
+
+    /// Distinguish identical C signatures whose argument or return storage differs.
+    fn compare_code_storage(
+        proto: &crate::fspec::FuncProto,
+        op_proto: &crate::fspec::FuncProto,
+    ) -> KunaResult<int4> {
+        for i in -1..proto.num_params() {
+            let (a, b) = if i < 0 {
+                (proto.get_output(), op_proto.get_output())
+            } else {
+                (
+                    proto
+                        .get_param(i)
+                        .ok_or_else(|| Datatype::code_invariant_err("compareStorage"))?,
+                    op_proto
+                        .get_param(i)
+                        .ok_or_else(|| Datatype::code_invariant_err("compareStorage"))?,
+                )
+            };
+            let storage = a.get_address().cmp(&b.get_address()).then(a.get_size().cmp(&b.get_size()));
+            if storage != std::cmp::Ordering::Equal {
+                return Ok(if storage == std::cmp::Ordering::Less { -1 } else { 1 });
+            }
+        }
+        Ok(0)
     }
 
     /// Transcribe the C++ `spaceid` tie-break shared by `TypePointer::compare`
@@ -2405,12 +2435,16 @@ impl Datatype {
         }
         let otype = proto.get_output_type();
         let opotype = op_proto.get_output_type();
-        match (otype, opotype) {
-            (None, None) => Ok(0),
-            (None, Some(_)) => Ok(1),
-            (Some(_), None) => Ok(-1),
-            (Some(o), Some(oo)) => Ok(Datatype::compare_dependency_ptr(o, oo)),
+        let res = match (otype, opotype) {
+            (None, None) => 0,
+            (None, Some(_)) => 1,
+            (Some(_), None) => -1,
+            (Some(o), Some(oo)) => Datatype::compare_dependency_ptr(o, oo),
+        };
+        if res != 0 {
+            return Ok(res);
         }
+        Self::compare_code_storage(proto, op_proto)
     }
 
     /// `TypeSpacebase::compareDependency` body (type.cc:3504-3514): base step,
@@ -6364,9 +6398,8 @@ impl TypeFactoryImpl {
     /// `TypeFactory::getTypeCode(const PrototypePieces&)`, type.cc:4476-4482).
     ///
     /// `setPrototype` (type.cc:3177-3190) turns on `variable_length`, builds a
-    /// fresh [`FuncProto`](crate::fspec::FuncProto), seeds the internal store
-    /// (`setInternal(sig.model, voidtype)`), recomputes storage from the pieces
-    /// (`updateAllTypes(sig)`), and locks input + output.  The C++ `sig.model` is
+    /// fresh [`FuncProto`](crate::fspec::FuncProto), assigns model storage and
+    /// preserves explicit storage via `seed_locked_from_pieces`. The C++ `sig.model` is
     /// the prototype model the declarator resolved (`decl->getModel(glb)`); a
     /// parsed function-pointer field carries no model name, so it resolves to
     /// `glb->defaultfp`, wired in via [`Self::set_proto_models`].
@@ -6416,23 +6449,8 @@ impl TypeFactoryImpl {
         // setPrototype(this, proto, voidtype):
         //   flags |= variable_length;
         tc.flags |= flags::variable_length;
-        //   proto = new FuncProto(); proto->setInternal(sig.model, voidtype);
         let mut fp = crate::fspec::FuncProto::new();
-        fp.set_internal(model, Rc::clone(&voidtype));
-        //   proto->updateAllTypes(sig); setInputLock(true); setOutputLock(true);
-        // (kuna `cppsig`) Pieces with no `outtype` and no explicit output storage
-        // declare the inputs only (`FuncProto::seed_locked_from_pieces`), so the
-        // output is laid out as `void` and left unlocked for recovery.
-        let input_only = proto.outtype.is_none() && proto.output_storage.is_none();
-        if input_only {
-            let mut typed = proto.clone();
-            typed.outtype = Some(voidtype);
-            fp.update_all_types(&typed, self, &manager_rc)?;
-        } else {
-            fp.update_all_types(proto, self, &manager_rc)?;
-        }
-        fp.set_input_lock(true);
-        fp.set_output_lock(!input_only);
+        fp.seed_locked_from_pieces(proto, model, voidtype, self, &manager_rc)?;
         tc.kind = DatatypeKind::Code { proto: Some(Rc::new(fp)) };
 
         // markComplete(): clear type_incomplete.
