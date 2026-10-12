@@ -1,9 +1,11 @@
 {
   "data_footer": [
-    2506,
-    2506
+    2517,
+    2517
   ],
   "passing": [
+    "data:64-bit logical shift retains unsigned destination",
+    "data:64-bit unsigned merge retains signed conversion",
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
     "data:ALIASOVERLAP #2: the 8-byte indexed read is a local ahead of the element store",
     "data:ALIASOVERLAP #3: only the adjacent-byte stores keep the read folded",
@@ -1273,6 +1275,9 @@
     "data:RETURNPIECE #7: an argument in the high half beside a computed low half",
     "data:RETURNPIECE #8: the control whose high half is the first argument is unchanged",
     "data:RETURNPIECE #9: no function returns only four of the eight bytes it computes",
+    "data:RUST LOWERED LABELS #1: both option paths retain the first unsigned high-bit pattern",
+    "data:RUST LOWERED LABELS #2: both option paths retain the second unsigned high-bit pattern",
+    "data:RUST LOWERED LABELS #3: lowered matches are emitted in both passes",
     "data:RUST SWITCH LABELS #1: every function prints a Rust match",
     "data:RUST SWITCH LABELS #2: every signed first arm is negative",
     "data:RUST SWITCH LABELS #3: every signed last arm is negative",
@@ -2147,6 +2152,7 @@
     "data:kuna-msvcstackguard #1: the entry-side cookie scramble is emitted only with the option off",
     "data:kuna-msvcstackguard #2: the checker call is emitted only with the option off",
     "data:kuna-msvcstackguard #3: the computation the function actually performs survives both passes",
+    "data:logical shift retains unsigned destination",
     "data:marker has no executable trap",
     "data:mirror receives the local without a device read",
     "data:mode aggressive enables returndup (warning appears once); mode reliable does not",
@@ -2294,6 +2300,8 @@
     "data:short UTF-16 #2: the one-byte rendering is gone",
     "data:short UTF-16 #3: adjacent wide literal is preserved",
     "data:short UTF-16 #4: ordinary ASCII literal is preserved",
+    "data:signed merge retains signed conversion",
+    "data:signed shift stays signed",
     "data:signedness #1: the masked loop bound is declared unsigned under option signedness upstream, the declaration type inference produces (bug reproduces, once)",
     "data:signedness #2: and every signed comparison on it carries a cast back to int4 (bug reproduces, once)",
     "data:signedness #3: the shipped default, option signedness auto, declares it at the signedness its operations demand (fix, once)",
@@ -2435,6 +2443,7 @@
     "data:undefname #8: the body writes that slot through the same name",
     "data:unrolledguard #1: both gates off, the interleaved dispatches degrade to computed calls (bug reproduced); neither fix adds any (7 pass1 + 0 pass2 + 0 pass3)",
     "data:unrolledguard #2 / jtsharepartial #1: both fixes recover every interleaved table as a switch, independently (1 pass1 + 16 pass2 unrolledguard + 16 pass3 shipped default = 33)",
+    "data:unsigned merge retains signed conversion",
     "data:unused volatile pointee survives",
     "data:unused volatile reads remain",
     "data:varargstackargs #1: option off drops the stack-passed variadic argument (bug reproduced)",
@@ -2475,6 +2484,8 @@
     "data:whiledo-complex #3: the bound check is a proper if statement in the loop body",
     "data:whiledo-complex #4: the loop exit is a proper break statement",
     "data:whiledo-complex #5: the bound-check return is a statement, not condition text",
+    "data:widened result retains 32-bit signed conversion",
+    "data:widened return preserves logical shift",
     "data:word conversion reaches return",
     "data:x64syscall #1: with the option off the user-op reads nothing, so it prints with empty parens in both syscall-bearing functions -- the bug",
     "data:x64syscall #2: and nothing redefines RAX, so kernel_call returns the RAX:RDX pair it was handed instead of a result",
