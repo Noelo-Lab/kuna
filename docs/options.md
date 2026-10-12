@@ -808,6 +808,9 @@ Three tiers:
 | return addresses print as constants stored to stack locals in an x86 windows pe | [`calleepopslot`](#calleepopslot) |
 | a pushed argument becomes an assignment to a local before the call | [`calleepopslot`](#calleepopslot) |
 | a __thiscall import that pops a by-value class argument is called with no arguments | [`calleepopslot`](#calleepopslot) |
+| a mingw i386 function drops an incoming stack argument after a win32 api call | [`calleepopframe`](#calleepopframe) |
+| a handle an api returned through a pointer is passed on as a different local | [`calleepopframe`](#calleepopframe) |
+| an api call is passed an uninitialized local where the caller forwarded its own argument | [`calleepopframe`](#calleepopframe) |
 | an msvc /GS binary drops the stack-passed arguments of every call in a function | [`cookiescramble`](#cookiescramble) |
 | a variadic call renders with only its register arguments after the format string | [`cookiescramble`](#cookiescramble) |
 | a value stored to [rsp+0x20] right before a call never reaches the call | [`cookiescramble`](#cookiescramble) |
@@ -2860,6 +2863,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: the flip moves 0 of 675 datatest assertions and is inert on any spec that states its own extrapop. Flip OFF to restore calleepop's plain push-run reading. With it off, an MSVC x86 PE whose function builds a by-value class in an outgoing slot drops the stack arguments of every later call in that function, prints return addresses as data and turns pushed arguments into assignments. Still not counted: a slot reserved with `push ecx` before the function's first call, which reads as a saved register.
 - **Where / provenance:** P6/stack-pointer-flow · kuna · correctness-fix · GH-991
 - **Example:** `option calleepopslot off`
+
+### `calleepopframe` -- on | off, default `on`
+
+- **Symptoms:** a mingw i386 function drops an incoming stack argument after a win32 api call; a handle an api returned through a pointer is passed on as a different local; an api call is passed an uninitialized local where the caller forwarded its own argument.
+- **What it does:** Read a callee's pop off a fixed-frame caller that re-reserves the bytes the callee popped. GCC and Clang on i386 Windows reserve the outgoing-argument area once in the prologue and write each call's arguments with `mov [esp+k]`; after a __stdcall callee pops them, the caller lowers the stack pointer again (`call [RegOpenKeyExA]; sub esp,0x14`). calleepop reads a pop off the push run in front of the call, finds none, and guesses 4, so the `sub` lowers the solved stack pointer by the popped bytes and every later frame offset is off by them. With the option on, the guess is 4+n when the first stack-pointer write after the call in its block is `result - n` (0 < n <= 256, pointer-size multiple; a lowering folded into the next call's return-address push is read less the push, and a push of the next call's argument is no re-reservation) and every slot of [esp, esp+n) at the call is stored between the previous call in the block and this one. The frame is the evidence, not the callee, so internal callees and calls through a register reloaded from a stack spill are covered too. Consulted under calleepop, for any call whose extrapop the equations leave free.
+- **When to flip:** On by default: the flip moves 0 of 675 datatest assertions and is inert on any spec that states its own extrapop. Flip OFF to restore calleepop's push-run reading. With it off, a MinGW or Clang i386 PE function that calls a __stdcall function loses an incoming stack argument to a local, and a local one call filled through a pointer is read back from a different slot after the next import call.
+- **Where / provenance:** P6/stack-pointer-flow · kuna · correctness-fix · GH-1029
+- **Example:** `option calleepopframe off`
 
 ### `cookiescramble` -- on | off, default `on`
 

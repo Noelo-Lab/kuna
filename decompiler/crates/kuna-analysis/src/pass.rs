@@ -407,6 +407,10 @@ pub struct AnalysisOutput {
     /// emits them here instead. The libc and Win32 signature passes all use this
     /// stream for concrete resolver entries. See [`crate::protos`].
     pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    /// The names a PE imports from a C runtime DLL, whose functions are `__cdecl`
+    /// whatever the image's default convention is. The commit boundary declares
+    /// the prototypes parked under these names with that model.
+    pub c_runtime_imports: Vec<String>,
     /// Processor-context decode-mode paints (the kuna analog of ARM's
     /// `ARM_ElfExtension`/`ArmSymbolAnalyzer` `programContext.setValue(TMode,…)`).
     /// Each sets a SLEIGH context variable over an address range; the commit boundary
@@ -622,6 +626,7 @@ impl AnalysisOutput {
         self.wide_strings32.extend(other.wide_strings32);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
+        self.c_runtime_imports.extend(other.c_runtime_imports);
         self.context_paints.extend(other.context_paints);
         self.inventory_context_paints.extend(other.inventory_context_paints);
         self.tracked_regs.extend(other.tracked_regs);

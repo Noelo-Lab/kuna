@@ -2140,6 +2140,25 @@ moves.
   address-keyed prototype per genuine import the resolver reports, which lands on
   both. PE/COFF only; a same-named definition/export is never retyped because this
   pass emits no global by-name prototype.
+
+  The libc tables meet the same `__stdcall` default on an i386 PE and need the
+  opposite answer: every export of a Microsoft C runtime DLL is `__cdecl`, so the
+  caller removes the arguments. Left under the default model, a locked
+  `memset(void *,int,size_t)` read as a callee that pops 12 bytes, and in a frame
+  whose caller pops nothing (the GCC/Clang fixed frame, where the caller writes
+  arguments with `mov [esp+k]`) every later stack slot in the function moved by
+  12: a local one call filled through a pointer was read back from another slot.
+  `LibProtoPass` therefore also reports the names the image imports from a C
+  runtime DLL (`decompiler/crates/kuna-analysis/src/loader/pe_iat.rs
+  (c_runtime_import_names)`: `msvcrt`/`msvcr*`, `ucrtbase`, the
+  `api-ms-win-crt-*` forwarders, `vcruntime*`, `crtdll`), and the commit boundary
+  (`decompiler/crates/kuna-console/src/engine.rs (commit_analysis_output)`)
+  declares the prototypes parked under those names with the spec's `__cdecl`
+  model, whose stated `extrapop` of 4 leaves nothing for `calleeprotostack`
+  (chapter 04) to resolve. The DLL is the evidence, not the name: the BSD socket
+  spellings the libc tables carry are `__stdcall` WinSock exports and keep the
+  default. Only where the default model's `extrapop` is unknown and the spec
+  registers a `__cdecl` model of its own, so x86-64 and every ELF are untouched.
 - **(kuna) Declared names** (`declaredlibcproto`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (declared_libc_prototype)`,
   consulted from `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`):

@@ -567,6 +567,7 @@ impl AnalysisPass for LibProtoPass {
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &present, LIBC, types, word_size, L);
         seed_resolved_prototypes(&mut out, &imports, LIBC, types, word_size, L);
+        out.c_runtime_imports = crate::loader::pe_iat::c_runtime_import_names(ctx.bytes);
         out
     }
 }

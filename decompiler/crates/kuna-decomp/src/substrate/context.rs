@@ -977,6 +977,10 @@ pub struct ArchContext {
     /// call and popped by a later one (`calleepopslot`).  Read by
     /// [`crate::p6_variables::kuna_calleepopslot::guess_extra_pop`].
     pub callee_pop_slot: bool,
+    /// (kuna) read a callee's pop off a fixed-frame caller that re-reserves
+    /// the popped bytes (`calleepopframe`).  Read by
+    /// [`crate::p6_variables::kuna_calleepopframe::guess_extra_pop`].
+    pub callee_pop_frame: bool,
     /// (kuna) `calleeprotostack` — a declared callee's locked prototype states
     /// its stack contract.  See [`crate::p4_calls::kuna_calleeprotostack`].
     pub callee_proto_stack: bool,
@@ -1793,6 +1797,7 @@ impl ArchContext {
             // the hand-built-fixture seam carries the same default.
             callee_pop: true,
             callee_pop_slot: true,
+            callee_pop_frame: true,
             callee_proto_stack: true,
             // argclobber only drops a trailing argument the callee's own
             // recovered prototype says it never reads, and declines outright

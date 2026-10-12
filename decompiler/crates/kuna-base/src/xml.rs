@@ -2070,7 +2070,7 @@ mod tests {
         // and kuna-globalarrayanchor{,-a64} / a negative element bias keeps the mapped array base
         // and kuna-switchguardreload / kuna-switchunrolledsense: a guarded
         // relative table is not read past its guard (GH-1028)
-        assert_eq!(count, 512, "corpus file count drifted");
+        assert_eq!(count, 513, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2649,
-    2649
+    2656,
+    2656
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -144,6 +144,13 @@
     "data:CALLEARITY FORMAT WITNESS #3: the sibling call keeps its three arguments in both passes",
     "data:CALLEARITY FORMAT WITNESS #4: a non-format constant never lends its longer arity",
     "data:CALLEARITY FORMAT WITNESS #5: the longer non-format call stays unchanged",
+    "data:CALLEEPOPFRAME #1: off drops the folder parameter",
+    "data:CALLEEPOPFRAME #2: off closes the size buffer",
+    "data:CALLEEPOPFRAME #3: on keeps both parameters",
+    "data:CALLEEPOPFRAME #4: on hands RegOpenKeyExA the key slot",
+    "data:CALLEEPOPFRAME #5: on queries the key with the forwarded folder",
+    "data:CALLEEPOPFRAME #6: on closes the key",
+    "data:CALLEEPOPFRAME #7: memset keeps its arguments in both passes",
     "data:CALLEEPOPSLOT #1: off lands the hidden return pointer on the local",
     "data:CALLEEPOPSLOT #2: off leaves operator= without arguments",
     "data:CALLEEPOPSLOT #3: on passes the hidden return pointer to operator=",
@@ -877,7 +884,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 290 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 291 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",

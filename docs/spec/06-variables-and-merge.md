@@ -2383,6 +2383,37 @@ the walk continues past one call only. A push of a register's input value
 still ends the run, so a slot reserved with `push ecx` before a function's
 first call is still not counted for the call that pops it.
 
+A caller with no push run at all says how much its callee popped in a
+different way (option `calleepopframe`, default on, consulted only under
+`calleepop`, for any call whose extrapop the equations leave free, and ahead of
+both readings above). GCC and Clang on i386 Windows
+reserve the outgoing-argument area once in the prologue and write each call's
+arguments with `mov [esp+k]`; after a `__stdcall` callee pops them the caller
+lowers the stack pointer by the same amount to keep its frame fixed
+(`call [RegOpenKeyExA]; sub esp,0x14`). The push-run walk finds nothing to
+count, the guess stays at `4`, and the `sub` then lowers the solved stack
+pointer by the popped bytes, so an incoming argument read after the call
+resolves to a local and a slot whose address an earlier call was handed is
+read back from a different one.
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_calleepopframe.rs
+(guess_extra_pop)` guesses `4 + n` when the first write to the stack pointer
+after the call in its block is the call's result lowered by `n` (positive, at
+most 256, a multiple of the pointer size) and every pointer-sized slot of
+`[esp, esp + n)` at the call instruction is stored to between the previous call
+in the block, or the block start, and this one. When nothing reads the stack
+pointer between the `sub` and the next call, the additive normalization folds
+the lowering into that call's return-address push, so a first write that is a
+call's own push is read less the push; a first write that is a push of the next
+call's argument (a STORE through it in the same instruction) is no
+re-reservation and leaves the push-run reading in charge. The caller's frame is the evidence, not
+the callee's identity, so unlike the push-run reading this one also covers an
+internal callee and a call through a register the target was reloaded into
+from a stack spill, which is still unresolved when the solver runs. A
+`__cdecl` callee in such a frame is followed by no adjustment, one in a
+push-style frame by a raise, and a push-style caller that defers a cleanup and
+lowers the stack for the next call's alignment fails the store test, since the
+alignment slots are never written.
+
 A declared struct parameter split across registers and the entry stack can be
 spilled contiguously beside its incoming stack tail. The spill then crosses
 entry SP=0, so the ordinary local-only range cannot describe the whole object.
