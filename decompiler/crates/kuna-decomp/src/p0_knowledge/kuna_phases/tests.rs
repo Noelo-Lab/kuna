@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_285() {
-    assert_eq!(kuna_num_settables(), 285);
-    assert_eq!(SETTABLE_TABLE.len(), 285);
+fn settable_count_is_286() {
+    assert_eq!(kuna_num_settables(), 286);
+    assert_eq!(SETTABLE_TABLE.len(), 286);
 }
 
 #[test]
-fn tier_counts_are_99_core_110_transform_76_analysis() {
+fn tier_counts_are_99_core_111_transform_76_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_99_core_110_transform_76_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (99, 110, 76));
+    assert_eq!((core, transform, analysis), (99, 111, 76));
 }
 
 #[test]
@@ -794,8 +794,9 @@ fn option_values_live_value_present_for_110() {
     // 119 -> 120: +1 for `armwalkmode` (live_field = analysis_armwalkmode).
     // 120 -> 121: +1 for `calleepopslot` (live_field = callee_pop_slot).
     // 121 -> 122: +1 for `callerreads` (live_field = caller_reads).
-    // 122 -> 123: +1 for `globalarrayanchor` (live_field = global_array_anchor).
-    assert_eq!(with_live, 123);
+    // 122 -> 123: +1 for `callarrayextent` (live_field = call_array_extent).
+    // 123 -> 124: +1 for `globalarrayanchor` (live_field = global_array_anchor).
+    assert_eq!(with_live, 124);
 }
 
 #[test]
@@ -990,7 +991,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `thunkentry`; its P1 row sits mid-table beside `unmappedentry`.
     // +1 for `zerocallregs`; its P4 row sits mid-table beside `zerofillreturn`.
     // +1 for `callerreads`.
-    assert_eq!(json.matches("},\n").count(), 284);
+    assert_eq!(json.matches("},\n").count(), 285);
 }
 
 #[test]

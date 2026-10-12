@@ -905,6 +905,19 @@ takes `extra_pool_rules`); the engine currently always passes an empty list
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
 (Architecture::build_action)`).
 
+**Binary64 sign-word operations.** (kuna) Before its commute logic,
+`RuleConcatCommute` recognizes the exact binary64 sign-word idioms in
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_floatnegpiece.rs`.
+`PIECE(FLOAT_NEG(SUBPIECE(x,4)), SUBPIECE(x,0))` becomes `FLOAT_NEG(x)`;
+the corresponding `FLOAT_ABS` pattern becomes `FLOAT_ABS(x)`. Negating or
+clearing the binary32 high word's sign bit changes exactly the binary64 sign
+bit, without numerically converting the word. Both slices must be four bytes
+at significant-value offsets four and zero, independent of memory byte order,
+and must share the same eight-byte source typed as an eight-byte float.
+Different sources, changed low slices, wider floats, incompatible types and
+other unary operations decline. These are strict value-correctness repairs
+with no inference option; they add no floating-status or exception model.
+
 **Ordered floating-point condition negation.** The shared
 `decompiler/crates/kuna-num/src/opcodes.rs (get_booleanflip)` table returns no
 single-opcode complement for `FLOAT_LESS` or `FLOAT_LESSEQUAL`: when either
@@ -1644,6 +1657,16 @@ the `decompiler/crates/kuna-decomp/src/substrate/transform.rs
 lives. `subflow.rs (SubfloatFlow)` (trigger `RuleSubfloatConvert`, group
 `floatprecision`) does the same for a float value carried in a wider float
 container, converting constant encodings between formats along the way.
+The trace refuses to lower `FLOAT_ADD`, `FLOAT_SUB`, `FLOAT_MULT` or
+`FLOAT_DIV` below their operand width (`SubfloatFlow::exceeds_precision`).
+Inputs widened from a smaller format do not prove that arithmetic in the
+wider format can be replaced: lowering an intermediate introduces an earlier
+rounding and changes overflow and underflow. Binary32 inputs widened for
+subtraction and addition in binary64 therefore keep their widenings and final
+narrowing, printing `(float)((double)accum + ((double)neg_theta - (double)local_axis))`.
+Conversion-only round trips and arithmetic already performed in binary32
+retain their existing simplifications and grouping. This is a correctness
+constraint on both forward and backward traces, including divided SIMD lanes.
 `subflow.rs (SplitDatatype)` (triggers `RuleSplitCopy`/`RuleSplitLoad`/
 `RuleSplitStore`, cleanup pool) splits a whole-struct COPY/LOAD/STORE into
 per-field transfers using recovered types — described with the type system in
