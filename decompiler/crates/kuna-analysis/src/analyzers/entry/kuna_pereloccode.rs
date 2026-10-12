@@ -323,6 +323,26 @@ mod tests {
         );
     }
 
+    /// The relocated addresses ahead of the first record are handed on as
+    /// candidates; the one past the last record is not.
+    #[test]
+    fn pre_record_pointers_stop_at_the_first_record() {
+        let path = format!(
+            "{}/tests/fixtures/pe_addrtaken_x86_64.exe",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let file = object::File::parse(bytes.as_slice()).expect("parse fixture PE");
+        let execs = executable_sections(&file);
+        assert_eq!(
+            super::pre_record_code_pointers(&bytes, &execs),
+            vec![0x140001000, 0x140001010, 0x140001020]
+        );
+        let other = fixture();
+        let file = object::File::parse(other.as_slice()).expect("parse fixture PE");
+        assert!(super::pre_record_code_pointers(&other, &executable_sections(&file)).is_empty());
+    }
+
     /// Without `[begin, end)` bounds there is no way to tell a handler pointer
     /// from a jump-table label, so the oracle abstains rather than guess: zeroing
     /// the exception directory takes the address-taken function back out.

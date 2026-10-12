@@ -3400,7 +3400,11 @@ it read as code pointers. The same directory settles that too — its records co
 `0x1400091c0` upwards while every one of those strings lies below — so a candidate
 must fall inside the span of its own section that the exception table vouches for.
 On the witness that costs nothing: `vm.exe`'s records span `.text` end to end, and
-the four handlers sit in holes inside it.
+the four handlers sit in holes inside it. The span before the first record is not dropped
+for good, though: `addrtakenentry` takes the relocated addresses there as
+candidates and admits the ones the decoded code shows to be functions — a
+frame-less leaf cluster at the top of `.text` is that shape — while the span past
+the last record, and a section with no record, stay out.
 
 That guard is also the precondition. An image vouching for no code region — a PE32
 with no exception directory, or an ARM/ARM64 PE whose 8-byte records carry no
@@ -4335,6 +4339,63 @@ starts after a thunk table or after a Delphi `jmp`-over-`ret` prologue. On 464
 stripped x86-64 ELFs and 12 i386 PEs without incremental linking it adds and removes
 nothing, so their output is unchanged (`decompile-all` is byte-identical on `gzip`,
 `dash`, `diff` and two of the PEs). Off restores the previous discovery set exactly.
+
+(kuna) `addrtakenentry` (default-on;
+`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_addrtakenentry.rs (AddrTaken)`)
+answers the same question for code that no flow reaches at all: a function the
+program only ever calls through a pointer it takes itself. A registration stub
+that stores `lea rax,[rip+handler]` to a global, a callback handed to the runtime
+in a register — the walk decodes the instruction that takes the address but never
+the code it names, and the extent bounder then folds that code into the function
+before it. On an x64 PE a frame-less leaf has no `.pdata` record either, so no
+load-time oracle names it: the GH-1039 witness, a stripped zig/MinGW build, reports
+its 16-byte handler `0x140001040` inside a 32-byte `sub_140001030`, and on a 16 MB
+MSVC image the reporter counted 2,065 reference starts inside larger kuna extents,
+none with a `.pdata` record. Two kinds of evidence name a candidate. A decoded
+instruction materializes it: a RIP-relative `lea`, a `mov` of an immediate into a
+register or memory, or a `push` of an immediate, read off the instruction's own
+bytes. Or, on a PE, a base-relocated word holds it and it lies before the first
+`RUNTIME_FUNCTION` of its executable section — the span the relocation oracle's
+hull guard leaves out (`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_pereloccode.rs (pre_record_code_pointers)`).
+Either may still name a label or data, so a candidate becomes an entry only when
+three things hold. It is undecoded executable memory: no decoded instruction covers
+it, so no flow the walk followed reaches it. It starts where a function starts: the
+decoded instruction before it (or one this pass accepted, in address order) does
+not fall through, and only padding or zero fill lies between the two, or between
+the candidate and the start of its section. And it ends like a function: decoded
+inside its gap, every path ends in a return, a computed jump, a trap (`int3`,
+`ud2`, `hlt`), a call followed by padding, or a jump to a known function entry; no
+path falls out of the gap into other code or jumps into the middle of decoded
+code, it does not open with zero fill or `int3`, and an address in the middle of a
+padding run is not a function that opens with a `nop`. The accepted entries
+re-seed the walk, which resumes from the Listing it already has
+(`decompiler/crates/kuna-analysis/src/listing/mod.rs (Listing::resume)`) and moves
+its instruction store rather than copying it, so their callees and the addresses
+their own code takes are found too; acceptance repeats for at most four rounds. The
+walk's closure does not depend on the order it reaches addresses in, so the resumed
+Listing is the one a fresh build from the grown seed set makes. Like `thunkentry`
+it applies wherever the walk's own set is committed (`fast_funcdisc`,
+`funcdisc_recursive`), so `reliable` mode on x86-64 is unchanged. Measured with each
+stripped image scored against its own symbols: on 7 x64 MSVC PEs scored against
+their `.pdb`, 283 true starts are gained and none is lost, no entry lands inside a
+sized function body, and of the 870 other entries 696 are the `/INCREMENTAL` jump
+thunks the pointers name — the same thunks kuna already lists where they are
+called — and the rest are 16-aligned starts in spans the `.pdb` has no symbol for;
+115 MinGW x64 PEs gain 2 true starts; 830 x86-64 ELFs (663 decbench twins and 167
+crackmes, PIE and non-PIE) are unchanged, because `.eh_frame` already names every
+function a pointer reaches, except one Go binary where two call targets inside
+`duffzero` become entries through a function the oracle re-seeded. On
+`jormungandr.exe` the 612 relocated pointers into the UTF-16 locale table that sits
+before its first record are all refused: the strings run into other code. Over 583
+x64 PE crackmes 1,296 entries are added and 29 removed; 27 of the removals are Aggressive
+Instruction Finder entries a few bytes into a function whose real start the pointer
+names, and the other two, in two builds of one Rust crackme, are a true start the
+gap walk now plants four bytes late over the richer Listing. x86-64 only:
+on i386 every address is an absolute immediate, and the same shape names a MinGW
+SJLJ landing pad — it sits after its function's `ret` and alignment padding, and
+the function stores its address with `mov [ebp-0x1c],imm` — so 40 i386 PEs would
+gain 210 true starts but lose 574 and grow 4,974 mid-body entries. Off restores the
+previous discovery set exactly.
 
 (kuna) `callerreads` (default-on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs (call_returns)`)

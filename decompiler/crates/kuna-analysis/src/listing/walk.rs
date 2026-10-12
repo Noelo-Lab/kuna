@@ -418,6 +418,7 @@ pub(super) fn walk(
     want_stack_callbacks: bool,
     plan: &super::kuna_pdecode::WalkPlan,
     frames: Option<&mut super::kuna_framemode::FrameModes>,
+    resumed: Option<WalkState>,
 ) -> WalkState {
     // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
     // ContextDatabase BEFORE we decode a single instruction — the timing the
@@ -434,7 +435,7 @@ pub(super) fn walk(
     let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
     let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail };
 
-    let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk);
+    let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk, resumed);
     if let Some(mode) = flow_mode {
         st.mode_runs.extend(super::kuna_flowmode::disagreeing_runs(&ctx, arch, mode));
     }
@@ -452,9 +453,10 @@ fn walk_plain(
     plan: &super::kuna_pdecode::WalkPlan,
     frames: Option<&mut super::kuna_framemode::FrameModes>,
     arm_walk: Option<&super::kuna_armwalkmode::ArmWalkMode>,
+    resumed: Option<WalkState>,
 ) -> WalkState {
     let StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail } = *ctx;
-    if plan.lanes() > 1 && frames.is_none() && arm_walk.is_none() {
+    if plan.lanes() > 1 && frames.is_none() && arm_walk.is_none() && resumed.is_none() {
         let inputs = super::kuna_pdecode::ParallelInputs {
             arch,
             translate,
@@ -471,7 +473,7 @@ fn walk_plain(
             let Some(abort) = super::kuna_pdecode::selfcheck() else {
                 return parallel;
             };
-            let serial = walk_serial(ctx, seeds, seed_funcs, detail, arch, None, None);
+            let serial = walk_serial(ctx, seeds, seed_funcs, detail, arch, None, None, None);
             let differences = super::kuna_pdecode::compare(&parallel, &serial);
             assert!(
                 differences == 0 || !abort,
@@ -481,11 +483,13 @@ fn walk_plain(
         }
     }
 
-    walk_serial(ctx, seeds, seed_funcs, detail, arch, frames, arm_walk)
+    walk_serial(ctx, seeds, seed_funcs, detail, arch, frames, arm_walk, resumed)
 }
 
 /// The serial walk: the two-level worklist over [`step`], and the only walk that
-/// runs where the parallel gate refuses.
+/// runs where the parallel gate refuses. `resumed` is a finished walk's state to
+/// continue from, taken over rather than copied.
+#[allow(clippy::too_many_arguments)]
 fn walk_serial(
     ctx: &StepCtx<'_>,
     seeds: &[u64],
@@ -494,22 +498,33 @@ fn walk_serial(
     arch: &Architecture,
     mut frames: Option<&mut super::kuna_framemode::FrameModes>,
     arm_walk: Option<&super::kuna_armwalkmode::ArmWalkMode>,
+    resumed: Option<WalkState>,
 ) -> WalkState {
     let mut walk_context = super::kuna_walkcontext::WalkContext::new(
         frames.is_some(), ctx.translate, arch, ctx.code_space, ctx.exec_ranges,
     );
     let established = frames.as_ref().and_then(|frames| frames.established());
-    let mut insns = established.map_or_else(InstructionStore::default, |prior| prior.insns.clone());
-    let mut funcs = established.map_or_else(BTreeMap::new, |prior| prior.funcs.clone());
-    let mode_runs = established.map_or_else(Vec::new, |prior| prior.mode_runs.clone());
     let mut refs = RefCollector::new(detail.refs);
     let mut callbacks = CallbackEvidence::default();
-    if let Some(prior) = established {
-        refs.edges.extend_from_slice(prior.refs.edges());
-        for &(source, target) in &prior.stack_callback_refs {
+    let (mut insns, mut funcs, mode_runs) = if let Some(prior) = resumed {
+        refs.edges = prior.refs;
+        for (target, source) in prior.stack_callback_refs {
             callbacks.file(source, target);
         }
-    }
+        (prior.insns, prior.funcs, prior.mode_runs)
+    } else {
+        if let Some(prior) = established {
+            refs.edges.extend_from_slice(prior.refs.edges());
+            for &(source, target) in &prior.stack_callback_refs {
+                callbacks.file(source, target);
+            }
+        }
+        (
+            established.map_or_else(InstructionStore::default, |prior| prior.insns.clone()),
+            established.map_or_else(BTreeMap::new, |prior| prior.funcs.clone()),
+            established.map_or_else(Vec::new, |prior| prior.mode_runs.clone()),
+        )
+    };
 
     // Function-entry worklist, seeded from the root set.
     let mut func_worklist: Vec<u64> = seeds.to_vec();

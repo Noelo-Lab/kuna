@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2656,
-    2656
+    2661,
+    2661
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -863,6 +863,11 @@
     "data:JUMPTABLEMAX #2: every case of the table is a case label",
     "data:JUMPTABLEMAX #3: `option jumptablemax 2` refuses the four-case table and the dispatch prints as a call",
     "data:JUMPTABLEMAX #4: the lower cap prints no case label, so the one `case 0:` is the default pass",
+    "data:KUNA-ADDRTAKENENTRY #1: _start and register are functions in all four passes",
+    "data:KUNA-ADDRTAKENENTRY #2: pre_a, pre_b and the handler are functions only with the option on",
+    "data:KUNA-ADDRTAKENENTRY #3: no look-alike is a function",
+    "data:KUNA-ADDRTAKENENTRY #4: the handler decompiles to its own body",
+    "data:KUNA-ADDRTAKENENTRY #5: the catalog documents it as a default-on P1 code/data-partition option",
     "data:KUNA-AIFBRACKET #1: dispatch is a function in all three passes",
     "data:KUNA-AIFBRACKET #2: the fragment inside dispatch is a function only with the option off",
     "data:KUNA-AIFBRACKET #3: the pointer-referenced routine after padding stays an AIF function",
@@ -884,7 +889,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 291 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 292 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",

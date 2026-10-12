@@ -1384,3 +1384,19 @@ stores it to `gj` and `x + 1` to `gi` and returns it, `same` tail-calls `strcmp`
 three calls and ignores it after `scale`. With `callerreads` off a single-function
 decompile prints all four `void`; on, `triple`, `keep` and `same` return `int` and `scale`
 stays `void`. Used by `tests/stages/kuna-callerreads.xml`.
+
+### Functions reached only through a pointer the program takes
+
+`pe_addrtaken_x86_64.exe` (4,096 bytes, PE32+/x86-64, SHA-256
+`b495c1fe3995967c59fd9c87cf337dd8c5ec1055a9f3a0bdd191e0c384a5d495`) is a clean-room
+reduction of the GH-1039 witness. `.pdata` describes only `_start`@`0x140001052`, which
+calls `register`@`0x140001030`. `register` stores `lea rax,[0x140001040]` to a global and
+`_start` calls the handler at `0x140001040` through it; `pre_a`@`0x140001000` and
+`pre_b`@`0x140001010` are named only by relocated `.rdata` words ahead of the first
+`RUNTIME_FUNCTION`. The look-alikes: a UTF-16 string at `0x140001020` (relocated and
+lea'd), `runon`@`0x140001050` (lea'd, falls into `_start`), the interior address
+`0x140001043`, a relocated stub past the last record at `0x140001090` and a lea'd string
+at `0x1400010a0`. With `addrtakenentry` off the inventory is `_start` and `register`; on,
+it adds `pre_a`, `pre_b` and the handler and nothing else. Regenerate from this directory
+with `python3 pe_addrtaken_x86_64.py`. Used by `tests/stages/kuna-addrtakenentry.xml` and
+the `kuna_pereloccode` unit tests.

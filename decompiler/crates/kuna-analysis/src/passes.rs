@@ -819,7 +819,8 @@ pub fn run_listing_consumers(
     let walk_committed = (arch.analysis_listing && arch.analysis_funcstart_patterns)
         || arch.analysis_fast_funcdisc;
     // (kuna `addrtakenentry`) Code whose address the program takes and no flow
-    // reaches re-seeds the walk. See `aif/kuna_addrtakenentry.rs`.
+    // reaches re-seeds the walk, which resumes from the Listing it already has.
+    // See `aif/kuna_addrtakenentry.rs`.
     if arch.analysis_addrtakenentry && walk_committed {
         let evidence = crate::aif::kuna_addrtakenentry::AddrTaken::new(&file, bytes);
         if let (Some(evidence), Some(code_space)) = (evidence, arch.manage().get_default_code_space()) {
@@ -832,8 +833,8 @@ pub fn run_listing_consumers(
                 if seeds.len() == before {
                     break;
                 }
-                listing = crate::listing::Listing::build_with_meta_planned(
-                    &file, image, arch, translate, &seeds, &funcsym_seeds, &seed_names, detail, plan,
+                listing = listing.resume(
+                    &file, arch, translate, &seeds, &funcsym_seeds, &seed_names, detail, plan,
                 );
             }
         }

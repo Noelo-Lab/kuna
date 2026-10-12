@@ -1,5 +1,5 @@
 //! (kuna) `addrtakenentry` — code whose address the program takes, and that no
-//! flow reaches, is a function entry (P1 code/data partition, x86).
+//! flow reaches, is a function entry (P1 code/data partition, x86-64).
 //!
 //! The Listing walk makes a function only at a CALL target. A function whose
 //! address is taken — `lea rax,[rip+handler]` stored to a global, `mov
@@ -11,9 +11,9 @@
 //!
 //! Two kinds of evidence name such an address:
 //!
-//! 1. an instruction the walk decoded materializes it: a RIP-relative (x86-64)
-//!    or absolute (i386) `lea`, a `mov` of an immediate into a register or
-//!    memory, or a `push` of an immediate;
+//! 1. an instruction the walk decoded materializes it: a RIP-relative `lea`, a
+//!    `mov` of an immediate into a register or memory, or a `push` of an
+//!    immediate;
 //! 2. on a PE, a base-relocated word holds it and it lies before the first
 //!    `RUNTIME_FUNCTION` of its section — the span the relocation oracle's
 //!    `.pdata` hull guard leaves out (see `entry::kuna_pereloccode`).
@@ -36,6 +36,12 @@
 //! The accepted entries re-seed the walk, so their callees and the addresses
 //! their own code takes are found too; acceptance repeats over the rebuilt
 //! Listing for at most [`MAX_ROUNDS`] rounds.
+//!
+//! x86-64 only. On i386 every address is an absolute immediate, and the same
+//! shape names non-functions: a MinGW SJLJ landing pad sits after its
+//! function's `ret` and alignment padding, and the function stores its address
+//! with `mov [ebp-0x1c],imm` — measured, 40 i386 PEs gained 210 true starts,
+//! lost 574 and grew 4,974 mid-body entries.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -58,22 +64,19 @@ const MAX_PADDING_INSNS: usize = 64;
 /// The evidence that does not change between rounds: the executable bytes the
 /// instruction scan reads, and a PE's pre-record relocated code pointers.
 pub(crate) struct AddrTaken {
-    wide: bool,
     texts: Vec<(u64, u64, Vec<u8>)>,
     relocated: Vec<u64>,
 }
 
 impl AddrTaken {
-    /// `None` off x86.
+    /// `None` off x86-64.
     pub(crate) fn new(file: &object::File, bytes: &[u8]) -> Option<AddrTaken> {
-        let wide = match file.architecture() {
-            object::Architecture::X86_64 => true,
-            object::Architecture::I386 => false,
-            _ => return None,
-        };
+        if file.architecture() != object::Architecture::X86_64 {
+            return None;
+        }
         let texts = crate::entry::executable_sections(file);
         let relocated = crate::entry::kuna_pereloccode::pre_record_code_pointers(bytes, &texts);
-        Some(AddrTaken { wide, texts, relocated })
+        Some(AddrTaken { texts, relocated })
     }
 
     /// The candidates over `listing`, address-sorted: every undecoded executable
@@ -83,7 +86,7 @@ impl AddrTaken {
         let mut out: Vec<u64> = self.relocated.clone();
         for (&at, insn) in listing.instructions() {
             let Some(bytes) = self.bytes(at, insn.len) else { continue };
-            if let Some(target) = materialized(at, bytes, self.wide) {
+            if let Some(target) = materialized(at, bytes) {
                 if target != at.wrapping_add(u64::from(insn.len)) {
                     out.push(target);
                 }
@@ -123,11 +126,11 @@ impl AddrTaken {
             if splits_claimed(&claimed, target) {
                 continue;
             }
-            let Some(padded) = isolated(listing, &mut decoder, &claimed, lo, target, self.wide) else {
+            let Some(padded) = isolated(listing, &mut decoder, &claimed, lo, target) else {
                 continue;
             };
             let gap_hi = listing.next_instruction_start_after(target).map_or(hi, |n| n.min(hi));
-            if let Some(body) = routine(listing, &mut decoder, &accepted, target, gap_hi, padded, self.wide) {
+            if let Some(body) = routine(listing, &mut decoder, &accepted, target, gap_hi, padded) {
                 accepted.insert(target);
                 claimed.extend(body);
             }
@@ -144,11 +147,11 @@ struct Claimed {
     falls: bool,
 }
 
-/// The address the decoded instruction `bytes` at `at` materializes as a value,
-/// when it is a `lea` of an absolute or RIP-relative address, a `mov` of an
-/// immediate, or a `push` of an immediate. Operand-size overrides narrow the
-/// value below an address and are refused.
-fn materialized(at: u64, bytes: &[u8], wide: bool) -> Option<u64> {
+/// The address the decoded x86-64 instruction `bytes` at `at` materializes as a
+/// value, when it is a RIP-relative `lea`, a `mov` of an immediate, or a `push`
+/// of an immediate. Operand-size overrides narrow the value below an address and
+/// are refused.
+fn materialized(at: u64, bytes: &[u8]) -> Option<u64> {
     let mut i = 0;
     while let Some(&prefix) = bytes.get(i) {
         match prefix {
@@ -158,7 +161,7 @@ fn materialized(at: u64, bytes: &[u8], wide: bool) -> Option<u64> {
         }
     }
     let mut rex_w = false;
-    if wide && bytes.get(i).is_some_and(|&rex| rex & 0xF0 == 0x40) {
+    if bytes.get(i).is_some_and(|&rex| rex & 0xF0 == 0x40) {
         rex_w = bytes[i] & 0x08 != 0;
         i += 1;
     }
@@ -170,13 +173,10 @@ fn materialized(at: u64, bytes: &[u8], wide: bool) -> Option<u64> {
                 return None;
             }
             let disp = tail32()? as i32 as i64 as u64;
-            if !wide {
-                return Some(disp & 0xFFFF_FFFF);
-            }
             let target = at.wrapping_add(len as u64).wrapping_add(disp);
             Some(if rex_w { target } else { target & 0xFFFF_FFFF })
         }
-        0xB8..=0xBF if wide && rex_w => {
+        0xB8..=0xBF if rex_w => {
             let imm = bytes.get(i + 1..)?;
             (imm.len() == 8).then(|| u64::from_le_bytes(imm.try_into().unwrap()))
         }
@@ -193,7 +193,7 @@ fn materialized(at: u64, bytes: &[u8], wide: bool) -> Option<u64> {
                 return None;
             }
             let imm = tail32()?;
-            Some(if wide { imm as i32 as i64 as u64 } else { u64::from(imm) })
+            Some(imm as i32 as i64 as u64)
         }
         _ => None,
     }
@@ -216,7 +216,6 @@ fn isolated(
     claimed: &BTreeMap<u64, Claimed>,
     lo: u64,
     target: u64,
-    wide: bool,
 ) -> Option<bool> {
     let decoded = listing
         .instruction_before(target)
@@ -237,7 +236,7 @@ fn isolated(
             return Some(at != start);
         }
         let insn = decoder.probe(at)?;
-        if !is_padding(&insn, wide) && !is_zero_fill(&insn) {
+        if !is_padding(&insn, true) && !is_zero_fill(&insn) {
             return None;
         }
         at = at.checked_add(u64::from(insn.len)).filter(|&next| next <= target)?;
@@ -257,10 +256,9 @@ fn routine(
     target: u64,
     gap_hi: u64,
     padded: bool,
-    wide: bool,
 ) -> Option<BTreeMap<u64, Claimed>> {
     let first = decoder.probe(target)?;
-    if is_zero_fill(&first) || is_trap(&first) || (padded && is_padding(&first, wide)) {
+    if is_zero_fill(&first) || is_trap(&first) || (padded && is_padding(&first, true)) {
         return None;
     }
     let is_entry = |at: u64| listing.function_at(at).is_some() || accepted.contains(&at);
@@ -274,7 +272,7 @@ fn routine(
             return None;
         }
         let insn = decoder.probe(at)?;
-        if after_call && (is_padding(&insn, wide) || is_trap(&insn)) {
+        if after_call && (is_padding(&insn, true) || is_trap(&insn)) {
             continue;
         }
         let end = at.checked_add(u64::from(insn.len)).filter(|&end| end <= gap_hi)?;
@@ -323,46 +321,43 @@ mod tests {
     fn rip_relative_lea_names_its_target() {
         // lea rax,[rip+0x9] at 0x140001030 (the GH-1039 registration stub)
         let lea = [0x48, 0x8d, 0x05, 0x09, 0x00, 0x00, 0x00];
-        assert_eq!(materialized(0x1_4000_1030, &lea, true), Some(0x1_4000_1040));
+        assert_eq!(materialized(0x1_4000_1030, &lea), Some(0x1_4000_1040));
         // lea rcx,[rip-0x10]
         let back = [0x48, 0x8d, 0x0d, 0xf0, 0xff, 0xff, 0xff];
-        assert_eq!(materialized(0x1000, &back, true), Some(0x1007 - 0x10));
+        assert_eq!(materialized(0x1000, &back), Some(0x1007 - 0x10));
     }
 
     #[test]
     fn register_based_lea_names_nothing() {
         // lea eax,[rcx+rcx*4]
-        assert_eq!(materialized(0x1000, &[0x8d, 0x04, 0x89], true), None);
+        assert_eq!(materialized(0x1000, &[0x8d, 0x04, 0x89]), None);
         // lea rax,[rbx+0x10]
-        assert_eq!(materialized(0x1000, &[0x48, 0x8d, 0x43, 0x10], true), None);
+        assert_eq!(materialized(0x1000, &[0x48, 0x8d, 0x43, 0x10]), None);
     }
 
     #[test]
     fn immediates_are_read_at_their_width() {
         // mov edi,0x401136
-        assert_eq!(materialized(0x1000, &[0xbf, 0x36, 0x11, 0x40, 0x00], true), Some(0x401136));
+        assert_eq!(materialized(0x1000, &[0xbf, 0x36, 0x11, 0x40, 0x00]), Some(0x401136));
         // movabs rax,0x140001040
         let movabs = [0x48, 0xb8, 0x40, 0x10, 0x00, 0x40, 0x01, 0x00, 0x00, 0x00];
-        assert_eq!(materialized(0x1000, &movabs, true), Some(0x1_4000_1040));
+        assert_eq!(materialized(0x1000, &movabs), Some(0x1_4000_1040));
         // mov qword [rip+0x100],0x401136
         let store = [0x48, 0xc7, 0x05, 0x00, 0x01, 0x00, 0x00, 0x36, 0x11, 0x40, 0x00];
-        assert_eq!(materialized(0x1000, &store, true), Some(0x401136));
-        // push 0x401000 (i386)
-        assert_eq!(materialized(0x1000, &[0x68, 0x00, 0x10, 0x40, 0x00], false), Some(0x401000));
-        // mov dword [0x404000],0x401010 (i386)
-        let store32 = [0xc7, 0x05, 0x00, 0x40, 0x40, 0x00, 0x10, 0x10, 0x40, 0x00];
-        assert_eq!(materialized(0x1000, &store32, false), Some(0x401010));
-        // lea eax,[0x401020] (i386 absolute)
-        assert_eq!(materialized(0x1000, &[0x8d, 0x05, 0x20, 0x10, 0x40, 0x00], false), Some(0x401020));
+        assert_eq!(materialized(0x1000, &store), Some(0x401136));
+        // push 0x401000
+        assert_eq!(materialized(0x1000, &[0x68, 0x00, 0x10, 0x40, 0x00]), Some(0x401000));
+        // lea eax,[rip+0x10]: a 32-bit lea keeps the low half
+        assert_eq!(materialized(0x1_0000_1000, &[0x8d, 0x05, 0x10, 0x00, 0x00, 0x00]), Some(0x1016));
     }
 
     #[test]
     fn narrowed_and_unrelated_forms_name_nothing() {
         // mov ax,0x1234
-        assert_eq!(materialized(0x1000, &[0x66, 0xb8, 0x34, 0x12], true), None);
+        assert_eq!(materialized(0x1000, &[0x66, 0xb8, 0x34, 0x12]), None);
         // xbegin (c7 f8 rel32)
-        assert_eq!(materialized(0x1000, &[0xc7, 0xf8, 0x00, 0x00, 0x00, 0x00], true), None);
+        assert_eq!(materialized(0x1000, &[0xc7, 0xf8, 0x00, 0x00, 0x00, 0x00]), None);
         // call rel32
-        assert_eq!(materialized(0x1000, &[0xe8, 0x00, 0x00, 0x00, 0x00], true), None);
+        assert_eq!(materialized(0x1000, &[0xe8, 0x00, 0x00, 0x00, 0x00]), None);
     }
 }
