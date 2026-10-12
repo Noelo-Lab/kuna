@@ -245,6 +245,18 @@ peeled in parallel first — different word sizes or different address spaces
 force a cast, `void *` never does, and once inside a pointer the signedness
 care is always on.
 
+`FLOAT_TRUNC` converts a floating value to a signed integer of its output
+width. If a merged variable is unsigned (including an unsigned enum), cast
+insertion keeps a signed conversion temporary before converting its integer
+bits to that variable's type. Boolean destinations retain their existing
+conversion of the truncated signed value to a truth value. An unsigned
+destination must not turn the floating conversion itself into a C
+floating-to-unsigned cast: negative values in the signed range would
+then acquire undefined behavior. Ordinary signed destinations retain their
+existing conversion. This correctness repair is architecture independent and
+needs no option; it does not model floating exception state or define C casts
+outside the signed integer's representable range.
+
 **Integer promotion.** C silently promotes small integers, so many extensions
 must *not* print. The strategy classifies a sub-`int` value's promotion as
 unsigned, signed, either, or unknown (`cast.rs

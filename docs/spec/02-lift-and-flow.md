@@ -140,8 +140,9 @@ both just produce a shorter function. So the out-of-bounds handler emits the C++
 diagnostics — a `Funcdata::warning` at each cut edge and, once per function, the
 `Function flows out of bounds` `Funcdata::warning_header` — which the emitter
 renders as comments on the prototype and the offending statement. A correctly
-declared function ends in a return and never leaves its range, so a warning here
-means the declared end is wrong.
+declared function ends in a return or a recognized tail transfer. A known callee
+outside the extent can be recovered under `tailcalljump` without following its
+body; an unrecognized edge still clips and warns, so its declared end needs review.
 
 Warning is only half of continuing, though, because the cut edge still needs a
 head: the target was never decoded, so it has no op, and until DIV-121 the block
@@ -585,6 +586,28 @@ attributable. Without it the follower walks *into* the PLT thunk, whose body is
 an indirect GOT jump; jump-table recovery fails on it and the function renders
 a `(*dat_...)(...)` computed call with a `"Treating indirect jump as call"`
 warning. Two datatests (Long double #1/#2) opt out per-test.
+
+**Bounded conditional tails.** With an explicit extent, a machine-address
+`CPUI_CBRANCH` to another known function's entry outside that extent is the
+conditional form of the same direct tail. Both `on` and `direct` recover it
+when the branch is the instruction's last p-code op. The taken path receives a
+CALL with normal callee prototype and flow-effect setup, followed by RETURN
+(or the callee's no-return halt); the false path skips that block and continues
+at the next instruction. Each path keeps its own register state, so argument
+swaps on the false path cannot change the taken call's inputs. The local taken
+block has a stable, effect-free COPY before the call so its relative branch
+target survives explicit callee inlining or call-fixup injection; ordinary
+dataflow cleanup removes that unused copy.
+
+An entry inside the asserted extent stays local, and a target that is unknown,
+mid-function, self-directed, or a relative p-code destination is never recovered
+by this rule. It does not infer conditional tails from frame teardown. A
+conditional with remaining p-code in its instruction keeps the original flow,
+as does an unbounded conditional. `off` retains clipping for an out-of-extent
+conditional even when its target is declared. A false edge that itself crosses
+the bound still receives the missing halt and out-of-bounds warning.
+`tests/stages/kuna-conditional-tail.xml` pins argument order, both direct modes,
+backward value-returning tails, no-return callees, inlining, and these refusals.
 
 `option tailcalljump` takes three values. `off` disables the rule, `direct`
 applies it to direct jumps only, and `on` (the default) also applies it to a

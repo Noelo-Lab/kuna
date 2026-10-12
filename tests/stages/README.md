@@ -94,6 +94,7 @@ writeup, not here.
 | `kuna-entryretdispatch.xml` | RE-friction need `entry-point-ret-dispatch` | S2 flow classification (proven entry `push continuation; push target; ret` links become calls) | `option entryretdispatch on\|off` |
 | `kuna-extent-fallthrough.xml` | [Kuna #850](https://github.com/Noelo-Lab/kuna/issues/850) | S2 flow classification (caller-declared extent vs discovered interior entry) | `option funcboundflow on\|off` |
 | `kuna-extent-direct-branch.xml` | [Kuna #850](https://github.com/Noelo-Lab/kuna/issues/850) | S2 flow classification (in-extent direct and recovered indirect branches vs tail-call inference; out-of-extent veneer control) | `option tailcalljump on\|off` |
+| `kuna-conditional-tail.xml` | Authored bounded conditional forwarding | P2 flow classification (a known out-of-extent entry is called only on the taken path) | `option tailcalljump on\|direct\|off` |
 | `kuna-thunkentry.xml` | [Kuna #992](https://github.com/Noelo-Lab/kuna/issues/992) | P1 code/data partition (the target of a walk entry that is one direct `jmp` becomes a function; MSVC `/INCREMENTAL` thunk table) | `option thunkentry on\|off` |
 | `kuna-aifbracket.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (an AIF gap candidate whose own flow rejoins the known function around it is refused without boundary evidence) | `option aifbracket on\|off` |
 | `kuna-aifnoppad.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (no AIF gap entry starts on nop padding: padding in front of a known function is not probed, and an accept behind padding moves to the code after it) | `option aifnoppad on\|off` |
@@ -210,6 +211,12 @@ assembled synthetic examples; it contains no bytes from the reported binary.
 local preserves the incoming parameter, its entry comparisons, and the value
 passed to a callee across repeated decompilation. Its instructions are synthetic.
 
+`kuna-custom-call-storage.xml` checks an authored MSABI caller whose getter
+return is passed in EDX to a callee with one explicit formal. Repeated builds
+retain that value and the one-formal signature; the ordinary two-slot prototype
+passes the same value as argument two. The assertion API and callable-type
+interning controls are in `kuna-console/tests/verify_assertplane.rs`.
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason
@@ -241,3 +248,10 @@ the `calleeretpreserves off` pass restores the undefined return.
 `kuna-cli/tests/direct_call_return.rs` checks native and recompiled emitted C
 at `-O0` and `-O2`, real return-register writes, unknown returning calls and an
 incomplete helper. These are authored MSABI probes in an ELF container.
+
+`kuna-floatprecision.xml` pins authored scalar and packed SSE binary32 inputs
+widened for binary64 subtraction/addition before one final narrowing, plus
+widened multiplication/division and float-only/conversion-only controls.
+`kuna-cli/tests/float_precision.rs` recompiles the emitted C with GCC and Clang
+at `-O0` and `-O2` and compares its bits against the assembly for cancellation,
+subnormals, overflow, signed zeros, infinities and individual NaN payloads.
