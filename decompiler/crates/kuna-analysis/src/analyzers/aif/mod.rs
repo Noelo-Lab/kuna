@@ -114,6 +114,7 @@ pub mod kuna_aifnoppad;
 pub mod kuna_aifstrict;
 pub mod kuna_poolentry;
 pub(crate) mod kuna_entrychecks;
+pub(crate) mod kuna_frameretain;
 mod kuna_armprologue;
 mod kuna_framecalls;
 mod kuna_framecache;
@@ -208,6 +209,9 @@ struct GapDecoder<'a> {
     /// Every other validator stops at a terminal and rejects any invalid flow.
     frame_probe: bool,
     prologue_starts: Option<Rc<BTreeSet<u64>>>,
+    /// When collected, every address an accepted AIF body runs into by
+    /// fall-through or a conditional branch, and every address of a refused body.
+    straight_line: Option<BTreeSet<u64>>,
     scratch: Decoded,
     mnemonics: Vec<Rc<str>>,
     visited: HashSet<u64>,
@@ -276,7 +280,7 @@ impl<'a> GapDecoder<'a> {
         GapDecoder {
             translate, code_space, exec_ranges, prior_partition: None, cache: BTreeMap::new(),
             spare: None, frame_instructions: None, full_capture: None,
-            frame_probe: false, prologue_starts: None, scratch: Decoded::default(), mnemonics: Vec::new(),
+            frame_probe: false, prologue_starts: None, straight_line: None, scratch: Decoded::default(), mnemonics: Vec::new(),
             visited: HashSet::new(), worklist: Vec::new(), linear_run: None, linear_events: VecDeque::new(),
             #[cfg(test)]
             peak_cache_len: 0,
@@ -832,11 +836,17 @@ pub(crate) fn run_aif_after_frames(
     aifcorroborate: bool,
     aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
     aifnoppad: bool,
+    mut straight_line: Option<&mut BTreeSet<u64>>,
 ) -> Vec<u64> {
     let _probe = arm_gap_probe_scope(translate);
     let mut decoder = GapDecoder::new(translate, code_space, listing.exec_ranges());
     decoder.prior_partition = Some(prior);
-    run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate, aifbracket, aifnoppad)
+    decoder.straight_line = straight_line.is_some().then(BTreeSet::new);
+    let entries = run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate, aifbracket, aifnoppad);
+    if let (Some(out), Some(reached)) = (straight_line.as_deref_mut(), decoder.straight_line.take()) {
+        out.extend(reached);
+    }
+    entries
 }
 
 /// Probe ARM gaps without publishing their modes; local IT state remains active.
@@ -968,6 +978,15 @@ fn aif_candidates(
                     if let Some(bodies) = &mut bodies {
                         bodies.insert(entry, body.iter().map(|&at| (at, decoder.recorded(at))).collect());
                     }
+                    if decoder.straight_line.is_some() {
+                        let reached: Vec<u64> = body.iter().filter_map(|&at| decoder.probe(at))
+                            .flat_map(|insn| {
+                                let taken = (insn.kind == FlowKind::ConditionalBranch).then(|| insn.flows.clone());
+                                insn.fall_through.into_iter().chain(taken.into_iter().flatten())
+                            })
+                            .collect();
+                        decoder.straight_line.as_mut().unwrap().extend(reached);
+                    }
                     accepted.insert(entry);
                     let body_max = body.iter().copied().max().unwrap_or(gap_start);
                     advanced = body_max.saturating_add(1);
@@ -980,6 +999,9 @@ fn aif_candidates(
                 // 3.4 MB PE witness as mid-body entries RISING by 222 while 1,100
                 // real entries were lost. See `kuna_aifcorroborate`.
                 Probe::Uncorroborated(body) => {
+                    if let Some(refused) = &mut decoder.straight_line {
+                        refused.extend(body.iter().copied());
+                    }
                     let body_max = body.iter().copied().max().unwrap_or(gap_start);
                     advanced = body_max.saturating_add(1);
                     claimed.extend(body);
@@ -1178,7 +1200,8 @@ pub(crate) fn raw_arm_frames(
         let replacements = frames.reconcile(listing, listing, &mut decoder, &accepted, &[],
             arch.analysis_aifstrict, arch.analysis_aifcorroborate);
         accepted.retain(|root| !replacements.contains_key(root));
-        accepted.extend(replacements.into_values());
+        accepted.extend(replacements.values().copied());
+        frames.replaced = replacements;
     }
     frames.roots = accepted.into_iter().collect();
     frames

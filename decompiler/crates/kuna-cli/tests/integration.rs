@@ -20,6 +20,9 @@ mod arm_float_arguments;
 #[path = "arm_float_returns.rs"]
 mod arm_float_returns;
 
+#[path = "arm_frame_retain.rs"]
+mod arm_frame_retain;
+
 #[path = "arm_interwork_cli.rs"]
 mod arm_interwork_cli;
 

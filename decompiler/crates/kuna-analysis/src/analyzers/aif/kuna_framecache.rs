@@ -5,6 +5,7 @@ use super::*;
 #[derive(Default)]
 pub(crate) struct ArmFrames {
     pub roots: Vec<u64>,
+    pub replaced: BTreeMap<u64, u64>,
     bodies: BTreeMap<u64, Option<Vec<(u64, u32)>>>,
     prefixes: Option<PrefixScan>,
     instructions: Rc<BTreeMap<u64, Rc<ProbedInsn>>>,

@@ -817,7 +817,11 @@ pub fn run_listing_consumers(
     let mut frame_aif: Option<crate::aif::kuna_entrychecks::CheckedAif> = None;
     let mut frame_pointers = None;
     let mut inventory_context_paints = Vec::new();
-    // Recover validated LR-saving ARM/Thumb frames in gaps before fingerprinting.
+    let mut retained_entries = Vec::new();
+    let mut frames_recovered = false;
+    // Recover validated LR-saving ARM/Thumb frames in gaps before fingerprinting,
+    // keeping every entry the frameless inventory would report unless the
+    // frame-expanded Listing contradicts it.
     if arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let mut frame_cache = crate::aif::raw_arm_frames(
@@ -830,7 +834,16 @@ pub fn run_listing_consumers(
                 false,
             );
             if !frame_cache.roots.is_empty() {
+                frames_recovered = true;
+                let prior = crate::aif::kuna_frameretain::prior_inventory(
+                    &file, &listing, &seeds,
+                    |seeds| crate::listing::Listing::build_with_meta_planned(
+                        &file, image, arch, translate, seeds, &funcsym_seeds, &seed_names, detail, plan,
+                    ),
+                    arch, translate, code_space, bracket(listing.exec_ranges()),
+                );
                 let mut frames: std::collections::BTreeSet<u64> = frame_cache.roots.iter().copied().collect();
+                prior.restore(&mut frames, &frame_cache.replaced);
                 let mut rejected = std::collections::BTreeSet::new();
                 let independent_seeds = seeds.clone();
                 let original = listing;
@@ -851,10 +864,11 @@ pub fn run_listing_consumers(
                         &file, image, arch, translate, &seeds, &funcsym_seeds,
                         &seed_names, detail, plan, Some(&mut modes),
                     );
-                    let replacements = crate::aif::arm_frame_prefixes(
+                    let mut replacements = crate::aif::arm_frame_prefixes(
                         &mut frame_cache, &original, &listing, &frames, &[], frame_context.as_ref(),
                         arch, translate, std::rc::Rc::clone(code_space),
                     );
+                    replacements.retain(|root, _| !prior.walked.contains(root));
                     let stale = if replacements.is_empty() { modes.stale().clone() }
                         else { std::collections::BTreeSet::new() };
                     if !replacements.is_empty() || !stale.is_empty() {
@@ -899,6 +913,15 @@ pub fn run_listing_consumers(
                             continue;
                         }
                     }
+                    let found: std::collections::BTreeSet<u64> = frame_aif.iter()
+                        .flat_map(|checked| checked.entries.iter().chain(&checked.pool_entries)
+                            .chain(&checked.pointer_entries))
+                        .copied().collect();
+                    let straight_line = frame_aif.as_ref().map(|checked| &checked.straight_line);
+                    retained_entries = prior.retained(
+                        &found, straight_line.unwrap_or(&std::collections::BTreeSet::new()), &listing,
+                        translate, std::rc::Rc::clone(code_space),
+                    );
                     inventory_context_paints = modes.decoded_paints();
                     if let Some(context) = frame_context {
                         context.commit();
@@ -908,7 +931,7 @@ pub fn run_listing_consumers(
             }
         }
     }
-    if arch.analysis_listing && arch.analysis_funcstart_patterns && !arch.analysis_armframes {
+    if arch.analysis_listing && arch.analysis_funcstart_patterns && !frames_recovered {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let raw = crate::aif::raw_thumb_prologue_seeds(
                 &file, &listing, translate, std::rc::Rc::clone(code_space), listing.exec_ranges(),
@@ -1140,9 +1163,10 @@ pub fn run_listing_consumers(
         mode_out.context_paints = mode_paints;
         out.push(("flowmode", mode_out));
     }
-    if !inventory_context_paints.is_empty() {
+    if !inventory_context_paints.is_empty() || !retained_entries.is_empty() {
         let mut modes = AnalysisOutput::default();
         modes.inventory_context_paints = inventory_context_paints;
+        modes.entries = retained_entries;
         out.push(("armframes", modes));
     }
     sanitize_all_names(&mut out);

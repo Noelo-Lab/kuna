@@ -4774,11 +4774,13 @@ the code-pointer-table scan
 — every 4-byte-aligned odd word in any allocated section whose masked target lands
 in an undefined gap, *and* opens with a frame-establishing Thumb prologue, *and*
 passes the same probe), and the AIF gap walk above. The additional default-off
-`armframes` option replaces the Thumb scan with shared validated ARM/Thumb
-recovery
+`armframes` option walks shared validated ARM/Thumb frame roots in place of the
+Thumb scan
 (`decompiler/crates/kuna-analysis/src/analyzers/aif/mod.rs (raw_arm_prologue_seeds)`):
 mode-matched LR-saving `STMDB SP!`, `PUSH` or `PUSH.W` in an undefined gap must
-pass the strict valid-subroutine probe.
+pass the strict valid-subroutine probe. It keeps the entries the Thumb scan and the
+gap walk would have reported (see the ARM reference walks later in §1.6), and when it validates
+no frame at all the Thumb scan runs exactly as with the option off.
 
 **Pointer-referenced entries** (`ptrentry`, default-off; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_ptrentry.rs`) re-admits
@@ -5091,6 +5093,38 @@ LR-saving frame roots used by the Listing when both `funcstart_patterns` and
 `armframes` are enabled. `armframes` defaults off and is never injected by CLI
 discovery bundles or mode presets. With it off, reference discovery keeps its
 existing seeded/AIF walk and Listing keeps its Thumb-only inventory recovery.
+
+Frame recovery never drops an inventory entry the option-off pipeline reports
+without evidence against it
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_frameretain.rs`). Once
+at least one root validates, the Listing pass first computes that frameless
+inventory under a discarded decode context: the walk after the Thumb prologue
+scan, plus the AIF, pool and pointer entries over it. Two mechanisms would
+otherwise lose those entries. A recovered frame's walk follows a tail branch into
+a routine the gap walk had found on its own and absorbs it as same-function flow;
+on a stripped U-Boot this dropped `invalidate_dcache_range`, reached by `b` from a
+newly recovered caller. And the prefix scan below can replace a root with
+literal-pool words in front of it that happen to decode as straight-line code,
+which dense Thumb encodings do readily. So a root the frameless walk already has
+is never replaced by a prefix, and after the last rebuild every frameless entry the
+recovered inventory lacks is published unless the final Listing contradicts it:
+the entry is data or lies inside a decoded instruction; a fall-through or a
+conditional branch runs into it; its first instruction is predicated, with a flow to
+its own fall-through, which no function entry can be because the condition flags
+are undefined there (literal-pool words in front of an A32 frame decode this way);
+an accepted body of the post-frame gap walk runs into it, or a body that walk refused
+covers it; or non-call flow from it reaches decoded code that is no function entry,
+as a switch case does when its function's computed jump stayed unresolved. A
+shrink-wrapped `cmp; ble` prefix still replaces a push the gap walk had reported,
+because the push then has a fall-through predecessor. Over the 98 stripped ARM
+images of the DecBench dataset, scored against their original `STT_FUNC` symbols,
+the option dropped 1,756 symbol starts the default inventory found and now drops
+34; nearly all of the rest are still entered by a fall-through from literal-pool
+words in front of them. It keeps 1,738 of the 1,746 starts it adds. Entries without
+a matching symbol go from 8,528 to 8,583, 54 of them on three Cortex-M images where
+no frame validates and the option now reproduces the default inventory exactly.
+Computing the frameless inventory adds about 14% to frame recovery on the 5.4 MB
+U-Boot image.
 The shared
 `raw_arm_prologue_seeds` scan matches unconditional A32 `STMDB SP!, {…,lr}`
 only at word-aligned ARM addresses and Thumb `PUSH` / `PUSH.W` only where the live
