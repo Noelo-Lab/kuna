@@ -798,7 +798,8 @@ fn option_values_live_value_present_for_110() {
     // 122 -> 123: +1 for `callarrayextent` (live_field = call_array_extent).
     // 123 -> 124: +1 for `globalarrayanchor` (live_field = global_array_anchor).
     // 124 -> 126: +2 for `wideslice` and `devectorize`.
-    assert_eq!(with_live, 127);
+    // 127 -> 128: +1 for `calleepopframe` (live_field = callee_pop_frame).
+    assert_eq!(with_live, 128);
 }
 
 #[test]
