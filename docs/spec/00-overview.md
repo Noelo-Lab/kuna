@@ -2782,13 +2782,31 @@ ending in the input or written class never traverse that view
 Creation inserts a free node only in the location tree. Becoming input or written
 adds its definition entry; becoming free removes that entry and rekeys its
 location entry. Destroying a free node removes only its location entry. Both
-logical orders retain the same ids and comparator semantics.
+logical orders retain the same ids and comparator semantics. Immediate teardown
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs (destroy_varnode)`)
+clears the definition and class flags without reinserting a temporary free entry.
+High-variable and descendant cleanup read nodes by id, then destruction erases
+the retained indexed snapshot; no location or definition query runs in between
+(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (make_free_for_destroy)`).
 
 The keys (`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (LocKey, DefKey)`)
 store integer ordering fields rather than `Address` or `SeqNum` objects. Sentinel
 rank and signed space index share a packed prefix, followed by the offset;
 flipping the index's sign bit preserves signed order within each rank. The
-input/written/free wrap ordering is computed once when a key is constructed.
+input/written/free wrap ordering is computed once when a key is constructed,
+including the combined input-and-written mask. Location keys also pack signed
+size, sign-biased, and the preordered class into a single unsigned prefix.
+One comparison therefore retains the original size-then-class ordering,
+including negative sizes and extreme range bounds. Converting a location key
+to a definition key restores the signed size and class without consulting the
+live Varnode.
+Storage address and size are immutable within a Varnode. Changing its input,
+written, or free class therefore reuses those fields from the old snapshot and
+replaces only the class and sequence payload, avoiding another address-space
+lookup (`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (LocKey::with_class)`).
+Creation constructs the key directly from the allocation's address, size,
+creation index, and optional definition; its free or written class is already
+known. A newly allocated node does not need a separate general key reconstruction.
 Written keys retain SeqNum's uniq-only equality check before comparing PC and
 time; free keys use the same uniq slot for their creation index. Each Varnode
 caches one location snapshot, from which definition keys are copied, so removals
