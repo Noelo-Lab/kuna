@@ -1582,6 +1582,14 @@ pub struct Architecture {
     /// the claim that the target is a function is withheld. Off restores the
     /// previous (phantom-producing) discovery set exactly.
     pub analysis_unmappedentry: bool,
+    /// (kuna, GH-299) Read a Thumb `tbb`/`tbh` switch table in the Listing walk
+    /// (`thumbswitch`); default **on**. The walk gives a computed jump no
+    /// successor, so every case body behind a `tbb`/`tbh` stayed undecoded and
+    /// the AIF gap walk planted mid-function entries in it. With this on, a
+    /// PC-relative `tbb`/`tbh` behind a `cmp index,#n` range check has its
+    /// `n + 1` offsets read, and each case body is walked as the dispatcher's own
+    /// code. ARM images only; inert without `--option listing on`.
+    pub analysis_thumbswitch: bool,
     /// (kuna) Make the target of a jump thunk a function entry (`thunkentry`);
     /// default **on**. The Listing walk makes a function only at a CALL target,
     /// so the routine behind a function whose whole body is one direct `jmp`
@@ -2861,6 +2869,7 @@ impl Architecture {
             analysis_win32sigs: false,
             analysis_declaredlibcproto: false,
             analysis_unmappedentry: false,
+            analysis_thumbswitch: true,
             analysis_thunkentry: false,
             analysis_addrtakenentry: false,
             analysis_ppclocalentry: false,
@@ -3224,6 +3233,8 @@ impl Architecture {
         // (kuna) Unmapped-CALL-target entry suppression -- default-ON (it only ever
         // withholds an entry the walk already refused to decode).
         self.analysis_unmappedentry = true;
+        // (kuna, GH-299) Thumb tbb/tbh switch-table read -- default-ON (ARM only).
+        self.analysis_thumbswitch = true;
         // (kuna) Jump-thunk target function entries -- default-ON (x86 only).
         self.analysis_thunkentry = true;
         // (kuna) Address-taken code function entries -- default-ON (x86-64 only).

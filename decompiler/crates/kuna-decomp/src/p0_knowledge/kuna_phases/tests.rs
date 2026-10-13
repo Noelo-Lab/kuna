@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_292() {
-    assert_eq!(kuna_num_settables(), 292);
-    assert_eq!(SETTABLE_TABLE.len(), 292);
+fn settable_count_is_293() {
+    assert_eq!(kuna_num_settables(), 293);
+    assert_eq!(SETTABLE_TABLE.len(), 293);
 }
 
 #[test]
-fn tier_counts_are_103_core_112_transform_77_analysis() {
+fn tier_counts_are_103_core_112_transform_78_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_103_core_112_transform_77_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (103, 112, 77));
+    assert_eq!((core, transform, analysis), (103, 112, 78));
 }
 
 #[test]
@@ -394,6 +394,10 @@ fn option_values_live_value_present_for_110() {
         // no codegen live reader (read console-side via kuna_live_value), like the
         // discovery gates around it. Default-ON.
         "unmappedentry",
+        // (kuna, GH-299) Thumb tbb/tbh switch-table read in the Listing walk --
+        // an analysis-tier gate with no codegen live reader, like `unmappedentry`
+        // above. Default-ON.
+        "thumbswitch",
         // (kuna) Jump-thunk target function entries -- an analysis-tier gate with
         // no codegen live reader (read console-side via kuna_live_value), like
         // `unmappedentry` above. Default-ON.
@@ -1001,7 +1005,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `bytearrayc`; its P9 row sits mid-table.
     // +2 for `wideslice` and `devectorize`.
     // +1 for `addrtakenentry`; its P1 row sits mid-table beside `thunkentry`.
-    assert_eq!(json.matches("},\n").count(), 291);
+    assert_eq!(json.matches("},\n").count(), 292);
 }
 
 #[test]

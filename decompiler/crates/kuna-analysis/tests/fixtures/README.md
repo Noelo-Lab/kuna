@@ -1386,6 +1386,23 @@ whose reset vector is `_start`@`0x8110`, which calls `f1`@`0x8122`, `f2`@`0x8132
 this directory with `python3 condcall_le32.py` (no cross toolchain). Used by
 `tests/stages/kuna-condcall.xml`.
 
+### Thumb tbb switch behind the walk
+
+`thumbswitch_le32` (804 bytes, ELF32/ARM, stripped, SHA-256
+`928ec9eea909ef5e49d8bbebc255cbdba87df23d5fa4dd657c0f5de24e6f29bc`) is a clean-room
+reduction of the GH-299 Cortex-M mid-body entries. `.text` opens with a Cortex-M vector table
+whose reset vector is `_start`@`0x8110`, which calls 22 leaves (`push {r4,lr}; movs r4,#n;
+adds r0,r0,r4; pop {r4,pc}`), `dispatch`@`0x8226` (`cmp r0,#3; bhi default; tbb [pc,r0]`,
+four cases), `dispatch2`@`0x8254` (`cmp r0,#3; bcs default2; tbb [pc,r0]`, three cases and a
+zero pad byte) and `dispatch3`@`0x8274` (`cmp r0,#3; bge default3; tbb [pc,r0]`, three cases
+and a byte that reads as an offset to the unreferenced `lone3`@`0x8290`). Case 1 of the first
+two (`0x8238`, `0x8264`) opens with the leaves' prologue and ends in its own `pop {r4,pc}`.
+With `thumbswitch` off the walk stops at every `tbb` and the gap walk lists `sub_8238` and
+`sub_8264`; on, the first two tables are read and their cases decoded as the dispatchers' code,
+while the signed `bge` bounds nothing and `lone3` stays a function. Regenerate from this
+directory with `python3 thumbswitch_le32.py` (no cross toolchain). Used by
+`tests/stages/kuna-thumbswitch.xml`.
+
 ### Return values a caller reads
 
 `callerreads_x86_64_gcc_O2` (16,280 bytes, PIE x86-64, not stripped) is built from

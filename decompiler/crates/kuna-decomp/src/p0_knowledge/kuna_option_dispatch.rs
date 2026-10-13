@@ -799,6 +799,9 @@ kuna_options! { self, p1;
     "unmappedentry" => {
         on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
     },
+    "thumbswitch" => {
+        on_off!(analysis_thumbswitch, "Thumb tbb/tbh switch-table read in the Listing walk (GH-299)")
+    },
     "thunkentry" => on_off!(analysis_thunkentry, "Jump-thunk target function entries"),
     "addrtakenentry" => {
         on_off!(analysis_addrtakenentry, "Address-taken code function entries")

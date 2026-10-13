@@ -52,6 +52,7 @@ mod kuna_picpool;
 mod kuna_poolref;
 mod kuna_ppclocalentry;
 mod kuna_switchtable;
+mod kuna_thumbswitch;
 mod kuna_unmappedentry;
 pub mod model;
 pub mod walk;
@@ -380,6 +381,16 @@ impl Listing {
         let want_stack_callbacks = arch.analysis_fast_funcdisc
             && matches!(file.architecture(), object::Architecture::I386 | object::Architecture::X86_64);
 
+        let tables = arch
+            .analysis_thumbswitch
+            .then(|| {
+                kuna_thumbswitch::HalfwordTables::new(
+                    file,
+                    arch.manage().get_default_data_space().cloned(),
+                    arch.max_jumptable_size as usize,
+                )
+            })
+            .flatten();
         let st = walk::walk(
             translate,
             arch,
@@ -396,6 +407,7 @@ impl Listing {
             plan,
             frames,
             resumed,
+            tables.as_ref(),
         );
 
         let refs = kuna_compactrefs::ReferenceIndex::new(st.refs);
@@ -469,6 +481,7 @@ impl Listing {
             detail,
             /* want_stack_callbacks = */ false,
             &WalkPlan::serial(),
+            None,
             None,
             None,
         );

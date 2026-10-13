@@ -865,6 +865,7 @@ fn run(
             local_entries,
             policy,
             detail,
+            tables: None,
         };
         if !gate.wait() {
             return Err(Refusal::LaneFault);

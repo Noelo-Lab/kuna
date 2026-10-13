@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2665,
-    2665
+    2671,
+    2671
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -889,7 +889,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 292 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 293 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -964,6 +964,12 @@
     "data:KUNA-STRUCTDEFS #3: the tag gets the forward declaration the project header gives it",
     "data:KUNA-STRUCTDEFS #4: the signature is unchanged by the flip",
     "data:KUNA-STRUCTDEFS #5: the body is unchanged by the flip",
+    "data:KUNA-THUMBSWITCH #1: the bhi-guarded dispatcher is a function in both passes",
+    "data:KUNA-THUMBSWITCH #2: the bhi-guarded case body is a function only with the option off",
+    "data:KUNA-THUMBSWITCH #3: the bcs-guarded dispatcher is a function in both passes",
+    "data:KUNA-THUMBSWITCH #4: the bcs-guarded case body is a function only with the option off",
+    "data:KUNA-THUMBSWITCH #5: the catalog documents it as a default-on P1 code/data-partition option",
+    "data:KUNA-THUMBSWITCH #6: a bge bounds no table, so the function after it is not read as a case",
     "data:KUNA-THUNKENTRY #1: every thunk is a function in all four passes",
     "data:KUNA-THUNKENTRY #2: sum and start are missing only from pass 1 (fast, option off)",
     "data:KUNA-THUNKENTRY #3: leaf is a function only with the option on, in fast and aggressive mode",

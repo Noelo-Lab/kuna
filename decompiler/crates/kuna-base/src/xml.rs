@@ -2074,7 +2074,9 @@ mod tests {
         // function entry (GH-1039)
         // and kuna-condcall / a predicated call's fall-through is not a function
         // (GH-299)
-        assert_eq!(count, 515, "corpus file count drifted");
+        // and kuna-thumbswitch / the Listing walk reads a Thumb tbb/tbh switch
+        // table (GH-299)
+        assert_eq!(count, 516, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
