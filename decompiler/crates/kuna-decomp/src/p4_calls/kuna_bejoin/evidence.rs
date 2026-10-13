@@ -37,7 +37,10 @@
 //!
 //! A call's own two-register result joins in the ABI's order when the
 //! callee's recovery returned its pair that way ([`callee_high_first`]), which
-//! `decompile-all` makes available by decompiling callees first.
+//! `decompile-all` makes available by decompiling callees first. A caller of
+//! such a callee that reads only the first register reads the value's HIGH
+//! word, not the whole of a narrower result, so the call is given the pair
+//! and the read becomes its high piece ([`build_high_read`]).
 
 use std::collections::BTreeSet;
 
@@ -46,7 +49,7 @@ use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{OpId, VarnodeId};
-use crate::fspec::ParamActive;
+use crate::fspec::{FuncCallSpecs, ParamActive};
 use crate::funcdata::Funcdata;
 use crate::op::PcodeOp;
 
@@ -398,4 +401,100 @@ pub(super) fn callee_high_first(data: &Funcdata, entry: &Address, active: &Param
         None
     };
     offset(hi_t.get_address(), hi_t.get_size()) == Some(lo_t.get_size()) && offset(lo_t.get_address(), lo_t.get_size()) == Some(0)
+}
+
+/// The (high, low) register halves of `size` bytes at `addr`: the pieces of a
+/// two-piece join, or the two halves of one register by significance.
+fn halves(data: &Funcdata, addr: &Address, size: int4) -> Option<((Address, int4), (Address, int4))> {
+    if addr.is_join() {
+        let jr = data.get_arch().manage.find_join(addr.get_offset()).ok()?;
+        if jr.num_pieces() != 2 {
+            return None;
+        }
+        let piece = |i| (jr.get_piece(i).get_addr(), jr.get_piece(i).size as int4);
+        return Some((piece(0), piece(1)));
+    }
+    let half = size / 2;
+    if half <= 0 || 2 * half != size {
+        return None;
+    }
+    let space = addr.get_space()?;
+    let a = Address::new(space.clone(), addr.get_offset());
+    let b = Address::new(space.clone(), addr.get_offset() + half as u64);
+    if addr.justified_contain(size, &a, half, false) == half {
+        Some(((a, half), (b, half)))
+    } else {
+        Some(((b, half), (a, half)))
+    }
+}
+
+/// Give a call whose callee's own recovery returned its pair high word
+/// first, as the ABI returns it ([`callee_high_first`]), that pair as its
+/// output when the caller reads only the first register: the read becomes
+/// the pair's high piece, `(int)(g() >> 32)`, rather than the whole of a
+/// narrower result, which C's truncation would read as the low word.
+///
+/// Runs in `buildOutputFromTrials` while the unused trials are still present;
+/// `trialvn` holds each trial's INDIRECT creation, by original slot. Returns
+/// `false`, changing nothing, unless the pair is built.
+pub(crate) fn build_high_read(fc: &mut FuncCallSpecs, data: &mut Funcdata, trialvn: &[Option<VarnodeId>]) -> bool {
+    if super::mode(data) != super::BeJoinMode::Evidence || !fc.proto().has_model() {
+        return false;
+    }
+    let reads: Vec<(Address, int4, VarnodeId)> = {
+        let active = fc.get_active_output();
+        (0..active.get_num_trials())
+            .map(|i| active.get_trial(i))
+            .filter(|t| t.is_used())
+            .filter_map(|t| trialvn.get((t.get_slot() - 1) as usize).copied().flatten().map(|vn| (t.get_address().clone(), t.get_size(), vn)))
+            .collect()
+    };
+    let [(ref raddr, rsize, vn)] = reads[..] else { return false };
+    let entry = fc.get_entry_address().clone();
+    let Some(sp) = entry.get_space() else { return false };
+    let Some((addr, size)) = data.kuna_callee_return_storage((sp.get_index(), entry.get_offset())).cloned() else {
+        return false;
+    };
+    let Some(((hi_addr, hi_size), (lo_addr, lo_size))) = halves(data, &addr, size) else { return false };
+    let within = hi_addr.justified_contain(hi_size, raddr, rsize, false);
+    if within < 0 {
+        return false;
+    }
+    let manager = data.get_arch().manage.clone();
+    let mut probe = ParamActive::new(false);
+    for (a, s) in [(&hi_addr, hi_size), (&lo_addr, lo_size)] {
+        probe.register_trial(a, s);
+    }
+    for i in 0..2 {
+        probe.get_trial_mut(i).mark_active();
+    }
+    if fc.proto().derive_output_map(&mut probe, &manager).is_err()
+        || !(0..2).all(|i| probe.get_trial(i).is_used())
+        || probe.join_pair_order() == (0, 1)
+        || !callee_high_first(data, &entry, &probe)
+    {
+        return false;
+    }
+    let op = fc.get_op();
+    let Some(call_addr) = data.obank().get(op).map(|o| o.get_addr().clone()) else { return false };
+    let Some(joinaddr) = crate::kuna_rustabi::pair_join_address(data, &hi_addr, hi_size, &lo_addr, lo_size, &call_addr)
+    else {
+        return false;
+    };
+    let Ok(whole) = data.new_varnode_out(lo_size + hi_size, &joinaddr, op) else { return false };
+    if let Some(v) = data.vbank_mut().get_mut(whole) {
+        v.set_write_mask();
+    }
+    let indop = data.vbank().get(vn).and_then(|v| v.get_def());
+    let sub = data.new_op(2, call_addr);
+    data.op_set_opcode_code(sub, OpCode::CPUI_SUBPIECE);
+    let c = data.new_constant(4, (lo_size + within) as u64);
+    let _ = data.op_set_input(sub, whole, 0);
+    let _ = data.op_set_input(sub, c, 1);
+    let _ = data.op_set_output(sub, vn);
+    data.op_insert_after(sub, op);
+    if let Some(indop) = indop {
+        data.op_destroy(indop);
+    }
+    true
 }

@@ -9004,8 +9004,9 @@ fn a_64_bit_comparison_keeps_its_int_result_in_the_first_register() {
 /// value: `sum_hi` and `sum64` on PowerPC -O2 (`addc 4,4,6; addze 3,3; add
 /// 3,3,5`), `mulhi` and `uwide_mul` on MIPS gcc -O0 (both halves of `multu`
 /// left in `$2:$3`). On, every one reads as the `long long`, so the `int`
-/// versions print the whole 64-bit value; off, the default, every one reads as
-/// the `int`, so the `long long` versions print with their halves swapped.
+/// versions print the whole 64-bit value; off, and the default `evidence`,
+/// which finds no proof in these bytes, every one reads as the `int`, so the
+/// `long long` versions print with their halves swapped.
 /// gcc -O0 on MIPS moves `sum_hi`'s high word down with `srl $17,$2,0` for
 /// `>> 32`, which works it over, so there `sum_hi` reads as its `int` in both
 /// modes. `ltz` returns a flag and reads as its `int` either way. Each mode's
@@ -9026,9 +9027,7 @@ fn bejoin_reads_an_ints_stale_low_half_as_the_long_long_it_matches() {
             .to_string();
         for on in [true, false] {
             let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()];
-            if on {
-                args.extend(["--option", "bejoin", "on"]);
-            }
+            args.extend(["--option", "bejoin", if on { "on" } else { "off" }]);
             let (stdout, stderr, ok) = run_kuna(&args);
             assert!(ok, "kuna decompile-all {fixture} (bejoin {on}) failed: {stderr}");
             let printed = callrettype_functions(&stdout, funcs);
@@ -9415,7 +9414,7 @@ fn a_shift_that_carries_into_the_first_register_keeps_the_int() {
 /// `$2`, the registers `zb`, which returns its second argument zero-extended,
 /// leaves on purpose. Joined in the ABI's order, `pick` returned the argument
 /// (`return a1;`). A function with an indirect jump flow could not follow
-/// keeps the first-register-low join, the default's, for a low word
+/// keeps the first-register-low join, off's, for a low word
 /// nothing visible reads and the jump's code can; `zb` keeps its fix and is
 /// compiled with gcc and clang at -O0 and -O2. (`pick`'s printed jump-as-call
 /// is not C a compiler takes.)
@@ -9427,9 +9426,7 @@ fn an_unrecovered_switch_keeps_a_pointers_register() {
     let mut listings = Vec::new();
     for on in [true, false] {
         let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()];
-        if on {
-            args.extend(["--option", "bejoin", "on"]);
-        }
+        args.extend(["--option", "bejoin", if on { "on" } else { "off" }]);
         let (stdout, stderr, ok) = run_kuna(&args);
         assert!(ok, "kuna decompile-all bejoin_jump_mips32_O2.o (bejoin {on}) failed: {stderr}");
         listings.push(stdout);

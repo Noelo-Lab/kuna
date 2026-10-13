@@ -819,7 +819,9 @@ fn option_values_live_value_present_for_110() {
     // 127 -> 128: +1 for `calleepopframe` (live_field = callee_pop_frame).
     // 129 -> 130: +1 for `msvcbyval` (live_field = msvc_byval).
     // 132 -> 133: +1 for `pushpadread` (live_field = push_pad_read).
-    assert_eq!(with_live, 136);
+    // -1 for `bejoin`, now a mode (`off|evidence|on`) over an enum field
+    // with no `live_field`.
+    assert_eq!(with_live, 135);
 }
 
 #[test]

@@ -562,7 +562,9 @@ pub fn build_output_from_trials(
     data: &mut Funcdata,
     trialvn: &[Option<VarnodeId>],
 ) {
-    if crate::p4_calls::kuna_callretpair::build_partial_pair(fc, data, trialvn) {
+    if crate::p4_calls::kuna_callretpair::build_partial_pair(fc, data, trialvn)
+        || crate::kuna_bejoin::build_high_read(fc, data, trialvn)
+    {
         return;
     }
     let op = fc.get_op();

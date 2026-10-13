@@ -1789,12 +1789,91 @@ never joined at all (`ActionParamDouble` below is a no-op), so a `long long`
 argument prints as its two registers in the ABI's order and no order assumption
 applies there.
 
-On those ABIs, with the (kuna) `bejoin` option on, the pair joins in the ABI's
-order only when its second register holds a low word the function returns on
-purpose
-(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (join_order)`).
-The option is off by default (below): off, every pair joins first register
-low, as upstream does, so default output on those ABIs is upstream's.
+On those ABIs the (kuna) `bejoin` option decides the order
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (join_order)`):
+`off` joins every pair first register low, as upstream does; `evidence`, the
+default, joins in the ABI's order only on proof that the RETURNs hand back one
+value twice a register's width; `on` joins in the ABI's order when the second
+register holds a low word the function seems to return on purpose.
+
+With `evidence`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (proven_wide)`)
+the proof is in the instructions, so it has to be a shape an `int` has no
+reason to compute. An `int` worked out from the high half of a 64-bit
+temporary can leave the temporary's low half in the second register, and then
+compiles to exactly the bytes of the `long long` that returns the temporary
+whole: `umull r1,r0,r1,r0` on ARM big-endian is both `((u64)a * b) >> 32` and
+`(u64)a * b`, and `addc 4,4,6; addze 3,3; add 3,3,5` on PowerPC is both
+`(a + b) >> 32` and `a + b`. No reading of those bytes tells the two apart. So
+the pair joins in the ABI's order only when every live RETURN (one never
+reached is skipped, as above) holds one of:
+
+* a sign extension: the first register is the second register's value shifted
+  right arithmetically by all but one of its bits (`mr 4,3; srawi 3,3,31`);
+  the shift instruction's own carry computations, which nothing outside it
+  reads, are part of the shift;
+* a zero extension: the first register is a literal zero;
+* the two halves of one product of two extended words: the first register the
+  product's high half (`SUBPIECE(p, 4)`, or `SUBPIECE(p >> 32, 0)`), the
+  second its low half made by an instruction of its own, either a separate
+  low product of the same two words (PowerPC's `mullw` beside `mulhw`) or a
+  move out of the register the multiply left it in (MIPS's `mflo` beside
+  `mfhi`, ARMv6's `umull r2,r3,r1,r0` then `mov r1,r2`). A low half the
+  multiply itself writes into the second register (ARMv7's `umull r1,r0`,
+  SPARC's `umul %i1,%i0,%i1`), or that only a register window's `restore`
+  carries there, proves nothing: the instruction writes it whether or not the
+  function returns it.
+
+An extension's value must be made on purpose. Read through moves, choices of
+such values, and the extension a byte or halfword load makes, it is a value
+the function computed or another register's argument moved there: not a
+literal, not the second register's own entry value (`srawi 3,4,31` is both
+`(long long)b` and `b >> 31`), not a load (a volatile read, `(void)*p; return
+0;`, leaves what it read in `r4` beside the zero on PowerPC -O2 and in `$3` on
+MIPS gcc -O2), not a call's output or clobber, not a piece of a wider value.
+Nothing but the low-word slot of the live RETURNs, and a sign extension's
+shift, may read it, and a product's low half is held to the same; a call
+whose inputs are still undecided trials does not read a register's entry
+value it finds in place. A function with an indirect jump flow could not
+follow, or a user-defined operation given no register inputs
+(`hidden_readers`, below), proves nothing. Every other pair keeps the
+first-register-low join, which C's truncation reads as the right `int`, and a
+genuine `long long` there still prints with its halves swapped: a 64-bit sum
+or difference, a load of both words, a product the multiply writes whole, a
+value a call hands back (`return g() >> 32` of a `long long g()` leaves `g`'s
+low word in the second register, the code of `return g()`).
+
+A declared return type needs no proof: a DWARF, library or `--assert
+prototype` 8-byte return locks the output, and the model places it in the
+ABI's order in every mode (DWARF-described ARM big-endian and MIPS gcc
+objects print every such `long long` right).
+
+A call's two-register output follows its callee
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (call_join_order)`,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (callee_high_first)`):
+with `evidence` it joins in the ABI's order exactly when the callee's own
+recovery, which a serial `decompile-all` files callee first, returned that
+pair with the first register's word high, whatever the calling function
+itself returns, so the call reads the value the callee's printed C returns.
+A caller of such a callee that reads only the first register reads the
+value's high word, so the call is given the pair as its output and the read
+becomes its high piece, `(int)((uint8)g() >> 0x20)`, rather than the whole of
+a narrower result, which C's truncation would read as the low word
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (build_high_read)`).
+With no filed recovery (a single-function run, `--jobs N`, a callee whose own
+pair joined first register low) the call keeps the first-register-low join.
+
+Against `off`, the default changes no function whose DWARF or source return
+type is narrower than eight bytes over 698 objects of bash, cronie,
+diffutils, dpkg, findutils, grep, kmod, libbsd, libedit, Lua, openssh, shadow
+and sysvinit built for PowerPC, SPARC and ARM big-endian with clang and for
+MIPS with gcc at -O0 and -O2, SQLite and zlib for the same four targets, and every shape
+GH-904 lists (the #763 fixtures' sources) built for each target at -O0 to -O3
+and -Os, ARMv6, Thumb-2 and MIPS PIC; the functions it changes return a
+64-bit value and print it right. Little-endian output is byte-identical.
+
+With `bejoin on`, the pair joins in the ABI's order only when its second
+register holds a low word the function returns on purpose.
 Ancestor realism makes a pair of any function whose second register reaches the
 RETURN holding something, and a function returning one register often leaves
 something there: SPARC's `restore` copies `%i1` back into `%o1` on every function
@@ -2047,18 +2126,17 @@ option on each shape is read one way:
   does. These print right by default and print the whole 64-bit value with
   the option on.
 
-The default is off (GH-904). The second kind is rare in real code and the
-first is common, but the rule decides from the instructions alone, and the
+`on` is not the default (GH-904). The second kind is rare in real code and
+the first is common, but the rule decides from the instructions alone, and the
 `int` that works over the high half of a 64-bit temporary is a family, not
 one shape: each new look at it found another arithmetic form that compiles to
 the `long long`'s registers. A default must not turn a correct `int` into a
-wrong `long long`, so default output keeps upstream's join on every target, and
-the option is for a reader who has checked a big-endian or AVR function's
-return against its disassembly. A sound default needs positive evidence that
-the value is 64 bits wide: a declared, DWARF or asserted 8-byte return type,
-callers that read both registers after the call as one value, or a 64-bit
-operation whose two halves both reach every RETURN without being narrowed.
-With the option on, over 24,257 functions of nine corpora (e2fsprogs, coreutils and
+wrong `long long`, so the default, `evidence`, takes only the proofs above,
+and `on` is for a reader who has checked a big-endian or AVR function's
+return against its disassembly. Callers that read both registers after the
+call as one value would be a fourth proof; it needs every caller decompiled
+before its callee, the reverse of `decompile-all`'s order, and is not taken.
+With `on`, over 24,257 functions of nine corpora (e2fsprogs, coreutils and
 gnulib, libexpat, libbsd, dpkg, diffutils, findutils, sysvinit, Lua,
 libselinux, iproute2, rsyslog, openssh, bash, cronie, libedit, grep, kmod,
 shadow, zlib, dash, gnutls, base-passwd and gzip) built with clang for
@@ -3013,8 +3091,8 @@ concatenated from two halves, never a lone recovered return register. Where ever
 half is uncomputed — the synthesized-return case — the low, first-in-class
 register is kept so the function's output storage still agrees across every
 RETURN. A pair joined first register high is left alone: return recovery joins
-one that way only when its low word is part of the value (see the join order
-above; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
+one that way only when its low word is part of the value, and a declared
+return is placed that way by the model (see the join order above; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
 (first_register_holds_high)`).
 
 When only the high half carries a value and it is the second register of an
@@ -3043,8 +3121,8 @@ same function returning 5 kept its `PIECE` and was repaired to `return 5;`.
 
 So on a pair joined first register low on an ABI that returns the first
 register high (PowerPC, MIPS o32, SPARC and ARM big-endian, wherever return
-recovery keeps the old join: `Funcdata::kuna_pairs_first_low`, recorded with
-`bejoin` on or off), the repair reads `ZEXT(hi) << 8k` as the pair of `hi` and
+recovery keeps the old join: `Funcdata::kuna_pairs_first_low`, recorded in
+every `bejoin` mode), the repair reads `ZEXT(hi) << 8k` as the pair of `hi` and
 a `k`-byte zero and decides it as it decides any other: when the high half is
 uncomputed by the placement test above and was not moved back, the RETURN
 returns a `k`-byte zero, the low register's width
@@ -3849,8 +3927,9 @@ is run through the model's own `derive_output_map`; the pair is taken only when
 the model uses exactly both, and the probe's join order says which is the high
 half. A shift by 32 names the half it reads, so the pair is formed only when the
 call's join order is the ABI's: on a big-endian ABI (`r3:r4`, `$v0:$v1`) that
-takes `option bejoin on`, because the shipped first-register-low join (GH-904)
-would print a read of the low word `r4` as the high one. The CALL then
+takes `option bejoin on`, or, with the default `evidence`, a callee whose own
+recovery returned the pair high word first, because the first-register-low
+join would print a read of the low word `r4` as the high one. The CALL then
 gains the pair as a `join` output, each read becomes a `SUBPIECE` of it at its
 own byte offset (`DL` is byte 4, `r1:1` byte 4, `r0` byte 0), and the INDIRECT
 creations are destroyed. When one trial was already used, as in the Cortex-M

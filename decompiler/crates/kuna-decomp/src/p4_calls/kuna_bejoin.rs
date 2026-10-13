@@ -88,11 +88,12 @@
 //! ([`joins_first_low`]), so a pair a call hands back and the function
 //! returns stays one value.
 //!
-//! The rule is a prior, not a proof, so it ships behind `option bejoin`, off
-//! by default (GH-904): off joins every pair first register low, as before.
-//! An `int` that leaves the stale low half of a 64-bit temporary in the second
-//! register compiles to the same registers as the `long long` that returns it
-//! whole -- `(a + b) >> 32` on PowerPC -O2 is `addc 4,4,6; addze 3,3; add
+//! The rule is a prior, not a proof, so it is `option bejoin on` (GH-904);
+//! `off` joins every pair first register low, as upstream does, and the
+//! default, `evidence`, joins in the ABI's order only on proof the value is
+//! that wide ([`evidence`]). With it on, an `int` that leaves the stale low
+//! half of a 64-bit temporary in the second register compiles to the same
+//! registers as the `long long` that returns it whole -- `(a + b) >> 32` on PowerPC -O2 is `addc 4,4,6; addze 3,3; add
 //! 3,3,5`, the code for `a + b`, and `((u64)a * b) >> 32` on ARM big-endian
 //! is the `umull` of `(u64)a * b` -- and reads as that `long long`. The other way
 //! round, `(u64)x << 32` leaves the same zero in the second register as a
@@ -2471,6 +2472,8 @@ fn pair_halves(data: &Funcdata, whole: VarnodeId) -> Option<(Address, i32, Addre
 
 #[path = "kuna_bejoin/evidence.rs"]
 mod evidence;
+
+pub(crate) use evidence::build_high_read;
 
 #[cfg(test)]
 #[path = "kuna_bejoin/tests.rs"]

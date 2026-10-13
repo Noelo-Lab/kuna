@@ -168,12 +168,13 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   the grow call on the strength of its argument shape; the callee body is never
   read. That trust is the operator's call to make about a binary, not a default.
 
-- **`bejoin`** — it joins a big-endian or AVR two-register value high word first
-  when its low word looks returned on purpose. The rule reads the instructions,
-  not a type, and an `int` that works over the high half of a 64-bit temporary
-  compiles to the same registers as the `long long`, so with it on that correct
-  `int` prints as a wrong `long long` (GH-904). In the preset it would be the
-  default output under 500 KiB.
+- **`bejoin`** — its default, `evidence`, joins a big-endian or AVR
+  two-register value high word first only on proof the value is that wide, in
+  every mode. `on` joins it that way whenever its low word looks returned on
+  purpose: the rule reads the instructions, not a type, and an `int` that works
+  over the high half of a 64-bit temporary compiles to the same registers as the
+  `long long`, so with it on that correct `int` prints as a wrong `long long`
+  (GH-904). In the preset it would be the default output under 500 KiB.
 
 All six therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
 `--option dwarf_lines on`, `--option formatstring full`, `--option ifuncfpret on`,

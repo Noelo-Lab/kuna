@@ -2083,7 +2083,9 @@ mod tests {
         // and kuna-declorder / locals print in natural number order
         // and kuna-elfmain-named / an executable's own `main` gets the C runtime's
         // declaration, as far as its own analysis recovers its parameters
-        assert_eq!(count, 542, "corpus file count drifted");
+        // and kuna-bejoin-evidence, -sparc, -armeb / a big-endian pair joins
+        // high word first on proof (GH-904)
+        assert_eq!(count, 545, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
