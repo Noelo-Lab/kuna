@@ -2072,7 +2072,9 @@ mod tests {
         // relative table is not read past its guard (GH-1028)
         // and kuna-addrtakenentry / code whose address the program takes is a
         // function entry (GH-1039)
-        assert_eq!(count, 514, "corpus file count drifted");
+        // and kuna-condcall / a predicated call's fall-through is not a function
+        // (GH-299)
+        assert_eq!(count, 515, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

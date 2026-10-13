@@ -1374,6 +1374,18 @@ six nops, with a prologue nothing else shares) are only found by the gap walk. W
 `nasm -f bin -I . -o aifnoppad_pe_i386.exe aifnoppad_pe_i386.asm`. Used by
 `tests/stages/kuna-aifnoppad.xml`.
 
+### Predicated calls in a Thumb image
+
+`condcall_le32` (500 bytes, ELF32/ARM, stripped, SHA-256
+`21a41e22f33ce563c5cd6ca2060f6d678882852c35aa1e53148d350fa88bf9d2`) is a clean-room
+reduction of the GH-299 predicated-call entries. `.text` opens with a Cortex-M vector table
+whose reset vector is `_start`@`0x8110`, which calls `f1`@`0x8122`, `f2`@`0x8132`,
+`f3`@`0x8142` (each `push {r7,lr}; bl ext; cmp r0,#n; it gt; blgt ext; pop {r7,pc}`) and
+`other`@`0x8152`, which calls `ext`@`0x8164` (`adds r0,#1; bx lr`) twice. Before the fix the
+`pop` after each `blgt` was listed as a function and `ext` became no-return. Regenerate from
+this directory with `python3 condcall_le32.py` (no cross toolchain). Used by
+`tests/stages/kuna-condcall.xml`.
+
 ### Return values a caller reads
 
 `callerreads_x86_64_gcc_O2` (16,280 bytes, PIE x86-64, not stripped) is built from

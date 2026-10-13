@@ -4449,6 +4449,21 @@ load-bearing gotchas are worth restating: a constant-space branch operand is
 p-code-relative (an intra-instruction branch), never a VMA; fall-through is decided
 by the *last* op only; and delay slots are already folded into the reported length.
 
+(kuna, GH-299) A predicated call — an A32 `blgt`, or a `bl` inside a Thumb `it`
+block — lifts to a `CBRANCH` to the next instruction (the skip when the condition
+fails) followed by the `CALL`. `classify` collects the target of every branch op,
+and the walk makes every target of a call instruction a function, so the
+instruction after each such call became a `sub_<addr>`: a mid-body entry that cut
+its own function short, and evidence for the no-return discovery pass, which
+counts the calls to a callee that are followed by a function start and at three
+marks it no-return, truncating every caller in the image. The skip is the call's
+fall-through and is now dropped from a call's targets; a call to the next
+instruction (the i386 `call $+5` idiom), which carries no such branch, keeps its
+target. Over 26 images (ARM, x86-64, i386 PE, AArch64, MIPS, PowerPC and RISC-V)
+only the ARM inventories change: 37 entries fewer in all, 23 of them right after a
+predicated call and the rest mid-body entries that sat in the functions those
+entries had cut short, with no symbol-table start lost.
+
 The instruction model stores records in 1,024-row chunks, with a B-tree of
 `(address, row number)` pairs for ordered lookup
 (`decompiler/crates/kuna-analysis/src/listing/kuna_insnstore.rs (InstructionStore)`).

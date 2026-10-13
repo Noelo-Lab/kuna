@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2661,
-    2661
+    2665,
+    2665
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -901,6 +901,10 @@
     "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist, orchain, endptrbound, loweredswitchheads, structsynth, structmerge, structheadless, devectorize)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind counts explicitly opted transformations (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip, +outline, +spillargtrial, +securitycheck, +msvcstackguard, +nulterminator, +stackaddrargtrial, +jumptablemax, +globalarrayanchor)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
+    "data:KUNA-CONDCALL #1: the instruction after a blgt is not a function",
+    "data:KUNA-CONDCALL #2: the predicated callers are functions",
+    "data:KUNA-CONDCALL #3: ext returns, so other makes both calls",
+    "data:KUNA-CONDCALL #4: no call to ext is no-return",
     "data:KUNA-CONSOLE #1: phase list shows Band B membership",
     "data:KUNA-CONSOLE #2: phase list includes the P3 dead-definition gate sub-phase",
     "data:KUNA-CONSOLE #3: LATENT decisions are flagged in the catalog",
