@@ -399,3 +399,6 @@ mod common_allocation_cli;
 
 #[path = "call_outparam_snapshot.rs"]
 mod call_outparam_snapshot;
+
+#[path = "integer_float_rounding.rs"]
+mod integer_float_rounding;

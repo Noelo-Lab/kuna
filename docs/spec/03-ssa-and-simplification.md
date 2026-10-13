@@ -1710,6 +1710,22 @@ narrowing, printing `(float)((double)accum + ((double)neg_theta - (double)local_
 Conversion-only round trips and arithmetic already performed in binary32
 retain their existing simplifications and grouping. This is a correctness
 constraint on both forward and backward traces, including divided SIMD lanes.
+
+Integer-to-float conversions also retain their rounding width. `RuleFloatCast`
+combines an integer conversion followed by a floating conversion only when
+both floating widths match or the intermediate format can represent every
+signed source integer exactly. The required precision is one less than the
+integer bit width; binary32 has 24 significant bits and binary64 has 53.
+Otherwise, signed32-to-binary32-to-binary64 keeps its first rounding, and
+signed64-to-binary64-to-binary32 keeps its possible double rounding.
+`SubfloatFlow` additionally requires the replacement format to represent every
+signed source integer exactly before moving a conversion through the traced
+network. Original-width exactness alone would allow new rounding ahead of
+comparisons, truncation, or square root. Unknown intermediate formats decline
+the rewrite. This is an
+architecture-independent value-correctness repair, requiring no option; it
+makes no new floating exception or rounding-mode contract.
+
 `subflow.rs (SplitDatatype)` (triggers `RuleSplitCopy`/`RuleSplitLoad`/
 `RuleSplitStore`, cleanup pool) splits a whole-struct COPY/LOAD/STORE into
 per-field transfers using recovered types — described with the type system in

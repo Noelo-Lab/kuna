@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2846,
-    2846
+    2849,
+    2849
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2138,6 +2138,7 @@
     "data:equal-width input has no uninitialized shadow local",
     "data:escaped addresses retain the shared backing",
     "data:escaped scalar storage keeps one physical backing",
+    "data:exact signed32-to-double intermediate still combines",
     "data:fieldtype #10: the end pointers take the walking pointers' type, so the loop test needs no cast in either pass",
     "data:fieldtype #11: a union member read as a double and as a pointer stays raw bytes in both passes",
     "data:fieldtype #12: an index read at a table and handed to write stays a number in both passes, so write gets it through a cast",
@@ -2326,6 +2327,7 @@
     "data:inputtile-overlap #6: the EINVAL retry probe is recovered",
     "data:inputtile-overlap #7: the errno save/restore around close is recovered",
     "data:inputtile-overlap #8: the failure path closes the descriptor",
+    "data:integer rounding survives a float-to-double widening",
     "data:integer to float remains a numeric conversion",
     "data:interior replacement retains its native definition",
     "data:interior uses never emit undefined storage or partial tokens",
@@ -2566,6 +2568,7 @@
     "data:short UTF-16 #4: ordinary ASCII literal is preserved",
     "data:signed merge retains signed conversion",
     "data:signed shift stays signed",
+    "data:signed64 double rounding survives subfloat lowering",
     "data:signedness #1: the masked loop bound is declared unsigned under option signedness upstream, the declaration type inference produces (bug reproduces, once)",
     "data:signedness #2: and every signed comparison on it carries a cast back to int4 (bug reproduces, once)",
     "data:signedness #3: the shipped default, option signedness auto, declares it at the signedness its operations demand (fix, once)",
