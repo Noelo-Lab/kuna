@@ -16,8 +16,10 @@
 //! A driver given no limit uses the cgroup default instead
 //! ([`use_cgroup_default`]) when the process runs under a finite cgroup v2
 //! `memory.max`: a drive trips once it has added that cgroup's
-//! [`cgroup_margin`] AND the cgroup holds more than it can reclaim beyond
-//! [`cgroup_limit`] ([`cgroup_trips`]). What it compares is the whole
+//! [`cgroup_margin`] (less under a cap with little room left) AND the cgroup
+//! holds more than it can reclaim beyond [`cgroup_limit`] ([`cgroup_trips`]).
+//! A drive that starts within a tenth of the tightest limit first hands free
+//! heap pages back, as under an explicit limit. What it compares is the whole
 //! cgroup's usage, so every process in a container shares one budget and none
 //! is given a fixed slice of it. The cgroup is read only on a sample that
 //! finds the drive grown that much.
@@ -44,6 +46,10 @@ static LIMIT_MIB: AtomicU64 = AtomicU64::new(0);
 /// cgroup's directory and its cap.
 static CGROUP_DEFAULT: AtomicBool = AtomicBool::new(false);
 static CGROUP_LEVELS: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
+
+/// The smallest [`cgroup_limit`] of those levels, the one a drive's start
+/// compares the resident set against before releasing free pages.
+static CGROUP_TIGHTEST: AtomicU64 = AtomicU64::new(0);
 
 /// The resident set right after the last release at a drive's start, so a
 /// process whose live data sits near the limit does not release again for
@@ -76,6 +82,8 @@ pub fn set_limit_mib(mib: u64) {
 pub fn use_cgroup_default() -> bool {
     LIMIT_MIB.store(0, Ordering::Relaxed);
     let levels = capped_cgroups();
+    let tightest = levels.iter().map(|(_, cap)| cgroup_limit(*cap)).min().unwrap_or(0);
+    CGROUP_TIGHTEST.store(tightest, Ordering::Relaxed);
     let on = !levels.is_empty() && supported();
     *CGROUP_LEVELS.lock().unwrap_or_else(|e| e.into_inner()) = levels;
     CGROUP_DEFAULT.store(on, Ordering::Relaxed);
@@ -116,20 +124,16 @@ impl Armed {
     /// when no limit is set or the resident set cannot be read.
     pub fn enter() -> Armed {
         if CGROUP_DEFAULT.load(Ordering::Relaxed) {
-            return Armed::arm(resident_bytes().map(|start| Drive {
-                start,
-                limit: 0,
-                next: Instant::now() + SAMPLE_EVERY,
-                tripped: false,
-                cgroup: true,
-            }));
+            return Armed::enter_with(CGROUP_TIGHTEST.load(Ordering::Relaxed), true);
         }
-        Armed::enter_with(limit_mib())
+        Armed::enter_with(limit_mib().saturating_mul(MIB), false)
     }
 
-    fn enter_with(limit_mib: u64) -> Armed {
-        let limit = limit_mib.saturating_mul(MIB);
-        let start = (limit > 0).then(resident_bytes).flatten().map(|rss| {
+    /// Arm a drive against `limit` bytes of resident set, or under the cgroup
+    /// default, where `limit` is the tightest cgroup limit and only decides
+    /// the release at the start.
+    fn enter_with(limit: u64, cgroup: bool) -> Armed {
+        let start = (limit > 0 || cgroup).then(resident_bytes).flatten().map(|rss| {
             if rss > limit / 10 * 9 && rss >= RELEASED_AT.load(Ordering::Relaxed) + MIN_GROWTH {
                 release_free_pages();
                 let after = resident_bytes().unwrap_or(rss);
@@ -141,10 +145,10 @@ impl Armed {
         });
         Armed::arm(start.map(|start| Drive {
             start,
-            limit,
+            limit: if cgroup { 0 } else { limit },
             next: Instant::now() + SAMPLE_EVERY,
             tripped: false,
-            cgroup: false,
+            cgroup,
         }))
     }
 
@@ -171,9 +175,9 @@ impl Drop for Armed {
 }
 
 /// Is the armed drive over its limit? Reads the resident set at most once per
-/// [`SAMPLE_EVERY`] (and, under the cgroup default, the capped cgroups' usage
-/// on a sample that finds the drive grown by [`MIN_GROWTH`]); once over, stays
-/// over for the rest of the drive.
+/// [`SAMPLE_EVERY`] (and, under the cgroup default, a capped cgroup's usage on
+/// a sample that finds the drive grown by that cgroup's floor, see
+/// [`cgroup_trips`]); once over, stays over for the rest of the drive.
 pub fn over(now: Instant) -> bool {
     DRIVE.with(|d| {
         let Some(mut drive) = d.get() else {
@@ -207,11 +211,13 @@ pub fn trips(rss: u64, start: u64, limit: u64) -> bool {
 
 /// The cgroup default's trip rule: a capped cgroup (`levels`: directory and
 /// cap) holds more than its [`cgroup_limit`] by `usage`, and the drive that
-/// started at `start` has itself added at least that cgroup's
-/// [`cgroup_margin`]. A function that grew less cannot be what is taking the
-/// cgroup through its margin, so it is left to finish. Returns the limit gone
-/// over. `usage` is asked only about a cgroup whose margin the drive has
-/// grown by.
+/// started at `start` has itself grown by that cgroup's floor: its
+/// [`cgroup_margin`], or half the room the cap left the process at the start
+/// when that is less, and never under [`MIN_GROWTH`]. A function that grew
+/// less is left to finish, since it is not what is using the margin up; the
+/// room term keeps a small cap from being reached before the floor is.
+/// Returns the limit gone over. `usage` is asked only about a cgroup whose
+/// floor the drive has grown by.
 pub fn cgroup_trips(
     rss: u64,
     start: u64,
@@ -221,7 +227,8 @@ pub fn cgroup_trips(
     let grown = rss.saturating_sub(start);
     levels.iter().find_map(|(dir, cap)| {
         let limit = cgroup_limit(*cap);
-        (grown >= cgroup_margin(*cap).max(MIN_GROWTH) && usage(dir)? > limit).then_some(limit)
+        let floor = cgroup_margin(*cap).min(cap.saturating_sub(start) / 2).max(MIN_GROWTH);
+        (grown >= floor && usage(dir)? > limit).then_some(limit)
     })
 }
 
@@ -256,7 +263,7 @@ mod tests {
 
     #[test]
     fn an_unarmed_drive_never_trips() {
-        let guard = Armed::enter_with(0);
+        let guard = Armed::enter_with(0, false);
         assert!(!guard.is_armed());
         assert!(!over(Instant::now() + Duration::from_secs(1)));
         drop(guard);
@@ -268,7 +275,7 @@ mod tests {
         if !supported() {
             return;
         }
-        let guard = Armed::enter_with(1);
+        let guard = Armed::enter_with(MIB, false);
         assert!(guard.is_armed());
         let grown: Vec<u8> = vec![1; 256 << 20];
         let later = Instant::now() + 2 * SAMPLE_EVERY;
@@ -316,5 +323,19 @@ mod tests {
         assert_eq!(cgroup_margin(256 << 20), 256 << 20, "a cap under 512 MiB is all margin");
         let unread = |_: &str| -> Option<u64> { panic!("usage read before the drive grew by the margin") };
         assert_eq!(cgroup_trips(1300 * MIB, 800 * MIB, &one("/a"), unread), None);
+    }
+
+    #[test]
+    fn a_small_cap_lowers_the_floor_to_half_the_room_left() {
+        let small = vec![("/s".to_string(), 600 * MIB)];
+        let full = |_: &str| Some(400 * MIB);
+        assert_eq!(cgroup_limit(600 * MIB), 88 * MIB);
+        assert_eq!(cgroup_trips(365 * MIB, 165 * MIB, &small, full), None, "grew 200 MiB of a 217 MiB floor");
+        assert_eq!(cgroup_trips(385 * MIB, 165 * MIB, &small, full), Some(88 * MIB), "grew 220 MiB");
+        let tight = vec![("/t".to_string(), 200 * MIB)];
+        assert_eq!(cgroup_trips(230 * MIB, 165 * MIB, &tight, full), Some(0), "the floor never drops under 64 MiB");
+        assert_eq!(cgroup_trips(225 * MIB, 165 * MIB, &tight, full), None);
+        let big = vec![("/b".to_string(), 6 << 30)];
+        assert_eq!(cgroup_trips(1400 * MIB, 800 * MIB, &big, |_| Some(5600 * MIB)), None, "a 6 GiB cap keeps its 614 MiB floor");
     }
 }

@@ -1514,21 +1514,25 @@ v2 `memory.max` takes the cgroup default instead
 (`kuna_fnmemory.rs (use_cgroup_default)`): the serial run, every `--jobs`
 worker (the parent passes a value only when one was given) and `decomp_dbg`
 (`--max-fn-memory cgroup`). It budgets the container, not the process. With
-a margin of max(512 MiB, 10% of the cap), a drive trips once it has itself
-added the margin AND some capped cgroup on the path to the root holds more
-than its cap less the margin, counting `memory.current` without the
-file-backed LRU pages reclaim can drop (`kuna_fnmemory.rs (cgroup_trips)`,
-`decompiler/crates/kuna-decomp/src/infra/kuna_hostmem.rs
-(unreclaimable_bytes)`). The cgroup files are read only on a sample that
-finds the drive grown that much. A fixed per-process share of the cap was the
-first alternative, and it stops functions the container could have held while
-the other workers were small. A 64 MiB growth floor was the second: with
-fifteen workers in a 6 GiB scope the container sits past its limit for long
-stretches, and that floor stopped whichever medium function happened to grow
-then (13 of 29 stops on `gh` were functions that finish when nothing is
-stopped). A function that grew by less than the margin cannot be what is
-using the container's last margin up; one that grew by more is, and stopping
-it is what saves the worker the kernel would otherwise kill. A run outside a capped cgroup has no default. The resident set
+a margin of max(512 MiB, 10% of the cap), a drive trips once some capped
+cgroup on the path to the root holds more than its cap less the margin,
+counting `memory.current` without the file-backed LRU pages reclaim can drop
+(`decompiler/crates/kuna-decomp/src/infra/kuna_hostmem.rs
+(unreclaimable_bytes)`), AND the drive has itself grown by that cgroup's
+floor: the margin, or half the room the cap left the process when the drive
+started if that is less, and never under 64 MiB (`kuna_fnmemory.rs
+(cgroup_trips)`). The room term is what keeps a runaway under a small cap
+from reaching the cap before the floor. The cgroup files are read only on a
+sample that finds the drive grown that much, and a drive that starts within
+a tenth of the tightest limit first releases free heap pages, as under an
+explicit limit. A fixed per-process share of the cap would stop functions the
+container could have held while the other workers were small; the shared
+budget stops only a function that has grown by the floor while the container
+is inside its margin. Inside that band the stop is a judgment: a function
+that grew by the floor while other workers filled the container can be
+stopped although it would have fit, and which one it is varies from run to
+run, but each such stop usually replaces a worker the kernel would have
+killed outright. A run outside a capped cgroup has no default. The resident set
 is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, and on Windows the
 larger of the working set and the private commit; a platform that reports no
 resident set (macOS) refuses a non-zero limit. A function whose drive

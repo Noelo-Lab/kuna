@@ -1703,20 +1703,27 @@ Behaviors specific to `decompile-all`:
   `memory.max` (`docker run --memory`, `systemd-run -p MemoryMax=6G`), every
   one of those processes takes the **cgroup default** instead, which budgets
   the container rather than the process. Its margin is max(512 MiB, 10% of
-  the cap): a function that has itself added the margin is stopped once a
+  the cap): a function that has itself grown by the margin is stopped once a
   capped cgroup on the path to the root holds more than its cap less the
   margin (5,529 MiB of a 6 GiB cap, after 614 MiB of growth), counting
   `memory.current` without the file-backed pages reclaim can drop
-  (`active_file` + `inactive_file`). Every `--jobs` worker therefore shares
-  the one budget, and a worker whose function is taking the container to its
-  cap records that function's memory `error` instead of being killed. A
-  function that grew by less than the margin is never stopped, since it
-  cannot be what is using the container's last margin up, and nor is one
-  that grows while the container has room. The cgroup is read only on a
-  50 ms sample that finds the function grown by the margin. The error names
-  the limit, as for an explicit value. A pool wider than the container can
-  hold even without its big functions (each worker's load counts) can still
-  be killed; `--jobs N` lowers it. An explicit
+  (`active_file` + `inactive_file`). Under a small cap the growth needed is
+  half the room the cap left the process when the function started, if that
+  is less (and never under 64 MiB), so a runaway is stopped before the cap
+  is reached. Every `--jobs` worker therefore shares the one budget, and a
+  worker whose function is taking the container to its cap records that
+  function's memory `error` instead of being killed. A function that grew by
+  less is never stopped, nor is one that grows while the container has room.
+  Inside the margin band the stop is a judgment, not a measurement: a
+  function that grew by the margin while other workers filled the container
+  can be stopped although it would have fit, which of them it is varies from
+  run to run, and each such stop usually stands in for a worker the kernel
+  would have killed. The cgroup is read only on a 50 ms sample that finds
+  the function grown that much, and a function that starts within a tenth
+  of the limit first hands free heap pages back. The error names the limit,
+  as for an explicit value. A pool wider than the container can hold even
+  without its big functions (each worker's load counts) can still be
+  killed; `--jobs N` lowers it. An explicit
   value, `0` included, always wins; outside a capped cgroup there is no
   default, and a function the limit never stops is unchanged. It reads the
   resident set (`VmRSS` on Linux; on Windows the larger of the working set and
