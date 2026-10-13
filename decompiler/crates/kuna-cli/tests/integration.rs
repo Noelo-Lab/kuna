@@ -62,6 +62,9 @@ mod call_result_high_word_reads;
 #[path = "call_result_pair_returns.rs"]
 mod call_result_pair_returns;
 
+#[path = "catalog_cli.rs"]
+mod catalog_cli;
+
 #[path = "caller_stack_cli.rs"]
 mod caller_stack_cli;
 
