@@ -159,8 +159,7 @@ jobs:
         run: |
           ext=""
           if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
-          alone="$RUNNER_TEMP/kuna-alone"
-          mkdir -p "$alone"
+          alone="$(mktemp -d)"
           cp "decompiler/target/${{ matrix.target }}/release/kuna$ext" "$alone/"
           fixture="$PWD/decompiler/crates/kuna-analysis/tests/fixtures/fauxware"
           cd "$alone"
