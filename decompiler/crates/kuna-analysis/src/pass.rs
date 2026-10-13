@@ -583,8 +583,10 @@ pub struct CppSigFacts {
     /// (kuna `msvcbyval`) The MSVC `__cdecl` imports in [`Self::msvc`] left open
     /// at a by-value class, as whole declarations the call sites size.
     pub msvc_byval: Vec<(u64, kuna_decomp::kuna_msvcbyval::ByvalDecl)>,
-    /// (kuna `msvcbyval`) The entries an MSVC name declares as a constructor.
-    pub msvc_ctors: Vec<u64>,
+    /// (kuna `msvcbyval`) The entries an MSVC name declares as building the
+    /// object at an address they are handed: a `__thiscall` constructor, or a
+    /// function returning a class through its hidden pointer.
+    pub msvc_builders: Vec<(u64, kuna_decomp::kuna_msvcbyval::Builder)>,
 }
 
 /// (kuna `cppproto`) The DWARF facts recovered by resolving a subprogram DIE
@@ -648,7 +650,7 @@ impl AnalysisOutput {
         self.cpp_sig.msvc.extend(other.cpp_sig.msvc);
         self.cpp_sig.msvc_legacy.extend(other.cpp_sig.msvc_legacy);
         self.cpp_sig.msvc_byval.extend(other.cpp_sig.msvc_byval);
-        self.cpp_sig.msvc_ctors.extend(other.cpp_sig.msvc_ctors);
+        self.cpp_sig.msvc_builders.extend(other.cpp_sig.msvc_builders);
         self.format_sites.extend(other.format_sites);
         self.libctypes_glibc |= other.libctypes_glibc;
         self.libctypes_refused |= other.libctypes_refused;

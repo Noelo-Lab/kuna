@@ -2674,22 +2674,29 @@ the top of the argument area, and the size is declined unless:
 A model that lays the full declaration out differently from that arithmetic is
 also declined.
 
-**The object.** Walking back, the first write of `ecx` before a call is the
-`this` that call receives; when it points at the start of the class's slot while
-the slot is still unreserved further back, and the call's target is a
-constructor by its MSVC name (`??0`, recorded at the analysis commit), that call
-builds the argument. Two passes act on it. `Heritage::guardCalls` (§4.3,
-*Effect lists*) gives the constructor call a `killedbycall` effect on every
-range inside the slot instead of `unknown_effect`
+**The object.** A slot whose address the caller forms during the walk is an
+object as well as an argument, so `ActionRestrictLocal` leaves it mapped instead
+of marking it as the call's parameter storage
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (keeps_slot_mapped)`),
+and whatever fills it through that address prints as the same local the call is
+passed. The walk also finds the call that builds the object: for an earlier
+call whose MSVC name makes it a `__thiscall` constructor (`??0`), the latest
+write of `ecx` before it is the `this` it receives; for one whose applied MSVC
+declaration returns a class by value, the latest push to its first stack
+argument is its hidden return pointer (both recorded at the analysis commit).
+That value is traced back through register copies to the stack pointer, and
+when it is the start of the class's slot while the slot is still unreserved
+further back, that call builds the argument. `Heritage::guardCalls` (§4.3,
+*Effect lists*) then gives the builder a `killedbycall` effect on every range
+inside the slot instead of `unknown_effect`
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (constructed_ranges, constructs)`):
 the slot's value after the call is one the call creates, not one it may modify,
 so the `ecx` value `push ecx` stored to reserve the slot is dead, and the
-function no longer gains `ecx` as a parameter it only pushed. And
-`ActionRestrictLocal` leaves the slot mapped instead of marking it as the call's
-parameter storage
-(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (keeps_slot_mapped)`),
-so the constructor's `this` and the argument print as one local: `Build` becomes
-`Arr::Arr((Arr *)&v1,a1); MakeStack(a0,v1,a1,a2);` with three parameters.
+function no longer gains `ecx` as a parameter it only pushed. `Build` becomes
+`Arr::Arr((Arr *)&v1,a1); MakeStack(a0,v1,a1,a2);` with three parameters, and
+`MakeStack(GetArr(), x, y)` becomes `GetArr((Arr *)&v1); MakeStack(a0,v1,a1,a2);`.
+Where no builder is found, the slot is still mapped and keeps the value pushed to
+reserve it, which is what the machine code passes.
 
 Inert without `msvcsig`, and a class passed by value to a callee-pops convention
 is still refused there (its pop would depend on the missing size).

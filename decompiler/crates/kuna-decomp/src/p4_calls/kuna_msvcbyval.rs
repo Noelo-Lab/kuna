@@ -38,14 +38,16 @@
 //!
 //! # The object
 //!
-//! When `ecx` is loaded with the slot's address and the next call is an MSVC
-//! constructor (`??0`), that call builds the argument. Heritage gives the slot to
-//! it as a value it creates rather than one it may modify, so the `ecx` value a
-//! `push ecx` stored to reserve the slot is dead, and `ActionRestrictLocal` leaves
-//! the slot mapped, so the constructor's `this` and the argument print as one
-//! local.
+//! A slot whose address the caller forms is an object as well as an argument,
+//! so `ActionRestrictLocal` leaves it mapped, and whatever fills it through that
+//! address and the argument print as one local. When the slot's address is the
+//! object a call builds -- the `this` (`ecx`) of a `__thiscall` MSVC constructor
+//! (`??0`), or the hidden return pointer (first stack argument) of an MSVC
+//! function returning a class by value -- Heritage gives the slot to that call
+//! as a value it creates rather than one it may modify, so the `ecx` value a
+//! `push ecx` stored to reserve the slot is dead.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -88,16 +90,27 @@ pub struct ByvalDecl {
 /// Declarations by entry `(space index, offset)`.
 pub type ByvalDecls = BTreeMap<(int4, uintb), ByvalDecl>;
 
-/// Entries `(space index, offset)` declared as MSVC constructors.
-pub type CtorEntries = BTreeSet<(int4, uintb)>;
+/// Where a call takes the address of the object it builds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Builder {
+    /// A `__thiscall` constructor: `this`, in `ecx`.
+    This,
+    /// A function returning a class by value: the hidden return pointer, its
+    /// first stack argument.
+    ReturnSlot,
+}
 
-/// One call whose by-value slot was sized, and the constructor call that builds
-/// the argument in that slot, if one was found.
+/// MSVC-declared builders by entry `(space index, offset)`.
+pub type Builders = BTreeMap<(int4, uintb), Builder>;
+
+/// One call whose by-value slot was sized: the call that builds the argument in
+/// that slot, if one was found, and whether the slot's address was formed.
 #[derive(Clone, Debug)]
 pub struct ByvalSite {
     pub call: OpId,
     pub param: usize,
-    pub ctor: Option<OpId>,
+    pub builder: Option<OpId>,
+    pub mapped: bool,
 }
 
 /// Most argument bytes a single cleanup is read as, as for `calleepop`.
@@ -162,7 +175,9 @@ pub fn size_slots(data: &mut Funcdata) {
             off += w;
         }
         let (lo, _) = layout[decl.at];
-        let Some(walk) = walk_back(data, call, &sp, 4 + k, (lo, lo + slot)) else { continue };
+        let Some(walk) = walk_back(data, call, &sp, 4 + k, (lo, lo + slot), &arch.msvc_builders) else {
+            continue;
+        };
         let pushed = layout
             .iter()
             .enumerate()
@@ -183,12 +198,7 @@ pub fn size_slots(data: &mut Funcdata) {
             continue;
         }
         data.get_call_specs_mut(i).proto_mut().copy(&fp);
-        let ctor = walk.this_call.filter(|c| {
-            data.get_call_specs_index(*c)
-                .and_then(|ci| key(data.get_call_specs(ci).get_entry_address()))
-                .is_some_and(|k| arch.msvc_ctors.contains(&k))
-        });
-        sites.push(ByvalSite { call, param: decl.at, ctor });
+        sites.push(ByvalSite { call, param: decl.at, builder: walk.builder, mapped: walk.slot_taken });
     }
     data.kuna_set_msvc_byval_sites(sites);
 }
@@ -302,32 +312,97 @@ struct Walk {
     /// Per byte of `[0, top)` from the call's stack pointer: written by a push
     /// after it was last reserved.
     written: Vec<bool>,
-    /// The call that `ecx` was pointed at the by-value slot for.
-    this_call: Option<OpId>,
+    /// The call that builds the object at the by-value slot's start.
+    builder: Option<OpId>,
+    /// An address inside the by-value slot was formed.
+    slot_taken: bool,
+}
+
+/// The builder kind of the call `op`, when its prototype fits it.
+fn builder_kind(data: &Funcdata, op: OpId, builders: &Builders) -> Option<Builder> {
+    let fc = data.get_call_specs(data.get_call_specs_index(op)?);
+    let kind = *builders.get(&key(fc.get_entry_address())?)?;
+    let model_ok = fc.proto().has_model()
+        && match kind {
+            Builder::This => fc.proto().get_model_name() == "__thiscall",
+            Builder::ReturnSlot => fc.proto().is_input_locked(),
+        };
+    model_ok.then_some(kind)
+}
+
+/// Do two storage ranges in one space overlap?
+fn overlaps(a: &Address, asz: int4, b: &Address, bsz: int4) -> bool {
+    match (a.get_space(), b.get_space()) {
+        (Some(x), Some(y)) if Rc::ptr_eq(x, y) => {
+            let (ao, bo) = (a.get_offset(), b.get_offset());
+            ao < bo.wrapping_add(bsz as uintb) && bo < ao.wrapping_add(asz as uintb)
+        }
+        _ => false,
+    }
 }
 
 /// Walk the raw p-code back from `call` until the stack pointer stands at `top`
 /// bytes above its value at the call (see the module header); `None` when the
-/// walk declines.
+/// walk declines. `slot` is the by-value slot, from the call's stack pointer.
 fn walk_back(
     data: &Funcdata,
     call: OpId,
     sp: &(Address, int4),
     top: int4,
     slot: (int4, int4),
+    builders: &Builders,
 ) -> Option<Walk> {
     let n = top as usize;
     let mut claimed = vec![false; n];
     let mut written = vec![false; n];
     let mut d: int4 = 0;
     let mut cleaned: Option<OpId> = None;
-    let mut next_call: Option<OpId> = None;
-    let mut ecx_set = false;
-    let mut this_call = None;
+    // (builder call, storage whose latest write is the object address it gets)
+    let mut pending: Vec<(OpId, Address, int4)> = Vec::new();
+    // (return-slot builder call, offset of the push of its first stack argument)
+    let mut want: Option<(OpId, int4)> = None;
+    let mut builder = None;
+    let mut slot_taken = false;
     let ecx = this_register(data);
     let mut cur = data.op_previous_op(call)?;
     loop {
         let o = data.obank().get(cur)?;
+        if let Some(out) = o.get_out().and_then(|v| data.vbank().get(v)) {
+            let mut resolved = Vec::new();
+            pending.retain_mut(|(c, a, sz)| {
+                if !overlaps(out.get_addr(), out.get_size(), a, *sz) {
+                    return true;
+                }
+                if out.get_addr() != a || out.get_size() != *sz {
+                    return false;
+                }
+                match o.code() {
+                    OpCode::CPUI_COPY if is_sp(data, o.get_in(0), sp) => resolved.push((*c, d)),
+                    OpCode::CPUI_INT_ADD if is_sp(data, o.get_in(0), sp) => {
+                        if let Some(k) = constant(data, o.get_in(1)) {
+                            resolved.push((*c, d + k));
+                        }
+                    }
+                    OpCode::CPUI_COPY => {
+                        if let Some(v) = o.get_in(0).and_then(|v| data.vbank().get(v)) {
+                            if !v.is_constant() {
+                                *a = v.get_addr().clone();
+                                *sz = v.get_size();
+                                return true;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                false
+            });
+            for (c, ptr) in resolved {
+                let fresh = (slot.0..slot.1).all(|b| !claimed[b as usize] && !written[b as usize]);
+                if ptr == slot.0 && fresh {
+                    builder = Some(c);
+                }
+            }
+        }
         match o.code() {
             OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
                 let idx = data.get_call_specs_index(cur)?;
@@ -341,38 +416,39 @@ fn walk_back(
                 }
                 d -= e;
                 cleaned = None;
-                next_call = Some(cur);
-                ecx_set = false;
+                pending.clear();
+                want = None;
+                match builder_kind(data, cur, builders) {
+                    Some(Builder::This) => {
+                        if let Some(r) = &ecx {
+                            pending.push((cur, r.0.clone(), r.1));
+                        }
+                    }
+                    Some(Builder::ReturnSlot) => want = Some((cur, d + 4)),
+                    None => {}
+                }
             }
             OpCode::CPUI_STORE if is_sp(data, o.get_in(1), sp) => {
-                let size = o.get_in(2).and_then(|v| data.vbank().get(v)).map(|v| v.get_size())?;
-                for b in d.max(0)..(d + size).min(top) {
+                let v = o.get_in(2).and_then(|v| data.vbank().get(v))?;
+                for b in d.max(0)..(d + v.get_size()).min(top) {
                     if !claimed[b as usize] {
                         written[b as usize] = true;
+                    }
+                }
+                if let Some((c, _)) = want.filter(|(_, at)| *at == d) {
+                    want = None;
+                    if !v.is_constant() {
+                        pending.push((c, v.get_addr().clone(), v.get_size()));
                     }
                 }
             }
             _ => {}
         }
         if let Some(t) = sp_pointer(data, cur, sp).map(|c| d + c) {
-            if (4..top).contains(&t) && !claimed[t as usize] && !(slot.0..slot.1).contains(&t) {
+            if (slot.0..slot.1).contains(&t) {
+                slot_taken = true;
+            } else if (4..top).contains(&t) && !claimed[t as usize] {
                 return None;
-            }
-        }
-        if let (Some(r), Some(out)) = (&ecx, o.get_out().and_then(|v| data.vbank().get(v))) {
-            if out.get_addr() == &r.0 && !ecx_set {
-                ecx_set = true;
-                let points = match o.code() {
-                    OpCode::CPUI_COPY if is_sp(data, o.get_in(0), sp) => Some(d),
-                    OpCode::CPUI_INT_ADD if is_sp(data, o.get_in(0), sp) => {
-                        constant(data, o.get_in(1)).map(|c| d + c)
-                    }
-                    _ => None,
-                };
-                let fresh = |b: int4| !claimed[b as usize] && !written[b as usize];
-                if points == Some(slot.0) && (slot.0..slot.1).all(fresh) {
-                    this_call = next_call;
-                }
             }
         }
         match sp_delta(data, cur, sp) {
@@ -388,7 +464,7 @@ fn walk_back(
                     return None;
                 }
                 if d == top {
-                    return Some(Walk { written, this_call });
+                    return Some(Walk { written, builder, slot_taken });
                 }
             }
             Some(Some(delta)) => {
@@ -430,8 +506,8 @@ fn this_register(data: &Funcdata) -> Option<(Address, int4)> {
     Some((Address::new(reg.space.clone()?, reg.offset), reg.size as int4))
 }
 
-/// The caller-frame stack range each recorded constructor call builds, as
-/// `(constructor call, offset, size)` in `stack`. `qlst` is the function's call
+/// The caller-frame stack range each recorded builder call builds, as
+/// `(builder call, offset, size)` in `stack`. `qlst` is the function's call
 /// specs, lifted out by `Heritage::guardCalls`.
 pub fn constructed_ranges(
     data: &Funcdata,
@@ -440,7 +516,7 @@ pub fn constructed_ranges(
 ) -> Vec<(OpId, uintb, int4)> {
     let mut out = Vec::new();
     for site in data.kuna_msvc_byval_sites() {
-        let Some(ctor) = site.ctor else { continue };
+        let Some(builder) = site.builder else { continue };
         let Some(fc) = qlst.iter().find(|fc| fc.get_op() == site.call) else { continue };
         let base = fc.get_spacebase_offset();
         if base == OFFSET_UNKNOWN {
@@ -451,7 +527,7 @@ pub fn constructed_ranges(
         if !addr.get_space().is_some_and(|s| Rc::ptr_eq(s, stack)) {
             continue;
         }
-        out.push((ctor, stack.wrap_offset(addr.get_offset().wrapping_add(base)), param.get_size()));
+        out.push((builder, stack.wrap_offset(addr.get_offset().wrapping_add(base)), param.get_size()));
     }
     out
 }
@@ -470,12 +546,12 @@ fn within(rel: uintb, size: int4, object: int4) -> bool {
 }
 
 /// Does `ActionRestrictLocal` leave parameter `param` of the call `op` mapped?
-/// True for a by-value slot a recorded constructor builds: that slot is an
+/// True for a by-value slot whose address the caller formed: that slot is an
 /// object, not just an argument.
 pub fn keeps_slot_mapped(data: &Funcdata, op: OpId, param: int4) -> bool {
     data.kuna_msvc_byval_sites()
         .iter()
-        .any(|s| s.call == op && s.param as int4 == param && s.ctor.is_some())
+        .any(|s| s.call == op && s.param as int4 == param && s.mapped)
 }
 
 #[cfg(test)]

@@ -852,8 +852,10 @@ pub struct Architecture {
     /// unstated size, by entry `(space index, offset)`; filled by the analysis
     /// commit while `msvcsig` applies.
     pub msvc_byval_decls: Rc<crate::p4_calls::kuna_msvcbyval::ByvalDecls>,
-    /// (kuna `msvcbyval`) The entries an MSVC name declares as a constructor.
-    pub msvc_ctors: Rc<crate::p4_calls::kuna_msvcbyval::CtorEntries>,
+    /// (kuna `msvcbyval`) The entries an MSVC name declares as building the
+    /// object at an address they are handed (a constructor, or a function
+    /// returning a class by value).
+    pub msvc_builders: Rc<crate::p4_calls::kuna_msvcbyval::Builders>,
     /// (kuna) Drop a trailing register argument a previous call's clobber put
     /// there (option `argclobber`).  See [`crate::p4_calls::kuna_argclobber`].
     pub arg_clobber: bool,
@@ -2763,7 +2765,7 @@ impl Architecture {
             callee_proto_stack: true,
             msvc_byval: true,
             msvc_byval_decls: Rc::new(Default::default()),
-            msvc_ctors: Rc::new(Default::default()),
+            msvc_builders: Rc::new(Default::default()),
             arg_clobber: true, // (kuna) option argclobber; reset_defaults sets the shipped default
             arm_float_args: false, // (kuna) option armfloatargs
             arm_float_return: false, // (kuna) option armfloatreturn
@@ -3902,7 +3904,7 @@ impl Architecture {
         ctx.callee_proto_stack = self.callee_proto_stack; // calleeprotostack
         ctx.msvc_byval = self.msvc_byval; // msvcbyval
         ctx.msvc_byval_decls = Rc::clone(&self.msvc_byval_decls);
-        ctx.msvc_ctors = Rc::clone(&self.msvc_ctors);
+        ctx.msvc_builders = Rc::clone(&self.msvc_builders);
         ctx.arg_clobber = self.arg_clobber; // argclobber
         ctx.pass_through = self.pass_through; // passthrough
         ctx.mixed_tail_ret = self.mixed_tail_ret; // mixedtailret

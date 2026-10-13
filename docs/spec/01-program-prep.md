@@ -2728,9 +2728,10 @@ moves.
   constructor, or a call returning into the slot — the call-site recovery refuses
   every slot above the one whose address was taken. So for such an import (one
   by-value class, no `...`) the arm also parks the whole declaration, the class a
-  placeholder, and records every entry an MSVC name declares a constructor
-  (`??0`); `msvcbyval` (04 §4.4) sizes the class at each call from the caller's
-  cleanup. LOSS: where it declines, those arguments render as stores before the
+  placeholder, and records every entry that builds an object at an address it is
+  handed: a 32-bit `__thiscall` constructor (`??0`) and an applied declaration
+  returning a class by value; `msvcbyval` (04 §4.4) sizes the class at each call
+  from the caller's cleanup. LOSS: where it declines, those arguments render as stores before the
   call (`MakeStack(a1)`, after `Arr::Arr((Arr *)&v1,a2)`, keeps only its hidden
   return pointer). `--option msvcsig off` restores the Itanium-arm reading of MSVC
   names exactly.

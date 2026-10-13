@@ -990,8 +990,9 @@ pub struct ArchContext {
     /// (kuna `msvcbyval`) The declarations with a by-value class of unstated
     /// size, by entry; snapshotted from the architecture at `build_arch_handle`.
     pub msvc_byval_decls: Rc<crate::p4_calls::kuna_msvcbyval::ByvalDecls>,
-    /// (kuna `msvcbyval`) The entries declared as MSVC constructors.
-    pub msvc_ctors: Rc<crate::p4_calls::kuna_msvcbyval::CtorEntries>,
+    /// (kuna `msvcbyval`) The entries an MSVC name declares as building an
+    /// object at an address they are handed.
+    pub msvc_builders: Rc<crate::p4_calls::kuna_msvcbyval::Builders>,
     /// (kuna) drop a trailing register argument a previous call's clobber put
     /// there (`argclobber`).  Read by
     /// [`crate::p4_calls::kuna_argclobber::drop_clobber_tail_arg`]; off by
@@ -1813,7 +1814,7 @@ impl ArchContext {
             callee_proto_stack: true,
             msvc_byval: true,
             msvc_byval_decls: Rc::new(Default::default()),
-            msvc_ctors: Rc::new(Default::default()),
+            msvc_builders: Rc::new(Default::default()),
             // argclobber only drops a trailing argument the callee's own
             // recovered prototype says it never reads, and declines outright
             // when there is no callee to ask, so the fixture seam carries the

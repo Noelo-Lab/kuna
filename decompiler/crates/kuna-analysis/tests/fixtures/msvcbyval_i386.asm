@@ -9,6 +9,7 @@
 ;   void Note(long)                    ?Note@@YAXJ@Z                      __cdecl
 ;   Arr MakeStack(Arr, Arr &, Arr &)   ?MakeStack@@YA?AVArr@@V1@AAV1@1@Z  __cdecl
 ;   void Join(Pair, Pair &)            ?Join@@YAXVPair@@AAV1@@Z           __cdecl
+;   Arr GetArr(void)                   ?GetArr@@YA?AVArr@@XZ              __cdecl
 ;
 ; Build: nasm -f bin -I . -o msvcbyval_i386.exe msvcbyval_i386.asm
 
@@ -70,6 +71,26 @@ folded:                                 ; 0x401050
     ret
 
     align 16, db 0xcc
+; Arr Fresh(Arr &x, Arr &y) { return MakeStack(GetArr(), x, y); }
+; GetArr returns straight into the by-value slot through its hidden pointer.
+fresh:                                  ; 0x401080
+    push ebp
+    mov ebp, esp
+    push dword [ebp+16]
+    push dword [ebp+12]
+    push ecx                            ; room for GetArr's result
+    mov eax, esp
+    push eax
+    call [__imp_GetArr]
+    add esp, 4
+    push dword [ebp+8]
+    call [__imp_MakeStack]
+    add esp, 0x10
+    mov eax, [ebp+8]
+    pop ebp
+    ret
+
+    align 16, db 0xcc
 entry:
     push 0
     call wide
@@ -83,6 +104,11 @@ entry:
     push 0
     call folded
     add esp, 8
+    push 0
+    push 0
+    push 0
+    call fresh
+    add esp, 12
     ret
 
 section .rdata
@@ -97,9 +123,10 @@ __imp_Pair_copy:   dd RVA(hn_pcopy)
 __imp_Note:        dd RVA(hn_note)
 __imp_MakeStack:   dd RVA(hn_makestack)
 __imp_Join:        dd RVA(hn_join)
+__imp_GetArr:      dd RVA(hn_getarr)
     dd 0
 iat_end:
-ilt_arr: dd RVA(hn_copy), RVA(hn_pcopy), RVA(hn_note), RVA(hn_makestack), RVA(hn_join), 0
+ilt_arr: dd RVA(hn_copy), RVA(hn_pcopy), RVA(hn_note), RVA(hn_makestack), RVA(hn_join), RVA(hn_getarr), 0
 hn_copy: dw 0
     db '??0Arr@@QAE@ABV0@@Z', 0
     align 2, db 0
@@ -114,6 +141,9 @@ hn_makestack: dw 0
     align 2, db 0
 hn_join: dw 0
     db '?Join@@YAXVPair@@AAV1@@Z', 0
+    align 2, db 0
+hn_getarr: dw 0
+    db '?GetArr@@YA?AVArr@@XZ', 0
     align 2, db 0
 dll_arr: db 'arr.dll', 0
 

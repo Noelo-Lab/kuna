@@ -56,7 +56,7 @@ use object::{Architecture, BinaryFormat};
 use kuna_base::types::{int4, uint4};
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory};
 use kuna_decomp::fspec::PrototypePieces;
-use kuna_decomp::kuna_msvcbyval::ByvalDecl;
+use kuna_decomp::kuna_msvcbyval::{Builder, ByvalDecl};
 
 use super::demangle_raw;
 use super::kuna_cppsig::{
@@ -788,12 +788,17 @@ pub(super) fn collect(
         .chain(imports.iter().map(|(a, raw)| (*a, raw, true)));
     for (addr, raw, import) in sources {
         let Some(decl) = demangle_raw(raw).and_then(|dem| parse(&dem)) else { continue };
-        if decl.ctor {
-            out.msvc_ctors.push(addr);
+        if x86_32 && decl.ctor && decl.convention == Convention::Thiscall {
+            out.msvc_builders.push((addr, Builder::This));
         }
         if let Some(sig) = build(&decl, &nontrivial, import, x86_32, types, ptr, word_size) {
             if let Some(byval) = sig.byval {
                 out.msvc_byval.push((addr, byval));
+            }
+            let indirect = matches!(decl.ret, Ret::ByValue(_))
+                && matches!(decl.convention, Convention::Cdecl | Convention::Stdcall | Convention::Thiscall);
+            if x86_32 && indirect {
+                out.msvc_builders.push((addr, Builder::ReturnSlot));
             }
             out.msvc.push((addr, sig.pieces, sig.model));
         }

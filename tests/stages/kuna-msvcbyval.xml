@@ -28,13 +28,15 @@
         0x401020 Late: Note(1)'s pop deferred into MakeStack's `add esp,0x14`
         0x401050 Folded: no frame pointer, the cleanup also releases a local
                  (MakeStack(y, x, y) into a local r)
+        0x401080 Fresh: MakeStack(GetArr(), x, y), GetArr returning straight
+                 into the slot through its hidden pointer
 
     Pass 1 (`option msvcbyval off`) is the BUG: MakeStack(a1) and Join() keep
     only the parameters before the class, and the pushed `ecx` that reserves
     the slot is an extra parameter of Build.
     Pass 2 (default) is the FIX: MakeStack(a0,v1,a1,a2) and Join(v1,a0), the
-    copy constructor building that same local, and Build taking exactly its
-    three parameters. Late and Folded must stay as they were: their cleanups
+    copy constructor (or GetArr) building that same local, and Build and Fresh
+    taking exactly their three parameters. Late and Folded must stay as they were: their cleanups
     over-state MakeStack's arguments, so the size is declined (two of each).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
@@ -63,6 +65,9 @@ c3
   <com>load addr 0x401050</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x401080</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcsig_protos_i386.exe</com>
   <com>read symbols</com>
@@ -81,16 +86,22 @@ c3
   <com>load addr 0x401050</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x401080</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="MSVCBYVAL #1: off keeps only MakeStack's hidden return pointer" min="1" max="1">MakeStack\(a1\);</stringmatch>
+<stringmatch name="MSVCBYVAL #1: off keeps only MakeStack's hidden return pointer (Build, Fresh)" min="2" max="2">MakeStack\(a1\);</stringmatch>
 <stringmatch name="MSVCBYVAL #2: off reads the reserving push of ecx as a parameter" min="1" max="1">Arr \* sub_401020\(unsigned int a0,Arr \*a1,Arr \*a2,unsigned int a3\)</stringmatch>
 <stringmatch name="MSVCBYVAL #3: off drops both of Join's arguments" min="1" max="1">Join\(\);</stringmatch>
-<stringmatch name="MSVCBYVAL #4: on passes MakeStack every argument, the copy in place" min="1" max="1">MakeStack\(a0,v1,a1,a2\);</stringmatch>
+<stringmatch name="MSVCBYVAL #4: on passes MakeStack every argument, the class in place (Build, Fresh)" min="2" max="2">MakeStack\(a0,v1,a1,a2\);</stringmatch>
 <stringmatch name="MSVCBYVAL #5: on, the copy constructor builds that same local" min="1" max="1">Arr::Arr\(\(Arr \*\)&amp;v1,a1\);</stringmatch>
 <stringmatch name="MSVCBYVAL #6: on, Build takes exactly its three parameters" min="1" max="1">Arr \* sub_401020\(Arr \*a0,Arr \*a1,Arr \*a2\)</stringmatch>
 <stringmatch name="MSVCBYVAL #7: on sizes the 8-byte Pair from sub esp,8" min="1" max="1">Join\(v1,a0\);</stringmatch>
 <stringmatch name="MSVCBYVAL #8: on, the Pair copy constructor builds the argument" min="1" max="1">Pair::Pair\(\(Pair \*\)&amp;v1,a0\);</stringmatch>
 <stringmatch name="MSVCBYVAL #9: a deferred pop in the cleanup is declined in both passes" min="2" max="2">MakeStack\(a0\);</stringmatch>
 <stringmatch name="MSVCBYVAL #10: a local released by the cleanup is declined in both passes" min="2" max="2">MakeStack\(\(Arr \*\)&amp;v2\);</stringmatch>
+<stringmatch name="MSVCBYVAL #11: off, Fresh reads the reserving push of ecx as a parameter" min="1" max="1">Arr \* sub_401080\(unsigned int a0,Arr \*a1,unsigned int a2,unsigned int a3\)</stringmatch>
+<stringmatch name="MSVCBYVAL #12: on, GetArr's hidden pointer builds the slot, so Fresh takes three parameters" min="1" max="1">Arr \* sub_401080\(Arr \*a0,Arr \*a1,Arr \*a2\)</stringmatch>
+<stringmatch name="MSVCBYVAL #13: GetArr returns into the slot as a local in both passes" min="2" max="2">GetArr\(\(Arr \*\)&amp;v1\);</stringmatch>
 </decompilertest>
