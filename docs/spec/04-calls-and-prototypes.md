@@ -1855,7 +1855,11 @@ a piece of a wider value. A call reads every argument register holding a
 value the function put there. A loop on the way to a RETURN, an indirect
 jump, a branch into another function's entry (a tail call), an operation
 given no register inputs, an undecodable instruction, or a walk over its
-budget (64 paths, 20,000 p-code operations) proves nothing. Every other pair
+budget (64 paths, 20,000 p-code operations) proves nothing, and so does an
+"entry" whose first instruction calls itself, the placeholder an unrelocated
+call in an object file leaves behind (stopping there keeps the walks of an
+object full of them cheap). The walks share one decoded copy of each
+instruction per image. Every other pair
 keeps the first-register-low join, which C's truncation reads as the right
 `int`, and a genuine `long long` there still prints with its halves swapped:
 a 64-bit sum or difference, a load of both words, a product the multiply

@@ -34,7 +34,9 @@
 //! entry value, not a load, a call's result or a piece of a wider value. A
 //! call reads every argument register holding a value the function put there.
 //! A loop, an indirect jump, a tail branch to another function, an operation
-//! given no register inputs, or a walk over its budget proves nothing.
+//! given no register inputs, or a walk over its budget proves nothing, and
+//! neither does an "entry" whose first instruction calls itself (the
+//! placeholder an unrelocated call in an object file leaves).
 
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
@@ -76,6 +78,20 @@ impl WidePair {
     }
 }
 
+/// What `option bejoin evidence` keeps per image: the model's pair (once
+/// looked up; `Some(None)` when the model joins first register low), every
+/// verdict taken, and every instruction the walks decoded, which callers
+/// share with their callees.
+#[derive(Default)]
+pub struct WideCache {
+    pair: Option<Option<WidePair>>,
+    verdicts: HashMap<(int4, uintb), bool>,
+    insns: HashMap<(int4, u64), Rc<Insn>>,
+}
+
+/// How many decoded instructions [`WideCache`] keeps before it starts over.
+const MAX_CACHED_INSNS: usize = 1 << 18;
+
 /// A symbolic value.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Term {
@@ -84,10 +100,24 @@ enum Term {
     /// A literal of the given size.
     Const(u64, u32),
     /// An operation on values, with its output size.
-    Op(OpCode, Vec<usize>, u32),
+    Op(OpCode, Args, u32),
     /// A value nothing here can name: a load, a call's result or clobber, a
     /// partly written register.
     Opaque(u32),
+}
+
+/// An operation's inputs: at most three values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct Args {
+    n: u8,
+    v: [usize; 3],
+}
+
+impl std::ops::Deref for Args {
+    type Target = [usize];
+    fn deref(&self) -> &[usize] {
+        &self.v[..self.n as usize]
+    }
 }
 
 /// The values one walk has made, each once.
@@ -166,12 +196,14 @@ enum Dest {
 }
 
 /// What one decoded instruction is.
-struct Insn {
+pub struct Insn {
     len: u64,
     ops: Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>,
     /// Does it copy three or more registers into others at once (a register
     /// window's `save` or `restore`)?
     window: bool,
+    /// The spaces its varnodes lie in.
+    spaces: Vec<Rc<AddrSpace>>,
 }
 
 #[derive(Default)]
@@ -228,10 +260,14 @@ pub fn seed(arch: &mut Architecture, data: &mut Funcdata) {
         return;
     }
     let Some(model) = arch.default_fp().cloned() else { return };
-    if arch.kuna_wide_pair.is_none() {
-        arch.kuna_wide_pair = Some(wide_pair(&model, arch.manage()));
+    let mut cache = std::mem::take(&mut arch.kuna_wide);
+    if cache.pair.is_none() {
+        cache.pair = Some(wide_pair(&model, arch.manage()));
     }
-    let Some(Some(pair)) = arch.kuna_wide_pair.clone() else { return };
+    let Some(Some(pair)) = cache.pair.clone() else {
+        arch.kuna_wide = cache;
+        return;
+    };
     let mut entries: Vec<Address> = vec![data.get_address().clone()];
     for i in 0..data.num_calls() {
         let e = data.get_call_specs(i).get_entry_address().clone();
@@ -243,16 +279,20 @@ pub fn seed(arch: &mut Architecture, data: &mut Funcdata) {
     for e in entries {
         let Some(sp) = e.get_space() else { continue };
         let k = (sp.get_index(), e.get_offset());
-        let v = match arch.kuna_wide_cache.get(&k) {
+        let v = match cache.verdicts.get(&k) {
             Some(&v) => v,
             None => {
-                let v = proves_wide(arch, &model, &pair, &e);
-                arch.kuna_wide_cache.insert(k, v);
+                if cache.insns.len() > MAX_CACHED_INSNS {
+                    cache.insns.clear();
+                }
+                let v = proves_wide(arch, &model, &pair, &e, &mut cache.insns);
+                cache.verdicts.insert(k, v);
                 v
             }
         };
         verdicts.insert(k, v);
     }
+    arch.kuna_wide = cache;
     data.kuna_set_wide_returns(pair, verdicts);
 }
 
@@ -264,7 +304,13 @@ pub fn proven(data: &Funcdata, entry: &Address) -> bool {
 
 /// The walk: does every RETURN of the function at `entry` hand back one
 /// value twice a register's width in `pair` (see the module header)?
-fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, entry: &Address) -> bool {
+fn proves_wide(
+    arch: &Architecture,
+    model: &Rc<ProtoModel>,
+    pair: &WidePair,
+    entry: &Address,
+    insns: &mut HashMap<(int4, u64), Rc<Insn>>,
+) -> bool {
     let (Some(hi_key), Some(lo_key)) = (WidePair::key(&pair.hi), WidePair::key(&pair.lo)) else { return false };
     if entry.get_space().is_none_or(|s| s.get_type() != spacetype::IPTR_PROCESSOR) {
         return false;
@@ -275,7 +321,7 @@ fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, ent
         hi: hi_key,
         lo: lo_key,
         terms: Terms::default(),
-        insns: HashMap::new(),
+        insns,
         spaces: HashMap::new(),
         args: model
             .input_opt()
@@ -331,7 +377,7 @@ struct Walk<'a> {
     hi: Key,
     lo: Key,
     terms: Terms,
-    insns: HashMap<u64, Rc<Insn>>,
+    insns: &'a mut HashMap<(int4, u64), Rc<Insn>>,
     spaces: HashMap<int4, Rc<AddrSpace>>,
     args: Vec<Key>,
     entry: Address,
@@ -351,17 +397,26 @@ fn overlaps(a: &Key, b: &Key) -> bool {
 }
 
 impl<'a> Walk<'a> {
-    /// Decode (once) the instruction at `at`.
+    /// Decode (once per image) the instruction at `at`.
     fn insn(&mut self, at: &Address) -> Option<Rc<Insn>> {
-        if let Some(i) = self.insns.get(&at.get_offset()) {
-            return Some(Rc::clone(i));
+        let key = (at.get_space()?.get_index(), at.get_offset());
+        if let Some(i) = self.insns.get(&key) {
+            let i = Rc::clone(i);
+            for sp in &i.spaces {
+                self.spaces.entry(sp.get_index()).or_insert_with(|| Rc::clone(sp));
+            }
+            return Some(i);
         }
         let mut c = Collect::default();
         let len = self.arch.translate().one_instruction(&mut c, at).ok().filter(|&n| n > 0)?;
         let mut copies = 0;
+        let mut spaces: Vec<Rc<AddrSpace>> = Vec::new();
         for (opc, out, ins) in &c.ops {
             for v in out.iter().chain(ins.iter()) {
                 if let Some(sp) = v.space.as_ref() {
+                    if !spaces.iter().any(|x| Rc::ptr_eq(x, sp)) {
+                        spaces.push(Rc::clone(sp));
+                    }
                     self.spaces.entry(sp.get_index()).or_insert_with(|| Rc::clone(sp));
                 }
             }
@@ -370,8 +425,8 @@ impl<'a> Walk<'a> {
                 copies += 1;
             }
         }
-        let i = Rc::new(Insn { len: len as u64, ops: c.ops, window: copies >= 3 });
-        self.insns.insert(at.get_offset(), Rc::clone(&i));
+        let i = Rc::new(Insn { len: len as u64, ops: c.ops, window: copies >= 3, spaces });
+        self.insns.insert(key, Rc::clone(&i));
         Some(i)
     }
 
@@ -418,10 +473,10 @@ impl<'a> Walk<'a> {
     /// of the latest write that contains it, or its entry value (a call's
     /// clobber once a call ran, unless the model says calls leave it alone).
     fn read(&mut self, path: &Path, k: &Key) -> usize {
-        if let Some(&(_, t, _)) = path.regs.iter().rev().find(|(r, _, _)| r == k) {
-            return t;
-        }
         if let Some(&(r, t, _)) = path.regs.iter().rev().find(|(r, _, _)| overlaps(r, k)) {
+            if r == *k {
+                return t;
+            }
             if r.1 <= k.1 && k.1 + k.2 as u64 <= r.1 + r.2 as u64 {
                 let big = self.spaces.get(&k.0).is_some_and(|s| s.is_big_endian());
                 let shift = if big { (r.1 + r.2 as u64) - (k.1 + k.2 as u64) } else { k.1 - r.1 };
@@ -490,7 +545,12 @@ impl<'a> Walk<'a> {
                 return self.terms.intern(Term::Const(r & mask, size));
             }
         }
-        self.terms.intern(Term::Op(opc, ins, size))
+        if ins.len() > 3 {
+            return self.terms.opaque();
+        }
+        let mut v = [0usize; 3];
+        v[..ins.len()].copy_from_slice(&ins);
+        self.terms.intern(Term::Op(opc, Args { n: ins.len() as u8, v }, size))
     }
 
     /// Run one path from op `op` of the instruction at `path.at`: `Some(true)`
@@ -558,6 +618,9 @@ impl<'a> Walk<'a> {
                         let target = (*opc == OpCode::CPUI_CALL)
                             .then(|| ins[0].space.as_ref().map(|sp| Address::new(Rc::clone(sp), ins[0].offset)))
                             .flatten();
+                        if target.as_ref().is_some_and(|t| *t == self.entry && here == self.entry.get_offset()) {
+                            return None;
+                        }
                         if target.is_some_and(|t| crate::p4_calls::kuna_calleenoreturn::is_no_return(self.arch, &t)) {
                             return Some(false);
                         }
@@ -627,10 +690,14 @@ impl<'a> Walk<'a> {
                         let t = self.fold(*opc, ts.clone(), size);
                         if !ts.contains(&t) {
                             for &i in &ts {
-                                path.reads.push(Read { term: i, insn: here, opc: *opc, out: Some(t) });
+                                if !matches!(self.terms.get(i), Term::Const(..)) {
+                                    path.reads.push(Read { term: i, insn: here, opc: *opc, out: Some(t) });
+                                }
                             }
                         }
-                        path.made_at.entry(t).or_insert(here);
+                        if *opc == OpCode::CPUI_SUBPIECE {
+                            path.made_at.entry(t).or_insert(here);
+                        }
                         if let Some(o) = out {
                             self.write(&mut path, o, t, here);
                         }
@@ -638,9 +705,8 @@ impl<'a> Walk<'a> {
                 }
             }
             let to = next?;
-            if self.ops > MAX_OPS {
-                return None;
-            }
+            let spaces = &self.spaces;
+            path.regs.retain(|(k, _, _)| spaces.get(&k.0).is_none_or(|s| s.get_type() != spacetype::IPTR_INTERNAL));
             path.at = to;
             op = 0;
         }
