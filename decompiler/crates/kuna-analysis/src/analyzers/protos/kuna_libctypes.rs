@@ -122,8 +122,8 @@ use kuna_base::types::{int4, uint4};
 use kuna_decomp::dtype::{flags, type_metatype, Datatype, TypeFactory};
 
 use super::{
-    resolved_import_addrs, seed_named_prototypes, seed_resolved_prototypes,
-    unambiguous_defined_function_names, unambiguous_imported_function_names, Sig, Ty,
+    seed_named_prototypes, seed_resolved_prototypes,
+    unambiguous_defined_function_names, Sig, Ty,
 };
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
@@ -628,13 +628,13 @@ impl AnalysisPass for LibcTypesPass {
         // that this pass, merged after `DwarfPass`, would otherwise outrank.
         // Retargeting the import is the whole job; the definition belongs to
         // whoever declared it.
-        let resolved = resolved_import_addrs(ctx.file, ctx.bytes);
-        let imported = unambiguous_imported_function_names(ctx.file, ctx.bytes);
+        let (resolved, reloc_imports) = super::loaded_import_addrs(ctx.file, ctx.bytes, ctx.image);
+        let imported = super::loaded_function_names(ctx.file, ctx.bytes, &reloc_imports, true);
         // The obstack exception and its two channels (see `LIBC_DEFINED_NAMED`).
         // The defined channel takes the DEFINED names, not the union: an
         // ordinary import is in the union, and the two channels disagree about
         // the size slots.
-        let defined = unambiguous_defined_function_names(ctx.file, ctx.bytes);
+        let defined = unambiguous_defined_function_names(ctx.file, ctx.bytes, &reloc_imports);
         seed_named_prototypes(&mut out, &defined, LIBC_DEFINED_NAMED, types, word_size, layout);
         seed_named_prototypes(&mut out, &imported, LIBC_IMPORTED_OBSTACK, types, word_size, layout);
         seed_resolved_prototypes(&mut out, &resolved, LIBC_IMPORTED_OBSTACK, types, word_size, layout);

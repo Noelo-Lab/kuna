@@ -3584,7 +3584,8 @@ fn a_return_merged_in_pieces_stays_void() {
 /// `floatret_parse_gcc_O1.o` and `floatret_parse_armel.o` (soft-float ARM):
 /// `parse`, `parse2` and `parsef` return what `strtod` and `strtof` return, and
 /// `rp` keeps `parse`'s bits as an integer, `rp2` stores `parse2`'s `double`, and
-/// `rpf` keeps `parsef`'s bits. A relocatable object declares neither callee, so
+/// `rpf` keeps `parsef`'s bits. With libc signature seeding disabled, neither
+/// callee has a declaration, so
 /// a return through them printed `unsigned long parse(..) { return strtod(..); }`,
 /// which converts the `double` by value once compiled against `<stdlib.h>`. They
 /// stay `void`, as before a caller asked for their result.
@@ -3593,7 +3594,7 @@ fn a_return_of_an_undeclared_float_callee_stays_void() {
     let sp = specs();
     for name in ["floatret_parse_gcc_O1.o", "floatret_parse_armel.o"] {
         let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "libcsigs", "off"]);
         assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
         let printed = printed_functions(&stdout, &["parse ", "parse2 ", "parsef ", "rp ", "rp2 ", "rpf "]);
         for want in ["void parse(", "void parse2(", "void parsef("] {
@@ -3601,6 +3602,30 @@ fn a_return_of_an_undeclared_float_callee_stays_void() {
         }
         for bad in ["return strtod(", "return strtof("] {
             assert!(!printed.contains(bad), "{name}: `{bad}` converts the callee's float by value:\n{printed}");
+        }
+    }
+}
+
+/// Code-proven imports receive their known floating-point contracts on x86-64;
+/// ARM retains its exclusion for incompatible floating-point ABI rows.
+#[test]
+fn a_known_float_import_preserves_its_floating_return() {
+    let sp = specs();
+    for name in ["floatret_parse_gcc_O1.o", "floatret_parse_armel.o"] {
+        let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
+        let printed = printed_functions(&stdout, &["parse ", "parse2 ", "parsef "]);
+        let wants: &[&str] = if name == "floatret_parse_gcc_O1.o" {
+            &["double parse(char *", "double parse2(char *", "float parsef(char *", "return strtod(", "return strtof("]
+        } else {
+            &["void parse(", "void parse2(", "void parsef("]
+        };
+        for want in wants {
+            assert!(printed.contains(want), "{name}: missing `{want}`:\n{printed}");
+        }
+        for bad in ["unsigned long parse(", "unsigned long parse2(", "unsigned int parsef(", "(int)strtod(", "(int)strtof("] {
+            assert!(!printed.contains(bad), "{name}: `{bad}` numerically converts a floating return:\n{printed}");
         }
     }
 }

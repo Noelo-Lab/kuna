@@ -1661,6 +1661,17 @@ moves.
   This is required on PE, where the IAT slot and its `FF 25` veneer are separate
   `FunctionSymbol`s with the same name and a direct call reads the veneer's
   prototype by entry address.
+  ELF relocatable objects also contribute the loader's proven external code targets,
+  including undefined `STT_NOTYPE` symbols reached by call relocations. Their
+  synthetic target addresses receive the same signature as ordinary imports;
+  data-only relocations and undefined symbols without code relocation evidence
+  or a function symbol kind do not qualify. A same-spelled
+  definition still suppresses ambiguous name-only parking. The `libcsigs` and
+  `libctypes` passes use this same import evidence.
+  This is a strict repair of existing standard-library declaration matching,
+  not an inference option; the passes retain their existing gates. Code imports
+  the loader cannot establish, including untyped x86 `PC32` direct calls and
+  `GOTPCRELX` indirect calls, remain outside this additional evidence stream.
 - **(kuna) Measured libc signatures** (`libcsigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libcsigs.rs (LibcSigsPass)`):
   the second, larger half of the same table, closing most of the LOSS above. Which

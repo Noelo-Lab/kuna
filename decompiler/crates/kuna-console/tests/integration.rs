@@ -411,3 +411,6 @@ mod verify_widestrings;
 
 #[path = "wrapped_stack_encode.rs"]
 mod wrapped_stack_encode;
+
+#[path = "verify_notype_import_prototypes.rs"]
+mod verify_notype_import_prototypes;

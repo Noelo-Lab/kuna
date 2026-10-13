@@ -515,34 +515,68 @@ fn retain_unambiguous_names(
     candidates.retain(|name| !(imported.contains(name) && defined.contains(name)));
 }
 
-fn unambiguous_present_function_names(file: &object::File, bytes: &[u8]) -> HashSet<String> {
-    let mut present = present_function_names(file, bytes);
-    let imported = imported_function_names(file, bytes);
-    let defined = defined_function_names(file, bytes);
-    retain_unambiguous_names(&mut present, &imported, &defined);
-    present
-}
-
-fn unambiguous_imported_function_names(file: &object::File, bytes: &[u8]) -> HashSet<String> {
-    let mut imported = imported_function_names(file, bytes);
-    let defined = defined_function_names(file, bytes);
-    let imported_evidence = imported.clone();
-    retain_unambiguous_names(&mut imported, &imported_evidence, &defined);
-    imported
-}
-
 /// The names this image DEFINES and does not also import — the mirror of
-/// [`unambiguous_imported_function_names`], and the only set that can tell a
+/// `loaded_function_names(..., true)`, and the only set that can tell a
 /// linked-in copy of a library function from a call into the system one.
 ///
-/// [`unambiguous_present_function_names`] cannot: it is the union, minus the
+/// `loaded_function_names(..., false)` cannot: it is the union, minus the
 /// collisions, so an ordinary import is in it.
-fn unambiguous_defined_function_names(file: &object::File, bytes: &[u8]) -> HashSet<String> {
+fn unambiguous_defined_function_names(
+    file: &object::File,
+    bytes: &[u8],
+    reloc_imports: &[(String, u64)],
+) -> HashSet<String> {
     let mut defined = defined_function_names(file, bytes);
-    let imported = imported_function_names(file, bytes);
+    let mut imported = imported_function_names(file, bytes);
+    imported.extend(reloc_imports.iter().map(|(name, _)| name.clone()));
     let defined_evidence = defined.clone();
     retain_unambiguous_names(&mut defined, &imported, &defined_evidence);
     defined
+}
+
+/// Extend resolver addresses with proven ELF code externs retained by `reloc_symbols`.
+fn loaded_import_addrs(
+    file: &object::File,
+    bytes: &[u8],
+    image: &crate::loadimage_object::ObjectLoadImage,
+) -> (Vec<(String, u64)>, Vec<(String, u64)>) {
+    let mut imports = resolved_import_addrs(file, bytes);
+    let mut reloc_imports = Vec::new();
+    if file.format() != object::BinaryFormat::Elf || image.reloc_symbols().is_empty() {
+        return (imports, reloc_imports);
+    }
+    let mut seen: HashSet<_> = imports.iter().cloned().collect();
+    for sym in image.reloc_symbols().iter().filter(|sym| sym.undefined) {
+        let name = crate::loader::elf_plt::strip_version(sym.name.as_bytes());
+        let imported = (String::from_utf8_lossy(&name).into_owned(), sym.vma);
+        if seen.insert(imported.clone()) {
+            imports.push(imported.clone());
+            reloc_imports.push(imported);
+        }
+    }
+    (imports, reloc_imports)
+}
+
+/// Preserve import/definition ambiguity checks after adding proven code externs.
+fn loaded_function_names(
+    file: &object::File,
+    bytes: &[u8],
+    reloc_imports: &[(String, u64)],
+    imported_only: bool,
+) -> HashSet<String> {
+    let mut imported = imported_function_names(file, bytes);
+    imported.extend(reloc_imports.iter().map(|(name, _)| name.clone()));
+    let defined = defined_function_names(file, bytes);
+    let mut names = if imported_only {
+        imported.clone()
+    } else {
+        present_function_names(file, bytes)
+    };
+    if !imported_only {
+        names.extend(reloc_imports.iter().map(|(name, _)| name.clone()));
+    }
+    retain_unambiguous_names(&mut names, &imported, &defined);
+    names
 }
 
 impl AnalysisPass for LibProtoPass {
@@ -561,8 +595,8 @@ impl AnalysisPass for LibProtoPass {
         // branch. On a PE a `printf` import then types its first arg `char *`, so
         // `printf("%d\n", …)` renders the literal instead of `printf(0x…, …)`.
         let mut out = AnalysisOutput::default();
-        let present = unambiguous_present_function_names(ctx.file, ctx.bytes);
-        let imports = resolved_import_addrs(ctx.file, ctx.bytes);
+        let (imports, reloc_imports) = loaded_import_addrs(ctx.file, ctx.bytes, ctx.image);
+        let present = loaded_function_names(ctx.file, ctx.bytes, &reloc_imports, false);
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &present, LIBC, types, word_size, L);
@@ -575,6 +609,211 @@ impl AnalysisPass for LibProtoPass {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notype_call_imports_gain_prototypes_but_data_relocations_do_not() {
+        use object::{
+            write, Architecture, BinaryFormat, Endianness, RelocationFlags, SymbolFlags,
+            SymbolScope,
+        };
+        for (architecture, endian, code, relocation) in [
+            (
+                Architecture::Sparc,
+                Endianness::Big,
+                vec![0x40, 0, 0, 0],
+                object::elf::R_SPARC_WDISP30,
+            ),
+            (
+                Architecture::X86_64,
+                Endianness::Little,
+                vec![0xe8, 0, 0, 0, 0],
+                object::elf::R_X86_64_PLT32,
+            ),
+        ] {
+            for (call_target, same_named_definition) in
+                [(false, false), (true, false), (true, true)]
+            {
+                let mut object = write::Object::new(BinaryFormat::Elf, architecture, endian);
+                let section = object.section_id(if call_target {
+                    write::StandardSection::Text
+                } else {
+                    write::StandardSection::Data
+                });
+                object.append_section_data(section, &code, 4);
+                let symbol = object.add_symbol(write::Symbol {
+                    name: if same_named_definition {
+                        b"memset@TEST_1".to_vec()
+                    } else {
+                        b"memset".to_vec()
+                    },
+                    value: 0,
+                    size: 0,
+                    kind: SymbolKind::Unknown,
+                    scope: SymbolScope::Dynamic,
+                    weak: false,
+                    section: write::SymbolSection::Undefined,
+                    flags: SymbolFlags::None,
+                });
+                if same_named_definition {
+                    object.add_symbol(write::Symbol {
+                        name: b"memset@@TEST_1".to_vec(),
+                        value: 0,
+                        size: 4,
+                        kind: SymbolKind::Text,
+                        scope: SymbolScope::Dynamic,
+                        weak: false,
+                        section: write::SymbolSection::Section(section),
+                        flags: SymbolFlags::None,
+                    });
+                }
+                let r_type = if call_target {
+                    relocation
+                } else if architecture == Architecture::Sparc {
+                    object::elf::R_SPARC_32
+                } else {
+                    object::elf::R_X86_64_32
+                };
+                object
+                    .add_relocation(
+                        section,
+                        write::Relocation {
+                            offset: if architecture == Architecture::X86_64 && call_target {
+                                1
+                            } else {
+                                0
+                            },
+                            symbol,
+                            addend: if architecture == Architecture::X86_64 && call_target {
+                                -4
+                            } else {
+                                0
+                            },
+                            flags: RelocationFlags::Elf { r_type },
+                        },
+                    )
+                    .unwrap();
+                let bytes = object.write().unwrap();
+                let file = object::File::parse(bytes.as_slice()).unwrap();
+                let image =
+                    crate::loadimage_object::ObjectLoadImage::from_bytes_silent("call.o", &bytes)
+                        .unwrap();
+                let (imports, reloc_imports) = loaded_import_addrs(&file, &bytes, &image);
+                assert_eq!(
+                    imports.iter().any(|(name, _)| name == "memset"),
+                    call_target,
+                    "code proof: {architecture:?}, call={call_target}, definition={same_named_definition}"
+                );
+                for imported_only in [false, true] {
+                    let names = loaded_function_names(&file, &bytes, &reloc_imports, imported_only);
+                    assert_eq!(names.contains("memset"), call_target && !same_named_definition,
+                        "name parking: {architecture:?}, call={call_target}, definition={same_named_definition}, imported={imported_only}");
+                }
+                let defined = unambiguous_defined_function_names(&file, &bytes, &reloc_imports);
+                assert!(
+                    !defined.contains("memset"),
+                    "definition collision: {architecture:?}"
+                );
+                let types = fmt_factory();
+                let mut out = AnalysisOutput::default();
+                seed_resolved_prototypes(&mut out, &imports, LIBC, &types, 1, L);
+                assert_eq!(out.prototypes_at.len(), usize::from(call_target));
+                if call_target {
+                    assert_eq!(
+                        out.prototypes_at[0].1.intypes[0].metatype,
+                        type_metatype::TYPE_PTR
+                    );
+                    assert_eq!(out.prototypes_at[0].0, imports[0].1);
+                    if same_named_definition {
+                        let definition = image
+                            .reloc_symbols()
+                            .iter()
+                            .find(|sym| !sym.undefined && sym.name.starts_with("memset"))
+                            .unwrap();
+                        assert_ne!(out.prototypes_at[0].0, definition.vma);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn notype_address_materialization_in_text_is_not_a_function_import() {
+        use object::{
+            write, Architecture, BinaryFormat, Endianness, RelocationFlags, SymbolFlags,
+            SymbolScope,
+        };
+        let sparc: Vec<_> = [0x03000000u32, 0x82106000, 0x81c3e008, 0x01000000]
+            .into_iter()
+            .flat_map(u32::to_be_bytes)
+            .collect();
+        for (architecture, endian, code, relocations) in [
+            (
+                Architecture::Sparc,
+                Endianness::Big,
+                sparc,
+                vec![
+                    (0, object::elf::R_SPARC_HI22, 0),
+                    (4, object::elf::R_SPARC_LO10, 0),
+                ],
+            ),
+            (
+                Architecture::X86_64,
+                Endianness::Little,
+                vec![0x48, 0x8d, 0x05, 0, 0, 0, 0, 0xc3],
+                vec![(3, object::elf::R_X86_64_PC32, -4)],
+            ),
+            (
+                Architecture::X86_64,
+                Endianness::Little,
+                vec![0x48, 0x8b, 0x05, 0, 0, 0, 0, 0xc3],
+                vec![(3, object::elf::R_X86_64_GOTPCREL, -4)],
+            ),
+            (
+                Architecture::X86_64,
+                Endianness::Little,
+                vec![0x48, 0x8b, 0x05, 0, 0, 0, 0, 0xc3],
+                vec![(3, object::elf::R_X86_64_REX_GOTPCRELX, -4)],
+            ),
+        ] {
+            let mut object = write::Object::new(BinaryFormat::Elf, architecture, endian);
+            let text = object.section_id(write::StandardSection::Text);
+            object.append_section_data(text, &code, 4);
+            let target = object.add_symbol(write::Symbol {
+                name: b"memset".to_vec(),
+                value: 0,
+                size: 0,
+                kind: SymbolKind::Unknown,
+                scope: SymbolScope::Dynamic,
+                weak: false,
+                section: write::SymbolSection::Undefined,
+                flags: SymbolFlags::None,
+            });
+            for &(offset, r_type, addend) in &relocations {
+                object
+                    .add_relocation(
+                        text,
+                        write::Relocation {
+                            offset,
+                            symbol: target,
+                            addend,
+                            flags: RelocationFlags::Elf { r_type },
+                        },
+                    )
+                    .unwrap();
+            }
+            let bytes = object.write().unwrap();
+            let file = object::File::parse(bytes.as_slice()).unwrap();
+            let image =
+                crate::loadimage_object::ObjectLoadImage::from_bytes_silent("address.o", &bytes)
+                    .unwrap();
+            let (imports, reloc_imports) = loaded_import_addrs(&file, &bytes, &image);
+            assert!(
+                imports.is_empty(),
+                "data address: {architecture:?}, {relocations:?}"
+            );
+            assert!(!loaded_function_names(&file, &bytes, &reloc_imports, true).contains("memset"));
+        }
+    }
 
     /// A type factory shaped like the x86-64 one the passes run against.
     fn fmt_factory() -> kuna_decomp::dtype::TypeFactoryImpl {
@@ -800,7 +1039,7 @@ mod tests {
             .expect("install char core type");
         types.cache_core_types().expect("cache core types");
         let mut out = AnalysisOutput::default();
-        let imported = unambiguous_imported_function_names(&file, &bytes);
+        let imported = loaded_function_names(&file, &bytes, &[], true);
         assert!(
             !imported.contains("memcmp"),
             "a same-named resolver export makes global by-name parking ambiguous"
@@ -865,7 +1104,7 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/pe_imports_stripped.exe");
         let bytes = std::fs::read(path).expect("read stripped PE fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse stripped PE fixture");
-        let present = unambiguous_present_function_names(&file, &bytes);
+        let present = loaded_function_names(&file, &bytes, &[], false);
         assert!(present.contains("puts"), "the compatible by-name match remains available");
 
         let imports = resolved_import_addrs(&file, &bytes);
