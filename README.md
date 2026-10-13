@@ -56,7 +56,34 @@ To install and activate Kuna in Ghidra, do the following:
 
 Now, when you decompile, you should see `/* Kuna v{version} */` in the decompilation.
 
-![](./assets/kuna_ghidra.png)
+### Ghidra Headless Usage
+
+The Kuna Ghidra extension is designed for the GUI and does not load in headless mode due to OSGi bundle resolution. To use Kuna as the decompiler backend in headless Ghidra (e.g., for automation, CI, or tools like [REA](https://github.com/morluto/rea)), you can swap the native decompiler binary directly.
+
+1. Locate the stock Ghidra decompiler binary:
+
+       $GHIDRA_INSTALL_DIR/Ghidra/Features/Decompiler/os/linux_x86_64/decompile
+
+2. Back up the original binary:
+
+       cp decompile decompile.ghidra.orig
+
+3. Replace it with the Kuna backend from the extension's `os/linux_x86_64/` directory:
+
+       cp /path/to/KunaDecompiler/os/linux_x86_64/kuna_ghidra decompile
+       chmod +x decompile
+
+4. Set the `KUNA_SPECS` environment variable to the extracted specs directory (from the release's `kuna-v<version>-specs.tar.gz`):
+
+       export KUNA_SPECS=/path/to/specs
+
+5. Verify the swap: decompile a function and check for the `/* Kuna v<version> */` marker in the output.
+
+To revert to the stock Ghidra decompiler, restore the backup:
+
+    cp decompile.ghidra.orig decompile
+
+This method is verified with Ghidra 12.1.2 and REA 3.1.0.
 
 All native Ghidra features are not yet supported, so please report them when you find issues.
 To disable the Kuna backend, simply disable the plugin in `File -> Configure`.
