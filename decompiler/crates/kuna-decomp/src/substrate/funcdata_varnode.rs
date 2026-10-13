@@ -876,11 +876,7 @@ impl Funcdata {
             if let Some(o) = self.obank_mut().get_mut(defop) {
                 o.set_output(None);
             }
-            // vn->def = 0: the C++ nulls the raw `def` field (no tree reinsert,
-            // since destroy() follows immediately).  `make_free` clears the
-            // written class and re-keys the varnode as free so `destroy`'s
-            // "integrated varnode" guard (def != 0) passes.
-            self.vbank_mut().make_free(vn);
+            self.vbank_mut().make_free_for_destroy(vn);
         }
         // ~Varnode(): if (high != 0) { high->remove(this); if (high->isUnattached())
         //   delete high; }  (varnode.cc:629).  See `purge_high_on_free`.
