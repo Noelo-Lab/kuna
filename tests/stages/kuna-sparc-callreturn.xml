@@ -93,6 +93,6 @@
 <stringmatch name="sparc-callreturn #5: f6 reads atoll's o0:o1 result, not a second argument" min="1" max="1">= atoll\(a0\);</stringmatch>
 <stringmatch name="sparc-callreturn #6: fl stores ff's fs0 result" min="1" max="1">\*a1 = ff\(a0\);</stringmatch>
 <stringmatch name="sparc-callreturn #7: no call result is dropped" min="0" max="0">^\s*(atoi|atoll|ff)\(</stringmatch>
-<stringmatch name="sparc-callreturn #8: widen still returns a long long" min="1" max="1">(unsigned long long|int8) widen\(int4 a0\)</stringmatch>
+<stringmatch name="sparc-callreturn #8: widen still returns a long long" min="1" max="1">int8 widen\(int4 a0\)</stringmatch>
 <stringmatch name="sparc-callreturn #9: widen does not lose its low word" min="0" max="0">return a0 >> 0x1f;</stringmatch>
 </decompilertest>

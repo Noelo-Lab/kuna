@@ -9004,9 +9004,11 @@ fn a_64_bit_comparison_keeps_its_int_result_in_the_first_register() {
 /// value: `sum_hi` and `sum64` on PowerPC -O2 (`addc 4,4,6; addze 3,3; add
 /// 3,3,5`), `mulhi` and `uwide_mul` on MIPS gcc -O0 (both halves of `multu`
 /// left in `$2:$3`). On, every one reads as the `long long`, so the `int`
-/// versions print the whole 64-bit value; off, and the default `evidence`,
-/// which finds no proof in these bytes, every one reads as the `int`, so the
-/// `long long` versions print with their halves swapped.
+/// versions print the whole 64-bit value; off, every one reads as the `int`,
+/// so the `long long` versions print with their halves swapped. The default,
+/// `evidence`, reads them as off does, except PowerPC `uwide_mul`, whose low
+/// word `mullw` makes apart from the `mulhwu` that leaves `mulhi`'s: it prints
+/// the whole product, and `mulhi` its `int`.
 /// gcc -O0 on MIPS moves `sum_hi`'s high word down with `srl $17,$2,0` for
 /// `>> 32`, which works it over, so there `sum_hi` reads as its `int` in both
 /// modes. `ltz` returns a flag and reads as its `int` either way. Each mode's
@@ -9025,11 +9027,18 @@ fn bejoin_reads_an_ints_stale_low_half_as_the_long_long_it_matches() {
             .to_str()
             .unwrap()
             .to_string();
-        for on in [true, false] {
+        for mode in ["on", "off", "evidence"] {
+            let on = mode == "on";
+            let proven = mode == "evidence" && !fixture.contains("mips");
+            let funcs: Vec<&str> =
+                if proven { funcs.iter().copied().chain(["uwide_mul", "mulhi"]).collect() } else { funcs.to_vec() };
+            let funcs = &funcs[..];
             let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()];
-            args.extend(["--option", "bejoin", if on { "on" } else { "off" }]);
+            if mode != "evidence" {
+                args.extend(["--option", "bejoin", mode]);
+            }
             let (stdout, stderr, ok) = run_kuna(&args);
-            assert!(ok, "kuna decompile-all {fixture} (bejoin {on}) failed: {stderr}");
+            assert!(ok, "kuna decompile-all {fixture} (bejoin {mode}) failed: {stderr}");
             let printed = callrettype_functions(&stdout, funcs);
             let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
             assert_eq!(sigs.len(), funcs.len(), "{fixture}: every function prints:\n{stdout}");
@@ -9051,7 +9060,7 @@ fn bejoin_reads_an_ints_stale_low_half_as_the_long_long_it_matches() {
                 (
                     "SW(V(ws[i], ws[j]) + V(ws[k], ws[j ^ 3]))",
                     "(u64)(u32)((V(ws[i], ws[j]) + V(ws[k], ws[j ^ 3])) >> 32)",
-                    "SW((u64)ws[i] * ws[j])",
+                    if proven { "(u64)ws[i] * ws[j]" } else { "SW((u64)ws[i] * ws[j])" },
                     "(u64)(u32)(((u64)ws[i] * ws[j]) >> 32)",
                 )
             };
@@ -9082,7 +9091,7 @@ fn bejoin_reads_an_ints_stale_low_half_as_the_long_long_it_matches() {
                  for (int i = 0; i < 8; i++)\n    for (int j = 0; j < 8; j++) {{\n{checks}    }}\n  \
                  printf(\"%d\\n\", bad);\n  return 0;\n}}\n"
             );
-            bejoin_round_trip(&format!("{fixture}-{}", if on { "on" } else { "off" }), &src_text, &printed);
+            bejoin_round_trip(&format!("{fixture}-{mode}"), &src_text, &printed);
         }
     }
 }
@@ -9450,6 +9459,76 @@ fn an_unrecovered_switch_keeps_a_pointers_register() {
          printf(\"%d\\n\", bad);\n  return 0;\n}}\n"
     );
     bejoin_round_trip("bejoin_jump_mips32_O2.o", &src_text, &printed);
+}
+
+/// A call reads its callee's pair the way the callee's own RETURN joins it,
+/// whichever of the two is decompiled first and in whatever run. The default,
+/// `bejoin evidence`, decides both from the callee's instructions alone.
+/// `bejoin_order.c` places `D_mix` and `E_self` before `widen` and `self`,
+/// whose sign-extended `long long` they read both words of, and `self` reads
+/// its own pair back. Each caller is taken from a whole `decompile-all`, a run
+/// narrowed to it with `--functions`, a `--jobs 2` run and a single `kuna
+/// decompile`, compiled with gcc and clang at -O0 and -O2 beside its callee's
+/// printed C, and run against the source, callee included. On main the callee
+/// printed its halves swapped; an order-dependent join printed it right but
+/// let a caller decompiled first read its low word as the high one. (`E_self` is checked on MIPS alone: kuna drops `self`'s
+/// recursive argument on SPARC and its low word on PowerPC, as before.)
+#[test]
+fn bejoin_evidence_reads_a_callee_pair_alike_in_every_run() {
+    let sp = specs();
+    let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let cases: [(&str, &[&str]); 3] = [
+        ("bejoin_order_ppc32_O2.o", &["D_mix"]),
+        ("bejoin_order_sparc32_O2.o", &["D_mix"]),
+        ("bejoin_order_mips32_O2", &["D_mix", "E_self"]),
+    ];
+    for (fixture, callers) in cases {
+        let bin = fixtures.join(fixture).to_str().unwrap().to_string();
+        let (full, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
+        let (jobs, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--jobs", "2"]);
+        assert!(ok, "kuna decompile-all {fixture} --jobs 2 failed: {stderr}");
+        for &caller in callers {
+            let callee = if caller == "D_mix" { "widen" } else { "self" };
+            let (narrowed, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--functions", caller]);
+            assert!(ok, "kuna decompile-all {fixture} --functions {caller} failed: {stderr}");
+            let (single, stderr, ok) = run_kuna(&["decompile", &bin, caller, "--sleighpath", &sp]);
+            assert!(ok, "kuna decompile {fixture} {caller} failed: {stderr}");
+            let runs = [
+                ("all", callrettype_functions(&full, &[caller])),
+                ("functions", callrettype_functions(&narrowed, &[caller])),
+                ("jobs", callrettype_functions(&jobs, &[caller])),
+                ("single", format!("// Function: {caller}\n{single}")),
+            ];
+            let callee_text = callrettype_functions(&full, &[callee]);
+            assert!(!callee_text.is_empty(), "{fixture}: {callee} prints:\n{full}");
+            for (run, caller_text) in runs {
+                assert!(caller_text.contains(caller), "{fixture} ({run}): {caller} prints:\n{caller_text}");
+                let printed = format!("{callee_text}\n{caller_text}");
+                let sigs: String = printed
+                    .split("// Function: ")
+                    .skip(1)
+                    .filter_map(|part| part.lines().find(|l| l.contains('(')))
+                    .map(|sig| format!("{sig};\n"))
+                    .collect();
+                let (stub_decls, stub_defs) = bejoin_stubs(&printed);
+                let src_text = format!(
+                    "#include <stdio.h>\n\
+                     typedef long long i64;\n\
+                     #define CONCAT44(h, l) ((unsigned long long)(unsigned int)(h) << 32 | (unsigned int)(l))\n\
+                     {stub_decls}{sigs}{printed}\n{stub_defs}\
+                     static i64 src_self(int n) {{ int r = n * 9; if (n > 0 && n < 8) {{ i64 v = src_self(n - 1); r = (int)(v >> 32) * 3 + (int)v - n; }} return (i64)r; }}\n\
+                     static i64 src_widen(int x) {{ return x; }}\n\
+                     static int src_D_mix(int x) {{ i64 v = x; return (int)(v >> 32) * 3 + (int)v; }}\n\
+                     static int src_E_self(int n) {{ i64 v = src_self(n); return (int)(v >> 32) * 3 + (int)v; }}\n\
+                     int main(void) {{\n  static const int xs[10] = {{0, 1, -1, 7, -7, 3, 0x7fffffff, (int)0x80000000, 123456789, -5}};\n  \
+                     int bad = 0;\n  for (int i = 0; i < 10; i++)\n    bad += (int){caller}(xs[i]) != src_{caller}(xs[i])\n      || (i64){callee}(xs[i]) != src_{callee}(xs[i]);\n  \
+                     printf(\"%d\\n\", bad);\n  return 0;\n}}\n"
+                );
+                bejoin_round_trip(&format!("order-{fixture}-{caller}-{run}"), &src_text, &printed);
+            }
+        }
+    }
 }
 
 /// An `int` worked out from the high half of a 64-bit temporary leaves the low

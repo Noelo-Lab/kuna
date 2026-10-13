@@ -165,14 +165,14 @@ impl BeJoinMode {
 
 /// The trial indexes `(low, high)` to join the two used output trials of
 /// `active` in: the ABI's order when `option bejoin` finds the pair one value
-/// ([`evidence::proven_wide`], or [`low_word_returned`] with it `on`), first
-/// trial low otherwise.
+/// ([`evidence::proven`], or [`low_word_returned`] with it `on`), first trial
+/// low otherwise.
 pub fn join_order(active: &ParamActive, data: &Funcdata, return_ops: &[OpId]) -> (int4, int4) {
     let abi = active.join_pair_order();
     let wide = abi != (0, 1)
         && match mode(data) {
             BeJoinMode::Off => false,
-            BeJoinMode::Evidence => evidence::proven_wide(active, data, return_ops),
+            BeJoinMode::Evidence => evidence::proven(data, data.get_address()),
             BeJoinMode::On => low_word_returned(active, data, return_ops),
         };
     if wide {
@@ -196,15 +196,15 @@ pub fn live(data: &Funcdata) -> bool {
 /// The trial indexes `(low, high)` a call's two output trials in `active`
 /// join in. With `bejoin on`: the ABI's order unless the calling function's
 /// own pair joined first register low ([`joins_first_low`]). With `evidence`:
-/// the ABI's order exactly when the callee at `callee` returned its pair that
-/// way in its own recovery ([`evidence::callee_high_first`]), whatever the
-/// calling function returns, so the call reads the value the callee's
-/// recovery returns. First register low otherwise.
+/// the ABI's order exactly when the callee at `callee` is proven to return
+/// its pair as one value ([`evidence::proven`]), the same verdict the
+/// callee's own RETURN joins by, whatever the calling function returns.
+/// First register low otherwise.
 pub fn call_join_order(data: &Funcdata, active: &ParamActive, callee: Option<&Address>) -> (int4, int4) {
     let abi = match mode(data) {
         BeJoinMode::Off => false,
         BeJoinMode::On => !data.kuna_pairs_first_low(),
-        BeJoinMode::Evidence => callee.is_some_and(|e| evidence::callee_high_first(data, e, active)),
+        BeJoinMode::Evidence => callee.is_some_and(|e| evidence::proven(data, e)),
     };
     if abi {
         active.join_pair_order()
@@ -2473,7 +2473,7 @@ fn pair_halves(data: &Funcdata, whole: VarnodeId) -> Option<(Address, i32, Addre
 #[path = "kuna_bejoin/evidence.rs"]
 mod evidence;
 
-pub(crate) use evidence::build_high_read;
+pub(crate) use evidence::{build_high_read, seed as seed_wide_returns, WidePair};
 
 #[cfg(test)]
 #[path = "kuna_bejoin/tests.rs"]

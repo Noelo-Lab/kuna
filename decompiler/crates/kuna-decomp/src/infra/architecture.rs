@@ -1481,6 +1481,15 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
     >,
+    /// (kuna `bejoin evidence`) The model's two-register output pair in the
+    /// ABI's order, once looked up (`Some(None)`: the model joins first
+    /// register low, so nothing is probed).
+    pub kuna_wide_pair: Option<Option<crate::kuna_bejoin::WidePair>>,
+    /// (kuna `bejoin evidence`) Per-image cache of the wide-return proof
+    /// ([`crate::kuna_bejoin::seed_wide_returns`]), keyed by the function's
+    /// `(space index, entry offset)`, so a function and every caller of it read
+    /// the same verdict and each body is walked once per run.
+    pub kuna_wide_cache: std::collections::HashMap<(int4, uintb), bool>,
     /// (kuna `calleedeadarg`) Per-image cache of the callee entry-liveness probe
     /// ([`crate::kuna_calleedeadarg::probe_callee_entry_dead`]), keyed by the
     /// callee's `(space index, entry offset)`.  Each distinct function body is
@@ -2923,6 +2932,8 @@ impl Architecture {
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
             kuna_callee_write_cache: std::collections::HashMap::new(),
+            kuna_wide_pair: None,
+            kuna_wide_cache: std::collections::HashMap::new(),
             kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_callee_memory_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),

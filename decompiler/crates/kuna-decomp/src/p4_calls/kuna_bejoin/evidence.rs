@@ -1,444 +1,803 @@
-//! (kuna) `option bejoin evidence`: join a two-register value in the ABI's
-//! order only on proof that it is one value twice a register's width.
+//! (kuna) The per-function proof `option bejoin evidence` joins a
+//! two-register value by, read off the function's own instructions.
 //!
-//! An `int` worked out from the high half of a 64-bit temporary can leave the
-//! temporary's low half in the second register, and then compiles to the same
-//! instructions as the `long long` that returns the temporary whole (ARM's
-//! `umull r1,r0` is both `((u64)a * b) >> 32` and `(u64)a * b`; PowerPC's
-//! `addc 4,4,6; addze 3,3; add 3,3,5` is both `(a + b) >> 32` and `a + b`).
-//! No reading of such bytes can tell the two apart, so they keep the
-//! first-register-low join, which C's truncation reads as the right `int`.
+//! The answer has to be a function of the callee alone: a call reads its
+//! callee's pair in whatever order the callee's own RETURN joins it, and the
+//! two are decided in different decompiles, in any order, in any process
+//! (`--jobs`, a narrowed run, one `kuna decompile`, a front-end session). So
+//! the driver walks the function's raw p-code once per image, before any
+//! pipeline runs, for the function itself and for every direct callee, and
+//! both seams read the same cached verdict ([`seed`]). A caller that reads
+//! only the first register of a proven callee reads the value's high word
+//! ([`build_high_read`]).
 //!
-//! The ABI's order is taken only where every live RETURN holds one of these,
-//! each of which an `int` function has no reason to compute:
+//! The walk follows every path from the entry to a RETURN, executing the
+//! p-code over symbolic values ([`Term`]): a register's value at the entry, a
+//! literal, an operation on values, or an opaque value (a load, a call's
+//! result or clobber, a partly written register). At each RETURN the model's
+//! pair must hold one of three shapes an `int` function has no reason to
+//! compute, both registers written by the function and neither read again
+//! before the RETURN:
 //!
-//! * a sign extension: the first register is the second shifted right
-//!   arithmetically by all but one of its bits (`mr 4,3; srawi 3,3,31`);
-//! * a zero extension: the first register is a literal zero beside a value;
-//! * the two halves of one product, the low half made by an instruction of
-//!   its own (PowerPC's `mullw` beside `mulhw`, MIPS's `mflo` beside `mfhi`),
-//!   not by the instruction that also makes the high half (ARM's `umull`,
-//!   SPARC's `umul`, which write it whether or not anything reads it).
+//! * a sign extension: the first register is the second register's value
+//!   shifted right arithmetically by all but one of its bits, the shift (and
+//!   the carry its instruction computes for nothing) the value's only reader;
+//! * a zero extension: the first register is a literal zero, and nothing reads
+//!   the value;
+//! * the two halves of one product of two extended words, the low half made
+//!   by an instruction of its own -- a separate low product of the same two
+//!   words (PowerPC's `mullw` beside `mulhw`), or a move out of the register
+//!   the multiply left it in (MIPS's `mflo`) -- and read by nothing.
 //!
-//! A call's result handed back whole is no proof: `return g() >> 32` of a
-//! `long long g()` leaves `g`'s low word in the second register, the code of
-//! `return g()`.
-//!
-//! The extended value must be made on purpose: a value the function computes
-//! or another register's argument, not the second register's own entry value
-//! (`srawi 3,4,31` is both `(long long)b` and `b >> 31`), not a load (a
-//! volatile read leaves what it read wherever the register allocator put it),
-//! not a call's or another instruction's by-product. Nothing but the RETURNs
-//! (and the shift a sign extension makes from it) may read it. A RETURN never
-//! reached, and the RETURN of a `restore` in a SPARC call's delay slot, are
-//! not counted; a function whose code return recovery cannot all see (an
-//! unfollowed indirect jump, an operation that may read any register) proves
-//! nothing.
-//!
-//! A call's own two-register result joins in the ABI's order when the
-//! callee's recovery returned its pair that way ([`callee_high_first`]), which
-//! `decompile-all` makes available by decompiling callees first. A caller of
-//! such a callee that reads only the first register reads the value's HIGH
-//! word, not the whole of a narrower result, so the call is given the pair
-//! and the read becomes its high piece ([`build_high_read`]).
+//! An extended value must be made on purpose: computed by the function, or
+//! another register's argument; not a literal, not the second register's own
+//! entry value, not a load, a call's result or a piece of a wider value. A
+//! call reads every argument register holding a value the function put there.
+//! A loop, an indirect jump, a tail branch to another function, an operation
+//! given no register inputs, or a walk over its budget proves nothing.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, HashMap};
+use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::types::int4;
+use kuna_base::space::{spacetype, AddrSpace};
+use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
+use kuna_num::pcoderaw::VarnodeData;
 
-use crate::context::{OpId, VarnodeId};
-use crate::fspec::{FuncCallSpecs, ParamActive};
+use crate::architecture::Architecture;
+use crate::context::VarnodeId;
+use crate::fspec::{effect_type, FuncCallSpecs, ParamActive, ProtoModel};
 use crate::funcdata::Funcdata;
-use crate::op::PcodeOp;
 
-use super::{entry_value_of, hidden_readers, literal_value, moved, moves_register_window, never_reached, undecided_input};
+/// How many paths one walk follows before it gives up.
+const MAX_PATHS: usize = 64;
 
-/// How many Varnodes one walk visits before it gives up (and proves nothing).
-const MAX_NODES: usize = 1024;
+/// How many p-code operations one walk executes before it gives up.
+const MAX_OPS: usize = 20_000;
 
-/// How many moves [`unmove`] looks through.
-const MAX_MOVES: u32 = 16;
+/// How many machine instructions one path runs through before it gives up.
+const MAX_PATH_INSNS: usize = 512;
 
-/// Does every live RETURN of `data` hold the two used trials of `active`, in
-/// the ABI's order, as one value twice a register's width (see the module
-/// header)?
-pub(super) fn proven_wide(active: &ParamActive, data: &Funcdata, return_ops: &[OpId]) -> bool {
-    let used = (0..active.get_num_trials()).take_while(|&i| active.get_trial(i).is_used()).count();
-    if used != 2 {
-        return false;
+/// A storage location: space index, offset, size.
+type Key = (int4, u64, u32);
+
+/// The model's two-register output pair, high word's register first, with
+/// the space each lies in.
+#[derive(Clone, Debug)]
+pub struct WidePair {
+    pub hi: (Address, int4),
+    pub lo: (Address, int4),
+}
+
+impl WidePair {
+    fn key(loc: &(Address, int4)) -> Option<Key> {
+        Some((loc.0.get_space()?.get_index(), loc.0.get_offset(), loc.1 as u32))
     }
-    let (lo, hi) = active.join_pair_order();
-    let (lo_t, hi_t) = (active.get_trial(lo), active.get_trial(hi));
-    if lo_t.get_size() != hi_t.get_size() {
-        return false;
+}
+
+/// A symbolic value.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum Term {
+    /// A location's value at the function's entry.
+    Input(Key),
+    /// A literal of the given size.
+    Const(u64, u32),
+    /// An operation on values, with its output size.
+    Op(OpCode, Vec<usize>, u32),
+    /// A value nothing here can name: a load, a call's result or clobber, a
+    /// partly written register.
+    Opaque(u32),
+}
+
+/// The values one walk has made, each once.
+#[derive(Default)]
+struct Terms {
+    list: Vec<Term>,
+    index: HashMap<Term, usize>,
+    opaque: u32,
+}
+
+impl Terms {
+    fn intern(&mut self, t: Term) -> usize {
+        if let Some(&id) = self.index.get(&t) {
+            return id;
+        }
+        self.list.push(t.clone());
+        self.index.insert(t, self.list.len() - 1);
+        self.list.len() - 1
     }
-    let pair = Pair {
-        lo_slot: lo_t.get_slot(),
-        hi_slot: hi_t.get_slot(),
-        size: lo_t.get_size(),
-        lo_reg: lo_t.get_address().clone(),
-    };
-    let live: Vec<OpId> = return_ops
+
+    fn opaque(&mut self) -> usize {
+        self.opaque += 1;
+        let t = Term::Opaque(self.opaque);
+        self.intern(t)
+    }
+
+    fn get(&self, id: usize) -> &Term {
+        &self.list[id]
+    }
+
+    fn literal(&self, id: usize) -> Option<u64> {
+        match self.get(id) {
+            Term::Const(v, _) => Some(*v),
+            _ => None,
+        }
+    }
+}
+
+/// One operand an operation read on a path.
+#[derive(Clone, Debug)]
+struct Read {
+    term: usize,
+    insn: u64,
+    opc: OpCode,
+    out: Option<usize>,
+}
+
+/// A path's state.
+#[derive(Clone)]
+struct Path {
+    at: Address,
+    /// The most recent write of each location, with the instruction that made
+    /// the value the location holds.
+    regs: Vec<(Key, usize, u64)>,
+    /// A call has run: a register nothing wrote since holds the call's clobber
+    /// unless the model says calls leave it alone.
+    after_call: bool,
+    reads: Vec<Read>,
+    /// The first instruction on the path that computed each value.
+    made_at: HashMap<usize, u64>,
+    /// Was the high or low register read after its last write, by another
+    /// instruction than the one that wrote it (which reads it only for the
+    /// flags it sets)?
+    hi_read: bool,
+    lo_read: bool,
+    hi_at: Option<u64>,
+    lo_at: Option<u64>,
+    insns: usize,
+    visited: Vec<u64>,
+}
+
+/// Where a branch goes.
+enum Dest {
+    Op(usize),
+    Insn(Address),
+}
+
+/// What one decoded instruction is.
+struct Insn {
+    len: u64,
+    ops: Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>,
+    /// Does it copy three or more registers into others at once (a register
+    /// window's `save` or `restore`)?
+    window: bool,
+}
+
+#[derive(Default)]
+struct Collect {
+    ops: Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>,
+}
+
+impl kuna_sleigh::translate::PcodeEmit for Collect {
+    fn dump(&mut self, _addr: &Address, opc: OpCode, outvar: Option<&VarnodeData>, vars: &[VarnodeData]) {
+        self.ops.push((opc, outvar.cloned(), vars.to_vec()));
+    }
+}
+
+/// The model's two-register output pair in the ABI's order, when its output
+/// rule joins the two first general registers high word first.
+pub fn wide_pair(model: &ProtoModel, manager: &kuna_base::space::AddrSpaceManager) -> Option<WidePair> {
+    let list = model.output_list()?;
+    let regs: Vec<(Address, int4)> = list
+        .get_entry()
         .iter()
-        .copied()
-        .filter(|&r| data.obank().get(r).is_some_and(|o| !o.is_dead() && o.get_halt_type() == 0) && !never_reached(data, r))
+        .filter(|e| e.get_type() == crate::dtype::type_class::TYPECLASS_GENERAL && e.get_join_record().is_none())
+        .filter(|e| e.get_space().get_type() == spacetype::IPTR_PROCESSOR)
+        .map(|e| (Address::new(Rc::clone(e.get_space()), e.get_base()), e.get_size()))
+        .take(2)
         .collect();
-    if live.is_empty() || !hidden_readers(data).is_empty() {
-        return false;
-    }
-    live.iter().all(|&r| wide_at(data, r, &pair))
-}
-
-/// The pair a RETURN carries, in the ABI's order.
-struct Pair {
-    lo_slot: int4,
-    hi_slot: int4,
-    size: int4,
-    /// The second register, which holds the low word.
-    lo_reg: Address,
-}
-
-/// Does `retop` hold one wide value in the pair's two slots?
-fn wide_at(data: &Funcdata, retop: OpId, pair: &Pair) -> bool {
-    let Some(o) = data.obank().get(retop) else { return false };
-    let (Some(lo), Some(hi)) = (o.get_in(pair.lo_slot), o.get_in(pair.hi_slot)) else { return false };
-    sign_extended(data, hi, lo, pair)
-        || zero_extended(data, hi, lo, pair)
-        || product_halves(data, hi, lo, pair)
-}
-
-/// The defining operation of `vn`, if any.
-fn def(data: &Funcdata, vn: VarnodeId) -> Option<&PcodeOp> {
-    data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d))
-}
-
-/// `vn` before the moves that only carry it ([`moved`]).
-fn unmove(data: &Funcdata, vn: VarnodeId) -> VarnodeId {
-    let mut cur = vn;
-    for _ in 0..MAX_MOVES {
-        match moved(data, cur) {
-            Some(x) => cur = x,
-            None => break,
-        }
-    }
-    cur
-}
-
-/// Is `hi` the low word `lo` shifted right arithmetically by all but one of
-/// its bits, `lo` a value made on purpose and read by nothing but that shift
-/// and the RETURNs?
-fn sign_extended(data: &Funcdata, hi: VarnodeId, lo: VarnodeId, pair: &Pair) -> bool {
-    let Some(shift_id) = data.vbank().get(unmove(data, hi)).and_then(|v| v.get_def()) else { return false };
-    let Some(shift) = data.obank().get(shift_id).filter(|op| op.code() == OpCode::CPUI_INT_SRIGHT) else { return false };
-    let (Some(src), Some(by)) = (shift.get_in(0), shift.get_in(1)) else { return false };
-    let x = unmove(data, lo);
-    literal_value(data, by, 1) == Some(8 * pair.size as u64 - 1)
-        && unmove(data, src) == x
-        && on_purpose(data, lo, pair)
-        && only_returned(data, x, pair, Some(shift_id))
-}
-
-/// Is `hi` a literal zero beside a low word `lo` made on purpose and read by
-/// nothing but the RETURNs?
-fn zero_extended(data: &Funcdata, hi: VarnodeId, lo: VarnodeId, pair: &Pair) -> bool {
-    literal_value(data, hi, 4) == Some(0) && on_purpose(data, lo, pair) && only_returned(data, unmove(data, lo), pair, None)
-}
-
-/// Is the low word `lo` (through moves, choices of such values, and the
-/// extensions a byte or halfword load makes) a value the function computed or
-/// another register's argument: not a literal, not the second register's own
-/// entry value, not a load, not a call's result or clobber, not a piece of a
-/// wider value?
-fn on_purpose(data: &Funcdata, lo: VarnodeId, pair: &Pair) -> bool {
-    if entry_value_of(data, lo, &pair.lo_reg) {
-        return false;
-    }
-    let mut seen: BTreeSet<VarnodeId> = BTreeSet::new();
-    let mut work = vec![lo];
-    while let Some(cur) = work.pop() {
-        let cur = unmove(data, cur);
-        if !seen.insert(cur) {
-            continue;
-        }
-        if seen.len() > MAX_NODES || literal_value(data, cur, 4).is_some() {
-            return false;
-        }
-        let Some(v) = data.vbank().get(cur) else { return false };
-        let Some(op) = def(data, cur) else {
-            if !v.is_input() || v.get_addr() == &pair.lo_reg {
-                return false;
-            }
-            continue;
-        };
-        match op.code() {
-            OpCode::CPUI_MULTIEQUAL => work.extend((0..op.num_input()).filter_map(|i| op.get_in(i))),
-            OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => work.extend(op.get_in(0)),
-            OpCode::CPUI_LOAD
-            | OpCode::CPUI_CALL
-            | OpCode::CPUI_CALLIND
-            | OpCode::CPUI_CALLOTHER
-            | OpCode::CPUI_INDIRECT
-            | OpCode::CPUI_SUBPIECE
-            | OpCode::CPUI_PIECE
-            | OpCode::CPUI_NEW
-            | OpCode::CPUI_SEGMENTOP
-            | OpCode::CPUI_CPOOLREF => return false,
-            _ => {}
-        }
-    }
-    true
-}
-
-/// Does nothing but moves into the low-word slot of the live RETURNs, and
-/// the instruction at `except` (a sign extension's shift, with the flags it
-/// sets and nothing reads), read `x`? A call whose inputs are still trials
-/// does not yet read a register's entry value it finds in place.
-fn only_returned(data: &Funcdata, x: VarnodeId, pair: &Pair, except: Option<OpId>) -> bool {
-    let mut seen: BTreeSet<VarnodeId> = BTreeSet::new();
-    let mut work = vec![x];
-    while let Some(cur) = work.pop() {
-        if !seen.insert(cur) {
-            continue;
-        }
-        if seen.len() > MAX_NODES {
-            return false;
-        }
-        let Some(v) = data.vbank().get(cur) else { return false };
-        for d in v.descend_iter() {
-            let Some(op) = data.obank().get(d) else { continue };
-            if op.is_dead() || Some(d) == except || except.is_some_and(|e| same_instruction_unread(data, d, e)) {
-                continue;
-            }
-            match op.code() {
-                OpCode::CPUI_RETURN => {
-                    if op.get_halt_type() != 0 || never_reached(data, d) {
-                        continue;
-                    }
-                    if (0..op.num_input()).any(|i| i != pair.lo_slot && op.get_in(i) == Some(cur)) {
-                        return false;
-                    }
-                }
-                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND
-                    if undecided_input(data, d) && (v.is_input() || entry_value_of(data, cur, v.get_addr())) => {}
-                OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL => work.extend(op.get_out()),
-                OpCode::CPUI_INDIRECT if op.get_in(0) == Some(cur) && !op.is_indirect_creation() => {
-                    work.extend(op.get_out())
-                }
-                _ => match op.get_out() {
-                    Some(out) if moved(data, out) == Some(cur) => work.push(out),
-                    _ => return false,
-                },
-            }
-        }
-    }
-    true
-}
-
-/// Is `op` another p-code operation of the machine instruction `of` belongs
-/// to, whose result nothing outside that instruction reads (the carry
-/// `srawi` or `asr` computes)?
-fn same_instruction_unread(data: &Funcdata, op: OpId, of: OpId) -> bool {
-    let (Some(a), Some(b)) = (data.obank().get(op), data.obank().get(of)) else { return false };
-    let at = b.get_addr();
-    if a.get_addr() != at {
-        return false;
-    }
-    let mut work: Vec<VarnodeId> = a.get_out().into_iter().collect();
-    let mut seen: BTreeSet<VarnodeId> = BTreeSet::new();
-    while let Some(cur) = work.pop() {
-        if !seen.insert(cur) {
-            continue;
-        }
-        if seen.len() > 64 {
-            return false;
-        }
-        let Some(v) = data.vbank().get(cur) else { return false };
-        for r in v.descend_iter() {
-            let Some(r) = data.obank().get(r) else { continue };
-            if r.is_dead() {
-                continue;
-            }
-            if r.get_addr() != at {
-                return false;
-            }
-            work.extend(r.get_out());
-        }
-    }
-    true
-}
-
-/// Are `hi` and `lo` the high and low halves of one product of two extended
-/// words, the low half made by an instruction of its own (a separate low
-/// product, or a move out of the register the product left it in) and read
-/// by nothing but the RETURNs?
-fn product_halves(data: &Funcdata, hi: VarnodeId, lo: VarnodeId, pair: &Pair) -> bool {
-    let Some(wide) = high_half_of(data, unmove(data, hi), pair.size) else { return false };
-    let Some(mult) = def(data, wide).filter(|op| op.code() == OpCode::CPUI_INT_MULT) else { return false };
-    let factors = |op: &PcodeOp| -> Option<BTreeSet<VarnodeId>> {
-        let f = |i: int4| {
-            let x = op.get_in(i)?;
-            match def(data, x) {
-                Some(e) if matches!(e.code(), OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT) => e.get_in(0).map(|y| unmove(data, y)),
-                _ => None,
-            }
-        };
-        Some([f(0)?, f(1)?].into_iter().collect())
-    };
-    let Some(wide_factors) = factors(mult) else { return false };
-    let low = unmove(data, lo);
-    let Some(op) = def(data, low) else { return false };
-    let own = match op.code() {
-        OpCode::CPUI_INT_MULT => {
-            let both: Option<BTreeSet<VarnodeId>> =
-                (0..2).map(|i| op.get_in(i).map(|x| unmove(data, x))).collect::<Option<BTreeSet<_>>>();
-            both.as_ref() == Some(&wide_factors) && data.vbank().get(low).is_some_and(|v| v.get_size() == pair.size)
-        }
-        OpCode::CPUI_SUBPIECE => {
-            op.get_in(0) == Some(wide)
-                && op.get_in(1).and_then(|k| literal_value(data, k, 1)) == Some(0)
-                && moved_out(data, lo, low, op.get_addr())
-        }
-        _ => false,
-    };
-    own && only_returned(data, moved_target(data, lo, low), pair, None)
-}
-
-/// The wide value `vn` is the high `size` bytes of: `SUBPIECE(w, size)`, or
-/// `SUBPIECE(w >> 8*size, 0)`.
-fn high_half_of(data: &Funcdata, vn: VarnodeId, size: int4) -> Option<VarnodeId> {
-    let op = def(data, vn).filter(|op| op.code() == OpCode::CPUI_SUBPIECE)?;
-    let w = op.get_in(0)?;
-    if data.vbank().get(w)?.get_size() != 2 * size {
+    let [first, second] = &regs[..] else { return None };
+    if first.1 != second.1 {
         return None;
     }
-    match literal_value(data, op.get_in(1)?, 1)? {
-        k if k == size as u64 => Some(w),
-        0 => {
-            let sh = def(data, w).filter(|s| s.code() == OpCode::CPUI_INT_RIGHT)?;
-            (literal_value(data, sh.get_in(1)?, 1)? == 8 * size as u64).then_some(sh.get_in(0)?)
-        }
-        _ => None,
+    let mut probe = ParamActive::new(false);
+    for (a, s) in [first, second] {
+        probe.register_trial(a, *s);
     }
+    for i in 0..2 {
+        probe.get_trial_mut(i).mark_active();
+    }
+    if model.derive_output_map(&mut probe, manager).is_err() || !(0..2).all(|i| probe.get_trial(i).is_used()) {
+        return None;
+    }
+    let (lo, hi) = probe.join_pair_order();
+    if (lo, hi) == (0, 1) {
+        return None;
+    }
+    let piece = |i: int4| (probe.get_trial(i).get_address().clone(), probe.get_trial(i).get_size());
+    Some(WidePair { hi: piece(hi), lo: piece(lo) })
 }
 
-/// Is there, between the RETURN's low word `lo` and `low`, a move of a
-/// machine instruction other than the one at `made` and other than a
-/// register window's `restore`?
-fn moved_out(data: &Funcdata, lo: VarnodeId, low: VarnodeId, made: &Address) -> bool {
-    let mut cur = lo;
-    for _ in 0..MAX_MOVES {
-        if cur == low {
-            return false;
+/// Take (or reuse, per image) the verdict for the function `data` is and for
+/// every direct callee it calls, and its pair, for the RETURN and CALL seams
+/// to read. Inert unless `option bejoin` is `evidence` and the image's model
+/// joins its pair high word first.
+pub fn seed(arch: &mut Architecture, data: &mut Funcdata) {
+    if arch.be_join != super::BeJoinMode::Evidence {
+        return;
+    }
+    let Some(model) = arch.default_fp().cloned() else { return };
+    if arch.kuna_wide_pair.is_none() {
+        arch.kuna_wide_pair = Some(wide_pair(&model, arch.manage()));
+    }
+    let Some(Some(pair)) = arch.kuna_wide_pair.clone() else { return };
+    let mut entries: Vec<Address> = vec![data.get_address().clone()];
+    for i in 0..data.num_calls() {
+        let e = data.get_call_specs(i).get_entry_address().clone();
+        if !e.is_invalid() {
+            entries.push(e);
         }
-        let Some(d) = data.vbank().get(cur).and_then(|v| v.get_def()) else { return false };
-        let Some(op) = data.obank().get(d) else { return false };
-        if op.get_addr() != made && !moves_register_window(data, d) && op.code() != OpCode::CPUI_INDIRECT {
-            return true;
-        }
-        match moved(data, cur) {
-            Some(x) => cur = x,
+    }
+    let mut verdicts: BTreeMap<(int4, uintb), bool> = BTreeMap::new();
+    for e in entries {
+        let Some(sp) = e.get_space() else { continue };
+        let k = (sp.get_index(), e.get_offset());
+        let v = match arch.kuna_wide_cache.get(&k) {
+            Some(&v) => v,
+            None => {
+                let v = proves_wide(arch, &model, &pair, &e);
+                arch.kuna_wide_cache.insert(k, v);
+                v
+            }
+        };
+        verdicts.insert(k, v);
+    }
+    data.kuna_set_wide_returns(pair, verdicts);
+}
+
+/// Is the function at `entry` proven to return its pair as one wide value,
+/// by the verdict the driver seeded for this decompile ([`seed`])?
+pub fn proven(data: &Funcdata, entry: &Address) -> bool {
+    entry.get_space().is_some_and(|sp| data.kuna_bejoin_verdict((sp.get_index(), entry.get_offset())) == Some(true))
+}
+
+/// The walk: does every RETURN of the function at `entry` hand back one
+/// value twice a register's width in `pair` (see the module header)?
+fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, entry: &Address) -> bool {
+    let (Some(hi_key), Some(lo_key)) = (WidePair::key(&pair.hi), WidePair::key(&pair.lo)) else { return false };
+    if entry.get_space().is_none_or(|s| s.get_type() != spacetype::IPTR_PROCESSOR) {
+        return false;
+    }
+    let mut w = Walk {
+        arch,
+        model,
+        hi: hi_key,
+        lo: lo_key,
+        terms: Terms::default(),
+        insns: HashMap::new(),
+        spaces: HashMap::new(),
+        args: model
+            .input_opt()
+            .map(|l| {
+                l.get_entry()
+                    .iter()
+                    .filter(|e| e.get_space().get_type() == spacetype::IPTR_PROCESSOR && e.get_join_record().is_none())
+                    .map(|e| (e.get_space().get_index(), e.get_base(), e.get_size() as u32))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        entry: entry.clone(),
+        ops: 0,
+    };
+    let tracked = arch.with_context_db_mut(|db| db.get_tracked_set(entry).clone());
+    let mut start = Path {
+        at: entry.clone(),
+        regs: Vec::new(),
+        after_call: false,
+        reads: Vec::new(),
+        made_at: HashMap::new(),
+        hi_read: false,
+        lo_read: false,
+        hi_at: None,
+        lo_at: None,
+        insns: 0,
+        visited: Vec::new(),
+    };
+    for t in &tracked {
+        let Some(sp) = t.loc.space.as_ref() else { continue };
+        let c = w.terms.intern(Term::Const(t.val & ones(t.loc.size), t.loc.size));
+        start.regs.push(((sp.get_index(), t.loc.offset, t.loc.size), c, entry.get_offset()));
+    }
+    let mut todo = vec![(start, 0usize)];
+    let mut paths = 1usize;
+    let mut returns = 0usize;
+    while let Some((path, op)) = todo.pop() {
+        match w.run(path, op, &mut todo, &mut paths) {
+            Some(true) => returns += 1,
+            Some(false) => {}
             None => return false,
         }
+        if paths > MAX_PATHS {
+            return false;
+        }
     }
-    false
+    returns > 0
 }
 
-/// The first Varnode, walking from the RETURN's `lo` back toward `low`, that
-/// a move of its own instruction made ([`moved_out`]), or `low`.
-fn moved_target(data: &Funcdata, lo: VarnodeId, low: VarnodeId) -> VarnodeId {
-    let made = def(data, low).map(|op| op.get_addr().clone());
-    let mut cur = lo;
-    let mut last = low;
-    for _ in 0..MAX_MOVES {
-        if cur == low {
-            break;
-        }
-        let Some(op) = def(data, cur) else { break };
-        if Some(op.get_addr()) != made.as_ref() && op.code() == OpCode::CPUI_COPY {
-            last = cur;
-        }
-        match moved(data, cur) {
-            Some(x) => cur = x,
-            None => break,
-        }
-    }
-    last
+struct Walk<'a> {
+    arch: &'a Architecture,
+    model: &'a Rc<ProtoModel>,
+    hi: Key,
+    lo: Key,
+    terms: Terms,
+    insns: HashMap<u64, Rc<Insn>>,
+    spaces: HashMap<int4, Rc<AddrSpace>>,
+    args: Vec<Key>,
+    entry: Address,
+    ops: usize,
 }
 
-/// Did the callee at `entry` -- in its own recovery, which `decompile-all`
-/// records before it reaches the callers -- return the two trials of
-/// `active` as one value with the first register's word high, as the ABI
-/// returns it?
-pub(super) fn callee_high_first(data: &Funcdata, entry: &Address, active: &ParamActive) -> bool {
-    let used = (0..active.get_num_trials()).take_while(|&i| active.get_trial(i).is_used()).count();
-    if used != 2 {
-        return false;
+fn ones(size: u32) -> u64 {
+    if size >= 8 {
+        u64::MAX
+    } else {
+        (1u64 << (8 * size)) - 1
     }
-    let (lo, hi) = active.join_pair_order();
-    let (lo_t, hi_t) = (active.get_trial(lo), active.get_trial(hi));
-    let Some(sp) = entry.get_space() else { return false };
-    let Some((addr, size)) = data.kuna_callee_return_storage((sp.get_index(), entry.get_offset())) else { return false };
-    if *size != lo_t.get_size() + hi_t.get_size() {
-        return false;
-    }
-    let offset = |reg: &Address, rsize: int4| -> Option<int4> {
-        if !addr.is_join() {
-            let k = addr.justified_contain(*size, reg, rsize, false);
-            return (k >= 0).then_some(k);
+}
+
+fn overlaps(a: &Key, b: &Key) -> bool {
+    a.0 == b.0 && a.1 < b.1 + b.2 as u64 && b.1 < a.1 + a.2 as u64
+}
+
+impl<'a> Walk<'a> {
+    /// Decode (once) the instruction at `at`.
+    fn insn(&mut self, at: &Address) -> Option<Rc<Insn>> {
+        if let Some(i) = self.insns.get(&at.get_offset()) {
+            return Some(Rc::clone(i));
         }
-        let jr = data.get_arch().manage.find_join(addr.get_offset()).ok()?;
-        let mut at = 0;
-        for i in (0..jr.num_pieces()).rev() {
-            let p = jr.get_piece(i);
-            let k = p.get_addr().justified_contain(p.size as int4, reg, rsize, false);
-            if k >= 0 {
-                return Some(at + k);
+        let mut c = Collect::default();
+        let len = self.arch.translate().one_instruction(&mut c, at).ok().filter(|&n| n > 0)?;
+        let mut copies = 0;
+        for (opc, out, ins) in &c.ops {
+            for v in out.iter().chain(ins.iter()) {
+                if let Some(sp) = v.space.as_ref() {
+                    self.spaces.entry(sp.get_index()).or_insert_with(|| Rc::clone(sp));
+                }
             }
-            at += p.size as int4;
+            let reg = |v: &VarnodeData| v.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR);
+            if *opc == OpCode::CPUI_COPY && out.as_ref().is_some_and(reg) && ins.first().is_some_and(reg) {
+                copies += 1;
+            }
         }
-        None
-    };
-    offset(hi_t.get_address(), hi_t.get_size()) == Some(lo_t.get_size()) && offset(lo_t.get_address(), lo_t.get_size()) == Some(0)
-}
+        let i = Rc::new(Insn { len: len as u64, ops: c.ops, window: copies >= 3 });
+        self.insns.insert(at.get_offset(), Rc::clone(&i));
+        Some(i)
+    }
 
-/// The (high, low) register halves of `size` bytes at `addr`: the pieces of a
-/// two-piece join, or the two halves of one register by significance.
-fn halves(data: &Funcdata, addr: &Address, size: int4) -> Option<((Address, int4), (Address, int4))> {
-    if addr.is_join() {
-        let jr = data.get_arch().manage.find_join(addr.get_offset()).ok()?;
-        if jr.num_pieces() != 2 {
+    fn key(v: &VarnodeData) -> Option<Key> {
+        Some((v.space.as_ref()?.get_index(), v.offset, v.size))
+    }
+
+    fn is_const(v: &VarnodeData) -> bool {
+        v.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_CONSTANT)
+    }
+
+    /// Does a call leave the location alone?
+    fn preserved(&self, k: &Key) -> bool {
+        let Some(sp) = self.spaces.get(&k.0) else { return false };
+        if sp.get_type() != spacetype::IPTR_PROCESSOR && sp.get_type() != spacetype::IPTR_INTERNAL {
+            return true;
+        }
+        self.model.has_effect(&Address::new(Rc::clone(sp), k.1), k.2 as int4) == effect_type::UNAFFECTED
+    }
+
+    /// The value `v` holds on `path`, marking a read of the pair's registers.
+    fn value(&mut self, path: &mut Path, v: &VarnodeData) -> usize {
+        if Self::is_const(v) {
+            return self.terms.intern(Term::Const(v.offset & ones(v.size), v.size));
+        }
+        let Some(k) = Self::key(v) else { return self.terms.opaque() };
+        let here = path.at.get_offset();
+        if overlaps(&k, &self.hi) && path.hi_at != Some(here) {
+            path.hi_read = true;
+        }
+        if overlaps(&k, &self.lo) && path.lo_at != Some(here) {
+            path.lo_read = true;
+        }
+        let t = self.read(path, &k);
+        if let Some(&(r, _, by)) = path.regs.iter().rev().find(|(r, _, _)| overlaps(r, &k)) {
+            if r != k {
+                path.made_at.entry(t).or_insert(by);
+            }
+        }
+        t
+    }
+
+    /// The value `k` holds on `path`: the latest write of exactly it, a piece
+    /// of the latest write that contains it, or its entry value (a call's
+    /// clobber once a call ran, unless the model says calls leave it alone).
+    fn read(&mut self, path: &Path, k: &Key) -> usize {
+        if let Some(&(_, t, _)) = path.regs.iter().rev().find(|(r, _, _)| r == k) {
+            return t;
+        }
+        if let Some(&(r, t, _)) = path.regs.iter().rev().find(|(r, _, _)| overlaps(r, k)) {
+            if r.1 <= k.1 && k.1 + k.2 as u64 <= r.1 + r.2 as u64 {
+                let big = self.spaces.get(&k.0).is_some_and(|s| s.is_big_endian());
+                let shift = if big { (r.1 + r.2 as u64) - (k.1 + k.2 as u64) } else { k.1 - r.1 };
+                let c = self.terms.intern(Term::Const(shift, 4));
+                return self.fold(OpCode::CPUI_SUBPIECE, vec![t, c], k.2);
+            }
+            return self.terms.opaque();
+        }
+        if path.after_call && !self.preserved(k) {
+            return self.terms.opaque();
+        }
+        self.terms.intern(Term::Input(*k))
+    }
+
+    fn write(&mut self, path: &mut Path, v: &VarnodeData, t: usize, by: u64) {
+        let Some(k) = Self::key(v) else { return };
+        path.regs.retain(|(r, _, _)| !overlaps(r, &k));
+        path.regs.push((k, t, by));
+        if overlaps(&k, &self.hi) {
+            path.hi_read = false;
+            path.hi_at = Some(path.at.get_offset());
+        }
+        if overlaps(&k, &self.lo) {
+            path.lo_read = false;
+            path.lo_at = Some(path.at.get_offset());
+        }
+    }
+
+    /// The value of `opc` over `ins`, folded when every input is a literal
+    /// and reduced when the operation only moves its input.
+    fn fold(&mut self, opc: OpCode, ins: Vec<usize>, size: u32) -> usize {
+        let lit: Vec<Option<u64>> = ins.iter().map(|&i| self.terms.literal(i)).collect();
+        let mask = ones(size);
+        let moved = match (opc, &lit[..]) {
+            (OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_ADD, [None, Some(0)]) => Some(ins[0]),
+            (OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_ADD, [Some(0), None]) => Some(ins[1]),
+            (OpCode::CPUI_INT_OR | OpCode::CPUI_INT_AND, [None, None]) if ins[0] == ins[1] => Some(ins[0]),
+            _ => None,
+        };
+        if let Some(m) = moved {
+            return m;
+        }
+        if lit.iter().all(|l| l.is_some()) && !lit.is_empty() {
+            let a = lit[0].unwrap_or(0);
+            let b = lit.get(1).copied().flatten().unwrap_or(0);
+            let r = match opc {
+                OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT => Some(a),
+                OpCode::CPUI_INT_ADD => Some(a.wrapping_add(b)),
+                OpCode::CPUI_INT_SUB => Some(a.wrapping_sub(b)),
+                OpCode::CPUI_INT_AND => Some(a & b),
+                OpCode::CPUI_INT_OR => Some(a | b),
+                OpCode::CPUI_INT_XOR => Some(a ^ b),
+                OpCode::CPUI_INT_EQUAL => Some((a == b) as u64),
+                OpCode::CPUI_INT_NOTEQUAL => Some((a != b) as u64),
+                OpCode::CPUI_BOOL_NEGATE => Some((a == 0) as u64),
+                OpCode::CPUI_BOOL_AND => Some(((a != 0) && (b != 0)) as u64),
+                OpCode::CPUI_BOOL_OR => Some(((a != 0) || (b != 0)) as u64),
+                OpCode::CPUI_INT_NEGATE => Some(!a),
+                OpCode::CPUI_INT_2COMP => Some(a.wrapping_neg()),
+                OpCode::CPUI_INT_LEFT => Some(a.checked_shl(b as u32).unwrap_or(0)),
+                OpCode::CPUI_INT_RIGHT => Some(a.checked_shr(b as u32).unwrap_or(0)),
+                OpCode::CPUI_SUBPIECE => Some(a.checked_shr(8 * b as u32).unwrap_or(0)),
+                _ => None,
+            };
+            if let Some(r) = r {
+                return self.terms.intern(Term::Const(r & mask, size));
+            }
+        }
+        self.terms.intern(Term::Op(opc, ins, size))
+    }
+
+    /// Run one path from op `op` of the instruction at `path.at`: `Some(true)`
+    /// at a RETURN holding a wide value, `Some(false)` at a path end that is no
+    /// RETURN (a no-return call), `None` when the function proves nothing.
+    fn run(&mut self, mut path: Path, mut op: usize, todo: &mut Vec<(Path, usize)>, paths: &mut usize) -> Option<bool> {
+        loop {
+            let at = path.at.clone();
+            if op == 0 {
+                if path.visited.contains(&at.get_offset()) || path.insns >= MAX_PATH_INSNS {
+                    return None;
+                }
+                path.visited.push(at.get_offset());
+                path.insns += 1;
+            }
+            let insn = self.insn(&at)?;
+            let mut next: Option<Address> = Some(&at + insn.len as i64);
+            while op < insn.ops.len() {
+                self.ops += 1;
+                if self.ops > MAX_OPS {
+                    return None;
+                }
+                let (opc, out, ins) = &insn.ops[op];
+                let here = at.get_offset();
+                op += 1;
+                match opc {
+                    OpCode::CPUI_COPY => {
+                        let t = self.value(&mut path, &ins[0]);
+                        let by = if insn.window {
+                            Self::key(&ins[0])
+                                .and_then(|k| path.regs.iter().rev().find(|(r, _, _)| *r == k).map(|r| r.2))
+                                .unwrap_or(here)
+                        } else {
+                            here
+                        };
+                        if let Some(o) = out {
+                            self.write(&mut path, o, t, by);
+                        }
+                    }
+                    OpCode::CPUI_LOAD => {
+                        let a = self.value(&mut path, &ins[1]);
+                        path.reads.push(Read { term: a, insn: here, opc: *opc, out: None });
+                        let t = self.terms.opaque();
+                        if let Some(o) = out {
+                            self.write(&mut path, o, t, here);
+                        }
+                    }
+                    OpCode::CPUI_STORE => {
+                        for v in &ins[1..] {
+                            let t = self.value(&mut path, v);
+                            path.reads.push(Read { term: t, insn: here, opc: *opc, out: None });
+                        }
+                    }
+                    OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                        if *opc == OpCode::CPUI_CALLIND {
+                            let t = self.value(&mut path, &ins[0]);
+                            path.reads.push(Read { term: t, insn: here, opc: *opc, out: None });
+                        }
+                        for (k, t, _) in path.regs.clone() {
+                            let arg = self.args.iter().any(|a| overlaps(a, &k));
+                            if arg && self.terms.get(t) != &Term::Input(k) {
+                                path.reads.push(Read { term: t, insn: here, opc: *opc, out: None });
+                            }
+                        }
+                        let target = (*opc == OpCode::CPUI_CALL)
+                            .then(|| ins[0].space.as_ref().map(|sp| Address::new(Rc::clone(sp), ins[0].offset)))
+                            .flatten();
+                        if target.is_some_and(|t| crate::p4_calls::kuna_calleenoreturn::is_no_return(self.arch, &t)) {
+                            return Some(false);
+                        }
+                        for i in 0..path.regs.len() {
+                            if !self.preserved(&path.regs[i].0) {
+                                path.regs[i].1 = self.terms.opaque();
+                                path.regs[i].2 = here;
+                            }
+                        }
+                        path.after_call = true;
+                        path.hi_read = false;
+                        path.lo_read = false;
+                    }
+                    OpCode::CPUI_CALLOTHER => {
+                        if ins[1..].iter().all(Self::is_const) {
+                            return None;
+                        }
+                        for v in &ins[1..] {
+                            let t = self.value(&mut path, v);
+                            path.reads.push(Read { term: t, insn: here, opc: *opc, out: None });
+                        }
+                        if let Some(o) = out {
+                            let t = self.terms.opaque();
+                            self.write(&mut path, o, t, here);
+                        }
+                    }
+                    OpCode::CPUI_BRANCHIND => return None,
+                    OpCode::CPUI_RETURN => return self.proves(&path).then_some(true),
+                    OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => {
+                        let cond = if *opc == OpCode::CPUI_CBRANCH {
+                            let c = self.value(&mut path, &ins[1]);
+                            path.reads.push(Read { term: c, insn: here, opc: *opc, out: None });
+                            self.terms.literal(c).map(|v| v != 0)
+                        } else {
+                            Some(true)
+                        };
+                        if cond == Some(false) {
+                            continue;
+                        }
+                        let dest = self.destination(&insn, op - 1, &ins[0], &next)?;
+                        if cond == Some(true) {
+                            match dest {
+                                Dest::Op(i) => op = i,
+                                Dest::Insn(a) => {
+                                    next = Some(a);
+                                    op = insn.ops.len();
+                                }
+                            }
+                            continue;
+                        }
+                        *paths += 1;
+                        let mut fork = path.clone();
+                        match dest {
+                            Dest::Op(i) => todo.push((fork, i)),
+                            Dest::Insn(a) => {
+                                fork.at = a;
+                                todo.push((fork, 0));
+                            }
+                        }
+                    }
+                    _ => {
+                        let mut ts = Vec::with_capacity(ins.len());
+                        for v in ins {
+                            ts.push(self.value(&mut path, v));
+                        }
+                        let size = out.as_ref().map_or(0, |o| o.size);
+                        let t = self.fold(*opc, ts.clone(), size);
+                        if !ts.contains(&t) {
+                            for &i in &ts {
+                                path.reads.push(Read { term: i, insn: here, opc: *opc, out: Some(t) });
+                            }
+                        }
+                        path.made_at.entry(t).or_insert(here);
+                        if let Some(o) = out {
+                            self.write(&mut path, o, t, here);
+                        }
+                    }
+                }
+            }
+            let to = next?;
+            if self.ops > MAX_OPS {
+                return None;
+            }
+            path.at = to;
+            op = 0;
+        }
+    }
+
+    /// Where a branch at op `index` of `insn` goes: another op of the same
+    /// instruction (a p-code relative target), or an instruction; `None` for a
+    /// tail branch into another function, or a relative target out of range.
+    fn destination(&self, insn: &Insn, index: usize, dest: &VarnodeData, next: &Option<Address>) -> Option<Dest> {
+        if Self::is_const(dest) {
+            let bits = 8 * dest.size.clamp(1, 8);
+            let off = ((dest.offset << (64 - bits)) as i64) >> (64 - bits);
+            let to = index as i64 + off;
+            if to == insn.ops.len() as i64 {
+                return next.clone().map(Dest::Insn);
+            }
+            if to < 0 || to > insn.ops.len() as i64 {
+                return None;
+            }
+            return Some(Dest::Op(to as usize));
+        }
+        let sp = dest.space.as_ref()?;
+        let a = Address::new(Rc::clone(sp), dest.offset);
+        if a.get_offset() < self.entry.get_offset()
+            || (a != self.entry && self.arch.symboltab.find_function_across_scopes(&a).is_some())
+        {
             return None;
         }
-        let piece = |i| (jr.get_piece(i).get_addr(), jr.get_piece(i).size as int4);
-        return Some((piece(0), piece(1)));
+        Some(Dest::Insn(a))
     }
-    let half = size / 2;
-    if half <= 0 || 2 * half != size {
-        return None;
+
+    /// Does the RETURN `path` reached hold one of the module header's shapes
+    /// in the pair?
+    fn proves(&mut self, path: &Path) -> bool {
+        if path.hi_read || path.lo_read {
+            return false;
+        }
+        let written = |k: &Key| path.regs.iter().any(|(r, _, _)| r == k);
+        if !written(&self.hi) || !written(&self.lo) {
+            return false;
+        }
+        let (hi, lo) = (self.read(path, &self.hi.clone()), self.read(path, &self.lo.clone()));
+        let size = self.lo.2;
+        self.sign_extended(path, hi, lo, size) || self.zero_extended(path, hi, lo) || self.product(path, hi, lo, size)
     }
-    let space = addr.get_space()?;
-    let a = Address::new(space.clone(), addr.get_offset());
-    let b = Address::new(space.clone(), addr.get_offset() + half as u64);
-    if addr.justified_contain(size, &a, half, false) == half {
-        Some(((a, half), (b, half)))
-    } else {
-        Some(((b, half), (a, half)))
+
+    fn sign_extended(&self, path: &Path, hi: usize, lo: usize, size: u32) -> bool {
+        let Term::Op(OpCode::CPUI_INT_SRIGHT, ins, _) = self.terms.get(hi) else { return false };
+        if ins.len() != 2 || ins[0] != lo || self.terms.literal(ins[1]) != Some(8 * size as u64 - 1) || !self.on_purpose(lo) {
+            return false;
+        }
+        let Some(shift) = path
+            .reads
+            .iter()
+            .find(|r| r.term == lo && r.opc == OpCode::CPUI_INT_SRIGHT && r.out == Some(hi))
+            .map(|r| r.insn)
+        else {
+            return false;
+        };
+        let mut flags: Vec<usize> = path
+            .reads
+            .iter()
+            .filter(|r| r.term == lo && r.insn == shift && r.out != Some(hi))
+            .filter_map(|r| r.out)
+            .collect();
+        let mut k = 0;
+        while k < flags.len() {
+            let f = flags[k];
+            for r in path.reads.iter().filter(|r| r.term == f && r.insn == shift) {
+                if let Some(o) = r.out.filter(|o| !flags.contains(o) && *o != hi) {
+                    flags.push(o);
+                }
+            }
+            k += 1;
+        }
+        path.reads.iter().all(|r| {
+            if r.term == lo {
+                r.insn == shift && r.opc != OpCode::CPUI_CALL && r.opc != OpCode::CPUI_CALLIND
+            } else if flags.contains(&r.term) {
+                r.insn == shift
+            } else {
+                true
+            }
+        })
+    }
+
+    fn zero_extended(&self, path: &Path, hi: usize, lo: usize) -> bool {
+        self.terms.literal(hi) == Some(0) && self.on_purpose(lo) && !path.reads.iter().any(|r| r.term == lo)
+    }
+
+    fn product(&self, path: &Path, hi: usize, lo: usize, size: u32) -> bool {
+        let Some(wide) = self.high_half_of(hi, size) else { return false };
+        let Term::Op(OpCode::CPUI_INT_MULT, ins, _) = self.terms.get(wide) else { return false };
+        let factor = |t: usize| match self.terms.get(t) {
+            Term::Op(OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT, x, _) if x.len() == 1 => Some(x[0]),
+            _ => None,
+        };
+        let (Some(a), Some(b)) = (factor(ins[0]), factor(ins[1])) else { return false };
+        let own = match self.terms.get(lo) {
+            Term::Op(OpCode::CPUI_INT_MULT, l, s) => *s == size && l.len() == 2 && ((l[0] == a && l[1] == b) || (l[0] == b && l[1] == a)),
+            Term::Op(OpCode::CPUI_SUBPIECE, l, _) => {
+                l.len() == 2 && l[0] == wide && self.terms.literal(l[1]) == Some(0) && {
+                    let writer = path.regs.iter().rev().find(|(r, _, _)| *r == self.lo).map(|r| r.2);
+                    let made = path.made_at.get(&lo).copied();
+                    writer.is_some() && made.is_some() && writer != made
+                }
+            }
+            _ => false,
+        };
+        own && !path.reads.iter().any(|r| r.term == lo)
+    }
+
+    /// The wide value `t` is the high `size` bytes of.
+    fn high_half_of(&self, t: usize, size: u32) -> Option<usize> {
+        let Term::Op(OpCode::CPUI_SUBPIECE, ins, _) = self.terms.get(t) else { return None };
+        let (w, k) = (ins[0], self.terms.literal(ins[1])?);
+        let wsize = match self.terms.get(w) {
+            Term::Op(_, _, s) => *s,
+            _ => return None,
+        };
+        if wsize != 2 * size {
+            return None;
+        }
+        if k == size as u64 {
+            return Some(w);
+        }
+        if k != 0 {
+            return None;
+        }
+        let Term::Op(OpCode::CPUI_INT_RIGHT, sh, _) = self.terms.get(w) else { return None };
+        (self.terms.literal(sh[1])? == 8 * size as u64).then_some(sh[0])
+    }
+
+    /// Is `t` made on purpose: computed, or the argument another register
+    /// passed in?
+    fn on_purpose(&self, t: usize) -> bool {
+        match self.terms.get(t) {
+            Term::Input(k) => !overlaps(k, &self.lo) && self.args.iter().any(|a| overlaps(a, k)),
+            Term::Const(..) | Term::Opaque(_) => false,
+            Term::Op(OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT, x, _) => x.len() == 1 && self.on_purpose(x[0]),
+            Term::Op(OpCode::CPUI_SUBPIECE | OpCode::CPUI_PIECE, _, _) => false,
+            Term::Op(..) => true,
+        }
     }
 }
 
-/// Give a call whose callee's own recovery returned its pair high word
-/// first, as the ABI returns it ([`callee_high_first`]), that pair as its
-/// output when the caller reads only the first register: the read becomes
-/// the pair's high piece, `(int)(g() >> 32)`, rather than the whole of a
-/// narrower result, which C's truncation would read as the low word.
+/// Give a call whose callee is proven to return its pair as one wide value
+/// ([`seed`]) that pair as its output when the caller reads only the first
+/// register: the read becomes the pair's high piece, `(int)(g() >> 32)`,
+/// rather than the whole of a narrower result, which C's truncation would
+/// read as the low word.
 ///
 /// Runs in `buildOutputFromTrials` while the unused trials are still present;
 /// `trialvn` holds each trial's INDIRECT creation, by original slot. Returns
 /// `false`, changing nothing, unless the pair is built.
 pub(crate) fn build_high_read(fc: &mut FuncCallSpecs, data: &mut Funcdata, trialvn: &[Option<VarnodeId>]) -> bool {
-    if super::mode(data) != super::BeJoinMode::Evidence || !fc.proto().has_model() {
+    if super::mode(data) != super::BeJoinMode::Evidence {
         return false;
     }
     let reads: Vec<(Address, int4, VarnodeId)> = {
@@ -451,28 +810,13 @@ pub(crate) fn build_high_read(fc: &mut FuncCallSpecs, data: &mut Funcdata, trial
     };
     let [(ref raddr, rsize, vn)] = reads[..] else { return false };
     let entry = fc.get_entry_address().clone();
-    let Some(sp) = entry.get_space() else { return false };
-    let Some((addr, size)) = data.kuna_callee_return_storage((sp.get_index(), entry.get_offset())).cloned() else {
+    if !proven(data, &entry) {
         return false;
-    };
-    let Some(((hi_addr, hi_size), (lo_addr, lo_size))) = halves(data, &addr, size) else { return false };
+    }
+    let Some(pair) = data.kuna_bejoin_pair().cloned() else { return false };
+    let ((hi_addr, hi_size), (lo_addr, lo_size)) = (pair.hi, pair.lo);
     let within = hi_addr.justified_contain(hi_size, raddr, rsize, false);
     if within < 0 {
-        return false;
-    }
-    let manager = data.get_arch().manage.clone();
-    let mut probe = ParamActive::new(false);
-    for (a, s) in [(&hi_addr, hi_size), (&lo_addr, lo_size)] {
-        probe.register_trial(a, s);
-    }
-    for i in 0..2 {
-        probe.get_trial_mut(i).mark_active();
-    }
-    if fc.proto().derive_output_map(&mut probe, &manager).is_err()
-        || !(0..2).all(|i| probe.get_trial(i).is_used())
-        || probe.join_pair_order() == (0, 1)
-        || !callee_high_first(data, &entry, &probe)
-    {
         return false;
     }
     let op = fc.get_op();

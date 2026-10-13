@@ -1797,80 +1797,102 @@ value twice a register's width; `on` joins in the ABI's order when the second
 register holds a low word the function seems to return on purpose.
 
 With `evidence`
-(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (proven_wide)`)
-the proof is in the instructions, so it has to be a shape an `int` has no
-reason to compute. An `int` worked out from the high half of a 64-bit
-temporary can leave the temporary's low half in the second register, and then
-compiles to exactly the bytes of the `long long` that returns the temporary
-whole: `umull r1,r0,r1,r0` on ARM big-endian is both `((u64)a * b) >> 32` and
-`(u64)a * b`, and `addc 4,4,6; addze 3,3; add 3,3,5` on PowerPC is both
-`(a + b) >> 32` and `a + b`. No reading of those bytes tells the two apart. So
-the pair joins in the ABI's order only when every live RETURN (one never
-reached is skipped, as above) holds one of:
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (seed, proven)`)
+the order is a fact about one function that its own RETURN and every call to
+it must agree on, in any order and in any run: a whole `decompile-all`, a run
+narrowed by `--functions` or `--addr`, `--jobs N`, a single `kuna decompile`,
+a Ghidra or web session. So it is decided from that function's instructions
+alone. Before any pipeline runs, the driver walks the raw p-code of the
+function and of every function it calls directly, once per image (the verdicts
+are cached on the `Architecture`), and return recovery and the call-output
+seams both read the verdict for the entry they concern. The model's pair is
+the first two general registers of its output list when its `<join>` rule
+puts the first one high (`r3:r4`, `$2:$3`, `%o0:%o1`, `r0:r1`, AVR's `R25:R24`,
+AArch64 big-endian's `x0:x1` for a 16-byte value); on any other model nothing
+is walked and nothing changes.
 
-* a sign extension: the first register is the second register's value shifted
-  right arithmetically by all but one of its bits (`mr 4,3; srawi 3,3,31`);
-  the shift instruction's own carry computations, which nothing outside it
-  reads, are part of the shift;
-* a zero extension: the first register is a literal zero;
+The walk follows every path from the entry to a RETURN over symbolic values
+(a register's value at the entry, a literal, an operation on values, or an
+opaque value: a load, a call's result or clobber, a partly written register),
+taking a branch whose condition folds to a literal one way only (SPARC's
+`call` p-code keeps a RETURN for a `restore` in its delay slot behind
+`didrestore == 0`, never taken) and starting from the processor's tracked
+register values. A call keeps the registers the model says it leaves alone.
+An `int` worked out from the high half of a 64-bit temporary can leave the
+temporary's low half in the second register, and then compiles to exactly the
+bytes of the `long long` that returns the temporary whole: `umull r1,r0,r1,r0`
+on ARM big-endian is both `((u64)a * b) >> 32` and `(u64)a * b`, and `addc
+4,4,6; addze 3,3; add 3,3,5` on PowerPC is both `(a + b) >> 32` and `a + b`.
+No reading of those bytes tells the two apart. So the pair joins in the ABI's
+order only when every path's RETURN holds, in the pair, with both registers
+written by the function and neither read again before the RETURN by another
+instruction, one of:
+
+* a sign extension: the first register is the second register's value
+  shifted right arithmetically by all but one of its bits (`mr 4,3; srawi
+  3,3,31`), the shift instruction (with the carry it computes for nothing) the
+  value's only reader;
+* a zero extension: the first register is a literal zero, and nothing reads
+  the value;
 * the two halves of one product of two extended words: the first register the
   product's high half (`SUBPIECE(p, 4)`, or `SUBPIECE(p >> 32, 0)`), the
-  second its low half made by an instruction of its own, either a separate
-  low product of the same two words (PowerPC's `mullw` beside `mulhw`) or a
-  move out of the register the multiply left it in (MIPS's `mflo` beside
-  `mfhi`, ARMv6's `umull r2,r3,r1,r0` then `mov r1,r2`). A low half the
-  multiply itself writes into the second register (ARMv7's `umull r1,r0`,
-  SPARC's `umul %i1,%i0,%i1`), or that only a register window's `restore`
-  carries there, proves nothing: the instruction writes it whether or not the
-  function returns it.
+  second its low half made by an instruction of its own and read by nothing,
+  either a separate low product of the same two words (PowerPC's `mullw`
+  beside `mulhw`) or a move out of the register the multiply left it in
+  (MIPS's `mflo` beside `mfhi`, ARMv6's `umull r2,r3,r1,r0` then `mov
+  r1,r2`). A low half the multiply itself writes into the second register
+  (ARMv7's `umull r1,r0`, SPARC's `umul %i1,%i0,%i1`), or that only a
+  register window's `restore` carries there, proves nothing: the instruction
+  writes it whether or not the function returns it.
 
-An extension's value must be made on purpose. Read through moves, choices of
-such values, and the extension a byte or halfword load makes, it is a value
-the function computed or another register's argument moved there: not a
-literal, not the second register's own entry value (`srawi 3,4,31` is both
-`(long long)b` and `b >> 31`), not a load (a volatile read, `(void)*p; return
-0;`, leaves what it read in `r4` beside the zero on PowerPC -O2 and in `$3` on
-MIPS gcc -O2), not a call's output or clobber, not a piece of a wider value.
-Nothing but the low-word slot of the live RETURNs, and a sign extension's
-shift, may read it, and a product's low half is held to the same; a call
-whose inputs are still undecided trials does not read a register's entry
-value it finds in place. A function with an indirect jump flow could not
-follow, or a user-defined operation given no register inputs
-(`hidden_readers`, below), proves nothing. Every other pair keeps the
-first-register-low join, which C's truncation reads as the right `int`, and a
-genuine `long long` there still prints with its halves swapped: a 64-bit sum
-or difference, a load of both words, a product the multiply writes whole, a
-value a call hands back (`return g() >> 32` of a `long long g()` leaves `g`'s
-low word in the second register, the code of `return g()`).
+An extended value must be made on purpose: computed by the function, or
+another register's argument moved there, read through zero and sign
+extensions; not a literal, not the second register's own entry value
+(`srawi 3,4,31` is both `(long long)b` and `b >> 31`), not a load (a volatile
+read, `(void)*p; return 0;`, leaves what it read in `r4` beside the zero on
+PowerPC -O2 and in `$3` on MIPS gcc -O2), not a call's result or clobber, not
+a piece of a wider value. A call reads every argument register holding a
+value the function put there. A loop on the way to a RETURN, an indirect
+jump, a branch into another function's entry (a tail call), an operation
+given no register inputs, an undecodable instruction, or a walk over its
+budget (64 paths, 20,000 p-code operations) proves nothing. Every other pair
+keeps the first-register-low join, which C's truncation reads as the right
+`int`, and a genuine `long long` there still prints with its halves swapped:
+a 64-bit sum or difference, a load of both words, a product the multiply
+writes whole, a value a call hands back (`return g() >> 32` of a `long long
+g()` leaves `g`'s low word in the second register, the code of `return g()`).
+
+A call's two-register output joins in the ABI's order exactly when its callee
+is proven (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
+(call_join_order)`), whatever the calling function itself returns, so the
+call reads the value the callee's printed C returns; a self-recursive call
+reads the function's own verdict. A caller of a proven callee that reads only
+the first register reads the value's high word, so the call is given the pair
+as its output and the read becomes its high piece, `(int)((uint8)g() >>
+0x20)`, rather than the whole of a narrower result, which C's truncation would
+read as the low word
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (build_high_read)`).
+A caller that reads only the second register goes through the arm below
+(`build_partial_pair`), which needs more evidence about the callee and may
+still print the register as a local nothing assigns, as before. A callee
+whose bytes are not there (an import, an indirect call) is not proven, so
+both sides keep the old join.
 
 A declared return type needs no proof: a DWARF, library or `--assert
 prototype` 8-byte return locks the output, and the model places it in the
 ABI's order in every mode (DWARF-described ARM big-endian and MIPS gcc
 objects print every such `long long` right).
 
-A call's two-register output follows its callee
-(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (call_join_order)`,
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (callee_high_first)`):
-with `evidence` it joins in the ABI's order exactly when the callee's own
-recovery, which a serial `decompile-all` files callee first, returned that
-pair with the first register's word high, whatever the calling function
-itself returns, so the call reads the value the callee's printed C returns.
-A caller of such a callee that reads only the first register reads the
-value's high word, so the call is given the pair as its output and the read
-becomes its high piece, `(int)((uint8)g() >> 0x20)`, rather than the whole of
-a narrower result, which C's truncation would read as the low word
-(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (build_high_read)`).
-With no filed recovery (a single-function run, `--jobs N`, a callee whose own
-pair joined first register low) the call keeps the first-register-low join.
-
 Against `off`, the default changes no function whose DWARF or source return
 type is narrower than eight bytes over 698 objects of bash, cronie,
 diffutils, dpkg, findutils, grep, kmod, libbsd, libedit, Lua, openssh, shadow
 and sysvinit built for PowerPC, SPARC and ARM big-endian with clang and for
-MIPS with gcc at -O0 and -O2, SQLite and zlib for the same four targets, and every shape
-GH-904 lists (the #763 fixtures' sources) built for each target at -O0 to -O3
-and -Os, ARMv6, Thumb-2 and MIPS PIC; the functions it changes return a
-64-bit value and print it right. Little-endian output is byte-identical.
+MIPS with gcc at -O0 and -O2, SQLite and zlib for the same four targets, and
+every shape GH-904 lists built for each target at -O0 to -O3 and -Os, ARMv6,
+Thumb-2 and MIPS PIC, with the callers placed before or after their callees
+and decompiled whole, narrowed, with `--jobs 2` or one at a time; the
+functions it changes return a 64-bit value and print it right, and their
+callers read it right. Little-endian output is byte-identical.
 
 With `bejoin on`, the pair joins in the ABI's order only when its second
 register holds a low word the function returns on purpose.

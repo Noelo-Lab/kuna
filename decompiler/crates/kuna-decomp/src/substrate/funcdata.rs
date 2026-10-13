@@ -435,6 +435,12 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
     >,
+    /// (kuna `bejoin evidence`) The model's output pair and, for this function
+    /// and each direct callee, whether it is proven to return the pair as one
+    /// wide value, keyed by `(space index, entry offset)`. Seeded by the
+    /// driver ([`crate::kuna_bejoin::seed_wide_returns`]).
+    kuna_wide_pair: Option<crate::kuna_bejoin::WidePair>,
+    kuna_wide_returns: std::collections::BTreeMap<(int4, kuna_base::types::uintb), bool>,
     /// (kuna `calleedeadarg`) Per direct-call-target evidence about the registers
     /// the callee is *proven* never to read before writing, keyed by
     /// `(space index, entry offset)`.  Seeded by the driver after the flow build
@@ -741,6 +747,8 @@ impl Funcdata {
             kuna_wrapped_wire_storage: std::collections::BTreeMap::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
+            kuna_wide_pair: None,
+            kuna_wide_returns: std::collections::BTreeMap::new(),
             kuna_callee_entry_dead: std::collections::HashMap::new(),
             kuna_hiddenret_vetoed: std::collections::HashSet::new(),
             kuna_own_entry_dead: None,
@@ -992,6 +1000,29 @@ impl Funcdata {
 
     /// (kuna `rustabi`) Record what a probe of `entry`'s body proved about the
     /// registers it writes.
+    /// (kuna `bejoin evidence`) Record the output pair and the wide-return
+    /// verdicts the driver took for this function and its direct callees.
+    pub fn kuna_set_wide_returns(
+        &mut self,
+        pair: crate::kuna_bejoin::WidePair,
+        verdicts: std::collections::BTreeMap<(int4, kuna_base::types::uintb), bool>,
+    ) {
+        self.kuna_wide_pair = Some(pair);
+        self.kuna_wide_returns = verdicts;
+    }
+
+    /// (kuna `bejoin evidence`) The wide-return verdict for the function at
+    /// `key`, when the driver took one.
+    pub fn kuna_bejoin_verdict(&self, key: (int4, kuna_base::types::uintb)) -> Option<bool> {
+        self.kuna_wide_returns.get(&key).copied()
+    }
+
+    /// (kuna `bejoin evidence`) The model's output pair, high word's register
+    /// first, when the driver seeded the verdicts.
+    pub fn kuna_bejoin_pair(&self) -> Option<&crate::kuna_bejoin::WidePair> {
+        self.kuna_wide_pair.as_ref()
+    }
+
     pub fn kuna_set_callee_ret_writes(
         &mut self,
         entry: &Address,
