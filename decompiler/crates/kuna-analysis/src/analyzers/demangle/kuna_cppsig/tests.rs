@@ -229,6 +229,8 @@ fn msvc_gate_picks_one_reading_of_an_msvc_name() {
         inferred: Vec::new(),
         msvc: vec![(0x20, pieces("msvc"), Some("__thiscall"))],
         msvc_legacy: vec![(0x20, pieces("legacy"))],
+        msvc_byval: Vec::new(),
+        msvc_ctors: Vec::new(),
     };
     let on = select(facts(), false, true);
     assert_eq!(on.iter().map(|s| s.pieces.name.as_str()).collect::<Vec<_>>(), ["itanium", "msvc"]);

@@ -56,13 +56,14 @@ use object::{Architecture, BinaryFormat};
 use kuna_base::types::{int4, uint4};
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory};
 use kuna_decomp::fspec::PrototypePieces;
+use kuna_decomp::kuna_msvcbyval::ByvalDecl;
 
 use super::demangle_raw;
 use super::kuna_cppsig::{
     is_identifier, last_token, primitive_type, split_params, split_top_level, strip_qualifier_word,
     strip_template_args,
 };
-use crate::pass::AnalysisCtx;
+use crate::pass::{AnalysisCtx, CppSigFacts};
 
 /// An MSVC calling convention this arm can name a prototype model for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -133,6 +134,8 @@ pub(super) struct MsvcDecl {
     pub(super) ret: Ret,
     pub(super) params: Vec<String>,
     pub(super) varargs: bool,
+    /// A constructor of its class.
+    pub(super) ctor: bool,
 }
 
 /// Parse the demangled text of an MSVC function name, or `None` for a data
@@ -167,8 +170,9 @@ pub(super) fn parse(dem: &str) -> Option<MsvcDecl> {
         return None;
     }
 
+    let bare = strip_template_args(&last);
+    let ctor = this && bare == class;
     let ret = if ret_text.is_empty() {
-        let bare = strip_template_args(&last);
         let ctor_dtor = bare == class || bare.strip_prefix('~') == Some(class.as_str());
         if !(ctor_dtor || last.starts_with("operator ")) {
             return None;
@@ -208,6 +212,7 @@ pub(super) fn parse(dem: &str) -> Option<MsvcDecl> {
         ret,
         params,
         varargs,
+        ctor: ctor && ret_text.is_empty(),
     })
 }
 
@@ -589,6 +594,10 @@ pub(super) fn nontrivial_classes<'a>(names: impl Iterator<Item = &'a str>) -> Ha
 pub(super) struct MsvcSig {
     pub(super) pieces: PrototypePieces,
     pub(super) model: Option<&'static str>,
+    /// For an open `__cdecl` import whose one by-value class is all that is
+    /// unstated: the whole declaration, for the call sites to size
+    /// (`msvcbyval`).
+    pub(super) byval: Option<ByvalDecl>,
 }
 
 /// Build the prototype `decl` declares, or `None` where it cannot be laid out
@@ -619,11 +628,23 @@ pub(super) fn build(
     };
     let mut params: Vec<Shape> = Vec::with_capacity(decl.params.len());
     let mut open = false;
-    for p in &decl.params {
+    let mut tail: Option<Vec<Shape>> = None;
+    for (i, p) in decl.params.iter().enumerate() {
         match shape(p) {
             s @ (Shape::Code | Shape::Named { .. }) => params.push(s),
             Shape::UnknownSize if import && x86_32 && decl.convention == Convention::Cdecl => {
                 open = true;
+                tail = (!decl.varargs)
+                    .then(|| {
+                        decl.params[i + 1..]
+                            .iter()
+                            .map(|q| match shape(q) {
+                                s @ (Shape::Code | Shape::Named { .. }) => Some(s),
+                                _ => None,
+                            })
+                            .collect::<Option<Vec<Shape>>>()
+                    })
+                    .flatten();
                 break;
             }
             _ => return None,
@@ -653,18 +674,38 @@ pub(super) fn build(
         innames.push(String::new());
     }
     let first_var_arg_slot = if open || decl.varargs { intypes.len() as int4 } else { -1 };
-    Some(MsvcSig {
-        pieces: PrototypePieces {
-            name: decl.qualified.clone(),
-            outtype,
-            intypes,
-            innames,
-            first_var_arg_slot,
-            output_storage: None,
-            input_storage: Vec::new(),
-        },
-        model: x86_32.then(|| decl.convention.model()),
-    })
+    let pieces = PrototypePieces {
+        name: decl.qualified.clone(),
+        outtype,
+        intypes,
+        innames,
+        first_var_arg_slot,
+        output_storage: None,
+        input_storage: Vec::new(),
+    };
+    let byval = tail.and_then(|tail| byval_decl(&pieces, &tail, types, ptr, word_size));
+    Some(MsvcSig { pieces, model: x86_32.then(|| decl.convention.model()), byval })
+}
+
+/// The whole declaration of an open `__cdecl` import: `open`'s parameters, a
+/// placeholder for the by-value class, then the parameters after it.
+fn byval_decl(
+    open: &PrototypePieces,
+    tail: &[Shape],
+    types: &dyn TypeFactory,
+    ptr: int4,
+    word_size: uint4,
+) -> Option<ByvalDecl> {
+    let mut pieces = open.clone();
+    let at = pieces.intypes.len();
+    pieces.intypes.push(types.get_base(4, type_metatype::TYPE_UNKNOWN).ok()?);
+    pieces.innames.push(String::new());
+    for s in tail {
+        pieces.intypes.push(build_type(s, types, ptr, word_size)?);
+        pieces.innames.push(String::new());
+    }
+    pieces.first_var_arg_slot = -1;
+    Some(ByvalDecl { pieces, at })
 }
 
 /// A 32-bit x86 PE or COFF object: the one target whose MSVC conventions differ.
@@ -724,12 +765,11 @@ fn image_msvc_names(file: &object::File) -> Vec<String> {
 
 /// Read every MSVC declaration among the defined function symbols in `defined`
 /// and the imports in `imports` into `out`, in that order.
-#[allow(clippy::type_complexity)]
 pub(super) fn collect(
     ctx: &AnalysisCtx,
     defined: &[(u64, String)],
     imports: &[(u64, String)],
-    out: &mut Vec<(u64, PrototypePieces, Option<&'static str>)>,
+    out: &mut CppSigFacts,
 ) {
     let any_defined = defined.iter().any(|(_, raw)| raw.starts_with('?'));
     if !any_defined && imports.is_empty() {
@@ -748,8 +788,14 @@ pub(super) fn collect(
         .chain(imports.iter().map(|(a, raw)| (*a, raw, true)));
     for (addr, raw, import) in sources {
         let Some(decl) = demangle_raw(raw).and_then(|dem| parse(&dem)) else { continue };
+        if decl.ctor {
+            out.msvc_ctors.push(addr);
+        }
         if let Some(sig) = build(&decl, &nontrivial, import, x86_32, types, ptr, word_size) {
-            out.push((addr, sig.pieces, sig.model));
+            if let Some(byval) = sig.byval {
+                out.msvc_byval.push((addr, byval));
+            }
+            out.msvc.push((addr, sig.pieces, sig.model));
         }
     }
 }

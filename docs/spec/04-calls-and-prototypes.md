@@ -2622,6 +2622,78 @@ home slot its caller allocated and passes the slot by reference (every Qt
 before the call was dead. The gather is deferred and cached for the length of one heritage pass, so a function
 that never reaches the locked branch never pays for it.
 
+### (kuna) `msvcbyval` — an MSVC by-value class sized at the call
+
+An MSVC name states every parameter's type but not the size of a class passed by
+value, so `msvcsig` (01) applies a `__cdecl` import's parameters up to the class
+and leaves the rest of the list open, as for a variadic call. The open tail is
+then left to the trials, and the trials cannot take it: MSVC reserves the class's
+outgoing slot (`push ecx`, or `sub esp,n`), copy-constructs the argument into it
+through a pointer (`mov ecx,esp; call ??0`), and `checkInputTrialUse` refuses
+every stack trial at or above an address the caller takes. So
+`?MakeStack@@YA?AVArr@@V1@AAV1@1@Z` (`Arr MakeStack(Arr, Arr &, Arr &)`) kept only
+its hidden return pointer, and the pushes for the class's slot and the two
+references rendered as stores before the call. `msvcsig` therefore also parks the
+whole declaration of such an import — every parameter, the class as a
+placeholder — when that class is the one thing it does not state (no second
+by-value class, no `...`).
+
+The caller pops a `__cdecl` callee's arguments, so where the next instruction
+after the call is a single `add esp,k`, `k` is the argument bytes and the class's
+slot is `k` less the other parameters' 4-byte-aligned slots. At the end of
+`ActionDefaultParams`, once every call has its prototype and its pop, each call
+to a parked declaration whose prototype is still the open one is read this way
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (size_slots)`):
+the call takes the full declaration, the class an `undefined` of the slot's width
+(an `undefined1` array past 8 bytes), locked under the call's own `__cdecl`
+model, before `ActionFuncLink` reads it. The size is the call site's, not the
+import's; a call with no such cleanup keeps the open tail.
+
+A cleanup is evidence only when it is this call's alone. A compiler may defer an
+earlier call's pop into it, or fold the release of the frame's own locals into
+it, and either would over-size the class and shift every parameter after it. So
+the raw p-code of the call's block is walked back from the call, tracking the
+stack pointer by its constant adjustments, until the pointer stands exactly at
+the top of the argument area, and the size is declined unless:
+
+- every slot of a declared parameter (all but the class's) is written by a push
+  made after that slot was last reserved — the class's slot may instead be
+  reserved by `push ecx` or `sub esp,n`, or pushed;
+- no address is formed from the stack pointer into a declared parameter's slot
+  while the slot is live, which is what a local the cleanup also releases shows
+  (its address handed to a call, or a value read from it);
+- each earlier call on the way pops an exact amount (its model's, or its locked
+  prototype's) and, when that is only the return address, is either cleaned by
+  the instruction after it or declares no stack parameter — a call whose
+  arguments may still be on the stack is a deferred pop;
+- the stack pointer is written only as itself plus a constant, rises only as the
+  cleanup that directly follows a call, and no single reservation straddles the
+  top of the area;
+- the walk reaches the top inside the block.
+
+A model that lays the full declaration out differently from that arithmetic is
+also declined.
+
+**The object.** Walking back, the first write of `ecx` before a call is the
+`this` that call receives; when it points at the start of the class's slot while
+the slot is still unreserved further back, and the call's target is a
+constructor by its MSVC name (`??0`, recorded at the analysis commit), that call
+builds the argument. Two passes act on it. `Heritage::guardCalls` (§4.3,
+*Effect lists*) gives the constructor call a `killedbycall` effect on every
+range inside the slot instead of `unknown_effect`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (constructed_ranges, constructs)`):
+the slot's value after the call is one the call creates, not one it may modify,
+so the `ecx` value `push ecx` stored to reserve the slot is dead, and the
+function no longer gains `ecx` as a parameter it only pushed. And
+`ActionRestrictLocal` leaves the slot mapped instead of marking it as the call's
+parameter storage
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (keeps_slot_mapped)`),
+so the constructor's `this` and the argument print as one local: `Build` becomes
+`Arr::Arr((Arr *)&v1,a1); MakeStack(a0,v1,a1,a2);` with three parameters.
+
+Inert without `msvcsig`, and a class passed by value to a callee-pops convention
+is still refused there (its pop would depend on the missing size).
+
 ### (kuna) `callpush` — a call's own return-address push
 
 An x86 `call` lifts as three p-code ops at one instruction address: the stack

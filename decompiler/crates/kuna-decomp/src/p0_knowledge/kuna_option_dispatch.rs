@@ -320,6 +320,11 @@ kuna_options! { self, p1;
         self.callee_pop_frame = val;
         Ok(msg)
     },
+    "msvcbyval" => {
+        let (val, msg) = crate::p4_calls::kuna_msvcbyval::OptionMsvcByval.apply(p1)?;
+        self.msvc_byval = val;
+        Ok(msg)
+    },
     "calleeprotostack" => {
         let (val, msg) =
             crate::p4_calls::kuna_calleeprotostack::OptionCalleeProtoStack.apply(p1)?;

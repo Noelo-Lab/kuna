@@ -2714,6 +2714,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "msvcbyval"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "callee-prototype-stack-contract"
+strength = "HARD"
+rewind = "P3"
+issue = "GH-990"
+summary = "Size an MSVC __cdecl import's by-value class argument at each call site. An MSVC name states every parameter's type but not the size of a class passed by value, so msvcsig applies such an import's parameters up to the class and leaves the rest open, and the call-site recovery cannot take the slots above it: MSVC builds the class in its outgoing slot through a pointer (a copy constructor's this), and FuncCallSpecs::checkInputTrialUse refuses every stack slot at or above an address the caller takes. With the option on, the caller's own cleanup states the argument bytes: when the instruction right after the call is `add esp,k`, the class's slot is k less the declared parameters' 4-byte slots, and the call takes the full declaration with the class as an undefined of that width before ActionFuncLink reads it. The cleanup is believed only after a walk back over the block's raw p-code from the call to the top of the argument area: every declared parameter's slot written by a push after it was last reserved, every earlier call on the way popping an exact amount and, when it pops only its return address, cleaned by the next instruction or declaring no stack parameter, the stack pointer moved only by constants, no reservation straddling the top, and the walk staying in the block -- so a deferred pop or a frame release folded into the cleanup declines. When ecx is pointed at the slot for the next call and that call is an MSVC constructor, the constructor builds the argument: Heritage::guardCalls makes its effect on the slot killedbycall, so the ecx value a `push ecx` stored to reserve the slot is dead, and ActionRestrictLocal leaves the slot mapped so the constructor's this and the argument print as one local."
+use_when = "On by default: the flip moves 0 of 675 datatest assertions -- the parity corpora carry no MSVC-mangled import. Flip OFF to restore msvcsig's open tail. With it off, a call to an MSVC __cdecl import that takes a class by value keeps only the parameters before the class (MakeStack(a1) for `Arr MakeStack(Arr, Arr &, Arr &)`), the copy constructor's slot is a local the caller never passes, and the pushed arguments after it render as stores before the call. Inert without msvcsig, on a call whose next instruction is not `add esp,k`, and wherever the walk declines; a class passed to a callee-pops convention is still refused by msvcsig."
+example = "option msvcbyval off"
+source_decompiler = "kuna"
+inspiration = "MSVC x86 by-value class arguments (caller-reserved slot, copy-constructed in place, caller cleanup for __cdecl) + upstream FuncCallSpecs::checkInputTrialUse alias refusal (fspec.cc:5616)"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a call to an msvc c++ import that takes a class by value keeps only its hidden return pointer|the arguments after a by-value class render as stores before the call|a copy constructor fills a local the caller never passes on|an x86 function gains an ecx parameter from a push ecx that only reserves a by-value slot"
+live_field = "msvc_byval"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "calleepop"
 values = "on|off"
 default = "on"

@@ -523,6 +523,9 @@ pub struct Funcdata {
     /// writes the return register, which carries no argument, just before them
     /// (`xor %eax,%eax` is SysV's vector-register count).
     kuna_passthrough_vararg_calls: Vec<crate::context::OpId>,
+    /// (kuna `msvcbyval`) The calls whose by-value slot `ActionDefaultParams`
+    /// sized, with the constructor call that builds each.
+    kuna_msvc_byval_sites: Vec<crate::p4_calls::kuna_msvcbyval::ByvalSite>,
     /// (kuna `calleereadarg`) The CALL ops set up as variadic calls, recorded
     /// before heritage whatever `passthrough` decides.
     kuna_readarg_vararg_calls: Vec<crate::context::OpId>,
@@ -742,6 +745,7 @@ impl Funcdata {
             kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
+            kuna_msvc_byval_sites: Vec::new(),
             kuna_readarg_vararg_calls: Vec::new(),
             kuna_passthrough_variadic: false,
             kuna_moved_back_returns: Vec::new(),
@@ -1476,6 +1480,16 @@ impl Funcdata {
     /// (kuna `passthrough`) The CALL ops set up as variadic calls.
     pub fn kuna_passthrough_vararg_calls(&self) -> &[crate::context::OpId] {
         &self.kuna_passthrough_vararg_calls
+    }
+
+    /// (kuna `msvcbyval`) Record the calls whose by-value slot was sized.
+    pub fn kuna_set_msvc_byval_sites(&mut self, sites: Vec<crate::p4_calls::kuna_msvcbyval::ByvalSite>) {
+        self.kuna_msvc_byval_sites = sites;
+    }
+
+    /// (kuna `msvcbyval`) The calls whose by-value slot was sized.
+    pub fn kuna_msvc_byval_sites(&self) -> &[crate::p4_calls::kuna_msvcbyval::ByvalSite] {
+        &self.kuna_msvc_byval_sites
     }
 
     /// (kuna `calleereadarg`) Record the CALL ops set up as variadic calls.
@@ -3855,6 +3869,7 @@ impl Funcdata {
         self.slot_evidence.borrow_mut().clear();
         self.kuna_passthrough_claims.clear();
         self.kuna_passthrough_vararg_calls.clear();
+        self.kuna_msvc_byval_sites.clear();
         self.kuna_readarg_vararg_calls.clear();
         self.kuna_passthrough_variadic = false;
         self.kuna_moved_back_returns.clear();

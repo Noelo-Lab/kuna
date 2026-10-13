@@ -4362,6 +4362,11 @@ fn commit_analysis_output(
     //     mangling entails, `inferred` those plus the class-evidence inferences,
     //     `off` neither. `msvcsig` picks which reading of an MSVC name applies.
     let cppsig_mode = prog.arch().analysis_cppsig;
+    let (msvc_byval, msvc_ctors) = if cppsig_mode.enabled() && prog.arch().analysis_msvcsig {
+        (std::mem::take(&mut out.cpp_sig.msvc_byval), std::mem::take(&mut out.cpp_sig.msvc_ctors))
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let cppsig_protos = if cppsig_mode.enabled() {
         kuna_analysis::demangle::kuna_cppsig::select(
             std::mem::take(&mut out.cpp_sig),
@@ -4941,6 +4946,10 @@ fn commit_analysis_output(
     //     the symbol, as a `prototype` directive is, because a call through a PE
     //     import slot reads the symbol's prototype, not the parked pieces; and
     //     the address is recorded so the flow can make such a call direct.
+    //     (kuna `msvcbyval`) An MSVC import applied open at a by-value class also
+    //     parks its whole declaration for the call sites to size, and the
+    //     constructors MSVC names declare are recorded by entry.
+    let mut msvc_applied: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
     for sig in cppsig_protos {
         let kuna_analysis::demangle::kuna_cppsig::SelectedSig { addr, pieces, model, msvc } = sig;
         let a = Address::new(Rc::clone(code_space), addr);
@@ -4959,8 +4968,18 @@ fn commit_analysis_output(
             if let Some(space) = a.get_space() {
                 prog.arch_mut().msvcsig_import_slots.insert((space.get_index(), addr));
             }
+            msvc_applied.insert(addr);
         }
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
+    }
+    let space_index = code_space.get_index();
+    for (addr, decl) in msvc_byval {
+        if msvc_applied.contains(&addr) {
+            Rc::make_mut(&mut prog.arch_mut().msvc_byval_decls).insert((space_index, addr), decl);
+        }
+    }
+    for addr in msvc_ctors {
+        Rc::make_mut(&mut prog.arch_mut().msvc_ctors).insert((space_index, addr));
     }
 
     // 5a. (kuna `cppproto`) The DWARF prototypes bound by ENTRY ADDRESS. Applied

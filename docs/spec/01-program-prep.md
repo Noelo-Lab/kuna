@@ -2723,14 +2723,17 @@ moves.
   (the `msvcp` iostream and string API in most): calls printed with no arguments
   fall from 13,819 to 11,302 and from 18,858 to 17,355, 5.4% and 8.3% of the
   functions change, and total decompile CPU time moves by +0.3% and -0.5%.
-  LOSS: a parameter after a by-value class is not placed, and where MSVC
-  constructs that class in its
-  outgoing slot through a pointer — a copy constructor, or a call returning into
-  the slot — the call-site recovery refuses every slot above the one whose address
-  was taken, so those arguments render as stores before the call
-  (`MakeStack(a1)`, after `Arr::Arr((Arr *)&v1,a2)`, keeps only its hidden return
-  pointer). `--option msvcsig off` restores the Itanium-arm reading of MSVC names
-  exactly.
+  A parameter after a by-value class is not placed by the declaration, and where
+  MSVC constructs that class in its outgoing slot through a pointer — a copy
+  constructor, or a call returning into the slot — the call-site recovery refuses
+  every slot above the one whose address was taken. So for such an import (one
+  by-value class, no `...`) the arm also parks the whole declaration, the class a
+  placeholder, and records every entry an MSVC name declares a constructor
+  (`??0`); `msvcbyval` (04 §4.4) sizes the class at each call from the caller's
+  cleanup. LOSS: where it declines, those arguments render as stores before the
+  call (`MakeStack(a1)`, after `Arr::Arr((Arr *)&v1,a2)`, keeps only its hidden
+  return pointer). `--option msvcsig off` restores the Itanium-arm reading of MSVC
+  names exactly.
 - **Source-language detection**
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
   (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) runs once,

@@ -1,0 +1,96 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    An MSVC __cdecl import's by-value class argument is sized at the call site
+    (`option msvcbyval on|off`).
+
+    Issue: GH Noelo-Lab/kuna#990. An MSVC name states every parameter's type but
+    not the size of a class passed by value, so msvcsig applies such an import's
+    parameters up to the class and leaves the rest open. MSVC copy-constructs the
+    class in its outgoing slot (`push ecx; mov ecx,esp; call ??0`), so the
+    call-site recovery refuses every slot from that address up, and the call
+    keeps only the parameters before the class.
+
+    Stage / sub-stage: P4 callee-prototype (`p4_calls/kuna_msvcbyval.rs`, run at
+    the end of ActionDefaultParams on the raw p-code) feeding P3 heritage (the
+    constructor call creates the slot) and P6 ActionRestrictLocal (the slot
+    stays a mapped local).
+
+    P0 assertion: `option msvcbyval on|off` (on by default; inert without
+    msvcsig).
+
+    Fixtures (see the fixtures README):
+      msvcsig_protos_i386.exe 0x401020, the issue's repro:
+        Arr Build(Arr &x, Arr &y) { return MakeStack(x, x, y); }
+        with ?MakeStack@@YA?AVArr@@V1@AAV1@1@Z, `add esp,0x10` after the call.
+      msvcbyval_i386.exe:
+        0x401000 void Wide(Pair &p) { Join(p, p); }   8-byte Pair, `sub esp,8`
+        0x401020 Late: Note(1)'s pop deferred into MakeStack's `add esp,0x14`
+        0x401050 Folded: no frame pointer, the cleanup also releases a local
+                 (MakeStack(y, x, y) into a local r)
+
+    Pass 1 (`option msvcbyval off`) is the BUG: MakeStack(a1) and Join() keep
+    only the parameters before the class, and the pushed `ecx` that reserves
+    the slot is an extra parameter of Build.
+    Pass 2 (default) is the FIX: MakeStack(a0,v1,a1,a2) and Join(v1,a0), the
+    copy constructor building that same local, and Build taking exactly its
+    three parameters. Late and Folded must stay as they were: their cleanups
+    over-state MakeStack's arguments, so the size is declined (two of each).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcsig_protos_i386.exe</com>
+  <com>option msvcbyval off</com>
+  <com>read symbols</com>
+  <com>load addr 0x401020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcbyval_i386.exe</com>
+  <com>option msvcbyval off</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401050</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcsig_protos_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcbyval_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401050</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MSVCBYVAL #1: off keeps only MakeStack's hidden return pointer" min="1" max="1">MakeStack\(a1\);</stringmatch>
+<stringmatch name="MSVCBYVAL #2: off reads the reserving push of ecx as a parameter" min="1" max="1">Arr \* sub_401020\(unsigned int a0,Arr \*a1,Arr \*a2,unsigned int a3\)</stringmatch>
+<stringmatch name="MSVCBYVAL #3: off drops both of Join's arguments" min="1" max="1">Join\(\);</stringmatch>
+<stringmatch name="MSVCBYVAL #4: on passes MakeStack every argument, the copy in place" min="1" max="1">MakeStack\(a0,v1,a1,a2\);</stringmatch>
+<stringmatch name="MSVCBYVAL #5: on, the copy constructor builds that same local" min="1" max="1">Arr::Arr\(\(Arr \*\)&amp;v1,a1\);</stringmatch>
+<stringmatch name="MSVCBYVAL #6: on, Build takes exactly its three parameters" min="1" max="1">Arr \* sub_401020\(Arr \*a0,Arr \*a1,Arr \*a2\)</stringmatch>
+<stringmatch name="MSVCBYVAL #7: on sizes the 8-byte Pair from sub esp,8" min="1" max="1">Join\(v1,a0\);</stringmatch>
+<stringmatch name="MSVCBYVAL #8: on, the Pair copy constructor builds the argument" min="1" max="1">Pair::Pair\(\(Pair \*\)&amp;v1,a0\);</stringmatch>
+<stringmatch name="MSVCBYVAL #9: a deferred pop in the cleanup is declined in both passes" min="2" max="2">MakeStack\(a0\);</stringmatch>
+<stringmatch name="MSVCBYVAL #10: a local released by the cleanup is declined in both passes" min="2" max="2">MakeStack\(\(Arr \*\)&amp;v2\);</stringmatch>
+</decompilertest>
