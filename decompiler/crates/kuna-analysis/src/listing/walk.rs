@@ -230,6 +230,8 @@ pub(super) struct StepCtx<'a> {
     pub policy: WalkPolicy,
     /// What the build captures beyond the partition.
     pub detail: ListingDetail,
+    /// `thumbswitch`: the table reader for a Thumb `tbb`/`tbh` dispatch.
+    pub tables: Option<&'a super::kuna_thumbswitch::HalfwordTables<'a>>,
 }
 
 /// True if `vma` lands inside any executable range `[lo, hi)`.
@@ -352,6 +354,15 @@ where
         out.insn(fall);
         refs.file(vma, fall, RefKind::Code);
     }
+    // (kuna) `thumbswitch`: the case bodies of a Thumb `tbb`/`tbh` are this
+    // function's own successors. See [`super::kuna_thumbswitch`].
+    if let Some(tables) = ctx.tables.filter(|_| c.flow.is_computed && c.flow.is_jump && c.flows.is_empty()) {
+        let decoded = |at: u64| insns.decoded(at);
+        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma).0 {
+            out.insn(target);
+            refs.file(vma, target, RefKind::Code);
+        }
+    }
     true
 }
 
@@ -419,6 +430,7 @@ pub(super) fn walk(
     plan: &super::kuna_pdecode::WalkPlan,
     frames: Option<&mut super::kuna_framemode::FrameModes>,
     resumed: Option<WalkState>,
+    tables: Option<&super::kuna_thumbswitch::HalfwordTables<'_>>,
 ) -> WalkState {
     // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
     // ContextDatabase BEFORE we decode a single instruction — the timing the
@@ -433,7 +445,7 @@ pub(super) fn walk(
     }
 
     let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
-    let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail };
+    let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail, tables };
 
     let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk, resumed);
     if let Some(mode) = flow_mode {
@@ -455,7 +467,7 @@ fn walk_plain(
     arm_walk: Option<&super::kuna_armwalkmode::ArmWalkMode>,
     resumed: Option<WalkState>,
 ) -> WalkState {
-    let StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail } = *ctx;
+    let StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail, .. } = *ctx;
     if plan.lanes() > 1 && frames.is_none() && arm_walk.is_none() && resumed.is_none() {
         let inputs = super::kuna_pdecode::ParallelInputs {
             arch,

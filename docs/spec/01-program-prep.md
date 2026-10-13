@@ -5726,6 +5726,48 @@ states and the number read, which is zero when the ceiling is below the two
 entries a table needs). A table with no range check that reads up to the
 ceiling is recorded the same way, with no stated count.
 
+(kuna, GH-299) Neither read covers the dispatch Cortex-M firmware uses for
+almost every switch, and the function-discovery walk (`walk.rs`) had no table
+read at all: a computed jump there has no successor, so the case region behind
+every `tbb`/`tbh` stayed undecoded, and the AIF gap walk planted entries in it —
+a case body that opens with a common prologue and ends in its own return is a
+valid subroutine with a known fingerprint. **Thumb offset tables** (`thumbswitch`,
+default-on; `decompiler/crates/kuna-analysis/src/listing/kuna_thumbswitch.rs`)
+read them in both walks. `tbb [pc,rN]` and `tbh [pc,rN,lsl #1]` jump to
+`inst_next + 2 * table[rN]`, where the byte or halfword table starts at
+`inst_next`; the dispatch's own p-code is folded through the same lattice as the
+delta-table read, extended with a narrow table word and its doubling, and only
+this PC-relative form — table and base both the instruction's own `inst_next` —
+is an answer. The table states no length either, so the count again comes from
+the range check: the `cmp rN,#n` the dispatch sits behind lifts to
+`INT_LESSEQUAL(n, rN)`, and when a conditional branch follows it within three
+instructions with nothing in between writing `rN`, the table has `n + 1`
+entries if that branch reads exactly the carry and the zero flag
+(`bhi`/`bls`, so `rN == n` is a case) and `n` if it reads only the carry
+(`bcs`/`bcc`). A branch on any other flags bounds nothing — a signed `bge`
+lets a negative index through — so neither it nor a dispatch with no check at
+all is read. Over the jump-table ceiling the first `jumptablemax` entries are
+read, and the xrefs walk records the switch as truncated like any other table. Because the offsets are
+unsigned and the cases are laid out after the table, an entry that lands inside
+the table, or outside the dispatcher's executable section, refuses the whole
+read rather than truncating it. The cases become same-function successors of the
+dispatch, as a branch target is, plus a code reference from it. Scored against
+the symbol tables of the 93 non-u-boot 32-bit ARM ELFs in the decbench corpus,
+default mode: mid-body entries 6,946 to 4,375 net (2,606 gone; 35 new, all
+gap-walk entries in other holes of the functions whose cases are now decoded)
+and true function starts 41,822 to 42,180 (the functions only a case
+body calls), with none lost; on the Keil-built `CMSIS_DAP.axf`, whose tables
+sit behind `bcs`, 18 to 16 and 300 to 301; the A32 u-boot images and the i386
+PE corpus are unchanged. A function a case body calls is now walked too, and
+its own tail `b` takes the target in as any branch the walk follows does: on an
+armhf `libc.so.6` a case body calls `0x73248`, whose tail `b` pulls in
+`0x73078`, a true start nothing else reaches, so it is no longer listed;
+`tailcallentry` (on in `--mode aggressive`) recovers it. The walk decodes the
+case bodies, and what they call, on every Listing build, so discovery alone
+takes longer where tables are read (`kuna functions` about 8% on betaflight and
+that libc), while a whole-binary run gets faster because no case body is
+decompiled as a function of its own. It is ARM-only and needs a walk, so it is inert without `--option listing on`.
+
 (kuna) The walk's decode set is global, so it cannot say how long one function
 is: code two entries share is decoded under whichever entry reached it first. A
 gcc `.cold` fragment sits below its parent and jumps back into the parent's body,
