@@ -94,6 +94,9 @@ pub(crate) fn input_contract(fd: &Funcdata, id: OpId, slot: i32) -> Option<Rc<Da
     let contract = match op.code() {
         OpCode::CPUI_CALL | OpCode::CPUI_CALLIND if slot > 0 => {
             let spec = fd.get_call_specs(fd.get_call_specs_index(id)?);
+            if !spec.proto().has_store() {
+                return None;
+            }
             let param = spec.proto().get_param(slot - 1)?;
             if !param.is_type_locked() {
                 return None;

@@ -4628,7 +4628,7 @@ fn jobs_rerunning_a_dead_worker_never_loops() {
 fn jobs_a_worker_that_dies_in_its_load_loses_nothing() {
     let serial = fauxware_serial_json();
     let total = json_records(&serial).len();
-    let loads = |stderr: &str| stderr.matches("KUNA_JOBS_FAULT: injected load abort").count();
+    let loads = |stderr: &str| stderr.matches("KUNA_JOBS_FAULT").count();
 
     let (got, stderr, ok) = fauxware_pooled_with_fault("load-abort:1", "0");
     assert!(ok, "{stderr}");

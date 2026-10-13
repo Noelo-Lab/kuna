@@ -2389,7 +2389,9 @@ With `stackviews`, a complete summary can leave a caller frame range unaffected
 when none of its possible writes reaches that range. The range must lie above
 the declared callee frame and argument area, including the full extent of every
 locked stack parameter rather than just the callee's extra-pop count; explicit
-effect overrides win.
+effect overrides win. A call without an attached prototype store cannot provide
+this boundary or a parameter contract, so its effects remain unknown even when
+its body has a complete instruction summary.
 Unknown aliases retain the existing guard. The P6 physical-write policy also
 uses the possible reads and escapes to decide whether a call observes bytes
 before a later overwrite. An opaque return value alone is not a memory read:

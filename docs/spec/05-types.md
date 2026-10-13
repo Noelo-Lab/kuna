@@ -3321,7 +3321,11 @@ scores well, an enum flowing into FLOAT_ADD scores badly. Trials stop and
 score terminally at type locks (`score_locked_type`), locked
 parameters/returns (`score_parameter`, `score_return_type`), truncations
 (`score_truncation`), and constants (`score_constant_fit` — including a
-"looks like a pointer" bounds test). The budgets are read from the code
+"looks like a pointer" bounds test). A caller or callee without an attached
+prototype store supplies no locked parameter or return facts. Scoring then uses
+the ordinary unknown-contract weights, without creating a prototype or reading
+missing storage; complete locked contracts retain their normal field scores.
+The budgets are read from the code
 (`unionresolve.rs`): at most **6** levels (`MAX_PASSES`), no new level once
 **256** trials have run (`THRESHOLD`), hard stop at **1024** trials
 (`MAX_TRIALS`) — a union inside a big expression web must not turn one

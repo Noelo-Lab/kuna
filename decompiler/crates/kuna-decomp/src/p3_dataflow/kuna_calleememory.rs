@@ -744,6 +744,7 @@ fn for_call<'a>(
     size: i32,
 ) -> Option<&'a CalleeMemory> {
     if fd.obank().get(call.get_op())?.code() != OpCode::CPUI_CALL
+        || !call.proto().has_store()
         || call.proto().has_effect_override()
     {
         return None;
@@ -1738,6 +1739,25 @@ mod tests {
 
     fn install_call_summary(fx: &mut Fx, actual: crate::context::VarnodeId) -> OpId {
         install_call_summary_with_stack_base(fx, actual, 40)
+    }
+
+    #[test]
+    fn complete_body_without_a_parameter_store_remains_a_call_barrier() {
+        let mut fx = Fx::new();
+        let actual = fx.frame_pointer(-64);
+        let call = make_call_site(&mut fx, actual);
+        fx.fd.callee_memory.insert((fx.reg.get_index(), 0x2000), Rc::new(CalleeMemory {
+            complete: true,
+            ..Default::default()
+        }));
+        let query = (-32i64) as u64;
+        assert!(test_call_summary_is_usable(&fx.fd, call, query, 8));
+        assert_eq!(unobserved(&fx.fd, call, query, 8, 0xff), Some(0xff));
+        let index = fx.fd.get_call_specs_index(call).unwrap();
+        fx.fd.get_call_specs_mut(index).proto_mut().copy(&crate::fspec::FuncProto::new());
+        assert!(!fx.fd.get_call_specs(index).proto().has_store());
+        assert!(!test_call_summary_is_usable(&fx.fd, call, query, 8));
+        assert_eq!(unobserved(&fx.fd, call, query, 8, 0xff), None);
     }
 
     #[test]

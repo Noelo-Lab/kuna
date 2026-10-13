@@ -385,3 +385,45 @@ fn wide_duplicate_pointer_choices_exhaust_the_alias_proof() {
     let address = f.fd.new_unique_out(8, op).unwrap();
     assert!(crate::kuna_stackranges::may_alias(&f.fd, address, 8, 8));
 }
+
+#[test]
+fn absent_call_contracts_keep_frame_effects_and_later_locked_views() {
+    use crate::dtype::{type_metatype, DatatypeKind};
+    use crate::fspec::{FuncCallSpecs, ParameterPieces};
+    for opcode in [OpCode::CPUI_CALL, OpCode::CPUI_CALLIND] {
+        let mut f = Fixture::new(false, 8);
+        let block = f.block();
+        f.store(block, 0x1001, 0x20, 4);
+        let target = f.fd.new_constant(8, 0x2000);
+        let argument = f.fd.new_constant(8, 0x20);
+        let (call, _) = f.op(block, 0x1002, opcode, &[target, argument], None);
+        f.fd.obank_mut().mark_alive(call);
+        let index = f.fd.push_call_specs(FuncCallSpecs::new(
+            call, Address::new(Rc::clone(&f.ram), 0x2000),
+        ));
+        let point = f.point(block, 0x1003);
+        let expected = vec![BTreeSet::from([
+            write(0x1001), ByteSource::Effect(SourcePoint { space: 2, address: 0x1002 }),
+        ]); 4];
+        assert!(crate::kuna_stackuses::declared_view(&f.fd, call, 1).is_none());
+        assert!(!f.fd.get_call_specs(index).proto().has_store());
+        assert_eq!(f.bytes(point, 0x20, 4), expected);
+
+        let value_type = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        let mut pointer = Datatype::new(8, type_metatype::TYPE_PTR);
+        pointer.kind = DatatypeKind::Pointer {
+            ptrto: Rc::clone(&value_type), spaceid: None, truncate: None, wordsize: 1,
+        };
+        let parameter_address = Address::new(Rc::clone(&f.ram), 0x80);
+        let proto = f.fd.get_call_specs_mut(index).proto_mut();
+        proto.attach_internal_store(Rc::new(Datatype::new(0, type_metatype::TYPE_VOID)));
+        proto.set_param(0, "value", &ParameterPieces {
+            addr: parameter_address, type_: Some(Rc::new(pointer)), flags: 0,
+        });
+        assert!(crate::kuna_stackuses::declared_view(&f.fd, call, 1).is_none());
+        f.fd.get_call_specs_mut(index).proto_mut().set_input_lock(true);
+        let view = crate::kuna_stackuses::declared_view(&f.fd, call, 1).unwrap();
+        assert!(Rc::ptr_eq(&view, &value_type));
+        assert_eq!(f.bytes(point, 0x20, 4), expected);
+    }
+}

@@ -1869,6 +1869,24 @@ questions in full over the whole distance, for its own folds, because those are
 the ones it released; the `foldcallretphi` entry below has that half. Provenance:
 `docs/features/gh657/`.
 
+The second span also keeps ordinary calls ahead of separate printed statements
+that read their own INDIRECT effects. A phi-edge COPY can snapshot an updated
+out-parameter after the call but before its result's final branch condition;
+folding the call into that condition would print the snapshot first and read
+the pre-call value. Such explicit snapshots keep the call in its own statement.
+The guard follows their implied input expressions through at most 64 varnode
+visits, so a CAST or arithmetic expression cannot hide the updated memory read;
+an exhausted proof also keeps the call explicit. Already explicit input values
+terminate this walk, and the walk allocates no collection for ordinary calls.
+COPYs whose input and output already share one high are excluded, matching the
+later copy-marker pass that suppresses their redundant statements. A value not
+yet classified remains a possible separate statement: the descendants-first
+marking walk may later force it explicit, and does not revisit already implied
+calls. Pending input expressions are therefore followed too; only an already
+explicit input terminates their expression walk.
+Implied reads that remain inside the same expression retain the existing span
+rule, and reads of unrelated call effects do not add a barrier.
+
 The same chain also decides whether the folded call is evaluated at all
 (kuna GH-684). P-code's `BOOL_AND` and `BOOL_OR` evaluate both operands, and
 every op of the chain can sit in the call's own block, but the printer emits
@@ -2453,8 +2471,14 @@ inferred.
 `decompiler/crates/kuna-decomp/src/p6_variables/kuna_registerepochs.rs`
 walks same-width COPY, CAST, MULTIEQUAL and non-creating INDIRECT edges in both
 directions, excluding constants and the INDIRECT operation annotation. Unrelated
-loads or computations occupying the register do not join that family. A bounded
-walk conservatively declines the fallback when it cannot prove connectivity.
+loads or computations occupying the register do not join that family. The walk
+has an 8192-work budget shared by initial values, worklist pops (including
+duplicates), definition operands, descendant edges and each operand examined
+while checking a descendant. Oversized input lists decline before collection;
+definition expansion charges all operands before growing the worklist. Repeated
+phi inputs therefore cannot bypass the bound through duplicate readers or
+quadratic operand scans. Exhaustion conservatively declines the fallback when
+connectivity has not been proved.
 The architecture register lookup restricts this guard to actual registers;
 address-tied memory retains its physical aliasing. A native byte-hash/pointer
 fixture checks that independent RAX values remain separately typed, including a
@@ -2516,7 +2540,11 @@ this frame. Marker versions are not writes. The check is enabled by stackviews.
 `stackviews on` collects distinct complete, declared pointee types before
 spatial stack hints are reconciled. Direct calls, typed indirect calls and
 call-site prototype overrides contribute the same locked parameter types;
-undeclared or incomplete pointee types contribute no object extent. Incompatible
+undeclared or incomplete pointee types contribute no object extent. A call
+without an attached prototype store contributes no declared view and leaves
+its memory effects unknown. A later attached,
+locked contract can supply its normal view without the earlier query inventing
+parameters or weakening the call barrier. Incompatible
 views at one frame address use one union backing object, including scalar writes
 and a raw byte view. The
 normal operation-specific union resolution selects the field used by each call
