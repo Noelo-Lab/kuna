@@ -1487,14 +1487,55 @@ at every group/sub-action boundary and repeat gate
 Action::perform, ActionRestartGroup::apply)`), every 1024 op-visits inside the
 rule-pool loop (`decompiler/crates/kuna-decomp/src/infra/action.rs
 (POOL_DEADLINE_STRIDE)`), at the heritage loop
-(`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`) and before each
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`), before each
+range heritage's guard placement visits and before each
 address the written-slot guard guards, every 256 new values a pointer walk of
 `stackstoreguard` visits, and again after the final layout checks: the drive
 publishes its deadline to
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (deadline_passed)`,
 so a walk inside one pass gives up rather than run past it. On expiry the
 containers stop scheduling work and unwind; the driver converts that into the
-function's `error` record and the batch continues. A function whose drive
+function's `error` record (a pass panic after the deadline passed reports the
+same budget error) and the batch continues. `--max-fn-memory MiB` arms the
+same probes with a memory limit
+(`decompiler/crates/kuna-decomp/src/infra/kuna_fnmemory.rs`): the driver sets
+it process-wide, each drive reads the resident set it starts from (first
+releasing free heap pages with glibc `malloc_trim` and reading again when it
+starts within a tenth of the limit), and
+`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (budget_spent)` —
+the one test every probe makes — also asks, reading the resident set at most
+every 50 ms, whether the process is over the limit and the drive itself has
+added at least 64 MiB (`kuna_fnmemory.rs (trips)`), so what the batch built
+up before a function began cannot stop it. A drive armed only by the limit
+gets a deadline a year out so the probes run. The trip holds for the rest of
+the drive, the function's `error` names the limit, and the drive releases free
+heap pages on the way out. Without the flag, a process under a finite cgroup
+v2 `memory.max` takes the cgroup default instead
+(`kuna_fnmemory.rs (use_cgroup_default)`): the serial run, every `--jobs`
+worker (the parent passes a value only when one was given) and `decomp_dbg`
+(`--max-fn-memory cgroup`). It budgets the container, not the process. With
+a margin of max(512 MiB, 10% of the cap), a drive trips once some capped
+cgroup on the path to the root holds more than its cap less the margin,
+counting `memory.current` without the file-backed LRU pages reclaim can drop
+(`decompiler/crates/kuna-decomp/src/infra/kuna_hostmem.rs
+(unreclaimable_bytes)`), AND the drive has itself grown by that cgroup's
+floor: the margin, or half the room the cap left the process when the drive
+started if that is less, and never under 64 MiB (`kuna_fnmemory.rs
+(cgroup_trips)`). The room term is what keeps a runaway under a small cap
+from reaching the cap before the floor. The cgroup files are read only on a
+sample that finds the drive grown that much, and a drive that starts within
+a tenth of the tightest limit first releases free heap pages, as under an
+explicit limit. A fixed per-process share of the cap would stop functions the
+container could have held while the other workers were small; the shared
+budget stops only a function that has grown by the floor while the container
+is inside its margin. Inside that band the stop is a judgment: a function
+that grew by the floor while other workers filled the container can be
+stopped although it would have fit, and which one it is varies from run to
+run, but each such stop usually replaces a worker the kernel would have
+killed outright. A run outside a capped cgroup has no default. The resident set
+is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, and on Windows the
+larger of the working set and the private commit; a platform that reports no
+resident set (macOS) refuses a non-zero limit. A function whose drive
 completes before expiry is byte-identical with or without a budget, and the
 console/parity paths never set one. It is not a hard wall around discovery,
 unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
@@ -1741,6 +1782,28 @@ it already carries, is left alone — because a name is installed into the scope
 `::` path names, and replacing one buries a name the worker derived correctly.
 `--jobs-full-load` restores the parent's exact load in every worker.
 
+The pool's width is fixed after the parent's load, the only point at which the
+parent knows what a load costs (`decompiler/crates/kuna-cli/src/jobs.rs
+(affordable_jobs)`). A worker is priced at a quarter of the parent's peak
+resident set, less what its decode lanes added (256 MiB at least; the whole
+peak under `--jobs-full-load`), and the pool may take two thirds of the memory a
+new process could still take
+(`decompiler/crates/kuna-decomp/src/infra/kuna_hostmem.rs (available)`). On
+Linux that is `MemAvailable`, or the headroom of the cgroup v2 hierarchy the
+process runs in when that is smaller: each cgroup on the path to the root with
+a finite `memory.max` leaves that cap less its `memory.current` without the
+file-backed LRU pages reclaim can drop, and the smallest such headroom bounds
+the pool (`kuna_hostmem.rs (headroom_from)`), because a container's cap kills a
+worker long before the host runs short. On Windows it is the smaller of the
+free physical memory and the commit still available under the commit limit,
+and the parent's cost is the larger of its peak working set and its peak
+commit: Windows refuses an allocation past the commit limit rather than
+overcommitting, and the worker aborts. On macOS it is the physical memory times
+the percentage the memory status reports free, and the cost is `ru_maxrss`.
+`--jobs auto` comes down to what fits and names the bound it hit; an explicit
+`--jobs N` is kept and warned about. Where neither number is known, `auto` is
+the core count.
+
 Progress is written to stderr. Its ETA is withheld until each worker has completed
 its first chunk and then uses only the rate measured after that point, so every
 one-time worker load remains in elapsed time without being charged again to each
@@ -1767,16 +1830,24 @@ work, the thread that served the chunk re-runs each of those targets once as a
 chunk of its own (`decompiler/crates/kuna-cli/src/jobs.rs (retry_order)`): the
 function that was running goes first, onto the fresh worker the thread starts
 next, so the `error` record it ends with is what it does alone, and the targets
-that never started follow. Three failures are not re-run, each because a re-run
-would repeat a cost no single target caused or one already paid. A function the
-stall watchdog killed has already run four times past its budget, and the
-in-process watchdog's verdict on such a function is final too. A worker that
-never finished a chunk and never opened this one ran none of it and may have died
-in its own program load, which every re-run would repeat; the worker opens the
-chunk's result file just before its first target, so the file's existence is what
-separates the two. And a chunk no worker ran, because its spec could not be
-written or no worker could be spawned, failed for a reason no target has. A
-re-run is never itself re-run. The cost is one extra worker load for every
+that never started follow. A worker that died before opening its chunk (the
+result file it creates just before its first target is what tells) ran none of
+it, and every target of the chunk is re-run the same way, whether it died
+between chunks or in its own program load. A load death used to forfeit the
+whole chunk unretried, on the theory that every re-run would repeat it, but the
+parent has already completed that load on the same binary, and the deaths that
+actually occur there are the machine's: a pool's memory peaks while its workers
+load at once, and an allocation refused then aborts the worker, which Windows
+reports as `0xc0000409` (the shape of issue #1039's report: 188 functions of a
+17,837-function export lost to that exit code, each of which decompiled on its
+own). A load that fails every
+time is bounded by the pool-wide check below instead, as a re-run that could not
+start counts against it. Two failures are not re-run, each because a re-run would
+repeat a cost no single target caused or one already paid. A function the stall
+watchdog killed has already run four times past its budget, and the in-process
+watchdog's verdict on such a function is final too. And a chunk no worker ran,
+because its spec could not be written or no worker could be spawned, failed for a
+reason no target has. A re-run is never itself re-run. The cost is one extra worker load for every
 function that fails again on its own, since its crash takes the re-run's worker
 with it, and the stopping rules only cap that cost where re-running is futile.
 Chunks are cut from a size-sorted order and functions that crash alike sit side
@@ -1795,7 +1866,8 @@ the ones recovered (`decompiler/crates/kuna-cli/src/jobs.rs (ChunkReruns)`); the
 function that was running only counts toward the stalls, since it is expected to
 crash again. And a pool-wide check (`decompiler/crates/kuna-cli/src/jobs.rs
 (RetryGate)`), asked each time a re-run would start, holds it back while sixteen
-or more re-runs have failed and they outnumber every record the workers
+or more re-runs have failed or could not start and they outnumber every record
+the workers
 delivered, planned or re-run: workers that die on everything deliver nothing and
 so pay a bounded number of extra loads, and since a held-back re-run cannot
 fail, a run whose workers mostly work catches up and resumes re-running, even
@@ -2240,6 +2312,36 @@ external-symbol note rather than `not mapped in this input` — and folds the
 ARM/Thumb mode bit out of the address, so the declaration lands where every later
 resolution of it looks.
 
+(kuna) **A by-address selection inside another function is said to be one.**
+Pointing `--addr` at an address is how an entry discovery missed gets
+decompiled at all, so a selection that starts no inventory entry is decompiled
+from where it points rather than refused or moved. The same command at an
+address inside a function discovery did find printed a `sub_<addr>` body that is
+a fragment of its neighbour, with nothing to say so, and such fragments were
+cited as function entries (issue #1039). The fragment's `sub_<addr>` name
+selects the same address, so the question is asked of the address a selection
+RESOLVES to, whatever its spelling — a name, a numeric address with or without
+the Thumb mode bit, an object's section coordinate: the canonical entry
+immediately below it whose inventory size — the address-contiguous clip `kuna
+functions` reports, or a declared extent — reaches past it
+(`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::entries_containing)`,
+which enumerates the inventory once for a whole batch of targets). An address
+that is itself an entry, or that no extent covers, has no answer. `kuna
+decompile` asks the console with `function containing <selector>` before
+installing the selection's symbol and reads the answer off the transcript; the
+in-process surfaces (`decompile --json`, `decompile-all`, `decompile-project`)
+ask about the targets their selection already resolved and deduplicated
+(`decompiler/crates/kuna-cli/src/interior.rs (selections)`), and an unfiltered
+run, which selects inventory entries only, asks nothing. `decompile-graph` does
+not ask: it keeps only executable inventory entries, so it never decompiles an
+interior target. Each prints
+one `note:` per record on stderr naming the containing function and the offset,
+and the JSON record of such a target carries it as `interior_to`. The key exists only
+there, so `kuna decompile --json` of an entry stays byte-identical to its
+`decompile-all` record, and the exit status and the C are unchanged. A
+`--define-function` at the address registers an entry there before the
+question is asked, which is how a caller says the fragment is meant.
+
 (kuna) **The C the assertion plane accepts is the C it prints.** Six directives
 carry a C declaration, and every one of them goes through the console's
 C-declaration grammar (`decompiler/crates/kuna-console/src/grammar.rs (CParse)`),
@@ -2564,6 +2666,7 @@ runtime `on_or_off` parser.
 | `KUNA_IFUNCFPRET` | `ifuncfpret` | x86-64 IFUNC (`R_X86_64_IRELATIVE`) stub naming, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ifuncfpret.rs (IFUNCFPRET_ENV)` |
 | `KUNA_TYPEDEPTH` | `typedepth` | DWARF full-depth type resolution, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_typedepth.rs (TYPEDEPTH_ENV)` |
 | `KUNA_DWARFSTRUCTS` | `dwarfstructs` | DWARF aggregate-layout import (`DW_AT_byte_size` + `DW_TAG_member` walk), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dwarfstructs.rs (DWARFSTRUCTS_ENV)` |
+| `KUNA_CALLTARGETTYPE` | `calltargettype` | DWARF `DW_TAG_subroutine_type` import as a function prototype (off unless the option, or the `aggressive` preset, is on, and never for Rust output), `decompiler/crates/kuna-decomp/src/p5_types/kuna_calltargettype.rs (CALLTARGETTYPE_ENV)` |
 | `KUNA_DWARFVARIANTS` | `dwarfvariants` | DWARF variant-part (discriminated-union) import (`DW_AT_discr` + `DW_TAG_variant` walk), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dwarfvariants.rs (DWARFVARIANTS_ENV)` |
 | `KUNA_PDATACHAINED` | `pdatachained` | PE `.pdata` chained-`UNWIND_INFO` entry suppression, `decompiler/crates/kuna-analysis/src/analyzers/entry/pe_entry.rs (pdata_begins)` |
 | `KUNA_REXTHUNK` | `rexthunk` | x86-64 PE import-thunk decode drops the `FF 25` one byte into a REX-prefixed tail jump, `decompiler/crates/kuna-analysis/src/loader/kuna_rexthunk.rs (is_rex_tail)` |
@@ -2681,6 +2784,14 @@ Every cross-arena mutation routes through `Funcdata` — Rust cannot hold two
 C++ splits between `Funcdata` and `BlockBasic` are all `Funcdata` methods here
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (bb_insert_op,
 bb_remove_op)`).
+
+Call/store membership and operation positions carry a per-function revision
+(`Funcdata::affecting_ops_revision`). Moving or removing a call/store, changing
+its opcode, renumbering operations, mutating the basic-block graph, or changing
+the call-specification list advances it. Chapter 06's intersection cache checks
+this revision before reusing its saved call/store positions or crossing verdicts;
+the merge engine can be temporarily borrowed out of the function while these
+mutations occur, so invalidation is checked on the next query.
 
 **Phi arity tracks in-degree, and the marker run is not a place to look it up.**
 A basic block's MULTIEQUALs carry one input per in-edge, in edge order, so CFG

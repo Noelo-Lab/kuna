@@ -1137,6 +1137,36 @@ impl ConsoleProgram {
             .find(|e| e.addr.get_offset() == want)
     }
 
+    /// The address `selector` resolves to: a mapped numeric address with its
+    /// Thumb bit folded, as [`Self::resolve_entry`] would answer it but without
+    /// building the entry, and anything else through `resolve_entry`.
+    pub fn selection_address(&self, selector: &EntrySelector) -> Option<u64> {
+        if let EntrySelector::Numeric(vma) = selector {
+            let vma = self.thumb_normalized(*vma);
+            if self.vma_is_mapped(vma) {
+                return Some(vma);
+            }
+        }
+        self.resolve_entry(selector).ok().map(|entry| entry.addr.get_offset())
+    }
+
+    /// For each of `vmas`, the inventory entry whose extent holds it when it is
+    /// not itself an entry: what a selection lands inside when discovery found
+    /// no function starting there (`docs/cli.md`, `interior_to`). The inventory
+    /// is enumerated once for the whole batch.
+    pub fn entries_containing(&self, vmas: &[u64]) -> Vec<Option<FunctionEntry>> {
+        let entries = self.function_entries_canonical();
+        vmas.iter()
+            .map(|&vma| {
+                let want = self.thumb_normalized(vma);
+                let below = entries.partition_point(|e| e.addr.get_offset() <= want);
+                let owner = entries.get(below.checked_sub(1)?)?;
+                let start = owner.addr.get_offset();
+                (start < want && want - start < owner.size).then(|| owner.clone())
+            })
+            .collect()
+    }
+
     /// Resolve a selector without guessing between object-file coordinates.
     ///
     /// Numeric resolution checks the mapped synthetic address space first. On
@@ -4878,6 +4908,25 @@ fn commit_analysis_output(
     for (addr, pieces) in out.prototypes_at {
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
+    }
+
+    // 5d. A C runtime import is `__cdecl` even where the image's default
+    //     convention leaves the cleanup to each callee (`x86win.cspec`'s
+    //     `__stdcall`), so its signature must not be read as bytes it pops.
+    let default_pop_unknown = prog
+        .arch()
+        .default_fp()
+        .is_some_and(|m| m.get_extra_pop() == kuna_decomp::fspec::EXTRAPOP_UNKNOWN);
+    let cdecl = prog
+        .arch()
+        .get_model("__cdecl")
+        .filter(|m| m.get_alias_parent().is_none())
+        .filter(|m| m.get_extra_pop() != kuna_decomp::fspec::EXTRAPOP_UNKNOWN)
+        .cloned();
+    if let (true, Some(cdecl)) = (default_pop_unknown, cdecl) {
+        for name in &out.c_runtime_imports {
+            prog.arch_mut().set_function_prototype_model(name, Rc::clone(&cdecl));
+        }
     }
 
     // 5b. (kuna `cppsig`) The DEMANGLED prototypes, bound by entry address like

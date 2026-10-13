@@ -121,7 +121,8 @@ the directories it looked in.
 | `KUNA_DECODE_SELFCHECK` | `1` runs both walks, compares them field by field and returns the serial result; `abort` panics on a difference. Keeps the runtime's panic report, as `KUNA_DECODE_STATS` does. |
 | `KUNA_DECODE_STATS` | `1` prints one line of lane/interval/round/crossing/decode counts and the walk, merge and lane-memory figures. It also keeps the runtime's panic report for a lane fault, which the fallback otherwise silences. |
 | `KUNA_DECODE_FAULT` | Test-only: `<n>` panics lane `n` once, `spawn:<n>` makes lane `n`'s spawn fail — the two fallback paths. |
-| `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), and `spawn:<n>` refuses every worker spawn after the first `n` — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
+| `KUNA_CGROUP_ROOT` | Test-only: the directory read in place of `/sys/fs/cgroup` by the `--max-fn-memory` cgroup default and when `--jobs auto` reads a cgroup's headroom. |
+| `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
 
 An override wins over both layouts, and one pointing at nothing is reported as
 such rather than silently re-probed.
@@ -183,6 +184,10 @@ Drives `decomp_dbg` as a subprocess and captures `print C` via `openfile write`,
 interactive prompts never pollute the output. `--option NAME VALUE` (repeatable) and
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
+`--max-fn-memory MiB` stops the decompile once `decomp_dbg` holds more than MiB
+resident and the function has added 64 MiB (see *Per-function memory limit*
+under `decompile-all`, including its cgroup default) and reports `per-function
+memory limit exceeded` instead of being killed.
 
 An option **name** is checked before anything is loaded, on every surface that takes
 `--option`, and an unrecognized one exits 2 rather than running as if it had not been
@@ -319,7 +324,7 @@ kuna decompile ./crackme.exe main --option errortoomanyinstructions on
 Both options are upstream `OptionDatabase` names rather than phase-model ones, so
 they are reachable through `--option` on every surface but do not appear in `kuna
 catalog`. `--max-fn-seconds` (see `decompile-all` below) is the wall-clock half of
-the same budget.
+the same budget, and `--max-fn-memory` the memory half.
 
 The jump-table ceiling is the other budget a giant function hits: a switch whose
 range check admits more than `jumptablemax` cases (1024 by default) is not
@@ -335,6 +340,33 @@ kuna decompile ./state_machine.exe 0x14000c0b0 --addr \
 `kuna functions --summary --json` (and `functions --reachable-from --json`) report
 which functions would hit either budget before anything is decompiled; see `limits`
 below.
+
+**An address inside another function is decompiled as asked, and said to be
+one.** `--addr` declares that a function starts where it points — that is how an
+entry discovery missed is reached at all — so it is never refused or moved. But
+an address inside a function discovery *did* find decompiles to a plausible
+`sub_<addr>` that is only a fragment of its neighbour, so stderr names the
+function whose inventory extent (the `size` `kuna functions --json` reports)
+holds it, and the offset:
+
+```bash
+kuna decompile ./kuna_repro.exe 0x140001040 --addr
+#   int sub_140001040(int a0) { return a0 * 0xb + -4; }
+#   note: 0x140001040 is interior to sub_140001030 (0x140001030+0x10), not an entry
+#         kuna discovered; decompiled from 0x140001040 as asked (--define-function
+#         0x140001040 declares a function there)
+```
+
+Select the containing function by its name or entry address to decompile it
+whole; if a function really starts there, `--define-function <addr>` makes it an
+entry and the note goes away. The exit status is unchanged. It is the address
+the selection resolves to that is checked, so the fragment's own name (`kuna
+decompile ./kuna_repro.exe sub_140001040`), a Thumb address carrying its mode bit
+and an object's `.text+0xOFF` answer the same way, and so do `decompile-all` and
+`decompile-project` for each target selected by `--addr` or `--functions` — one
+note per record. With `--json` the record of such a
+target carries it as `interior_to`: `{name,address,address_hex,offset}`. No other
+record has the key, so every other document is byte-for-byte what it was.
 
 **`--define-function <start[-end][=name] | @file>`** (repeatable) tells kuna where a
 function starts and ends. Every boundary kuna knows is otherwise *derived* —
@@ -383,7 +415,11 @@ comment on its prototype and one at each cut edge, naming the address the edge l
 for. That holds for a conditional branch over the end as much as for fall-through
 past it — including a branch to the exclusive end itself, which is what a
 tail-clipped `if (err) goto fail;` looks like. A correct boundary ends in a return
-and produces no warning, so that comment is the signal to widen the range.
+or a recognized tail transfer and produces no warning. With `tailcalljump on`
+or `direct`, a terminal conditional branch to a separately known function entry
+outside the declared extent is a tail call on its taken path. Unknown targets
+and mid-function addresses still clip and warn, so that comment is the signal
+to review the range.
 
 A declaration also survives the whole-binary filter. Unfiltered `decompile-all`,
 `decompile-project` and the browser inventory decompile only entries inside a
@@ -1485,7 +1521,9 @@ stack_offset,size,line_numbers,addresses}],types:[{name,definition,size}]}]}` (`
 object shaped like the `--summary` one over the listed functions, and the key is absent
 otherwise, so the plain listing never pays for the walk).
 `object_location` is `null` for linked images and undefined imports; for a relocatable
-definition it is `{section_index,section,offset,offset_hex}`. `count` is what the
+definition it is `{section_index,section,offset,offset_hex}`. A record selected (`--addr` or `--functions`)
+inside another function's extent also carries `interior_to` (see `kuna decompile`
+above): `{name,address,address_hex,offset}` of the function that holds it. `count` is what the
 `functions` array holds. `kuna functions --json` also carries `total`, the count
 before any triage narrowing; `decompile-all --json` carries `total` only when a
 triage flag actually narrowed it, so an unfiltered whole-binary document — the one
@@ -1673,13 +1711,64 @@ Behaviors specific to `decompile-all`:
   arms only the fast whole-binary 10-second policy and leaves its other commands
   unbudgeted. A function whose decompile drive exceeds the budget is cut off
   cooperatively (deadline probes at the action/rule-pool/heritage loop
-  boundaries) and recorded as that function's `error` (`"per-function
-  decompile budget exceeded (N s)"`), the batch continuing. This is not a hard
-  process timer: it does not bound discovery, unprobed decoder work, C/variable
-  rendering, artifact construction, total export time, or memory. Driver
-  policy, not a stage-model settable — zero output change for a function whose
-  drive completes before expiry; the console / `decomp_dbg` parity path never
-  arms it.
+  boundaries, including each range heritage guards) and recorded as that
+  function's `error` (`"per-function decompile budget exceeded (N s)"`), the
+  batch continuing. This is not a hard process timer: it does not bound
+  discovery, unprobed decoder work, C/variable rendering, artifact
+  construction, total export time, or memory. Driver policy, not a stage-model
+  settable — zero output change for a function whose drive completes before
+  expiry; the console / `decomp_dbg` parity path never arms it.
+
+- **Per-function memory limit** — `--max-fn-memory MiB` (`0` disables) on
+  `decompile-all`, `decompile-project`, `decompile-graph` and `kuna decompile`.
+  A function is stopped once the process decompiling it holds more than MiB
+  resident AND the function itself has added at least 64 MiB since it began;
+  it is cut off at the same cooperative probes as the watchdog and recorded as
+  its `error` (`"per-function memory limit exceeded (N MiB)"`), and the batch
+  continues. The 64 MiB floor is what keeps a long batch's creep (results it
+  holds, heap the allocator kept) from stopping an ordinary function, so the
+  process can end up to that much over the limit before a function is
+  blamed. The resident set is read when each function starts and then at most
+  every 50 ms while it runs. A function that starts within a tenth of the limit
+  first hands free heap pages back to the system (glibc `malloc_trim`) and
+  measures again, and a stopped function hands its own back before the next
+  one starts.
+
+  An explicit limit is per process: the serial run, each `--jobs N` worker,
+  and the `decomp_dbg` child of `kuna decompile` each get the value given.
+  When the flag is absent and the process runs under a finite cgroup v2
+  `memory.max` (`docker run --memory`, `systemd-run -p MemoryMax=6G`), every
+  one of those processes takes the **cgroup default** instead, which budgets
+  the container rather than the process. Its margin is max(512 MiB, 10% of
+  the cap): a function that has itself grown by the margin is stopped once a
+  capped cgroup on the path to the root holds more than its cap less the
+  margin (5,529 MiB of a 6 GiB cap, after 614 MiB of growth), counting
+  `memory.current` without the file-backed pages reclaim can drop
+  (`active_file` + `inactive_file`). Under a small cap the growth needed is
+  half the room the cap left the process when the function started, if that
+  is less (and never under 64 MiB), so a runaway is stopped before the cap
+  is reached. Every `--jobs` worker therefore shares the one budget, and a
+  worker whose function is taking the container to its cap records that
+  function's memory `error` instead of being killed. A function that grew by
+  less is never stopped, nor is one that grows while the container has room.
+  Inside the margin band the stop is a judgment, not a measurement: a
+  function that grew by the margin while other workers filled the container
+  can be stopped although it would have fit, which of them it is varies from
+  run to run, and each such stop usually stands in for a worker the kernel
+  would have killed. The cgroup is read only on a 50 ms sample that finds
+  the function grown that much, and a function that starts within a tenth
+  of the limit first hands free heap pages back. The error names the limit,
+  as for an explicit value. A pool wider than the container can hold even
+  without its big functions (each worker's load counts) can still be
+  killed; `--jobs N` lowers it. An explicit
+  value, `0` included, always wins; outside a capped cgroup there is no
+  default, and a function the limit never stops is unchanged. It reads the
+  resident set (`VmRSS` on Linux; on Windows the larger of the working set and
+  the private commit), so on a platform without one (macOS) a non-zero value
+  is refused. A function the limit stops usually has an
+  alternative that keeps some output: `--max-size N` leaves functions over N
+  bytes out of the run, and `--option maxinstruction N` truncates their flow
+  (see *The instruction budget*).
 
 - **`--jobs N|auto` — the worker pool, and the decode lanes.** The per-function
   loop is ~96% of a whole-binary run's wall clock and the engine is
@@ -1767,7 +1856,23 @@ Behaviors specific to `decompile-all`:
     hands over; `--jobs-full-load` puts each worker back on the parent's own load
     and its memory. `--jobs auto` takes this machine's parallelism capped at 16,
     then lowers that to what free memory holds and says so; an explicit
-    `--jobs N` is obeyed with a warning instead.
+    `--jobs N` is obeyed with a warning instead. The pool takes two thirds of
+    the free memory, at a quarter of the parent's peak resident set per worker
+    (256 MiB at least; the whole peak with `--jobs-full-load`). Free memory is
+    Linux `MemAvailable`, or, under a cgroup v2 `memory.max` (`docker run
+    --memory`, `systemd-run -p MemoryMax=`), what that cap still leaves when
+    it is the tighter bound: for each capped cgroup
+    on the path to the root, its `memory.max` less its `memory.current`
+    without the file-backed LRU pages (`active_file` + `inactive_file`) that
+    reclaim can drop. The message then says `free under a cgroup's
+    memory.max`. On Windows it is the smaller of the free physical memory and
+    the commit still available, since Windows refuses an allocation past its
+    commit limit (the worker then aborts with `0xc0000409`), and a worker's
+    cost is priced from the larger of the parent's peak working set and its
+    peak commit. On macOS it is `hw.memsize` times `kern.memorystatus_level`,
+    priced from `ru_maxrss`. A cgroup v1 limit is not read (only
+    `MemAvailable` applies); on other platforms `auto` is the core count,
+    untrimmed.
   - **Small runs are slower.** A worker pays a whole program load before its first
     function (17 s on that PE), so a run only wins once the work exceeds one such
     load — a few hundred functions there, and nothing at all on a handful of
@@ -1791,12 +1896,15 @@ Behaviors specific to `decompile-all`:
     chunk: the one that was running first, on a fresh worker, so its `error`
     record is the failure it repeats on its own, then the rest. Without this, one
     panicking function took its whole chunk with it (26 to 512 functions wide on
-    a large binary). Three failures are not re-run: a function the stall
-    watchdog killed (it already ran four times past its budget, and a second try
-    costs the same window again); the functions of a worker that died before it
-    finished any chunk or opened this one, because its load may be what failed;
-    and a chunk no worker ran at all, because a spawn was refused or its spec
-    could not be written.
+    a large binary). A worker that died in its own program load, before its
+    first function, is no exception: the parent has already loaded the same
+    binary, and what kills a worker there is the machine — every worker loads at
+    once, and an allocation refused then aborts it (`exit code: 0xc0000409` on
+    Windows, `signal: 6 (SIGABRT)` elsewhere) — so its chunk is re-run like any
+    other. Two failures are not re-run: a function the stall watchdog killed (it
+    already ran four times past its budget, and a second try costs the same
+    window again); and a chunk no worker ran at all, because a spawn was refused
+    or its spec could not be written.
 
     The cost is one extra worker load for every function that fails again on
     its own, because its crash takes the re-run's worker with it; functions that
@@ -1811,8 +1919,9 @@ Behaviors specific to `decompile-all`:
     most two extra stall windows, and once 8 of its re-runs (not counting the
     function that was running) have failed again and they outnumber the ones
     that came back. And no re-run starts while 16 or more re-runs have failed
-    and they outnumber every result the workers delivered, which is what workers
-    that die on everything look like; the run says so once, and re-running
+    or could not start and they outnumber every result the workers delivered,
+    which is what workers that die on everything look like; the run says so
+    once, and re-running
     resumes when deliveries catch up, so a burst of crashes among the large
     functions a run starts with does not switch it off. Functions left behind
     keep their `error`, with `; not re-run: <why>` appended. The closing lines
@@ -1986,6 +2095,34 @@ jump, and the name only has to point the walk at the addresses to check.
 0x140001a9e	call	__write_memory.part.0+0x18e	CALL qword ptr [0x14000d234]
 0x140001cce	read	_pei386_runtime_relocator+0x19e	MOV R12,qword ptr [0x14000d234]
 ```
+
+### An export called through its own PLT stub
+
+A shared library built without `-fvisibility=hidden`, `-Bsymbolic` or
+`-fno-semantic-interposition` calls its own exports through `name@plt`, so the
+name is on two functions: the export's body and the stub. A name selects the body
+(it is what `kuna decompile` lifts), but nothing calls the body directly. So when
+`--to`/`--from` is given a **name**, the alias class also takes in every forwarding
+veneer whose slot the image's own dynamic relocations bind to that body (the
+relocation's symbol is defined in the image at the body's address). The callers
+through the stub are then the export's callers, and `target.aliases` lists the
+stub and its GOT slot. The join is the relocation, never the shared name. An
+**address** still answers for that address alone: `--to <body>` stays at the direct
+references, and `--to <stub>` lists only its slot as an alias.
+
+```
+# 3 references to bump @ 0x1120
+# same export at 0x1050 (bump) - its own PLT stub
+# same export at 0x4018 (-) - the GOT slot its PLT stub jumps through
+0x1137	call	bump_twice+0x7	CALL 0x1050
+0x1140	jump	bump_twice+0x10	JMP 0x1050
+0x1158	call	bump_and_read+0x8	CALL 0x1050
+```
+
+When the name also matches a function outside the answered class (for example a
+stub whose forwarding jump the walk could not decode), the answer is still for the
+selected address, and stderr says so with
+`warning: "NAME" also names 0x...; this answer is for 0x... only, query that address for the rest`.
 
 Flags: `--json`, `--kind call,jump,data,read,write` (repeatable-by-comma filter),
 plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
@@ -2736,8 +2873,8 @@ The project-export face of the same in-process core
 `kuna_console::project` module — the decompile loop + artifact builders also behind the
 web UI's Download-Binary-Source zip and `kuna_wasm project`). Identical
 load-once/decompile-many path and flags —
-`--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--option`/`--isa`/`--slice`/
-`--target`/`--sleighpath`/`--jobs`/`--stream`; no `--json`. Omitted mode is the same
+`--functions`/`--addr`/`--max-fn-seconds`/`--max-fn-memory`/`--mode`/`--option`/
+`--isa`/`--slice`/`--target`/`--sleighpath`/`--jobs`/`--stream`; no `--json`. Omitted mode is the same
 size-based `auto` policy as the other file front-ends. In particular, a project input
 at least 2 MiB automatically suppresses the exhaustive Listing consumers, prologue
 scan, and AIF gap walk through the `fast` preset, while substituting rooted direct-call
@@ -3074,7 +3211,7 @@ One document holding every discovered function — its recovered signature,
 parameters, C body and assembly — plus the call edges between them
 (`decompiler/crates/kuna-cli/src/decompile_graph.rs`). The same in-process
 load-once path and the same flags as `decompile-project`
-(`--functions`/`--addr`/`--max-fn-seconds`/`--mode`/`--define-function`/
+(`--functions`/`--addr`/`--max-fn-seconds`/`--max-fn-memory`/`--mode`/`--define-function`/
 `--option`/`--slice`/`--target`/`--sleighpath`/`--jobs`; no `--json`, the document
 always is), plus `-o/--output FILE` and `--label TEXT`, which is copied verbatim into
 `binary.label` for a consumer that wants to stamp the document with its own
@@ -3232,7 +3369,14 @@ kuna catalog --tier transform    # filter to the transform-tier control surface
 
 Parses the decompiler's `phase catalog` JSON (single source of truth: `settableTable`,
 generated from `decompiler/crates/kuna-decomp/phases.toml`) into the documented, flippable
-assertion list. `--markdown` output is tier-grouped and symptom-indexed; `--check`
+assertion list. `--json` emits a JSON **array** with one object per option —
+`[{option,values,default,destructive_as_default,phase,subphase,strength,rewind,issue,summary,
+use_when,example,source_decompiler,inspiration,change_kind,tier,symptoms}]` — and `--option
+NAME` keeps that shape with one element, so a consumer reads both the same way. `--tier`
+filters the array exactly as it filters the table. It and
+`kuna docs --json` (`[{topic,title,summary,bytes}]`) are the two array-rooted documents;
+every other subcommand's `--json` is an object (`{binary,...}`, `{modes:[...]}`), and each
+`--help` names its root. `--markdown` output is tier-grouped and symptom-indexed; `--check`
 cross-checks the catalog against `kuna_decomp::options::KUNA_OPTION_NAMES` in-process.
 The rendered catalog is `docs/options.md`; the model behind it is `docs/phases.md` /
 `docs/spec/`; the defaults are recorded in `docs/history.md`.

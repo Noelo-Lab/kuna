@@ -773,6 +773,8 @@ pub struct ArchContext {
     /// (C++ `fold_boolean_mask`, DIV-2 default-on).  Read by
     /// [`RuleBoolSignShift`](crate::kuna_booleanmask::RuleBoolSignShift).
     pub fold_boolean_mask: bool,
+    /// Keep mapped global array bases separate from negative element offsets.
+    pub global_array_anchor: bool,
     /// (kuna) Fold an exact one-byte modular cancellation around a bounded
     /// left shift (`option cancelbytearithmetic`).
     pub cancel_byte_arithmetic: bool,
@@ -836,6 +838,12 @@ pub struct ArchContext {
     /// Read by
     /// [`ActionCallTargetType`](crate::kuna_calltargettype::ActionCallTargetType).
     pub call_target_type: bool,
+    /// (kuna `calltargettype`) C output: a parameter or global takes the call's
+    /// type too, and a target whose uses disagree is cast at each call. The
+    /// Rust speller spells every pointer to code `*const ()`, so neither changes
+    /// anything there. Read by
+    /// [`retype_call_targets`](crate::kuna_calltargettype::retype_call_targets).
+    pub call_target_c: bool,
     /// (kuna `floatglobals`) The globals the program only moves through float
     /// registers, once the scan has run; read by
     /// [`float_only`](crate::kuna_floatglobals::float_only).
@@ -969,6 +977,10 @@ pub struct ArchContext {
     /// call and popped by a later one (`calleepopslot`).  Read by
     /// [`crate::p6_variables::kuna_calleepopslot::guess_extra_pop`].
     pub callee_pop_slot: bool,
+    /// (kuna) read a callee's pop off a fixed-frame caller that re-reserves
+    /// the popped bytes (`calleepopframe`).  Read by
+    /// [`crate::p6_variables::kuna_calleepopframe::guess_extra_pop`].
+    pub callee_pop_frame: bool,
     /// (kuna) `calleeprotostack` — a declared callee's locked prototype states
     /// its stack contract.  See [`crate::p4_calls::kuna_calleeprotostack`].
     pub callee_proto_stack: bool,
@@ -1176,6 +1188,8 @@ pub struct ArchContext {
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
     pub stack_views: bool,
+    /// Opt-in frame-bounded arrays for call-escaped integer storage.
+    pub call_array_extent: bool,
     /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
     /// `RulePropagateCopy` marker propagation that would leave an address-tied
     /// `COPY` output holding a call's return value with no readers, so a
@@ -1196,6 +1210,10 @@ pub struct ArchContext {
     pub tied_phi_trim: bool,
     /// (kuna) `splitstorekeep` — carry `stack_store` onto refinement pieces.
     pub split_store_keep: bool,
+    /// (kuna) `wideslice` — slice reduction through synthetic-width SSA trees.
+    pub wide_slice_reduce: bool,
+    /// (kuna) `devectorize` — re-roll a vectorized reduction into its scalar loop.
+    pub devectorize_reduction: bool,
     /// Guard stack slots against stores through stack-derived pointers.
     pub stack_store_guard: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -1717,6 +1735,7 @@ impl ArchContext {
             // registered `enabled=false` is inert there — matching the gate-off
             // unit tests (and the `infer_funcentry` stub-default convention).
             fold_boolean_mask: false,    // GH-1282 booleanmask
+            global_array_anchor: false,
             cancel_byte_arithmetic: false, // cancelbytearithmetic (the ArchSeam carries the real default)
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             simd_lane_fold: false,       // simdlane (the ArchSeam carries the real default)
@@ -1731,6 +1750,7 @@ impl ArchContext {
             rodata_string: false,        // (kuna) rodatastring
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
             call_target_type: false,     // (kuna) option calltargettype
+            call_target_c: false,        // (kuna) option calltargettype, C output
             float_globals: None,         // (kuna) option floatglobals
             float_globals_pending: false,
             float_globals_wanted: std::cell::Cell::new(false),
@@ -1781,6 +1801,7 @@ impl ArchContext {
             // the hand-built-fixture seam carries the same default.
             callee_pop: true,
             callee_pop_slot: true,
+            callee_pop_frame: true,
             callee_proto_stack: true,
             // argclobber only drops a trailing argument the callee's own
             // recovered prototype says it never reads, and declines outright
@@ -1827,6 +1848,7 @@ impl ArchContext {
             cond_exe_ret_use: true,      // condexeretuse (default-on)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
+            call_array_extent: false,
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)
@@ -1834,6 +1856,8 @@ impl ArchContext {
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
             split_store_keep: false,     // splitstorekeep (Architecture::reset_defaults sets the shipped default: on)
+            wide_slice_reduce: false,    // wideslice (Architecture::reset_defaults sets the shipped default: on)
+            devectorize_reduction: false, // devectorize (opt-in default-off)
             stack_store_guard: false,
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)

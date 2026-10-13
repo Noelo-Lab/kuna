@@ -140,8 +140,9 @@ both just produce a shorter function. So the out-of-bounds handler emits the C++
 diagnostics — a `Funcdata::warning` at each cut edge and, once per function, the
 `Function flows out of bounds` `Funcdata::warning_header` — which the emitter
 renders as comments on the prototype and the offending statement. A correctly
-declared function ends in a return and never leaves its range, so a warning here
-means the declared end is wrong.
+declared function ends in a return or a recognized tail transfer. A known callee
+outside the extent can be recovered under `tailcalljump` without following its
+body; an unrecognized edge still clips and warns, so its declared end needs review.
 
 Warning is only half of continuing, though, because the cut edge still needs a
 head: the target was never decoded, so it has no op, and until DIV-121 the block
@@ -585,6 +586,28 @@ attributable. Without it the follower walks *into* the PLT thunk, whose body is
 an indirect GOT jump; jump-table recovery fails on it and the function renders
 a `(*dat_...)(...)` computed call with a `"Treating indirect jump as call"`
 warning. Two datatests (Long double #1/#2) opt out per-test.
+
+**Bounded conditional tails.** With an explicit extent, a machine-address
+`CPUI_CBRANCH` to another known function's entry outside that extent is the
+conditional form of the same direct tail. Both `on` and `direct` recover it
+when the branch is the instruction's last p-code op. The taken path receives a
+CALL with normal callee prototype and flow-effect setup, followed by RETURN
+(or the callee's no-return halt); the false path skips that block and continues
+at the next instruction. Each path keeps its own register state, so argument
+swaps on the false path cannot change the taken call's inputs. The local taken
+block has a stable, effect-free COPY before the call so its relative branch
+target survives explicit callee inlining or call-fixup injection; ordinary
+dataflow cleanup removes that unused copy.
+
+An entry inside the asserted extent stays local, and a target that is unknown,
+mid-function, self-directed, or a relative p-code destination is never recovered
+by this rule. It does not infer conditional tails from frame teardown. A
+conditional with remaining p-code in its instruction keeps the original flow,
+as does an unbounded conditional. `off` retains clipping for an out-of-extent
+conditional even when its target is declared. A false edge that itself crosses
+the bound still receives the missing halt and out-of-bounds warning.
+`tests/stages/kuna-conditional-tail.xml` pins argument order, both direct modes,
+backward value-returning tails, no-return callees, inlining, and these refusals.
 
 `option tailcalljump` takes three values. `off` disables the rule, `direct`
 applies it to direct jumps only, and `on` (the default) also applies it to a
@@ -1389,12 +1412,28 @@ the case targets.
    circular value range the guarded Varnode must lie in for control to reach
    the switch. A guard applies to a candidate if they are literally the same
    Varnode, quasi-copies of one base value, duplicate calculations, or loads of
-   the same location (`jumptable.rs (GuardRecord::value_match)`).
+   the same location (`jumptable.rs (GuardRecord::value_match)`). Two LOADs
+   read the same location when their addresses are one Varnode or one base plus
+   equal constants, or when the addresses are computed by the same pure ops
+   from the same Varnodes and no STORE, CALL, CALLIND or CALLOTHER lies between
+   the loads on a chain of single-predecessor blocks
+   (`jumptable.rs (GuardRecord::no_write_between)`). gcc's compact selector
+   `cmp byte [rax+rcx],N; ja; movzx edi,byte [rax+rcx]` guards one load and
+   indexes the table with the other; without that match the byte's full 256
+   rows were emulated and the next table's rows were read with this table's
+   base, sending flow into instruction interiors (#1028).
 3. **Range.** For each meld candidate, `jumptable.rs
    (JumpBasicModel::calc_range)` seeds a range from what the Varnode itself
    proves (a constant; a boolean output = {0,1}; an AND-mask bound + power-of-2
    stride from the non-zero mask) and intersects every matching guard range;
-   ranges still larger than 0x10000 are assumed positive.
+   ranges still larger than 0x10000 are assumed positive. After that existing
+   domain narrowing, matching guards are intersected again by
+   `decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchguardrange.rs (intersect)`.
+   Two circular guard ranges whose first intersection needed two intervals may
+   now intersect as one interval. This retains both bounds of a guarded A32 `ADDPL pc,pc,index,lsl #2`
+   table instead of dropping its branch bodies into an unresolved interior call.
+   ARM's lifted PC+8 base, the predicate's fallthrough, and actual indirect calls
+   retain their existing flow semantics.
    `find_smallest_normal` picks the candidate with the smallest reaching range
    as the normalized variable — refusing a 1-byte, 256-value candidate unless a
    table LOAD lies between it and the branch (a bare byte is not evidence of a
@@ -1596,7 +1635,13 @@ exclude a row the table still lists. Otherwise, when the fresh
 model's own values rebuild the whole table row for row (`jumptable.rs
 (JumpBasicModel::rebuilds_rows)`), the labels come from those values; this
 covers a fresh normalized variable that is offset from the flow-time one. When
-neither holds — typically because the fresh
+neither holds, the normalized variable first moves away from the branch, to
+the first common Varnode behind it whose range is bounded and that labels the
+rows (`jumptable.rs (JumpBasicModel::label_by_deeper_variable)`): a guard on a
+reloaded map entry can make that entry the smallest range late, while the
+flow-time rows were labelled by the selector in front of the map, whose own
+guard the late search no longer finds behind the retry loop. When no such
+variable exists — typically because the fresh
 variable is a mapped selector, an index already looked up in a byte map in
 front of the target table — the basic model first tries the guard-bound
 recovery paths (`switchmodbound`, `switchguardbound`, `switchsharedcase`,
@@ -1997,7 +2042,15 @@ is never changed, only what counts as a bound.
   predecessor's guard as a function of its MULTIEQUAL input (same
   first-routing-flip evaluation as `switchguardbound`, trampoline blocks
   peeled up to 4 deep) and re-binds the table to the *union* — the max — of
-  the per-path prefixes.
+  the per-path prefixes. The lockstep walk also records nothing when the
+  copies of one check branch with opposite senses (one `ja default`, the other
+  `jbe dispatch`, as in libselinux `getprocattrcon_raw`), and a byte index then
+  kept its full 256-row range, which is not over-sized, so the fallback never
+  ran. `jumptable.rs (JumpBasicModel::check_unrolled_guard_by_edge)` pulls
+  each edge's check back under that edge's own toward-switch sense until it
+  reaches the edge's input to one MULTIEQUAL of the dispatch block, and records
+  the union of the per-edge ranges as an unrolled guard on the MULTIEQUAL
+  output (#1028).
 
 **(angr) `unrolledguard`, default off** — despite the name, not a guard
 analysis: a partial-flow tolerance in `flow.rs (FlowInfo::collect_edges)` for

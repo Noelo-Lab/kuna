@@ -382,6 +382,7 @@ pub(crate) fn get_input_cast(
                 || crate::p9_emit::kuna_unknowncasts::declared_argument(data, op, slot);
             strat
                 .cast_standard(&reqtype, &curtype, false, care_ptr_uint)
+                .or_else(|| crate::kuna_calltargettype::uncallable_target_cast(data, op, slot, &curtype))
                 .or_else(|| crate::kuna_truncarg::narrowed_arg_cast(data, strat, op, slot))
         }
     }
@@ -1196,7 +1197,7 @@ impl Funcdata {
             Some(t) => t as Rc<dyn crate::dtype::TypeFactory>,
             None => return 0,
         };
-        let strat = CastStrategyC::new(tlst);
+        let strat = CastStrategyC::new(tlst).with_record_identity(self.get_arch().call_target_c);
 
         let mut count: int4 = 0;
         // Follow data flow: basic blocks in dominance order, ops in block order.
@@ -1648,6 +1649,10 @@ impl Funcdata {
                 }
             }
         }
+        // FLOAT_TRUNC converts to a signed integer before any destination coercion.
+        force |= self.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_FLOAT_TRUNC)
+            && matches!(out_high_resolve.get_metatype(),
+                type_metatype::TYPE_UINT | type_metatype::TYPE_BOOL);
         let mut opc = OpCode::CPUI_CAST;
         if !force {
             let outct = out_high_resolve;

@@ -2350,7 +2350,12 @@ impl ScopeLocal {
         usepoint: &Address,
         types: &dyn TypeFactory,
     ) -> Option<Rc<Datatype>> {
-        let eref = self.db.find_container(self.scope, addr, 1, usepoint)?;
+        let width = if crate::p0_knowledge::kuna_wrappedstackmap::pieces(addr, size).is_some() {
+            1
+        } else {
+            size
+        };
+        let eref = self.db.find_container(self.scope, addr, width, usepoint)?;
         self.build_localtype_seed_from_entry(eref, addr, size, types)
     }
 

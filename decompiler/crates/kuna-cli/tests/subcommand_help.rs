@@ -102,6 +102,74 @@ fn the_repaired_blocks_document_their_flags() {
     }
 }
 
+/// Every `--json` names its root in `--help` (issue #1039): `catalog` and
+/// `docs` emit arrays and everything else an object, and a consumer that assumed
+/// one shape broke on the other. Where the document needs no input binary, the
+/// stated root is checked against the one emitted.
+#[test]
+fn every_json_surface_names_its_root_in_help() {
+    let stated: &[(&str, &str)] = &[
+        ("decompile", "{binary,"),
+        ("decompile-all", "{binary,"),
+        ("functions", "{binary,"),
+        ("disassemble", "{binary,"),
+        ("read", "{binary,"),
+        ("xrefs", "{binary,"),
+        ("strings", "{binary,"),
+        ("crypto", "{binary,"),
+        ("unpack", "{binary,"),
+        ("test", "{unit_footer,"),
+        ("modes", "{modes:["),
+        ("docs", "[{topic,"),
+        ("catalog", "[{option,"),
+    ];
+    for sub in subcommands() {
+        let text = help_text(&run(&[&sub, "--help"]));
+        if !text.contains("--json") {
+            continue;
+        }
+        let root = stated
+            .iter()
+            .find(|(name, _)| *name == sub)
+            .unwrap_or_else(|| panic!("`kuna {sub}` takes --json but this table has no root for it"))
+            .1;
+        assert!(text.contains(root), "`kuna {sub} --help` never states its --json root {root}:\n{text}");
+    }
+    for argv in [
+        &["catalog", "--json"][..],
+        &["catalog", "--json", "--option", "jumptablemax"],
+        &["docs", "--json"],
+        &["modes", "--json"],
+    ] {
+        let out = run(argv);
+        assert_eq!(out.status.code(), Some(0), "{argv:?}: {}", help_text(&out));
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let emitted = stdout.trim_start().chars().next();
+        let root = stated.iter().find(|(name, _)| *name == argv[0]).unwrap().1;
+        assert_eq!(emitted, root.chars().next(), "{argv:?} emits a different root than its help states");
+    }
+}
+
+/// `--tier` keeps one tier in `--json` as it does in the table: it used to reach
+/// the table only, so `catalog --json --tier core` answered every row.
+#[test]
+fn catalog_tier_filters_the_json_as_it_filters_the_table() {
+    let rows = |argv: &[&str]| -> Vec<serde_json::Value> {
+        let out = run(argv);
+        assert_eq!(out.status.code(), Some(0), "{argv:?}: {}", help_text(&out));
+        serde_json::from_slice(&out.stdout).expect("a JSON array")
+    };
+    let all = rows(&["catalog", "--json"]);
+    let mut kept = 0;
+    for tier in ["transform", "analysis", "core"] {
+        let some = rows(&["catalog", "--json", "--tier", tier]);
+        assert!(!some.is_empty() && some.iter().all(|r| r["tier"] == tier), "{tier}: {some:?}");
+        kept += some.len();
+    }
+    assert_eq!(kept, all.len(), "the three tiers partition the catalog");
+    assert!(rows(&["catalog", "--json", "--option", "jumptablemax", "--tier", "core"]).is_empty());
+}
+
 /// Adding the help arm must not have swallowed a real usage error: an unknown
 /// option is still exit 2, and `--help` is not a way to smuggle one past.
 #[test]

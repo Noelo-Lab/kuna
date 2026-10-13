@@ -338,3 +338,50 @@ fn wrapped_frame_offsets_and_exhausted_queries_stay_bounded() {
         BTreeSet::from([ByteSource::Unknown])
     );
 }
+
+#[test]
+fn integer_frame_addresses_keep_unbounded_positive_parameter_aliases() {
+    use crate::kuna_stackranges::{frame_address, may_alias};
+    for width in [4, 8] {
+        let mut f = Fixture::new(false, width);
+        let block = f.block();
+        let ty = Rc::new(Datatype::new(width as i32, crate::dtype::type_metatype::TYPE_UINT));
+        let base = f.fd.new_varnode(
+            width as i32,
+            &Address::new(Rc::clone(&f.ram), 0x80),
+            Some(Rc::clone(&ty)),
+        );
+        let base = f.fd.set_input_varnode(base).unwrap();
+        f.fd.vbank_mut().get_mut(base).unwrap().set_spacebase();
+        let index = f.fd.new_varnode(
+            width as i32,
+            &Address::new(Rc::clone(&f.ram), 0x90),
+            Some(Rc::clone(&ty)),
+        );
+        let index = f.fd.set_input_varnode(index).unwrap();
+        let (op, _) = f.op(block, 0x1001, OpCode::CPUI_INT_ADD, &[base, index], None);
+        let address = f.fd.new_unique_out(width as i32, op).unwrap();
+        f.fd.vn_update_type(address, ty);
+        assert!(!may_alias(&f.fd, base, 8, 8));
+
+        f.fd.vbank_mut().get_mut(index).unwrap().set_nz_mask(7);
+        assert!(frame_address(&f.fd, address).is_some());
+        assert!(!may_alias(&f.fd, address, 8, 8));
+        f.fd.vbank_mut().get_mut(index).unwrap().set_nz_mask(15);
+        assert!(may_alias(&f.fd, address, 8, 8));
+        f.fd.vbank_mut().get_mut(index).unwrap()
+            .set_nz_mask(kuna_base::address::calc_mask(width as i32));
+        assert!(frame_address(&f.fd, address).is_none());
+        assert!(may_alias(&f.fd, address, 8, 8));
+    }
+}
+
+#[test]
+fn wide_duplicate_pointer_choices_exhaust_the_alias_proof() {
+    let mut f = Fixture::new(false, 8);
+    let block = f.block();
+    let global = f.fd.new_constant(8, 0x4000);
+    let (op, _) = f.op(block, 0x1001, OpCode::CPUI_MULTIEQUAL, &vec![global; 1024], None);
+    let address = f.fd.new_unique_out(8, op).unwrap();
+    assert!(crate::kuna_stackranges::may_alias(&f.fd, address, 8, 8));
+}

@@ -7,11 +7,24 @@ mod ambiguous_selector_cli;
 #[path = "argument_errors_cli.rs"]
 mod argument_errors_cli;
 
+#[path = "conditional_register_lifetimes.rs"]
+mod conditional_register_lifetimes;
+
+#[path = "conditional_stack_bytes.rs"]
+mod conditional_stack_bytes;
+#[path = "arm_conditional_switch.rs"]
+mod arm_conditional_switch;
+#[path = "arm_constant_shift.rs"]
+mod arm_constant_shift;
+
 #[path = "arm_float_arguments.rs"]
 mod arm_float_arguments;
 
 #[path = "arm_float_returns.rs"]
 mod arm_float_returns;
+
+#[path = "arm_frame_retain.rs"]
+mod arm_frame_retain;
 
 #[path = "arm_interwork_cli.rs"]
 mod arm_interwork_cli;
@@ -43,6 +56,9 @@ mod broken_pipe;
 #[path = "buildstamp_cli.rs"]
 mod buildstamp_cli;
 
+#[path = "call_array_extent.rs"]
+mod call_array_extent;
+
 #[path = "call_result_high_word_reads.rs"]
 mod call_result_high_word_reads;
 
@@ -60,6 +76,9 @@ mod coff_strings;
 
 #[path = "compact_switch_cli.rs"]
 mod compact_switch_cli;
+
+#[path = "contiguous_byte_frame.rs"]
+mod contiguous_byte_frame;
 
 #[path = "cookie_pointer_return_271.rs"]
 mod cookie_pointer_return_271;
@@ -130,6 +149,9 @@ mod fid_cli;
 #[path = "float_unordered_compare.rs"]
 mod float_unordered_compare;
 
+#[path = "float_precision.rs"]
+mod float_precision;
+
 #[path = "function_boundary_return_cli.rs"]
 mod function_boundary_return_cli;
 
@@ -153,6 +175,11 @@ mod limits_cli;
 
 #[path = "local_name_batch.rs"]
 mod local_name_batch;
+
+#[path = "loop_cursor_initializer.rs"]
+mod loop_cursor_initializer;
+#[path = "mapped_array_c.rs"]
+mod mapped_array_c;
 
 #[path = "mapped_decode_failure.rs"]
 mod mapped_decode_failure;
@@ -355,8 +382,14 @@ mod xref_body_ownership;
 #[path = "xrefs_cli.rs"]
 mod xrefs_cli;
 
+#[path = "xrefs_own_export_plt.rs"]
+mod xrefs_own_export_plt;
+
 #[path = "zero_extended_returns.rs"]
 mod zero_extended_returns;
 
 #[path = "zext_pair_returns.rs"]
 mod zext_pair_returns;
+
+#[path = "common_allocation_cli.rs"]
+mod common_allocation_cli;

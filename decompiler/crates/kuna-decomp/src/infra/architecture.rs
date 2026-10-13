@@ -401,6 +401,9 @@ pub struct Architecture {
     /// floats.  Implementation: [`kuna_floatbits`](crate::p5_types::kuna_floatbits).
     pub float_bits: bool,
     pub partial_concat: bool,
+    /// (kuna `armconstshift`) Convert a signed shiftee to unsigned before a
+    /// fixed ARM LSL so the emitted C shift is defined.
+    pub arm_constant_shift: bool,
     /// (kuna `charbyte`) Keep `char` for a byte loaded through a `char *` when
     /// the only unsigned vote on it is a zero-extension.  Implementation:
     /// [`kuna_charbyte`](crate::p5_types::kuna_charbyte).
@@ -621,6 +624,9 @@ pub struct Architecture {
     /// (kuna GH-1282) Fold `(b<<k) s>> k` boolean sign-extension-mask idioms
     /// (C++ `fold_boolean_mask`).
     pub fold_boolean_mask: bool,
+    /// Keep mapped global array bases separate from negative element offsets
+    /// (option `globalarrayanchor`).
+    pub global_array_anchor: bool,
     /// (kuna) Fold an exact one-byte modular cancellation around a bounded
     /// left shift (option `cancelbytearithmetic`).
     pub cancel_byte_arithmetic: bool,
@@ -832,6 +838,10 @@ pub struct Architecture {
     /// one call and popped by a later one (option `calleepopslot`).  See
     /// [`crate::p6_variables::kuna_calleepopslot`].
     pub callee_pop_slot: bool,
+    /// (kuna) Read a callee's pop off a fixed-frame caller that re-reserves
+    /// the popped bytes (option `calleepopframe`).  See
+    /// [`crate::p6_variables::kuna_calleepopframe`].
+    pub callee_pop_frame: bool,
     /// (kuna) Read a declared callee's stack contract off its locked prototype
     /// (`calleeprotostack`).  See [`crate::p4_calls::kuna_calleeprotostack`].
     pub callee_proto_stack: bool,
@@ -981,6 +991,8 @@ pub struct Architecture {
     /// of its indices, `2` = also over contiguous write-only slots. See
     /// [`crate::p6_variables::kuna_arrayextent`] (option `arrayextent`).
     pub array_extent: int4,
+    /// Opt-in frame-bounded arrays for call-escaped integer storage.
+    pub call_array_extent: bool,
     /// (kuna) Refuse the `RulePropagateCopy` marker propagation that would
     /// orphan an address-tied `COPY` output holding a call's return value,
     /// keeping a `local = f();` frame store in the emitted C (option
@@ -1004,6 +1016,15 @@ pub struct Architecture {
     /// `ActionDeadCode` (option `splitstorekeep`, default-on, DIV-153).  See
     /// [`crate::p3_dataflow::kuna_splitstorekeep`].
     pub split_store_keep: bool,
+    /// (kuna) Push a demanded SUBPIECE through 9..15-byte (and wider
+    /// non-power-of-two) PIECE/shift/bitwise trees (option `wideslice`,
+    /// default-on).  See [`crate::p3_dataflow::kuna_wideslice`].
+    pub wide_slice_reduce: bool,
+    /// (kuna) Re-roll a vectorized integer reduction (guard, stride loop with
+    /// one accumulator per lane, fold, scalar remainder loop) into its scalar
+    /// loop (option `devectorize`, opt-in default-off).  See
+    /// [`crate::p3_dataflow::kuna_devectorize`].
+    pub devectorize_reduction: bool,
     /// Guard stack slots against stores through stack-derived pointers.
     pub stack_store_guard: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -1576,6 +1597,16 @@ pub struct Architecture {
     /// address after the thunk's jump holds no ordinary code. x86 only. Off
     /// restores the previous discovery set exactly.
     pub analysis_thunkentry: bool,
+    /// (kuna) Make code whose address the program takes, and that no flow
+    /// reaches, a function entry (`addrtakenentry`); default **on**. A function
+    /// called only through a pointer that a `lea`/`mov`/`push` materializes, or
+    /// (PE) that a relocated word before the section's first `.pdata` record
+    /// holds, was folded into the function before it. On, such a target joins the
+    /// walk's committed set when it is undecoded, follows a non-falling
+    /// instruction and padding only, is not a label of the function taking it,
+    /// and its own flow ends like a function's. x86-64 only, and not on a Go
+    /// binary. Off restores the previous discovery set exactly.
+    pub analysis_addrtakenentry: bool,
     /// (kuna) Refuse a function entry at a PPC64 ELFv2 **local entry point**
     /// (`ppclocalentry`); default **on**. The OpenPOWER ELFv2 ABI gives a
     /// function two entries — the symbol's `st_value` (which materialises the
@@ -2615,6 +2646,7 @@ impl Architecture {
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             float_bits: false, // (kuna) option floatbits; reset_defaults sets the shipped default
             partial_concat: true,
+            arm_constant_shift: false,
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
             cast_arith: false, // (kuna) option castarith; reset_defaults sets the shipped default
             cast_index: false, // (kuna) option castindex; reset_defaults sets the shipped default
@@ -2661,6 +2693,7 @@ impl Architecture {
             sparc_struct_return: false,
             ov_less_simplify: false,
             fold_boolean_mask: false,
+            global_array_anchor: false,
             cancel_byte_arithmetic: false,
             simd_lane_fold: false,
             const_space_load_fold: false,
@@ -2709,6 +2742,7 @@ impl Architecture {
             mul_blob: true,
             callee_pop: true,
             callee_pop_slot: true,
+            callee_pop_frame: true,
             callee_proto_stack: true,
             arg_clobber: true, // (kuna) option argclobber; reset_defaults sets the shipped default
             arm_float_args: false, // (kuna) option armfloatargs
@@ -2742,11 +2776,14 @@ impl Architecture {
             cond_exe_ret_use: false, // (kuna) option condexeretuse; reset_defaults sets the shipped default
             load_guard_range: false, // (kuna) option loadguardrange; reset_defaults sets the shipped default
             index_alias_guard: 0, // (kuna) option indexaliasguard; reset_defaults sets the shipped default
+            call_array_extent: false,
             array_extent: 0, // (kuna) option arrayextent; reset_defaults sets the shipped default
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
             split_store_keep: false, // (kuna) option splitstorekeep; reset_defaults sets the shipped default (on)
+            wide_slice_reduce: false, // (kuna) option wideslice; reset_defaults sets the shipped default (on)
+            devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
             stack_store_guard: false,
             region_structure: true,
             guard_arm: false,
@@ -2833,6 +2870,7 @@ impl Architecture {
             analysis_declaredlibcproto: false,
             analysis_unmappedentry: false,
             analysis_thunkentry: false,
+            analysis_addrtakenentry: false,
             analysis_ppclocalentry: false,
             analysis_flowmode: false,
             analysis_flowmode_aftercall: false,
@@ -3049,6 +3087,7 @@ impl Architecture {
         self.callee_proto_stack = true; // (kuna) default-on (0/675 ablation): a locked callee prototype states how much it pops and how much of the caller's stack it can reach
         self.callee_pop = true; // (kuna) default-on (0/675 ablation): an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
         self.callee_pop_slot = true; // (kuna) default-on (0/675 ablation): the calleepop guess follows a slot pushed in front of one call and popped by a later one
+        self.callee_pop_frame = true; // (kuna) default-on (0/675 ablation): a fixed-frame caller's `sub esp,n` after an imported call reads as the callee popping n
         self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
         self.hidden_ret_arg = true; // (kuna) default-on (0/675 ablation): a hidden-return register trial the callee never takes, or a null-page constant, is no argument
         self.callee_read_arg = true; // (kuna) default-on: a register argument the caller also tests is kept when the callee's own body reads it (0/675 ablation)
@@ -3074,6 +3113,7 @@ impl Architecture {
         self.cond_exe_ret_use = true; // (kuna) option condexeretuse default-on: a use of a returned value on the branch a merge block's re-test of the same condition rules out no longer rejects the output trial; 0/675 datatest assertions moved
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
         self.index_alias_guard = crate::p3_dataflow::kuna_indexaliasguard::LEVEL_GLOBAL; // (kuna) DIV-147 restored upstream Heritage::guardLoads (heritage.cc:1570), which kuna shipped behind a hard-coded highPtrPossible == false; default `global` adds guardStores' INDIRECT on a global at each STORE into its space and a LOAD guard COPY of a global at each LOAD that may read it (0/675 datatest); `load` drops both, `off` drops all, `full` adds upstream guardStores
+        self.call_array_extent = false;
         self.array_extent = crate::p6_variables::kuna_arrayextent::LEVEL_ON; // (kuna) GH-867 default-on: an indexed stack array covers the slots its known-bits bound reaches and, unbounded, the contiguous write-only slots after it (0/675 datatest)
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
@@ -3081,6 +3121,7 @@ impl Architecture {
         self.hide_shadow = true; // (kuna) default-on: the upstream ActionHideShadow body, which kuna carried as an inert stub. Consolidates two copies of one value into one chain so ActionCopyMarker can hide the repeated assignment (0/675 ablation, stages PARITY OK; 434 of 444 stripped ELFs byte-identical and the other 10 each lose a duplicated assignment); `option hideshadow off` restores the stub's behaviour exactly
         self.tied_phi_trim = true; // (kuna) DIV-182 default-on: Merge::mergeOp trims a loop head's direct read of an aliased location, so the values the loop loads do not print as stores into it (0/675 ablation); `option tiedphitrim off` restores upstream's merge
         self.split_store_keep = true; // (kuna) DIV-153 default-on: Heritage::refineWrite carries the stack_store mark onto its refinement pieces, so an overlapping-range frame store stays a direct write and is not swept by ActionDeadCode (0/675 ablation); `option splitstorekeep off` restores upstream's unmarked pieces
+        self.wide_slice_reduce = true; // (kuna) default-on: every rewrite is a bitvector identity on a synthetic 9..15-byte intermediate that no upstream rule can take apart; byte-identical (0/675) on the datatest corpus, and the power-of-two widths ActionLaneDivide owns are refused; `option wideslice off` leaves the wide intermediates to upstream's rules
         self.stack_store_guard = true;
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.loop_continue = true;
@@ -3132,6 +3173,7 @@ impl Architecture {
         self.float_bits = true; // (kuna) option floatbits default-on: a float helper that only bit-ops its float-register input into its float-register return types float on both sides
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.partial_concat = true;
+        self.arm_constant_shift = false;
         self.arm_float_args = false; // (kuna) option armfloatargs default-off: scalar VFP input recovery is measured only on the feature's own corpus and one firmware image
         self.narrow_ext = crate::kuna_narrowext::NarrowExtMode::Abi; // (kuna) option narrowext default `abi`: a narrow integer argument or return value is extended as the RISC-V and LoongArch procedure-call standards state
         self.arm_float_return = false; // (kuna) option armfloatreturn default-off: the float/double width guess on a partial d0 write and the widened model are unmeasured beyond the feature's own corpus
@@ -3193,6 +3235,8 @@ impl Architecture {
         self.analysis_unmappedentry = true;
         // (kuna) Jump-thunk target function entries -- default-ON (x86 only).
         self.analysis_thunkentry = true;
+        // (kuna) Address-taken code function entries -- default-ON (x86-64 only).
+        self.analysis_addrtakenentry = true;
         // (kuna) PPC64 ELFv2 local-entry entry suppression -- default-ON (it only
         // ever withholds the duplicate second entry over a function whose global
         // entry is already a seed, so no body can be lost).
@@ -3774,6 +3818,7 @@ impl Architecture {
         // reads `data.get_arch().<flag>`; the rule is registered `enabled=false`
         // so the live flag drives both the DIV default and the toggle).
         ctx.fold_boolean_mask = self.fold_boolean_mask; // GH-1282 booleanmask
+        ctx.global_array_anchor = self.global_array_anchor;
         ctx.cancel_byte_arithmetic = self.cancel_byte_arithmetic; // cancelbytearithmetic
         ctx.simd_lane_fold = self.simd_lane_fold; // simdlane
         ctx.const_space_load_fold = self.const_space_load_fold; // constspaceload
@@ -3794,6 +3839,7 @@ impl Architecture {
         ctx.rodata_string = self.rodata_string; // (kuna) rodatastring
         ctx.ptrdepthcap = self.ptrdepthcap; // (kuna) ptrdepthcap
         ctx.call_target_type = self.call_target_type && self.ctypes; // (kuna) calltargettype: only C's own spelling needs it
+        ctx.call_target_c = ctx.call_target_type && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) calltargettype
         if self.float_globals {
             ctx.float_globals = self.kuna_float_globals.clone(); // (kuna) floatglobals
             ctx.float_globals_pending = self.kuna_float_globals.is_none() && self.kuna_float_scan.is_some();
@@ -3828,6 +3874,7 @@ impl Architecture {
         ctx.mul_blob = self.mul_blob; // (kuna) mulblob
         ctx.callee_pop = self.callee_pop; // calleepop
         ctx.callee_pop_slot = self.callee_pop_slot; // calleepopslot
+        ctx.callee_pop_frame = self.callee_pop_frame; // calleepopframe
         ctx.callee_proto_stack = self.callee_proto_stack; // calleeprotostack
         ctx.arg_clobber = self.arg_clobber; // argclobber
         ctx.pass_through = self.pass_through; // passthrough
@@ -3858,6 +3905,7 @@ impl Architecture {
         ctx.cond_exe_ret_use = self.cond_exe_ret_use; // condexeretuse
         ctx.load_guard_range = self.load_guard_range; // loadguardrange
         ctx.index_alias_guard = self.index_alias_guard; // indexaliasguard
+        ctx.call_array_extent = self.call_array_extent;
         ctx.array_extent = self.array_extent; // arrayextent
         ctx.stack_alias_deadstore = self.stack_alias_deadstore; // stackalias
         ctx.stack_views = self.stack_views;
@@ -3865,6 +3913,8 @@ impl Architecture {
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim
         ctx.split_store_keep = self.split_store_keep; // splitstorekeep
+        ctx.wide_slice_reduce = self.wide_slice_reduce; // wideslice
+        ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.stack_store_guard = self.stack_store_guard;
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm

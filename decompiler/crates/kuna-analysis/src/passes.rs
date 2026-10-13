@@ -814,10 +814,39 @@ pub fn run_listing_consumers(
             );
         }
     }
+    // (kuna `thunkentry`, `addrtakenentry`) Where the walk's own function set is
+    // committed (`funcdisc_recursive`, `fast_funcdisc`).
+    let walk_committed = (arch.analysis_listing && arch.analysis_funcstart_patterns)
+        || arch.analysis_fast_funcdisc;
+    // (kuna `addrtakenentry`) Code whose address the program takes and no flow
+    // reaches re-seeds the walk, which resumes from the Listing it already has.
+    // See `aif/kuna_addrtakenentry.rs`.
+    if arch.analysis_addrtakenentry && walk_committed {
+        let evidence = crate::aif::kuna_addrtakenentry::AddrTaken::new(&file, bytes);
+        if let (Some(evidence), Some(code_space)) = (evidence, arch.manage().get_default_code_space()) {
+            for _ in 0..crate::aif::kuna_addrtakenentry::MAX_ROUNDS {
+                let accepted = evidence.accept(&listing, translate, std::rc::Rc::clone(code_space));
+                let before = seeds.len();
+                seeds.extend(accepted);
+                seeds.sort_unstable();
+                seeds.dedup();
+                if seeds.len() == before {
+                    break;
+                }
+                listing = listing.resume(
+                    &file, arch, translate, &seeds, &funcsym_seeds, &seed_names, detail, plan,
+                );
+            }
+        }
+    }
     let mut frame_aif: Option<crate::aif::kuna_entrychecks::CheckedAif> = None;
     let mut frame_pointers = None;
     let mut inventory_context_paints = Vec::new();
-    // Recover validated LR-saving ARM/Thumb frames in gaps before fingerprinting.
+    let mut retained_entries = Vec::new();
+    let mut frames_recovered = false;
+    // Recover validated LR-saving ARM/Thumb frames in gaps before fingerprinting,
+    // keeping every entry the frameless inventory would report unless the
+    // frame-expanded Listing contradicts it.
     if arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let mut frame_cache = crate::aif::raw_arm_frames(
@@ -830,7 +859,16 @@ pub fn run_listing_consumers(
                 false,
             );
             if !frame_cache.roots.is_empty() {
+                frames_recovered = true;
+                let prior = crate::aif::kuna_frameretain::prior_inventory(
+                    &file, &listing, &seeds,
+                    |seeds| crate::listing::Listing::build_with_meta_planned(
+                        &file, image, arch, translate, seeds, &funcsym_seeds, &seed_names, detail, plan,
+                    ),
+                    arch, translate, code_space, bracket(listing.exec_ranges()),
+                );
                 let mut frames: std::collections::BTreeSet<u64> = frame_cache.roots.iter().copied().collect();
+                prior.restore(&mut frames, &frame_cache);
                 let mut rejected = std::collections::BTreeSet::new();
                 let independent_seeds = seeds.clone();
                 let original = listing;
@@ -851,10 +889,11 @@ pub fn run_listing_consumers(
                         &file, image, arch, translate, &seeds, &funcsym_seeds,
                         &seed_names, detail, plan, Some(&mut modes),
                     );
-                    let replacements = crate::aif::arm_frame_prefixes(
+                    let mut replacements = crate::aif::arm_frame_prefixes(
                         &mut frame_cache, &original, &listing, &frames, &[], frame_context.as_ref(),
                         arch, translate, std::rc::Rc::clone(code_space),
                     );
+                    replacements.retain(|&root, &mut prefix| !prior.shields(root, prefix, &frame_cache));
                     let stale = if replacements.is_empty() { modes.stale().clone() }
                         else { std::collections::BTreeSet::new() };
                     if !replacements.is_empty() || !stale.is_empty() {
@@ -899,6 +938,16 @@ pub fn run_listing_consumers(
                             continue;
                         }
                     }
+                    let found: std::collections::BTreeSet<u64> = frame_aif.iter()
+                        .flat_map(|checked| checked.entries.iter().chain(&checked.pool_entries)
+                            .chain(&checked.pointer_entries))
+                        .copied().collect();
+                    let refuted: std::collections::BTreeSet<u64> = frame_aif.iter()
+                        .flat_map(|checked| checked.straight_line.iter().copied())
+                        .chain(rejected.iter().copied()).collect();
+                    retained_entries = prior.retained(
+                        &found, &refuted, &listing, translate, std::rc::Rc::clone(code_space),
+                    );
                     inventory_context_paints = modes.decoded_paints();
                     if let Some(context) = frame_context {
                         context.commit();
@@ -908,7 +957,7 @@ pub fn run_listing_consumers(
             }
         }
     }
-    if arch.analysis_listing && arch.analysis_funcstart_patterns && !arch.analysis_armframes {
+    if arch.analysis_listing && arch.analysis_funcstart_patterns && !frames_recovered {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let raw = crate::aif::raw_thumb_prologue_seeds(
                 &file, &listing, translate, std::rc::Rc::clone(code_space), listing.exec_ranges(),
@@ -1090,10 +1139,7 @@ pub fn run_listing_consumers(
     }
 
     // (kuna `thunkentry`) The targets of the walk's jump thunks join the walk's own
-    // function set wherever that set is committed (`funcdisc_recursive`,
-    // `fast_funcdisc`). See `listing/kuna_thunkentry.rs`.
-    let walk_committed = (arch.analysis_listing && arch.analysis_funcstart_patterns)
-        || arch.analysis_fast_funcdisc;
+    // function set wherever that set is committed. See `listing/kuna_thunkentry.rs`.
     let thunk_targets = if arch.analysis_thunkentry && walk_committed {
         crate::listing::kuna_thunkentry::thunk_entries(&file, &listing)
     } else {
@@ -1140,9 +1186,10 @@ pub fn run_listing_consumers(
         mode_out.context_paints = mode_paints;
         out.push(("flowmode", mode_out));
     }
-    if !inventory_context_paints.is_empty() {
+    if !inventory_context_paints.is_empty() || !retained_entries.is_empty() {
         let mut modes = AnalysisOutput::default();
         modes.inventory_context_paints = inventory_context_paints;
+        modes.entries = retained_entries;
         out.push(("armframes", modes));
     }
     sanitize_all_names(&mut out);

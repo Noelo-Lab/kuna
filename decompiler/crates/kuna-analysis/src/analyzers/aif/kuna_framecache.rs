@@ -5,6 +5,7 @@ use super::*;
 #[derive(Default)]
 pub(crate) struct ArmFrames {
     pub roots: Vec<u64>,
+    pub replaced: BTreeMap<u64, u64>,
     bodies: BTreeMap<u64, Option<Vec<(u64, u32)>>>,
     prefixes: Option<PrefixScan>,
     instructions: Rc<BTreeMap<u64, Rc<ProbedInsn>>>,
@@ -93,6 +94,17 @@ impl ArmFrames {
                     let addr = kuna_base::address::Address::new(Rc::clone(space), at);
                     db.get_variable_value(b"TMode", &addr).ok() == Some(0)
                 })
+            })
+        })
+    }
+
+    /// True iff `root` lies strictly inside an instruction of the body the last
+    /// reconciliation validated for `prefix`.
+    pub(crate) fn splits(&self, root: u64, prefix: u64) -> bool {
+        let Some(scan) = &self.prefixes else { return false };
+        scan.bodies.get(&prefix).is_some_and(|body| {
+            body.range(..root).any(|at| {
+                scan.instructions.get(at).is_some_and(|insn| root < at + u64::from(insn.len))
             })
         })
     }

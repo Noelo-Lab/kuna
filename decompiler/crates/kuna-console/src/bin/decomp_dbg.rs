@@ -48,6 +48,21 @@ fn main() -> ExitCode {
             if i < args.len() {
                 spec_roots.push(args[i].clone());
             }
+        } else if flag == "--max-fn-memory" {
+            // (kuna) `kuna decompile`'s per-function memory limit: MiB, or
+            // `cgroup` for the cgroup default.
+            i += 1;
+            match args.get(i).map(|v| v.trim()) {
+                Some("cgroup") => {
+                    kuna_decomp::kuna_fnmemory::use_cgroup_default();
+                }
+                Some(v) => {
+                    if let Ok(mib) = v.parse::<u64>() {
+                        kuna_decomp::kuna_fnmemory::set_limit_mib(mib);
+                    }
+                }
+                None => {}
+            }
         }
         // Unknown flags are skipped (the C++ loop advances on any leading '-').
         i += 1;

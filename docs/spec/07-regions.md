@@ -440,9 +440,15 @@ input after peeling value-preserving COPY/CAST/INDIRECT links, rejects unknown
 terminals and malformed or cyclic value-preserving chains, and requires all
 scramble seeds to share one frame offset. Every visited node must be able to
 reach a seed, admitting grounded loops while rejecting seedless cyclic
-components. The worklist and peel are iterative, so long call and phi chains
-do not depend on recursion depth or an arbitrary link count. The stack-pointer
-affine walk still has its separate 32-step bound.
+components. The worklist and peel are iterative, and one call shares a budget
+of 1024 varnode visits across all its arguments, transparent links, phi inputs,
+and stack-pointer checks. Exhaustion declines the entire call, retaining its
+ordinary register effects and the check itself. A phi with more inputs than
+the remaining budget declines before allocating its edge vector. The
+stack-pointer affine walk also retains its separate 32-step depth bound. These
+limits apply to the default `calleeretpreserves` path as well as explicit
+`msvcstackguard` removal, so repeated long call chains cannot make the matcher
+walk the whole function for every argument.
 Three further gates keep the edit honest: the victim must be a direct
 `CPUI_CALL` (the checker is statically linked into the image, never an import
 thunk); the call's output must have no reader (the checker returns `void`, and

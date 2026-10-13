@@ -299,6 +299,27 @@ fn proven_unobserved(fd: &Funcdata, saves: &[Save], stack_space: &Rc<AddrSpace>)
             OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER => return false,
             _ => {}
         }
+        if matches!(op.code(), OpCode::CPUI_LOAD | OpCode::CPUI_STORE) {
+            let Some(pointer) = op.get_in(1) else {
+                return false;
+            };
+            let literal_global = fd
+                .vbank()
+                .get(pointer)
+                .is_some_and(|value| value.is_constant())
+                && op
+                    .get_in(0)
+                    .and_then(|id| fd.vbank().get(id))
+                    .is_some_and(|space| {
+                        space.is_constant()
+                            && fd.get_arch().manage().get_default_data_space().is_some_and(
+                                |data| space.get_offset() == data.get_index() as u64,
+                            )
+                    });
+            if !literal_global && frame_range(fd, pointer, access_width(fd, id, 1)).is_none() {
+                return false;
+            }
+        }
         if let Some(out) = op.get_out().and_then(|vn| fd.vbank().get(vn)) {
             if out.get_space().get_index() == stack_space.get_index() {
                 let write = FrameRange {

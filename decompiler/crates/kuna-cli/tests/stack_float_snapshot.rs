@@ -189,10 +189,12 @@ fn emitted_translation_unit(first: &str, second: &str, conversion: &str) -> Stri
 fn stack_float_snapshots_keep_bits_at_both_point_lanes() {
     let mut compilers: Vec<&str> = ["gcc", "clang"]
         .into_iter()
-        .filter(|compiler| Command::new(compiler).arg("--version").output().is_ok())
+        .filter(|compiler| {
+            common::process::optional_output(Command::new(compiler).arg("--version")).is_some()
+        })
         .collect();
     if compilers.is_empty() {
-        if Command::new("cc").arg("--version").output().is_err() {
+        if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
             eprintln!("no C compiler available; skipping native stack-float control");
             return;
         }

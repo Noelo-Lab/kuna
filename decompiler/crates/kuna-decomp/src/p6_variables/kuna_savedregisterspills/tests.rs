@@ -1,11 +1,14 @@
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::space::AddrSpace;
+use kuna_base::space::{
+    addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, SpacebaseSpace,
+    UniqueSpace, VarnodeStorage,
+};
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
-use crate::context::{BlockId, OpId, VarnodeId};
+use crate::context::{ArchContext, BlockId, OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::p6_variables::funcdata_spacebase::spacebase_tests::{build_fd, make_sp_in, reg_addr};
 
@@ -33,7 +36,70 @@ struct Fx {
 
 impl Fx {
     fn new() -> Self {
-        let mut fd = build_fd();
+        Self::with_fd(build_fd())
+    }
+
+    fn with_default_data_space() -> Self {
+        let original = build_fd();
+        let entry = original.get_address().clone();
+        let mut manager = Rc::clone(&original.get_arch().manage);
+        drop(original);
+        let index = manager.get_space_by_name("register").unwrap().get_index();
+        Rc::get_mut(&mut manager)
+            .unwrap()
+            .set_default_code_space(index)
+            .unwrap();
+        let arch = Rc::new(ArchContext::new_shared(manager));
+        Self::with_fd(Funcdata::new("func", "func", arch, entry, 0x1000_0000, 0x40).unwrap())
+    }
+
+    fn word_addressed() -> Self {
+        let mut manager = AddrSpaceManager::new();
+        manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        manager
+            .insert_space(Rc::new(UniqueSpace::new(1, 0, false)))
+            .unwrap();
+        let reg = Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "register",
+            false,
+            8,
+            2,
+            2,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        ));
+        manager.insert_space(Rc::clone(&reg)).unwrap();
+        let stack = Rc::new(SpacebaseSpace::new("stack", 3, 8, &reg, 1, true, false));
+        manager.insert_space(Rc::clone(&stack)).unwrap();
+        manager
+            .add_spacebase_pointer(
+                &stack,
+                &VarnodeStorage {
+                    space: Some(Rc::clone(&reg)),
+                    offset: 0x20,
+                    size: 8,
+                },
+                8,
+                true,
+            )
+            .unwrap();
+        let arch = Rc::new(ArchContext::new(manager));
+        Self::with_fd(
+            Funcdata::new(
+                "func",
+                "func",
+                arch,
+                Address::new(reg, 0x1000),
+                0x1000_0000,
+                0x40,
+            )
+            .unwrap(),
+        )
+    }
+
+    fn with_fd(mut fd: Funcdata) -> Self {
         let sp = make_sp_in(&mut fd);
         fd.spacebase();
         let reg = Rc::clone(
@@ -440,4 +506,107 @@ fn opaque_direct_indirect_and_user_calls_block_restriction() {
             "{code:?} without a complete memory summary must block saved-lane pruning"
         );
     }
+}
+
+#[test]
+fn unknown_memory_pointers_keep_saved_lanes_mapped() {
+    for code in [OpCode::CPUI_LOAD, OpCode::CPUI_STORE] {
+        let mut fx = Fx::new();
+        let source = fx.input(0x40, 4);
+        let save = fx.copy_save(source);
+        let pointer = fx.input(0x300, 8);
+        let space_id = fx.constant(4, fx.reg.get_index() as u64);
+        if code == OpCode::CPUI_LOAD {
+            fx.emit(code, &[space_id, pointer], Some(Out::Unique(4)));
+        } else {
+            let value = fx.constant(4, 7);
+            fx.emit(code, &[space_id, pointer, value], None);
+        }
+        assert!(
+            !proven_unobserved(&fx.fd, &[save], &fx.stack),
+            "{code:?} through an incoming pointer can observe saved frame bytes"
+        );
+    }
+}
+
+#[test]
+fn globally_reloaded_pointers_keep_saved_lanes_mapped() {
+    for code in [OpCode::CPUI_LOAD, OpCode::CPUI_STORE] {
+        let mut fx = Fx::with_default_data_space();
+        let source = fx.input(0x40, 4);
+        let save = fx.copy_save(source);
+        let space_id = fx.constant(4, fx.reg.get_index() as u64);
+        let global = fx.constant(8, 0x4000);
+        let pointer = fx
+            .emit(OpCode::CPUI_LOAD, &[space_id, global], Some(Out::Unique(8)))
+            .1
+            .unwrap();
+        if code == OpCode::CPUI_LOAD {
+            fx.emit(code, &[space_id, pointer], Some(Out::Unique(4)));
+        } else {
+            let value = fx.constant(4, 7);
+            fx.emit(code, &[space_id, pointer, value], None);
+        }
+        assert!(
+            !proven_unobserved(&fx.fd, &[save], &fx.stack),
+            "{code:?} through a global pointer can observe saved frame bytes"
+        );
+    }
+}
+
+#[test]
+fn only_literal_globals_in_the_default_data_space_are_disjoint() {
+    for code in [OpCode::CPUI_LOAD, OpCode::CPUI_STORE] {
+        for default_space in [false, true] {
+            let mut fx = Fx::with_default_data_space();
+            let source = fx.input(0x40, 4);
+            let save = fx.copy_save(source);
+            let memory = if default_space { &fx.reg } else { &fx.other };
+            let space_id = fx.constant(4, memory.get_index() as u64);
+            let global = fx.constant(8, 0x4000);
+            if code == OpCode::CPUI_LOAD {
+                fx.emit(code, &[space_id, global], Some(Out::Unique(4)));
+            } else {
+                let value = fx.constant(4, 7);
+                fx.emit(code, &[space_id, global, value], None);
+            }
+            assert_eq!(
+                proven_unobserved(&fx.fd, &[save], &fx.stack),
+                default_space,
+                "{code:?} with default_space={default_space}"
+            );
+        }
+    }
+}
+
+#[test]
+fn word_addressed_stack_load_cannot_hide_an_overlapping_save() {
+    let mut fx = Fx::word_addressed();
+    let source = fx.input(0x40, 4);
+    let start = (-16i64) as u64;
+    let stack = Rc::clone(&fx.stack);
+    let op = fx
+        .emit(OpCode::CPUI_COPY, &[source], Some(Out::At(stack, start, 4)))
+        .0;
+    let save = Save {
+        op,
+        slot: FrameRange {
+            start,
+            size: 4,
+            exact: true,
+        },
+        source,
+    };
+    let pointer = fx.frame_pointer(-8);
+    let space = fx.constant(4, fx.reg.get_index() as u64);
+    let load = fx
+        .emit(OpCode::CPUI_LOAD, &[space, pointer], Some(Out::Unique(4)))
+        .0;
+    let (resolved, offset) = crate::ruleaction_4::RuleLoadVarnode::check_spacebase(&fx.fd, load)
+        .expect("the load must resolve to the word-addressed stack");
+    assert_eq!(
+        AddrSpace::address_to_byte(offset, resolved.get_word_size()),
+        start
+    );
+    assert!(!proven_unobserved(&fx.fd, &[save], &fx.stack));
 }

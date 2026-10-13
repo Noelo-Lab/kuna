@@ -142,9 +142,9 @@ fn write_thumb_te() -> PathBuf {
     path
 }
 
-/// A larger **ARM 32-bit** ELF fixture with functions the prologue-`<patternpairs>`
-/// matcher genuinely finds and the entry oracles do not (`0x3e0`, `0x410`,
-/// `0x3c520`) — the fixture the DIV-20 `funcstart_patterns` assertion needs.
+/// A larger **ARM 32-bit** ELF fixture with a function the prologue-`<patternpairs>`
+/// matcher genuinely finds and the entry oracles do not (`0x410`) — the fixture the
+/// DIV-20 `funcstart_patterns` assertion needs.
 ///
 /// `arm_thumb()` cannot serve that role: it holds exactly two functions, both
 /// already named by `.symtab`, so `funcstart_patterns` adds no real entry there.
@@ -518,10 +518,8 @@ fn decompile_mode_requires_a_value() {
 /// more. The reliable driver fallback must match an explicit
 /// `--option funcstart_patterns on` and beat `off`.
 ///
-/// Runs on `entrymain_arm`, where the pass finds three functions nothing else does
-/// (`0x3e0`, `0x410`, `0x3c520`): 10 entries `off` vs 12 by default — 13 canonical,
-/// of which `0x3c520` falls outside every CODE section and so is listed by `kuna
-/// functions` but not decompiled. It used to run
+/// Runs on `entrymain_arm`, where the pass finds `0x410`, which nothing else does:
+/// 10 entries `off` vs 11 by default. It used to run
 /// on the two-function `arm_thumb()` fixture, where the "extra" entries the
 /// assertion counted were in fact duplicate records for functions already found —
 /// so the fixture swap is what keeps this assertion meaningful once issue #197
@@ -675,14 +673,15 @@ fn arm_functions_inventory_covers_every_decompile_all_entry() {
         inventory.len(),
         decompiled.len()
     );
-    // The two entries only the prologue matcher finds — the concrete pre-fix miss.
-    for want in [0x3e0u64, 0x410] {
-        assert!(
-            inventory.contains(&want),
-            "the ARM inventory is missing the funcstart_patterns discovery 0x{want:x}: {:x?}",
-            inventory
-        );
-    }
+    // The entry only the prologue matcher finds — the concrete pre-fix miss.
+    assert!(
+        inventory.contains(&0x410),
+        "the ARM inventory is missing the funcstart_patterns discovery 0x410: {:x?}",
+        inventory
+    );
+    // 0x3e0 is `_start + 4`; it was listed only as the fall-through of an A32
+    // misdecode of `_start` as a predicated `bleq` (GH-299).
+    assert!(!inventory.contains(&0x3e0), "0x3e0 is inside _start: {inventory:x?}");
     // The injection fired: the default inventory equals the explicit bundle.
     let explicit = run_json_addrs(
         "functions",
@@ -1123,6 +1122,155 @@ fn te_input_errors_preserve_format_and_target_diagnostics() {
     assert!(!ok, "endianness-conflicting TE target unexpectedly loaded");
     assert!(stderr.contains("BE-endian") && stderr.contains("LE-endian"));
     std::fs::remove_file(path).unwrap();
+}
+
+/// `big` in `tests/hang-repro/escaped_locals` hands each of 700 stack structs
+/// to a call, so heritage places one INDIRECT per stack range per call — about
+/// a million of them, 2.6 GB and 15 s even with a 1 s budget while that
+/// placement ignored the watchdog. It now stops at the deadline like every
+/// other probed loop.
+#[test]
+fn watchdog_stops_heritage_guard_placement() {
+    let bin = repo_root().join("tests/hang-repro/escaped_locals");
+    let start = Instant::now();
+    let (stdout, stderr, _) = run_kuna_with_timeout(
+        &[
+            "decompile-all", bin.to_str().unwrap(), "--functions", "big", "--json",
+            "--max-fn-seconds", "1", "--sleighpath", &specs(),
+        ],
+        Duration::from_secs(300),
+    )
+    .expect("decompile-all did not terminate within the 300s outer bound");
+    let elapsed = start.elapsed();
+    assert!(
+        stdout.contains("per-function decompile budget exceeded (1 s)"),
+        "expected the watchdog error record:\n{stdout}\n{stderr}"
+    );
+    assert!(elapsed < Duration::from_secs(10), "the 1 s watchdog took {elapsed:?} to stop big");
+}
+
+/// `--max-fn-memory` stops `big` in `tests/hang-repro/escaped_locals` once its
+/// process passes the limit, records that as `big`'s error, and the batch goes
+/// on to decompile `after`: in process, through a worker pool, and on the
+/// `kuna decompile` text surface, whose engine runs in `decomp_dbg`.
+#[test]
+fn memory_limit_stops_one_function_and_the_batch_continues() {
+    let bin = repo_root().join("tests/hang-repro/escaped_locals");
+    let bin = bin.to_str().unwrap();
+    let sp = specs();
+    let error = "per-function memory limit exceeded (300 MiB)";
+    for jobs in ["1", "2"] {
+        let (stdout, stderr, ok) = run_kuna_with_timeout(
+            &[
+                "decompile-all", bin, "--json", "--max-fn-seconds", "0", "--max-fn-memory", "300",
+                "--jobs", jobs, "--sleighpath", &sp,
+            ],
+            Duration::from_secs(300),
+        )
+        .expect("decompile-all did not terminate within the 300s outer bound");
+        assert!(ok, "--jobs {jobs}: {stderr}");
+        let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let row = |name: &str| {
+            doc["functions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["name"] == name)
+                .unwrap_or_else(|| panic!("--jobs {jobs}: no {name} record:\n{stdout}"))
+                .clone()
+        };
+        assert_eq!(row("big")["error"], error, "--jobs {jobs}");
+        assert_eq!(row("after")["error"], serde_json::Value::Null, "--jobs {jobs}");
+        assert!(
+            row("after")["code"].as_str().unwrap().contains("return a0 * 3 + 1;"),
+            "--jobs {jobs}: {stdout}"
+        );
+    }
+    let (_, stderr, ok) = run_kuna_with_timeout(
+        &["decompile", bin, "big", "--max-fn-memory", "300", "--sleighpath", &sp],
+        Duration::from_secs(300),
+    )
+    .expect("decompile did not terminate within the 300s outer bound");
+    assert!(!ok && stderr.contains(error), "{stderr}");
+}
+
+/// A limit below what the process already holds after its load does not stop
+/// ordinary functions: none of them adds 64 MiB, so a long batch's creep cannot
+/// fail them. A limit nothing reaches changes nothing either, and the value is
+/// MiB, not a size with a unit.
+#[test]
+fn ordinary_functions_never_trip_the_memory_limit() {
+    let bin = fauxware();
+    let sp = specs();
+    let base = ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath", &sp];
+    let (plain, stderr, ok) = run_kuna(&base);
+    assert!(ok, "{stderr}");
+    for limit in ["1", "65536"] {
+        let limited: Vec<&str> = base.iter().copied().chain(["--max-fn-memory", limit]).collect();
+        let (with_limit, stderr, ok) = run_kuna(&limited);
+        assert!(ok, "{stderr}");
+        assert_eq!(plain, with_limit, "--max-fn-memory {limit}");
+    }
+    let unit: Vec<&str> = base.iter().copied().chain(["--max-fn-memory", "6G"]).collect();
+    let (_, stderr, ok) = run_kuna(&unit);
+    assert!(!ok && stderr.contains("invalid --max-fn-memory value \"6G\""), "{stderr}");
+}
+
+/// Without `--max-fn-memory`, a run under a capped cgroup takes the cgroup
+/// default, the serial run, every `--jobs` worker and `kuna decompile` alike:
+/// with a margin of max(512 MiB, 10%) of the cap, a function that has grown by
+/// the margin is stopped once the cgroup holds more than its cap less it, which
+/// is 512 MiB of a faked 1 GiB cap that is already full. The same cap with room left stops nothing (`big` then runs
+/// into its 1 s watchdog instead), and an explicit value, `0` included, wins.
+#[test]
+fn the_memory_limit_defaults_to_the_cgroup_cap() {
+    let Some(own) = std::fs::read_to_string("/proc/self/cgroup")
+        .ok()
+        .and_then(|m| m.lines().find_map(|l| l.strip_prefix("0::").map(str::to_string)))
+    else {
+        return;
+    };
+    let bin = repo_root().join("tests/hang-repro/escaped_locals");
+    let bin = bin.to_str().unwrap();
+    let sp = specs();
+    let watchdog = "per-function decompile budget exceeded (1 s)";
+    for (current, extra, error) in [
+        ("1073741824", &[][..], "per-function memory limit exceeded (512 MiB)"),
+        ("1073741824", &["--jobs", "2"][..], "per-function memory limit exceeded (512 MiB)"),
+        ("1073741824", &["--max-fn-memory", "300"][..], "per-function memory limit exceeded (300 MiB)"),
+        ("1073741824", &["--max-fn-memory", "0", "--max-fn-seconds", "1"][..], watchdog),
+        ("104857600", &["--max-fn-seconds", "1"][..], watchdog),
+        ("104857600", &["--jobs", "2", "--max-fn-seconds", "1"][..], watchdog),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let leaf = root.path().join(own.trim_start_matches('/'));
+        std::fs::create_dir_all(&leaf).unwrap();
+        std::fs::write(leaf.join("memory.max"), "1073741824\n").unwrap();
+        std::fs::write(leaf.join("memory.current"), format!("{current}\n")).unwrap();
+        let env = [("KUNA_CGROUP_ROOT", root.path().to_str().unwrap())];
+        let mut args = vec!["decompile-all", bin, "--json", "--sleighpath", &sp];
+        if !extra.contains(&"--max-fn-seconds") {
+            args.extend_from_slice(&["--max-fn-seconds", "0"]);
+        }
+        args.extend_from_slice(extra);
+        let (stdout, stderr, ok) = run_kuna_env_with_timeout(&args, &env, Duration::from_secs(300))
+            .expect("decompile-all did not terminate within the 300s outer bound");
+        assert!(ok, "{current} {extra:?}: {stderr}");
+        assert!(stdout.contains(error), "{current} {extra:?}: expected {error}:\n{stdout}");
+        assert!(stdout.contains("return a0 * 3 + 1;"), "{current} {extra:?}: after must decompile:\n{stdout}");
+        if error == watchdog {
+            assert!(!stdout.contains("memory limit exceeded"), "{current} {extra:?}:\n{stdout}");
+        }
+        if current == "1073741824" && extra.is_empty() {
+            let (_, stderr, ok) = run_kuna_env_with_timeout(
+                &["decompile", bin, "big", "--sleighpath", &sp],
+                &env,
+                Duration::from_secs(300),
+            )
+            .expect("decompile did not terminate within the 300s outer bound");
+            assert!(!ok && stderr.contains(error), "{stderr}");
+        }
+    }
 }
 
 /// The past-pathological function of the stripped-ELF hang repro now
@@ -3781,6 +3929,55 @@ fn jobs_auto_and_the_plain_c_surface_match_serial() {
     }
 }
 
+/// `--jobs auto` sizes the pool from what a cgroup v2 `memory.max` still
+/// leaves, not from the machine's free memory: a faked 1 GiB cap whose cgroup
+/// already holds 900 MiB that reclaim cannot free has room for one worker, and
+/// the run says which bound it hit. An explicit `--jobs 3` is warned about in
+/// the same words and kept.
+#[test]
+fn jobs_auto_fits_the_cgroup_memory_cap() {
+    let Some(own) = std::fs::read_to_string("/proc/self/cgroup")
+        .ok()
+        .and_then(|m| m.lines().find_map(|l| l.strip_prefix("0::").map(str::to_string)))
+    else {
+        return;
+    };
+    let root = tempfile::tempdir().unwrap();
+    let leaf = root.path().join(own.trim_start_matches('/'));
+    std::fs::create_dir_all(&leaf).unwrap();
+    std::fs::write(leaf.join("memory.max"), "1073741824\n").unwrap();
+    std::fs::write(leaf.join("memory.current"), "943718400\n").unwrap();
+    std::fs::write(
+        leaf.join("memory.stat"),
+        "anon 734003200\nfile 209715200\nactive_file 0\ninactive_file 0\nshmem 209715200\n",
+    )
+    .unwrap();
+    let env = [("KUNA_CGROUP_ROOT", root.path().to_str().unwrap())];
+    let bin = fauxware();
+    let sp = specs();
+    let base =
+        ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
+    let (want, stderr, ok) = run_kuna_env(&base, &env);
+    assert!(ok, "{stderr}");
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    for jobs in ["auto", "3"] {
+        if jobs == "auto" && cores < 2 {
+            continue;
+        }
+        let args: Vec<&str> = base.iter().copied().chain(["--jobs", jobs]).collect();
+        let (got, stderr, ok) = run_kuna_env(&args, &env);
+        assert!(ok, "--jobs {jobs}: {stderr}");
+        assert_eq!(got, want, "--jobs {jobs} moved the document");
+        let (said, workers) = if jobs == "auto" {
+            ("GB is free under a cgroup's memory.max. Pass --jobs N", "1 worker process(es)")
+        } else {
+            ("GB free under a cgroup's memory.max; expect", "3 worker process(es)")
+        };
+        assert!(stderr.contains(said), "--jobs {jobs}: expected {said:?}:\n{stderr}");
+        assert!(stderr.contains(workers), "--jobs {jobs}: expected {workers:?}:\n{stderr}");
+    }
+}
+
 /// A sharded run names every synthesized structure as the serial run does, on
 /// both surfaces and at every job count. `structsynthchain_x86_64` takes the
 /// convergence sweep (`fb` is decided again onto `fc`'s structure while `fa`
@@ -4417,6 +4614,53 @@ fn jobs_rerunning_a_dead_worker_never_loops() {
     assert_eq!(stderr.matches("are not re-run while that lasts").count(), 1, "{stderr}");
     let run_stopped = "; not re-run: re-runs in this run had failed more often than workers had";
     assert_eq!(got.matches(run_stopped).count(), total - reruns, "{got}");
+}
+
+/// A worker that dies in its own load has opened no chunk. An allocation
+/// refused while N workers load at once does that: Rust aborts, which Windows
+/// reports as `0xc0000409`. That worker's whole chunk used to be recorded as
+/// failed and never re-run, although the parent and every other worker load the
+/// same binary fine (the shape of issue #1039's 188 lost functions, each of which
+/// decompiled cleanly on its own). The chunk is now re-run
+/// on a fresh worker and nothing is lost. A load that fails every time costs one
+/// extra load per chunk until 16 re-runs have failed with nothing delivered.
+#[test]
+fn jobs_a_worker_that_dies_in_its_load_loses_nothing() {
+    let serial = fauxware_serial_json();
+    let total = json_records(&serial).len();
+    let loads = |stderr: &str| stderr.matches("KUNA_JOBS_FAULT: injected load abort").count();
+
+    let (got, stderr, ok) = fauxware_pooled_with_fault("load-abort:1", "0");
+    assert!(ok, "{stderr}");
+    assert_eq!(got, serial, "a recovered run must be the serial document");
+    assert_eq!(loads(&stderr), 1, "{stderr}");
+    assert_eq!(recovered_count(&stderr), Some(total), "{stderr}");
+    assert!(!stderr.contains("have no result"), "nothing was lost:\n{stderr}");
+
+    let aborted = "\"error\": \"worker chunk failed (worker exited: signal: 6";
+    let (got, stderr, ok) = fauxware_pooled_with_fault("load-abort:*", "0");
+    assert!(!ok, "{stderr}");
+    let records = json_records(&got);
+    assert_eq!(records.len(), total, "{got}");
+    for r in &records {
+        assert!(r.contains(aborted) && r.contains("; not re-run: its re-run could not start"), "{r}");
+    }
+    assert_eq!(loads(&stderr), 2, "the chunk's worker, then one re-run that could not start:\n{stderr}");
+
+    let bin = fauxware();
+    let sp = specs();
+    let args = [
+        "decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath",
+        sp.as_str(), "--jobs", "2", "--jobs-chunk", "1",
+    ];
+    let cap = Duration::from_secs(240);
+    let (got, stderr, ok) = run_kuna_env_with_timeout(&args, &[("KUNA_JOBS_FAULT", "load-abort:*")], cap)
+        .expect("workers that die in every load wedged the pool");
+    assert!(!ok, "{stderr}");
+    assert_eq!(json_records(&got).len(), total, "{got}");
+    let reruns = loads(&stderr) - total;
+    assert!((16..=17).contains(&reruns), "16 or 17 re-runs that could not start, not {reruns}:\n{stderr}");
+    assert_eq!(stderr.matches("are not re-run while that lasts").count(), 1, "{stderr}");
 }
 
 // --- `--jobs N`: the decode lanes --------------------------------------------

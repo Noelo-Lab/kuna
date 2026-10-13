@@ -15,6 +15,8 @@
 //     read output all fail closed.
 //   - the cookie walk is iterative across long INDIRECT and phi chains; grounded
 //     cycles pass, while seedless cycles and unproven inputs fail closed.
+//   - transparent links, wide phis, and multiple arguments share a finite budget;
+//     exhaustion retains the original call and its effects.
 //   - the first enabled action pass seeds the exact call site and requests a
 //     restart; the replay removes it.
 //   - with removal off, every locked-void checker is marked in one pass for
@@ -196,7 +198,8 @@ fn entry_stack_pointer_is_offset_zero() {
     let mut fd = build_fd();
     let spin = sp_input(&mut fd);
     let sp = sp(&fd);
-    assert_eq!(stack_pointer_offset(spin, WALK_DEPTH, &fd, &sp), Some(0));
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(stack_pointer_offset(spin, WALK_DEPTH, &fd, &sp, &mut budget), Some(0));
 }
 
 #[test]
@@ -207,7 +210,8 @@ fn ptrsub_chain_reports_signed_frame_offset() {
     // `sub rsp,0x48` normalized to SP - 0x48.
     let frame = frame_ptr(&mut fd, bl, 0x10, spin, (-0x48i64) as u64, 0x100);
     let sp = sp(&fd);
-    assert_eq!(stack_pointer_offset(frame, WALK_DEPTH, &fd, &sp), Some(-0x48));
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(stack_pointer_offset(frame, WALK_DEPTH, &fd, &sp, &mut budget), Some(-0x48));
 }
 
 #[test]
@@ -223,7 +227,8 @@ fn cast_between_the_chain_is_peeled() {
     fd.op_set_output(op, out).unwrap();
     fd.op_insert_end(op, bl);
     let sp = sp(&fd);
-    assert_eq!(stack_pointer_offset(out, WALK_DEPTH, &fd, &sp), Some(-0x48));
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(stack_pointer_offset(out, WALK_DEPTH, &fd, &sp, &mut budget), Some(-0x48));
 }
 
 #[test]
@@ -232,7 +237,8 @@ fn unrelated_register_is_not_a_stack_pointer() {
     let bl = mk_block(&mut fd);
     let other = cookie_read(&mut fd, bl, 0x10, 0x100);
     let sp = sp(&fd);
-    assert_eq!(stack_pointer_offset(other, WALK_DEPTH, &fd, &sp), None);
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(stack_pointer_offset(other, WALK_DEPTH, &fd, &sp, &mut budget), None);
 }
 
 #[test]
@@ -309,7 +315,8 @@ fn cancel_at_the_same_frame_offset_matches() {
     let mut fd = build_fd();
     let (out, init) = build_cancel(&mut fd, -0x48, -0x48);
     let sp = sp(&fd);
-    assert_eq!(cookie_cancel(out, &fd, &sp), Some(vec![init]));
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp, &mut budget), Some(vec![init]));
 }
 
 #[test]
@@ -334,7 +341,95 @@ fn a_cookie_carried_across_many_calls_still_matches() {
     }
     let f2 = frame_ptr(&mut fd, bl, 0x90, spin, (-0x48i64) as u64, 0x500);
     let out = binop(&mut fd, bl, 0x94, OpCode::CPUI_INT_XOR, saved, f2, 0x508);
-    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), Some(vec![init]));
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd), &mut budget), Some(vec![init]));
+}
+
+fn copy_chain(fd: &mut Funcdata, bl: BlockId, mut value: VarnodeId, count: usize) -> VarnodeId {
+    for i in 0..count as u64 {
+        let op = mk_op(fd, 1, 0x1000 + i, OpCode::CPUI_COPY);
+        fd.op_set_input(op, value, 0).unwrap();
+        let output_addr = reg(fd, 0x2000 + i * 8);
+        let output = fd.vbank_mut().create(8, output_addr, unk(8));
+        fd.op_set_output(op, output).unwrap();
+        fd.op_insert_end(op, bl);
+        value = output;
+    }
+    value
+}
+
+#[test]
+fn an_over_budget_cookie_call_keeps_its_effects() {
+    let mut fd = build_fd_with_both_options(false, true);
+    let (arg, _) = build_cancel(&mut fd, -0x48, -0x48);
+    let bl = fd
+        .obank()
+        .get(fd.vbank().get(arg).unwrap().get_def().unwrap())
+        .unwrap()
+        .get_parent()
+        .unwrap();
+    let arg = copy_chain(&mut fd, bl, arg, MAX_MATCH_STEPS + 1);
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(arg, &fd, &sp(&fd), &mut budget), None);
+    assert_eq!(budget, 0);
+
+    let (call, _) = checker_call(&mut fd, &[arg], OpCode::CPUI_CALL);
+    push_locked_void_call(&mut fd, call, 0x2000);
+    let site = fd.obank().get(call).unwrap().get_addr().clone();
+    let mut act = ActionStripMsvcStackGuard::new(false, "returnsplit");
+    assert_eq!(act.apply(&mut fd, &mut ActionContext::default()), 0);
+    assert!(!fd.has_restart_pending());
+    assert!(!fd.get_override().is_msvc_cookie_call(&site));
+    assert!(!fd.obank().get(call).unwrap().is_dead());
+}
+
+#[test]
+fn an_over_budget_phi_declines_before_exploring_its_inputs() {
+    let mut fd = build_fd();
+    let (arg, _) = build_cancel(&mut fd, -0x48, -0x48);
+    let cancel = fd.vbank().get(arg).unwrap().get_def().unwrap();
+    let saved = fd.obank().get(cancel).unwrap().get_in(0).unwrap();
+    let bl = fd.obank().get(cancel).unwrap().get_parent().unwrap();
+    let phi_op = mk_op(
+        &mut fd,
+        MAX_MATCH_STEPS as int4 + 1,
+        0x28,
+        OpCode::CPUI_MULTIEQUAL,
+    );
+    let phi_addr = reg(&fd, 0x500);
+    let joined = fd.vbank_mut().create(8, phi_addr, unk(8));
+    fd.op_set_output(phi_op, joined).unwrap();
+    for slot in 0..MAX_MATCH_STEPS as int4 + 1 {
+        fd.op_set_input(phi_op, saved, slot).unwrap();
+    }
+    fd.op_insert_begin(phi_op, bl);
+    fd.op_set_input(cancel, joined, 0).unwrap();
+
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(arg, &fd, &sp(&fd), &mut budget), None);
+    assert_eq!(budget, 0);
+    let (call, _) = checker_call(&mut fd, &[arg, saved], OpCode::CPUI_CALL);
+    assert_eq!(cookie_check_op(&fd, call, &sp(&fd)), None);
+}
+
+#[test]
+fn every_argument_shares_the_call_budget() {
+    let mut fd = build_fd();
+    let (arg, _) = build_cancel(&mut fd, -0x48, -0x48);
+    let bl = fd
+        .obank()
+        .get(fd.vbank().get(arg).unwrap().get_def().unwrap())
+        .unwrap()
+        .get_parent()
+        .unwrap();
+    let scalar = fd.new_constant(8, 7);
+    let scalar = copy_chain(&mut fd, bl, scalar, MAX_MATCH_STEPS / 2);
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(scalar, &fd, &sp(&fd), &mut budget), None);
+    let mut budget = MAX_MATCH_STEPS;
+    assert!(cookie_cancel(arg, &fd, &sp(&fd), &mut budget).is_some());
+    let (call, _) = checker_call(&mut fd, &[arg, scalar, scalar], OpCode::CPUI_CALL);
+    assert_eq!(cookie_check_op(&fd, call, &sp(&fd)), None);
 }
 
 #[test]
@@ -357,7 +452,8 @@ fn a_loop_carried_cookie_phi_uses_its_entry_scramble() {
 
     let f2 = frame_ptr(&mut fd, bl, 0x20, spin, (-0x48i64) as u64, 0x120);
     let out = binop(&mut fd, bl, 0x24, OpCode::CPUI_INT_XOR, carried, f2, 0x128);
-    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), Some(vec![init]));
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd), &mut budget), Some(vec![init]));
 }
 
 enum CycleExternal {
@@ -427,7 +523,8 @@ fn build_multi_phi_cycle_cancel(fd: &mut Funcdata, mode: CycleExternal) -> (Varn
 fn a_cookie_cycle_spanning_multiple_phis_reaches_its_entry_scramble() {
     let mut fd = build_fd();
     let (out, init) = build_multi_phi_cycle_cancel(&mut fd, CycleExternal::Backedge);
-    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), Some(vec![init]));
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd), &mut budget), Some(vec![init]));
 }
 
 #[test]
@@ -455,7 +552,8 @@ fn a_seedless_multi_phi_cycle_declines() {
 
     let frame = frame_ptr(&mut fd, bl, 0x18, spin, (-0x48i64) as u64, 0x110);
     let out = binop(&mut fd, bl, 0x1c, OpCode::CPUI_INT_XOR, phi_a, frame, 0x118);
-    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), None);
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd), &mut budget), None);
 }
 
 #[test]
@@ -478,21 +576,24 @@ fn a_seedless_cycle_alongside_a_valid_scramble_declines() {
     let joined = phi(&mut fd, bl, 0x20, saved, loop_value, 0x120);
     let f2 = frame_ptr(&mut fd, bl, 0x24, spin, (-0x48i64) as u64, 0x128);
     let out = binop(&mut fd, bl, 0x28, OpCode::CPUI_INT_XOR, joined, f2, 0x130);
-    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), None);
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd), &mut budget), None);
 }
 
 #[test]
 fn a_multi_phi_cycle_with_an_unproven_entry_declines() {
     let mut fd = build_fd();
     let (out, _) = build_multi_phi_cycle_cancel(&mut fd, CycleExternal::Unknown);
-    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), None);
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd), &mut budget), None);
 }
 
 #[test]
 fn a_multi_phi_cycle_with_a_different_frame_offset_declines() {
     let mut fd = build_fd();
     let (out, _) = build_multi_phi_cycle_cancel(&mut fd, CycleExternal::Scramble(-0x40));
-    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), None);
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd), &mut budget), None);
 }
 
 #[test]
@@ -500,7 +601,8 @@ fn cancel_at_a_different_frame_offset_declines() {
     let mut fd = build_fd();
     let (out, _) = build_cancel(&mut fd, -0x48, -0x40);
     let sp = sp(&fd);
-    assert_eq!(cookie_cancel(out, &fd, &sp), None);
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp, &mut budget), None);
 }
 
 #[test]
@@ -514,7 +616,8 @@ fn a_constant_scrambled_with_the_stack_pointer_is_not_a_cookie() {
     let f2 = frame_ptr(&mut fd, bl, 0x20, spin, (-0x48i64) as u64, 0x118);
     let out = binop(&mut fd, bl, 0x24, OpCode::CPUI_INT_XOR, saved, f2, 0x120);
     let sp = sp(&fd);
-    assert_eq!(cookie_cancel(out, &fd, &sp), None);
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp, &mut budget), None);
 }
 
 #[test]
@@ -526,7 +629,8 @@ fn one_xor_is_not_a_cancel() {
     let f1 = frame_ptr(&mut fd, bl, 0x14, spin, (-0x48i64) as u64, 0x108);
     let saved = binop(&mut fd, bl, 0x18, OpCode::CPUI_INT_XOR, k, f1, 0x110);
     let sp = sp(&fd);
-    assert_eq!(cookie_cancel(saved, &fd, &sp), None);
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(saved, &fd, &sp, &mut budget), None);
 }
 
 /// `phi = MULTIEQUAL(a, b)` placed at the head of `bl`.
@@ -563,7 +667,8 @@ fn a_join_of_scrambles_at_one_offset_matches() {
     let mut fd = build_fd();
     let (out, inits) = build_phi_cancel(&mut fd, -0x48);
     let sp = sp(&fd);
-    assert_eq!(cookie_cancel(out, &fd, &sp), Some(inits));
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp, &mut budget), Some(inits));
 }
 
 #[test]
@@ -571,7 +676,8 @@ fn a_join_with_one_scramble_at_another_offset_declines() {
     let mut fd = build_fd();
     let (out, _) = build_phi_cancel(&mut fd, -0x40);
     let sp = sp(&fd);
-    assert_eq!(cookie_cancel(out, &fd, &sp), None);
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp, &mut budget), None);
 }
 
 #[test]
@@ -589,7 +695,8 @@ fn a_cookie_carried_through_more_than_walk_depth_phis_matches() {
     }
     let f2 = frame_ptr(&mut fd, bl, 0x400, spin, (-0x48i64) as u64, 0x900);
     let out = binop(&mut fd, bl, 0x404, OpCode::CPUI_INT_XOR, carried, f2, 0x908);
-    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), Some(vec![init]));
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd), &mut budget), Some(vec![init]));
 }
 
 #[test]
@@ -610,7 +717,8 @@ fn a_transparent_cycle_in_the_cookie_operand_declines() {
     let f2 = frame_ptr(&mut fd, bl, 0x1c, spin, (-0x48i64) as u64, 0x118);
     let out = binop(&mut fd, bl, 0x20, OpCode::CPUI_INT_XOR, saved, f2, 0x120);
 
-    assert_eq!(cookie_cancel(out, &fd, &sp(&fd)), None);
+    let mut budget = MAX_MATCH_STEPS;
+    assert_eq!(cookie_cancel(out, &fd, &sp(&fd), &mut budget), None);
 }
 
 // --- cookie_check_op ---------------------------------------------------------

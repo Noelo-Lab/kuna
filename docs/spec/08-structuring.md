@@ -637,6 +637,22 @@ stuck knot, or a schema error all make `structure()` report non-convergence,
 upon which `ActionBlockStructure` re-seeds and falls back to
 `CollapseStructure` (§8.1) — the structurer never aborts the run.
 
+A doomed attempt is also cut short. Every schema except the switch-loop
+absorb merges components along edges, and no step adds an edge, so a live
+component left with no in- or out-edges (typically after `rule_block_goto`
+removes the last edge into a block whose own exits are already gone) can
+never join the rest. Each round therefore first asks `region_structurer.rs
+(RegionStructurer::has_stranded_component)` whether such a component exists
+while others remain, and reports non-convergence at once if so. The one
+exemption is a component the address-keyed absorb could still collect: its
+address lies in a pending switch-loop body, or another live component shares
+it (a later body set could then name it). A declined attempt is discarded
+whole, so stopping early changes no output; it only skips rounds. That matters
+on a large goto-heavy function, which declines once per `structure_reset` the
+CFG passes take: Bash's `declare_internal` declines 18 times in one `kuna
+decompile`, and each attempt strands a component within its first ~100 of
+~800 rounds.
+
 **Edge virtualization and its ordering.** When forced to emit a goto, the
 choice of edge is the whole quality game. Candidates are every structured,
 non-self out-edge of a live component (edges inside a mid-fold switch-loop

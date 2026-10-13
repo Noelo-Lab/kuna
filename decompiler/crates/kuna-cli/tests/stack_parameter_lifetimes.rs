@@ -434,3 +434,75 @@ fn names_and_types_survive_replay_without_replacing_the_input() {
         execute(after["code"].as_str().unwrap());
     }
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn conditional_parameter_escapes_keep_wider_writes_in_shared_storage() {
+    let compiler = ["gcc", "clang"].into_iter().find(|compiler| {
+        common::process::optional_output(Command::new(compiler).arg("--version")).is_some()
+    });
+    let Some(compiler) = compiler else {
+        eprintln!("no C compiler available; skipping native conditional parameter escape");
+        return;
+    };
+    let image = common::scratch_file("conditional-parameter-escape", "elf");
+    common::process::required_output(
+        Command::new(compiler)
+            .args([
+                "-nostdlib", "-no-pie", "-Wl,--build-id=none,-Ttext=0x401000,-Tdata=0x402000,-e,_start",
+            ])
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/conditional_parameter_escape.S"))
+            .arg("-o")
+            .arg(&image),
+    );
+    common::process::required_output(&mut Command::new(&image));
+    let assertions = [
+        "prototype conditional_parameter_escape unsigned long long conditional_parameter_escape(int enable, int a1, int a2, int a3, int a4, int a5, int key)",
+        "prototype unknown_parameter_escape unsigned long long unknown_parameter_escape(int enable, const unsigned long long *other, int a2, int a3, int a4, int a5, int key)",
+        "prototype read_wide unsigned long long read_wide(const unsigned long long *p)",
+        "prototype read_escaped unsigned long long read_escaped(void)",
+        "data 0x402000 unsigned long long global_word",
+        "data 0x402008 unsigned long long *escaped",
+    ];
+    let mut code = String::new();
+    for function in ["conditional_parameter_escape", "unknown_parameter_escape"] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        command
+            .arg("decompile")
+            .arg(&image)
+            .args([
+                function, "--mode", "reliable", "--json", "--assert-strict",
+                "--option", "stackviews", "on", "--option", "stackalias", "off",
+                "--option", "structdefs", "on", "--sleighpath",
+            ])
+            .arg(common::repo_root().join("specs"));
+        for assertion in assertions {
+            command.args(["--assert", assertion]);
+        }
+        let output = common::process::output_with_timeout(
+            &mut command, Duration::from_secs(15), Duration::from_millis(25),
+        ).expect("bounded conditional parameter escape decompilation");
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let result = &document["functions"][0];
+        assert!(result["error"].is_null(), "{result}");
+        code.push_str(result["code"].as_str().unwrap());
+        code.push('\n');
+    }
+    execute_source("conditional-parameter-escape", &format!(
+        "#include <stdint.h>\n\
+         typedef uint8_t uint1; typedef uint16_t uint2; typedef uint32_t uint4;\n\
+         typedef uint64_t uint8; typedef int32_t int4; typedef uint8_t undefined1;\n\
+         uint8 global_word=UINT64_C(0x8877665544332211), *escaped;\n\
+         __attribute__((noinline)) uint8 read_wide(const uint8 *p) {{ return *p; }}\n\
+         __attribute__((noinline)) uint8 read_escaped(void) {{ return *escaped; }}\n\
+         {code}\n\
+         int main(void) {{\n\
+           uint8 expected=UINT64_C(0x9a43302d56077469);\n\
+           return conditional_parameter_escape(1,0,0,0,0,0,42)!=0 ||\n\
+                  conditional_parameter_escape(0,0,0,0,0,0,42)!=expected ||\n\
+                  unknown_parameter_escape(1,&global_word,0,0,0,0,42)!=0 ||\n\
+                  unknown_parameter_escape(0,&global_word,0,0,0,0,42)!=expected;\n\
+         }}\n"
+    ));
+}

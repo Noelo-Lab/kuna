@@ -1,0 +1,24 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v5t:default">
+<!-- Authored predicated pointer loads. A call kills r1, but the old value
+     cannot reach the load guarded by validity and the pending byte. -->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+10402de90040a0e1080000eb000050e3041094150000d115000050130100000a040091e51080bde80000a0e31080bde8000050e3000090151eff2fe1
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="candidate"/>
+<symbol space="ram" offset="0x10030" name="valid"/>
+</binaryimage>
+<script>
+<com>map prototype valid unsigned int valid(unsigned int *entity)</com>
+<com>map prototype candidate unsigned int candidate(unsigned int *entity)</com>
+<com>lo fu candidate</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="CONDITIONAL REGISTER #1: no artificial undefined transfer" min="0" max="0">^  v[0-9]+ = v[0-9]+;</stringmatch>
+<stringmatch name="CONDITIONAL REGISTER #2: the validity call remains" min="1" max="1">valid\(entity\)</stringmatch>
+<stringmatch name="CONDITIONAL REGISTER #3: the guarded pointer definition remains" min="1" max="1">= \(char \*\)entity\[1\];</stringmatch>
+<stringmatch name="CONDITIONAL REGISTER #4: the pending-byte load remains" min="1" max="1">= \*v[0-9]+;</stringmatch>
+<stringmatch name="CONDITIONAL REGISTER #5: the guarded word return remains" min="1" max="1">return \*\(uint4 \*\)&amp;v[0-9]+\[4\];</stringmatch>
+</decompilertest>

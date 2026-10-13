@@ -70,6 +70,11 @@ pub(crate) struct Args {
     /// stripped-ELF non-convergence hang (`tests/hang-repro/`). Defaults to 10
     /// for an unfiltered fast whole-binary run and 120 otherwise.
     pub(crate) max_fn_seconds: u64,
+    /// `--max-fn-memory N` (the decompiling surfaces): stop a function once the
+    /// process decompiling it holds more than N MiB resident and the function
+    /// itself added at least 64 MiB, recording that function's `error`; `0`
+    /// disables. `None` (omitted) is the cgroup default. See [`arm_fn_budgets`].
+    pub(crate) max_fn_memory: Option<u64>,
     pub(crate) options: Vec<(String, String)>,
     /// `--define-function <start[-end][=name] | @file>` (repeatable): the
     /// caller-declared function boundaries, applied by [`load_program`] right
@@ -150,6 +155,7 @@ impl Args {
             entry_seeds: Vec::new(),
             no_vars: false,
             max_fn_seconds: 0,
+            max_fn_memory: Some(0),
             options: Vec::new(),
             func_decls: Vec::new(),
             assertions: Vec::new(),
@@ -619,6 +625,7 @@ pub fn run(argv: &[String]) -> i32 {
                     run_error.as_deref(),
                     filters.narrows().then_some(run.discovered),
                     &run.assertions,
+                    &run.interior,
                 )
             } else {
                 render_c(&run.funcs)
@@ -656,18 +663,18 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
     let scratch = args.jobs_worker.as_deref().expect("worker mode");
     let assignments = jobs::listen_for_assignments(scratch);
 
+    let dir = std::path::Path::new(scratch);
+    let faults = jobs::Faults::from_env();
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
     if !args.jobs_objects {
         kuna_decomp::kuna_elemptr::without_objects(prog.arch_mut());
     }
-    let inventory = std::path::Path::new(scratch).join(jobs::INVENTORY_FILE);
+    let inventory = dir.join(jobs::INVENTORY_FILE);
     if !args.jobs_full_load && inventory.is_file() {
         seed_worker_inventory(&mut prog, &inventory.to_string_lossy())?;
     }
-    if args.max_fn_seconds > 0 {
-        prog.arch_mut().kuna_fn_budget =
-            Some(std::time::Duration::from_secs(args.max_fn_seconds));
-    }
+    faults.after_load(dir);
+    arm_fn_budgets(&mut prog, args);
     // (kuna `structsynth`) A recording worker reports every ledger lookup and
     // its own answer; a forcing one first mints the parent's replayed
     // structures, in the serial run's order, and then answers each lookup with
@@ -687,8 +694,6 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
     prog.arch_mut().struct_synth_shard = synth_hook.clone();
     let converge = args.jobs_synth == Some(jobs::SynthWorker::Serial);
 
-    let dir = std::path::Path::new(scratch);
-    let faults = jobs::Faults::from_env();
     while let Ok(assignment) = assignments.recv() {
         // The type block is rendered ONCE, when the parent retires this worker:
         // the factory accumulates over every chunk served, so only its final
@@ -958,6 +963,7 @@ pub(crate) fn pool_config<'a>(
         want_callee_hints,
         want_pointer_arguments: false,
         max_fn_seconds: args.max_fn_seconds,
+        max_fn_memory: args.max_fn_memory,
         full_load: args.jobs_full_load,
         load_seconds,
         isa: args.isa.map(ArmIsa::as_str),
@@ -1195,6 +1201,8 @@ struct AllRun {
     discovered: usize,
     /// One row per `--assert` directive: what became of it.
     assertions: Vec<kuna_console::assertions::Outcome>,
+    /// The `--addr` targets that land inside another function.
+    interior: crate::interior::Interiors,
 }
 
 /// Load + analyze the binary once, narrow the target list, then decompile what
@@ -1213,6 +1221,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     } else {
         targets
     };
+    let interior = crate::interior::selections(&prog, args, &targets);
     let whole = targets.len() == discovered && args.addrs.is_empty() && args.names.is_none();
     let (callee_first, explicit) = callee_first_decision(&prog, args, targets.len(), whole);
     // `--jobs N`: hand the targets to the worker pool and release the parent's
@@ -1243,7 +1252,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
             synth,
             callee_first,
         )?;
-        return Ok(AllRun { funcs: pooled.results, discovered, assertions });
+        return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior });
     }
     if explicit && prog.arch().protoorder.is_on() && !whole {
         eprintln!(
@@ -1257,7 +1266,40 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     } else {
         decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true)
     };
-    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes() })
+    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior })
+}
+
+/// Arm the per-function budgets `args` asks for: the wall-clock watchdog on the
+/// architecture, and the memory limit process-wide, since what it measures is
+/// the process's resident set. With no `--max-fn-memory` the process takes the
+/// cgroup default ([`kuna_decomp::kuna_fnmemory::use_cgroup_default`]), the
+/// serial run and every `--jobs` worker alike.
+pub(crate) fn arm_fn_budgets(prog: &mut ConsoleProgram, args: &Args) {
+    if args.max_fn_seconds > 0 {
+        prog.arch_mut().kuna_fn_budget =
+            Some(std::time::Duration::from_secs(args.max_fn_seconds));
+    }
+    match args.max_fn_memory {
+        Some(mib) => kuna_decomp::kuna_fnmemory::set_limit_mib(mib),
+        None => {
+            kuna_decomp::kuna_fnmemory::use_cgroup_default();
+        }
+    }
+}
+
+/// Parse a `--max-fn-memory` value: MiB, `0` to disable. Refused where the
+/// process's resident set cannot be read, since the limit could never fire.
+pub(crate) fn parse_max_fn_memory(v: &str) -> Result<u64, String> {
+    let mib = v
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| format!("invalid --max-fn-memory value {v:?} (MiB)"))?;
+    if mib > 0 && !kuna_decomp::kuna_fnmemory::supported() {
+        return Err(
+            "--max-fn-memory needs the resident set, which this platform does not report".into()
+        );
+    }
+    Ok(mib)
 }
 
 /// Arm the per-function watchdog and run the decompile loop over `targets` — the
@@ -1278,10 +1320,7 @@ pub(crate) fn decompile_entries(
     targets: Vec<FunctionEntry>,
     pointer_arguments: bool,
 ) -> Vec<FuncResult> {
-    if args.max_fn_seconds > 0 {
-        prog.arch_mut().kuna_fn_budget =
-            Some(std::time::Duration::from_secs(args.max_fn_seconds));
-    }
+    arm_fn_budgets(prog, args);
     let opts = DecompileOptions {
         no_vars: args.no_vars,
         want_provenance: args.json,
@@ -1959,8 +1998,9 @@ pub(crate) fn render_result_json(
     options: &[(String, String)],
     error: Option<&str>,
     assertions: &[kuna_console::assertions::Outcome],
+    interior: &crate::interior::Interiors,
 ) -> String {
-    render_selected_json(binary, funcs, options, error, None, assertions)
+    render_selected_json(binary, funcs, options, error, None, assertions, interior)
 }
 
 /// [`render_result_json`] plus the inventory `total` a NARROWED whole-binary run
@@ -1978,11 +2018,12 @@ pub(crate) fn render_selected_json(
     error: Option<&str>,
     total: Option<usize>,
     assertions: &[kuna_console::assertions::Outcome],
+    interior: &crate::interior::Interiors,
 ) -> String {
     let language = last_option_value(options, "setlanguage").unwrap_or("c-language");
     format!(
         "{}\n",
-        dumps_indent2(&result_json(binary, funcs, language, error, total, assertions))
+        dumps_indent2(&result_json(binary, funcs, language, error, total, assertions, interior))
     )
 }
 
@@ -2068,6 +2109,7 @@ fn result_json(
     error: Option<&str>,
     total: Option<usize>,
     assertions: &[kuna_console::assertions::Outcome],
+    interior: &crate::interior::Interiors,
 ) -> Json {
     let functions = Json::Array(
         funcs
@@ -2077,7 +2119,7 @@ fn result_json(
                 let line_mappings =
                     Json::Array(f.line_mappings.iter().map(line_mapping_json).collect());
                 let types = Json::Array(f.types.iter().map(type_json).collect());
-                let mut fields = vec![
+                let mut record = vec![
                     ("name".into(), Json::Str(f.name.clone())),
                     ("address".into(), Json::Number(f.address.to_string())),
                     ("address_hex".into(), Json::Str(format!("0x{:x}", f.address))),
@@ -2111,11 +2153,14 @@ fn result_json(
                     ("types".into(), types),
                 ];
                 if !f.stack_objects.is_empty() {
-                    fields.push(("stack_objects".into(), Json::Array(
+                    record.push(("stack_objects".into(), Json::Array(
                         f.stack_objects.iter().map(stack_object_json).collect(),
                     )));
                 }
-                Json::Object(fields)
+                if let Some(inside) = interior.get(&f.byte_address) {
+                    record.push(("interior_to".into(), crate::interior::json(inside)));
+                }
+                Json::Object(record)
             })
             .collect(),
     );
@@ -2297,6 +2342,7 @@ mod provenance_json_tests {
             }],
             stack_objects: Vec::new(),
             globals: Vec::new(),
+            field_calls: Vec::new(),
             line_mappings: vec![LineMapping {
                 line_number: 3,
                 addresses: vec![0x401004, 0x401008],
@@ -2309,7 +2355,7 @@ mod provenance_json_tests {
             detail: None,
         };
 
-        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[]));
+        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[], &Default::default()));
         assert!(rendered.contains("\"address\": 4198400"));
         assert!(rendered.contains("\"code\": \"int f(int x)\\n{\\n  return x;\\n}\""));
         assert!(rendered.contains("\"line_mappings\": ["));
@@ -2431,6 +2477,7 @@ pub(crate) fn parse_args_with_filters(
     let mut entry_seeds: Vec<EntrySelector> = Vec::new();
     let mut no_vars = false;
     let mut max_fn_seconds: Option<u64> = None;
+    let mut max_fn_memory: Option<u64> = None;
     let mut options: Vec<(String, String)> = Vec::new();
     let mut func_decls: Vec<crate::funcdecl::FuncDecl> = Vec::new();
     let mut assertions: Vec<kuna_console::assertions::Directive> = Vec::new();
@@ -2533,6 +2580,13 @@ pub(crate) fn parse_args_with_filters(
                         .parse::<u64>()
                         .map_err(|_| format!("invalid --max-fn-seconds value {v:?}"))?,
                 );
+            }
+            "--max-fn-memory"
+                if cmd == "decompile-all"
+                    || cmd == "decompile-project"
+                    || cmd == "decompile-graph" =>
+            {
+                max_fn_memory = Some(parse_max_fn_memory(&take(argv, &mut i, "--max-fn-memory")?)?);
             }
             "--filter" if triageable => {
                 let v = take(argv, &mut i, "--filter")?;
@@ -2675,6 +2729,8 @@ pub(crate) fn parse_args_with_filters(
     let whole_binary = batch && names.is_none() && addrs.is_empty();
     let max_fn_seconds = max_fn_seconds
         .unwrap_or_else(|| default_fn_budget_seconds(concrete_mode, whole_binary));
+    let decompiles = matches!(cmd, "decompile-all" | "decompile-project" | "decompile-graph");
+    let max_fn_memory = if decompiles { max_fn_memory } else { Some(0) };
     // The pool re-execs this binary, so a policy it cannot express is one the
     // shards would silently drop rather than honour. Pool-only: on `functions`
     // the same flag buys decode lanes and no process is re-exec'd, so a raw
@@ -2739,6 +2795,7 @@ pub(crate) fn parse_args_with_filters(
             entry_seeds,
             no_vars,
             max_fn_seconds,
+            max_fn_memory,
             options,
             func_decls,
             assertions,
@@ -2792,7 +2849,8 @@ fn parse_entry_selector(s: &str) -> Result<EntrySelector, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                   [--no-vars] [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
+         \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
          \x20                   [--filter REGEX] [--min-size N] [--max-size N] \\\n\
          \x20                   [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
@@ -2806,6 +2864,13 @@ fn usage_decompile_all() {
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 10\n\
          for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\
          budget becomes its own `error` record and the batch continues.\n\
+         --max-fn-memory MiB stops a function once the process decompiling it\n\
+         holds more than MiB resident and the function added 64 MiB or more;\n\
+         that function becomes its own `error` record the same way. Omitted,\n\
+         under a cgroup memory cap, with a margin of max(512 MiB, 10%), a\n\
+         function that grew by the margin is stopped once the cgroup holds more\n\
+         than the cap less it, serial or --jobs alike; outside one there is\n\
+         none; 0 disables.\n\
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
          in-process path). Output is merged in target order and is identical to\n\
@@ -3066,10 +3131,10 @@ mod discovery_tests {
             failed.contains("\"error\": \"no functions discovered in fixture\""),
             "{failed}"
         );
-        let decompiled = render_result_json("fixture", &[], &[], Some("boom"), &[]);
+        let decompiled = render_result_json("fixture", &[], &[], Some("boom"), &[], &Default::default());
         assert!(decompiled.contains("\"error\": \"boom\""), "{decompiled}");
         assert!(
-            render_result_json("fixture", &[], &[], None, &[]).contains("\"error\": null")
+            render_result_json("fixture", &[], &[], None, &[], &Default::default()).contains("\"error\": null")
         );
     }
 
@@ -3081,8 +3146,8 @@ mod discovery_tests {
             ("setlanguage".into(), "rust-language".into()),
             ("setlanguage".into(), "c-language".into()),
         ];
-        assert!(render_result_json("f", &[], &options, None, &[]).contains("\"c-language\""));
-        assert!(render_result_json("f", &[], &[], None, &[]).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &options, None, &[], &Default::default()).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &[], None, &[], &Default::default()).contains("\"c-language\""));
     }
 }
 

@@ -308,6 +308,18 @@ inserting casts. Its stored value is an assignment to declared C storage rather
 than an untyped user-op argument, including a pointer view retyped by an object
 assertion.
 
+`FLOAT_TRUNC` converts a floating value to a signed integer of its output
+width. If a merged variable is unsigned (including an unsigned enum), cast
+insertion keeps a signed conversion temporary before converting its integer
+bits to that variable's type. Boolean destinations retain their existing
+conversion of the truncated signed value to a truth value. An unsigned
+destination must not turn the floating conversion itself into a C
+floating-to-unsigned cast: negative values in the signed range would
+then acquire undefined behavior. Ordinary signed destinations retain their
+existing conversion. This correctness repair is architecture independent and
+needs no option; it does not model floating exception state or define C casts
+outside the signed integer's representable range.
+
 **Integer promotion.** C silently promotes small integers, so many extensions
 must *not* print. The strategy classifies a sub-`int` value's promotion as
 unsigned, signed, either, or unknown (`cast.rs
@@ -429,6 +441,19 @@ cast is redundant, though never wrong. Only an output language whose
 `sink(a0 * 3)` with a `u16` `a0` already carries the truncation there. The rule
 has no option because it only restores a conversion the binary performed.
 Pinned by `tests/stages/kuna-truncarg.xml`.
+
+The default arm has one more fallback, for the target of an indirect call. A
+pointer to the prototype-less `code`, or to `void`, needs no cast under
+`cast_standard`, which never casts to or from either, but C cannot call it.
+When `calltargettype` recorded the type the call states for a target it could
+not give that type -- its uses disagree, or a declaration fixes another type --
+and the target is still such a pointer,
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_calltargettype.rs
+(uncallable_target_cast)` returns that type and the target is cast to it at the
+call (chapter [05](05-types.md)), in C output only. With the same option on in
+C output, `cast_standard` also prints no cast between a record's declaration and
+its completed definition, which the factory holds as two types and C spells
+alike (`CastStrategyC::with_record_identity`).
 
 One value-changing case is still open. A 32-bit argument trimmed out of a
 64-bit register keeps its `int` type, so `sink64(a0 * 3)` with `int a0`
@@ -1044,6 +1069,44 @@ and emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml`; signe
 comparison and ASR consumers are in
 `tests/stages/kuna-arm-register-shift-signed.xml`.
 
+**(kuna) Fixed ARM LSL with a signed operand in C.** A constant-count 32-bit
+`INT_LEFT` still computes the low 32 bits when its declared operand is signed.
+C11 instead makes a negative signed shiftee or signed overflow undefined,
+including when the function converts the result to unsigned on return.
+`p9_emit/kuna_armconstantshift.rs (plan_arm_constant_lsl)` selects ARM shifts
+with a constant count below 32, equal four-byte input/output widths, and a
+signed integer or signed enum shiftee. The C printer casts that operand to
+`uint4` before the shift, preserving locked declarations. If the output type
+is signed, it casts the whole unsigned shift back to `int4` to preserve signed
+comparisons and arithmetic right shifts. That signed conversion and negative
+arithmetic right shift retain C11's implementation-defined semantics, as in
+the register-count renderer; GCC and Clang implement the ARM interpretation.
+Each operand prints once, so a call result or volatile load needs no
+repeatability restriction. Signed compound assignment is declined so this
+conversion remains on the assignment's right-hand side. Unsigned shiftees,
+other widths, out-of-range constants, other architectures and other output
+languages retain their existing rendering. Count zero is ordinarily removed
+before emission. The repair runs only under option `armconstshift` (default
+off, and kept out of the `aggressive` preset): firmware tests nearly every
+register flag with a sign-bit shift such as `x << 0x18 < 0`, and the defined
+form `(int)((unsigned int)x << 0x18) < 0` adds a cast pair to each one, so the
+shipped default keeps the shorter spelling. `tests/stages/kuna-arm-constant-shift.xml`
+pins the unconverted default pass and the casts and signed consumers with the
+option on; `kuna-cli/tests/arm_constant_shift.rs` compiles the unchanged bodies
+as C11 at `-O0` and `-O2`, with and without UBSan, and compares counts 0, 1, 2,
+3 and 31 against an independent unsigned 64-bit model truncated to 32 bits.
+The runtime checks cover both return signs, ASR, signed comparisons, a stored
+result, a repeated shift in a loop, a signed call result, a volatile load and
+variable-count controls.
+
+A whole four-byte signed mapped symbol printed by an implied volatile-read
+annotation also qualifies, even when the userop output metadata is unsigned.
+The planner follows only the `NO_OPERATOR` annotation form and requires an
+exact whole-symbol type match; it preserves the single volatile read. Runtime
+signed-comparison probes pass the shifted result to a typed comparison helper
+so the comparison cannot canonicalize the shift into signed multiplication.
+Defining signed multiplication on overflow is outside this repair.
+
 **Every label labels a statement.** Label placement in the printed C is valid
 C99/C11/C17 and does not rely on C23. In those dialects a label is part of a
 labeled statement, so `case 2:`, `default:` or `label_10ad:` directly before a
@@ -1191,6 +1254,46 @@ whole-container operand reads `return v1._0_16_ << 0x40;` under
 shifts a member of an array. What this does **not** fix is that container type
 itself. Recovering it needs either a scalar wide-integer type or a mid-end fold
 of the `CONCAT88(0,x) << 64` idiom; neither is done here.
+
+**Standard C for mapped byte arrays.** `bytearrayc` (default **off**,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_bytearrayc.rs`) provides a C11
+rendering choice for direct integer accesses of two, four or eight bytes within
+a mapped global array of one-byte integer elements. A one-byte access retains
+its subscript; a whole one-element byte array explicitly uses element zero.
+Partial and whole-array covers use the same checked interval:
+the offset plus access size must fit within the mapped object. This does not
+change the declared array type or the recovered operations.
+
+Reads call an emitted `kuna_bytearray_load<bits>_<le|be>` helper through the
+address of the first byte, then convert to the read-facing integer type. Stores
+call the matching `kuna_bytearray_store<bits>_<le|be>` helper with the value
+expression evaluated once. Same-width integer casts into an array view use
+scalar bits instead of an invalid C array cast. The helper reads or writes exactly the requested
+bytes through character pointers; it neither dereferences a wider pointer nor
+requires alignment or an effective integer type for the mapped object. Explicit
+unsigned shifts encode the target storage space's byte order, independently of
+the host byte order. A read used in a store argument completes before the store
+helper starts, preserving overlapping copies. Each width/endian pair has guarded
+static inline definitions so independently emitted functions can share one C
+translation unit. The preamble includes `<stdint.h>` and `<limits.h>` and asserts
+that a C byte has eight bits. The `kuna_bytearray_` helper names and
+`KUNA_BYTEARRAY_C_` guards belong to this generated support surface.
+
+The option deliberately leaves volatile accesses in their existing form:
+splitting a wide device access into several volatile byte accesses changes the
+observable access width and count, while casting a byte array to a wider volatile
+pointer would invent alignment and aliasing guarantees. Their standard-C
+representation requires an additional device/type contract. Read helpers accept
+`const void *`, store helpers accept `void *`, and neither casts away a qualifier
+on a source or destination argument. This option does not repair qualifier loss
+in declaration recovery. Arrays nested in aggregates, stack/register containers,
+noninteger values, non-byte-addressed spaces and other transfer widths also
+retain their existing representation. Off retains all existing emitted C.
+The authored CLI round trips in
+`decompiler/crates/kuna-cli/tests/mapped_array_c.rs` compile unchanged emitted
+bodies at `-O0` and `-O2` with strict aliasing and UBSan, including unaligned
+transfers, overlapping stores, signed reads, const sources, both ARM endian
+variants and an unchanged named-struct control.
 
 **Leaves with no Symbol.** Not every leaf has one. When no mapped symbol covers
 the storage the leaf falls through to the upstream `pushUnnamedLocation`
@@ -2105,6 +2208,12 @@ and `printc.rs (print_unicode)` emits the named C escapes then falls to `print_c
 (not in the loadimage) can be registered under a constant-space hash address
 and resolve through the same cache.
 
+When `globalarrayanchor` is enabled, `ActionConstantPtr` records its per-function
+pass count for the P3 folding guard (§3.5). Reset activates this count only for
+a scheduled action with the option on; functions without that action leave the
+guard inactive. The fourth pass releases its hold on unresolved array-base
+constants.
+
 The probe's entry condition is a **type**, not a detected string boundary: the
 manager reads from whatever address it is handed, so the whole question is
 whether the constant arrived carrying a character-pointer type. Type inference
@@ -3003,7 +3112,11 @@ floating arithmetic and numeric conversions. Integer bit patterns are printed as
 unsigned constants, while named pointer constants retain their address provenance.
 Equal-width signed, unsigned and unknown integer views remain compatible and
 keep ordinary scalar assignments; the fallback targets incompatible layouts or
-representations rather than changes of integer signedness.
+representations rather than changes of integer signedness. Conditional and
+short-circuit boolean assignment recovery retains explicit branch statements
+when an arm requires this storage-copy path or a changed-byte transfer. A
+ternary or boolean assignment would otherwise bypass byte-store emission and
+assign to an artificial partial field of the declared layout.
 
 `kuna_stackbytes.rs` follows byte provenance through COPY, same-width CAST,
 PIECE, SUBPIECE, zero extension and byte-aligned logical shifts. With

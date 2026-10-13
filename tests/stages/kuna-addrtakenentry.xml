@@ -1,0 +1,76 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: code whose address the program takes, and that no flow
+    reaches, is a function entry (`option addrtakenentry on|off`, default-ON).
+
+    Issue:      kuna GH-1039 sections 1 and 2 - a handler called only through a
+                pointer that a `lea` stores is missing from the inventory and
+                folded into the function before it, and so are handlers a
+                relocated table names before the first RUNTIME_FUNCTION.
+    Stage:      P1 code/data partition - the Listing walk's committed function
+                set (`aif/kuna_addrtakenentry.rs`, re-seeding the walk behind
+                `fast_funcdisc` and `funcdisc_recursive`).
+    P0 assert:  `option addrtakenentry on|off`.
+
+    The XML wrapper only provides the harness architecture.  Every pass clears
+    it and loads `pe_addrtaken_x86_64.exe` (source `pe_addrtaken_x86_64.py`
+    beside it).  `.pdata` describes only _start (0x140001052), which calls
+    register (0x140001030).  register stores `lea rax,[0x140001040]` to a
+    global and _start calls the handler through it; pre_a (0x140001000) and
+    pre_b (0x140001010) are named only by relocated words in `.rdata`, before
+    the first record.  The look-alikes are not functions: a UTF-16 string at
+    0x140001020 (relocated and lea'd), `runon` at 0x140001050 (lea'd, falls
+    into _start), the interior address 0x140001043, a data blob shaped like a
+    MinGW delay-import descriptor at 0x1400010a0 (lea'd after a ret, decodes
+    to add [rax],eax ; add [rax],al ; ... ; ret 0), the computed-goto return
+    block 0x1400010c0 (add rsp,0x28 ; ret) that interp (0x1400010b0) takes
+    with lea and reaches with `jmp rax`, a relocated stub past the last record at 0x1400010d0 and a
+    lea'd string at 0x1400010e0.
+
+    Pass 1 (`mode fast`, `option addrtakenentry off`) reproduces the bug: only
+    _start, register and interp.
+    Pass 2 (`mode fast`, shipped default) adds pre_a, pre_b and the handler,
+    and the handler decompiles to its own body.
+    Passes 3 and 4 repeat that in `mode aggressive`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pe_addrtaken_x86_64.exe</com>
+  <com>mode fast</com>
+  <com>option addrtakenentry off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pe_addrtaken_x86_64.exe</com>
+  <com>mode fast</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function sub_140001040</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pe_addrtaken_x86_64.exe</com>
+  <com>mode aggressive</com>
+  <com>option addrtakenentry off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pe_addrtaken_x86_64.exe</com>
+  <com>mode aggressive</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>phase catalog addrtakenentry</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-ADDRTAKENENTRY #1: _start, register and interp are functions in all four passes" min="12" max="12">0x1400010(52|30|b0) sub_1400010(52|30|b0)</stringmatch>
+<stringmatch name="KUNA-ADDRTAKENENTRY #2: pre_a, pre_b and the handler are functions only with the option on" min="6" max="6">0x1400010[014]0 sub_1400010[014]0</stringmatch>
+<stringmatch name="KUNA-ADDRTAKENENTRY #3: no look-alike is a function" min="0" max="0">sub_1400010(20|43|50|a0|c0|d0|e0)</stringmatch>
+<stringmatch name="KUNA-ADDRTAKENENTRY #4: the handler decompiles to its own body" min="1" max="1">return a0 \* 0xb \+ -4;</stringmatch>
+<stringmatch name="KUNA-ADDRTAKENENTRY #5: the catalog documents it as a default-on P1 code/data-partition option" min="1" max="1">"option": "addrtakenentry", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
+</decompilertest>

@@ -29,10 +29,10 @@
     },
     "stdout_absent": [
       "\\bvoid\\s+[A-Za-z_]\\w*\\s*;",
-      "\\(void\\)"
+      "(?<!\\(\\*\\))\\(void\\)"
     ],
     "stdout_matches": [
-      "\\(\\*a[0-9]+\\)\\(\\)"
+      "\\(\\*(?:\\([^()]*\\(\\*\\)\\([^()]*\\)\\))?a[0-9]+\\)\\(\\)"
     ]
   },
   "notes": "need decompiler-emits-void-scalar. Witness: crackmes.one 5ab77f5f33c5d40ad448c834 crkme.exe 0x44ac6b, which declared `void v4; // al` and stored `(void)sub_44ac7a()` through a code pointer. Retargeted onto the vendored codescalar_x86_64 (same shape, no dataset in CI): same absent clauses, and the match clause pins the indirect call that must survive."

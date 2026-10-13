@@ -3972,9 +3972,13 @@ impl SplitDatatype {
                 if cur_off < 0 || cur_off >= tmp_type.get_size() as int8 {
                     // An offset not within the data-type indicates an array.
                     new_type = Rc::clone(&tmp_type);
-                    let mut no = cur_off % tmp_type.get_size() as int8;
-                    no = if no < 0 { no + tmp_type.get_size() as int8 } else { no };
-                    new_off = no;
+                    // A zero-sized type (an empty C++ class, an unsized array) has no element
+                    // stride to wrap by: Ghidra's `%` is undefined here, ours panicked
+                    // ("remainder with a divisor of zero"). Give up on this split instead.
+                    let stride = tmp_type.get_size() as int8;
+                    new_off = array_elem_offset(cur_off, stride).ok_or_else(|| {
+                        KunaError::lowlevel("SplitDatatype: buildPointers on a zero-sized type")
+                    })?;
                 } else {
                     let (sub, so) = tmp_type.get_sub_type(cur_off)?;
                     match sub {
@@ -4001,6 +4005,11 @@ impl SplitDatatype {
                 {
                     let mut final_offset = cur_off - new_off;
                     let mut sz = res_type.get_size(); // Element size in bytes
+                    if sz == 0 {
+                        return Err(KunaError::lowlevel(
+                            "SplitDatatype: buildPointers on a zero-sized element type",
+                        ));
+                    }
                     final_offset /= sz as int8; // Number of elements
                     // cast: byteToAddressInt(int4,..) returns int4-range here.
                     sz = AddrSpace::byte_to_address_int(sz as i64, word_size) as int4;
@@ -5007,9 +5016,20 @@ impl SubfloatFlow {
 
     /// Determine if the given binary float op exceeds our precision (C++
     /// `SubfloatFlow::exceedsPrecision`, subflow.cc:3201).
+    /// Arithmetic keeps its rounding width even when its inputs were widened.
     fn exceeds_precision(&mut self, data: &mut Funcdata, op: OpId) -> bool {
         let in0 = data.obank().get(op).expect("stale op").get_in(0).expect("in0");
         let in1 = data.obank().get(op).expect("stale op").get_in(1).expect("in1");
+        if matches!(
+            data.obank().get(op).expect("stale op").code(),
+            OpCode::CPUI_FLOAT_ADD
+                | OpCode::CPUI_FLOAT_SUB
+                | OpCode::CPUI_FLOAT_MULT
+                | OpCode::CPUI_FLOAT_DIV
+        ) {
+            return data.vbank().get(in0).expect("stale in0").get_size() > self.precision
+                || data.vbank().get(in1).expect("stale in1").get_size() > self.precision;
+        }
         let val1 = self.max_precision(data, in0);
         let val2 = self.max_precision(data, in1);
         let min = if val1 < val2 { val1 } else { val2 };
@@ -6848,6 +6868,34 @@ mod tests {
     }
 
     #[test]
+    fn build_pointers_on_zero_sized_type_is_an_error_not_a_panic() {
+        // An empty C++ class is a zero-sized struct. buildPointers used to compute
+        // `curOff % size` / `/ size` on it: "attempt to calculate the remainder with a
+        // divisor of zero" (seen on GCC cc1). It must give up on the split instead.
+        use crate::dtype::TypeFactoryImpl;
+        let factory = TypeFactoryImpl::new();
+        factory.set_default_alignment_map();
+        factory.set_max_basetype_size(8);
+        let empty = Rc::new(Datatype::new(0, type_metatype::TYPE_STRUCT));
+        let ptr = factory.get_type_pointer(8, Rc::clone(&empty), 1).unwrap();
+        let int4t = factory.get_base(4, type_metatype::TYPE_INT).unwrap();
+
+        let mut fd = build_fd();
+        let root = mk_input(&mut fd, 0x40, 8);
+        let copyop = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_COPY);
+        let mut sd = SplitDatatype::new(3);
+        sd.data_type_pieces.push(Component {
+            in_type: Rc::clone(&int4t),
+            out_type: int4t,
+            offset: 0,
+        });
+        let mut ptrs = Vec::new();
+        let r = sd.build_pointers(&mut fd, root, &ptr, 0, copyop, &mut ptrs, true);
+        assert!(r.is_err());
+        assert!(ptrs.is_empty());
+    }
+
+    #[test]
     fn split_datatype_struct_disabled_when_config_zero() {
         // With split_datatype_config == 0, splitStructures/splitArrays are false,
         // so a struct categorizes as not-splittable (-1).
@@ -7228,5 +7276,34 @@ mod tests {
             patches_mid + 1,
             "second call must not re-traverse RETURNs, only add its terminal"
         );
+    }
+}
+
+/// Offset of `cur_off` inside one element of an array whose elements are `size` bytes
+/// (always in `0..size`, also for negative `cur_off`); `None` for a zero-sized element.
+fn array_elem_offset(cur_off: int8, size: int8) -> Option<int8> {
+    if size <= 0 {
+        return None;
+    }
+    let no = cur_off % size;
+    Some(if no < 0 { no + size } else { no })
+}
+
+#[cfg(test)]
+mod array_elem_offset_tests {
+    use super::array_elem_offset;
+
+    #[test]
+    fn wraps_into_the_element() {
+        assert_eq!(array_elem_offset(10, 4), Some(2));
+        assert_eq!(array_elem_offset(-1, 4), Some(3));
+        assert_eq!(array_elem_offset(-8, 4), Some(0));
+        assert_eq!(array_elem_offset(0, 1), Some(0));
+    }
+
+    #[test]
+    fn zero_sized_element_does_not_divide_by_zero() {
+        assert_eq!(array_elem_offset(5, 0), None);
+        assert_eq!(array_elem_offset(-5, 0), None);
     }
 }

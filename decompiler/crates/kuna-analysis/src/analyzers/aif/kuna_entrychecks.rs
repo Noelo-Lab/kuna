@@ -12,6 +12,9 @@ pub(crate) struct CheckedAif {
     pub entries: Vec<u64>,
     pub pool_entries: Vec<u64>,
     pub pointer_entries: Vec<u64>,
+    /// Addresses accepted post-frame AIF bodies run into by straight-line flow,
+    /// and every address of a body that gap walk refused.
+    pub straight_line: std::collections::BTreeSet<u64>,
 }
 
 /// All checks use the partition preceding the optional AIF rewalk. Pointer and
@@ -25,6 +28,7 @@ pub(crate) fn run(
     pointer_entries: Vec<u64>,
     bracket: Option<&super::kuna_aifbracket::BracketEvidence>,
 ) -> CheckedAif {
+    let mut straight_line = std::collections::BTreeSet::new();
     let mut entries = if let Some(prior) = pre_frame {
         super::run_aif_after_frames(
             listing,
@@ -35,6 +39,7 @@ pub(crate) fn run(
             arch.analysis_aifcorroborate,
             bracket,
             arch.analysis_aifnoppad,
+            Some(&mut straight_line),
         )
     } else {
         super::run_aif(
@@ -66,5 +71,6 @@ pub(crate) fn run(
         entries,
         pool_entries,
         pointer_entries,
+        straight_line,
     }
 }

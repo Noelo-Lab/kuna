@@ -367,6 +367,10 @@ impl Action for ActionStackByteCopy {
                 changed += 1;
             }
         }
-        changed
+        self.base.count += changed;
+        0
     }
 }
+
+#[cfg(test)]
+mod tests;

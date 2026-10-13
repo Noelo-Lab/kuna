@@ -370,6 +370,7 @@ pub trait CastStrategy {
 pub struct CastStrategyC {
     tlst: Rc<dyn TypeFactory>,
     promote_size: int4,
+    record_identity: bool,
 }
 
 impl CastStrategyC {
@@ -377,7 +378,14 @@ impl CastStrategyC {
     /// cast.cc:23-28): `promoteSize = tlst->getSizeOfInt()`.
     pub fn new(tlst: Rc<dyn TypeFactory>) -> CastStrategyC {
         let promote_size = tlst.get_size_of_int();
-        CastStrategyC { tlst, promote_size }
+        CastStrategyC { tlst, promote_size, record_identity: false }
+    }
+
+    /// (kuna `calltargettype`) Treat a record's declaration and its completed
+    /// definition as one type ([`same_record`](crate::kuna_calltargettype::same_record)).
+    pub fn with_record_identity(mut self, on: bool) -> CastStrategyC {
+        self.record_identity = on;
+        self
     }
 }
 
@@ -721,6 +729,9 @@ impl CastStrategy for CastStrategyC {
         }
         if Rc::ptr_eq(&curbase, &reqbase) {
             return None; // Different typedefs could point to the same type
+        }
+        if self.record_identity && crate::kuna_calltargettype::same_record(&reqbase, &curbase) {
+            return None;
         }
         if reqbase.get_metatype() == type_metatype::TYPE_VOID
             || curbase.get_metatype() == type_metatype::TYPE_VOID

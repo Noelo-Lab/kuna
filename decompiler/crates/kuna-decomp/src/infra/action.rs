@@ -614,16 +614,13 @@ impl ActionContext {
     }
 
     /// (kuna decompile-all watchdog) `true` once the cooperative per-function
-    /// [`deadline`](ActionContext::deadline) has passed.  A single
-    /// `Instant::now()` compare; `None` (no budget — every console/parity path)
-    /// short-circuits without touching the clock.
+    /// [`deadline`](ActionContext::deadline) has passed or the drive went over
+    /// its memory limit ([`budget_spent`](crate::decompile_drive::budget_spent)).
+    /// `None` (no budget — every console/parity path) short-circuits without
+    /// touching the clock.
     #[inline]
     pub fn deadline_expired(&self) -> bool {
-        self.abandon
-            || match self.deadline {
-                Some(d) => std::time::Instant::now() >= d,
-                None => false,
-            }
+        self.abandon || self.deadline.is_some_and(crate::decompile_drive::budget_spent)
     }
 }
 

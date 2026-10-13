@@ -139,11 +139,15 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("constselectjump", "on"),
     ("switchguardbound", "on"), // speed-expensive
     ("unrolledguard", "on"),    // speed-expensive
+    ("globalarrayanchor", "on"),
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("regionedgeorder", "on"),
     ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
     ("orchain", "on"),   // the returndup gate DIV-69 measured; must follow returndup
     ("iteexpr", "on"), // angr-style ?: recovery over computed-expression arms (readability)
+    // Recover the scalar loop for readability. Kept in aggressive mode because
+    // this hides the compiler's vector stride and duplicated loop body.
+    ("devectorize", "on"),
     // (kuna) Valid per-architecture C type spelling. The shipped catalog default
     // is OFF because 42 XML datatest assertions pin the Ghidra spellings, and the
     // parity harness applies no mode -- so preset membership is what makes valid C
@@ -366,7 +370,14 @@ mod tests {
             "aggressive must NOT enable dwarf_lines (buries `-g` output in /* src.c:N */)"
         );
         // Representative members that MUST be on.
-        for want in ["listing", "aif", "switchguardbound", "returndup", "sparcstructret"] {
+        for want in [
+            "listing",
+            "aif",
+            "switchguardbound",
+            "returndup",
+            "sparcstructret",
+            "globalarrayanchor",
+        ] {
             assert!(
                 agg.iter().any(|(o, v)| *o == want && *v == "on"),
                 "aggressive must enable `{want}`"
@@ -486,11 +497,21 @@ mod tests {
         /// `varargsharedfloat` reads a PowerPC register choice that only -O0
         /// code preserves: on clang -O2 and -Os batteries it adds 23 arguments
         /// the source never passed for 11 it restores.
+        ///
+        /// `callarrayextent` preserves call-written aliases by declaring the
+        /// available frame region as an array, but a pointer parameter does not
+        /// establish the source array's exact length. Keep that representation
+        /// choice per-run rather than enabling it in a preset.
+        ///
+        /// `armconstshift` makes signed ARM constant shifts defined C at the
+        /// cost of a cast pair on every sign-bit test (`x << 0x18 < 0`), which
+        /// firmware uses for nearly every register flag check.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin", "armframes",
-              "mixedtailret", "varargsharedfloat"];
+              "mixedtailret", "varargsharedfloat", "callarrayextent",
+              "armconstshift"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open
@@ -556,6 +577,11 @@ mod tests {
             // which record the other is answered with. Full evaluation:
             // docs/features/fieldtype/default-on-evaluation.md.
             "fieldtype",
+            // `bytearrayc` changes the C emitted for mapped global integer
+            // accesses. This PR adds focused compiler fixtures, not the broad
+            // preset sweep or speed measurement needed before changing the
+            // default output for every aggressive-mode decompile.
+            "bytearrayc",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

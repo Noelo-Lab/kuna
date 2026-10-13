@@ -112,17 +112,24 @@ writeup, not here.
 | `kuna-entryretdispatch.xml` | RE-friction need `entry-point-ret-dispatch` | S2 flow classification (proven entry `push continuation; push target; ret` links become calls) | `option entryretdispatch on\|off` |
 | `kuna-extent-fallthrough.xml` | [Kuna #850](https://github.com/Noelo-Lab/kuna/issues/850) | S2 flow classification (caller-declared extent vs discovered interior entry) | `option funcboundflow on\|off` |
 | `kuna-extent-direct-branch.xml` | [Kuna #850](https://github.com/Noelo-Lab/kuna/issues/850) | S2 flow classification (in-extent direct and recovered indirect branches vs tail-call inference; out-of-extent veneer control) | `option tailcalljump on\|off` |
+| `kuna-conditional-tail.xml` | Authored bounded conditional forwarding | P2 flow classification (a known out-of-extent entry is called only on the taken path) | `option tailcalljump on\|direct\|off` |
 | `kuna-thunkentry.xml` | [Kuna #992](https://github.com/Noelo-Lab/kuna/issues/992) | P1 code/data partition (the target of a walk entry that is one direct `jmp` becomes a function; MSVC `/INCREMENTAL` thunk table) | `option thunkentry on\|off` |
 | `kuna-aifbracket.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (an AIF gap candidate whose own flow rejoins the known function around it is refused without boundary evidence) | `option aifbracket on\|off` |
 | `kuna-aifnoppad.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (no AIF gap entry starts on nop padding: padding in front of a known function is not probed, and an accept behind padding moves to the code after it) | `option aifnoppad on\|off` |
+| `kuna-condcall.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (a predicated call's skip to the next instruction is its fall-through, not a second call target, so the next instruction is not a function and the callee is not no-return) | default correctness fix (no option) |
 | `kuna-pushimmediateret.xml` | RE-friction duplicate needs `entry-point-push-return` + `push-immediate-ret-transfer` | S2 flow classification (a proven one-store `push immediate; ret` becomes a terminal branch; no target function is synthesized) | `option pushimmediateret on\|off` |
 | `kuna-subcommuteshift.xml` | RE-friction need `cancelling-byte-arithmetic-splits` | S3 simplification quiescence (exact modulo-256 multiply/shift cancellation) | `option cancelbytearithmetic on\|off` |
+| `kuna-wideslice.xml` | clang x86-64 `-O3` byte-sum regression | P3 SSA reduction (push demanded slices through 9..15-byte `PIECE`, byte shifts, and bitwise operations; the artificial aggregates heritage and the rule pool leave behind, without recognizing the source algorithm) | `option wideslice on\|off` |
+| `kuna-devectorize.xml` | clang x86-64 `-O3` byte-sum regression (follow-up to `kuna-wideslice.xml`) | P3 SSA reduction (a proven vectorized integer reduction: guard, stride loop with one accumulator per lane, fold and scalar remainder loop, re-rolled into its scalar loop by removing the guard's vector edge) | `option devectorize on\|off` |
+| `kuna-devectorize-effects.xml` | hand-written x86-64 byte sums whose exits disagree on a global store | P3 SSA reduction (`devectorize` refuses a reduction whose arm, remainder loop or exits write global storage) | `option devectorize off\|on` |
 | `re-checker-stack-aggregate.xml` | RE-friction need `checker-uses-stack-aggregate` | P9 declaration emission (constant address-reference highs are not whole storage representatives) | default correctness fix (no option) |
 | `ghdec-unsigned-byte-vm-selector.xml` | RE-friction need `unsigned-byte-vm-selector` | P2 switch model (range-comparison signedness carried through lowered-switch recovery) | `option loweredswitchlabels on\|off` |
 | `kuna-msvcstrappend.xml` | GH-468 finding 6 (inlined MSVC `std::string` appends) | P2 flow classification (a proven capacity diamond collapses to one `push_back`/`append` call; 29 one-defect near misses stay unrolled) | `option msvcstrappend on\|off` |
 | `kuna-loweredswitchvalue.xml` | GH-468 finding 4 (scrutinee soundness) | P2 switch model (a re-rolled lowered switch dispatches on the compared value, or is withdrawn) | `option loweredswitchvalue on\|off` |
 | `kuna-loweredswitchexact.xml` | GH-468 finding 4 (install soundness) | P2 switch model (every case value keeps its label; a switch that differs from its compare tree is declined) | `option loweredswitchexact on\|off` |
 | `kuna-loweredswitchheads.xml` | GH-468 finding 4 | P2 switch model (a cascade behind a later head on the switch variable is re-rolled) | `option loweredswitchheads on\|off` |
+| `kuna-switchguardreload.xml` | [Kuna #1028](https://github.com/Noelo-Lab/kuna/issues/1028) | P2 switch model (a guard on a byte in memory bounds the index read by a second load of the same address; the adjacent table is not read) | default correctness fix (no option) |
+| `kuna-switchunrolledsense.xml` | [Kuna #1028](https://github.com/Noelo-Lab/kuna/issues/1028) | P2 switch model (copies of the bound check on each predecessor of the dispatch, with opposite branch senses, bound the merged index) | `option switchmultipred on\|off` |
 
 | `gh8017-stackprobeloop.xml` | [GH-8017](https://github.com/NationalSecurityAgency/ghidra/issues/8017) | S2 stack-pointer normalization (stack-probe loop) | `option stackprobeloop on\|off` |
 
@@ -166,6 +173,7 @@ writeup, not here.
 | `kuna-floatgrouping.xml` | kuna [GH-641](https://github.com/Noelo-Lab/kuna/issues/641) (two x86-64 functions multiplying the same three floats in opposite orders decompiled to the same C, because `CPUI_FLOAT_MULT`/`CPUI_FLOAT_ADD` pushed the associative integer `*`/`+` tokens and the printer dropped the parentheses around a same-token right operand; one of the two renderings computed a different value than the function it came from) | P9 emit, the operator-token table and the `parentheses` binary case: the two float opcodes get their own singletons carrying `left_to_right_only`, which leaves a same-token left operand bare and parenthesises a right one; correctness fix, no option | default, single pass: the right-grouped product and sum keep `a * (b * c)` / `a + (b + c)` and the flat chain matches exactly one function of each pair, where pre-fix it matched both |
 | `kuna-arm-register-shift.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) (a variable ARM LSL can emit undefined C shifts for low-eight-bit counts 32 through 255) | P9 C emission, a guarded `CPUI_INT_LEFT` with unsigned shiftee, restricted to repeatable ARM operands; correctness fix, no option | default, single pass: preserves `count & 0xff`, checks `< 32`, emits an unsigned shift plus zero fallback, and avoids compound assignment when the guard applies |
 | `kuna-arm-register-shift-signed.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) follow-up (the shift's unsigned C repair must retain the signed value consumed by ARM signed compare and ASR) | P9 C emission, signed true/false conditional arms around the guarded unsigned LSL | default: output retains signed comparison and arithmetic shift behavior |
+| `kuna-call-array-extent.xml` | Synthetic call-escaped frame storage | P6 stack-frame-layout | `option callarrayextent on\|off` |
 
 `kuna-minss-nan.xml` pins an authored scalar MINSS and ratio/clamp probe.
 P3 and P9 preserve the negation of an ordered float comparison as `!(a < b)`
@@ -229,6 +237,12 @@ assembled synthetic examples; it contains no bytes from the reported binary.
 local preserves the incoming parameter, its entry comparisons, and the value
 passed to a callee across repeated decompilation. Its instructions are synthetic.
 
+`kuna-custom-call-storage.xml` checks an authored MSABI caller whose getter
+return is passed in EDX to a callee with one explicit formal. Repeated builds
+retain that value and the one-formal signature; the ordinary two-slot prototype
+passes the same value as argument two. The assertion API and callable-type
+interning controls are in `kuna-console/tests/verify_assertplane.rs`.
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason
@@ -260,3 +274,21 @@ the `calleeretpreserves off` pass restores the undefined return.
 `kuna-cli/tests/direct_call_return.rs` checks native and recompiled emitted C
 at `-O0` and `-O2`, real return-register writes, unknown returning calls and an
 incomplete helper. These are authored MSABI probes in an ELF container.
+
+`kuna-floatprecision.xml` pins authored scalar and packed SSE binary32 inputs
+widened for binary64 subtraction/addition before one final narrowing, plus
+widened multiplication/division and float-only/conversion-only controls.
+`kuna-cli/tests/float_precision.rs` recompiles the emitted C with GCC and Clang
+at `-O0` and `-O2` and compares its bits against the assembly for cancellation,
+subnormals, overflow, signed zeros, infinities and individual NaN payloads.
+
+`kuna-arm-conditional-switch.xml` pins authored A32 `SUBS`/`ADDPL PC`
+branch tables, including case bodies that share a saved-frame epilogue, with
+`tailcalljump` on and off. Unconditional `ADD PC`, healthy `ADDLS PC`, and a
+real indirect function-pointer call are controls. `kuna-cli/tests/arm_conditional_switch.rs`
+compiles the untouched emitted bodies with GCC and Clang at `-O0` and `-O2`
+with undefined-behavior checks and exercises every case and signed boundaries.
+
+- `kuna-sparc-double-abs.xml`, `kuna-sparc64-double-abs.xml`: binary64 absolute value from a high-word `fabss`, without a numeric high-word cast.
+
+- `kuna-sparc-double-sign.xml`, `kuna-sparc64-double-sign.xml`: binary64 negation from a high-word `fnegs`, without a numeric high-word cast.

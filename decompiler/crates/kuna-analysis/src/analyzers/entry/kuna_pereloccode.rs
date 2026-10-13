@@ -54,11 +54,11 @@
 //! carries 3287 relocated code addresses.
 
 use object::pe::{
-    IMAGE_FILE_MACHINE_AMD64, IMAGE_FILE_MACHINE_I386, IMAGE_REL_BASED_DIR64,
-    IMAGE_REL_BASED_HIGHLOW,
+    ImageNtHeaders32, ImageNtHeaders64, IMAGE_FILE_MACHINE_AMD64, IMAGE_FILE_MACHINE_I386,
+    IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_HIGHLOW,
 };
-use object::read::pe::{ImageNtHeaders, PeFile};
-use object::LittleEndian as LE;
+use object::read::pe::{ImageNtHeaders, PeFile, PeFile32, PeFile64};
+use object::{FileKind, LittleEndian as LE};
 
 /// Push every relocated absolute address the exception table vouches for as a
 /// function start: inside an executable section's `.pdata`-covered span, and not
@@ -83,6 +83,56 @@ pub(super) fn reloc_code_pointers<Pe: ImageNtHeaders>(
     if code.hulls.is_empty() {
         return;
     }
+    relocated_words(pe, bytes, ptr, |va| {
+        if code.is_function_start(va) {
+            out.push(va);
+        }
+    });
+}
+
+/// (kuna `addrtakenentry`) The relocated addresses [`reloc_code_pointers`] leaves
+/// out because they lie in an executable section before the first
+/// `RUNTIME_FUNCTION` that section has. Not starts on this evidence alone — a
+/// packed image's data blob sits there too — so they are candidates the Listing
+/// tier validates against the decoded code. A section with no record, and the
+/// span after its last record, stay out.
+pub(crate) fn pre_record_code_pointers(bytes: &[u8], execs: &[(u64, u64, Vec<u8>)]) -> Vec<u64> {
+    fn typed<Pe: ImageNtHeaders>(
+        pe: &PeFile<Pe>,
+        bytes: &[u8],
+        ptr: usize,
+        execs: &[(u64, u64, Vec<u8>)],
+    ) -> Vec<u64> {
+        use object::read::Object;
+        let code = CodeRegions::describe(pe, bytes, pe.relative_address_base(), execs);
+        let mut out = Vec::new();
+        if !code.firsts.is_empty() {
+            relocated_words(pe, bytes, ptr, |va| {
+                if code.firsts.iter().any(|&(lo, first)| va >= lo && va < first) {
+                    out.push(va);
+                }
+            });
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+    match FileKind::parse(bytes) {
+        Ok(FileKind::Pe64) => PeFile64::parse(bytes)
+            .map_or_else(|_| Vec::new(), |pe| typed::<ImageNtHeaders64>(&pe, bytes, 8, execs)),
+        Ok(FileKind::Pe32) => PeFile32::parse(bytes)
+            .map_or_else(|_| Vec::new(), |pe| typed::<ImageNtHeaders32>(&pe, bytes, 4, execs)),
+        _ => Vec::new(),
+    }
+}
+
+/// Call `f` with the nonzero value of every base-relocated word of width `ptr`.
+fn relocated_words<Pe: ImageNtHeaders>(
+    pe: &PeFile<Pe>,
+    bytes: &[u8],
+    ptr: usize,
+    mut f: impl FnMut(u64),
+) {
     let sections = pe.section_table();
     let blocks = match pe.data_directories().relocation_blocks(bytes, &sections) {
         Ok(Some(b)) => b,
@@ -102,12 +152,9 @@ pub(super) fn reloc_code_pointers<Pe: ImageNtHeaders>(
                 Some(s) => s,
                 None => continue,
             };
-            let va = match read_word(slot, width) {
-                Some(v) if v != 0 => v,
+            match read_word(slot, width) {
+                Some(v) if v != 0 => f(v),
                 _ => continue,
-            };
-            if code.is_function_start(va) {
-                out.push(va);
             }
         }
     }
@@ -121,6 +168,9 @@ struct CodeRegions {
     /// Per executable section carrying at least one body, the span from its
     /// lowest `BeginAddress` to its highest `EndAddress`.
     hulls: Vec<(u64, u64)>,
+    /// Per executable section carrying at least one body, the section start and
+    /// its lowest `BeginAddress`.
+    firsts: Vec<(u64, u64)>,
 }
 
 impl CodeRegions {
@@ -136,7 +186,7 @@ impl CodeRegions {
         image_base: u64,
         execs: &[(u64, u64, Vec<u8>)],
     ) -> Self {
-        let mut me = CodeRegions { bodies: Vec::new(), hulls: Vec::new() };
+        let mut me = CodeRegions { bodies: Vec::new(), hulls: Vec::new(), firsts: Vec::new() };
         // Only the 12-byte x86/x64 `RUNTIME_FUNCTION` carries an `EndAddress`.
         match pe.nt_headers().file_header().machine.get(LE) {
             IMAGE_FILE_MACHINE_I386 | IMAGE_FILE_MACHINE_AMD64 => {}
@@ -168,6 +218,11 @@ impl CodeRegions {
                 h.1 = h.1.max(end);
             }
         }
+        me.firsts = hulls
+            .iter()
+            .zip(execs)
+            .filter_map(|(hull, &(lo, _, _))| hull.map(|(first, _)| (lo, first)))
+            .collect();
         me.hulls = hulls.into_iter().flatten().collect();
         me.bodies.sort_unstable();
         // Coalesce, so a malformed (nested or out-of-order) table still leaves a
@@ -266,6 +321,26 @@ mod tests {
             !entries.contains(&PAYLOAD),
             "unvouched {PAYLOAD:#x} seeded from {entries:#x?}"
         );
+    }
+
+    /// The relocated addresses ahead of the first record are handed on as
+    /// candidates; the one past the last record is not.
+    #[test]
+    fn pre_record_pointers_stop_at_the_first_record() {
+        let path = format!(
+            "{}/tests/fixtures/pe_addrtaken_x86_64.exe",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let file = object::File::parse(bytes.as_slice()).expect("parse fixture PE");
+        let execs = executable_sections(&file);
+        assert_eq!(
+            super::pre_record_code_pointers(&bytes, &execs),
+            vec![0x140001000, 0x140001010, 0x140001020]
+        );
+        let other = fixture();
+        let file = object::File::parse(other.as_slice()).expect("parse fixture PE");
+        assert!(super::pre_record_code_pointers(&other, &executable_sections(&file)).is_empty());
     }
 
     /// Without `[begin, end)` bounds there is no way to tell a handler pointer

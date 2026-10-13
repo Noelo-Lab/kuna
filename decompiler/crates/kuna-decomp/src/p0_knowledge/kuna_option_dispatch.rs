@@ -39,6 +39,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "partialconcat" => on_off!(partial_concat, "Partial scalar concatenation rendering"),
+    "armconstshift" => on_off!(arm_constant_shift, "ARM constant-shift C11 conversion"),
     "arraynotation" => {
         let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;
         self.print_mut().options.set_array_notation(val);
@@ -70,6 +71,11 @@ kuna_options! { self, p1;
         self.print_mut().options.set_array_cover_width(val);
         Ok(msg)
     },
+    "bytearrayc" => {
+        let value = on_or_off(p1)?;
+        self.print_mut().options.bytearray_c = value;
+        Ok(format!("Standard C byte-array transfers turned {}", if value { "on" } else { "off" }))
+    },
     "emptystrconst" => {
         let (val, msg) = crate::kuna_emptystrconst::OptionEmptyStrConst.apply(p1)?;
         self.print_mut().options.set_empty_str_const(val);
@@ -95,6 +101,7 @@ kuna_options! { self, p1;
     "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
     "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
     "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
+    "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
     "cancelbytearithmetic" => {
         let (val, msg) =
             crate::p3_dataflow::kuna_cancelbytearithmetic::OptionCancelByteArithmetic
@@ -307,6 +314,12 @@ kuna_options! { self, p1;
         self.callee_pop_slot = val;
         Ok(msg)
     },
+    "calleepopframe" => {
+        let (val, msg) =
+            crate::p6_variables::kuna_calleepopframe::OptionCalleePopFrame.apply(p1)?;
+        self.callee_pop_frame = val;
+        Ok(msg)
+    },
     "calleeprotostack" => {
         let (val, msg) =
             crate::p4_calls::kuna_calleeprotostack::OptionCalleeProtoStack.apply(p1)?;
@@ -478,6 +491,7 @@ kuna_options! { self, p1;
         self.index_alias_guard = val;
         Ok(msg)
     },
+    "callarrayextent" => on_off!(call_array_extent, "Call-escaped frame array extent"),
     "arrayextent" => {
         let (val, msg) =
             crate::p6_variables::kuna_arrayextent::OptionArrayExtent.apply(p1)?;
@@ -496,6 +510,8 @@ kuna_options! { self, p1;
     "splitstorekeep" => {
         on_off!(split_store_keep, "Refinement-split stack store mark")
     },
+    "wideslice" => on_off!(wide_slice_reduce, "Wide SSA slice reduction"),
+    "devectorize" => on_off!(devectorize_reduction, "Vectorized reduction re-roll"),
     "regionstructure" => {
         let (val, msg) =
             crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
@@ -789,6 +805,9 @@ kuna_options! { self, p1;
         on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
     },
     "thunkentry" => on_off!(analysis_thunkentry, "Jump-thunk target function entries"),
+    "addrtakenentry" => {
+        on_off!(analysis_addrtakenentry, "Address-taken code function entries")
+    },
     "ppclocalentry" => {
         on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
     },

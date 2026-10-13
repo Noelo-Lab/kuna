@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_285() {
-    assert_eq!(kuna_num_settables(), 285);
-    assert_eq!(SETTABLE_TABLE.len(), 285);
+fn settable_count_is_293() {
+    assert_eq!(kuna_num_settables(), 293);
+    assert_eq!(SETTABLE_TABLE.len(), 293);
 }
 
 #[test]
-fn tier_counts_are_99_core_110_transform_76_analysis() {
+fn tier_counts_are_103_core_113_transform_77_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_99_core_110_transform_76_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (99, 110, 76));
+    assert_eq!((core, transform, analysis), (103, 113, 77));
 }
 
 #[test]
@@ -398,6 +398,10 @@ fn option_values_live_value_present_for_110() {
         // no codegen live reader (read console-side via kuna_live_value), like
         // `unmappedentry` above. Default-ON.
         "thunkentry",
+        // (kuna) Address-taken code function entries -- an analysis-tier gate with
+        // no codegen live reader (read console-side via kuna_live_value), like
+        // `thunkentry` above. Default-ON.
+        "addrtakenentry",
         // (kuna) PPC64 ELFv2 local-entry entry suppression -- an analysis-tier gate
         // with no codegen live reader (read console-side via kuna_live_value), like
         // `unmappedentry` above. Default-ON.
@@ -624,6 +628,7 @@ fn option_values_live_value_present_for_110() {
                             // `Architecture::syscall_regs`.
                             | "syscallregs"
                             | "arraycoverwidth"
+                            | "bytearrayc"
                             | "emptystrconst"
                             // (kuna) `structdefs` is a PrintC option like
                             // `arraycoverwidth`/`emptystrconst` above: its live
@@ -794,7 +799,11 @@ fn option_values_live_value_present_for_110() {
     // 119 -> 120: +1 for `armwalkmode` (live_field = analysis_armwalkmode).
     // 120 -> 121: +1 for `calleepopslot` (live_field = callee_pop_slot).
     // 121 -> 122: +1 for `callerreads` (live_field = caller_reads).
-    assert_eq!(with_live, 123);
+    // 122 -> 123: +1 for `callarrayextent` (live_field = call_array_extent).
+    // 123 -> 124: +1 for `globalarrayanchor` (live_field = global_array_anchor).
+    // 124 -> 126: +2 for `wideslice` and `devectorize`.
+    // 127 -> 128: +1 for `calleepopframe` (live_field = callee_pop_frame).
+    assert_eq!(with_live, 129);
 }
 
 #[test]
@@ -989,7 +998,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `thunkentry`; its P1 row sits mid-table beside `unmappedentry`.
     // +1 for `zerocallregs`; its P4 row sits mid-table beside `zerofillreturn`.
     // +1 for `callerreads`.
-    assert_eq!(json.matches("},\n").count(), 284);
+    // +1 for `bytearrayc`; its P9 row sits mid-table.
+    // +2 for `wideslice` and `devectorize`.
+    // +1 for `addrtakenentry`; its P1 row sits mid-table beside `thunkentry`.
+    assert_eq!(json.matches("},\n").count(), 292);
 }
 
 #[test]

@@ -587,6 +587,8 @@ impl Funcdata {
         state.gather_symbols(&hints);
         crate::p6_variables::kuna_arrayextent::extend_unbounded(self, &mut state, &space, &unbounded);
 
+        super::kuna_callarrayextent::coalesce(self, &mut state, &space);
+
         let reach_checks = match self.get_arch().types_rc() {
             Some(t) => crate::p6_variables::kuna_storereach::prepare_hints(self, &mut state, &space, t.as_ref()),
             None => Default::default(),

@@ -722,7 +722,9 @@ alias assumption, so overlapping copies retain their sequential byte semantics.
 Ordinary heritage then sees the concrete frame accesses: pushed scratch bytes
 no longer inherit a stale saved-register value after a complete overwrite, a
 partial overwrite retains the untouched bytes, and an earlier snapshot remains
-independent. No physical store is deleted by the rewrite. It is disabled by
+independent. No physical store is deleted by the rewrite. Each expanded loop
+increments the action's change count so the enclosing scheduler observes the
+control-flow rewrite. It is disabled by
 `stackstoreguard off` or `indexaliasguard off`; `stackviews` is not required.
 
 The expanded memory operations retain a function-local identity until analysis
@@ -880,10 +882,13 @@ kept alive by dead-code marking it fires zero times across the corpus, and the
 faithful throw is restored.)
 
 Two kuna extensions ride on the pass boundary: the per-function watchdog
-deadline is probed at each address-space iteration (§0.6 — a stripped-binary
-non-convergence spends its time inside heritage, so the pass bails here rather
-than at the next action boundary; the abandoned partial pass is never
-rendered), and after every pass `ActionHeritage` runs the lowered-switch input
+deadline is probed at each address-space iteration and before each range
+guard placement visits, and a pass whose deadline passed during placement
+returns before renaming (§0.6 — a stripped-binary non-convergence spends its
+time inside heritage, and a function that hands the addresses of thousands of
+stack locals to thousands of calls gets one INDIRECT per range per call, so
+the pass bails here rather than at the next action boundary; the abandoned
+partial pass is never rendered), and after every pass `ActionHeritage` runs the lowered-switch input
 repair (`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
 (Funcdata::kuna_repair_lowered_switch_inputs)`), which re-points a synthetic
 lowered-switch BRANCHIND whose input heritage normalized away (chapter 02). The
@@ -942,6 +947,19 @@ append CPU-specific rules to oppool1 (`universalaction.rs (build_universal_actio
 takes `extra_pool_rules`); the engine currently always passes an empty list
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
 (Architecture::build_action)`).
+
+**Binary64 sign-word operations.** (kuna) Before its commute logic,
+`RuleConcatCommute` recognizes the exact binary64 sign-word idioms in
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_floatnegpiece.rs`.
+`PIECE(FLOAT_NEG(SUBPIECE(x,4)), SUBPIECE(x,0))` becomes `FLOAT_NEG(x)`;
+the corresponding `FLOAT_ABS` pattern becomes `FLOAT_ABS(x)`. Negating or
+clearing the binary32 high word's sign bit changes exactly the binary64 sign
+bit, without numerically converting the word. Both slices must be four bytes
+at significant-value offsets four and zero, independent of memory byte order,
+and must share the same eight-byte source typed as an eight-byte float.
+Different sources, changed low slices, wider floats, incompatible types and
+other unary operations decline. These are strict value-correctness repairs
+with no inference option; they add no floating-status or exception model.
 
 **Ordered floating-point condition negation.** The shared
 `decompiler/crates/kuna-num/src/opcodes.rs (get_booleanflip)` table returns no
@@ -1682,6 +1700,16 @@ the `decompiler/crates/kuna-decomp/src/substrate/transform.rs
 lives. `subflow.rs (SubfloatFlow)` (trigger `RuleSubfloatConvert`, group
 `floatprecision`) does the same for a float value carried in a wider float
 container, converting constant encodings between formats along the way.
+The trace refuses to lower `FLOAT_ADD`, `FLOAT_SUB`, `FLOAT_MULT` or
+`FLOAT_DIV` below their operand width (`SubfloatFlow::exceeds_precision`).
+Inputs widened from a smaller format do not prove that arithmetic in the
+wider format can be replaced: lowering an intermediate introduces an earlier
+rounding and changes overflow and underflow. Binary32 inputs widened for
+subtraction and addition in binary64 therefore keep their widenings and final
+narrowing, printing `(float)((double)accum + ((double)neg_theta - (double)local_axis))`.
+Conversion-only round trips and arithmetic already performed in binary32
+retain their existing simplifications and grouping. This is a correctness
+constraint on both forward and backward traces, including divided SIMD lanes.
 `subflow.rs (SplitDatatype)` (triggers `RuleSplitCopy`/`RuleSplitLoad`/
 `RuleSplitStore`, cleanup pool) splits a whole-struct COPY/LOAD/STORE into
 per-field transfers using recovered types — described with the type system in
@@ -1844,6 +1872,40 @@ DIV-2/DIV-3 rows of `docs/history.md` carry the ablation evidence). With a
 gate off, the rule returns 0 unconditionally and output is byte-identical to
 upstream. Full option metadata: [docs/options.md](../options.md).
 
+**globalarrayanchor** —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalarrayanchor.rs
+(preserve_array_base)`.
+With `option globalarrayanchor on` (default off), constant collection defers
+combining an exact mapped array base with a negative whole-element displacement
+in an element-scaled LOAD/STORE address. This leaves the declared base available to
+constant-pointer recovery; the subsequent pointer rules can render the bias in
+the index. The displacement magnitude must not exceed the declared array size,
+and every variable coefficient must be an element-size multiple. No nearby-symbol
+search is performed. Ordinary arithmetic, unmapped addresses, unaligned byte
+offsets, shared address trees and non-byte-addressed access spaces retain normal
+folding. Pointer-typed variable terms also decline.
+
+The check follows single-use additions, same-width copies and casts to the
+LOAD/STORE address root, so multiple indices are judged as one expression (at
+most 64 outward nodes and 256 inward nodes). Unused pure COPY/CAST readers do not
+count as sharing; auto-live outputs and indirect-source operations still do.
+Only unshared constants eligible for pointer inference in the unique compatible
+access space are held. Literal COPY/OR expressions may supply the base before
+ordinary constant folding finishes. Byte-array symbols, including mapped string
+arrays, accept coefficient one as an element index; access width does not
+change the test.
+
+The guard is inactive without a scheduled constant-pointer action,
+constant-pointer inference or type recovery,
+from the fourth constant-pointer pass, or once recovery has checked and declined
+the base after it folds to a constant varnode. The guard does not suppress
+COPY propagation or constant OR folding in the ordinary rule pools. An all-constant inner addition also defers folding when the full
+memory address meets the same test; unrelated constant expressions still fold.
+The option is a readability choice: the disabled form still computes the
+original machine address. The catalog default is off; aggressive enables it,
+including auto when the input size selects aggressive. An explicit
+`option globalarrayanchor off` after mode selection restores ordinary folding.
+
 **addcarrychain** (GH-8913) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_addcarrychain.rs
 (RuleAddCarryChain)`, oppool1, fires on PIECE. Pattern: the reassembly of an
@@ -1924,6 +1986,71 @@ lanes and not another SUBPIECE. A mask wider than eight bytes does not fit a
 value and every lane byte is provably zero — the broadcast mask, and the only
 wide constant mask the engine constructs. Settable `simdlane`, shipped default
 **on**.
+
+**Wide-slice SSA reduction** (`option wideslice`, default **on**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_wideslice.rs
+(RuleWideSlice)`, in the repeated analysis pool. Heritage widens each partial
+lane write of a vector register by joining it with the bytes below it
+(`normalize_write_size`), so a run of byte writes leaves intermediates 2..15
+bytes wide, and `RuleConcatZext`/`RuleConcatZero` keep manufacturing such widths
+while they fold zero lanes. Nothing upstream takes a 9..15-byte value apart
+again: `SubvariableFlow` stops at a 64-bit mask, `RuleDumptyHump`,
+`RuleSubCommute` and `RuleShiftSub` do not cross a piece boundary, and lane
+division accepts only lane-aligned `PIECE`s. The rule pushes the demanded
+`SUBPIECE` through `PIECE`, byte-aligned logical shifts and
+`INT_AND`/`INT_OR`/`INT_XOR` as bitvector identities — a slice straddling a
+`PIECE` becomes a `PIECE` of two slices, a slice reaching into a shift's zero
+fill becomes a zero-extended shorter slice — without matching a function
+signature, loop, source type or vector instruction. Free inputs, type locks,
+precision marks, invalid ranges, non-byte shifts and arithmetic shifts are
+refused.
+
+Power-of-two widths stay with `ActionLaneDivide`, `simdlane` and
+`constspaceload` to preserve their view of register lanes. The rule runs during
+simplification because other rules can recreate the odd widths after heritage.
+The default leaves all 675 datatest assertions unchanged; `option wideslice off`
+leaves the wide intermediates to upstream's rules.
+`tests/stages/kuna-wideslice.xml` pins clang
+`-O3` SSE byte-unpacking in both passes (off: six 13-byte locals and ten lines of
+`SUB13x` reads; on: eight direct lane additions);
+`gh275-spillargtrial.xml` independently exercises a 12-byte packed-double tree.
+
+**De-vectorized reductions** (`option devectorize`, default **off**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_devectorize.rs
+(ActionDevectorize)`, in the fullloop tail beside the stack-guard and
+security-check strippers. clang and gcc vectorize `for (i) sum += a[i]` into a
+guard `length >= S`, a stride-S loop with one accumulator per lane, a
+horizontal fold, an early return when `length & -S == length`, and a scalar
+copy of the loop that finishes the remainder or, when the guard failed, runs
+from zero. After the wide-slice reduction the vector arm is S copies of the
+scalar body in a different order. The action matches the whole shape on SSA and
+proves it: the accumulators and the induction variable start at zero; each lane
+zero-extends a disjoint E-byte slice of a load at `base + i*E + c`, and the
+lanes tile exactly S elements for a power-of-two S the guard bounds; the fold
+adds every accumulator once; the scalar loop starts at `length & -S` with the
+fold, or at zero with zero, steps one element and exits at `length`; both exits
+hand back their sums (the early return and the scalar exit, or a shared join
+whose other phis agree slot for slot); no block of the arm, the remainder loop,
+the else block or the scalar exit writes global storage, so nothing the
+remainder loop computes besides the sum can be observed; and nothing defined in
+the arm is read outside it except on a phi slot of the join. A lane must lie
+inside the bytes of the load it is sliced from, and a signed guard against a
+negative constant proves no lower bound. Integer addition is associative and commutative modulo 2^(8Z), so
+the scalar loop from zero computes the same value on every input; the guard's
+vector edge is removed (`remove_branch`) and the arm is collected as
+unreachable. The option ships off because the rewrite erases the stride, the
+handoff alignment and the duplicated body, which a reader of the binary may
+want; like every on/off default-off option it is in the `aggressive` preset,
+so `--mode auto` turns it on for inputs under the aggressive size threshold.
+Floats, saturating and sign-extended lanes are not matched, and neither is a
+vector loop the compiler also unrolled (two vector iterations per trip with an
+odd-trip epilogue, clang 14's x86-64 `-O2`/`-O3` default) nor any gcc 11 shape
+measured.
+`tests/stages/kuna-devectorize.xml` runs the byte-sum witness in both passes
+(off: the guard, eight accumulators, fold and remainder loop; on: one
+`do { v1 += bytes[v2]; ... } while (length != v2)`);
+`tests/stages/kuna-devectorize-effects.xml` keeps the vector arm of two
+hand-written sums whose exits disagree on a global store.
 
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs

@@ -187,12 +187,7 @@ fn initialize_parameters(
 
 /// Scalar slots also need backing when their addresses have wider observers.
 pub(crate) fn needs_backing(fd: &Funcdata, start: u64, size: i32) -> bool {
-    let first = start as i64 as i128;
-    let end = first + size as i128;
-    let aliases = |input| {
-        crate::kuna_stackranges::frame_address(fd, input)
-            .filter(|address| (address.first as i128) < end && address.last as i128 >= first)
-    };
+    let aliases = |input| crate::kuna_stackranges::may_alias(fd, input, start, size);
     for id in fd.obank().iter_alive() {
         let Some(op) = fd.obank().get(id) else {
             continue;
@@ -200,12 +195,17 @@ pub(crate) fn needs_backing(fd: &Funcdata, start: u64, size: i32) -> bool {
         match op.code() {
             OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
                 for slot in 1..op.num_input() {
-                    let Some(address) = op.get_in(slot).and_then(aliases) else {
+                    let Some(input) = op.get_in(slot).filter(|&input| aliases(input)) else {
                         continue;
+                    };
+                    let Some(address) = crate::kuna_stackranges::frame_address(fd, input) else {
+                        return true;
                     };
                     if address.first != address.last
                         || !address.terms.is_empty()
-                        || address.first as i128 != first
+                        || fd.get_arch().manage().get_stack_space().is_none_or(|space| {
+                            space.wrap_offset(address.first as u64) != start
+                        })
                         || crate::kuna_stackviews::declared_view(fd, id, slot)
                             .is_none_or(|ty| ty.get_size() != size)
                     {
@@ -221,7 +221,7 @@ pub(crate) fn needs_backing(fd: &Funcdata, start: u64, size: i32) -> bool {
                     .get_out()
                     .and_then(|out| fd.vbank().get(out))
                     .is_some_and(|value| value.is_persist() || value.is_stack_store())
-                    && (0..op.num_input()).any(|slot| op.get_in(slot).and_then(aliases).is_some())
+                    && (0..op.num_input()).any(|slot| op.get_in(slot).is_some_and(aliases))
                 {
                     return true;
                 }
@@ -230,7 +230,7 @@ pub(crate) fn needs_backing(fd: &Funcdata, start: u64, size: i32) -> bool {
             | OpCode::CPUI_LOAD
             | OpCode::CPUI_RETURN
             | OpCode::CPUI_CALLOTHER => {
-                if (1..op.num_input()).any(|slot| op.get_in(slot).and_then(aliases).is_some()) {
+                if (1..op.num_input()).any(|slot| op.get_in(slot).is_some_and(aliases)) {
                     return true;
                 }
             }
@@ -288,11 +288,7 @@ fn bind_values(fd: &mut Funcdata, info: &crate::varmap::LinkEntryInfo) {
 }
 
 fn aliases(fd: &Funcdata, input: VarnodeId, object: &StackObject) -> bool {
-    let Some(address) = crate::kuna_stackranges::frame_address(fd, input) else {
-        return false;
-    };
-    let start = object.address.get_offset() as i64 as i128;
-    (address.first as i128) < start + object.size as i128 && address.last as i128 >= start
+    crate::kuna_stackranges::may_alias(fd, input, object.address.get_offset(), object.size)
 }
 
 fn closed_reuse(fd: &Funcdata, object: &StackObject) -> bool {
@@ -321,12 +317,14 @@ fn closed_reuse(fd: &Funcdata, object: &StackObject) -> bool {
                     }
                 }
             }
-            OpCode::CPUI_COPY => {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL => {
                 if op
                     .get_out()
                     .and_then(|out| fd.vbank().get(out))
-                    .is_some_and(|v| v.is_persist())
-                    && op.get_in(0).is_some_and(|input| aliases(fd, input, object))
+                    .is_some_and(|v| v.is_persist() || v.is_stack_store())
+                    && (0..op.num_input()).any(|slot| {
+                        op.get_in(slot).is_some_and(|input| aliases(fd, input, object))
+                    })
                 {
                     return false;
                 }

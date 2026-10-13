@@ -2006,6 +2006,7 @@ impl Action for ActionCopyMarker {
         data.with_covermerge(|merge, data| {
             merge.mark_internal_copies(data);
         });
+        crate::p6_variables::kuna_undefinedcopy::mark(data);
         0
     }
 }

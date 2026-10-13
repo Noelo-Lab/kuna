@@ -1,0 +1,49 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Wide-slice SSA reduction, `option wideslice on|off`. The witness is clang -O3
+    x86-64: eight input bytes are widened through SSE unpack operations,
+    accumulated in four dword lanes, folded horizontally, then followed by a
+    scalar tail.
+
+    Heritage widens each one- or two-byte lane write by joining it with the
+    bytes below it, so the XMM value passes through intermediates 2..15 bytes
+    wide, and the rule pool keeps recreating such widths while it folds the zero
+    lanes. Nothing upstream takes a 13-byte value apart again.
+
+    Pass 1 (`option wideslice off`): assertions #1 and #2 reproduce the bug,
+    six 13-byte locals that exist nowhere in the program and ten lines of
+    SUB13x reads of them. Pass 2 (default on): assertions #3 to #5 prove every
+    lane sum is a direct shift-and-mask of the loaded dword; none of those
+    shapes occurs in pass 1.
+
+    This self-contained byte_sum regression embeds 143 bytes of x86-64 code
+    loaded at 0x1000.
+-->
+<bytechunk space="ram" offset="0x1000">
+85f6740d89f183fe08730931d231c0eb6f31c0c389ca83e2f8660fefc931c0
+660fefd2660fefc0660f1f840000000000660f6e1c07660f6e640704660f60
+d9660f61d9660ffed3660f60e1660f61e1660ffec44883c0084839c275d466
+0ffec2660f70c8ee660ffec8660f70c155660ffec1660f7ec039ca7414660f
+1f4400000fb6341701f048ffc24839d175f2c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="byte_sum"/>
+</binaryimage>
+<script>
+  <com>parse line extern unsigned int byte_sum(unsigned char *bytes, unsigned int length);</com>
+  <com>option wideslice off</com>
+  <com>lo fu byte_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option wideslice on</com>
+  <com>lo fu byte_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="wide-slice #1: option off declares six artificial 13-byte locals (bug reproduced)" min="6" max="6">char v[0-9]+ \[13\];</stringmatch>
+<stringmatch name="wide-slice #2: option off reads the 13-byte temporaries through SUB13x slices on ten lines (bug reproduced)" min="10" max="10">SUB13[0-9]+\(</stringmatch>
+<stringmatch name="wide-slice #3: default on sums both low byte lanes as direct masked additions" min="2" max="2">v[0-9]+ \+= v[0-9]+ &amp; 0xff;</stringmatch>
+<stringmatch name="wide-slice #4: default on sums all four middle byte lanes as direct shifted masked additions" min="4" max="4">v[0-9]+ \+= v[0-9]+ &gt;&gt; (8|0x10) &amp; 0xff;</stringmatch>
+<stringmatch name="wide-slice #5: default on sums both top byte lanes as direct shifted additions" min="2" max="2">v[0-9]+ \+= v[0-9]+ &gt;&gt; 0x18;</stringmatch>
+</decompilertest>

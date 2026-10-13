@@ -62,6 +62,9 @@ pub struct DecompileArgs {
     pub raw_image: bool,
     /// Address assigned to raw file offset zero.
     pub base: Option<u64>,
+    /// The per-function memory limit in MiB (`0` off), handed to `decomp_dbg`
+    /// as its `--max-fn-memory`; `None` hands it the cgroup default.
+    pub max_fn_memory: Option<u64>,
 }
 
 /// A 0x-prefixed token auto-selects address mode (a bare hex-looking token is a
@@ -537,6 +540,8 @@ struct DecompileOutcome {
     /// which function it is about -- `--addr` selection names an address, and
     /// the transcript is where the resolved name lives on this surface.
     name: String,
+    /// The function an `--addr` selection lands inside, when not at an entry.
+    interior: Option<crate::interior::Interior>,
 }
 
 /// Run the decompile and return its [`DecompileOutcome`].
@@ -621,6 +626,15 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
 
         let mut cmd = Command::new(&bin_path);
         cmd.arg("-s").arg(&specs).env("SLEIGHHOME", &specs);
+        match args.max_fn_memory {
+            Some(0) => {}
+            Some(mib) => {
+                cmd.arg("--max-fn-memory").arg(mib.to_string());
+            }
+            None => {
+                cmd.arg("--max-fn-memory").arg("cgroup");
+            }
+        }
         cmd.env(
             kuna_buildstamp::PARENT_ENV,
             kuna_buildstamp::identity(kuna_buildstamp::ChildKind::Engine),
@@ -698,6 +712,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                     failure: None,
                     assertions: assertion_outcomes(&stdout_text, &args.assertions, selected),
                     name: args.target.clone(),
+                    interior: None,
                 });
             }
             return Err((
@@ -745,6 +760,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             failure,
             assertions: assertion_outcomes(&stdout_text, &args.assertions, selected),
             name: decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone()),
+            interior: crate::interior::from_transcript(&stdout_text),
         })
     };
 
@@ -784,6 +800,9 @@ pub fn run(args: &DecompileArgs) -> i32 {
             // survived (DIV-45): a closed reader is not evidence the decompile
             // worked.  Emitting first keeps the stdout-then-stderr order.
             let written = crate::output::emit(&text);
+            if let Some(interior) = &out.interior {
+                eprintln!("{}", crate::interior::note(interior));
+            }
             // (kuna outlang) The Rust back-end's unrepresentable gotos, counted
             // off the rendered text: this surface drives `decomp_dbg` as a
             // subprocess, so an in-engine counter would never reach it.
@@ -849,6 +868,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     let mut isa: Option<ArmIsa> = None;
     let mut raw_image = false;
     let mut base: Option<u64> = None;
+    let mut max_fn_memory: Option<u64> = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -899,6 +919,12 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
                 forwarded.push("--assert-strict".into());
             }
             "--decomp-dbg" => decomp_dbg = Some(take_value(argv, &mut i, "--decomp-dbg")?),
+            "--max-fn-memory" => {
+                let value = take_value(argv, &mut i, "--max-fn-memory")?;
+                max_fn_memory = Some(decompile_all::parse_max_fn_memory(&value)?);
+                forwarded.push("--max-fn-memory".into());
+                forwarded.push(value);
+            }
             "--engine" => engine = Some(take_value(argv, &mut i, "--engine")?),
             "--sleighpath" => sleighpath = Some(take_value(argv, &mut i, "--sleighpath")?),
             "-h" | "--help" => {
@@ -1021,6 +1047,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         isa,
         raw_image,
         base,
+        max_fn_memory,
     }))
 }
 
@@ -1032,12 +1059,14 @@ fn usage() {
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
          \x20                     [--isa auto|arm|thumb] [--slice ARCH] [--target T] \\\n\
-         \x20                     [--sleighpath D] [--decomp-dbg P]\n\
+         \x20                     [--sleighpath D] [--decomp-dbg P] [--max-fn-memory MiB]\n\
          \x20                     [--raw-image --target T --base VMA]\n\
          \n\
          Decompile ONE function.  The target is a name, or an address with --addr\n\
-         (a `0x`-prefixed target implies it).  --json emits the decompile-all record\n\
-         for that one function ({{binary,count,functions:[{{name,address,code,variables,..}}]}});\n\
+         (a `0x`-prefixed target implies it); an address inside another function is\n\
+         decompiled as asked, with a note naming that function.  --json emits the\n\
+         decompile-all record for that one function\n\
+         ({{binary,count,functions:[{{name,address,code,variables,..}}]}});\n\
          without it, the C text alone.\n\
          \n\
          --option NAME VALUE (repeatable) flips one phase-model decision for this run;\n\
@@ -1045,6 +1074,11 @@ fn usage() {
          --mode applies an option preset (`kuna modes`); omitted, `auto` picks one by\n\
          input size.  Explicit --option values win over the preset.\n\
          --language selects the output language; omitted, it follows the binary.\n\
+         --max-fn-memory MiB stops the decompile once the process doing it holds\n\
+         more than MiB resident and the function added 64 MiB or more, and\n\
+         reports that instead of being killed by the system (omitted: under a\n\
+         cgroup memory cap, once it grew by the cap's margin and the cgroup\n\
+         nears its cap; 0 disables).\n\
          \n\
          --define-function <start[-end][=name] | @file> (repeatable) declares where a\n\
          function starts and ends: start names an entry discovery missed, the\n\
@@ -1148,6 +1182,7 @@ fn run_json(req: &JsonRequest) -> i32 {
                 &args.options,
                 Some(&message),
                 &[],
+                &Default::default(),
             ),
             Some(message),
         ),
@@ -1170,6 +1205,7 @@ fn run_json(req: &JsonRequest) -> i32 {
 fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String>), String> {
     let mut prog = decompile_all::load_program(args, DriverDefaults::Decompile)?;
     let targets = decompile_all::resolve_targets(&prog, args)?;
+    let interior = crate::interior::selections(&prog, args, &targets);
     if targets.is_empty() {
         // Two different answers, and the caller acts on the difference: a binary
         // that yielded NOTHING is the whole-binary discovery failure (which names
@@ -1210,6 +1246,7 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
         &args.options,
         failure.as_deref(),
         &assertions,
+        &interior,
     );
     if failure.is_none() && args.assert_strict && rejected {
         failure = Some(format!("--assert directive rejected in {}", args.binary));
@@ -1297,6 +1334,7 @@ mod tests {
             isa: None,
             raw_image: false,
             base: None,
+            max_fn_memory: Some(0),
         }
     }
 
@@ -1962,7 +2000,7 @@ Execution error: No symbol named: v9
         assert_eq!(script, concat!(
                 "load raw x86:LE:64:default 0x4000 0x4000 \"/tmp/raw image.bin\"\n",
                 "option errortoomanyinstructions off\noption listing on\nread symbols\n",
-                "function symbol 0x4000\nload addr 0x4000\ndecompile\n",
+                "function containing 0x4000\nfunction symbol 0x4000\nload addr 0x4000\ndecompile\n",
                 "openfile write \"/tmp/out dir/kuna.c\"\nprint C\nprint raw\nclosefile\n",
                 "openfile write \"/tmp/out dir/regions.txt\"\nregion blocks\nregion tree\nclosefile\nquit\n",
             ));

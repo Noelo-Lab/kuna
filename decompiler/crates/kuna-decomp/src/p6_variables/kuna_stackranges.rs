@@ -141,7 +141,100 @@ fn signed_constant(value: u64, size: i32) -> i64 {
 }
 
 pub(crate) fn frame_address(fd: &Funcdata, value: VarnodeId) -> Option<FrameAddress> {
+    if fd.get_arch().manage().get_stack_space()?.get_word_size() != 1 {
+        return None;
+    }
     walk(fd, value, &mut 64)
+}
+
+/// Pointer choices and unresolved pointer arms cannot prove frame disjointness.
+pub(crate) fn may_alias(fd: &Funcdata, value: VarnodeId, start: u64, size: i32) -> bool {
+    let Some(space) = fd.get_arch().manage().get_stack_space() else {
+        return true;
+    };
+    if space.get_word_size() != 1 || size <= 0 {
+        return true;
+    }
+    let mut pending = vec![(value, false, false)];
+    let mut visited = std::collections::BTreeSet::new();
+    let mut budget = 64usize;
+    while let Some((value, pointer, unresolved)) = pending.pop() {
+        if budget == 0 {
+            return true;
+        }
+        budget -= 1;
+        if !visited.insert((value, pointer, unresolved)) {
+            continue;
+        }
+        if let Some(address) = frame_address(fd, value) {
+            if unresolved {
+                return true;
+            }
+            let Some((at, width)) = address.extent(1) else {
+                return true;
+            };
+            if space.wrap_offset(at.wrapping_sub(start)) < size as u64
+                || space.wrap_offset(start.wrapping_sub(at)) < width as u64
+            {
+                return true;
+            }
+            continue;
+        }
+        let Some(v) = fd.vbank().get(value) else {
+            return true;
+        };
+        if v.is_constant() {
+            continue;
+        }
+        let pointer = pointer
+            || v.get_type().get_metatype() == crate::dtype::type_metatype::TYPE_PTR
+            || (v.get_type().get_metatype() == crate::dtype::type_metatype::TYPE_UNKNOWN
+                && v.get_size() == space.get_addr_size() as i32);
+        let Some(op) = v.get_def().and_then(|id| fd.obank().get(id)) else {
+            if pointer {
+                return true;
+            }
+            continue;
+        };
+        match op.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => {
+                if let Some(input) = op.get_in(0) {
+                    pending.push((input, pointer, unresolved));
+                } else {
+                    return true;
+                }
+            }
+            OpCode::CPUI_MULTIEQUAL => {
+                if op.num_input() as usize > budget.saturating_sub(pending.len()) {
+                    return true;
+                }
+                pending.extend((0..op.num_input()).filter_map(|slot| {
+                    op.get_in(slot).map(|input| (input, pointer, unresolved))
+                }));
+            }
+            OpCode::CPUI_PTRADD
+            | OpCode::CPUI_PTRSUB
+            | OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_INT_SUB => {
+                if (0..op.num_input()).all(|slot| {
+                    op.get_in(slot)
+                        .and_then(|input| fd.vbank().get(input))
+                        .is_some_and(|input| input.is_constant())
+                }) {
+                    continue;
+                }
+                if pointer {
+                    return true;
+                }
+                pending.extend((0..op.num_input().min(2)).filter_map(|slot| {
+                    op.get_in(slot).map(|input| (input, pointer, true))
+                }));
+            }
+            _ if pointer => return true,
+            _ => (),
+        }
+    }
+    false
 }
 
 fn walk(fd: &Funcdata, value: VarnodeId, budget: &mut usize) -> Option<FrameAddress> {

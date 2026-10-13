@@ -555,13 +555,14 @@ fn cut_row_reaching_the_default_keeps_index_labels() {
 }
 
 /// `pick` bounds `mode` to 0..4 and switches on `map[mode]` through a 5-entry
-/// table.  Mode 2's map value falls outside the table, so the flow-time rows
-/// stop at mode 1, while mode 3 still dispatches to mode 1's labelled case.
-/// The index labels would leave mode 3 out, so the cases are labelled by
-/// address, and the table, whose first entry's bytes spell `7A@`, must print
-/// as the table rather than as a string literal.
+/// table.  GCC compares `map[mode]` in memory with the table's last index and
+/// reloads it for the dispatch, so that guard bounds the reloaded entry: the
+/// switch is over `map[mode]` with index labels, and mode 2's entry 6, past
+/// the table, reaches the default instead of a row read past the table.  The
+/// table, whose first entry's bytes spell `7A@`, must not print as a string
+/// literal.
 #[test]
-fn cut_row_reaching_a_labelled_case_falls_back_to_the_table() {
+fn reloaded_map_entry_bounded_by_its_guard_is_the_switch_value() {
     let fixture = SourceFixture {
         name: "switch_cutrow_labelled_x86_64",
         pick: "0x40410e",
@@ -570,7 +571,9 @@ fn cut_row_reaching_a_labelled_case_falls_back_to_the_table() {
         modes: 40,
     };
     let c = source_decompile(&fixture);
-    assert!(c.contains("labelled by address"), "kept index labels that miss mode 3: {c}");
+    assert!(!c.contains("labelled by address"), "labelled cases by address: {c}");
+    assert!(c.contains("&map[a0 * 4UL])"), "the switch is not over map[mode]: {c}");
+    assert!(c.contains("default:\n      sink = 7;"), "the entries past the table lost the default: {c}");
     assert!(!c.contains('"'), "printed the table as a string literal: {c}");
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     source_round_trip(&fixture, &c);
@@ -599,10 +602,10 @@ fn address_labels_are_the_table_values_not_the_block_starts() {
 
 /// The `switch_cutrow_labelled_x86_64` switch, assembled with a `nop` at the
 /// start of the two dispatched cases.  A `nop` has no p-code, so each case's
-/// block starts one byte past its table value, and the address labels must
-/// still be the table values 0x404153 and 0x404162.
+/// block starts one byte past its table value; the guarded `map[mode]` still
+/// labels them by index, as the cases 2 and 3 that modes 0, 1 and 3 reach.
 #[test]
-fn address_labels_hold_at_a_case_starting_with_a_nop() {
+fn index_labels_hold_at_a_case_starting_with_a_nop() {
     let fixture = SourceFixture {
         name: "switch_nop_case_x86_64",
         pick: "0x40410e",
@@ -611,9 +614,9 @@ fn address_labels_hold_at_a_case_starting_with_a_nop() {
         modes: 40,
     };
     let c = source_decompile(&fixture);
-    assert!(c.contains("labelled by address"), "kept index labels that miss mode 3: {c}");
-    for label in ["case 0x404153:", "case 0x404162:"] {
-        assert!(c.contains(label), "lost the table value {label}: {c}");
+    assert!(!c.contains("labelled by address"), "labelled cases by address: {c}");
+    for case in ["case 2:\n      return g(0x818) ^ 3;", "case 3:\n      return g(0x819) ^ 4;"] {
+        assert!(c.contains(case), "lost the nop-started case {case}: {c}");
     }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     source_round_trip(&fixture, &c);

@@ -41,11 +41,10 @@
 //! `sub rsp,N`) and an `/O2` frame agree.
 //!
 //! A cookie slot may cross many call guards and phi merges. The value peel is
-//! iterative and stops on a repeated varnode. A worklist checks every reachable
-//! phi input: every reachable terminal must be a scramble at the same frame
+//! iterative and bounded. A worklist checks every reachable phi input: every reachable terminal must be a scramble at the same frame
 //! offset, and every visited node must be able to reach a seed. Grounded loops
 //! are accepted; seedless cycles, unknown entries, and conflicting offsets are
-//! refused.
+//! refused. One call shares a finite budget across every argument and traversal.
 //!
 //! The cost of a false positive is a deleted call and a deleted argument
 //! computation, which is why the envelope is narrow and the option ships OFF.
@@ -135,6 +134,8 @@ use crate::kuna_stackguard::{collect_value_slots, release_canary_slots};
 
 /// How far the structural derivation recurses before giving up.
 const WALK_DEPTH: int4 = 32;
+/// Maximum varnode visits for one call's cookie proofs, including affine walks.
+const MAX_MATCH_STEPS: usize = 1024;
 
 /// The storage of the stack space's base register (`getStackSpace()->
 /// getSpacebase(0)`), or `None` when the architecture has no stack space.
@@ -145,13 +146,10 @@ fn stack_pointer_storage(data: &Funcdata) -> Option<(Rc<AddrSpace>, uintb, int4)
     Some((space, point.offset, point.size as int4))
 }
 
-/// Peel value-preserving ops, declining malformed chains and transparent cycles.
-fn peel(mut vn: VarnodeId, data: &Funcdata) -> Option<VarnodeId> {
-    let mut seen = BTreeSet::new();
+/// Peel value-preserving ops, declining malformed chains and exhausted visits.
+fn peel(mut vn: VarnodeId, data: &Funcdata, budget: &mut usize) -> Option<VarnodeId> {
     loop {
-        if !seen.insert(vn) {
-            return None;
-        }
+        *budget = budget.checked_sub(1)?;
         let v = data.vbank().get(vn)?;
         if !v.is_written() {
             return Some(vn);
@@ -182,11 +180,12 @@ fn stack_pointer_offset(
     depth: int4,
     data: &Funcdata,
     sp: &(Rc<AddrSpace>, uintb, int4),
+    budget: &mut usize,
 ) -> Option<i64> {
     if depth <= 0 {
         return None;
     }
-    let vn = peel(vn, data)?;
+    let vn = peel(vn, data, budget)?;
     let v = data.vbank().get(vn)?;
     if v.is_constant() {
         return None;
@@ -216,13 +215,13 @@ fn stack_pointer_offset(
                 return None;
             };
             let k = sign_extend(data, konst)?;
-            stack_pointer_offset(base, depth - 1, data, sp).map(|o| o.wrapping_add(k))
+            stack_pointer_offset(base, depth - 1, data, sp, budget).map(|o| o.wrapping_add(k))
         }
         OpCode::CPUI_PTRADD if nin == 3 => {
             let base = dop.get_in(0)?;
             let idx = sign_extend(data, dop.get_in(1)?)?;
             let sz = sign_extend(data, dop.get_in(2)?)?;
-            stack_pointer_offset(base, depth - 1, data, sp)
+            stack_pointer_offset(base, depth - 1, data, sp, budget)
                 .map(|o| o.wrapping_add(idx.wrapping_mul(sz)))
         }
         // A stack-pointer-storage Varnode written by anything else (a restored
@@ -254,14 +253,15 @@ fn cookie_scramble(
     data: &Funcdata,
     sp: &(Rc<AddrSpace>, uintb, int4),
     inits: &mut Vec<OpId>,
+    budget: &mut usize,
 ) -> Option<i64> {
-    let mut pending = vec![peel(vn, data)?];
+    let mut pending = vec![peel(vn, data, budget)?];
     let mut visited = BTreeSet::new();
     let mut phi_edges: BTreeMap<VarnodeId, Vec<VarnodeId>> = BTreeMap::new();
     let mut seeds: BTreeMap<VarnodeId, (i64, OpId)> = BTreeMap::new();
 
     while let Some(vn) = pending.pop() {
-        let vn = peel(vn, data)?;
+        let vn = peel(vn, data, budget)?;
         if !visited.insert(vn) {
             continue;
         }
@@ -275,12 +275,15 @@ fn cookie_scramble(
             OpCode::CPUI_INT_XOR => {
                 let a = dop.get_in(0)?;
                 let b = dop.get_in(1)?;
-                let (cookie, off) = match stack_pointer_offset(b, WALK_DEPTH, data, sp) {
+                let (cookie, off) = match stack_pointer_offset(b, WALK_DEPTH, data, sp, budget) {
                     Some(o) => (a, o),
-                    None => (b, stack_pointer_offset(a, WALK_DEPTH, data, sp)?),
+                    None => (b, stack_pointer_offset(a, WALK_DEPTH, data, sp, budget)?),
                 };
-                let c = data.vbank().get(peel(cookie, data)?)?;
-                if c.is_constant() || stack_pointer_offset(cookie, WALK_DEPTH, data, sp).is_some() {
+                let c = data.vbank().get(peel(cookie, data, budget)?)?;
+                if c.is_constant()
+                    || stack_pointer_offset(cookie, WALK_DEPTH, data, sp, budget).is_some()
+                    || *budget == 0
+                {
                     return None;
                 }
                 seeds.insert(vn, (off, def));
@@ -290,9 +293,13 @@ fn cookie_scramble(
                 if n <= 0 {
                     return None;
                 }
+                if n as usize > *budget {
+                    *budget = 0;
+                    return None;
+                }
                 let mut inputs = Vec::with_capacity(n as usize);
                 for i in 0..n {
-                    inputs.push(peel(dop.get_in(i)?, data)?);
+                    inputs.push(peel(dop.get_in(i)?, data, budget)?);
                 }
                 pending.extend(inputs.iter().copied());
                 phi_edges.insert(vn, inputs);
@@ -347,8 +354,9 @@ fn cookie_cancel(
     vn: VarnodeId,
     data: &Funcdata,
     sp: &(Rc<AddrSpace>, uintb, int4),
+    budget: &mut usize,
 ) -> Option<Vec<OpId>> {
-    let vn = peel(vn, data)?;
+    let vn = peel(vn, data, budget)?;
     let v = data.vbank().get(vn)?;
     if !v.is_written() {
         return None;
@@ -360,13 +368,13 @@ fn cookie_cancel(
     }
     let a = dop.get_in(0)?;
     let b = dop.get_in(1)?;
-    let (saved, unscramble_off) = match stack_pointer_offset(b, WALK_DEPTH, data, sp) {
+    let (saved, unscramble_off) = match stack_pointer_offset(b, WALK_DEPTH, data, sp, budget) {
         Some(o) => (a, o),
-        None => (b, stack_pointer_offset(a, WALK_DEPTH, data, sp)?),
+        None => (b, stack_pointer_offset(a, WALK_DEPTH, data, sp, budget)?),
     };
     let mut inits: Vec<OpId> = Vec::new();
-    let scramble_off = cookie_scramble(saved, data, sp, &mut inits)?;
-    if scramble_off != unscramble_off || inits.is_empty() {
+    let scramble_off = cookie_scramble(saved, data, sp, &mut inits, budget)?;
+    if scramble_off != unscramble_off || inits.is_empty() || *budget == 0 {
         return None;
     }
     Some(inits)
@@ -388,9 +396,14 @@ fn cookie_check_op(
         }
     }
     let mut found: Option<Vec<OpId>> = None;
+    let mut budget = MAX_MATCH_STEPS;
     for j in 1..o.num_input() {
         let arg = data.obank().get(op)?.get_in(j)?;
-        let Some(inits) = cookie_cancel(arg, data, sp) else { continue };
+        let proof = cookie_cancel(arg, data, sp, &mut budget);
+        if budget == 0 {
+            return None;
+        }
+        let Some(inits) = proof else { continue };
         if found.is_some() {
             return None;
         }

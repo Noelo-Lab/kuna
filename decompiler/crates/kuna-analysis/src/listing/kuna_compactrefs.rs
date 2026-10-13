@@ -80,6 +80,11 @@ impl ReferenceIndex {
     pub fn edges(&self) -> &[Reference] {
         &self.from
     }
+
+    /// The edges, in `from` order, without the `to` index.
+    pub fn into_edges(self) -> Vec<Reference> {
+        self.from
+    }
 }
 
 fn bucket(edges: &[Reference], address: u64, key: impl Fn(&Reference) -> u64) -> &[Reference] {

@@ -262,6 +262,51 @@ impl Listing {
         plan: &WalkPlan,
         frames: Option<&mut kuna_framemode::FrameModes>,
     ) -> Listing {
+        Self::build_resuming(file, arch, translate, seeds, funcsym_seeds, seed_names, detail, plan,
+            frames, None)
+    }
+
+    /// (kuna `addrtakenentry`) Continue this Listing's walk with `seeds`, the old
+    /// ones included. The instructions, functions and references already found
+    /// are kept and moved, not copied, so the walk decodes only what the new
+    /// seeds reach; the result is the Listing a fresh build from `seeds` makes,
+    /// because a decode at an address does not depend on who reached it first.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn resume(
+        self,
+        file: &object::File,
+        arch: &Architecture,
+        translate: &dyn Translate,
+        seeds: &[u64],
+        funcsym_seeds: &[u64],
+        seed_names: &[(u64, String)],
+        detail: ListingDetail,
+        plan: &WalkPlan,
+    ) -> Listing {
+        let prior = walk::WalkState {
+            insns: self.insns,
+            refs: self.refs.into_edges(),
+            funcs: self.funcs,
+            stack_callback_refs: self.stack_callback_refs.into_iter().map(|(s, t)| (t, s)).collect(),
+            mode_runs: self.mode_runs,
+        };
+        Self::build_resuming(file, arch, translate, seeds, funcsym_seeds, seed_names, detail, plan,
+            None, Some(prior))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_resuming(
+        file: &object::File,
+        arch: &Architecture,
+        translate: &dyn Translate,
+        seeds: &[u64],
+        funcsym_seeds: &[u64],
+        seed_names: &[(u64, String)],
+        detail: ListingDetail,
+        plan: &WalkPlan,
+        frames: Option<&mut kuna_framemode::FrameModes>,
+        resumed: Option<walk::WalkState>,
+    ) -> Listing {
         debug_assert!(
             plan.built_from(arch),
             "the plan's decode recipe was captured from another architecture than {}",
@@ -350,6 +395,7 @@ impl Listing {
             want_stack_callbacks,
             plan,
             frames,
+            resumed,
         );
 
         let refs = kuna_compactrefs::ReferenceIndex::new(st.refs);
@@ -423,6 +469,7 @@ impl Listing {
             detail,
             /* want_stack_callbacks = */ false,
             &WalkPlan::serial(),
+            None,
             None,
         );
         let refs = kuna_compactrefs::ReferenceIndex::new(st.refs);

@@ -127,6 +127,15 @@ pub(super) fn build_script_for_input(
     // install `--define-function <start>` performs — skipped when the caller
     // already declared that start, whose extent a second bare declaration would
     // clear.
+    let (verb, selection): (&str, Cow<'_, str>) = match EntrySelector::parse(target) {
+        _ if !by_address => ("function", target.into()),
+        EntrySelector::SectionOffset { .. } | EntrySelector::SectionIndexOffset { .. } => {
+            ("function", target.into())
+        }
+        _ if target.starts_with("0x") || target.starts_with("0X") => ("addr", target.into()),
+        _ => ("addr", format!("0x{target}").into()),
+    };
+    lines.push(format!("function containing {selection}"));
     if let Some(vma) = selected_vma(target, by_address) {
         if !func_decls.iter().any(|decl| decl.start == vma) {
             lines.push(format!("function symbol {vma:#x}"));
@@ -138,23 +147,7 @@ pub(super) fn build_script_for_input(
     for form in forms(crate::assertdecl::Slot::Program) {
         lines.push(form.line);
     }
-    if by_address {
-        match EntrySelector::parse(target) {
-            EntrySelector::SectionOffset { .. } | EntrySelector::SectionIndexOffset { .. } => {
-                lines.push(format!("load function {target}"));
-            }
-            _ => {
-                let addr = if target.starts_with("0x") || target.starts_with("0X") {
-                    target.to_string()
-                } else {
-                    format!("0x{target}")
-                };
-                lines.push(format!("load addr {addr}"));
-            }
-        }
-    } else {
-        lines.push(format!("load function {target}"));
-    }
+    lines.push(format!("load {verb} {selection}"));
     // FUNCTION-scoped directives need a loaded function and are consumed at flow
     // time, so they precede the first `decompile`.
     for form in forms(crate::assertdecl::Slot::Function) {

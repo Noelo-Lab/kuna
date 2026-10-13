@@ -96,10 +96,12 @@ const RUN_RERUN_FAILURES: usize = 16;
 /// Test-only fault injection, comma-separated: `panic:<addr>` panics a worker
 /// as it starts the target at `<addr>`, `panic-once:<addr>` only the first time
 /// in a run, `stall:<addr>` wedges it there until the stall watchdog kills it,
-/// `spawn:<n>` refuses every worker spawn after the first `n`, `synth:serial`
-/// names synthesized structures by the one-worker serial path, `synth:force`
-/// renames no function and `synth:noinstall` makes a worker refuse the
-/// replayed structures.  `<addr>` is a byte address (`0x` hex or
+/// `spawn:<n>` refuses every worker spawn after the first `n`, `load-abort:<n>`
+/// aborts the first `n` worker loads of the run (`*` every one) the way a
+/// refused allocation does, before the worker reaches its first chunk,
+/// `synth:serial` names synthesized structures by the one-worker serial path,
+/// `synth:force` renames no function and `synth:noinstall` makes a worker
+/// refuse the replayed structures.  `<addr>` is a byte address (`0x` hex or
 /// decimal), or `*` for every target.
 pub(crate) const JOBS_FAULT_ENV: &str = "KUNA_JOBS_FAULT";
 
@@ -187,6 +189,8 @@ pub(crate) struct PoolConfig<'a> {
     /// the complete result set.
     pub(crate) want_pointer_arguments: bool,
     pub(crate) max_fn_seconds: u64,
+    /// `None` leaves each worker to the cgroup default.
+    pub(crate) max_fn_memory: Option<u64>,
     pub(crate) full_load: bool,
     /// How long the PARENT's own load took.  The stall watchdog cannot fire
     /// before a worker could plausibly have finished loading, and this is the
@@ -711,9 +715,9 @@ impl Pool<'_> {
             if !self.gate.allows() {
                 if self.gate.first_refusal() {
                     eprintln!(
-                        "[kuna {}] warning: {RUN_RERUN_FAILURES} or more functions have failed \
-                         again when re-run on their own, more than the workers have delivered, \
-                         so functions a worker leaves unfinished are not re-run while that lasts.",
+                        "[kuna {}] warning: {RUN_RERUN_FAILURES} or more re-runs have failed or \
+                         could not start, more than the workers have delivered, so functions a \
+                         worker leaves unfinished are not re-run while that lasts.",
                         self.tag
                     );
                 }
@@ -723,6 +727,7 @@ impl Pool<'_> {
             }
             let solo = self.serve(worker, std::slice::from_ref(&chunk[p]));
             if !solo.ending.started() {
+                self.gate.failed();
                 let cause = solo.results[0].error.clone().unwrap_or_default();
                 let why = format!("its re-run could not start ({cause})");
                 kept.push(indices[p]);
@@ -827,9 +832,8 @@ enum Ending {
     NotRun,
     /// The worker exited, or the stall watchdog killed it, first.  `started`:
     /// it had opened this chunk's result file, which it does after its load,
-    /// its spec and its rehydration, just before its first target.  `warm`: it
-    /// had finished a chunk before this one.
-    Died { stalled: bool, started: bool, warm: bool },
+    /// its spec and its rehydration, just before its first target.
+    Died { stalled: bool, started: bool },
 }
 
 impl Ending {
@@ -895,14 +899,15 @@ impl Reruns {
 /// own; the bystanders follow in [`spread`] order.  A stalled suspect is not
 /// re-run: it already ran past four times the per-function budget, and a second
 /// attempt would cost the same stall window again.  A worker that never opened
-/// this chunk ran none of it, so its targets are all bystanders if it had served
-/// a chunk before — and none are re-run if it had not, because then it may have
-/// died in its own load.
+/// this chunk ran none of it, so its targets are all bystanders — including when
+/// it died in its own load, which the parent has already survived on the same
+/// binary: there the usual cause is the machine (an allocation refused while N
+/// workers load at once), and a load that fails every time is bounded by the
+/// re-run gate instead.
 fn retry_order(ending: Ending, delivered: &[bool]) -> Reruns {
-    let Ending::Died { stalled, started, warm } = ending else { return Reruns::default() };
+    let Ending::Died { stalled, started } = ending else { return Reruns::default() };
     let missing: Vec<usize> = (0..delivered.len()).filter(|&p| !delivered[p]).collect();
     let (suspect, rest) = match (started, missing.split_first()) {
-        (false, _) if !warm => return Reruns::default(),
         (false, _) => (None, &missing[..]),
         (true, None) => return Reruns::default(),
         (true, Some((&first, rest))) => ((!stalled).then_some(first), rest),
@@ -953,11 +958,12 @@ impl ChunkReruns {
 }
 
 /// The run-wide check on re-running, asked each time a re-run would start: no
-/// while [`RUN_RERUN_FAILURES`] or more re-runs have failed and they outnumber
-/// every record the workers delivered, planned or re-run.  Workers that die
-/// whatever they are given deliver nothing, so they pay a bounded number of
-/// extra loads; since held-back re-runs cannot fail, deliveries catch up and
-/// re-running resumes in a run whose workers mostly work.
+/// while [`RUN_RERUN_FAILURES`] or more re-runs have failed or could not start
+/// and they outnumber every record the workers delivered, planned or re-run.
+/// Workers that die whatever they are given deliver nothing, so they pay a
+/// bounded number of extra loads; since held-back re-runs cannot fail,
+/// deliveries catch up and re-running resumes in a run whose workers mostly
+/// work.
 #[derive(Default)]
 struct RetryGate {
     failed: AtomicUsize,
@@ -1029,6 +1035,9 @@ impl Worker {
             .arg(cfg.mode)
             .arg("--max-fn-seconds")
             .arg(cfg.max_fn_seconds.to_string());
+        if let Some(mib) = cfg.max_fn_memory {
+            cmd.arg("--max-fn-memory").arg(mib.to_string());
+        }
         if cfg.no_vars {
             cmd.arg("--no-vars");
         }
@@ -1150,7 +1159,6 @@ impl Worker {
         len: usize,
     ) -> (Vec<FuncResult>, String, Ending) {
         self.functions_done += len;
-        let warm = self.warm;
         let out_path = scratch.join(result_name(idx));
         let assigned = writeln!(self.stdin, "{idx}").and_then(|()| self.stdin.flush());
         let outcome = match assigned {
@@ -1176,12 +1184,12 @@ impl Worker {
             Wait::Stalled => (
                 produced,
                 format!("{STALLED} ({}s); the worker was killed", cfg.max_fn_seconds),
-                Ending::Died { stalled: true, started, warm },
+                Ending::Died { stalled: true, started },
             ),
             Wait::Failed(why) => (
                 produced,
                 format!("{CHUNK_FAILED} ({why})"),
-                Ending::Died { stalled: false, started, warm },
+                Ending::Died { stalled: false, started },
             ),
         }
     }
@@ -1422,13 +1430,16 @@ fn anomaly_lines(
 /// when an explicit `--jobs N` asks for more than that.
 ///
 /// `auto` is a promise not to wreck the machine, so it yields; an explicit
-/// number is an instruction, so it is obeyed with a warning.
+/// number is an instruction, so it is obeyed with a warning. Free memory is
+/// [`kuna_decomp::kuna_hostmem::available`]: under a cgroup v2 `memory.max`
+/// it is that cap's headroom when the cap is the tighter bound.
 fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
-    let (Some(per_worker), Some(available)) =
-        (worker_estimate(cfg.full_load), available_memory_bytes())
+    let (Some(per_worker), Some(free)) =
+        (worker_estimate(cfg.full_load), kuna_decomp::kuna_hostmem::available())
     else {
         return cfg.jobs;
     };
+    let available = free.bytes;
     // Two thirds of what is free: the parent keeps its own load on several of
     // these surfaces, and a worker's peak is an estimate, not a bound.
     let affordable = (available.saturating_mul(2) / 3 / per_worker.max(1)).max(1) as usize;
@@ -1436,19 +1447,21 @@ fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
         return cfg.jobs;
     }
     let gb = |b: u64| b as f64 / (1024.0 * 1024.0 * 1024.0);
+    let capped = if free.cgroup { " under a cgroup's memory.max" } else { "" };
     if cfg.jobs_auto {
         eprintln!(
             "[kuna {tag}] auto: {affordable} worker(s), not {} — one worker needs about {:.1} GB \
-             here and {:.1} GB is free. Pass --jobs N to override.",
+             here and {:.1} GB is free{capped}. Pass --jobs N to override.",
             cfg.jobs,
             gb(per_worker),
             gb(available)
         );
         return affordable;
     }
+    let place = if free.cgroup { capped } else { " on this machine" };
     eprintln!(
-        "[kuna {tag}] warning: {} workers at about {:.1} GB each is more than the {:.1} GB free \
-         on this machine; expect swapping or an OOM kill. {affordable} would fit.",
+        "[kuna {tag}] warning: {} workers at about {:.1} GB each is more than the {:.1} GB free\
+         {place}; expect swapping or an OOM kill. {affordable} would fit.",
         cfg.jobs,
         gb(per_worker),
         gb(available)
@@ -1467,7 +1480,7 @@ fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
 /// constant costs dominate and the ratio means nothing.
 fn worker_estimate(full_load: bool) -> Option<u64> {
     Some(worker_estimate_from(
-        peak_rss_bytes()?,
+        kuna_decomp::kuna_hostmem::peak_resident_bytes()?,
         kuna_analysis::listing::kuna_pdecode::lane_peak_excess_bytes(),
         full_load,
     ))
@@ -1486,22 +1499,6 @@ fn worker_estimate_from(parent_peak: u64, lane_excess: u64, full_load: bool) -> 
     } else {
         (parent / 4).max(FLOOR)
     }
-}
-
-/// This process's peak resident size (Linux `VmHWM`).
-fn peak_rss_bytes() -> Option<u64> {
-    proc_kb("/proc/self/status", "VmHWM:")
-}
-
-/// Memory that can be handed out without swapping (Linux `MemAvailable`).
-fn available_memory_bytes() -> Option<u64> {
-    proc_kb("/proc/meminfo", "MemAvailable:")
-}
-
-fn proc_kb(path: &str, key: &str) -> Option<u64> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let line = text.lines().find(|l| l.starts_with(key))?;
-    Some(line.split_whitespace().nth(1)?.parse::<u64>().ok()? * 1024)
 }
 
 /// Plan the chunks: which targets each worker invocation gets, in dispatch
@@ -1602,6 +1599,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         types: Vec::new(),
         stack_objects: Vec::new(),
         globals: Vec::new(),
+        field_calls: Vec::new(),
         line_mappings: Vec::new(),
         aliases: t.aliases.clone(),
         object_location: t.object_location.clone(),
@@ -1735,6 +1733,8 @@ pub(crate) fn ack_chunk(idx: usize) {
 pub(crate) struct Faults {
     at: Vec<(Fault, Option<u64>)>,
     spawn_after: Option<usize>,
+    /// `load-abort:<n>`: how many worker loads abort (`usize::MAX` for `*`).
+    load_aborts: usize,
     /// `synth:serial`: name the synthesized structures by the one-worker serial
     /// path even when the replay holds, so a test can reach it.
     synth_serial: bool,
@@ -1780,6 +1780,10 @@ impl Faults {
                 let fault = match kind.trim() {
                     "spawn" => {
                         faults.spawn_after = Some(arg.parse().ok()?);
+                        return Some(());
+                    }
+                    "load-abort" => {
+                        faults.load_aborts = if arg == "*" { usize::MAX } else { arg.parse().ok()? };
                         return Some(());
                     }
                     "synth" if arg == "serial" => {
@@ -1838,6 +1842,21 @@ impl Faults {
                     }
                 }
             }
+        }
+    }
+
+    /// Worker side, once its load is done: abort as an allocation failure does
+    /// if this is one of the first `load-abort` loads of the run, counted with
+    /// marker files in the pool's shared scratch directory.
+    pub(crate) fn after_load(&self, scratch: &Path) {
+        let fire = self.load_aborts == usize::MAX
+            || (0..self.load_aborts).any(|k| {
+                let marker = scratch.join(format!("fault-load-{k}"));
+                std::fs::OpenOptions::new().write(true).create_new(true).open(marker).is_ok()
+            });
+        if fire {
+            eprintln!("{JOBS_FAULT_ENV}: injected load abort");
+            std::alloc::handle_alloc_error(std::alloc::Layout::new::<[u8; 1 << 20]>());
         }
     }
 
@@ -2044,6 +2063,18 @@ mod tests {
                 aggregate: true,
                 elem: true,
             }],
+            field_calls: vec![
+                kuna_decomp::kuna_calltargettype::FieldDecl {
+                    record: "struct_3".into(),
+                    field: "field_0x8".into(),
+                    declaration: Some("int (*field_0x8)(unsigned int,long)".into()),
+                },
+                kuna_decomp::kuna_calltargettype::FieldDecl {
+                    record: "struct_3".into(),
+                    field: "field_0x10".into(),
+                    declaration: None,
+                },
+            ],
             line_mappings: vec![LineMapping { line_number: 3, addresses: vec![0x401004] }],
             aliases: vec!["_main".into()],
             object_location: Some(ObjectLocation {
@@ -2069,6 +2100,7 @@ mod tests {
             && a.aliases == b.aliases
             && a.object_location == b.object_location
             && a.callee_hints == b.callee_hints
+            && a.field_calls == b.field_calls
             && a.pointerargs == b.pointerargs
             && a.synth == b.synth
             && a.line_mappings == b.line_mappings
@@ -2138,6 +2170,7 @@ mod tests {
             types: Vec::new(),
             stack_objects: Vec::new(),
             globals: Vec::new(),
+            field_calls: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
@@ -2189,6 +2222,7 @@ mod tests {
             types: Vec::new(),
             stack_objects: Vec::new(),
             globals: Vec::new(),
+            field_calls: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
@@ -2197,15 +2231,25 @@ mod tests {
             pointerargs: None,
             detail: None,
         };
-        let expected = b"KUNAJOBRES07\x01\x44\0\0\0\
-            \x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0\
-            \xff\xff\xff\xff\xff\xff\xff\xff\
-            \x01\0\0\0f\0\x01\x01\0\0\0e\0\0\
-            \0\0\0\0\0\0\0\0\0\0\0\0\
-            \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+        let expected = [
+            b"KUNAJOBRES07\x01\x48\0\0\0".as_slice(),
+            b"\x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0",
+            b"\xff\xff\xff\xff\xff\xff\xff\xff",
+            b"\x01\0\0\0f\0\x01\x01\0\0\0e\0\0",
+            b"\0\0\0\0", // aliases
+            b"\0\0\0\0", // line mappings
+            b"\0\0\0\0", // variables
+            b"\0\0\0\0", // types
+            b"\0\0\0\0", // stack objects
+            b"\0\0\0\0", // globals
+            b"\0\0\0\0", // field calls
+            b"\0\0\0\0", // callee hints
+            b"\0\0", // synth and pointer arguments
+        ]
+        .concat();
         ResultWriter::create(&path).unwrap().push(&result).unwrap();
         assert_eq!(std::fs::read(path).unwrap(), expected);
-        let decoded = decode_results(expected).unwrap();
+        let decoded = decode_results(&expected).unwrap();
         assert_eq!(decoded.len(), 1);
         assert!(same(&decoded[0], &result));
     }
@@ -2374,8 +2418,8 @@ mod tests {
         }
     }
 
-    fn died(stalled: bool, started: bool, warm: bool) -> Ending {
-        Ending::Died { stalled, started, warm }
+    fn died(stalled: bool, started: bool) -> Ending {
+        Ending::Died { stalled, started }
     }
 
     fn reruns(suspect: Option<usize>, bystanders: &[usize]) -> Reruns {
@@ -2385,49 +2429,43 @@ mod tests {
     /// The re-run policy, case by case.  A crash re-runs the function it
     /// happened in first and then everything that never started; a stall
     /// re-runs only what never started; a worker that ran none of the chunk
-    /// re-runs all of it, unless it may have died in its own load.
+    /// re-runs all of it, its own load included.
     #[test]
     fn a_dead_worker_reruns_its_suspect_first_and_its_bystanders_after() {
         let prefix = [true, true, false, false, false];
-        assert_eq!(retry_order(died(false, true, true), &prefix), reruns(Some(2), &[3, 4]));
-        assert_eq!(retry_order(died(false, true, false), &prefix), reruns(Some(2), &[3, 4]));
+        assert_eq!(retry_order(died(false, true), &prefix), reruns(Some(2), &[3, 4]));
         assert_eq!(
-            retry_order(died(true, true, true), &prefix),
+            retry_order(died(true, true), &prefix),
             reruns(None, &[3, 4]),
             "a stalled suspect already ran four budgets; only its bystanders are re-run"
         );
-        assert!(retry_order(died(true, true, false), &[false]).is_empty());
+        assert!(retry_order(died(true, true), &[false]).is_empty());
         assert_eq!(
-            retry_order(died(false, true, false), &[false]),
+            retry_order(died(false, true), &[false]),
             reruns(Some(0), &[]),
             "a planned singleton that crashed is run once more on a fresh worker"
         );
 
         let untouched = [false; 5];
-        assert_eq!(
-            retry_order(died(false, false, true), &untouched),
-            reruns(None, &[0, 4, 2, 1, 3]),
-            "a warm worker that died between chunks ran none of this one"
-        );
         let everything = reruns(None, &[0, 4, 2, 1, 3]);
-        assert_eq!(retry_order(died(true, false, true), &untouched), everything);
-        assert!(
-            retry_order(died(false, false, false), &untouched).is_empty(),
-            "a worker that never finished a chunk may have died in its load"
+        assert_eq!(
+            retry_order(died(false, false), &untouched),
+            everything,
+            "a worker that died before its first target, in its load or between chunks, ran none of this one"
         );
-        assert!(retry_order(died(true, false, false), &untouched).is_empty());
+        assert_eq!(retry_order(died(true, false), &untouched), everything);
 
         for ending in [Ending::Finished, Ending::NotRun] {
             assert!(retry_order(ending, &untouched).is_empty(), "{ending:?} re-runs nothing");
         }
-        assert!(retry_order(died(false, true, true), &[true; 4]).is_empty());
+        assert!(retry_order(died(false, true), &[true; 4]).is_empty());
 
         // A re-run counts as run only once its worker reached the target; one
         // that did not ends its chunk's re-runs instead of spawning for the rest.
         assert!(Ending::Finished.started());
-        assert!(died(false, true, false).started() && died(true, true, true).started());
+        assert!(died(false, true).started() && died(true, true).started());
         assert!(!Ending::NotRun.started());
-        assert!(!died(false, false, false).started() && !died(true, false, true).started());
+        assert!(!died(false, false).started() && !died(true, false).started());
     }
 
     /// Bystanders are visited in bit-reversed order, so any prefix of the visit
@@ -2588,6 +2626,7 @@ mod tests {
             types: Vec::new(),
             stack_objects: Vec::new(),
             globals: Vec::new(),
+            field_calls: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
@@ -2626,6 +2665,7 @@ mod tests {
             want_callee_hints: false,
             want_pointer_arguments: false,
             max_fn_seconds,
+            max_fn_memory: Some(0),
             full_load: false,
             load_seconds,
             isa: None,
@@ -2699,7 +2739,7 @@ mod tests {
     /// and yields to what free memory holds; an explicit count is an instruction
     /// and is obeyed with a warning.  A request the machine can hold is never
     /// touched either way.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     #[test]
     fn auto_yields_to_free_memory_and_an_explicit_count_does_not() {
         let mut c = cfg(0, 0.0);

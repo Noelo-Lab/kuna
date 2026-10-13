@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v5t:default">
+<!--
+    Authored ARM fixed-count LSL, adjacent to Kuna #849's register-count case.
+    A locked signed parameter shifted before an unsigned return conversion
+    has C11 UB for negative inputs and positive overflow. Pass 1 (default,
+    option armconstshift off) prints the shift as written (the bug). Pass 2
+    (armconstshift on) casts the shiftee before the operation, keeps signed
+    consumers, and declines signed compound assignment. No application bytes
+    are used.
+    The unchanged generated-C runtime oracle is arm_constant_shift.rs.
+-->
+<bytechunk space="ram" offset="0x10000">0001a0e11eff2fe1</bytechunk>
+<bytechunk space="ram" offset="0x10040">0001a0e11eff2fe1</bytechunk>
+<bytechunk space="ram" offset="0x10080">0001a0e1c00fa0e11eff2fe1</bytechunk>
+<bytechunk space="ram" offset="0x100c0">0001a0e1000081e51eff2fe1</bytechunk>
+<bytechunk space="ram" offset="0x10100">0001a0e11eff2fe1</bytechunk>
+<symbol space="ram" offset="0x10000" name="ShiftLeftTwo"/>
+<symbol space="ram" offset="0x10040" name="ShiftSigned"/>
+<symbol space="ram" offset="0x10080" name="ShiftArithmetic"/>
+<symbol space="ram" offset="0x100c0" name="ShiftAndStore"/>
+<symbol space="ram" offset="0x10100" name="ShiftUnsigned"/>
+</binaryimage>
+<script>
+  <com>parse line extern uint4 ShiftLeftTwo(int4 value);</com>
+  <com>parse line extern int4 ShiftSigned(int4 value);</com>
+  <com>parse line extern int4 ShiftArithmetic(int4 value);</com>
+  <com>parse line extern int4 ShiftAndStore(int4 value, int4 *output);</com>
+  <com>parse line extern uint4 ShiftUnsigned(uint4 value);</com>
+  <com>load function ShiftLeftTwo</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftSigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftArithmetic</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftAndStore</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftUnsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option armconstshift on</com>
+  <com>load function ShiftLeftTwo</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftSigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftArithmetic</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftAndStore</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftUnsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ARM constant LSL #1: armconstshift off shifts the four signed operands as written (bug reproduces), plus the unsigned control in pass 2" min="5" max="5">return value &lt;&lt; 2;</stringmatch>
+<stringmatch name="ARM constant LSL #2: armconstshift on converts signed operands before shifting" min="5" max="5">\(uint4\)value\s*&lt;&lt;\s*2</stringmatch>
+<stringmatch name="ARM constant LSL #3: armconstshift on restores signed results for signed consumers" min="5" max="5">\(int4\)\s*\(\s*\(uint4\)value</stringmatch>
+<stringmatch name="ARM constant LSL #4: both passes preserve the locked signed parameter" min="2" max="2">uint4 ShiftLeftTwo\(int4 value\)</stringmatch>
+<stringmatch name="ARM constant LSL #5: neither pass shifts a signed variable in place" min="0" max="0">&lt;&lt;=</stringmatch>
+<stringmatch name="ARM constant LSL #6: both passes keep the arithmetic right shift" min="2" max="2">&gt;&gt;\s*(31|0x1f)</stringmatch>
+<stringmatch name="ARM constant LSL #7: constants need no register-count guard" min="0" max="0">32u \?</stringmatch>
+</decompilertest>

@@ -32,6 +32,7 @@ pub mod kuna_indirectonly;
 pub mod dynamic;
 pub mod kuna_dynamiclocals;
 pub mod kuna_registerepochs;
+pub mod kuna_undefinedcopy;
 pub mod kuna_dynamichashmax;
 pub mod coreaction_stackptr;
 pub mod kuna_paramcopyhoist;
@@ -40,6 +41,7 @@ pub mod kuna_globalvalue;
 pub mod kuna_globalorder;
 pub mod kuna_calleepop;
 pub mod kuna_calleepopslot;
+pub mod kuna_calleepopframe;
 pub mod kuna_cookiescramble;
 pub mod kuna_nulterminator;
 pub mod kuna_endptrbound;
@@ -54,3 +56,5 @@ pub mod kuna_pointeevalue;
 pub mod kuna_loadorder;
 
 pub(crate) mod kuna_wrappedstackaggregate;
+
+pub(crate) mod kuna_callarrayextent;

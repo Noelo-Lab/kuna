@@ -779,9 +779,7 @@ fn export(
     let load_started = Instant::now();
     let mut prog = load_with_heartbeat(args, run)?;
     let load_seconds = load_started.elapsed().as_secs_f64();
-    if args.max_fn_seconds > 0 {
-        prog.arch_mut().kuna_fn_budget = Some(Duration::from_secs(args.max_fn_seconds));
-    }
+    crate::decompile_all::arm_fn_budgets(&mut prog, args);
     if prog.arch().print().get_name() != "c-language" {
         return Err(format!(
             "project export is C-only in this release (got {}); use `kuna decompile` or \
@@ -793,6 +791,7 @@ fn export(
     if targets.is_empty() {
         return Err(format!("no functions selected/discovered in {}", args.binary));
     }
+    crate::interior::selections(&prog, args, &targets);
     // The scheduler's fallback cursor, the `.asm` labels and the reconciliation
     // all read one order, so the target list is sorted once here.
     targets.sort_by(|a, b| {
@@ -1258,6 +1257,7 @@ mod tests {
             types: Vec::new(),
             stack_objects: Vec::new(),
             globals: Vec::new(),
+            field_calls: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
