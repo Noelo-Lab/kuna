@@ -4657,9 +4657,23 @@ fn jobs_a_worker_that_dies_in_its_load_loses_nothing() {
     let (got, stderr, ok) = run_kuna_env_with_timeout(&args, &[("KUNA_JOBS_FAULT", "load-abort:*")], cap)
         .expect("workers that die in every load wedged the pool");
     assert!(!ok, "{stderr}");
-    assert_eq!(json_records(&got).len(), total, "{got}");
+    let records = json_records(&got);
+    assert_eq!(records.len(), total, "{got}");
+    let addresses: std::collections::BTreeSet<u64> = records
+        .iter()
+        .map(|r| serde_json::from_str::<serde_json::Value>(r).unwrap()["address"].as_u64().unwrap())
+        .collect();
+    assert_eq!(addresses.len(), total, "every function exactly once:\n{got}");
+    let (gate, jobs) = (16, 2);
     let reruns = loads(&stderr) - total;
-    assert!((16..=17).contains(&reruns), "16 or 17 re-runs that could not start, not {reruns}:\n{stderr}");
+    assert!(
+        (gate..gate + jobs).contains(&reruns),
+        "{gate} re-runs that could not start, plus at most one that started alongside the last, not {reruns}:\n{stderr}"
+    );
+    let could_not_start = "; not re-run: its re-run could not start";
+    let run_stopped = "; not re-run: re-runs in this run had failed more often than workers had";
+    assert_eq!(got.matches(could_not_start).count(), reruns, "{got}");
+    assert_eq!(got.matches(run_stopped).count(), total - reruns, "{got}");
     assert_eq!(stderr.matches("are not re-run while that lasts").count(), 1, "{stderr}");
 }
 
