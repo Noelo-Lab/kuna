@@ -864,24 +864,46 @@ Four front-ends drive one engine assembly:
   typelock) and the host's declared types and names get re-derived instead of
   applied.
 
-(kuna) **Locating the engine and the specs.** Two installations are first class
-(`decompiler/crates/kuna-cli/src/paths.rs (binary, specs_dir)`), and neither is
-derived from the other. In a checkout `kuna` is built to
-`<root>/decompiler/target/[<triple>/]<profile>/kuna`, so the repo root is the
-directory above the `decompiler`/`target` pair and `specs/` sits under it. In an
-extracted release archive `kuna`, `decomp_dbg` and `slacomp` are siblings in one
-directory, the separately downloaded `specs/` tree is beside or inside it, and
-there is no repo root at all — popping three parents off the archive directory
-lands on a path that exists nowhere, so the pop is refused rather than reported.
-Each binary probe tries the bare name and then the platform's executable suffix,
-because the Windows archive ships `decomp_dbg.exe` and `Path::exists` applies no
-suffix of its own. The environment overrides (`KUNA_ROOT`, `KUNA_SPECS`,
-`KUNA_DECOMP_DBG`, `KUNA_DECOMP_TEST`, `KUNA_SLACOMP`, `KUNA_RUST_PROFILE`, all
-documented in `docs/cli.md`) win over both layouts. A probe that finds nothing
-names the directories it looked in: the in-tree path a checkout would have built
-to is not an answer on a machine that has no checkout, and a missing SLEIGH tree
-is reported where it is resolved rather than as the engine's downstream
-`No sleigh specification` — which reads as a problem with the binary.
+(kuna) **Locating the engine and the specs.** `kuna` is the whole toolchain
+(`decompiler/crates/kuna-cli/src/paths.rs (decomp_dbg, slacomp, specs_dir)`). The
+decompiler console and the SLEIGH compiler are library entry points
+(`decompiler/crates/kuna-console/src/consolemain.rs (main)`,
+`decompiler/crates/kuna-slacomp/src/slacompmain.rs (main)`) that the `decomp_dbg`
+and `slacomp` binaries and `kuna`'s own hidden `decomp_dbg` and `slacomp`
+subcommands all call, so `kuna decompile`, `kuna catalog` and `kuna specs` launch
+the running `kuna` again rather than look for siblings — a separate binary is used
+only when `KUNA_DECOMP_DBG` or `KUNA_SLACOMP` names one. The child is still a
+separate process, which keeps the per-run memory limit and crash isolation the
+console had as its own binary. A release `kuna` also carries the compiled SLEIGH
+tree (cargo feature `embed-specs`, an `include_bytes!` table that
+`decompiler/crates/kuna-cli/build.rs` generates from every file under `specs/`
+except the SLEIGH sources). The engine reads specs only through plain `std::fs`
+path reads — the same contract the WASI front-end relies on — so the table is
+unpacked rather than read in place
+(`decompiler/crates/kuna-cli/src/embedded_specs.rs (unpack)`): into
+`specs-<id>` under the per-user cache directory, falling back to the system temp
+directory, where `<id>` hashes every path and byte of the table. Each unpack is
+written to a private staging directory and renamed into place only after its
+`.complete` marker is written, so a reader never sees a partial tree, concurrent
+first runs settle on one copy, and a tree without the marker is replaced. A
+release whose specs did not change therefore reuses the tree already on disk.
+
+The spec root resolves in this order: `KUNA_SPECS`, then `KUNA_ROOT`'s `specs/`,
+then the built-in tree, then the first directory that holds a
+`Ghidra/Processors` tree among the checkout's `specs/`, a `specs/` inside or next
+to the directory holding `kuna`, and the current directory's. A checkout build is
+recognised by its path, `<root>/decompiler/target/[<triple>/]<profile>/kuna`; any
+other directory has no repo root, and popping three parents off it lands on a path
+that exists nowhere, so the pop is refused rather than reported. `decomp_test_dbg`
+is not built in: it is probed for beside `kuna` and in the checkout's
+`decompiler/target/<profile>/`, under its bare name and then the platform's
+executable suffix, because `Path::exists` applies no suffix of its own. The
+environment overrides (`KUNA_ROOT`, `KUNA_SPECS`, `KUNA_DECOMP_DBG`,
+`KUNA_DECOMP_TEST`, `KUNA_SLACOMP`, `KUNA_RUST_PROFILE`, all documented in
+`docs/cli.md`) win over everything else. A probe that finds nothing names the
+directories it looked in and why a built-in tree could not be unpacked: a missing
+SLEIGH tree is reported where it is resolved rather than as the engine's
+downstream `No sleigh specification` — which reads as a problem with the binary.
 
 `kuna specs --diff` is informational: it writes verification guidance without
 starting a compiler (`decompiler/crates/kuna-cli/src/specs.rs (run)`). It identifies

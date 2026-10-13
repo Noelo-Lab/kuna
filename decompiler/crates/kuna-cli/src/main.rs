@@ -11,6 +11,7 @@ mod decompile_all;
 mod decompile_project;
 mod decompile_graph;
 mod disassemble;
+mod embedded_specs;
 mod fid;
 mod assertdecl;
 mod funcdecl;
@@ -69,6 +70,11 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
     let sub = args[1].as_str();
+    match sub {
+        paths::DECOMP_DBG_SUBCOMMAND => return kuna_console::consolemain::main(args[1..].to_vec()),
+        paths::SLACOMP_SUBCOMMAND => return kuna_slacomp::slacompmain::main(args[1..].to_vec()),
+        _ => {}
+    }
     let rest = &args[2..];
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {

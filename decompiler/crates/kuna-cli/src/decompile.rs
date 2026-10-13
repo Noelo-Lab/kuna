@@ -18,8 +18,7 @@
 //! which is why the `decomp_dbg`-only flags are refused rather than ignored.
 
 use std::io::{Read, Write};
-use std::path::PathBuf;
-use std::process::Command;
+use std::path::{Path, PathBuf};
 
 use kuna_console::engine::{ArmIsa, ARM_ISA_ENV};
 use kuna_console::kuna_buildstamp;
@@ -551,21 +550,17 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     let binary = binary.to_string_lossy().to_string();
     reject_unquotable("binary path", &binary)?;
 
-    let bin_path = if let Some(d) = &args.decomp_dbg {
-        PathBuf::from(d)
-    } else {
-        paths::decomp_dbg()
+    let engine = match &args.decomp_dbg {
+        Some(d) if !Path::new(d).exists() => {
+            return Err(format!("decomp_dbg not found at {d} (--decomp-dbg)"));
+        }
+        Some(d) => paths::Program { path: PathBuf::from(d), subcommand: None },
+        None => paths::decomp_dbg()?,
     };
     let pinned_by = match &args.decomp_dbg {
         Some(_) => Some("--decomp-dbg"),
         None => paths::pinned_by("KUNA_DECOMP_DBG"),
     };
-    if !bin_path.exists() {
-        return Err(match &args.decomp_dbg {
-            Some(d) => format!("decomp_dbg not found at {d} (--decomp-dbg)"),
-            None => paths::missing_decomp_dbg(),
-        });
-    }
 
     let specs = match &args.sleighpath {
         Some(s) => PathBuf::from(s),
@@ -624,7 +619,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         );
 
 
-        let mut cmd = Command::new(&bin_path);
+        let mut cmd = engine.command();
         cmd.arg("-s").arg(&specs).env("SLEIGHHOME", &specs);
         match args.max_fn_memory {
             Some(0) => {}
@@ -666,7 +661,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             kuna_buildstamp::ChildKind::Engine,
             String::from_utf8_lossy(&output.stderr).into_owned(),
             "decomp_dbg",
-            &bin_path,
+            &engine.path,
             pinned_by,
         );
         let combined = format!("{stdout_text}\n{stderr_text}");

@@ -94,25 +94,30 @@ differential is described in `docs/history.md`.
 
 ## Where kuna finds the engine and the specs
 
-`kuna` drives two sibling binaries — `decomp_dbg` (the engine behind `decompile`
-and `catalog`) and `slacomp` (behind `kuna specs`) — plus a compiled SLEIGH tree.
-Both shipped layouts resolve with no configuration:
+`kuna` runs two programs besides itself — the decompiler console `decomp_dbg`
+(behind `decompile` and `catalog`) and the SLEIGH compiler `slacomp` (behind
+`kuna specs`) — and both are built into it: `kuna decomp_dbg` and `kuna slacomp`
+are those programs, and `kuna` launches itself that way. It also needs a compiled
+SLEIGH tree, found in this order when nothing pins it:
 
-- **a release archive**: `kuna`, `decomp_dbg` and `slacomp` extracted side by side
-  (on Windows as `kuna.exe`, `decomp_dbg.exe`, `slacomp.exe`), with the
-  `kuna-v<ver>-specs` archive's `specs/` tree beside or inside that directory;
-- **a repo checkout**: `decompiler/target/<profile>/`, with the repo's `specs/`.
+- **built in**: a release `kuna` (cargo feature `embed-specs`) carries the tree and
+  unpacks it once, under a name derived from its contents, into the per-user cache
+  directory — `%LOCALAPPDATA%\kuna`, `~/Library/Caches/kuna`, or
+  `$XDG_CACHE_HOME/kuna` (default `~/.cache/kuna`) — falling back to the system
+  temp directory;
+- **a repo checkout**: the repo's `specs/`, above `decompiler/target/<profile>/`;
+- **beside the binary**: a `specs/` directory inside or next to the one holding
+  `kuna`, then one in the current directory.
 
-Each probe tries the bare name and the platform's executable suffix, so a Windows
-install resolves the same way a unix one does. A probe that finds nothing names
-the directories it looked in.
+A probe that finds nothing names the directories it looked in, and why a built-in
+tree could not be unpacked.
 
 | Variable | What it pins |
 |---|---|
-| `KUNA_SPECS` | The SLEIGH tree passed as `-sleighpath` (`SLEIGHHOME` is the engine's own name for the same thing). |
-| `KUNA_DECOMP_DBG` | The `decomp_dbg` binary. `kuna decompile --decomp-dbg PATH` does the same for one run. |
-| `KUNA_DECOMP_TEST` | The `decomp_test_dbg` datatest harness (`kuna test --binary PATH`). |
-| `KUNA_SLACOMP` | The `slacomp` binary `kuna specs` runs. |
+| `KUNA_SPECS` | The SLEIGH tree passed as `-sleighpath` (`SLEIGHHOME` is the engine's own name for the same thing). Wins over a built-in tree. |
+| `KUNA_DECOMP_DBG` | A separate `decomp_dbg` binary to run instead of the built-in console. `kuna decompile --decomp-dbg PATH` does the same for one run. |
+| `KUNA_DECOMP_TEST` | The `decomp_test_dbg` datatest harness (`kuna test --binary PATH`). It is not built in; it is looked for beside `kuna`, then in the checkout's `decompiler/target/<profile>/`, under its bare and `.exe` names. |
+| `KUNA_SLACOMP` | A separate `slacomp` binary for `kuna specs` to run instead of the built-in compiler. |
 | `KUNA_ROOT` | The repo root, when the binaries are not in-tree: `specs/`, `tests/datatests/` and `decompiler/target/<profile>/` are all read from it. |
 | `KUNA_RUST_PROFILE` | The `decompiler/target/<profile>` directory the in-tree fallback reads (default `release`). |
 | `KUNA_DECODE_JOBS` | Decode lanes for the discovery walk, without `--jobs` — what `--jobs N` exports for the duration of the load (capped at 32, forced to `1` in pool workers). |
@@ -124,12 +129,13 @@ the directories it looked in.
 | `KUNA_CGROUP_ROOT` | Test-only: the directory read in place of `/sys/fs/cgroup` by the `--max-fn-memory` cgroup default and when `--jobs auto` reads a cgroup's headroom. |
 | `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
 
-An override wins over both layouts, and one pointing at nothing is reported as
+An override wins over all of these, and one pointing at nothing is reported as
 such rather than silently re-probed.
 
-The engine binary can also come from a different build than `kuna`: an override
-pointing at another install, or a `decomp_dbg` left behind when only `kuna` was
-rebuilt. `kuna` passes its build identity to every `decomp_dbg` and
+A separate engine binary can come from a different build than `kuna`: an
+override pointing at another install, or a `decomp_test_dbg` left behind when
+only `kuna` was rebuilt. (The built-in console is `kuna` itself, so it always
+matches.) `kuna` passes its build identity to every `decomp_dbg` and
 `decomp_test_dbg` it runs (as `KUNA_PARENT_BUILD`). A child from another build
 answers, and `kuna` prints one warning on stderr naming both, then carries on:
 
