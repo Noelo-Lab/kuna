@@ -142,9 +142,9 @@ fn write_thumb_te() -> PathBuf {
     path
 }
 
-/// A larger **ARM 32-bit** ELF fixture with functions the prologue-`<patternpairs>`
-/// matcher genuinely finds and the entry oracles do not (`0x3e0`, `0x410`,
-/// `0x3c520`) — the fixture the DIV-20 `funcstart_patterns` assertion needs.
+/// A larger **ARM 32-bit** ELF fixture with a function the prologue-`<patternpairs>`
+/// matcher genuinely finds and the entry oracles do not (`0x410`) — the fixture the
+/// DIV-20 `funcstart_patterns` assertion needs.
 ///
 /// `arm_thumb()` cannot serve that role: it holds exactly two functions, both
 /// already named by `.symtab`, so `funcstart_patterns` adds no real entry there.
@@ -518,10 +518,8 @@ fn decompile_mode_requires_a_value() {
 /// more. The reliable driver fallback must match an explicit
 /// `--option funcstart_patterns on` and beat `off`.
 ///
-/// Runs on `entrymain_arm`, where the pass finds three functions nothing else does
-/// (`0x3e0`, `0x410`, `0x3c520`): 10 entries `off` vs 12 by default — 13 canonical,
-/// of which `0x3c520` falls outside every CODE section and so is listed by `kuna
-/// functions` but not decompiled. It used to run
+/// Runs on `entrymain_arm`, where the pass finds `0x410`, which nothing else does:
+/// 10 entries `off` vs 11 by default. It used to run
 /// on the two-function `arm_thumb()` fixture, where the "extra" entries the
 /// assertion counted were in fact duplicate records for functions already found —
 /// so the fixture swap is what keeps this assertion meaningful once issue #197
@@ -675,14 +673,15 @@ fn arm_functions_inventory_covers_every_decompile_all_entry() {
         inventory.len(),
         decompiled.len()
     );
-    // The two entries only the prologue matcher finds — the concrete pre-fix miss.
-    for want in [0x3e0u64, 0x410] {
-        assert!(
-            inventory.contains(&want),
-            "the ARM inventory is missing the funcstart_patterns discovery 0x{want:x}: {:x?}",
-            inventory
-        );
-    }
+    // The entry only the prologue matcher finds — the concrete pre-fix miss.
+    assert!(
+        inventory.contains(&0x410),
+        "the ARM inventory is missing the funcstart_patterns discovery 0x410: {:x?}",
+        inventory
+    );
+    // 0x3e0 is `_start + 4`; it was listed only as the fall-through of an A32
+    // misdecode of `_start` as a predicated `bleq` (GH-299).
+    assert!(!inventory.contains(&0x3e0), "0x3e0 is inside _start: {inventory:x?}");
     // The injection fired: the default inventory equals the explicit bundle.
     let explicit = run_json_addrs(
         "functions",
