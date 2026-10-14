@@ -4480,6 +4480,16 @@ rebuilds clone the records and index before extending them. Serial and parallel
 walks use the same store. This changes allocation and lookup layout, not the
 instruction partition or the facts any consumer receives.
 
+The optional lazy p-code list is an owned boxed vector, so an instruction with
+no retained p-code reserves a pointer-sized slot rather than a vector header
+(`decompiler/crates/kuna-analysis/src/listing/model.rs (Insn)`). Populated lists
+keep the same order and mutable vector operations, and cloning a record clones
+its owned list. This changes the public `Insn.pcode` field from
+`Option<Vec<RawOp>>` to `Option<Box<Vec<RawOp>>>`; a populated constructor uses
+`Some(Box::new(ops))`. The usual Listing walk leaves the slot empty. A populated
+slot adds the box allocation in exchange for reducing every record's fixed
+storage; instruction contents and discovery remain unchanged.
+
 After loading, committing analysis and applying caller assertions, the in-process
 CLI returns unused glibc heap pages before selecting and decompiling functions
 (`decompiler/crates/kuna-cli/src/kuna_allocrelease.rs (after_analysis)`). Dropping

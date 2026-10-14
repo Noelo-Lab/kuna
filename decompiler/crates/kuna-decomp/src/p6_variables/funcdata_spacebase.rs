@@ -613,6 +613,8 @@ impl Funcdata {
 
         crate::kuna_stackviews::gather(self, &mut state, &space);
 
+        super::kuna_stackstruct::coalesce(self, &mut state, &space);
+
         // overlapProblems = restructure(state).  Clone the type factory `Rc` out
         // first so the &mut ScopeLocal borrow does not alias the &self arch read.
         let types_rc = self.get_arch().types_rc();

@@ -3013,12 +3013,14 @@ and an agent writes:
   `decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs`, so a default-off
   option is either in the preset or listed there with its reason),
   and **`fast`** (`listing`, `funcstart_patterns`, and `aif` off to avoid
-  program-wide decode and speculative discovery, `ctypes` on). A fourth frontend
+  program-wide decode and speculative discovery, `ctypes` and `partialaccess`
+  on). A fourth frontend
   policy, **`auto`**, resolves from the raw input length before the Architecture
   is built: `<500 KiB` selects `aggressive`, `500 KiB–<2 MiB` selects `reliable`,
   and `>=2 MiB` selects `fast`. `auto` also carries its own override list,
-  applied before the selected preset's: `ctypes=on`, so the C spelling of the
-  core types (chapter [09](09-emission.md) §9.2) does not change with input size.
+  applied before the selected preset's: `ctypes=on` and `partialaccess=on`, so
+  the C spelling of the core types and of a partial access (chapter
+  [09](09-emission.md) §9.2) does not change with input size.
   Size selects how much discovery and recovery a run can afford; spelling costs
   nothing and is not part of that trade. An explicit `--mode reliable` stays the
   catalog defaults. One function,

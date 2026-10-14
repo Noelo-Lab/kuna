@@ -122,10 +122,10 @@ mod tests {
             flows: vec![addr.wrapping_add(17)],
             mnemonic: format!("op_{addr}"),
             operands: format!("target_{addr}"),
-            pcode: Some(vec![RawOp {
+            pcode: Some(Box::new(vec![RawOp {
                 opcode: OpCode::CPUI_RETURN,
                 in0: None,
-            }]),
+            }])),
         }
     }
 
