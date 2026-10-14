@@ -1740,6 +1740,27 @@ moves.
   address-keyed copy at each resolver address. Thus an IAT slot and veneer remain
   typed even when a same-spelled export suppresses the global key; the export
   itself remains untouched.
+- **(kuna) Library parameter and result names** (for `libcnames`,
+  `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libcnames.rs (library_names)`):
+  every prototype the three libc tables above build carries the library's own
+  names for its parameters and, where the result has one, for its return value,
+  in `PrototypePieces::kuna_library_names`. They travel with exactly the
+  prototypes the tables park, so the imports-only rule and the order in which
+  DWARF replaces a table prototype apply to them unchanged, and they are kept
+  out of `innames`: the callee's signature prints as before and no parameter
+  becomes name-locked. Only the naming pass reads them, under `option libcnames`
+  (chapter 06). The parameter names are the glibc 2.35 header declarations with
+  the leading underscores stripped (`read (int __fd, void *__buf, size_t
+  __nbytes)` gives `fd, buf, nbytes`), read from the plain headers first and the
+  FORTIFY ones for the entry points only those declare; a slot the header leaves
+  unnamed stays empty. `__isoc99_X`, the GCC FORTIFY builtins `__X_chk` and
+  `__X_2` have no declaration of their own and take `X`'s names for the slots
+  they share with it. A return name is given only where the result is one kind
+  of thing whatever the arguments (`fd` for `open`/`socket`/`dup`/`mkstemp`, `n`
+  for `read`/`write`/`fread`, `len` for `strlen`, `p` for an allocation or a
+  pointer into a string, `fp` for an opened stream, `pid`, `dirp`, `entry`, `c`
+  for a read character); `fcntl` and `ioctl`, whose result depends on the
+  command, have none. 567 entries: 554 name parameters, 91 name the result.
 - **(kuna) Named libc aggregate types** (`libctypes`, values `off|opaque|glibc`,
   default opaque,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs (LibcTypesPass)`,

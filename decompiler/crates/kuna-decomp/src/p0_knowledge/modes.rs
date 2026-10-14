@@ -210,6 +210,12 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // the upstream `code *` spellings and applies no mode; preset membership is
     // what makes a call through a table entry or a local compile as C by default.
     ("calltargettype", "on"),
+    // (kuna) Name a local after the library call that returns it or takes it
+    // whole (`fd = open(...)`, `read(fd, ...)`). Shipped default OFF because six
+    // stage assertions of other features spell the `vN` it names; preset
+    // membership is what makes it the default rendering for the web page and for
+    // every binary `auto` decompiles under 500 KiB.
+    ("libcnames", "on"),
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),

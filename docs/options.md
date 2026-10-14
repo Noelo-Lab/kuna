@@ -1092,6 +1092,11 @@ Three tiers:
 | v10 and v11 declared between v1 and v2 | [`declorder`](#declorder) |
 | local declarations in string order v1, v10, v11, v2 | [`declorder`](#declorder) |
 | a numbered local hard to find among ten or more declarations | [`declorder`](#declorder) |
+| a local holding open()'s result named v1 | [`libcnames`](#libcnames) |
+| read's byte count kept as a vN | [`libcnames`](#libcnames) |
+| a buffer length from strlen named vN | [`libcnames`](#libcnames) |
+| a local passed to a libc function keeps a vN name | [`libcnames`](#libcnames) |
+| kuna names fewer locals than IDA on libc-heavy code | [`libcnames`](#libcnames) |
 | a double parameter stored into a global prints as unsigned long and moves ahead of the integer parameters | [`floatglobals`](#floatglobals) |
 | a float parameter copied into a global prints as unsigned int | [`floatglobals`](#floatglobals) |
 | a global passed to a float parameter prints as a union reinterpretation ((union { unsigned int from; float to; }){ .from = dat_10001d78 }).to | [`floatglobals`](#floatglobals) |
@@ -3430,6 +3435,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: locals declare as `v1, v2, ..., v10`, the order IDA declares its numbered locals in. Set it to `name` for the plain string order (`v1, v10, v11, v2`) the declaration pass used before.
 - **Where / provenance:** P9/naming-policy · ida · presentation-default · kuna-declorder
 - **Example:** `option declorder name`
+
+### `libcnames` -- on | off, default `off`
+
+- **Symptoms:** a local holding open()'s result named v1; read's byte count kept as a vN; a buffer length from strlen named vN; a local passed to a libc function keeps a vN name; kuna names fewer locals than IDA on libc-heavy code.
+- **What it does:** Give a numbered local the name the C library gives it, as a second name for its number. The built-in libc tables (`libproto`, `libcsigs`, `libctypes`) carry glibc's declared parameter names, leading underscores stripped (`read (int __fd, void *__buf, size_t __nbytes)` gives `fd, buf, nbytes`), and, where the result is one kind of thing whatever the arguments, a conventional name for it (`fd` for `open`, `n` for `read`, `len` for `strlen`, `p` for `malloc`, `fp` for `fopen`, `tp` for `localtime`). They ride on the prototype a table parks, so only a call a table prototype reaches counts, and they are kept out of the callee's parameter names, so its printed signature and name locks do not change. `kuna_libcnames` reads each local's evidence before the naming walk: the value a library call returns (`fd = open(a0,0);`), counted only when every library result the local holds agrees; then a library argument it is passed whole as when the name says what the value is (`read(fd,...)`, `write(a0,a1,n)`); then a name that only says which side of one call a value is on (`dest`/`src`, `s1`/`s2`), counted only when every such name agrees. A name equal to a type the code can print (`tm`, `FILE`) or a C or Rust keyword is passed over. The walk numbers every local exactly as with the option off and records that numbering, and only then does a numbered candidate print its library name, so `v4` is the same variable in every mode. A clash takes `_2`, `_3`, ... in call order, and no spelling repeats a name any variable of the function prints (a global's included), the scope holds, or a callee has. A directive reaches the local by either name, and a replay records the number: after `name fd src` the second descriptor stays `fd_2` and no local becomes `fd`, and a local whose library name a rename took prints its number. Over 14 stripped decbench binaries under `--mode aggressive` (O0 gzip, crontab, wc, bzip2, cat, dash; O2 bzip2, init, login, gzip, crond, tail, kmod, grep), 968 of 10,106 numbered locals print a library name in 546 of 3,297 functions, and every changed function differs from the option-off output only in those names, every other local keeping its number; against the source of the `compiled/` twins at the same call and slot, 415 of them could be located: 91 carry the source's own name and 324 another spelling of the same meaning (`fp` for `inStr`, `len` for `namelen`, `tp` for `tm`), none a misleading one. 0/675 datatest assertions move. Six stage assertions of other features spell a `vN` it names (`strlen(v7)` becomes `strlen(s)`), so it ships off and the `aggressive` preset turns it on.
+- **When to flip:** Off by default; on under `--mode aggressive`, which `auto` picks for a binary under 500 KiB and the web page runs. With it on a local reads `fd = open(a0,0); n = read(fd,v4,0x200);` where it read `v1 = open(a0,0); v3 = read(v1,v4,0x200);`, and every other local keeps its number. A directive may name such a local `fd` or `v1` in either mode. Set it off for `vN` defaults only; set it on with `--mode reliable` to get the names on the shipped defaults.
+- **Where / provenance:** P6/naming-policy · ida · presentation-default · kuna-libcnames
+- **Example:** `option libcnames on`
 
 ### `floatglobals` -- on | off, default `on`
 

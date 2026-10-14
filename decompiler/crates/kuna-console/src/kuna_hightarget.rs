@@ -172,11 +172,13 @@ fn printed_by_pass(fd: &Funcdata, name: &str, touched: &[DirectiveSymbol]) -> bo
             .any(|id| fd.high_bank().get(id).is_some_and(|h| !h.kuna_global()))
 }
 
-/// The HighVariables the printer declared as `name`.
+/// The HighVariables the printer declared as `name`, a local printed under its
+/// library name answering to the number it is numbered under
+/// (`kuna_decomp::kuna_libcnames`).
 fn printed_highs(fd: &Funcdata, name: &str) -> Vec<HighVariableId> {
     fd.high_bank()
         .iter()
-        .filter(|(_, h)| h.kuna_name() == Some(name))
+        .filter(|(id, h)| kuna_decomp::kuna_libcnames::shown_number(fd, *id).or(h.kuna_name()) == Some(name))
         // A CONCAT piece shares its root's name and carries the root's in-symbol
         // offset; the root (offset -1) is the declaration and the only nameable
         // target, exactly as the printer's decl loop decides it.
@@ -189,6 +191,22 @@ fn printed_highs(fd: &Funcdata, name: &str) -> Vec<HighVariableId> {
         })
         .map(|(id, _)| id)
         .collect()
+}
+
+/// The number a library name (`kuna_decomp::kuna_libcnames`) stands for, so a
+/// directive reaches the local by either of its names and a replay records the
+/// number, whether or not this run prints library names. `None` when no local
+/// has the library name `name`, or when an earlier directive in the batch gave
+/// `name` to another local: that rename took the library name, which is then
+/// that local's.
+fn library_number(fd: &Funcdata, name: &str) -> Option<String> {
+    let number = kuna_decomp::kuna_libcnames::number_for(fd, name)?;
+    let lm = fd.get_scope_local()?;
+    let given = fd
+        .kuna_directive_symbols()
+        .iter()
+        .any(|d| d.printed != name && lm.database().symbol(d.symbol).name == name);
+    (!given).then_some(number)
 }
 
 /// Apply one `name`/`type` directive to the local `name` resolves to: rename it
@@ -205,6 +223,8 @@ pub fn apply_local(
     if newname != name {
         check_local_name(fd, newname)?;
     }
+    let number = library_number(fd, name);
+    let name = number.as_deref().unwrap_or(name);
     if kuna_decomp::kuna_stackobjectasserts::apply(fd, name, newname, retype.clone())? {
         return Ok(None);
     }

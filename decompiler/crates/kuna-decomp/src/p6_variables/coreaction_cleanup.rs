@@ -2652,6 +2652,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         .iter()
         .filter_map(|(_, h)| h.kuna_name().map(str::to_string))
         .collect();
+    let library = crate::kuna_libcnames::candidates(data);
     for vn in vlist {
         // C++ `if (curvn->isFree()) continue;` (coreaction.cc:3058) — runs ahead of
         // both the per-space spacebase rename and the body-high naming.
@@ -3147,6 +3148,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         let snapshot = crate::kuna_stablenames::snapshot(data);
         data.set_kuna_name_snapshot(snapshot);
     }
+    crate::kuna_libcnames::apply(data, &library);
 }
 
 /// Type every instance of `high` as `ct` and lock it, after the merge and before

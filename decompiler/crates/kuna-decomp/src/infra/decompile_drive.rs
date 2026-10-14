@@ -2451,6 +2451,13 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
             if category != crate::database::symbol_category::NO_CATEGORY {
                 continue; // already emitted as a parameter above
             }
+            // (kuna `libcnames`) A local printed under its library name is
+            // reported under it too; its Symbol keeps the number.
+            let name = fd
+                .kuna_library_aliases()
+                .iter()
+                .find(|a| a.shown && a.number == name)
+                .map_or(name, |a| a.alias.clone());
             let type_name = crate::kuna_bytehonest::exported_type_name(arch, &ct);
             out.push(VarInfo {
                 name,

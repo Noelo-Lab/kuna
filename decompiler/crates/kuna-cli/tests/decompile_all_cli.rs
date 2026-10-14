@@ -2440,7 +2440,7 @@ fn a_frame_records_char_pointer_pointer_is_not_its_type() {
         if !ok {
             panic!("kuna decompile-all --option calleevote {value} failed: {stderr}");
         }
-        assert!(got.contains("v2[1] = 0x506070801020304;"), "{value}: the node's word store split:\n{got}");
+        assert!(got.contains("p[1] = 0x506070801020304;"), "{value}: the node's word store split:\n{got}");
         assert!(!got.contains("] = '\\x"), "{value}: a character store:\n{got}");
         assert!(!got.contains("drop(char **a0)"), "{value}: drop took the frame char **:\n{got}");
         assert!(got.contains("int advance(char **a0)"), "{value}: advance lost its char **:\n{got}");
@@ -5391,7 +5391,7 @@ int main(void) {
             "memmove((void *)a0->field_0x0,(void *)(a0->field_0x0 + (a0->field_0x8 - a0->field_0x10)),a0->field_0x10);",
             "memmove(a0->field_0x0,(void *)((long)a0->field_0x0 + (a0->field_0x8 - a0->field_0x10)),a0->field_0x10);",
         ),
-        ("v2 = strlen((char *)a0->field_0x10);", "v2 = strlen(a0->field_0x10);"),
+        ("len = strlen((char *)a0->field_0x10);", "len = strlen(a0->field_0x10);"),
         ("    long field_0x10;\n    long field_0x18;", "    long *field_0x10;\n    long *field_0x18;"),
         ("a0->field_0x0 = a0->field_0x0 + 8;", "a0->field_0x0 = &a0->field_0x0[1];"),
         ("v1 = (*(long (*)(unsigned long))a0->field_0x8)(a0->field_0x10);", "v1 = (*a0->field_0x8)(a0->field_0x10);"),
@@ -6162,7 +6162,7 @@ int main(void) {
             FUNCS,
             MAIN,
             WANT,
-            &[("v1 = (unsigned long)a0[a2];", "v1 = a0[a2];")],
+            &[("len = (unsigned long)a0[a2];", "len = a0[a2];")],
             OLD,
         ),
     ];
@@ -7641,10 +7641,10 @@ int main(void) {
             WANT,
             &[
                 ("v1 = (char *)skip_blanks(a0);", "v1 = skip_blanks(a0);"),
-                ("v1 = (FILE *)pick_stream(a0);", "v1 = pick_stream(a0);"),
+                ("stream = (FILE *)pick_stream(a0);", "stream = pick_stream(a0);"),
                 (
-                    "v1 = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
-                    "    v1 = after_colon(a0);\n  else {\n    v1 = fallback_name();",
+                    "s = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
+                    "    s = after_colon(a0);\n  else {\n    s = fallback_name();",
                 ),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
             ],
@@ -7668,11 +7668,11 @@ int main(void) {
             WANT,
             &[
                 ("v1 = (char *)skip_blanks(a0);", "v1 = skip_blanks(a0);"),
-                ("v1 = (FILE *)pick_stream(a0);", "v1 = pick_stream(a0);"),
+                ("stream = (FILE *)pick_stream(a0);", "stream = pick_stream(a0);"),
                 ("return (long)signed_delta(a0,a1) < 0;", "return signed_delta(a0,a1) < 0;"),
                 (
-                    "v1 = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
-                    "v1 = (a0) ? after_colon(a0) : fallback_name();",
+                    "s = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
+                    "s = (a0) ? after_colon(a0) : fallback_name();",
                 ),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
             ],
@@ -7692,7 +7692,7 @@ int main(void) {
             &[
                 ("v1 = (char *)after_colon(a0);", "v1 = after_colon(a0);"),
                 ("v1 = (char *)fallback_name();", "v1 = fallback_name();"),
-                ("v1 = (FILE *)pick_stream(a0);", "v1 = pick_stream(a0);"),
+                ("stream = (FILE *)pick_stream(a0);", "stream = pick_stream(a0);"),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
             ],
             &[

@@ -181,6 +181,9 @@ mod limits_cli;
 #[path = "local_name_batch.rs"]
 mod local_name_batch;
 
+#[path = "library_names.rs"]
+mod library_names;
+
 #[path = "stable_local_names.rs"]
 mod stable_local_names;
 

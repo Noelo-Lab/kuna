@@ -42,7 +42,7 @@
       {
         "path": "functions[0].code",
         "op": "contains",
-        "value": "unsigned int *v1; // rax"
+        "value": "unsigned int *p; // rax"
       }
     ]
   },

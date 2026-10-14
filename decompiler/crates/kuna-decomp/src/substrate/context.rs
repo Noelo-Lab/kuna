@@ -1201,6 +1201,9 @@ pub struct ArchContext {
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
     pub stack_views: bool,
+    /// (kuna `libcnames`) Name locals from the library calls they meet.
+    /// See [`crate::kuna_libcnames`].
+    pub libc_names: bool,
     /// Opt-in frame-bounded arrays for call-escaped integer storage.
     pub call_array_extent: bool,
     /// (kuna `stackstruct`) Lay out an address-taken frame record as one structure.
@@ -1882,6 +1885,7 @@ impl ArchContext {
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)
+            libc_names: false, // libcnames (opt-in)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             global_call_store: false,    // globalcallstore (Architecture::reset_defaults sets the shipped default: on)
@@ -2153,6 +2157,20 @@ impl ArchContext {
             .iter()
             .find(|(sp, off, _)| *sp == space_index && *off == offset)
             .map(|(_, _, m)| std::rc::Rc::clone(m))
+    }
+
+    /// (kuna `libcnames`) The library names the prototype parked on the
+    /// callee at `addr` carries, without copying the prototype.
+    pub fn callee_library_names(&self, addr: &Address) -> Option<&'static crate::kuna_libcnames::LibraryNames> {
+        if self.remote_scope.is_some() {
+            return None;
+        }
+        let space_index = addr.get_space()?.get_index();
+        let offset = addr.get_offset();
+        self.callee_protos
+            .iter()
+            .find(|(si, off, _)| *si == space_index && *off == offset)
+            .and_then(|(_, _, pieces)| pieces.kuna_library_names)
     }
 
     pub fn callee_proto_pieces(&self, addr: &Address) -> Option<crate::fspec::PrototypePieces> {
