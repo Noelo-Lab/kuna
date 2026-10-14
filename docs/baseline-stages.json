@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2946,
-    2946
+    2951,
+    2951
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2425,6 +2425,11 @@
     "data:low address outside pointer inference range still folds",
     "data:marker has no executable trap",
     "data:mirror receives the local without a device read",
+    "data:mixed argument reads: byte uses fifth argument",
+    "data:mixed argument reads: complete six-argument prototype",
+    "data:mixed argument reads: full-width value uses both arguments",
+    "data:mixed argument reads: halfword uses fifth argument",
+    "data:mixed argument reads: no synthetic register fragments",
     "data:mode aggressive enables returndup (warning appears once); mode reliable does not",
     "data:named incoming families retain the same backing at their use",
     "data:named interior use never takes the formal address",

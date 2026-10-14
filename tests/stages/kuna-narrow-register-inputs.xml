@@ -1,0 +1,19 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">da2a2011d82a2012d83a0000d832201081c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1000" name="store_parts"/>
+</binaryimage>
+<script>
+<com>parse line typedef struct Record { uint8 wide; uint8 untouched; uint2 half; uint1 byte; } Record;</com>
+<com>parse line extern void store_parts(Record *dst,uint4 b,uint4 c,uint4 d,uint4 e,uint4 f);</com>
+<com>load function store_parts</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="mixed argument reads: complete six-argument prototype" min="1" max="1">void store_parts\(Record \*dst,uint4 b,uint4 c,uint4 d,uint4 e,uint4 f\)</stringmatch>
+<stringmatch name="mixed argument reads: full-width value uses both arguments" min="1" max="1">dst-&gt;wide = CONCAT44\(e,f\);</stringmatch>
+<stringmatch name="mixed argument reads: halfword uses fifth argument" min="1" max="1">dst-&gt;half = e;</stringmatch>
+<stringmatch name="mixed argument reads: byte uses fifth argument" min="1" max="1">dst-&gt;byte = e;</stringmatch>
+<stringmatch name="mixed argument reads: no synthetic register fragments" min="0" max="0">in_register|unaff_|CONCAT31|halt_baddata</stringmatch>
+</decompilertest>
