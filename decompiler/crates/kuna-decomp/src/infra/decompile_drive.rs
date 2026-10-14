@@ -1222,6 +1222,7 @@ pub fn decompile_func_full_with_objects(
     let staged_name_recs = std::mem::take(&mut arch.kuna_pending_name_recs);
     let staged_dyn_recs = std::mem::take(&mut arch.kuna_pending_dyn_recs);
     let staged_proto_model = arch.kuna_pending_proto_model.take();
+    let name_gaps = arch.kuna_name_gaps.clone();
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
                        condstmts_seed: &std::collections::BTreeSet<Address>|
@@ -1241,6 +1242,7 @@ pub fn decompile_func_full_with_objects(
             )?,
         };
         crate::kuna_stackobjectasserts::seed(&mut fd, object_assertions);
+        fd.seed_name_gaps(name_gaps.clone());
         if unguarded {
             fd.withdraw_stack_store_guard();
         }

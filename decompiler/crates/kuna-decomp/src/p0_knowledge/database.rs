@@ -4259,6 +4259,7 @@ impl Database {
         scope: ScopeId,
         base: &mut int4,
         arch: &dyn DatabaseArch,
+        skip: &dyn Fn(int4) -> bool,
     ) -> KunaResult<()> {
         self.kuna_gen += 1;
         use std::ops::Bound::{Excluded, Unbounded};
@@ -4276,6 +4277,9 @@ impl Database {
             .map(|(_, &sid)| sid)
             .collect();
         for sid in undefined {
+            while skip(*base) {
+                *base += 1;
+            }
             let nm = self.build_default_name(scope, sid, base, None, arch)?;
             self.rename_symbol(sid, &nm)?;
         }

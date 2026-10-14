@@ -400,6 +400,11 @@ pub struct Funcdata {
     /// empty, so the entries are exactly one batch: the directives between two
     /// decompiles.
     kuna_directive_symbols: Vec<DirectiveSymbol>,
+    /// (kuna `--assert`) The default numbers earlier renames left unused, seeded
+    /// by the drive; see [`crate::kuna_namegaps`].
+    kuna_name_gaps: crate::kuna_namegaps::NameGaps,
+    /// One past the last default index the naming pass handed out.
+    kuna_default_name_end: int4,
     /// (kuna, ghidra Phase 4) WIRE-ONLY symbols the encode-time link pass
     /// synthesized for named HighVariables the analysis deliberately left
     /// symbol-less — see [`crate::database::WireSymbol`].  They are encoded
@@ -715,6 +720,8 @@ impl Funcdata {
             kuna_pipeline_failure: None,
             kuna_rejected_flow: Vec::new(),
             kuna_directive_symbols: Vec::new(),
+            kuna_name_gaps: Default::default(),
+            kuna_default_name_end: 1,
             kuna_wire_symbols: Vec::new(),
             kuna_wrapped_wire_storage: std::collections::BTreeMap::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
@@ -929,6 +936,24 @@ impl Funcdata {
             return;
         }
         self.kuna_directive_symbols.push(entry);
+    }
+
+    /// (kuna `--assert`) The default numbers this decompile must leave unused.
+    pub fn kuna_name_gaps(&self) -> &crate::kuna_namegaps::NameGaps {
+        &self.kuna_name_gaps
+    }
+
+    pub fn seed_name_gaps(&mut self, gaps: crate::kuna_namegaps::NameGaps) {
+        self.kuna_name_gaps = gaps;
+    }
+
+    /// One past the last default index the naming pass handed out.
+    pub fn kuna_default_name_end(&self) -> int4 {
+        self.kuna_default_name_end
+    }
+
+    pub fn set_kuna_default_name_end(&mut self, end: int4) {
+        self.kuna_default_name_end = end;
     }
 
     /// (kuna `rustabi`) Record what a probe of `entry`'s body proved about the

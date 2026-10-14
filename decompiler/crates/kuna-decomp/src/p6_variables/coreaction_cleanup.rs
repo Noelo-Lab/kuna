@@ -2422,12 +2422,12 @@ fn build_func_param_name_recmap(
 /// no prefix (so the ghidra name degenerates to `Var<index>`, matching the C++
 /// empty-`printNameBase` case).
 fn kuna_default_local_name(
-    data: &Funcdata,
+    data: &mut Funcdata,
     ct: Option<&crate::dtype::Datatype>,
     base: &mut int4,
 ) -> String {
     use crate::database::DatabaseArch;
-    let arch = data.get_arch();
+    let arch = data.get_arch().clone();
     if arch.name_style_angr() {
         default_v_name(data, base)
     } else {
@@ -2439,12 +2439,12 @@ fn kuna_default_local_name(
 
 /// `v<base++>`, past any name a name-locked local Symbol holds
 /// (`ScopeLocal::next_default_name`).
-fn default_v_name(data: &Funcdata, base: &mut int4) -> String {
+fn default_v_name(data: &mut Funcdata, base: &mut int4) -> String {
     next_default_name(data, base, |i| format!("v{i}"))
 }
 
-fn next_default_name(data: &Funcdata, base: &mut int4, render: impl Fn(int4) -> String) -> String {
-    match data.get_scope_local() {
+fn next_default_name(data: &mut Funcdata, base: &mut int4, render: impl Fn(int4) -> String) -> String {
+    match data.get_scope_local_mut() {
         Some(lm) => lm.next_default_name(base, render),
         None => {
             let name = render(*base);
@@ -2594,6 +2594,10 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // address-tied arm renames the Symbol at the recommended address, and the
     // use-point arms are applied per-high inside the walk
     // (`recommended_name_for`).  All are no-ops without recommendations.
+    let gaps = data.kuna_name_gaps().clone();
+    if let Some(lm) = data.get_scope_local_mut() {
+        lm.install_name_gaps(gaps);
+    }
     data.kuna_apply_dynamic_recommendations();
     if let Some(lm) = data.get_scope_local_mut() {
         lm.recover_addrtied_name_recommendations();
@@ -3098,6 +3102,8 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // placeholder may outlive this pass, in the Symbol table or in a HighVariable's
     // name cache.  See `crate::kuna_undefname`.
     crate::kuna_undefname::finish_undefined_names(data, &mut base);
+    let end = data.get_scope_local().map_or(base, |lm| base.max(lm.name_gaps_overflow()));
+    data.set_kuna_default_name_end(end);
 }
 
 /// Choose a *name* for all high-level variables (C++ `ActionNameVars`,

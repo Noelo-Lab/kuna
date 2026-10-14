@@ -963,6 +963,9 @@ pub struct ScopeLocal {
     /// (C++ `Symbol::setIsolated`).  Read by
     /// [`Self::has_isolated_symbols`]; see that method for why it is monotone.
     isolated_present: bool,
+    /// (kuna `--assert`) The default numbers earlier renames left unused, for
+    /// [`Self::next_default_name`].
+    name_gaps: crate::kuna_namegaps::GapState,
 }
 
 impl ScopeLocal {
@@ -992,6 +995,7 @@ impl ScopeLocal {
             name_recommend: Vec::new(),
             dyn_recommend: Vec::new(),
             isolated_present: false,
+            name_gaps: Default::default(),
         })
     }
 
@@ -1235,7 +1239,8 @@ impl ScopeLocal {
         base: &mut int4,
         arch: &dyn crate::database::DatabaseArch,
     ) -> KunaResult<()> {
-        self.db.assign_default_names(self.scope, base, arch)
+        let gaps = &self.name_gaps;
+        self.db.assign_default_names(self.scope, base, arch, &|i| gaps.skips(i))
     }
 
     /// C++ `Scope::queryProperties` (`database.cc:1268`) on the local stack scope:
@@ -1828,14 +1833,42 @@ impl ScopeLocal {
     /// (`name v3 v1`) keeps its Symbol through the second pass, and handing the
     /// same `v1` to an untouched neighbour made the printer suffix one of the two
     /// -- often the caller's.  Without such a Symbol this is `render(base++)`.
-    pub fn next_default_name(&self, base: &mut int4, render: impl Fn(int4) -> String) -> String {
+    ///
+    /// The numbers the [`crate::kuna_namegaps`] state records as left by a
+    /// caller's rename are passed over, and a local whose name a rename took is
+    /// given one of those numbers instead (or one past the last the previous
+    /// decompile used), so a rename moves no other local's number.
+    pub fn next_default_name(&mut self, base: &mut int4, render: impl Fn(int4) -> String) -> String {
         loop {
-            let name = render(*base);
+            let index = *base;
             *base += 1;
-            if !self.db.find_by_name(self.scope, &name).iter().any(|&s| self.db.symbol(s).is_name_locked()) {
+            if self.name_gaps.skips(index) {
+                continue;
+            }
+            let name = render(index);
+            if self.name_gaps.displaces(&name) {
+                let (db, scope) = (&self.db, self.scope);
+                let free = |name: &str| !db.find_by_name(scope, name).iter().any(|&s| db.symbol(s).is_name_locked());
+                return render(self.name_gaps.displaced_index(&render, &free));
+            }
+            if !self.name_locked(&name) {
                 return name;
             }
         }
+    }
+
+    fn name_locked(&self, name: &str) -> bool {
+        self.db.find_by_name(self.scope, name).iter().any(|&s| self.db.symbol(s).is_name_locked())
+    }
+
+    /// (kuna `--assert`) Start a naming pass with the gaps earlier renames left.
+    pub fn install_name_gaps(&mut self, gaps: crate::kuna_namegaps::NameGaps) {
+        self.name_gaps = crate::kuna_namegaps::GapState::new(gaps);
+    }
+
+    /// One past every index [`Self::next_default_name`] gave a displaced local.
+    pub fn name_gaps_overflow(&self) -> int4 {
+        self.name_gaps.overflow()
     }
 
     /// C++ `ActionNameVars`'s namerec rename (coreaction.cc:3087-3094): if the
