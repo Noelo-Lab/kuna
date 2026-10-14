@@ -939,6 +939,94 @@ fn w9_con_grammar_v6_lexer_boundary_no_panic() {
     assert_eq!(lex_kinds("/**/a"), vec![tok::IDENTIFIER, tok::ENDOFFILE]);
 }
 
+#[test]
+fn lexer_reuse_preserves_eof_and_per_line_limits() {
+    let mut lx = GrammarLexer::new(8);
+    for (input, expected) in [
+        ("", vec![tok::ENDOFFILE]),
+        ("a", vec![tok::IDENTIFIER, tok::ENDOFFILE]),
+        ("abcdefg", vec![tok::IDENTIFIER, tok::ENDOFFILE]),
+        ("abcdefgh", vec![tok::BADTOKEN]),
+        ("abcdefg\nabcdefg\n", vec![tok::IDENTIFIER, tok::IDENTIFIER, tok::ENDOFFILE]),
+        ("/*", vec![tok::BADTOKEN]),
+        ("a;", vec![tok::IDENTIFIER, tok::SEMICOLON, tok::ENDOFFILE]),
+        ("", vec![tok::ENDOFFILE]),
+    ] {
+        lx.clear();
+        lx.push_file("reuse", input.as_bytes().to_vec());
+        let mut got = Vec::new();
+        for _ in 0..=input.len() + 1 {
+            let kind = read_tok(&mut lx).get_type();
+            if kind != 0 {
+                got.push(kind);
+            }
+            if kind == tok::BADTOKEN || kind == tok::ENDOFFILE {
+                break;
+            }
+        }
+        assert_eq!(got, expected, "{input:?}");
+    }
+}
+
+#[test]
+fn a_newline_can_separate_a_type_from_its_declarator() {
+    let f = factory();
+    let (ty, name) = parse_type("int4\n*value", &f, org()).unwrap();
+    assert_eq!(name, "value");
+    assert_eq!(ty.get_ptr_to().unwrap().get_name(), "int4");
+    for input in ["\"a\nb\"", "'a\nb'", "'\\\na'"] {
+        assert_eq!(lex_kinds(input), vec![tok::BADTOKEN]);
+    }
+}
+
+#[test]
+fn declarations_accept_trailing_whitespace_and_comments() {
+    let f = factory();
+    for suffix in ["", " ", "\n", "\r\n", "\n\n", "\t", " /* done */", " // done", " // done\n"] {
+        let mut applied = false;
+        super::parse_c(&format!("extern int4\nexample(void);{suffix}"), &f, org(), &[], |proto, _| {
+            assert_eq!(proto.name, "example");
+            applied = true;
+            Ok(())
+        }).unwrap_or_else(|e| panic!("suffix {suffix:?}: {e:?}"));
+        assert!(applied);
+        assert_eq!(parse_type(&format!("int4\n*value{suffix}"), &f, org()).unwrap().1, "value");
+    }
+    for input in ["", " ", "\n", "/* done */", "// done"] {
+        assert_eq!(lex_kinds(input), vec![tok::ENDOFFILE], "{input:?}");
+    }
+}
+
+#[test]
+fn short_lexer_inputs_terminate_without_panicking() {
+    let alphabet = b"a1/*'\"\\\n ";
+    for length in 0..=4u32 {
+        for mut value in 0..alphabet.len().pow(length) {
+            let mut input = vec![0; length as usize];
+            for byte in &mut input {
+                *byte = alphabet[value % alphabet.len()];
+                value /= alphabet.len();
+            }
+            for limit in [1, 2, 4, 8] {
+                let result = std::panic::catch_unwind(|| {
+                    let mut lx = GrammarLexer::new(limit);
+                    lx.push_file("short", input.clone());
+                    for _ in 0..input.len() + 3 {
+                        let mut token = GrammarToken::new();
+                        if lx.get_next_token(&mut token).is_err()
+                            || matches!(token.get_type(), tok::BADTOKEN | tok::ENDOFFILE)
+                        {
+                            return;
+                        }
+                    }
+                    panic!("lexer did not terminate");
+                });
+                assert!(result.is_ok(), "input {input:?}, limit {limit}");
+            }
+        }
+    }
+}
+
 /// V7: end-to-end parity for a multi-pointer + array declarator, exercising the
 /// pointer-vector reverse() order and the buildType reverse-mod walk together.
 /// `int4 **a[3]` is a `int4*[3]` ... actually `int4 (**a)[3]`-style binding is
