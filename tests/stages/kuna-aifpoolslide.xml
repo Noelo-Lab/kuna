@@ -14,16 +14,19 @@
     The XML wrapper only provides the harness architecture.  Every pass clears
     it and loads `poolslide_le32` (generator `poolslide_le32.py` beside it): a
     stripped Thumb ELF whose `_start` calls 22 leaves that open with
-    `movs r3,#n; adds r0,r0,r3` and `user` at 0x81f4, which loads the pool word
-    at 0x81f8 (0x20000124, an SRAM address) with `ldr r0,[pc,#0]`.  The
-    unreferenced `lone` at 0x81fc follows the pool.  The pool word's high half
+    `movs r3,#n; adds r0,r0,r3`, `user` at 0x81f8, which loads the pool word
+    at 0x81fc (0x20000124, an SRAM address) with `ldr r0,[pc,#0]`, and `taker`
+    at 0x8208, which jumps to `h3` at 0x8210 through `adr r1,h3`.  The
+    unreferenced `lone` at 0x8200 follows the pool.  The pool word's high half
     reads as `movs r0,#0`, and with `lone`'s first `adds` it matches the
     leaves' prologue.  Both passes use `mode reliable` with the Listing and the
     gap walk on, as `kuna functions` runs on a large ARM image.
 
     Pass 1 (`option aifpoolslide off`) reproduces the bug: the gap walk lists
-    sub_81fa, on the pool word, and claims `lone` as its body.
-    Pass 2 (shipped default) plants that accept on `lone` itself: sub_81fc.
+    sub_81fe, on the pool word, and claims `lone` as its body.
+    Pass 2 (shipped default) plants that accept on `lone` itself: sub_8200.
+    `adr` loads nothing, so `h3`'s first word is not a pool word and `h3` stays
+    at its own address in both passes.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -50,7 +53,9 @@ c3
   <com>quit</com>
 </script>
 <stringmatch name="KUNA-AIFPOOLSLIDE #1: the reset handler is a function in both passes" min="2" max="2">0x8110 sub_8110</stringmatch>
-<stringmatch name="KUNA-AIFPOOLSLIDE #2: the entry on the pool word is listed only with the option off" min="1" max="1">0x81fa sub_81fa</stringmatch>
-<stringmatch name="KUNA-AIFPOOLSLIDE #3: lone is listed at its own address only with the option on" min="1" max="1">0x81fc sub_81fc</stringmatch>
+<stringmatch name="KUNA-AIFPOOLSLIDE #2: the entry on the pool word is listed only with the option off" min="1" max="1">0x81fe sub_81fe</stringmatch>
+<stringmatch name="KUNA-AIFPOOLSLIDE #3: lone is listed at its own address only with the option on" min="1" max="1">0x8200 sub_8200</stringmatch>
 <stringmatch name="KUNA-AIFPOOLSLIDE #4: the catalog documents it as a default-on P1 code/data-partition option" min="1" max="1">"option": "aifpoolslide", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
+<stringmatch name="KUNA-AIFPOOLSLIDE #5: a function whose address adr takes stays at its own address" min="2" max="2">0x8210 sub_8210</stringmatch>
+<stringmatch name="KUNA-AIFPOOLSLIDE #6: and is never moved past its first word" min="0" max="0">0x8214 sub_8214</stringmatch>
 </decompilertest>

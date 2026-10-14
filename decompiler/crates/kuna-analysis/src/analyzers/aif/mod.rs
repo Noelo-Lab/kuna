@@ -990,10 +990,17 @@ fn aif_candidates(
                 other => other,
             };
             // (kuna, `aifpoolslide`) A candidate on a literal-pool word plants its
-            // accept on the code after the pool, or is rejected outright.
+            // accept on the code after the pool; it is refused, consuming its body,
+            // when that is data, and rejected when its body never decoded there.
             let pool_end = literals.as_ref().and_then(|lits| lits.run_end(gap_start));
             let probe = match (probe, pool_end) {
+                (Probe::Accept(body), Some(end))
+                    if !literals.as_ref().is_some_and(|l| l.may_plant(end)) =>
+                {
+                    Probe::Uncorroborated(body)
+                }
                 (Probe::Accept(body), Some(end)) if body.contains(&end) => Probe::Accept(body),
+                (Probe::Uncorroborated(body), Some(_)) => Probe::Uncorroborated(body),
                 (_, Some(_)) => Probe::Reject,
                 (probe, None) => probe,
             };

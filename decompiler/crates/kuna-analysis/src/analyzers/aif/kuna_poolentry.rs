@@ -162,7 +162,7 @@ pub(super) struct DecodeMode<'a> {
 impl DecodeMode<'_> {
     /// PC bias of a `[pc,#imm]` literal at `addr`: Thumb +4, A32 +8, `None` where
     /// the language has no decode-mode context.
-    fn pc_delta(&self, addr: u64) -> Option<u64> {
+    pub(super) fn pc_delta(&self, addr: u64) -> Option<u64> {
         let at = kuna_base::address::Address::new(Rc::clone(&self.code_space), addr);
         let tmode = self
             .arch
@@ -220,7 +220,7 @@ fn referenced_words(
 /// A 64-bit literal load covers TWO words; the second is loaded by nothing.
 pub(super) fn wide(mnemonic: &str) -> bool {
     let m = mnemonic.to_ascii_lowercase();
-    m.starts_with("vldr.64") || m.starts_with("ldrd")
+    (m.starts_with("vldr") && m.ends_with(".64")) || m.starts_with("ldrd")
 }
 
 fn insert_literal(

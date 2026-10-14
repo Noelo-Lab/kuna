@@ -4804,25 +4804,32 @@ the function behind it is never probed: on a stripped A32 u-boot this hid 334 re
 functions. `poolentry` repairs the same shape after the fact, but only in
 `--mode aggressive`, only for a pool behind a return (u-boot's often follow a call
 to a no-return function), and only by adding a second entry. Here the walk keeps a
-set of literal words: every word a decoded Listing instruction loads PC-relatively
-(the absolute `[0x...]` operand of a resolved `ldr`, the `[pc,#imm]` form of
-`vldr`/`ldrd`, both words of a 64-bit load), extended with the literal words of
-each body it accepts or consumes, so the pool behind a gap-found function is known
-by the time the walk reaches it. A candidate inside a run of adjacent literal words
-is probed as before, but its accept is planted on the first address after the run
-when its body decoded an instruction there, and it is rejected otherwise, so the
-cursor reaches the code after the pool and probes it on its own. It is 32-bit ARM
-only and runs only in the plain gap walk. Scored against unstripped twins in the
-default mode: over the 93 non-u-boot ARM ELFs of the decbench corpus mid-body
-entries 4,375 to 1,868 net and true starts +223; on the two u-boot images
-1,415 to 1,081 and +334; no true start lost, and `CMSIS_DAP.axf`, the i386 PE
-corpus and x86-64 images unchanged. The new entries are 557 true starts, 21
-mid-body entries and 128 entries on data islands in `.text` (string tables between
-functions), against 88 such entries removed: a phantom on a referenced word in
-such a table moves to the next, unreferenced word rather than disappearing. It
-shares `poolentry`'s one disclosed split: a literal reference that resolves onto a
-function's own first word (the SPLIT shape of `cortexm_poolentry_le32`) moves that
-function's entry four bytes in; the corpus measurement above has no such case.
+set of literal words: every word an `ldr` or `vldr` of the decoded Listing loads
+PC-relatively (its absolute `[0x...]` operand or its `[pc,#imm]` form, both words
+of a 64-bit load; an `adr` only takes an address, so a function whose address it
+takes is not a pool), extended with the literal words of each body the walk
+accepts or consumes, so the pool behind a gap-found function is known by the time
+the walk reaches it. A candidate inside a run of adjacent literal words is probed
+as before, but its accept is planted on the first address after the run when its
+body decoded an instruction there, and it is rejected otherwise, so the cursor
+reaches the code after the pool and probes it on its own. When that address is
+data — bytes that begin a printable NUL-terminated string, or an even address some
+literal word of Thumb code holds, since a Thumb code address carries bit 0 — the
+candidate is refused but still consumes its body: a body the walk accepts over a
+string table decodes text as `ldr`s, and those bogus literal words must not move an
+entry onto a string the code passes as an argument. A bracket refusal also keeps
+consuming its body. It is 32-bit ARM only and runs only in the plain gap walk.
+Scored against unstripped twins in the default mode: over the 93 non-u-boot ARM
+ELFs of the decbench corpus mid-body entries 4,375 to 1,866 net and true starts
++222; on the two u-boot images 1,415 to 1,081 and +334; no true start lost, and
+`CMSIS_DAP.axf`, the i386 PE corpus and x86-64 images unchanged. Besides the 556
+true starts, the new entries are 5 mid-body entries and 63 on data (none on a
+string start), against 88 such data entries removed, 77 of them on a string. It
+shares `poolentry`'s one disclosed split: a literal
+reference that resolves onto a function's own first word (the SPLIT shape of
+`cortexm_poolentry_le32`) moves that function's entry four bytes in, which the
+gap walk without this option gets right in `--mode reliable`; the corpus
+measurement has no such case.
 
 (kuna, GH-313) Upstream applies a **second** fingerprint test that kuna's port
 dropped. Its analyzer refuses a candidate twice — once on the shared-prologue count

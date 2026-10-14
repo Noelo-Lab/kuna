@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2842,
-    2842
+    2844,
+    2844
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -885,6 +885,8 @@
     "data:KUNA-AIFPOOLSLIDE #2: the entry on the pool word is listed only with the option off",
     "data:KUNA-AIFPOOLSLIDE #3: lone is listed at its own address only with the option on",
     "data:KUNA-AIFPOOLSLIDE #4: the catalog documents it as a default-on P1 code/data-partition option",
+    "data:KUNA-AIFPOOLSLIDE #5: a function whose address adr takes stays at its own address",
+    "data:KUNA-AIFPOOLSLIDE #6: and is never moved past its first word",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
     "data:KUNA-ASSERT #2: kassert list reports the P3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic P9 assertion as HINT via HARD mechanism",

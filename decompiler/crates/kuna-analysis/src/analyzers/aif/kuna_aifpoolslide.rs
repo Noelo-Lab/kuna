@@ -19,9 +19,10 @@
 //! # The rule
 //!
 //! A word that some instruction loads PC-relatively is data. [`LiteralWords`]
-//! collects those words from the decoded Listing (the absolute `[0x...]` operand
-//! the ARM SLEIGH prints for a resolved `ldr`, and the `[pc,#imm]` form of
-//! `vldr`/`ldrd`, both words of a 64-bit one)
+//! collects those words from the `ldr`/`vldr` instructions of the decoded Listing
+//! (the absolute `[0x...]` operand the ARM SLEIGH prints for a resolved literal
+//! load, or its `[pc,#imm]` form, both words of a 64-bit one; an `adr` takes an
+//! address and loads nothing, so it does not count)
 //! and, as the walk moves up the image, from each body it accepts or consumes, so
 //! the pool behind a gap-found function is known when the walk reaches it.
 //!
@@ -29,7 +30,15 @@
 //! planted at the end of the run, the first address after the pool, when its body
 //! decoded an instruction there; otherwise the candidate is rejected and the walk
 //! probes the code after the pool on its own. The entry therefore moves onto the
-//! function the phantom was decoding instead of disappearing with it.
+//! function the phantom was decoding instead of disappearing with it. When the
+//! end of the run is data — bytes that begin a printable NUL-terminated string,
+//! or an even address some literal word of Thumb code holds (a Thumb code address
+//! carries bit 0) — the candidate is refused as an entry but still consumes its
+//! body, as the walk did before, so it neither plants an entry on that data nor
+//! reopens the hole for a probe to land on it. A body the walk accepts over a
+//! string table can decode text as `ldr` instructions, and this keeps their bogus
+//! literal words from moving an entry onto a string. A bracket refusal still
+//! consumes its body.
 //!
 //! Only those two literal forms count as a reference, and only on 32-bit ARM, so
 //! no other architecture is affected.
@@ -39,9 +48,10 @@
 //! Default mode, each stripped image scored against its unstripped twin's symbols:
 //!
 //! ```text
-//! 93 decbench ARM ELFs (no u-boot)  mid-body 4,375 -> 1,868  true starts +223, lost 0
+//! 93 decbench ARM ELFs (no u-boot)  mid-body 4,375 -> 1,866  true starts +222, lost 0
 //! 2 u-boot A32 images               mid-body 1,415 -> 1,081  true starts +334, lost 0
 //! CMSIS_DAP.axf, i386 PEs, x86-64   unchanged
+//! new entries off a true start      5 mid-body, 63 on data (none on a string start)
 //! ```
 
 use std::collections::BTreeSet;
@@ -51,16 +61,18 @@ use crate::listing::Listing;
 use super::kuna_poolentry::{literal_target, wide, DecodeMode};
 use super::GapDecoder;
 
-/// Every word an instruction seen so far loads as a PC-relative literal.
+/// Every word an instruction seen so far loads as a PC-relative literal, and the
+/// even values such words hold in Thumb code.
 pub(super) struct LiteralWords<'a> {
     mode: DecodeMode<'a>,
     words: BTreeSet<u64>,
+    data_pointers: BTreeSet<u64>,
 }
 
 impl<'a> LiteralWords<'a> {
     /// The words the decoded Listing loads.
     pub(super) fn from_listing(listing: &Listing, mode: DecodeMode<'a>) -> Self {
-        let mut out = LiteralWords { mode, words: BTreeSet::new() };
+        let mut out = LiteralWords { mode, words: BTreeSet::new(), data_pointers: BTreeSet::new() };
         for (&at, insn) in listing.instructions() {
             out.note(listing, at, &insn.mnemonic, &insn.operands);
         }
@@ -76,12 +88,22 @@ impl<'a> LiteralWords<'a> {
     }
 
     fn note(&mut self, listing: &Listing, at: u64, mnemonic: &str, operands: &str) {
+        let m = mnemonic.to_ascii_lowercase();
+        if !(m.starts_with("ldr") || m.starts_with("vldr")) {
+            return;
+        }
         let Some(target) = literal_target(at, operands, &self.mode) else { return };
         let count = if wide(mnemonic) { 2 } else { 1 };
+        let thumb = self.mode.pc_delta(at) == Some(4);
         for word in (0..count).map(|k| target + 4 * k) {
-            let in_exec = listing.exec_ranges().iter().any(|&(lo, hi)| lo <= word && word < hi);
-            if word % 4 == 0 && in_exec && !listing.is_instruction_start(word) {
+            let in_exec = |v: u64| listing.exec_ranges().iter().any(|&(lo, hi)| lo <= v && v < hi);
+            if word % 4 == 0 && in_exec(word) && !listing.is_instruction_start(word) {
                 self.words.insert(word);
+                if thumb {
+                    if let Some(value) = self.read(word, 4).filter(|&v| v & 1 == 0 && in_exec(v)) {
+                        self.data_pointers.insert(value);
+                    }
+                }
             }
         }
     }
@@ -90,7 +112,35 @@ impl<'a> LiteralWords<'a> {
     pub(super) fn run_end(&self, at: u64) -> Option<u64> {
         run_end(&self.words, at)
     }
+
+    /// Whether an accept may be planted at `at`: not on bytes Thumb code loads as
+    /// a data address (a code address there carries the Thumb bit), and not on a
+    /// printable NUL-terminated string.
+    pub(super) fn may_plant(&self, at: u64) -> bool {
+        !self.data_pointers.contains(&at) && !self.starts_string(at)
+    }
+
+    fn starts_string(&self, at: u64) -> bool {
+        for k in 0..MAX_STRING {
+            match self.read(at + k, 1) {
+                Some(0) => return k >= MIN_STRING,
+                Some(b) if (0x20..0x7f).contains(&b) || matches!(b, 0x09 | 0x0a | 0x0d) => {}
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    fn read(&self, at: u64, size: i32) -> Option<u64> {
+        let addr = kuna_base::address::Address::new(std::rc::Rc::clone(&self.mode.code_space), at);
+        self.mode.arch.read_loadimage_value(&addr, size).ok()
+    }
 }
+
+/// The shortest printable run before a NUL that reads as a string.
+const MIN_STRING: u64 = 4;
+/// How far a printable run is followed before it is taken as a string.
+const MAX_STRING: u64 = 64;
 
 fn run_end(words: &BTreeSet<u64>, at: u64) -> Option<u64> {
     let &word = words.range(..=at).next_back()?;
