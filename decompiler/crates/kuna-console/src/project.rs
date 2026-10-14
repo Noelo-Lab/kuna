@@ -719,7 +719,7 @@ pub fn decompile_pulled(
                     let carried_dynamic = fd.dynamic_symbol_specs();
                     let carried_objects = kuna_decomp::kuna_stackobjectasserts::specs(&fd).to_vec();
                     let carried_params = crate::kuna_paramasserts::carried(&fd, &seed.mapped_params);
-                    prog.arch_mut().kuna_name_gaps = kuna_decomp::kuna_namegaps::carry(&fd);
+                    prog.arch_mut().kuna_prior_names = kuna_decomp::kuna_stablenames::carry(&fd);
                     let second = crate::decompile_step::decompile_one(
                         prog.arch_mut(),
                         &name,
@@ -737,7 +737,7 @@ pub fn decompile_pulled(
                         &[],
                     )
                     .result;
-                    prog.arch_mut().kuna_name_gaps = Default::default();
+                    prog.arch_mut().kuna_prior_names = Default::default();
                     second
                 } else {
                     Ok(fd)

@@ -963,9 +963,9 @@ pub struct ScopeLocal {
     /// (C++ `Symbol::setIsolated`).  Read by
     /// [`Self::has_isolated_symbols`]; see that method for why it is monotone.
     isolated_present: bool,
-    /// (kuna `--assert`) The default numbers earlier renames left unused, for
+    /// (kuna `--assert`) The previous decompile's numbering, for
     /// [`Self::next_default_name`].
-    name_gaps: crate::kuna_namegaps::GapState,
+    name_state: crate::kuna_stablenames::NameState,
 }
 
 impl ScopeLocal {
@@ -995,7 +995,7 @@ impl ScopeLocal {
             name_recommend: Vec::new(),
             dyn_recommend: Vec::new(),
             isolated_present: false,
-            name_gaps: Default::default(),
+            name_state: Default::default(),
         })
     }
 
@@ -1239,8 +1239,18 @@ impl ScopeLocal {
         base: &mut int4,
         arch: &dyn crate::database::DatabaseArch,
     ) -> KunaResult<()> {
-        let gaps = &self.name_gaps;
-        self.db.assign_default_names(self.scope, base, arch, &|i| gaps.skips(i))
+        if !self.name_state.active() {
+            return self.db.assign_default_names(self.scope, base, arch);
+        }
+        for sym in self.db.undefined_symbols(self.scope) {
+            let mut number = *base;
+            if self.db.symbol(sym).get_category() != crate::database::symbol_category::FUNCTION_PARAMETER {
+                self.prefer_symbol_names(sym);
+                number = self.pick_default_number(&|i| format!("v{i}"));
+            }
+            self.db.assign_default_name(self.scope, sym, &mut number, arch)?;
+        }
+        Ok(())
     }
 
     /// C++ `Scope::queryProperties` (`database.cc:1268`) on the local stack scope:
@@ -1834,41 +1844,63 @@ impl ScopeLocal {
     /// same `v1` to an untouched neighbour made the printer suffix one of the two
     /// -- often the caller's.  Without such a Symbol this is `render(base++)`.
     ///
-    /// The numbers the [`crate::kuna_namegaps`] state records as left by a
-    /// caller's rename are passed over, and a local whose name a rename took is
-    /// given one of those numbers instead (or one past the last the previous
-    /// decompile used), so a rename moves no other local's number.
+    /// When a directive batch is replayed the previous decompile's numbering
+    /// is kept instead (see [`crate::kuna_stablenames`]): the number comes from
+    /// [`Self::prefer_names`] and the Symbol being named, and `base` is unused.
     pub fn next_default_name(&mut self, base: &mut int4, render: impl Fn(int4) -> String) -> String {
-        loop {
-            let index = *base;
+        if self.name_state.active() {
             *base += 1;
-            if self.name_gaps.skips(index) {
-                continue;
-            }
-            let name = render(index);
-            if self.name_gaps.displaces(&name) {
-                let (db, scope) = (&self.db, self.scope);
-                let free = |name: &str| !db.find_by_name(scope, name).iter().any(|&s| db.symbol(s).is_name_locked());
-                return render(self.name_gaps.displaced_index(&render, &free));
-            }
-            if !self.name_locked(&name) {
+            return render(self.pick_default_number(&render));
+        }
+        loop {
+            let name = render(*base);
+            *base += 1;
+            if !self.db.find_by_name(self.scope, &name).iter().any(|&s| self.db.symbol(s).is_name_locked()) {
                 return name;
             }
         }
     }
 
-    fn name_locked(&self, name: &str) -> bool {
-        self.db.find_by_name(self.scope, name).iter().any(|&s| self.db.symbol(s).is_name_locked())
+    fn pick_default_number(&mut self, render: &dyn Fn(int4) -> String) -> int4 {
+        let (db, scope) = (&self.db, self.scope);
+        let free = |name: &str| !db.find_by_name(scope, name).iter().any(|&s| db.symbol(s).is_name_locked());
+        self.name_state.pick(render, &free)
     }
 
-    /// (kuna `--assert`) Start a naming pass with the gaps earlier renames left.
-    pub fn install_name_gaps(&mut self, gaps: crate::kuna_namegaps::NameGaps) {
-        self.name_gaps = crate::kuna_namegaps::GapState::new(gaps);
+    /// (kuna `--assert`) Start a naming pass that keeps `prior`'s numbering.
+    pub fn install_prior_names(&mut self, prior: crate::kuna_stablenames::PriorNames) {
+        self.name_state = crate::kuna_stablenames::NameState::new(prior);
     }
 
-    /// One past every index [`Self::next_default_name`] gave a displaced local.
-    pub fn name_gaps_overflow(&self) -> int4 {
-        self.name_gaps.overflow()
+    /// The numbers the next default name should try first (empty clears them).
+    pub fn prefer_names(&mut self, numbers: Vec<int4>) {
+        if self.name_state.active() {
+            self.name_state.prefer(numbers);
+        }
+    }
+
+    /// Try the number `sym` had in the previous decompile first.
+    fn prefer_symbol_names(&mut self, sym: crate::database::SymbolId) {
+        if !self.name_state.active() {
+            return;
+        }
+        let Some(&eref) = self.db.symbol(sym).mapentry.first() else { return };
+        if matches!(eref, crate::database::EntryRef::Dynamic(_)) {
+            return;
+        }
+        let entry = self.db.entry(self.scope, eref);
+        let (addr, size) = (entry.get_addr().clone(), entry.get_size());
+        self.name_state.prefer_symbol(&addr, size);
+    }
+
+    /// One past every number the naming pass handed out under a kept numbering.
+    pub fn prior_names_end(&self) -> int4 {
+        self.name_state.end()
+    }
+
+    /// Each Symbol with its first entry's storage, width and name.
+    pub fn named_symbol_storage(&self) -> Vec<(crate::database::SymbolId, Address, int4, String)> {
+        self.db.scope_symbol_storage(self.scope)
     }
 
     /// C++ `ActionNameVars`'s namerec rename (coreaction.cc:3087-3094): if the
@@ -1944,6 +1976,7 @@ impl ScopeLocal {
                 }
                 None => {
                     // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm).
+                    self.prefer_symbol_names(sym);
                     let newname = self.next_default_name(base, |i| format!("v{i}"));
                     // makeNameUnique then renameSymbol.
                     let _ = self.db.rename_symbol(sym, &newname);
@@ -1993,6 +2026,7 @@ impl ScopeLocal {
         }
         // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm); then
         // scope->renameSymbol(sym, newname).
+        self.prefer_symbol_names(sym);
         let newname = self.next_default_name(base, |i| format!("v{i}"));
         let _ = self.db.rename_symbol(sym, &newname);
         Some(newname)
@@ -2183,6 +2217,7 @@ impl ScopeLocal {
             (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
         // ActionNameVars::apply: rename the undefined-named Symbol to `vN` once.
         if self.db.symbol(sym).is_name_undefined() {
+            self.prefer_symbol_names(sym);
             let newname = self.next_default_name(base, |i| format!("v{i}"));
             let _ = self.db.rename_symbol(sym, &newname);
         }

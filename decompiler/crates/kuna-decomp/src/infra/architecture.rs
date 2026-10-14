@@ -1529,10 +1529,10 @@ pub struct Architecture {
     /// disagree with the database and make Java's `checkFullCommit` rewrite
     /// the user's signature on any rename.  `None` outside ghidra mode.
     pub kuna_pending_proto_model: Option<Rc<crate::fspec::ProtoModel>>,
-    /// (kuna `--assert`) The default numbers the next drive of a function must
-    /// leave unused, set by the caller that replays a batch of renames and
-    /// cleared after it; see [`crate::kuna_namegaps`].  Empty everywhere else.
-    pub kuna_name_gaps: crate::kuna_namegaps::NameGaps,
+    /// (kuna `--assert`) The default numbering the next drive of a function
+    /// keeps, set by the caller that replays a directive batch and cleared
+    /// after it; see [`crate::kuna_stablenames`].  Empty everywhere else.
+    pub kuna_prior_names: crate::kuna_stablenames::PriorNames,
 
     // --- kuna analysis-pass gates (per-run `--option <id> on|off`) ----------
     // One boolean per `kuna_analysis::passes` pass id; the console's
@@ -2887,7 +2887,7 @@ impl Architecture {
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
             kuna_pending_proto_model: None,     // (ghidra Phase 4) staged per drive
-            kuna_name_gaps: Default::default(),
+            kuna_prior_names: Default::default(),
 
             // Analysis-pass gates: placeholder values -- `Architecture::new` calls
             // `reset_defaults_internal()` below, the SINGLE source of every

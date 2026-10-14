@@ -2151,11 +2151,12 @@ fn bind_proto_partial_piece(
             // (shared across all members of the struct), consuming `base`.
             let name = match existing_name {
                 Some(n) => n,
-                None => data
-                    .get_scope_local_mut()
-                    .and_then(|lm| lm.link_symbol_root(&root_addr, base))
-                    .map(|(n, _, _)| n)
-                    .unwrap_or_else(|| default_v_name(data, base)),
+                None => with_prior_numbers(data, root_high, |data| {
+                    data.get_scope_local_mut()
+                        .and_then(|lm| lm.link_symbol_root(&root_addr, base))
+                        .map(|(n, _, _)| n)
+                        .unwrap_or_else(|| default_v_name(data, base))
+                }),
             };
             (name, info.sym_off, info.sym_type)
         }
@@ -2178,7 +2179,7 @@ fn bind_proto_partial_piece(
                         root_names.insert(n.clone());
                         n
                     }
-                    None => default_v_name(data, base),
+                    None => with_prior_numbers(data, root_high, |data| default_v_name(data, base)),
                 },
             };
             taken.insert(name.clone());
@@ -2594,9 +2595,9 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // address-tied arm renames the Symbol at the recommended address, and the
     // use-point arms are applied per-high inside the walk
     // (`recommended_name_for`).  All are no-ops without recommendations.
-    let gaps = data.kuna_name_gaps().clone();
+    let prior = data.kuna_prior_names().clone();
     if let Some(lm) = data.get_scope_local_mut() {
-        lm.install_name_gaps(gaps);
+        lm.install_prior_names(prior);
     }
     data.kuna_apply_dynamic_recommendations();
     if let Some(lm) = data.get_scope_local_mut() {
@@ -2916,8 +2917,10 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                             Some(lm) => lm.make_local_name_unique_among(&rec, &taken),
                             None => rec,
                         });
-                let resolved = data.get_scope_local_mut().and_then(|lm| {
-                    lm.resolve_default_name_for_link(&info, v_size, &mut base, rec_name.as_deref())
+                let resolved = with_prior_numbers(data, high, |data| {
+                    data.get_scope_local_mut().and_then(|lm| {
+                        lm.resolve_default_name_for_link(&info, v_size, &mut base, rec_name.as_deref())
+                    })
                 });
                 let bound_sid = info.symbol;
                 let (sym_name, sym_off, sym_type) = match resolved {
@@ -3056,7 +3059,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 // (`iVar1`/`uVar1`/...).  Pick the rep's data-type for the prefix
                 // (the same type that renders the declaration, e.g. `int4`).
                 let rep_ty = data.vbank().get(name_rep.unwrap()).map(|v| v.get_type().clone());
-                kuna_default_local_name(data, rep_ty.as_deref(), &mut base)
+                with_prior_numbers(data, high, |data| kuna_default_local_name(data, rep_ty.as_deref(), &mut base))
             }
         };
         taken.insert(name.clone());
@@ -3102,8 +3105,27 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // placeholder may outlive this pass, in the Symbol table or in a HighVariable's
     // name cache.  See `crate::kuna_undefname`.
     crate::kuna_undefname::finish_undefined_names(data, &mut base);
-    let end = data.get_scope_local().map_or(base, |lm| base.max(lm.name_gaps_overflow()));
+    let end = data.get_scope_local().map_or(base, |lm| base.max(lm.prior_names_end()));
     data.set_kuna_default_name_end(end);
+}
+
+/// Run a default-name allocation for `high` trying first the numbers its pieces
+/// had in the previous decompile (`crate::kuna_stablenames`); a no-op wrapper
+/// when no numbering is carried.
+fn with_prior_numbers<T>(
+    data: &mut Funcdata,
+    high: crate::context::HighVariableId,
+    f: impl FnOnce(&mut Funcdata) -> T,
+) -> T {
+    let numbers = crate::kuna_stablenames::candidates(data, high);
+    if let Some(lm) = data.get_scope_local_mut() {
+        lm.prefer_names(numbers);
+    }
+    let out = f(data);
+    if let Some(lm) = data.get_scope_local_mut() {
+        lm.prefer_names(Vec::new());
+    }
+    out
 }
 
 /// Choose a *name* for all high-level variables (C++ `ActionNameVars`,

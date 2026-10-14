@@ -400,9 +400,10 @@ pub struct Funcdata {
     /// empty, so the entries are exactly one batch: the directives between two
     /// decompiles.
     kuna_directive_symbols: Vec<DirectiveSymbol>,
-    /// (kuna `--assert`) The default numbers earlier renames left unused, seeded
-    /// by the drive; see [`crate::kuna_namegaps`].
-    kuna_name_gaps: crate::kuna_namegaps::NameGaps,
+    /// (kuna `--assert`) The previous decompile's default numbering, seeded by
+    /// the drive when a directive batch is replayed; see
+    /// [`crate::kuna_stablenames`].
+    kuna_prior_names: crate::kuna_stablenames::PriorNames,
     /// One past the last default index the naming pass handed out.
     kuna_default_name_end: int4,
     /// (kuna, ghidra Phase 4) WIRE-ONLY symbols the encode-time link pass
@@ -720,7 +721,7 @@ impl Funcdata {
             kuna_pipeline_failure: None,
             kuna_rejected_flow: Vec::new(),
             kuna_directive_symbols: Vec::new(),
-            kuna_name_gaps: Default::default(),
+            kuna_prior_names: Default::default(),
             kuna_default_name_end: 1,
             kuna_wire_symbols: Vec::new(),
             kuna_wrapped_wire_storage: std::collections::BTreeMap::new(),
@@ -938,13 +939,13 @@ impl Funcdata {
         self.kuna_directive_symbols.push(entry);
     }
 
-    /// (kuna `--assert`) The default numbers this decompile must leave unused.
-    pub fn kuna_name_gaps(&self) -> &crate::kuna_namegaps::NameGaps {
-        &self.kuna_name_gaps
+    /// (kuna `--assert`) The previous decompile's default numbering to keep.
+    pub fn kuna_prior_names(&self) -> &crate::kuna_stablenames::PriorNames {
+        &self.kuna_prior_names
     }
 
-    pub fn seed_name_gaps(&mut self, gaps: crate::kuna_namegaps::NameGaps) {
-        self.kuna_name_gaps = gaps;
+    pub fn seed_prior_names(&mut self, prior: crate::kuna_stablenames::PriorNames) {
+        self.kuna_prior_names = prior;
     }
 
     /// One past the last default index the naming pass handed out.

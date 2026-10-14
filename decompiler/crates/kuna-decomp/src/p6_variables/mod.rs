@@ -24,7 +24,7 @@ pub mod kuna_stackparamviews;
 pub mod kuna_stackobjectinfo;
 pub mod kuna_stackranges;
 pub mod kuna_undefname;
-pub mod kuna_namegaps;
+pub mod kuna_stablenames;
 pub mod varmap;
 pub mod coreaction_cleanup;
 pub mod kuna_callretfold;
