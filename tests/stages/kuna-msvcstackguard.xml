@@ -51,6 +51,65 @@
 32a2df2d992b0000
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="guarded"/>
+<!--
+    A second asset-free probe crosses the former value-peel limit with 271
+    direct calls after the cookie is saved. Its factory returns a pointer in
+    RAX; the helper at 0x11057e preserves RAX. The script checks preservation
+    with the checker left in place and with msvcstackguard removing it.
+-->
+<bytechunk space="ram" offset="0x110000" readonly="true">
+4883ec184c8b15f51f00004931e24c89542410e85d050000e858050000e85305
+0000e84e050000e849050000e844050000e83f050000e83a050000e835050000
+e830050000e82b050000e826050000e821050000e81c050000e817050000e812
+050000e80d050000e808050000e803050000e8fe040000e8f9040000e8f40400
+00e8ef040000e8ea040000e8e5040000e8e0040000e8db040000e8d6040000e8
+d1040000e8cc040000e8c7040000e8c2040000e8bd040000e8b8040000e8b304
+0000e8ae040000e8a9040000e8a4040000e89f040000e89a040000e895040000
+e890040000e88b040000e886040000e881040000e87c040000e877040000e872
+040000e86d040000e868040000e863040000e85e040000e859040000e8540400
+00e84f040000e84a040000e845040000e840040000e83b040000e836040000e8
+31040000e82c040000e827040000e822040000e81d040000e818040000e81304
+0000e80e040000e809040000e804040000e8ff030000e8fa030000e8f5030000
+e8f0030000e8eb030000e8e6030000e8e1030000e8dc030000e8d7030000e8d2
+030000e8cd030000e8c8030000e8c3030000e8be030000e8b9030000e8b40300
+00e8af030000e8aa030000e8a5030000e8a0030000e89b030000e896030000e8
+91030000e88c030000e887030000e882030000e87d030000e878030000e87303
+0000e86e030000e869030000e864030000e85f030000e85a030000e855030000
+e850030000e84b030000e846030000e841030000e83c030000e837030000e832
+030000e82d030000e828030000e823030000e81e030000e819030000e8140300
+00e80f030000e80a030000e805030000e800030000e8fb020000e8f6020000e8
+f1020000e8ec020000e8e7020000e8e2020000e8dd020000e8d8020000e8d302
+0000e8ce020000e8c9020000e8c4020000e8bf020000e8ba020000e8b5020000
+e8b0020000e8ab020000e8a6020000e8a1020000e89c020000e897020000e892
+020000e88d020000e888020000e883020000e87e020000e879020000e8740200
+00e86f020000e86a020000e865020000e860020000e85b020000e856020000e8
+51020000e84c020000e847020000e842020000e83d020000e838020000e83302
+0000e82e020000e829020000e824020000e81f020000e81a020000e815020000
+e810020000e80b020000e806020000e801020000e8fc010000e8f7010000e8f2
+010000e8ed010000e8e8010000e8e3010000e8de010000e8d9010000e8d40100
+00e8cf010000e8ca010000e8c5010000e8c0010000e8bb010000e8b6010000e8
+b1010000e8ac010000e8a7010000e8a2010000e89d010000e898010000e89301
+0000e88e010000e889010000e884010000e87f010000e87a010000e875010000
+e870010000e86b010000e866010000e861010000e85c010000e857010000e852
+010000e84d010000e848010000e843010000e83e010000e839010000e8340100
+00e82f010000e82a010000e825010000e820010000e81b010000e816010000e8
+11010000e80c010000e807010000e802010000e8fd000000e8f8000000e8f300
+0000e8ee000000e8e9000000e8e4000000e8df000000e8da000000e8d5000000
+e8d0000000e8cb000000e8c6000000e8c1000000e8bc000000e8b7000000e8b2
+000000e8ad000000e8a8000000e8a3000000e89e000000e899000000e8940000
+00e88f000000e88a000000e885000000e880000000e87b000000e876000000e8
+71000000e86c000000e867000000e862000000e85d000000e858000000e85300
+0000e84e000000e849000000e844000000e83f000000e83a000000e835000000
+e830000000e82b000000e826000000e821000000e81c000000e817000000e813
+000000488b7c24104831e7e80e0000004883c418c3c3488d058b1a0000c3483b
+3d7b1a000074020f0bc3
+</bytechunk>
+<bytechunk space="ram" offset="0x112000">
+03c07921ac1ea5340000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x110000" name="pointer_after_checks"/>
+<symbol space="ram" offset="0x110576" name="make_cookie_object"/>
+<symbol space="ram" offset="0x11057e" name="cookie_check"/>
 </binaryimage>
 <script>
   <com>option msvcstackguard off</com>
@@ -60,9 +119,28 @@
   <com>option msvcstackguard on</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>map prototype 0x110576 void * make_cookie_object(void)</com>
+  <com>map prototype 0x11057e void cookie_check(unsigned long long cookie)</com>
+  <com>map prototype 0x110000 void * pointer_after_checks(void)</com>
+  <com>option msvcstackguard off</com>
+  <com>option calleeretpreserves off</com>
+  <com>lo fu pointer_after_checks</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleeretpreserves on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option msvcstackguard on</com>
+  <com>option calleeretpreserves off</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="kuna-msvcstackguard #1: the entry-side cookie scramble is emitted only with the option off" min="1" max="1">dat_101000 \^</stringmatch>
 <stringmatch name="kuna-msvcstackguard #2: the checker call is emitted only with the option off" min="1" max="1">sub_100050\(</stringmatch>
 <stringmatch name="kuna-msvcstackguard #3: the computation the function actually performs survives both passes" min="2" max="2">a0 \+ 0x41414141</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-LIFETIME #1: both non-removal modes keep the checker" min="2" max="2">cookie_check\(</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-LIFETIME #2: both non-removal modes retain the cookie load" min="2" max="2">dat_112000 \^</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-LIFETIME #3: factory result is used only when return storage is preserved" min="2" max="2">(v[0-9]+ = make_cookie_object\(\);|return make_cookie_object\(\);)</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-LIFETIME #4: generic call guarding leaves the factory result unused" min="1" max="1">^  make_cookie_object\(\);$</stringmatch>
 </decompilertest>

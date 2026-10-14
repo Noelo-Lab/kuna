@@ -1445,12 +1445,10 @@ pub fn generate_tspec(manager: &AddrSpaceManager, big_endian: bool, unique_base:
 /// `listing on` plus the `auto`-resolved mode preset (aggressive under
 /// 500 KiB) — the CLI-default ground truth the differential pins against.
 pub fn apply_cli_default_options(prog: &mut ConsoleProgram, size_bytes: u64) {
-    let mode = kuna_decomp::modes::resolve_mode_for_size(None, size_bytes)
+    let (_, overrides) = kuna_decomp::modes::resolve_overrides_for_size(None, size_bytes)
         .expect("auto mode resolves");
     let mut options: Vec<(&str, &str)> = vec![("listing", "on")];
-    if let Some(overrides) = kuna_decomp::modes::mode_overrides(mode) {
-        options.extend(overrides.iter().copied());
-    }
+    options.extend(overrides);
     for (name, value) in options {
         if KUNA_OPTION_NAMES.contains(&name) {
             prog.arch_mut()

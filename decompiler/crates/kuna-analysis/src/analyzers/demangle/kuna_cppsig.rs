@@ -190,7 +190,7 @@ impl AnalysisPass for CppSigPass {
                 out.cpp_sig.inferred.push((*addr, pieces));
             }
         }
-        super::kuna_msvcsig::collect(ctx, &mangled, &imports, &mut out.cpp_sig.msvc);
+        super::kuna_msvcsig::collect(ctx, &mangled, &imports, &mut out.cpp_sig);
         out
     }
 }
@@ -746,6 +746,7 @@ pub fn select(facts: CppSigFacts, inferred: bool, msvc: bool) -> Vec<SelectedSig
         inferred: amb,
         msvc: msvc_sigs,
         msvc_legacy,
+        ..
     } = facts;
     let plain = |(addr, pieces): (u64, PrototypePieces)| SelectedSig {
         addr,

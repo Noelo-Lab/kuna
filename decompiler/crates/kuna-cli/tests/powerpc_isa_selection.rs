@@ -152,7 +152,7 @@ fn generic_powerpc_failure_explains_the_explicit_isa_override() {
                 "{output}"
             );
             assert!(
-                output.contains("== 0")
+                (output.contains("== 0") || output.contains("if (!a0)"))
                     && output.contains("if (")
                     && output.contains("a1")
                     && output.contains("a2")

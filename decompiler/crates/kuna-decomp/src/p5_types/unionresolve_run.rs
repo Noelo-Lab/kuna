@@ -269,6 +269,15 @@ impl<'a> ScoreUnionFields<'a> {
     /// Resolve a [`crate::fspec::FuncProto`] into the seam-free [`LockedProtoFacts`]
     /// the leaf [`score_parameter`]/[`score_return_type`] consume.
     fn proto_facts(proto: &crate::fspec::FuncProto) -> LockedProtoFacts {
+        if !proto.has_store() {
+            return LockedProtoFacts {
+                input_locked: false,
+                output_locked: false,
+                num_params: 0,
+                param_types: Vec::new(),
+                output_type: None,
+            };
+        }
         let input_locked = proto.is_input_locked();
         let output_locked = proto.is_output_locked();
         let num_params = proto.num_params();

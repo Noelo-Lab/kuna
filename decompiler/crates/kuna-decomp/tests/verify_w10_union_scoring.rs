@@ -165,3 +165,49 @@ fn w10_union_resolves_int_field_into_int_add() {
     let cached = fd.get_union_field(&u, op, 0).expect("resolution cached on edge");
     assert_eq!(cached.get_field_num(), 0, "INT_ADD resolves to the int field");
 }
+
+#[test]
+fn union_contract_scoring_keeps_absent_prototypes_unknown_and_locked_types_authoritative() {
+    use kuna_decomp::fspec::{FuncCallSpecs, FuncProto, ParameterPieces};
+    for opcode in [OpCode::CPUI_CALL, OpCode::CPUI_CALLIND, OpCode::CPUI_CALLOTHER, OpCode::CPUI_RETURN] {
+        for locked in [false, true] {
+            let mut fd = build_fd();
+            let int = base(4, type_metatype::TYPE_INT);
+            let float = base(4, type_metatype::TYPE_FLOAT);
+            let union = make_union(4, &[(0, int), (0, Rc::clone(&float))]);
+            let op = new_op_code(&mut fd, 2, opcode, "CONTRACT");
+            let target = fd.new_constant(8, 0x4000);
+            fd.op_set_input(op, target, 0).unwrap();
+            wire_input(&mut fd, op, 1, 0x100, 4, Rc::clone(&union));
+            let mut proto = FuncProto::new();
+            if locked {
+                proto.attach_internal_store(base(0, type_metatype::TYPE_VOID));
+                let storage = ParameterPieces {
+                    addr: Address::new(ram(&fd), 0x200),
+                    type_: Some(float),
+                    flags: 0,
+                };
+                proto.set_param(0, "value", &storage);
+                proto.set_output(&storage);
+                proto.set_input_lock(true);
+                proto.set_output_lock(true);
+            }
+            if opcode == OpCode::CPUI_RETURN {
+                fd.get_func_proto_mut().copy(&proto);
+            } else {
+                let mut call = FuncCallSpecs::new(op, Address::new(ram(&fd), 0x4000));
+                call.proto_mut().copy(&proto);
+                fd.push_call_specs(call);
+            }
+            let resolved = fd.resolve_in_flow(&union, op, 1).unwrap();
+            assert_eq!(resolved.get_metatype(), if locked {
+                type_metatype::TYPE_FLOAT
+            } else {
+                type_metatype::TYPE_INT
+            }, "{opcode:?}, locked={locked}");
+            let cached = fd.get_union_field(&union, op, 1).unwrap();
+            assert_eq!(cached.get_field_num(), if locked { 1 } else { 0 });
+            assert_eq!(proto.has_store(), locked);
+        }
+    }
+}
