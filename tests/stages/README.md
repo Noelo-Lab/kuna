@@ -294,3 +294,5 @@ with undefined-behavior checks and exercises every case and signed boundaries.
 - `kuna-sparc-double-abs.xml`, `kuna-sparc64-double-abs.xml`: binary64 absolute value from a high-word `fabss`, without a numeric high-word cast.
 
 - `kuna-sparc-double-sign.xml`, `kuna-sparc64-double-sign.xml`: binary64 negation from a high-word `fnegs`, without a numeric high-word cast.
+
+`kuna-global-load-call-order.xml` keeps a post-call memory-loaded global write after the getter, including a later call, a loop marker and a no-final-call control. The CLI roundtrips check an impure getter, a computed-value reload control and overlapping x86-64 SIMD reads using GCC/Clang at O0/O2.

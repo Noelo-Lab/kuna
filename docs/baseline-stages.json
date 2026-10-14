@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2846,
-    2846
+    2849,
+    2849
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2661,6 +2661,9 @@
     "data:stalejumptable #3: case 0x80 (CHECK_ORDER) on both passes",
     "data:stalejumptable #4: case 0x83 (TOTAL) on both passes",
     "data:stalejumptable #5: no pipeline failure on either pass",
+    "data:store order: division call precedes the later global write",
+    "data:store order: exactly one global write per function",
+    "data:store order: final call remains after both writes",
     "data:storealias #10: default, each read stays where the binary makes it",
     "data:storealias #11: load, the store to gi is printed after the pointer store",
     "data:storealias #12: default, the store to gi stays in front of the pointer store",
