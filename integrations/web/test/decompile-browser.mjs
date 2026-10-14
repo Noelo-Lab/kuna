@@ -6,7 +6,7 @@
 // opening pasted base64 text (button and Ctrl+V),
 // the layout at 1024 and 820 px, and the Strings
 // list taking a search for "flag" to the code that uses it, and the type
-// definitions shown above a function. Any uncaught page exception fails the run.
+// definitions above a function (folded until opened). Any uncaught page exception fails the run.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 // Steps that need the engine's `inspect`/`--assert` surface assert the page's
@@ -472,6 +472,10 @@ try {
   await page.click('#tab-c');
   await page.waitFor(`document.getElementById('vname').textContent === 'make_item' && document.querySelector('#ccode .d2-tyhead')`, { what: 'make_item with its types', timeout: 60000 });
   assert.equal(await text('#ccode .d2-tyhead'), 'Types this function uses 1 type');
+  const folded = () => page.call(() => [document.querySelector('.d2-tytoggle').getAttribute('aria-expanded'), getComputedStyle(document.getElementById('c-L1')).display]);
+  assert.deepEqual(await folded(), ['false', 'none'], 'the definitions start folded');
+  await page.click('.d2-tytoggle');
+  assert.equal((await folded())[0], 'true', 'the heading unfolds them');
   const shaded = await page.call(() => [...document.querySelectorAll('#ccode .d2-cl.d2-ty')].map((row) => row.querySelector('.ct').textContent));
   assert.equal(shaded[0], 'typedef struct struct_0 struct_0;');
   assert.ok(shaded.includes('struct struct_0 {') && shaded.includes('    unsigned long field_0x8;'), 'struct_0 is defined above make_item');
@@ -480,16 +484,20 @@ try {
   await page.click('#c-L4 .ct');
   assert.match(await text('#railbody .x-card'), /Part of the definition of struct_0, a type this function uses\..*field_0x8 is the field 0x8 bytes from the start/s,
     'a definition line explains itself');
+  await page.call(() => { [...document.querySelectorAll('#fnlist .fn')].find((row) => row.textContent === 'main').click(); return true; });
+  await page.waitFor(`document.getElementById('vname').textContent === 'main' && /make_item/.test(document.getElementById('ccode').textContent)`, { what: 'main', timeout: 60000 });
+  await page.call(() => { [...document.querySelectorAll('#fnlist .fn')].find((row) => row.textContent === 'make_item').click(); return true; });
+  await page.waitFor(`document.getElementById('vname').textContent === 'make_item' && document.querySelector('#ccode .d2-tyhead')`, { what: 'make_item again', timeout: 60000 });
+  assert.equal((await folded())[0], 'true', 'opened, the definitions stay open for the visit');
   await page.click('.d2-tytoggle');
-  assert.deepEqual(await page.call(() => [document.querySelector('.d2-tytoggle').getAttribute('aria-expanded'), getComputedStyle(document.getElementById('c-L1')).display]),
-    ['false', 'none'], 'the heading folds the definitions');
+  assert.deepEqual(await folded(), ['false', 'none'], 'the heading folds the definitions');
   await page.call(() => { document.getElementById('ccode').focus(); return true; });
   await page.key('ArrowDown');
   assert.equal(await page.call(() => document.getElementById('ccode').getAttribute('aria-activedescendant')), `c-L${shaded.length + 1}`,
     'folded, the keyboard starts at the function');
   await page.click('.d2-tytoggle');
   assert.notEqual(await page.call(() => getComputedStyle(document.getElementById('c-L1')).display), 'none', 'and unfolds them');
-  await noExceptions('the struct the decompiler worked out is defined above the function, in a block that folds');
+  await noExceptions('the struct the decompiler worked out is defined above the function, in a block that starts folded');
 
   console.log(`DECOMPILE BROWSER OK — ${done.join('; ')}` + (skipped.length ? `; SKIPPED: ${skipped.join('; ')}` : ''));
 } finally {

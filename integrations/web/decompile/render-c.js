@@ -461,8 +461,8 @@ export function lineHtml(line, ctx = {}, plan = null) {
  * The C pane's HTML: one `.d2-cl#c-L<n>` row per line with a line-number and
  * address gutter, tokens as `.t` spans carrying their kind, symbol, address,
  * callee, global address and type. The preamble's rows are `.d2-ty`, under a
- * heading that folds them. `ctx`: `{index, segs, preamble, fnByName, globalsByName,
- * planOf}` (`planOf(i)`: how line i wraps, or null).
+ * heading that folds them (folded unless `typesOpen`). `ctx`: `{index, segs, preamble,
+ * typesOpen, fnByName, globalsByName, planOf}` (`planOf(i)`: how line i wraps, or null).
  */
 export function renderC(fnData, ctx = {}) {
   const segs = ctx.segs || lineSegments(fnData).segs;
@@ -475,7 +475,7 @@ export function renderC(fnData, ctx = {}) {
   if (preamble) {
     const n = fnData.types.length;
     out += '<div class="d2-tyhead" role="presentation"><span class="ln"></span><span class="la"></span><span class="ct">' +
-      `<button class="d2-tytoggle" data-act="types-toggle" aria-expanded="true">Types this function uses</button> <span class="d2-tyn">${n} type${n === 1 ? '' : 's'}</span></span></div>`;
+      `<button class="d2-tytoggle" data-act="types-toggle" aria-expanded="${ctx.typesOpen ? 'true' : 'false'}">Types this function uses</button> <span class="d2-tyn">${n} type${n === 1 ? '' : 's'}</span></span></div>`;
   }
   segs.forEach((line, i) => {
     if (i && i % CHUNK === 0) out += '</div><div class="d2-chunk">';

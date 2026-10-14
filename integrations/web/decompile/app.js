@@ -1132,7 +1132,7 @@ const RENDER = {
     const { data, segs, index, preamble } = cur;
     cur.wrapCols = state.prefs.cWrap ? state.wrapCols : 0;
     cur.wrapped = new Set();
-    els.ccode.innerHTML = renderC(data, { ...cContext(), index, segs, preamble, planOf: (i) => linePlan(cur, i) });
+    els.ccode.innerHTML = renderC(data, { ...cContext(), index, segs, preamble, typesOpen: typesShown(), planOf: (i) => linePlan(cur, i) });
     els.ccode.classList.toggle('no-addrs', index.lineToInsns.size === 0);
     applyTypesOpen();
     applyPaneClasses();
@@ -1442,11 +1442,9 @@ function lineInsns(n) {
 
 const MAX_CARD_ROWS = 10;
 
-const TYPES_OPEN_LINES = 30;
-
-/** Whether the type definitions above the function show: the student's choice, else when they are short. */
+/** Whether the type definitions above the function show: folded until the student opens them. */
 function typesShown() {
-  return state.typesOpen ?? state.current.preamble <= TYPES_OPEN_LINES;
+  return !!state.typesOpen;
 }
 
 function applyTypesOpen() {

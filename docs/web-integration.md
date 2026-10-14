@@ -758,10 +758,9 @@ says why.
 
 **Type definitions.** When a function names a struct, union, enum or typedef (a
 `struct_0` the decompiler worked out, a DWARF struct, a library type such as `FILE`), the
-Code view opens with their definitions under the heading *Types this function uses*, on a
-shaded block, and the function starts below them. The heading folds the block; a block of
-more than 30 lines (a debug-info or C++ program can name dozens of types) starts folded,
-and a student's own choice holds for the rest of the visit. Folded, the keyboard starts at
+Code view puts their definitions above the function under the heading *Types this function
+uses*, on a shaded block that starts folded. The heading opens and folds the block, and a
+student's own choice holds for the rest of the visit. Folded, the keyboard starts at
 the signature; the Stack view's "only in the debug info" test ignores the block. It is the engine's own text, so
 line numbers match `kuna decompile --option structdefs on`; it is highlighted but not
 clickable (a field name is not a variable to rename), and selecting one of its lines says
