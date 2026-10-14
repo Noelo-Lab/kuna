@@ -38,6 +38,10 @@
     single shift by 32+3 == 0x23.  It is written with a variable multiplier so
     that RuleDivOpt declines and the truncation reaches the printer.
 
+    The script sets castnarrow off: the assertions read the cast the
+    truncation prints as, which a char store or a uint4 return otherwise
+    leaves to C's own conversion.
+
     No option: this is a correctness fix (an undeclared p-code operator in the
     C body is never desired) restoring upstream's own behavior from a port
     stub, so it is a Convergence, not a divergence (see docs/history.md).
@@ -53,6 +57,7 @@
 <symbol space="ram" offset="0x10001e" name="mulhi_shift"/>
 </binaryimage>
 <script>
+  <com>option castnarrow off</com>
   <com>lo fu put_u32_be</com>
   <com>decompile</com>
   <com>print C</com>

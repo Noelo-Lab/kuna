@@ -111,9 +111,9 @@
 <stringmatch name="ALIASOVERLAP #3: only the adjacent-byte stores keep the read folded" min="2" max="2">return \*\(unsigned int \*\)\(\(int8\)a0 \+ 7\);</stringmatch>
 <stringmatch name="ALIASOVERLAP #4: the adjacent-element store keeps the read folded" min="1" max="1">return a0\[a1\];</stringmatch>
 <stringmatch name="ALIASOVERLAP #5: splitstore reads s+7 whole before the byte store into it" min="1" max="1">v1 = \*\(uint4 \*\)&amp;s-&gt;c7;
-s-&gt;c9 = \(char\)w;</stringmatch>
+s-&gt;c9 = w;</stringmatch>
 <stringmatch name="ALIASOVERLAP #6: splitother reads s+7 whole before the store through t" min="1" max="1">v1 = \*\(uint4 \*\)&amp;s-&gt;c7;
-t-&gt;c9 = \(char\)w;</stringmatch>
+t-&gt;c9 = w;</stringmatch>
 <stringmatch name="ALIASOVERLAP #7: splitcall reads s+7 whole before the call" min="1" max="1">v1 = \*\(uint4 \*\)&amp;s-&gt;c7;
 sink\(s\);</stringmatch>
 <stringmatch name="ALIASOVERLAP #8: with nothing in between, splitplain still splits into the return register" min="1" max="1">uint4 splitplain\(S \*s\)

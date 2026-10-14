@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "p-657caab9b997",
+  "probe_id": "p-cab29e9799ec",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -32,7 +32,7 @@
     },
     "stdout_matches": [
       "char \\* w_decode\\(char \\*a0,unsigned long a1,unsigned long \\*a2\\)",
-      "v6\\[v8\\] = \\(char\\)\\(v5 >> 0x10\\);",
+      "v6\\[v8\\] = v5 >> 0x10;",
       "\\(a0\\[v7\\] != '='\\)",
       "\\? dat_300053e0\\[\\(unsigned char\\)a0\\[v7\\]\\] : 0;"
     ],
