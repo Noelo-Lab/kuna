@@ -9,6 +9,7 @@
 // (assets/js/highlight-c.js `scan`) for that line only.
 import { scan, escapeHtml } from '../assets/js/highlight-c.js';
 import { addrHex, bare } from './addr.js';
+import { splitNotes } from './tags.js';
 
 const CHUNK = 256;
 const MAX_TOKEN_SPANS = 200000;
@@ -49,15 +50,15 @@ function normalizeInsn(insn, entry) {
  * One function as the page works with it, from either an `inspect` document or
  * a plain `decompile` document (an engine build without `inspect`): the latter
  * has no tokens and no instructions, and says so through `tokens_error` and
- * `hasInstructions`.
+ * `hasInstructions`. kuna's end-of-line notes leave the code for `notes`
+ * (tags.js `splitNotes`).
  */
 export function normalizeInspect(result) {
   const fromInspect = !!result?.function;
   const fn = fromInspect ? result.function : (result?.functions || [])[0];
   if (!fn) throw new Error('the engine returned no function');
   const address_hex = addrHex(fn.address_hex ?? fn.address);
-  const code = fn.code ?? '';
-  const tokens = Array.isArray(fn.tokens) ? fn.tokens : [];
+  const { code, tokens, notes } = splitNotes(fn.code ?? '', Array.isArray(fn.tokens) ? fn.tokens : []);
   return {
     source: fromInspect ? 'inspect' : 'decompile',
     name: fn.name,
@@ -66,6 +67,7 @@ export function normalizeInspect(result) {
     kind: fn.kind || 'func',
     size: fn.size ?? 0,
     code,
+    notes,
     error: fn.error ?? null,
     proto: (fn.proto ?? signatureLine(code))?.replace(/^#\[[^\n]*\]\s*\n/gm, '').replace(/;\s*$/, '').trim() ?? null,
     language: result.language || (/^#\[allow\(|\blet mut\b/m.test(code) ? 'rust-language' : 'c-language'),

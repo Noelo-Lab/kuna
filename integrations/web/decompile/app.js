@@ -41,7 +41,7 @@ import {
 import { archFrom, nopFill } from './arch.js';
 import { explain, idioms } from './mnemonics.js';
 import { frameModel, renderFrame, slotIndex } from './stack-frame.js';
-import { lineTags, commentStart } from './tags.js';
+import { commentStart } from './tags.js';
 import { renderXrefs, renderLocalCalls, localCallees, renderRefsDialog, useKind } from './xrefs-view.js';
 import { renderStringList, stringRefsModel } from './strings-view.js';
 import { helpHtml } from './help.js';
@@ -1506,7 +1506,7 @@ function lineCard(n, varTok) {
     else why = 'This line has no instructions of its own: its work was merged into a neighbouring line.';
     html = `<div class="ch">Line ${n}</div><div class="cx">${escapeHtml(why)}</div>`;
   }
-  html += tagNotes(text, 'cx');
+  html += tagNotes(n, 'cx');
   if (varTok) html += `<div class="cx"><b>${escapeHtml(varSummary(varTok.textContent))}</b></div>`;
   return html;
 }
@@ -1627,9 +1627,9 @@ function insnSelectedCard(addrHex) {
   return html;
 }
 
-/** The notes kuna left at the end of a line (`// branch-flip`), each in words. */
-function tagNotes(text, cls = 'x-note') {
-  return lineTags(text).map((t) => `<p class="${cls} x-tag"><code>// ${escapeHtml(t.tag)}</code> ${escapeHtml(t.words)}</p>`).join('');
+/** The notes kuna left at the end of line n (`// branch-flip`), which the code does not show, each in words. */
+function tagNotes(n, cls = 'x-note') {
+  return (state.current.data.notes?.get(n) || []).map((t) => `<p class="${cls} x-tag"><code>// ${escapeHtml(t.tag)}</code> ${escapeHtml(t.words)}</p>`).join('');
 }
 
 /** "Line 5 turns into 3 instructions …", or what the function's setup or cleanup on line n does. */
@@ -1650,7 +1650,7 @@ function lineSelectedCard(n) {
   const { index, codeLines } = state.current;
   const { exact, inferred, all } = lineInsns(n);
   const text = (codeLines[n - 1] || '').trim();
-  let html = `<div class="x-card"><div class="x-code">${escapeHtml(text || '(empty line)')}</div>` + tagNotes(text);
+  let html = `<div class="x-card"><div class="x-code">${escapeHtml(text || '(empty line)')}</div>` + tagNotes(n);
   const typeNote = typeLineNote(n);
   if (typeNote) return html + `<p class="x-note">${escapeHtml(typeNote)}</p></div>`;
   if (!all.length) return html + `<p class="x-note">Line ${n} has no instructions of its own.</p></div>`;

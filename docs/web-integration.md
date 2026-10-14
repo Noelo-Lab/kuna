@@ -562,7 +562,12 @@ address" —, the lines that use it, *Rename* and *Change type*), an instruction
 at 11b5, 29 bytes into main", what the mnemonic does, its C line, *Replace with NOP*,
 *Edit bytes*, *Add a note*), a C line (its instructions, and each note kuna left at its
 end — `// branch-flip`, `// no-return`, `// early-return x10` — in words, which the hover
-card shows too) or a stack slot. `e` opens and closes the panel. *This function*: its inputs and
+card shows too) or a stack slot. The page keeps those notes out of the code it shows
+(and so out of what is copied from it, the Assembly headings and the `x` rows): it takes
+them off each line when the function arrives and keeps them by line for these cards
+(`tags.js` `splitNotes`). Every other comment stays, such as a declaration's `// rax`
+and a note of the student's own. The *Download C code* files are the decompiler's own
+output, as the command line writes it, and keep them. `e` opens and closes the panel. *This function*: its inputs and
 return type in words, *Calls and callers*, *Variables*, and behind disclosures the
 variables only the debug info has and the types. *Your changes*: one plain line per edit
 ("Renamed v1 → total", "Patched 1 byte at 11af"; the directive is its tooltip) with a
@@ -584,7 +589,7 @@ source tree):
 | `groups.js` | the function list's three groups and the function to open first |
 | `bytes-view.js` / `arch.js` | the hex dump and the patched file; no-op fills |
 | `mnemonics.js` / `stack-frame.js` / `xrefs-view.js` / `help.js` | instruction notes and idioms; the frame diagram; calls and callers in words and the `x` cross-references dialog; the help dialog |
-| `wrap-c.js` / `tags.js` | where a long C line splits (the Hex-Rays rules); kuna's end-of-line notes (`// branch-flip`, `// early-return x10`) in words for the Explain panel and the hover card |
+| `wrap-c.js` / `tags.js` | where a long C line splits (the Hex-Rays rules); kuna's end-of-line notes (`// branch-flip`, `// early-return x10`) taken out of the shown code and kept by line, in words, for the Explain panel and the hover card |
 | `strings-view.js` | the sidebar's Strings list: its three groups, the users of each string, the search and the row cap |
 | `prefs.js` / `addr.js` | view settings (`kuna.d2.prefs`, v3 with the v1 and v2 migrations) and `hintsOn`; addresses as hex strings and BigInt |
 | `collab/` | *Working together* (below), loaded with a dynamic `import()` only when a session starts or an invite or reply link is opened: `collab.js` (dialogs, the roster, following), `sync.js` (the page's side: the Session ⇄ register sync, joining and leaving, where a session is stored), `group.js` (the protocol: hello, snapshots, relayed introductions, file transfer, digests, limits), `link.js` (WebRTC and BroadcastChannel links), `replica.js` (registers, `validOp`, digests, the register-based undo), `wire.js` (messages and their checks, invite and reply codes), `sdp.js`, `presence.js` (pointers and pings), `collab.css`; all but `collab.js`, `link.js` and `presence.js` are DOM-free (SHA-256 is `../sha256.js`, shared with the page) |
@@ -1087,7 +1092,7 @@ skips it as too costly):
    version-1 migration, the type definitions above a function), **`test/decompile-wrap.mjs`**
    (where long C lines split under the Hex-Rays rules, that only spaces and redundant
    brackets go, the rows' hanging blocks, kuna's end-of-line notes in
-   words, the `x` dialog's helpers, instruction grouping by basic block from `flow`),
+   words and taken out of the code, the `x` dialog's helpers, instruction grouping by basic block from `flow`),
    **`test/decompile-groups.mjs`** (which group a function lands
    in, `main` first, the function opened first),
    **`test/decompile-session.mjs`** (directive merging and pinning, unqualified vs

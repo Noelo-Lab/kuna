@@ -5,8 +5,9 @@
 // patch a byte, reload to see the session restored, the Collaborate button,
 // opening pasted base64 text (button and Ctrl+V),
 // the layout at 1024 and 820 px, and the Strings
-// list taking a search for "flag" to the code that uses it, and the type
-// definitions above a function (folded until opened). Any uncaught page exception fails the run.
+// list taking a search for "flag" to the code that uses it, kuna's notes
+// (`// branch-flip`) kept out of the code and shown for a selected line, and
+// the type definitions above a function (folded until opened). Any uncaught page exception fails the run.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 // Steps that need the engine's `inspect`/`--assert` surface assert the page's
@@ -393,6 +394,12 @@ try {
   await openSample(page, 'crackme.elf');
   await page.waitFor(`/check/.test(document.getElementById('ccode').textContent)`, { what: 'crackme main', timeout: 60000 });
   await idle('crackme open');
+  assert.doesNotMatch(await text('#ccode'), /return-dupe/, 'kuna\'s notes are not in the code');
+  assert.equal(await text('#c-L3 .ct'), 'int main(void)', 'not even on the signature');
+  await page.click('#c-L3 .ct');
+  assert.match(await text('#railsel'), /^int main\(void\)\/\/ return-dupe The machine code shares one return between several paths/,
+    'selecting the line shows its note in the Explain panel, in words');
+  await page.key('Escape');
   assert.deepEqual(await page.call(() => [document.getElementById('fnpanel').hidden, document.getElementById('strpanel').hidden]), [false, true],
     'the sidebar starts on the functions');
   await page.click('#side-strs');
@@ -413,6 +420,11 @@ try {
   await page.click(flagLink);
   await page.waitFor(`document.getElementById('asmcode').getAttribute('aria-activedescendant') === 'a-${sites[1]}'`, { what: 'the next use', timeout: 10000 });
   assert.match(await text('#ccode .d2-cl.hl-sel'), /strcmp\(input,secret\)/, 'a second click goes to its next use');
+  const flip = await page.call(() => [...document.querySelectorAll('#ccode .d2-cl')].find((row) => /strlen\(secret\)/.test(row.textContent)).dataset.line);
+  assert.equal(await text(`#c-L${flip} .ct`), '  if (v2 != strlen(secret)) {', 'a flipped if reads as plain code');
+  await page.click(`#c-L${flip} .ct`);
+  assert.match(await text('#railsel .x-tag'), /^\/\/ branch-flip The decompiler flipped this if/, 'and says it was flipped once selected');
+  assert.doesNotMatch(await text('#asmcode'), /branch-flip/, 'the assembly headings leave the note out too');
   await page.click('#strlist .str[data-addr="0x2037"] .sx');
   await page.waitFor(`document.getElementById('vname').textContent === 'main' && /Enter the flag/.test(document.querySelector('#ccode .d2-cl.hl-sel')?.textContent || '')`, { what: 'main at the prompt', timeout: 60000 });
   await page.call(() => document.querySelector('#strlist .str[data-addr="0x2004"] .sx').focus());
