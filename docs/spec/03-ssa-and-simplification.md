@@ -1041,6 +1041,12 @@ group):
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs` | signed div/mod idioms, segments, pointer flow, predication, float compares | `RuleSignDiv2`, `RuleSignMod2nOpt`, `RuleModOpt`, `RuleSegment`, `RulePtrFlow`, `RuleConditionalMove` (group `conditionalexe`), `RuleFloatCast`, `RuleIgnoreNan` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, cleanup-pool `RuleExpandLoad` |
 
+`RuleMultiCollapse` keeps its operand traversal, marked-output list and
+temporary rewrite operands in local inline scratch. Wide or deeply nested
+phis can spill to owned buffers without changing visit order. The lists add
+no persistent state to an operation or rule; both success and failure clear
+the same marks, and successful rewriting iterates copied IDs directly.
+
 `RulePullsubIndirect`
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs (RulePullsubIndirect)`)
 narrows an INDIRECT whose readers are all SUBPIECEs to the bytes they use, from
