@@ -2076,7 +2076,7 @@ mod tests {
         // (GH-299)
         // and kuna-thumbswitch / the Listing walk reads a Thumb tbb/tbh switch
         // table (GH-299)
-        assert_eq!(count, 532, "corpus file count drifted");
+        assert_eq!(count, 533, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
