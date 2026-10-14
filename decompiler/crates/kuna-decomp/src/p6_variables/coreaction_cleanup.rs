@@ -2113,7 +2113,8 @@ fn bind_proto_partial_piece(
         .high_bank()
         .get(root_high)
         .and_then(|h| h.kuna_name())
-        .map(|s| s.to_string());
+        .map(|s| s.to_string())
+        .or_else(|| data.get_scope_local().and_then(|lm| lm.rename_target(root_high)));
     // The member-of-mapped-composite path applies only when the root's name
     // representative is ADDR-TIED storage (the unified stack symbol the
     // `propagateSpacebaseRef` seed forms) — that is the C++ `linkSymbol` query that
@@ -2596,8 +2597,13 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // use-point arms are applied per-high inside the walk
     // (`recommended_name_for`).  All are no-ops without recommendations.
     let prior = data.kuna_prior_names().clone();
+    let tallies = crate::kuna_stablenames::tallies(data);
+    let targets = crate::kuna_stablenames::rename_targets(data, &tallies);
+    let assigned = crate::kuna_stablenames::assign_numbers(data, &tallies);
     if let Some(lm) = data.get_scope_local_mut() {
         lm.install_prior_names(prior);
+        lm.set_rename_targets(targets);
+        lm.set_assigned_numbers(assigned);
     }
     data.kuna_apply_dynamic_recommendations();
     if let Some(lm) = data.get_scope_local_mut() {
@@ -2685,6 +2691,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         if data.high_bank().get(high).map(|h| h.kuna_name().is_some()).unwrap_or(false) {
             continue;
         }
+        let rename = data.get_scope_local().and_then(|lm| lm.rename_target(high));
         // C++ `Funcdata::linkSymbol` (`funcdata_varnode.cc:1180-1181`): a proto-partial
         // Varnode is a piece getting PIECEd into a larger structure (a struct-by-value
         // return / param built by `RulePieceStructure`).  Before the generic symbol
@@ -2736,7 +2743,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         // function, so a recommendation recorded at a NON-representative
         // instance's def address must still match).  Empty outside ghidra
         // mode.
-        if let Some(rec_name) = recommended_name_for(
+        if let Some(rec_name) = rename.is_none().then(|| recommended_name_for(
             data,
             high,
             name_rep.unwrap(),
@@ -2744,7 +2751,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
             v_size,
             v_input,
             v_addrtied,
-        ) {
+        )).flatten() {
             let unique = data
                 .get_scope_local()
                 .map(|lm| lm.make_local_name_unique(&rec_name))
@@ -2912,12 +2919,13 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 // locked parameter name for this argument high wins over the `vN`
                 // default for an undefined whole-symbol cover (the spill struct local
                 // renders `dvar`).
-                let rec_name =
+                let rec_name = rename.clone().or_else(|| {
                     func_param_name_for_high(data, &func_param_recmap, high, name_rep.unwrap())
                         .map(|rec| match data.get_scope_local() {
                             Some(lm) => lm.make_local_name_unique_among(&rec, &taken),
                             None => rec,
-                        });
+                        })
+                });
                 let resolved = with_prior_numbers(data, high, |data| {
                     data.get_scope_local_mut().and_then(|lm| {
                         lm.resolve_default_name_for_link(&info, v_size, &mut base, rec_name.as_deref())
@@ -3047,25 +3055,27 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         // lookForFuncParamNames override (coreaction.cc:2992): a callee parameter name
         // for this argument high wins over the `vN` default (and does not consume
         // `base`) for an unmapped local that reaches the tail.
-        let name = match func_param_name_for_high(data, &func_param_recmap, high, name_rep.unwrap())
-        {
-            Some(rec) => data
-                .get_scope_local()
-                .map(|lm| lm.make_local_name_unique_among(&rec, &taken))
-                .unwrap_or(rec),
-            None => {
-                // C++ `Scope::buildDefaultName`'s local arm (database.cc:1786 ->
-                // `buildVariableName`): the angr style names every local `v<base>`;
-                // the ghidra style names it `<printNameBase(type)>Var<base>`
-                // (`iVar1`/`uVar1`/...).  Pick the rep's data-type for the prefix
-                // (the same type that renders the declaration, e.g. `int4`).
-                let rep_ty = data.vbank().get(name_rep.unwrap()).map(|v| v.get_type().clone());
-                if let Some(number) = crate::kuna_stablenames::renamed_number(data, high) {
-                    renamed_parts.push((high, rep_ty, number));
-                    continue;
+        let name = match rename {
+            Some(name) => name,
+            None => match func_param_name_for_high(data, &func_param_recmap, high, name_rep.unwrap()) {
+                Some(rec) => data
+                    .get_scope_local()
+                    .map(|lm| lm.make_local_name_unique_among(&rec, &taken))
+                    .unwrap_or(rec),
+                None => {
+                    // C++ `Scope::buildDefaultName`'s local arm (database.cc:1786 ->
+                    // `buildVariableName`): the angr style names every local `v<base>`;
+                    // the ghidra style names it `<printNameBase(type)>Var<base>`
+                    // (`iVar1`/`uVar1`/...).  Pick the rep's data-type for the prefix
+                    // (the same type that renders the declaration, e.g. `int4`).
+                    let rep_ty = data.vbank().get(name_rep.unwrap()).map(|v| v.get_type().clone());
+                    if let Some(number) = crate::kuna_stablenames::renamed_number(data, high) {
+                        renamed_parts.push((high, rep_ty, number));
+                        continue;
+                    }
+                    with_prior_numbers(data, high, |data| kuna_default_local_name(data, rep_ty.as_deref(), &mut base))
                 }
-                with_prior_numbers(data, high, |data| kuna_default_local_name(data, rep_ty.as_deref(), &mut base))
-            }
+            },
         };
         taken.insert(name.clone());
         if let Some(h) = data.high_bank_mut().get_mut(high) {
@@ -3138,8 +3148,8 @@ fn with_prior_numbers<T>(
     high: crate::context::HighVariableId,
     f: impl FnOnce(&mut Funcdata) -> T,
 ) -> T {
-    let numbers = crate::kuna_stablenames::best(data, high).into_iter().collect();
     if let Some(lm) = data.get_scope_local_mut() {
+        let numbers = lm.assigned_number(high).into_iter().collect();
         lm.prefer_names(numbers);
     }
     let out = f(data);

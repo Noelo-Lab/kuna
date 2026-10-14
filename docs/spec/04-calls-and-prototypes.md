@@ -1661,6 +1661,41 @@ classified:
   extern in a relocatable object, a PLT import with no library prototype) gives
   no evidence and changes nothing. `off` leaves every list as the other rules
   settle it.
+
+  A register the callee only pushes above a call's stack arguments -- an
+  alignment pad -- is no read either (`pushpadread`, default-on,
+  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs (at_call)`).
+  x86 compilers align an odd number of stack arguments by pushing whatever
+  register is at hand before them: gcc 9 at -O2 and gcc 11 at -Os push an `rdx`
+  the body never set ahead of three bytes for `__snprintf_chk`. The push copies
+  the register, so the walk recorded a read of `rdx` and every caller's call
+  gained a third argument, whatever the caller last left in `rdx` (a loop bound,
+  an end pointer); where that was the caller's own incoming `rdx`, the caller
+  gained a parameter too. A push alone cannot be told from a real forwarded
+  argument, though -- gcc forwards a register as a stack argument with the same
+  `push %reg` then `add $N,%rsp`. So the discriminator is POSITIVE evidence of
+  how many stack arguments the nested call takes: a push BELOW that count is a
+  real argument the callee reads and is kept; only a push ABOVE it is the pad.
+  The evidence is the format resolver (chapter 1): for a printf-family call with
+  a constant format it already recovers the full argument list, and the number
+  of those arguments the ABI puts on the stack is parked by the call's VMA
+  (`Architecture::format_stack_args`), so the probe, reaching that call in the
+  callee's body, reads the count straight off. The walk follows each push as a
+  stack slot at its offset from the stack pointer; at the call the slots rising
+  without a gap from the return address are the arguments, and the lowest `N` of
+  them (the call's stack arguments) count as reads while any above `N` do not.
+  `show`'s pad lies above `__snprintf_chk`'s three; `report` forwarding its
+  third argument as the sixth of `printf`'s variadic arguments (its seventh counting the format) lies below. A read of the slot through the
+  stack pointer before the call (a `pop`, a `mov` from the stack), a use of the
+  stack pointer the walk cannot place (copied into another register, offset into
+  one, realigned), or a call whose stack-argument count is UNKNOWN -- a
+  non-format callee like a nine-parameter `nine`, an indirect call, or any call
+  when the Listing (and so the resolver) is off -- leaves every slot a read.
+  That is the conservative answer: without positive evidence a push is a read,
+  so the rule never drops a real argument and a phantom is the worst it can
+  leave. Only this rule's question changes; the dead-argument veto and every
+  other reader of the walk see every push as a read. `off` counts every push
+  again.
 - A definitely-unused trial has its dataflow **freed immediately** — the CALL
   input is replaced with constant 0 so dead-code elimination can reap the
   producer. This is why P4 must iterate with DCE inside mainloop.

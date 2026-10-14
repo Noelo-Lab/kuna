@@ -12,6 +12,10 @@
 //! JOIN storage and definitions sharing one native address use the existing
 //! DynamicHash machinery, checked against the selected high before binding.
 //! Both kinds survive the next IR rebuild; no analysis-local id is a replay key.
+//! A `name` with no type maps an unlocked Symbol only so later directives in
+//! the batch can find the variable; the rebuild carries the rename as a name
+//! instead (`kuna_stablenames`), since a Symbol over one definition of a merged
+//! variable split it and its type lock retyped it.
 //!
 //! # The usepoint is load-bearing
 //!
@@ -238,7 +242,9 @@ pub fn apply_local(
                     matches!(entry, kuna_decomp::database::EntryRef::Dynamic(_))
                 });
             lm.rename_symbol(sym, newname).map_err(|e| e.explain().to_string())?;
-            if dynamic {
+            if bound_size.is_some() || (!dynamic && !lm.database().symbol(sym).is_type_locked()) {
+                lm.set_attribute(sym, varnode_flags::namelock);
+            } else if dynamic {
                 lm.set_attribute(sym, varnode_flags::namelock);
                 if !lm.database().symbol(sym).is_type_locked() {
                     lm.set_symbol_identity_isolated(sym);
@@ -250,6 +256,9 @@ pub fn apply_local(
         Some(ct) => {
             lm.retype_symbol(sym, ct).map_err(|e| e.explain().to_string())?;
             lm.set_attribute(sym, varnode_flags::typelock);
+            if bound_size.is_some() {
+                lm.set_symbol_isolated(sym, true);
+            }
             if !newname.is_empty() && newname != current {
                 lm.rename_symbol(sym, newname).map_err(|e| e.explain().to_string())?;
                 lm.set_attribute(sym, varnode_flags::namelock);
@@ -408,9 +417,7 @@ fn bind_printed_local(
         Some(hash) => scope.add_dynamic_symbol(name, ct, &target.usepoint, hash),
         None => scope.add_symbol(name, ct, &target.addr, &target.usepoint),
     }.map_err(|error| error.explain().to_string())?;
-    if target.dynamic_hash.is_some() && !lock_type {
-        scope.set_symbol_identity_isolated(sym);
-    } else {
+    if lock_type {
         scope.set_attribute(sym, varnode_flags::typelock);
         scope.set_symbol_isolated(sym, true);
     }

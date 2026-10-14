@@ -717,7 +717,7 @@ pub fn decompile_pulled(
                 if crate::assertions::apply_symbol_scoped(prog, &mut fd, &name, single_target) {
                     let carried = crate::assertions::carried_symbols(&fd);
                     let carried_usepoint = crate::assertions::carried_usepoint_symbols(&fd);
-                    let carried_dynamic = fd.dynamic_symbol_specs();
+                    let carried_dynamic = crate::assertions::carried_dynamic_symbols(&fd);
                     let carried_objects = kuna_decomp::kuna_stackobjectasserts::specs(&fd).to_vec();
                     let carried_params = crate::kuna_paramasserts::carried(&fd, &seed.mapped_params);
                     prog.arch_mut().kuna_prior_names = kuna_decomp::kuna_stablenames::carry(&fd);

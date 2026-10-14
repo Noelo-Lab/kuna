@@ -436,3 +436,44 @@ fn assembly_into_matches_legacy_and_clears_reused_buffers() {
     assert!(mnemonic.is_empty());
     assert!(body.is_empty());
 }
+
+#[test]
+fn assembly_emitter_can_disassemble_again_without_changing_outer_text() {
+    struct NestedEmit<'a> {
+        sleigh: &'a Sleigh,
+        next: Address,
+        before: (String, String),
+        after: (String, String),
+        nested: TextEmit,
+    }
+    impl AssemblyEmit for NestedEmit<'_> {
+        fn dump(&mut self, _addr: &Address, mnemonic: &str, body: &str) {
+            self.before = (mnemonic.to_owned(), body.to_owned());
+            self.sleigh.print_assembly(&mut self.nested, &self.next).unwrap();
+            self.after = (mnemonic.to_owned(), body.to_owned());
+        }
+    }
+
+    let code = [0x48, 0x01, 0xfe, 0xb9, 0x44, 0x33, 0x22, 0x11];
+    let sleigh = build_x86_64(&code);
+    let first = code_addr(&sleigh, VMA);
+    let next = code_addr(&sleigh, VMA + 3);
+    let mut want_first = (String::new(), String::new());
+    let mut want_next = (String::new(), String::new());
+    sleigh.print_assembly_into(&first, &mut want_first.0, &mut want_first.1).unwrap();
+    sleigh.print_assembly_into(&next, &mut want_next.0, &mut want_next.1).unwrap();
+    let mut emit = NestedEmit {
+        sleigh: &sleigh,
+        next,
+        before: (String::new(), String::new()),
+        after: (String::new(), String::new()),
+        nested: TextEmit::default(),
+    };
+    assert_eq!(sleigh.print_assembly(&mut emit, &first).unwrap(), 3);
+    assert_eq!(emit.before, want_first);
+    assert_eq!(emit.after, want_first);
+    assert_eq!((emit.nested.mnemonic, emit.nested.body), want_next);
+    let mut again = TextEmit::default();
+    assert_eq!(sleigh.print_assembly(&mut again, &first).unwrap(), 3);
+    assert_eq!((again.mnemonic, again.body), want_first);
+}

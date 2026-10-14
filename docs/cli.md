@@ -499,8 +499,11 @@ including a `typedef` you asserted earlier in the same run.
 **`name`/`type` reach the register locals, not just the stack ones.** A local
 kuna prints with a storage comment — `unsigned long v6; // rax` — has no symbol
 behind it; naming one used to answer `No symbol named: v6` no matter how it was
-spelled. It now resolves: the directive maps a locked symbol over that
-variable's storage at its use point, and the second pass types it there.
+spelled. It now resolves. A `type` maps a locked symbol over that variable's
+storage at its use point, and the second pass types it there. A `name` alone
+changes nothing but the name: the second pass finds the variable by its
+instances and names all of it, so a merged register local is never split, re-
+merged with a neighbour or retyped by being renamed.
 
 ```bash
 kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'
@@ -968,9 +971,11 @@ control. See `docs/spec/09-emission.md` §9.6.
 Omitting `--mode` selects `auto`: files below 500 KiB use `aggressive`, files
 from 500 KiB up to 2 MiB use `reliable`, and files at least 2 MiB use `fast`.
 The raw on-disk byte length is used, with exact cutovers at 512,000 and
-2,097,152 bytes. `auto` also turns `ctypes` on at every size, so core types
-print as C (`int`, `unsigned long`, `double`) whichever preset it selects; an
-explicit `--mode reliable` keeps the catalog's `int4`/`uint8`/`float8`. A later
+2,097,152 bytes. `auto` also turns `ctypes` and `partialaccess` on at every
+size, so core types print as C (`int`, `unsigned long`, `double`) and a partial
+access of a variable as a typed pointer access (`((short *)&v1)[2]`) whichever
+preset it selects; an explicit `--mode reliable` keeps the catalog's
+`int4`/`uint8`/`float8` and Ghidra's `v1._4_2_`. A later
 explicit `--option` wins over the resolved preset.
 Address-selected single-function decompilation suppresses a preset-provided
 `fast_funcdisc` whole-image walk because the requested entry is already known.

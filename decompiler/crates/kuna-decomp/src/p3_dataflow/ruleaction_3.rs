@@ -9,6 +9,7 @@ use kuna_base::address::calc_mask;
 use kuna_base::space::spacetype;
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
+use smallvec::SmallVec;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::expression::AddExpression;
@@ -729,7 +730,8 @@ impl Rule for RuleMultiCollapse {
         let mut defcopyr: Option<VarnodeId> = None;
         let mut j = 0usize;
 
-        let mut matchlist: Vec<VarnodeId> = Vec::with_capacity(numinput as usize);
+        let mut matchlist: SmallVec<[VarnodeId; 8]> =
+            SmallVec::with_capacity(numinput as usize);
         for i in 0..numinput {
             matchlist.push(op_in(data, op, i).expect("RuleMultiCollapse: null input"));
         }
@@ -747,7 +749,8 @@ impl Rule for RuleMultiCollapse {
         let mut success = true;
         let outvn = op_out(data, op).expect("RuleMultiCollapse: MULTIEQUAL has no output");
         vn_set_mark(data, outvn);
-        let mut skiplist: Vec<VarnodeId> = vec![outvn];
+        let mut skiplist: SmallVec<[VarnodeId; 8]> = SmallVec::new();
+        skiplist.push(outvn);
 
         while j < matchlist.len() {
             let copyr = matchlist[j];
@@ -810,9 +813,8 @@ impl Rule for RuleMultiCollapse {
         if success {
             let defcopyr = defcopyr.expect("RuleMultiCollapse: success implies a defining branch");
             // C++ iterates `skiplist` (fixed at this point — the collapse body never
-            // pushes to it).  Snapshot it so the `&mut data` calls inside don't
-            // alias the Vec.
-            for copyr in skiplist.clone() {
+            // pushes to it). These copied IDs do not borrow or alias `data`.
+            for copyr in skiplist.iter().copied() {
                 vn_clear_mark(data, copyr);
                 let cur_op = vn_def(data, copyr).expect("skiplist varnode must be written");
                 if func_eq {
@@ -839,7 +841,8 @@ impl Rule for RuleMultiCollapse {
                     } else {
                         // Otherwise, rewrite cur_op into a copy of newop.
                         let needsreinsert = op_code(data, cur_op) == OpCode::CPUI_MULTIEQUAL;
-                        let mut parms: Vec<VarnodeId> = Vec::with_capacity(newin as usize);
+                        let mut parms: SmallVec<[VarnodeId; 8]> =
+                            SmallVec::with_capacity(newin as usize);
                         for i in 0..newin {
                             parms.push(op_in(data, newop, i).expect("newop null input"));
                         }
@@ -870,7 +873,7 @@ impl Rule for RuleMultiCollapse {
         }
 
         // Failure: clear out any marks we put down.
-        for &v in skiplist.iter() {
+        for v in skiplist.iter().copied() {
             vn_clear_mark(data, v);
         }
         0

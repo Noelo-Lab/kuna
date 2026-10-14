@@ -888,6 +888,10 @@ pub struct Architecture {
     /// own body reads it (option `calleereadarg`).  See
     /// [`crate::p4_calls::kuna_calleereadarg`].
     pub callee_read_arg: bool,
+    /// (kuna) Do not take a register the callee only pushes for its next call,
+    /// with nothing reading the slot back, as `calleereadarg` evidence (option
+    /// `pushpadread`).  See [`crate::p4_calls::kuna_calleedeadarg`].
+    pub push_pad_read: bool,
     /// (kuna) Drop the zero fill a narrow write leaves in the upper half of a
     /// returned vector register (option `zerofillreturn`).
     pub zero_fill_return: bool,
@@ -1004,6 +1008,9 @@ pub struct Architecture {
     pub array_extent: int4,
     /// Opt-in frame-bounded arrays for call-escaped integer storage.
     pub call_array_extent: bool,
+    /// (kuna `stackstruct`) Lay out an address-taken frame record as one
+    /// structure. See [`crate::p6_variables::kuna_stackstruct`].
+    pub stack_struct: bool,
     /// (kuna) Refuse the `RulePropagateCopy` marker propagation that would
     /// orphan an address-tied `COPY` output holding a call's return value,
     /// keeping a `local = f();` frame store in the emitted C (option
@@ -2083,6 +2090,15 @@ pub struct Architecture {
     /// overrides.  Empty unless the Listing and `formatstring` are both on.
     pub format_call_overrides:
         std::collections::BTreeMap<u64, Vec<crate::kuna_formatstring::ParkedFormatSite>>,
+    /// (kuna `pushpadread`) The number of STACK arguments each printf-family
+    /// format call consumes, keyed by the call instruction's VMA -- derived from
+    /// the format resolver's per-site conversion count. The callee-body probe
+    /// uses it to tell a real stack argument a callee forwards (pushed below this
+    /// count) from the alignment pad gcc pushes above it. Built whenever
+    /// `pushpadread` is on and the Listing runs; it carries NO typing and never
+    /// reaches the varargs-override path, so it is independent of `--option
+    /// formatstring`.
+    pub format_stack_args: std::rc::Rc<std::collections::BTreeMap<u64, usize>>,
     /// (kuna `formatstring`) The call points, among the prototype overrides of
     /// the drive in progress, whose override a resolved format string produced.
     /// Set by the console's decompile step around each drive; the flow build
@@ -2789,6 +2805,7 @@ impl Architecture {
             callee_dead_arg: true,
             hidden_ret_arg: true,
             callee_read_arg: true,
+            push_pad_read: true,
             zero_fill_return: true,
             zero_call_regs: true,
             callee_preserves: true,
@@ -2813,6 +2830,7 @@ impl Architecture {
             load_guard_range: false, // (kuna) option loadguardrange; reset_defaults sets the shipped default
             index_alias_guard: 0, // (kuna) option indexaliasguard; reset_defaults sets the shipped default
             call_array_extent: false,
+            stack_struct: false,
             array_extent: 0, // (kuna) option arrayextent; reset_defaults sets the shipped default
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
@@ -2965,6 +2983,7 @@ impl Architecture {
             analysis_operand_refs: false,
             analysis_formatstring: crate::kuna_formatstring::FormatStringMode::Off,
             format_call_overrides: std::collections::BTreeMap::new(),
+            format_stack_args: std::rc::Rc::new(std::collections::BTreeMap::new()),
             format_override_callpoints: std::collections::BTreeSet::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
@@ -3132,6 +3151,7 @@ impl Architecture {
         self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
         self.hidden_ret_arg = true; // (kuna) default-on (0/675 ablation): a hidden-return register trial the callee never takes, or a null-page constant, is no argument
         self.callee_read_arg = true; // (kuna) default-on: a register argument the caller also tests is kept when the callee's own body reads it (0/675 ablation)
+        self.push_pad_read = true; // (kuna) default-on: a register a callee only pushes for its next call, with nothing reading the slot back, is no calleereadarg evidence
         self.zero_fill_return = true; // (kuna) default-on (0/675 ablation): the zero a narrow write leaves in a returned q register's upper half is no part of the value
         self.zero_call_regs = true; // (kuna) default-on (0/675 ablation): a register a -fzero-call-used-regs epilogue clears before the return is no part of the value
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
@@ -3155,6 +3175,7 @@ impl Architecture {
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
         self.index_alias_guard = crate::p3_dataflow::kuna_indexaliasguard::LEVEL_GLOBAL; // (kuna) DIV-147 restored upstream Heritage::guardLoads (heritage.cc:1570), which kuna shipped behind a hard-coded highPtrPossible == false; default `global` adds guardStores' INDIRECT on a global at each STORE into its space and a LOAD guard COPY of a global at each LOAD that may read it (0/675 datatest); `load` drops both, `off` drops all, `full` adds upstream guardStores
         self.call_array_extent = false;
+        self.stack_struct = false;
         self.array_extent = crate::p6_variables::kuna_arrayextent::LEVEL_ON; // (kuna) GH-867 default-on: an indexed stack array covers the slots its known-bits bound reaches and, unbounded, the contiguous write-only slots after it (0/675 datatest)
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
@@ -3930,6 +3951,7 @@ impl Architecture {
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
         ctx.hidden_ret_arg = self.hidden_ret_arg; // hiddenretarg
         ctx.callee_read_arg = self.callee_read_arg; // calleereadarg
+        ctx.push_pad_read = self.push_pad_read; // pushpadread
         ctx.zero_fill_return = self.zero_fill_return; // zerofillreturn
         ctx.zero_call_regs = self.zero_call_regs; // zerocallregs
         ctx.callee_preserves = self.callee_preserves; // calleepreserves
@@ -3954,6 +3976,7 @@ impl Architecture {
         ctx.load_guard_range = self.load_guard_range; // loadguardrange
         ctx.index_alias_guard = self.index_alias_guard; // indexaliasguard
         ctx.call_array_extent = self.call_array_extent;
+        ctx.stack_struct = self.stack_struct;
         ctx.array_extent = self.array_extent; // arrayextent
         ctx.stack_alias_deadstore = self.stack_alias_deadstore; // stackalias
         ctx.stack_views = self.stack_views;
