@@ -225,6 +225,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "sparcstructret" => on_off(conf.sparc_struct_return),
         "arraystride" => on_off(conf.recover_array_stride),
         "stackalias" => on_off(conf.stack_alias_deadstore),
+        "stackviews" => on_off(conf.stack_views),
         "dynamichashmax" => on_off(conf.dynamic_hash_maxdup_high),
         "stackprobeloop" => on_off(conf.model_stack_probe_loop),
         "callpush" => on_off(conf.drop_call_push),
@@ -292,6 +293,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "listing" => on_off(conf.analysis_listing),
         "armframes" => on_off(conf.analysis_armframes),
         "unmappedentry" => on_off(conf.analysis_unmappedentry),
+        "thumbswitch" => on_off(conf.analysis_thumbswitch),
         "thunkentry" => on_off(conf.analysis_thunkentry),
         "addrtakenentry" => on_off(conf.analysis_addrtakenentry),
         "ppclocalentry" => on_off(conf.analysis_ppclocalentry),
@@ -312,6 +314,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "gopclntab" => on_off(conf.analysis_gopclntab),
         "aifbracket" => on_off(conf.analysis_aifbracket),
         "aifnoppad" => on_off(conf.analysis_aifnoppad),
+        "aifpoolslide" => on_off(conf.analysis_aifpoolslide),
         "armconstshift" => on_off(conf.arm_constant_shift),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested
         // state (the live spec-selection gate is the load-time env var, but the
@@ -800,9 +803,6 @@ impl IfaceCommandAction for IfcKunaAssert {
                 "Symbol::setIsolated (IfaceDecompData::readSymbol) for kassert merge-aggressiveness",
             )),
             Dispatch::Rename => {
-                // C++ kassert naming-policy -> Scope::renameSymbol + namelock,
-                // exactly like IfcRename (ifacedecomp.rs IfcRename::execute).
-                use kuna_decomp::varnode::varnode_flags;
                 if tokens.len() < 2 {
                     return Err(IfaceError::parse(
                         "naming-policy assertion needs <oldname> <newname>",
@@ -811,23 +811,10 @@ impl IfaceCommandAction for IfcKunaAssert {
                 let oldname = tokens[0].clone();
                 let newname = tokens[1].clone();
                 let dcp = dcp_mut(status)?;
-                let sym_list = dcp.read_symbol(&oldname)?;
-                if sym_list.is_empty() {
-                    return Err(IfaceError::execution(format!("No symbol named: {oldname}")));
-                }
-                if sym_list.len() > 1 {
-                    return Err(IfaceError::execution(format!(
-                        "More than one symbol named: {oldname}"
-                    )));
-                }
-                let sym = sym_list[0];
-                let fd = dcp.fd.as_mut().expect("read_symbol succeeded => fd present");
-                let lm = fd
-                    .get_scope_local_mut()
-                    .ok_or_else(|| IfaceError::execution("Function has no local scope"))?;
-                lm.rename_symbol(sym, &newname)
-                    .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-                lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+                let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
+                let fd = dcp.local_symbol_fd(&oldname)?;
+                crate::kuna_hightarget::apply_local(fd, &oldname, &newname, None, maxduplicates)
+                    .map_err(IfaceError::execution)?;
                 status.out(&applied_line);
                 self.assert_log.borrow_mut().push(record);
                 Ok(())

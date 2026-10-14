@@ -1,0 +1,13 @@
+prototype xor_view int xor_view(float initial)
+prototype constant_bits int constant_bits(void)
+prototype effect_bits int effect_bits(void (*writer)(unsigned int *value))
+prototype write_word void write_word(unsigned int *value)
+prototype read_float int read_float(const float *value)
+prototype observe_word void observe_word(const unsigned int *value)
+data 0x402000 float two
+data 0x402004 unsigned int observed_word
+prototype double_bits int double_bits(double initial)
+prototype read_double int read_double(const double *value)
+prototype observe_quad void observe_quad(const unsigned long long *value)
+data 0x402010 double two_double
+data 0x402018 unsigned long long observed_quad

@@ -639,6 +639,8 @@ pub struct DynamicSymbolSpec {
     pub name: String,
     /// Symbol data-type (C++ `Symbol::type`).
     pub dtype: Rc<Datatype>,
+    /// Original name/type lock intent.
+    pub flags: uint4,
     /// First-use address of the dynamic SymbolEntry (C++ `getFirstUseAddress`).
     pub addr: Address,
     /// The dynamic hash identifying the Varnode (C++ `SymbolEntry::hash`).
@@ -1289,6 +1291,10 @@ impl Database {
         &self.symbols[id]
     }
 
+    pub fn try_symbol(&self, id: SymbolId) -> Option<&Symbol> {
+        self.symbols.get(id)
+    }
+
     /// Mutably borrow a symbol by id.
     pub fn symbol_mut(&mut self, id: SymbolId) -> &mut Symbol {
         self.kuna_gen += 1;
@@ -1934,6 +1940,7 @@ impl Database {
             out.push(DynamicSymbolSpec {
                 name: symbol.name.clone(),
                 dtype: ct,
+                flags: symbol.flags,
                 addr: entry.get_first_use_address(),
                 hash: entry.get_hash(),
                 category: symbol.category,
@@ -2596,6 +2603,18 @@ impl Database {
         size: int4,
         usepoint: &Address,
     ) -> Option<EntryRef> {
+        self.find_container_matching(scope, addr, size, usepoint, |_| true)
+    }
+
+    /// Select a containing entry from a particular symbol domain.
+    pub fn find_container_matching(
+        &self,
+        scope: ScopeId,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+        accepts: impl Fn(&Symbol) -> bool,
+    ) -> Option<EntryRef> {
         let space = addr.get_space()?;
         let space_index = space.get_index() as usize;
         let rangemap = self.scopes[scope].maptable.get(space_index)?.as_ref()?;
@@ -2613,8 +2632,8 @@ impl Database {
             if entry.get_last() >= end {
                 // We contain the range.
                 if entry.get_size() < oldsize || oldsize == -1 {
-                    let symflags = self.symbols[entry.symbol].flags;
-                    if entry.in_use(usepoint, symflags) {
+                    let symbol = &self.symbols[entry.symbol];
+                    if accepts(symbol) && entry.in_use(usepoint, symbol.flags) {
                         bestentry = Some(EntryRef::Mapped { space_index, idx });
                         if entry.get_size() == size {
                             break;
@@ -4110,8 +4129,10 @@ impl Database {
             .filter(|&sid| self.symbols[sid].get_category() < 0)
             .collect();
         for sid in candidates {
-            if self.symbols[sid].is_type_locked() {
-                // Only hold if TYPE locked; clear an unlocked, defined name.
+            if self.symbols[sid].is_type_locked()
+                || (self.symbols[sid].is_name_locked() && self.symbols[sid].is_isolated())
+            {
+                // Keep asserted identity; reset an unasserted recovered name.
                 if !self.symbols[sid].is_name_locked() && !self.symbols[sid].is_name_undefined() {
                     let newname = self.build_undefined_name(scope)?;
                     self.rename_symbol(sid, &newname)?;

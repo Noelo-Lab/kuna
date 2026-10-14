@@ -1,0 +1,25 @@
+<decompilertest>
+  <!-- A logical object name must preserve pointer-field loads through its shared backing. -->
+  <binaryimage arch="x86:LE:64:default:gcc">
+    <bytechunk space="ram" offset="0x401000">4883ec284889e7e810000000488b442408488b008b40104883c428c3488d05dd0f000048894708b801000000c3e8ceffffff31ff83f81f400f95c7b83c0000000f05</bytechunk>
+    <bytechunk space="ram" offset="0x402000">182040000000000000000000000000000700000000000000000000000000000000000000000000001f00000000000000</bytechunk>
+    <symbol space="ram" offset="0x401000" name="group_fields" />
+    <symbol space="ram" offset="0x40101c" name="construct_set" />
+  </binaryimage>
+  <script>
+    <com>parse line struct FieldNode { FieldNode *next; FieldNode *previous; int4 value; uint1 padding[4]; };</com>
+    <com>parse line struct FieldSet { float4 load; uint1 padding[4]; FieldNode *head; uint8 count; };</com>
+    <com>parse line extern int4 group_fields(void);</com>
+    <com>parse line extern bool construct_set(FieldSet *set);</com>
+    <com>option stackalias off</com>
+    <com>option stackviews off</com>
+    <com>lo fu group_fields</com><com>decompile</com><com>print C</com>
+    <com>option stackviews on</com>
+    <com>lo fu group_fields</com><com>decompile</com><com>print C</com>
+    <com>rename object_401007_1 target_set</com><com>decompile</com><com>print C</com>
+    <com>quit</com>
+  </script>
+  <stringmatch name="pointer fields: native next loads survive naming" min="3" max="3">return \(v1\.(view_FieldSet\.)?head\)-&gt;next-&gt;value;</stringmatch>
+  <stringmatch name="pointer fields: name selects shared member" min="1" max="1">construct_set\(&amp;v1\.target_set\);</stringmatch>
+  <stringmatch name="pointer fields: no unresolved pointer expressions" min="0" max="0">PTRSUB\(</stringmatch>
+</decompilertest>

@@ -1,0 +1,44 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: a predicated call's fall-through is not a function
+    (default correctness fix, no option).
+
+    Issue:      kuna GH-299 - mid-function entries on ARM firmware; a
+                conditional `bl` made the instruction after it a function, and
+                three such sites made the callee no-return.
+    Stage:      P1 code/data partition - the Listing walk's call targets
+                (`listing/classify.rs`).
+
+    The XML wrapper only provides the harness architecture.  The script loads
+    `condcall_le32` (generator `condcall_le32.py` beside it): a stripped Thumb
+    ELF whose `_start` calls f1, f2 and f3, each `bl ext; cmp r0,#n; it gt;
+    blgt ext; pop {r7,pc}`, and `other` at 0x8152, which calls `ext` (a plain
+    `adds r0,#1; bx lr` at 0x8164) twice.  The `blgt` lifts to a branch to the
+    next instruction ahead of its call, and that branch was read as a second
+    call target: the `pop` after each `blgt` became sub_8130, sub_8140 and
+    sub_8150, and the no-return discovery pass, seeing three calls to `ext`
+    followed by a function start, made `ext` no-return and cut `other` off
+    after its first call.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/condcall_le32</com>
+  <com>mode aggressive</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function sub_8152</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-CONDCALL #1: the instruction after a blgt is not a function" min="0" max="0">0x81[345]0 sub_81[345]0</stringmatch>
+<stringmatch name="KUNA-CONDCALL #2: the predicated callers are functions" min="3" max="3">0x81[234]2 sub_81[234]2</stringmatch>
+<stringmatch name="KUNA-CONDCALL #3: ext returns, so other makes both calls" min="1" max="1">return sub_8164\(v1 \+ 1\) \+ v1;</stringmatch>
+<stringmatch name="KUNA-CONDCALL #4: no call to ext is no-return" min="0" max="0">no-return</stringmatch>
+</decompilertest>

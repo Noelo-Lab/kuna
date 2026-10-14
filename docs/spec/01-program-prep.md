@@ -2723,14 +2723,18 @@ moves.
   (the `msvcp` iostream and string API in most): calls printed with no arguments
   fall from 13,819 to 11,302 and from 18,858 to 17,355, 5.4% and 8.3% of the
   functions change, and total decompile CPU time moves by +0.3% and -0.5%.
-  LOSS: a parameter after a by-value class is not placed, and where MSVC
-  constructs that class in its
-  outgoing slot through a pointer — a copy constructor, or a call returning into
-  the slot — the call-site recovery refuses every slot above the one whose address
-  was taken, so those arguments render as stores before the call
-  (`MakeStack(a1)`, after `Arr::Arr((Arr *)&v1,a2)`, keeps only its hidden return
-  pointer). `--option msvcsig off` restores the Itanium-arm reading of MSVC names
-  exactly.
+  A parameter after a by-value class is not placed by the declaration, and where
+  MSVC constructs that class in its outgoing slot through a pointer — a copy
+  constructor, or a call returning into the slot — the call-site recovery refuses
+  every slot above the one whose address was taken. So for such an import (one
+  by-value class, no `...`) the arm also parks the whole declaration, the class a
+  placeholder, and records every entry that builds an object at an address it is
+  handed: a 32-bit `__thiscall` constructor (`??0`) and an applied declaration
+  returning a class by value; `msvcbyval` (04 §4.4) sizes the class at each call
+  from the caller's cleanup. LOSS: where it declines, those arguments render as stores before the
+  call (`MakeStack(a1)`, after `Arr::Arr((Arr *)&v1,a2)`, keeps only its hidden
+  return pointer). `--option msvcsig off` restores the Itanium-arm reading of MSVC
+  names exactly.
 - **Source-language detection**
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
   (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) runs once,
@@ -4449,6 +4453,21 @@ load-bearing gotchas are worth restating: a constant-space branch operand is
 p-code-relative (an intra-instruction branch), never a VMA; fall-through is decided
 by the *last* op only; and delay slots are already folded into the reported length.
 
+(kuna, GH-299) A predicated call — an A32 `blgt`, or a `bl` inside a Thumb `it`
+block — lifts to a `CBRANCH` to the next instruction (the skip when the condition
+fails) followed by the `CALL`. `classify` collects the target of every branch op,
+and the walk makes every target of a call instruction a function, so the
+instruction after each such call became a `sub_<addr>`: a mid-body entry that cut
+its own function short, and evidence for the no-return discovery pass, which
+counts the calls to a callee that are followed by a function start and at three
+marks it no-return, truncating every caller in the image. The skip is the call's
+fall-through and is now dropped from a call's targets; a call to the next
+instruction (the i386 `call $+5` idiom), which carries no such branch, keeps its
+target. Over 26 images (ARM, x86-64, i386 PE, AArch64, MIPS, PowerPC and RISC-V)
+only the ARM inventories change: 37 entries fewer in all, 23 of them right after a
+predicated call and the rest mid-body entries that sat in the functions those
+entries had cut short, with no symbol-table start lost.
+
 The instruction model stores records in 1,024-row chunks, with a B-tree of
 `(address, row number)` pairs for ordered lookup
 (`decompiler/crates/kuna-analysis/src/listing/kuna_insnstore.rs (InstructionStore)`).
@@ -4781,6 +4800,46 @@ loses no true function start on any corpus and gains 50 on the i386 PEs (the
 function behind padding, now at its own address) and 38 on the ARM ELFs (the
 function a zero run used to swallow); it removes 7,446 non-start PE entries and a
 net 77 mid-body ARM ones, and leaves i386 and x86-64 ELFs unchanged.
+
+(kuna, GH-299) No gap entry starts on a literal-pool word: `aifpoolslide`
+(default-on; `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifpoolslide.rs`).
+ARM code keeps its constants in pools right after the code that loads them, so a
+pool usually sits between one function and the next, and the walk never decodes
+it. The gap walk then reads a pool word as an instruction — an A32 image address
+`0x608xxxxx` as `addvs`, the high half of a Thumb SRAM pointer `0x2000xxxx` as
+`movs r0,#0` — whose pairing with the next function's prologue matches the
+fingerprint, and whose speculative body runs into that function and validates. The
+entry lands a word or half a word early, and because an accept consumes its body,
+the function behind it is never probed: on a stripped A32 u-boot this hid 334 real
+functions. `poolentry` repairs the same shape after the fact, but only in
+`--mode aggressive`, only for a pool behind a return (u-boot's often follow a call
+to a no-return function), and only by adding a second entry. Here the walk keeps a
+set of literal words: every word an `ldr` or `vldr` of the decoded Listing loads
+PC-relatively (its absolute `[0x...]` operand or its `[pc,#imm]` form, both words
+of a 64-bit load; an `adr` only takes an address, so a function whose address it
+takes is not a pool), extended with the literal words of each body the walk
+accepts or consumes, so the pool behind a gap-found function is known by the time
+the walk reaches it. A candidate inside a run of adjacent literal words is probed
+as before, but its accept is planted on the first address after the run when its
+body decoded an instruction there, and it is rejected otherwise, so the cursor
+reaches the code after the pool and probes it on its own. When that address is
+data — bytes that begin a printable NUL-terminated string, or an even address some
+literal word of Thumb code holds, since a Thumb code address carries bit 0 — the
+candidate is refused but still consumes its body: a body the walk accepts over a
+string table decodes text as `ldr`s, and those bogus literal words must not move an
+entry onto a string the code passes as an argument. A bracket refusal also keeps
+consuming its body. It is 32-bit ARM only and runs only in the plain gap walk.
+Scored against unstripped twins in the default mode: over the 93 non-u-boot ARM
+ELFs of the decbench corpus mid-body entries 4,375 to 1,866 net and true starts
++222; on the two u-boot images 1,415 to 1,081 and +334; no true start lost, and
+`CMSIS_DAP.axf`, the i386 PE corpus and x86-64 images unchanged. Besides the 556
+true starts, the new entries are 5 mid-body entries and 63 on data (none on a
+string start), against 88 such data entries removed, 77 of them on a string. It
+shares `poolentry`'s one disclosed split: a literal
+reference that resolves onto a function's own first word (the SPLIT shape of
+`cortexm_poolentry_le32`) moves that function's entry four bytes in, which the
+gap walk without this option gets right in `--mode reliable`; the corpus
+measurement has no such case.
 
 (kuna, GH-313) Upstream applies a **second** fingerprint test that kuna's port
 dropped. Its analyzer refuses a candidate twice — once on the shared-prologue count
@@ -5720,6 +5779,48 @@ switch as **truncated** (`SwitchTable`, with the case count the range check
 states and the number read, which is zero when the ceiling is below the two
 entries a table needs). A table with no range check that reads up to the
 ceiling is recorded the same way, with no stated count.
+
+(kuna, GH-299) Neither read covers the dispatch Cortex-M firmware uses for
+almost every switch, and the function-discovery walk (`walk.rs`) had no table
+read at all: a computed jump there has no successor, so the case region behind
+every `tbb`/`tbh` stayed undecoded, and the AIF gap walk planted entries in it —
+a case body that opens with a common prologue and ends in its own return is a
+valid subroutine with a known fingerprint. **Thumb offset tables** (`thumbswitch`,
+default-on; `decompiler/crates/kuna-analysis/src/listing/kuna_thumbswitch.rs`)
+read them in both walks. `tbb [pc,rN]` and `tbh [pc,rN,lsl #1]` jump to
+`inst_next + 2 * table[rN]`, where the byte or halfword table starts at
+`inst_next`; the dispatch's own p-code is folded through the same lattice as the
+delta-table read, extended with a narrow table word and its doubling, and only
+this PC-relative form — table and base both the instruction's own `inst_next` —
+is an answer. The table states no length either, so the count again comes from
+the range check: the `cmp rN,#n` the dispatch sits behind lifts to
+`INT_LESSEQUAL(n, rN)`, and when a conditional branch follows it within three
+instructions with nothing in between writing `rN`, the table has `n + 1`
+entries if that branch reads exactly the carry and the zero flag
+(`bhi`/`bls`, so `rN == n` is a case) and `n` if it reads only the carry
+(`bcs`/`bcc`). A branch on any other flags bounds nothing — a signed `bge`
+lets a negative index through — so neither it nor a dispatch with no check at
+all is read. Over the jump-table ceiling the first `jumptablemax` entries are
+read, and the xrefs walk records the switch as truncated like any other table. Because the offsets are
+unsigned and the cases are laid out after the table, an entry that lands inside
+the table, or outside the dispatcher's executable section, refuses the whole
+read rather than truncating it. The cases become same-function successors of the
+dispatch, as a branch target is, plus a code reference from it. Scored against
+the symbol tables of the 93 non-u-boot 32-bit ARM ELFs in the decbench corpus,
+default mode: mid-body entries 6,946 to 4,375 net (2,606 gone; 35 new, all
+gap-walk entries in other holes of the functions whose cases are now decoded)
+and true function starts 41,822 to 42,180 (the functions only a case
+body calls), with none lost; on the Keil-built `CMSIS_DAP.axf`, whose tables
+sit behind `bcs`, 18 to 16 and 300 to 301; the A32 u-boot images and the i386
+PE corpus are unchanged. A function a case body calls is now walked too, and
+its own tail `b` takes the target in as any branch the walk follows does: on an
+armhf `libc.so.6` a case body calls `0x73248`, whose tail `b` pulls in
+`0x73078`, a true start nothing else reaches, so it is no longer listed;
+`tailcallentry` (on in `--mode aggressive`) recovers it. The walk decodes the
+case bodies, and what they call, on every Listing build, so discovery alone
+takes longer where tables are read (`kuna functions` about 8% on betaflight and
+that libc), while a whole-binary run gets faster because no case body is
+decompiled as a function of its own. It is ARM-only and needs a walk, so it is inert without `--option listing on`.
 
 (kuna) The walk's decode set is global, so it cannot say how long one function
 is: code two entries share is decoded under whichever entry reached it first. A

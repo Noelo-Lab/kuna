@@ -1,0 +1,62 @@
+<decompilertest>
+  <!-- Kuna #810. P3 callee-memory summaries / P6 physical-write liveness. option stackviews off (default) retains the first initializer; on removes it through a stack-passed pointer. Direct caller-frame reads, const-declared writes and returned-pointer reads before/after overwrite preserve native behavior. -->
+  <binaryimage arch="x86:LE:64:default:gcc">
+    <bytechunk space="ram" offset="0x401000">534883ec20c744241005000000c744241407000000488d4424104889042431ff31f631d231c94531c04531c9e85c01000089c3c744241009000000488d7c2410e84201000001d84883c4205bc3534883ec20c744241005000000c744241407000000488d4424104889042431ff31f631d231c94531c04531c9e81801000089c3c744241009000000488d7c2410e8f500000001d84883c4205bc34883ec28c744241005000000c744241407000000488d4424104889042431ff31f631d231c94531c04531c9e8d10000008b442410034424144883c428c3534883ec20488d442410488905180f0000c744241005000000c7442414070000004889042431ff31f631d231c94531c04531c9e8700000008b18c744241009000000488d7c2410e86400000001d84883c4205bc3534883ec20488d442410488905c40e0000c744241005000000c7442414070000004889042431ff31f631d231c94531c04531c9e81c000000c7442410090000008b18488d7c2410e81000000001d84883c4205bc3488b057a0e0000c38b07034704c3488b4424088b4004c38b442418c3488b442408c7000900000031c0c3e852feffff83f817752ce895feffff83f8157522e8d8feffff83f8107518e80bffffff83f815750ee855ffffff83f819750431ffeb05bf01000000b83c0000000f05</bytechunk>
+    <bytechunk space="ram" offset="0x402000">0000000000000000</bytechunk>
+    <symbol space="ram" offset="0x401000" name="overwrite_after_stack_read" />
+    <symbol space="ram" offset="0x40104d" name="overwrite_after_stack_hidden" />
+    <symbol space="ram" offset="0x40109a" name="read_after_stack_write" />
+    <symbol space="ram" offset="0x4010d7" name="returned_pointer_read_before_overwrite" />
+    <symbol space="ram" offset="0x40112b" name="returned_pointer_read_after_overwrite" />
+    <symbol space="ram" offset="0x40117f" name="stack_return_pointer" />
+    <symbol space="ram" offset="0x401187" name="stack_read_pair" />
+    <symbol space="ram" offset="0x40118d" name="stack_read_second" />
+    <symbol space="ram" offset="0x401196" name="stack_hidden_read" />
+    <symbol space="ram" offset="0x40119b" name="stack_const_write" />
+    <symbol space="ram" offset="0x4011a9" name="_start" />
+    <symbol space="ram" offset="0x402000" name="stack_saved_pointer" />
+    <symbol space="ram" offset="0x402008" name="__bss_start" />
+    <symbol space="ram" offset="0x402008" name="_edata" />
+    <symbol space="ram" offset="0x402008" name="_end" />
+  </binaryimage>
+  <script>
+    <com>parse line typedef struct CalleePair { int first; int second; } CalleePair;</com>
+    <com>parse line extern int overwrite_after_stack_read(void);</com>
+    <com>parse line extern int overwrite_after_stack_hidden(void);</com>
+    <com>parse line extern int read_after_stack_write(void);</com>
+    <com>parse line extern int returned_pointer_read_before_overwrite(void);</com>
+    <com>parse line extern int returned_pointer_read_after_overwrite(void);</com>
+    <com>parse line extern struct CalleePair *stack_return_pointer(long a, long b, long c, long d, long e, long f, const struct CalleePair *pair);</com>
+    <com>parse line extern int stack_read_pair(const struct CalleePair *pair);</com>
+    <com>parse line extern int stack_read_second(long a, long b, long c, long d, long e, long f, const struct CalleePair *pair);</com>
+    <com>parse line extern int stack_hidden_read(long a, long b, long c, long d, long e, long f, const struct CalleePair *pair);</com>
+    <com>parse line extern int stack_const_write(long a, long b, long c, long d, long e, long f, const struct CalleePair *pair);</com>
+    <com>map addr r0x402000 struct CalleePair *stack_saved_pointer</com>
+    <com>option stackalias off</com>
+    <com>option stackviews off</com>
+    <com>lo fu overwrite_after_stack_read</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>option stackviews on</com>
+    <com>lo fu overwrite_after_stack_read</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu overwrite_after_stack_hidden</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu read_after_stack_write</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu returned_pointer_read_before_overwrite</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu returned_pointer_read_after_overwrite</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>quit</com>
+  </script>
+  <stringmatch name="x86_64 callee stack: first writes survive off and real observers" min="4" max="4"> = 5;</stringmatch>
+  <stringmatch name="x86_64 callee stack: all second words survive" min="6" max="6"> = 7;</stringmatch>
+  <stringmatch name="x86_64 callee stack: all later overwrites survive" min="5" max="5"> = 9;</stringmatch>
+  <stringmatch name="x86_64 callee stack: stack-passed const writer does not fold stale bytes" min="0" max="0">return 12;</stringmatch>
+</decompilertest>

@@ -393,16 +393,16 @@ fn build_localtypes(data: &mut Funcdata) {
             vn_size = v.get_size();
             vn_type_lock = v.is_type_lock();
         }
+        let vn_usepoint = data.vn_use_point(vn);
         // C++ buildLocaltypes type-locked-symbol seed (coreaction.cc:5275-5281):
         // The seed is consulted only when the Varnode is itself not type-locked
         // (a type-locked Varnode already carries its own definitive type via the
         // getLocalType `isTypeLock` fast-path).
-        let usepoint = data.vn_use_point(vn);
         let seed = if !vn_type_lock {
             data.get_scope_local().and_then(|lm| {
                 data.get_arch()
                     .types()
-                    .and_then(|t| lm.build_localtype_seed_at(&vn_addr, vn_size, &usepoint, t))
+                    .and_then(|t| lm.build_localtype_seed_at(&vn_addr, vn_size, &vn_usepoint, t))
             })
         } else {
             None
@@ -589,6 +589,9 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
         Some(t) => t,
         None => return false,
     };
+    let backing_store = crate::p5_types::kuna_stackwordtypes::backing_store(
+        data, op, inslot, outslot, invn, &alttype,
+    );
     // (C++ coreaction.cc:5335-5341)  Always give the incoming union/relative-pointer
     // a chance to resolve so the field choice is cached for later facing lookups,
     // but only adopt the resolved type for the propagation when `op` is not a MULTIEQUAL
@@ -602,6 +605,9 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
         if !is_marker {
             alttype = res_type;
         }
+    }
+    if backing_store {
+        alttype = crate::p5_types::kuna_stackwordtypes::stored_word(data, invn, alttype);
     }
 
     // Resolve the outgoing Varnode.
