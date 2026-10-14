@@ -2164,7 +2164,7 @@ decomp_command!(
                     crate::assertions::carried_usepoint_symbols(fd),
                     // The console-added `map hash` dynamic symbols (likewise carried
                     // across so `ActionDynamicSymbols` can name the matched temps).
-                    fd.dynamic_symbol_specs(),
+                    crate::assertions::carried_dynamic_symbols(fd),
                     kuna_decomp::kuna_stackobjectasserts::specs(fd).to_vec(),
                 ),
             };
@@ -2238,6 +2238,11 @@ decomp_command!(
             }
             carried
         };
+        let prior_names = dcp_mut(status)?
+            .fd
+            .as_ref()
+            .map(kuna_decomp::kuna_stablenames::carry)
+            .unwrap_or_default();
         // The `override prototype` facts stashed for this function (re-seeded on the
         // rebuilt IR), consumed at flow time as `Override::applyPrototype`.  The
         // shared decompile step may discover further per-call-site printf/scanf
@@ -2285,7 +2290,8 @@ decomp_command!(
                 && pending_proto.is_none()
                 && all_pending_protos_empty
                 && mapped_params.is_empty()
-                && proto_overrides.is_empty();
+                && proto_overrides.is_empty()
+                && prior_names.is_empty();
             let stamp_matches = matches!(&dcp.pristine_flow, Some(p)
                 if p.command_seq + 1 == command_seq
                     && p.name == name
@@ -2336,6 +2342,8 @@ decomp_command!(
         // whole-binary loop (`project::decompile_targets`) run the identical
         // pipeline — including the FormatStringAnalyzer half-B override /
         // re-decompile loop, which used to live only here.
+        prog.arch_mut().kuna_prior_names = prior_names;
+        prog.arch_mut().kuna_record_names = true;
         let step = crate::decompile_step::decompile_one_prefollowed(
             prog.arch_mut(),
             &name,
@@ -2353,6 +2361,8 @@ decomp_command!(
             &proto_overrides,
             prefollowed,
         );
+        prog.arch_mut().kuna_prior_names = Default::default();
+        prog.arch_mut().kuna_record_names = false;
         let result = step.result;
         if !step.discovered.is_empty() {
             status.out("Re-decompiling with format-string varargs typing\n");

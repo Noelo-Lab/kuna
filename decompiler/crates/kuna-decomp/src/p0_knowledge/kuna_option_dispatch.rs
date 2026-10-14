@@ -71,6 +71,11 @@ kuna_options! { self, p1;
         self.print_mut().options.set_array_cover_width(val);
         Ok(msg)
     },
+    "partialaccess" => {
+        let value = on_or_off(p1)?;
+        self.print_mut().options.partial_access = value;
+        Ok(format!("Typed pointer partial accesses turned {}", if value { "on" } else { "off" }))
+    },
     "bytearrayc" => {
         let value = on_or_off(p1)?;
         self.print_mut().options.bytearray_c = value;
@@ -349,6 +354,7 @@ kuna_options! { self, p1;
         self.callee_read_arg = val;
         Ok(msg)
     },
+    "pushpadread" => on_off!(push_pad_read, "push-only reads left out of callee-read argument evidence"),
     "zerocallregs" => {
         let (val, msg) =
             crate::p4_calls::kuna_zerocallregs::OptionZeroCallRegs.apply(p1)?;
@@ -497,6 +503,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "callarrayextent" => on_off!(call_array_extent, "Call-escaped frame array extent"),
+    "stackstruct" => on_off!(stack_struct, "Address-taken frame record layout"),
     "arrayextent" => {
         let (val, msg) =
             crate::p6_variables::kuna_arrayextent::OptionArrayExtent.apply(p1)?;

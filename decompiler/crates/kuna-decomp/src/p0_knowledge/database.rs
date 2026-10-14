@@ -4261,6 +4261,27 @@ impl Database {
         arch: &dyn DatabaseArch,
     ) -> KunaResult<()> {
         self.kuna_gen += 1;
+        for sid in self.undefined_symbols(scope) {
+            self.assign_default_name(scope, sid, base, arch)?;
+        }
+        Ok(())
+    }
+
+    /// One step of [`Self::assign_default_names`]: give `sid` its default name.
+    pub fn assign_default_name(
+        &mut self,
+        scope: ScopeId,
+        sid: SymbolId,
+        base: &mut int4,
+        arch: &dyn DatabaseArch,
+    ) -> KunaResult<()> {
+        self.kuna_gen += 1;
+        let nm = self.build_default_name(scope, sid, base, None, arch)?;
+        self.rename_symbol(sid, &nm)
+    }
+
+    /// The Symbols of `scope` whose name is still undefined, in name order.
+    pub fn undefined_symbols(&self, scope: ScopeId) -> Vec<SymbolId> {
         use std::ops::Bound::{Excluded, Unbounded};
         // C++: iter = nametree.upper_bound(Symbol("$$undef")); walk while names
         // are still "undefined".  Collect the undefined-named ids first (the
@@ -4269,17 +4290,30 @@ impl Database {
         // C++ probe is Symbol("$$undef") with nameDedup=0; upper_bound is the
         // first key strictly greater than ("$$undef", 0).
         let probe = NameKey { name: "$$undef".to_string(), name_dedup: 0 };
-        let undefined: Vec<SymbolId> = self.scopes[scope]
+        self.scopes[scope]
             .nametree
             .range((Excluded(probe), Unbounded))
             .take_while(|(k, _)| k.name.len() == 15 && k.name.starts_with("$$undef"))
             .map(|(_, &sid)| sid)
-            .collect();
-        for sid in undefined {
-            let nm = self.build_default_name(scope, sid, base, None, arch)?;
-            self.rename_symbol(sid, &nm)?;
-        }
-        Ok(())
+            .collect()
+    }
+
+    /// (kuna) Each Symbol of `scope` with its first mapped entry's storage,
+    /// width and name; Symbols without a mapped entry are left out.
+    pub fn scope_symbol_storage(&self, scope: ScopeId) -> Vec<(SymbolId, Address, int4, String)> {
+        self.scopes[scope]
+            .nametree
+            .values()
+            .filter_map(|&sid| {
+                let symbol = &self.symbols[sid];
+                let eref = *symbol.mapentry.first()?;
+                if matches!(eref, EntryRef::Dynamic(_)) {
+                    return None;
+                }
+                let entry = self.entry(scope, eref);
+                Some((sid, entry.get_addr().clone(), entry.get_size(), symbol.name.clone()))
+            })
+            .collect()
     }
 }
 

@@ -499,16 +499,20 @@ including a `typedef` you asserted earlier in the same run.
 **`name`/`type` reach the register locals, not just the stack ones.** A local
 kuna prints with a storage comment — `unsigned long v6; // rax` — has no symbol
 behind it; naming one used to answer `No symbol named: v6` no matter how it was
-spelled. It now resolves: the directive maps a locked symbol over that
-variable's storage at its use point, and the second pass types it there.
+spelled. It now resolves. A `type` maps a locked symbol over that variable's
+storage at its use point, and the second pass types it there. A `name` alone
+changes nothing but the name: the second pass finds the variable by its
+instances and names all of it, so a merged register local is never split, re-
+merged with a neighbour or retyped by being renamed.
 
 ```bash
 kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'
 #   unsigned long *v6;  // rax        (was: unsigned long v6;)
 ```
 
-A bare `type <local> <T>` states no name, so the retyped local may come back
-under a different `vN`; `type v6 unsigned long *vmtop` pins a name outright.
+A bare `type <local> <T>` states no name, so the retyped local keeps its `vN`
+while the retype leaves the variable whole; `type v6 unsigned long *vmtop` pins
+a name outright.
 Register assertions identify a definition at its native address and width.
 Saved copies, joins and later reuse of that register remain distinct. JOIN
 values, temporaries and ambiguous definition addresses use a validated
@@ -562,6 +566,14 @@ name was also printed (`name v2 v1` after `name v1 v2`, or a rotation): it
 renames the local printed under the identifier. Two register locals that share a
 register at different widths (`char *s; // rax` and `uint4 v1; // eax`) can both
 be named when their definition identities are distinct.
+
+**A directive renumbers no other local.** Every local keeps the `vN` the output
+you were shown printed, so after `name v9 idx` the old `v10` is still `v10` and
+the next directive naming it still reaches it. The renamed local's number is
+left unused. A local that loses its number to a rename (`name v3 v7` when `v7`
+exists) and a local the directives created (a retype that splits a variable)
+take a number past the last one printed, so a number never comes back on a
+different variable; a variable a retype merged away leaves its number unused.
 
 Parameter `name` and `type` directives update the signature and its body uses.
 They retain the parameter's native storage, so a retype must occupy the same
@@ -959,9 +971,11 @@ control. See `docs/spec/09-emission.md` §9.6.
 Omitting `--mode` selects `auto`: files below 500 KiB use `aggressive`, files
 from 500 KiB up to 2 MiB use `reliable`, and files at least 2 MiB use `fast`.
 The raw on-disk byte length is used, with exact cutovers at 512,000 and
-2,097,152 bytes. `auto` also turns `ctypes` on at every size, so core types
-print as C (`int`, `unsigned long`, `double`) whichever preset it selects; an
-explicit `--mode reliable` keeps the catalog's `int4`/`uint8`/`float8`. A later
+2,097,152 bytes. `auto` also turns `ctypes` and `partialaccess` on at every
+size, so core types print as C (`int`, `unsigned long`, `double`) and a partial
+access of a variable as a typed pointer access (`((short *)&v1)[2]`) whichever
+preset it selects; an explicit `--mode reliable` keeps the catalog's
+`int4`/`uint8`/`float8` and Ghidra's `v1._4_2_`. A later
 explicit `--option` wins over the resolved preset.
 Address-selected single-function decompilation suppresses a preset-provided
 `fast_funcdisc` whole-image walk because the requested entry is already known.

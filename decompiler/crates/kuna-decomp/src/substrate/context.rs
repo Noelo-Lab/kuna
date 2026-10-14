@@ -1050,6 +1050,10 @@ pub struct ArchContext {
     /// callee's own body reads them (`calleereadarg`).  Read by
     /// [`crate::p4_calls::kuna_calleereadarg::capture`].
     pub callee_read_arg: bool,
+    /// (kuna) do not take a register the callee only pushes for its next call
+    /// as `calleereadarg` evidence (`pushpadread`).  Read by
+    /// [`crate::p4_calls::kuna_calleereadarg::capture`].
+    pub push_pad_read: bool,
     /// (kuna) drop the zero fill a narrow write leaves in the upper half of a
     /// returned vector register (`zerofillreturn`).  Read by
     /// [`crate::p4_calls::kuna_zerofillreturn::drop_zero_fill`].
@@ -1199,6 +1203,8 @@ pub struct ArchContext {
     pub stack_views: bool,
     /// Opt-in frame-bounded arrays for call-escaped integer storage.
     pub call_array_extent: bool,
+    /// (kuna `stackstruct`) Lay out an address-taken frame record as one structure.
+    pub stack_struct: bool,
     /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
     /// `RulePropagateCopy` marker propagation that would leave an address-tied
     /// `COPY` output holding a call's return value with no readers, so a
@@ -1837,6 +1843,7 @@ impl ArchContext {
             callee_dead_arg: true,
             hidden_ret_arg: true,
             callee_read_arg: true,       // calleereadarg (default-on)
+            push_pad_read: true,         // pushpadread (default-on)
             zero_fill_return: true,
             zero_call_regs: true,
             callee_preserves: true,
@@ -1861,6 +1868,7 @@ impl ArchContext {
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
             call_array_extent: false,
+            stack_struct: false,
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)

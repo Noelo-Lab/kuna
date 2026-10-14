@@ -8,6 +8,7 @@ pub mod coreaction_casts;
 pub mod printlanguage;
 pub mod printc;
 pub mod kuna_partialconcat;
+pub mod kuna_partialaccess;
 pub mod prettyprint;
 pub mod printjava;
 pub mod cast;

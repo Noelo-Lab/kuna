@@ -2873,8 +2873,9 @@ fn usage_decompile_all() {
          worker re-run whole-binary\n\
          function discovery instead of taking the parent's inventory.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
-         2 MiB, and fast at 2 MiB or larger, with ctypes on at every size (an\n\
-         explicit --mode reliable keeps the int4/uint8 names). Explicit --option\n\
+         2 MiB, and fast at 2 MiB or larger, with ctypes and partialaccess on\n\
+         at every size (an explicit --mode reliable keeps the int4/uint8 names\n\
+         and the name._4_2_ members). Explicit --option\n\
          values win.\n\
          An unfiltered run that discovers no function at all exits 1 with the\n\
          reason on stderr and in the document's run-level `error` field.\n\
@@ -3163,7 +3164,10 @@ mod mode_tests {
             (kuna_decomp::modes::AUTO_RELIABLE_MIN_BYTES, "reliable"),
             (kuna_decomp::modes::AUTO_FAST_MIN_BYTES, "fast"),
         ] {
-            let mut expected = vec![("ctypes".to_string(), "on".to_string())];
+            let mut expected = vec![
+                ("ctypes".to_string(), "on".to_string()),
+                ("partialaccess".to_string(), "on".to_string()),
+            ];
             expected.extend(mode_override_pairs(concrete).unwrap());
             for requested in [None, Some("auto")] {
                 let resolved = resolved_mode(requested, size).unwrap();

@@ -49,7 +49,7 @@ pub struct Insn {
     /// runtime value, so an `Insn` with `pcode: None` is still `!Send` — a walker
     /// that wants to hand its instruction records to another thread must carry
     /// [`InsnLite`] instead and convert on arrival.
-    pub pcode: Option<Vec<RawOp>>,
+    pub pcode: Option<Box<Vec<RawOp>>>,
 }
 
 /// The walk's actual per-instruction product: every [`Insn`] field except the

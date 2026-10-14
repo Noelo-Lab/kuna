@@ -185,6 +185,66 @@ fn a_function_rename_reaches_the_inventory_and_qualifies_later_directives() {
     assert_eq!(statuses, vec!["applied", "applied"]);
 }
 
+/// `inspect`'s C for `function` of `binary` under `asserts`, as sorted lines
+/// with each `(from, to)` identifier swapped.
+fn inspected_lines(binary: &str, function: &str, asserts: &[&str], renames: &[(&str, &str)]) -> Vec<String> {
+    let inspected = run_on(binary, "inspect", &[function], asserts).expect("inspect");
+    let code = inspected["function"]["code"].as_str().expect("code");
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut out: Vec<String> = code
+        .lines()
+        .map(|line| {
+            line.split_inclusive(|c: char| !word(c))
+                .map(|piece| {
+                    let name = piece.trim_end_matches(|c: char| !word(c));
+                    match renames.iter().find(|(from, _)| *from == name) {
+                        Some((_, to)) => format!("{to}{}", &piece[name.len()..]),
+                        None => piece.to_string(),
+                    }
+                })
+                .collect::<String>()
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// The page sends every rename on every request, each naming the local as the
+/// first decompile printed it, so a rename must not renumber another local:
+/// `check`'s `v2` stays `v2` when `v1` is renamed.
+#[test]
+fn a_local_rename_moves_no_other_local_number() {
+    let plain = inspected_lines("crackme.elf", "check", &[], &[]);
+    assert!(plain.iter().any(|line| line.contains(" v2; // ")), "{plain:?}");
+    assert_eq!(inspected_lines("crackme.elf", "check", &["name v1 ok"], &[("ok", "v1")]), plain);
+}
+
+/// Two renames in turn, the second naming the local the page showed as `v7`
+/// after the first: both survive and nothing else moves.
+#[test]
+fn two_renames_in_turn_both_survive() {
+    let plain = inspected_lines("long.elf", "main", &[], &[]);
+    let renamed = inspected_lines(
+        "long.elf",
+        "main",
+        &["name main::v6 word_count", "name main::v7 line_count"],
+        &[("word_count", "v6"), ("line_count", "v7")],
+    );
+    assert_eq!(renamed, plain);
+}
+
+/// A rename names the whole printed variable: `long.elf`'s `v2` lives in
+/// `eax` and two stack slots, and renaming it used to split off a new `v15`;
+/// renaming `v3` used to swallow `v1`.
+#[test]
+fn a_rename_names_the_whole_variable() {
+    let plain = inspected_lines("long.elf", "main", &[], &[]);
+    for (from, to) in [("v2", "count"), ("v3", "input")] {
+        let directive = format!("name main::{from} {to}");
+        assert_eq!(inspected_lines("long.elf", "main", &[&directive], &[(to, from)]), plain, "{directive}");
+    }
+}
+
 /// A `bytes` overlay is what every later read of the image sees.
 #[test]
 fn a_byte_patch_reaches_read_and_the_listing() {

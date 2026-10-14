@@ -235,7 +235,8 @@ fn parse_command(cmd: &str, args: &[String], binary: &str) -> Result<Cmd, String
 ///
 /// For the mode, `None` and `Some("auto")` select `aggressive` below 500 KiB,
 /// `reliable` from 500 KiB through just below 2 MiB, and `fast` at 2 MiB and
-/// above, with `auto`'s own overrides (`ctypes on`) under every one of them.
+/// above, with `auto`'s own overrides (`ctypes`, `partialaccess` on) under
+/// every one of them.
 ///
 /// (kuna outlang) For the language, `None` and `Some("auto")` follow the binary:
 /// a Rust binary renders as Rust. `project` is excluded from that policy -- its

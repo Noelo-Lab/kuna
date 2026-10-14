@@ -230,6 +230,9 @@ pub struct Funcdata {
     /// re-declared, as `(offset, size, type)`; read by
     /// [`crate::kuna_castobject::reconcile`] once the variables are merged.
     cast_objects: std::cell::RefCell<Vec<(kuna_base::types::uintb, int4, std::rc::Rc<crate::dtype::Datatype>)>>,
+    /// (kuna `stackstruct`) Every frame record a `restructure_varnode` pass laid
+    /// out; later passes keep it while no access contradicts its bounds.
+    stack_records: std::cell::RefCell<Vec<crate::p6_variables::kuna_stackstruct::StackRecord>>,
     /// (kuna `stackstoreguard`) Set once a `restructure_varnode` pass lays out a
     /// guarded store's reach; later passes keep doing so
     /// (`p6_variables/kuna_storereach.rs`).
@@ -400,6 +403,17 @@ pub struct Funcdata {
     /// empty, so the entries are exactly one batch: the directives between two
     /// decompiles.
     kuna_directive_symbols: Vec<DirectiveSymbol>,
+    /// (kuna `--assert`) The previous decompile's default numbering, seeded by
+    /// the drive when a directive batch is replayed; see
+    /// [`crate::kuna_stablenames`].
+    kuna_prior_names: crate::kuna_stablenames::PriorNames,
+    /// One past the last default index the naming pass handed out.
+    kuna_default_name_end: int4,
+    /// Whether the naming pass records [`Self::kuna_name_snapshot`].
+    kuna_record_names: bool,
+    /// The numbering the naming pass handed out, by instance identity; see
+    /// `kuna_stablenames::snapshot`.
+    kuna_name_snapshot: Vec<(String, crate::kuna_stablenames::Keys)>,
     /// (kuna, ghidra Phase 4) WIRE-ONLY symbols the encode-time link pass
     /// synthesized for named HighVariables the analysis deliberately left
     /// symbol-less — see [`crate::database::WireSymbol`].  They are encoded
@@ -675,6 +689,7 @@ impl Funcdata {
             frame_slots: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             slot_evidence: std::cell::RefCell::new(Default::default()),
             cast_objects: std::cell::RefCell::new(Vec::new()),
+            stack_records: std::cell::RefCell::new(Vec::new()),
             store_reach_committed: std::cell::Cell::new(false),
             store_reach_checks: std::cell::RefCell::new(Default::default()),
             indexed_guard_stores: std::cell::RefCell::new(Default::default()),
@@ -715,6 +730,10 @@ impl Funcdata {
             kuna_pipeline_failure: None,
             kuna_rejected_flow: Vec::new(),
             kuna_directive_symbols: Vec::new(),
+            kuna_prior_names: Default::default(),
+            kuna_default_name_end: 1,
+            kuna_record_names: false,
+            kuna_name_snapshot: Vec::new(),
             kuna_wire_symbols: Vec::new(),
             kuna_wrapped_wire_storage: std::collections::BTreeMap::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
@@ -929,6 +948,42 @@ impl Funcdata {
             return;
         }
         self.kuna_directive_symbols.push(entry);
+    }
+
+    /// (kuna `--assert`) The previous decompile's default numbering to keep.
+    pub fn kuna_prior_names(&self) -> &crate::kuna_stablenames::PriorNames {
+        &self.kuna_prior_names
+    }
+
+    pub fn seed_prior_names(&mut self, prior: crate::kuna_stablenames::PriorNames) {
+        self.kuna_prior_names = prior;
+    }
+
+    /// One past the last default index the naming pass handed out.
+    pub fn kuna_default_name_end(&self) -> int4 {
+        self.kuna_default_name_end
+    }
+
+    pub fn set_kuna_default_name_end(&mut self, end: int4) {
+        self.kuna_default_name_end = end;
+    }
+
+    /// (kuna `--assert`) Should the naming pass record its numbering?
+    pub fn kuna_record_names(&self) -> bool {
+        self.kuna_record_names
+    }
+
+    pub fn set_kuna_record_names(&mut self, on: bool) {
+        self.kuna_record_names = on;
+    }
+
+    /// The numbering the naming pass recorded (empty unless asked to).
+    pub fn kuna_name_snapshot(&self) -> &[(String, crate::kuna_stablenames::Keys)] {
+        &self.kuna_name_snapshot
+    }
+
+    pub fn set_kuna_name_snapshot(&mut self, snapshot: Vec<(String, crate::kuna_stablenames::Keys)>) {
+        self.kuna_name_snapshot = snapshot;
     }
 
     /// (kuna `rustabi`) Record what a probe of `entry`'s body proved about the
@@ -2070,6 +2125,18 @@ impl Funcdata {
     /// (kuna `framelayout`) The union of every stack-frame slot any pass recovered.
     pub fn frame_slots(&self) -> Vec<(i64, FrameSlot)> {
         self.frame_slots.borrow().iter().map(|(k, v)| (*k, v.clone())).collect()
+    }
+
+    /// (kuna `stackstruct`) The frame records earlier passes laid out.
+    pub fn stack_records(&self) -> Vec<crate::p6_variables::kuna_stackstruct::StackRecord> {
+        self.stack_records.borrow().clone()
+    }
+
+    /// (kuna `stackstruct`) Remember a frame record, replacing one at the same start.
+    pub fn record_stack_record(&self, r: crate::p6_variables::kuna_stackstruct::StackRecord) {
+        let mut all = self.stack_records.borrow_mut();
+        all.retain(|o| o.start != r.start);
+        all.push(r);
     }
 
     /// (kuna `castobject`) Remember the stack objects one pass re-declared.
