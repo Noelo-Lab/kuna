@@ -1,0 +1,16 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:64:default:default">
+<bytechunk space="ram" offset="0x10000" readonly="true">
+03000080c518400085a0110281a018c2c120600881c3e00801000000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="double_rounded"/>
+</binaryimage>
+<script>
+<com>parse line extern void double_rounded(void);</com>
+<com>map address r0x20000 long long value</com>
+<com>map address r0x20008 float result</com>
+<com>lo fu double_rounded</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="signed64 double rounding survives subfloat lowering" min="1" max="1">result = \(float4\)\(float8\)value;</stringmatch>
+</decompilertest>

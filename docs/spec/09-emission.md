@@ -706,6 +706,60 @@ the machine's does), all printing the binary's values for negative inputs,
 0x80000000..0xffffffff, sums past 32 bits and squares past 2^32, including the
 shared, parenthesized and regrouped shapes above.
 
+**Narrowings C performs by itself (kuna `castnarrow`).** `castimplied` leaves
+a widening out where the destination converts the value anyway, and keeps every
+truncation and sign change. So a value narrowed into a destination of exactly
+the narrow type kept its cast: `v1 = (unsigned int)a0;` into an
+`unsigned int v1` from a `long a0`, `*a1 = (char)a0;` through a `char *a1`,
+`toupper((int)a0)`, and `return (int)x;` from a function declared `int`. The
+destination performs that very conversion (C11 6.5.16.1p2 for `=`, 6.5.2.2p7 for
+a prototyped argument, 6.8.6.4p3 for `return`), and a conversion between
+integer types depends only on the value converted and the type converted to
+(6.3.1.3), so `T v = (T)e;` stores what `T v = e;` stores whatever integer type
+`e` has. With the option `castnarrow` on (the default; `off` keeps every
+narrowing cast), the printer leaves such a cast out
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_castnarrow.rs (drops)`, asked
+from `kuna_castimplied.rs (ImpliedCasts::drops)` and so from
+`printc.rs (PrintC::implied_cast_drops)`, which the `CPUI_CAST` arm and now the
+cast arm of `printc.rs (PrintC::op_subpiece_ir)` consult with the op that reads
+the value). The IR is unchanged. Three printed forms are candidates: a low
+SUBPIECE printed as a cast, a `CPUI_CAST` between integer types, and the
+`(T)name` the partial-symbol printer writes when an access reads the low piece
+of a wider variable (`kuna_castnarrow.rs (drops_partial)`, from
+`printc.rs (PrintC::partial_cast_drops)` in `push_partial_symbol_ir`, only when
+the cast covers the bare name).
+
+The cast goes when two things hold. First, the value lands whole in a
+destination whose printed type is spelled exactly as the cast
+(`kuna_castnarrow.rs (destination)`): a plain `lhs = (T)e;` statement whose left
+side is a local or parameter declared with that spelling, also inside a comma
+condition, but not an arm of `c ? a : b` and not the compound literal a stack
+view or a byte-wise store writes (`kuna_castnarrow.rs (plain_statement)`); a
+store through a pointer printed with that pointee, as `castwiden` finds it
+(`kuna_castwiden.rs (store_pointee)`), but not a bitfield store or a stack-view
+`__builtin_memcpy`; a direct call argument whose parameter is type-locked
+(`kuna_castimplied.rs (trusted_param)`, which refuses trials, varargs
+positions, per-call-site overrides and `truncarg` arguments); or `return` from a
+function whose declared return type is that spelling. Implied COPYs are looked
+through. Second, the target is a plain integer (not `bool`, not an enum) and the
+operand prints as an integer (`kuna_castnarrow.rs (integer_operand)`): a
+declared variable, including one of an unknown type the printer spells as an
+integer, a cast, a load through a typed pointer, an integer expression whose
+operands are all such (`kuna_castwiden.rs (operand_set)`), or a shift of one,
+which has its left operand's promoted type. For a piece of a variable, the
+variable must be declared with exactly its own type. A constant, a call, a
+pointer or a float operand keeps the cast, since C would not convert it
+implicitly or would warn. Anything else that reads the narrowed value keeps the
+cast too: `v = (unsigned int)a + b` converts `a` before the addition, a
+comparison and a conversion over it depend on its narrowed type, and a
+destination of another spelling (`*a1 = (int)a0;` through an
+`unsigned int *a1`) is left as it is. Only where `int` is 4 bytes, and only for
+C output. Pinned by a compiled round trip
+(`kuna-cli/tests/castnarrow_round_trip.rs`) over gcc and clang builds at -O0 and
+-O2 of `castnarrow_x86_64.c`, printed with the option off and on and compiled
+with gcc and clang at -O0 and -O2, each build computing what the source computes
+for every input.
+
 **Casting an output.** `coreaction_casts.rs (Funcdata::cast_output)` compares
 the *token* type the operator naturally produces — `coreaction_casts.rs
 (get_output_token)`: COPY/PTRADD echo the input, arithmetic takes the
@@ -1295,6 +1349,68 @@ bodies at `-O0` and `-O2` with strict aliasing and UBSan, including unaligned
 transfers, overlapping stores, signed reads, const sources, both ARM endian
 variants and an unchanged named-struct control.
 
+**Partial accesses as C (kuna `partialaccess`, default `off`, on in
+`aggressive`, `fast` and at every `auto` size).** Everywhere else the walk ends
+on the artificial member, which is Ghidra's notation and not C: `v1._4_2_ ==
+2`. With the option on, `printc.rs (PrintC::push_partial_walk)` takes the
+trailing `._<off>_<size>_` entry off the member stack and prints what it
+describes (`printc.rs (PrintC::push_piece_open)`, `kuna_partialaccess.rs
+(Piece::plan)`). An access of a width C has a scalar for is the pointer access
+it is: `((T *)&v1)[k]` when the offset is a multiple of the access width, with
+`k` the offset divided by the width; `*(T *)&v1` at offset 0; `*(T *)((char
+*)&v1 + off)` at an unaligned offset; `*(T *)&buf[off]`, and `*(T *)buf` at
+offset 0, when the walk took the bytes out of a byte array (a `char[16]` local,
+a synthesized record's `undefined1` filler), whose subscripts already count
+bytes, as IDA prints `*(_DWORD *)&buf[8]`; and `((char *)&v1)[off]` when the
+caller asked for the address of a position inside the symbol (the `sz == 0`
+request of the spacebase arm, which wraps the result in `&`). The first form
+is the spelling the cast pass already gives the same bytes reached through a
+pointer (`((unsigned char *)a0)[7]`) and IDA's `BYTEn`/`WORDn` macros. `T` is
+the type of the Varnode being printed when that type is exactly the access
+width and is a scalar (an integer, boolean, float, pointer or unknown of 1, 2,
+4 or 8 bytes, or a float of its own width); otherwise it is the unknown type of
+the width, spelled by the active type speller -- except that an unknown-typed
+access that carries a float (a float operation or a copy of a float wrote it,
+or a float operation reads it) takes the float of its width, because an
+integer `T` would make C convert the value where the binary moves its bits
+(`*(double *)&v1[8] = a0 * a0;` for an AArch64 `d1:d0` pair). A 16-byte access
+on a target with 8-byte pointers reads through `unsigned __int128`, the GCC
+and Clang 16-byte integer (`return *(unsigned __int128 *)v1;`), which is local
+to this rendering: the variable keeps the declaration it had.
+
+C has no scalar of 3, 5, 6, 7 or 9 to 15 bytes, and no form may compile to a
+different meaning, so those widths are handled by what the statement does.
+`printc.rs (PrintC::emit_wide_copy)` prints a plain `COPY` into such bytes, or
+into 16 bytes, as `memset` when the source is a constant whose bytes are all
+equal and as `memcpy` when it is another such piece or a variable, with the
+exact byte count (`memset(&v2,0,0x10);`, `memcpy((char *)&v1 + 0x10,(char
+*)&d + 0x10,0x38);`); a whole array variable that takes a copy out of such
+bytes is copied the same way, since an array cannot be assigned. A read of 3,
+5, 6 or 7 bytes out of a scalar prints as the `SUB<in><out>(v,k)` intrinsic
+the surrounding output already uses for a truncation, `k` counted from the
+value's low end (the memory offset on a little-endian space, the bytes after
+the access on a big-endian one). Any other access of such a width -- a store
+of an intrinsic's value (`v47._0_12_ = ZEXT412(1) << 0x40;`), or a 16-byte
+access on a 32-bit target -- keeps Ghidra's token, which no compiler accepts:
+an array-typed spelling would compile, as an assignment error at best and as
+the address of the bytes at worst. The member path stays inside the
+address-of (`((unsigned int *)&v1.flagfield)[1]`, `*(unsigned long
+*)&v11[0]`), every form is an lvalue so a partial store prints the same way,
+and the offset is still the byte offset into the symbol's storage, so the
+reading is the target's memory order whatever its endianness. The rendering is
+C only (the Rust printer keeps its own spelling) and reinterprets the variable
+through another type exactly as IDA's macros do, so recompiling it wants
+`-fno-strict-aliasing`, as decompiled C generally does. The catalog default
+stays off because the datatest corpus pins Ghidra's notation in two assertions
+and applies no mode; the presets are what make the C spelling the default
+rendering for a real binary. Over 36 stripped decbench binaries
+(O0 and O2) under `--mode aggressive` the option replaces the 4,964 artificial
+members of 805 functions: the 4,306 of a scalar width become pointer accesses;
+of the 658 wider or odd ones, 211 read through `unsigned __int128`, the plain
+stores and copies become 292 `memset` and 15 `memcpy` statements, 43 odd-width
+reads become `SUB` intrinsics, and 89 keep the token, each a store of an
+intrinsic's value. Nothing else changes.
+
 **Leaves with no Symbol.** Not every leaf has one. When no mapped symbol covers
 the storage the leaf falls through to the upstream `pushUnnamedLocation`
 naming, `printc.rs (kuna_unnamed_location_name)`: the register name covering
@@ -1591,11 +1707,16 @@ derived from the first character of the type's name (`float8` is what makes
 `fVar1`), and the console's C-type parser resolves base types solely through
 `TypeFactory::find_by_name`, which the corpus feeds `int4`/`float8` from 269
 script lines. The shipped catalog default is `off`, which is what the XML
-parity corpora run at (42 datatest assertions pin the Ghidra spellings); the
-`aggressive` preset turns it on, and `auto` selects `aggressive` under 500 KiB,
-so valid C is the rendering every real-binary surface gets. Exercised by
+parity corpora and an explicit `--mode reliable` run at (42 datatest assertions
+pin the Ghidra spellings). The `aggressive` and `fast` presets turn it on, and
+`auto` turns it on at every input size, the `reliable` tier from 500 KiB to
+2 MiB included (chapter [00](00-overview.md), *Modes*). Valid C is therefore
+the rendering every real-binary surface gets, whatever the input size. Before
+that, a binary of 500 KiB or more fell back to the interned names, and an
+8-byte element cast such as `((int8 *)a0)[4]` read like a byte offset of 4 at
+an element offset of 0x20 (GH-1063). Exercised by
 `tests/stages/kuna-ctypes.xml` and the per-architecture CLI gate
-`ctypes_per_arch`.
+`ctypes_per_arch`, which also runs `--mode fast` and `auto` at each size tier.
 
 ## 9.3 Naming
 
@@ -1664,6 +1785,10 @@ the earlier declaration-collapse decisions. Collapsed declarations combine the
 homes of every HighVariable rendered through them. COPY and same-width
 MULTIEQUAL inputs contribute unchanged values' homes, including a conditional
 move's selected register, without following arithmetic or memory-address inputs.
+Such an input that belongs to another variable reports its own frame offset, not
+that variable's base: a register copied from the field at -0x80 of a record at
+-0x98 says `stack - 0x80` (this also moves 10 of 4,908 functions' comments under
+`--mode reliable`, e.g. `stack - 0x208` to `stack - 0x1c0`).
 Register copies used only to supply outgoing CALL or CALLIND arguments are
 transport locations, so they do not contribute to a local's source comment.
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_calltransport.rs` checks that
@@ -2177,6 +2302,29 @@ dedupvardecls off` restores the one-line-per-HighVariable behavior for the two
 option-controlled collapses; overlap-owner collapsing and collision suffixing
 remain active because unique, correctly bound C identifiers are an output
 validity invariant rather than a presentation choice.
+
+**(kuna) declorder — the order the declarations print in.** The collapses
+and the suffix allocation above walk the locals sorted by name, a plain string
+sort under which every two-digit name lands between `v1` and `v2`: a function
+with eleven numbered locals declared `v1, v10, v11, v2, ..., v9`. Once the
+final spellings are known, and only then, the option `declorder` (P9
+`naming-policy`, default `natural`) reorders the surviving declarations
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_declorder.rs (order_decls)`).
+`natural` compares two names character by character, except that where both
+have an ASCII digit run at the same position the runs compare by numeric
+value: leading zeros dropped, then the shorter run first, then digit by digit,
+so no run is too long to compare. Two names whose runs differ only in leading
+zeros fall back to plain string order, which keeps the order total and agrees
+with name equality (`kuna_declorder.rs (natural_cmp)`). The same eleven locals
+then declare `v1, v2, ..., v9, v10, v11`, the order IDA declares its numbered
+locals in. Because the reorder runs after the collapses and the suffixes, the
+choice of which declaration survives a collapse and which spelling takes a
+suffix is the name-sorted one either way; only the order of the declaration
+lines changes. The reorder applies to angr-style names, the default
+`namestyle`: Ghidra-style names carry hexadecimal offsets (`local_1c`,
+`uStack_a8`) that a decimal comparison would scramble, so under
+`namestyle ghidra` the declarations keep the string order. `option declorder
+name` keeps the string order everywhere.
 
 ## 9.4 Strings & comments
 

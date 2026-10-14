@@ -118,6 +118,7 @@ writeup, not here.
 | `kuna-aifnoppad.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (no AIF gap entry starts on nop padding: padding in front of a known function is not probed, and an accept behind padding moves to the code after it) | `option aifnoppad on\|off` |
 | `kuna-condcall.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (a predicated call's skip to the next instruction is its fall-through, not a second call target, so the next instruction is not a function and the callee is not no-return) | default correctness fix (no option) |
 | `kuna-thumbswitch.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (the Listing walk reads a range-checked Thumb `tbb`/`tbh` offset table and decodes the case bodies as the dispatcher's own code, so no gap entry lands on a case) | `option thumbswitch on\|off` |
+| `kuna-aifpoolslide.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (an AIF gap candidate on a word a PC-relative load reads is pool data: its accept moves to the code after the pool) | `option aifpoolslide on\|off` |
 | `kuna-pushimmediateret.xml` | RE-friction duplicate needs `entry-point-push-return` + `push-immediate-ret-transfer` | S2 flow classification (a proven one-store `push immediate; ret` becomes a terminal branch; no target function is synthesized) | `option pushimmediateret on\|off` |
 | `kuna-subcommuteshift.xml` | RE-friction need `cancelling-byte-arithmetic-splits` | S3 simplification quiescence (exact modulo-256 multiply/shift cancellation) | `option cancelbytearithmetic on\|off` |
 | `kuna-wideslice.xml` | clang x86-64 `-O3` byte-sum regression | P3 SSA reduction (push demanded slices through 9..15-byte `PIECE`, byte shifts, and bitwise operations; the artificial aggregates heritage and the rule pool leave behind, without recognizing the source algorithm) | `option wideslice on\|off` |
@@ -175,6 +176,8 @@ writeup, not here.
 | `kuna-arm-register-shift.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) (a variable ARM LSL can emit undefined C shifts for low-eight-bit counts 32 through 255) | P9 C emission, a guarded `CPUI_INT_LEFT` with unsigned shiftee, restricted to repeatable ARM operands; correctness fix, no option | default, single pass: preserves `count & 0xff`, checks `< 32`, emits an unsigned shift plus zero fallback, and avoids compound assignment when the guard applies |
 | `kuna-arm-register-shift-signed.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) follow-up (the shift's unsigned C repair must retain the signed value consumed by ARM signed compare and ASR) | P9 C emission, signed true/false conditional arms around the guarded unsigned LSL | default: output retains signed comparison and arithmetic shift behavior |
 | `kuna-call-array-extent.xml` | Synthetic call-escaped frame storage | P6 stack-frame-layout | `option callarrayextent on\|off` |
+| `kuna-stackstruct.xml` | A local record read through `read(fd,&h,8)` printed its byte and short fields as `v1._4_2_`, which is not C, and no record type was declared (authored C, gcc/clang -O0/-O2) | P6 stack-frame-layout + P9 pointer-notation | `option stackstruct on\|off`, `option partialaccess on\|off` |
+| `kuna-declorder.xml` | A function with ten or more locals declared them in string order, `v1, v10, v11, v2, ...` (authored C, gcc -O0) | P9 naming-policy, local declaration order | `option declorder natural\|name` |
 
 `kuna-minss-nan.xml` pins an authored scalar MINSS and ratio/clamp probe.
 P3 and P9 preserve the negation of an ordered float comparison as `!(a < b)`
@@ -293,3 +296,5 @@ with undefined-behavior checks and exercises every case and signed boundaries.
 - `kuna-sparc-double-abs.xml`, `kuna-sparc64-double-abs.xml`: binary64 absolute value from a high-word `fabss`, without a numeric high-word cast.
 
 - `kuna-sparc-double-sign.xml`, `kuna-sparc64-double-sign.xml`: binary64 negation from a high-word `fnegs`, without a numeric high-word cast.
+
+- `kuna-integer-float-rounding.xml`, `kuna-integer-float-rounding64.xml`, `kuna-integer-float-rounding-x87.xml`: an integer-to-float conversion keeps its rounding through a later float conversion or a narrower float trace (`option intfloatround`; the first passes run it `off`), while exact intermediates, x87 extended conversions and `fld1` still combine.

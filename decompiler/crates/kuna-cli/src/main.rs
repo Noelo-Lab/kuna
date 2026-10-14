@@ -387,13 +387,17 @@ fn cmd_modes(argv: &[String]) -> i32 {
         for m in kuna_decomp::modes::MODE_TABLE {
             let _ = writeln!(text, "{}", m.name);
             let _ = writeln!(text, "  {}", m.summary);
+            let joined: Vec<String> =
+                m.overrides.iter().map(|(o, v)| format!("{o}={v}")).collect();
             if m.automatic {
-                let _ = writeln!(text, "  (automatic size policy; no direct overrides)");
+                let _ = writeln!(
+                    text,
+                    "  (automatic size policy) overrides under every selected preset: {}",
+                    joined.join(", ")
+                );
             } else if m.overrides.is_empty() {
                 let _ = writeln!(text, "  (no overrides — the shipped defaults)");
             } else {
-                let joined: Vec<String> =
-                    m.overrides.iter().map(|(o, v)| format!("{o}={v}")).collect();
                 let _ = writeln!(text, "  overrides: {}", joined.join(", "));
             }
         }

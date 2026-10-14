@@ -61,6 +61,29 @@ Now, when you decompile, you should see `/* Kuna v{version} */` in the decompila
 All native Ghidra features are not yet supported, so please report them when you find issues.
 To disable the Kuna backend, simply disable the plugin in `File -> Configure`.
 
+### Ghidra Headless Usage
+
+The Kuna extension swaps the decompiler from a CodeBrowser plugin, and headless Ghidra (`analyzeHeadless`, PyGhidra, or tools built on them like [REA](https://github.com/morluto/rea)) never loads GUI plugins.
+To use Kuna as the decompiler backend there, swap the native decompiler binary directly.
+
+1. Locate the stock Ghidra decompiler binary and back it up:
+   ```bash
+   cd "$GHIDRA_INSTALL_DIR/Ghidra/Features/Decompiler/os/linux_x86_64"
+   cp decompile decompile.ghidra.orig
+   ```
+2. Replace it with the Kuna backend from the extension zip's `KunaDecompiler/os/linux_x86_64/` directory:
+   ```bash
+   cp /path/to/KunaDecompiler/os/linux_x86_64/kuna_ghidra decompile
+   chmod +x decompile
+   ```
+3. Verify the swap: decompile a function and check for the `/* Kuna v<version> */` marker in the output.
+
+No specs download is needed: `kuna_ghidra` gets the processor specs and p-code from Ghidra itself.
+On other platforms, use the matching `os/<platform>/` directory (`linux_arm_64`, `mac_x86_64`, `mac_arm_64`, or `win_x86_64`, where both files end in `.exe`).
+To revert to the stock Ghidra decompiler, restore the backup with `cp decompile.ghidra.orig decompile`.
+The [extension README](integrations/ghidra/KunaDecompiler/README.md#use-with-pyghidra-headless--scripting) also covers an in-script PyGhidra toggle and a drop-in that leaves the stock binary untouched.
+This method was tested with Ghidra 12.1.2 and REA 3.1.0.
+
 ## Project Goals
 
 LLM agents, like [Codex](https://chatgpt.com/codex/), have fundamentally changed how we reverse engineer and ultimately secure binaries.

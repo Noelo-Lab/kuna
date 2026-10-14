@@ -13,6 +13,9 @@ mod verify_aif;
 #[path = "verify_aifcorroborate.rs"]
 mod verify_aifcorroborate;
 
+#[path = "verify_aifpoolslide.rs"]
+mod verify_aifpoolslide;
+
 #[path = "verify_aifstrict.rs"]
 mod verify_aifstrict;
 

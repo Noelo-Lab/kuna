@@ -6,6 +6,9 @@
     "decompile",
     "{{BIN}}",
     "main",
+    "--option",
+    "elfmain",
+    "off",
     "--assert",
     "prototype 0x4006ed int4 MSABI accepted(int4 status)",
     "--assert-strict"

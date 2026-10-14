@@ -344,3 +344,48 @@ fn vt3_w10_stackslot_ssa_nested_multiequal_branch_collapses() {
         "the base varnode edi must not be left marked"
     );
 }
+
+// VT4 — NESTED FAILURE PAST THE INLINE SCRATCH CAPACITY. Nine nested phis
+// expand the matchlist and skiplist beyond eight entries; the bottom phi adds
+// a genuinely different input, forcing failure after every nested output has
+// been marked. The failure path must leave all phis intact and clear every mark.
+#[test]
+fn vt4_nested_multiequal_failure_grows_scratch_and_clears_all_marks() {
+    let mut fd = build_fd();
+    let join = mk_block(&mut fd);
+    let edi = mk_reg(&mut fd, 4, 0x40);
+    let esi = mk_reg(&mut fd, 4, 0x48);
+
+    let mut tail = esi;
+    let mut nested_ops = Vec::new();
+    let mut nested_outs = Vec::new();
+    for depth in 0..9 {
+        let phi = mk_op(
+            &mut fd,
+            2,
+            0x100 + depth * 0x10,
+            OpCode::CPUI_MULTIEQUAL,
+        );
+        fd.op_set_input(phi, edi, 0).unwrap();
+        fd.op_set_input(phi, tail, 1).unwrap();
+        fd.op_insert(phi, join, None);
+        tail = mk_out(&mut fd, 4, phi);
+        nested_ops.push(phi);
+        nested_outs.push(tail);
+    }
+
+    let outer = mk_op(&mut fd, 2, 0x200, OpCode::CPUI_MULTIEQUAL);
+    fd.op_set_input(outer, edi, 0).unwrap();
+    fd.op_set_input(outer, tail, 1).unwrap();
+    fd.op_insert(outer, join, None);
+    let outer_out = mk_out(&mut fd, 4, outer);
+    fd.bb_set_order(join);
+
+    assert_eq!(RuleMultiCollapse.apply_op(outer, &mut fd), 0);
+    assert_eq!(fd.obank().get(outer).unwrap().code(), OpCode::CPUI_MULTIEQUAL);
+    assert!(!fd.vbank().get(outer_out).unwrap().is_mark());
+    for (&phi, &out) in nested_ops.iter().zip(&nested_outs) {
+        assert_eq!(fd.obank().get(phi).unwrap().code(), OpCode::CPUI_MULTIEQUAL);
+        assert!(!fd.vbank().get(out).unwrap().is_mark());
+    }
+}

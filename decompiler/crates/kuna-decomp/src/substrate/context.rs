@@ -984,6 +984,15 @@ pub struct ArchContext {
     /// (kuna) `calleeprotostack` — a declared callee's locked prototype states
     /// its stack contract.  See [`crate::p4_calls::kuna_calleeprotostack`].
     pub callee_proto_stack: bool,
+    /// (kuna) `msvcbyval` — size an MSVC `__cdecl` import's by-value class
+    /// argument at the call site.  See [`crate::p4_calls::kuna_msvcbyval`].
+    pub msvc_byval: bool,
+    /// (kuna `msvcbyval`) The declarations with a by-value class of unstated
+    /// size, by entry; snapshotted from the architecture at `build_arch_handle`.
+    pub msvc_byval_decls: Rc<crate::p4_calls::kuna_msvcbyval::ByvalDecls>,
+    /// (kuna `msvcbyval`) The entries an MSVC name declares as building an
+    /// object at an address they are handed.
+    pub msvc_builders: Rc<crate::p4_calls::kuna_msvcbyval::Builders>,
     /// (kuna) drop a trailing register argument a previous call's clobber put
     /// there (`argclobber`).  Read by
     /// [`crate::p4_calls::kuna_argclobber::drop_clobber_tail_arg`]; off by
@@ -1041,6 +1050,10 @@ pub struct ArchContext {
     /// callee's own body reads them (`calleereadarg`).  Read by
     /// [`crate::p4_calls::kuna_calleereadarg::capture`].
     pub callee_read_arg: bool,
+    /// (kuna) do not take a register the callee only pushes for its next call
+    /// as `calleereadarg` evidence (`pushpadread`).  Read by
+    /// [`crate::p4_calls::kuna_calleereadarg::capture`].
+    pub push_pad_read: bool,
     /// (kuna) drop the zero fill a narrow write leaves in the upper half of a
     /// returned vector register (`zerofillreturn`).  Read by
     /// [`crate::p4_calls::kuna_zerofillreturn::drop_zero_fill`].
@@ -1190,6 +1203,8 @@ pub struct ArchContext {
     pub stack_views: bool,
     /// Opt-in frame-bounded arrays for call-escaped integer storage.
     pub call_array_extent: bool,
+    /// (kuna `stackstruct`) Lay out an address-taken frame record as one structure.
+    pub stack_struct: bool,
     /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
     /// `RulePropagateCopy` marker propagation that would leave an address-tied
     /// `COPY` output holding a call's return value with no readers, so a
@@ -1204,6 +1219,10 @@ pub struct ArchContext {
     /// it.  Read by
     /// [`crate::p3_dataflow::kuna_loopcounterstore::declines`].
     pub loop_counter_store: bool,
+    /// (kuna) `option intfloatround` (default-on): keep an integer-to-float
+    /// conversion's rounding through `RuleFloatCast` and `SubfloatFlow`. Read
+    /// by [`crate::p3_dataflow::kuna_intfloatround`].
+    pub int_float_round: bool,
     /// (kuna) `option tiedphitrim` (default-on, DIV-182): `Merge::mergeOp` trims a
     /// loop head's direct read of an aliased location out of the forced merge.
     /// Read through `MergeContext::kuna_tied_phi_trim`.
@@ -1803,6 +1822,9 @@ impl ArchContext {
             callee_pop_slot: true,
             callee_pop_frame: true,
             callee_proto_stack: true,
+            msvc_byval: true,
+            msvc_byval_decls: Rc::new(Default::default()),
+            msvc_builders: Rc::new(Default::default()),
             // argclobber only drops a trailing argument the callee's own
             // recovered prototype says it never reads, and declines outright
             // when there is no callee to ask, so the fixture seam carries the
@@ -1825,6 +1847,7 @@ impl ArchContext {
             callee_dead_arg: true,
             hidden_ret_arg: true,
             callee_read_arg: true,       // calleereadarg (default-on)
+            push_pad_read: true,         // pushpadread (default-on)
             zero_fill_return: true,
             zero_call_regs: true,
             callee_preserves: true,
@@ -1849,11 +1872,13 @@ impl ArchContext {
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
             call_array_extent: false,
+            stack_struct: false,
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
+            int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
             split_store_keep: false,     // splitstorekeep (Architecture::reset_defaults sets the shipped default: on)
             wide_slice_reduce: false,    // wideslice (Architecture::reset_defaults sets the shipped default: on)

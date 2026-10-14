@@ -167,6 +167,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
     }
     Some(Cow::Borrowed(match option {
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
+        "partialaccess" => on_off(conf.print().options.partial_access),
         "infloopstyle" => if conf.print().options.inf_loop_top { "while" } else { "do" },
         "loopcontinue" => on_off(conf.loop_continue),
         "compareform" => {
@@ -182,6 +183,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "thumbfuncptr" => on_off(conf.preserve_thumb_funcptr),
         "armfloatargs" => on_off(conf.arm_float_args),
         "callarrayextent" => on_off(conf.call_array_extent),
+        "stackstruct" => on_off(conf.stack_struct),
         "inferfuncentry" => on_off(conf.infer_funcentry),
         "globalarrayanchor" => on_off(conf.global_array_anchor),
         "booleanmask" => on_off(conf.fold_boolean_mask),
@@ -314,6 +316,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "gopclntab" => on_off(conf.analysis_gopclntab),
         "aifbracket" => on_off(conf.analysis_aifbracket),
         "aifnoppad" => on_off(conf.analysis_aifnoppad),
+        "aifpoolslide" => on_off(conf.analysis_aifpoolslide),
         "armconstshift" => on_off(conf.arm_constant_shift),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested
         // state (the live spec-selection gate is the load-time env var, but the

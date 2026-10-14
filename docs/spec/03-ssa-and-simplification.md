@@ -1041,6 +1041,12 @@ group):
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs` | signed div/mod idioms, segments, pointer flow, predication, float compares | `RuleSignDiv2`, `RuleSignMod2nOpt`, `RuleModOpt`, `RuleSegment`, `RulePtrFlow`, `RuleConditionalMove` (group `conditionalexe`), `RuleFloatCast`, `RuleIgnoreNan` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, cleanup-pool `RuleExpandLoad` |
 
+`RuleMultiCollapse` keeps its operand traversal, marked-output list and
+temporary rewrite operands in local inline scratch. Wide or deeply nested
+phis can spill to owned buffers without changing visit order. The lists add
+no persistent state to an operation or rule; both success and failure clear
+the same marks, and successful rewriting iterates copied IDs directly.
+
 `RulePullsubIndirect`
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs (RulePullsubIndirect)`)
 narrows an INDIRECT whose readers are all SUBPIECEs to the bytes they use, from
@@ -1710,6 +1716,31 @@ narrowing, printing `(float)((double)accum + ((double)neg_theta - (double)local_
 Conversion-only round trips and arithmetic already performed in binary32
 retain their existing simplifications and grouping. This is a correctness
 constraint on both forward and backward traces, including divided SIMD lanes.
+
+Integer-to-float conversions also retain their rounding width (`option
+intfloatround`, default on;
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_intfloatround.rs`). `RuleFloatCast`
+combines an integer conversion followed by a floating conversion only when
+both floating widths match or the intermediate format can represent every
+signed source integer exactly. The required precision is one less than the
+integer bit width; binary32 has 24 significant bits and binary64 has 53. The
+80-bit extended format of x87 and 68k registers has no float-format entry and
+counts 64.
+Otherwise, signed32-to-binary32-to-binary64 keeps its first rounding, and
+signed64-to-binary64-to-binary32 keeps its possible double rounding.
+`SubfloatFlow` additionally requires the replacement format to represent every
+signed source integer exactly before moving a conversion through the traced
+network. Original-width exactness alone would allow new rounding ahead of
+comparisons, truncation, or square root. The replacement is never wider than
+the original, so its exactness implies the original's, and an x87 network
+narrows as before. A constant source needs only its own significant bits, so
+`fld1` and `fldz` still narrow. Other unknown formats decline the rewrite. This is an
+architecture-independent value-correctness repair; it makes no new floating
+exception or rounding-mode contract. It is an option because declining also
+moves correct output: an x87 comparison of an int64 conversion stays in long
+double where the narrowed form happened to be exact. `off` is upstream's
+unconditional fold.
+
 `subflow.rs (SplitDatatype)` (triggers `RuleSplitCopy`/`RuleSplitLoad`/
 `RuleSplitStore`, cleanup pool) splits a whole-struct COPY/LOAD/STORE into
 per-field transfers using recovered types — described with the type system in

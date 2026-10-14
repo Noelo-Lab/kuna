@@ -2675,13 +2675,18 @@ pub fn parse_type(
     Ok((ty, name))
 }
 
+/// Longest single line the C grammar accepts. Ghidra's parser uses 4096 bytes, but
+/// `--assert` directives are one line each and a generated struct declaration with a
+/// few hundred fields does not fit in that.
+const LINE_BUFFER: int4 = 65536;
+
 /// Parse a mapped object's type while retaining its outer volatile qualifier.
 pub fn parse_type_with_volatile(
     input: &str,
     factory: &dyn TypeFactory,
     org: DataOrg,
 ) -> KunaResult<(Rc<Datatype>, String, bool)> {
-    let mut parser = CParse::new(factory, org, 4096);
+    let mut parser = CParse::new(factory, org, LINE_BUFFER);
     if !parser.parse_stream(input.as_bytes().to_vec(), DocType::ParameterDeclaration)? {
         return Err(KunaError::parse(parser.get_error().to_string()));
     }
@@ -2717,7 +2722,7 @@ pub fn parse_protopieces(
     factory: &dyn TypeFactory,
     org: DataOrg,
 ) -> KunaResult<PrototypePieces> {
-    let mut parser = CParse::new(factory, org, 4096);
+    let mut parser = CParse::new(factory, org, LINE_BUFFER);
     if !parser.parse_stream(input.as_bytes().to_vec(), DocType::Declaration)? {
         return Err(KunaError::parse(parser.get_error().to_string()));
     }
@@ -2762,7 +2767,7 @@ pub fn parse_c(
     models: &[String],
     set_prototype: impl FnOnce(PrototypePieces, &str) -> KunaResult<()>,
 ) -> KunaResult<()> {
-    let mut parser = CParse::with_models(factory, org, 4096, models);
+    let mut parser = CParse::with_models(factory, org, LINE_BUFFER, models);
     if !parser.parse_stream(input.as_bytes().to_vec(), DocType::Declaration)? {
         return Err(KunaError::parse(parser.get_error().to_string()));
     }

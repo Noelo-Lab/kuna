@@ -40,7 +40,7 @@
     <com>rename v1 operand</com>
     <com>decompile</com>
     <com>print C</com>
-    <com>rename v1 multiplier</com>
+    <com>rename v2 multiplier</com>
     <com>decompile</com>
     <com>print C</com>
     <com>option impliedrefs 2</com>

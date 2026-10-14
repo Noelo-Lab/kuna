@@ -71,6 +71,9 @@ mod callee_memory_lifetimes;
 #[path = "caller_stack_cli.rs"]
 mod caller_stack_cli;
 
+#[path = "castnarrow_round_trip.rs"]
+mod castnarrow_round_trip;
+
 #[path = "coff_strings.rs"]
 mod coff_strings;
 
@@ -175,6 +178,9 @@ mod limits_cli;
 
 #[path = "local_name_batch.rs"]
 mod local_name_batch;
+
+#[path = "stable_local_names.rs"]
+mod stable_local_names;
 
 #[path = "loop_cursor_initializer.rs"]
 mod loop_cursor_initializer;
@@ -295,6 +301,9 @@ mod stack_object_lifetimes;
 #[path = "stack_parameter_lifetimes.rs"]
 mod stack_parameter_lifetimes;
 
+#[path = "stack_struct.rs"]
+mod stack_struct;
+
 #[path = "store_alias.rs"]
 mod store_alias;
 
@@ -396,3 +405,6 @@ mod common_allocation_cli;
 
 #[path = "call_outparam_snapshot.rs"]
 mod call_outparam_snapshot;
+
+#[path = "integer_float_rounding.rs"]
+mod integer_float_rounding;

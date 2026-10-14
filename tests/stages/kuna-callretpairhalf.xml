@@ -123,7 +123,7 @@ efffffeb0100a0e10088bde800482de9ebffffeb7110efe6010020e20088bde800482de9e6ffffeb
 <stringmatch name="CALLRETPAIRHALF #3: on, the high byte is a SUBPIECE of the pair the call returns" min="1" max="1">return \(uint4\)\(\(uint8\)full\(a0\) >> 0x20\) &amp; 0xff;</stringmatch>
 <stringmatch name="CALLRETPAIRHALF #4: on, the high word plus a constant" min="1" max="1">return \(int4\)\(\(uint8\)full\(a0\) >> 0x20\) \+ 7;</stringmatch>
 <stringmatch name="CALLRETPAIRHALF #5: on, the high word moved into r0" min="1" max="1">return \(int4\)\(\(uint8\)full\(a0\) >> 0x20\);</stringmatch>
-<stringmatch name="CALLRETPAIRHALF #6: on, Thumb: the high byte through uxtb r0,r1" min="1" max="1">return \(uint1\)\(\(uint8\)fullt\(a0\) >> 0x20\);</stringmatch>
+<stringmatch name="CALLRETPAIRHALF #6: on, Thumb: the high byte through uxtb r0,r1" min="1" max="1">return \(uint8\)fullt\(a0\) >> 0x20;</stringmatch>
 <stringmatch name="CALLRETPAIRHALF #7: on, Thumb: r0 and the byte r1:1 are both pieces of the call result" min="1" max="1">return fullt\(a0\) &amp; 0xffffffffff \^ 1;</stringmatch>
 <stringmatch name="CALLRETPAIRHALF #8: off, Thumb: r1:1 was concatenated unassigned" min="1" max="1">CONCAT14\(v1,fullt\(a0\)\)</stringmatch>
 <stringmatch name="CALLRETPAIRHALF #9: the low-word control prints the same in both passes" min="2" max="2">return full\(a0\) \+ 1;</stringmatch>

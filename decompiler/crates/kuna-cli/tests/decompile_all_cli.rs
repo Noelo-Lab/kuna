@@ -28,6 +28,12 @@ fn fauxware() -> String {
         .to_string()
 }
 
+/// `fauxware`'s `main` returns `accepted()`'s value, which the serial default's
+/// callee-first order settles otherwise than a pool can
+/// ([`jobs_notes_that_the_default_callee_first_order_is_serial_only`]), so the
+/// pool runs held to the serial document turn that order off on both sides.
+const SERIAL_ORDER_OFF: [&str; 3] = ["--option", "protoorder", "off"];
+
 /// The checked-in stripped-ELF hang repro (`tests/hang-repro/README.md`): a
 /// fully-stripped x86-64 openssh `ssh-sk-helper` whose `sub_1bd04` @ 0x1bd04
 /// never converges in the decompile pipeline (the `--max-fn-seconds` watchdog's
@@ -417,8 +423,11 @@ fn fast_mode_matches_explicit_options_and_user_override_wins() {
         "--option",
         "fast_funcdisc",
         "on",
+        "--option",
+        "ctypes",
+        "on",
     ]);
-    assert_eq!(fast, explicit, "fast must equal its four explicit option overrides");
+    assert_eq!(fast, explicit, "fast must equal its five explicit option overrides");
 
     let noreturn = noreturn_fixture();
     let base = [
@@ -2548,7 +2557,7 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
         "if (v1 == 0x3fc00001)",
         "(unsigned int)(0x3fc00000 < v1)",
         "*a2 = (short)((unsigned int)v1 >> 0x10);",
-        "a2[1] = (char)((unsigned int)v1 >> 0x10);",
+        "a2[1] = (unsigned int)v1 >> 0x10;",
     ] {
         assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
     }
@@ -3872,20 +3881,16 @@ fn a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole() {
 fn jobs_full_load_agrees_with_the_inventory_handoff() {
     let bin = fauxware();
     let sp = specs();
-    let base = [
-        "decompile-all",
-        bin.as_str(),
-        "--json",
-        "--max-fn-seconds",
-        "0",
-        "--sleighpath",
-        sp.as_str(),
-    ];
+    let base: Vec<&str> =
+        ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath", sp.as_str()]
+            .into_iter()
+            .chain(SERIAL_ORDER_OFF)
+            .collect();
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
         panic!("kuna decompile-all failed: {stderr}");
     }
-    let mut args = base.to_vec();
+    let mut args = base.clone();
     args.extend_from_slice(&["--jobs", "3", "--jobs-full-load"]);
     let (got, stderr, ok) = run_kuna(&args);
     assert!(ok, "kuna decompile-all --jobs-full-load failed: {stderr}");
@@ -3934,8 +3939,10 @@ fn jobs_preserves_namespaced_cpp_callee_names() {
 fn jobs_auto_and_the_plain_c_surface_match_serial() {
     let bin = fauxware();
     let sp = specs();
-    let base =
-        ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
+    let base: Vec<&str> = ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()]
+        .into_iter()
+        .chain(SERIAL_ORDER_OFF)
+        .collect();
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
         panic!("kuna decompile-all failed: {stderr}");
@@ -3980,8 +3987,10 @@ fn jobs_auto_fits_the_cgroup_memory_cap() {
     let env = [("KUNA_CGROUP_ROOT", root.path().to_str().unwrap())];
     let bin = fauxware();
     let sp = specs();
-    let base =
-        ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
+    let base: Vec<&str> = ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()]
+        .into_iter()
+        .chain(SERIAL_ORDER_OFF)
+        .collect();
     let (want, stderr, ok) = run_kuna_env(&base, &env);
     assert!(ok, "{stderr}");
     let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
@@ -4368,15 +4377,12 @@ fn recovered_count(stderr: &str) -> Option<usize> {
 
 /// The serial `decompile-all --json` document of `fauxware`.
 fn fauxware_serial_json() -> String {
-    let (want, stderr, ok) = run_kuna(&[
-        "decompile-all",
-        &fauxware(),
-        "--json",
-        "--max-fn-seconds",
-        "0",
-        "--sleighpath",
-        &specs(),
-    ]);
+    let (bin, sp) = (fauxware(), specs());
+    let args: Vec<&str> = ["decompile-all", &bin, "--json", "--max-fn-seconds", "0", "--sleighpath", &sp]
+        .into_iter()
+        .chain(SERIAL_ORDER_OFF)
+        .collect();
+    let (want, stderr, ok) = run_kuna(&args);
     if !ok {
         panic!("kuna decompile-all failed: {stderr}");
     }
@@ -4389,7 +4395,7 @@ fn fauxware_serial_json() -> String {
 fn fauxware_pooled_with_fault(fault: &str, max_fn_seconds: &str) -> (String, String, bool) {
     let bin = fauxware();
     let sp = specs();
-    let args = [
+    let args: Vec<&str> = [
         "decompile-all",
         bin.as_str(),
         "--json",
@@ -4401,7 +4407,10 @@ fn fauxware_pooled_with_fault(fault: &str, max_fn_seconds: &str) -> (String, Str
         "2",
         "--jobs-chunk",
         "64",
-    ];
+    ]
+    .into_iter()
+    .chain(SERIAL_ORDER_OFF)
+    .collect();
     run_kuna_env_with_timeout(&args, &[("KUNA_JOBS_FAULT", fault)], Duration::from_secs(240))
         .unwrap_or_else(|| panic!("KUNA_JOBS_FAULT={fault} wedged the pool"))
 }
@@ -4682,9 +4691,23 @@ fn jobs_a_worker_that_dies_in_its_load_loses_nothing() {
     let (got, stderr, ok) = run_kuna_env_with_timeout(&args, &[("KUNA_JOBS_FAULT", "load-abort:*")], cap)
         .expect("workers that die in every load wedged the pool");
     assert!(!ok, "{stderr}");
-    assert_eq!(json_records(&got).len(), total, "{got}");
+    let records = json_records(&got);
+    assert_eq!(records.len(), total, "{got}");
+    let addresses: std::collections::BTreeSet<u64> = records
+        .iter()
+        .map(|r| serde_json::from_str::<serde_json::Value>(r).unwrap()["address"].as_u64().unwrap())
+        .collect();
+    assert_eq!(addresses.len(), total, "every function exactly once:\n{got}");
+    let (gate, jobs) = (16, 2);
     let reruns = loads(&stderr) - total;
-    assert!((16..=17).contains(&reruns), "16 or 17 re-runs that could not start, not {reruns}:\n{stderr}");
+    assert!(
+        (gate..gate + jobs).contains(&reruns),
+        "{gate} re-runs that could not start, plus at most one that started alongside the last, not {reruns}:\n{stderr}"
+    );
+    let could_not_start = "; not re-run: its re-run could not start";
+    let run_stopped = "; not re-run: re-runs in this run had failed more often than workers had";
+    assert_eq!(got.matches(could_not_start).count(), reruns, "{got}");
+    assert_eq!(got.matches(run_stopped).count(), total - reruns, "{got}");
     assert_eq!(stderr.matches("are not re-run while that lasts").count(), 1, "{stderr}");
 }
 
@@ -4856,13 +4879,15 @@ fn a_dead_lane_falls_back_to_the_serial_walk() {
 fn jobs_decode_lanes_agree_with_serial_on_decompile_all() {
     let bin = fauxware();
     let sp = specs();
-    let base =
-        ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath", &sp];
+    let base: Vec<&str> = ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath", &sp]
+        .into_iter()
+        .chain(SERIAL_ORDER_OFF)
+        .collect();
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
         panic!("kuna decompile-all failed: {stderr}");
     }
-    let mut args = base.to_vec();
+    let mut args = base.clone();
     args.extend_from_slice(&["--jobs", "4"]);
     let (got, stderr, ok) =
         run_kuna_env(&args, &[("KUNA_DECODE_MIN_BYTES", "0"), ("KUNA_DECODE_STATS", "1")]);
@@ -7284,12 +7309,12 @@ fn a_split_load_is_not_moved_past_a_store_or_a_call() {
         rest[..rest.find("// Function:").unwrap_or(rest.len())].to_string()
     };
     let read = "v1 = *(unsigned int *)&s->c7;";
-    for (name, after) in [("intospan", "s->c9 = (char)w;"), ("otherptr", "t->c9 = (char)w;"), ("acrosscall", "sink(s);")] {
+    for (name, after) in [("intospan", "s->c9 = w;"), ("otherptr", "t->c9 = w;"), ("acrosscall", "sink(s);")] {
         let b = body(name);
         let (i, j) = (b.find(read), b.find(after));
         assert!(i.is_some() && j.is_some() && i < j, "{name}: `{read}` must print before `{after}`:\n{b}");
     }
-    assert!(body("plain").contains("v1._0_1_ = s->c7;"), "plain no longer splits:\n{}", body("plain"));
+    assert!(body("plain").contains("*(char *)&v1 = s->c7;"), "plain no longer splits:\n{}", body("plain"));
 
     if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("splitload round trip: no `cc`, order checked only");
@@ -9576,8 +9601,8 @@ fn an_aarch64_double_return_leaves_out_the_zero_fill() {
     assert!(ok, "kuna decompile-all failed: {stderr}");
     let fa = printed_functions(&stdout, &["fa "]);
     let mk = printed_functions(&stdout, &["mk "]);
-    assert!(mk.contains("// d1:d0") && mk.contains("._8_8_ = a0 * a0;"), "mk's reloaded pair is not joined:\n{mk}");
-    assert!(!fa.contains("d1:d0") && fa.contains("._8_8_ = 0;"), "fa joins a d1 its callee may have left:\n{fa}");
+    assert!(mk.contains("// d1:d0") && mk.contains("*(double *)&v1[8] = a0 * a0;"), "mk's reloaded pair is not joined:\n{mk}");
+    assert!(!fa.contains("d1:d0") && fa.contains("[8] = 0;"), "fa joins a d1 its callee may have left:\n{fa}");
 }
 
 /// `voidret_complexpick_a64.o` (clang -O2, AArch64): `pick` tail-calls `cpart`,

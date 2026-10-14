@@ -144,6 +144,7 @@ pub fn high_comment(
     if !arch.name_style_angr {
         return None;
     }
+    let own = high;
     let high = fd.high_bank().get(high)?;
     let mut homes = BTreeMap::new();
     let mut fallback = None;
@@ -173,6 +174,7 @@ pub fn high_comment(
             .map(|h| h.kuna_symbol_offset())
             .unwrap_or(-1);
         if varnode.is_addr_tied()
+            && varnode.get_high() == Some(own)
             && symbol_offset > 0
             && fd
                 .get_arch()

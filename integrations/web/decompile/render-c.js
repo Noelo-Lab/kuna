@@ -9,6 +9,7 @@
 // (assets/js/highlight-c.js `scan`) for that line only.
 import { scan, escapeHtml } from '../assets/js/highlight-c.js';
 import { addrHex, bare } from './addr.js';
+import { splitNotes } from './tags.js';
 
 const CHUNK = 256;
 const MAX_TOKEN_SPANS = 200000;
@@ -49,15 +50,15 @@ function normalizeInsn(insn, entry) {
  * One function as the page works with it, from either an `inspect` document or
  * a plain `decompile` document (an engine build without `inspect`): the latter
  * has no tokens and no instructions, and says so through `tokens_error` and
- * `hasInstructions`.
+ * `hasInstructions`. kuna's end-of-line notes leave the code for `notes`
+ * (tags.js `splitNotes`).
  */
 export function normalizeInspect(result) {
   const fromInspect = !!result?.function;
   const fn = fromInspect ? result.function : (result?.functions || [])[0];
   if (!fn) throw new Error('the engine returned no function');
   const address_hex = addrHex(fn.address_hex ?? fn.address);
-  const code = fn.code ?? '';
-  const tokens = Array.isArray(fn.tokens) ? fn.tokens : [];
+  const { code, tokens, notes } = splitNotes(fn.code ?? '', Array.isArray(fn.tokens) ? fn.tokens : []);
   return {
     source: fromInspect ? 'inspect' : 'decompile',
     name: fn.name,
@@ -66,6 +67,7 @@ export function normalizeInspect(result) {
     kind: fn.kind || 'func',
     size: fn.size ?? 0,
     code,
+    notes,
     error: fn.error ?? null,
     proto: (fn.proto ?? signatureLine(code))?.replace(/^#\[[^\n]*\]\s*\n/gm, '').replace(/;\s*$/, '').trim() ?? null,
     language: result.language || (/^#\[allow\(|\blet mut\b/m.test(code) ? 'rust-language' : 'c-language'),
@@ -461,8 +463,8 @@ export function lineHtml(line, ctx = {}, plan = null) {
  * The C pane's HTML: one `.d2-cl#c-L<n>` row per line with a line-number and
  * address gutter, tokens as `.t` spans carrying their kind, symbol, address,
  * callee, global address and type. The preamble's rows are `.d2-ty`, under a
- * heading that folds them. `ctx`: `{index, segs, preamble, fnByName, globalsByName,
- * planOf}` (`planOf(i)`: how line i wraps, or null).
+ * heading that folds them (folded unless `typesOpen`). `ctx`: `{index, segs, preamble,
+ * typesOpen, fnByName, globalsByName, planOf}` (`planOf(i)`: how line i wraps, or null).
  */
 export function renderC(fnData, ctx = {}) {
   const segs = ctx.segs || lineSegments(fnData).segs;
@@ -475,7 +477,7 @@ export function renderC(fnData, ctx = {}) {
   if (preamble) {
     const n = fnData.types.length;
     out += '<div class="d2-tyhead" role="presentation"><span class="ln"></span><span class="la"></span><span class="ct">' +
-      `<button class="d2-tytoggle" data-act="types-toggle" aria-expanded="true">Types this function uses</button> <span class="d2-tyn">${n} type${n === 1 ? '' : 's'}</span></span></div>`;
+      `<button class="d2-tytoggle" data-act="types-toggle" aria-expanded="${ctx.typesOpen ? 'true' : 'false'}">Types this function uses</button> <span class="d2-tyn">${n} type${n === 1 ? '' : 's'}</span></span></div>`;
   }
   segs.forEach((line, i) => {
     if (i && i % CHUNK === 0) out += '</div><div class="d2-chunk">';
@@ -491,16 +493,19 @@ export function renderC(fnData, ctx = {}) {
 }
 
 /**
- * The 1-based lines of `newCode` that are not part of a longest common
- * subsequence with `oldCode` (what an edit changed). Large bodies skip the
- * quadratic table and report nothing rather than stall the page.
+ * How `newCode` differs from `oldCode` by line, from a longest common
+ * subsequence: `changed`, the 1-based lines of `newCode` outside it (what an
+ * edit changed), and `lineOf(n)`, the line old line n is now (a changed line
+ * moves with the nearest kept line above it, or below it at the top). Large
+ * bodies skip the quadratic table and report nothing (`lineOf` null) rather
+ * than stall the page.
  */
-export function changedLines(oldCode, newCode) {
+export function diffLines(oldCode, newCode) {
   const a = (oldCode || '').split('\n');
   const b = (newCode || '').split('\n');
   const changed = new Set();
-  if (!oldCode) return changed;
-  if (a.length * b.length > 4e6) return changed;
+  if (!oldCode) return { changed, lineOf: null };
+  if (a.length * b.length > 4e6) return { changed, lineOf: null };
   const w = b.length + 1;
   const dp = new Uint32Array((a.length + 1) * w);
   for (let i = a.length - 1; i >= 0; i--) {
@@ -508,11 +513,22 @@ export function changedLines(oldCode, newCode) {
       dp[i * w + j] = a[i] === b[j] ? dp[(i + 1) * w + j + 1] + 1 : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
     }
   }
-  let i = 0, j = 0;
+  const delta = new Int32Array(a.length);
+  let i = 0, j = 0, last = null;
   while (j < b.length) {
-    if (i < a.length && a[i] === b[j]) { i++; j++; }
-    else if (i < a.length && dp[(i + 1) * w + j] >= dp[i * w + j + 1]) i++;
+    if (i < a.length && a[i] === b[j]) {
+      if (last === null) delta.fill(j - i, 0, i);
+      last = j - i;
+      delta[i++] = last;
+      j++;
+    } else if (i < a.length && dp[(i + 1) * w + j] >= dp[i * w + j + 1]) delta[i++] = last ?? 0;
     else { changed.add(j + 1); j++; }
   }
-  return changed;
+  while (i < a.length) delta[i++] = last ?? 0;
+  return { changed, lineOf: (n) => (n >= 1 && n <= a.length ? Math.max(1, n + delta[n - 1]) : n) };
+}
+
+/** The 1-based lines of `newCode` an edit changed (`diffLines`). */
+export function changedLines(oldCode, newCode) {
+  return diffLines(oldCode, newCode).changed;
 }

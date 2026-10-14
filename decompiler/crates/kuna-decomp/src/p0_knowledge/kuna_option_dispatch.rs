@@ -71,6 +71,11 @@ kuna_options! { self, p1;
         self.print_mut().options.set_array_cover_width(val);
         Ok(msg)
     },
+    "partialaccess" => {
+        let value = on_or_off(p1)?;
+        self.print_mut().options.partial_access = value;
+        Ok(format!("Typed pointer partial accesses turned {}", if value { "on" } else { "off" }))
+    },
     "bytearrayc" => {
         let value = on_or_off(p1)?;
         self.print_mut().options.bytearray_c = value;
@@ -320,6 +325,11 @@ kuna_options! { self, p1;
         self.callee_pop_frame = val;
         Ok(msg)
     },
+    "msvcbyval" => {
+        let (val, msg) = crate::p4_calls::kuna_msvcbyval::OptionMsvcByval.apply(p1)?;
+        self.msvc_byval = val;
+        Ok(msg)
+    },
     "calleeprotostack" => {
         let (val, msg) =
             crate::p4_calls::kuna_calleeprotostack::OptionCalleeProtoStack.apply(p1)?;
@@ -344,6 +354,7 @@ kuna_options! { self, p1;
         self.callee_read_arg = val;
         Ok(msg)
     },
+    "pushpadread" => on_off!(push_pad_read, "push-only reads left out of callee-read argument evidence"),
     "zerocallregs" => {
         let (val, msg) =
             crate::p4_calls::kuna_zerocallregs::OptionZeroCallRegs.apply(p1)?;
@@ -492,6 +503,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "callarrayextent" => on_off!(call_array_extent, "Call-escaped frame array extent"),
+    "stackstruct" => on_off!(stack_struct, "Address-taken frame record layout"),
     "arrayextent" => {
         let (val, msg) =
             crate::p6_variables::kuna_arrayextent::OptionArrayExtent.apply(p1)?;
@@ -504,6 +516,7 @@ kuna_options! { self, p1;
     "loopcounterstore" => {
         on_off!(loop_counter_store, "Frame-slot loop-counter store brake")
     },
+    "intfloatround" => on_off!(int_float_round, "Integer-to-float rounding preservation"),
     "tiedphitrim" => {
         on_off!(tied_phi_trim, "Loop-head address-tied input trim")
     },
@@ -712,6 +725,12 @@ kuna_options! { self, p1;
     "castsign" => on_off!(cast_sign, "signed declarations for signed-only locals"),
     "castternary" => on_off!(cast_ternary, "conditional-arm cast elision"),
     "callrettype" => on_off!(call_ret_type, "callee-stated call return types"),
+    "castnarrow" => on_off!(cast_narrow, "implied narrowing-cast elision"),
+    "declorder" => {
+        let (mode, msg) = crate::kuna_declorder::OptionDeclOrder.apply(p1)?;
+        self.decl_order = mode;
+        Ok(msg)
+    },
     "castwiden" => {
         let (mode, msg) = crate::kuna_castwiden::OptionCastWiden.apply(p1)?;
         self.cast_widen = mode;
@@ -1087,6 +1106,9 @@ kuna_options! { self, p1;
     },
     "aifnoppad" => {
         on_off!(analysis_aifnoppad, "AIF padding/zero-fill candidate reject (GH-299)")
+    },
+    "aifpoolslide" => {
+        on_off!(analysis_aifpoolslide, "AIF literal-pool candidate slide (GH-299)")
     },
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")

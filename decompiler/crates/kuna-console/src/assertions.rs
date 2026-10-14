@@ -1164,7 +1164,10 @@ pub fn unclaimed(directive: &Directive) -> Outcome {
 /// re-seeds it from (`IfcDecompile` carries the same specs across its own IR
 /// rebuild).
 pub fn carried_symbols(fd: &Funcdata) -> Vec<(String, Rc<Datatype>, Address, uint4)> {
-    crate::kuna_paramasserts::exclude_from_locals(fd, fd.mapped_symbol_specs())
+    let renamed = name_only_renames(fd);
+    let mut specs = crate::kuna_paramasserts::exclude_from_locals(fd, fd.mapped_symbol_specs());
+    specs.retain(|(name, ..)| !renamed.contains(name));
+    specs
 }
 
 /// The usepoint-scoped half of the same carry: the register-storage Symbols a
@@ -1176,5 +1179,31 @@ pub fn carried_symbols(fd: &Funcdata) -> Vec<(String, Rc<Datatype>, Address, uin
 pub fn carried_usepoint_symbols(
     fd: &Funcdata,
 ) -> Vec<(String, Rc<Datatype>, Address, uint4, Address, bool)> {
-    crate::kuna_paramasserts::exclude_from_usepoints(fd, fd.usepoint_symbol_specs())
+    let renamed = name_only_renames(fd);
+    let mut specs = crate::kuna_paramasserts::exclude_from_usepoints(fd, fd.usepoint_symbol_specs());
+    specs.retain(|(name, ..)| !renamed.contains(name));
+    specs
+}
+
+/// The dynamic-storage half of the same carry (`fd.dynamic_symbol_specs`),
+/// likewise without the name-only renames.
+pub fn carried_dynamic_symbols(fd: &Funcdata) -> Vec<kuna_decomp::database::DynamicSymbolSpec> {
+    let renamed = name_only_renames(fd);
+    let mut specs = fd.dynamic_symbol_specs();
+    specs.retain(|spec| !renamed.contains(&spec.name));
+    specs
+}
+
+/// The names a `name` directive gave without stating a type
+/// (`kuna_stablenames::is_name_only`). They travel to the next decompile as
+/// names (`kuna_stablenames::carry`), not as Symbols: a Symbol mapped over one
+/// definition of a merged variable split it on the next decompile, and a type
+/// lock retyped it.
+fn name_only_renames(fd: &Funcdata) -> Vec<String> {
+    let Some(lm) = fd.get_scope_local() else { return Vec::new() };
+    fd.kuna_directive_symbols()
+        .iter()
+        .filter(|d| kuna_decomp::kuna_stablenames::is_name_only(fd, d.symbol))
+        .map(|d| lm.database().symbol(d.symbol).name.clone())
+        .collect()
 }
