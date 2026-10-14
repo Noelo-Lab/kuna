@@ -422,6 +422,9 @@ fn build_localtypes(data: &mut Funcdata) {
         } else {
             crate::kuna_calleevote::input_vote(data, vn, &ct).unwrap_or(ct)
         };
+        // (kuna `elfmain`) An executable's own `main` gives the runtime arguments
+        // its body reads their runtime types, unlocked. See `kuna_elfmaindecl`.
+        let ct = if from_seed { ct } else { crate::kuna_elfmaindecl::input_type(data, vn).unwrap_or(ct) };
         // (kuna `ptrfromuse`) A function input whose only memory role is to be a
         // LOAD/STORE base has no pointer candidate in the fold above, because
         // `TypeOpIntAdd` votes `int<N>` for it and refuses to carry the pointer
@@ -670,6 +673,12 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
     // (kuna `elemptr`) A value stored through a pointer `elemptr` typed keeps
     // its own sign; see `kuna_elemptr::keeps_stored_sign`.
     if crate::kuna_elemptr::keeps_stored_sign(data, op, inslot, outslot, &newtype, &cur) {
+        return false;
+    }
+    // (kuna `elfmain`) A runtime argument of an executable's own `main` keeps its
+    // runtime type, without the type lock that would make it a realistic input
+    // to the next call. See `kuna_elfmaindecl`.
+    if crate::kuna_elfmaindecl::took_runtime_type(data, outvn, &cur) {
         return false;
     }
     if 0 > newtype.type_order(&cur).unwrap_or(0) {

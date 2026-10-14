@@ -6,6 +6,9 @@
     "decompile-all",
     "{{BIN}}",
     "--option",
+    "elfmain",
+    "off",
+    "--option",
     "structheadless",
     "closed"
   ],
@@ -40,5 +43,5 @@
     ]
   },
   "notes": "CLOSED: `obsolete_count` reads only `argv[1]` and `argv[2]` of the `char **` main passes it and hands `getopt` (tail's parse_obsolete_option shape). The callers' type and getopt's declaration outrank a record read past its start; `mode_of`, which nothing outside types, is still one.",
-  "probe_id": "a-c133364ec318"
+  "probe_id": "a-18f5f9db2387"
 }

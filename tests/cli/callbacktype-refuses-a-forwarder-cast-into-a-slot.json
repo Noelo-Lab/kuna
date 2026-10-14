@@ -31,7 +31,7 @@
     },
     "stdout_matches": [
       "int cmp3\\(void \\*a0,void \\*a1,unsigned long a2\\)",
-      "cmp3\\([^;]*,\\\"x\\\",\\(long\\)[^;]*a0\\);",
+      "cmp3\\([^;]*,\\\"x\\\",\\(long\\)[^;]*(a0|argc)\\);",
       "qsort\\(v\\d+,4,4,cmp3\\)"
     ],
     "stdout_absent": [
@@ -40,5 +40,5 @@
     ]
   },
   "notes": "cmp3 takes three arguments and is cast into qsort's two-argument slot; it forwards the third to memcmp in a tail call. Parking the slot drops the third argument at the direct call. cmp3 keeps its three parameters and, since the direct call prints its result, returns memcmp's int.",
-  "probe_id": "p-95133a915bab"
+  "probe_id": "p-7119c2ccb19e"
 }

@@ -52,6 +52,8 @@ fn load(arch: &str, formatstring_on: bool) -> ConsoleProgram {
         .to_string();
     let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
+    // The untyped varargs are `main`'s body-driven parameters; `elfmain` declares them.
+    prog.arch_mut().set_kuna_option("elfmain", "off").expect("elfmain flips off");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     if formatstring_on {
         prog.arch_mut()

@@ -3151,7 +3151,7 @@ impl PrintC {
     }
 
     /// Emit one `<type> <name>;  // <storage>` declaration per named local
-    /// HighVariable, in name order, returning `true` if any were emitted (C++
+    /// HighVariable, in the order `declorder` picks, returning `true` if any were emitted (C++
     /// `emitLocalVarDecls` + `emitVarDeclStatement`, printc.cc:2652).  The W4
     /// ScopeLocal symbol walk is the missing surface; the named HighVariables
     /// (`kuna_name`) are the same locals the scope would declare.  A trailing
@@ -3575,6 +3575,7 @@ impl PrintC {
                 }
             }
         }
+        crate::kuna_declorder::order_decls(&mut decls, arch.decl_order, arch.name_style_angr);
         let mut source_comments = std::collections::HashMap::new();
         if arch.name_style_angr {
             for (high, _) in &decls {

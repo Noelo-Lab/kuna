@@ -1028,6 +1028,11 @@ pub struct Architecture {
     /// that observes the old value (option `globalcallstore`, default-on).
     /// See [`crate::p3_dataflow::kuna_globalcallstore`].
     pub global_call_store: bool,
+    /// (kuna) Keep the rounding of an integer-to-float conversion that a
+    /// later float conversion or a narrower float trace would fold away
+    /// (option `intfloatround`, default-on).  See
+    /// [`crate::p3_dataflow::kuna_intfloatround`].
+    pub int_float_round: bool,
     /// (kuna) `Merge::mergeOp` trims a loop head's direct read of an aliased
     /// location out of the forced merge, so the values the loop loads do not
     /// print as stores into that location (option `tiedphitrim`, default-on,
@@ -1426,6 +1431,9 @@ pub struct Architecture {
     /// whose type is spelled exactly as the cast's: C's own conversion there is
     /// that very conversion.  See [`crate::kuna_castnarrow`].
     pub cast_narrow: bool,
+    /// (kuna `declorder`) The order the body's local declarations print in.
+    /// See [`crate::kuna_declorder`].
+    pub decl_order: crate::kuna_declorder::DeclOrder,
     /// (kuna `cortexmpriv`) Assume the Cortex-M core is privileged, folding away
     /// the `isCurrentModePrivileged()` guard the vendored ARM SLEIGH wraps around
     /// every VERSION_7M MRS/MSR (`kuna_cortexmpriv`).
@@ -1738,10 +1746,11 @@ pub struct Architecture {
     /// guess (the value is consumed outside the image) and the two slots exist
     /// only because this `main` happens to read them. The declaration is applied
     /// LOCKED, so a body-driven parameter in a register past the third is not
-    /// kept. ELF only, refused on an image that names no
-    /// `__libc_start_main`, on an address that already carries a function symbol,
-    /// and on one whose image already spells a symbol `main`. Off restores the
-    /// `sub_<addr>` / width-only form exactly.
+    /// kept. An image that names its own `main` keeps the name and gets the
+    /// declaration. ELF only, refused on an image that names no
+    /// `__libc_start_main` and on an address that carries a function symbol
+    /// other than `main`. Off restores the `sub_<addr>` / width-only form
+    /// exactly.
     pub analysis_elfmain: bool,
     /// (kuna) Reject a discovered function entry that falls strictly inside a
     /// single-function `.eh_frame` FDE body (`fdeinterior`); default **on**.
@@ -2109,6 +2118,12 @@ pub struct Architecture {
     /// reaches the varargs-override path, so it is independent of `--option
     /// formatstring`.
     pub format_stack_args: std::rc::Rc<std::collections::BTreeMap<u64, usize>>,
+    /// (kuna `elfmain`) The C runtime's `int main(int argc, char **argv, char
+    /// **envp)` for an executable's own symbol-named `main`, with its entry.
+    /// Not parked on the symbol: the drive locks only its `int` return and names
+    /// and types the parameters `main`'s own analysis recovers
+    /// ([`crate::kuna_elfmaindecl`]).
+    pub elfmain_main_decl: Option<(Address, crate::fspec::PrototypePieces)>,
     /// (kuna `formatstring`) The call points, among the prototype overrides of
     /// the drive in progress, whose override a resolved format string produced.
     /// Set by the console's decompile step around each drive; the flow build
@@ -2845,6 +2860,7 @@ impl Architecture {
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
             global_call_store: false, // (kuna) option globalcallstore; reset_defaults sets the shipped default (on)
+            int_float_round: false, // (kuna) option intfloatround; reset_defaults sets the shipped default (on)
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
             split_store_keep: false, // (kuna) option splitstorekeep; reset_defaults sets the shipped default (on)
             wide_slice_reduce: false, // (kuna) option wideslice; reset_defaults sets the shipped default (on)
@@ -2900,6 +2916,7 @@ impl Architecture {
             call_ret_type: false, // (kuna) option callrettype; reset_defaults sets the shipped default
             cast_widen: crate::kuna_castwiden::CastWidenMode::Off, // (kuna) option castwiden; reset_defaults sets the shipped default
             cast_narrow: false, // (kuna) option castnarrow; reset_defaults sets the shipped default
+            decl_order: crate::kuna_declorder::DeclOrder::Name, // (kuna) option declorder; reset_defaults sets the shipped default
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
@@ -2996,6 +3013,7 @@ impl Architecture {
             analysis_formatstring: crate::kuna_formatstring::FormatStringMode::Off,
             format_call_overrides: std::collections::BTreeMap::new(),
             format_stack_args: std::rc::Rc::new(std::collections::BTreeMap::new()),
+            elfmain_main_decl: None,
             format_override_callpoints: std::collections::BTreeSet::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
@@ -3193,6 +3211,7 @@ impl Architecture {
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation
         self.global_call_store = true; // (kuna) default-on (0/675 datatest assertions): RulePropagateCopy keeps a global's COPY of a loaded value whose only reader is the global's marker, so the write stays after the call that observes the old value; `option globalcallstore off` restores the propagation
+        self.int_float_round = true; // (kuna) default-on (0/675 datatest assertions): RuleFloatCast and SubfloatFlow keep an integer-to-float conversion's rounding unless the float it passes through holds the integer exactly; `option intfloatround off` restores the unconditional fold
         self.hide_shadow = true; // (kuna) default-on: the upstream ActionHideShadow body, which kuna carried as an inert stub. Consolidates two copies of one value into one chain so ActionCopyMarker can hide the repeated assignment (0/675 ablation, stages PARITY OK; 434 of 444 stripped ELFs byte-identical and the other 10 each lose a duplicated assignment); `option hideshadow off` restores the stub's behaviour exactly
         self.tied_phi_trim = true; // (kuna) DIV-182 default-on: Merge::mergeOp trims a loop head's direct read of an aliased location, so the values the loop loads do not print as stores into it (0/675 ablation); `option tiedphitrim off` restores upstream's merge
         self.split_store_keep = true; // (kuna) DIV-153 default-on: Heritage::refineWrite carries the stack_store mark onto its refinement pieces, so an overlapping-range frame store stays a direct write and is not swept by ActionDeadCode (0/675 ablation); `option splitstorekeep off` restores upstream's unmarked pieces
@@ -3241,6 +3260,7 @@ impl Architecture {
         self.call_ret_type = true; // (kuna) option callrettype default-on: a call's result takes the return type its callee stated earlier in a callee-first run; 0/675 datatest assertions and 0 stage assertions moved (single-function surfaces state nothing), one test-cli probe moved to the intended form, the 444-slice typesweep +6 perfect and 0 lost, casts 35,588 -> 34,808 on the census corpus (393 functions fewer, 25 more); docs/features/callrettype/default-on-evaluation.md
         self.cast_widen = crate::kuna_castwiden::CastWidenMode::Literal; // (kuna) option castwiden default `literal`: a 64-bit widening C's usual arithmetic or assignment conversion performs prints no cast, and an 8-byte literal beside one prints its L/UL suffix; 5/675 datatest assertions (upstream's pinned form) opt out per test, 18 stage assertions of other options moved to the new form, 444-slice typesweep identical, casts 35,588 -> 34,062 on the castbench shared set with 0 functions more; docs/features/castwiden/default-on-evaluation.md
         self.cast_narrow = true; // (kuna) option castnarrow default-on: leaves out only an integer truncation or sign change that an assignment, store, trusted argument or return of exactly the cast's type performs itself
+        self.decl_order = crate::kuna_declorder::DeclOrder::Natural; // (kuna) option declorder default `natural`: locals declare v1, v2, ..., v10; only the order of declaration lines moves, 0/675 datatest assertions
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.caller_reads = true; // (kuna) option callerreads default-on: inert without the Listing, so 0/675 datatest assertions move
@@ -3997,6 +4017,7 @@ impl Architecture {
         ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
         ctx.global_call_store = self.global_call_store; // globalcallstore
+        ctx.int_float_round = self.int_float_round; // intfloatround
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim
         ctx.split_store_keep = self.split_store_keep; // splitstorekeep
         ctx.wide_slice_reduce = self.wide_slice_reduce; // wideslice

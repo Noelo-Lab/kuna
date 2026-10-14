@@ -5252,6 +5252,11 @@ impl SubfloatFlow {
                 if !iv.is_constant() && iv.is_free() {
                     return Ok(false);
                 }
+                let original_size = data.vbank().get(origvn).expect("stale origvn").get_size();
+                let constant = iv.is_constant().then(|| iv.get_offset());
+                if !super::kuna_intfloatround::lowers(&self.arch, iv.get_size(), constant, original_size, self.precision) {
+                    return Ok(false);
+                }
                 let rop = self.tm.new_op_replace(1, OpCode::CPUI_FLOAT_INT2FLOAT, op);
                 self.tm.op_set_output(rop, rvn);
                 let newvar = self.tm.get_preexisting_varnode(data, invn);

@@ -28,6 +28,12 @@ fn fauxware() -> String {
         .to_string()
 }
 
+/// `fauxware`'s `main` returns `accepted()`'s value, which the serial default's
+/// callee-first order settles otherwise than a pool can
+/// ([`jobs_notes_that_the_default_callee_first_order_is_serial_only`]), so the
+/// pool runs held to the serial document turn that order off on both sides.
+const SERIAL_ORDER_OFF: [&str; 3] = ["--option", "protoorder", "off"];
+
 /// The checked-in stripped-ELF hang repro (`tests/hang-repro/README.md`): a
 /// fully-stripped x86-64 openssh `ssh-sk-helper` whose `sub_1bd04` @ 0x1bd04
 /// never converges in the decompile pipeline (the `--max-fn-seconds` watchdog's
@@ -3850,20 +3856,16 @@ fn a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole() {
 fn jobs_full_load_agrees_with_the_inventory_handoff() {
     let bin = fauxware();
     let sp = specs();
-    let base = [
-        "decompile-all",
-        bin.as_str(),
-        "--json",
-        "--max-fn-seconds",
-        "0",
-        "--sleighpath",
-        sp.as_str(),
-    ];
+    let base: Vec<&str> =
+        ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath", sp.as_str()]
+            .into_iter()
+            .chain(SERIAL_ORDER_OFF)
+            .collect();
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
         panic!("kuna decompile-all failed: {stderr}");
     }
-    let mut args = base.to_vec();
+    let mut args = base.clone();
     args.extend_from_slice(&["--jobs", "3", "--jobs-full-load"]);
     let (got, stderr, ok) = run_kuna(&args);
     assert!(ok, "kuna decompile-all --jobs-full-load failed: {stderr}");
@@ -3912,8 +3914,10 @@ fn jobs_preserves_namespaced_cpp_callee_names() {
 fn jobs_auto_and_the_plain_c_surface_match_serial() {
     let bin = fauxware();
     let sp = specs();
-    let base =
-        ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
+    let base: Vec<&str> = ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()]
+        .into_iter()
+        .chain(SERIAL_ORDER_OFF)
+        .collect();
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
         panic!("kuna decompile-all failed: {stderr}");
@@ -3958,8 +3962,10 @@ fn jobs_auto_fits_the_cgroup_memory_cap() {
     let env = [("KUNA_CGROUP_ROOT", root.path().to_str().unwrap())];
     let bin = fauxware();
     let sp = specs();
-    let base =
-        ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
+    let base: Vec<&str> = ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()]
+        .into_iter()
+        .chain(SERIAL_ORDER_OFF)
+        .collect();
     let (want, stderr, ok) = run_kuna_env(&base, &env);
     assert!(ok, "{stderr}");
     let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
@@ -4346,15 +4352,12 @@ fn recovered_count(stderr: &str) -> Option<usize> {
 
 /// The serial `decompile-all --json` document of `fauxware`.
 fn fauxware_serial_json() -> String {
-    let (want, stderr, ok) = run_kuna(&[
-        "decompile-all",
-        &fauxware(),
-        "--json",
-        "--max-fn-seconds",
-        "0",
-        "--sleighpath",
-        &specs(),
-    ]);
+    let (bin, sp) = (fauxware(), specs());
+    let args: Vec<&str> = ["decompile-all", &bin, "--json", "--max-fn-seconds", "0", "--sleighpath", &sp]
+        .into_iter()
+        .chain(SERIAL_ORDER_OFF)
+        .collect();
+    let (want, stderr, ok) = run_kuna(&args);
     if !ok {
         panic!("kuna decompile-all failed: {stderr}");
     }
@@ -4367,7 +4370,7 @@ fn fauxware_serial_json() -> String {
 fn fauxware_pooled_with_fault(fault: &str, max_fn_seconds: &str) -> (String, String, bool) {
     let bin = fauxware();
     let sp = specs();
-    let args = [
+    let args: Vec<&str> = [
         "decompile-all",
         bin.as_str(),
         "--json",
@@ -4379,7 +4382,10 @@ fn fauxware_pooled_with_fault(fault: &str, max_fn_seconds: &str) -> (String, Str
         "2",
         "--jobs-chunk",
         "64",
-    ];
+    ]
+    .into_iter()
+    .chain(SERIAL_ORDER_OFF)
+    .collect();
     run_kuna_env_with_timeout(&args, &[("KUNA_JOBS_FAULT", fault)], Duration::from_secs(240))
         .unwrap_or_else(|| panic!("KUNA_JOBS_FAULT={fault} wedged the pool"))
 }
@@ -4848,13 +4854,15 @@ fn a_dead_lane_falls_back_to_the_serial_walk() {
 fn jobs_decode_lanes_agree_with_serial_on_decompile_all() {
     let bin = fauxware();
     let sp = specs();
-    let base =
-        ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath", &sp];
+    let base: Vec<&str> = ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath", &sp]
+        .into_iter()
+        .chain(SERIAL_ORDER_OFF)
+        .collect();
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
         panic!("kuna decompile-all failed: {stderr}");
     }
-    let mut args = base.to_vec();
+    let mut args = base.clone();
     args.extend_from_slice(&["--jobs", "4"]);
     let (got, stderr, ok) =
         run_kuna_env(&args, &[("KUNA_DECODE_MIN_BYTES", "0"), ("KUNA_DECODE_STATS", "1")]);
