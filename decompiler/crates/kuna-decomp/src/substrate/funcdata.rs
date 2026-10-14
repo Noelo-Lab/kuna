@@ -410,7 +410,7 @@ pub struct Funcdata {
     kuna_record_names: bool,
     /// The numbering the naming pass handed out, by instance identity; see
     /// `kuna_stablenames::snapshot`.
-    kuna_name_snapshot: Vec<(int4, crate::kuna_stablenames::Keys)>,
+    kuna_name_snapshot: Vec<(String, crate::kuna_stablenames::Keys)>,
     /// (kuna, ghidra Phase 4) WIRE-ONLY symbols the encode-time link pass
     /// synthesized for named HighVariables the analysis deliberately left
     /// symbol-less — see [`crate::database::WireSymbol`].  They are encoded
@@ -974,11 +974,11 @@ impl Funcdata {
     }
 
     /// The numbering the naming pass recorded (empty unless asked to).
-    pub fn kuna_name_snapshot(&self) -> &[(int4, crate::kuna_stablenames::Keys)] {
+    pub fn kuna_name_snapshot(&self) -> &[(String, crate::kuna_stablenames::Keys)] {
         &self.kuna_name_snapshot
     }
 
-    pub fn set_kuna_name_snapshot(&mut self, snapshot: Vec<(int4, crate::kuna_stablenames::Keys)>) {
+    pub fn set_kuna_name_snapshot(&mut self, snapshot: Vec<(String, crate::kuna_stablenames::Keys)>) {
         self.kuna_name_snapshot = snapshot;
     }
 

@@ -2164,7 +2164,7 @@ decomp_command!(
                     crate::assertions::carried_usepoint_symbols(fd),
                     // The console-added `map hash` dynamic symbols (likewise carried
                     // across so `ActionDynamicSymbols` can name the matched temps).
-                    fd.dynamic_symbol_specs(),
+                    crate::assertions::carried_dynamic_symbols(fd),
                     kuna_decomp::kuna_stackobjectasserts::specs(fd).to_vec(),
                 ),
             };

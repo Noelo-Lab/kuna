@@ -63,13 +63,13 @@ pub type Keys = (Op, Shape, Place);
 /// same function.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PriorNames {
-    /// The number each instance of a numbered variable had, by [`Op`]; `None`
-    /// where the key named more than one number.
-    pub ops: BTreeMap<Op, Option<int4>>,
+    /// The name of the local each instance belonged to, by [`Op`]; `None`
+    /// where the key belonged to more than one name.
+    pub ops: BTreeMap<Op, Option<String>>,
     /// The same by [`Shape`].
-    pub shapes: BTreeMap<Shape, Option<int4>>,
+    pub shapes: BTreeMap<Shape, Option<String>>,
     /// The same by [`Place`].
-    pub places: BTreeMap<Place, Option<int4>>,
+    pub places: BTreeMap<Place, Option<String>>,
     /// The number each numbered Symbol had, by its storage and width.
     pub symbols: BTreeMap<(Address, int4), int4>,
     /// The numbers renamed locals held, with the names they were given.
@@ -78,11 +78,23 @@ pub struct PriorNames {
     pub given: BTreeSet<String>,
     /// One past the last number handed out.
     pub end: int4,
+    /// Each name-only rename of a printed local: the name it was printed under
+    /// and the name it was given (see [`rename_targets`]).
+    pub renames: BTreeMap<String, String>,
+    /// Each name-only rename of a stack local's Symbol, by the Symbol's
+    /// storage and width: the analysis rebuilds the Symbol, and the naming
+    /// pass gives it this name instead of a number.
+    pub symbol_renames: BTreeMap<(Address, int4), String>,
 }
 
 impl PriorNames {
     pub fn is_empty(&self) -> bool {
-        self.ops.is_empty() && self.symbols.is_empty() && self.vacated.is_empty() && self.given.is_empty()
+        self.ops.is_empty()
+            && self.symbols.is_empty()
+            && self.vacated.is_empty()
+            && self.given.is_empty()
+            && self.renames.is_empty()
+            && self.symbol_renames.is_empty()
     }
 }
 
@@ -151,32 +163,53 @@ fn instances(fd: &Funcdata, high: HighVariableId) -> Vec<Keys> {
         .collect()
 }
 
-/// The number most of `high`'s instances had (the lowest on a tie), each
-/// matched by its most precise key that names one; `None` without a carried
-/// record or a match. Instances in registers and on the stack decide before
-/// temporaries: a temporary merges wherever its copies lead, so after a rename
-/// changes the merge it can sit in a different variable, while the storage
-/// the declaration lists is what the reader knows the variable by. A renamed
-/// local's number counts only when nothing else matches: a variable that took
-/// in part of the renamed one is still the variable it was.
+/// How many of `high`'s instances belonged to each name in the carried
+/// record, as (register and stack instances, temporaries). An instance is
+/// matched by the most precise key the record holds: a key it holds for more
+/// than one name matches nothing.
+fn tally(fd: &Funcdata, high: HighVariableId) -> BTreeMap<String, (usize, usize)> {
+    let prior = fd.kuna_prior_names();
+    let mut counts: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    for (op, shape, place) in instances(fd, high) {
+        let name = match prior.ops.get(&op) {
+            Some(name) => name,
+            None => match prior.shapes.get(&shape) {
+                Some(name) => name,
+                None => prior.places.get(&place).unwrap_or(&None),
+            },
+        };
+        if let Some(name) = name {
+            let count = counts.entry(name.clone()).or_default();
+            if op.2.get_space().is_some_and(|space| space.get_type() == IPTR_INTERNAL) {
+                count.1 += 1;
+            } else {
+                count.0 += 1;
+            }
+        }
+    }
+    counts
+}
+
+/// The number most of `high`'s instances had (the lowest on a tie); `None`
+/// without a carried record or a match. Instances in registers and on the
+/// stack decide before temporaries: a temporary merges wherever its copies
+/// lead, so after a retype changes the merge it can sit in a different
+/// variable, while the storage the declaration lists is what the reader knows
+/// the variable by. A renamed local's number counts only when nothing else
+/// matches: a variable that took in part of the renamed one is still the
+/// variable it was.
 pub fn best(fd: &Funcdata, high: HighVariableId) -> Option<int4> {
     let prior = fd.kuna_prior_names();
     if prior.ops.is_empty() {
         return None;
     }
+    let angr = fd.get_arch().name_style_angr;
     let mut counts: BTreeMap<int4, (usize, usize)> = BTreeMap::new();
-    for (op, shape, place) in instances(fd, high) {
-        let number = prior.ops.get(&op).copied().flatten()
-            .or_else(|| prior.shapes.get(&shape).copied().flatten())
-            .or_else(|| prior.places.get(&place).copied().flatten());
-        if let Some(i) = number {
-            let temporary = op.2.get_space().is_some_and(|space| space.get_type() == IPTR_INTERNAL);
-            let count = counts.entry(i).or_default();
-            if temporary {
-                count.1 += 1;
-            } else {
-                count.0 += 1;
-            }
+    for (name, count) in tally(fd, high) {
+        if let Some(i) = default_name_index(&name, angr) {
+            let total = counts.entry(i).or_default();
+            total.0 += count.0;
+            total.1 += count.1;
         }
     }
     let renamed = |i: &int4| prior.vacated.contains_key(i);
@@ -201,6 +234,32 @@ pub fn orphaned(fd: &Funcdata, i: int4) -> bool {
     !fd.high_bank().iter().any(|(_, h)| h.kuna_name() == Some(name.as_str()))
 }
 
+/// The local each name-only rename names: the one holding most of the renamed
+/// variable's instances (register and stack instances first). A name-only
+/// rename maps no Symbol over the variable, so it cannot change what the
+/// analysis merges or how it types it; the name is attached here, after the
+/// merge, to the whole variable.
+pub fn rename_targets(fd: &Funcdata) -> BTreeMap<HighVariableId, String> {
+    let renames = &fd.kuna_prior_names().renames;
+    if renames.is_empty() {
+        return BTreeMap::new();
+    }
+    let mut best: BTreeMap<&String, ((usize, usize), HighVariableId)> = BTreeMap::new();
+    for (high, h) in fd.high_bank().iter() {
+        if h.kuna_global() {
+            continue;
+        }
+        for (name, count) in tally(fd, high) {
+            if let Some((from, _)) = renames.get_key_value(&name) {
+                if best.get(from).is_none_or(|(held, _)| count > *held) {
+                    best.insert(from, (count, high));
+                }
+            }
+        }
+    }
+    best.into_iter().map(|(from, (_, high))| (high, renames[from].clone())).collect()
+}
+
 /// The allocator's view of [`PriorNames`] during one naming pass.
 #[derive(Clone, Debug, Default)]
 pub struct NameState {
@@ -209,13 +268,24 @@ pub struct NameState {
     handed: BTreeSet<int4>,
     overflow: int4,
     preferred: Vec<int4>,
+    targets: BTreeMap<HighVariableId, String>,
 }
 
 impl NameState {
     pub fn new(prior: PriorNames) -> NameState {
         let active = !prior.is_empty();
         let overflow = prior.end;
-        NameState { prior, active, handed: BTreeSet::new(), overflow, preferred: Vec::new() }
+        NameState { prior, active, handed: BTreeSet::new(), overflow, preferred: Vec::new(), targets: BTreeMap::new() }
+    }
+
+    /// Record which local each name-only rename names (see [`rename_targets`]).
+    pub fn set_targets(&mut self, targets: BTreeMap<HighVariableId, String>) {
+        self.targets = targets;
+    }
+
+    /// The name a name-only rename gives `high`, if any.
+    pub fn target(&self, high: HighVariableId) -> Option<&str> {
+        self.targets.get(&high).map(String::as_str)
     }
 
     /// Is a previous decompile's numbering being kept?
@@ -232,6 +302,11 @@ impl NameState {
     /// rename named nothing (see [`orphaned`]).
     pub fn release(&mut self, i: int4) {
         self.prior.vacated.remove(&i);
+    }
+
+    /// The name a rename gave the Symbol at `(addr, size)`, if any.
+    pub fn symbol_rename(&self, addr: &Address, size: int4) -> Option<&str> {
+        self.prior.symbol_renames.get(&(addr.clone(), size)).map(String::as_str)
     }
 
     /// Put the number the Symbol at `(addr, size)` had ahead of the others.
@@ -277,26 +352,49 @@ impl NameState {
     }
 }
 
-/// Note that `key` names number `i`; a key that names two numbers names none.
-fn record<K: Ord>(map: &mut BTreeMap<K, Option<int4>>, key: K, i: int4) {
-    map.entry(key).and_modify(|n| *n = n.filter(|&n| n == i)).or_insert(Some(i));
+/// Note that `key` belonged to `name`; a key that belonged to two names
+/// names neither.
+fn record<K: Ord>(map: &mut BTreeMap<K, Option<String>>, key: K, name: &str) {
+    map.entry(key)
+        .and_modify(|held| {
+            if held.as_deref() != Some(name) {
+                *held = None;
+            }
+        })
+        .or_insert_with(|| Some(name.to_string()));
 }
 
-/// The keys of every instance of each local the naming pass just numbered,
-/// for [`carry`]; taken only when the drive asked for it
+/// The keys of every instance of each local the naming pass just named, with
+/// its name, for [`carry`]; taken only when the drive asked for it
 /// (`Architecture::kuna_record_names`), since a directive may follow.
-pub fn snapshot(fd: &Funcdata) -> Vec<(int4, Keys)> {
-    let angr = fd.get_arch().name_style_angr;
+pub fn snapshot(fd: &Funcdata) -> Vec<(String, Keys)> {
     let mut out = Vec::new();
     for (high, h) in fd.high_bank().iter() {
         if h.kuna_global() {
             continue;
         }
-        if let Some(i) = h.kuna_name().and_then(|name| default_name_index(name, angr)) {
-            out.extend(instances(fd, high).into_iter().map(|keys| (i, keys)));
+        if let Some(name) = h.kuna_name() {
+            out.extend(instances(fd, high).into_iter().map(|keys| (name.to_string(), keys)));
         }
     }
     out
+}
+
+/// Did a `name` directive rename `sym` without stating a type: a Symbol it
+/// mapped over a printed local, or a stack local's Symbol it renamed? Such a
+/// rename is carried as a name, not as a Symbol: a Symbol over one definition
+/// of a merged variable split it, and a type lock retyped it.
+pub fn is_name_only(fd: &Funcdata, sym: crate::database::SymbolId) -> bool {
+    let Some(lm) = fd.get_scope_local() else { return false };
+    let symbol = lm.database().symbol(sym);
+    let mapped = symbol.mapentry.iter().any(|entry| !matches!(entry, crate::database::EntryRef::Dynamic(_)));
+    symbol.is_name_locked()
+        && !symbol.is_type_locked()
+        && symbol.get_category() != crate::database::symbol_category::FUNCTION_PARAMETER
+        && fd
+            .kuna_directive_symbols()
+            .iter()
+            .any(|d| d.symbol == sym && (d.bound.is_some() || mapped))
 }
 
 /// The record the next decompile of `fd`'s function keeps: `fd`'s numbering
@@ -317,12 +415,16 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
         vacated: prior.vacated.clone(),
         given: prior.given.clone(),
         end: prior.end.max(fd.kuna_default_name_end()),
+        renames: BTreeMap::new(),
+        symbol_renames: prior.symbol_renames.clone(),
     };
-    for (i, (op, shape, place)) in fd.kuna_name_snapshot().iter().cloned() {
-        record(&mut next.ops, op, i);
-        record(&mut next.shapes, shape, i);
-        record(&mut next.places, place, i);
+    for (name, (op, shape, place)) in fd.kuna_name_snapshot().iter().cloned() {
+        record(&mut next.ops, op, &name);
+        record(&mut next.shapes, shape, &name);
+        record(&mut next.places, place, &name);
     }
+    let mut renamed: BTreeMap<String, String> =
+        prior.renames.values().map(|name| (name.clone(), name.clone())).collect();
     let Some(lm) = fd.get_scope_local() else { return next };
     let directives = fd.kuna_directive_symbols();
     for (sym, addr, size, name) in lm.named_symbol_storage() {
@@ -340,6 +442,14 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
         if symbol.is_name_undefined() || !symbol.is_name_locked() {
             continue;
         }
+        if is_name_only(fd, directive.symbol) {
+            renamed.insert(directive.printed.clone(), symbol.name.clone());
+            if let Some((_, addr, size, _)) =
+                lm.named_symbol_storage().into_iter().find(|(sym, ..)| *sym == directive.symbol && directive.bound.is_none())
+            {
+                next.symbol_renames.insert((addr, size), symbol.name.clone());
+            }
+        }
         if !next.given.remove(&directive.printed) {
             if let Some(i) = default_name_index(&directive.printed, angr) {
                 next.vacated.insert(i, symbol.name.clone());
@@ -349,6 +459,7 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
             next.given.insert(symbol.name.clone());
         }
     }
+    next.renames = renamed;
     next
 }
 

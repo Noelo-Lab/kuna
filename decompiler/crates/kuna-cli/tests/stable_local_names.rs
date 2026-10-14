@@ -114,13 +114,11 @@ fn renaming_the_first_local_keeps_every_other_number() {
     renames_only(&["name v1 c"], &[("c", "v1")]);
 }
 
-/// `v13` is two values in one register, and the rename names both; no other
-/// local's number moves.
+/// `v13` is two values the analysis merged in one register; the rename names
+/// the variable once, under one declaration.
 #[test]
 fn renaming_the_last_local_keeps_every_other_number() {
-    let numbered: BTreeSet<String> =
-        declared(&decompile(&["name v13 acc"])).into_iter().filter(|n| !n.starts_with("acc")).collect();
-    assert_eq!(numbered, (1..=12).map(|i| format!("v{i}")).collect());
+    renames_only(&["name v13 acc"], &[("acc", "v13")]);
 }
 
 #[test]
@@ -146,19 +144,70 @@ fn renaming_onto_another_locals_number_gives_that_local_a_new_one() {
     renames_only(&["name v1 c", "name v6 v9"], &[("c", "v1"), ("v9", "v6"), ("v14", "v9")]);
 }
 
-/// The rename binds the instance at the variable's representative, which
-/// splits `v5` on the second decompile. The part left over is a local the
-/// first decompile did not print: it takes a new number, and no printed
-/// local's number moves.
+/// A name-only rename names the whole printed variable: `v5` spans four
+/// registers and used to split, leaving the `rax` part behind as a new `v14`;
+/// `v7` used to come back retyped `unsigned long` with a cast at its compare.
 #[test]
-fn a_split_remainder_takes_a_new_number() {
-    let plain = declared(&decompile(&[]));
-    let renamed = declared(&decompile(&["name v5 hash"]));
-    let kept: BTreeSet<String> = plain.iter().filter(|n| *n != "v5").cloned().collect();
-    let added: BTreeSet<String> = renamed.difference(&kept).cloned().collect();
-    assert!(kept.is_subset(&renamed), "{plain:?} -> {renamed:?}");
-    assert!(!renamed.contains("v5"), "{renamed:?}");
-    assert_eq!(added, ["hash", "v14"].iter().map(|s| s.to_string()).collect());
+fn a_rename_neither_splits_nor_retypes_the_variable() {
+    renames_only(&["name v5 hash"], &[("hash", "v5")]);
+    renames_only(&["name v7 best"], &[("best", "v7")]);
+}
+
+/// Two such renames in one batch, and a rename of a renamed local.
+#[test]
+fn successive_renames_name_the_whole_variable() {
+    renames_only(&["name v5 hash", "name v7 best"], &[("hash", "v5"), ("best", "v7")]);
+    renames_only(&["name v5 hash", "name hash h"], &[("h", "v5")]);
+}
+
+/// The console carries a rename across every later decompile: one rename per
+/// decompile, the second naming a local by the number the first left alone.
+#[test]
+fn console_renames_survive_later_decompiles() {
+    let script = "load function mix\ndecompile\nprint C\nrename v5 hash\ndecompile\nprint C\n\
+                  rename v7 best\ndecompile\nprint C\nrename hash h\ndecompile\nprint C";
+    let out = console(script);
+    let printed: Vec<&str> = out
+        .split(" mix(")
+        .skip(1)
+        .map(|block| block.find("\n}\n").map_or(block, |end| &block[..end + 2]))
+        .collect();
+    assert_eq!(printed.len(), 4, "{out}");
+    let plain = format!(" mix({}", printed[0]);
+    let steps: [&[(&str, &str)]; 3] =
+        [&[("hash", "v5")], &[("hash", "v5"), ("best", "v7")], &[("h", "v5"), ("best", "v7")]];
+    for (step, renames) in printed[1..].iter().zip(steps) {
+        let code = format!(" mix({step}");
+        assert_eq!(lines_renamed(&code, renames), lines_renamed(&plain, &[]), "{renames:?}:\n{plain}\n---\n{code}");
+    }
+}
+
+/// Drive `decomp_dbg` with `script` on the fixture.
+fn console(script: &str) -> String {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let engine = std::env::var_os("KUNA_DECOMP_DBG").map(std::path::PathBuf::from).unwrap_or_else(|| {
+        std::path::Path::new(env!("CARGO_BIN_EXE_kuna")).parent().unwrap().join("decomp_dbg")
+    });
+    let specs = std::env::var_os("SLEIGHHOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| common::repo_root().join("specs"));
+    let mut child = Command::new(engine)
+        .arg("-s")
+        .arg(specs)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run console");
+    let script = format!(
+        "load file \"{}\"\nread symbols\n{script}\nquit\n",
+        common::fixture("stablenames_x86_64")
+    );
+    child.stdin.take().unwrap().write_all(script.as_bytes()).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    String::from_utf8(output.stdout).unwrap()
 }
 
 /// Under Ghidra names the register locals read `iVar6` and the stack array
