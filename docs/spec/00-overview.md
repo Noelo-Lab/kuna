@@ -2766,6 +2766,25 @@ the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as 
 `BlockCopy` mirror of the CFG when structuring begins
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_sblocks_copy)`).
 
+The Varnode and op banks' `get` and `get_mut` accessors are inlineable, exposing
+repeated accesses to the optimizer without changing their lookup contract.
+Bounds checks and full-id comparisons remain enabled in release and debug builds;
+stale and null ids still return `None`. Retired PcodeOps remain accessible until
+the bank is cleared. The checked arena
+(`decompiler/crates/kuna-decomp/src/substrate/kuna_checkedarena.rs`) retains
+SlotMap storage and allocation order, and caches the full FFI encoding of each
+live id in a compact array indexed by slot. A lookup checks that array's bounds and
+compares the full cached id before reading the original slot. Removal and clear
+invalidate cached ids before modifying storage; only the arena wrapper can change
+slot membership. The all-ones encoding marks vacancies. Its index is `u32::MAX`,
+which the cache rejects during insertion, so a checked id cannot match a vacancy.
+This adds eight bytes per slot, while avoiding out-of-line
+SlotMap validation calls and allowing repeated checks to fold together. Debug
+builds also perform SlotMap's original checks at the final slot access.
+The record getters `PcodeOp::code` and
+`Varnode::has_no_descend` are inlineable as well; `code` still panics if the
+opcode has not been assigned.
+
 Registering an input varnode also applies the prototype's saved-register and
 return-address effects. This is unconditional registration behavior, not a
 separate feature gate; `funcdata_varnode.rs (apply_input_effect_marking)` uses
