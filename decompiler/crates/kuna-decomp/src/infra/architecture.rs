@@ -888,6 +888,10 @@ pub struct Architecture {
     /// own body reads it (option `calleereadarg`).  See
     /// [`crate::p4_calls::kuna_calleereadarg`].
     pub callee_read_arg: bool,
+    /// (kuna) Do not take a register the callee only pushes for its next call,
+    /// with nothing reading the slot back, as `calleereadarg` evidence (option
+    /// `pushpadread`).  See [`crate::p4_calls::kuna_calleedeadarg`].
+    pub push_pad_read: bool,
     /// (kuna) Drop the zero fill a narrow write leaves in the upper half of a
     /// returned vector register (option `zerofillreturn`).
     pub zero_fill_return: bool,
@@ -2086,6 +2090,15 @@ pub struct Architecture {
     /// overrides.  Empty unless the Listing and `formatstring` are both on.
     pub format_call_overrides:
         std::collections::BTreeMap<u64, Vec<crate::kuna_formatstring::ParkedFormatSite>>,
+    /// (kuna `pushpadread`) The number of STACK arguments each printf-family
+    /// format call consumes, keyed by the call instruction's VMA -- derived from
+    /// the format resolver's per-site conversion count. The callee-body probe
+    /// uses it to tell a real stack argument a callee forwards (pushed below this
+    /// count) from the alignment pad gcc pushes above it. Built whenever
+    /// `pushpadread` is on and the Listing runs; it carries NO typing and never
+    /// reaches the varargs-override path, so it is independent of `--option
+    /// formatstring`.
+    pub format_stack_args: std::rc::Rc<std::collections::BTreeMap<u64, usize>>,
     /// (kuna `formatstring`) The call points, among the prototype overrides of
     /// the drive in progress, whose override a resolved format string produced.
     /// Set by the console's decompile step around each drive; the flow build
@@ -2792,6 +2805,7 @@ impl Architecture {
             callee_dead_arg: true,
             hidden_ret_arg: true,
             callee_read_arg: true,
+            push_pad_read: true,
             zero_fill_return: true,
             zero_call_regs: true,
             callee_preserves: true,
@@ -2969,6 +2983,7 @@ impl Architecture {
             analysis_operand_refs: false,
             analysis_formatstring: crate::kuna_formatstring::FormatStringMode::Off,
             format_call_overrides: std::collections::BTreeMap::new(),
+            format_stack_args: std::rc::Rc::new(std::collections::BTreeMap::new()),
             format_override_callpoints: std::collections::BTreeSet::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
@@ -3136,6 +3151,7 @@ impl Architecture {
         self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
         self.hidden_ret_arg = true; // (kuna) default-on (0/675 ablation): a hidden-return register trial the callee never takes, or a null-page constant, is no argument
         self.callee_read_arg = true; // (kuna) default-on: a register argument the caller also tests is kept when the callee's own body reads it (0/675 ablation)
+        self.push_pad_read = true; // (kuna) default-on: a register a callee only pushes for its next call, with nothing reading the slot back, is no calleereadarg evidence
         self.zero_fill_return = true; // (kuna) default-on (0/675 ablation): the zero a narrow write leaves in a returned q register's upper half is no part of the value
         self.zero_call_regs = true; // (kuna) default-on (0/675 ablation): a register a -fzero-call-used-regs epilogue clears before the return is no part of the value
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
@@ -3935,6 +3951,7 @@ impl Architecture {
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
         ctx.hidden_ret_arg = self.hidden_ret_arg; // hiddenretarg
         ctx.callee_read_arg = self.callee_read_arg; // calleereadarg
+        ctx.push_pad_read = self.push_pad_read; // pushpadread
         ctx.zero_fill_return = self.zero_fill_return; // zerofillreturn
         ctx.zero_call_regs = self.zero_call_regs; // zerocallregs
         ctx.callee_preserves = self.callee_preserves; // calleepreserves

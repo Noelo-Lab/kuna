@@ -354,6 +354,7 @@ kuna_options! { self, p1;
         self.callee_read_arg = val;
         Ok(msg)
     },
+    "pushpadread" => on_off!(push_pad_read, "push-only reads left out of callee-read argument evidence"),
     "zerocallregs" => {
         let (val, msg) =
             crate::p4_calls::kuna_zerocallregs::OptionZeroCallRegs.apply(p1)?;

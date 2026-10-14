@@ -4643,6 +4643,41 @@ fn commit_analysis_output(
         prog.arch_mut().format_call_overrides = parked;
     }
 
+    // (kuna `pushpadread`) The stack-argument count per format call site, carried
+    // for the callee-body probe (not the varargs typing above, so independent of
+    // the `formatstring` gate). gcc pushes a format call's stack arguments below
+    // an alignment pad, and the probe uses this count to tell the two apart.
+    if prog.arch().push_pad_read && !out.format_sites.is_empty() {
+        let model = prog.arch().default_fp().cloned();
+        let stack_idx = prog.arch().manage().get_stack_space().map(|sp| sp.get_index());
+        if let (Some(model), Some(stack_idx)) = (model, stack_idx) {
+            let mut map: std::collections::BTreeMap<u64, usize> = std::collections::BTreeMap::new();
+            for site in &out.format_sites {
+                let mut res = Vec::new();
+                if model
+                    .assign_parameter_storage(
+                        &site.pieces,
+                        &mut res,
+                        true,
+                        prog.arch().types(),
+                        prog.arch().manage(),
+                    )
+                    .is_ok()
+                {
+                    // res[0] is the return; the parameters follow. A parameter
+                    // whose storage is in the stack space is a stack argument.
+                    let n = res
+                        .iter()
+                        .skip(1)
+                        .filter(|p| p.addr.get_space().is_some_and(|sp| sp.get_index() == stack_idx))
+                        .count();
+                    map.insert(site.callpoint, n);
+                }
+            }
+            prog.arch_mut().format_stack_args = Rc::new(map);
+        }
+    }
+
     // 3b. FID re-identification (the kuna analog of Ghidra's FID identification
     //     analyzer): RENAME a function whose instruction-stream fingerprint matched
     //     a known-library record. Unlike the SymFact arm (step 1) — an idempotent

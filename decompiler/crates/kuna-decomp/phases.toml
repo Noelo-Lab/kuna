@@ -3803,6 +3803,28 @@ tier = "core"
 symptoms = "a call to a function in the same binary prints with no argument although the argument register is loaded right before the CALL|f() is called where the same output declares f(int)|the argument register is compared or branched on just before the CALL and the argument disappears|a value returned on one path and passed to a tail call on the other loses the argument|return ext() + 1 where the disassembly loads edi just before call ext"
 
 [[settable]]
+option = "pushpadread"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "active-input-trial-scoring"
+strength = "HARD"
+rewind = "P4"
+issue = "kuna-pushpadread"
+summary = "Do not count a register the callee only pushes ABOVE a call's stack arguments -- an alignment pad -- as a read of that register when `calleereadarg` asks whether the callee's body consumes it. x86 compilers align an odd number of stack arguments by pushing whatever register is at hand first (gcc 9 at -O2, gcc 11 at -Os: `push %rdx` before pushing three bytes for `__snprintf_chk`), and that push copies a register the body never set. The bounded entry decode `calleedeadarg` takes of every direct callee recorded it as a read of `rdx`, so `calleereadarg` gave every caller's call a third argument the callee never takes, printing whatever the caller last left in `rdx`: `show(&p, cells)` came out `show(&p, cells, end)` in the `pushpad_x86_64` fixture. A push alone cannot be told from a real forwarded argument, though -- gcc forwards a register as a stack argument with the same `push %reg; call; add rsp,N`. So a push is a pad ONLY with POSITIVE evidence it lies above the nested call's stack arguments: for a printf-family call with a constant format the format resolver recovers the argument list and parks how many of them land on the stack (keyed by the call's VMA, `Architecture::format_stack_args`), and a push below that count is a real argument the callee reads (kept) while one above it is the pad (dropped). Any call whose stack-argument count is unknown -- a non-format callee, an indirect call, or any call when the Listing is off -- leaves every push a read, the conservative answer, so the rule never drops a real argument and the worst it leaves is a phantom. Needs the Listing (default off, on in `kuna decompile`/`decompile-all` and the aggressive preset), which runs the default-on static format resolver. Only `calleereadarg`'s question changes; the dead-argument veto and every other reader of the decode count every push."
+use_when = "On by default. Flip off if a call to a same-binary callee prints one argument too many -- a value the caller computed for something else -- where the callee pushes that register, unset, right before a printf-family call to align its stack arguments. Keeping it on is safe for a forwarded argument: a register the callee passes on as a real stack argument of a format call (below the format's stack-argument count) is kept, as is any push to a callee whose arity the resolver cannot read."
+example = "option pushpadread off"
+live_field = "push_pad_read"
+live_true = "on"
+live_false = "off"
+source_decompiler = "kuna"
+inspiration = "the `pushpad_x86_64` fixture (gcc -O2, `show` built -Os), whose `show(&p, cells)` call printed a third argument because `show` pushes an unset `rdx` to align `__snprintf_chk`'s three stack arguments; gcc 9 at -O2 emits the same pad"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a call to a same-binary function prints one argument more than the callee takes|the extra call argument is a value the caller computed for a loop bound or comparison|the callee pushes an unset rdx before a printf-family call to align its stack arguments"
+
+[[settable]]
 option = "hiddenretarg"
 values = "on|off"
 default = "on"

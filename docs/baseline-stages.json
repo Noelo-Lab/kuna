@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2864,
-    2864
+    2868,
+    2868
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -900,7 +900,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 298 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 299 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -1356,6 +1356,10 @@
     "data:PROTORANGES HOMESLOT #4: on, the same local is passed to consume",
     "data:PUSHIMMEDIATERET #1: both arms preserve the unpacker call",
     "data:PUSHIMMEDIATERET #2: only option on emits the complete tail-transfer statement",
+    "data:PUSHPADREAD #1: off, the pad push reads as an argument the call passes on",
+    "data:PUSHPADREAD #2: default, the pad above the format call's arguments is no argument",
+    "data:PUSHPADREAD #3: default, an argument forwarded as a format call's stack argument survives",
+    "data:PUSHPADREAD #4: default, an argument forwarded to a same-binary nine-parameter callee survives",
     "data:REALTYPES #1: signature uses real C types, not xunknown8",
     "data:REALTYPES #2: 1-byte stack buffer is char[8], not xunknown1[8]",
     "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",

@@ -1050,6 +1050,10 @@ pub struct ArchContext {
     /// callee's own body reads them (`calleereadarg`).  Read by
     /// [`crate::p4_calls::kuna_calleereadarg::capture`].
     pub callee_read_arg: bool,
+    /// (kuna) do not take a register the callee only pushes for its next call
+    /// as `calleereadarg` evidence (`pushpadread`).  Read by
+    /// [`crate::p4_calls::kuna_calleereadarg::capture`].
+    pub push_pad_read: bool,
     /// (kuna) drop the zero fill a narrow write leaves in the upper half of a
     /// returned vector register (`zerofillreturn`).  Read by
     /// [`crate::p4_calls::kuna_zerofillreturn::drop_zero_fill`].
@@ -1839,6 +1843,7 @@ impl ArchContext {
             callee_dead_arg: true,
             hidden_ret_arg: true,
             callee_read_arg: true,       // calleereadarg (default-on)
+            push_pad_read: true,         // pushpadread (default-on)
             zero_fill_return: true,
             zero_call_regs: true,
             callee_preserves: true,
