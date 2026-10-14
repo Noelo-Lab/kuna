@@ -1888,6 +1888,16 @@ impl ScopeLocal {
         self.name_state.set_targets(targets);
     }
 
+    /// Record the number each local keeps (`kuna_stablenames::assign_numbers`).
+    pub fn set_assigned_numbers(&mut self, assigned: std::collections::BTreeMap<crate::context::HighVariableId, int4>) {
+        self.name_state.set_assigned(assigned);
+    }
+
+    /// The number `high` keeps under a carried numbering.
+    pub fn assigned_number(&self, high: crate::context::HighVariableId) -> Option<int4> {
+        self.name_state.assigned(high)
+    }
+
     /// The name a name-only rename gives `high` (`kuna_stablenames::rename_targets`).
     pub fn rename_target(&self, high: crate::context::HighVariableId) -> Option<String> {
         self.name_state.target(high).map(str::to_string)

@@ -239,25 +239,64 @@ pub fn orphaned(fd: &Funcdata, i: int4) -> bool {
 /// rename maps no Symbol over the variable, so it cannot change what the
 /// analysis merges or how it types it; the name is attached here, after the
 /// merge, to the whole variable.
-pub fn rename_targets(fd: &Funcdata) -> BTreeMap<HighVariableId, String> {
+pub fn rename_targets(fd: &Funcdata, tallies: &[(HighVariableId, BTreeMap<String, (usize, usize)>)]) -> BTreeMap<HighVariableId, String> {
     let renames = &fd.kuna_prior_names().renames;
-    if renames.is_empty() {
-        return BTreeMap::new();
-    }
     let mut best: BTreeMap<&String, ((usize, usize), HighVariableId)> = BTreeMap::new();
-    for (high, h) in fd.high_bank().iter() {
-        if h.kuna_global() {
-            continue;
-        }
-        for (name, count) in tally(fd, high) {
-            if let Some((from, _)) = renames.get_key_value(&name) {
-                if best.get(from).is_none_or(|(held, _)| count > *held) {
-                    best.insert(from, (count, high));
+    for (high, counts) in tallies {
+        for (name, count) in counts {
+            if let Some((from, _)) = renames.get_key_value(name) {
+                if best.get(from).is_none_or(|(held, _)| *count > *held) {
+                    best.insert(from, (*count, *high));
                 }
             }
         }
     }
     best.into_iter().map(|(from, (_, high))| (high, renames[from].clone())).collect()
+}
+
+/// [`tally`] of every local, when a record is carried.
+pub fn tallies(fd: &Funcdata) -> Vec<(HighVariableId, BTreeMap<String, (usize, usize)>)> {
+    if fd.kuna_prior_names().ops.is_empty() {
+        return Vec::new();
+    }
+    fd.high_bank()
+        .iter()
+        .filter(|(_, h)| !h.kuna_global())
+        .map(|(high, _)| (high, tally(fd, high)))
+        .collect()
+}
+
+/// The number each local keeps, assigned over the whole function: strongest
+/// evidence first (most register and stack instances, then temporaries), so a
+/// local holding a few pieces of another variable cannot take its number
+/// before the variable itself. A renamed local's number goes to no one.
+pub fn assign_numbers(
+    fd: &Funcdata,
+    tallies: &[(HighVariableId, BTreeMap<String, (usize, usize)>)],
+) -> BTreeMap<HighVariableId, int4> {
+    let prior = fd.kuna_prior_names();
+    let angr = fd.get_arch().name_style_angr;
+    let mut options: Vec<((usize, usize), int4, HighVariableId)> = Vec::new();
+    for (high, counts) in tallies {
+        let mut numbers: BTreeMap<int4, (usize, usize)> = BTreeMap::new();
+        for (name, count) in counts {
+            if let Some(i) = default_name_index(name, angr).filter(|i| !prior.vacated.contains_key(i)) {
+                let total = numbers.entry(i).or_default();
+                total.0 += count.0;
+                total.1 += count.1;
+            }
+        }
+        options.extend(numbers.into_iter().map(|(i, count)| (count, i, *high)));
+    }
+    options.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+    let mut assigned: BTreeMap<HighVariableId, int4> = BTreeMap::new();
+    let mut taken: BTreeSet<int4> = BTreeSet::new();
+    for (_, i, high) in options {
+        if !assigned.contains_key(&high) && taken.insert(i) {
+            assigned.insert(high, i);
+        }
+    }
+    assigned
 }
 
 /// The allocator's view of [`PriorNames`] during one naming pass.
@@ -269,13 +308,32 @@ pub struct NameState {
     overflow: int4,
     preferred: Vec<int4>,
     targets: BTreeMap<HighVariableId, String>,
+    assigned: BTreeMap<HighVariableId, int4>,
 }
 
 impl NameState {
     pub fn new(prior: PriorNames) -> NameState {
         let active = !prior.is_empty();
         let overflow = prior.end;
-        NameState { prior, active, handed: BTreeSet::new(), overflow, preferred: Vec::new(), targets: BTreeMap::new() }
+        NameState {
+            prior,
+            active,
+            handed: BTreeSet::new(),
+            overflow,
+            preferred: Vec::new(),
+            targets: BTreeMap::new(),
+            assigned: BTreeMap::new(),
+        }
+    }
+
+    /// Record the number each local keeps (see [`assign_numbers`]).
+    pub fn set_assigned(&mut self, assigned: BTreeMap<HighVariableId, int4>) {
+        self.assigned = assigned;
+    }
+
+    /// The number `high` keeps, if any.
+    pub fn assigned(&self, high: HighVariableId) -> Option<int4> {
+        self.assigned.get(&high).copied()
     }
 
     /// Record which local each name-only rename names (see [`rename_targets`]).

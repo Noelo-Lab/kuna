@@ -2597,10 +2597,13 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // use-point arms are applied per-high inside the walk
     // (`recommended_name_for`).  All are no-ops without recommendations.
     let prior = data.kuna_prior_names().clone();
-    let targets = crate::kuna_stablenames::rename_targets(data);
+    let tallies = crate::kuna_stablenames::tallies(data);
+    let targets = crate::kuna_stablenames::rename_targets(data, &tallies);
+    let assigned = crate::kuna_stablenames::assign_numbers(data, &tallies);
     if let Some(lm) = data.get_scope_local_mut() {
         lm.install_prior_names(prior);
         lm.set_rename_targets(targets);
+        lm.set_assigned_numbers(assigned);
     }
     data.kuna_apply_dynamic_recommendations();
     if let Some(lm) = data.get_scope_local_mut() {
@@ -3145,8 +3148,8 @@ fn with_prior_numbers<T>(
     high: crate::context::HighVariableId,
     f: impl FnOnce(&mut Funcdata) -> T,
 ) -> T {
-    let numbers = crate::kuna_stablenames::best(data, high).into_iter().collect();
     if let Some(lm) = data.get_scope_local_mut() {
+        let numbers = lm.assigned_number(high).into_iter().collect();
         lm.prefer_names(numbers);
     }
     let out = f(data);
