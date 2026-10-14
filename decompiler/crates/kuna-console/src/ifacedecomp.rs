@@ -2343,6 +2343,7 @@ decomp_command!(
         // pipeline — including the FormatStringAnalyzer half-B override /
         // re-decompile loop, which used to live only here.
         prog.arch_mut().kuna_prior_names = prior_names;
+        prog.arch_mut().kuna_record_names = true;
         let step = crate::decompile_step::decompile_one_prefollowed(
             prog.arch_mut(),
             &name,
@@ -2361,6 +2362,7 @@ decomp_command!(
             prefollowed,
         );
         prog.arch_mut().kuna_prior_names = Default::default();
+        prog.arch_mut().kuna_record_names = false;
         let result = step.result;
         if !step.discovered.is_empty() {
             status.out("Re-decompiling with format-string varargs typing\n");

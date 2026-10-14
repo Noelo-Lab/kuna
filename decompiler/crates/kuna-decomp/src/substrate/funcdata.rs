@@ -406,6 +406,11 @@ pub struct Funcdata {
     kuna_prior_names: crate::kuna_stablenames::PriorNames,
     /// One past the last default index the naming pass handed out.
     kuna_default_name_end: int4,
+    /// Whether the naming pass records [`Self::kuna_name_snapshot`].
+    kuna_record_names: bool,
+    /// The numbering the naming pass handed out, by instance identity; see
+    /// `kuna_stablenames::snapshot`.
+    kuna_name_snapshot: Vec<(int4, crate::kuna_stablenames::Keys)>,
     /// (kuna, ghidra Phase 4) WIRE-ONLY symbols the encode-time link pass
     /// synthesized for named HighVariables the analysis deliberately left
     /// symbol-less — see [`crate::database::WireSymbol`].  They are encoded
@@ -723,6 +728,8 @@ impl Funcdata {
             kuna_directive_symbols: Vec::new(),
             kuna_prior_names: Default::default(),
             kuna_default_name_end: 1,
+            kuna_record_names: false,
+            kuna_name_snapshot: Vec::new(),
             kuna_wire_symbols: Vec::new(),
             kuna_wrapped_wire_storage: std::collections::BTreeMap::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
@@ -955,6 +962,24 @@ impl Funcdata {
 
     pub fn set_kuna_default_name_end(&mut self, end: int4) {
         self.kuna_default_name_end = end;
+    }
+
+    /// (kuna `--assert`) Should the naming pass record its numbering?
+    pub fn kuna_record_names(&self) -> bool {
+        self.kuna_record_names
+    }
+
+    pub fn set_kuna_record_names(&mut self, on: bool) {
+        self.kuna_record_names = on;
+    }
+
+    /// The numbering the naming pass recorded (empty unless asked to).
+    pub fn kuna_name_snapshot(&self) -> &[(int4, crate::kuna_stablenames::Keys)] {
+        &self.kuna_name_snapshot
+    }
+
+    pub fn set_kuna_name_snapshot(&mut self, snapshot: Vec<(int4, crate::kuna_stablenames::Keys)>) {
+        self.kuna_name_snapshot = snapshot;
     }
 
     /// (kuna `rustabi`) Record what a probe of `entry`'s body proved about the

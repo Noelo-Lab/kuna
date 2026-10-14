@@ -1533,6 +1533,10 @@ pub struct Architecture {
     /// keeps, set by the caller that replays a directive batch and cleared
     /// after it; see [`crate::kuna_stablenames`].  Empty everywhere else.
     pub kuna_prior_names: crate::kuna_stablenames::PriorNames,
+    /// (kuna `--assert`) Whether the next drive records the numbering its
+    /// naming pass hands out, because a directive batch may be replayed
+    /// against it; set and cleared by that caller.
+    pub kuna_record_names: bool,
 
     // --- kuna analysis-pass gates (per-run `--option <id> on|off`) ----------
     // One boolean per `kuna_analysis::passes` pass id; the console's
@@ -2888,6 +2892,7 @@ impl Architecture {
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
             kuna_pending_proto_model: None,     // (ghidra Phase 4) staged per drive
             kuna_prior_names: Default::default(),
+            kuna_record_names: false,
 
             // Analysis-pass gates: placeholder values -- `Architecture::new` calls
             // `reset_defaults_internal()` below, the SINGLE source of every

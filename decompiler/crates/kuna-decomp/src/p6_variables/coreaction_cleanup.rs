@@ -2634,6 +2634,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     data.name_undefined_spacebase_symbols(&mut base);
     let mut seen: std::collections::BTreeSet<HighVariableId> = std::collections::BTreeSet::new();
     let mut root_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut renamed_parts: Vec<(HighVariableId, Option<std::rc::Rc<crate::dtype::Datatype>>, int4)> = Vec::new();
     let mut taken: std::collections::BTreeSet<String> = data
         .high_bank()
         .iter()
@@ -3059,6 +3060,10 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 // (`iVar1`/`uVar1`/...).  Pick the rep's data-type for the prefix
                 // (the same type that renders the declaration, e.g. `int4`).
                 let rep_ty = data.vbank().get(name_rep.unwrap()).map(|v| v.get_type().clone());
+                if let Some(number) = crate::kuna_stablenames::renamed_number(data, high) {
+                    renamed_parts.push((high, rep_ty, number));
+                    continue;
+                }
                 with_prior_numbers(data, high, |data| kuna_default_local_name(data, rep_ty.as_deref(), &mut base))
             }
         };
@@ -3100,6 +3105,18 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         }
     }
 
+    for (high, rep_ty, number) in renamed_parts {
+        if crate::kuna_stablenames::orphaned(data, number) {
+            if let Some(lm) = data.get_scope_local_mut() {
+                lm.release_prior_number(number);
+            }
+        }
+        let name = with_prior_numbers(data, high, |data| kuna_default_local_name(data, rep_ty.as_deref(), &mut base));
+        if let Some(h) = data.high_bank_mut().get_mut(high) {
+            h.set_kuna_name(name);
+        }
+    }
+
     // C++ `localmap->assignDefaultNames(base)` (coreaction.cc:3079), plus the kuna
     // counterpart of the printer's live `sym->getDisplayName()` read: no `$$undef`
     // placeholder may outlive this pass, in the Symbol table or in a HighVariable's
@@ -3107,17 +3124,21 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     crate::kuna_undefname::finish_undefined_names(data, &mut base);
     let end = data.get_scope_local().map_or(base, |lm| base.max(lm.prior_names_end()));
     data.set_kuna_default_name_end(end);
+    if data.kuna_record_names() {
+        let snapshot = crate::kuna_stablenames::snapshot(data);
+        data.set_kuna_name_snapshot(snapshot);
+    }
 }
 
-/// Run a default-name allocation for `high` trying first the numbers its
-/// instances had in the previous decompile (`crate::kuna_stablenames`); a no-op wrapper
+/// Run a default-name allocation for `high` trying first the number most of
+/// its instances had in the previous decompile (`crate::kuna_stablenames`); a no-op wrapper
 /// when no numbering is carried.
 fn with_prior_numbers<T>(
     data: &mut Funcdata,
     high: crate::context::HighVariableId,
     f: impl FnOnce(&mut Funcdata) -> T,
 ) -> T {
-    let numbers = crate::kuna_stablenames::candidates(data, high);
+    let numbers = crate::kuna_stablenames::best(data, high).into_iter().collect();
     if let Some(lm) = data.get_scope_local_mut() {
         lm.prefer_names(numbers);
     }

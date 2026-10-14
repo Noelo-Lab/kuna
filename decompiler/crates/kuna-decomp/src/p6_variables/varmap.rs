@@ -1879,6 +1879,11 @@ impl ScopeLocal {
         }
     }
 
+    /// Let a renamed local's number be handed out again (`kuna_stablenames::orphaned`).
+    pub fn release_prior_number(&mut self, number: int4) {
+        self.name_state.release(number);
+    }
+
     /// Try the number `sym` had in the previous decompile first.
     fn prefer_symbol_names(&mut self, sym: crate::database::SymbolId) {
         if !self.name_state.active() {
