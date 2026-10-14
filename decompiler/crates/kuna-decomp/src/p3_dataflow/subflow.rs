@@ -5253,12 +5253,8 @@ impl SubfloatFlow {
                     return Ok(false);
                 }
                 let original_size = data.vbank().get(origvn).expect("stale origvn").get_size();
-                if original_size != self.precision
-                    && ![original_size, self.precision].into_iter().all(|size| {
-                        self.arch.get_float_format(size)
-                            .is_some_and(|format| format.get_precision() >= iv.get_size() * 8 - 1)
-                    })
-                {
+                let constant = iv.is_constant().then(|| iv.get_offset());
+                if !super::kuna_intfloatround::lowers(&self.arch, iv.get_size(), constant, original_size, self.precision) {
                     return Ok(false);
                 }
                 let rop = self.tm.new_op_replace(1, OpCode::CPUI_FLOAT_INT2FLOAT, op);

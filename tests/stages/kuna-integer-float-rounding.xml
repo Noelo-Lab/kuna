@@ -13,10 +13,14 @@
 <com>parse line extern double rounded(void);</com>
 <com>parse line extern float exact_intermediate(void);</com>
 <com>map address r0x20000 int value</com>
+<com>option intfloatround off</com>
+<com>lo fu rounded</com><com>decompile</com><com>print C</com>
+<com>option intfloatround on</com>
 <com>lo fu rounded</com><com>decompile</com><com>print C</com>
 <com>lo fu exact_intermediate</com><com>decompile</com><com>print C</com>
 <com>quit</com>
 </script>
+<stringmatch name="intfloatround off folds the float rounding away" min="1" max="1">return \(float8\)value;</stringmatch>
 <stringmatch name="integer rounding survives a float-to-double widening" min="1" max="1">return \(float8\)\(float4\)value;</stringmatch>
 <stringmatch name="exact signed32-to-double intermediate still combines" min="1" max="1">return \(float4\)value;</stringmatch>
 </decompilertest>

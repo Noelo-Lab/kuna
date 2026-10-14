@@ -516,6 +516,7 @@ kuna_options! { self, p1;
     "loopcounterstore" => {
         on_off!(loop_counter_store, "Frame-slot loop-counter store brake")
     },
+    "intfloatround" => on_off!(int_float_round, "Integer-to-float rounding preservation"),
     "tiedphitrim" => {
         on_off!(tied_phi_trim, "Loop-head address-tied input trim")
     },

@@ -2147,10 +2147,7 @@ impl Rule for RuleFloatCast {
                 return 1;
             }
         } else if opc2 == OpCode::CPUI_FLOAT_INT2FLOAT && opc1 == OpCode::CPUI_FLOAT_FLOAT2FLOAT {
-            if insize1 != outsize
-                && !data.get_arch().get_float_format(insize1)
-                    .is_some_and(|format| format.get_precision() >= insize2 * 8 - 1)
-            {
+            if !super::kuna_intfloatround::combines(data.get_arch(), insize2, insize1, outsize) {
                 return 0;
             }
             // Convert integer straight into final float size

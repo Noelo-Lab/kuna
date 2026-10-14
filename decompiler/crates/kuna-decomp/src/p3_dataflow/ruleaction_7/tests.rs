@@ -56,6 +56,7 @@ fn build_fd() -> Funcdata {
     let manage = build_manager();
     let mut context = ArchContext::new(manage);
     context.floatformats = [4, 8].into_iter().map(kuna_num::float::FloatFormat::new).collect();
+    context.int_float_round = true;
     let glb = Rc::new(context);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
@@ -567,6 +568,39 @@ fn floatcast_combines_exact_integer_intermediates_and_identical_float_widths() {
         let mut fd = build_fd();
         let source = make_input(&mut fd, 0x100, integer_size);
         let (inner, rounded) = make_op(&mut fd, 0x200, OpCode::CPUI_FLOAT_INT2FLOAT, 1, intermediate_size);
+        wire(&mut fd, source, inner, 0);
+        let root = make_op(&mut fd, 0x210, OpCode::CPUI_FLOAT_FLOAT2FLOAT, 1, final_size).0;
+        wire(&mut fd, rounded, root, 0);
+
+        assert_eq!(RuleFloatCast::new().apply_op(root, &mut fd), 1);
+        assert_eq!(op_of(&fd, root), OpCode::CPUI_FLOAT_INT2FLOAT);
+        assert_eq!(in_vn(&fd, root, 0), source);
+    }
+}
+
+#[test]
+fn floatcast_folds_every_integer_rounding_with_intfloatround_off() {
+    let mut context = ArchContext::new(build_manager());
+    context.floatformats = [4, 8].into_iter().map(kuna_num::float::FloatFormat::new).collect();
+    let glb = Rc::new(context);
+    let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+    let mut fd = Funcdata::new("func", "func", glb, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap();
+    let source = make_input(&mut fd, 0x100, 4);
+    let (inner, rounded) = make_op(&mut fd, 0x200, OpCode::CPUI_FLOAT_INT2FLOAT, 1, 4);
+    wire(&mut fd, source, inner, 0);
+    let root = make_op(&mut fd, 0x210, OpCode::CPUI_FLOAT_FLOAT2FLOAT, 1, 8).0;
+    wire(&mut fd, rounded, root, 0);
+
+    assert_eq!(RuleFloatCast::new().apply_op(root, &mut fd), 1);
+    assert_eq!(in_vn(&fd, root, 0), source);
+}
+
+#[test]
+fn floatcast_combines_through_the_unlisted_extended_format() {
+    for (integer_size, final_size) in [(4, 8), (8, 4), (8, 8), (2, 4)] {
+        let mut fd = build_fd();
+        let source = make_input(&mut fd, 0x100, integer_size);
+        let (inner, rounded) = make_op(&mut fd, 0x200, OpCode::CPUI_FLOAT_INT2FLOAT, 1, 10);
         wire(&mut fd, source, inner, 0);
         let root = make_op(&mut fd, 0x210, OpCode::CPUI_FLOAT_FLOAT2FLOAT, 1, final_size).0;
         wire(&mut fd, rounded, root, 0);

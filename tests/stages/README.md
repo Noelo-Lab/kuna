@@ -295,3 +295,5 @@ with undefined-behavior checks and exercises every case and signed boundaries.
 - `kuna-sparc-double-abs.xml`, `kuna-sparc64-double-abs.xml`: binary64 absolute value from a high-word `fabss`, without a numeric high-word cast.
 
 - `kuna-sparc-double-sign.xml`, `kuna-sparc64-double-sign.xml`: binary64 negation from a high-word `fnegs`, without a numeric high-word cast.
+
+- `kuna-integer-float-rounding.xml`, `kuna-integer-float-rounding64.xml`, `kuna-integer-float-rounding-x87.xml`: an integer-to-float conversion keeps its rounding through a later float conversion or a narrower float trace (`option intfloatround`; the first passes run it `off`), while exact intermediates, x87 extended conversions and `fld1` still combine.

@@ -2080,7 +2080,7 @@ mod tests {
         // (GH-299)
         // and kuna-pushpadread / a register a callee only pushes above a call's
         // stack arguments is no argument it reads
-        assert_eq!(count, 538, "corpus file count drifted");
+        assert_eq!(count, 539, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

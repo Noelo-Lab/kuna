@@ -1047,6 +1047,10 @@ Three tiers:
 | call result stored to the frame but the store is missing from the emitted C so the later read looks uninitialized | [`tiedstorekeep`](#tiedstorekeep) |
 | indirect call through a stack slot that no statement ever writes | [`tiedstorekeep`](#tiedstorekeep) |
 | a stack local read after a call shows only its initialiser | [`tiedstorekeep`](#tiedstorekeep) |
+| an int converted to float and then to double prints as a direct (double) conversion | [`intfloatround`](#intfloatround) |
+| (double)(float)i prints as (double)i | [`intfloatround`](#intfloatround) |
+| a long long converted to double and then to float prints as one (float) conversion | [`intfloatround`](#intfloatround) |
+| an x87 int spilled to a float slot prints without the (float) rounding | [`intfloatround`](#intfloatround) |
 | a for loop initialises and tests one variable but assigns its increment to another | [`loopcounterstore`](#loopcounterstore) |
 | the induction variable is never updated so the emitted loop cannot terminate | [`loopcounterstore`](#loopcounterstore) |
 | several loop counters lose their increments to one shared register temporary | [`loopcounterstore`](#loopcounterstore) |
@@ -3320,6 +3324,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-105). The OFF symptom is C that says the program uses a value it never computed: a local initialised to NULL, a call whose result is assigned to a register temporary, and then an indirect call or a dereference through the still-NULL local -- `v108 = NULL; v12 = (void *)GetProcAddress(...); ... v7 = (*v108)(...);`. The dataflow underneath is correct (the CALLIND's target really is the GetProcAddress result); only the printed store is missing, which is worse than a wrong-looking expression because an analyst reads it as a null-pointer call and concludes the import is never used. Flip OFF to reproduce upstream Ghidra's propagation exactly, or to bisect whether a stack-frame variable's appearance came from this brake. Each clause of the predicate was bought by measurement, not by argument: dropping the from-a-call clause turns three upstream datatests' if/else diamonds into `?:` ternaries and degrades union field resolution (7/675 assertions move, 0/675 with it); letting it fire on `persist` globals -- which already have heritage's own RETURN-COPY keeping their last store printed -- made the `copytrim` datatest run for minutes instead of 0.16 s.
 - **Where / provenance:** P3/copy-propagation · kuna · correctness-fix · re-getprocaddress-result-discarded
 - **Example:** `option tiedstorekeep off`
+
+### `intfloatround` -- on | off, default `on`
+
+- **Symptoms:** an int converted to float and then to double prints as a direct (double) conversion; (double)(float)i prints as (double)i; a long long converted to double and then to float prints as one (float) conversion; an x87 int spilled to a float slot prints without the (float) rounding.
+- **What it does:** Keep the rounding an integer-to-float conversion performs. RuleFloatCast folds FLOAT2FLOAT(INT2FLOAT(x)) into one INT2FLOAT at the final width, and SubfloatFlow re-issues an INT2FLOAT at its narrower precision; both drop the first rounding. A signed 32-bit integer converted to binary32 and widened to binary64 (`(double)(float)i`) then printed `(double)i`, which differs from the binary for |i| > 2^24, and a signed 64-bit value rounded to binary64 and then to binary32 lost its double rounding. ON folds only when both float widths match or the float the value passes through holds every integer the source can be (precision >= width - 1; binary32 24 bits, binary64 53, the x87/68k 80-bit format 64); SubfloatFlow needs the same of its replacement precision, which never exceeds the original's, or for a constant source only that constant's own bits (`fld1`, `fldz`). Other unknown formats decline. OFF is upstream's unconditional fold.
+- **When to flip:** On by default: 0/675 datatest assertions move. The OFF symptom is an integer converted straight to the wider type where the binary rounds it through float first: `return (double)value;` for `cvtsi2ss; cvtss2sd`, or an x87 spill to a float slot that disappears. Flip off to compare against upstream; ON keeps an x87 comparison of an int64 conversion in long double instead of narrowing it to double, which is longer to read.
+- **Where / provenance:** P3/simplification-quiescence · kuna · correctness-fix · kuna-intfloatround
+- **Example:** `option intfloatround off`
 
 ### `loopcounterstore` -- on | off, default `on`
 
