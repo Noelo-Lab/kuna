@@ -298,6 +298,9 @@ mod stack_object_lifetimes;
 #[path = "stack_parameter_lifetimes.rs"]
 mod stack_parameter_lifetimes;
 
+#[path = "stack_struct.rs"]
+mod stack_struct;
+
 #[path = "store_alias.rs"]
 mod store_alias;
 

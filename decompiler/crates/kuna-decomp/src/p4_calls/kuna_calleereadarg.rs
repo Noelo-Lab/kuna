@@ -163,16 +163,18 @@ fn is_register(addr: &Address) -> bool {
 
 /// Does the callee summary `live` show `[addr, addr+size)` consumed as an
 /// argument: its low byte read on entry, with `last`, the final register of its
-/// storage class, left unread?
+/// storage class, left unread? With `pads`, a register the callee only pushes
+/// for its next call, with nothing reading the slot back, is not read.
 pub(crate) fn reads_as_argument(
     live: &CalleeEntryDead,
     addr: &Address,
     size: int4,
     last: Option<&(Address, int4)>,
     stores: bool,
+    pads: bool,
 ) -> bool {
     let Some((last_addr, last_size)) = last else { return false };
-    live.reads_low_byte(addr, size, stores) && !live.proves_read(last_addr, *last_size)
+    live.reads_low_byte(addr, size, stores, pads) && !live.proves_read(last_addr, *last_size)
 }
 
 /// Record the calls this rule must leave alone, before heritage folds the
@@ -255,6 +257,7 @@ pub fn capture(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingReadArg> {
                 e.get_size(),
             )
     });
+    let pads = data.get_arch().push_pad_read;
     let active = fc.active_input();
     let mut any = false;
     let mut row: Vec<Option<Slot>> = Vec::new();
@@ -269,7 +272,7 @@ pub fn capture(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingReadArg> {
         };
         let t = active.get_trial(i);
         let (addr, size) = (t.get_address().clone(), t.get_size());
-        let callee_reads = live.reads_low_byte(&addr, size, stores);
+        let callee_reads = live.reads_low_byte(&addr, size, stores, pads);
         let vn = if t.is_definitely_not_used() || t.is_unref() || t.get_slot() < 1 {
             None
         } else {
@@ -282,7 +285,7 @@ pub fn capture(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingReadArg> {
         let width = if callee_reads { live.live_input_width(&addr, size).unwrap_or(size) } else { size };
         let refused =
             !t.is_used() && !t.is_active() && (t.has_ancestor_realistic() || t.has_ancestor_solid());
-        let reads = refused && vn.is_some() && reads_as_argument(live, &addr, size, last.as_ref(), stores);
+        let reads = refused && vn.is_some() && reads_as_argument(live, &addr, size, last.as_ref(), stores, pads);
         any |= reads;
         row.push(Some(Slot { index: i, addr, size, width, vn, reads }));
     }

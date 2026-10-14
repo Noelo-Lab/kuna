@@ -1243,6 +1243,10 @@ impl ScopeLocal {
             return self.db.assign_default_names(self.scope, base, arch);
         }
         for sym in self.db.undefined_symbols(self.scope) {
+            if let Some(name) = self.renamed_symbol_name(sym) {
+                self.db.rename_symbol(sym, &name)?;
+                continue;
+            }
             let mut number = *base;
             if self.db.symbol(sym).get_category() != crate::database::symbol_category::FUNCTION_PARAMETER {
                 self.prefer_symbol_names(sym);
@@ -1879,6 +1883,26 @@ impl ScopeLocal {
         }
     }
 
+    /// Record which local each name-only rename names.
+    pub fn set_rename_targets(&mut self, targets: std::collections::BTreeMap<crate::context::HighVariableId, String>) {
+        self.name_state.set_targets(targets);
+    }
+
+    /// Record the number each local keeps (`kuna_stablenames::assign_numbers`).
+    pub fn set_assigned_numbers(&mut self, assigned: std::collections::BTreeMap<crate::context::HighVariableId, int4>) {
+        self.name_state.set_assigned(assigned);
+    }
+
+    /// The number `high` keeps under a carried numbering.
+    pub fn assigned_number(&self, high: crate::context::HighVariableId) -> Option<int4> {
+        self.name_state.assigned(high)
+    }
+
+    /// The name a name-only rename gives `high` (`kuna_stablenames::rename_targets`).
+    pub fn rename_target(&self, high: crate::context::HighVariableId) -> Option<String> {
+        self.name_state.target(high).map(str::to_string)
+    }
+
     /// Let a renamed local's number be handed out again (`kuna_stablenames::orphaned`).
     pub fn release_prior_number(&mut self, number: int4) {
         self.name_state.release(number);
@@ -1886,16 +1910,40 @@ impl ScopeLocal {
 
     /// Try the number `sym` had in the previous decompile first.
     fn prefer_symbol_names(&mut self, sym: crate::database::SymbolId) {
-        if !self.name_state.active() {
-            return;
+        if let Some((addr, size)) = self.prior_symbol_storage(sym) {
+            self.name_state.prefer_symbol(&addr, size);
         }
-        let Some(&eref) = self.db.symbol(sym).mapentry.first() else { return };
+    }
+
+    /// The storage and width `sym` is known by in a carried numbering, or
+    /// `None` when none is carried.
+    fn prior_symbol_storage(&self, sym: crate::database::SymbolId) -> Option<(Address, int4)> {
+        if !self.name_state.active() {
+            return None;
+        }
+        let &eref = self.db.symbol(sym).mapentry.first()?;
         if matches!(eref, crate::database::EntryRef::Dynamic(_)) {
-            return;
+            return None;
         }
         let entry = self.db.entry(self.scope, eref);
-        let (addr, size) = (entry.get_addr().clone(), entry.get_size());
-        self.name_state.prefer_symbol(&addr, size);
+        Some((entry.get_addr().clone(), entry.get_size()))
+    }
+
+    /// The name for undefined-named `sym`: the one a carried rename gave it,
+    /// else the next default name.
+    fn default_symbol_name(&mut self, sym: crate::database::SymbolId, base: &mut int4) -> String {
+        if let Some(name) = self.renamed_symbol_name(sym) {
+            return name;
+        }
+        self.prefer_symbol_names(sym);
+        self.next_default_name(base, |i| format!("v{i}"))
+    }
+
+    /// The name a carried rename gave `sym`. Two renamed slots may share a
+    /// name, as their Symbols did; the printer tells the declarations apart.
+    fn renamed_symbol_name(&self, sym: crate::database::SymbolId) -> Option<String> {
+        let (addr, size) = self.prior_symbol_storage(sym)?;
+        self.name_state.symbol_rename(&addr, size).map(str::to_string)
     }
 
     /// One past every number the naming pass handed out under a kept numbering.
@@ -1972,7 +2020,7 @@ impl ScopeLocal {
         // access is `sym_off == 0 && size == entry_size` (the entire mapped entry).
         let undefined = self.db.symbol(sym).is_name_undefined();
         if undefined && sym_off == 0 && size == entry_size {
-            match override_name {
+            match override_name.filter(|_| self.renamed_symbol_name(sym).is_none()) {
                 // lookForFuncParamNames: renameSymbol(makeNameUnique(namerec)) — the
                 // callee parameter name wins over `vN` and does not consume `base`.
                 Some(nm) => {
@@ -1981,8 +2029,7 @@ impl ScopeLocal {
                 }
                 None => {
                     // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm).
-                    self.prefer_symbol_names(sym);
-                    let newname = self.next_default_name(base, |i| format!("v{i}"));
+                    let newname = self.default_symbol_name(sym, base);
                     // makeNameUnique then renameSymbol.
                     let _ = self.db.rename_symbol(sym, &newname);
                 }
@@ -2031,8 +2078,7 @@ impl ScopeLocal {
         }
         // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm); then
         // scope->renameSymbol(sym, newname).
-        self.prefer_symbol_names(sym);
-        let newname = self.next_default_name(base, |i| format!("v{i}"));
+        let newname = self.default_symbol_name(sym, base);
         let _ = self.db.rename_symbol(sym, &newname);
         Some(newname)
     }
@@ -2222,8 +2268,7 @@ impl ScopeLocal {
             (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
         // ActionNameVars::apply: rename the undefined-named Symbol to `vN` once.
         if self.db.symbol(sym).is_name_undefined() {
-            self.prefer_symbol_names(sym);
-            let newname = self.next_default_name(base, |i| format!("v{i}"));
+            let newname = self.default_symbol_name(sym, base);
             let _ = self.db.rename_symbol(sym, &newname);
         }
         let symbol = self.db.symbol(sym);
