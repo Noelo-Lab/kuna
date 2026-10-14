@@ -10,7 +10,8 @@
 //!
 //! Four modes ship:
 //!   - **`auto`** -- a frontend policy that selects a concrete preset from the
-//!     input binary's file size. It is not itself applicable to an
+//!     input binary's file size and layers its own presentation overrides
+//!     ([`AUTO_OVERRIDES`]) under that preset. It is not itself applicable to an
 //!     [`Architecture`](crate::architecture::Architecture), which has no input
 //!     file metadata.
 //!   - **`reliable`** -- the shipped, well-tested defaults (a stable, named
@@ -23,8 +24,9 @@
 //!     plus conservative pointer validation while retaining per-function transforms.
 //!
 //! Concrete presets are applied through `Architecture::apply_mode` (which fans
-//! out to `set_kuna_option`). File frontends first resolve `auto` from binary
-//! metadata; the interactive console has no file-size policy and accepts only
+//! out to `set_kuna_option`). File frontends resolve `auto` from binary
+//! metadata with [`resolve_overrides_for_size`], which also returns `auto`'s own
+//! overrides; the interactive console has no file-size policy and accepts only
 //! concrete presets.
 
 /// A named preset over the option surface.
@@ -37,9 +39,9 @@ pub struct Mode {
     /// preset using input metadata.
     pub automatic: bool,
     /// Ordered `(option, value)` overrides. Applied in order; a later
-    /// `set_kuna_option` (another override, or a user `--option`) wins. An empty
-    /// slice means either the shipped defaults (`reliable`) or a dynamic policy
-    /// with no direct overrides (`auto`); consult [`Self::automatic`].
+    /// `set_kuna_option` (another override, or a user `--option`) wins. For an
+    /// automatic policy these are applied before the overrides of whichever
+    /// preset it selects; an empty concrete list is the shipped defaults.
     pub overrides: &'static [(&'static str, &'static str)],
 }
 
@@ -54,9 +56,10 @@ pub const MODE_TABLE: &[Mode] = &[
     Mode {
         name: "auto",
         summary: "Select aggressive below 500 KiB, reliable from 500 KiB up to \
-                  2 MiB, and fast at 2 MiB or larger, using the input file size.",
+                  2 MiB, and fast at 2 MiB or larger, using the input file size; \
+                  every size spells core types as C (ctypes on).",
         automatic: true,
-        overrides: &[],
+        overrides: AUTO_OVERRIDES,
     },
     Mode {
         name: "reliable",
@@ -79,7 +82,8 @@ pub const MODE_TABLE: &[Mode] = &[
         name: "fast",
         summary: "Speed-first whole-binary analysis: replace exhaustive Listing, \
                   prologue-pattern, and AIF discovery with rooted recursive \
-                  function discovery plus conservative pointer validation.",
+                  function discovery plus conservative pointer validation; core \
+                  types spell as C (ctypes on).",
         automatic: false,
         overrides: FAST_OVERRIDES,
     },
@@ -248,12 +252,24 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
 /// `fast` = avoid the three exhaustive program-wide discovery paths that dominate
 /// large-binary latency, while retaining rooted recursive discovery and
 /// conservative pointer validation for a usable whole-binary project.
+///
+/// `ctypes` is the printer's C spelling of the core types. It costs nothing, so
+/// a speed preset has no reason to print `int8` where `aggressive` prints
+/// `long long` (GH-1063).
 const FAST_OVERRIDES: &[(&str, &str)] = &[
     ("listing", "off"),
     ("funcstart_patterns", "off"),
     ("aif", "off"),
     ("fast_funcdisc", "on"),
+    ("ctypes", "on"),
 ];
+
+/// `auto`'s own overrides, applied under every preset it selects. The size
+/// policy trades discovery and recovery depth for latency; the spelling of the
+/// emitted C is not part of that trade, so `ctypes` holds at every size,
+/// including the `reliable` tier between 500 KiB and 2 MiB. An explicit
+/// `--mode reliable` stays the catalog defaults.
+const AUTO_OVERRIDES: &[(&str, &str)] = &[("ctypes", "on")];
 
 /// Select the concrete preset for `size_bytes` under the `auto` policy.
 pub fn auto_mode_for_size(size_bytes: u64) -> &'static str {
@@ -281,6 +297,21 @@ pub fn resolve_mode_for_size(
     } else {
         Some(mode.name)
     }
+}
+
+/// Resolve an omitted or named frontend mode to its concrete preset and the
+/// ordered overrides a frontend applies for it: an automatic policy's own
+/// overrides, then the selected preset's. Returns `None` for an unknown name.
+pub fn resolve_overrides_for_size(
+    requested: Option<&str>,
+    size_bytes: u64,
+) -> Option<(&'static str, Vec<(&'static str, &'static str)>)> {
+    let requested = requested.unwrap_or("auto");
+    let mode = MODE_TABLE.iter().find(|mode| mode.name == requested)?;
+    let concrete = resolve_mode_for_size(Some(requested), size_bytes)?;
+    let mut overrides = if mode.automatic { mode.overrides.to_vec() } else { Vec::new() };
+    overrides.extend_from_slice(mode_overrides(concrete)?);
+    Some((concrete, overrides))
 }
 
 /// Whether `name` identifies a frontend policy rather than a static preset.
@@ -642,9 +673,29 @@ mod tests {
                 ("listing", "off"),
                 ("funcstart_patterns", "off"),
                 ("aif", "off"),
-                ("fast_funcdisc", "on")
+                ("fast_funcdisc", "on"),
+                ("ctypes", "on")
             ]
         );
+    }
+
+    #[test]
+    fn auto_spells_c_at_every_size_and_explicit_presets_keep_their_lists() {
+        for size in [0, AUTO_RELIABLE_MIN_BYTES, AUTO_FAST_MIN_BYTES, u64::MAX] {
+            for requested in [None, Some("auto")] {
+                let (concrete, overrides) =
+                    resolve_overrides_for_size(requested, size).unwrap();
+                assert_eq!(concrete, auto_mode_for_size(size));
+                assert_eq!(overrides[0], ("ctypes", "on"), "auto at {size}");
+                assert_eq!(&overrides[1..], mode_overrides(concrete).unwrap());
+            }
+        }
+        for name in ["reliable", "aggressive", "fast"] {
+            let (concrete, overrides) = resolve_overrides_for_size(Some(name), 0).unwrap();
+            assert_eq!(concrete, name);
+            assert_eq!(overrides, mode_overrides(name).unwrap());
+        }
+        assert!(resolve_overrides_for_size(Some("turbo"), 0).is_none());
     }
 
     #[test]
