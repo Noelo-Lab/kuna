@@ -1804,7 +1804,12 @@ impl Rule for RulePropagateCopy {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        if data.obank().get(op).expect("RulePropagateCopy: stale op").is_return_copy() {
+        let (return_copy, machine_read) = {
+            let operation = data.obank().get(op).expect("RulePropagateCopy: stale op");
+            (operation.is_return_copy(), operation.get_addlflags() & crate::op::pcodeop_addlflags::kuna_stack_read != 0)
+        };
+        if machine_read { crate::p3_dataflow::kuna_stackreadscope::record_current_read(data, op); }
+        if return_copy {
             return 0;
         }
         let n = op_num_input(data, op);
@@ -1907,6 +1912,7 @@ impl Rule for RulePropagateCopy {
                     }
                 }
             }
+            crate::p3_dataflow::kuna_stackreadscope::record_propagated_read(data, copyop, invn);
             data.kuna_inherit_storage(invn, vn);
             data.op_set_input(op, invn, i).expect("RulePropagateCopy: opSetInput"); // propagate just a single copy
             return 1;

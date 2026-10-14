@@ -282,7 +282,27 @@ forbids a forced merge, the machinery edits the data flow until it doesn't:
    fills the slot (upstream `merge.cc:461` "snip must come after OP CAUSING
    EFFECT"; kuna GH-181, where `freecon` then frees the pre-call NULL).
    `Merge::trim_op_output` applies the same INDIRECT rule to its own
-   insert-after point. Windows spanning several addresses become
+   insert-after point. For a call-written stack value whose affected reads
+   are all dominated by one single-predecessor successor of the call block,
+   the original stack-LOAD ledger must contain positive evidence tied to the
+   call, with no overlapping lowered read anywhere in the call block and no removed or
+   invalid original read blocks. Reloads after a later write do not feed
+   these affected reads and do not prevent the repair. With that positive
+   evidence, the trim COPY is placed at the successor's start, before its
+   other accesses. It therefore does not
+   run on paths through the other successor. Phi inputs are reads on their
+   incoming edges. Calls, STOREs, CALLOTHERs and overlapping storage writes
+   after the defining call prevent this delay. Missing positive call-bound
+   provenance or stale original read blocks,
+   pre-branch machine reads, and wrapping frame ranges also keep the existing
+   placement. Other shapes retain the defining-op
+   placement; the repair does not reschedule through further nested guards.
+   The default-on `guardedreadtrim` option applies this scope-aware placement
+   to ordinary and volatile locals; off restores legacy insertion. Reliable
+   and aggressive inherit the same default. Ordinary scalar captures may
+   produce equivalent C values, whereas an extra volatile read is observable.
+   The option also disables provenance collection when off. Windows spanning
+   several addresses become
    VariableGroup pieces (`bank_group_with`). *(kuna divergence, documented at
    `merge.rs (Merge::merge_addr_tied)`)*: a forced merge that still intersects
    — a heavily-reused stack slot from compiler stack-coloring — is *skipped*,

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2946,
-    2946
+    2960,
+    2960
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -912,7 +912,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 305 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 306 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -2281,6 +2281,14 @@
     "data:globalvalue #7: the conversion reads the value",
     "data:globalvalue #8: the conversion does not read the global",
     "data:globalvalue #9: the strtoul result is stored where the binary stores it",
+    "data:guarded SPARC stack read: capture stays inside success branch",
+    "data:guarded SPARC stack read: legacy capture before success branch",
+    "data:guarded SPARC stack read: saved value reaches consumer",
+    "data:guarded SPARC stack read: volatile reads retain observable qualifiers",
+    "data:guarded stack read: capture stays inside success branch",
+    "data:guarded stack read: legacy capture before success branch",
+    "data:guarded stack read: saved value reaches consumer",
+    "data:guarded stack read: volatile reads retain observable qualifiers",
     "data:halfword load stays zero extended",
     "data:hiddenretarg #10: a callee whose svc reads the caller's x8 keeps the syscall number",
     "data:hiddenretarg #11: a callee that reads x8 keeps a null-page constant there",
@@ -2538,6 +2546,12 @@
     "data:pointer-arguments #1: standalone caller retains its scalar storage",
     "data:pointer-arguments #2: no declaration leaks between standalone renders",
     "data:positive displacement stays symbolic",
+    "data:preloaded SPARC stack read: capture stays before branch",
+    "data:preloaded SPARC stack read: guarded consumer retains saved value",
+    "data:preloaded SPARC stack read: volatile slot retained",
+    "data:preloaded x86 stack read: capture stays before branch",
+    "data:preloaded x86 stack read: guarded consumer retains saved value",
+    "data:preloaded x86 stack read: volatile slot retained",
     "data:ptrdepthcap #1: option off leaves the unbounded escalation (bug reproduces: 6 four-star decls + 1 cast)",
     "data:ptrdepthcap #2: option on settles the lattice (7 in the off pass + 0 in the on pass = 7; any leak back raises the count)",
     "data:ptrfromuse #10: and the named global it indexes survives in all three, instead of becoming a raw address",

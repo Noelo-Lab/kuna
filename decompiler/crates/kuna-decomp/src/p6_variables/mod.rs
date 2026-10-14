@@ -41,6 +41,7 @@ pub mod kuna_paramcopyhoist;
 pub mod kuna_tiedphitrim;
 pub mod kuna_globalvalue;
 pub mod kuna_globalorder;
+pub mod kuna_guardedreadtrim;
 pub mod kuna_calleepop;
 pub mod kuna_calleepopslot;
 pub mod kuna_calleepopframe;

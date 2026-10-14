@@ -276,6 +276,7 @@ pub struct Funcdata {
     vbank: VarnodeBank,
     /// Machine homes retained when equivalent values replace their Varnodes.
     kuna_storage_sources: std::collections::HashMap<VarnodeId, Vec<crate::kuna_varsources::StorageSource>>,
+    pub(crate) kuna_guarded_reads: crate::p3_dataflow::kuna_stackreadscope::ReadScopes,
     kuna_call_transport: std::collections::HashSet<VarnodeId>,
     kuna_call_transport_projections: std::collections::HashMap<VarnodeId, int4>,
     kuna_denied_storage_writes: std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
@@ -723,6 +724,7 @@ impl Funcdata {
             jumpvec: Vec::new(),
             vbank,
             kuna_storage_sources: std::collections::HashMap::new(),
+            kuna_guarded_reads: Default::default(),
             kuna_call_transport: std::collections::HashSet::new(),
             kuna_call_transport_projections: std::collections::HashMap::new(),
             kuna_denied_storage_writes: std::collections::HashMap::new(),
@@ -3990,6 +3992,7 @@ impl Funcdata {
         self.obank.clear();
         self.vbank.clear();
         self.kuna_storage_sources.clear();
+        self.kuna_guarded_reads = Default::default();
         self.kuna_call_transport.clear();
         self.kuna_call_transport_projections.clear();
         self.kuna_denied_storage_writes.clear();

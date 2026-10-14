@@ -415,3 +415,5 @@ mod call_outparam_snapshot;
 mod global_load_call_order;
 #[path = "integer_float_rounding.rs"]
 mod integer_float_rounding;
+#[path = "guarded_local_read.rs"]
+mod guarded_local_read;

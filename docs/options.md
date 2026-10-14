@@ -1215,6 +1215,8 @@ Three tiers:
 | a signed ARM value is shifted left by a constant in the emitted C | [`armconstshift`](#armconstshift) |
 | UBSan reports a left shift of a negative value in recompiled ARM output | [`armconstshift`](#armconstshift) |
 | a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift) |
+| a local read appears before the machine branch that guards it | [`guardedreadtrim`](#guardedreadtrim) |
+| a call-written volatile stack local is read on the failure path | [`guardedreadtrim`](#guardedreadtrim) |
 
 ## Toggleable transforms
 
@@ -3667,6 +3669,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check.
 - **Where / provenance:** P9/cast-policy · kuna · correctness-fix · arm-fixed-signed-lsl
 - **Example:** `option armconstshift on`
+
+### `guardedreadtrim` -- on | off, default `on`
+
+- **Symptoms:** a local read appears before the machine branch that guards it; a call-written volatile stack local is read on the failure path.
+- **What it does:** Place an interference-preserving COPY of call-written stack storage inside the direct successor dominating its affected reads, rather than eagerly after the call. Require original stack-read evidence, reject overlapping lowered reads anywhere in the call block and stale read blocks, and retain legacy placement when intervening effects or writes prevent the move. This preserves a machine guard around a local read, including observable volatile accesses.
+- **When to flip:** On by default in all modes, including reliable and aggressive. Turn off to restore legacy merge-trim placement when comparing output. Ordinary scalar captures may be value-equivalent, but the guarded rendering preserves their evaluation scope and avoids extra volatile reads on other paths.
+- **Where / provenance:** P6/merge-aggressiveness · kuna · correctness-fix · guarded-stack-read-trim
+- **Example:** `option guardedreadtrim off`
 
 ## Programmatic use
 

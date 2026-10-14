@@ -2087,7 +2087,8 @@ mod tests {
         // high word first on proof (GH-904)
         // and kuna-strlenscan / an inline repnz scasb length prints as strlen
         // and kuna-libcnames / a local takes the name of the library call it meets
-        assert_eq!(count, 547, "corpus file count drifted");
+        // and guarded/preloaded local read controls on SPARC and x86
+        assert_eq!(count, 551, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

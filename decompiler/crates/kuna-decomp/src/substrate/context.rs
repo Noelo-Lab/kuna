@@ -1215,6 +1215,8 @@ pub struct ArchContext {
     /// vanishing from the emitted C.  Read by
     /// [`crate::p3_dataflow::kuna_tiedstorekeep::declines`].
     pub tied_store_keep: bool,
+    /// Preserve guarded stack-read scope when inserting merge trims.
+    pub guarded_read_trim: bool,
     /// (kuna) `option loopcounterstore` (default-on, DIV-146): refuse the
     /// `RulePropagateCopy` marker propagation that would delete the write-back
     /// of a loop counter living in an address-tied frame slot, so the counter's
@@ -1886,6 +1888,7 @@ impl ArchContext {
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)
             libc_names: false, // libcnames (opt-in)
+            guarded_read_trim: false,
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             global_call_store: false,    // globalcallstore (Architecture::reset_defaults sets the shipped default: on)

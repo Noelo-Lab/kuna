@@ -2349,6 +2349,17 @@ hold that dead-code elimination immediately reinstates would prevent the main
 loop from converging; ordinary temporary holds keep their existing release rule.
 
 
+With `guardedreadtrim on`, a physical stack LOAD lowered by `RuleLoadVarnode`
+retains its original read block and byte range. Indexed frame LOAD guards also
+record their conservative range when heritage creates the preserving COPY.
+When copy propagation binds that read to call-written frame memory, the call
+is associated with that provenance before the COPY is removed.
+The original read ledger also survives COPY removal; removed CFG
+blocks fail the later placement check. P6 uses it to distinguish a guarded
+machine read from an unconditional preload whose value is used only under a
+branch (chapter [06](06-variables-and-merge.md)); functions without calls do not
+allocate this tracking state.
+
 A read from a volatile range becomes a `read_volatile` user op only once its
 address is a constant: `RuleLoadVarnode` turns the LOAD into a COPY of the
 memory varnode, which carries the range's `volatile` property, and
