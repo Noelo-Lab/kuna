@@ -154,8 +154,9 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("devectorize", "on"),
     // (kuna) Valid per-architecture C type spelling. The shipped catalog default
     // is OFF because 42 XML datatest assertions pin the Ghidra spellings, and the
-    // parity harness applies no mode -- so preset membership is what makes valid C
-    // the default RENDERING for every real binary without touching the corpus.
+    // parity harness applies no mode -- so preset membership (with `fast` and
+    // `AUTO_OVERRIDES`) is what makes valid C the default RENDERING for every
+    // real binary without touching the corpus.
     ("ctypes", "on"),
     // (kuna DIV-98) Elide a void function's trailing bare `return;`, the statement
     // the C source it came from does not have. The shipped catalog default is OFF

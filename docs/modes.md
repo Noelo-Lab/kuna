@@ -19,10 +19,10 @@ session changes only the options that second mode names. Discover them with
 
 | Mode | What it does |
 |---|---|
-| `auto` | The default file-front-end policy: `aggressive` below 500 KiB, `reliable` from 500 KiB up to 2 MiB, and `fast` at 2 MiB or larger. |
+| `auto` | The default file-front-end policy: `aggressive` below 500 KiB, `reliable` from 500 KiB up to 2 MiB, and `fast` at 2 MiB or larger, with `ctypes` on at every size. |
 | `reliable` | The shipped, well-tested defaults — the safe, stable baseline. An **empty** override list. |
 | `aggressive` | Maximum recovery: turns **on** every off-by-default quality, structuring, and analysis pass except `v850indirectbranch` and `dwarf_lines`. Slower and more speculative (may over-recover); best for readability and for measuring the recovery ceiling on the benchmark, not for guaranteed faithfulness. |
-| `fast` | Latency first: disables the exhaustive Listing consumers, prologue-pattern scan, and AIF gap walk, then substitutes rooted direct-call discovery and conservative pointer-table validation. Keeps the shipped per-function transforms and explicit selectors, but may still discover fewer functions and recover fewer program-wide facts than `reliable`. |
+| `fast` | Latency first: disables the exhaustive Listing consumers, prologue-pattern scan, and AIF gap walk, then substitutes rooted direct-call discovery and conservative pointer-table validation. Keeps the shipped per-function transforms and explicit selectors, but may still discover fewer functions and recover fewer program-wide facts than `reliable`. Spells core types as C (`ctypes`). |
 
 ## `auto` (default)
 
@@ -40,6 +40,18 @@ file is `fast`. “Standard mode” in the size policy means the existing
 front-end classifies the uploaded virtual file's byte length through the same
 Rust function. An explicit concrete `--mode` bypasses size selection, and a
 later explicit `--option` still overrides the selected preset.
+
+`auto` also carries one override of its own, `ctypes=on`, applied before the
+selected preset's list (`AUTO_OVERRIDES`, resolved together with the preset by
+`resolve_overrides_for_size`). The size policy trades discovery and recovery
+depth for latency; how the emitted C spells a type is not part of that trade,
+and `ctypes` costs nothing. Without it a binary of 500 KiB or more printed
+`int4`, `uint8` and `float8` where a smaller one printed `int`,
+`unsigned long` and `double`. An 8-byte element cast such as `((int8 *)a0)[4]`
+reads like a byte offset of 4 when the offset is 0x20 (GH-1063). `kuna modes`
+lists the override under `auto`. An explicit `--mode reliable` does not get it:
+that preset stays the catalog defaults, which is also what the datatest corpus
+runs.
 
 This makes small binaries favor maximum recovery while bounding the work a
 browser or bulk export attempts for large inputs. On private PE
@@ -59,7 +71,9 @@ bodies, 13 isolated failures, and 3,153 definitions total.
 The current defaults are already a well-tuned, net-positive-on-benchmark set
 (many angr structuring flags are default-on; see `docs/history.md`).
 `reliable` is a stable, named alias for that set — its override list is
-deliberately empty. Pinning options here (e.g. `listing off`) would *change*
+deliberately empty. `auto`'s 500 KiB–2 MiB tier selects it with `auto`'s own
+`ctypes=on` in front; an explicit `--mode reliable` is the catalog defaults
+exactly, Ghidra's `int4`/`float8` spellings included. Pinning options here (e.g. `listing off`) would *change*
 behaviour versus the surface defaults (`decompile` and `decompile-all`
 auto-enable the Listing), so the empty list is the faithful implementation. It
 future-proofs the preset: if the defaults later drift more aggressive,
@@ -204,15 +218,18 @@ preset merely keeps naming it. See
 
 ## `fast`
 
-`fast` applies exactly four overrides:
+`fast` applies exactly five overrides:
 
 ```text
 listing=off
 funcstart_patterns=off
 aif=off
 fast_funcdisc=on
+ctypes=on
 ```
 
+`ctypes` is the printer's C spelling of the core types and costs nothing, so a
+speed preset has no reason to print `int8` where `aggressive` prints a C type.
 The first three disable the exhaustive program-wide decode and speculative
 discovery paths that dominate large-binary latency. Naming `listing` suppresses
 its default injection on all three decompile surfaces; naming

@@ -1321,10 +1321,10 @@ pub struct Architecture {
     /// covers only residual `TYPE_UNKNOWN`; that split is why one function can
     /// today declare `unsigned int v3;` and `int4 v1;` in the same block.
     /// Default OFF in the catalog (the datatest corpus pins the Ghidra spellings
-    /// in 42 assertions) but ON in the `aggressive` preset, which `auto` selects
-    /// for anything under 500 KiB -- i.e. the default rendering of the CLI, the
-    /// web front-end and the benchmark.  Read by the printc declarator
-    /// chokepoints (`RealTypeCtx`).
+    /// in 42 assertions) but ON in the `aggressive` and `fast` presets and at
+    /// every `auto` size -- i.e. the default rendering of the CLI, the web
+    /// front-end and the benchmark.  Read by the printc declarator chokepoints
+    /// (`RealTypeCtx`).
     pub ctypes: bool,
     /// (kuna `framelayout`) Report the union of every stack-frame slot any
     /// `restructure_varnode` pass recovered on the `decompile-all --json`
@@ -3164,7 +3164,7 @@ impl Architecture {
         self.decl_high_type = true; // (kuna) DIV-PENDING default-on: a merged local is declared at its own HighVariable's type -- the one every cast in the body was checked against -- instead of whichever member Varnode happened to be address-tied, so the declaration can no longer widen a one-byte dereference into an eight-byte one. 0/675 byte-identical on the datatest corpus; restore the declaration-representative type with `option declhightype off`
         self.signedness = crate::kuna_typeround::SignPolicy::Auto; // (kuna) default `auto`: a declaration is re-signed only when every signedness-sensitive reader of the value agrees, which makes each surviving cast on it a no-op and leaves every other token byte-identical. 0/675 datatests and PARITY OK on stages; `option signedness upstream` restores the declaration type inference produced
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
-        self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so valid C is the default RENDERING everywhere a real binary is decompiled
+        self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` and `fast` presets and at every `auto` size, so valid C is the default RENDERING everywhere a real binary is decompiled
         self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions
         self.slot_ptr = true; // (kuna) option slotptr default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; evidence in docs/features/slotptr/default-on-evaluation.md
         self.byte_honest = true; // (kuna) default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +10 type_match-perfect / 121 improved / 0 worse over 5,298 scored decbench functions

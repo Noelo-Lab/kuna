@@ -72,9 +72,9 @@ artifact builders, moved there from `kuna-cli` so wasm32-wasip1 can reach them w
 *exact* engine entry points:
 
 ```
-metadata(binary).len() → auto_mode_for_size(...) // <500 KiB aggressive; <2 MiB reliable; else fast
+metadata(binary).len() → resolve_overrides_for_size(...) // <500 KiB aggressive; <2 MiB reliable; else fast; auto adds ctypes=on
   → bootstrap_from_object(binary, "", [spec_root])   // load image + resolve arch + build translator
-  → apply concrete mode + command-scoped discovery policy + non-conflicting driver injections
+  → apply resolved overrides + command-scoped discovery policy + non-conflicting driver injections
   → commit_pending_analysis()                                   // the `read symbols` seam
   → kuna_console::project::decompile_targets(...)  // the same loop kuna decompile-all runs
 ```
@@ -146,7 +146,8 @@ document — `{binary, name, count, ok, failed, files:{"<name>.c", "<name>.h", "
 "README.md"}}` (artifacts named after `<display-name>`, default the binary's basename;
 whole binary only). Omitted mode and explicit `--mode auto` use the shared
 native/browser policy: `<500 KiB` selects `aggressive`, `500 KiB–<2 MiB`
-selects `reliable`, and `>=2 MiB` selects `fast`. Because `project` is
+selects `reliable`, and `>=2 MiB` selects `fast`, each with `auto`'s own
+`ctypes=on`, so the browser prints C type names at every size. Because `project` is
 whole-binary only, the fast selection runs `fast_funcdisc`: the downloaded C/H
 inventory contains directly reached and validated indirect-only internal
 functions while the exhaustive prologue and AIF scans remain off. The page's
