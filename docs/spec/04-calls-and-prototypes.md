@@ -1803,15 +1803,24 @@ it must agree on, in any order and in any run: a whole `decompile-all`, a run
 narrowed by `--functions` or `--addr`, `--jobs N`, a single `kuna decompile`,
 a Ghidra or web session. So it is decided from that function's instructions
 alone. Before any pipeline runs, the driver walks the raw p-code of the
-function and of every function it calls directly, once per image (the verdicts
-are cached on the `Architecture`), and return recovery and the call-output
-seams both read the verdict for the entry they concern. The model's pair is
+function and of every function it calls directly. Each function is walked
+at most once per image (the verdicts are cached on the `Architecture`, and,
+like the other per-image callee probes, kept for the session: a host that
+patches bytes does not retake them), and return recovery and the call-output
+seams both read the verdict for the entry they concern. A call
+`ActionDeindirect` resolves only mid-pass (a constant-propagated function
+pointer, a `-mlong-calls` call through a register) asks about a callee with
+no verdict at hand and reads it as not proven; after the pass the driver
+takes that callee's verdict, and if it is proven runs the pass again with it
+(`missed_proven`), so the call still reads the verdict of its callee alone.
+The model's pair is
 the first two general registers of its output list when its `<join>` rule
 puts the first one high (`r3:r4`, `$2:$3`, `%o0:%o1`, `r0:r1`, AVR's `R25:R24`,
 AArch64 big-endian's `x0:x1` for a 16-byte value); on any other model nothing
 is walked and nothing changes.
 
-The walk follows every path from the entry to a RETURN over symbolic values
+The walk follows every path from the entry to a RETURN, or to a call that
+does not return, over symbolic values
 (a register's value at the entry, a literal, an operation on values, or an
 opaque value: a load, a call's result or clobber, a partly written register),
 taking a branch whose condition folds to a literal one way only (SPARC's
@@ -1845,9 +1854,13 @@ instruction, one of:
   register window's `restore` carries there, proves nothing: the instruction
   writes it whether or not the function returns it.
 
-An extended value must be made on purpose: computed by the function, or
-another register's argument moved there, read through zero and sign
-extensions; not a literal, not the second register's own entry value
+Every read counts, on every path, a path that ends in a call that does not
+return included: gcc -Os hoists an error path's computation into a branch
+delay slot (`beqz a0; addiu v1,a1,1` before `jal exit`), so the RETURN of
+`return 0` finds a value in `$3` that only the path calling `exit` reads, and
+that value is no zero extension. An extended value must be made on purpose:
+computed by the function, or another register's argument moved there, read
+through zero and sign extensions; not a literal, not the second register's own entry value
 (`srawi 3,4,31` is both `(long long)b` and `b >> 31`), not a load (a volatile
 read, `(void)*p; return 0;`, leaves what it read in `r4` beside the zero on
 PowerPC -O2 and in `$3` on MIPS gcc -O2), not a call's result or clobber, not
@@ -1858,8 +1871,7 @@ given no register inputs, an undecodable instruction, or a walk over its
 budget (64 paths, 20,000 p-code operations) proves nothing, and so does an
 "entry" whose first instruction calls itself, the placeholder an unrelocated
 call in an object file leaves behind (stopping there keeps the walks of an
-object full of them cheap). The walks share one decoded copy of each
-instruction per image. Every other pair
+object full of them cheap). Every other pair
 keeps the first-register-low join, which C's truncation reads as the right
 `int`, and a genuine `long long` there still prints with its halves swapped:
 a 64-bit sum or difference, a load of both words, a product the multiply
@@ -1879,8 +1891,10 @@ read as the low word
 A caller that reads only the second register goes through the arm below
 (`build_partial_pair`), which needs more evidence about the callee and may
 still print the register as a local nothing assigns, as before. A callee
-whose bytes are not there (an import, an indirect call) is not proven, so
-both sides keep the old join.
+whose bytes are not there (an import) is not proven, and a call kuna does not
+resolve to its callee (an indirect call through a value it cannot follow, a
+MIPS PIC call to a preemptible function through its GOT slot in a shared
+object) reads no verdict, so both sides keep the old join.
 
 A declared return type needs no proof: a DWARF, library or `--assert
 prototype` 8-byte return locks the output, and the model places it in the

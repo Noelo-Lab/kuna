@@ -9471,16 +9471,20 @@ fn an_unrecovered_switch_keeps_a_pointers_register() {
 /// decompile`, compiled with gcc and clang at -O0 and -O2 beside its callee's
 /// printed C, and run against the source, callee included. On main the callee
 /// printed its halves swapped; an order-dependent join printed it right but
-/// let a caller decompiled first read its low word as the high one. (`E_self` is checked on MIPS alone: kuna drops `self`'s
-/// recursive argument on SPARC and its low word on PowerPC, as before.)
+/// let a caller decompiled first read its low word as the high one. (`E_self`
+/// is checked on MIPS alone: kuna drops `self`'s recursive argument on SPARC
+/// and its low word on PowerPC, as before.) The `-mlong-calls` build calls
+/// through a register the pipeline resolves to the callee only mid-pass, so
+/// the caller had no verdict to read.
 #[test]
 fn bejoin_evidence_reads_a_callee_pair_alike_in_every_run() {
     let sp = specs();
     let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
-    let cases: [(&str, &[&str]); 3] = [
+    let cases: [(&str, &[&str]); 4] = [
         ("bejoin_order_ppc32_O2.o", &["D_mix"]),
         ("bejoin_order_sparc32_O2.o", &["D_mix"]),
         ("bejoin_order_mips32_O2", &["D_mix", "E_self"]),
+        ("bejoin_order_mips32_O2_longcalls", &["D_mix", "E_self"]),
     ];
     for (fixture, callers) in cases {
         let bin = fixtures.join(fixture).to_str().unwrap().to_string();
@@ -9529,6 +9533,63 @@ fn bejoin_evidence_reads_a_callee_pair_alike_in_every_run() {
             }
         }
     }
+}
+
+/// gcc -Os on MIPS computes `chk`'s exit argument from `b + 1`, made in the
+/// delay slot of the branch to the RETURN (`beqz a0; addiu v1,a1,1`), so
+/// `return 0` finds `b + 1` in `$3` beside the zero in `$2`, the shape of a
+/// zero-extended `long long`. Only the path calling `exit` reads it, and a
+/// value any path reads proves nothing, so the default prints `chk` and
+/// `chk2` as `bejoin off` does; the evidence once read `chk` as returning `b +
+/// 1`. `zk`'s product, made in the same kind of delay slot beside an `abort`
+/// path that reads nothing of it, still joins in the ABI's order. The image is
+/// linked: an object file leaves `exit` unresolved. Each function is compiled
+/// with gcc and clang at -O0 and -O2 and run against the source, `exit` and
+/// `abort` recording their argument.
+#[test]
+fn a_value_only_a_no_return_path_reads_proves_nothing() {
+    let sp = specs();
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/bejoin_noreturn_mips32_Os")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let names = ["chk", "chk2", "zk"];
+    let run = |mode: &str| {
+        let (stdout, stderr, ok) =
+            run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--functions", "chk,chk2,zk", "--option", "bejoin", mode]);
+        assert!(ok, "kuna decompile-all bejoin_noreturn_mips32_Os ({mode}) failed: {stderr}");
+        stdout
+    };
+    let (evidence, off) = (run("evidence"), run("off"));
+    assert_eq!(
+        callrettype_functions(&evidence, &["chk", "chk2"]),
+        callrettype_functions(&off, &["chk", "chk2"]),
+        "a value only the exit path reads proves nothing:\n{evidence}"
+    );
+    let printed = callrettype_functions(&evidence, &names);
+    let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
+    assert_eq!(sigs.len(), names.len(), "every function prints:\n{evidence}");
+    let zk = callrettype_functions(&evidence, &["zk"]);
+    assert!(!zk.contains("CONCAT44"), "zk's product joins in the ABI's order:\n{zk}");
+    let decls: String = sigs.iter().map(|sig| format!("{sig};\n")).collect();
+    let src_text = format!(
+        "#include <stdio.h>\n\
+         #define CONCAT44(h, l) ((unsigned long long)(unsigned int)(h) << 32 | (unsigned int)(l))\n\
+         static int got;\n#define exit(v) (got = (v))\n#define abort() (got = -1)\n\
+         {decls}{printed}\n\
+         int main(void) {{\n  static const int xs[8] = {{0, 1, -1, 7, -7, 0x7fffffff, (int)0x80000000, 123456789}};\n  \
+         int bad = 0;\n  for (int i = 0; i < 8; i++)\n    for (int j = 0; j < 8; j++)\n      for (int k = 0; k < 8; k++) {{\n        \
+         int a = xs[i], b = xs[j], c = xs[k], r;\n        \
+         got = 0x5a5a; r = (int)chk(a, b, c);\n        \
+         bad += a ? got != ((c - b) ^ (a * (b + 1))) - c * (b + 1) : r != 0 || got != 0x5a5a;\n        \
+         got = 0x5a5a; r = (int)chk2(a, b, c);\n        \
+         bad += a == c ? got != (b + 1) * c : r != 0 || got != 0x5a5a;\n        \
+         got = 0x5a5a; unsigned long long w = (unsigned long long)zk(a, b, c);\n        \
+         bad += a ? got != -1 : w != (unsigned long long)(unsigned)b * (unsigned)c || got != 0x5a5a;\n      }}\n  \
+         printf(\"%d\\n\", bad);\n  return 0;\n}}\n"
+    );
+    bejoin_round_trip("bejoin_noreturn_mips32_Os", &src_text, &printed);
 }
 
 /// An `int` worked out from the high half of a 64-bit temporary leaves the low

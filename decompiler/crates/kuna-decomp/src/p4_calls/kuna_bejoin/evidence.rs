@@ -5,19 +5,23 @@
 //! callee's pair in whatever order the callee's own RETURN joins it, and the
 //! two are decided in different decompiles, in any order, in any process
 //! (`--jobs`, a narrowed run, one `kuna decompile`, a front-end session). So
-//! the driver walks the function's raw p-code once per image, before any
-//! pipeline runs, for the function itself and for every direct callee, and
-//! both seams read the same cached verdict ([`seed`]). A caller that reads
-//! only the first register of a proven callee reads the value's high word
-//! ([`build_high_read`]).
+//! the driver walks a function's raw p-code at most once per image, before any
+//! pipeline runs, and both seams read the same cached verdict ([`seed`]): the
+//! function's own and each direct callee's. A call the pipeline resolves only
+//! mid-way (a constant-propagated function pointer, a `-mlong-calls` call
+//! through a register) asks about a callee with no verdict at hand and reads
+//! it as not proven; after the pass the driver takes that verdict, and if it
+//! is proven runs the pass again with it ([`missed_proven`]). A caller that
+//! reads only the first register of a proven callee reads the value's high
+//! word ([`build_high_read`]).
 //!
-//! The walk follows every path from the entry to a RETURN, executing the
-//! p-code over symbolic values ([`Term`]): a register's value at the entry, a
-//! literal, an operation on values, or an opaque value (a load, a call's
-//! result or clobber, a partly written register). At each RETURN the model's
-//! pair must hold one of three shapes an `int` function has no reason to
-//! compute, both registers written by the function and neither read again
-//! before the RETURN:
+//! The walk follows every path from the entry to a RETURN or a call that
+//! does not return, executing the p-code over symbolic values ([`Term`]): a
+//! register's value at the entry, a literal, an operation on values, or an
+//! opaque value (a load, a call's result or clobber, a partly written
+//! register). At each RETURN the model's pair must hold one of three shapes
+//! an `int` function has no reason to compute, both registers written by the
+//! function and neither read again before the RETURN:
 //!
 //! * a sign extension: the first register is the second register's value
 //!   shifted right arithmetically by all but one of its bits, the shift (and
@@ -29,16 +33,20 @@
 //!   words (PowerPC's `mullw` beside `mulhw`), or a move out of the register
 //!   the multiply left it in (MIPS's `mflo`) -- and read by nothing.
 //!
-//! An extended value must be made on purpose: computed by the function, or
-//! another register's argument; not a literal, not the second register's own
-//! entry value, not a load, a call's result or a piece of a wider value. A
-//! call reads every argument register holding a value the function put there.
-//! A loop, an indirect jump, a tail branch to another function, an operation
-//! given no register inputs, or a walk over its budget proves nothing, and
-//! neither does an "entry" whose first instruction calls itself (the
-//! placeholder an unrelocated call in an object file leaves).
+//! "Nothing reads" counts every path, a path ending in a call that does not
+//! return included: gcc -Os hoists an error path's computation into a branch
+//! delay slot (`beqz a0; addiu v1,a1,1`), so the RETURN of `return 0` finds a
+//! value in `$3` that only the path calling `exit` reads. An extended value
+//! must be made on purpose: computed by the function, or another register's
+//! argument; not a literal, not the second register's own entry value, not a
+//! load, a call's result or a piece of a wider value. A call reads every
+//! argument register holding a value the function put there. A loop, an
+//! indirect jump, a tail branch to another function, an operation given no
+//! register inputs, or a walk over its budget proves nothing, and neither does
+//! an "entry" whose first instruction calls itself (the placeholder an
+//! unrelocated call in an object file leaves).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -78,19 +86,48 @@ impl WidePair {
     }
 }
 
+/// A function, by `(space index, entry offset)`.
+type Entry = (int4, uintb);
+
 /// What `option bejoin evidence` keeps per image: the model's pair (once
-/// looked up; `Some(None)` when the model joins first register low), every
-/// verdict taken, and every instruction the walks decoded, which callers
-/// share with their callees.
+/// looked up; `Some(None)` when the model joins first register low) and
+/// every verdict taken.
 #[derive(Default)]
 pub struct WideCache {
     pair: Option<Option<WidePair>>,
-    verdicts: HashMap<(int4, uintb), bool>,
-    insns: HashMap<(int4, u64), Rc<Insn>>,
+    map: HashMap<Entry, bool>,
 }
 
-/// How many decoded instructions [`WideCache`] keeps before it starts over.
-const MAX_CACHED_INSNS: usize = 1 << 18;
+/// One decompile's view: the model's pair, the verdicts of the function and
+/// of each callee it calls directly (or that an earlier pass of the same
+/// decompile asked about), and each callee a call asked about without one.
+pub struct WideView {
+    pub pair: WidePair,
+    verdicts: HashMap<Entry, bool>,
+    missed: std::cell::RefCell<Vec<Entry>>,
+}
+
+impl WideView {
+    fn get(&self, key: Entry) -> bool {
+        self.verdicts.get(&key).copied().unwrap_or_else(|| {
+            self.missed.borrow_mut().push(key);
+            false
+        })
+    }
+}
+
+/// The verdict for `key`, taken once per image.
+fn verdict(arch: &Architecture, map: &mut HashMap<Entry, bool>, model: &Rc<ProtoModel>, pair: &WidePair, key: Entry) -> bool {
+    if let Some(&v) = map.get(&key) {
+        return v;
+    }
+    let v = arch
+        .manage()
+        .get_space(key.0)
+        .is_some_and(|sp| proves_wide(arch, model, pair, &Address::new(Rc::clone(sp), key.1)));
+    map.insert(key, v);
+    v
+}
 
 /// A symbolic value.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -195,15 +232,22 @@ enum Dest {
     Insn(Address),
 }
 
+/// What one RETURN reached holds in the pair, with the instruction that
+/// last wrote the low register and the one that made its value.
+struct Site {
+    hi: usize,
+    lo: usize,
+    lo_writer: Option<u64>,
+    lo_made: Option<u64>,
+}
+
 /// What one decoded instruction is.
-pub struct Insn {
+struct Insn {
     len: u64,
     ops: Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>,
     /// Does it copy three or more registers into others at once (a register
     /// window's `save` or `restore`)?
     window: bool,
-    /// The spaces its varnodes lie in.
-    spaces: Vec<Rc<AddrSpace>>,
 }
 
 #[derive(Default)]
@@ -251,10 +295,11 @@ pub fn wide_pair(model: &ProtoModel, manager: &kuna_base::space::AddrSpaceManage
     Some(WidePair { hi: piece(hi), lo: piece(lo) })
 }
 
-/// Take (or reuse, per image) the verdict for the function `data` is and for
-/// every direct callee it calls, and its pair, for the RETURN and CALL seams
-/// to read. Inert unless `option bejoin` is `evidence` and the image's model
-/// joins its pair high word first.
+/// Take (or reuse, per image) the verdict for the function `data` is, for
+/// every direct callee it calls and for every callee an earlier pass of this
+/// decompile asked about, and its pair, for the RETURN and CALL seams to read.
+/// Inert unless `option bejoin` is `evidence` and the image's model joins its
+/// pair high word first.
 pub fn seed(arch: &mut Architecture, data: &mut Funcdata) {
     if arch.be_join != super::BeJoinMode::Evidence {
         return;
@@ -268,49 +313,60 @@ pub fn seed(arch: &mut Architecture, data: &mut Funcdata) {
         arch.kuna_wide = cache;
         return;
     };
-    let mut entries: Vec<Address> = vec![data.get_address().clone()];
+    let mut entries: Vec<Entry> = Vec::new();
+    let key = |a: &Address| a.get_space().map(|sp| (sp.get_index(), a.get_offset()));
+    entries.extend(key(data.get_address()));
     for i in 0..data.num_calls() {
-        let e = data.get_call_specs(i).get_entry_address().clone();
-        if !e.is_invalid() {
-            entries.push(e);
+        let entry = data.get_call_specs(i).get_entry_address();
+        if !entry.is_invalid() {
+            entries.extend(key(entry));
         }
     }
-    let mut verdicts: BTreeMap<(int4, uintb), bool> = BTreeMap::new();
-    for e in entries {
-        let Some(sp) = e.get_space() else { continue };
-        let k = (sp.get_index(), e.get_offset());
-        let v = match cache.verdicts.get(&k) {
-            Some(&v) => v,
-            None => {
-                if cache.insns.len() > MAX_CACHED_INSNS {
-                    cache.insns.clear();
-                }
-                let v = proves_wide(arch, &model, &pair, &e, &mut cache.insns);
-                cache.verdicts.insert(k, v);
-                v
-            }
-        };
-        verdicts.insert(k, v);
+    if let Some(earlier) = data.kuna_wide() {
+        entries.extend(earlier.verdicts.keys().copied());
+        entries.extend(earlier.missed.borrow().iter().copied());
+    }
+    let mut verdicts = HashMap::new();
+    for k in entries {
+        if !verdicts.contains_key(&k) {
+            verdicts.insert(k, verdict(arch, &mut cache.map, &model, &pair, k));
+        }
+    }
+    data.kuna_set_wide(WideView { pair, verdicts, missed: Default::default() });
+    arch.kuna_wide = cache;
+}
+
+/// After a pass of the pipeline: did a call ask about a callee no verdict was
+/// taken for (one the pipeline resolved an indirect call to), and is any such
+/// callee proven? Then the driver runs the pass again, and [`seed`] takes
+/// those callees' verdicts too.
+pub fn missed_proven(arch: &mut Architecture, data: &Funcdata) -> bool {
+    let Some(view) = data.kuna_wide() else { return false };
+    let missed = view.missed.borrow().clone();
+    if missed.is_empty() {
+        return false;
+    }
+    let Some(model) = arch.default_fp().cloned() else { return false };
+    let mut cache = std::mem::take(&mut arch.kuna_wide);
+    let mut any = false;
+    for k in missed {
+        any |= verdict(arch, &mut cache.map, &model, &view.pair, k);
     }
     arch.kuna_wide = cache;
-    data.kuna_set_wide_returns(pair, verdicts);
+    any
 }
 
 /// Is the function at `entry` proven to return its pair as one wide value,
-/// by the verdict the driver seeded for this decompile ([`seed`])?
+/// by the verdict the driver seeded for this decompile ([`seed`])? A callee
+/// with none is not, and is noted for [`missed_proven`].
 pub fn proven(data: &Funcdata, entry: &Address) -> bool {
-    entry.get_space().is_some_and(|sp| data.kuna_bejoin_verdict((sp.get_index(), entry.get_offset())) == Some(true))
+    let Some(sp) = entry.get_space() else { return false };
+    data.kuna_wide().is_some_and(|w| w.get((sp.get_index(), entry.get_offset())))
 }
 
 /// The walk: does every RETURN of the function at `entry` hand back one
 /// value twice a register's width in `pair` (see the module header)?
-fn proves_wide(
-    arch: &Architecture,
-    model: &Rc<ProtoModel>,
-    pair: &WidePair,
-    entry: &Address,
-    insns: &mut HashMap<(int4, u64), Rc<Insn>>,
-) -> bool {
+fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, entry: &Address) -> bool {
     let (Some(hi_key), Some(lo_key)) = (WidePair::key(&pair.hi), WidePair::key(&pair.lo)) else { return false };
     if entry.get_space().is_none_or(|s| s.get_type() != spacetype::IPTR_PROCESSOR) {
         return false;
@@ -321,7 +377,9 @@ fn proves_wide(
         hi: hi_key,
         lo: lo_key,
         terms: Terms::default(),
-        insns,
+        insns: HashMap::new(),
+        reads: Vec::new(),
+        sites: Vec::new(),
         spaces: HashMap::new(),
         args: model
             .input_opt()
@@ -357,18 +415,13 @@ fn proves_wide(
     }
     let mut todo = vec![(start, 0usize)];
     let mut paths = 1usize;
-    let mut returns = 0usize;
     while let Some((path, op)) = todo.pop() {
-        match w.run(path, op, &mut todo, &mut paths) {
-            Some(true) => returns += 1,
-            Some(false) => {}
-            None => return false,
-        }
-        if paths > MAX_PATHS {
+        if w.run(path, op, &mut todo, &mut paths).is_none() || paths > MAX_PATHS {
             return false;
         }
     }
-    returns > 0
+    let sites = std::mem::take(&mut w.sites);
+    !sites.is_empty() && sites.iter().all(|site| w.proves(site))
 }
 
 struct Walk<'a> {
@@ -377,7 +430,11 @@ struct Walk<'a> {
     hi: Key,
     lo: Key,
     terms: Terms,
-    insns: &'a mut HashMap<(int4, u64), Rc<Insn>>,
+    insns: HashMap<u64, Rc<Insn>>,
+    /// Every operand read on every path walked, a no-return path's included.
+    reads: Vec<Read>,
+    /// What each RETURN reached holds.
+    sites: Vec<Site>,
     spaces: HashMap<int4, Rc<AddrSpace>>,
     args: Vec<Key>,
     entry: Address,
@@ -397,26 +454,17 @@ fn overlaps(a: &Key, b: &Key) -> bool {
 }
 
 impl<'a> Walk<'a> {
-    /// Decode (once per image) the instruction at `at`.
+    /// Decode (once per walk) the instruction at `at`.
     fn insn(&mut self, at: &Address) -> Option<Rc<Insn>> {
-        let key = (at.get_space()?.get_index(), at.get_offset());
-        if let Some(i) = self.insns.get(&key) {
-            let i = Rc::clone(i);
-            for sp in &i.spaces {
-                self.spaces.entry(sp.get_index()).or_insert_with(|| Rc::clone(sp));
-            }
-            return Some(i);
+        if let Some(i) = self.insns.get(&at.get_offset()) {
+            return Some(Rc::clone(i));
         }
         let mut c = Collect::default();
         let len = self.arch.translate().one_instruction(&mut c, at).ok().filter(|&n| n > 0)?;
         let mut copies = 0;
-        let mut spaces: Vec<Rc<AddrSpace>> = Vec::new();
         for (opc, out, ins) in &c.ops {
             for v in out.iter().chain(ins.iter()) {
                 if let Some(sp) = v.space.as_ref() {
-                    if !spaces.iter().any(|x| Rc::ptr_eq(x, sp)) {
-                        spaces.push(Rc::clone(sp));
-                    }
                     self.spaces.entry(sp.get_index()).or_insert_with(|| Rc::clone(sp));
                 }
             }
@@ -425,8 +473,8 @@ impl<'a> Walk<'a> {
                 copies += 1;
             }
         }
-        let i = Rc::new(Insn { len: len as u64, ops: c.ops, window: copies >= 3, spaces });
-        self.insns.insert(key, Rc::clone(&i));
+        let i = Rc::new(Insn { len: len as u64, ops: c.ops, window: copies >= 3 });
+        self.insns.insert(at.get_offset(), Rc::clone(&i));
         Some(i)
     }
 
@@ -622,6 +670,7 @@ impl<'a> Walk<'a> {
                             return None;
                         }
                         if target.is_some_and(|t| crate::p4_calls::kuna_calleenoreturn::is_no_return(self.arch, &t)) {
+                            self.reads.append(&mut path.reads);
                             return Some(false);
                         }
                         for i in 0..path.regs.len() {
@@ -648,7 +697,12 @@ impl<'a> Walk<'a> {
                         }
                     }
                     OpCode::CPUI_BRANCHIND => return None,
-                    OpCode::CPUI_RETURN => return self.proves(&path).then_some(true),
+                    OpCode::CPUI_RETURN => {
+                        let site = self.site(&path)?;
+                        self.sites.push(site);
+                        self.reads.append(&mut path.reads);
+                        return Some(true);
+                    }
                     OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => {
                         let cond = if *opc == OpCode::CPUI_CBRANCH {
                             let c = self.value(&mut path, &ins[1]);
@@ -738,66 +792,72 @@ impl<'a> Walk<'a> {
         Some(Dest::Insn(a))
     }
 
-    /// Does the RETURN `path` reached hold one of the module header's shapes
-    /// in the pair?
-    fn proves(&mut self, path: &Path) -> bool {
-        if path.hi_read || path.lo_read {
-            return false;
-        }
+    /// What the RETURN `path` reached holds, when both pair registers were
+    /// written on the path and neither was read again by another instruction.
+    fn site(&mut self, path: &Path) -> Option<Site> {
         let written = |k: &Key| path.regs.iter().any(|(r, _, _)| r == k);
-        if !written(&self.hi) || !written(&self.lo) {
-            return false;
+        if path.hi_read || path.lo_read || !written(&self.hi) || !written(&self.lo) {
+            return None;
         }
         let (hi, lo) = (self.read(path, &self.hi.clone()), self.read(path, &self.lo.clone()));
-        let size = self.lo.2;
-        self.sign_extended(path, hi, lo, size) || self.zero_extended(path, hi, lo) || self.product(path, hi, lo, size)
+        let lo_writer = path.regs.iter().rev().find(|(r, _, _)| *r == self.lo).map(|r| r.2);
+        Some(Site { hi, lo, lo_writer, lo_made: path.made_at.get(&lo).copied() })
     }
 
-    fn sign_extended(&self, path: &Path, hi: usize, lo: usize, size: u32) -> bool {
+    /// Does `site` hold one of the module header's shapes, judged against the
+    /// reads of every path the walk took?
+    fn proves(&self, site: &Site) -> bool {
+        let size = self.lo.2;
+        self.sign_extended(site.hi, site.lo, size) || self.zero_extended(site.lo, site.hi) || self.product(site, size)
+    }
+
+    fn sign_extended(&self, hi: usize, lo: usize, size: u32) -> bool {
         let Term::Op(OpCode::CPUI_INT_SRIGHT, ins, _) = self.terms.get(hi) else { return false };
         if ins.len() != 2 || ins[0] != lo || self.terms.literal(ins[1]) != Some(8 * size as u64 - 1) || !self.on_purpose(lo) {
             return false;
         }
-        let Some(shift) = path
+        let shifts: Vec<u64> = self
             .reads
             .iter()
-            .find(|r| r.term == lo && r.opc == OpCode::CPUI_INT_SRIGHT && r.out == Some(hi))
+            .filter(|r| r.term == lo && r.opc == OpCode::CPUI_INT_SRIGHT && r.out == Some(hi))
             .map(|r| r.insn)
-        else {
+            .collect();
+        if shifts.is_empty() {
             return false;
-        };
-        let mut flags: Vec<usize> = path
+        }
+        let mut flags: Vec<usize> = self
             .reads
             .iter()
-            .filter(|r| r.term == lo && r.insn == shift && r.out != Some(hi))
+            .filter(|r| r.term == lo && shifts.contains(&r.insn) && r.out != Some(hi))
             .filter_map(|r| r.out)
             .collect();
         let mut k = 0;
         while k < flags.len() {
             let f = flags[k];
-            for r in path.reads.iter().filter(|r| r.term == f && r.insn == shift) {
+            for r in self.reads.iter().filter(|r| r.term == f && shifts.contains(&r.insn)) {
                 if let Some(o) = r.out.filter(|o| !flags.contains(o) && *o != hi) {
                     flags.push(o);
                 }
             }
             k += 1;
         }
-        path.reads.iter().all(|r| {
+        self.reads.iter().all(|r| {
             if r.term == lo {
-                r.insn == shift && r.opc != OpCode::CPUI_CALL && r.opc != OpCode::CPUI_CALLIND
+                shifts.contains(&r.insn) && r.opc != OpCode::CPUI_CALL && r.opc != OpCode::CPUI_CALLIND
             } else if flags.contains(&r.term) {
-                r.insn == shift
+                shifts.contains(&r.insn)
             } else {
                 true
             }
         })
     }
 
-    fn zero_extended(&self, path: &Path, hi: usize, lo: usize) -> bool {
-        self.terms.literal(hi) == Some(0) && self.on_purpose(lo) && !path.reads.iter().any(|r| r.term == lo)
+    fn zero_extended(&self, lo: usize, hi: usize) -> bool {
+        self.terms.literal(hi) == Some(0) && self.on_purpose(lo) && !self.reads.iter().any(|r| r.term == lo)
     }
 
-    fn product(&self, path: &Path, hi: usize, lo: usize, size: u32) -> bool {
+    fn product(&self, site: &Site, size: u32) -> bool {
+        let (hi, lo) = (site.hi, site.lo);
         let Some(wide) = self.high_half_of(hi, size) else { return false };
         let Term::Op(OpCode::CPUI_INT_MULT, ins, _) = self.terms.get(wide) else { return false };
         let factor = |t: usize| match self.terms.get(t) {
@@ -808,15 +868,16 @@ impl<'a> Walk<'a> {
         let own = match self.terms.get(lo) {
             Term::Op(OpCode::CPUI_INT_MULT, l, s) => *s == size && l.len() == 2 && ((l[0] == a && l[1] == b) || (l[0] == b && l[1] == a)),
             Term::Op(OpCode::CPUI_SUBPIECE, l, _) => {
-                l.len() == 2 && l[0] == wide && self.terms.literal(l[1]) == Some(0) && {
-                    let writer = path.regs.iter().rev().find(|(r, _, _)| *r == self.lo).map(|r| r.2);
-                    let made = path.made_at.get(&lo).copied();
-                    writer.is_some() && made.is_some() && writer != made
-                }
+                l.len() == 2
+                    && l[0] == wide
+                    && self.terms.literal(l[1]) == Some(0)
+                    && site.lo_writer.is_some()
+                    && site.lo_made.is_some()
+                    && site.lo_writer != site.lo_made
             }
             _ => false,
         };
-        own && !path.reads.iter().any(|r| r.term == lo)
+        own && !self.reads.iter().any(|r| r.term == lo)
     }
 
     /// The wide value `t` is the high `size` bytes of.
@@ -879,7 +940,7 @@ pub(crate) fn build_high_read(fc: &mut FuncCallSpecs, data: &mut Funcdata, trial
     if !proven(data, &entry) {
         return false;
     }
-    let Some(pair) = data.kuna_bejoin_pair().cloned() else { return false };
+    let Some(pair) = data.kuna_wide().map(|w| w.pair.clone()) else { return false };
     let ((hi_addr, hi_size), (lo_addr, lo_size)) = (pair.hi, pair.lo);
     let within = hi_addr.justified_contain(hi_size, raddr, rsize, false);
     if within < 0 {

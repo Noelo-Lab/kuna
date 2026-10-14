@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2900,
-    2900
+    2917,
+    2917
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1825,6 +1825,23 @@
     "data:bejoin mips #2: no join puts the low product first",
     "data:bejoin mips #3: realeof and both return the bool in $2",
     "data:bejoin mips #4: nothing is shifted into the high word",
+    "data:bejoin-evidence #1: the default joins wide_mul's mulhw word (r3) high",
+    "data:bejoin-evidence #1b: only off puts the low product first",
+    "data:bejoin-evidence #2: the default returns widen's argument sign-extended",
+    "data:bejoin-evidence #2b: only off shifts widen's sign into the low word",
+    "data:bejoin-evidence #3: the default returns zsum's sum zero-extended",
+    "data:bejoin-evidence #3b: only off shifts zsum's sum into the high word",
+    "data:bejoin-evidence #4: the declared sum64 joins r3 high in both passes",
+    "data:bejoin-evidence #5: sum_hi keeps r3 low in both passes, which truncates to its int",
+    "data:bejoin-evidence #6: clr's loaded r4 keeps the old join in both passes",
+    "data:bejoin-evidence-armeb #1: umull's halves keep r0 low in both passes, which truncates to mulhi's int",
+    "data:bejoin-evidence-armeb #2: the default returns uwiden's argument zero-extended",
+    "data:bejoin-evidence-armeb #2b: only off shifts uwiden's argument into the high word",
+    "data:bejoin-evidence-sparc #1: the default returns both arguments whole",
+    "data:bejoin-evidence-sparc #1b: the default widens to int8 and uint8",
+    "data:bejoin-evidence-sparc #2: only off shifts widen's sign into the low word",
+    "data:bejoin-evidence-sparc #2b: only off shifts uwiden's argument into the high word",
+    "data:bejoin-evidence-sparc #3: shi keeps %o0 low in both passes, which truncates to its int",
     "data:bejoin-sparc #1: wide_mul returns the 64-bit product, high word in o0",
     "data:bejoin-sparc #2: bound keeps its value in the low half, which its int4 return keeps",
     "data:bejoin-sparc #3: bound returns int4",
