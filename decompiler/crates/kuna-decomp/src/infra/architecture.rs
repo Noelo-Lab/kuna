@@ -1811,8 +1811,9 @@ pub struct Architecture {
     /// byte-identical. Real-ELF/PE/Mach-O path only ⇒ the XML datatest oracle is
     /// structurally untouched.
     pub analysis_funcstart_patterns: bool,
-    /// Opt-in validated ARM/Thumb frame recovery, requiring funcstart_patterns.
+    /// Validated A32 inventory frames; full recovery also admits Thumb and xrefs.
     pub analysis_armframes: bool,
+    pub analysis_armframes_full: bool,
     /// (kuna) Widen the ARM Cortex-M hardware vector-table signature
     /// (`cortexmvectors`); default **off** (output-changing: it discovers more
     /// functions). The shipped signature confirms a table only when it starts a
@@ -2976,7 +2977,8 @@ impl Architecture {
             analysis_pdatainterior: false,
             analysis_pdbinterior: false,
             analysis_funcstart_patterns: false,
-            analysis_armframes: false,
+            analysis_armframes: true,
+            analysis_armframes_full: false,
             analysis_cortexmvectors: false,
             analysis_ptrentry: false,
             analysis_poolentry: false,
@@ -3368,7 +3370,8 @@ impl Architecture {
         // (kuna) PDB-procedure-interior entry suppression — default-ON.
         self.analysis_pdbinterior = true;
         self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
-        self.analysis_armframes = false;
+        self.analysis_armframes = true;
+        self.analysis_armframes_full = false;
         self.analysis_cortexmvectors = false; // (kuna) widened Cortex-M vector signature default-off (output-changing)
         self.analysis_ptrentry = false; // (kuna) pointer-referenced ARM entries default-off (output-changing)
         self.analysis_poolentry = false; // (kuna) ARM literal-pool inference default-off

@@ -5507,6 +5507,14 @@ Mode correction also runs with AIF disabled
 (`decompiler/crates/kuna-analysis/src/listing/kuna_framemode.rs`).
 
 Frame recovery retains its original validation records across reconciliation.
+When `aifpoolslide` is enabled, frame-prefix reconciliation uses the same literal
+word evidence as the ordinary AIF gap pass, including loads from validated frame
+bodies before any prefix is considered. An accepted prefix on a referenced pool
+word moves to the code after the pool. Its retained decode records exclude the
+pool instructions, so neither their register writes nor their calls can supply
+frame evidence. If the corrected address is already a frame root, that root
+keeps its place; reconciliation never replaces an entry with itself
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_framepool.rs`).
 A prefix pass reuses frame validity and claimed spans, and retains accepted prefix
 bodies directly from the gap scan instead of validating them again. An unchanged
 root set and unchanged fingerprint acceptance thresholds reuse the prior scan;
@@ -5572,8 +5580,18 @@ late root replacement or contradicted frame mode rebuilds the reference walk. Di
 disabling `aif` does not. Recovery remains heuristic and bounded: frames with other
 prologues, undecodable paths or uncorroborated flow escapes can remain undiscovered.
 
-The extra coverage can substantially increase query cost, which is why frame
-recovery is explicitly opt-in. On a 400,556-byte stripped ARM BusyBox ELF,
+The `inventory` value is the default: it validates A32 frame starts in the
+function inventory while retaining the existing Thumb-only inventory path.
+The `on` value also validates Thumb frames and expands independent reference
+walks; `off` restores the prior discovery path. The same function-start and
+Listing prerequisites still apply. In the optimized DecBench U-Boot pilot,
+full frame recovery adds 770 listed bodies and loses none; the corresponding
+Betaflight pilot exchanges one gained body for one lost body. Default recovery
+therefore targets A32 inventory roots. Short callbacks and vector-only handlers
+remain separate discovery sources.
+
+Full reference expansion can substantially increase query cost. In a historical
+measurement on a 400,556-byte stripped ARM BusyBox ELF,
 `xrefs --to puts --kind call` initially reached 2,271 instructions; frame
 recovery expanded the walk to about 74,000. The recovered query found 70 call
 references instead of 43 and took roughly twice as long. Disabling `aif` with

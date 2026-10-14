@@ -893,7 +893,15 @@ kuna_options! { self, p1;
         on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
     },
     "armframes" => {
-        on_off!(analysis_armframes, "Validated ARM/Thumb frame recovery")
+        let (inventory, full) = if p1 == "inventory" {
+            (true, false)
+        } else {
+            let on = on_or_off(p1)?;
+            (on, on)
+        };
+        self.analysis_armframes = inventory;
+        self.analysis_armframes_full = full;
+        Ok(format!("Validated ARM frame recovery set to {p1}"))
     },
     "cortexmvectors" => {
         on_off!(analysis_cortexmvectors, "Widened ARM Cortex-M vector-table signature")

@@ -120,6 +120,7 @@ pub(crate) mod kuna_frameretain;
 mod kuna_armprologue;
 mod kuna_framecalls;
 mod kuna_framecache;
+mod kuna_framepool;
 mod kuna_thumbframes;
 pub(crate) use kuna_framecache::ArmFrames;
 pub mod kuna_ptrentry;
@@ -913,9 +914,13 @@ fn aif_candidates(
     let GapWalk { strict: aifstrict, corroborate: aifcorroborate, bracket, noppad, poolslide } = policy;
     let bracket = bracket.filter(|_| roots.is_none());
     let mut padding = (noppad && roots.is_none()).then(|| kuna_aifnoppad::PaddingRuns::new(decoder));
-    let mut literals = poolslide.filter(|_| roots.is_none()).map(|(arch, code_space)| {
-        kuna_aifpoolslide::LiteralWords::from_listing(listing, kuna_poolentry::DecodeMode { arch, code_space })
-    });
+    let mut literals = if roots.is_some() {
+        kuna_framepool::literals(listing, decoder, frames, poolslide)
+    } else {
+        poolslide.map(|(arch, code_space)| {
+            kuna_aifpoolslide::LiteralWords::from_listing(listing, kuna_poolentry::DecodeMode { arch, code_space })
+        })
+    };
     if corpus.function_count() < MINIMUM_FUNCTION_COUNT || corpus.num_instructions() == 0 {
         return Vec::new();
     }
@@ -1016,7 +1021,8 @@ fn aif_candidates(
                         _ => gap_start,
                     };
                     if let Some(bodies) = &mut bodies {
-                        bodies.insert(entry, body.iter().map(|&at| (at, decoder.recorded(at))).collect());
+                        bodies.insert(entry, body.iter().copied().filter(|&at| at >= entry)
+                            .map(|at| (at, decoder.recorded(at))).collect());
                     }
                     if decoder.straight_line.is_some() {
                         let reached: Vec<u64> = body.iter().filter_map(|&at| decoder.probe(at))
@@ -1237,8 +1243,8 @@ pub(crate) fn raw_arm_frames(
     }
 
     if arch.analysis_aif && !accepted.is_empty() && listing.function_count() >= MINIMUM_FUNCTION_COUNT {
-        let replacements = frames.reconcile(listing, listing, &mut decoder, &accepted, &[],
-            arch.analysis_aifstrict, arch.analysis_aifcorroborate);
+        let policy = kuna_framepool::policy(arch, Rc::clone(&decoder.code_space));
+        let replacements = frames.reconcile(listing, listing, &mut decoder, &accepted, &[], policy);
         accepted.retain(|root| !replacements.contains_key(root));
         accepted.extend(replacements.values().copied());
         frames.replaced = replacements;
@@ -1272,8 +1278,8 @@ pub(crate) fn arm_frame_prefixes(
     let mut decoder = GapDecoder::new(translate, code_space, listing.exec_ranges());
     decoder.frame_probe = true;
     decoder.prologue_starts = Some(Rc::new(roots.clone()));
-    frames.reconcile(listing, corpus, &mut decoder, roots, focused,
-        arch.analysis_aifstrict, arch.analysis_aifcorroborate)
+    let policy = kuna_framepool::policy(arch, Rc::clone(&decoder.code_space));
+    frames.reconcile(listing, corpus, &mut decoder, roots, focused, policy)
 }
 
 fn reconcile_frame_prefixes(
@@ -1282,16 +1288,14 @@ fn reconcile_frame_prefixes(
     decoder: &mut GapDecoder,
     roots: &BTreeSet<u64>,
     mut claimed: BTreeMap<u64, u32>,
-    strict: bool,
-    corroborate: bool,
+    policy: GapWalk<'_>,
     bodies: &mut BTreeMap<u64, ProbedBody>,
 ) -> BTreeMap<u64, u64> {
     let mut accepted = roots.clone();
     let mut replacements = BTreeMap::new();
-    let policy = GapWalk { strict, corroborate, bracket: None, noppad: false, poolslide: None };
     let prefixes = aif_candidates(listing, corpus, decoder, policy, &claimed, Some(roots), Some(bodies));
     for prefix in prefixes {
-        if !listing.is_undefined(prefix) {
+        if !listing.is_undefined(prefix) || roots.contains(&prefix) {
             continue;
         }
         if claimed.range(..=prefix).next_back()

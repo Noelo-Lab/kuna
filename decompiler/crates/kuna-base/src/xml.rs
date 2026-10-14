@@ -2083,7 +2083,8 @@ mod tests {
         // and kuna-declorder / locals print in natural number order
         // and kuna-elfmain-named / an executable's own `main` gets the C runtime's
         // declaration, as far as its own analysis recovers its parameters
-        assert_eq!(count, 542, "corpus file count drifted");
+        // and kuna-arm-frame-inventory / validated A32 frames join the default inventory
+        assert_eq!(count, 543, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

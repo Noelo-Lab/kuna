@@ -116,8 +116,7 @@ impl ArmFrames {
         decoder: &mut GapDecoder,
         roots: &BTreeSet<u64>,
         focused: &[u64],
-        strict: bool,
-        corroborate: bool,
+        policy: GapWalk<'_>,
     ) -> BTreeMap<u64, u64> {
         let histogram: BTreeMap<_, _> = build_fingerprint_histogram(corpus, decoder)
             .into_iter()
@@ -125,7 +124,7 @@ impl ArmFrames {
             .map(|(fp, count)| {
                 (
                     fp,
-                    if corroborate && count >= kuna_aifcorroborate::UNCORROBORATED_THRESHOLD {
+                    if policy.corroborate && count >= kuna_aifcorroborate::UNCORROBORATED_THRESHOLD {
                         kuna_aifcorroborate::UNCORROBORATED_THRESHOLD
                     } else {
                         FINGERPRINT_THRESHOLD
@@ -152,23 +151,24 @@ impl ArmFrames {
             let mut claimed = BTreeMap::new();
             let mut validated = BTreeSet::new();
             for &root in roots {
-                let body = self.bodies.entry(root).or_insert_with(|| {
+                if !self.bodies.contains_key(&root) {
                     let gap_hi = listing
                         .next_instruction_start_after(root)
                         .unwrap_or(u64::MAX);
-                    check_valid_subroutine_strict(decoder, listing, root, root, gap_hi).map(
-                        |body| {
-                            body.into_iter()
-                                .map(|at| (at, decoder.probe(at).unwrap().len))
-                                .collect()
-                        },
-                    )
-                });
-                if let Some(body) = body {
+                    if let Some(body) = check_valid_subroutine_strict(decoder, listing, root, root, gap_hi) {
+                        let spans = body.into_iter()
+                            .map(|at| (at, decoder.probe(at).unwrap().len)).collect();
+                        self.validated(root, spans, decoder);
+                    } else {
+                        self.bodies.insert(root, None);
+                    }
+                }
+                if let Some(body) = &self.bodies[&root] {
                     validated.insert(root);
                     claimed.extend(body.iter().copied());
                 }
             }
+            decoder.frame_instructions = Some(Rc::clone(&self.instructions));
             let mut probed = BTreeMap::new();
             let replacements = reconcile_frame_prefixes(
                 listing,
@@ -176,8 +176,7 @@ impl ArmFrames {
                 decoder,
                 &validated,
                 claimed,
-                strict,
-                corroborate,
+                policy,
                 &mut probed,
             );
             let mut instructions = BTreeMap::new();

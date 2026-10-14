@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2900,
-    2900
+    2906,
+    2906
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -49,6 +49,12 @@
     "data:ARM-FLOAT-ARGS #1: off retains the integer-typed VFP bits",
     "data:ARM-FLOAT-ARGS #2: on recovers the floating width and core input",
     "data:ARM-FLOAT-ARGS #3: the variadic destination keeps the source values",
+    "data:ARM-FRAME-INVENTORY #1: the disconnected frame is added only by default recovery",
+    "data:ARM-FRAME-INVENTORY #2: the prior tail target survives both passes",
+    "data:ARM-FRAME-INVENTORY #3: the literal-guarded caller begins at its own address",
+    "data:ARM-FRAME-INVENTORY #4: the literal guard preserves the incoming value",
+    "data:ARM-FRAME-INVENTORY #5: disabling the guard reproduces the literal entry",
+    "data:ARM-FRAME-INVENTORY #6: disabling the guard clobbers the incoming value",
     "data:ARMFUNCMODE #1: off, and for a size-0 symbol, arm_helper decodes as Thumb",
     "data:ARMFUNCMODE #2: arm_helper decodes as A32 in the four other passes",
     "data:ARMFUNCMODE #3: the A32 body appears in the four other passes",
@@ -910,8 +916,8 @@
     "data:KUNA-CATALOG #10: fast whole-project discovery is default-off but live-toggleable",
     "data:KUNA-CATALOG #11: mapped ELF x86 flow recovery is default-on in P2",
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
-    "data:KUNA-CATALOG #13: validated ARM frames are default-off",
-    "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
+    "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
+    "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
     "data:KUNA-CATALOG #15: 303 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",

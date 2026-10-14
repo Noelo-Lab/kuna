@@ -564,6 +564,7 @@ Three tiers:
 | functions after nop padding missing in a stripped binary | [`funcstart_patterns`](#funcstart_patterns) |
 | a push rbx; mov rbx,rdi prologue never discovered as a function start | [`funcstart_patterns`](#funcstart_patterns) |
 | code-bearing gaps between discovered functions left undefined | [`funcstart_patterns`](#funcstart_patterns) |
+| a stripped a32 firmware omits disconnected functions | [`armframes`](#armframes) |
 | stripped arm xref queries omit calls from disconnected stack frames | [`armframes`](#armframes) |
 | an arm caller is assigned to an interior prologue | [`armframes`](#armframes) |
 | arm interworking frame discovery leaves stale call references | [`armframes`](#armframes) |
@@ -2343,13 +2344,13 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-funcstart-patterns
 - **Example:** `--option funcstart_patterns on`
 
-### `armframes` -- on | off, default `off`
+### `armframes` -- inventory | on | off, default `inventory`
 
-- **Symptoms:** stripped arm xref queries omit calls from disconnected stack frames; an arm caller is assigned to an interior prologue; arm interworking frame discovery leaves stale call references.
-- **What it does:** Recover validated LR-saving ARM/Thumb frame entries in undefined executable code, share them between the Listing and reference queries, and reconcile AIF-supported prefixes and contradicted ISA modes. The inventory keeps every entry the option-off pipeline reports unless the frame-expanded Listing contradicts it, and runs the Thumb-only scan when no frame validates. Requires funcstart_patterns on; Listing inventory recovery also requires listing on. Default-off because recovering disconnected code can substantially increase whole-image query work. Off retains the existing Thumb-only inventory scan and reference discovery.
-- **When to flip:** Enable when a stripped ARM ELF omits callers reachable only through indirect calls, reports no call references from an unreferenced frame, or assigns a call to an interior prologue. Use --option funcstart_patterns on --option armframes on. Recovery validates full bodies and may decode much more code: one 400 KB stripped ARM BusyBox query grew from about 2,000 initial instructions to 74,000 and took about twice as long, while finding 70 puts callers instead of 43. Keep off for the shipped query speed.
+- **Symptoms:** a stripped a32 firmware omits disconnected functions; stripped arm xref queries omit calls from disconnected stack frames; an arm caller is assigned to an interior prologue; arm interworking frame discovery leaves stale call references.
+- **What it does:** Recover validated LR-saving A32 frame entries in undefined executable code for the function inventory by default. The inventory value requires listing and funcstart_patterns and retains the prior inventory unless the expanded partition refutes an entry. On additionally validates Thumb frames and expands independent ARM reference queries; off retains the existing Thumb-only inventory scan and reference discovery. Frame-prefix reconciliation applies aifpoolslide literal evidence from the original Listing and validated frames, preserving the incoming value flow after a loaded pool word. Full recovery remains explicit because disconnected Thumb code can change gap discovery and independent query expansion can substantially increase work.
+- **When to flip:** Use inventory (default) to recover stripped A32 routines reachable only from disconnected frames or new fingerprint evidence. Use --option funcstart_patterns on --option armframes on for full ARM/Thumb and reference-query recovery. Full reference recovery historically expanded a 400 KB ARM BusyBox query from about 2,000 to 74,000 instructions and roughly doubled its time; use off to restore the prior inventory.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-arm-frame-recovery
-- **Example:** `--option funcstart_patterns on --option armframes on`
+- **Example:** `--option armframes inventory`
 
 ### `cortexmvectors` -- on | off, default `off`
 
