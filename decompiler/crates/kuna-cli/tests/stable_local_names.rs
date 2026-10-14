@@ -409,6 +409,18 @@ fn an_address_only_local_takes_its_retype() {
     }
 }
 
+/// A DWARF-named local takes a rename and a retype on both surfaces: the
+/// console re-seeded the DWARF local over the Symbol the directive had
+/// renamed, so the text surface kept printing `n`.
+#[test]
+fn a_dwarf_local_takes_its_rename_and_retype() {
+    let fixture = "castsign_dwarf_gcc_O0_x86_64";
+    for (directive, decl) in [("name n count", "  unsigned long count;"), ("type n long count", "  long count;")] {
+        let code = decompile_in(fixture, "sign_of", &[], &[directive]);
+        assert!(code.contains(decl), "{directive}:\n{code}");
+    }
+}
+
 /// A local cannot take a C keyword or a type's name: `name v6 int` used to
 /// print `int int;`.
 #[test]

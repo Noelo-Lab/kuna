@@ -914,7 +914,11 @@ touched it refused, with the reason (`verify_printed` on the in-process path;
 the console prints `Rejected <command>: <reason>` at the next `print C`), and
 `kuna decompile` says the C was produced without it. A retype that changes the
 width, which can leave the old declaration in place, is now reported this way
-instead of `applied`.
+instead of `applied`. The check also showed the console dropping every rename
+of a DWARF local: `kuna-console/src/ifacedecomp.rs (IfcDecompile)` re-seeded the
+function's DWARF locals after the Symbols it carried, at the same storage, and
+the DWARF name won; it now re-seeds only the DWARF locals the previous decompile
+did not map.
 
 **A new name must be one the declaration can print.**
 `kuna-console/src/kuna_hightarget.rs (check_local_name)` rejects a `name`, or

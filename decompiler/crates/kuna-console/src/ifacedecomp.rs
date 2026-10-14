@@ -2155,6 +2155,11 @@ decomp_command!(
         let command_seq = status.command_seq;
         // Read the per-function values + take the program out so the engine work
         // borrows neither `status` nor `dcp` while the console output is written.
+        let mapped_before: Vec<kuna_base::address::Address> = dcp_mut(status)?
+            .fd
+            .as_ref()
+            .map(|fd| fd.mapped_symbol_specs().into_iter().map(|(_, _, addr, _)| addr).collect())
+            .unwrap_or_default();
         let (name, has_no_code, proc_started, entry, size, mut mapped_symbols, usepoint_symbols, dynamic_symbols, object_assertions, pending_proto, all_pending_protos, mut prog) = {
             let dcp = dcp_mut(status)?;
             let (name, has_no_code, proc_started, entry, size, mapped_symbols, usepoint_symbols, dynamic_symbols, object_assertions) = match &dcp.fd {
@@ -2204,7 +2209,11 @@ decomp_command!(
         // datatest path (which parks none). A function-local `map addr` the user set
         // by hand still wins: `seed_mapped_symbols` skips an address already mapped
         // (`add_symbol`'s overlap arm), and the hand-mapped symbols come first.
-        mapped_symbols.extend(prog.dwarf_locals_for(entry.get_offset()));
+        // A DWARF local the previous decompile already mapped stays as a
+        // directive left it: carried as a Symbol, or as a name and type.
+        mapped_symbols.extend(
+            prog.dwarf_locals_for(entry.get_offset()).into_iter().filter(|(_, _, addr, _)| !mapped_before.contains(addr)),
+        );
         // Re-park every parsed callee prototype on its global FunctionSymbol so the
         // pipeline's `ActionDefaultParams` copies the locked callee proto into the
         // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).
