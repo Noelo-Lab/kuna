@@ -391,6 +391,14 @@ pub trait MergeContext: HighContext {
 
     /// (kuna) `option tiedphitrim`: [`crate::p6_variables::kuna_tiedphitrim`].
     fn kuna_tied_phi_trim(&self) -> bool;
+    /// (kuna) [`crate::kuna_stablenames::same_variable`].
+    fn kuna_same_prior_variable(&self, _a: HighVariableId, _b: HighVariableId) -> Option<bool> {
+        None
+    }
+    /// (kuna) [`crate::kuna_stablenames::variable_groups`].
+    fn kuna_prior_variable_groups(&self, _highs: &[HighVariableId]) -> Vec<Vec<HighVariableId>> {
+        Vec::new()
+    }
     /// (kuna) [`crate::p6_variables::kuna_pointeevalue::load_crosses_write`].
     fn vn_loads_across_write(&self, _vn: VarnodeId) -> bool {
         false
@@ -651,10 +659,14 @@ impl Merge {
             return false;
         }
 
+        let prior = ctx.kuna_same_prior_variable(high_out, high_in);
+        if prior == Some(false) {
+            return false;
+        }
         // Make sure variables have the same type.
         let t_out = ctx.high_get_type(high_out);
         let t_in = ctx.high_get_type(high_in);
-        if !std::rc::Rc::ptr_eq(&t_out, &t_in) {
+        if !std::rc::Rc::ptr_eq(&t_out, &t_in) && prior.is_none() {
             return false;
         }
 
@@ -1356,6 +1368,7 @@ impl Merge {
         for &h in &highlist {
             ctx.bank_clear_mark(h);
         }
+        let gathered = highlist.clone();
 
         // Group by exact type (Rc identity) preserving order; each group -> mergeLinear.
         let mut remaining: std::collections::VecDeque<HighVariableId> = highlist.into_iter().collect();
@@ -1372,6 +1385,9 @@ impl Merge {
                 }
             }
             remaining = rest;
+            self.merge_linear(ctx, &mut highvec)?;
+        }
+        for mut highvec in ctx.kuna_prior_variable_groups(&gathered) {
             self.merge_linear(ctx, &mut highvec)?;
         }
         Ok(())
@@ -1394,10 +1410,12 @@ impl Merge {
             let ct = ctx.op_output_type_local(op);
             let ni = ctx.op_num_input(op);
             for i in 0..ni {
-                if !std::rc::Rc::ptr_eq(&ct, &ctx.op_input_type_local(op, i)) {
+                let vn2 = ctx.op_in(op, i);
+                if !std::rc::Rc::ptr_eq(&ct, &ctx.op_input_type_local(op, i))
+                    && vn2.and_then(|vn2| ctx.vn_high(vn2)).and_then(|h| ctx.kuna_same_prior_variable(high_out, h)) != Some(true)
+                {
                     continue; // Only merge if types should be the same
                 }
-                let vn2 = ctx.op_in(op, i);
                 if !Self::merge_test_basic(ctx, vn2) {
                     continue;
                 }

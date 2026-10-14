@@ -235,3 +235,127 @@ fn a_retype_that_changes_merging_keeps_every_number() {
     let plain = declared(&decompile(&[]));
     assert_eq!(declared(&decompile(&["type v8 unsigned long"])), plain);
 }
+
+/// Retyping leaves the C as it was apart from the retyped declaration
+/// (`decl`: as retyped, as printed before) and the `casts` at its uses.
+fn retypes_only_in(
+    fixture: &str,
+    function: &str,
+    directives: &[&str],
+    renames: &[(&str, &str)],
+    decl: (&str, &str),
+    casts: &[&str],
+) {
+    let plain = decompile_in(fixture, function, &[], &[]);
+    let retyped = decompile_in(fixture, function, &[], directives);
+    assert!(retyped.contains(decl.0), "{directives:?}:\n{retyped}");
+    let uncast = |code: &str| casts.iter().fold(code.to_string(), |code, cast| code.replace(cast, ""));
+    assert_eq!(
+        lines_renamed(&uncast(&retyped.replacen(decl.0, decl.1, 1)), renames),
+        lines_renamed(&uncast(&plain), &[]),
+        "{directives:?} changed more than the declaration and its casts:\n{plain}\n---\n{retyped}"
+    );
+}
+
+/// A retype that keeps a local's width types the whole printed variable:
+/// `type v5 unsigned long` used to split `v5`'s `rax` part off as a new
+/// `v14`, `type v13 long` merged `v12` and `v5` differently and added a
+/// `v14`, and in `handle_intel` `type v6 unsigned long` and `type v9 int` each
+/// added a `v11`.
+#[test]
+fn a_same_width_retype_types_the_whole_variable() {
+    retypes_only_in(
+        "stablenames_x86_64",
+        "mix",
+        &["type v5 unsigned long"],
+        &[],
+        ("  unsigned long v5;", "  long v5;"),
+        &["(unsigned long)", "(long)"],
+    );
+    retypes_only_in("stablenames_x86_64", "mix", &["type v13 long"], &[], ("  long v13;", "  unsigned long v13;"), &[]);
+    retypes_only_in("stablenames_x86_64", "mix", &["type v8 unsigned long"], &[], ("  unsigned long v8;", "  long v8;"), &[]);
+    let function = "handle_intel.constprop.0";
+    retypes_only_in("mcount_x86_64", function, &["type v6 unsigned long"], &[], ("  unsigned long v6;", "  long v6;"), &[]);
+    retypes_only_in("mcount_x86_64", function, &["type v9 int"], &[], ("  int v9;", "  unsigned int v9;"), &["(unsigned int)"]);
+}
+
+/// The page's order: name a local, then retype it under the new name.
+#[test]
+fn a_rename_then_a_retype_types_the_whole_variable() {
+    retypes_only_in(
+        "stablenames_x86_64",
+        "mix",
+        &["name v5 hash", "type hash unsigned long hash"],
+        &[("hash", "v5")],
+        ("  unsigned long hash;", "  long hash;"),
+        &["(unsigned long)", "(long)"],
+    );
+}
+
+/// The console carries a retype across every later decompile, also once the
+/// retyped local is renamed.
+#[test]
+fn console_retypes_survive_later_decompiles() {
+    let script = "load function mix\ndecompile\nprint C\nretype v5 unsigned long\ndecompile\nprint C\n\
+                  decompile\nprint C\nrename v5 hash\ndecompile\nprint C";
+    let out = console(script);
+    let printed: Vec<String> = out
+        .split(" mix(")
+        .skip(1)
+        .map(|block| format!(" mix({}", block.find("\n}\n").map_or(block, |end| &block[..end + 2])))
+        .collect();
+    assert_eq!(printed.len(), 4, "{out}");
+    let uncast = |code: &str| code.replace("(uint8)", "").replace("(int8)", "");
+    let plain = lines_renamed(&uncast(&printed[0]), &[]);
+    for (code, decl, renames) in [
+        (&printed[1], "  uint8 v5;", &[][..]),
+        (&printed[2], "  uint8 v5;", &[][..]),
+        (&printed[3], "  uint8 hash;", &[("hash", "v5")][..]),
+    ] {
+        assert!(code.contains(decl), "{decl}:\n{code}");
+        let code = uncast(&code.replacen(decl, &decl.replace("uint8", "int8"), 1));
+        assert_eq!(lines_renamed(&code, renames), plain, "{decl}:\n{}\n---\n{code}", printed[0]);
+    }
+}
+
+/// A retype to a pointer to a structure still drives type inference, which
+/// is what prints the fields read through it.
+#[test]
+fn a_structure_pointer_retype_prints_fields() {
+    let fixture = "globalpointee_gcc_O2_x86_64";
+    let typedef = "typedef struct rec { int a; short b; short pad; long x; long y; int c; } rec;";
+    let code = decompile_in(fixture, "r_rec", &[], &[typedef, "type v3 rec *"]);
+    assert!(code.contains("  rec *v3;") && code.contains("v1 = v3->b;"), "{code}");
+    assert_eq!(declared(&code), declared(&decompile_in(fixture, "r_rec", &[], &[])));
+}
+
+/// Such a retype types every definition of the variable: `name_len`'s `v1`
+/// holds either call's result, and the type used to reach only one of them,
+/// splitting the other off as `char *v2`.
+#[test]
+fn a_structure_pointer_retype_keeps_the_variable_whole() {
+    let fixture = "callrettype_gcc_O2_x86_64";
+    let typedef = "typedef struct S { long f0; long f1; } S;";
+    let code = decompile_in(fixture, "name_len", &[], &[typedef, "type v1 S *"]);
+    assert_eq!(declared(&code), declared(&decompile_in(fixture, "name_len", &[], &[])), "{code}");
+    assert_eq!(code.matches("v1 = (S *)").count(), 2, "{code}");
+}
+
+/// A local cannot take a C keyword or a type's name: `name v6 int` used to
+/// print `int int;`.
+#[test]
+fn a_keyword_or_type_name_is_refused() {
+    let binary = common::fixture("stablenames_x86_64");
+    for (directive, reason) in [
+        ("name v6 int", "`int` is a C keyword"),
+        ("name v6 uint4", "`uint4` names a type"),
+        ("type v6 unsigned int while", "`while` is a C keyword"),
+    ] {
+        let (text, stderr, code) = common::run_kuna(&["decompile", binary.as_str(), "mix", "--assert", directive]);
+        assert_eq!(code, 0, "{directive}: {stderr}");
+        assert!(stderr.contains("rejected") && stderr.contains(reason), "{directive}: {stderr}");
+        assert!(text.contains(" v6;"), "{directive}:\n{text}");
+    }
+    let out = console("load function mix\ndecompile\nrename v6 int\nretype v6 unsigned int while");
+    assert!(out.contains("`int` is a C keyword") && out.contains("`while` is a C keyword"), "{out}");
+}

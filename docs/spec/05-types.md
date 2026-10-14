@@ -353,7 +353,11 @@ stack-frame Varnodes (`propagate_ref`), which is what turns "pointer typed as
 `mystruct *`" into "stack local declared `mystruct`". The pass opens by
 committing any pending stack-symbol type recommendations
 (`decompiler/crates/kuna-decomp/src/p6_variables/funcdata_spacebase.rs
-(apply_type_recommendations)`).
+(apply_type_recommendations)`), then type-locks a replayed `type` directive's
+structure, union, array, function or relative pointer on every Varnode the
+previous decompile printed under the retyped name
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stablenames.rs
+(lock_retyped)`, chapter 06), so each of them is a seed and a wall.
 
 **The bounded pass count.** The wrapper
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs

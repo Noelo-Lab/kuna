@@ -245,6 +245,31 @@ fn a_rename_names_the_whole_variable() {
     }
 }
 
+/// A retype that keeps a local's width types the whole printed variable:
+/// `type v2 unsigned int count` used to leave `v2`'s other definitions behind
+/// as a new `unsigned int v15`. Only the declaration and the casts at its uses
+/// change, whether the page retypes it alone or renames it first.
+#[test]
+fn a_same_width_retype_types_the_whole_variable() {
+    let uncast = |lines: Vec<String>| -> Vec<String> {
+        let mut out: Vec<String> = lines
+            .into_iter()
+            .map(|line| line.replace("(unsigned int)", "").replace("(int)", "").replace("  unsigned int v2;", "  int v2;"))
+            .collect();
+        out.sort();
+        out
+    };
+    let plain = uncast(inspected_lines("long.elf", "main", &[], &[]));
+    for asserts in [
+        &["type main::v2 unsigned int count"][..],
+        &["type main::v2 unsigned int"][..],
+        &["name main::v2 count", "type main::count unsigned int count"][..],
+    ] {
+        let retyped = uncast(inspected_lines("long.elf", "main", asserts, &[("count", "v2")]));
+        assert_eq!(retyped, plain, "{asserts:?}");
+    }
+}
+
 /// A `bytes` overlay is what every later read of the image sees.
 #[test]
 fn a_byte_patch_reaches_read_and_the_listing() {

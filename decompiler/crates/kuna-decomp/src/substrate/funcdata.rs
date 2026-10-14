@@ -149,6 +149,11 @@ pub struct DirectiveSymbol {
     /// storage, width and analysis-local high identity. The identity is used only
     /// within the batch; replay continues to use the scoped definition witness.
     pub bound: Option<(Address, int4, crate::context::HighVariableId)>,
+    /// Did a `type` directive in the batch retype it.
+    pub retyped: bool,
+    /// The type a `type` directive gave the whole printed variable, when it keeps
+    /// the variable's width and kind (`kuna_stablenames::retypes_as_unit`).
+    pub unit_type: Option<std::rc::Rc<crate::dtype::Datatype>>,
 }
 
 pub struct Funcdata {
@@ -958,6 +963,19 @@ impl Funcdata {
             return;
         }
         self.kuna_directive_symbols.push(entry);
+    }
+
+    /// (kuna `--assert`) Record that a `type` directive retyped `symbol`, and
+    /// the unit type it gave the printed variable, if any.
+    pub fn kuna_set_directive_retype(
+        &mut self,
+        symbol: crate::database::SymbolId,
+        unit_type: Option<std::rc::Rc<crate::dtype::Datatype>>,
+    ) {
+        if let Some(entry) = self.kuna_directive_symbols.iter_mut().find(|d| d.symbol == symbol) {
+            entry.retyped = true;
+            entry.unit_type = unit_type;
+        }
     }
 
     /// (kuna `--assert`) The previous decompile's default numbering to keep.

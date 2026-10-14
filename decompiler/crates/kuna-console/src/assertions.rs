@@ -1194,16 +1194,17 @@ pub fn carried_dynamic_symbols(fd: &Funcdata) -> Vec<kuna_decomp::database::Dyna
     specs
 }
 
-/// The names a `name` directive gave without stating a type
-/// (`kuna_stablenames::is_name_only`). They travel to the next decompile as
-/// names (`kuna_stablenames::carry`), not as Symbols: a Symbol mapped over one
-/// definition of a merged variable split it on the next decompile, and a type
-/// lock retyped it.
+/// The Symbols of the directives carried as names (`kuna_stablenames::
+/// is_carried_as_name`): a `name` that states no type, and a `type` that keeps
+/// the printed variable's width and kind. They travel to the next decompile as
+/// names and types (`kuna_stablenames::carry`), not as Symbols: a Symbol mapped
+/// over one definition of a merged variable split it on the next decompile, and
+/// a type lock retyped what it did not cover.
 fn name_only_renames(fd: &Funcdata) -> Vec<String> {
     let Some(lm) = fd.get_scope_local() else { return Vec::new() };
     fd.kuna_directive_symbols()
         .iter()
-        .filter(|d| kuna_decomp::kuna_stablenames::is_name_only(fd, d.symbol))
+        .filter(|d| kuna_decomp::kuna_stablenames::is_carried_as_name(fd, d.symbol))
         .map(|d| lm.database().symbol(d.symbol).name.clone())
         .collect()
 }

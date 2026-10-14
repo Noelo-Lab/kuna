@@ -15,7 +15,9 @@
 //! A `name` with no type maps an unlocked Symbol only so later directives in
 //! the batch can find the variable; the rebuild carries the rename as a name
 //! instead (`kuna_stablenames`), since a Symbol over one definition of a merged
-//! variable split it and its type lock retyped it.
+//! variable split it and its type lock retyped it. A `type` that keeps the
+//! variable's width and kind travels the same way, as the type of the whole
+//! variable.
 //!
 //! # The usepoint is load-bearing
 //!
@@ -198,18 +200,26 @@ pub fn apply_local(
     retype: Option<Rc<Datatype>>,
     maxduplicates: u32,
 ) -> Result<(), String> {
+    if newname != name {
+        check_local_name(fd, newname)?;
+    }
     if kuna_decomp::kuna_stackobjectasserts::apply(fd, name, newname, retype.clone())? {
         return Ok(());
     }
     let sym = match resolve_local(fd, name, retype.is_none().then_some(newname), maxduplicates)? {
         LocalTarget::Printed(target) => {
             let lock_type = retype.is_some();
+            let unit_type = retype
+                .clone()
+                .filter(|ct| kuna_decomp::kuna_stablenames::retypes_as_unit(&target.dtype, ct));
             let ct = retype.unwrap_or_else(|| target.dtype.clone());
             let symbol = bind_printed_local(fd, &target, newname, ct, lock_type)?;
             fd.kuna_record_directive_symbol(DirectiveSymbol {
                 symbol,
                 printed: name.to_string(),
                 bound: Some((target.addr.clone(), target.size, target.high)),
+                retyped: lock_type,
+                unit_type,
             });
             return Ok(());
         }
@@ -220,9 +230,17 @@ pub fn apply_local(
         .iter()
         .find(|d| d.symbol == sym)
         .and_then(|d| d.bound.as_ref().map(|(_, size, _)| *size));
+    let unit_type = fd
+        .get_scope_local()
+        .filter(|lm| lm.symbol_category(sym) != symbol_category::FUNCTION_PARAMETER)
+        .and_then(|lm| lm.database().symbol(sym).dtype.clone())
+        .zip(retype.clone())
+        .filter(|(from, to)| kuna_decomp::kuna_stablenames::retypes_as_unit(from, to))
+        .map(|(_, to)| to);
     if let (Some(size), Some(ct)) = (bound_size, retype.as_ref()) {
         check_width(size, ct)?;
     }
+    let retype_given = retype.is_some();
     let parameter = crate::kuna_paramasserts::prepare(fd, sym, retype.as_ref())?;
     // A parameter's storage is model-derived; locking its name or type locks the
     // input side of the prototype too (C++ `IfcRename`/`IfcRetype`).
@@ -268,7 +286,10 @@ pub fn apply_local(
     if let Some(parameter) = parameter {
         crate::kuna_paramasserts::apply(fd, sym, parameter);
     }
-    fd.kuna_record_directive_symbol(DirectiveSymbol { symbol: sym, printed: current, bound: None });
+    fd.kuna_record_directive_symbol(DirectiveSymbol { symbol: sym, printed: current, bound: None, retyped: false, unit_type: None });
+    if retype_given {
+        fd.kuna_set_directive_retype(sym, unit_type);
+    }
     Ok(())
 }
 
@@ -368,6 +389,36 @@ fn dynamic_target(
         return Err("Unable to identify the selected variable uniquely for replay".to_string());
     }
     Ok(PrintedLocal { high, addr, size, usepoint, dtype, dynamic_hash: Some(hash) })
+}
+
+/// The words C reserves, which no declaration can use as a variable's name.
+const C_KEYWORDS: &[&str] = &[
+    "alignas", "alignof", "auto", "bool", "break", "case", "char", "const", "constexpr", "continue",
+    "default", "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if",
+    "inline", "int", "long", "nullptr", "register", "restrict", "return", "short", "signed",
+    "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true", "typedef",
+    "typeof", "typeof_unqual", "union", "unsigned", "void", "volatile", "while", "_Alignas",
+    "_Alignof", "_Atomic", "_BitInt", "_Bool", "_Complex", "_Decimal128", "_Decimal32",
+    "_Decimal64", "_Generic", "_Imaginary", "_Noreturn", "_Static_assert", "_Thread_local",
+];
+
+/// Refuse a new local name the declaration could not print as a name: a C
+/// keyword (`int int;`) or a type the program knows by that name.
+fn check_local_name(fd: &Funcdata, newname: &str) -> Result<(), String> {
+    if newname.is_empty() {
+        return Ok(());
+    }
+    if C_KEYWORDS.contains(&newname) {
+        return Err(format!("`{newname}` is a C keyword, not a usable local name"));
+    }
+    let is_type = fd
+        .get_arch()
+        .types()
+        .is_some_and(|types| types.find_by_name(newname).ok().flatten().is_some());
+    if is_type {
+        return Err(format!("`{newname}` names a type, not a usable local name"));
+    }
+    Ok(())
 }
 
 /// A Symbol covers `ct.get_size()` bytes from the storage address, so a type

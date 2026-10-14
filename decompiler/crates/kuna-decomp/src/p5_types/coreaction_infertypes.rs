@@ -1928,6 +1928,7 @@ pub fn run_infer_types(data: &mut Funcdata) -> bool {
     // input-Varnode type recommendations (the `this`-pointer collection is the
     // merged tree's only source; a no-op on a recommendation-free function).
     data.apply_type_recommendations();
+    crate::kuna_stablenames::lock_retyped(data);
     crate::kuna_charbyte::begin(data);
     build_localtypes(data);
     propagate_all(data);

@@ -823,9 +823,58 @@ its naming pass `kuna_stablenames.rs (rename_targets)` gives the new name to the
 local holding most of the renamed variable's instances, through the same paths
 a callee's parameter name takes (a Symbol the analysis rebuilt takes it in place
 of a number, `varmap.rs (ScopeLocal::default_symbol_name)`), and its number
-stays unused. A `type` directive still maps a locked Symbol and may split or
-merge, as a retype legitimately changes the analysis. Renaming only names, so
-this is unconditional.
+stays unused. Renaming only names, so this is unconditional.
+
+**A retype that keeps the width types the whole variable.** A `type` directive
+mapped the same type-locked, isolated Symbol, so it split a merged variable the
+same way, and the lock's type spread through copies into other locals. In the
+same fixture `type v5 unsigned long` turned `long v5; // r9 | rax | rdi | rsi`
+into `unsigned long v5; // r9 | rdi | rsi` plus a new `unsigned long v14; //
+rax`, and `type v8 unsigned long` retyped `v2` as well and moved `v5`'s `rax`
+into it. A retype that keeps the printed variable's width and kind
+(`kuna_stablenames.rs (retypes_as_unit)`: an integer, `bool` or enumeration to
+another of the same width, a float to a float, a pointer to a pointer) now types
+the variable as one unit, whether it is a register local or a stack local's
+Symbol. `kuna-console/src/kuna_hightarget.rs (apply_local)` records the type on
+the batch's directive, which is carried as a name rather than a Symbol,
+`kuna_stablenames.rs (carry)` hands the type on under the name the first
+decompile printed, and the next decompile's naming pass gives it to
+the local holding most of the variable's instances (`retype_targets`), locking
+it on every instance after the merge and before the casts are placed
+(`coreaction_cleanup.rs (retype_whole_variable)`). Nothing reaches the
+analysis, so the merge is the first decompile's, and only the declaration and
+the casts at the variable's uses change: `v7 < v5` becomes `v7 < (long)v5`.
+
+The exception is a pointer whose pointee the analysis reads through: a
+structure, union, array or function, or a relative pointer
+(`kuna_stablenames.rs (drives_inference)`). Type inference is what turns the
+offsets read through it into fields, elements and calls, so that type has to
+reach the analysis. `kuna_stablenames.rs (lock_retyped)` locks it, at the start
+of every type inference (`p5_types/coreaction_infertypes.rs (run_infer_types)`),
+on each varnode that the keys above match to the retyped variable: every part
+of the variable is read through the type, and the parts still agree when the
+merge compares their types, where a Symbol over the representative typed one
+part and left the rest to inference (a part defined by `malloc`'s `void *`
+return kept its own type and split off). Inference still carries the type into
+the variable's copies, as it carries any type, and the speculative merges
+compare types, so a changed type could join two locals or part one. Under such
+a retype the merge therefore follows the first decompile's variables wherever
+the keys say what they were: `kuna_stablenames.rs (same_variable)`, asked by
+`merge.rs (merge_test_adjacent)` and `merge_adjacent`, refuses to join highs
+whose instances belonged to different locals and lets highs that belonged to
+one local join whatever their types, and `kuna_stablenames.rs
+(variable_groups)` hands `merge_by_datatype` the parts of each local that its
+grouping by type kept apart. A high with no matched instance merges by the
+usual rules. A retype that changes the width or the kind
+still maps the locked, isolated Symbol and may split or merge, since it changes
+what the analysis reads. A run without a `type` directive is unchanged, as are
+the datatests and the stages, and this corrects what a directive reaches, so it
+is unconditional.
+
+**A new name must be one the declaration can print.**
+`kuna-console/src/kuna_hightarget.rs (check_local_name)` rejects a `name`, or
+the name a `type` states, that is a C keyword or a type the program knows by
+that name (`uint4`, an asserted `typedef`): `name v6 int` printed `int int;`.
 
 Two recommendation paths share a name on purpose. A name recommendation
 recorded for a storage location names every high at that storage alike, as the

@@ -499,11 +499,18 @@ including a `typedef` you asserted earlier in the same run.
 **`name`/`type` reach the register locals, not just the stack ones.** A local
 kuna prints with a storage comment — `unsigned long v6; // rax` — has no symbol
 behind it; naming one used to answer `No symbol named: v6` no matter how it was
-spelled. It now resolves. A `type` maps a locked symbol over that variable's
-storage at its use point, and the second pass types it there. A `name` alone
-changes nothing but the name: the second pass finds the variable by its
-instances and names all of it, so a merged register local is never split, re-
-merged with a neighbour or retyped by being renamed.
+spelled. It now resolves. A `name` alone changes nothing but the name: the second pass
+finds the variable by its instances and names all of it, so a merged register
+local is never split, re-merged with a neighbour or retyped by being renamed.
+A `type` that keeps the variable's width and kind (an integer to an integer, a
+float to a float, a pointer to a pointer) types the whole variable the same
+way: only its declaration and the casts at its uses change. A pointer to a
+structure, union, array or function also reaches type inference, on every part
+of the variable, so its fields print and its type can reach the variable's
+copies. A `type` that changes the
+width maps a locked symbol over the variable's storage at its use point, and
+can split or merge the variable. A new name that is a C keyword or a type's
+name (`name v6 int`, `name v6 uint4`) is `rejected`.
 
 ```bash
 kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'
