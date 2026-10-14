@@ -2294,6 +2294,224 @@ mod w10_printc_cast_render {
     }
 
     #[test]
+    fn integer_facing_truncations_read_the_declared_float_bits() {
+        for size in [4, 8] {
+            let manage = build_manager();
+            let mut context = ContextArch::new(manage);
+            let types = Rc::new(crate::dtype::TypeFactoryImpl::new());
+            types.set_max_basetype_size(8);
+            types.set_default_alignment_map();
+            types.set_size_of_int(4);
+            types.set_size_of_float(4);
+            types.set_size_of_long_long(8);
+            types.set_size_of_double(8);
+            context.types = Some(types);
+            let space = Rc::clone(context.manage().get_space_by_name("ram").unwrap());
+            let mut fd = Funcdata::new(
+                "func",
+                "func",
+                Rc::new(context),
+                Address::new(Rc::clone(&space), 0x1000),
+                0x1000,
+                0x40,
+            )
+            .unwrap();
+            let source = fd.new_varnode(
+                size,
+                &Address::new(Rc::clone(&space), 0x400),
+                Some(named("word", size, type_metatype::TYPE_UINT)),
+            );
+            let float = fd.new_varnode(
+                size,
+                &Address::new(Rc::clone(&space), 0x408),
+                Some(named(
+                    if size == 4 { "float" } else { "double" },
+                    size,
+                    type_metatype::TYPE_FLOAT,
+                )),
+            );
+            let op = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_SUBPIECE);
+            fd.op_set_input(op, source, 0).unwrap();
+            let offset = fd.new_constant(4, 0);
+            fd.op_set_input(op, offset, 1).unwrap();
+            let output = fd.new_varnode(
+                2,
+                &Address::new(space, 0x410),
+                Some(named("short", 2, type_metatype::TYPE_INT)),
+            );
+            fd.op_set_output(op, output).unwrap();
+            fd.set_high_level();
+            let first = fd.vbank().get(source).unwrap().get_high().unwrap();
+            let second = fd.vbank().get(float).unwrap().get_high().unwrap();
+            let mut writes = Vec::new();
+            fd.with_high_split(|bank, ctx| {
+                bank.merge_internal(first, second, false, ctx, &mut |vn, high, group| {
+                    writes.push((vn, high, group))
+                })
+            })
+            .unwrap();
+            for (vn, high, group) in writes {
+                fd.vbank_mut().get_mut(vn).unwrap().set_high(high, group);
+            }
+            fd.high_bank_mut()
+                .get_mut(first)
+                .unwrap()
+                .set_kuna_name("workspace");
+            assert_eq!(
+                fd.vn_type_read_facing(source, op).get_metatype(),
+                type_metatype::TYPE_UINT
+            );
+            assert_eq!(
+                super::super::declared_variable_type(&fd, true, source)
+                    .unwrap()
+                    .get_metatype(),
+                type_metatype::TYPE_FLOAT
+            );
+            let mut arch = bare_arch();
+            arch.decl_high_type = true;
+            assert!(crate::kuna_bitcast::truncated_float_storage(&fd, true, op).is_some());
+            for lang in ["c", "rust"] {
+                let mut printer = PrintC::new();
+                printer.set_name(lang);
+                printer.set_output_stream();
+                printer.op_push_ir(&fd, &arch, op, None);
+                let text = printer.emit_mut().output_str();
+                if lang == "c" {
+                    let expected = format!(
+                        "(short)((union {{ {} from; {} to; }}){{ .from = workspace }}).to",
+                        if size == 4 { "float" } else { "double" },
+                        if size == 4 { "unsigned int" } else { "unsigned long long" }
+                    );
+                    assert_eq!(text, expected);
+                    let float = if size == 4 { "float" } else { "double" };
+                    let word = if size == 4 {
+                        "unsigned int"
+                    } else {
+                        "unsigned long long"
+                    };
+                    let program = format!("#include <string.h>\nshort extract({float} workspace) {{ return {text}; }}\nint main(void) {{ {word} samples[]={{511,8183,16350,32768,65535}}; for(unsigned i=0;i<5;++i) {{ {float} workspace; memcpy(&workspace,&samples[i],sizeof workspace); int want=(int)(samples[i]&65535); if(want>=32768) want-=65536; if(extract(workspace)!=want) return 1; }} return 0; }}\n");
+                    for compiler in ["gcc", "clang"] {
+                        if std::process::Command::new(compiler)
+                            .arg("--version")
+                            .output()
+                            .is_err()
+                        {
+                            continue;
+                        }
+                        for optimization in ["-O0", "-O2"] {
+                            let nonce = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_nanos();
+                            let file = std::env::temp_dir()
+                                .join(format!("kuna-float-trunc-{}-{nonce}.c", std::process::id()));
+                            let executable = file.with_extension("exe");
+                            std::fs::write(&file, &program).unwrap();
+                            let built = std::process::Command::new(compiler)
+                                .args(["-std=c11", "-Wall", "-Wextra", "-Werror", optimization])
+                                .arg(&file)
+                                .arg("-o")
+                                .arg(&executable)
+                                .output()
+                                .unwrap();
+                            assert!(
+                                built.status.success(),
+                                "{compiler} {optimization}: {}",
+                                String::from_utf8_lossy(&built.stderr)
+                            );
+                            assert!(
+                                std::process::Command::new(&executable)
+                                    .status()
+                                    .unwrap()
+                                    .success(),
+                                "{compiler} {optimization} size {size}: {text}"
+                            );
+                            std::fs::remove_file(file).unwrap();
+                            std::fs::remove_file(executable).unwrap();
+                        }
+                    }
+                } else {
+                    assert!(text.contains(".to_bits()"), "{text}");
+                    assert_eq!(text.matches("workspace").count(), 1, "{text}");
+                }
+            }
+            let offset = fd.new_constant(4, 1);
+            fd.op_set_input(op, offset, 1).unwrap();
+            let mut printer = PrintC::new();
+            printer.set_output_stream();
+            printer.op_push_ir(&fd, &arch, op, None);
+            let text = printer.emit_mut().output_str();
+            assert!(text.starts_with("SUB"), "{text}");
+            assert!(!text.contains("union"), "{text}");
+            let zero = fd.new_constant(4, 0);
+            fd.op_set_input(op, zero, 1).unwrap();
+            fd.vbank_mut().get_mut(source).unwrap().update_type(named(
+                "float",
+                size,
+                type_metatype::TYPE_FLOAT,
+            ));
+            let integer = fd.vbank_mut().get_mut(float).unwrap();
+            integer.update_type(named("word", size, type_metatype::TYPE_UINT));
+            integer.set_flags_pub(crate::varnode::varnode_flags::typelock);
+            assert_eq!(
+                super::super::declared_variable_type(&fd, true, source)
+                    .unwrap()
+                    .get_metatype(),
+                type_metatype::TYPE_UINT
+            );
+            let mut printer = PrintC::new();
+            printer.set_output_stream();
+            printer.op_push_ir(&fd, &arch, op, None);
+            let text = printer.emit_mut().output_str();
+            assert!(text.starts_with("SUB"), "{text}");
+            assert!(!text.contains("union"), "{text}");
+        }
+    }
+
+    #[test]
+    fn integer_storage_view_overrides_a_float_declaration() {
+        let mut context = ContextArch::new(build_manager());
+        context.stack_views = true;
+        let types = Rc::new(crate::dtype::TypeFactoryImpl::new());
+        types.set_size_of_int(4);
+        types.set_size_of_float(4);
+        context.types = Some(Rc::clone(&types));
+        let space = Rc::clone(context.manage().get_space_by_name("ram").unwrap());
+        let mut fd = Funcdata::new("func", "func", Rc::new(context), Address::new(Rc::clone(&space), 0x1000), 0x1000, 0x40).unwrap();
+        let source = fd.new_varnode(4, &Address::new(Rc::clone(&space), 0x400), Some(named("float", 4, type_metatype::TYPE_FLOAT)));
+        let op = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_SUBPIECE);
+        fd.op_set_input(op, source, 0).unwrap();
+        let offset = fd.new_constant(4, 0);
+        fd.op_set_input(op, offset, 1).unwrap();
+        let output = fd.new_varnode(2, &Address::new(space, 0x410), Some(named("short", 2, type_metatype::TYPE_INT)));
+        fd.op_set_output(op, output).unwrap();
+        let mut backing = Datatype::new_with_align(4, 4, type_metatype::TYPE_UNION);
+        backing.name = "stack_views_test".to_owned();
+        backing.display_name = backing.name.clone();
+        backing.id = Datatype::hash_name(&backing.name);
+        backing.flags |= crate::dtype::flags::needs_resolution;
+        backing.kind = crate::dtype::DatatypeKind::Union { field: vec![
+            crate::dtype::TypeField::new(0, 0, "word", named("unsigned int", 4, type_metatype::TYPE_UINT)),
+            crate::dtype::TypeField::new(1, 0, "floating", named("float", 4, type_metatype::TYPE_FLOAT)),
+        ] };
+        let backing = Rc::new(backing);
+        fd.set_high_level();
+        let high = fd.vbank().get(source).unwrap().get_high().unwrap();
+        let named = fd.high_bank_mut().get_mut(high).unwrap();
+        named.set_kuna_name("workspace");
+        named.set_symbol_type(Rc::clone(&backing));
+        named.set_symbol_offset(0);
+        let resolution = crate::unionresolve::ResolvedUnion::new_field(Rc::clone(&backing), 0, types.as_ref()).unwrap();
+        fd.set_union_field(&backing, op, 0, resolution);
+        assert_eq!(super::super::declared_variable_type(&fd, true, source).unwrap().get_metatype(), type_metatype::TYPE_FLOAT);
+        assert_eq!(crate::kuna_stackviews::access_type(&fd, source, op, 0).unwrap().get_metatype(), type_metatype::TYPE_UINT);
+        let mut printer = PrintC::new();
+        printer.set_output_stream();
+        printer.op_push_ir(&fd, &bare_arch(), op, None);
+        assert_eq!(printer.emit_mut().output_str(), "(short)workspace.word");
+    }
+
+    #[test]
     fn only_a_cast_reinterprets_float_bits_even_with_cast_printing_disabled() {
         for opcode in [OpCode::CPUI_CAST, OpCode::CPUI_COPY] {
             for size in [4, 8] {

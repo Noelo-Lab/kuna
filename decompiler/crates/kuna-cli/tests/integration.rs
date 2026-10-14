@@ -415,3 +415,5 @@ mod call_outparam_snapshot;
 mod global_load_call_order;
 #[path = "integer_float_rounding.rs"]
 mod integer_float_rounding;
+#[path = "float_storage_truncation.rs"]
+mod float_storage_truncation;
