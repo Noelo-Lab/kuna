@@ -1296,6 +1296,26 @@ function rerender(...tabs) {
 const sync = createSync();
 const isShown = (tab) => visibleTabs().includes(tab);
 
+/**
+ * Scroll `el` into its pane: to the nearest edge, or, for a pane that just
+ * came on screen (`arriving`), to its middle unless it is already in view.
+ */
+function bring(el, { arriving = false } = {}) {
+  if (!el) return;
+  if (arriving) {
+    const pane = el.closest('.d2code')?.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    if (pane && r.top >= pane.top && r.bottom <= pane.bottom) return;
+  }
+  el.scrollIntoView({ block: arriving ? 'center' : 'nearest' });
+}
+
+/** The instruction of `addrs` that comes first in the function. */
+function firstInsn(addrs) {
+  const index = state.current?.index;
+  return [...addrs].sort((a, b) => (index?.insnIndex.get(a) ?? 0) - (index?.insnIndex.get(b) ?? 0))[0];
+}
+
 /** A pane as sync sees it: which elements a target marks, and how to reveal it. */
 function markerView(elementsFor, reveal) {
   const marked = new Map();
@@ -1319,20 +1339,18 @@ sync.register('c', markerView((sets, cls, target) => {
     for (const sym of sets.syms) out.push(...els.ccode.querySelectorAll(`.t[data-sym="${CSS.escape(sym)}"]`));
   }
   return out;
-}, (target, sets) => {
+}, (target, sets, how) => {
   if (!isShown('c') || !sets.lines.size) return;
-  $('c-L' + Math.min(...sets.lines))?.scrollIntoView({ block: 'nearest' });
+  bring($('c-L' + Math.min(...sets.lines)), how);
 }));
 
 sync.register('asm', markerView((sets) => {
   const out = [];
   for (const a of sets.addrs) { const el = $('a-' + a); if (el) out.push(el); }
   return out;
-}, (target, sets) => {
+}, (target, sets, how) => {
   if (!isShown('asm') || !sets.addrs.size) return;
-  const index = state.current?.index;
-  const first = [...sets.addrs].sort((a, b) => (index?.insnIndex.get(a) ?? 0) - (index?.insnIndex.get(b) ?? 0))[0];
-  $('a-' + first)?.scrollIntoView({ block: 'nearest' });
+  bring($('a-' + firstInsn(sets.addrs)), how);
 }));
 
 sync.register('bytes', markerView((sets) => {
@@ -1344,10 +1362,10 @@ sync.register('bytes', markerView((sets) => {
     if (i !== undefined) out.push(...els.hexdump.querySelectorAll(`.hb[data-i="${i}"]`));
   }
   return out;
-}, (target, sets) => {
+}, (target, sets, how) => {
   if (!isShown('bytes') || !sets.addrs.size) return;
-  const i = state.current.index.insnIndex.get([...sets.addrs][0]);
-  els.hexdump.querySelector(`.hb[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest' });
+  const i = state.current.index.insnIndex.get(firstInsn(sets.addrs));
+  bring(els.hexdump.querySelector(`.hb[data-i="${i}"]`), how);
 }));
 
 sync.register('stack', markerView((sets) => {
@@ -1908,6 +1926,7 @@ function paneKey(e) {
 
 /** Switch the view: `c` (the code), `split` (the code beside the assembly), `asm`, `bytes` or `stack`. */
 function setView(view) {
+  const before = visibleTabs();
   state.view = view;
   updatePrefs({ view });
   const shown = visibleTabs();
@@ -1922,7 +1941,24 @@ function setView(view) {
   if (state.asmRendered && state.asmRendered !== (inSplit() ? 'split' : 'asm')) state.rendered.delete('asm');
   applyPaneClasses();
   renderVisible();
+  if (state.current) {
+    const place = followTarget();
+    for (const tab of shown) if (!before.includes(tab) && (tab !== 'c' || place?.addr)) sync.show(tab, place);
+  }
   collab?.whereChanged();
+}
+
+/**
+ * Where a pane that comes on screen goes: the selected instruction, the line
+ * under the code's cursor (a variable selected there), else the selection.
+ * The code pane only follows an instruction, so it never jumps to a
+ * variable's first use.
+ */
+function followTarget() {
+  const sel = state.sel;
+  if (sel?.addr) return { addr: sel.addr };
+  const row = sel?.sym && state.cursor?.isConnected ? state.cursor.closest('.d2-cl') : null;
+  return row ? { line: Number(row.dataset.line) } : sel;
 }
 const setTab = setView;
 

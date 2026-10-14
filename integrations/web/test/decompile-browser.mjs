@@ -7,9 +7,9 @@
 // the layout at 1024 and 820 px, and the Strings
 // list taking a search for "flag" to the code that uses it, kuna's notes
 // (`// branch-flip`) kept out of the code and shown for a selected line, the
-// type definitions above a function (folded until opened), and a rename far
-// down a long function keeping the view where it was. Any uncaught page
-// exception fails the run.
+// Bytes view opening at the selected line's bytes, the type definitions above
+// a function (folded until opened), and a rename far down a long function
+// keeping the view where it was. Any uncaught page exception fails the run.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 // Steps that need the engine's `inspect`/`--assert` surface assert the page's
@@ -477,6 +477,49 @@ try {
   await page.click('#strnone [data-act=strings-load]');
   await page.waitFor(`document.querySelectorAll('#strlist .str').length > 0`, { what: 'the strings again', timeout: 60000 });
   await noExceptions('Strings: search "flag", go to each use, show an unused string\'s bytes');
+
+  await setSelect('mode', 'auto');
+  await page.waitFor(`[...document.querySelectorAll('#fnlist .fn')].some((row) => row.textContent === 'main')`, { what: 'crackme in Auto', timeout: 60000 });
+  await idle('crackme in Auto');
+  await page.call(() => { [...document.querySelectorAll('#fnlist .fn')].find((row) => row.textContent === 'main').click(); return true; });
+  await page.click('#tab-c');
+  await page.waitFor(`document.getElementById('vname').textContent === 'main' && /Enter the flag/.test(document.getElementById('ccode').textContent)`, { what: 'crackme main again', timeout: 60000 });
+  await idle('crackme main for the bytes');
+  await page.viewport(1280, 400);
+  const inPane = (sel, pane) => page.call((s, p) => {
+    const el = document.querySelector(s);
+    const box = document.getElementById(p).getBoundingClientRect();
+    const r = el?.getBoundingClientRect();
+    return !!r && r.height > 0 && r.top >= box.top && r.bottom <= box.bottom;
+  }, sel, pane);
+  await page.key('3');
+  await page.call(() => { const h = document.getElementById('hexdump'); h.scrollTop = h.scrollHeight; return true; });
+  await page.key('1');
+  const [firstLine, firstAddr] = await page.call(() => {
+    const row = document.querySelector('#ccode .d2-cl[data-addrs]');
+    return [row.dataset.line, row.dataset.addrs.split(' ')[0]];
+  });
+  await page.click(`#c-L${firstLine} .ct`);
+  await page.key('3');
+  assert.ok(await count(`#hexdump .hb.hl-sel[data-a="${firstAddr}"]`) === 1, 'a line selected in the code is marked in the bytes');
+  assert.ok(await inPane(`#hexdump .hb[data-a="${firstAddr}"]`, 'hexdump'), 'and the bytes view scrolls to its first instruction');
+  await page.key('2');
+  const lastAddr = await page.call(() => [...document.querySelectorAll('#asmcode .d2-ar')].at(-1).dataset.addr);
+  await page.click(`#a-${lastAddr}`);
+  await page.click('#tab-bytes');
+  assert.ok(await inPane(`#hexdump .hb[data-a="${lastAddr}"]`, 'hexdump'), 'an instruction selected in the assembly is in view in the bytes');
+  assert.ok(await page.call((a) => document.querySelector(`#hexdump .hb[data-a="${a}"]`).classList.contains('hl-sel'), lastAddr), 'and marked');
+  await page.call(() => { document.getElementById('hexdump').scrollTop = 0; return true; });
+  await page.key('2');
+  await page.call(() => { document.getElementById('asmcode').scrollTop = 0; return true; });
+  await page.key('3');
+  assert.ok(await inPane(`#hexdump .hb[data-a="${lastAddr}"]`, 'hexdump'), 'from the keyboard too');
+  await page.click(`#hexdump .hb[data-a="${lastAddr}"]`);
+  await page.key('Escape');
+  await page.key('2');
+  assert.ok(await inPane(`#a-${lastAddr}`, 'asmcode'), 'and back in the assembly, the instruction whose byte was picked is in view');
+  await page.viewport(1280, 860);
+  await noExceptions('the Bytes view opens at the selected line or instruction, and the Assembly at a picked byte');
 
   await setSelect('mode', 'auto');
   await openSample(page, 'structs.elf');
