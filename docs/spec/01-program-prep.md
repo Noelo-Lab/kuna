@@ -4819,7 +4819,10 @@ entries 4,375 to 1,868 net and true starts +223; on the two u-boot images
 corpus and x86-64 images unchanged. The new entries are 557 true starts, 21
 mid-body entries and 128 entries on data islands in `.text` (string tables between
 functions), against 88 such entries removed: a phantom on a referenced word in
-such a table moves to the next, unreferenced word rather than disappearing.
+such a table moves to the next, unreferenced word rather than disappearing. It
+shares `poolentry`'s one disclosed split: a literal reference that resolves onto a
+function's own first word (the SPLIT shape of `cortexm_poolentry_le32`) moves that
+function's entry four bytes in; the corpus measurement above has no such case.
 
 (kuna, GH-313) Upstream applies a **second** fingerprint test that kuna's port
 dropped. Its analyzer refuses a candidate twice — once on the shared-prologue count
