@@ -688,6 +688,8 @@ pub struct Architecture {
     /// rustc one.  Read by [`crate::p4_calls::kuna_callretpair`] through the
     /// `ArchContext` handle.
     pub call_ret_pair: bool,
+    /// Recover complete ABI argument slots within wider physical register ranges.
+    pub multi_reg_args: bool,
     /// (kuna) `option bejoin`: when a two-register value joins with its high
     /// word in the first register where the ABI puts it there.  Read by
     /// [`crate::p4_calls::kuna_bejoin`] through the `ArchContext` handle.
@@ -2794,6 +2796,7 @@ impl Architecture {
             stack_addr_arg_trial: false,
             exclusive_arg_use: false, // (kuna) option exclusivearguse; reset_defaults sets the shipped default
             call_ret_pair: false, // (kuna) option callretpair; reset_defaults sets the shipped default
+            multi_reg_args: false,
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
             source_is_rust: false, // (kuna) a load-time fact; set by the console's `load file`
@@ -3161,6 +3164,7 @@ impl Architecture {
         self.stack_addr_arg_trial = false;
         self.exclusive_arg_use = true; // (kuna) DIV-PENDING default-on: a LOAD/STORE on a path that provably cannot co-execute with a call is not a competing use of the value the call is passed, so it no longer sinks the call's input trial. 0/675 byte-identical on the datatest corpus. Restore the upstream rejection with `option exclusivearguse off`
         self.call_ret_pair = true; // (kuna) DIV-162 default-on: the multi-trial arm of `FuncCallSpecs::buildOutputFromTrials` (fspec.cc:5777) shipped as a stub, so a CALL whose cspec output rule asked for a register pair got NO output and both halves rendered as locals the function never assigns. Completing it is upstream behaviour and is not language-specific -- a 16-byte aggregate return in RAX:RDX is ordinary System V C. 0/675 byte-identical on the datatest corpus. Restore the stub with `option callretpair off`
+        self.multi_reg_args = true;
         self.be_join = crate::kuna_bejoin::BeJoinMode::Evidence; // (kuna) option bejoin default `evidence` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart); `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
@@ -3907,6 +3911,7 @@ impl Architecture {
         // (kuna) carry the big-endian pair-order gate so `kuna_bejoin` reaches
         // `option bejoin` via `glb`.
         ctx.be_join = self.be_join;
+        ctx.multi_reg_args = self.multi_reg_args;
         // (kuna) carry the Rust return-ABI gate and the detected source language
         // so `kuna_rustabi` reaches both via `glb`.
         ctx.rust_abi = self.rust_abi;

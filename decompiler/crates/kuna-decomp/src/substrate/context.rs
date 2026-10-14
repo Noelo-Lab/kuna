@@ -726,6 +726,8 @@ pub struct ArchContext {
     /// a detected rustc one.  Read by
     /// [`crate::p4_calls::kuna_callretpair::live`].
     pub call_ret_pair: bool,
+    /// Recover complete ABI argument slots within wider physical register ranges.
+    pub multi_reg_args: bool,
     /// (kuna) `option bejoin`: when may a two-register value join with its
     /// high word in the first register where the ABI puts it?  Read by
     /// [`crate::p4_calls::kuna_bejoin::mode`].
@@ -1739,6 +1741,7 @@ impl ArchContext {
             // (kuna) `option bejoin`; the real value is copied from the engine
             // Architecture in `build_arch_handle`.
             be_join: crate::kuna_bejoin::BeJoinMode::Off,
+            multi_reg_args: false,
             // (kuna) `option rustabi` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,

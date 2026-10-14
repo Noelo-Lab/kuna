@@ -33,6 +33,7 @@ pub mod kuna_compareform;
 pub mod kuna_indirectanchor; // (kuna) an op inserted after a guard INDIRECT anchors to the op it speaks for
 pub mod kuna_inputtile;
 pub mod kuna_calloverlap;
+pub(crate) mod kuna_multiregargs;
 pub mod kuna_indexaliasguard;
 pub mod kuna_stackeffects;
 pub mod kuna_calleememory;
