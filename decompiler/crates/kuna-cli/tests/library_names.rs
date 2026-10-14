@@ -33,6 +33,9 @@ fn decompile_in(fixture: &str, function: &str, extra: &[&str], directives: &[&st
     let (doc, stderr, _) = common::run_kuna(&args);
     let parsed: serde_json::Value =
         serde_json::from_str(&doc).unwrap_or_else(|e| panic!("{e}: {stderr}\n{doc}"));
+    for outcome in parsed["assertions"].as_array().into_iter().flatten() {
+        assert_eq!(outcome["status"], "applied", "{directives:?}: {outcome}");
+    }
     let json = parsed
         .pointer("/functions/0/code")
         .and_then(serde_json::Value::as_str)
@@ -122,14 +125,24 @@ fn a_freed_library_name_goes_to_no_other_local() {
     assert_eq!(declared(&code), names(&["fd_2", "n", "src_fd", "v4", "v5"]), "{code}");
 }
 
-/// A retype that keeps the width names nothing anew.
+/// A retype that keeps the width names nothing anew, and is applied by the
+/// library name or the number alike.
 #[test]
 fn a_retype_of_a_library_named_local_keeps_every_name() {
-    for (directive, local) in [("type fd unsigned int", "fd"), ("type fd_2 unsigned int", "fd_2")] {
+    for (directive, local) in [
+        ("type fd unsigned int", "fd"),
+        ("type v1 unsigned int", "fd"),
+        ("type fd_2 unsigned int", "fd_2"),
+        ("type v2 unsigned int", "fd_2"),
+    ] {
         let code = decompile(&[], &[directive]);
         assert_eq!(declared(&code), names(&["fd", "fd_2", "n", "v4", "v5"]), "{directive}:\n{code}");
         assert!(code.contains(&format!("  unsigned int {local}; // ")), "{directive}:\n{code}");
     }
+    let code = decompile(&[], &["type n unsigned long"]);
+    assert!(code.contains("  unsigned long n; // rax\n"), "{code}");
+    let code = decompile(&[], &["type fd unsigned int", "name fd src"]);
+    assert!(code.contains("  unsigned int src; // ") && code.contains("  int fd_2; // "), "{code}");
 }
 
 /// A rename to a name shaped like a number is the caller's name, not a number

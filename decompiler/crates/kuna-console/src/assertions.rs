@@ -1238,9 +1238,14 @@ pub fn check_printed(
     let declared = print.declared_locals();
     let mut taken: std::collections::HashSet<kuna_decomp::context::HighVariableId> = std::collections::HashSet::new();
     let mut found: Vec<Option<(String, String)>> = vec![None; expected.len()];
+    // A local printed under its library name (`kuna_decomp::kuna_libcnames`)
+    // is declared under that name and answers to its number too.
+    let declares = |base: &str, name: &str| {
+        base == name || fd.kuna_library_aliases().iter().any(|a| a.shown && a.number == name && a.alias == base)
+    };
     for (slot, local) in expected.iter().enumerate().filter(|(_, local)| !local.parameter) {
         let target = fd.kuna_directive_targets().get(&local.printed).and_then(|&high| print.declared_local(high));
-        if let Some(decl) = target.filter(|decl| decl.base == local.name && taken.insert(decl.high)) {
+        if let Some(decl) = target.filter(|decl| declares(&decl.base, &local.name) && taken.insert(decl.high)) {
             found[slot] = Some((decl.name.clone(), decl.decl.clone()));
         }
     }
@@ -1253,7 +1258,7 @@ pub fn check_printed(
         } else {
             declared
                 .iter()
-                .find(|decl| decl.base == local.name && !taken.contains(&decl.high))
+                .find(|decl| declares(&decl.base, &local.name) && !taken.contains(&decl.high))
                 .map(|decl| {
                     taken.insert(decl.high);
                     (decl.name.clone(), decl.decl.clone())
@@ -1272,7 +1277,7 @@ pub fn check_printed(
                         decl.trim(),
                         spelled.trim()
                     ))),
-                    None => (name != local.name).then(|| {
+                    None => (name != local.name && !declares(&name, &local.name)).then(|| {
                         Shown::AppliedAs(format!(
                             "applied as `{name}`: `{}` is already another identifier here",
                             local.name
