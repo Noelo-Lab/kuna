@@ -283,7 +283,8 @@ pub fn auto_mode_for_size(size_bytes: u64) -> &'static str {
     }
 }
 
-/// Resolve an omitted or named frontend mode to a concrete preset.
+/// Resolve an omitted or named frontend mode to a concrete preset name only;
+/// the overrides to apply come from [`resolve_overrides_for_size`].
 ///
 /// Omission selects `auto`. Explicit concrete presets ignore `size_bytes`.
 /// Returns `None` for an unknown name.
@@ -321,8 +322,8 @@ pub fn mode_is_automatic(name: &str) -> bool {
 }
 
 /// The override list for a static `name`, or `None` if `name` is unknown or
-/// automatic. Frontends must resolve `auto` with [`resolve_mode_for_size`]
-/// first.
+/// automatic. A frontend applies [`resolve_overrides_for_size`] instead, which
+/// also carries `auto`'s own overrides; this list alone drops them.
 pub fn mode_overrides(name: &str) -> Option<&'static [(&'static str, &'static str)]> {
     MODE_TABLE.iter().find(|m| m.name == name && !m.automatic).map(|m| m.overrides)
 }

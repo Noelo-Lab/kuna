@@ -2873,7 +2873,9 @@ fn usage_decompile_all() {
          worker re-run whole-binary\n\
          function discovery instead of taking the parent's inventory.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
-         2 MiB, and fast at 2 MiB or larger. Explicit --option values win.\n\
+         2 MiB, and fast at 2 MiB or larger, with ctypes on at every size (an\n\
+         explicit --mode reliable keeps the int4/uint8 names). Explicit --option\n\
+         values win.\n\
          An unfiltered run that discovers no function at all exits 1 with the\n\
          reason on stderr and in the document's run-level `error` field.\n\
          \n\
