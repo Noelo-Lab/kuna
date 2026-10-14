@@ -449,7 +449,7 @@ fn conditional_parameter_escapes_keep_wider_writes_in_shared_storage() {
     common::process::required_output(
         Command::new(compiler)
             .args([
-                "-nostdlib", "-no-pie", "-Wl,--build-id=none,-Ttext=0x401000,-Tdata=0x402000,-e,_start",
+                "-nostdlib", "-no-pie", "-Wl,--build-id=none,-Ttext=0x401000,-Tdata=0x402000,-e,_start,--section-start=.note.gnu.property=0x403000",
             ])
             .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/conditional_parameter_escape.S"))
             .arg("-o")
