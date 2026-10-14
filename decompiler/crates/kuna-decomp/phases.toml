@@ -4043,6 +4043,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "globalcallstore"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "copy-propagation"
+strength = "HARD"
+rewind = "P3"
+issue = "kuna-globalcallstore"
+summary = "Refuse the RulePropagateCopy marker propagation that moves a global's write to the load it copies. A value loaded from memory (often a stack reload of an earlier global read) and stored to a global lowers to `global = COPY(LOAD)`; when the only reader of that COPY is the global's own marker -- the INDIRECT of a later call or a loop's MULTIEQUAL at the same address and width -- RulePropagateCopy rewrites the marker to read the LOAD, the COPY dies, and forced merging prints the assignment at the load. A write the binary makes after a call then prints before it (`after = v1; result = v1 / get();` where the binary calls get() first), so a callee that reads the global sees the new value in the C. ON keeps the COPY, so the write prints where the binary makes it; the LOAD keeps its own variable where `kuna_loadorder` finds it live across a store to a global. The refusal runs only at `option indexaliasguard global` (the default), the one level at which `kuna_loadorder` keeps a load ahead of such a store; at any other level a kept COPY would print its load after the store. OFF is upstream propagation."
+use_when = "On by default. The OFF symptom is a global assignment printed before a call (or loop back edge) that the binary makes after it, so the call appears to observe the new value. Flip off to compare against upstream propagation; the ON side also changes storage comments (a variable no longer lists the global it was merged into) and can split a reused register into its own variable where the store kept its COPY."
+example = "option globalcallstore off"
+source_decompiler = "kuna"
+inspiration = "GitHub PR #1074 (SPARC32 stack reload of a float global stored after a call); dash popstackmark, whose loop printed `v1 = *stackp; free(stackp);` without ever updating stackp"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a global is assigned before a call although the binary stores it after the call returns|a call that reads a global appears to see a value the caller stores only afterwards|a loop that walks a global list frees the head but never advances the global|a variable's storage comment lists a global it is only copied into"
+live_field = "global_call_store"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "intfloatround"
 values = "on|off"
 default = "on"

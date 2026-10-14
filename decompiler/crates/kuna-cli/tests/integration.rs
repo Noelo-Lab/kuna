@@ -406,5 +406,7 @@ mod common_allocation_cli;
 #[path = "call_outparam_snapshot.rs"]
 mod call_outparam_snapshot;
 
+#[path = "global_load_call_order.rs"]
+mod global_load_call_order;
 #[path = "integer_float_rounding.rs"]
 mod integer_float_rounding;

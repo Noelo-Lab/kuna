@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_302() {
-    assert_eq!(kuna_num_settables(), 302);
-    assert_eq!(SETTABLE_TABLE.len(), 302);
+fn settable_count_is_303() {
+    assert_eq!(kuna_num_settables(), 303);
+    assert_eq!(SETTABLE_TABLE.len(), 303);
 }
 
 #[test]
-fn tier_counts_are_108_core_115_transform_79_analysis() {
+fn tier_counts_are_109_core_115_transform_79_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_108_core_115_transform_79_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (108, 115, 79));
+    assert_eq!((core, transform, analysis), (109, 115, 79));
 }
 
 #[test]
@@ -815,7 +815,7 @@ fn option_values_live_value_present_for_110() {
     // 127 -> 128: +1 for `calleepopframe` (live_field = callee_pop_frame).
     // 129 -> 130: +1 for `msvcbyval` (live_field = msvc_byval).
     // 132 -> 133: +1 for `pushpadread` (live_field = push_pad_read).
-    assert_eq!(with_live, 135);
+    assert_eq!(with_live, 136);
 }
 
 #[test]
@@ -1013,7 +1013,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `bytearrayc`; its P9 row sits mid-table.
     // +2 for `wideslice` and `devectorize`.
     // +1 for `addrtakenentry`; its P1 row sits mid-table beside `thunkentry`.
-    assert_eq!(json.matches("},\n").count(), 301);
+    assert_eq!(json.matches("},\n").count(), 302);
 }
 
 #[test]

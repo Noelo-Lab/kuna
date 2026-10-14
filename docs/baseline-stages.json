@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2895,
-    2895
+    2900,
+    2900
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -912,7 +912,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 302 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 303 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -2208,6 +2208,7 @@
     "data:global array anchoring is default off",
     "data:globalloadguard #10: global keeps the store and the load between the two stores",
     "data:globalloadguard #11: a load stored to gi after a store to gj still prints ahead of it",
+    "data:globalloadguard #12: at load the pointer load still prints ahead of the store to gj",
     "data:globalloadguard #1: load drops both stores around the pointer load in the loop",
     "data:globalloadguard #2: global keeps both stores around the pointer load in the loop",
     "data:globalloadguard #3: load drops the store before the branch that loads",
@@ -2706,6 +2707,10 @@
     "data:stalejumptable #3: case 0x80 (CHECK_ORDER) on both passes",
     "data:stalejumptable #4: case 0x83 (TOTAL) on both passes",
     "data:stalejumptable #5: no pipeline failure on either pass",
+    "data:store order: division call precedes the later global write",
+    "data:store order: exactly one global write per function",
+    "data:store order: final call remains after both writes",
+    "data:store order: globalcallstore off writes the global before the call",
     "data:storealias #10: default, each read stays where the binary makes it",
     "data:storealias #11: load, the store to gi is printed after the pointer store",
     "data:storealias #12: default, the store to gi stays in front of the pointer store",

@@ -1054,6 +1054,10 @@ Three tiers:
 | call result stored to the frame but the store is missing from the emitted C so the later read looks uninitialized | [`tiedstorekeep`](#tiedstorekeep) |
 | indirect call through a stack slot that no statement ever writes | [`tiedstorekeep`](#tiedstorekeep) |
 | a stack local read after a call shows only its initialiser | [`tiedstorekeep`](#tiedstorekeep) |
+| a global is assigned before a call although the binary stores it after the call returns | [`globalcallstore`](#globalcallstore) |
+| a call that reads a global appears to see a value the caller stores only afterwards | [`globalcallstore`](#globalcallstore) |
+| a loop that walks a global list frees the head but never advances the global | [`globalcallstore`](#globalcallstore) |
+| a variable's storage comment lists a global it is only copied into | [`globalcallstore`](#globalcallstore) |
 | an int converted to float and then to double prints as a direct (double) conversion | [`intfloatround`](#intfloatround) |
 | (double)(float)i prints as (double)i | [`intfloatround`](#intfloatround) |
 | a long long converted to double and then to float prints as one (float) conversion | [`intfloatround`](#intfloatround) |
@@ -3342,6 +3346,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-105). The OFF symptom is C that says the program uses a value it never computed: a local initialised to NULL, a call whose result is assigned to a register temporary, and then an indirect call or a dereference through the still-NULL local -- `v108 = NULL; v12 = (void *)GetProcAddress(...); ... v7 = (*v108)(...);`. The dataflow underneath is correct (the CALLIND's target really is the GetProcAddress result); only the printed store is missing, which is worse than a wrong-looking expression because an analyst reads it as a null-pointer call and concludes the import is never used. Flip OFF to reproduce upstream Ghidra's propagation exactly, or to bisect whether a stack-frame variable's appearance came from this brake. Each clause of the predicate was bought by measurement, not by argument: dropping the from-a-call clause turns three upstream datatests' if/else diamonds into `?:` ternaries and degrades union field resolution (7/675 assertions move, 0/675 with it); letting it fire on `persist` globals -- which already have heritage's own RETURN-COPY keeping their last store printed -- made the `copytrim` datatest run for minutes instead of 0.16 s.
 - **Where / provenance:** P3/copy-propagation · kuna · correctness-fix · re-getprocaddress-result-discarded
 - **Example:** `option tiedstorekeep off`
+
+### `globalcallstore` -- on | off, default `on`
+
+- **Symptoms:** a global is assigned before a call although the binary stores it after the call returns; a call that reads a global appears to see a value the caller stores only afterwards; a loop that walks a global list frees the head but never advances the global; a variable's storage comment lists a global it is only copied into.
+- **What it does:** Refuse the RulePropagateCopy marker propagation that moves a global's write to the load it copies. A value loaded from memory (often a stack reload of an earlier global read) and stored to a global lowers to `global = COPY(LOAD)`; when the only reader of that COPY is the global's own marker -- the INDIRECT of a later call or a loop's MULTIEQUAL at the same address and width -- RulePropagateCopy rewrites the marker to read the LOAD, the COPY dies, and forced merging prints the assignment at the load. A write the binary makes after a call then prints before it (`after = v1; result = v1 / get();` where the binary calls get() first), so a callee that reads the global sees the new value in the C. ON keeps the COPY, so the write prints where the binary makes it; the LOAD keeps its own variable where `kuna_loadorder` finds it live across a store to a global. The refusal runs only at `option indexaliasguard global` (the default), the one level at which `kuna_loadorder` keeps a load ahead of such a store; at any other level a kept COPY would print its load after the store. OFF is upstream propagation.
+- **When to flip:** On by default. The OFF symptom is a global assignment printed before a call (or loop back edge) that the binary makes after it, so the call appears to observe the new value. Flip off to compare against upstream propagation; the ON side also changes storage comments (a variable no longer lists the global it was merged into) and can split a reused register into its own variable where the store kept its COPY.
+- **Where / provenance:** P3/copy-propagation · kuna · correctness-fix · kuna-globalcallstore
+- **Example:** `option globalcallstore off`
 
 ### `intfloatround` -- on | off, default `on`
 
