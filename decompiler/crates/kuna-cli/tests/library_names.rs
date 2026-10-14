@@ -132,6 +132,19 @@ fn a_retype_of_a_library_named_local_keeps_every_name() {
     }
 }
 
+/// A rename to a name shaped like a number is the caller's name, not a number
+/// to print a library name over: `name fd v9` prints `v9`, which the next
+/// directive reaches, and a numbered local renamed onto a library-named
+/// local's number leaves that local its library name.
+#[test]
+fn a_number_shaped_rename_is_kept() {
+    renames_only(&["name fd v9"], &[("v9", "fd")]);
+    renames_only(&["name fd v9", "name v9 x"], &[("x", "fd")]);
+    renames_only(&["name fd v9", "name fd_2 v8"], &[("v9", "fd"), ("v8", "fd_2")]);
+    renames_only(&["name v4 v1"], &[("v1", "v4")]);
+    renames_only(&["name fd v1"], &[("v1", "fd")]);
+}
+
 /// A local keeps its number whatever the mode prints, so a directive the
 /// page recorded in one mode reaches the same variable after a switch to
 /// another, by its number or by its library name.

@@ -258,6 +258,16 @@ fn a_rename_reaches_the_same_local_after_a_mode_switch() {
     }
 }
 
+/// A rename to a number-shaped name is kept: `len` renamed `v7` prints `v7`,
+/// and the next rename reaches it by that name.
+#[test]
+fn a_number_shaped_rename_of_a_library_name_is_kept() {
+    let code = check_in_mode(None, &["name len v7"]);
+    assert!(code.contains("  v7 = strlen(input);\n") && !code.contains(" len;"), "{code}");
+    let code = check_in_mode(None, &["name len v7", "name v7 size"]);
+    assert!(code.contains("  size = strlen(input);\n"), "{code}");
+}
+
 /// A rename onto `len` leaves `strlen`'s local its number `v2`, and the next
 /// rename reaches it by that number.
 #[test]

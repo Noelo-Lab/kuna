@@ -26,7 +26,9 @@
 //! ([`apply`]), so `v4` is the same variable in every mode, a directive may
 //! name the local by either name, and a replay identifies it by its number. A
 //! clash takes `_2`, `_3`, ... in the order of the evidence, and no spelling
-//! repeats a name another variable, the scope or a callee holds. Under a
+//! repeats a name another variable, the scope or a callee holds. A name a
+//! directive or the binary chose stays, even when it is shaped like a number
+//! (`name fd v9`). Under a
 //! carried naming record a local keeps the spelling it printed; a spelling a
 //! rename took or vacated is handed to no other local, and a local whose
 //! spelling a rename took prints its number.
@@ -281,10 +283,11 @@ pub fn apply(fd: &mut Funcdata, candidates: &[Candidate]) {
             continue;
         };
         let Some(index) = crate::kuna_stablenames::default_name_index(&number, angr) else { continue };
-        if out.iter().any(|a| a.number == number) {
+        if out.iter().any(|a| a.number == number) || chosen(fd, &prior, &number) {
             continue;
         }
-        let alias = match prior.aliases.get(&index) {
+        let before = crate::kuna_stablenames::best(fd, c.high).unwrap_or(index);
+        let alias = match prior.aliases.get(&before) {
             Some(before) if spells(before, c.base) => Some(before.clone()).filter(|s| free(fd, &taken, s)),
             _ => (1..)
                 .map(|k| spelling(c.base, k))
@@ -305,6 +308,17 @@ pub fn apply(fd: &mut Funcdata, candidates: &[Candidate]) {
         }
     }
     fd.set_kuna_library_aliases(out);
+}
+
+/// Did a directive or the binary choose `name`, though it is shaped like a
+/// number (`name fd v9`, a DWARF local `v1`): a rename gave it, or a
+/// name-locked Symbol of the scope holds it. Such a local keeps it.
+fn chosen(fd: &Funcdata, prior: &crate::kuna_stablenames::PriorNames, name: &str) -> bool {
+    prior.renames.values().any(|given| given == name)
+        || prior.given.contains(name)
+        || fd.get_scope_local().is_some_and(|lm| {
+            lm.query_by_name(name).into_iter().any(|sym| lm.database().symbol(sym).is_name_locked())
+        })
 }
 
 /// The name a local is printed under, translated to the number a directive

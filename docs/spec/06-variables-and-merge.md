@@ -777,8 +777,12 @@ another: `name fd src` and `name v1 src` both rename the descriptor, with the
 option on or off (off, the library names are still decided, for this lookup
 only, whenever a directive may name a local). The one exception is a library
 name an earlier directive of the batch gave to another local: that rename took
-the name, so it names that local. Under a carried naming record
-(`PriorNames::aliases`, by number) a local keeps the spelling it printed; a
+the name, so it names that local. A name a rename gave or a name-locked
+Symbol holds is the caller's or the binary's even when it is shaped like a
+number, and no library name is printed over it (`name fd v9` prints `v9`).
+Under a carried naming record (`PriorNames::aliases`, by the number the
+local's instances had) a local keeps the spelling it printed, also when a
+rename took its number; a
 spelling a rename took or vacated (`PriorNames::vacated_names`), or that
 another local printed, goes to no one else, and a local whose spelling a
 rename took prints its number. After `name fd src` the second descriptor is
