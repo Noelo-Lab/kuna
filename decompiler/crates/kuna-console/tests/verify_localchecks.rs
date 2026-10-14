@@ -1,5 +1,5 @@
 //! A `name`/`type` directive is checked against the C its replay printed
-//! (`assertions::unapplied`): a directive whose local the output does not
+//! (`assertions::check_printed`): a directive whose local the output does not
 //! declare under its name, or with its type, is reported, never `applied`.
 //!
 //! Fixture: `kuna-analysis/tests/fixtures/stablenames_x86_64`'s `mix`. The
@@ -15,6 +15,21 @@ use kuna_console::grammar::{parse_type, DataOrg};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
+}
+
+fn refusals(
+    prog: &kuna_console::engine::ConsoleProgram,
+    fd: &kuna_decomp::funcdata::Funcdata,
+    code: &str,
+    expected: &[assertions::Expected],
+) -> Vec<(usize, String)> {
+    assertions::check_printed(prog.arch(), fd, code, expected)
+        .into_iter()
+        .filter_map(|(i, shown)| match shown {
+            assertions::Shown::Refused(reason) => Some((i, reason)),
+            assertions::Shown::AppliedAs(_) => None,
+        })
+        .collect()
 }
 
 #[test]
@@ -47,14 +62,14 @@ fn a_directive_the_output_does_not_show_is_reported() {
         .expect("binds a Symbol");
     let expected = assertions::expected_locals(&fd, &[(0, renamed, None), (1, retyped, Some(float8))]);
     let code = kuna_decomp::decompile_drive::print_c(prog.arch_mut(), &fd);
-    let unapplied = assertions::unapplied(prog.arch(), &code, &expected);
+    let unapplied = refusals(&prog, &fd, &code, &expected);
     assert_eq!(unapplied.len(), 2, "{unapplied:?}");
     assert!(unapplied.contains(&(0, "nothing is declared as `hash` after it".into())), "{unapplied:?}");
-    assert!(unapplied.iter().any(|(i, reason)| *i == 1 && reason.starts_with("`v7` is still declared as")), "{unapplied:?}");
+    assert!(unapplied.iter().any(|(i, reason)| *i == 1 && reason.starts_with("`v7` is declared as")), "{unapplied:?}");
 
     let untouched = kuna_console::kuna_hightarget::apply_local(&mut fd, "v2", "v2", None, 8)
         .expect("applies")
         .expect("binds a Symbol");
     let expected = assertions::expected_locals(&fd, &[(2, untouched, None)]);
-    assert!(assertions::unapplied(prog.arch(), &code, &expected).is_empty());
+    assert!(refusals(&prog, &fd, &code, &expected).is_empty());
 }

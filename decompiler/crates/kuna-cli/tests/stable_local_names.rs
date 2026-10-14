@@ -421,6 +421,53 @@ fn a_dwarf_local_takes_its_rename_and_retype() {
     }
 }
 
+/// The `--json` outcome of each directive on `function`, after checking that
+/// the text surface exits 0 on them.
+fn outcomes(fixture: &str, function: &str, directives: &[&str]) -> (String, Vec<(String, Option<String>)>) {
+    let binary = common::fixture(fixture);
+    let mut args = vec!["decompile", binary.as_str(), function];
+    for directive in directives {
+        args.extend(["--assert", directive]);
+    }
+    let (_, stderr, code) = common::run_kuna(&args);
+    assert_eq!(code, 0, "{directives:?}: {stderr}");
+    args.push("--json");
+    let (doc, stderr, _) = common::run_kuna(&args);
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap_or_else(|e| panic!("{e}: {stderr}\n{doc}"));
+    let code = parsed.pointer("/functions/0/code").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+    let rows = parsed["assertions"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .map(|row| (row["status"].as_str().unwrap_or_default().to_string(), row["detail"].as_str().map(str::to_string)))
+                .collect()
+        })
+        .unwrap_or_default();
+    (code, rows)
+}
+
+/// A rename the printer has to suffix, because the name already belongs to
+/// another identifier (a function, a parameter, another renamed local), took
+/// effect: it is applied, and says what it was printed as. The check that
+/// reads the printed C finds the local by its declaration, so a parameter or
+/// another local that merely carries the requested name proves nothing.
+#[test]
+fn a_suffixed_rename_is_applied_as_printed() {
+    let applied_as = |name: &str| Some(format!("applied as `{name}`: `{}` is already another identifier here", name.trim_end_matches("_1")));
+    for (directive, decl, printed) in [
+        ("name v6 is_vowel", "  int is_vowel_1;", "is_vowel_1"),
+        ("name v6 mix", "  int mix_1;", "mix_1"),
+        ("name v6 a0", "  int a0_1;", "a0_1"),
+    ] {
+        let (code, rows) = outcomes("stablenames_x86_64", "mix", &[directive]);
+        assert!(code.contains(decl), "{directive}:\n{code}");
+        assert_eq!(rows, vec![("applied".to_string(), applied_as(printed))], "{directive}");
+    }
+    let (code, rows) = outcomes("stablenames_x86_64", "mix", &["name v6 dup", "name v7 dup"]);
+    assert!(code.contains("  int dup_1; // r8d") && code.contains(" dup; // r9 | rsi"), "{code}");
+    assert_eq!(rows, vec![("applied".to_string(), applied_as("dup_1")), ("applied".to_string(), None)]);
+}
+
 /// A local cannot take a C keyword or a type's name: `name v6 int` used to
 /// print `int int;`.
 #[test]

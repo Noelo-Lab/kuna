@@ -178,7 +178,7 @@ pub struct IfaceDecompData {
     /// with the Symbol each touched and the type a `retype` gave.
     pub pending_local_checks: Vec<(String, kuna_decomp::database::SymbolId, Option<std::rc::Rc<kuna_decomp::dtype::Datatype>>)>,
     /// (kuna) What the last `decompile` must print for those lines, which the
-    /// next `print C` checks (`assertions::unapplied`).
+    /// next `print C` checks (`assertions::check_printed`).
     pub printed_checks: Option<(Vec<String>, Vec<crate::assertions::Expected>)>,
 }
 
@@ -2572,11 +2572,16 @@ decomp_command!(
                 print_c(prog.arch_mut(), &fd)
             };
             dcp.fd = Some(fd);
-            let refusals: Vec<String> = match (dcp.printed_checks.take(), dcp.conf.as_ref()) {
-                (Some((lines, expected)), Some(prog)) => crate::assertions::unapplied(prog.arch(), &text, &expected)
-                    .into_iter()
-                    .map(|(i, reason)| format!("Rejected {}: {reason}\n", lines[i]))
-                    .collect(),
+            let refusals: Vec<String> = match (dcp.printed_checks.take(), dcp.conf.as_ref(), dcp.fd.as_ref()) {
+                (Some((lines, expected)), Some(prog), Some(fd)) => {
+                    crate::assertions::check_printed(prog.arch(), fd, &text, &expected)
+                        .into_iter()
+                        .filter_map(|(i, shown)| match shown {
+                            crate::assertions::Shown::Refused(reason) => Some(format!("Rejected {}: {reason}\n", lines[i])),
+                            crate::assertions::Shown::AppliedAs(_) => None,
+                        })
+                        .collect()
+                }
                 _ => Vec::new(),
             };
             (text, refusals)

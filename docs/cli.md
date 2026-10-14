@@ -515,7 +515,9 @@ can split or merge the variable. A new name that is a C keyword or a type's
 name (`name v6 int`, `name v6 uint4`) is `rejected`. A `name` or `type` whose
 local the output does not then declare under that name, or with that type, is
 reported refused (`fatal`), with the reason, never `applied`: the C came back
-without it.
+without it. A local the printer had to suffix, because the name already belongs
+to another identifier (`name v7 score` prints `score_1` when the program has a
+function `score`), is `applied`, with a detail saying what it was printed as.
 
 ```bash
 kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'

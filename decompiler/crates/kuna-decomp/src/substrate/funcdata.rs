@@ -419,6 +419,10 @@ pub struct Funcdata {
     /// The numbering the naming pass handed out, by instance identity; see
     /// `kuna_stablenames::snapshot`.
     kuna_name_snapshot: Vec<(String, crate::kuna_stablenames::Keys)>,
+    /// The local each replayed rename or retype reached, by the name the
+    /// previous decompile printed it under; see
+    /// `kuna_stablenames::directive_targets`.
+    kuna_directive_targets: std::collections::BTreeMap<String, crate::context::HighVariableId>,
     /// (kuna, ghidra Phase 4) WIRE-ONLY symbols the encode-time link pass
     /// synthesized for named HighVariables the analysis deliberately left
     /// symbol-less — see [`crate::database::WireSymbol`].  They are encoded
@@ -747,6 +751,7 @@ impl Funcdata {
             kuna_default_name_end: 1,
             kuna_record_names: false,
             kuna_name_snapshot: Vec::new(),
+            kuna_directive_targets: std::collections::BTreeMap::new(),
             kuna_wire_symbols: Vec::new(),
             kuna_wrapped_wire_storage: std::collections::BTreeMap::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
@@ -1008,6 +1013,19 @@ impl Funcdata {
     /// The numbering the naming pass recorded (empty unless asked to).
     pub fn kuna_name_snapshot(&self) -> &[(String, crate::kuna_stablenames::Keys)] {
         &self.kuna_name_snapshot
+    }
+
+    /// (kuna `--assert`) The local each replayed rename or retype reached, by
+    /// the name the previous decompile printed it under.
+    pub fn kuna_directive_targets(&self) -> &std::collections::BTreeMap<String, crate::context::HighVariableId> {
+        &self.kuna_directive_targets
+    }
+
+    pub fn set_kuna_directive_targets(
+        &mut self,
+        targets: std::collections::BTreeMap<String, crate::context::HighVariableId>,
+    ) {
+        self.kuna_directive_targets = targets;
     }
 
     pub fn set_kuna_name_snapshot(&mut self, snapshot: Vec<(String, crate::kuna_stablenames::Keys)>) {

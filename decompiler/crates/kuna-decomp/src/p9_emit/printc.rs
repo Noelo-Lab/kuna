@@ -1597,6 +1597,8 @@ pub struct PrintC {
     /// same-named unique whole owner exists. Their references are relative to
     /// their own declared object, not the overlap group's synthetic symbol.
     local_name_standalones: std::collections::HashSet<crate::context::HighVariableId>,
+    /// (kuna) The locals the last document declared, as [`DeclaredLocal`]s.
+    declared_locals: Vec<DeclaredLocal>,
     /// Final C declarations, including storage and symbol overrides.
     pointer_decls: crate::kuna_pointerargs::Declarations,
     /// Pointer-argument facts are recorded only for a buffered driver that asked
@@ -1650,6 +1652,7 @@ impl PrintC {
             local_name_overrides: std::collections::HashMap::new(),
             local_name_aliases: std::collections::HashMap::new(),
             local_name_standalones: std::collections::HashSet::new(),
+            declared_locals: Vec::new(),
             pointer_decls: crate::kuna_pointerargs::Declarations::default(),
             record_pointer_arguments: false,
             pointer_record: None,
@@ -2551,6 +2554,7 @@ impl PrintC {
         self.local_name_overrides.clear();
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
+        self.declared_locals.clear();
         self.pointer_decls.clear();
         self.begin_pointer_record(fd);
         // (kuna `signedness`) Round the declared signedness of this function's
@@ -3559,6 +3563,8 @@ impl PrintC {
         // semantic: a generated `value_1` local must not capture an existing
         // `value_1` global or direct call. The override is also read by all body
         // render paths.
+        let base_names: std::collections::HashMap<crate::context::HighVariableId, String> =
+            decls.iter().cloned().collect();
         {
             let occupied = declaration_occupied_names(fd, param_names);
             let mut names = crate::kuna_dedupvardecls::DeclNameUniquifier::new(
@@ -3661,6 +3667,15 @@ impl PrintC {
             if array_count.is_none() {
                 self.cast_implied.record_local(*high, name, format!("{decl_type}{decl_back}"));
             }
+            self.declared_locals.push(DeclaredLocal {
+                high: *high,
+                base: base_names.get(high).cloned().unwrap_or_else(|| name.clone()),
+                name: name.clone(),
+                decl: match &array_count {
+                    Some((_, count)) => format!("{decl_type} [{count}]{decl_back}"),
+                    None => format!("{decl_type}{decl_back}"),
+                },
+            });
             self.pointer_decls.record(name, &decl_type, &decl_back, array_count.is_some());
             self.emit.tag_line();
             let id = self.emit.begin_var_decl(&markup);
@@ -3740,6 +3755,18 @@ impl PrintC {
                 }
             }
         }
+    }
+
+    /// (kuna) The locals the last printed document declared.
+    pub fn declared_locals(&self) -> &[DeclaredLocal] {
+        &self.declared_locals
+    }
+
+    /// (kuna) The declaration `high` reads through in the last printed document:
+    /// its own, or the one it was collapsed into.
+    pub fn declared_local(&self, high: crate::context::HighVariableId) -> Option<&DeclaredLocal> {
+        let owner = self.local_name_aliases.get(&high).copied().unwrap_or(high);
+        self.declared_locals.iter().find(|local| local.high == owner)
     }
 
     /// Resolve the emitted spelling of a named HighVariable in this function.
@@ -10866,6 +10893,18 @@ pub fn type_to_c_string(
 ) -> String {
     let (front, back) = declarator_parts(ct, RealTypeCtx::from_arch(arch, arch.print().out_lang()));
     format!("{front}{back}")
+}
+
+/// (kuna) One local declaration the printer emitted: the HighVariable it
+/// declares, the name the naming pass gave it, the name it was printed under
+/// (suffixed when it collided with another identifier), and its declarator with
+/// the name taken out (`char [16]`, `S *`).
+#[derive(Clone, Debug)]
+pub struct DeclaredLocal {
+    pub high: crate::context::HighVariableId,
+    pub base: String,
+    pub name: String,
+    pub decl: String,
 }
 
 // ===========================================================================

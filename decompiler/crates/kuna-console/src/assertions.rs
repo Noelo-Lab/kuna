@@ -1147,8 +1147,10 @@ fn apply_one_symbol_scoped(
 /// directive gave it, and the directives that answer for it.
 pub struct Expected {
     directives: Vec<usize>,
+    printed: String,
     name: String,
     retype: Option<Rc<Datatype>>,
+    parameter: bool,
 }
 
 /// The [`Expected`] of each local the `touched` directives (index, Symbol,
@@ -1160,15 +1162,12 @@ pub fn expected_locals(
     let Some(lm) = fd.get_scope_local() else { return Vec::new() };
     let mut out: Vec<(kuna_decomp::database::SymbolId, Expected)> = Vec::new();
     for (index, symbol, retype) in touched {
-        if !fd.kuna_directive_symbols().iter().any(|d| d.symbol == *symbol) {
+        let Some(directive) = fd.kuna_directive_symbols().iter().find(|d| d.symbol == *symbol) else {
             continue;
-        }
+        };
         let Some(record) = lm.database().try_symbol(*symbol) else { continue };
         let name = if record.is_name_undefined() || record.name.is_empty() {
-            match fd.kuna_directive_symbols().iter().find(|d| d.symbol == *symbol) {
-                Some(d) => d.printed.clone(),
-                None => continue,
-            }
+            directive.printed.clone()
         } else {
             record.name.clone()
         };
@@ -1180,58 +1179,126 @@ pub fn expected_locals(
                     expected.retype = retype.clone();
                 }
             }
-            None => out.push((*symbol, Expected { directives: vec![*index], name, retype: retype.clone() })),
+            None => out.push((
+                *symbol,
+                Expected {
+                    directives: vec![*index],
+                    printed: directive.printed.clone(),
+                    name,
+                    retype: retype.clone(),
+                    parameter: lm.symbol_category(*symbol) == kuna_decomp::database::symbol_category::FUNCTION_PARAMETER,
+                },
+            )),
         }
     }
     out.into_iter().map(|(_, expected)| expected).collect()
 }
 
+/// What the printed C shows for one directive: it did not reach the output, or
+/// it did under a suffixed name.
+pub enum Shown {
+    Refused(String),
+    AppliedAs(String),
+}
+
 /// Check the C a replayed batch printed against what it must show
-/// ([`Expected`]): a directive whose local `code` does not declare under its
-/// name, or with its type, did not reach the output, so it is reported refused
-/// rather than applied.
-pub fn verify_printed(prog: &mut ConsoleProgram, code: &str, expected: &[Expected]) {
+/// ([`Expected`]): a directive whose local is not declared, or not with its
+/// type, did not reach the output and is reported refused rather than
+/// applied; one declared under a suffixed name is applied, and says so.
+pub fn verify_printed(prog: &mut ConsoleProgram, fd: &Funcdata, code: &str, expected: &[Expected]) {
     let directives = prog.assertions().to_vec();
-    for (i, reason) in unapplied(prog.arch(), code, expected) {
-        if let Some(directive) = directives.get(i) {
-            prog.set_assertion_outcome(i, directive.refused(reason));
-        }
+    for (i, shown) in check_printed(prog.arch(), fd, code, expected) {
+        let Some(directive) = directives.get(i) else { continue };
+        let outcome = match shown {
+            Shown::Refused(reason) => directive.refused(reason),
+            Shown::AppliedAs(note) => Outcome { detail: Some(note), ..directive.applied() },
+        };
+        prog.set_assertion_outcome(i, outcome);
     }
 }
 
-/// The directives (by the index [`expected_locals`] was given) whose local the
-/// C `code` does not declare under its name or with its type, each with the
-/// reason. Only C is read; another output language reports nothing.
-pub fn unapplied(
+/// The directives (by the index [`expected_locals`] was given) whose local
+/// the decompile `fd` printed as `code` does not show as expected. A local is
+/// found by the declaration the printer emitted for it
+/// (`PrintC::declared_locals`): the HighVariable the replay gave the directive
+/// to (`Funcdata::kuna_directive_targets`), else a declaration the naming pass
+/// gave the expected name; the printer may have suffixed that name where it
+/// collided with another identifier. A parameter is read from the signature.
+/// Only C is read; another output language reports nothing.
+pub fn check_printed(
     arch: &kuna_decomp::architecture::Architecture,
+    fd: &Funcdata,
     code: &str,
     expected: &[Expected],
-) -> Vec<(usize, String)> {
+) -> Vec<(usize, Shown)> {
     if arch.print().out_lang() != kuna_decomp::kuna_lang::OutLang::C {
         return Vec::new();
     }
-    let mut out = Vec::new();
-    for local in expected {
-        let reason = match printed_declaration(code, &local.name) {
-            None => Some(format!("nothing is declared as `{}` after it", local.name)),
-            Some(declared) => local.retype.as_ref().and_then(|ct| {
-                let spelled = kuna_decomp::printc::type_to_c_string(arch, ct);
-                (squeeze(&spelled) != squeeze(&declared)).then(|| {
-                    format!("`{}` is still declared as `{}`, not `{}`", local.name, declared.trim(), spelled.trim())
+    let print = arch.print();
+    let declared = print.declared_locals();
+    let mut taken: std::collections::HashSet<kuna_decomp::context::HighVariableId> = std::collections::HashSet::new();
+    let mut found: Vec<Option<(String, String)>> = vec![None; expected.len()];
+    for (slot, local) in expected.iter().enumerate().filter(|(_, local)| !local.parameter) {
+        let target = fd.kuna_directive_targets().get(&local.printed).and_then(|&high| print.declared_local(high));
+        if let Some(decl) = target.filter(|decl| decl.base == local.name && taken.insert(decl.high)) {
+            found[slot] = Some((decl.name.clone(), decl.decl.clone()));
+        }
+    }
+    for (slot, local) in expected.iter().enumerate() {
+        if found[slot].is_some() {
+            continue;
+        }
+        found[slot] = if local.parameter {
+            signature_declaration(code, &local.name).map(|decl| (local.name.clone(), decl))
+        } else {
+            declared
+                .iter()
+                .find(|decl| decl.base == local.name && !taken.contains(&decl.high))
+                .map(|decl| {
+                    taken.insert(decl.high);
+                    (decl.name.clone(), decl.decl.clone())
                 })
-            }),
         };
-        if let Some(reason) = reason {
-            out.extend(local.directives.iter().map(|&i| (i, reason.clone())));
+    }
+    let mut out = Vec::new();
+    for (local, found) in expected.iter().zip(found) {
+        let shown = match found {
+            None => Some(Shown::Refused(format!("nothing is declared as `{}` after it", local.name))),
+            Some((name, decl)) => {
+                let spelled = local.retype.as_ref().map(|ct| kuna_decomp::printc::type_to_c_string(arch, ct));
+                match spelled.filter(|spelled| squeeze(spelled) != squeeze(&decl)) {
+                    Some(spelled) => Some(Shown::Refused(format!(
+                        "`{name}` is declared as `{}`, not `{}`",
+                        decl.trim(),
+                        spelled.trim()
+                    ))),
+                    None => (name != local.name).then(|| {
+                        Shown::AppliedAs(format!(
+                            "applied as `{name}`: `{}` is already another identifier here",
+                            local.name
+                        ))
+                    }),
+                }
+            }
+        };
+        if let Some(shown) = shown {
+            for &i in &local.directives {
+                out.push((
+                    i,
+                    match &shown {
+                        Shown::Refused(reason) => Shown::Refused(reason.clone()),
+                        Shown::AppliedAs(note) => Shown::AppliedAs(note.clone()),
+                    },
+                ));
+            }
         }
     }
     out
 }
 
-/// The type `code` declares `name` with, the name taken out (`char [32]` for
-/// `char v4 [32]`): among the function's parameters, or the declarations that
-/// open its body.
-fn printed_declaration(code: &str, name: &str) -> Option<String> {
+/// The type the signature printed in `code` declares the parameter `name`
+/// with, the name taken out (`char *` for `char *a0`).
+fn signature_declaration(code: &str, name: &str) -> Option<String> {
     let lines: Vec<&str> = code.lines().collect();
     let open = lines.iter().position(|line| line.trim_end() == "{")?;
     let declares = |text: &str| -> Option<String> {
@@ -1251,65 +1318,38 @@ fn printed_declaration(code: &str, name: &str) -> Option<String> {
     };
     let signature = open.checked_sub(1).map_or("", |line| lines[line]);
     let signature = signature.split("//").next().unwrap_or(signature);
-    let stop = signature.rfind(')');
-    let start = stop.and_then(|stop| {
-        let mut depth = 0;
-        signature[..stop].char_indices().rev().find_map(|(i, c)| match c {
-            ')' => {
-                depth += 1;
-                None
-            }
-            '(' if depth == 0 => Some(i),
-            '(' => {
-                depth -= 1;
-                None
-            }
-            _ => None,
-        })
-    });
-    if let (Some(start), Some(stop)) = (start, stop) {
-        let mut depth = 0;
-        let mut piece = String::new();
-        for c in signature[start + 1..stop].chars() {
-            match c {
-                '(' => depth += 1,
-                ')' => depth -= 1,
-                ',' if depth == 0 => {
-                    if let Some(found) = declares(&piece) {
-                        return Some(found);
-                    }
-                    piece.clear();
-                    continue;
+    let stop = signature.rfind(')')?;
+    let mut depth = 0;
+    let start = signature[..stop].char_indices().rev().find_map(|(i, c)| match c {
+        ')' => {
+            depth += 1;
+            None
+        }
+        '(' if depth == 0 => Some(i),
+        '(' => {
+            depth -= 1;
+            None
+        }
+        _ => None,
+    })?;
+    let mut depth = 0;
+    let mut piece = String::new();
+    for c in signature[start + 1..stop].chars() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                if let Some(found) = declares(&piece) {
+                    return Some(found);
                 }
-                _ => {}
+                piece.clear();
+                continue;
             }
-            piece.push(c);
+            _ => {}
         }
-        if let Some(found) = declares(&piece) {
-            return Some(found);
-        }
+        piece.push(c);
     }
-    for line in &lines[open + 1..] {
-        let declaration = match line.split_once("; //") {
-            Some((declaration, _)) => declaration,
-            None => {
-                let text = line.trim();
-                let statement = text.contains('=')
-                    || (text.contains('(') && !text.contains("(*"))
-                    || ["return", "if", "while", "for", "do", "switch", "goto", "break", "continue"]
-                        .iter()
-                        .any(|word| text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').next() == Some(*word));
-                match text.strip_suffix(';') {
-                    Some(declaration) if !statement => declaration,
-                    _ => break,
-                }
-            }
-        };
-        if let Some(found) = declares(declaration) {
-            return Some(found);
-        }
-    }
-    None
+    declares(&piece)
 }
 
 fn squeeze(text: &str) -> String {

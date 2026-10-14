@@ -270,6 +270,18 @@ fn a_same_width_retype_types_the_whole_variable() {
     }
 }
 
+/// A rename to a name the program already uses (`score` is a function) is
+/// printed suffixed, and is applied: the page shows what it became instead of
+/// a refusal.
+#[test]
+fn a_rename_the_printer_suffixes_is_applied() {
+    let inspected = run_on("long.elf", "inspect", &["main"], &["name main::v7 score"]).expect("inspect");
+    assert!(inspected["function"]["code"].as_str().expect("code").contains("  int score_1;"));
+    let row = &inspected["assertions"].as_array().expect("array")[0];
+    assert_eq!(row["status"].as_str(), Some("applied"));
+    assert_eq!(row["detail"].as_str(), Some("applied as `score_1`: `score` is already another identifier here"));
+}
+
 /// A `bytes` overlay is what every later read of the image sees.
 #[test]
 fn a_byte_patch_reaches_read_and_the_listing() {

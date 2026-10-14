@@ -851,11 +851,13 @@ enumeration names them, `bool` spells them, a character type quotes them,
 `kuna_stablenames.rs (prints_literals)`) gives its type to those constants too:
 applied to the instances alone, `type v1 state` on an `int` holding `enum
 state` printed `v1 = 3` where the Symbol had printed `v1 = RUN`.
-`retype_whole_variable` types each constant copied into the variable or
-compared with it (`kuna_stablenames.rs (met_constants)`), which is where type
-inference would have taken the type, and nothing further away: inference would
-also carry it into the variable's copies, into arithmetic (`a0[7] + E_ONE`) and
-across the frame, which this does not.
+`retype_whole_variable` types each constant copied into the variable, tested
+for equality with it or combined with it bit by bit (`v1 |= F_R`;
+`kuna_stablenames.rs (met_constants)`), which is where type inference would
+have taken the type, and nothing further away: inference would also carry it
+into the variable's copies, into arithmetic (`a0[7] + E_ONE`) and across the
+frame, which this does not. An ordered comparison keeps its constant a number,
+as before.
 
 A local the function only ever passes by address (`read(0,&c,1)`) has no
 instance at all, so nothing could carry its type; `kuna_hightarget.rs
@@ -906,15 +908,20 @@ used to report `applied` once it bound, whatever the next decompile printed: a
 retype of a local only passed by address was carried by instances it did not
 have and dropped. `kuna-console/src/assertions.rs (expected_locals)` records,
 per local a batch touched, the name it must be declared under and the type the
-last `type` gave it, and `assertions.rs (unapplied)` reads the C the replay
-printed: its parameters and the declarations that open the body, the name taken
-out and the rest compared with the type's own spelling. A local not declared
-under its name, or declared with another type, reports each directive that
-touched it refused, with the reason (`verify_printed` on the in-process path;
-the console prints `Rejected <command>: <reason>` at the next `print C`), and
-`kuna decompile` says the C was produced without it. A retype that changes the
-width, which can leave the old declaration in place, is now reported this way
-instead of `applied`. The check also showed the console dropping every rename
+last `type` gave it, and `assertions.rs (check_printed)` finds each in the C the
+replay printed by the declaration the printer emitted for it
+(`p9_emit/printc.rs (declared_locals)`): the declaration of the HighVariable
+the replay gave the directive to (`kuna_stablenames.rs (directive_targets)`),
+else one the naming pass gave the expected name and no other directive took; a
+parameter is read from the signature. A local declared under a suffixed name
+(`score_1`, because the program already has a function `score`) took the
+directive: it reports `applied`, with a note saying what it was printed as. A
+local not declared at all, or declared with another type than the directive
+gave, reports each directive that touched it refused, with the reason
+(`verify_printed` on the in-process path; the console prints `Rejected
+<command>: <reason>` at the next `print C`), and `kuna decompile` says the C was
+produced without it. A retype that changes the width, which can leave the old
+declaration in place, is now reported this way instead of `applied`. The check also showed the console dropping every rename
 of a DWARF local: `kuna-console/src/ifacedecomp.rs (IfcDecompile)` re-seeded the
 function's DWARF locals after the Symbols it carried, at the same storage, and
 the DWARF name won; it now re-seeds only the DWARF locals the previous decompile

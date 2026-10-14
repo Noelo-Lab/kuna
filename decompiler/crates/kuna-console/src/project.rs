@@ -872,7 +872,7 @@ pub fn decompile_pulled(
                 }));
                 match rendered {
                     Ok((code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => {
-                    crate::assertions::verify_printed(prog, &code, &replayed);
+                    crate::assertions::verify_printed(prog, &fd, &code, &replayed);
                     sink(FuncResult {
                         name,
                         address,

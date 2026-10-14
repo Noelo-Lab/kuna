@@ -658,9 +658,11 @@ pub fn prints_literals(ct: &crate::dtype::Datatype) -> bool {
 }
 
 /// The constants of `size` bytes the variable made of `instances` meets
-/// directly: copied into it, or compared with it. Type inference would give
-/// them the variable's type; applied after the merge, the retype gives it them
-/// here, and nothing further away.
+/// directly: copied into it, tested for equality with it, or combined with it
+/// bit by bit (`v |= F_R`). Type inference would give them the variable's type;
+/// applied after the merge, the retype gives it them here, and nothing further
+/// away. An ordered comparison keeps its constant a number, as it printed
+/// before: C compares an enumeration as an integer.
 pub fn met_constants(fd: &Funcdata, instances: &[VarnodeId], size: int4) -> Vec<VarnodeId> {
     let constant = |vn: Option<VarnodeId>| {
         vn.filter(|&vn| fd.vbank().get(vn).is_some_and(|v| v.is_constant() && v.get_size() == size))
@@ -679,10 +681,9 @@ pub fn met_constants(fd: &Funcdata, instances: &[VarnodeId], size: int4) -> Vec<
                 o.code(),
                 OpCode::CPUI_INT_EQUAL
                     | OpCode::CPUI_INT_NOTEQUAL
-                    | OpCode::CPUI_INT_LESS
-                    | OpCode::CPUI_INT_LESSEQUAL
-                    | OpCode::CPUI_INT_SLESS
-                    | OpCode::CPUI_INT_SLESSEQUAL
+                    | OpCode::CPUI_INT_OR
+                    | OpCode::CPUI_INT_AND
+                    | OpCode::CPUI_INT_XOR
             ) {
                 out.extend((0..o.num_input()).filter_map(|slot| constant(o.get_in(slot))));
             }
@@ -727,6 +728,27 @@ pub fn retype_targets(
         }
     }
     best.into_iter().map(|(from, (_, high))| (high, retypes[from].ct.clone())).collect()
+}
+
+/// The local each carried rename or unit retype reaches, by the name the
+/// previous decompile printed it under: the one holding most of that
+/// variable's instances, as for [`rename_targets`].
+pub fn directive_targets(
+    fd: &Funcdata,
+    tallies: &[(HighVariableId, BTreeMap<String, (usize, usize)>)],
+) -> BTreeMap<String, HighVariableId> {
+    let prior = fd.kuna_prior_names();
+    let mut best: BTreeMap<&String, ((usize, usize), HighVariableId)> = BTreeMap::new();
+    for (high, counts) in tallies {
+        for (name, count) in counts {
+            if prior.renames.contains_key(name) || prior.retypes.contains_key(name) {
+                if best.get(name).is_none_or(|(held, _)| *count > *held) {
+                    best.insert(name, (*count, *high));
+                }
+            }
+        }
+    }
+    best.into_iter().map(|(name, (_, high))| (name.clone(), high)).collect()
 }
 
 /// Did a `name` directive rename `sym` without stating a type: a Symbol it
