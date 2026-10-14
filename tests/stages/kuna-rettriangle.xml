@@ -1,0 +1,90 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `rettriangle`: `returndup` gives each predecessor of a shared
+    constant-return block its own return, which recovers a source's
+    early-return guards.  At the join of a one-block `if` there is no guard to
+    recover, and the split printed `if (c) celebrate(); return 0;` as
+    `if (!c) return 0; celebrate(); return 0;`.
+
+    Stage / sub-stage: P8 "goto-quality".  The P0 assertion
+    `option rettriangle on|off` decides whether `returndup` declines a return
+    block whose two predecessors are a two-way condition and a block entered
+    only from that condition that runs into the return.
+
+    The bytes are functions of decompiler/crates/kuna-analysis/tests/fixtures/
+    rettriangle.c built by gcc 11.4 at -O0 with -fstack-protector-strong
+    (x86-64 SysV): finish (`if (ok) celebrate(); return 0;`), check_name (the
+    same `if` behind a stack-protected buffer, whose stripped canary check
+    leaves the shared return), guard_first (a source guard clause, which
+    compiles to the same shape) and two_way (two conditions, no one-block
+    `if` at the return, the control).
+
+    Pass 1 runs with no option line, the shipped default (off), and
+    reproduces the split.  Pass 2 (`option rettriangle on`) prints each
+    one-block `if` with one return; two_way is the same in both.
+-->
+<bytechunk space="ram" offset="0x11a9">
+f30f1efa554889e58b055d2e000083c0018905542e0000905dc3f30f1efa554889e54883ec08897dfc837dfc007405e8ccffffffb800000000c9c3f30f1efa55
+4889e54883ec4048897dc864488b042528000000488945f831c0488b55c8488d45d04889d1488d15ef0d0000be200000004889c7b800000000e879feffff488d
+45d0488d15d60d00004889d64889c7e873feffff85c07505e863ffffffb800000000488b55f864482b1425280000007405e821feffffc9c3f30f1efa554889e5
+4883ec10897dfc488975f0837dfc007507b800000000eb22488b45f0c70001000000488b45f04883c004c70002000000e80bffffffb800000000c9c3f30f1efa
+554889e54883ec08897dfc8975f8837dfc007407b800000000eb10837df8007405e8dafeffffb800000000c9c3
+</bytechunk>
+<symbol space="ram" offset="0x11a9" name="celebrate"/>
+<symbol space="ram" offset="0x11c3" name="finish"/>
+<symbol space="ram" offset="0x11e4" name="check_name"/>
+<symbol space="ram" offset="0x1261" name="guard_first"/>
+<symbol space="ram" offset="0x12a5" name="two_way"/>
+<symbol space="ram" offset="0x1080" name="__stack_chk_fail"/>
+<symbol space="ram" offset="0x10a0" name="snprintf"/>
+<symbol space="ram" offset="0x10b0" name="strcmp"/>
+</binaryimage>
+<script>
+  <com>parse line extern int snprintf(char *s,unsigned long n,char *f,...);</com>
+  <com>parse line extern int strcmp(char *a,char *b);</com>
+  <com>lo fu finish</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu check_name</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu guard_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_way</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rettriangle on</com>
+  <com>lo fu finish</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu check_name</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu guard_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_way</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="rettriangle #1: by default the join of a one-block if is split into an early return -- the bug" min="1" max="1">^  if \(!a0\)$
+^    return 0;$
+^  celebrate\(\);$
+^  return 0;$</stringmatch>
+<stringmatch name="rettriangle #2: and so is the one behind a stack-protected buffer" min="1" max="1">^  if \(strcmp\(v1,\(char \*\)0x2008\)\)$
+^    return 0;$
+^  celebrate\(\);$</stringmatch>
+<stringmatch name="rettriangle #3: with the option on the one-block if keeps one return" min="1" max="1">^  if \(a0\)$
+^    celebrate\(\);$
+^  return 0;$</stringmatch>
+<stringmatch name="rettriangle #4: as does the one behind the buffer" min="1" max="1">^  if \(!strcmp\(v1,\(char \*\)0x2008\)\)$
+^    celebrate\(\);$
+^  return 0;$</stringmatch>
+<stringmatch name="rettriangle #5: a source guard clause compiles to the same shape and prints as the if" min="1" max="1">^  if \(a0\) \{$</stringmatch>
+<stringmatch name="rettriangle #6: two conditions before the return print the same in both passes" min="2" max="2">^  if \(\(!a0\) &amp;&amp; \(a1\)\)$
+^    celebrate\(\);$
+^  return 0;$</stringmatch>
+<stringmatch name="rettriangle #7: seven returns by default, four with the option on" min="11" max="11">return 0;</stringmatch>
+</decompilertest>

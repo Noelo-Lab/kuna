@@ -181,6 +181,9 @@ mod limits_cli;
 #[path = "local_name_batch.rs"]
 mod local_name_batch;
 
+#[path = "rettriangle_round_trip.rs"]
+mod rettriangle_round_trip;
+
 #[path = "stable_local_names.rs"]
 mod stable_local_names;
 
