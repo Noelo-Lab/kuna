@@ -1058,6 +1058,10 @@ Three tiers:
 | call result stored to the frame but the store is missing from the emitted C so the later read looks uninitialized | [`tiedstorekeep`](#tiedstorekeep) |
 | indirect call through a stack slot that no statement ever writes | [`tiedstorekeep`](#tiedstorekeep) |
 | a stack local read after a call shows only its initialiser | [`tiedstorekeep`](#tiedstorekeep) |
+| global structure field stores become local assignments | [`globalfieldstore`](#globalfieldstore) |
+| array member writes target unrelated local arrays | [`globalfieldstore`](#globalfieldstore) |
+| a global structure is assigned individual scalar fields | [`globalfieldstore`](#globalfieldstore) |
+| a call sees stale fields after a cached record copy | [`globalfieldstore`](#globalfieldstore) |
 | a global is assigned before a call although the binary stores it after the call returns | [`globalcallstore`](#globalcallstore) |
 | a call that reads a global appears to see a value the caller stores only afterwards | [`globalcallstore`](#globalcallstore) |
 | a loop that walks a global list frees the head but never advances the global | [`globalcallstore`](#globalcallstore) |
@@ -3363,6 +3367,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-105). The OFF symptom is C that says the program uses a value it never computed: a local initialised to NULL, a call whose result is assigned to a register temporary, and then an indirect call or a dereference through the still-NULL local -- `v108 = NULL; v12 = (void *)GetProcAddress(...); ... v7 = (*v108)(...);`. The dataflow underneath is correct (the CALLIND's target really is the GetProcAddress result); only the printed store is missing, which is worse than a wrong-looking expression because an analyst reads it as a null-pointer call and concludes the import is never used. Flip OFF to reproduce upstream Ghidra's propagation exactly, or to bisect whether a stack-frame variable's appearance came from this brake. Each clause of the predicate was bought by measurement, not by argument: dropping the from-a-call clause turns three upstream datatests' if/else diamonds into `?:` ternaries and degrades union field resolution (7/675 assertions move, 0/675 with it); letting it fire on `persist` globals -- which already have heritage's own RETURN-COPY keeping their last store printed -- made the `copytrim` datatest run for minutes instead of 0.16 s.
 - **Where / provenance:** P3/copy-propagation · kuna · correctness-fix · re-getprocaddress-result-discarded
 - **Example:** `option tiedstorekeep off`
+
+### `globalfieldstore` -- on | off, default `on`
+
+- **Symptoms:** global structure field stores become local assignments; array member writes target unrelated local arrays; a global structure is assigned individual scalar fields; a call sees stale fields after a cached record copy.
+- **What it does:** Preserve the memory destination of a typed global COPY spanning structure fields or an array-typed view when a marker reads it. Propagating the register source can let later datatype splitting print field writes as local assignments or assign scalar values to the whole structure. ON keeps persistent TYPE_PARTIALSTRUCT and TYPE_ARRAY COPY outputs attached to markers; scalar stores and complete structure values keep existing propagation. A source defined directly by LOAD requires indexaliasguard global so its read cannot move past an aliasing write.
+- **When to flip:** On by default. OFF reproduces missing global field publication after a filled local record is copied to a cached global and then passed to an observing call. This includes complete global arrays and array members. Keeping a COPY can also change storage comments and variable merging where the prior output was correct.
+- **Where / provenance:** P3/copy-propagation · kuna · correctness-fix · kuna-globalfieldstore
+- **Example:** `option globalfieldstore off`
 
 ### `globalcallstore` -- on | off, default `on`
 

@@ -4065,6 +4065,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "globalfieldstore"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "copy-propagation"
+strength = "HARD"
+rewind = "P3"
+issue = "kuna-globalfieldstore"
+summary = "Preserve the memory destination of a typed global COPY spanning structure fields or an array-typed view when a marker reads it. Propagating the register source can let later datatype splitting print field writes as local assignments or assign scalar values to the whole structure. ON keeps persistent TYPE_PARTIALSTRUCT and TYPE_ARRAY COPY outputs attached to markers; scalar stores and complete structure values keep existing propagation. A source defined directly by LOAD requires indexaliasguard global so its read cannot move past an aliasing write."
+use_when = "On by default. OFF reproduces missing global field publication after a filled local record is copied to a cached global and then passed to an observing call. This includes complete global arrays and array members. Keeping a COPY can also change storage comments and variable merging where the prior output was correct."
+example = "option globalfieldstore off"
+source_decompiler = "kuna"
+inspiration = "Independently assembled SPARC record copies and Clang-generated conditional record publication on SPARC32 and AArch64"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "global structure field stores become local assignments|array member writes target unrelated local arrays|a global structure is assigned individual scalar fields|a call sees stale fields after a cached record copy"
+live_field = "global_field_store"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "globalcallstore"
 values = "on|off"
 default = "on"

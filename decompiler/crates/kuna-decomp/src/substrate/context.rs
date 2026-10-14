@@ -1226,6 +1226,8 @@ pub struct ArchContext {
     /// loaded value whose only reader is the global's own marker. Read by
     /// [`crate::p3_dataflow::kuna_globalcallstore::declines`].
     pub global_call_store: bool,
+    /// Preserve typed global field stores through marker propagation.
+    pub global_field_store: bool,
     /// (kuna) `option intfloatround` (default-on): keep an integer-to-float
     /// conversion's rounding through `RuleFloatCast` and `SubfloatFlow`. Read
     /// by [`crate::p3_dataflow::kuna_intfloatround`].
@@ -1888,6 +1890,7 @@ impl ArchContext {
             libc_names: false, // libcnames (opt-in)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
+            global_field_store: false,
             global_call_store: false,    // globalcallstore (Architecture::reset_defaults sets the shipped default: on)
             int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)

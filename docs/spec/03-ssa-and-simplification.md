@@ -1201,6 +1201,24 @@ No new purity assumption is made. The option exists because keeping the COPY
 also changes correct output: a storage comment no longer lists the global,
 and a value the store kept can print as its own variable.
 
+`globalfieldstore` (default on) keeps a typed global COPY spanning structure
+fields or an array-typed global view, including a complete global array,
+attached to its memory destination when read by a MULTIEQUAL or
+INDIRECT marker.
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalfieldstore.rs`
+keeps marker inputs attached to persistent `TYPE_PARTIALSTRUCT` and
+`TYPE_ARRAY` COPY outputs. Replacing that output with its register source can
+leave datatype splitting with register pieces that print as local assignments
+or scalar assignments to the complete structure, removing the original global
+field writes from emitted C. Scalar stores, complete structure values,
+ordinary readers, and nonpersistent aggregate values retain the existing
+propagation rules. The guard uses the view type known before propagation. A source defined directly by LOAD
+requires `indexaliasguard global`, the level that preserves its read before
+aliasing writes when the COPY prints that source inline. OFF restores legacy
+propagation, including correct outputs whose storage comments or variable
+merging the retained COPY also changes. The option is enabled in every mode;
+existing type and memory-order guards remain in force.
+
 **Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
 default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
 `COPY`'s input instead. When the reader is an ordinary op that is pure gain: the

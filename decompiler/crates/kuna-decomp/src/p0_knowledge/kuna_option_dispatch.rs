@@ -520,6 +520,7 @@ kuna_options! { self, p1;
     "loopcounterstore" => {
         on_off!(loop_counter_store, "Frame-slot loop-counter store brake")
     },
+    "globalfieldstore" => on_off!(global_field_store, "Typed global field stores"),
     "globalcallstore" => on_off!(global_call_store, "Loaded global store brake"),
     "intfloatround" => on_off!(int_float_round, "Integer-to-float rounding preservation"),
     "tiedphitrim" => {
