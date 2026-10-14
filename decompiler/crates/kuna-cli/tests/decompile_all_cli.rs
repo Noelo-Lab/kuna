@@ -2551,7 +2551,7 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
         "if (v1 == 0x3fc00001)",
         "(unsigned int)(0x3fc00000 < v1)",
         "*a2 = (short)((unsigned int)v1 >> 0x10);",
-        "a2[1] = (char)((unsigned int)v1 >> 0x10);",
+        "a2[1] = (unsigned int)v1 >> 0x10;",
     ] {
         assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
     }
@@ -7276,7 +7276,7 @@ fn a_split_load_is_not_moved_past_a_store_or_a_call() {
         rest[..rest.find("// Function:").unwrap_or(rest.len())].to_string()
     };
     let read = "v1 = *(unsigned int *)&s->c7;";
-    for (name, after) in [("intospan", "s->c9 = (char)w;"), ("otherptr", "t->c9 = (char)w;"), ("acrosscall", "sink(s);")] {
+    for (name, after) in [("intospan", "s->c9 = w;"), ("otherptr", "t->c9 = w;"), ("acrosscall", "sink(s);")] {
         let b = body(name);
         let (i, j) = (b.find(read), b.find(after));
         assert!(i.is_some() && j.is_some() && i < j, "{name}: `{read}` must print before `{after}`:\n{b}");

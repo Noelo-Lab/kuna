@@ -73,7 +73,9 @@
                     byte
 
     Pass 1 (`option boolbyte off`) reproduces the bug; pass 2 (`on`) is the fix.
-    All five controls are identical in both passes.
+    All five controls are identical in both passes.  castnarrow is off in both:
+    #13 reads the `(char)` cast that otherwise leaves the narrowing to C's
+    assignment conversion.
 -->
 <bytechunk space="ram" offset="0x100000">
 4084ff7406b82a000000c331c0c300004084ff7408400fb6c783c003c331c0c340f6c7017406b82a
@@ -96,6 +98,7 @@
 <symbol space="ram" offset="0x100100" name="truncflag"/>
 </binaryimage>
 <script>
+  <com>option castnarrow off</com>
   <com>option boolbyte off</com>
   <com>lo fu flagparam</com>
   <com>decompile</com>
