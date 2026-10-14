@@ -2965,7 +2965,12 @@ read back from a different one.
 after the call in its block is the call's result lowered by `n` (positive, at
 most 256, a multiple of the pointer size) and every pointer-sized slot of
 `[esp, esp + n)` at the call instruction is stored to between the previous call
-in the block, or the block start, and this one. When nothing reads the stack
+in the block, or the block start, and this one. Coverage is measured in bytes:
+a byte or halfword store alone does not prove a whole argument slot. Smaller
+or overlapping stores may jointly cover the range, but any unwritten byte
+leaves the guess unknown. Only the bounded argument window is tracked, and
+unrepresentable stack adjustments decline instead of overflowing.
+When nothing reads the stack
 pointer between the `sub` and the next call, the additive normalization folds
 the lowering into that call's return-address push, so a first write that is a
 call's own push is read less the push; a first write that is a push of the next

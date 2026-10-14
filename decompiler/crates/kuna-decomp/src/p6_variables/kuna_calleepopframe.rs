@@ -94,10 +94,8 @@ pub fn guess_extra_pop(
         return None;
     }
     let (base, delta) = decompose(data, spacebase, call_sp)?;
-    let stored = stored_offsets(data, spacebase, call, base, step);
-    let first = delta + step;
-    let staged = (0..n / step).all(|i| stored.contains(&(first + i * step)));
-    staged.then_some(RETURN_ADDRESS_ONLY + n)
+    let first = delta.checked_add(step)?;
+    stores_cover(data, spacebase, call, base, first, n).then_some(RETURN_ADDRESS_ONLY + n)
 }
 
 /// `n` when the first stack-pointer write after `call` in its block is
@@ -128,9 +126,9 @@ fn rereserved(
             (a, Some(b)) if b == call_out => a,
             _ => return None,
         };
-        let lowered = -const_signed(data, other)?;
+        let lowered = const_signed(data, other)?.checked_neg()?;
         return match instruction_kind(data, cur) {
-            Instruction::Call => Some(lowered - step),
+            Instruction::Call => lowered.checked_sub(step),
             Instruction::Push => None,
             Instruction::Other => Some(lowered),
         };
@@ -169,16 +167,17 @@ fn instruction_kind(data: &Funcdata, op: OpId) -> Instruction {
     }
 }
 
-/// The offsets from `base` of the pointer-sized stack slots stored to between
-/// the previous call in `call`'s block (or the block start) and `call`.
-fn stored_offsets(
+/// Whether stores since the previous call cover every byte of the bounded
+/// argument range. Partial and overlapping stores contribute only their bytes.
+fn stores_cover(
     data: &Funcdata,
     spacebase: &Address,
     call: OpId,
     base: VarnodeId,
-    step: int4,
-) -> Vec<int4> {
-    let mut offsets = Vec::new();
+    first: int4,
+    size: int4,
+) -> bool {
+    let mut covered = [false; MAX_ARG_BYTES as usize];
     let mut cur = call;
     while let Some(prev) = data.obank().get(cur).and_then(|o| o.basic_neighbours().0) {
         cur = prev;
@@ -190,12 +189,16 @@ fn stored_offsets(
             continue;
         }
         let at = o.get_in(1).and_then(|a| offset_from(data, spacebase, base, a));
-        let size = o.get_in(2).and_then(|v| data.vbank().get(v)).map(|v| v.get_size());
-        if let (Some(at), Some(size)) = (at, size) {
-            offsets.extend((0..size.max(1)).step_by(step as usize).map(|k| at + k));
+        let width = o.get_in(2).and_then(|v| data.vbank().get(v)).map(|v| v.get_size());
+        if let (Some(at), Some(width)) = (at, width) {
+            let start = i64::from(at) - i64::from(first);
+            let end = start + i64::from(width.max(0));
+            let lo = start.clamp(0, i64::from(size)) as usize;
+            let hi = end.clamp(0, i64::from(size)) as usize;
+            covered[lo..hi].fill(true);
         }
     }
-    offsets
+    covered[..size as usize].iter().all(|&byte| byte)
 }
 
 /// The offset from `base` of the address `addr`: a stack-pointer reference at
@@ -213,7 +216,7 @@ fn offset_from(data: &Funcdata, spacebase: &Address, base: VarnodeId, addr: Varn
         (a, Some(b)) if at_address(data, Some(b), spacebase) => (b, const_signed(data, a)?),
         _ => return None,
     };
-    Some(sp_offset(data, spacebase, base, sp)? + k)
+    sp_offset(data, spacebase, base, sp)?.checked_add(k)
 }
 
 fn sp_offset(data: &Funcdata, spacebase: &Address, base: VarnodeId, sp: VarnodeId) -> Option<int4> {
