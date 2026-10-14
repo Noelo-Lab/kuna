@@ -12,6 +12,10 @@
 //! JOIN storage and definitions sharing one native address use the existing
 //! DynamicHash machinery, checked against the selected high before binding.
 //! Both kinds survive the next IR rebuild; no analysis-local id is a replay key.
+//! A `name` with no type maps an unlocked Symbol only so later directives in
+//! the batch can find the variable; the rebuild carries the rename as a name
+//! instead (`kuna_stablenames`), since a Symbol over one definition of a merged
+//! variable split it and its type lock retyped it.
 //!
 //! # The usepoint is load-bearing
 //!

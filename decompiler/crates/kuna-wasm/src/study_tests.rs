@@ -233,6 +233,18 @@ fn two_renames_in_turn_both_survive() {
     assert_eq!(renamed, plain);
 }
 
+/// A rename names the whole printed variable: `long.elf`'s `v2` lives in
+/// `eax` and two stack slots, and renaming it used to split off a new `v15`;
+/// renaming `v3` used to swallow `v1`.
+#[test]
+fn a_rename_names_the_whole_variable() {
+    let plain = inspected_lines("long.elf", "main", &[], &[]);
+    for (from, to) in [("v2", "count"), ("v3", "input")] {
+        let directive = format!("name main::{from} {to}");
+        assert_eq!(inspected_lines("long.elf", "main", &[&directive], &[(to, from)]), plain, "{directive}");
+    }
+}
+
 /// A `bytes` overlay is what every later read of the image sees.
 #[test]
 fn a_byte_patch_reaches_read_and_the_listing() {
