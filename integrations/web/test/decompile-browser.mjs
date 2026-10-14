@@ -6,8 +6,10 @@
 // opening pasted base64 text (button and Ctrl+V),
 // the layout at 1024 and 820 px, and the Strings
 // list taking a search for "flag" to the code that uses it, kuna's notes
-// (`// branch-flip`) kept out of the code and shown for a selected line, and
-// the type definitions above a function (folded until opened). Any uncaught page exception fails the run.
+// (`// branch-flip`) kept out of the code and shown for a selected line, the
+// type definitions above a function (folded until opened), and a rename far
+// down a long function keeping the view where it was. Any uncaught page
+// exception fails the run.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 // Steps that need the engine's `inspect`/`--assert` surface assert the page's
@@ -510,6 +512,53 @@ try {
   await page.click('.d2-tytoggle');
   assert.notEqual(await page.call(() => getComputedStyle(document.getElementById('c-L1')).display), 'none', 'and unfolds them');
   await noExceptions('the struct the decompiler worked out is defined above the function, in a block that starts folded');
+
+  await openSample(page, 'long.elf');
+  await page.waitFor(`document.getElementById('vname').textContent === 'main' && /a few words/.test(document.getElementById('ccode').textContent)`, { what: 'the long main', timeout: 60000 });
+  await idle('long main open');
+  const view = () => page.call(() => {
+    const cc = document.getElementById('ccode');
+    const top = cc.getBoundingClientRect().top;
+    const first = [...cc.querySelectorAll('.d2-cl')].find((row) => row.getBoundingClientRect().bottom > top + 1);
+    const cur = cc.querySelector('.t.cur');
+    return { top: cc.scrollTop, first: first.dataset.line, at: Math.round(first.getBoundingClientRect().top - top), cur: cur && `${cur.closest('.d2-cl').dataset.line}:${cur.textContent}` };
+  });
+  const [deep, deepSym] = await page.call(() => {
+    const rows = [...document.querySelectorAll('#ccode .d2-cl')].filter((row) => row.querySelector('.t[data-kind=variable][data-sym^=v]'));
+    const row = rows[rows.length - 1];
+    return [Number(row.dataset.line), row.querySelector('.t[data-kind=variable][data-sym^=v]').dataset.sym];
+  });
+  assert.ok(deep > 60, 'a line far below the declarations');
+  const editDeep = async (sym, key, value, after) => {
+    await page.call((n) => {
+      const cc = document.getElementById('ccode');
+      cc.scrollTop += document.getElementById(`c-L${n}`).getBoundingClientRect().top - cc.getBoundingClientRect().top - cc.clientHeight / 2;
+      return true;
+    }, deep);
+    await page.click(`#c-L${deep} .t[data-sym="${sym}"]`);
+    const before = await view();
+    assert.ok(before.top > 0 && Number(before.first) > 40, 'scrolled well down the function');
+    await page.key(key);
+    await page.waitFor(`!document.getElementById('d2pop').hidden`, { what: `${key} popover` });
+    await page.call(() => { document.querySelector('#d2pop input').select(); return true; });
+    await page.type(value);
+    await page.key('Enter');
+    await page.waitFor(after, { what: `${key} ${value} applied`, timeout: 60000 });
+    await idle(`${key} ${value}`);
+    const name = key === 'n' ? value : sym;
+    const { top, ...shown } = await view();
+    assert.deepEqual(shown, { first: before.first, at: before.at, cur: `${deep}:${name}` }, `${key} ${value} keeps the same lines in view, to the pixel, with the cursor where it was`);
+    await page.key('ArrowDown');
+    assert.equal(await count(`#c-L${deep + 1}.hl-sel`), 1, 'and the keyboard carries on from there');
+    assert.equal((await view()).top, top);
+  };
+  await editDeep(deepSym, 'n', 'word_count', `document.querySelector('#ccode .t[data-sym="word_count"]')`);
+  await page.key('s');
+  await sleep(300);
+  await editDeep('word_count', 'n', 'words_seen', `document.querySelector('#ccode .t[data-sym="words_seen"]')`);
+  await editDeep('words_seen', 'y', 'unsigned int', `/unsigned int words_seen;/.test(document.getElementById('ccode').textContent)`);
+  await page.key('s');
+  await noExceptions('renaming a variable far down a long function keeps the view where it was (Code and Side by side)');
 
   console.log(`DECOMPILE BROWSER OK — ${done.join('; ')}` + (skipped.length ? `; SKIPPED: ${skipped.join('; ')}` : ''));
 } finally {

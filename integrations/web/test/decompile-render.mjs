@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { highlight, highlightC, highlightRust, scan, escapeHtml } from '../assets/js/highlight-c.js';
 import {
   normalizeInspect, tokenLines, fallbackLines, lineSegments, buildIndex, renderC,
-  changedLines, localDecls, storageLabel, bandOf, preambleLength, preambleTypes,
+  changedLines, diffLines, localDecls, storageLabel, bandOf, preambleLength, preambleTypes,
 } from '../decompile/render-c.js';
 import { addrHex, signedHex } from '../decompile/addr.js';
 import { normalizePrefs, cycle, hintsOn, DEFAULT_PREFS, loadPrefs, savePrefs } from '../decompile/prefs.js';
@@ -179,6 +179,10 @@ assert.equal(bandOf(6), 0);
 assert.deepEqual([...changedLines('a\nb\nc', 'a\nB\nc\nd')], [2, 4]);
 assert.deepEqual([...changedLines(MAIN, MAIN.replace(/v1/g, 'total'))], [3, 4, 5, 6]);
 assert.equal(changedLines('', 'x').size, 0, 'nothing flashes on a first render');
+assert.deepEqual([1, 2, 3, 4].map(diffLines('a\nb\nc\nd', 'a\nnote\nb\nc\nd').lineOf), [1, 3, 4, 5], 'lines move past an inserted one');
+assert.deepEqual([1, 2, 3].map(diffLines('a\nb\nc', 'a\nB\nc').lineOf), [1, 2, 3], 'a changed line moves with the kept line above it');
+assert.deepEqual([1, 2, 3].map(diffLines('t1\nt2\nf\nx', 'f\nx').lineOf), [1, 1, 1], 'lines above a removed block stay with what follows');
+assert.equal(diffLines('', 'x').lineOf, null);
 assert.equal(addrHex(4504), '0x1198');
 assert.equal(addrHex('0X11AB'), '0x11ab');
 assert.equal(addrHex('0xffffffff81000000'), '0xffffffff81000000');

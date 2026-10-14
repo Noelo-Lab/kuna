@@ -685,13 +685,17 @@ rejects an address qualifier, and a name qualifier must be the function's curren
 function's **current** name (`name summation::v1 i` after `function 0x1161=summation`).
 `list` gets the global directives minus function renames; the sidebar overlays the
 session's names itself. Each edit snapshots the session, re-inspects with the previous
-render still up (a thin progress bar; scroll and selection kept), flashes the lines that
-changed, and records every `assertions[]` row against the record that produced it:
+render still up (a thin progress bar), redraws without moving the view, flashes the lines
+that changed, and records every `assertions[]` row against the record that produced it:
 *Your changes* marks it applied (✓) or rejected (✗, with the engine's reason, also
 toasted). A
 rejected directive stays in the session; a request that fails or is cancelled restores
 the snapshot (working alone; in a live session the change stays, see *Working
-together*). The engine refuses a retype that changes a local's storage size (`Storage
+together*). The redraw holds the line under the cursor (or the selected line, else the
+top line showing) at the same height in the pane, following it when lines above it come
+or go (a note added above it); the selection and the cursor stay, a renamed name keeps
+its selection under the new name, and nothing scrolls to its first use
+(`render-c.js` `diffLines` maps the old lines to the new). The engine refuses a retype that changes a local's storage size (`Storage
 is 8 bytes, the stated type is 4`), so the retype dialog warns before sending one, sizing
 `long` by the target's data model (4 bytes on Windows). A directive the engine cannot
 parse fails the whole request (`error: --assert "<directive>": …`, exit 1): the page
@@ -1250,7 +1254,9 @@ Fixtures (all benign, small, reproducible from the committed source via the comm
 header): `sample.elf` (x86-64 ELF, rich body — call chain + `for`-loop), `sample_aarch64.o`
 (AArch64), `sample_macho.o` (Mach-O x86-64 — a second *format*), `crackme.elf` (x86-64
 ELF, a flag check whose strings are used directly and through a pointer), `structs.elf`
-(x86-64 ELF without debug info, whose `struct item` the decompiler works out as `struct_0`). **PE** executables were
+(x86-64 ELF without debug info, whose `struct item` the decompiler works out as `struct_0`), `long.elf` (x86-64
+ELF, a 120-line `main` whose locals are used far below their declarations, for edits that
+must not move the view). **PE** executables were
 verified separately against a real PE (152 functions) through the browser lazy path; no
 benign PE is committed because this environment has no PE linker.
 
