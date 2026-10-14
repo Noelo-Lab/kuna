@@ -841,7 +841,11 @@ the batch's directive, which is carried as a name rather than a Symbol,
 decompile printed, and the next decompile's naming pass gives it to
 the local holding most of the variable's instances (`retype_targets`), locking
 it on every instance after the merge and before the casts are placed
-(`coreaction_cleanup.rs (retype_whole_variable)`). For most such retypes
+(`coreaction_cleanup.rs (retype_whole_variable)`). Only a local as wide as the
+new type can take it: a stack local read whole and by halves is several locals
+under one Symbol, all printed by one declaration, and the declaration is the
+whole one's. A half that tied with it took the type before, and the variable
+kept its old one. For most such retypes
 nothing else reaches the analysis, so the merge is the first decompile's, and
 only the declaration and the casts at the variable's uses change: `v7 < v5`
 becomes `v7 < (long)v5`.

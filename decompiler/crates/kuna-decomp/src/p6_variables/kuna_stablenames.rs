@@ -711,37 +711,37 @@ pub fn reads_through(ct: &crate::dtype::Datatype) -> bool {
 }
 
 /// The local each unit retype types: the one holding most of the retyped
-/// variable's instances, as for [`rename_targets`].
+/// variable's instances, as for [`rename_targets`], among the locals as wide as
+/// the new type. A stack local read whole and in halves is several locals of
+/// one Symbol, and the declaration is the whole one's.
 pub fn retype_targets(
     fd: &Funcdata,
     tallies: &[(HighVariableId, BTreeMap<String, (usize, usize)>)],
 ) -> BTreeMap<HighVariableId, std::rc::Rc<crate::dtype::Datatype>> {
     let retypes = &fd.kuna_prior_names().retypes;
-    let mut best: BTreeMap<&String, ((usize, usize), HighVariableId)> = BTreeMap::new();
-    for (high, counts) in tallies {
-        for (name, count) in counts {
-            if let Some((from, _)) = retypes.get_key_value(name) {
-                if best.get(from).is_none_or(|(held, _)| *count > *held) {
-                    best.insert(from, (*count, *high));
-                }
-            }
-        }
-    }
-    best.into_iter().map(|(from, (_, high))| (high, retypes[from].ct.clone())).collect()
+    directive_targets(fd, tallies)
+        .into_iter()
+        .filter_map(|(name, high)| retypes.get(&name).map(|retype| (high, retype.ct.clone())))
+        .collect()
 }
 
 /// The local each carried rename or unit retype reaches, by the name the
 /// previous decompile printed it under: the one holding most of that
-/// variable's instances, as for [`rename_targets`].
+/// variable's instances, as for [`rename_targets`]; for a retype, among the
+/// locals as wide as its type ([`retype_targets`]).
 pub fn directive_targets(
     fd: &Funcdata,
     tallies: &[(HighVariableId, BTreeMap<String, (usize, usize)>)],
 ) -> BTreeMap<String, HighVariableId> {
     let prior = fd.kuna_prior_names();
+    let fits = |name: &str, high: HighVariableId| match prior.retypes.get(name) {
+        Some(retype) => width(fd, high) == Some(retype.ct.get_size()),
+        None => true,
+    };
     let mut best: BTreeMap<&String, ((usize, usize), HighVariableId)> = BTreeMap::new();
     for (high, counts) in tallies {
         for (name, count) in counts {
-            if prior.renames.contains_key(name) || prior.retypes.contains_key(name) {
+            if (prior.renames.contains_key(name) || prior.retypes.contains_key(name)) && fits(name, *high) {
                 if best.get(name).is_none_or(|(held, _)| *count > *held) {
                     best.insert(name, (*count, *high));
                 }
@@ -749,6 +749,11 @@ pub fn directive_targets(
         }
     }
     best.into_iter().map(|(name, (_, high))| (name.clone(), high)).collect()
+}
+
+fn width(fd: &Funcdata, high: HighVariableId) -> Option<int4> {
+    let h = fd.high_bank().get(high)?;
+    (h.num_instances() > 0).then(|| fd.vbank().get(h.get_instance(0)).map(|v| v.get_size())).flatten()
 }
 
 /// Did a `name` directive rename `sym` without stating a type: a Symbol it

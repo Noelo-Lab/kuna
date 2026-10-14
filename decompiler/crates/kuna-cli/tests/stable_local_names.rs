@@ -409,6 +409,19 @@ fn an_address_only_local_takes_its_retype() {
     }
 }
 
+/// A stack local read whole and by halves is three locals under one Symbol,
+/// printed by one declaration, and the retype goes to the whole one: a half
+/// that tied with it took the type, and the declaration kept its old one.
+#[test]
+fn a_stack_local_read_by_halves_is_retyped_whole() {
+    let fixture = "retypehalves_x86_64";
+    let plain = decompile_in(fixture, "control", &[], &[]);
+    assert!(plain.contains("  unsigned long v6; // rdx | stack - 0x38"), "{plain}");
+    let code = decompile_in(fixture, "control", &[], &["type v6 long"]);
+    assert!(code.contains("  long v6; // rdx | stack - 0x38"), "{code}");
+    assert_eq!(declared(&code), declared(&plain), "{code}");
+}
+
 /// A DWARF-named local takes a rename and a retype on both surfaces: the
 /// console re-seeded the DWARF local over the Symbol the directive had
 /// renamed, so the text surface kept printing `n`.
