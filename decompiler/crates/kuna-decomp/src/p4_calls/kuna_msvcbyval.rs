@@ -314,7 +314,7 @@ struct Walk {
     written: Vec<bool>,
     /// The call that builds the object at the by-value slot's start.
     builder: Option<OpId>,
-    /// An address inside the by-value slot was formed.
+    /// An address inside the by-value slot was formed while the slot was live.
     slot_taken: bool,
 }
 
@@ -445,9 +445,10 @@ fn walk_back(
             _ => {}
         }
         if let Some(t) = sp_pointer(data, cur, sp).map(|c| d + c) {
+            let live = (0..top).contains(&t) && !claimed[t as usize];
             if (slot.0..slot.1).contains(&t) {
-                slot_taken = true;
-            } else if (4..top).contains(&t) && !claimed[t as usize] {
+                slot_taken |= live;
+            } else if t >= 4 && live {
                 return None;
             }
         }
