@@ -1093,6 +1093,9 @@ kuna_options! { self, p1;
     "aifnoppad" => {
         on_off!(analysis_aifnoppad, "AIF padding/zero-fill candidate reject (GH-299)")
     },
+    "aifpoolslide" => {
+        on_off!(analysis_aifpoolslide, "AIF literal-pool candidate slide (GH-299)")
+    },
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
     },

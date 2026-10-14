@@ -3033,6 +3033,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (kuna, GH-299) The AIF filler reject, shaping the `aif` accept list the
         // same way; registered for the same fail-open reason.
         "aifnoppad" => arch.analysis_aifnoppad,
+        // (kuna, GH-299) The AIF literal-pool slide, shaping the `aif` accept list
+        // the same way; registered for the same fail-open reason.
+        "aifpoolslide" => arch.analysis_aifpoolslide,
         // (kuna) Tail-call function-entry recovery — default-OFF (discovers more
         // functions, so it changes emitted C by construction). Listing consumer;
         // the live gate is the pre-invocation check in `run_listing_consumers`.

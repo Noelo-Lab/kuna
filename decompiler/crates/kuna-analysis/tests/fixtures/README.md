@@ -1460,6 +1460,19 @@ while the signed `bge` bounds nothing and `lone3` stays a function. Regenerate f
 directory with `python3 thumbswitch_le32.py` (no cross toolchain). Used by
 `tests/stages/kuna-thumbswitch.xml`.
 
+### A literal pool word in front of a function
+
+`poolslide_le32` (652 bytes, ELF32/ARM, stripped, SHA-256
+`7ef7d18738380550af1a6f1d7d5b1fdab8c16e6685e599e638b2d47b7c45408f`) is a clean-room
+reduction of the GH-299 literal-pool entries. `.text` opens with a Cortex-M vector table whose
+reset vector is `_start`@`0x8110`, which calls 22 leaves (`movs r3,#n; adds r0,r0,r3; bx lr`)
+and `user`@`0x81f4` (`ldr r0,[pc,#0]; bx lr`), which loads the pool word at `0x81f8`
+(`0x20000124`). The unreferenced `lone`@`0x81fc` (`adds r0,r0,r1; lsls r0,r0,#1; bx lr`)
+follows it. The pool word's high half reads as `movs r0,#0`, which with `lone`'s `adds` is
+the leaves' prologue. With `aifpoolslide` off a `mode reliable` gap walk lists `sub_81fa` on
+the pool word; on, it lists `sub_81fc`. Regenerate from this directory with
+`python3 poolslide_le32.py` (no cross toolchain). Used by `tests/stages/kuna-aifpoolslide.xml`.
+
 ### Return values a caller reads
 
 `callerreads_x86_64_gcc_O2` (16,280 bytes, PIE x86-64, not stripped) is built from

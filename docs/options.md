@@ -704,6 +704,11 @@ Three tiers:
 | kuna functions reports a tbb or tbh function far smaller than its symbol | [`thumbswitch`](#thumbswitch) |
 | a function called only from a switch case is missing from a stripped firmware image | [`thumbswitch`](#thumbswitch) |
 | aif adds entries inside cortex-m switch statements | [`thumbswitch`](#thumbswitch) |
+| a sub_ entry starts on a literal pool word one word before a real function | [`aifpoolslide`](#aifpoolslide) |
+| a stripped arm function list lists a function 4 bytes early | [`aifpoolslide`](#aifpoolslide) |
+| a function's first decoded instruction is a conditional addvs or a movs r0,#0 that no code reaches | [`aifpoolslide`](#aifpoolslide) |
+| a real arm function is missing from a stripped inventory while the entry just before it is a pool word | [`aifpoolslide`](#aifpoolslide) |
+| aif adds entries on literal pools | [`aifpoolslide`](#aifpoolslide) |
 | routine reached only by a tail B produces no decompiled output at all | [`tailcallentry`](#tailcallentry) |
 | a shared ISR handler is swallowed by the two-instruction stub that branches to it | [`tailcallentry`](#tailcallentry) |
 | function entry missing where the previous function ends in an unconditional branch | [`tailcallentry`](#tailcallentry) |
@@ -2628,6 +2633,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default). It only fires at a PC-relative tbb/tbh that a range check bounds, so it adds code the switch provably dispatches to: a stripped Cortex-M function list loses the sub_ entries that were switch cases, and the functions those cases call are found. Flip off to reproduce the GH-299 measurement exactly, or when a hand-written tbb/tbh whose table is not where the range check says makes the walk decode a case region that is not code.
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · GH-299
 - **Example:** `--option thumbswitch off`
+
+### `aifpoolslide` -- on | off, default `on`
+
+- **Symptoms:** a sub_ entry starts on a literal pool word one word before a real function; a stripped arm function list lists a function 4 bytes early; a function's first decoded instruction is a conditional addvs or a movs r0,#0 that no code reaches; a real arm function is missing from a stripped inventory while the entry just before it is a pool word; aif adds entries on literal pools.
+- **What it does:** Never plant an Aggressive Instruction Finder gap entry on a literal-pool word; plant it on the code after the pool (GH-299). ARM code keeps its constants in pools right after the code that loads them, so a pool usually sits between one function and the next, and the Listing walk never decodes it. The gap walk reads a pool word as an instruction (an A32 image address 0x608xxxxx as addvs, the high half of a Thumb SRAM pointer 0x2000xxxx as movs r0,#0) whose pairing with the next function's prologue matches the fingerprint, and whose speculative body runs into that function and validates; the entry lands a word or half a word early and, because an accept consumes its body, the function behind it is never probed. With this on, the walk keeps the set of words that decoded Listing instructions load PC-relatively (the absolute [0x...] operand of a resolved ldr, the [pc,#imm] form of vldr/ldrd, both words of a 64-bit load), extended with the literal words of every body it accepts or consumes. A candidate inside a run of adjacent literal words is probed as before, but its accept is planted on the first address after the run when its body decoded an instruction there, and it is rejected otherwise so the walk reaches the code after the pool. 32-bit ARM only. Measured with each stripped image scored against its unstripped twin's symbol table, default mode: over the 93 non-u-boot 32-bit ARM ELFs of the decbench corpus mid-body entries fall 4,375 to 1,868 net and true function starts rise by 223; on the two u-boot A32 images mid-body entries fall 1,415 to 1,081 and true starts rise by 334; no true start is lost, and CMSIS_DAP.axf, 12 i386 decbench PEs, 17 Wine DLLs, 16 MinGW crackmes and 25 x86-64 images are unchanged. The new entries are 557 true starts, 21 mid-body entries and 128 entries on data islands in .text (string tables between functions), against 88 such entries removed. Inert without aif and without --option listing on, so the datatest corpus is byte-identical.
+- **When to flip:** On (default). It only moves or refuses a gap entry whose first bytes some instruction loads as a constant, so it removes entries that are data and lists the function behind the pool at its own address. Flip off to reproduce the GH-299 measurement exactly, or when an ARM image computes into a word it also executes (self-modifying code) and a real function that begins on a loaded word disappears from a stripped function list.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · GH-299
+- **Example:** `--option aifpoolslide off`
 
 ### `tailcallentry` -- on | off, default `off`
 

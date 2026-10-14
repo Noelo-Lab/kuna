@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2838,
-    2838
+    2842,
+    2842
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -881,6 +881,10 @@
     "data:KUNA-AIFNOPPAD #4: lone is found at its own address only with the option on",
     "data:KUNA-AIFNOPPAD #5: the mov edi,edi entry after a return stays an AIF function",
     "data:KUNA-AIFNOPPAD #6: the catalog documents it as a default-on P1 code/data-partition option",
+    "data:KUNA-AIFPOOLSLIDE #1: the reset handler is a function in both passes",
+    "data:KUNA-AIFPOOLSLIDE #2: the entry on the pool word is listed only with the option off",
+    "data:KUNA-AIFPOOLSLIDE #3: lone is listed at its own address only with the option on",
+    "data:KUNA-AIFPOOLSLIDE #4: the catalog documents it as a default-on P1 code/data-partition option",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
     "data:KUNA-ASSERT #2: kassert list reports the P3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic P9 assertion as HINT via HARD mechanism",
@@ -892,7 +896,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 295 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 296 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",

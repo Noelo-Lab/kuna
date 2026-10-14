@@ -4791,6 +4791,36 @@ function behind padding, now at its own address) and 38 on the ARM ELFs (the
 function a zero run used to swallow); it removes 7,446 non-start PE entries and a
 net 77 mid-body ARM ones, and leaves i386 and x86-64 ELFs unchanged.
 
+(kuna, GH-299) No gap entry starts on a literal-pool word: `aifpoolslide`
+(default-on; `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifpoolslide.rs`).
+ARM code keeps its constants in pools right after the code that loads them, so a
+pool usually sits between one function and the next, and the walk never decodes
+it. The gap walk then reads a pool word as an instruction — an A32 image address
+`0x608xxxxx` as `addvs`, the high half of a Thumb SRAM pointer `0x2000xxxx` as
+`movs r0,#0` — whose pairing with the next function's prologue matches the
+fingerprint, and whose speculative body runs into that function and validates. The
+entry lands a word or half a word early, and because an accept consumes its body,
+the function behind it is never probed: on a stripped A32 u-boot this hid 334 real
+functions. `poolentry` repairs the same shape after the fact, but only in
+`--mode aggressive`, only for a pool behind a return (u-boot's often follow a call
+to a no-return function), and only by adding a second entry. Here the walk keeps a
+set of literal words: every word a decoded Listing instruction loads PC-relatively
+(the absolute `[0x...]` operand of a resolved `ldr`, the `[pc,#imm]` form of
+`vldr`/`ldrd`, both words of a 64-bit load), extended with the literal words of
+each body it accepts or consumes, so the pool behind a gap-found function is known
+by the time the walk reaches it. A candidate inside a run of adjacent literal words
+is probed as before, but its accept is planted on the first address after the run
+when its body decoded an instruction there, and it is rejected otherwise, so the
+cursor reaches the code after the pool and probes it on its own. It is 32-bit ARM
+only and runs only in the plain gap walk. Scored against unstripped twins in the
+default mode: over the 93 non-u-boot ARM ELFs of the decbench corpus mid-body
+entries 4,375 to 1,868 net and true starts +223; on the two u-boot images
+1,415 to 1,081 and +334; no true start lost, and `CMSIS_DAP.axf`, the i386 PE
+corpus and x86-64 images unchanged. The new entries are 557 true starts, 21
+mid-body entries and 128 entries on data islands in `.text` (string tables between
+functions), against 88 such entries removed: a phantom on a referenced word in
+such a table moves to the next, unreferenced word rather than disappearing.
+
 (kuna, GH-313) Upstream applies a **second** fingerprint test that kuna's port
 dropped. Its analyzer refuses a candidate twice — once on the shared-prologue count
 alone, and again after the validity walk, where a routine that adds no information

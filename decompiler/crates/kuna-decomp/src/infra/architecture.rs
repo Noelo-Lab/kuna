@@ -2271,6 +2271,12 @@ pub struct Architecture {
     /// padding is planted after it. Inert without `aif`, so every parity gate is
     /// byte-identical.
     pub analysis_aifnoppad: bool,
+    /// (kuna, GH-299) Gate the AIF literal-pool slide (`aifpoolslide`); default
+    /// **on**. A gap candidate on a word some instruction loads PC-relatively is
+    /// pool data: its accept is planted on the first address after the pool when
+    /// its body decoded an instruction there, and it is rejected otherwise. 32-bit
+    /// ARM only; inert without `aif`, so every parity gate is byte-identical.
+    pub analysis_aifpoolslide: bool,
     /// (kuna) Gate tail-call function-entry recovery (`tailcallentry`); default
     /// **off**. The recursive-descent Listing walk treats every non-CALL flow
     /// target as a same-function successor, so a routine reached only by a tail
@@ -2968,6 +2974,7 @@ impl Architecture {
             analysis_aifcorroborate: false,
             analysis_aifbracket: true,
             analysis_aifnoppad: true,
+            analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
             analysis_gopclntab: false,
             analysis_objc: false,
@@ -3355,6 +3362,8 @@ impl Architecture {
         self.analysis_aifbracket = true;
         // (kuna, GH-299) AIF filler reject -- default-ON; inert without `aif`.
         self.analysis_aifnoppad = true;
+        // (kuna, GH-299) AIF literal-pool slide -- default-ON; inert without `aif`.
+        self.analysis_aifpoolslide = true;
         self.analysis_tailcallentry = false; // tail-call function-entry recovery default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
