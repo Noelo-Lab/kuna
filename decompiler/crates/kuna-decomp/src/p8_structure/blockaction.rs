@@ -3762,7 +3762,7 @@ impl Action for ActionBlockStructure {
         }
         Some(Box::new(ActionBlockStructure { base: self.base.clone() }))
     }
-    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ blockaction.cc:2170.
         if data.sblocks_get_size() != 0 {
             crate::p8_structure::kuna_condstmts::record_hits(data);
@@ -3784,7 +3784,11 @@ impl Action for ActionBlockStructure {
         // unchanged `CollapseStructure` path.  OFF (default) skips this entirely and
         // output is byte-identical.
         if data.get_arch().region_structure {
-            match crate::p8_structure::region_structurer::run_region_structurer(data) {
+            let result = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline);
+            if ctx.deadline_expired() {
+                return 0;
+            }
+            match result {
                 Ok((true, flips)) => {
                     // Realize the deferred data-flow half of the loop-condition
                     // `negateCondition`s the region structurer recorded (the same
