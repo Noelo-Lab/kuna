@@ -599,7 +599,12 @@ engine's `instructions[].lines`, `line_mappings` and the addresses on that line'
 (each alone can be sparse — the provenance maps calls and returns, not every move). A
 line and its instructions share a colour band. Hovering marks the other panes without
 scrolling them; selecting (a line, an instruction, a variable, a stack slot) marks every
-pane, scrolls the others to it and fills the Explain panel's card. The hover card waits
+pane, scrolls the others to it and fills the Explain panel's card. A pane that comes on
+screen afterwards (switching to *Bytes* or *Assembly* by tab, key or Side by side) opens
+marked and scrolled to it as well: the selected instruction, else the first instruction of
+the selected line (or of the line under the code's cursor, for a variable), centred when
+it is not already in view. *Code* follows only a selected instruction, so it never jumps
+to a variable's first use (`sync.js` `show`). The hover card waits
 450 ms by default (View options → Hover delay: Instant, Short 250, Normal, Slow 800,
 Off; with *Show hints* off there is no card at all), switches instantly while open, and hides on pointer-out (120 ms grace), scroll,
 wheel, blur, mousedown and `Escape`; a touch long-press (500 ms) and arrow-key

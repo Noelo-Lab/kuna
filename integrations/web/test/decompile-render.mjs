@@ -18,7 +18,7 @@ import {
 import { entryOffset } from '../decompile/addr.js';
 import { parseRustSignature } from '../decompile/ctype.js';
 import { placeOverlay } from '../decompile/hover.js';
-import { expand } from '../decompile/sync.js';
+import { expand, createSync } from '../decompile/sync.js';
 
 /** The text a browser would show for our own renderer's markup: tags dropped, the five escapes decoded. */
 function visibleText(markup) {
@@ -376,7 +376,19 @@ assert.deepEqual([...sets.addrs], ['0x11b5', '0x11c2']);
 assert.deepEqual([...expand({ addr: '0x11e1' }, mainIndex).lines], [6]);
 assert.ok(expand({ sym: 'v1' }, mainIndex).lines.has(7));
 assert.equal(expand(null, mainIndex).lines.size, 0);
-checks.push('placeOverlay/expand');
+const seen = [];
+const sync = createSync();
+sync.setIndex(mainIndex);
+sync.register('bytes', { mark: (s, cls) => seen.push(['mark', cls, s ? [...s.addrs] : null]), reveal: (t, s, how) => seen.push(['reveal', [...s.addrs], how]) });
+sync.select({ line: 5 }, { from: 'c', reveal: false });
+seen.length = 0;
+sync.show('bytes');
+assert.deepEqual(seen, [['mark', 'hl-sel', ['0x11b5', '0x11c2']], ['mark', 'hl-hover', null], ['reveal', ['0x11b5', '0x11c2'], { arriving: true }]],
+  'a view that comes on screen is marked and scrolled to the selection');
+seen.length = 0;
+sync.show('bytes', { addr: '0x11e1' });
+assert.deepEqual(seen.at(-1), ['reveal', ['0x11e1'], { arriving: true }], 'or to the place it is given');
+checks.push('placeOverlay/expand/show');
 
 // ── the type definitions above a function (structs.elf: make_item) ────────
 const item = normalizeInspect(fixture('inspect-make_item.json'));
