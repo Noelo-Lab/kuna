@@ -11,7 +11,7 @@ One R-X PT_LOAD at 0x8000 (file offset == vma - 0x8000). `.text` opens with a
 Cortex-M vector table (initial SP, then the reset vector `_start`), so the image
 is Thumb throughout:
 
-  _start  bl leaf0 .. leaf21, bl user, bl taker, b .
+  _start  bl leaf0 .. leaf21, bl user, bl taker, bl namer, b .
   leafN   movs r3,#N; adds r0,r0,r3; bx lr
   user    ldr r0,[pc,#0]; bx lr          (loads the pool word below)
   pool    .word 0x20000124               (an SRAM address; its high half reads
@@ -19,11 +19,17 @@ is Thumb throughout:
   lone    adds r0,r0,r1; lsls r0,r0,#1; bx lr  (nothing calls it)
   taker   adr r1,h3; adds r1,#1; bx r1   (takes h3's address, loads nothing)
   h3      movs r3,#11; adds r0,r0,r3; bx lr
+  namer   ldr r1,[pc,#4]; ldr r0,[pc,#8]; bx lr  (loads the two pool words below)
+  pool2   .word name; .word 0x20000124
+  name    "A0pG"                         (a string `namer` loads the address of)
 
 The high half of the pool word followed by `lone`'s `adds` reads as the leaves'
 `movs; adds` prologue, so a gap walk that probes it accepts it and claims `lone`
 as its body; `lone`'s own `adds; lsls` matches no other function. `adr` names
-`h3`'s first word without loading it, so that word is code, not a pool.
+`h3`'s first word without loading it, so that word is code, not a pool. After
+`pool2` the high half of 0x20000124 and the string's bytes read as
+`movs r0,#0; adds r0,#0x41; bx lr` — the leaves' prologue again — and the first
+address after the pool is the string.
 """
 import os
 import struct
@@ -47,7 +53,7 @@ def bl(at, target):
 
 
 def build():
-    start_len = 4 * (LEAVES + 2) + 2
+    start_len = 4 * (LEAVES + 3) + 2
     leaf_at = [CODE + start_len + 6 * i for i in range(LEAVES)]
     user = leaf_at[-1] + 6
     pad = (4 - user % 4) % 4
@@ -56,8 +62,10 @@ def build():
     lone = pool + 4
     taker = lone + 8
     h3 = taker + 8
+    namer = h3 + 8
+    name = namer + 16
     hw = []
-    for t in leaf_at + [user, taker]:
+    for t in leaf_at + [user, taker, namer]:
         hw += bl(CODE + 2 * len(hw), t)
     hw += [0xE7FE]
     for i in range(LEAVES):
@@ -72,8 +80,13 @@ def build():
     assert CODE + 2 * len(hw) == taker and taker % 4 == 0
     hw += [0xA100 | ((h3 - ((taker + 4) & ~3)) // 4), 0x3101, 0x4708, 0xBF00]
     assert CODE + 2 * len(hw) == h3
-    hw += [0x230B, 0x18C0, 0x4770]
-    labels = dict(user=user, pool=pool, lone=lone, taker=taker, h3=h3)
+    hw += [0x230B, 0x18C0, 0x4770, 0xBF00]
+    assert CODE + 2 * len(hw) == namer and namer % 4 == 0
+    hw += [0x4901, 0x4802, 0x4770, 0xBF00]
+    hw += [name & 0xFFFF, name >> 16, POOL_WORD & 0xFFFF, POOL_WORD >> 16]
+    assert CODE + 2 * len(hw) == name
+    hw += [0x3041, 0x4770, 0x0000, 0x0000]
+    labels = dict(user=user, pool=pool, lone=lone, taker=taker, h3=h3, namer=namer, name=name)
     vectors = struct.pack("<IIII", 0x20001000, CODE | 1, 0, 0)
     return vectors + b"".join(struct.pack("<H", h) for h in hw), labels
 

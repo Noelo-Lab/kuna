@@ -1462,17 +1462,20 @@ directory with `python3 thumbswitch_le32.py` (no cross toolchain). Used by
 
 ### A literal pool word in front of a function
 
-`poolslide_le32` (672 bytes, ELF32/ARM, stripped, SHA-256
-`4bf23618c5995bed2341634fa7a00de42d06502de5d62bc63493e26b503b9b8c`) is a clean-room
+`poolslide_le32` (704 bytes, ELF32/ARM, stripped, SHA-256
+`73e935673fed7e49355bbda53ac363d6dc0ede3e9a49f5a2e162b1fcc41c7f04`) is a clean-room
 reduction of the GH-299 literal-pool entries. `.text` opens with a Cortex-M vector table whose
 reset vector is `_start`@`0x8110`, which calls 22 leaves (`movs r3,#n; adds r0,r0,r3; bx lr`),
-`user`@`0x81f8` (`ldr r0,[pc,#0]; bx lr`), which loads the pool word at `0x81fc`
-(`0x20000124`), and `taker`@`0x8208` (`adr r1,h3; adds r1,#1; bx r1`). The unreferenced
-`lone`@`0x8200` (`adds r0,r0,r1; lsls r0,r0,#1; bx lr`) follows the pool, and `h3`@`0x8210`
-follows `taker`. The pool word's high half reads as `movs r0,#0`, which with `lone`'s `adds` is
-the leaves' prologue. With `aifpoolslide` off a `mode reliable` gap walk lists `sub_81fe` on
-the pool word; on, it lists `sub_8200`; `h3`, whose address `adr` takes, stays at `0x8210`.
-Regenerate from this directory with `python3 poolslide_le32.py` (no cross toolchain). Used by
+`user`@`0x81fc` (`ldr r0,[pc,#0]; bx lr`), which loads the pool word at `0x8200`
+(`0x20000124`), `taker`@`0x820c` (`adr r1,h3; adds r1,#1; bx r1`) and `namer`@`0x821c`, which
+loads the pool words at `0x8224` (the address of the string `"A0pG"`@`0x822c`) and `0x8228`
+(`0x20000124`). The unreferenced `lone`@`0x8204` (`adds r0,r0,r1; lsls r0,r0,#1; bx lr`)
+follows the first pool, and `h3`@`0x8214` follows `taker`. A pool word's high half reads as
+`movs r0,#0`, which with `lone`'s `adds`, or with the string's bytes (`adds r0,#0x41; bx lr`),
+is the leaves' prologue. With `aifpoolslide` off a `mode reliable` gap walk lists `sub_8202`
+and `sub_822a` on the pool words; on, it lists `sub_8204`, refuses the entry the string would
+get, and keeps `h3`, whose address `adr` takes, at `0x8214`. Regenerate from this directory
+with `python3 poolslide_le32.py` (no cross toolchain). Used by
 `tests/stages/kuna-aifpoolslide.xml`.
 
 ### Return values a caller reads

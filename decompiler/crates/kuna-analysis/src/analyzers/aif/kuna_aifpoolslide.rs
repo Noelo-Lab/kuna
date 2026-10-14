@@ -88,8 +88,8 @@ impl<'a> LiteralWords<'a> {
     }
 
     fn note(&mut self, listing: &Listing, at: u64, mnemonic: &str, operands: &str) {
-        let m = mnemonic.to_ascii_lowercase();
-        if !(m.starts_with("ldr") || m.starts_with("vldr")) {
+        let starts = |p: &str| mnemonic.get(..p.len()).is_some_and(|m| m.eq_ignore_ascii_case(p));
+        if !(starts("ldr") || starts("vldr")) {
             return;
         }
         let Some(target) = literal_target(at, operands, &self.mode) else { return };
