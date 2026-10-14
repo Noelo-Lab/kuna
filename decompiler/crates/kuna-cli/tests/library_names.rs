@@ -188,14 +188,19 @@ fn a_local_a_rename_took_its_library_name_from_prints_its_number() {
     renames_only(&["name v5 fd_2", "name v2 second"], &[("fd_2", "v5"), ("second", "fd_2")]);
 }
 
-/// A library name never repeats a global's (`note_pid` reads the global
-/// `pid`), and the suffixed name a clash takes is addressable.
+/// A library name never repeats a global's, whether the function reads the
+/// global (`note_pid`) or not (`self_pid`), and the suffixed name a clash
+/// takes is addressable.
 #[test]
 fn a_library_name_takes_a_suffix_past_a_global() {
+    for function in ["note_pid", "self_pid"] {
+        let code = decompile_in("libcnames_x86_64", function, &[], &[]);
+        assert!(code.contains("  pid_2 = getpid();\n"), "{function}:\n{code}");
+        let code = decompile_in("libcnames_x86_64", function, &[], &["name pid_2 mine"]);
+        assert!(code.contains("  mine = getpid();\n"), "{function}:\n{code}");
+    }
     let code = decompile_in("libcnames_x86_64", "note_pid", &[], &[]);
-    assert!(code.contains("  pid_2 = getpid();\n") && code.contains("pid = pid_2;"), "{code}");
-    let code = decompile_in("libcnames_x86_64", "note_pid", &[], &["name pid_2 mine"]);
-    assert!(code.contains("  mine = getpid();\n"), "{code}");
+    assert!(code.contains("pid = pid_2;"), "{code}");
 }
 
 /// `access` names its mode argument `type`, a Rust keyword, which no local

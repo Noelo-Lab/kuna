@@ -764,7 +764,8 @@ names nothing. The local must be one the walk numbered: not an input, a
 global, a constant or a structure piece, and not a speculative merge of
 several classes. A clash takes `_2`, `_3`, ... in the order of the evidence
 (`fd`, `fd_2` for two `open`s), and no spelling repeats a name any variable of
-the function prints (a global's included), the scope holds, a callee or the
+the function prints, any global the program names (`GlobalQuery::has_symbol_name`,
+whether or not the function reads it), the scope holds, a callee or the
 function itself has.
 
 A directive reaches such a local by either name.

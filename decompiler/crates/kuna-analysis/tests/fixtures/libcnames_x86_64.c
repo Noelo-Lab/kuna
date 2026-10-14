@@ -81,6 +81,12 @@ int note_pid(void)
     return self * 2 + pid;
 }
 
+int self_pid(void)
+{
+    int me = getpid();
+    return me * 3 + (me > 7);
+}
+
 int stamp(time_t a, time_t b)
 {
     struct tm *x = localtime(&a);
@@ -109,6 +115,6 @@ int main(int argc, char **argv)
     puts(both);
     free(both);
     printf("%ld\n", copy_file(argv[1], argv[2]));
-    printf("%d %d %d\n", note_pid() - pid, stamp(0, 100000), can(argv[1], argv[2]));
+    printf("%d %d %d %d\n", note_pid() - pid, self_pid(), stamp(0, 100000), can(argv[1], argv[2]));
     return first_line(argv[1], line, sizeof line);
 }

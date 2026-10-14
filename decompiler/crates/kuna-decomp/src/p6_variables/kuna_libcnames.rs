@@ -255,10 +255,10 @@ pub fn candidates(fd: &mut Funcdata) -> Vec<Candidate> {
 
 /// Give each candidate still printed under its number its library name, after
 /// the walk has numbered every local and recorded that numbering. Every
-/// spelling is unique against every name a variable or the scope holds, the
-/// callees and the function itself; under a carried record a local keeps the
-/// spelling it printed, and a spelling a rename took or vacated, or another
-/// local printed, goes to no one else.
+/// spelling is unique against every name a variable or the scope holds, every
+/// global the program names, the callees and the function itself; under a
+/// carried record a local keeps the spelling it printed, and a spelling a
+/// rename took or vacated, or another local printed, goes to no one else.
 pub fn apply(fd: &mut Funcdata, candidates: &[Candidate]) {
     let shown = fd.get_arch().libc_names;
     let angr = fd.get_arch().name_style_angr;
@@ -274,8 +274,12 @@ pub fn apply(fd: &mut Funcdata, candidates: &[Candidate]) {
     taken.extend(prior.renames.values().cloned());
     taken.extend(prior.vacated_names.iter().cloned());
     let printed_before: BTreeSet<String> = prior.aliases.values().cloned().collect();
+    let globals = fd.get_arch().global_name_scope();
     let free = |fd: &Funcdata, taken: &BTreeSet<String>, name: &str| {
-        !taken.contains(name) && usable(fd, name) && fd.get_scope_local().is_none_or(|lm| !lm.local_name_used(name))
+        !taken.contains(name)
+            && usable(fd, name)
+            && fd.get_scope_local().is_none_or(|lm| !lm.local_name_used(name))
+            && globals.as_ref().is_none_or(|g| !g.has_symbol_name(name))
     };
     let mut out: Vec<LibraryAlias> = Vec::new();
     for c in candidates {

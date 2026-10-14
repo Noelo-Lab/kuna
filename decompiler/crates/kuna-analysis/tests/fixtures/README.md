@@ -1521,14 +1521,14 @@ and `interp`; on, it adds `pre_a`, `pre_b` and the handler and nothing else. Reg
 with `python3 pe_addrtaken_x86_64.py`. Used by `tests/stages/kuna-addrtakenentry.xml` and
 the `kuna_pereloccode` unit tests.
 
-`libcnames_x86_64` (17,008 bytes, SHA-256
-`f20d7f399340aec61254cf390d031186ea3766df08a07b29fc5819e1bac36354`) and `libcnames_O0_x86_64`
-(16,992 bytes, SHA-256 `343e4abebd5a4be48bdf26ba0b4f736c21038ab9e9605226f1f97efdb92dd599`) are
+`libcnames_x86_64` (17,040 bytes, SHA-256
+`45c441dd4db008a5ce8888744c43af9be5aab4a54bf3792ddb5df4a369619466`) and `libcnames_O0_x86_64`
+(17,024 bytes, SHA-256 `2b91f417e177f44ff6c08c5a966bc47f7c7d11a1eb3c22ebeb7391e83c9fd343`) are
 `libcnames_x86_64.c` built with Ubuntu gcc 11.4, `-O2 -fno-inline -fno-stack-protector` and
 `-O0 -fno-stack-protector` (the default `_FORTIFY_SOURCE` turns the `-O2` `fgets` into
 `__fgets_chk`), symbols kept. Its functions meet `open`, `read`, `write`, `close`, `strlen`,
 `malloc`, `memcpy`, `fopen`, `fgets`, `strcmp`, `getpid`, `localtime`, `access` and `printf` in the
 shapes the `libcnames` naming pass reads: a result held in a local, a local passed whole, two calls
 naming one local, one local `strcmp` takes as `s2` and then as `s1`, a result named like a global
-(`pid`), results whose type is the typedef `tm`, and a parameter named like a keyword (`type`).
+(`pid`) in a function that reads it and in one that does not, results whose type is the typedef `tm`, and a parameter named like a keyword (`type`).
 Used by `tests/stages/kuna-libcnames.xml` and `kuna-cli/tests/library_names.rs`.
