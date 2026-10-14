@@ -2078,7 +2078,7 @@ mod tests {
         // table (GH-299)
         // and kuna-aifpoolslide / no AIF entry starts on a literal-pool word
         // (GH-299)
-        assert_eq!(count, 534, "corpus file count drifted");
+        assert_eq!(count, 535, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

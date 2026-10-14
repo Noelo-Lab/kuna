@@ -85,7 +85,11 @@ fn partial_global_writes_reach_aliasing_loads_before_whole_writes() {
             assert_eq!(
                 volatile_body
                     .lines()
-                    .filter(|line| line.trim_start().starts_with("gv") && line.contains(" = "))
+                    .filter(|line| {
+                        line.split_once(" = ").is_some_and(|(lhs, _)| {
+                            lhs.trim_start().starts_with("gv") || lhs.contains("&gv")
+                        })
+                    })
                     .count(),
                 3,
                 "volatile stores changed width or multiplicity:\n{volatile_body}"

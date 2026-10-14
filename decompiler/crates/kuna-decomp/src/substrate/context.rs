@@ -1199,6 +1199,8 @@ pub struct ArchContext {
     pub stack_views: bool,
     /// Opt-in frame-bounded arrays for call-escaped integer storage.
     pub call_array_extent: bool,
+    /// (kuna `stackstruct`) Lay out an address-taken frame record as one structure.
+    pub stack_struct: bool,
     /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
     /// `RulePropagateCopy` marker propagation that would leave an address-tied
     /// `COPY` output holding a call's return value with no readers, so a
@@ -1861,6 +1863,7 @@ impl ArchContext {
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
             call_array_extent: false,
+            stack_struct: false,
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)

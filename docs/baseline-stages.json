@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2846,
-    2846
+    2864,
+    2864
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -900,7 +900,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 296 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 298 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -2646,6 +2646,24 @@
     "data:stack lifetimes: unknown memory observers remain in both modes",
     "data:stackarggap #1: option off invents a fourth and fifth argument to reach a stack slot (bug reproduced)",
     "data:stackarggap #2: option on ends the argument list at the register the caller never wrote",
+    "data:stackstruct #10: structdefs prints the record above the function",
+    "data:stackstruct #11: gcc -O0's later slots stay separate locals",
+    "data:stackstruct #12: the vector zero store's lanes put the count in the gcc -O2 record",
+    "data:stackstruct #13: memset's byte count puts the data pointer in the clang -O0 record",
+    "data:stackstruct #14: one 8-byte word stays a scalar with the options off and on",
+    "data:stackstruct #15: a string built in place stays text, its byte read typed",
+    "data:stackstruct #16: partialaccess is a discoverable P9 opt-in",
+    "data:stackstruct #17: stackstruct is a discoverable P6 opt-in",
+    "data:stackstruct #18: a 16-byte zero store into a byte array is a memset of its 16 bytes",
+    "data:stackstruct #1: off, the short field of the header is a partial member of one scalar",
+    "data:stackstruct #2: off, the two byte fields are partial members too",
+    "data:stackstruct #3: off, clang -O0 splits the memset record into unrelated scalars",
+    "data:stackstruct #4: partialaccess prints the short field as a typed pointer access",
+    "data:stackstruct #5: partialaccess prints the byte fields as byte accesses",
+    "data:stackstruct #6: bytes out of a byte array take its byte subscript, and the unknown of their width",
+    "data:stackstruct #7: stackstruct declares exactly the four header records, and neither control",
+    "data:stackstruct #8: the version test names its member",
+    "data:stackstruct #9: the byte fields name their members",
     "data:stackviews binds ordinary global addresses to declared object views",
     "data:stackviews binds volatile global addresses to declared object views",
     "data:stackviews keeps the declared backing layout",

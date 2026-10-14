@@ -7281,7 +7281,7 @@ fn a_split_load_is_not_moved_past_a_store_or_a_call() {
         let (i, j) = (b.find(read), b.find(after));
         assert!(i.is_some() && j.is_some() && i < j, "{name}: `{read}` must print before `{after}`:\n{b}");
     }
-    assert!(body("plain").contains("v1._0_1_ = s->c7;"), "plain no longer splits:\n{}", body("plain"));
+    assert!(body("plain").contains("*(char *)&v1 = s->c7;"), "plain no longer splits:\n{}", body("plain"));
 
     if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("splitload round trip: no `cc`, order checked only");
@@ -9568,8 +9568,8 @@ fn an_aarch64_double_return_leaves_out_the_zero_fill() {
     assert!(ok, "kuna decompile-all failed: {stderr}");
     let fa = printed_functions(&stdout, &["fa "]);
     let mk = printed_functions(&stdout, &["mk "]);
-    assert!(mk.contains("// d1:d0") && mk.contains("._8_8_ = a0 * a0;"), "mk's reloaded pair is not joined:\n{mk}");
-    assert!(!fa.contains("d1:d0") && fa.contains("._8_8_ = 0;"), "fa joins a d1 its callee may have left:\n{fa}");
+    assert!(mk.contains("// d1:d0") && mk.contains("*(double *)&v1[8] = a0 * a0;"), "mk's reloaded pair is not joined:\n{mk}");
+    assert!(!fa.contains("d1:d0") && fa.contains("[8] = 0;"), "fa joins a d1 its callee may have left:\n{fa}");
 }
 
 /// `voidret_complexpick_a64.o` (clang -O2, AArch64): `pick` tail-calls `cpart`,

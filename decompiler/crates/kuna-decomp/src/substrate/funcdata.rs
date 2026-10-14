@@ -230,6 +230,9 @@ pub struct Funcdata {
     /// re-declared, as `(offset, size, type)`; read by
     /// [`crate::kuna_castobject::reconcile`] once the variables are merged.
     cast_objects: std::cell::RefCell<Vec<(kuna_base::types::uintb, int4, std::rc::Rc<crate::dtype::Datatype>)>>,
+    /// (kuna `stackstruct`) Every frame record a `restructure_varnode` pass laid
+    /// out; later passes keep it while no access contradicts its bounds.
+    stack_records: std::cell::RefCell<Vec<crate::p6_variables::kuna_stackstruct::StackRecord>>,
     /// (kuna `stackstoreguard`) Set once a `restructure_varnode` pass lays out a
     /// guarded store's reach; later passes keep doing so
     /// (`p6_variables/kuna_storereach.rs`).
@@ -686,6 +689,7 @@ impl Funcdata {
             frame_slots: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             slot_evidence: std::cell::RefCell::new(Default::default()),
             cast_objects: std::cell::RefCell::new(Vec::new()),
+            stack_records: std::cell::RefCell::new(Vec::new()),
             store_reach_committed: std::cell::Cell::new(false),
             store_reach_checks: std::cell::RefCell::new(Default::default()),
             indexed_guard_stores: std::cell::RefCell::new(Default::default()),
@@ -2121,6 +2125,18 @@ impl Funcdata {
     /// (kuna `framelayout`) The union of every stack-frame slot any pass recovered.
     pub fn frame_slots(&self) -> Vec<(i64, FrameSlot)> {
         self.frame_slots.borrow().iter().map(|(k, v)| (*k, v.clone())).collect()
+    }
+
+    /// (kuna `stackstruct`) The frame records earlier passes laid out.
+    pub fn stack_records(&self) -> Vec<crate::p6_variables::kuna_stackstruct::StackRecord> {
+        self.stack_records.borrow().clone()
+    }
+
+    /// (kuna `stackstruct`) Remember a frame record, replacing one at the same start.
+    pub fn record_stack_record(&self, r: crate::p6_variables::kuna_stackstruct::StackRecord) {
+        let mut all = self.stack_records.borrow_mut();
+        all.retain(|o| o.start != r.start);
+        all.push(r);
     }
 
     /// (kuna `castobject`) Remember the stack objects one pass re-declared.

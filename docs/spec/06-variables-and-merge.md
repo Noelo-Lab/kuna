@@ -1128,6 +1128,83 @@ parent base. Parameters and positive frame offsets are excluded. Explicit local
 types remain authoritative. The implementation is
 `decompiler/crates/kuna-decomp/src/p6_variables/kuna_callarrayextent.rs`.
 
+**Address-taken frame records (kuna `stackstruct`, default `off`, on in
+`aggressive`).** A local record whose address is handed to a callee keeps no
+type in a stripped binary, so the hints above make one scalar per slot: the
+byte and short members inside a slot become partial views of an `unsigned
+long` (`v1._4_2_`), and the slots after it become locals of their own. With
+the option on, `restructure_varnode` replaces the hints of such an object with
+one fixed hint of a synthesized structure, just before `restructure` merges
+them. The object is found from evidence about the object itself, never from
+adjacency:
+
+- Its start is an alias-checker base with no index term that reaches a `CALL`
+  or `CALLIND` as an argument.
+- Its extent grows from that start over what single accesses prove: an access
+  that begins at the start or inside the current extent and ends past it, the
+  contiguous writes one machine instruction made (a 16-byte vector zero store
+  that the lane split cut into two 8-byte words), and the byte count a buffer
+  call states for that address (`memset`, `memcpy`, `memmove`, `memcmp`,
+  `bzero`, `explicit_bzero`, `read`, `write`, `recv`, `send`, `fread`,
+  `fwrite`, and the compiler's object size in `__memset_chk`, `__memcpy_chk`,
+  `__memmove_chk`, `__read_chk`, `__fread_chk`). A slot next to the object
+  that no such access reaches stays an ordinary local, so a header read
+  through `read(fd,&h,8)` whose later slots are only reloaded keeps them
+  separate. An access that straddles the start of another address reaching a
+  call at its own start links nothing: a compiler zeroes or reloads two
+  adjacent locals with one access (an AArch64 `stp` of `xzr`, an 8-byte load of
+  an `int` and a `{short, short}`), and two addresses handed to calls
+  separately are two objects.
+- Its members are the accesses wholly inside the extent; an access that
+  strictly contains another is an initializer or a copy and claims nothing,
+  two claims that overlap or disagree in width at one offset decline, and a
+  member's type is the one every access of it carried, else the unknown type
+  of its width, or the float of its width when an unknown-typed access of it
+  carries a float (a C member of integer type would convert the value).
+
+It is a record only when at least two members of different widths remain, each
+naturally aligned and 1, 2, 4 or 8 bytes wide, and the extent is a multiple of
+the widest; one width at one offset is a scalar and a run of equal widths is an
+element walk, and both keep the default layout. The object also declines when
+an access crosses its start (the escaped address is inside a larger object), it
+would reach past the local frame, a hint over it is type-locked, shared
+storage, indexed or a composite some other evidence typed (a `libctypes`
+`stat`, a DWARF record), a write stores the bytes of text (a string built in
+place, which the compiler splits into words of whatever widths fit), a wide
+access copies a non-constant value over its members, or a read
+of the whole object uses the bytes as one value. The last two are the
+register-shared slot: a frame word that one path fills with a pointer and
+another with a `CONCAT` of bytes is not a record, and declaring it one prints a
+cast to a structure. Alignment padding between members becomes unknown members
+of the widest width each offset allows, so a zero store over it splits into one
+member store, and a longer gap becomes one `undefined1[N]` member. The fields
+are named `field_0x<off>` and the structure is minted through the `structsynth`
+layout ledger (05-types, `structsynth`), whose answer is used only when it is
+exactly the object's size: a frame object cannot grow into the slots after it.
+The existing machinery does the rest: `syncVarnodesWithSymbols` maps every
+access into the one Symbol, the partial-symbol walk prints `v1.field_0x4`, the
+split-copy rules turn an initializer into member stores, and `structdefs`
+prints the definition. Because restructuring runs on every `mainloop` pass, the
+first layout waits until type propagation has settled, so member types are the
+settled ones and the ledger mints one name per object; later passes, the
+restart included, keep that structure (`Funcdata::stack_records`) while no
+access crosses its bounds, so the layout is measured once and cannot alternate
+between passes. An access that becomes a frame access only
+after the last restructuring pass (tar's `tar_stat_info` reloads at -O0) lands
+in a filler member and prints through the partial-access walk
+(`*(unsigned long *)&v2.field_0x7c[0xc]` under `partialaccess`).
+Measured over 36 stripped decbench binaries (gzip, bzip2, dash, kmod, crond,
+getfacl, ls, sort, stat, grep and diff at -O0 and -O2; tar, crontab, dpkg,
+ssh-keygen, useradd, ip, cp, df, du, init, e2fsck, libedit and bash) it lays out
+5 records under `--mode aggressive` -- among them a 64-byte object `memcpy`'d
+into a local the default declares `char v13[12]`, tar's 440-byte
+`tar_stat_info` filled by `memset`, and an e2fsck policy copy the default
+printed as seven scalars -- and renumbers the synthesized structures of the
+later functions in that run. With the option on
+in default mode no datatest assertion and no other stage file's assertion
+moves. The implementation is
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackstruct.rs`.
+
 
 **An indexed array's extent (kuna `arrayextent`, default `on`).** The [0,3]
 floor is all upstream knows about an indexed base whose guard the value-set

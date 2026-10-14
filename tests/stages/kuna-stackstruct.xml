@@ -1,0 +1,162 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- An address-taken stack record read at several widths (P6 stack-frame-layout,
+     option stackstruct; P9 pointer-notation, option partialaccess; both default
+     off, both on in the aggressive preset).
+     Source: decompiler/crates/kuna-cli/tests/fixtures/stack_struct.c, linked with
+     stack_struct_helpers.c (gcc -O1 -fno-tree-vectorize -fno-tree-loop-distribute-patterns
+     -fno-builtin) as `ld -static -e parse_header -Ttext=<base>`; the record is compiled
+     with `<cc> -O<n> -fno-pie -fno-stack-protector -fcf-protection=none
+     -fno-asynchronous-unwind-tables -c`: gcc -O0 at 0x401000, gcc -O2 at 0x501000,
+     clang -O0 at 0x601000 (.rodata 0x602000), clang -O2 at 0x701000 (.rodata 0x702000).
+     header_* passes &h to fetch(&h,8) and setup(&h), then tests the u32 magic, the
+     u16 version and the two byte fields. Off: the fields print as Ghidra's
+     `v1._4_2_`, which is not C, or (clang -O0) as unrelated scalars. partialaccess
+     alone prints the typed pointer access; with stackstruct the record is one
+     struct_N whose definition structdefs prints. gcc -O2 and clang -O2 join the
+     16-byte vector zero store's two lanes; clang -O0 takes memset's 0x18; gcc -O0
+     keeps the later slots separate, since nothing ties them to the record.
+     word_sum (one 8-byte word) and text_len (a string built in place) decline. -->
+<bytechunk space="ram" offset="0x401000" readonly="true">554889e54883ec3048c745d00000000048c745d80000000048c745e000000000488d45d0be080000004889c7e8fc0000008b45d03d454844527407b8ffffffffeb690fb745d46683f8037407b8feffffffeb58488d45d04889c7e8e900000048c745f800000000c745f400000000eb18488b55e08b45f44801d00fb6000fb6c0480145f88345f4018b45d83945f472e00fb645d70fb6c80fb645d60fb6c0488b55f889ce89c7e8b0000000c9c3554889e54883ec1048c745f800000000488d45f8be080000004889c7e85f000000488b45f889c2488b45f848c1e8204801d0c9c3554889e54883ec1048b868656c6c6f20776f488945f4c745fc726c6400488d45f4be000000004889c7e81e0000000fb645f50fbec80fb645f40fbec0ba0000000089ce89c7e830000000c9c34885f67415b80000000089f229c28814074883c0014839c675f0c30fb647060fb657070fafc289470848897f10c36bf66401d669ffe80300008d043ec34889f84885d274134801fa4889f94883c101408871ff4839ca75f3c3</bytechunk>
+<bytechunk space="ram" offset="0x501000" readonly="true">4883ec28660fefc0be080000004889e70f29042448c744241000000000e80b010000813c2445484452757066837c24040375614889e7e80d0100008b54240885d2744d488b4c24108d72ff31d2488d41014801c6eb0e662e0f1f8400000000004883c0010fb6094801ca4889c14839f075ee0fb67424070fb67c2406e8da0000004883c428c3662e0f1f84000000000031d2ebdeb8feffffffebe6b8ffffffffebdf66662e0f1f8400000000000f1f004883ec18be0800000048c744240800000000488d7c2408e861000000488b5424084883c4184889d089d248c1e8204801d0c366662e0f1f8400000000000f1f0048b868656c6c6f20776f4883ec1831f6488d7c24044889442404c744240c726c6400e8160000000fbe7424050fbe7c240431d2e8330000004883c418c34885f67415b80000000089f229c28814074883c0014839c675f0c30fb647060fb657070fafc289470848897f10c36bf66401d669ffe80300008d043ec34889f84885d274134801fa4889f94883c101408871ff4839ca75f3c3</bytechunk>
+<bytechunk space="ram" offset="0x601000" readonly="true">554889e54883ec30488d7de031f6ba18000000e867010000488d7de0be08000000e81c010000817de0454844520f840c000000c745fcffffffffe9720000000fb745e483f8030f840c000000c745fcfeffffffe959000000488d7de0e8fc00000048c745d800000000c745d4000000008b45d43b45e80f8321000000488b45f08b4dd40fb60408480345d8488945d88b45d483c0018945d4e9d3ffffff0fb67de60fb675e7488b55d8e8c20000008945fc8b45fc4883c4305dc3660f1f440000554889e54883ec1048c745f800000000488d7df8be08000000e864000000488b45f889c0488b4df848c1e9204801c84883c4105dc3662e0f1f84000000000090554889e54883ec10488b042500206000488945f48b0425082060008945fc488d7df431c089c6e8170000000fbe7df40fbe75f531c089c2e8340000004883c4105dc34885f67415b80000000089f229c28814074883c0014839c675f0c30fb647060fb657070fafc289470848897f10c36bf66401d669ffe80300008d043ec34889f84885d274134801fa4889f94883c101408871ff4839ca75f3c3</bytechunk>
+<bytechunk space="ram" offset="0x602000" readonly="true">68656c6c6f20776f726c6400</bytechunk>
+<bytechunk space="ram" offset="0x701000" readonly="true">4883ec180f57c00f29042448c7442410000000004889e7be08000000e85c010000b8ffffffff813c24454844520f85cc000000b8feffffff66837c2404030f85bb0000004889e7e84c0100008b7424084885f6741c488b442410488d56ff4189f04183e0074883fa07730d31ff31d2eb5731d2e97800000083e6f831ff31d2900fb60c384801d10fb65438014801ca0fb64c38024801d10fb65438034801ca0fb64c38044801d10fb65438054801ca0fb64c38064801d10fb65438074801ca4883c7084839fe75b84d85c074234801f831f6662e0f1f8400000000000f1f40000fb63c304801fa4883c6014939f075f00fb67c24060fb6742407e8ac0000004883c418c3662e0f1f84000000000066905048c70424000000004889e7be08000000e857000000488b042489c148c1e8204801c859c3662e0f1f840000000000904883ec1848b868656c6c6f20776f4889442408c7442410726c6400488d7c240831f6e8160000000fbe7c24080fbe74240931d2e8330000004883c418c34885f67415b80000000089f229c28814074883c0014839c675f0c30fb647060fb657070fafc289470848897f10c36bf66401d669ffe80300008d043ec34889f84885d274134801fa4889f94883c101408871ff4839ca75f3c3</bytechunk>
+<bytechunk space="ram" offset="0x702000" readonly="true">68656c6c6f20776f726c6400</bytechunk>
+<symbol space="ram" offset="0x401000" name="header_gcc_o0"/>
+<symbol space="ram" offset="0x4010ad" name="word_sum_gcc_o0"/>
+<symbol space="ram" offset="0x4010e1" name="text_len_gcc_o0"/>
+<symbol space="ram" offset="0x40112d" name="fetch_gcc_o0"/>
+<symbol space="ram" offset="0x401148" name="setup_gcc_o0"/>
+<symbol space="ram" offset="0x40115b" name="report_gcc_o0"/>
+<symbol space="ram" offset="0x501000" name="header_gcc_o2"/>
+<symbol space="ram" offset="0x5010b0" name="word_sum_gcc_o2"/>
+<symbol space="ram" offset="0x5010f0" name="text_len_gcc_o2"/>
+<symbol space="ram" offset="0x50112d" name="fetch_gcc_o2"/>
+<symbol space="ram" offset="0x501148" name="setup_gcc_o2"/>
+<symbol space="ram" offset="0x50115b" name="report_gcc_o2"/>
+<symbol space="ram" offset="0x601000" name="header_clang_o0"/>
+<symbol space="ram" offset="0x6010c0" name="word_sum_clang_o0"/>
+<symbol space="ram" offset="0x601100" name="text_len_clang_o0"/>
+<symbol space="ram" offset="0x601142" name="fetch_clang_o0"/>
+<symbol space="ram" offset="0x60115d" name="setup_clang_o0"/>
+<symbol space="ram" offset="0x601170" name="report_clang_o0"/>
+<symbol space="ram" offset="0x60117f" name="memset"/>
+<symbol space="ram" offset="0x701000" name="header_clang_o2"/>
+<symbol space="ram" offset="0x701110" name="word_sum_clang_o2"/>
+<symbol space="ram" offset="0x701140" name="text_len_clang_o2"/>
+<symbol space="ram" offset="0x70117d" name="fetch_clang_o2"/>
+<symbol space="ram" offset="0x701198" name="setup_clang_o2"/>
+<symbol space="ram" offset="0x7011ab" name="report_clang_o2"/>
+</binaryimage>
+<script>
+  <com>lo fu header_gcc_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu word_sum_gcc_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu text_len_gcc_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu header_gcc_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu word_sum_gcc_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu text_len_gcc_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu header_clang_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu word_sum_clang_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu text_len_clang_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu header_clang_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu word_sum_clang_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu text_len_clang_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option partialaccess on</com>
+  <com>lo fu header_gcc_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu header_gcc_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option stackstruct on</com>
+  <com>option structdefs on</com>
+  <com>lo fu header_gcc_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu word_sum_gcc_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu text_len_gcc_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu header_gcc_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu word_sum_gcc_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu text_len_gcc_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu header_clang_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu word_sum_clang_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu text_len_clang_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu header_clang_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu word_sum_clang_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu text_len_clang_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>phase catalog partialaccess</com>
+  <com>phase catalog stackstruct</com>
+  <com>quit</com>
+</script>
+<stringmatch name="stackstruct #1: off, the short field of the header is a partial member of one scalar" min="3" max="3">if \(v[0-9]+\._4_2_ [!=]= 3\)</stringmatch>
+<stringmatch name="stackstruct #2: off, the two byte fields are partial members too" min="2" max="2">report_[a-z0-9_]+\(\(uint1\)v[0-9]+\._6_1_,\(uint1\)v[0-9]+\._7_1_,</stringmatch>
+<stringmatch name="stackstruct #3: off, clang -O0 splits the memset record into unrelated scalars" min="1" max="1">int2 v4; // ax \| stack - 0x24</stringmatch>
+<stringmatch name="stackstruct #4: partialaccess prints the short field as a typed pointer access" min="1" max="1">if \(\(\(int2 \*\)&amp;v1\)\[2\] != 3\)</stringmatch>
+<stringmatch name="stackstruct #5: partialaccess prints the byte fields as byte accesses" min="1" max="1">report_gcc_o0\(\(uint1\)\(\(char \*\)&amp;v1\)\[6\],\(uint1\)\(\(char \*\)&amp;v1\)\[7\],v5\);</stringmatch>
+<stringmatch name="stackstruct #6: bytes out of a byte array take its byte subscript, and the unknown of their width" min="1" max="1">if \(\*\(unsigned short \*\)&amp;v5\[4\] == 3\)</stringmatch>
+<stringmatch name="stackstruct #7: stackstruct declares exactly the four header records, and neither control" min="4" max="4">struct_[0-9]+ v[0-9]+; //</stringmatch>
+<stringmatch name="stackstruct #8: the version test names its member" min="4" max="4">if \(v[0-9]+\.field_0x4 [!=]= 3\)</stringmatch>
+<stringmatch name="stackstruct #9: the byte fields name their members" min="4" max="4">report_[a-z0-9_]+\(\(uint1\)v[0-9]+\.field_0x6,\(uint1\)v[0-9]+\.field_0x7,</stringmatch>
+<stringmatch name="stackstruct #10: structdefs prints the record above the function" min="1" max="1">struct struct_0 \{
+    int4 field_0x0;
+    int2 field_0x4;
+    char field_0x6;
+    char field_0x7;
+\};</stringmatch>
+<stringmatch name="stackstruct #11: gcc -O0's later slots stay separate locals" min="1" max="1">struct_0 v1; // al \| ax \| cl \| eax \| stack - 0x38
+  unsigned long v2; // eax \| stack - 0x30</stringmatch>
+<stringmatch name="stackstruct #12: the vector zero store's lanes put the count in the gcc -O2 record" min="1" max="1">if \(v5\.field_0x8\)</stringmatch>
+<stringmatch name="stackstruct #13: memset's byte count puts the data pointer in the clang -O0 record" min="1" max="1">v1\.field_0x10 \+ \(uint8\)v2</stringmatch>
+<stringmatch name="stackstruct #14: one 8-byte word stays a scalar with the options off and on" min="4" max="4">return \(v1 &gt;&gt; 0x20\) \+ \(v1 &amp; 0xffffffff\);</stringmatch>
+<stringmatch name="stackstruct #15: a string built in place stays text, its byte read typed" min="1" max="1">report_gcc_o2\(\(int4\)\(char\)v1,\(int4\)\(\(char \*\)&amp;v1\)\[1\],0\);</stringmatch>
+<stringmatch name="stackstruct #16: partialaccess is a discoverable P9 opt-in" min="1" max="1">"option": "partialaccess", "values": \["on", "off"\], "default": "off", "current": "on", "destructive_as_default": false, "phase": "P9"</stringmatch>
+<stringmatch name="stackstruct #17: stackstruct is a discoverable P6 opt-in" min="1" max="1">"option": "stackstruct", "values": \["on", "off"\], "default": "off", "current": "on", "destructive_as_default": false, "phase": "P6"</stringmatch>
+<stringmatch name="stackstruct #18: a 16-byte zero store into a byte array is a memset of its 16 bytes" min="1" max="1">memset\(&amp;v5,0,0x10\);</stringmatch>
+</decompilertest>
