@@ -1019,6 +1019,22 @@ the computation is unchanged, and the upstream console knob
 `option nocastprinting` suppresses every cast token at print time without
 touching the inserted ops.
 
+Indirect ABI parameters retain their source value type in C. A parameter
+marked as indirect storage represents a value carried by a pointer, unlike an
+ordinary pointer parameter. Direct and indirect calls render a dereferenced
+argument, using the existing member/array notation when possible. Function
+pointer declarators and callee parameters use the pointee value type, while
+reads of the callee's ABI input address use the address of that C parameter.
+If that input belongs to a mutable pointer variable, a distinct pointer local
+is initialized to the parameter address and subsequent pointer updates use it.
+This changes no register, stack, copy-extent, or memory-effect recovery and does
+not add an inference option. Rendering follows the locked source prototype:
+required by-value storage is a callee-owned copy. A caller that deliberately
+passes aliased storage is still shown passing a copy, so callee writes through
+that ABI pointer are not reflected in the caller's C. Ordinary pointer
+parameters retain aliasing. Array parameter types keep their ABI pointer view;
+C adjusts array parameters to pointers, so they do not denote by-value objects.
+
 ## 9.2 PrintC
 
 **Three layers.** The C back-end is a stack of three components in this
