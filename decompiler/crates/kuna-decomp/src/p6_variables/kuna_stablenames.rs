@@ -60,21 +60,20 @@ impl PriorNames {
 }
 
 /// The index of a default local name, `v9` -> 9 (or `iVar9` -> 9 under Ghidra
-/// names); `None` for any other name.
+/// names, where a stack Symbol is still `v9`); `None` for any other name.
 pub fn default_name_index(name: &str, angr: bool) -> Option<int4> {
-    let digits = if angr {
-        name.strip_prefix('v')?
-    } else {
-        let at = name.find("Var")?;
-        if name[..at].chars().count() > 1 {
-            return None;
-        }
-        &name[at + 3..]
+    let index = |digits: &str| {
+        let canonical = !digits.is_empty() && !digits.starts_with('0') && digits.bytes().all(|b| b.is_ascii_digit());
+        if canonical { digits.parse().ok() } else { None }
     };
-    if digits.is_empty() || digits.starts_with('0') || !digits.bytes().all(|b| b.is_ascii_digit()) {
+    if let Some(i) = name.strip_prefix('v').and_then(index) {
+        return Some(i);
+    }
+    let at = name.find("Var").filter(|_| !angr)?;
+    if name[..at].chars().count() > 1 {
         return None;
     }
-    digits.parse().ok()
+    index(&name[at + 3..])
 }
 
 /// The pieces of `high` (its non-constant instances).
@@ -269,7 +268,9 @@ mod tests {
         }
         assert_eq!(default_name_index("iVar3", false), Some(3));
         assert_eq!(default_name_index("Var3", false), Some(3));
-        for name in ["myVar3", "v3", "iVar", "iVar03"] {
+        assert_eq!(default_name_index("v3", false), Some(3));
+        assert_eq!(default_name_index("vVar3", false), Some(3));
+        for name in ["myVar3", "iVar", "iVar03", "vx"] {
             assert_eq!(default_name_index(name, false), None, "{name}");
         }
     }

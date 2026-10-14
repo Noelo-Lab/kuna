@@ -17,8 +17,14 @@ use crate::common;
 /// The C of `mix` under `directives`, after checking that every directive
 /// applied and both surfaces printed the same C.
 fn decompile(directives: &[&str]) -> String {
+    decompile_with(&[], directives)
+}
+
+/// [`decompile`] with `extra` command-line arguments.
+fn decompile_with(extra: &[&str], directives: &[&str]) -> String {
     let binary = common::fixture("stablenames_x86_64");
     let mut args = vec!["decompile", binary.as_str(), "mix"];
+    args.extend(extra);
     for directive in directives {
         args.extend(["--assert", directive]);
     }
@@ -68,8 +74,12 @@ fn declared(code: &str) -> BTreeSet<String> {
 
 /// Renaming leaves the C exactly as it was apart from the renamed names.
 fn renames_only(directives: &[&str], renames: &[(&str, &str)]) {
-    let plain = decompile(&[]);
-    let renamed = decompile(directives);
+    renames_only_with(&[], directives, renames);
+}
+
+fn renames_only_with(extra: &[&str], directives: &[&str], renames: &[(&str, &str)]) {
+    let plain = decompile_with(extra, &[]);
+    let renamed = decompile_with(extra, directives);
     assert_eq!(
         lines_renamed(&renamed, renames),
         lines_renamed(&plain, &[]),
@@ -138,6 +148,13 @@ fn a_split_remainder_takes_a_new_number() {
     assert!(kept.is_subset(&renamed), "{plain:?} -> {renamed:?}");
     assert!(!renamed.contains("v5"), "{renamed:?}");
     assert_eq!(added, ["hash", "v14"].iter().map(|s| s.to_string()).collect());
+}
+
+/// Under Ghidra names the register locals read `iVar6` and the stack array
+/// still reads `v4`; both keep their numbers.
+#[test]
+fn ghidra_names_keep_their_numbers() {
+    renames_only_with(&["--option", "namestyle", "ghidra"], &["name iVar6 vowels"], &[("vowels", "iVar6")]);
 }
 
 /// A retype that changes which storage the analysis merges keeps every
