@@ -1178,8 +1178,8 @@ Retained source facts identify their machine write. If stack heritage later
 reveals that a load was an outgoing reload of an existing local, its register
 fact can be withdrawn without removing a different write to that register.
 
-**Preserving memory-loaded global stores**
-(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalcallstore.rs`).
+**Preserving memory-loaded global stores** (`option globalcallstore`, default on;
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalcallstore.rs`).
 A persistent store keeps its COPY instead of propagating a LOAD input into
 its sole marker use at the same address and width. Without the COPY, forced
 variable merging can place the assignment at an earlier load. In stack-reload
@@ -1191,8 +1191,15 @@ to a non-LOAD source releases this refusal to the existing rules. The
 computed-value reload control preserves the call-before-write order even
 without the refusal.
 Ordinary or shared readers and non-LOAD inputs retain their existing handling.
-This is a strict memory-ordering repair on all architectures, without a new
-option or a new purity assumption.
+A kept COPY prints its single-use LOAD inline at the store unless
+`kuna_loadorder` keeps the load's own variable because it is live across a
+store to a global it may read, and that check runs only at
+`option indexaliasguard global`. The refusal therefore applies only at that
+level (the default); at `off`, `load` or `full` it would print
+`gj = 0; gi = *a0;` for a load the binary makes before the store to `gj`.
+No new purity assumption is made. The option exists because keeping the COPY
+also changes correct output: a storage comment no longer lists the global,
+and a value the store kept can print as its own variable.
 
 **Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
 default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
