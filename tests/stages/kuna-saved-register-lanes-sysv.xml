@@ -1,0 +1,18 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- SysV XMM6 is volatile. Keep this spill-like sequence because the helper
+     reads its bytes through an explicit pointer argument. -->
+<bytechunk space="ram" offset="0x401000">4883ec180f293424488d3c24e80f0000000f283424660f7ef04883c418c39090</bytechunk>
+<bytechunk space="ram" offset="0x401020">488b07c3</bytechunk>
+<symbol space="ram" offset="0x401000" name="fixture_sysv_observed_lane"/>
+<symbol space="ram" offset="0x401020" name="fixture_read_saved_lane"/>
+</binaryimage>
+<script>
+<com>map prototype 0x401000 unsigned long long fixture_sysv_observed_lane(void)</com>
+<com>map prototype 0x401020 unsigned long long fixture_read_saved_lane(const unsigned long long *source)</com>
+<com>option stackviews on</com>
+<com>lo fu fixture_sysv_observed_lane</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="SAVED-XMM-SYSV fixture #1: a volatile-register spill observed by a direct helper remains mapped" min="1" max="2">stack - 0x18</stringmatch>
+</decompilertest>

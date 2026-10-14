@@ -2072,7 +2072,13 @@ mod tests {
         // relative table is not read past its guard (GH-1028)
         // and kuna-addrtakenentry / code whose address the program takes is a
         // function entry (GH-1039)
-        assert_eq!(count, 514, "corpus file count drifted");
+        // and kuna-condcall / a predicated call's fall-through is not a function
+        // (GH-299)
+        // and kuna-thumbswitch / the Listing walk reads a Thumb tbb/tbh switch
+        // table (GH-299)
+        // and kuna-aifpoolslide / no AIF entry starts on a literal-pool word
+        // (GH-299)
+        assert_eq!(count, 534, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

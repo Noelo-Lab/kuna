@@ -28,7 +28,7 @@
       "eq": 0
     },
     "stdout_matches": [
-      "switch\\(v[0-9]+\\)",
+      "switch\\(\\(unsigned long\\)v[0-9]+\\)",
       "case 0x100020:",
       "case 0x100030:",
       "return a1 \\+ 1;",

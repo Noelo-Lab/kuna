@@ -229,6 +229,11 @@ kuna_options! { self, p1;
     "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
     "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
     "stackalias" => on_off!(stack_alias_deadstore, "Stack-pointer-alias dead-store hold"),
+    "stackviews" => {
+        let (value, message) = crate::kuna_stackviews::OptionStackViews.apply(p1)?;
+        self.stack_views = value;
+        Ok(message)
+    },
     "dynamichashmax" => on_off!(dynamic_hash_maxdup_high, "DynamicHash collision budget"),
     "stackprobeloop" => {
         let (form, msg) = crate::kuna_stackprobeloop::parse_stack_probe_loop_form(p1)?;
@@ -313,6 +318,11 @@ kuna_options! { self, p1;
         let (val, msg) =
             crate::p6_variables::kuna_calleepopframe::OptionCalleePopFrame.apply(p1)?;
         self.callee_pop_frame = val;
+        Ok(msg)
+    },
+    "msvcbyval" => {
+        let (val, msg) = crate::p4_calls::kuna_msvcbyval::OptionMsvcByval.apply(p1)?;
+        self.msvc_byval = val;
         Ok(msg)
     },
     "calleeprotostack" => {
@@ -799,6 +809,9 @@ kuna_options! { self, p1;
     "unmappedentry" => {
         on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
     },
+    "thumbswitch" => {
+        on_off!(analysis_thumbswitch, "Thumb tbb/tbh switch-table read in the Listing walk (GH-299)")
+    },
     "thunkentry" => on_off!(analysis_thunkentry, "Jump-thunk target function entries"),
     "addrtakenentry" => {
         on_off!(analysis_addrtakenentry, "Address-taken code function entries")
@@ -1079,6 +1092,9 @@ kuna_options! { self, p1;
     },
     "aifnoppad" => {
         on_off!(analysis_aifnoppad, "AIF padding/zero-fill candidate reject (GH-299)")
+    },
+    "aifpoolslide" => {
+        on_off!(analysis_aifpoolslide, "AIF literal-pool candidate slide (GH-299)")
     },
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")

@@ -984,6 +984,15 @@ pub struct ArchContext {
     /// (kuna) `calleeprotostack` — a declared callee's locked prototype states
     /// its stack contract.  See [`crate::p4_calls::kuna_calleeprotostack`].
     pub callee_proto_stack: bool,
+    /// (kuna) `msvcbyval` — size an MSVC `__cdecl` import's by-value class
+    /// argument at the call site.  See [`crate::p4_calls::kuna_msvcbyval`].
+    pub msvc_byval: bool,
+    /// (kuna `msvcbyval`) The declarations with a by-value class of unstated
+    /// size, by entry; snapshotted from the architecture at `build_arch_handle`.
+    pub msvc_byval_decls: Rc<crate::p4_calls::kuna_msvcbyval::ByvalDecls>,
+    /// (kuna `msvcbyval`) The entries an MSVC name declares as building an
+    /// object at an address they are handed.
+    pub msvc_builders: Rc<crate::p4_calls::kuna_msvcbyval::Builders>,
     /// (kuna) drop a trailing register argument a previous call's clobber put
     /// there (`argclobber`).  Read by
     /// [`crate::p4_calls::kuna_argclobber::drop_clobber_tail_arg`]; off by
@@ -1184,6 +1193,10 @@ pub struct ArchContext {
     /// indexed stack base reaches past upstream's four elements. Levels in
     /// [`crate::p6_variables::kuna_arrayextent`]; read by `gather_open`.
     pub array_extent: int4,
+    /// Keep physical frame writes live when conservative stack aliasing is requested.
+    pub stack_alias_deadstore: bool,
+    /// Operation-specific typed views over shared physical frame storage.
+    pub stack_views: bool,
     /// Opt-in frame-bounded arrays for call-escaped integer storage.
     pub call_array_extent: bool,
     /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
@@ -1799,6 +1812,9 @@ impl ArchContext {
             callee_pop_slot: true,
             callee_pop_frame: true,
             callee_proto_stack: true,
+            msvc_byval: true,
+            msvc_byval_decls: Rc::new(Default::default()),
+            msvc_builders: Rc::new(Default::default()),
             // argclobber only drops a trailing argument the callee's own
             // recovered prototype says it never reads, and declines outright
             // when there is no callee to ask, so the fixture seam carries the
@@ -1846,6 +1862,8 @@ impl ArchContext {
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
             call_array_extent: false,
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
+            stack_alias_deadstore: false,
+            stack_views: false, // stackviews (opt-in)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)

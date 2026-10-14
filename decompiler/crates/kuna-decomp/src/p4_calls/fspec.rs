@@ -4915,6 +4915,8 @@ pub trait ProtoParameter {
     fn get_address(&self) -> Address;
     /// Get the number of bytes occupied (C++ `getSize`).
     fn get_size(&self) -> int4;
+    /// Get the parameter's storage and lock properties.
+    fn get_flags(&self) -> uint4;
     /// Is the parameter data-type locked (C++ `isTypeLocked`).
     fn is_type_locked(&self) -> bool;
     /// Is the parameter name locked (C++ `isNameLocked`).
@@ -5002,6 +5004,9 @@ impl ProtoParameter for ParameterBasic {
     }
     fn get_size(&self) -> int4 {
         self.type_.as_ref().map(|t| t.get_size()).unwrap_or(0)
+    }
+    fn get_flags(&self) -> uint4 {
+        self.flags
     }
     fn is_type_locked(&self) -> bool {
         (self.flags & parameter_pieces_flags::TYPELOCK) != 0

@@ -107,6 +107,10 @@ fn bootstrap(on: bool) -> kuna_console::engine::ConsoleProgram {
     // were written against is pinned here rather than left to a default that may
     // move. `verify_aifstrict.rs` is the two-pass gate for the suppression itself.
     prog.arch_mut().set_kuna_option("aifstrict", "off").expect("aifstrict flips off");
+    // `aifpoolslide` (default-on) keeps the gap walk off both pool words in the first
+    // place; it is pinned off here for the same reason. `verify_aifpoolslide.rs`
+    // gates it on this fixture.
+    prog.arch_mut().set_kuna_option("aifpoolslide", "off").expect("aifpoolslide flips off");
     if on {
         prog.arch_mut().set_kuna_option("poolentry", "on").expect("poolentry flips on");
     }
@@ -308,6 +312,7 @@ fn checked_frame_program(
         ("aif", aif),
         ("aifstrict", false),
         ("aifcorroborate", false),
+        ("aifpoolslide", false),
         ("poolentry", pool),
         ("ptrentry", pointers),
     ] {

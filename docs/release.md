@@ -69,8 +69,14 @@ and 18 tags**.
 1. **version** — computes `MAJOR.MINOR` from a full-history checkout and skips
    the whole run if tag `vMAJOR.MINOR` already exists (safe re-runs, and the
    no-op guard above).
-2. **build** (matrix) — `cargo build --release` of `kuna-cli`, `kuna-console`,
-   `kuna-slacomp`, and `kuna-ghidra` for:
+2. **specs** — compiles every `.slaspec` → `.sla` once on Linux and packages
+   the whole `specs/` tree as `kuna-v<ver>-specs.tar.gz`. `.sla` files are
+   platform-independent, so one tree serves every OS: each **build** row
+   embeds it, and it also ships as an asset (for `KUNA_SPECS`, and the
+   nightly's speed baseline).
+3. **build** (matrix, after **specs**) — lays the compiled tree over the
+   checkout's `specs/`, then `cargo build --release` of `kuna-cli` (with
+   `--features kuna-cli/embed-specs`) and `kuna-ghidra` for:
    - Linux `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` (native,
      on the `ubuntu-24.04-arm` runner)
    - Linux `x86_64-unknown-linux-musl` — a fully static build (no glibc
@@ -81,14 +87,15 @@ and 18 tags**.
      cross-compiled on the arm64 runner)
    - Windows `x86_64-pc-windows-msvc`
    Each archive (`kuna-v<ver>-<os-arch>.tar.gz`, `.zip` on Windows) contains
-   `kuna`, `decomp_dbg`, `slacomp`, `LICENSE`, `NOTICE`. A smoke test asserts
-   `kuna --version` prints the release version. (`decomp_test_dbg` is not
-   shipped — the datatest harness only makes sense inside the repo.) The
-   `kuna_ghidra` binaries are not in the archives: each row uploads its binary
-   as a `ghidra-bin-<platform>` workflow artifact for the **ghidra-ext** job.
-3. **specs** — compiles every `.slaspec` → `.sla` once on Linux and packages
-   the whole `specs/` tree as `kuna-v<ver>-specs.tar.gz`. `.sla` files are
-   platform-independent, so one asset serves every OS.
+   `kuna`, `LICENSE`, `NOTICE` — `kuna` is self-contained: the decompiler
+   console (`decomp_dbg`) and the SLEIGH compiler (`slacomp`) are built in
+   as hidden subcommands, and `embed-specs` carries the compiled SLEIGH tree.
+   Two smoke tests assert `kuna --version` prints the release version and
+   that the binary, copied alone into an empty directory with no spec
+   override, decompiles a fixture. (`decomp_test_dbg` is not shipped — the
+   datatest harness only makes sense inside the repo.) The `kuna_ghidra`
+   binaries are not in the archives: each row uploads its binary as a
+   `ghidra-bin-<platform>` workflow artifact for the **ghidra-ext** job.
 4. **ghidra-ext** — packages the ready-to-install KunaDecompiler Ghidra
    extension, `kuna-v<ver>-KunaDecompiler-ghidra_<ghidra-version>.zip`. It
    downloads the pinned Ghidra release (version *and* full asset URL are
@@ -116,23 +123,28 @@ and 18 tags**.
 
 ## Using a released binary
 
-The binaries resolve each other as siblings of the `kuna` executable, so
-extracting one archive keeps `kuna decompile` (which spawns `decomp_dbg`) and
-`kuna specs` (which spawns `slacomp`) working — on Windows too, where the shipped
-names carry `.exe`. The engine additionally needs the compiled SLEIGH tree at
-runtime, and finds it beside or inside the extracted directory:
+`kuna` is the only file a release needs. It runs its own decompiler console
+and SLEIGH compiler, and carries the compiled SLEIGH tree, which it unpacks
+once — on first use, under a name derived from the tree's contents — into the
+per-user cache directory (`%LOCALAPPDATA%\kuna` on Windows,
+`~/Library/Caches/kuna` on macOS, `$XDG_CACHE_HOME/kuna` or `~/.cache/kuna`
+elsewhere, and the system temp directory when none of those is writable):
 
 ```bash
 tar xzf kuna-v<ver>-linux-x86_64.tar.gz
-tar xzf kuna-v<ver>-specs.tar.gz
 ./kuna-v<ver>-linux-x86_64/kuna decompile ./a.out main
 ```
 
-Extract it somewhere else and `export KUNA_SPECS=<dir>/specs` instead; the full
-list of overrides is in `docs/cli.md`.
+`KUNA_SPECS` still overrides the built-in tree (for example with the
+`kuna-v<ver>-specs.tar.gz` asset, or a tree of your own); the full list of
+overrides is in `docs/cli.md`. A release whose specs did not change reuses
+the tree already unpacked. Old trees are never removed automatically; deleting
+the cache directory is always safe, and the next run unpacks again.
 
-(Inside a repo checkout none of this applies — binaries live in
-`decompiler/target/release/` and specs are found from the repo root.)
+(Inside a repo checkout none of this applies — a plain `cargo build` carries no
+specs, and they are found from the repo root. `make specs` then
+`cargo build --release -p kuna-cli --features embed-specs` builds the
+self-contained binary locally.)
 
 The `kuna-v<ver>-KunaDecompiler-ghidra_<ghidra-version>.zip` asset is not an
 archive to extract — install it from inside Ghidra (**File → Install

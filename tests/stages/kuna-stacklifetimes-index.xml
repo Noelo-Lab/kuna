@@ -1,0 +1,47 @@
+<decompilertest>
+  <binaryimage arch="x86:LE:64:default:gcc">
+    <bytechunk space="ram" offset="0x401000">5341544883ec1889fb83e301c7042405000000c7442404070000004889e7e81a0100004189c4c7049c090000004889e7e8080100004401e04883c418415c5bc35341544883ec1889fb83e301c7042405000000c7442404070000004889e7e8da0000004189c48b049c4401e04883c418415c5bc35341544883ec1889fb83e301c7042405000000c7442404070000004889e7e8a60000004189c4c6049c094889e7e8970000004401e04883c418415c5bc35341544883ec1889fb83e301c7042405000000c7442404070000004889e7e8690000004189c4488d442404488d149d000000004829d0c700090000004889e7e8480000004401e04883c418415c5bc35341544883ec1889fbc7042405000000c7442404070000004889e7e81d0000004189c4c7049c090000004889e7e80b0000004401e04883c418415c5bc38b07034704c331ffe8b6feffff83f81c757fbf01000000e8a7feffff83f81a757031ffe8dbfeffff83f8117564bf01000000e8ccfeffff83f813755531ffe8f4feffff83f81c7549bf01000000e8e5feffff83f81a753a31ffe816ffffff83f81a752ebf01000000e807ffffff83f81c751f31ffe84affffff83f81c7513bf01000000e83bffffff83f81a750431ffeb05bf01000000b83c0000000f05</bytechunk>
+    <symbol space="ram" offset="0x0000000000401000" name="bounded_index_store" />
+    <symbol space="ram" offset="0x0000000000401040" name="bounded_index_load" />
+    <symbol space="ram" offset="0x0000000000401074" name="bounded_byte_store" />
+    <symbol space="ram" offset="0x00000000004010b1" name="bounded_reverse_store" />
+    <symbol space="ram" offset="0x0000000000401100" name="unbounded_index_store" />
+    <symbol space="ram" offset="0x000000000040113d" name="read_pair" />
+  </binaryimage>
+  <script>
+    <com>parse line typedef struct LifetimePair { int x; int y; } LifetimePair;</com>
+    <com>parse line extern int read_pair(const struct LifetimePair *pair);</com>
+    <com>parse line extern int bounded_index_store(unsigned int index);</com>
+    <com>parse line extern int bounded_index_load(unsigned int index);</com>
+    <com>parse line extern int bounded_byte_store(unsigned int index);</com>
+    <com>parse line extern int bounded_reverse_store(unsigned int index);</com>
+    <com>parse line extern int unbounded_index_store(unsigned int index);</com>
+    <com>option stackalias off</com>
+    <com>option stackviews off</com>
+    <com>lo fu bounded_index_store</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>option stackviews on</com>
+    <com>lo fu bounded_index_store</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu bounded_index_load</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu bounded_byte_store</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu bounded_reverse_store</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu unbounded_index_store</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>quit</com>
+  </script>
+  <stringmatch name="stack indices: off and unresolved bounds retain the original array" min="2" max="2">LifetimePair v2 \[3\];</stringmatch>
+  <stringmatch name="stack indices: four bounded accesses recover one backing object" min="4" max="4">^  stack_views_.* v2;</stringmatch>
+  <stringmatch name="stack indices: byte copies start at the whole backing object" min="4" max="4">\(uint1 \*\)&amp;v2</stringmatch>
+  <stringmatch name="stack indices: the reverse index keeps its byte displacement" min="1" max="1">&amp;v2 \+ 4\) -</stringmatch>
+  <stringmatch name="stack indices: typed calls still use the shared Pair view" min="7" max="7">read_pair\(&amp;v2\.view_LifetimePair\)</stringmatch>
+</decompilertest>

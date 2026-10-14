@@ -35,6 +35,9 @@ mod printc_parity;
 #[path = "proto_b4.rs"]
 mod proto_b4;
 
+#[path = "register_symbol_identity.rs"]
+mod register_symbol_identity;
+
 #[path = "testcirclerange.rs"]
 mod testcirclerange;
 
