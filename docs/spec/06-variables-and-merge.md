@@ -972,7 +972,10 @@ replay printed by the declaration the printer emitted for it
 (`p9_emit/printc.rs (declared_locals)`): the declaration of the HighVariable
 the replay gave the directive to (`kuna_stablenames.rs (directive_targets)`),
 else one the naming pass gave the expected name and no other directive took; a
-parameter is read from the signature. A local declared under a suffixed name
+parameter is read from the signature. A replay records a local printed under
+its library name (`libcnames`, above) by its number, so a declaration under
+that library name counts for the number as well: `type fd unsigned int` and
+`type v1 unsigned int` both find `unsigned int fd;`. A local declared under a suffixed name
 (`score_1`, because the program already has a function `score`) took the
 directive: it reports `applied`, with a note saying what it was printed as. A
 local not declared at all, or declared with another type than the directive
