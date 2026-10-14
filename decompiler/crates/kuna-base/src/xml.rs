@@ -2081,7 +2081,9 @@ mod tests {
         // and kuna-pushpadread / a register a callee only pushes above a call's
         // stack arguments is no argument it reads
         // and kuna-declorder / locals print in natural number order
-        assert_eq!(count, 537, "corpus file count drifted");
+        // and kuna-elfmain-named / an executable's own `main` gets the C runtime's
+        // declaration, as far as its own analysis recovers its parameters
+        assert_eq!(count, 538, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

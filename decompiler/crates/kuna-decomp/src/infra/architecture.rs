@@ -1736,10 +1736,11 @@ pub struct Architecture {
     /// guess (the value is consumed outside the image) and the two slots exist
     /// only because this `main` happens to read them. The declaration is applied
     /// LOCKED, so a body-driven parameter in a register past the third is not
-    /// kept. ELF only, refused on an image that names no
-    /// `__libc_start_main`, on an address that already carries a function symbol,
-    /// and on one whose image already spells a symbol `main`. Off restores the
-    /// `sub_<addr>` / width-only form exactly.
+    /// kept. An image that names its own `main` keeps the name and gets the
+    /// declaration. ELF only, refused on an image that names no
+    /// `__libc_start_main` and on an address that carries a function symbol
+    /// other than `main`. Off restores the `sub_<addr>` / width-only form
+    /// exactly.
     pub analysis_elfmain: bool,
     /// (kuna) Reject a discovered function entry that falls strictly inside a
     /// single-function `.eh_frame` FDE body (`fdeinterior`); default **on**.
@@ -2107,6 +2108,12 @@ pub struct Architecture {
     /// reaches the varargs-override path, so it is independent of `--option
     /// formatstring`.
     pub format_stack_args: std::rc::Rc<std::collections::BTreeMap<u64, usize>>,
+    /// (kuna `elfmain`) The C runtime's `int main(int argc, char **argv, char
+    /// **envp)` for an executable's own symbol-named `main`, with its entry.
+    /// Not parked on the symbol: the drive locks only its `int` return and names
+    /// and types the parameters `main`'s own analysis recovers
+    /// ([`crate::kuna_elfmaindecl`]).
+    pub elfmain_main_decl: Option<(Address, crate::fspec::PrototypePieces)>,
     /// (kuna `formatstring`) The call points, among the prototype overrides of
     /// the drive in progress, whose override a resolved format string produced.
     /// Set by the console's decompile step around each drive; the flow build
@@ -2994,6 +3001,7 @@ impl Architecture {
             analysis_formatstring: crate::kuna_formatstring::FormatStringMode::Off,
             format_call_overrides: std::collections::BTreeMap::new(),
             format_stack_args: std::rc::Rc::new(std::collections::BTreeMap::new()),
+            elfmain_main_decl: None,
             format_override_callpoints: std::collections::BTreeSet::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,

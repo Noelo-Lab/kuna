@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2875,
-    2875
+    2887,
+    2887
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -439,6 +439,18 @@
     "data:ELFMAIN #6: off, the fabricated slots are what the body forwards",
     "data:ELFMAIN #7: default, the stored register beyond the third becomes a local nothing assigns",
     "data:ELFMAIN #8: default, the forwarded register beyond the third is dropped from the call",
+    "data:ELFMAINNAMED #10: default, a main that reads only argv keeps the slot the analysis recovered ahead of it",
+    "data:ELFMAINNAMED #11: default, and its helper call gains no argument",
+    "data:ELFMAINNAMED #12: no pass hands a call half a register",
+    "data:ELFMAINNAMED #1: off, a symbol-named main keeps the declaration its body yields",
+    "data:ELFMAINNAMED #2: off, the argument vector is a struct and argv[1] a field of it",
+    "data:ELFMAINNAMED #3: default, main is declared with only the two arguments the body reads",
+    "data:ELFMAINNAMED #4: default, argv[1] reads as an element of argv",
+    "data:ELFMAINNAMED #5: off, a main that reads no argument is void and returns a guessed width",
+    "data:ELFMAINNAMED #6: default, it is int main(void) -- no argument is invented",
+    "data:ELFMAINNAMED #7: default, the call keeps the no-argument form the body has, not a phantom argc",
+    "data:ELFMAINNAMED #8: default, a main that forwards argc and argv to its first call keeps both parameters",
+    "data:ELFMAINNAMED #9: default, and the call still passes them",
     "data:EMPTYSTRCONST #1: the blob pointer keeps its address instead of becoming an empty literal",
     "data:EMPTYSTRCONST #2: an ordinary short literal beside it is untouched, in both passes",
     "data:EMPTYSTRCONST #3: a GENUINE empty literal, one that sits inside a run of string data, keeps its quotes in both passes",

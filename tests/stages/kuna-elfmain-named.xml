@@ -1,0 +1,97 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    An executable's own `main` gets the C runtime's declaration, TRUNCATED to
+    the arguments the body reads (`option elfmain on|off`, default on).
+
+    The XML wrapper only provides the harness architecture; every pass loads an
+    in-tree ELF through the CLI's own loader. `elfmainnamed_x86_64` is a gcc -O2
+    PIE whose `main` reads `argc` and `argv[1]` and never `envp` (source beside
+    it); `elfmainvoid_x86_64` is a gcc -O2 PIE whose `main` reads no argument at
+    all and calls `tick()`.
+
+    Pass 1 (`elfmain off`, named) reproduces the defect: the symbol names the
+    function `main`, but its declaration is whatever its body alone yields:
+    an unsigned return plus two anonymous slots, the second a struct whose
+    fields are `argv[0]` and `argv[1]`.
+
+    Pass 2 (the default, named) applies the C runtime's declaration, truncated
+    to the two arguments this body reads: `int main(int argc, char **argv)`,
+    with `argv[1]` read as an element of the argument vector. The locked prototype
+    is exactly the arity the body reads, so no third parameter is invented.
+
+    Passes 3 and 4 are the `elfmainvoid` fixture, whose `main` reads nothing.
+    Off, the body alone gives `main(void)` returning a guessed width; the
+    default names it `int main(void)`, and (the point of the truncation) the
+    call to `tick()` still takes no argument. Declaring argc/argv/envp here would
+    have handed `tick` a phantom one.
+
+    Passes 5 and 6 are the shapes the declaration must leave exactly as the
+    analysis finds them (`elfmainfwd_x86_64.c`, built twice). In
+    `elfmainfwd_x86_64` main hands argc and argv unchanged to its first call,
+    so the analysis recovers them as whole 64-bit registers read only by that
+    call; a 32-bit argc would leave half of that argument unassigned, so main
+    keeps both parameters and `count(a0,a1)`. In `elfmainargv_x86_64` main reads
+    only argv, after a call to `ping()`; the analysis recovers an unread slot
+    ahead of it, and declaring that slot argc would make it a live input, so
+    main keeps that form and the call to `ping()` gains nothing.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfmainnamed_x86_64</com>
+  <com>option elfmain off</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfmainnamed_x86_64</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfmainvoid_x86_64</com>
+  <com>option elfmain off</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfmainvoid_x86_64</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfmainfwd_x86_64</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfmainargv_x86_64</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ELFMAINNAMED #1: off, a symbol-named main keeps the declaration its body yields" min="1" max="1">uint4 main\(int4 a0,struct_0 \*a1\)</stringmatch>
+<stringmatch name="ELFMAINNAMED #2: off, the argument vector is a struct and argv[1] a field of it" min="1" max="1">score\(a1-&gt;field_0x8\)</stringmatch>
+<stringmatch name="ELFMAINNAMED #3: default, main is declared with only the two arguments the body reads" min="1" max="1">int4 main\(int4 argc,char \*\*argv\)</stringmatch>
+<stringmatch name="ELFMAINNAMED #4: default, argv[1] reads as an element of argv" min="1" max="1">score\(argv\[1\]\)</stringmatch>
+<stringmatch name="ELFMAINNAMED #5: off, a main that reads no argument is void and returns a guessed width" min="1" max="1">unsigned long main\(void\)</stringmatch>
+<stringmatch name="ELFMAINNAMED #6: default, it is int main(void) -- no argument is invented" min="1" max="1">int4 main\(void\)</stringmatch>
+<stringmatch name="ELFMAINNAMED #7: default, the call keeps the no-argument form the body has, not a phantom argc" min="2" max="2">tick\(\)</stringmatch>
+<stringmatch name="ELFMAINNAMED #8: default, a main that forwards argc and argv to its first call keeps both parameters" min="1" max="1">unsigned long main\(unsigned long a0,unsigned long a1\)</stringmatch>
+<stringmatch name="ELFMAINNAMED #9: default, and the call still passes them" min="1" max="1">count\(a0,a1\)</stringmatch>
+<stringmatch name="ELFMAINNAMED #10: default, a main that reads only argv keeps the slot the analysis recovered ahead of it" min="1" max="1">void main\(unsigned long a0,void \*a1\)</stringmatch>
+<stringmatch name="ELFMAINNAMED #11: default, and its helper call gains no argument" min="1" max="1">ping\(\);</stringmatch>
+<stringmatch name="ELFMAINNAMED #12: no pass hands a call half a register" min="0" max="0">CONCAT44</stringmatch>
+</decompilertest>
