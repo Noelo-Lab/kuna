@@ -176,6 +176,9 @@ mod limits_cli;
 #[path = "local_name_batch.rs"]
 mod local_name_batch;
 
+#[path = "stable_local_names.rs"]
+mod stable_local_names;
+
 #[path = "loop_cursor_initializer.rs"]
 mod loop_cursor_initializer;
 #[path = "mapped_array_c.rs"]

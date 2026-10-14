@@ -185,6 +185,36 @@ fn a_function_rename_reaches_the_inventory_and_qualifies_later_directives() {
     assert_eq!(statuses, vec!["applied", "applied"]);
 }
 
+/// The page sends every rename on every request, each naming the local as the
+/// first decompile printed it, so a rename must not renumber another local:
+/// `check`'s `v2` stays `v2` when `v1` is renamed.
+#[test]
+fn a_local_rename_moves_no_other_local_number() {
+    let code = |asserts: &[&str]| {
+        let inspected = run_on("crackme.elf", "inspect", &["check"], asserts).expect("inspect check");
+        inspected["function"]["code"].as_str().expect("code").to_string()
+    };
+    let plain = code(&[]);
+    let renamed = code(&["name v1 ok"]);
+    let lines = |text: &str, from: &str, to: &str| {
+        let mut out: Vec<String> = text
+            .lines()
+            .map(|line| {
+                line.split_inclusive(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                    .map(|piece| {
+                        let word = piece.trim_end_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_');
+                        if word == from { format!("{to}{}", &piece[word.len()..]) } else { piece.to_string() }
+                    })
+                    .collect::<String>()
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    assert!(plain.contains(" v2; // "), "{plain}");
+    assert_eq!(lines(&renamed, "ok", "v1"), lines(&plain, "", ""), "{plain}\n---\n{renamed}");
+}
+
 /// A `bytes` overlay is what every later read of the image sees.
 #[test]
 fn a_byte_patch_reaches_read_and_the_listing() {
