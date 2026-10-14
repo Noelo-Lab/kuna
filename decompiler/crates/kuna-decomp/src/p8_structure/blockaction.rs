@@ -3784,11 +3784,7 @@ impl Action for ActionBlockStructure {
         // unchanged `CollapseStructure` path.  OFF (default) skips this entirely and
         // output is byte-identical.
         if data.get_arch().region_structure {
-            let result = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline);
-            if ctx.deadline_expired() {
-                return 0;
-            }
-            match result {
+            match crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline) {
                 Ok((true, flips)) => {
                     // Realize the deferred data-flow half of the loop-condition
                     // `negateCondition`s the region structurer recorded (the same
@@ -3803,6 +3799,9 @@ impl Action for ActionBlockStructure {
                     return 0;
                 }
                 Ok((false, _)) | Err(_) => {
+                    if ctx.deadline_expired() {
+                        return 0;
+                    }
                     // Could not converge: discard the partially-structured sblocks
                     // and re-seed a clean BlockCopy mirror for the CollapseStructure
                     // fallback (never abort — honest-partial parity).
