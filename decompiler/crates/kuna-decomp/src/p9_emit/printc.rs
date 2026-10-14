@@ -8949,6 +8949,14 @@ impl PrintC {
                 // push_vn_explicit_ir renders for symbol-bound highs.
                 if let Some(st) = &sym_type {
                     if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
+                        if st.get_array_base().is_some_and(|elem| elem.get_array_base().is_some())
+                            && self.push_partial_symbol_ir(
+                                fd, arch, &name, std::rc::Rc::clone(st), sym_off as int8,
+                                size, vn, op, 1, false,
+                            )
+                        {
+                            return;
+                        }
                         if let Some(elem) = st.get_array_base() {
                             let elsize = elem.get_align_size().max(1);
                             if sym_off >= 0 && (sym_off % elsize) == 0 && st.get_size() > elsize {
