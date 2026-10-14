@@ -254,16 +254,26 @@ pub fn rename_targets(fd: &Funcdata, tallies: &[(HighVariableId, BTreeMap<String
     best.into_iter().map(|(from, (_, high))| (high, renames[from].clone())).collect()
 }
 
-/// [`tally`] of every local, when a record is carried.
-pub fn tallies(fd: &Funcdata) -> Vec<(HighVariableId, BTreeMap<String, (usize, usize)>)> {
+/// [`tally`] of every local the naming pass names on its own, when a record
+/// is carried: a piece of a structure takes its root's name, so it neither
+/// keeps a number nor is renamed apart from it.
+pub fn tallies(fd: &mut Funcdata) -> Vec<(HighVariableId, BTreeMap<String, (usize, usize)>)> {
     if fd.kuna_prior_names().ops.is_empty() {
         return Vec::new();
     }
-    fd.high_bank()
-        .iter()
-        .filter(|(_, h)| !h.kuna_global())
-        .map(|(high, _)| (high, tally(fd, high)))
-        .collect()
+    let highs: Vec<HighVariableId> =
+        fd.high_bank().iter().filter(|(_, h)| !h.kuna_global()).map(|(high, _)| high).collect();
+    let mut out = Vec::new();
+    for high in highs {
+        let piece = fd
+            .high_name_representative(high)
+            .and_then(|rep| fd.vbank().get(rep))
+            .is_some_and(|v| v.is_proto_partial());
+        if !piece && fd.high_has_name(high) {
+            out.push((high, tally(fd, high)));
+        }
+    }
+    out
 }
 
 /// The number each local keeps, assigned over the whole function: strongest
