@@ -1052,6 +1052,9 @@ pub struct Architecture {
     /// loop (option `devectorize`, opt-in default-off).  See
     /// [`crate::p3_dataflow::kuna_devectorize`].
     pub devectorize_reduction: bool,
+    /// (kuna) Collapse an inline `repnz scasb` string length into `strlen`
+    /// (option `strlenscan`).  See [`crate::p3_dataflow::kuna_strlenscan`].
+    pub strlen_scan: bool,
     /// Guard stack slots against stores through stack-derived pointers.
     pub stack_store_guard: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -2870,6 +2873,7 @@ impl Architecture {
             split_store_keep: false, // (kuna) option splitstorekeep; reset_defaults sets the shipped default (on)
             wide_slice_reduce: false, // (kuna) option wideslice; reset_defaults sets the shipped default (on)
             devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
+            strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
             stack_store_guard: false,
             region_structure: true,
             guard_arm: false,
@@ -3267,6 +3271,7 @@ impl Architecture {
         self.cast_widen = crate::kuna_castwiden::CastWidenMode::Literal; // (kuna) option castwiden default `literal`: a 64-bit widening C's usual arithmetic or assignment conversion performs prints no cast, and an 8-byte literal beside one prints its L/UL suffix; 5/675 datatest assertions (upstream's pinned form) opt out per test, 18 stage assertions of other options moved to the new form, 444-slice typesweep identical, casts 35,588 -> 34,062 on the castbench shared set with 0 functions more; docs/features/castwiden/default-on-evaluation.md
         self.cast_narrow = true; // (kuna) option castnarrow default-on: leaves out only an integer truncation or sign change that an assignment, store, trusted argument or return of exactly the cast's type performs itself
         self.decl_order = crate::kuna_declorder::DeclOrder::Natural; // (kuna) option declorder default `natural`: locals declare v1, v2, ..., v10; only the order of declaration lines moves, 0/675 datatest assertions
+        self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.caller_reads = true; // (kuna) option callerreads default-on: inert without the Listing, so 0/675 datatest assertions move
@@ -4028,6 +4033,7 @@ impl Architecture {
         ctx.split_store_keep = self.split_store_keep; // splitstorekeep
         ctx.wide_slice_reduce = self.wide_slice_reduce; // wideslice
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
+        ctx.strlen_scan = self.strlen_scan; // strlenscan
         ctx.stack_store_guard = self.stack_store_guard;
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
@@ -4923,7 +4929,7 @@ impl Architecture {
     /// front-loaded here).
     fn register_string_builtins(&mut self) -> KunaResult<()> {
         use crate::userop::{
-            BUILTIN_MEMCPY, BUILTIN_MEMSET, BUILTIN_STRINGDATA, BUILTIN_STRNCPY,
+            BUILTIN_MEMCPY, BUILTIN_MEMSET, BUILTIN_STRINGDATA, BUILTIN_STRLEN, BUILTIN_STRNCPY,
             BUILTIN_SYSCALL_ERROR, BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE,
             BUILTIN_WCSNCPY,
         };
@@ -4956,6 +4962,8 @@ impl Architecture {
             userops.register_builtin(BUILTIN_MEMSET, &adapter)?;
             // (kuna syscallregs) the MIPS/PowerPC system-call failure flag.
             userops.register_builtin(BUILTIN_SYSCALL_ERROR, &adapter)?;
+            // (kuna strlenscan) the length an inline `repnz scasb` computes.
+            userops.register_builtin(BUILTIN_STRLEN, &adapter)?;
             Ok(())
         })();
         self.userops = userops;

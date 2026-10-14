@@ -1821,6 +1821,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "strlenscan"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "kuna-strlenscan"
+summary = "Print an inline `repnz scasb` string length as `strlen(s)`. gcc up to version 9 (at -O1 and above) and older MSVC expand `strlen` inline as `or rcx,-1; xor eax,eax; repnz scasb; not rcx` (ECX on 32-bit x86), and SLEIGH lifts the repeat prefix as a loop inside the one instruction, so the C shows `do { if (!n) break; n -= 1; ... } while (c);` over the string and `~n - 1` wherever the length is used. When on, `kuna_strlenscan` matches the two blocks the instruction lifts to on SSA, after mainloop has settled the count and the byte searched for, and proves the loop is a string length: the count enters as the all-ones constant of its width and the head leaves exactly when it is zero; the body steps the count down and the pointer up by one, reads one byte through the pointer, computes nothing else with side effects, and loops exactly while that byte is not zero (checked for all 256 values, which proves the byte searched for is zero); nothing after the loop reads the count except through a bitwise NOT. It then places `len = strlen(s)` (a typed builtin user-op, `char *` in, unsigned out) in the body, gives every value the loop hands on its final-iteration value (count `~(len + 1)`, pointer `s + len + 1`, the terminator byte zero, from which the flags follow), and removes the never-taken zero-count exit and the back edge, every scan of a function in one pass. The builtin keeps the call flag, so it is ordered like a call: a `strlen` stays where its scan was, ahead of a store, call or `free` that follows, and is never duplicated into several readers or merged across a join. A scan for another byte, one whose raw count is read, one counting from another start and one stepping backward keep their loops. Over 8 stripped decbench binaries (gcc 11, which no longer emits the idiom) the output is byte-identical; over 29 Ubuntu 20.04 gcc 9 binaries (bash, coreutils, util-linux, shadow, binutils and others) under `--mode aggressive`, 52 of 11,000 functions change, each gaining `strlen` (132 more), with 136 fewer scan loops, 1,212 fewer lines (34,588 -> 33,376) and 10 fewer gotos; 0/675 datatest assertions move."
+use_when = "On by default: a string length gcc 9 or older MSVC computed with `repnz scasb` reads `strlen(s)`, taken where the scan was (`v1 = strlen(s);` when it is read twice or before a store). Set it off to see the scan loop SLEIGH lifts the instruction to, as upstream prints it."
+example = "option strlenscan off"
+source_decompiler = "ida"
+inspiration = "IDA 9.2 prints the inline gcc 9 `repnz scasb` length as `strlen(s)`; kuna printed an eight-line do/while and `~count - 1` arithmetic for the same instruction (authored gcc 9.4 -O1 and -Os fixture, `strlenscan.c`)."
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "a do/while that decrements a 0xffffffffffffffff counter while stepping a char pointer until the byte read is zero|if (!v3) break; v3 -= 1; inside a loop that reads one byte per step|~v3 - 1 or ~v3 - 5 where the source computes a string length|repnz scasb in the disassembly where IDA prints strlen"
+live_field = "strlen_scan"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "simdlane"
 values = "on|off"
 default = "on"

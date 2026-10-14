@@ -1237,6 +1237,8 @@ pub struct ArchContext {
     pub wide_slice_reduce: bool,
     /// (kuna) `devectorize` — re-roll a vectorized reduction into its scalar loop.
     pub devectorize_reduction: bool,
+    /// (kuna) `strlenscan` — collapse an inline `repnz scasb` length into `strlen`.
+    pub strlen_scan: bool,
     /// Guard stack slots against stores through stack-derived pointers.
     pub stack_store_guard: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -1888,6 +1890,7 @@ impl ArchContext {
             split_store_keep: false,     // splitstorekeep (Architecture::reset_defaults sets the shipped default: on)
             wide_slice_reduce: false,    // wideslice (Architecture::reset_defaults sets the shipped default: on)
             devectorize_reduction: false, // devectorize (opt-in default-off)
+            strlen_scan: false, // strlenscan (live value copied from the Architecture)
             stack_store_guard: false,
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)

@@ -2106,6 +2106,65 @@ measured.
 `tests/stages/kuna-devectorize-effects.xml` keeps the vector arm of two
 hand-written sums whose exits disagree on a global store.
 
+**Inline string lengths** (`option strlenscan`, default **on**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_strlenscan.rs
+(ActionStrlenScan)`, in the fullloop tail right after `devectorize`. gcc up to
+version 9 (at -O1 and above) and older MSVC expand `strlen(s)` inline as
+`or rcx,-1; xor eax,eax; repnz scasb; not rcx` (ECX on 32-bit x86). The
+SLEIGH repeat prefix lifts the scan as a loop inside one instruction: a head
+`H` that leaves when the count is zero and otherwise enters a body `B`, which
+steps the count down and the pointer up, reads a byte, and returns to `H`
+while the byte differs from AL. Upstream prints it as a do/while over the
+string and `~count - 1` wherever the length is used. Once mainloop has settled
+the count and the byte searched for to constants, the action matches the two
+blocks on SSA. Every op of `H` and `B` sits at one instruction address, `H` is
+entered from one block outside and from `B`, `B` only from `H`, and both leave
+to the same exit `E`. It then proves the following. `H` holds exactly two phis,
+the count, which enters as the all-ones constant of its width, and the pointer.
+`H` leaves to `E` exactly when the count is zero; this is evaluated over
+boundary values of the count, the condition reading nothing but the count and
+constants. `B` decrements the count by one and increments the pointer by one, so
+the direction flag is clear. It reads one byte through the pointer and computes
+only pure values of loop values, its own results and constants. It returns to
+`H` exactly when that byte is not zero, which is checked for all 256 values and
+so also proves the byte searched for is zero. Nothing outside the loop reads a
+loop value except through `E`'s phis, and the count only through a bitwise NOT,
+the first step of every length computation built on it. Any other use of the
+count declines the rewrite. The count starts at all ones and loses one per byte,
+so it reaches zero only after the whole address space has been read; the
+zero-count exit is never taken and the loop ends after `strlen(s) + 1` bytes
+with the terminator read. The rewrite places `len = strlen(s)` at the top of
+`B` (a `CALLOTHER` of the typed builtin `BUILTIN_STRLEN`, `char *` in, an
+unsigned integer of the count's width out; `p5_types/coreaction_infertypes.rs
+(output_type_local)` and `input_type_local` read those types). It then gives
+every value `B` hands to `E` its final-iteration value: the count
+`~(len + 1)`, which the NOT after the loop folds back to `len + 1`
+(`RuleNegateNegate`); the pointer `s + len + 1`; and the byte read, zero, from
+which the flags follow. Finally it removes the zero-count edge and the back
+edge (`remove_branch`), so `H` and `B` run once and the next mainloop pass folds
+the rest. Every scan a function holds is matched first and rewritten in the same
+pass, so the fullloop repeats once however many there are. The builtin keeps the
+call flag `CALLOTHER` carries, because its value depends on memory: a store, a
+call or a `free` after the scan changes what a later `strlen` would return. So
+it is ordered like a call. `ActionMarkExplicit` inlines it only where the
+call-return fold allows (one reader, in the same block, with nothing between
+them), the implied-cover check keeps it from moving past a store or a call,
+the multiplier never duplicates it into several readers, and two of them on
+different paths are never merged at a join. The printed `strlen` is therefore
+taken where the scan was. A scan for any other byte (a `memchr`-like loop), one
+whose count starts elsewhere, one whose raw count is read, and one stepping
+backward keep their loops.
+`tests/stages/kuna-strlenscan.xml` runs gcc 9 -O1 functions in both passes. The
+default pass shows `return strlen(a0);`, a length read twice as one variable,
+two lengths in one expression in order, a length taken before the store and
+before the call that follow the scan, an inlined `strcat` taking its length once
+before its two stores, a length on each side of a branch read after the join,
+and the two non-length scans still loops. With the option off every scan is a
+loop with `~v3 - 1`. `kuna-cli/tests/strlenscan_round_trip.rs` prints gcc 9
+-O1/-Os x86-64 and -O1 i386 builds with the option off and on, and compiles the
+x86-64 ones beside the source, with buffers whose bytes past the terminator are
+not zero, to check each printed function computes the same values.
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space

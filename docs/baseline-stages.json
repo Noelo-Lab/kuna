@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2917,
-    2917
+    2930,
+    2930
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -912,7 +912,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 303 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 304 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -2758,6 +2758,19 @@
     "data:storealias #7: load, a value read before the pointer store prints as a read after it",
     "data:storealias #8: default, the value read before the store keeps its own variable",
     "data:storealias #9: load, three reads around two pointer stores collapse into one",
+    "data:strlenscan #10: nine lines read a length in the default pass, none with the option off",
+    "data:strlenscan #11: a scan for another byte keeps its loop in both passes",
+    "data:strlenscan #12: as does a scan whose raw count is returned, once by default and with every length loop when off",
+    "data:strlenscan #13: with the option off a length is the loop's complemented count -- the bug",
+    "data:strlenscan #1: with no option line (the shipped default) a bare length is strlen",
+    "data:strlenscan #2: a length read twice is one variable",
+    "data:strlenscan #3: two lengths in one expression keep their order",
+    "data:strlenscan #4: a length is taken before the store that follows the scan",
+    "data:strlenscan #5: and before a call that follows it",
+    "data:strlenscan #6: an inlined strcat takes the length once, before its two stores",
+    "data:strlenscan #7: each side of a branch keeps its own length",
+    "data:strlenscan #8: and the other side its own",
+    "data:strlenscan #9: the join reads the variable, not a length taken after the store",
     "data:subright #1: the top-byte truncation lowers to a shift and a cast",
     "data:subright #2: the middle-byte truncation lowers to a shift and a cast",
     "data:subright #3: the one-byte-offset truncation lowers to a shift and a cast",

@@ -2085,7 +2085,8 @@ mod tests {
         // declaration, as far as its own analysis recovers its parameters
         // and kuna-bejoin-evidence, -sparc, -armeb / a big-endian pair joins
         // high word first on proof (GH-904)
-        assert_eq!(count, 545, "corpus file count drifted");
+        // and kuna-strlenscan / an inline repnz scasb length prints as strlen
+        assert_eq!(count, 546, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

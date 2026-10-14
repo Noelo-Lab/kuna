@@ -26,6 +26,10 @@ Three tiers:
 | a vectorised reduction is followed by a second copy of the loop over the remainder | [`devectorize`](#devectorize) |
 | an array sum is guarded by if (8 <= length) with a stride-eight do-while behind it | [`devectorize`](#devectorize) |
 | a line like v8 + v12 + v6 + v10 + v7 + v11 + v5 + v9 follows a loop | [`devectorize`](#devectorize) |
+| a do/while that decrements a 0xffffffffffffffff counter while stepping a char pointer until the byte read is zero | [`strlenscan`](#strlenscan) |
+| if (!v3) break; v3 -= 1; inside a loop that reads one byte per step | [`strlenscan`](#strlenscan) |
+| ~v3 - 1 or ~v3 - 5 where the source computes a string length | [`strlenscan`](#strlenscan) |
+| repnz scasb in the disassembly where IDA prints strlen | [`strlenscan`](#strlenscan) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring) |
@@ -1234,6 +1238,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Turn ON when an -O2/-O3 loop that sums the elements of an array comes out as a guard `if (8 <= length)`, a do-while adding `v2 & 0xff`, `v2 >> 8 & 0xff`, ... into eight separate accumulators, a line summing those accumulators, and a second do-while over `bytes[v4]` for the remainder -- and you want the source loop `v1 += bytes[v2]` instead. OFF (the default) keeps the compiler's shape, which shows the stride, the alignment of the handoff and the duplicated body. Inert on a function with no loop of that shape.
 - **Where / provenance:** P3/simplification-quiescence · kuna · structure-recovery · wide-ssa-slices
 - **Example:** `option devectorize on`
+
+### `strlenscan` -- on | off, default `on`
+
+- **Symptoms:** a do/while that decrements a 0xffffffffffffffff counter while stepping a char pointer until the byte read is zero; if (!v3) break; v3 -= 1; inside a loop that reads one byte per step; ~v3 - 1 or ~v3 - 5 where the source computes a string length; repnz scasb in the disassembly where IDA prints strlen.
+- **What it does:** Print an inline `repnz scasb` string length as `strlen(s)`. gcc up to version 9 (at -O1 and above) and older MSVC expand `strlen` inline as `or rcx,-1; xor eax,eax; repnz scasb; not rcx` (ECX on 32-bit x86), and SLEIGH lifts the repeat prefix as a loop inside the one instruction, so the C shows `do { if (!n) break; n -= 1; ... } while (c);` over the string and `~n - 1` wherever the length is used. When on, `kuna_strlenscan` matches the two blocks the instruction lifts to on SSA, after mainloop has settled the count and the byte searched for, and proves the loop is a string length: the count enters as the all-ones constant of its width and the head leaves exactly when it is zero; the body steps the count down and the pointer up by one, reads one byte through the pointer, computes nothing else with side effects, and loops exactly while that byte is not zero (checked for all 256 values, which proves the byte searched for is zero); nothing after the loop reads the count except through a bitwise NOT. It then places `len = strlen(s)` (a typed builtin user-op, `char *` in, unsigned out) in the body, gives every value the loop hands on its final-iteration value (count `~(len + 1)`, pointer `s + len + 1`, the terminator byte zero, from which the flags follow), and removes the never-taken zero-count exit and the back edge, every scan of a function in one pass. The builtin keeps the call flag, so it is ordered like a call: a `strlen` stays where its scan was, ahead of a store, call or `free` that follows, and is never duplicated into several readers or merged across a join. A scan for another byte, one whose raw count is read, one counting from another start and one stepping backward keep their loops. Over 8 stripped decbench binaries (gcc 11, which no longer emits the idiom) the output is byte-identical; over 29 Ubuntu 20.04 gcc 9 binaries (bash, coreutils, util-linux, shadow, binutils and others) under `--mode aggressive`, 52 of 11,000 functions change, each gaining `strlen` (132 more), with 136 fewer scan loops, 1,212 fewer lines (34,588 -> 33,376) and 10 fewer gotos; 0/675 datatest assertions move.
+- **When to flip:** On by default: a string length gcc 9 or older MSVC computed with `repnz scasb` reads `strlen(s)`, taken where the scan was (`v1 = strlen(s);` when it is read twice or before a store). Set it off to see the scan loop SLEIGH lifts the instruction to, as upstream prints it.
+- **Where / provenance:** P3/simplification-quiescence · ida · presentation-default · kuna-strlenscan
+- **Example:** `option strlenscan off`
 
 ### `rodatastring` -- on | off, default `on`
 
