@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2868,
-    2868
+    2875,
+    2875
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -900,7 +900,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 300 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 301 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -2097,6 +2097,13 @@
     "data:cspecprotos #4: the registered __thiscall model resolves and recovers ECX as the first parameter",
     "data:cspecprotos #5: the member access is now a parameter dereference",
     "data:cspecprotos #6: the stack argument shifts to the second slot behind the this-pointer",
+    "data:declorder #1: with no option line (the shipped default) v2 follows v1",
+    "data:declorder #2: and v10 follows v9",
+    "data:declorder #3: and v11 is the last declaration before the body",
+    "data:declorder #4: with the option set to name, v10 is declared right after v1 -- the bug",
+    "data:declorder #5: and v2 right after v11",
+    "data:declorder #6: both passes declare the same eleven locals",
+    "data:declorder #7: and print the same body",
     "data:devectorize #1: option off keeps the eight lane accumulators (bug reproduced)",
     "data:devectorize #2: option off guards the stride-eight loop on 8 <= length (bug reproduced)",
     "data:devectorize #3: option off hands the remainder over at length & ~7 (bug reproduced)",

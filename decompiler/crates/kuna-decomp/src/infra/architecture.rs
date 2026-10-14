@@ -1421,6 +1421,9 @@ pub struct Architecture {
     /// whose type is spelled exactly as the cast's: C's own conversion there is
     /// that very conversion.  See [`crate::kuna_castnarrow`].
     pub cast_narrow: bool,
+    /// (kuna `declorder`) The order the body's local declarations print in.
+    /// See [`crate::kuna_declorder`].
+    pub decl_order: crate::kuna_declorder::DeclOrder,
     /// (kuna `cortexmpriv`) Assume the Cortex-M core is privileged, folding away
     /// the `isCurrentModePrivileged()` guard the vendored ARM SLEIGH wraps around
     /// every VERSION_7M MRS/MSR (`kuna_cortexmpriv`).
@@ -2894,6 +2897,7 @@ impl Architecture {
             call_ret_type: false, // (kuna) option callrettype; reset_defaults sets the shipped default
             cast_widen: crate::kuna_castwiden::CastWidenMode::Off, // (kuna) option castwiden; reset_defaults sets the shipped default
             cast_narrow: false, // (kuna) option castnarrow; reset_defaults sets the shipped default
+            decl_order: crate::kuna_declorder::DeclOrder::Name, // (kuna) option declorder; reset_defaults sets the shipped default
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
@@ -3234,6 +3238,7 @@ impl Architecture {
         self.call_ret_type = true; // (kuna) option callrettype default-on: a call's result takes the return type its callee stated earlier in a callee-first run; 0/675 datatest assertions and 0 stage assertions moved (single-function surfaces state nothing), one test-cli probe moved to the intended form, the 444-slice typesweep +6 perfect and 0 lost, casts 35,588 -> 34,808 on the census corpus (393 functions fewer, 25 more); docs/features/callrettype/default-on-evaluation.md
         self.cast_widen = crate::kuna_castwiden::CastWidenMode::Literal; // (kuna) option castwiden default `literal`: a 64-bit widening C's usual arithmetic or assignment conversion performs prints no cast, and an 8-byte literal beside one prints its L/UL suffix; 5/675 datatest assertions (upstream's pinned form) opt out per test, 18 stage assertions of other options moved to the new form, 444-slice typesweep identical, casts 35,588 -> 34,062 on the castbench shared set with 0 functions more; docs/features/castwiden/default-on-evaluation.md
         self.cast_narrow = true; // (kuna) option castnarrow default-on: leaves out only an integer truncation or sign change that an assignment, store, trusted argument or return of exactly the cast's type performs itself
+        self.decl_order = crate::kuna_declorder::DeclOrder::Natural; // (kuna) option declorder default `natural`: locals declare v1, v2, ..., v10; only the order of declaration lines moves, 0/675 datatest assertions
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.caller_reads = true; // (kuna) option callerreads default-on: inert without the Listing, so 0/675 datatest assertions move

@@ -1075,6 +1075,9 @@ Three tiers:
 | return (unsigned long)v1; from a function declared unsigned long | [`castimplied`](#castimplied) |
 | several casts stacked over one byte, (long)(int)(unsigned int)(unsigned char)c | [`castimplied`](#castimplied) |
 | kuna prints more casts than IDA on the same function | [`castimplied`](#castimplied) |
+| v10 and v11 declared between v1 and v2 | [`declorder`](#declorder) |
+| local declarations in string order v1, v10, v11, v2 | [`declorder`](#declorder) |
+| a numbered local hard to find among ten or more declarations | [`declorder`](#declorder) |
 | a double parameter stored into a global prints as unsigned long and moves ahead of the integer parameters | [`floatglobals`](#floatglobals) |
 | a float parameter copied into a global prints as unsigned int | [`floatglobals`](#floatglobals) |
 | a global passed to a float parameter prints as a union reinterpretation ((union { unsigned int from; float to; }){ .from = dat_10001d78 }).to | [`floatglobals`](#floatglobals) |
@@ -3381,6 +3384,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: a cast C would perform by itself is left out -- `strchr(s,c)` rather than `strchr(s,(int)c)`, `v3 = v5;` into a `long v3` rather than `v3 = (long)v5;`, `return v1;` from an `unsigned long` function, and one cast rather than four over a byte widened to 64 bits. Set it off to see every conversion ActionSetCasts inserted, exactly as upstream Ghidra prints them, for example when checking which conversions the binary performs at a call or an assignment.
 - **Where / provenance:** P9/cast-policy · ida · presentation-default · kuna-castimplied
 - **Example:** `option castimplied on`
+
+### `declorder` -- natural | name, default `natural`
+
+- **Symptoms:** v10 and v11 declared between v1 and v2; local declarations in string order v1, v10, v11, v2; a numbered local hard to find among ten or more declarations.
+- **What it does:** Declare a function's locals in natural number order: `v1, v2, ..., v9, v10, v11` instead of the string order `v1, v10, v11, v2, ..., v9`. The declaration pass sorts its locals by name, and a plain string sort puts every two-digit name between `v1` and `v2`, so a function with ten or more locals scatters its numbered declarations and a reader looking up `v2` scans past `v10`..`v19` first. `natural` compares the ASCII digit runs inside two names by numeric value and everything else character by character, with plain string order as the tiebreak, so the order is total and agrees with name equality. Only the printed order moves: the symbol, rendered-line and group collapses and the repeated-name suffixes still run over the name-sorted list, and `kuna_declorder` reorders the surviving declarations once their final spellings are known. It applies to angr-style names (the default `namestyle`); Ghidra-style names carry hexadecimal offsets (`local_1c`) that a decimal comparison would scramble, so `namestyle ghidra` keeps the string order. Over 8 stripped decbench binaries (O2 gzip, dash, find, ls, grep; O2-noinline kmod; O0 bzip2, sort) under `--mode aggressive`, 291 of 3,225 functions change, every one only in the order of its declaration lines; 0/675 datatest assertions move.
+- **When to flip:** On by default: locals declare as `v1, v2, ..., v10`, the order IDA declares its numbered locals in. Set it to `name` for the plain string order (`v1, v10, v11, v2`) the declaration pass used before.
+- **Where / provenance:** P9/naming-policy · ida · presentation-default · kuna-declorder
+- **Example:** `option declorder name`
 
 ### `floatglobals` -- on | off, default `on`
 

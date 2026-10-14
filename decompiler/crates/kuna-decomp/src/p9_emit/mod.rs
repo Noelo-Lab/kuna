@@ -44,6 +44,7 @@ pub mod kuna_truncarg;
 pub mod kuna_pointerargs; // (kuna) a scalar's address passed to a character-pointer parameter
 pub mod kuna_castimplied; // (kuna) casts C's own conversions already perform
 pub mod kuna_castnarrow; // (kuna) a narrowing C's own assignment, argument or return conversion performs keeps no cast
+pub mod kuna_declorder; // (kuna) the order local declarations print in
 pub mod kuna_castternary; // (kuna) a conditional arm keeps no cast the conditional performs
 pub mod kuna_castwiden; // (kuna) a 64-bit widening C performs by itself keeps no cast
 pub mod kuna_castarith; // (kuna) pointer arithmetic stays in pointer terms

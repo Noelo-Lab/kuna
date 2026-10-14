@@ -725,6 +725,11 @@ kuna_options! { self, p1;
     "castternary" => on_off!(cast_ternary, "conditional-arm cast elision"),
     "callrettype" => on_off!(call_ret_type, "callee-stated call return types"),
     "castnarrow" => on_off!(cast_narrow, "implied narrowing-cast elision"),
+    "declorder" => {
+        let (mode, msg) = crate::kuna_declorder::OptionDeclOrder.apply(p1)?;
+        self.decl_order = mode;
+        Ok(msg)
+    },
     "castwiden" => {
         let (mode, msg) = crate::kuna_castwiden::OptionCastWiden.apply(p1)?;
         self.cast_widen = mode;

@@ -4909,6 +4909,25 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "declorder"
+values = "natural|name"
+default = "natural"
+destructive = false
+phase = "P9"
+subphase = "naming-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-declorder"
+summary = "Declare a function's locals in natural number order: `v1, v2, ..., v9, v10, v11` instead of the string order `v1, v10, v11, v2, ..., v9`. The declaration pass sorts its locals by name, and a plain string sort puts every two-digit name between `v1` and `v2`, so a function with ten or more locals scatters its numbered declarations and a reader looking up `v2` scans past `v10`..`v19` first. `natural` compares the ASCII digit runs inside two names by numeric value and everything else character by character, with plain string order as the tiebreak, so the order is total and agrees with name equality. Only the printed order moves: the symbol, rendered-line and group collapses and the repeated-name suffixes still run over the name-sorted list, and `kuna_declorder` reorders the surviving declarations once their final spellings are known. It applies to angr-style names (the default `namestyle`); Ghidra-style names carry hexadecimal offsets (`local_1c`) that a decimal comparison would scramble, so `namestyle ghidra` keeps the string order. Over 8 stripped decbench binaries (O2 gzip, dash, find, ls, grep; O2-noinline kmod; O0 bzip2, sort) under `--mode aggressive`, 291 of 3,225 functions change, every one only in the order of its declaration lines; 0/675 datatest assertions move."
+use_when = "On by default: locals declare as `v1, v2, ..., v10`, the order IDA declares its numbered locals in. Set it to `name` for the plain string order (`v1, v10, v11, v2`) the declaration pass used before."
+example = "option declorder name"
+source_decompiler = "ida"
+inspiration = "An authored gcc -O0 function with eleven live call results: kuna declared `v1, v10, v11, v2, ..., v9` while IDA 9.2 declares the same eleven locals in number order, `v2` through `v12`."
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "v10 and v11 declared between v1 and v2|local declarations in string order v1, v10, v11, v2|a numbered local hard to find among ten or more declarations"
+
+[[settable]]
 option = "ptrdepthcap"
 values = "on|off"
 default = "off"
