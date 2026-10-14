@@ -3013,11 +3013,19 @@ and an agent writes:
   `decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs`, so a default-off
   option is either in the preset or listed there with its reason),
   and **`fast`** (`listing`, `funcstart_patterns`, and `aif` off to avoid
-  program-wide decode and speculative discovery). A fourth frontend policy,
-  **`auto`**, resolves from the raw input length before the Architecture is
-  built: `<500 KiB` selects `aggressive`, `500 KiB–<2 MiB` selects `reliable`,
-  and `>=2 MiB` selects `fast`. File-based CLI commands use `auto` when
-  `--mode` is omitted; the WASI/browser frontend uses the same Rust classifier.
+  program-wide decode and speculative discovery, `ctypes` on). A fourth frontend
+  policy, **`auto`**, resolves from the raw input length before the Architecture
+  is built: `<500 KiB` selects `aggressive`, `500 KiB–<2 MiB` selects `reliable`,
+  and `>=2 MiB` selects `fast`. `auto` also carries its own override list,
+  applied before the selected preset's: `ctypes=on`, so the C spelling of the
+  core types (chapter [09](09-emission.md) §9.2) does not change with input size.
+  Size selects how much discovery and recovery a run can afford; spelling costs
+  nothing and is not part of that trade. An explicit `--mode reliable` stays the
+  catalog defaults. One function,
+  `decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs (resolve_overrides_for_size)`,
+  returns the concrete preset with the full ordered override list, and the CLI,
+  the WASI/browser frontend and the ghidra-sim CLI oracle all apply it. File-based
+  CLI commands use `auto` when `--mode` is omitted.
   The interactive console accepts concrete `mode <name>` presets but cannot
   apply unresolved `auto`, because an Architecture has no input-file metadata.
   Overrides are applied *before* the user's `--option` (last-write, so an
@@ -3045,8 +3053,9 @@ MIPS so GOT-slot loads fold to import names,
 `decompiler/crates/kuna-console/src/engine.rs (bootstrap_from_object)`);
 (4) driver surface injections (`listing`, non-x86-64
 `funcstart_patterns`/`aif`, §0.2) for options the concrete preset did not name;
-(5) the concrete mode's runtime overrides followed by the user's
-`--option`/`kassert` lines (which override the mode); and finally
+(5) `auto`'s own overrides (when the mode was omitted or `auto`), the concrete
+mode's runtime overrides, then the user's `--option`/`kassert` lines (which
+override the mode); and finally
 (6) the per-function snapshot copy (§0.5), after which the value is frozen for that
 function's drive.
 Which defaults deliberately diverge from upstream, and the measurements behind

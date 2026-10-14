@@ -391,8 +391,14 @@ impl Funcdata {
             // scope (the &mut getScopeLocal borrow must not alias the &self read of
             // the call spec / arch).
             let numparam = self.get_call_specs(i).proto().num_params();
+            let call_op = self.get_call_specs(i).get_op();
             let mut marks: Vec<(Rc<kuna_base::space::AddrSpace>, uintb, int4)> = Vec::new();
             for j in 0..numparam {
+                // (kuna) `msvcbyval`: a by-value slot a constructor builds is an
+                // object as well as an argument.
+                if crate::p4_calls::kuna_msvcbyval::keeps_slot_mapped(self, call_op, j) {
+                    continue;
+                }
                 let (addr, psize) = {
                     let fc = self.get_call_specs(i);
                     match fc.proto().get_param(j) {

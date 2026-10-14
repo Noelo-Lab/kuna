@@ -5,8 +5,11 @@
 // patch a byte, reload to see the session restored, the Collaborate button,
 // opening pasted base64 text (button and Ctrl+V),
 // the layout at 1024 and 820 px, and the Strings
-// list taking a search for "flag" to the code that uses it, and the type
-// definitions shown above a function. Any uncaught page exception fails the run.
+// list taking a search for "flag" to the code that uses it, kuna's notes
+// (`// branch-flip`) kept out of the code and shown for a selected line, the
+// type definitions above a function (folded until opened), and a rename far
+// down a long function keeping the view where it was. Any uncaught page
+// exception fails the run.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 // Steps that need the engine's `inspect`/`--assert` surface assert the page's
@@ -393,6 +396,12 @@ try {
   await openSample(page, 'crackme.elf');
   await page.waitFor(`/check/.test(document.getElementById('ccode').textContent)`, { what: 'crackme main', timeout: 60000 });
   await idle('crackme open');
+  assert.doesNotMatch(await text('#ccode'), /return-dupe/, 'kuna\'s notes are not in the code');
+  assert.equal(await text('#c-L3 .ct'), 'int main(void)', 'not even on the signature');
+  await page.click('#c-L3 .ct');
+  assert.match(await text('#railsel'), /^int main\(void\)\/\/ return-dupe The machine code shares one return between several paths/,
+    'selecting the line shows its note in the Explain panel, in words');
+  await page.key('Escape');
   assert.deepEqual(await page.call(() => [document.getElementById('fnpanel').hidden, document.getElementById('strpanel').hidden]), [false, true],
     'the sidebar starts on the functions');
   await page.click('#side-strs');
@@ -413,6 +422,11 @@ try {
   await page.click(flagLink);
   await page.waitFor(`document.getElementById('asmcode').getAttribute('aria-activedescendant') === 'a-${sites[1]}'`, { what: 'the next use', timeout: 10000 });
   assert.match(await text('#ccode .d2-cl.hl-sel'), /strcmp\(input,secret\)/, 'a second click goes to its next use');
+  const flip = await page.call(() => [...document.querySelectorAll('#ccode .d2-cl')].find((row) => /strlen\(secret\)/.test(row.textContent)).dataset.line);
+  assert.equal(await text(`#c-L${flip} .ct`), '  if (v2 != strlen(secret)) {', 'a flipped if reads as plain code');
+  await page.click(`#c-L${flip} .ct`);
+  assert.match(await text('#railsel .x-tag'), /^\/\/ branch-flip The decompiler flipped this if/, 'and says it was flipped once selected');
+  assert.doesNotMatch(await text('#asmcode'), /branch-flip/, 'the assembly headings leave the note out too');
   await page.click('#strlist .str[data-addr="0x2037"] .sx');
   await page.waitFor(`document.getElementById('vname').textContent === 'main' && /Enter the flag/.test(document.querySelector('#ccode .d2-cl.hl-sel')?.textContent || '')`, { what: 'main at the prompt', timeout: 60000 });
   await page.call(() => document.querySelector('#strlist .str[data-addr="0x2004"] .sx').focus());
@@ -472,6 +486,10 @@ try {
   await page.click('#tab-c');
   await page.waitFor(`document.getElementById('vname').textContent === 'make_item' && document.querySelector('#ccode .d2-tyhead')`, { what: 'make_item with its types', timeout: 60000 });
   assert.equal(await text('#ccode .d2-tyhead'), 'Types this function uses 1 type');
+  const folded = () => page.call(() => [document.querySelector('.d2-tytoggle').getAttribute('aria-expanded'), getComputedStyle(document.getElementById('c-L1')).display]);
+  assert.deepEqual(await folded(), ['false', 'none'], 'the definitions start folded');
+  await page.click('.d2-tytoggle');
+  assert.equal((await folded())[0], 'true', 'the heading unfolds them');
   const shaded = await page.call(() => [...document.querySelectorAll('#ccode .d2-cl.d2-ty')].map((row) => row.querySelector('.ct').textContent));
   assert.equal(shaded[0], 'typedef struct struct_0 struct_0;');
   assert.ok(shaded.includes('struct struct_0 {') && shaded.includes('    unsigned long field_0x8;'), 'struct_0 is defined above make_item');
@@ -480,16 +498,67 @@ try {
   await page.click('#c-L4 .ct');
   assert.match(await text('#railbody .x-card'), /Part of the definition of struct_0, a type this function uses\..*field_0x8 is the field 0x8 bytes from the start/s,
     'a definition line explains itself');
+  await page.call(() => { [...document.querySelectorAll('#fnlist .fn')].find((row) => row.textContent === 'main').click(); return true; });
+  await page.waitFor(`document.getElementById('vname').textContent === 'main' && /make_item/.test(document.getElementById('ccode').textContent)`, { what: 'main', timeout: 60000 });
+  await page.call(() => { [...document.querySelectorAll('#fnlist .fn')].find((row) => row.textContent === 'make_item').click(); return true; });
+  await page.waitFor(`document.getElementById('vname').textContent === 'make_item' && document.querySelector('#ccode .d2-tyhead')`, { what: 'make_item again', timeout: 60000 });
+  assert.equal((await folded())[0], 'true', 'opened, the definitions stay open for the visit');
   await page.click('.d2-tytoggle');
-  assert.deepEqual(await page.call(() => [document.querySelector('.d2-tytoggle').getAttribute('aria-expanded'), getComputedStyle(document.getElementById('c-L1')).display]),
-    ['false', 'none'], 'the heading folds the definitions');
+  assert.deepEqual(await folded(), ['false', 'none'], 'the heading folds the definitions');
   await page.call(() => { document.getElementById('ccode').focus(); return true; });
   await page.key('ArrowDown');
   assert.equal(await page.call(() => document.getElementById('ccode').getAttribute('aria-activedescendant')), `c-L${shaded.length + 1}`,
     'folded, the keyboard starts at the function');
   await page.click('.d2-tytoggle');
   assert.notEqual(await page.call(() => getComputedStyle(document.getElementById('c-L1')).display), 'none', 'and unfolds them');
-  await noExceptions('the struct the decompiler worked out is defined above the function, in a block that folds');
+  await noExceptions('the struct the decompiler worked out is defined above the function, in a block that starts folded');
+
+  await openSample(page, 'long.elf');
+  await page.waitFor(`document.getElementById('vname').textContent === 'main' && /a few words/.test(document.getElementById('ccode').textContent)`, { what: 'the long main', timeout: 60000 });
+  await idle('long main open');
+  const view = () => page.call(() => {
+    const cc = document.getElementById('ccode');
+    const top = cc.getBoundingClientRect().top;
+    const first = [...cc.querySelectorAll('.d2-cl')].find((row) => row.getBoundingClientRect().bottom > top + 1);
+    const cur = cc.querySelector('.t.cur');
+    return { top: cc.scrollTop, first: first.dataset.line, at: Math.round(first.getBoundingClientRect().top - top), cur: cur && `${cur.closest('.d2-cl').dataset.line}:${cur.textContent}` };
+  });
+  const [deep, deepSym] = await page.call(() => {
+    const rows = [...document.querySelectorAll('#ccode .d2-cl')].filter((row) => row.querySelector('.t[data-kind=variable][data-sym^=v]'));
+    const row = rows[rows.length - 1];
+    return [Number(row.dataset.line), row.querySelector('.t[data-kind=variable][data-sym^=v]').dataset.sym];
+  });
+  assert.ok(deep > 60, 'a line far below the declarations');
+  const editDeep = async (sym, key, value, after) => {
+    await page.call((n) => {
+      const cc = document.getElementById('ccode');
+      cc.scrollTop += document.getElementById(`c-L${n}`).getBoundingClientRect().top - cc.getBoundingClientRect().top - cc.clientHeight / 2;
+      return true;
+    }, deep);
+    await page.click(`#c-L${deep} .t[data-sym="${sym}"]`);
+    const before = await view();
+    assert.ok(before.top > 0 && Number(before.first) > 40, 'scrolled well down the function');
+    await page.key(key);
+    await page.waitFor(`!document.getElementById('d2pop').hidden`, { what: `${key} popover` });
+    await page.call(() => { document.querySelector('#d2pop input').select(); return true; });
+    await page.type(value);
+    await page.key('Enter');
+    await page.waitFor(after, { what: `${key} ${value} applied`, timeout: 60000 });
+    await idle(`${key} ${value}`);
+    const name = key === 'n' ? value : sym;
+    const { top, ...shown } = await view();
+    assert.deepEqual(shown, { first: before.first, at: before.at, cur: `${deep}:${name}` }, `${key} ${value} keeps the same lines in view, to the pixel, with the cursor where it was`);
+    await page.key('ArrowDown');
+    assert.equal(await count(`#c-L${deep + 1}.hl-sel`), 1, 'and the keyboard carries on from there');
+    assert.equal((await view()).top, top);
+  };
+  await editDeep(deepSym, 'n', 'word_count', `document.querySelector('#ccode .t[data-sym="word_count"]')`);
+  await page.key('s');
+  await sleep(300);
+  await editDeep('word_count', 'n', 'words_seen', `document.querySelector('#ccode .t[data-sym="words_seen"]')`);
+  await editDeep('words_seen', 'y', 'unsigned int', `/unsigned int words_seen;/.test(document.getElementById('ccode').textContent)`);
+  await page.key('s');
+  await noExceptions('renaming a variable far down a long function keeps the view where it was (Code and Side by side)');
 
   console.log(`DECOMPILE BROWSER OK — ${done.join('; ')}` + (skipped.length ? `; SKIPPED: ${skipped.join('; ')}` : ''));
 } finally {

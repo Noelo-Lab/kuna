@@ -1674,6 +1674,13 @@ impl Heritage {
                 return;
             }
         };
+        // (kuna) `msvcbyval`: the stack ranges a constructor call builds as a
+        // later call's by-value argument.  See [`crate::p4_calls::kuna_msvcbyval`].
+        let constructed = if fd.kuna_msvc_byval_sites().is_empty() || spc.get_type() != spacetype::IPTR_SPACEBASE {
+            Vec::new()
+        } else {
+            crate::p4_calls::kuna_msvcbyval::constructed_ranges(fd, &qlst, &spc)
+        };
         for fc in qlst.iter_mut() {
             let op = fc.get_op();
             let own_output = fd
@@ -1840,6 +1847,11 @@ impl Heritage {
             }
             if preserved {
                 effecttype = effect_type::UNAFFECTED;
+            }
+            if effecttype == effect_type::UNKNOWN_EFFECT
+                && crate::p4_calls::kuna_msvcbyval::constructs(&constructed, op, &spc, addr.get_offset(), size)
+            {
+                effecttype = effect_type::KILLEDBYCALL;
             }
 
             // Output-active branch (heritage.cc:1470-1487): register a return-value

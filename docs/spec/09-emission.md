@@ -1591,11 +1591,16 @@ derived from the first character of the type's name (`float8` is what makes
 `fVar1`), and the console's C-type parser resolves base types solely through
 `TypeFactory::find_by_name`, which the corpus feeds `int4`/`float8` from 269
 script lines. The shipped catalog default is `off`, which is what the XML
-parity corpora run at (42 datatest assertions pin the Ghidra spellings); the
-`aggressive` preset turns it on, and `auto` selects `aggressive` under 500 KiB,
-so valid C is the rendering every real-binary surface gets. Exercised by
+parity corpora and an explicit `--mode reliable` run at (42 datatest assertions
+pin the Ghidra spellings). The `aggressive` and `fast` presets turn it on, and
+`auto` turns it on at every input size, the `reliable` tier from 500 KiB to
+2 MiB included (chapter [00](00-overview.md), *Modes*). Valid C is therefore
+the rendering every real-binary surface gets, whatever the input size. Before
+that, a binary of 500 KiB or more fell back to the interned names, and an
+8-byte element cast such as `((int8 *)a0)[4]` read like a byte offset of 4 at
+an element offset of 0x20 (GH-1063). Exercised by
 `tests/stages/kuna-ctypes.xml` and the per-architecture CLI gate
-`ctypes_per_arch`.
+`ctypes_per_arch`, which also runs `--mode fast` and `auto` at each size tier.
 
 ## 9.3 Naming
 

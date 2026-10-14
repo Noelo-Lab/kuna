@@ -959,7 +959,10 @@ control. See `docs/spec/09-emission.md` §9.6.
 Omitting `--mode` selects `auto`: files below 500 KiB use `aggressive`, files
 from 500 KiB up to 2 MiB use `reliable`, and files at least 2 MiB use `fast`.
 The raw on-disk byte length is used, with exact cutovers at 512,000 and
-2,097,152 bytes. A later explicit `--option` wins over the resolved preset.
+2,097,152 bytes. `auto` also turns `ctypes` on at every size, so core types
+print as C (`int`, `unsigned long`, `double`) whichever preset it selects; an
+explicit `--mode reliable` keeps the catalog's `int4`/`uint8`/`float8`. A later
+explicit `--option` wins over the resolved preset.
 Address-selected single-function decompilation suppresses a preset-provided
 `fast_funcdisc` whole-image walk because the requested entry is already known.
 Name selection keeps it enabled so generated `sub_<addr>` names can resolve;
