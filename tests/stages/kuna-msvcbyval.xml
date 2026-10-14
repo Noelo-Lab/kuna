@@ -30,6 +30,11 @@
                  (MakeStack(y, x, y) into a local r)
         0x401080 Fresh: MakeStack(GetArr(), x, y), GetArr returning straight
                  into the slot through its hidden pointer
+      msvcbyval_ce_i386.exe: the shapes the sizing must decline (a pop cleanup,
+        padding or dead locals above the arguments, an addressed local the
+        cleanup releases, a split cleanup, a misaligned 8-byte class), checked in
+        the default pass, plus a padded 6-byte class and a plain 8-byte struct
+        that stay sized
 
     Pass 1 (`option msvcbyval off`) is the BUG: MakeStack(a1) and Join() keep
     only the parameters before the class, and the pushed `ecx` that reserves
@@ -107,6 +112,15 @@ c3
   <com>load addr 0x4010f0</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x401210</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401240</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401260</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="MSVCBYVAL #1: off keeps only MakeStack's hidden return pointer (Build, Fresh), and shift8 declines" min="3" max="3">MakeStack\(a1\);</stringmatch>
@@ -127,4 +141,7 @@ c3
 <stringmatch name="MSVCBYVAL #16: an 8-byte class the model misaligns is declined, not mis-sized (Take4)" min="1" max="1">Take4\(5\);</stringmatch>
 <stringmatch name="MSVCBYVAL #17: dead reserving pushes above the arguments leave shift8 declined" min="1" max="1">void sub_4011e0\(unsigned int a0,Arr \*a1,Arr \*a2,unsigned int a3\)</stringmatch>
 <stringmatch name="MSVCBYVAL #18: a 6-byte class padded to 8 by sub esp,8 is still sized (Put)" min="1" max="1">Put\(v1,v2\);</stringmatch>
+<stringmatch name="MSVCBYVAL #19: a local whose address is taken and that the cleanup releases is declined (podfold)" min="1" max="1">Take\(\*a1,a1\[1\],v1\);</stringmatch>
+<stringmatch name="MSVCBYVAL #20: a cleanup split over two add esp is declined" min="1" max="1">Take\(\*a0,a0\[1\],5\);</stringmatch>
+<stringmatch name="MSVCBYVAL #21: a trivially copyable 8-byte struct with a plain add esp is sized (podok)" min="1" max="1">Take\(\*a0,5\);</stringmatch>
 </decompilertest>

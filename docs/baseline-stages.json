@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2835,
-    2835
+    2838,
+    2838
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1115,7 +1115,10 @@
     "data:MSVCBYVAL #16: an 8-byte class the model misaligns is declined, not mis-sized (Take4)",
     "data:MSVCBYVAL #17: dead reserving pushes above the arguments leave shift8 declined",
     "data:MSVCBYVAL #18: a 6-byte class padded to 8 by sub esp,8 is still sized (Put)",
+    "data:MSVCBYVAL #19: a local whose address is taken and that the cleanup releases is declined (podfold)",
     "data:MSVCBYVAL #1: off keeps only MakeStack's hidden return pointer (Build, Fresh), and shift8 declines",
+    "data:MSVCBYVAL #20: a cleanup split over two add esp is declined",
+    "data:MSVCBYVAL #21: a trivially copyable 8-byte struct with a plain add esp is sized (podok)",
     "data:MSVCBYVAL #2: off reads the reserving push of ecx as a parameter",
     "data:MSVCBYVAL #3: off drops both of Join's arguments",
     "data:MSVCBYVAL #4: on passes MakeStack every argument, the class in place (Build, Fresh)",

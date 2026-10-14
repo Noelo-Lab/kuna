@@ -197,6 +197,11 @@ pub fn size_slots(data: &mut Funcdata) {
         if slot <= 0 || slot % 4 != 0 {
             continue;
         }
+        // An address formed into a live byte of the argument area outside the
+        // class slot is a local the cleanup also releases.
+        if walk.pointers.iter().any(|t| (4..top).contains(t) && !(lo..lo + slot).contains(t)) {
+            continue;
+        }
         let mut layout = Vec::with_capacity(widths.len());
         let mut off = 4;
         for (j, w) in widths.iter().enumerate() {
@@ -330,7 +335,8 @@ fn next_instruction(data: &Funcdata, op: OpId) -> Vec<OpId> {
 /// declined there rather than risk a wrong count.
 fn cleanup_after(data: &Funcdata, op: OpId, sp: &(Address, int4)) -> Option<int4> {
     let mut k = None;
-    for o in next_instruction(data, op) {
+    let ops = next_instruction(data, op);
+    for &o in &ops {
         let code = data.obank().get(o).map(|o| o.code());
         if matches!(code, Some(OpCode::CPUI_LOAD | OpCode::CPUI_STORE))
             && touches_sp(data, o, sp)
@@ -343,7 +349,44 @@ fn cleanup_after(data: &Funcdata, op: OpId, sp: &(Address, int4)) -> Option<int4
             _ => return None,
         }
     }
+    if split_cleanup(data, *ops.last()?, sp) {
+        return None;
+    }
     k.filter(|k| *k % 4 == 0 && *k <= MAX_ARG_BYTES)
+}
+
+/// Does another bare `add esp,c` follow `last` (the cleanup's last op) before
+/// the next call, branch or return, or the end of the block? Then the cleanup
+/// may be split (`add esp,8; add esp,4`) and the first add is not all of it. A
+/// `pop` (which also reads the stack) is an epilogue and does not count.
+fn split_cleanup(data: &Funcdata, last: OpId, sp: &(Address, int4)) -> bool {
+    let mut at: Option<Address> = None;
+    let mut reads_sp = false;
+    let mut cur = data.obank().get(last).and_then(|o| o.basic_neighbours().1);
+    while let Some(op) = cur {
+        let Some(o) = data.obank().get(op) else { return false };
+        if matches!(
+            o.code(),
+            OpCode::CPUI_CALL
+                | OpCode::CPUI_CALLIND
+                | OpCode::CPUI_BRANCH
+                | OpCode::CPUI_CBRANCH
+                | OpCode::CPUI_BRANCHIND
+                | OpCode::CPUI_RETURN
+        ) {
+            return false;
+        }
+        if at.as_ref() != Some(o.get_addr()) {
+            at = Some(o.get_addr().clone());
+            reads_sp = false;
+        }
+        reads_sp |= touches_sp(data, op, sp);
+        if matches!(sp_delta(data, op, sp), Some(Some(c)) if c > 0) && !reads_sp {
+            return true;
+        }
+        cur = o.basic_neighbours().1;
+    }
+    false
 }
 
 /// Does a LOAD or STORE address the stack through `sp` (`sp` or `sp + #c`)?

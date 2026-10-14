@@ -16,6 +16,10 @@
 ;   0x401190 take4   void Take4(int,Pair)  correct, but the cdecl model misaligns the    -> decline (documented)
 ;                                          8-byte class after a 4-byte slot
 ;   0x4011e0 shift8  frameless MakeStack   8 bytes of dead push-ecx locals above args    -> decline
+;   0x401210 podfold void Take(Pod,int)    frameless push-ecx local whose address goes to
+;                                          Fill, released by the cleanup                 -> decline
+;   0x401240 split   void Take(Pod,int)    cleanup split as add esp,8; add esp,4         -> decline
+;   0x401260 podok   void Take(Pod,int)    plain add esp,0xc (control)                   -> size (8)
 ; Build: nasm -f bin -I . -o msvcbyval_ce_i386.exe msvcbyval_ce_i386.asm
 %define IMAGE_DLL 0
 %include "pe32_data.inc"
@@ -233,6 +237,48 @@ shift8:
     add esp, 0x18
     ret
     align 16, db 0xcc
+; N1 void F(Pod *p) { int r; Fill(&r); Take(*p, r); }  frameless local r, addressed, released by the cleanup
+podfold:                                ; 0x401210
+    push ecx
+    mov eax, esp
+    push eax
+    call [__imp_Fill]
+    add esp, 4
+    mov eax, [esp+8]
+    push dword [esp]
+    push dword [eax+4]
+    push dword [eax]
+    call [__imp_Take]
+    add esp, 0x10
+    ret
+    align 16, db 0xcc
+; N5 split cleanup: Take(*p, 5) cleaned by add esp,8 then add esp,4
+split:                                  ; 0x401240
+    push ebp
+    mov ebp, esp
+    mov eax, [ebp+8]
+    push 5
+    push dword [eax+4]
+    push dword [eax]
+    call [__imp_Take]
+    add esp, 8
+    add esp, 4
+    pop ebp
+    ret
+    align 16, db 0xcc
+; N6 control: Take(*p, 5) with add esp,0xc
+podok:                                  ; 0x401260
+    push ebp
+    mov ebp, esp
+    mov eax, [ebp+8]
+    push 5
+    push dword [eax+4]
+    push dword [eax]
+    call [__imp_Take]
+    add esp, 0xc
+    pop ebp
+    ret
+    align 16, db 0xcc
 entry:
     ret
 section .rdata
@@ -251,9 +297,11 @@ __imp_Log:         dd RVA(hn_log)
 __imp_Six_copy:    dd RVA(hn_scopy)
 __imp_Put:         dd RVA(hn_put)
 __imp_Take4:       dd RVA(hn_take4)
+__imp_Take:        dd RVA(hn_take)
+__imp_Fill:        dd RVA(hn_fill)
     dd 0
 iat_end:
-ilt_arr: dd RVA(hn_copy), RVA(hn_pcopy), RVA(hn_makestack), RVA(hn_sink), RVA(hn_take3), RVA(hn_log), RVA(hn_scopy), RVA(hn_put), RVA(hn_take4), 0
+ilt_arr: dd RVA(hn_copy), RVA(hn_pcopy), RVA(hn_makestack), RVA(hn_sink), RVA(hn_take3), RVA(hn_log), RVA(hn_scopy), RVA(hn_put), RVA(hn_take4), RVA(hn_take), RVA(hn_fill), 0
 hn_copy: dw 0
     db '??0Arr@@QAE@ABV0@@Z', 0
     align 2, db 0
@@ -280,6 +328,12 @@ hn_put: dw 0
     align 2, db 0
 hn_take4: dw 0
     db '?Take4@@YAXHVPair@@@Z', 0
+    align 2, db 0
+hn_take: dw 0
+    db '?Take@@YAXUPod@@H@Z', 0
+    align 2, db 0
+hn_fill: dw 0
+    db '?Fill@@YAXPAH@Z', 0
     align 2, db 0
 dll_arr: db 'arr.dll', 0
 %include "pe32_data_end.inc"

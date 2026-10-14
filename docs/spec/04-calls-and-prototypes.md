@@ -2642,7 +2642,11 @@ The caller pops a `__cdecl` callee's arguments, so where the next instruction
 after the call is a single `add esp,k`, `k` is the argument bytes. A `pop` raises
 the stack pointer the same way but also reads the stack, and a run of pops (MSVC
 `/O1` cleanup) cannot be told from a `pop ebp` epilogue locally, so only an
-`add esp,k` is read and a pop cleanup is declined. At the end of
+`add esp,k` is read and a pop cleanup is declined. So is one followed by another
+bare `add esp` before the next call, branch or return
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (split_cleanup)`):
+the cleanup may be split (`add esp,8; add esp,4`), and its first half is not
+all of it. At the end of
 `ActionDefaultParams`, once every call has its prototype and its pop, each call
 to a parked declaration whose prototype is still the open one is read this way
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (size_slots)`):
@@ -2671,6 +2675,21 @@ class's size is taken from the stack itself, not from `k`, in one of two ways:
   so every byte of the argument area is a push: the slot is `k` less the declared
   parameters only when no byte of `[4, k+4)` is a reservation nothing wrote (a
   padding or local gap), which is declined.
+
+Either way, once the slot is placed, an address formed from the stack pointer
+into a still-live byte of the argument area outside the slot declines the
+sizing: that byte is a local the same `add esp` releases (its address handed to
+a call such as `Fill(&r)`, or a value read through it), not an argument.
+
+Known limits, where the stack carries no evidence that tells the shapes apart
+and the feature prints a wrong size: a single reservation larger than the class
+(`sub esp,12` for a 4-byte class, its padding folded into the same instruction)
+reads as a 12-byte class, since MSVC reserves exactly the class's 4-byte-aligned
+size and nothing else bounds it; and for a trivially copyable aggregate, a value
+pushed above the arguments that the function never reads or addresses (a dead
+`push 0` local) and that the same `add esp` releases reads as part of the
+aggregate. An 8-byte class reserved by two `push ecx` is declined rather than
+sized, since only the one reservation the builder captured is counted.
 
 The walk declines, too, when an earlier call on the way pops an amount its model
 or locked prototype does not state exactly (a deferred pop), when the stack
