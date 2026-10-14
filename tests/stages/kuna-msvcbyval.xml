@@ -89,9 +89,27 @@ c3
   <com>load addr 0x401080</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcbyval_ce_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401130</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401190</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4011e0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4010f0</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="MSVCBYVAL #1: off keeps only MakeStack's hidden return pointer (Build, Fresh)" min="2" max="2">MakeStack\(a1\);</stringmatch>
+<stringmatch name="MSVCBYVAL #1: off keeps only MakeStack's hidden return pointer (Build, Fresh), and shift8 declines" min="3" max="3">MakeStack\(a1\);</stringmatch>
 <stringmatch name="MSVCBYVAL #2: off reads the reserving push of ecx as a parameter" min="1" max="1">Arr \* sub_401020\(unsigned int a0,Arr \*a1,Arr \*a2,unsigned int a3\)</stringmatch>
 <stringmatch name="MSVCBYVAL #3: off drops both of Join's arguments" min="1" max="1">Join\(\);</stringmatch>
 <stringmatch name="MSVCBYVAL #4: on passes MakeStack every argument, the class in place (Build, Fresh)" min="2" max="2">MakeStack\(a0,v1,a1,a2\);</stringmatch>
@@ -104,4 +122,9 @@ c3
 <stringmatch name="MSVCBYVAL #11: off, Fresh reads the reserving push of ecx as a parameter" min="1" max="1">Arr \* sub_401080\(unsigned int a0,Arr \*a1,unsigned int a2,unsigned int a3\)</stringmatch>
 <stringmatch name="MSVCBYVAL #12: on, GetArr's hidden pointer builds the slot, so Fresh takes three parameters" min="1" max="1">Arr \* sub_401080\(Arr \*a0,Arr \*a1,Arr \*a2\)</stringmatch>
 <stringmatch name="MSVCBYVAL #13: GetArr returns into the slot as a local in both passes" min="2" max="2">GetArr\(\(Arr \*\)&amp;v1\);</stringmatch>
+<stringmatch name="MSVCBYVAL #14: a pop-run cleanup is not read as a size (Sink declined)" min="1" max="1">Sink\(\);</stringmatch>
+<stringmatch name="MSVCBYVAL #15: padding above a class-last argument is not absorbed (Take3 declined)" min="1" max="1">Take3\(5\);</stringmatch>
+<stringmatch name="MSVCBYVAL #16: an 8-byte class the model misaligns is declined, not mis-sized (Take4)" min="1" max="1">Take4\(5\);</stringmatch>
+<stringmatch name="MSVCBYVAL #17: dead reserving pushes above the arguments leave shift8 declined" min="1" max="1">void sub_4011e0\(unsigned int a0,Arr \*a1,Arr \*a2,unsigned int a3\)</stringmatch>
+<stringmatch name="MSVCBYVAL #18: a 6-byte class padded to 8 by sub esp,8 is still sized (Put)" min="1" max="1">Put\(v1,v2\);</stringmatch>
 </decompilertest>

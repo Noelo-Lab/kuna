@@ -160,10 +160,40 @@ pub fn size_slots(data: &mut Funcdata) {
         let model = Rc::clone(fc.proto().model());
         let call = fc.get_op();
         let Some(k) = cleanup_after(data, call, &sp) else { continue };
+        let top = 4 + k;
         let widths: Vec<int4> = decl.pieces.intypes.iter().map(|t| align4(t.get_size())).collect();
         let known: int4 =
             widths.iter().enumerate().filter(|(j, _)| *j != decl.at).map(|(_, w)| *w).sum();
-        let slot = k - known;
+        if known >= k {
+            continue;
+        }
+        // The class slot starts above the parameters below it, all known-width.
+        let lo: int4 = 4 + widths[..decl.at].iter().sum::<int4>();
+        let Some(walk) = walk_back(data, call, &sp, top, lo, &arch.msvc_builders) else { continue };
+        // The class slot's size, cross-checked against the cleanup so a padding
+        // reservation or a local released by the same `add esp` is declined.
+        let slot = match walk.builder {
+            // A copy constructor (or by-value return) fills the slot through a
+            // pointer, so its bytes are not pushes: take the reservation it
+            // captured, and require the cleanup to account for exactly it plus
+            // the declared parameters.
+            Some(_) => {
+                let Some(r) = walk.slot_reserved else { continue };
+                if r <= 0 || r % 4 != 0 || known + r != k {
+                    continue;
+                }
+                r
+            }
+            // A trivially copyable aggregate is stored directly, so every byte
+            // of the argument area is a push: a reservation nothing writes is a
+            // padding slot or a local, and the sizing is declined.
+            None => {
+                if (4..top).any(|b| !walk.written[b as usize]) {
+                    continue;
+                }
+                k - known
+            }
+        };
         if slot <= 0 || slot % 4 != 0 {
             continue;
         }
@@ -174,10 +204,6 @@ pub fn size_slots(data: &mut Funcdata) {
             layout.push((off, w));
             off += w;
         }
-        let (lo, _) = layout[decl.at];
-        let Some(walk) = walk_back(data, call, &sp, 4 + k, (lo, lo + slot), &arch.msvc_builders) else {
-            continue;
-        };
         let pushed = layout
             .iter()
             .enumerate()
@@ -198,7 +224,9 @@ pub fn size_slots(data: &mut Funcdata) {
             continue;
         }
         data.get_call_specs_mut(i).proto_mut().copy(&fp);
-        sites.push(ByvalSite { call, param: decl.at, builder: walk.builder, mapped: walk.slot_taken });
+        let mapped =
+            walk.builder.is_some() || walk.pointers.iter().any(|p| (lo..lo + slot).contains(p));
+        sites.push(ByvalSite { call, param: decl.at, builder: walk.builder, mapped });
     }
     data.kuna_set_msvc_byval_sites(sites);
 }
@@ -293,11 +321,22 @@ fn next_instruction(data: &Funcdata, op: OpId) -> Vec<OpId> {
     ops
 }
 
-/// The bytes the instruction right after the call `op` raises the stack pointer
-/// by, when that instruction is a single `sp = sp + #k` (`add esp,k`).
+/// The argument bytes the caller pops after the call, when the instruction
+/// right after it is a single `add esp,k`.
+///
+/// Only an `add esp,k` is read: a `pop` raises the stack pointer the same way
+/// but also reads the stack, and a run of pops (MSVC `/O1` argument cleanup)
+/// cannot be told apart from a `pop ebp` epilogue locally, so the sizing is
+/// declined there rather than risk a wrong count.
 fn cleanup_after(data: &Funcdata, op: OpId, sp: &(Address, int4)) -> Option<int4> {
     let mut k = None;
     for o in next_instruction(data, op) {
+        let code = data.obank().get(o).map(|o| o.code());
+        if matches!(code, Some(OpCode::CPUI_LOAD | OpCode::CPUI_STORE))
+            && touches_sp(data, o, sp)
+        {
+            return None; // a pop/push, not a bare `add esp,k`
+        }
         match sp_delta(data, o, sp) {
             None => {}
             Some(Some(c)) if c > 0 && k.is_none() => k = Some(c),
@@ -307,6 +346,27 @@ fn cleanup_after(data: &Funcdata, op: OpId, sp: &(Address, int4)) -> Option<int4
     k.filter(|k| *k % 4 == 0 && *k <= MAX_ARG_BYTES)
 }
 
+/// Does a LOAD or STORE address the stack through `sp` (`sp` or `sp + #c`)?
+fn touches_sp(data: &Funcdata, op: OpId, sp: &(Address, int4)) -> bool {
+    let Some(o) = data.obank().get(op) else { return false };
+    let addr = match o.code() {
+        OpCode::CPUI_LOAD | OpCode::CPUI_STORE => o.get_in(1),
+        _ => return false,
+    };
+    let Some(vn) = addr else { return false };
+    if is_sp(data, Some(vn), sp) {
+        return true;
+    }
+    data.vbank()
+        .get(vn)
+        .and_then(|v| v.get_def())
+        .and_then(|d| data.obank().get(d))
+        .is_some_and(|d| {
+            d.code() == OpCode::CPUI_INT_ADD
+                && (is_sp(data, d.get_in(0), sp) || is_sp(data, d.get_in(1), sp))
+        })
+}
+
 /// What the walk back from a call saw of its argument area.
 struct Walk {
     /// Per byte of `[0, top)` from the call's stack pointer: written by a push
@@ -314,8 +374,12 @@ struct Walk {
     written: Vec<bool>,
     /// The call that builds the object at the by-value slot's start.
     builder: Option<OpId>,
-    /// An address inside the by-value slot was formed while the slot was live.
-    slot_taken: bool,
+    /// The bytes the one reservation the builder captured its pointer at took
+    /// (`push ecx` = 4, `sub esp,n` = n): the class slot's real size.
+    slot_reserved: Option<int4>,
+    /// Every offset at which the walk saw an address formed from the stack
+    /// pointer while that offset was still live.
+    pointers: Vec<int4>,
 }
 
 /// The builder kind of the call `op`, when its prototype fits it.
@@ -343,13 +407,14 @@ fn overlaps(a: &Address, asz: int4, b: &Address, bsz: int4) -> bool {
 
 /// Walk the raw p-code back from `call` until the stack pointer stands at `top`
 /// bytes above its value at the call (see the module header); `None` when the
-/// walk declines. `slot` is the by-value slot, from the call's stack pointer.
+/// walk declines. `lo` is the by-value slot's bottom, from the call's stack
+/// pointer; its size is not yet known and is what the walk measures.
 fn walk_back(
     data: &Funcdata,
     call: OpId,
     sp: &(Address, int4),
     top: int4,
-    slot: (int4, int4),
+    lo: int4,
     builders: &Builders,
 ) -> Option<Walk> {
     let n = top as usize;
@@ -362,7 +427,9 @@ fn walk_back(
     // (return-slot builder call, offset of the push of its first stack argument)
     let mut want: Option<(OpId, int4)> = None;
     let mut builder = None;
-    let mut slot_taken = false;
+    let mut slot_reserved = None;
+    let mut after_capture = false;
+    let mut pointers = Vec::new();
     let ecx = this_register(data);
     let mut cur = data.op_previous_op(call)?;
     loop {
@@ -397,9 +464,10 @@ fn walk_back(
                 false
             });
             for (c, ptr) in resolved {
-                let fresh = (slot.0..slot.1).all(|b| !claimed[b as usize] && !written[b as usize]);
-                if ptr == slot.0 && fresh {
+                let fresh = !claimed[lo as usize] && !written[lo as usize];
+                if ptr == lo && fresh && builder.is_none() {
                     builder = Some(c);
+                    after_capture = true;
                 }
             }
         }
@@ -445,17 +513,18 @@ fn walk_back(
             _ => {}
         }
         if let Some(t) = sp_pointer(data, cur, sp).map(|c| d + c) {
-            let live = (0..top).contains(&t) && !claimed[t as usize];
-            if (slot.0..slot.1).contains(&t) {
-                slot_taken |= live;
-            } else if t >= 4 && live {
-                return None;
+            if (0..top).contains(&t) && !claimed[t as usize] {
+                pointers.push(t);
             }
         }
         match sp_delta(data, cur, sp) {
             None => {}
             Some(None) => return None,
             Some(Some(delta)) if delta < 0 => {
+                if after_capture && slot_reserved.is_none() {
+                    slot_reserved = Some(-delta);
+                    after_capture = false;
+                }
                 let from = d;
                 d -= delta;
                 for b in from.max(0)..d.min(top) {
@@ -465,7 +534,7 @@ fn walk_back(
                     return None;
                 }
                 if d == top {
-                    return Some(Walk { written, builder, slot_taken });
+                    return Some(Walk { written, builder, slot_reserved, pointers });
                 }
             }
             Some(Some(delta)) => {

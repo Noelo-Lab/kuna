@@ -2639,8 +2639,10 @@ placeholder — when that class is the one thing it does not state (no second
 by-value class, no `...`).
 
 The caller pops a `__cdecl` callee's arguments, so where the next instruction
-after the call is a single `add esp,k`, `k` is the argument bytes and the class's
-slot is `k` less the other parameters' 4-byte-aligned slots. At the end of
+after the call is a single `add esp,k`, `k` is the argument bytes. A `pop` raises
+the stack pointer the same way but also reads the stack, and a run of pops (MSVC
+`/O1` cleanup) cannot be told from a `pop ebp` epilogue locally, so only an
+`add esp,k` is read and a pop cleanup is declined. At the end of
 `ActionDefaultParams`, once every call has its prototype and its pop, each call
 to a parked declaration whose prototype is still the open one is read this way
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (size_slots)`):
@@ -2649,30 +2651,34 @@ the call takes the full declaration, the class an `undefined` of the slot's widt
 model, before `ActionFuncLink` reads it. The size is the call site's, not the
 import's; a call with no such cleanup keeps the open tail.
 
-A cleanup is evidence only when it is this call's alone. A compiler may defer an
-earlier call's pop into it, or fold the release of the frame's own locals into
-it, and either would over-size the class and shift every parameter after it. So
-the raw p-code of the call's block is walked back from the call, tracking the
-stack pointer by its constant adjustments, until the pointer stands exactly at
-the top of the argument area, and the size is declined unless:
+`k` by itself over-counts: a compiler may fold padding above the arguments, a
+local, or an earlier call's deferred pop into the same `add esp`, and any of
+those would over-size the class and shift the parameters after it. So the raw
+p-code of the call's block is walked back from the call, tracking the stack
+pointer by its constant adjustments to the top of the argument area, and the
+class's size is taken from the stack itself, not from `k`, in one of two ways:
 
-- every slot of a declared parameter (all but the class's) is written by a push
-  made after that slot was last reserved — the class's slot may instead be
-  reserved by `push ecx` or `sub esp,n`, or pushed;
-- no address is formed from the stack pointer into a declared parameter's slot
-  while the slot is live, which is what a local the cleanup also releases shows
-  (its address handed to a call, or a value read from it);
-- each earlier call on the way pops an exact amount (its model's, or its locked
-  prototype's) and, when that is only the return address, is either cleaned by
-  the instruction after it or declares no stack parameter — a call whose
-  arguments may still be on the stack is a deferred pop;
-- the stack pointer is written only as itself plus a constant, rises only as the
-  cleanup that directly follows a call, and no single reservation straddles the
-  top of the area;
-- the walk reaches the top inside the block.
+- **A class with a copy constructor** (and the `GetArr()`-style by-value return)
+  is built through a pointer, not pushed, so its slot is exactly the one
+  reservation the builder captured — the `push ecx` (4 bytes) or `sub esp,n` (n
+  bytes) the builder's `this` or return pointer sits at the bottom of. The sizing
+  is accepted only when the declared parameters plus that reservation account for
+  the whole cleanup (`known + reservation == k`); a padding `sub esp` or a local
+  released by the same `add esp` makes `k` larger and is declined. This is what
+  keeps `Take3(5, x)` with 8 bytes of padding, or `MakeStack` with 8 bytes of
+  dead `push ecx` locals, from absorbing those bytes into the class.
+- **A trivially copyable aggregate** has no constructor and is stored directly,
+  so every byte of the argument area is a push: the slot is `k` less the declared
+  parameters only when no byte of `[4, k+4)` is a reservation nothing wrote (a
+  padding or local gap), which is declined.
 
-A model that lays the full declaration out differently from that arithmetic is
-also declined.
+The walk declines, too, when an earlier call on the way pops an amount its model
+or locked prototype does not state exactly (a deferred pop), when the stack
+pointer is written as anything but itself plus a constant, when a reservation
+straddles the top of the area, or when the walk leaves the block. And the full
+declaration must lay out under the `__cdecl` model exactly as the walk placed it,
+which declines an 8-byte class after an odd number of 4-byte slots, where the
+model aligns the 8-byte parameter to a boundary the stack does not use.
 
 **The object.** A slot whose address the caller forms during the walk is an
 object as well as an argument, so `ActionRestrictLocal` leaves it mapped instead
