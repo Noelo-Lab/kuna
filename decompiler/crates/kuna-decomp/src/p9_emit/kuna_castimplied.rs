@@ -145,9 +145,11 @@ pub(crate) struct ImpliedCasts {
     resigned: bool,
     arms: bool,
     widen: CastWidenMode,
+    narrow: bool,
     plans: RefCell<HashMap<OpId, Plan>>,
     arm_drops: Vec<OpId>,
     locals: HashMap<HighVariableId, String>,
+    named: HashMap<String, Option<String>>,
     params: HashMap<String, String>,
     ret: Option<String>,
 }
@@ -155,21 +157,25 @@ pub(crate) struct ImpliedCasts {
 impl ImpliedCasts {
     /// Start a function: forget the previous one's declarations.  `arms` turns on
     /// `castternary` ([`crate::kuna_castternary`]), `widen` sets `castwiden`
-    /// ([`crate::kuna_castwiden`]).
-    pub(crate) fn begin(&mut self, enabled: bool, resigned: bool, arms: bool, widen: CastWidenMode) {
+    /// ([`crate::kuna_castwiden`]), `narrow` turns on `castnarrow`
+    /// ([`crate::kuna_castnarrow`]).
+    pub(crate) fn begin(&mut self, enabled: bool, resigned: bool, arms: bool, widen: CastWidenMode, narrow: bool) {
         self.enabled = enabled;
         self.resigned = enabled && resigned;
         self.arms = arms;
         self.widen = widen;
+        self.narrow = narrow;
         self.plans.borrow_mut().clear();
         self.arm_drops.clear();
         self.locals.clear();
+        self.named.clear();
         self.params.clear();
         self.ret = None;
     }
 
+    /// Is `castimplied` or `castnarrow` on, so a printed conversion may go?
     pub(crate) fn is_enabled(&self) -> bool {
-        self.enabled
+        self.enabled || self.narrow
     }
 
     pub(crate) fn arms_enabled(&self) -> bool {
@@ -187,7 +193,12 @@ impl ImpliedCasts {
     }
 
     fn tracking(&self) -> bool {
-        self.enabled || self.arms || self.widen != CastWidenMode::Off
+        self.enabled || self.arms || self.narrow || self.widen != CastWidenMode::Off
+    }
+
+    /// Is `castnarrow` on?
+    pub(crate) fn narrow_on(&self) -> bool {
+        self.narrow
     }
 
     /// Is `castwiden` on?
@@ -231,10 +242,23 @@ impl ImpliedCasts {
         }
     }
 
-    /// The printer declared local `high` as `spelling`.
-    pub(crate) fn record_local(&mut self, high: HighVariableId, spelling: String) {
+    /// The printer declared local `high`, named `name`, as `spelling`.
+    pub(crate) fn record_local(&mut self, high: HighVariableId, name: &str, spelling: String) {
         if self.tracking() {
+            let seen = self.named.entry(name.to_string()).or_insert_with(|| Some(spelling.clone()));
+            if seen.as_deref() != Some(spelling.as_str()) {
+                *seen = None;
+            }
             self.locals.insert(high, spelling);
+        }
+    }
+
+    /// The spelling the local or parameter the printer names `name` is declared
+    /// with, when one declaration carries that name.
+    pub(crate) fn declared_named(&self, name: &str) -> Option<&str> {
+        match self.named.get(name) {
+            Some(seen) => seen.as_deref(),
+            None => self.params.get(name).map(String::as_str),
         }
     }
 
@@ -261,13 +285,20 @@ impl ImpliedCasts {
         op: OpId,
         read_op: Option<OpId>,
     ) -> bool {
-        if !self.enabled {
-            return false;
+        if self.enabled {
+            let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()) else { return false };
+            let (reader, _) = through_copies(fd, read_op, out);
+            let below = reader.is_some_and(|r| fixes_type(p, fd, r));
+            if self.decide(p, fd, op, read_op, below) {
+                return true;
+            }
         }
-        let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()) else { return false };
-        let (reader, _) = through_copies(fd, read_op, out);
-        let below = reader.is_some_and(|r| fixes_type(p, fd, r));
-        self.decide(p, fd, op, read_op, below)
+        self.narrow && crate::kuna_castnarrow::drops(self, p, fd, op, read_op)
+    }
+
+    /// The spelling the printer declared the function's return type with.
+    pub(crate) fn return_spelling(&self) -> Option<&str> {
+        self.ret.as_deref()
     }
 
     fn decide(
@@ -597,7 +628,7 @@ impl ImpliedCasts {
 
     /// The spelling of the declaration an explicit `vn` prints as, when that
     /// declaration is exactly `vn`'s own storage.
-    fn declared_spelling(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId) -> Option<String> {
+    pub(crate) fn declared_spelling(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId) -> Option<String> {
         let v = fd.vbank().get(vn)?;
         if !v.is_explicit() || v.is_constant() || v.is_annotation() {
             return None;
@@ -633,7 +664,7 @@ struct Dest<'a> {
 /// The op that reads the value `vn` carries once `read_op` is known, looking
 /// through implied `COPY`s (which print as their operand), with the varnode that
 /// op reads it as.
-fn through_copies(fd: &Funcdata, read_op: Option<OpId>, vn: VarnodeId) -> (Option<OpId>, VarnodeId) {
+pub(crate) fn through_copies(fd: &Funcdata, read_op: Option<OpId>, vn: VarnodeId) -> (Option<OpId>, VarnodeId) {
     let (mut reader, mut value) = (read_op, vn);
     for _ in 0..8 {
         let Some(r) = reader else { break };
@@ -693,7 +724,7 @@ fn fixes_type(p: &dyn PrintedForms, fd: &Funcdata, r: OpId) -> bool {
 
 /// The declared type of the parameter `arg` fills at the direct call `call`,
 /// when that declaration is one C sees at this call.
-fn trusted_param(fd: &Funcdata, call: OpId, arg: VarnodeId) -> Option<Rc<Datatype>> {
+pub(crate) fn trusted_param(fd: &Funcdata, call: OpId, arg: VarnodeId) -> Option<Rc<Datatype>> {
     let o = fd.obank().get(call)?;
     if o.code() != OpCode::CPUI_CALL {
         return None;

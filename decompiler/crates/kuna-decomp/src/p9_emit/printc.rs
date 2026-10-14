@@ -2580,6 +2580,7 @@ impl PrintC {
             } else {
                 crate::kuna_castwiden::CastWidenMode::Off
             },
+            arch.cast_narrow && promotes && arch.types().get_size_of_int() == 4,
         );
         self.stmt_op = None;
         // (kuna) Publish the fd for the fd-free RPN leaf emitters (emit_atom /
@@ -3657,7 +3658,7 @@ impl PrintC {
                 }
             }
             if array_count.is_none() {
-                self.cast_implied.record_local(*high, format!("{decl_type}{decl_back}"));
+                self.cast_implied.record_local(*high, name, format!("{decl_type}{decl_back}"));
             }
             self.pointer_decls.record(name, &decl_type, &decl_back, array_count.is_some());
             self.emit.tag_line();
@@ -5978,7 +5979,7 @@ impl PrintC {
             OpCode::CPUI_BOOL_NEGATE => self.op_bool_negate_ir(fd, arch, op),
             // SUBPIECE (printc.cc:863 opSubpiece): a field-extraction special-print
             // (`symbol.field`) or the cast/functional dispatch.
-            OpCode::CPUI_SUBPIECE => self.op_subpiece_ir(fd, arch, op),
+            OpCode::CPUI_SUBPIECE => self.op_subpiece_ir(fd, arch, op, read_op),
             OpCode::CPUI_PIECE if self.op_partial_concat_ir(fd, arch, op) => {},
             // PTRADD (printc.cc:900 opPtradd) / PTRSUB (printc.cc:953 opPtrsub).
             OpCode::CPUI_PTRADD => self.op_ptradd_ir(fd, arch, op),
@@ -7028,7 +7029,7 @@ impl PrintC {
     /// case, printc.cc:872-881) or `expr.field` via a struct `findTruncation`
     /// (printc.cc:882-888).  A non-special SUBPIECE falls to the cast/functional
     /// dispatch (the existing `is_subpiece_cast` → `opTypeCast` / `opFunc`).
-    fn op_subpiece_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+    fn op_subpiece_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
         use crate::dtype::type_metatype;
         if fd.obank().get(op).map(|o| o.does_special_printing()).unwrap_or(false) {
             let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
@@ -7121,7 +7122,10 @@ impl PrintC {
         use crate::kuna_boolbyte::TruncationForm;
         match self.subpiece_cast_form(fd, arch, op) {
             Some(TruncationForm::CastThroughByte) => self.op_bool_truncation_ir(fd, arch, op),
-            Some(_) => self.op_type_cast_ir(fd, arch, op),
+            Some(_) => {
+                let implied = self.implied_cast_drops(fd, arch, op, read_op);
+                self.op_type_cast_ir_with(fd, arch, op, implied)
+            }
             None => self.op_func_ir(fd, arch, op),
         }
     }
@@ -7257,6 +7261,28 @@ impl PrintC {
         let Some(strat) = cast_strategy_for(arch) else { return false };
         let view = ImpliedView { pc: self, fd, arch, strat };
         self.cast_implied.drops(&view, fd, op, read_op)
+    }
+
+    /// (kuna `castnarrow`) Does C's own conversion already perform the `(T)name`
+    /// truncation printed for `vn`, the low piece of `name`, where `op` reads it?
+    /// See [`crate::kuna_castnarrow::drops_partial`].
+    #[allow(clippy::too_many_arguments)]
+    fn partial_cast_drops(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        vn: VarnodeId,
+        op: OpId,
+        piece: &std::rc::Rc<crate::dtype::Datatype>,
+        whole: &std::rc::Rc<crate::dtype::Datatype>,
+        name: &str,
+    ) -> bool {
+        if !self.cast_implied.narrow_on() {
+            return false;
+        }
+        let Some(strat) = cast_strategy_for(arch) else { return false };
+        let view = ImpliedView { pc: self, fd, arch, strat };
+        crate::kuna_castnarrow::drops_partial(&self.cast_implied, &view, fd, vn, op, piece, whole, name)
     }
 
     /// (kuna `castwiden`) Does the arithmetic `read_op` convert the widening `op`
@@ -8256,9 +8282,10 @@ impl PrintC {
         slot: int4,
         allow_cast: bool,
     ) -> bool {
+        let whole = std::rc::Rc::clone(&sym_type);
         let PartialWalk { mut stack, finalcast, unnamed_in } =
             self.partial_walk(fd, arch, sym_type, off_in, sz_in, vn, op, slot, allow_cast);
-        self.push_partial_walk(fd, arch, name, &mut stack, finalcast, unnamed_in, sz_in, vn, op)
+        self.push_partial_walk(fd, arch, name, &whole, &mut stack, finalcast, unnamed_in, sz_in, vn, op)
     }
 
     /// The member walk of [`Self::push_partial_symbol_ir`] (C++ `pushPartialSymbol`'s
@@ -8476,16 +8503,18 @@ impl PrintC {
         PartialWalk { stack, finalcast, unnamed_in }
     }
 
-    /// Emit a walked partial access: the member path over `name`, with the
-    /// trailing truncation cast, or the typed rendering `partialaccess` gives an
-    /// artificial `._<off>_<sz>_` member. Returns `false` for a whole-symbol cover,
-    /// which the caller renders as the bare name.
+    /// Emit a walked partial access: the member path over `name`, whose whole
+    /// type is `whole`, with the trailing truncation cast, or the typed rendering
+    /// `partialaccess` gives an artificial `._<off>_<sz>_` member. Returns
+    /// `false` for a whole-symbol cover, which the caller renders as the bare
+    /// name.
     #[allow(clippy::too_many_arguments)]
     fn push_partial_walk(
         &mut self,
         fd: &Funcdata,
         arch: &Architecture,
         name: &str,
+        whole: &std::rc::Rc<crate::dtype::Datatype>,
         stack: &mut Vec<PartialEntry>,
         finalcast: Option<std::rc::Rc<crate::dtype::Datatype>>,
         unnamed_in: Option<std::rc::Rc<crate::dtype::Datatype>>,
@@ -8517,7 +8546,7 @@ impl PrintC {
         // A leading `(cast)` over the whole member access (Rust: a trailing
         // `as T`, closed at the single exit below).
         let final_cast_open = match (&finalcast, self.options.nocasts) {
-            (Some(fc), false) => {
+            (Some(fc), false) if !(stack.is_empty() && self.partial_cast_drops(fd, arch, vn, op, fc, whole, name)) => {
                 self.push_cast_open(fc, op);
                 Some(fc.clone())
             }

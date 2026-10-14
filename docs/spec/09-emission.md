@@ -706,6 +706,60 @@ the machine's does), all printing the binary's values for negative inputs,
 0x80000000..0xffffffff, sums past 32 bits and squares past 2^32, including the
 shared, parenthesized and regrouped shapes above.
 
+**Narrowings C performs by itself (kuna `castnarrow`).** `castimplied` leaves
+a widening out where the destination converts the value anyway, and keeps every
+truncation and sign change. So a value narrowed into a destination of exactly
+the narrow type kept its cast: `v1 = (unsigned int)a0;` into an
+`unsigned int v1` from a `long a0`, `*a1 = (char)a0;` through a `char *a1`,
+`toupper((int)a0)`, and `return (int)x;` from a function declared `int`. The
+destination performs that very conversion (C11 6.5.16.1p2 for `=`, 6.5.2.2p7 for
+a prototyped argument, 6.8.6.4p3 for `return`), and a conversion between
+integer types depends only on the value converted and the type converted to
+(6.3.1.3), so `T v = (T)e;` stores what `T v = e;` stores whatever integer type
+`e` has. With the option `castnarrow` on (the default; `off` keeps every
+narrowing cast), the printer leaves such a cast out
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_castnarrow.rs (drops)`, asked
+from `kuna_castimplied.rs (ImpliedCasts::drops)` and so from
+`printc.rs (PrintC::implied_cast_drops)`, which the `CPUI_CAST` arm and now the
+cast arm of `printc.rs (PrintC::op_subpiece_ir)` consult with the op that reads
+the value). The IR is unchanged. Three printed forms are candidates: a low
+SUBPIECE printed as a cast, a `CPUI_CAST` between integer types, and the
+`(T)name` the partial-symbol printer writes when an access reads the low piece
+of a wider variable (`kuna_castnarrow.rs (drops_partial)`, from
+`printc.rs (PrintC::partial_cast_drops)` in `push_partial_symbol_ir`, only when
+the cast covers the bare name).
+
+The cast goes when two things hold. First, the value lands whole in a
+destination whose printed type is spelled exactly as the cast
+(`kuna_castnarrow.rs (destination)`): a plain `lhs = (T)e;` statement whose left
+side is a local or parameter declared with that spelling, also inside a comma
+condition, but not an arm of `c ? a : b` and not the compound literal a stack
+view or a byte-wise store writes (`kuna_castnarrow.rs (plain_statement)`); a
+store through a pointer printed with that pointee, as `castwiden` finds it
+(`kuna_castwiden.rs (store_pointee)`), but not a bitfield store or a stack-view
+`__builtin_memcpy`; a direct call argument whose parameter is type-locked
+(`kuna_castimplied.rs (trusted_param)`, which refuses trials, varargs
+positions, per-call-site overrides and `truncarg` arguments); or `return` from a
+function whose declared return type is that spelling. Implied COPYs are looked
+through. Second, the target is a plain integer (not `bool`, not an enum) and the
+operand prints as an integer (`kuna_castnarrow.rs (integer_operand)`): a
+declared variable, including one of an unknown type the printer spells as an
+integer, a cast, a load through a typed pointer, an integer expression whose
+operands are all such (`kuna_castwiden.rs (operand_set)`), or a shift of one,
+which has its left operand's promoted type. For a piece of a variable, the
+variable must be declared with exactly its own type. A constant, a call, a
+pointer or a float operand keeps the cast, since C would not convert it
+implicitly or would warn. Anything else that reads the narrowed value keeps the
+cast too: `v = (unsigned int)a + b` converts `a` before the addition, a
+comparison and a conversion over it depend on its narrowed type, and a
+destination of another spelling (`*a1 = (int)a0;` through an
+`unsigned int *a1`) is left as it is. Only where `int` is 4 bytes, and only for
+C output. Pinned by a compiled round trip
+(`kuna-cli/tests/castnarrow_round_trip.rs`) over gcc and clang builds at -O0 and
+-O2 of `castnarrow_x86_64.c`, printed with the option off and on and compiled
+with gcc and clang at -O0 and -O2, each build computing what the source computes
+for every input.
+
 **Casting an output.** `coreaction_casts.rs (Funcdata::cast_output)` compares
 the *token* type the operator naturally produces — `coreaction_casts.rs
 (get_output_token)`: COPY/PTRADD echo the input, arithmetic takes the

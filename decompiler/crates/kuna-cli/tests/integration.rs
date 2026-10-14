@@ -71,6 +71,9 @@ mod callee_memory_lifetimes;
 #[path = "caller_stack_cli.rs"]
 mod caller_stack_cli;
 
+#[path = "castnarrow_round_trip.rs"]
+mod castnarrow_round_trip;
+
 #[path = "coff_strings.rs"]
 mod coff_strings;
 
