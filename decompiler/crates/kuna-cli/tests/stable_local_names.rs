@@ -341,6 +341,54 @@ fn a_structure_pointer_retype_keeps_the_variable_whole() {
     assert_eq!(code.matches("v1 = (S *)").count(), 2, "{code}");
 }
 
+/// The retyped variable keeps the name a directive pins on it while the type
+/// reshapes the code around it: `walk`'s pointer is found by its lock once the
+/// first decompile's keys miss it (it printed as `v3`), and `squeeze`'s stays
+/// declared where the reshaped loop could inline it (it vanished).
+#[test]
+fn a_structure_pointer_retype_keeps_its_name() {
+    let fixture = "retypeptr_x86_64";
+    let typedef = "typedef struct S { long a; long b; } S;";
+    for (function, directive, decl) in
+        [("walk", "type v2 S *v2", "  S *v2;"), ("walk", "type v2 S *", "  S *v2;"), ("squeeze", "type v1 S *v1", "  S *v1;")]
+    {
+        let code = decompile_in(fixture, function, &[], &[typedef, directive]);
+        assert!(code.contains(decl), "{function} {directive}:\n{code}");
+        assert_eq!(declared(&code), declared(&decompile_in(fixture, function, &[], &[])), "{code}");
+    }
+}
+
+/// The type is locked only on what the variable's own operations define:
+/// `mix`'s `v10` points into the stack buffer `v4`, and a lock that also
+/// took varnodes of the same storage and instruction re-laid the frame
+/// around the pointer, losing `v4`.
+#[test]
+fn a_structure_pointer_retype_locks_only_the_variable() {
+    let typedef = "typedef struct S { long a; long b; int c; int d; char *e; long f[4]; } S;";
+    let code = decompile(&[typedef, "type v10 S *v10"]);
+    assert!(code.contains("  S *v10;"), "{code}");
+    assert_eq!(declared(&code), declared(&decompile(&[])), "{code}");
+}
+
+/// A retype to an enumeration also reaches type inference, which is what
+/// names the constants the variable meets: applied after the merge alone,
+/// `v1 = RUN` printed `v1 = 3`.
+#[test]
+fn an_enumeration_retype_names_its_constants() {
+    let fixture = "retypeenum_x86_64";
+    let state = "typedef enum state { IDLE = 0, RUN = 3, DONE = 9 } state;";
+    let code = decompile_in(fixture, "step", &[], &[state, "type v1 state v1"]);
+    for line in ["  state v1;", "v1 = IDLE;", "(v1 == RUN)", "v1 = DONE;"] {
+        assert!(code.contains(line), "{line}:\n{code}");
+    }
+    assert_eq!(declared(&code), declared(&decompile_in(fixture, "step", &[], &[])), "{code}");
+    let color = "typedef enum color { RED = 0, GREEN = 1, BLUE = 7 } color;";
+    let code = decompile_in(fixture, "pick", &[], &[color, "type v2 color"]);
+    for line in ["  color v2;", "v2 = RED;", "v2 = BLUE;", "v2 = GREEN;"] {
+        assert!(code.contains(line), "{line}:\n{code}");
+    }
+}
+
 /// A local cannot take a C keyword or a type's name: `name v6 int` used to
 /// print `int int;`.
 #[test]

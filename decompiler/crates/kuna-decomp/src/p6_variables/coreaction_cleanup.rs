@@ -798,6 +798,9 @@ fn base_explicit(data: &Funcdata, vn: crate::context::VarnodeId, mut maxref: int
     } else if v.is_proto_partial() {
         return -1;
     }
+    if crate::kuna_stablenames::holds_retype(data, vn) {
+        return -1;
+    }
     // def->code()==PIECE && in0 isProtoPartial -> explicit.
     {
         let dop = data.obank().get(def).unwrap();

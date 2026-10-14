@@ -841,35 +841,54 @@ the batch's directive, which is carried as a name rather than a Symbol,
 decompile printed, and the next decompile's naming pass gives it to
 the local holding most of the variable's instances (`retype_targets`), locking
 it on every instance after the merge and before the casts are placed
-(`coreaction_cleanup.rs (retype_whole_variable)`). Nothing reaches the
-analysis, so the merge is the first decompile's, and only the declaration and
-the casts at the variable's uses change: `v7 < v5` becomes `v7 < (long)v5`.
+(`coreaction_cleanup.rs (retype_whole_variable)`). For most such retypes
+nothing else reaches the analysis, so the merge is the first decompile's, and
+only the declaration and the casts at the variable's uses change: `v7 < v5`
+becomes `v7 < (long)v5`.
 
-The exception is a pointer whose pointee the analysis reads through: a
-structure, union, array or function, or a relative pointer
-(`kuna_stablenames.rs (drives_inference)`). Type inference is what turns the
-offsets read through it into fields, elements and calls, so that type has to
-reach the analysis. `kuna_stablenames.rs (lock_retyped)` locks it, at the start
-of every type inference (`p5_types/coreaction_infertypes.rs (run_infer_types)`),
-on each varnode that the keys above match to the retyped variable: every part
-of the variable is read through the type, and the parts still agree when the
-merge compares their types, where a Symbol over the representative typed one
-part and left the rest to inference (a part defined by `malloc`'s `void *`
-return kept its own type and split off). Inference still carries the type into
-the variable's copies, as it carries any type, and the speculative merges
-compare types, so a changed type could join two locals or part one. Under such
-a retype the merge therefore follows the first decompile's variables wherever
-the keys say what they were: `kuna_stablenames.rs (same_variable)`, asked by
-`merge.rs (merge_test_adjacent)` and `merge_adjacent`, refuses to join highs
-whose instances belonged to different locals and lets highs that belonged to
-one local join whatever their types, and `kuna_stablenames.rs
-(variable_groups)` hands `merge_by_datatype` the parts of each local that its
-grouping by type kept apart. A high with no matched instance merges by the
-usual rules. A retype that changes the width or the kind
-still maps the locked, isolated Symbol and may split or merge, since it changes
-what the analysis reads. A run without a `type` directive is unchanged, as are
-the datatests and the stages, and this corrects what a directive reaches, so it
-is unconditional.
+Some retypes change what type inference decides, and those still reach it
+(`kuna_stablenames.rs (reaches_inference)`): a pointer whose pointee the
+analysis reads through, on either side of the retype (a structure, union, array
+or function, or a relative pointer, `reads_through`), where inference turns the
+offsets read through it into fields, elements and calls; and a type that prints
+the constants the variable meets differently (an enumeration names them,
+`bool` spells them, a character type quotes them), since a constant's type is
+whatever inference gives it. Applied after the merge alone, `type v1 state` on
+an `int` holding `enum state` printed `v1 = 3` where the Symbol had printed
+`v1 = RUN`. `kuna_stablenames.rs (lock_retyped)` locks such a type, at the
+start of every type inference (`p5_types/coreaction_infertypes.rs
+(run_infer_types)`), on each varnode whose defining operation (instruction and
+creation time) defined an instance of the retyped variable in the first
+decompile. The shape and place keys are not used here: before the analysis
+settles they also fit other varnodes, which the lock would type too (in iproute2
+`rtnl_nexthopdump_req` it reached the loop's other pointer and re-laid the
+stack frame around it). Every part of the variable is read through the type,
+and the parts agree when the merge compares their types, where a Symbol over the
+representative typed one part and left the rest to inference (a part defined by
+`malloc`'s `void *` return kept its own type and split off).
+
+The type also changes which operations the analysis builds, so the first
+decompile's keys can miss the retyped variable's instances, and the naming pass
+falls back to the lock: an instance no key matches but that carries the locked
+type counts for the retyped variable (`kuna_stablenames.rs (matched_name)`), so
+the variable keeps its number and the name a directive gave it. It also stays
+explicit (`holds_retype`, asked by `coreaction_cleanup.rs (base_explicit)`): it
+was printed, and an expression the new type reshapes could otherwise inline it
+and leave its name on nothing. The merge follows the first decompile's
+variables wherever the keys still identify them: `kuna_stablenames.rs
+(same_variable)`, asked by `merge.rs (merge_test_adjacent)` and
+`merge_adjacent`, refuses to join highs whose instances belonged to different
+locals and lets highs that belonged to one local join whatever their types,
+and `kuna_stablenames.rs (variable_groups)` hands `merge_by_datatype` the parts
+of each local that its grouping by type kept apart. What does not hold: a high
+no key identifies merges by the usual rules, and inference carries the type
+into the variable's copies, as it carries any type, which can change their
+declarations and the signature, reshape their expressions, absorb a stack slot
+into a re-laid frame, or split a copy whose definitions no longer agree. A
+retype that changes the width or the kind still maps the locked, isolated
+Symbol and may split or merge, since it changes what the analysis reads. A run
+without a `type` directive is unchanged, as are the datatests and the stages,
+and this corrects what a directive reaches, so it is unconditional.
 
 **A new name must be one the declaration can print.**
 `kuna-console/src/kuna_hightarget.rs (check_local_name)` rejects a `name`, or

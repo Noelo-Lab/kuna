@@ -209,9 +209,8 @@ pub fn apply_local(
     let sym = match resolve_local(fd, name, retype.is_none().then_some(newname), maxduplicates)? {
         LocalTarget::Printed(target) => {
             let lock_type = retype.is_some();
-            let unit_type = retype
-                .clone()
-                .filter(|ct| kuna_decomp::kuna_stablenames::retypes_as_unit(&target.dtype, ct));
+            let unit_type =
+                retype.as_ref().and_then(|ct| kuna_decomp::kuna_stablenames::unit_retype(&target.dtype, ct));
             let ct = retype.unwrap_or_else(|| target.dtype.clone());
             let symbol = bind_printed_local(fd, &target, newname, ct, lock_type)?;
             fd.kuna_record_directive_symbol(DirectiveSymbol {
@@ -234,9 +233,8 @@ pub fn apply_local(
         .get_scope_local()
         .filter(|lm| lm.symbol_category(sym) != symbol_category::FUNCTION_PARAMETER)
         .and_then(|lm| lm.database().symbol(sym).dtype.clone())
-        .zip(retype.clone())
-        .filter(|(from, to)| kuna_decomp::kuna_stablenames::retypes_as_unit(from, to))
-        .map(|(_, to)| to);
+        .zip(retype.as_ref())
+        .and_then(|(from, to)| kuna_decomp::kuna_stablenames::unit_retype(&from, to));
     if let (Some(size), Some(ct)) = (bound_size, retype.as_ref()) {
         check_width(size, ct)?;
     }

@@ -505,9 +505,11 @@ local is never split, re-merged with a neighbour or retyped by being renamed.
 A `type` that keeps the variable's width and kind (an integer to an integer, a
 float to a float, a pointer to a pointer) types the whole variable the same
 way: only its declaration and the casts at its uses change. A pointer to a
-structure, union, array or function also reaches type inference, on every part
-of the variable, so its fields print and its type can reach the variable's
-copies. A `type` that changes the
+structure, union, array or function, an enumeration, `bool` or a character type
+also reaches type inference, on every part of the variable, so its fields and
+enumerators print; the variable keeps its name and number, but its type can
+reach its copies and the signature and reshape their expressions. A `type` that
+changes the
 width maps a locked symbol over the variable's storage at its use point, and
 can split or merge the variable. A new name that is a C keyword or a type's
 name (`name v6 int`, `name v6 uint4`) is `rejected`.

@@ -153,7 +153,7 @@ pub struct DirectiveSymbol {
     pub retyped: bool,
     /// The type a `type` directive gave the whole printed variable, when it keeps
     /// the variable's width and kind (`kuna_stablenames::retypes_as_unit`).
-    pub unit_type: Option<std::rc::Rc<crate::dtype::Datatype>>,
+    pub unit_type: Option<crate::kuna_stablenames::UnitRetype>,
 }
 
 pub struct Funcdata {
@@ -970,7 +970,7 @@ impl Funcdata {
     pub fn kuna_set_directive_retype(
         &mut self,
         symbol: crate::database::SymbolId,
-        unit_type: Option<std::rc::Rc<crate::dtype::Datatype>>,
+        unit_type: Option<crate::kuna_stablenames::UnitRetype>,
     ) {
         if let Some(entry) = self.kuna_directive_symbols.iter_mut().find(|d| d.symbol == symbol) {
             entry.retyped = true;
