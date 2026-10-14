@@ -1,0 +1,7 @@
+typedef struct LifetimePair { int x; int y; };
+prototype bounded_index_store int bounded_index_store(unsigned int index)
+prototype bounded_index_load int bounded_index_load(unsigned int index)
+prototype bounded_byte_store int bounded_byte_store(unsigned int index)
+prototype bounded_reverse_store int bounded_reverse_store(unsigned int index)
+prototype read_pair int read_pair(const struct LifetimePair *pair)
+prototype unbounded_index_store int unbounded_index_store(unsigned int index)

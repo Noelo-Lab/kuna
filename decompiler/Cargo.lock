@@ -269,6 +269,7 @@ dependencies = [
  "kuna-base",
  "kuna-console",
  "kuna-decomp",
+ "kuna-slacomp",
  "kuna-sleigh",
  "object",
  "regex",

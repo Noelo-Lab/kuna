@@ -58,6 +58,7 @@ pub fn default_fn_budget_seconds(mode: &str, whole_binary: bool) -> u64 {
 /// `error`).
 #[derive(Clone)]
 pub struct FuncResult {
+    pub stack_objects: Vec<kuna_decomp::kuna_stackobjectinfo::StackObjectInfo>,
     pub name: String,
     /// User-facing address, in the target's address units for a raw image.
     pub address: u64,
@@ -558,6 +559,7 @@ pub fn decompile_pulled(
                 proto: None,
                 variables: Vec::new(),
                 types: Vec::new(),
+                stack_objects: Vec::new(),
                 globals: Vec::new(),
                 field_calls: Vec::new(),
                 line_mappings: Vec::new(),
@@ -593,6 +595,7 @@ pub fn decompile_pulled(
                 proto: None,
                 variables: Vec::new(),
                 types: Vec::new(),
+                stack_objects: Vec::new(),
                 globals: Vec::new(),
                 field_calls: Vec::new(),
                 line_mappings: Vec::new(),
@@ -616,6 +619,7 @@ pub fn decompile_pulled(
                 proto: None,
                 variables: Vec::new(),
                 types: Vec::new(),
+                stack_objects: Vec::new(),
                 globals: Vec::new(),
                 field_calls: Vec::new(),
                 line_mappings: Vec::new(),
@@ -691,6 +695,7 @@ pub fn decompile_pulled(
                 mapped_symbols: &mapped,
                 usepoint_symbols: &[],
                 dynamic_symbols: &[],
+                object_assertions: &[],
                 pending_proto: seed.pending_proto.as_ref(),
                 flow_overrides: &flow_ovr,
                 mapped_params: &seed.mapped_params,
@@ -711,12 +716,9 @@ pub fn decompile_pulled(
                 if crate::assertions::apply_symbol_scoped(prog, &mut fd, &name, single_target) {
                     let carried = crate::assertions::carried_symbols(&fd);
                     let carried_usepoint = crate::assertions::carried_usepoint_symbols(&fd);
-                    let parameter_edits = crate::kuna_hightarget::carried_parameter_maps(&fd);
-                    let carried_params = if parameter_edits.is_empty() {
-                        &seed.mapped_params
-                    } else {
-                        &parameter_edits
-                    };
+                    let carried_dynamic = fd.dynamic_symbol_specs();
+                    let carried_objects = kuna_decomp::kuna_stackobjectasserts::specs(&fd).to_vec();
+                    let carried_params = crate::kuna_paramasserts::carried(&fd, &seed.mapped_params);
                     crate::decompile_step::decompile_one(
                         prog.arch_mut(),
                         &name,
@@ -725,10 +727,11 @@ pub fn decompile_pulled(
                         &crate::decompile_step::DecompileSeed {
                             mapped_symbols: &carried,
                             usepoint_symbols: &carried_usepoint,
-                            dynamic_symbols: &[],
+                            dynamic_symbols: &carried_dynamic,
+                            object_assertions: &carried_objects,
                             pending_proto: seed.pending_proto.as_ref(),
                             flow_overrides: &flow_ovr,
-                            mapped_params: carried_params,
+                            mapped_params: &carried_params,
                         },
                         &[],
                     )
@@ -822,6 +825,14 @@ pub fn decompile_pulled(
                     // the definitions the preamble just printed above the body,
                     // as records. Empty unless the option is on.
                     let types = extract_type_definitions(prog.arch(), &fd);
+                    let mut stack_objects = if no_vars { Vec::new() } else {
+                        kuna_decomp::kuna_stackobjectinfo::extract(prog.arch(), &fd)
+                    };
+                    for object in &mut stack_objects {
+                        for use_ in &mut object.uses {
+                            use_.address = prog.output_code_offset(use_.address);
+                        }
+                    }
                     let var_refs = provenance.apply_to_variables_with_refs(&fd, &mut variables);
                     let detail = want_tokens.then(|| {
                         Box::new(crate::inspect::FuncDetail::resolve(
@@ -851,10 +862,10 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
-                    (code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs)
+                    (code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)
                 }));
                 match rendered {
-                    Ok((code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs)) => sink(FuncResult {
+                    Ok((code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => sink(FuncResult {
                         name,
                         address,
                         byte_address,
@@ -863,6 +874,7 @@ pub fn decompile_pulled(
                         error: None,
                         proto,
                         variables,
+                        stack_objects,
                         types,
                         globals,
                         field_calls,
@@ -884,6 +896,7 @@ pub fn decompile_pulled(
                         proto: None,
                         variables: Vec::new(),
                         types: Vec::new(),
+                        stack_objects: Vec::new(),
                         globals: Vec::new(),
                         field_calls: Vec::new(),
                         line_mappings: Vec::new(),
@@ -906,6 +919,7 @@ pub fn decompile_pulled(
                 proto: None,
                 variables: Vec::new(),
                 types: Vec::new(),
+                stack_objects: Vec::new(),
                 globals: Vec::new(),
                 field_calls: Vec::new(),
                 line_mappings: Vec::new(),
@@ -1639,6 +1653,7 @@ mod tests {
                 addresses: vec![],
             }],
             types: vec![],
+            stack_objects: Vec::new(),
             globals: vec![],
             field_calls: Vec::new(),
             line_mappings: vec![],

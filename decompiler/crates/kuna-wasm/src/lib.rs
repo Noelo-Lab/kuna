@@ -235,7 +235,7 @@ fn parse_command(cmd: &str, args: &[String], binary: &str) -> Result<Cmd, String
 ///
 /// For the mode, `None` and `Some("auto")` select `aggressive` below 500 KiB,
 /// `reliable` from 500 KiB through just below 2 MiB, and `fast` at 2 MiB and
-/// above.
+/// above, with `auto`'s own overrides (`ctypes on`) under every one of them.
 ///
 /// (kuna outlang) For the language, `None` and `Some("auto")` follow the binary:
 /// a Rust binary renders as Rust. `project` is excluded from that policy -- its
@@ -255,13 +255,13 @@ pub fn run_request(req: &Request) -> Result<String, String> {
     } else {
         0
     };
-    let mode = resolve_mode(req.mode, binary_size)?;
+    let (mode, overrides) = resolve_mode(req.mode, binary_size)?;
     let language = resolve_language(binary, req.language, &command)?;
     let discovery = !matches!(command, Cmd::Read { .. });
     let mut prog = load_program(
         binary,
         req.spec_root,
-        mode,
+        &overrides,
         want_fast_funcdisc,
         language,
         &directives,
@@ -379,8 +379,13 @@ fn command_fn_budget_seconds(command: &Cmd, mode: &str) -> Option<u64> {
     }
 }
 
-fn resolve_mode(requested: Option<&str>, binary_size: u64) -> Result<&'static str, String> {
-    kuna_decomp::modes::resolve_mode_for_size(requested, binary_size).ok_or_else(|| {
+type Overrides = Vec<(&'static str, &'static str)>;
+
+fn resolve_mode(
+    requested: Option<&str>,
+    binary_size: u64,
+) -> Result<(&'static str, Overrides), String> {
+    kuna_decomp::modes::resolve_overrides_for_size(requested, binary_size).ok_or_else(|| {
         let requested = requested.unwrap_or("auto");
         let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
         format!("unknown mode {requested:?} (known: {})", known.join(", "))
@@ -502,14 +507,12 @@ fn resolve_language(
 fn load_program(
     binary: &str,
     spec_root: &str,
-    mode: &str,
+    overrides: &[(&'static str, &'static str)],
     want_fast_funcdisc: bool,
     language: Option<&str>,
     directives: &[Directive],
     discovery: bool,
 ) -> Result<ConsoleProgram, String> {
-    let overrides = kuna_decomp::modes::mode_overrides(mode)
-        .ok_or_else(|| format!("unknown mode {mode:?}"))?;
     let owns_arm64e = overrides
         .iter()
         .any(|(option, _)| *option == "macho-arm64e");
@@ -535,14 +538,14 @@ fn load_program(
     let mut prog = bootstrap
         .map_err(|e| format!("could not build an architecture for {binary}: {}", e.explain()))?;
 
-    prog.arch_mut()
-        .apply_mode(mode)
-        .map_err(|e| format!("mode {mode}: {}", e.explain()))?;
     let set = |prog: &mut ConsoleProgram, name: &str, value: &str| {
         prog.arch_mut()
             .set_kuna_option(name, value)
             .map_err(|e| format!("option {name}: {}", e.explain()))
     };
+    for (name, value) in overrides {
+        set(&mut prog, name, value)?;
+    }
     if !want_fast_funcdisc {
         set(&mut prog, "fast_funcdisc", "off")?;
     }
@@ -794,22 +797,26 @@ mod tests {
     #[test]
     fn auto_mode_uses_exact_browser_size_boundaries() {
         assert_eq!(
-            resolve_mode(Some("auto"), AUTO_RELIABLE_MIN_BYTES - 1).unwrap(),
+            resolve_mode(Some("auto"), AUTO_RELIABLE_MIN_BYTES - 1).unwrap().0,
             "aggressive"
         );
         assert_eq!(
-            resolve_mode(Some("auto"), AUTO_RELIABLE_MIN_BYTES).unwrap(),
+            resolve_mode(Some("auto"), AUTO_RELIABLE_MIN_BYTES).unwrap().0,
             "reliable"
         );
-        assert_eq!(resolve_mode(None, AUTO_FAST_MIN_BYTES - 1).unwrap(), "reliable");
-        assert_eq!(resolve_mode(None, AUTO_FAST_MIN_BYTES).unwrap(), "fast");
+        assert_eq!(resolve_mode(None, AUTO_FAST_MIN_BYTES - 1).unwrap().0, "reliable");
+        assert_eq!(resolve_mode(None, AUTO_FAST_MIN_BYTES).unwrap().0, "fast");
+        for size in [0, AUTO_RELIABLE_MIN_BYTES, AUTO_FAST_MIN_BYTES] {
+            assert!(resolve_mode(None, size).unwrap().1.contains(&("ctypes", "on")));
+        }
+        assert!(!resolve_mode(Some("reliable"), 0).unwrap().1.contains(&("ctypes", "on")));
     }
 
     #[test]
     fn explicit_mode_overrides_binary_size() {
-        assert_eq!(resolve_mode(Some("fast"), 1).unwrap(), "fast");
+        assert_eq!(resolve_mode(Some("fast"), 1).unwrap().0, "fast");
         assert_eq!(
-            resolve_mode(Some("aggressive"), 4 * AUTO_FAST_MIN_BYTES).unwrap(),
+            resolve_mode(Some("aggressive"), 4 * AUTO_FAST_MIN_BYTES).unwrap().0,
             "aggressive"
         );
         assert!(resolve_mode(Some("turbo"), 1).unwrap_err().contains("unknown mode"));

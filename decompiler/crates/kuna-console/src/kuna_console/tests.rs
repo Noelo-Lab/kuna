@@ -61,7 +61,7 @@ fn run_one(line: &str) -> String {
 
 #[test]
 fn registers_all_twenty_two_kuna_commands() {
-    // register_decomp_commands registers 105 (see ifacedecomp/tests.rs); the
+    // register_decomp_commands registers 106 (see ifacedecomp/tests.rs); the
     // kuna capability adds 22: phase list/map/status/catalog (plus the four
     // deprecated `stage ...` alias registrations), kassert, restarts,
     // pipeline, mode, quality, functions, region tree/blocks/walk,
@@ -73,7 +73,7 @@ fn registers_all_twenty_two_kuna_commands() {
         st.num_commands()
     };
     assert_eq!(only_kuna, 22);
-    assert_eq!(console(&[]).num_commands(), 105 + 22);
+    assert_eq!(console(&[]).num_commands(), 106 + 22);
 }
 
 #[test]

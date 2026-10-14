@@ -1,0 +1,24 @@
+typedef struct LifetimePair { int x; int y; };
+typedef struct LifetimeHandle { const int *value; };
+prototype read_pair int read_pair(const struct LifetimePair *pair)
+prototype obj_repeat int obj_repeat(void)
+prototype obj_reuse int obj_reuse(void)
+prototype obj_branch int obj_branch(int condition)
+prototype obj_loop int obj_loop(void)
+prototype obj_partial int obj_partial(void)
+prototype obj_global_reuse int obj_global_reuse(void)
+prototype obj_volatile_reuse int obj_volatile_reuse(void)
+prototype obj_volatile_branch int obj_volatile_branch(int condition)
+prototype obj_volatile_partial int obj_volatile_partial(void)
+prototype obj_volatile_loop int obj_volatile_loop(void)
+data 0x402000 int object_datum
+data 0x402008 struct LifetimePair *object_pair
+data 0x402010 struct LifetimeHandle *object_handle
+data 0x402018 struct LifetimePair *volatile_pair
+data 0x402020 struct LifetimeHandle *volatile_handle
+volatile 0x402018+16
+
+prototype obj_global_shifted int obj_global_shifted(void)
+prototype obj_volatile_shifted int obj_volatile_shifted(void)
+typedef struct LifetimeSink { struct LifetimePair *pair; struct LifetimeHandle *handle; };
+prototype obj_indirect_reuse int obj_indirect_reuse(struct LifetimeSink *sink)

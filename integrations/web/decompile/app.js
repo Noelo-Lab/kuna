@@ -18,7 +18,7 @@ import {
   renderC,
   lineHtml,
   localDecls,
-  changedLines,
+  diffLines,
   preambleTypes,
 } from './render-c.js';
 import { loadPrefs, savePrefs, cycle, hintsOn, DEFAULT_PREFS } from './prefs.js';
@@ -41,7 +41,7 @@ import {
 import { archFrom, nopFill } from './arch.js';
 import { explain, idioms } from './mnemonics.js';
 import { frameModel, renderFrame, slotIndex } from './stack-frame.js';
-import { lineTags, commentStart } from './tags.js';
+import { commentStart } from './tags.js';
 import { renderXrefs, renderLocalCalls, localCallees, renderRefsDialog, useKind } from './xrefs-view.js';
 import { renderStringList, stringRefsModel } from './strings-view.js';
 import { helpHtml } from './help.js';
@@ -1132,7 +1132,7 @@ const RENDER = {
     const { data, segs, index, preamble } = cur;
     cur.wrapCols = state.prefs.cWrap ? state.wrapCols : 0;
     cur.wrapped = new Set();
-    els.ccode.innerHTML = renderC(data, { ...cContext(), index, segs, preamble, planOf: (i) => linePlan(cur, i) });
+    els.ccode.innerHTML = renderC(data, { ...cContext(), index, segs, preamble, typesOpen: typesShown(), planOf: (i) => linePlan(cur, i) });
     els.ccode.classList.toggle('no-addrs', index.lineToInsns.size === 0);
     applyTypesOpen();
     applyPaneClasses();
@@ -1442,11 +1442,9 @@ function lineInsns(n) {
 
 const MAX_CARD_ROWS = 10;
 
-const TYPES_OPEN_LINES = 30;
-
-/** Whether the type definitions above the function show: the student's choice, else when they are short. */
+/** Whether the type definitions above the function show: folded until the student opens them. */
 function typesShown() {
-  return state.typesOpen ?? state.current.preamble <= TYPES_OPEN_LINES;
+  return !!state.typesOpen;
 }
 
 function applyTypesOpen() {
@@ -1508,7 +1506,7 @@ function lineCard(n, varTok) {
     else why = 'This line has no instructions of its own: its work was merged into a neighbouring line.';
     html = `<div class="ch">Line ${n}</div><div class="cx">${escapeHtml(why)}</div>`;
   }
-  html += tagNotes(text, 'cx');
+  html += tagNotes(n, 'cx');
   if (varTok) html += `<div class="cx"><b>${escapeHtml(varSummary(varTok.textContent))}</b></div>`;
   return html;
 }
@@ -1629,9 +1627,9 @@ function insnSelectedCard(addrHex) {
   return html;
 }
 
-/** The notes kuna left at the end of a line (`// branch-flip`), each in words. */
-function tagNotes(text, cls = 'x-note') {
-  return lineTags(text).map((t) => `<p class="${cls} x-tag"><code>// ${escapeHtml(t.tag)}</code> ${escapeHtml(t.words)}</p>`).join('');
+/** The notes kuna left at the end of line n (`// branch-flip`), which the code does not show, each in words. */
+function tagNotes(n, cls = 'x-note') {
+  return (state.current.data.notes?.get(n) || []).map((t) => `<p class="${cls} x-tag"><code>// ${escapeHtml(t.tag)}</code> ${escapeHtml(t.words)}</p>`).join('');
 }
 
 /** "Line 5 turns into 3 instructions …", or what the function's setup or cleanup on line n does. */
@@ -1652,7 +1650,7 @@ function lineSelectedCard(n) {
   const { index, codeLines } = state.current;
   const { exact, inferred, all } = lineInsns(n);
   const text = (codeLines[n - 1] || '').trim();
-  let html = `<div class="x-card"><div class="x-code">${escapeHtml(text || '(empty line)')}</div>` + tagNotes(text);
+  let html = `<div class="x-card"><div class="x-code">${escapeHtml(text || '(empty line)')}</div>` + tagNotes(n);
   const typeNote = typeLineNote(n);
   if (typeNote) return html + `<p class="x-note">${escapeHtml(typeNote)}</p></div>`;
   if (!all.length) return html + `<p class="x-note">Line ${n} has no instructions of its own.</p></div>`;
@@ -2544,6 +2542,47 @@ function restoreScroll(saved) {
   for (const [el, top, left] of saved) { el.scrollTop = top; el.scrollLeft = left; }
 }
 
+/** The C row to hold still across a re-render (the cursor's or the selected line on screen, else the first row showing) and its offset from the pane's top. */
+function codeAnchor() {
+  if (!state.rendered.has('c') || !isShown('c')) return null;
+  const top = els.ccode.getBoundingClientRect().top;
+  const bottom = top + els.ccode.clientHeight;
+  const showing = (row) => {
+    const r = row ? row.getBoundingClientRect() : null;
+    return r && r.height && r.bottom > top && r.top < bottom ? row : null;
+  };
+  const row = showing(state.cursor?.isConnected && state.cursor.closest('.d2-cl')) ||
+    showing(Number.isInteger(state.sel?.line) && $('c-L' + state.sel.line)) ||
+    [...els.ccode.querySelectorAll('.d2-cl')].find(showing);
+  return row ? { line: Number(row.dataset.line), offset: row.getBoundingClientRect().top - top } : null;
+}
+
+/** Scroll the C pane so line n sits where the anchor's row was. */
+function holdAnchor(anchor, n) {
+  const row = $('c-L' + n);
+  if (!row?.getClientRects().length) return;
+  els.ccode.scrollTop += row.getBoundingClientRect().top - els.ccode.getBoundingClientRect().top - anchor.offset;
+}
+
+/** Where the cursor token is: its line, kind, name, and place among that line's tokens of its kind (and of its name). */
+function cursorSpot() {
+  const tok = state.cursor?.isConnected ? state.cursor : null;
+  const row = tok?.closest('.d2-cl');
+  if (!row) return null;
+  const same = [...row.querySelectorAll(`.t[data-kind="${CSS.escape(tok.dataset.kind || '')}"]`)];
+  const sym = tok.dataset.sym || null;
+  return { line: Number(row.dataset.line), kind: tok.dataset.kind || '', sym, nth: same.indexOf(tok), nthSym: sym ? same.filter((t) => t.dataset.sym === sym).indexOf(tok) : 0 };
+}
+
+/** The token at `spot` once line `n` is redrawn: the same place, under `sym` (its name now) when it has one. */
+function tokenAt(spot, n, sym) {
+  const row = spot && $('c-L' + n);
+  if (!row) return null;
+  const same = [...row.querySelectorAll(`.t[data-kind="${CSS.escape(spot.kind)}"]`)];
+  const named = sym ? same.filter((t) => t.dataset.sym === sym) : [];
+  return named[spot.nthSym] || named[0] || same[spot.nth] || null;
+}
+
 function flash(lines) {
   for (const n of lines) {
     const el = $('c-L' + n);
@@ -2591,9 +2630,6 @@ async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit
   const fn = state.current.fn;
   const oldCode = state.current.data.code;
   const oldPreamble = state.current.preamble;
-  const oldSig = $('c-L' + (oldPreamble + 1))?.offsetTop ?? null;
-  const scroll = captureScroll();
-  let keepSel = reselect || state.sel;
   const op = beginOperation(remote ? 'remote' : 'edit');
   op.onCancel = () => {
     if (collab?.shared) {
@@ -2618,15 +2654,23 @@ async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit
     persist();
     cacheSet(fn.address_hex, data, key);
     if (state.current?.fn === fn) {
+      const scroll = captureScroll();
+      const anchor = codeAnchor();
+      const spot = cursorSpot();
+      const oldSym = state.sel?.sym;
+      let keepSel = reselect || state.sel;
       showFunction(fn, data, { keep: true, key });
       if (collab?.shared && key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
       restoreScroll(scroll);
       const shift = state.current.preamble - oldPreamble;
-      if (shift && Number.isInteger(keepSel?.line) && keepSel.line > oldPreamble) keepSel = { ...keepSel, line: keepSel.line + shift };
-      const newSig = $('c-L' + (state.current.preamble + 1))?.offsetTop ?? null;
-      if (oldSig !== null && newSig !== null) els.ccode.scrollTop += newSig - oldSig;
-      if (keepSel) selectTarget(keepSel, null, null, { reveal: !remote });
-      flash(changedLines(oldCode, data.code));
+      const { changed, lineOf } = diffLines(oldCode, data.code);
+      const moved = lineOf || ((n) => (n > oldPreamble ? n + shift : n));
+      if (anchor) holdAnchor(anchor, moved(anchor.line));
+      if (Number.isInteger(keepSel?.line)) keepSel = { ...keepSel, line: moved(keepSel.line) };
+      const tok = spot ? tokenAt(spot, moved(spot.line), spot.sym && spot.sym === oldSym && keepSel?.sym ? keepSel.sym : spot.sym) : null;
+      if (keepSel?.sym && tok?.dataset.sym && tok.dataset.sym !== keepSel.sym && !state.current.index.symToLines.has(keepSel.sym)) keepSel = { sym: tok.dataset.sym };
+      if (keepSel) selectTarget(keepSel, null, tok, { reveal: false });
+      flash(changed);
     }
     if (!state.caps.assert) {
       setStatus('Change kept but not applied', 'err', 'This version of the decompiler cannot apply changes');

@@ -222,7 +222,7 @@ mod shortcircuit {
     use std::rc::Rc;
 
     use kuna_base::address::Address;
-    use kuna_base::space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace};
+    use kuna_base::space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, IopSpace, UniqueSpace};
     use kuna_num::opcodes::OpCode;
 
     use crate::context::{ArchContext, OpId, VarnodeId};
@@ -234,6 +234,7 @@ mod shortcircuit {
         let mut m = AddrSpaceManager::new();
         m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
         m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+        m.insert_space(Rc::new(IopSpace::new(3))).unwrap();
         m.insert_space(Rc::new(AddrSpace::new(
             spacetype::IPTR_PROCESSOR,
             "ram",
@@ -294,5 +295,85 @@ mod shortcircuit {
         let (or, _) = op(&mut fd, OpCode::CPUI_BOOL_OR, &[b, t], 1);
         assert!(!chain_reaches_short_circuit_rhs(&fd, call, &[and]));
         assert!(chain_reaches_short_circuit_rhs(&fd, call, &[and, or]));
+    }
+
+    #[test]
+    fn a_separate_snapshot_of_this_calls_effect_keeps_the_call_before_the_branch() {
+        for (own_effect, derived, classification, same_high) in [false, true].into_iter().flat_map(|own| {
+            [OpCode::CPUI_COPY, OpCode::CPUI_CAST, OpCode::CPUI_INT_ADD].into_iter().flat_map(move |code| {
+                [0, 1, 2].into_iter().flat_map(move |classification| {
+                    [false, true].map(|same_high| (own, code, classification, same_high))
+                })
+            })
+        }) {
+            let mut fd = build_fd();
+            let root = fd.bblocks_root_pub();
+            let block = fd.bblocks_mut().new_block_basic(root);
+            let target = fd.new_constant(8, 0x2000);
+            let (other, _) = op(&mut fd, OpCode::CPUI_CALL, &[target], 4);
+            fd.op_insert_end(other, block);
+            let (call, result) = op(&mut fd, OpCode::CPUI_CALL, &[target], 4);
+            let old = fd.new_constant(8, 0);
+            let effect = fd.new_varnode_iop(if own_effect { call } else { other });
+            let (indirect, updated) = op(&mut fd, OpCode::CPUI_INDIRECT, &[old, effect], 8);
+            fd.op_insert_end(indirect, block);
+            fd.op_insert_end(call, block);
+            let zero = fd.new_constant(4, 0);
+            let (compare, condition) = op(&mut fd, OpCode::CPUI_INT_SLESSEQUAL, &[result, zero], 1);
+            fd.vbank_mut().get_mut(condition).unwrap().set_implied();
+            fd.op_insert_end(compare, block);
+            let source = if derived == OpCode::CPUI_COPY {
+                updated
+            } else {
+                let one = fd.new_constant(8, 1);
+                let inputs = if derived == OpCode::CPUI_CAST { vec![updated] } else { vec![updated, one] };
+                let (expression, source) = op(&mut fd, derived, &inputs, 8);
+                fd.vbank_mut().get_mut(source).unwrap().set_implied();
+                fd.op_insert_end(expression, block);
+                source
+            };
+            let (copy, snapshot) = op(&mut fd, OpCode::CPUI_COPY, &[source], 8);
+            if same_high {
+                fd.set_high_level();
+                let high = fd.vbank().get(source).unwrap().get_high().unwrap();
+                fd.vbank_mut().get_mut(snapshot).unwrap().set_high(high, 0);
+            }
+            if classification == 1 {
+                fd.vbank_mut().get_mut(snapshot).unwrap().set_explicit();
+            } else if classification == 2 {
+                fd.vbank_mut().get_mut(snapshot).unwrap().set_implied();
+            }
+            fd.op_insert_end(copy, block);
+            let branch = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(branch, OpCode::CPUI_CBRANCH);
+            fd.op_set_all_input(branch, &[target, condition]).unwrap();
+            fd.op_insert_end(branch, block);
+
+            assert!(super::super::call_output_foldable(&fd, result));
+            assert_eq!(super::super::fold_print_point_is_order_safe(&fd, result), !(own_effect && classification != 2 && !same_high), "own={own_effect} derived={derived:?} classification={classification} same_high={same_high}");
+        }
+    }
+
+    #[test]
+    fn an_unclassified_input_expression_cannot_hide_a_call_effect_read() {
+        for derived in [OpCode::CPUI_CAST, OpCode::CPUI_INT_ADD] {
+            for explicit_input in [false, true] {
+                let mut fd = build_fd();
+                let target = fd.new_constant(8, 0x2000);
+                let (call, _) = op(&mut fd, OpCode::CPUI_CALL, &[target], 4);
+                let old = fd.new_constant(8, 0);
+                let effect = fd.new_varnode_iop(call);
+                let (_, updated) = op(&mut fd, OpCode::CPUI_INDIRECT, &[old, effect], 8);
+                let one = fd.new_constant(8, 1);
+                let inputs = if derived == OpCode::CPUI_CAST { vec![updated] } else { vec![updated, one] };
+                let (_, expression) = op(&mut fd, derived, &inputs, 8);
+                if explicit_input {
+                    fd.vbank_mut().get_mut(expression).unwrap().set_explicit();
+                }
+                let (copy, snapshot) = op(&mut fd, OpCode::CPUI_COPY, &[expression], 8);
+                fd.vbank_mut().get_mut(snapshot).unwrap().set_explicit();
+                assert_eq!(super::super::statement_reads_indirect_output_of(&fd, copy, call), !explicit_input, "derived={derived:?} explicit_input={explicit_input}");
+            }
+        }
     }
 }

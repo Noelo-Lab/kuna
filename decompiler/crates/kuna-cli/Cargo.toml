@@ -14,12 +14,18 @@ kuna-base.workspace = true
 kuna-console.workspace = true
 kuna-analysis.workspace = true
 kuna-sleigh.workspace = true
+kuna-slacomp.workspace = true
 # FID construction also reads archive members.
 object = { workspace = true, features = ["archive"] }
 regex.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 tempfile = "3.27"
+
+[features]
+# Carry the compiled SLEIGH tree inside the binary (build.rs reads `specs/`, so
+# `make specs` must run first). Release builds enable it.
+embed-specs = []
 
 [dev-dependencies]
 object = { workspace = true, features = ["write"] }
@@ -47,3 +53,7 @@ path = "tests/docs_cli.rs"
 [[test]]
 name = "process_helpers"
 path = "tests/process_helpers.rs"
+
+[[test]]
+name = "single_binary_cli"
+path = "tests/single_binary_cli.rs"

@@ -6,7 +6,6 @@
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::process::Command;
 
 use kuna_console::kuna_buildstamp;
 use kuna_decomp::kuna_phases::emit_catalog_markdown;
@@ -18,17 +17,15 @@ use crate::paths;
 /// Run `decomp_dbg phase catalog [<option>]` and return the parsed JSON value
 /// (an array, or a single object when `option` is given).
 fn run_catalog(option: Option<&str>, pinned_by: Option<&str>) -> Result<Json, String> {
-    let bin = paths::decomp_dbg();
-    if !bin.exists() {
-        return Err(paths::missing_decomp_dbg());
-    }
+    let engine = paths::decomp_dbg()?;
     let specs = paths::specs_dir();
     let cmd = match option {
         None => "phase catalog\nquit\n".to_string(),
         Some(o) => format!("phase catalog {o}\nquit\n"),
     };
 
-    let output = Command::new(&bin)
+    let output = engine
+        .command()
         .arg("-s")
         .arg(&specs)
         .env("SLEIGHHOME", &specs)
@@ -52,7 +49,7 @@ fn run_catalog(option: Option<&str>, pinned_by: Option<&str>) -> Result<Json, St
         kuna_buildstamp::ChildKind::Engine,
         String::from_utf8_lossy(&output.stderr).into_owned(),
         "decomp_dbg",
-        &bin,
+        &engine.path,
         pinned_by,
     );
 

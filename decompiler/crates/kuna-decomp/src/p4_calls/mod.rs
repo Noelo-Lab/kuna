@@ -15,6 +15,7 @@ pub mod kuna_zerocallregs; // (kuna) a register a -fzero-call-used-regs epilogue
 pub mod kuna_calleepreserves; // (kuna) the decoded callee's writes narrow the cspec killedbycall set
 pub mod kuna_callretpair; // (kuna) complete the two-register CALL output arm on any image, not just a Rust one
 pub mod kuna_calleeprotostack; // (kuna) a declared callee's prototype states its stack contract
+pub mod kuna_msvcbyval; // (kuna) an MSVC __cdecl import's by-value class argument sized at the call site
 pub(crate) mod kuna_calleenoreturn;
 pub mod kuna_calleeretpreserves; // (kuna) the decoded callee's silence answers for the call's return register
 pub mod kuna_calleescratchbody; // (kuna) a scratch-only clobberer is still a body for calleepreserves

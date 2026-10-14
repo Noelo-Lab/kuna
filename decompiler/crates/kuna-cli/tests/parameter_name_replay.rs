@@ -114,15 +114,33 @@ fn semantic_oracle(image: &PathBuf, emitted: &[String], msabi: bool) {
 }
 
 fn semantic_oracle_with_callee(image: &PathBuf, emitted: &[String], msabi: bool, support: &str) {
+    semantic_oracle_with_parameter(
+        image,
+        emitted,
+        msabi,
+        support,
+        "int",
+        "-10,-1,0,1,7,11,42,2147483646",
+    );
+}
+
+fn semantic_oracle_with_parameter(
+    image: &PathBuf,
+    emitted: &[String],
+    msabi: bool,
+    support: &str,
+    parameter_type: &str,
+    values: &str,
+) {
     let driver = common::scratch_file("parameter-driver", "c");
     let source = common::scratch_file("parameter-emitted", "c");
     let native = common::scratch_file("parameter-native", "exe");
     let rebuilt = common::scratch_file("parameter-rebuilt", "exe");
-    let harness = "#include <stdio.h>\nint main(void) { int values[] = {-10,-1,0,1,7,11,42,2147483646}; for(unsigned i=0;i<sizeof(values)/sizeof(values[0]);i++) printf(\"%d\\n\",probe(0,values[i])); return 0; }\n";
+    let harness = format!("#include <stdio.h>\nint main(void) {{ {parameter_type} values[] = {{{values}}}; for(unsigned i=0;i<sizeof(values)/sizeof(values[0]);i++) printf(\"%d\\n\",probe(0,values[i])); return 0; }}\n");
     let abi = if msabi { "__attribute__((ms_abi))" } else { "" };
     std::fs::write(
         &driver,
-        format!("extern int {abi} probe(void *,int);\n{harness}"),
+        format!("extern int {abi} probe(void *,{parameter_type});\n{harness}"),
     )
     .unwrap();
     for cc in ["gcc", "clang"] {
@@ -141,7 +159,7 @@ fn semantic_oracle_with_callee(image: &PathBuf, emitted: &[String], msabi: bool,
             std::fs::write(
                 &source,
                 format!(
-                    "typedef int int4; typedef unsigned int uint4;\n{support}\n{body}\n{harness}"
+                    "typedef int int4; typedef unsigned int uint4; typedef unsigned long long uint8;\n{support}\n{body}\n{harness}"
                 ),
             )
             .unwrap();
@@ -329,26 +347,26 @@ fn later_register_alias_keeps_the_parameter_checks_and_call_value() {
 }
 
 #[test]
-fn different_width_parameter_overlap_still_rejects() {
+fn later_narrow_register_lifetime_preserves_the_wider_parameter() {
     let image = image_with_callee(REGISTER_REUSE, Some(43));
     let proto = "prototype probe int MSABI probe(void *popup,unsigned long long property)";
     let callee = "prototype sink int MSABI sink(void *popup,int cleared)";
     let control = decompile(&image, proto, &[callee]);
     let local = register_local(&control, "edx");
     let directive = format!("name {local} cleared_property");
-    for (json, batch) in [(false, false), (true, false), (true, true)] {
-        let (stdout, stderr, status) = run(&image, proto, &[callee, &directive], json, batch);
-        assert_eq!(status, 1, "{stdout}\n{stderr}");
-        if json {
-            let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-            assert_eq!(doc["assertions"][2]["status"], "rejected");
-            assert_eq!(
-                doc["functions"][0]["code"].as_str().unwrap().trim(),
-                control
-            );
-        } else {
-            assert!(stderr.contains("overlaps a live parameter"), "{stderr}");
-        }
-    }
+    let renamed = decompile(&image, proto, &[callee, &directive]);
+    assert!(renamed.contains("probe(void *popup,uint8 property)"), "{renamed}");
+    assert!(renamed.contains("if ((int4)property != 7)"), "{renamed}");
+    assert!(renamed.contains("if ((int4)property != 0xb)"), "{renamed}");
+    assert!(renamed.contains("int4 cleared_property; // edx"), "{renamed}");
+    assert!(renamed.contains("sink(popup,cleared_property)"), "{renamed}");
+    semantic_oracle_with_parameter(
+        &image,
+        &[control, renamed],
+        true,
+        "int4 sink(void *popup,int4 cleared) { return cleared; }",
+        "unsigned long long",
+        "0,1,7,11,42,0x100000007ULL,0xffffffff0000000bULL,0xffffffffffffffffULL",
+    );
     std::fs::remove_file(image).unwrap();
 }

@@ -343,6 +343,9 @@ impl MergeContext for Funcdata {
     fn high_is_addr_tied(&mut self, high: HighVariableId) -> bool {
         self.with_high_split(|hb, ctx| hb.get_mut(high).map(|h| h.is_addr_tied(ctx)).unwrap_or(false))
     }
+    fn stack_copy_moves_write(&self, storage: HighVariableId, value: HighVariableId) -> bool {
+        crate::p6_variables::kuna_stackvalueorder::moves_write(self, storage, value)
+    }
     fn high_is_input(&mut self, high: HighVariableId) -> bool {
         self.with_high_split(|hb, ctx| hb.get_mut(high).map(|h| h.is_input(ctx)).unwrap_or(false))
     }
@@ -478,6 +481,9 @@ impl MergeContext for Funcdata {
         self.refresh_high_cover(high);
     }
     fn bank_group_with(&mut self, high2: HighVariableId, off: int4, high1: HighVariableId) -> KunaResult<()> {
+        if crate::kuna_stackparamviews::separates_parameter(self, high1, high2) {
+            return Ok(());
+        }
         // The C++ `groupWith` reads each high's `getInstance(0)->getSize()` for the
         // piece sizes.
         let first_size = self
@@ -546,6 +552,18 @@ impl MergeContext for Funcdata {
         // the covering Symbol directly from the scope snapshot (the local stack scope,
         // then the frozen global scope) — the same covering-entry lookup `linkSymbol`
         // would use.
+        if let Some(lm) = self.get_scope_local().filter(|lm| lm.has_isolated_symbols()) {
+            for i in 0..h.num_instances() {
+                let vn = h.get_instance(i);
+                let Some(v) = self.vbank().get(vn) else { continue };
+                if v.is_free() || v.is_addr_tied() { continue }
+                if let Some((sym, addr, size, _)) = lm.container_symbol_link(v.get_addr(), &self.vn_use_point(vn)) {
+                    if addr == *v.get_addr() && size == v.get_size() {
+                        return Some(sym.data().as_ffi() & SYM_ID_LOCAL_MASK);
+                    }
+                }
+            }
+        }
         self.kuna_mapped_symbol_id(high)
     }
     fn bank_symbol_offset(&self, high: HighVariableId) -> int4 {
@@ -617,7 +635,8 @@ impl MergeContext for Funcdata {
             let usepoint = self.vn_use_point(vn);
             if let Some(lm) = self.get_scope_local() {
                 if let Some(info) = lm.query_container_for_link(&addr, &usepoint) {
-                    if info.is_isolated {
+                    if info.is_isolated && (self.vbank().get(vn).is_some_and(|v| v.is_addr_tied())
+                        || self.vbank().get(vn).is_some_and(|v| info.entry_addr == *v.get_addr() && info.entry_size == v.get_size())) {
                         return true;
                     }
                 }
@@ -1102,6 +1121,12 @@ impl MergeContext for Funcdata {
                 if v2.is_free() {
                     j += 1;
                     continue; // C++ skips free Varnodes (they are not merged)
+                }
+                if v2.is_input()
+                    && crate::kuna_stackparamviews::backing_for_address(self, a2, v2.get_size()).is_some()
+                {
+                    j += 1;
+                    continue;
                 }
                 let end_off = v2.get_offset().wrapping_add((v2.get_size() as uintb).wrapping_sub(1));
                 if end_off > max_off {

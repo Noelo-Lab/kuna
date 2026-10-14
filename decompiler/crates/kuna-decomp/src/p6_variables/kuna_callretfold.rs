@@ -57,7 +57,9 @@
 //!      and the statement the folded expression is finally printed in, which is
 //!      further than the use whenever the use op's own output is implied
 //!      ([`fold_print_point_is_order_safe`], asked once the implied chain below
-//!      the use is classified).  The ops that chain travels through are not
+//!      the use is classified). A separate printed statement that reads this
+//!      call's INDIRECT effect also keeps the call ahead of the read. The ops
+//!      that chain travels through are not
 //!      barriers to it: each consumes the previous one's value, so the call is
 //!      evaluated before them either way;
 //!   5. the call's value does not reach the **right-hand operand** of a
@@ -78,7 +80,7 @@
 //! it costs 117 further functions over the 37-binary corpus in
 //! `docs/features/gh657/`, dominated by `__ctype_b_loc()` inlined into the same
 //! conditional as the loads it now sits next to.  The same reasoning keeps the
-//! INDIRECT half of (3) on the span to the use: `dat_33798 =
+//! INDIRECT half of (3) on the span to the use for implied reads: `dat_33798 =
 //! *__errno_location()` is one call, one load and one store in exactly that
 //! order in the binary, and asking past the use de-folds
 //! 27 more functions and corrects none.  `foldcallretphi` — the option that lets
@@ -325,8 +327,8 @@ pub(crate) fn print_chain(data: &Funcdata, use_op: OpId) -> Option<Vec<OpId>> {
 /// exactly as it is in the binary — a `LOAD` of the pointer a call just returned
 /// is not a load the call was moved past.
 ///
-/// Ordinary calls retain the write-only span rule. Recognized system calls also
-/// fence reads and reads of their INDIRECT outputs through the final statement:
+/// Ordinary calls also fence separately printed reads of their INDIRECT effects.
+/// Recognized system calls fence all reads through the final statement:
 /// a later buffer read must not evaluate before a folded kernel call. A chain
 /// that carries the call into the right-hand operand of `&&`/`||` declines first.
 fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
@@ -358,10 +360,74 @@ fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool 
     !ops[ci + 1..=pi]
         .iter()
         .any(|&mid| {
-            (syscall && op_reads_indirect_output_of(data, mid, call))
-                || (!chain.contains(&mid)
-                    && if syscall { op_is_barrier(data, mid) } else { op_is_write_barrier(data, mid) })
+            if syscall {
+                op_reads_indirect_output_of(data, mid, call)
+                    || (!chain.contains(&mid) && op_is_barrier(data, mid))
+            } else {
+                !chain.contains(&mid)
+                    && (op_is_write_barrier(data, mid)
+                        || (op_is_statement(data, mid)
+                            && statement_reads_indirect_output_of(data, mid, call)))
+            }
         })
+}
+
+/// Follow only expressions evaluated inside this statement, declining on exhaustion.
+fn statement_reads_indirect_output_of(data: &Funcdata, statement: OpId, call: OpId) -> bool {
+    fn reads(data: &Funcdata, value: VarnodeId, call: OpId, budget: &mut usize) -> bool {
+        let Some(left) = budget.checked_sub(1) else {
+            return true;
+        };
+        *budget = left;
+        let Some(value) = data.vbank().get(value) else {
+            return true;
+        };
+        if value.is_annotation() || value.is_constant() {
+            return false;
+        }
+        let Some(definition) = value.get_def().and_then(|id| data.obank().get(id)) else {
+            return false;
+        };
+        if definition.code() == OpCode::CPUI_INDIRECT {
+            return definition.get_in(1)
+                .and_then(|input| data.vbank().get(input))
+                .map(|input| crate::funcdata_varnode::op_iop_decode(input.get_offset()))
+                == Some(call);
+        }
+        if value.is_explicit() || definition.is_marker() {
+            return false;
+        }
+        (0..definition.num_input()).any(|slot| {
+            definition.get_in(slot).is_none_or(|input| reads(data, input, call, budget))
+        })
+    }
+
+    let Some(statement) = data.obank().get(statement) else {
+        return true;
+    };
+    let mut budget = 64;
+    (0..statement.num_input()).any(|slot| {
+        statement.get_in(slot).is_none_or(|input| reads(data, input, call, &mut budget))
+    })
+}
+
+fn op_is_statement(data: &Funcdata, op: OpId) -> bool {
+    let Some(op) = data.obank().get(op) else {
+        return true;
+    };
+    if op.is_dead() || op.is_marker() || op.not_printed() {
+        return false;
+    }
+    if op.code() == OpCode::CPUI_COPY {
+        let source = op.get_in(0).and_then(|input| data.vbank().get(input)).and_then(|value| value.get_high());
+        let output = op.get_out().and_then(|output| data.vbank().get(output)).and_then(|value| value.get_high());
+        if source.is_some() && source == output {
+            return false;
+        }
+    }
+    op.get_out().is_none_or(|output| {
+        data.vbank().get(output).is_none_or(|value| !value.is_implied())
+    })
 }
 
 /// (kuna GH-684) Does the folded call's value reach the right-hand operand of an

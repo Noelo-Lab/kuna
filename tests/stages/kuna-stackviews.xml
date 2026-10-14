@@ -1,0 +1,88 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- Reusing eight frame bytes as Pair then Handle must keep one address with two typed views. The native fixture returns 67; CLI tests execute emitted C without editing it. -->
+<bytechunk space="ram" offset="0x401000">534883ec10c7042405000000c7442404070000004889e7e81d00000089c3488d05db0f0000488904244889e7e80e00000001d84883c4105bc38b07034704c3488b078b00c3</bytechunk>
+<bytechunk space="ram" offset="0x402000">37000000</bytechunk>
+<bytechunk space="ram" offset="0x401080">534883ec10c7042405000000c7442404070000004889e7e89dffffff89c3488d055b0f0000488904244889e7e88effffff01d84883c4105bc3</bytechunk>
+<symbol space="ram" offset="0x401080" name="override_reuse"/>
+<symbol space="ram" offset="0x401000" name="stack_reuse"/>
+<symbol space="ram" offset="0x401039" name="read_pair"/>
+<symbol space="ram" offset="0x40103f" name="read_handle"/>
+<bytechunk space="ram" offset="0x4011e8">4883ec10c7042405000000c7442404070000004889e0488905030e0000488b0dfc0d0000448b0144034104488d15e60d0000488914244889e0488905e80d0000488b0de10d0000488b014403004489c04883c410c3</bytechunk>
+<symbol space="ram" offset="0x4011e8" name="obj_global_reuse"/>
+<bytechunk space="ram" offset="0x40123d">4883ec10c7042405000000c7442404070000004889e0488905be0d0000488b0db70d0000448b0144034104488d15910d0000488914244889e0488905a30d0000488b0d9c0d0000488b014403004489c04883c410c3</bytechunk>
+<symbol space="ram" offset="0x40123d" name="obj_volatile_reuse"/>
+<bytechunk space="ram" offset="0x402008">0000000000000000000000000000000000000000000000000000000000000000</bytechunk>
+<bytechunk space="ram" offset="0x401600">415453554883ec104889f548893c244889e7ffd54c8b2424c70424050000004889e7e82f00000089c3488d05d0090000488904244889e7e81d00000001d84901c44c89e04883c4105d5b415cc348830702c3830702c38b07c3488b078b00c3bf0d000000488d35e2ffffffe890ffffff4883f84b0f850f01000048c7c7f9ffffff488d35c5ffffffe873ffffff4883f8370f85f200000048bffeffffff78563412488d35a5ffffffe853ffffff48b93c000000795634124839c80f85c900000048bffeffffff78563412488d3581ffffffe82affffff48b93c000000785634124839c80f85a0000000488d3d28090000488d3539090000e89900000083f83c0f8584000000488d05f4080000483905f50800007574488d05f4080000483905fd0800007564488d3dec080000488d35fd080000e85d00000083f83c754c488d05bc080000483905c5080000753c488d3dc4080000488d35d5080000e83500000083f83c7524488d05ac080000483905ad0800007514488d058c08000048390595080000750431ffeb05bf01000000b83c0000000f05415455534883ec104889fb4989f4c70424050000004889e7e8a4feffff89c5498b0424488904244889e7e895feffff4189c4488b4308483b4310740f488b0c244889084883c00848894308428d4425004883c4105b5d415cc3</bytechunk>
+<symbol space="ram" offset="0x401600" name="cached_stack_word"/>
+<symbol space="ram" offset="0x401656" name="snapshot_read_integer"/>
+<symbol space="ram" offset="0x401659" name="snapshot_read_handle"/>
+<symbol space="ram" offset="0x401795" name="publish_frame_word"/>
+</binaryimage>
+<script>
+<com>parse line struct LifetimePair { int4 x; int4 y; };</com>
+<com>parse line struct LifetimeHandle { int4 *value; };</com>
+<com>parse line extern int4 stack_reuse(void);</com>
+<com>parse line extern int4 read_pair(LifetimePair *pair);</com>
+<com>parse line extern int4 read_handle(LifetimeHandle *handle);</com>
+<com>map addr r0x402000 int4 datum</com>
+<com>volatile r0x402018 16</com>
+<com>map addr r0x402008 LifetimePair *object_pair</com>
+<com>map addr r0x402010 LifetimeHandle *object_handle</com>
+<com>map addr r0x402018 LifetimePair *volatile_pair</com>
+<com>map addr r0x402020 LifetimeHandle *volatile_handle</com>
+<com>option stackviews off</com>
+<com>lo fu stack_reuse</com><com>decompile</com><com>print C</com>
+<com>option stackviews on</com>
+<com>lo fu stack_reuse</com><com>decompile</com><com>print C</com>
+<com>parse line extern int4 override_reuse(void);</com>
+<com>parse line extern int4 read_pair(void *pair);</com>
+<com>parse line extern int4 read_handle(void *handle);</com>
+<com>lo fu override_reuse</com><com>decompile</com>
+<com>override prototype r0x401097 int4 read_pair(LifetimePair *pair);</com>
+<com>override prototype r0x4010ac int4 read_handle(LifetimeHandle *handle);</com>
+<com>decompile</com><com>print C</com>
+<com>parse line extern int4 read_pair(LifetimePair *pair);</com>
+<com>parse line extern int4 read_handle(LifetimeHandle *handle);</com>
+<com>option stackviews off</com>
+<com>lo fu stack_reuse</com>
+<com>map addr s0xffffffffffffffe8 LifetimePair protected_pair</com>
+<com>decompile</com><com>print C</com>
+<com>option stackviews on</com>
+<com>lo fu stack_reuse</com>
+<com>map addr s0xffffffffffffffe8 LifetimePair protected_pair</com>
+<com>decompile</com><com>print C</com>
+<com>parse line extern int4 obj_global_reuse(void);</com>
+<com>parse line extern int4 obj_volatile_reuse(void);</com>
+<com>option stackviews off</com>
+<com>lo fu obj_global_reuse</com><com>decompile</com><com>print C</com>
+<com>lo fu obj_volatile_reuse</com><com>decompile</com><com>print C</com>
+<com>option stackviews on</com>
+<com>lo fu obj_global_reuse</com><com>decompile</com><com>print C</com>
+<com>lo fu obj_volatile_reuse</com><com>decompile</com><com>print C</com>
+<com>parse line extern int4 snapshot_read_integer(int4 *word);</com>
+<com>parse line extern int4 snapshot_read_handle(LifetimeHandle *handle);</com>
+<com>parse line extern uint8 cached_stack_word(uint8 input,void (*callback)(void *slot));</com>
+<com>lo fu cached_stack_word</com><com>decompile</com><com>print C</com>
+<com>parse line struct LifetimeQueue { int4 **begin; int4 **end; int4 **capacity; };</com>
+<com>parse line extern int4 publish_frame_word(LifetimeQueue *queue,int4 **source);</com>
+<com>parse line extern int4 snapshot_read_integer(void *word);</com>
+<com>parse line extern int4 snapshot_read_handle(void *handle);</com>
+<com>lo fu publish_frame_word</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="stackviews off assigns a pointer to the Pair object" min="1" max="1">^  v2\[0\] = &amp;datum;$</stringmatch>
+<stringmatch name="stackviews on sends the Pair view to its helper" min="2" max="2">read_pair\(&amp;v2.view_LifetimePair\)</stringmatch>
+<stringmatch name="stackviews on writes the pointer member" min="2" max="2">^  v2.value_[0-9]+ = &amp;datum;$</stringmatch>
+<stringmatch name="stackviews on sends the Handle view to its helper" min="2" max="2">read_handle\(&amp;v2.view_LifetimeHandle\)</stringmatch>
+<stringmatch name="stackviews off assigns a pointer to the locked struct" min="1" max="1">^  protected_pair = &amp;datum;$</stringmatch>
+<stringmatch name="stackviews on copies pointer bytes into the locked struct" min="1" max="1">__builtin_memcpy\(\(uint1 \*\)&amp;protected_pair,&amp;\(void \*\)\{ &amp;datum \},8\)</stringmatch>
+<stringmatch name="stackviews keeps the declared backing layout" min="2" max="2">^  LifetimePair protected_pair;</stringmatch>
+<stringmatch name="stackviews binds ordinary global addresses to declared object views" min="1" max="1">object_pair = &amp;v[0-9]+\.view_LifetimePair;</stringmatch>
+<stringmatch name="stackviews binds volatile global addresses to declared object views" min="1" max="1">volatile_pair = &amp;v[0-9]+\.view_LifetimePair;</stringmatch>
+<stringmatch name="stackviews selects Handle views at both noncall uses" min="2" max="2">(object_handle|volatile_handle) = &amp;v[0-9]+\.view_LifetimeHandle;</stringmatch>
+<stringmatch name="cached frame words retain scalar declarations" min="1" max="1">^  uint8 v1;</stringmatch>
+<stringmatch name="cached frame reads select a scalar member" min="1" max="1">^  v1 = v3\.view_uint8;$</stringmatch>
+<stringmatch name="frame publications retain the declared queue pointer" min="1" max="1">^  int4 \*\*v1;</stringmatch>
+<stringmatch name="frame publications store scalar pointer bits" min="1" max="1">^    \*v1 = \(int4 \*\)v4\.view_uint8;$</stringmatch>
+</decompilertest>

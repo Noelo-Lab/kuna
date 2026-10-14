@@ -92,7 +92,7 @@ use super::xrefs::{decode, in_range, FullCapture, FullOp};
 
 /// Below this an accepted run is a coincidence rather than a table: a compiler
 /// does not lower a one-case switch through a jump table.
-const MIN_ENTRIES: usize = 2;
+pub(super) const MIN_ENTRIES: usize = 2;
 
 /// The largest table read when the caller names no ceiling: the engine's own
 /// default (`Architecture::max_jumptable_size`, 1024). The walk passes the live
@@ -306,7 +306,7 @@ fn guard_limit(
     usize::try_from(bound.checked_add(1)?).ok()
 }
 
-fn is_constant(vn: &VarnodeData) -> bool {
+pub(super) fn is_constant(vn: &VarnodeData) -> bool {
     vn.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_CONSTANT)
 }
 
@@ -405,12 +405,12 @@ fn models(opcode: OpCode) -> bool {
 /// How many values the fold carries at once. A dispatch chain needs two (the
 /// base and the entry); the cap keeps a long window of constant materializations
 /// from accumulating.
-const MAX_TRACKED: usize = 16;
+pub(super) const MAX_TRACKED: usize = 16;
 
 /// What the fold knows about a value. Only [`Val::Case`] and a pointer-wide
 /// [`Val::Entry`] are answers; the other two exist to get there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Val {
+pub(super) enum Val {
     /// Exactly this constant.
     Const(u64),
     /// This constant plus an unknown — an array address whose index is the
@@ -421,18 +421,22 @@ enum Val {
     /// A table entry added back to the base it is measured from: the case
     /// address itself.
     Case { table: u64, base: u64 },
+    /// A byte or halfword entry doubled: a Thumb `tbb`/`tbh` branch offset.
+    Halves { table: u64, width: u32 },
+    /// `base` plus a doubled entry: the case address of a `tbb`/`tbh`.
+    Short { table: u64, width: u32, base: u64 },
 }
 
 /// A varnode's identity, in the two classes the fold models — the same split
 /// [`super::kuna_picpool`] makes, since `register` and `ram` are both processor
 /// spaces and only the default data space tells them apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Key {
+pub(super) enum Key {
     Reg(u64, u32),
     Tmp(u64, u32),
 }
 
-fn key_of(vn: &VarnodeData, data: Option<&Rc<AddrSpace>>) -> Option<Key> {
+pub(super) fn key_of(vn: &VarnodeData, data: Option<&Rc<AddrSpace>>) -> Option<Key> {
     let space = vn.space.as_ref()?;
     match space.get_type() {
         spacetype::IPTR_INTERNAL => Some(Key::Tmp(vn.offset, vn.size)),
@@ -443,7 +447,7 @@ fn key_of(vn: &VarnodeData, data: Option<&Rc<AddrSpace>>) -> Option<Key> {
     }
 }
 
-fn value_of(vn: &VarnodeData, vals: &[(Key, Val)], data: Option<&Rc<AddrSpace>>) -> Option<Val> {
+pub(super) fn value_of(vn: &VarnodeData, vals: &[(Key, Val)], data: Option<&Rc<AddrSpace>>) -> Option<Val> {
     let space = vn.space.as_ref()?;
     if space.get_type() == spacetype::IPTR_CONSTANT {
         return Some(Val::Const(vn.offset & mask(vn.size)));
@@ -462,7 +466,7 @@ fn leaves_registers_unknown(opcode: OpCode) -> bool {
 }
 
 /// The value this op produces, or `None` where the fold does not model it.
-fn fold(
+pub(super) fn fold(
     op: &FullOp,
     vals: &[(Key, Val)],
     data: Option<&Rc<AddrSpace>>,
@@ -480,8 +484,8 @@ fn fold(
                     c & mask(width)
                 }))
             }
-            v @ (Val::Entry { .. } | Val::Case { .. }) => Some(v),
-            Val::Indexed(_) => None,
+            v @ (Val::Entry { .. } | Val::Case { .. } | Val::Halves { .. }) => Some(v),
+            Val::Indexed(_) | Val::Short { .. } => None,
         },
         OpCode::CPUI_INT_ADD => {
             let out = op.out.as_ref()?.size;
@@ -500,6 +504,14 @@ fn fold(
                 | (Some(Val::Const(base)), Some(Val::Entry { table, width: 4 })) => {
                     Some(Val::Case { table, base })
                 }
+                (Some(Val::Halves { table, width }), Some(Val::Const(base)))
+                | (Some(Val::Const(base)), Some(Val::Halves { table, width })) => {
+                    Some(Val::Short { table, width, base })
+                }
+                (Some(Val::Const(a) | Val::Indexed(a)), Some(Val::Entry { width: 1 | 2, .. }))
+                | (Some(Val::Entry { width: 1 | 2, .. }), Some(Val::Const(a) | Val::Indexed(a))) => {
+                    Some(Val::Indexed(a))
+                }
                 // A constant plus something the fold does not know is the array
                 // address: the unknown is the selector, scaled.
                 (Some(Val::Const(a)), None) | (None, Some(Val::Const(a))) => Some(Val::Indexed(a)),
@@ -509,6 +521,13 @@ fn fold(
                 _ => None,
             }
         }
+        OpCode::CPUI_INT_MULT => match (get(0)?, get(1)?) {
+            (Val::Entry { table, width: width @ (1 | 2) }, Val::Const(2))
+            | (Val::Const(2), Val::Entry { table, width: width @ (1 | 2) }) => {
+                Some(Val::Halves { table, width })
+            }
+            _ => None,
+        },
         OpCode::CPUI_INT_SUB => match (get(0)?, get(1)?) {
             (Val::Const(a), Val::Const(b)) => {
                 Some(Val::Const(a.wrapping_sub(b) & mask(op.out.as_ref()?.size)))
@@ -526,7 +545,9 @@ fn fold(
             }
             let width = op.out.as_ref()?.size;
             match get(1)? {
-                Val::Indexed(table) if width == 4 || width == pool.ptr_width() => {
+                Val::Indexed(table) | Val::Short { base: table, .. }
+                    if matches!(width, 1 | 2 | 4) || width == pool.ptr_width() =>
+                {
                     Some(Val::Entry { table, width })
                 }
                 _ => None,
@@ -538,7 +559,7 @@ fn fold(
 
 /// Drop every tracked value whose bytes overlap the write to `key`, so a write to
 /// `eax` cannot leave a stale `rax` behind.
-fn invalidate(vals: &mut Vec<(Key, Val)>, key: Option<Key>) {
+pub(super) fn invalidate(vals: &mut Vec<(Key, Val)>, key: Option<Key>) {
     let Some(key) = key else { return };
     vals.retain(|(k, _)| !keys_overlap(*k, key));
 }
@@ -552,7 +573,7 @@ fn split(key: Key) -> (u8, u64, u32) {
 
 /// Do two keys name overlapping bytes of the same class — `eax` and `rax`, but
 /// never a register and a temporary at the same offset?
-fn keys_overlap(a: Key, b: Key) -> bool {
+pub(super) fn keys_overlap(a: Key, b: Key) -> bool {
     let (ac, ao, as_) = split(a);
     let (bc, bo, bs) = split(b);
     ac == bc && spans_overlap(ao, as_, bo, bs)

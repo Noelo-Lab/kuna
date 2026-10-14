@@ -21,7 +21,7 @@ It can be used either on the [CLI](#cli-usage), the [web browser](#web-browser-u
 
 ### CLI Usage
 If building from source, you can find the `kuna` binary in `decompiler/target/release/kuna`.
-Otherwise, you can find it in the latest [release](https://github.com/Noelo-Lab/kuna/releases) for your OS (Linux, Windows, MacOS supported). 
+Otherwise, you can find it in the latest [release](https://github.com/Noelo-Lab/kuna/releases) for your OS (Linux, Windows, MacOS supported). The release `kuna` is a single self-contained binary: the compiled SLEIGH specs are built in. 
 
 ```bash
 kuna decompile ./a.out main
@@ -102,6 +102,8 @@ make binaries   # cargo-build the decompiler (decomp_dbg, decomp_test_dbg),
                 # the SLEIGH compiler (slacomp), and the `kuna` CLI
 make specs      # compile every SLEIGH .slaspec -> .sla with slacomp (the decoder needs these)
 make            # = binaries + specs
+cd decompiler && cargo build --release -p kuna-cli --features embed-specs
+                # after `make specs`: a `kuna` that carries the specs, as releases do
 ```
 
 Everything lands in `decompiler/target/release/`. For development, work in the cargo workspace
