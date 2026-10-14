@@ -2372,11 +2372,9 @@ mod provenance_json_tests {
 // --- argument parsing --------------------------------------------------------
 
 /// Expand a concrete decompiler mode into its owned `(option, value)`
-/// overrides. Callers PREPEND these before the user's `--option` pairs so an
-/// explicit `--option` still wins (last-write, matching the console's `mode`
-/// then `option` ordering). `auto` must first be resolved from binary metadata
-/// by [`mode_options_for_binary`].
-pub fn mode_override_pairs(mode: &str) -> Result<Vec<(String, String)>, String> {
+/// overrides, without `auto`'s own.
+#[cfg(test)]
+fn mode_override_pairs(mode: &str) -> Result<Vec<(String, String)>, String> {
     if kuna_decomp::modes::mode_is_automatic(mode) {
         return Err("mode `auto` requires input binary size".into());
     }
@@ -2389,19 +2387,20 @@ pub fn mode_override_pairs(mode: &str) -> Result<Vec<(String, String)>, String> 
     }
 }
 
-/// Resolve an omitted or explicit `auto` mode from `binary_size`; explicit
-/// concrete modes ignore the size.
-#[cfg(test)]
-fn mode_override_pairs_for_size(
-    mode: Option<&str>,
-    binary_size: u64,
-) -> Result<Vec<(String, String)>, String> {
-    let concrete = kuna_decomp::modes::resolve_mode_for_size(mode, binary_size).ok_or_else(|| {
-        let requested = mode.unwrap_or("auto");
-        let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
-        format!("unknown mode {requested:?} (known: {})", known.join(", "))
-    })?;
-    mode_override_pairs(concrete)
+/// Resolve an omitted or explicit `auto` mode from `binary_size` to its
+/// concrete preset and owned overrides (`auto`'s own first); explicit concrete
+/// modes ignore the size. Callers PREPEND the overrides before the user's
+/// `--option` pairs so an explicit `--option` still wins (last-write, matching
+/// the console's `mode` then `option` ordering).
+fn resolved_mode(mode: Option<&str>, binary_size: u64) -> Result<ResolvedMode, String> {
+    let (name, overrides) = kuna_decomp::modes::resolve_overrides_for_size(mode, binary_size)
+        .ok_or_else(|| {
+            let requested = mode.unwrap_or("auto");
+            let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
+            format!("unknown mode {requested:?} (known: {})", known.join(", "))
+        })?;
+    let options = overrides.iter().map(|(o, v)| ((*o).to_string(), (*v).to_string())).collect();
+    Ok(ResolvedMode { name, options })
 }
 
 /// Resolve the frontend mode policy and prepend its overrides to the user's
@@ -2425,31 +2424,17 @@ fn mode_and_options_for_binary(
     binary: &str,
     explicit: Vec<(String, String)>,
 ) -> Result<ResolvedMode, String> {
-    let concrete = concrete_mode_for_binary(mode, binary)?;
-    let mut merged = mode_override_pairs(concrete)?;
-    merged.extend(explicit);
-    Ok(ResolvedMode { name: concrete, options: merged })
-}
-
-fn concrete_mode_for_binary(
-    mode: Option<&str>,
-    binary: &str,
-) -> Result<&'static str, String> {
     let requested = mode.unwrap_or("auto");
-    if kuna_decomp::modes::mode_is_automatic(requested) {
-        let size = std::fs::metadata(binary)
+    let size = if kuna_decomp::modes::mode_is_automatic(requested) {
+        std::fs::metadata(binary)
             .map_err(|e| format!("cannot read input binary metadata for mode auto: {binary}: {e}"))?
-            .len();
-        kuna_decomp::modes::resolve_mode_for_size(Some(requested), size).ok_or_else(|| {
-            let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
-            format!("unknown mode {requested:?} (known: {})", known.join(", "))
-        })
+            .len()
     } else {
-        kuna_decomp::modes::resolve_mode_for_size(Some(requested), 0).ok_or_else(|| {
-            let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
-            format!("unknown mode {requested:?} (known: {})", known.join(", "))
-        })
-    }
+        0
+    };
+    let mut resolved = resolved_mode(Some(requested), size)?;
+    resolved.options.extend(explicit);
+    Ok(resolved)
 }
 
 /// Parse `argv` for `cmd`, discarding the triage half.
@@ -2888,7 +2873,9 @@ fn usage_decompile_all() {
          worker re-run whole-binary\n\
          function discovery instead of taking the parent's inventory.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
-         2 MiB, and fast at 2 MiB or larger. Explicit --option values win.\n\
+         2 MiB, and fast at 2 MiB or larger, with ctypes on at every size (an\n\
+         explicit --mode reliable keeps the int4/uint8 names). Explicit --option\n\
+         values win.\n\
          An unfiltered run that discovers no function at all exits 1 with the\n\
          reason on stderr and in the document's run-level `error` field.\n\
          \n\
@@ -3176,9 +3163,13 @@ mod mode_tests {
             (kuna_decomp::modes::AUTO_RELIABLE_MIN_BYTES, "reliable"),
             (kuna_decomp::modes::AUTO_FAST_MIN_BYTES, "fast"),
         ] {
-            let expected = mode_override_pairs(concrete).unwrap();
-            assert_eq!(mode_override_pairs_for_size(None, size).unwrap(), expected);
-            assert_eq!(mode_override_pairs_for_size(Some("auto"), size).unwrap(), expected);
+            let mut expected = vec![("ctypes".to_string(), "on".to_string())];
+            expected.extend(mode_override_pairs(concrete).unwrap());
+            for requested in [None, Some("auto")] {
+                let resolved = resolved_mode(requested, size).unwrap();
+                assert_eq!(resolved.name, concrete);
+                assert_eq!(resolved.options, expected);
+            }
         }
     }
 

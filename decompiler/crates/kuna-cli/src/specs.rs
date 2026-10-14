@@ -4,7 +4,7 @@
 //! running either. Compilation arguments otherwise pass through to `slacomp`.
 
 use std::io::Read;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use crate::paths;
 
@@ -32,11 +32,13 @@ pub fn run(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "--diff") {
         return crate::output::emit_with_status(&format!("{DIFF_NOTE}\n"), 0);
     }
-    let bin = paths::slacomp();
-    if !bin.exists() {
-        eprintln!("{}", paths::missing_binary("slacomp", "KUNA_SLACOMP", "kuna-slacomp"));
-        return 2;
-    }
+    let compiler = match paths::slacomp() {
+        Ok(program) => program,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return 2;
+        }
+    };
     // Pass the remaining args straight through to slacomp (it owns `-a <dir>` and
     // the bare `<slaspec>...` forms).
     //
@@ -48,7 +50,7 @@ pub fn run(args: &[String]) -> i32 {
     // is copied through as it arrives: the two interleave as they did when this
     // was a bare `status()` passthrough, and the write still goes through the
     // fallible boundary.
-    let mut child = match Command::new(&bin).args(args).stdout(Stdio::piped()).spawn() {
+    let mut child = match compiler.command().args(args).stdout(Stdio::piped()).spawn() {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: failed to run slacomp: {e}");
@@ -104,7 +106,7 @@ fn usage() {
          -a <dir> compiles every .slaspec under <dir> recursively (= make specs over\n\
          specs/); a bare list of files compiles just those.  A .sla is a build\n\
          artifact and is gitignored; the engine finds them under KUNA_SPECS /\n\
-         SLEIGHHOME.\n\
+         SLEIGHHOME.  A release kuna carries its compiled specs inside itself.\n\
          --diff prints guidance for independent compiler and decompiler checks; it runs neither."
     );
 }

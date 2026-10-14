@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: no AIF gap entry starts on a literal-pool word
+    (`option aifpoolslide on|off`, default-ON).
+
+    Issue:      kuna GH-299 - aif plants mid-function entries; the largest
+                class left sits one literal-pool word before a real function,
+                whose start it hides.
+    Stage:      P1 code/data partition - the AIF gap-walk accept
+                (`analyzers/aif/kuna_aifpoolslide.rs`).
+    P0 assert:  `option aifpoolslide on|off`.
+
+    The XML wrapper only provides the harness architecture.  Every pass clears
+    it and loads `poolslide_le32` (generator `poolslide_le32.py` beside it): a
+    stripped Thumb ELF whose `_start` calls 22 leaves that open with
+    `movs r3,#n; adds r0,r0,r3`, `user` at 0x81fc, which loads the pool word
+    at 0x8200 (0x20000124, an SRAM address) with `ldr r0,[pc,#0]`, `taker` at
+    0x820c, which jumps to `h3` at 0x8214 through `adr r1,h3`, and `namer` at
+    0x821c, which loads the address of the string "A0pG" at 0x822c and the
+    pool word in front of it at 0x8228.  The unreferenced `lone` at 0x8204
+    follows the first pool.  A pool word's high half reads as `movs r0,#0`,
+    which with `lone`'s first `adds`, or with the string's bytes
+    (`adds r0,#0x41; bx lr`), matches the leaves' prologue.  Both passes use
+    `mode reliable` with the Listing and the gap walk on, as `kuna functions`
+    runs on a large ARM image.
+
+    Pass 1 (`option aifpoolslide off`) reproduces the bug: the gap walk lists
+    sub_8202 and sub_822a, both on pool words, and claims `lone` as a body.
+    Pass 2 (shipped default) plants the first accept on `lone`: sub_8204.  The
+    second would land on the string, which is data, so it is refused and
+    neither the pool word nor the string is listed.  `adr` loads nothing, so
+    `h3` stays at its own address in both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/poolslide_le32</com>
+  <com>mode reliable</com>
+  <com>option listing on</com>
+  <com>option aif on</com>
+  <com>option aifpoolslide off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/poolslide_le32</com>
+  <com>mode reliable</com>
+  <com>option listing on</com>
+  <com>option aif on</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>phase catalog aifpoolslide</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-AIFPOOLSLIDE #1: the reset handler is a function in both passes" min="2" max="2">0x8110 sub_8110</stringmatch>
+<stringmatch name="KUNA-AIFPOOLSLIDE #2: the entry on the pool word is listed only with the option off" min="1" max="1">0x8202 sub_8202</stringmatch>
+<stringmatch name="KUNA-AIFPOOLSLIDE #3: lone is listed at its own address only with the option on" min="1" max="1">0x8204 sub_8204</stringmatch>
+<stringmatch name="KUNA-AIFPOOLSLIDE #4: the catalog documents it as a default-on P1 code/data-partition option" min="1" max="1">"option": "aifpoolslide", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
+<stringmatch name="KUNA-AIFPOOLSLIDE #5: a function whose address adr takes stays at its own address" min="2" max="2">0x8214 sub_8214</stringmatch>
+<stringmatch name="KUNA-AIFPOOLSLIDE #6: and is never moved past its first word" min="0" max="0">0x8218 sub_8218</stringmatch>
+<stringmatch name="KUNA-AIFPOOLSLIDE #7: the entry on the pool word in front of the string is listed only with the option off" min="1" max="1">0x822a sub_822a</stringmatch>
+<stringmatch name="KUNA-AIFPOOLSLIDE #8: the string the code loads is never a function" min="0" max="0">0x822c sub_822c</stringmatch>
+</decompilertest>

@@ -34,9 +34,10 @@
     hidden return pointer, typed. The copy constructor's evidence (it is
     imported) is what proves MakeStack returns Arr through that pointer.
     MakeStack's by-value `Arr` has a size the name does not state, so the
-    parameters after it are left open; they are not recovered here, because
-    the slot's address is passed to the copy constructor, so the pushes above
-    it stay stores before the call in both passes.
+    parameters after it are left open. `option msvcbyval` (on by default) sizes
+    that class from the caller's cleanup; it is pinned off in both passes here
+    so this test pins msvcsig alone (tests/stages/kuna-msvcbyval.xml covers
+    it), and without it the pushes above the slot stay stores before the call.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -47,6 +48,7 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcsig_protos_i386.exe</com>
   <com>option msvcsig off</com>
+  <com>option msvcbyval off</com>
   <com>read symbols</com>
   <com>load addr 0x401000</com>
   <com>decompile</com>
@@ -56,6 +58,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcsig_protos_i386.exe</com>
+  <com>option msvcbyval off</com>
   <com>read symbols</com>
   <com>load addr 0x401000</com>
   <com>decompile</com>

@@ -585,6 +585,10 @@ impl Action for ActionDefaultParams {
             // pcodeinjectlib): the default models on the datatest path declare no
             // uponreturn injection, so this is a no-op here.
         }
+        // (kuna) `msvcbyval`: size an MSVC `__cdecl` import's by-value class at
+        // each call, now that every call's pop is known.  See
+        // [`crate::p4_calls::kuna_msvcbyval`].
+        crate::p4_calls::kuna_msvcbyval::size_slots(data);
         0
     }
 }

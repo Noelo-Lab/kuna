@@ -2723,14 +2723,18 @@ moves.
   (the `msvcp` iostream and string API in most): calls printed with no arguments
   fall from 13,819 to 11,302 and from 18,858 to 17,355, 5.4% and 8.3% of the
   functions change, and total decompile CPU time moves by +0.3% and -0.5%.
-  LOSS: a parameter after a by-value class is not placed, and where MSVC
-  constructs that class in its
-  outgoing slot through a pointer — a copy constructor, or a call returning into
-  the slot — the call-site recovery refuses every slot above the one whose address
-  was taken, so those arguments render as stores before the call
-  (`MakeStack(a1)`, after `Arr::Arr((Arr *)&v1,a2)`, keeps only its hidden return
-  pointer). `--option msvcsig off` restores the Itanium-arm reading of MSVC names
-  exactly.
+  A parameter after a by-value class is not placed by the declaration, and where
+  MSVC constructs that class in its outgoing slot through a pointer — a copy
+  constructor, or a call returning into the slot — the call-site recovery refuses
+  every slot above the one whose address was taken. So for such an import (one
+  by-value class, no `...`) the arm also parks the whole declaration, the class a
+  placeholder, and records every entry that builds an object at an address it is
+  handed: a 32-bit `__thiscall` constructor (`??0`) and an applied declaration
+  returning a class by value; `msvcbyval` (04 §4.4) sizes the class at each call
+  from the caller's cleanup. LOSS: where it declines, those arguments render as stores before the
+  call (`MakeStack(a1)`, after `Arr::Arr((Arr *)&v1,a2)`, keeps only its hidden
+  return pointer). `--option msvcsig off` restores the Itanium-arm reading of MSVC
+  names exactly.
 - **Source-language detection**
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
   (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) runs once,
@@ -4786,6 +4790,46 @@ loses no true function start on any corpus and gains 50 on the i386 PEs (the
 function behind padding, now at its own address) and 38 on the ARM ELFs (the
 function a zero run used to swallow); it removes 7,446 non-start PE entries and a
 net 77 mid-body ARM ones, and leaves i386 and x86-64 ELFs unchanged.
+
+(kuna, GH-299) No gap entry starts on a literal-pool word: `aifpoolslide`
+(default-on; `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifpoolslide.rs`).
+ARM code keeps its constants in pools right after the code that loads them, so a
+pool usually sits between one function and the next, and the walk never decodes
+it. The gap walk then reads a pool word as an instruction — an A32 image address
+`0x608xxxxx` as `addvs`, the high half of a Thumb SRAM pointer `0x2000xxxx` as
+`movs r0,#0` — whose pairing with the next function's prologue matches the
+fingerprint, and whose speculative body runs into that function and validates. The
+entry lands a word or half a word early, and because an accept consumes its body,
+the function behind it is never probed: on a stripped A32 u-boot this hid 334 real
+functions. `poolentry` repairs the same shape after the fact, but only in
+`--mode aggressive`, only for a pool behind a return (u-boot's often follow a call
+to a no-return function), and only by adding a second entry. Here the walk keeps a
+set of literal words: every word an `ldr` or `vldr` of the decoded Listing loads
+PC-relatively (its absolute `[0x...]` operand or its `[pc,#imm]` form, both words
+of a 64-bit load; an `adr` only takes an address, so a function whose address it
+takes is not a pool), extended with the literal words of each body the walk
+accepts or consumes, so the pool behind a gap-found function is known by the time
+the walk reaches it. A candidate inside a run of adjacent literal words is probed
+as before, but its accept is planted on the first address after the run when its
+body decoded an instruction there, and it is rejected otherwise, so the cursor
+reaches the code after the pool and probes it on its own. When that address is
+data — bytes that begin a printable NUL-terminated string, or an even address some
+literal word of Thumb code holds, since a Thumb code address carries bit 0 — the
+candidate is refused but still consumes its body: a body the walk accepts over a
+string table decodes text as `ldr`s, and those bogus literal words must not move an
+entry onto a string the code passes as an argument. A bracket refusal also keeps
+consuming its body. It is 32-bit ARM only and runs only in the plain gap walk.
+Scored against unstripped twins in the default mode: over the 93 non-u-boot ARM
+ELFs of the decbench corpus mid-body entries 4,375 to 1,866 net and true starts
++222; on the two u-boot images 1,415 to 1,081 and +334; no true start lost, and
+`CMSIS_DAP.axf`, the i386 PE corpus and x86-64 images unchanged. Besides the 556
+true starts, the new entries are 5 mid-body entries and 63 on data (none on a
+string start), against 88 such data entries removed, 77 of them on a string. It
+shares `poolentry`'s one disclosed split: a literal
+reference that resolves onto a function's own first word (the SPLIT shape of
+`cortexm_poolentry_le32`) moves that function's entry four bytes in, which the
+gap walk without this option gets right in `--mode reliable`; the corpus
+measurement has no such case.
 
 (kuna, GH-313) Upstream applies a **second** fingerprint test that kuna's port
 dropped. Its analyzer refuses a candidate twice — once on the shared-prologue count

@@ -11,6 +11,7 @@
 //!
 //! Integration tests require the built processor specs under `specs/`.
 
+use crate::common;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -142,4 +143,56 @@ fn the_two_vocabularies_no_longer_coexist() {
     // On: only the C spelling remains.
     assert!(word_count(&on, "unsigned int") > 0);
     assert_eq!(word_count(&on, "uint4"), 0);
+}
+
+/// Run `kuna decompile-all <path> <args>` with no `--option ctypes`, so the
+/// spelling is whatever the mode policy gives.
+fn decompile_all_with(path: &str, args: &[&str]) -> String {
+    let sp = specs();
+    let mut argv = vec!["decompile-all", path, "--sleighpath", sp.as_str()];
+    argv.extend_from_slice(args);
+    let (stdout, stderr, code) = common::run_kuna(&argv);
+    assert_eq!(code, 0, "kuna decompile-all {args:?} failed on {path}: {stderr}");
+    stdout
+}
+
+fn assert_spelled_as_c(c: &str, what: &str) {
+    for ghidra in GHIDRA_TYPE_NAMES {
+        assert_eq!(word_count(c, ghidra), 0, "{what}: `{ghidra}` survived into the emitted C:\n{c}");
+    }
+    assert!(
+        c.contains("((long *)a0)[4]"),
+        "{what}: the 8-byte element cast must spell `long` on LP64:\n{c}"
+    );
+}
+
+/// GH-1063: the speed preset and every `auto` size spell the 8-byte element
+/// cast as C, where `((int8 *)a0)[4]` reads like a byte offset. The `reliable`
+/// and `fast` tiers are reached by padding a copy of the fixture past their
+/// size thresholds; an explicit `--mode reliable` keeps the catalog spelling.
+#[test]
+fn fast_and_every_auto_size_spell_core_types_as_c() {
+    let bin = fixture("elemindex_x86_64");
+    assert_spelled_as_c(&decompile_all_with(&bin, &["--mode", "fast"]), "--mode fast");
+    assert_spelled_as_c(&decompile_all_with(&bin, &[]), "auto (aggressive)");
+    for (size, tier) in [
+        (kuna_decomp::modes::AUTO_RELIABLE_MIN_BYTES, "reliable"),
+        (kuna_decomp::modes::AUTO_FAST_MIN_BYTES, "fast"),
+    ] {
+        let padded = common::scratch_file("elemindex-auto", "bin");
+        std::fs::copy(&bin, &padded).expect("copy the fixture");
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&padded)
+            .and_then(|f| f.set_len(size))
+            .expect("pad the fixture");
+        let c = decompile_all_with(padded.to_str().unwrap(), &[]);
+        assert_spelled_as_c(&c, &format!("auto ({tier})"));
+        let _ = std::fs::remove_file(&padded);
+    }
+    let reliable = decompile_all_with(&bin, &["--mode", "reliable"]);
+    assert!(
+        reliable.contains("((int8 *)a0)[4]"),
+        "an explicit --mode reliable stays the catalog defaults:\n{reliable}"
+    );
 }
