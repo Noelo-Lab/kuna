@@ -57,7 +57,8 @@ pub const MODE_TABLE: &[Mode] = &[
         name: "auto",
         summary: "Select aggressive below 500 KiB, reliable from 500 KiB up to \
                   2 MiB, and fast at 2 MiB or larger, using the input file size; \
-                  every size spells core types as C (ctypes on).",
+                  every size spells core types and partial accesses as C \
+                  (ctypes, partialaccess on).",
         automatic: true,
         overrides: AUTO_OVERRIDES,
     },
@@ -83,7 +84,8 @@ pub const MODE_TABLE: &[Mode] = &[
         summary: "Speed-first whole-binary analysis: replace exhaustive Listing, \
                   prologue-pattern, and AIF discovery with rooted recursive \
                   function discovery plus conservative pointer validation; core \
-                  types spell as C (ctypes on).",
+                  types and partial accesses spell as C (ctypes, partialaccess \
+                  on).",
         automatic: false,
         overrides: FAST_OVERRIDES,
     },
@@ -158,6 +160,16 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // `AUTO_OVERRIDES`) is what makes valid C the default RENDERING for every
     // real binary without touching the corpus.
     ("ctypes", "on"),
+    // (kuna) Print a partial access no member names as a typed pointer access
+    // instead of Ghidra's `name._<off>_<size>_`. Shipped default OFF for the
+    // same reason as `ctypes`: two XML datatest assertions pin the Ghidra
+    // spelling and the parity harness applies no mode.
+    ("partialaccess", "on"),
+    // (kuna) Lay out an address-taken frame record read at several widths as
+    // one synthesized structure. Shipped OFF because the structure is a layout
+    // hypothesis and its program-wide name renumbers later synthesized
+    // structures; 0/675 datatest assertions move with it on.
+    ("stackstruct", "on"),
     // (kuna DIV-98) Elide a void function's trailing bare `return;`, the statement
     // the C source it came from does not have. The shipped catalog default is OFF
     // because the XML datatest corpus pins the upstream rendering and applies no
@@ -263,6 +275,7 @@ const FAST_OVERRIDES: &[(&str, &str)] = &[
     ("aif", "off"),
     ("fast_funcdisc", "on"),
     ("ctypes", "on"),
+    ("partialaccess", "on"),
 ];
 
 /// `auto`'s own overrides, applied under every preset it selects. The size
@@ -270,7 +283,7 @@ const FAST_OVERRIDES: &[(&str, &str)] = &[
 /// emitted C is not part of that trade, so `ctypes` holds at every size,
 /// including the `reliable` tier between 500 KiB and 2 MiB. An explicit
 /// `--mode reliable` stays the catalog defaults.
-const AUTO_OVERRIDES: &[(&str, &str)] = &[("ctypes", "on")];
+const AUTO_OVERRIDES: &[(&str, &str)] = &[("ctypes", "on"), ("partialaccess", "on")];
 
 /// Select the concrete preset for `size_bytes` under the `auto` policy.
 pub fn auto_mode_for_size(size_bytes: u64) -> &'static str {
@@ -676,7 +689,8 @@ mod tests {
                 ("funcstart_patterns", "off"),
                 ("aif", "off"),
                 ("fast_funcdisc", "on"),
-                ("ctypes", "on")
+                ("ctypes", "on"),
+                ("partialaccess", "on")
             ]
         );
     }
@@ -688,8 +702,8 @@ mod tests {
                 let (concrete, overrides) =
                     resolve_overrides_for_size(requested, size).unwrap();
                 assert_eq!(concrete, auto_mode_for_size(size));
-                assert_eq!(overrides[0], ("ctypes", "on"), "auto at {size}");
-                assert_eq!(&overrides[1..], mode_overrides(concrete).unwrap());
+                assert_eq!(&overrides[..2], AUTO_OVERRIDES, "auto at {size}");
+                assert_eq!(&overrides[2..], mode_overrides(concrete).unwrap());
             }
         }
         for name in ["reliable", "aggressive", "fast"] {

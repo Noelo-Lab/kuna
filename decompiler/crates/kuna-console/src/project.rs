@@ -686,6 +686,8 @@ pub fn decompile_pulled(
         // what the caller declared outranks what analysis inferred.
         let mut flow_ovr = flow_ovr;
         flow_ovr.extend(seed.flow_overrides.iter().cloned());
+        let replay = crate::assertions::has_symbol_scoped(prog, &name, single_target);
+        prog.arch_mut().kuna_record_names = replay;
         let step = crate::decompile_step::decompile_one(
             prog.arch_mut(),
             &name,
@@ -702,6 +704,7 @@ pub fn decompile_pulled(
             },
             &[],
         );
+        prog.arch_mut().kuna_record_names = false;
         // (kuna `--assert`) The symbol-scoped second pass. `name`/`type` name a
         // LOCAL, and a local does not exist until a decompile has produced it --
         // so the only order in which they can work is decompile, mutate the local
@@ -710,16 +713,15 @@ pub fn decompile_pulled(
         // when such a directive actually bound to this function, so every other
         // invocation keeps its current cost.
         let result = match step.result {
-            Ok(mut fd)
-                if crate::assertions::has_symbol_scoped(prog, &name, single_target) =>
-            {
+            Ok(mut fd) if replay => {
                 if crate::assertions::apply_symbol_scoped(prog, &mut fd, &name, single_target) {
                     let carried = crate::assertions::carried_symbols(&fd);
                     let carried_usepoint = crate::assertions::carried_usepoint_symbols(&fd);
-                    let carried_dynamic = fd.dynamic_symbol_specs();
+                    let carried_dynamic = crate::assertions::carried_dynamic_symbols(&fd);
                     let carried_objects = kuna_decomp::kuna_stackobjectasserts::specs(&fd).to_vec();
                     let carried_params = crate::kuna_paramasserts::carried(&fd, &seed.mapped_params);
-                    crate::decompile_step::decompile_one(
+                    prog.arch_mut().kuna_prior_names = kuna_decomp::kuna_stablenames::carry(&fd);
+                    let second = crate::decompile_step::decompile_one(
                         prog.arch_mut(),
                         &name,
                         entry,
@@ -735,7 +737,9 @@ pub fn decompile_pulled(
                         },
                         &[],
                     )
-                    .result
+                    .result;
+                    prog.arch_mut().kuna_prior_names = Default::default();
+                    second
                 } else {
                     Ok(fd)
                 }

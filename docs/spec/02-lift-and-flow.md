@@ -282,6 +282,13 @@ contexts, and a guard returns each context after successful translation or an
 error. The engine stores no instruction-result cache; ordinary translations
 resolve the bytes and painted context on every call.
 
+Assembly-only rendering borrows the engine's reusable mnemonic and operand
+buffers without keeping their `RefCell` borrow across translation or the emitter
+callback (`decompiler/crates/kuna-sleigh/src/sleigh.rs (Sleigh::print_assembly)`).
+Each render clears its logical text while retaining allocation capacity, and
+returns the buffers after either success or a decode error. Failed decodes emit
+no assembly; later successful renders cannot observe text from an earlier call.
+
 Speculative consumers can open a `Translate::context_scope` to decode against a
 private context database and cache. Dropping the scope restores both; committing
 it retains the changes. Copies preserve explicit write boundaries and tracked

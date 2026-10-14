@@ -461,6 +461,9 @@ pub struct PrintCOptions {
     pub array_cover_width: bool,
     /// Render supported mapped byte-array transfers with standard C helpers.
     pub bytearray_c: bool,
+    /// (kuna) A partial access no member names renders as a typed pointer
+    /// access instead of `name._<off>_<size>_` (`option partialaccess`).
+    pub partial_access: bool,
     /// (kuna) A constant pointer whose readonly target spells a ZERO-character
     /// string declines the `""` literal and prints its address instead
     /// (`option emptystrconst`).
@@ -516,6 +519,7 @@ impl PrintCOptions {
             warn_inline: true, // (kuna) DIV-39; no upstream equivalent
             array_cover_width: true, // (kuna) no upstream equivalent
             bytearray_c: false,
+            partial_access: false,
             empty_str_const: true,   // (kuna) no upstream equivalent
             struct_defs: false,      // (kuna) no upstream equivalent; opt-in
             global_ref: true,        // (kuna) no upstream equivalent
@@ -2322,6 +2326,14 @@ enum PartialEntry {
     /// printc.cc:2106-2117): renders `unnamedField(offset,size)` = `._<off>_<sz>_`
     /// when a composite member walk lands on an offset/size with no exact field.
     Unnamed(int8, int4),
+}
+
+/// The member walk of one partial access, before any token is emitted
+/// ([`PrintC::partial_walk`]).
+struct PartialWalk {
+    stack: Vec<PartialEntry>,
+    finalcast: Option<std::rc::Rc<crate::dtype::Datatype>>,
+    unnamed_in: Option<std::rc::Rc<crate::dtype::Datatype>>,
 }
 
 impl PrintC {
@@ -5733,6 +5745,9 @@ impl PrintC {
                 return;
             }
         }
+        if self.emit_wide_copy(fd, arch, op) {
+            return;
+        }
         if self.options.bytearray_c && self.emit_bytearray_store(fd, arch, op) {
             return;
         }
@@ -8241,6 +8256,28 @@ impl PrintC {
         slot: int4,
         allow_cast: bool,
     ) -> bool {
+        let PartialWalk { mut stack, finalcast, unnamed_in } =
+            self.partial_walk(fd, arch, sym_type, off_in, sz_in, vn, op, slot, allow_cast);
+        self.push_partial_walk(fd, arch, name, &mut stack, finalcast, unnamed_in, sz_in, vn, op)
+    }
+
+    /// The member walk of [`Self::push_partial_symbol_ir`] (C++ `pushPartialSymbol`'s
+    /// type descent), without emitting anything: the member tokens, the trailing
+    /// truncation cast, and the type an artificial `._<off>_<sz>_` member was taken
+    /// out of.
+    #[allow(clippy::too_many_arguments)]
+    fn partial_walk(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        sym_type: std::rc::Rc<crate::dtype::Datatype>,
+        off_in: int8,
+        sz_in: int4,
+        vn: VarnodeId,
+        op: OpId,
+        slot: int4,
+        allow_cast: bool,
+    ) -> PartialWalk {
         use crate::dtype::type_metatype;
         // PartialSymbolEntry stack (C++ `vector<PartialSymbolEntry> stack`,
         // printc.cc:2026): each entry is a resolved member token — either an
@@ -8255,6 +8292,9 @@ impl PrintC {
         // arm when the trailing truncation is a SUBPIECE-style cast (`(undefined1)
         // v1.flagfield`); rendered as a leading `(cast)` before the member tokens.
         let mut finalcast: Option<std::rc::Rc<crate::dtype::Datatype>> = None;
+        // (kuna `partialaccess`) The type an artificial `._<off>_<sz>_` member was
+        // taken out of.
+        let mut unnamed_in: Option<std::rc::Rc<crate::dtype::Datatype>> = None;
 
         while let Some(cur) = ct.clone() {
             // (kuna arraycoverwidth) The upstream whole-symbol break exits the
@@ -8427,15 +8467,51 @@ impl PrintC {
                 if sz == 0 {
                     sz = cur.get_size() - off as int4;
                 }
+                unnamed_in = Some(std::rc::Rc::clone(&cur));
                 stack.push(PartialEntry::Unnamed(off, sz));
                 ct = None;
             }
         }
 
+        PartialWalk { stack, finalcast, unnamed_in }
+    }
+
+    /// Emit a walked partial access: the member path over `name`, with the
+    /// trailing truncation cast, or the typed rendering `partialaccess` gives an
+    /// artificial `._<off>_<sz>_` member. Returns `false` for a whole-symbol cover,
+    /// which the caller renders as the bare name.
+    #[allow(clippy::too_many_arguments)]
+    fn push_partial_walk(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        name: &str,
+        stack: &mut Vec<PartialEntry>,
+        finalcast: Option<std::rc::Rc<crate::dtype::Datatype>>,
+        unnamed_in: Option<std::rc::Rc<crate::dtype::Datatype>>,
+        sz_in: int4,
+        vn: VarnodeId,
+        op: OpId,
+    ) -> bool {
         // No member tokens collected and no trailing cast: this is a whole-symbol
         // cover, render bare (the caller emits the plain name).
         if stack.is_empty() && finalcast.is_none() {
             return false;
+        }
+
+        let piece = match stack.last() {
+            Some(PartialEntry::Unnamed(o, s))
+                if *s > 0 && self.options.partial_access && self.out_lang == crate::kuna_lang::OutLang::C =>
+            {
+                crate::kuna_partialaccess::Piece::plan(fd, arch, vn, op, *o, *s, sz_in == 0, unnamed_in.as_deref())
+            }
+            _ => None,
+        };
+        if piece.is_some() {
+            stack.pop();
+        }
+        if let Some(p) = &piece {
+            self.push_piece_open(p, op);
         }
 
         // A leading `(cast)` over the whole member access (Rust: a trailing
@@ -8447,7 +8523,19 @@ impl PrintC {
             }
             _ => None,
         };
+        self.push_partial_path(name, stack, vn, op);
+        if let Some(fc) = &final_cast_open {
+            self.push_cast_close(fc);
+        }
+        if let Some(p) = &piece {
+            self.push_piece_close(p, op);
+        }
+        true
+    }
 
+    /// The member path of a partial access over `name`: every member, subscript
+    /// and artificial `._<off>_<sz>_` entry of `stack`.
+    fn push_partial_path(&mut self, name: &str, stack: &[PartialEntry], vn: VarnodeId, op: OpId) {
         // Push the member ops in REVERSE stack order (C++ printc.cc:2124-2126:
         // `for(i=stack.size()-1;i>=0;--i) pushOp(stack[i].token,op)`).  The
         // outermost access (the last-resolved element) binds tightest, so e.g. for
@@ -8477,7 +8565,7 @@ impl PrintC {
         // Atom (`Atom(field->name,fieldtoken,...,parent,field->ident,op)`); an array
         // subscript emits the index as a constant-color integer literal
         // (`push_integer(entry.offset,...)`, printc.cc:2133).
-        for entry in &stack {
+        for entry in stack {
             match entry {
                 PartialEntry::Member(fname, fident) => {
                     self.push_atom(&Atom::field(
@@ -8494,9 +8582,7 @@ impl PrintC {
                     // syntax, 0, op, 0)` (printc.cc:2132): an array-subscript entry
                     // has `entry.size == 0`, so the index renders through the integer
                     // formatter — the `val<=10 -> dec` / `mostNaturalBase` hex/dec
-                    // rule, NOT an unconditional decimal.  (Previously emitted
-                    // `format!("{index}")`, which forced decimal and lost the oracle's
-                    // `arr[0xb]` hex rendering for an index whose natural base is 16.)
+                    // rule, NOT an unconditional decimal.
                     let sign = *index < 0;
                     self.push_constant_ir_fmt_sign(
                         *index as uintb,
@@ -8530,10 +8616,239 @@ impl PrintC {
                 }
             }
         }
-        if let Some(fc) = &final_cast_open {
-            self.push_cast_close(fc);
+    }
+
+    /// (kuna `partialaccess`) The member walk `push_vn_explicit_ir` gives `vn`
+    /// when it prints as part of a mapped Symbol, with the Symbol's name.
+    fn piece_walk(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        vn: VarnodeId,
+        op: OpId,
+        slot: int4,
+        allow_cast: bool,
+    ) -> Option<(String, PartialWalk)> {
+        use crate::dtype::type_metatype;
+        let v = fd.vbank().get(vn)?;
+        if v.is_constant() || v.is_implied() {
+            return None;
         }
+        let (name, sym_off, sym_type) = self.emitted_high_symbol(fd, v.get_high()?)?;
+        let st = sym_type?;
+        let symoff = sym_off.max(0);
+        let asize = v.get_size();
+        let composite = matches!(
+            st.get_metatype(),
+            type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION | type_metatype::TYPE_ARRAY
+        );
+        if !composite && !((symoff > 0 || asize < st.get_size()) && symoff + asize <= st.get_size()) {
+            return None;
+        }
+        Some((name, self.partial_walk(fd, arch, st, symoff as int8, asize, vn, op, slot, allow_cast)))
+    }
+
+    /// (kuna `partialaccess`) A plain store or copy of a width C has no scalar
+    /// for, into bytes no member names, as `memset`/`memcpy` of exactly those
+    /// bytes. The source is a constant whose bytes are all equal, the same kind
+    /// of piece, or a variable; a whole array variable takes a copy out of such a
+    /// piece the same way. Anything else (an intrinsic, an expression) declines
+    /// and the statement keeps its assignment.
+    fn emit_wide_copy(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
+        use crate::dtype::type_metatype;
+        use crate::kuna_partialaccess::is_scalar_width;
+        if !self.options.partial_access || self.out_lang != crate::kuna_lang::OutLang::C {
+            return false;
+        }
+        let Some((out, input)) = fd
+            .obank()
+            .get(op)
+            .filter(|o| o.code() == OpCode::CPUI_COPY)
+            .and_then(|o| Some((o.get_out()?, o.get_in(0)?)))
+        else {
+            return false;
+        };
+        let (Some(ov), Some(iv)) = (fd.vbank().get(out), fd.vbank().get(input)) else { return false };
+        let size = ov.get_size();
+        if size <= 0 || is_scalar_width(size) || ov.get_type().get_metatype() == type_metatype::TYPE_FLOAT {
+            return false;
+        }
+        let wide = |w: &PartialWalk| -> Option<int8> {
+            match w.stack.last() {
+                Some(&PartialEntry::Unnamed(off, s)) if s == size && w.finalcast.is_none() => Some(off),
+                _ => None,
+            }
+        };
+        let target = self.piece_walk(fd, arch, out, op, -1, false).and_then(|(n, w)| wide(&w).map(|o| (n, w, o)));
+        let piece_source =
+            self.piece_walk(fd, arch, input, op, 0, true).and_then(|(n, w)| wide(&w).map(|o| (n, w, o)));
+        let fill = iv.is_constant().then(|| {
+            let value = iv.get_offset();
+            let low = (value & 0xff) as u8;
+            let equal = (0..size.min(8) as u32).all(|i| ((value >> (8 * i)) & 0xff) as u8 == low)
+                && (size <= 8 || value == 0);
+            equal.then_some(low)
+        });
+        let variable = |v: &crate::varnode::Varnode| !v.is_constant() && !v.is_implied() && v.get_high().is_some();
+        let whole_array = variable(ov)
+            && matches!(ov.get_type().get_metatype(), type_metatype::TYPE_ARRAY | type_metatype::TYPE_UNKNOWN);
+        if target.is_none() && !(whole_array && piece_source.is_some()) {
+            return false;
+        }
+        if target.is_some() && piece_source.is_none() && fill.flatten().is_none() && !variable(iv) {
+            return false;
+        }
+        if fill.is_some_and(|f| f.is_none()) && piece_source.is_none() {
+            return false;
+        }
+        let key = Some(op_key(op));
+        let filled = fill.flatten();
+        self.push_op(&tokens::FUNCTION_CALL, key);
+        let callee = if filled.is_some() { "memset" } else { "memcpy" };
+        self.push_atom(&Atom::syntax(callee, TagType::FuncToken, crate::printlanguage::SyntaxHighlight::funcname_color));
+        self.push_op(&tokens::COMMA, key);
+        self.push_op(&tokens::COMMA, key);
+        match target {
+            Some((name, walk, off)) => self.push_piece_address(arch, &name, &walk, off, out, op),
+            None => {
+                self.push_op(&tokens::ADDRESSOF, key);
+                self.push_vn_ir(fd, arch, out, op);
+            }
+        }
+        match (filled, piece_source) {
+            (Some(byte), _) => self.push_constant_ir_fmt_sign(byte as uintb, 0, op, display_format::NONE, false),
+            (None, Some((name, walk, off))) => self.push_piece_address(arch, &name, &walk, off, input, op),
+            (None, None) => {
+                self.push_op(&tokens::ADDRESSOF, key);
+                self.push_vn_ir(fd, arch, input, op);
+            }
+        }
+        self.push_constant_ir_fmt_sign(size as uintb, 0, op, display_format::NONE, false);
         true
+    }
+
+    /// (kuna `partialaccess`) The address of the bytes a walk ends in an
+    /// artificial member for: `&v` at offset 0, `&buf[off]` in a byte array,
+    /// `(char *)&v + off` otherwise.
+    fn push_piece_address(&mut self, arch: &Architecture, name: &str, walk: &PartialWalk, off: int8, vn: VarnodeId, op: OpId) {
+        let key = Some(op_key(op));
+        let path = &walk.stack[..walk.stack.len().saturating_sub(1)];
+        let bytes_array = walk.unnamed_in.as_ref().is_some_and(|c| {
+            c.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY
+                && c.get_array_base().is_some_and(|e| e.get_size() == 1)
+        });
+        if off == 0 {
+            self.push_op(&tokens::ADDRESSOF, key);
+            self.push_partial_path(name, path, vn, op);
+        } else if bytes_array {
+            self.push_op(&tokens::ADDRESSOF, key);
+            self.push_op(&tokens::SUBSCRIPT, key);
+            self.push_partial_path(name, path, vn, op);
+            self.push_constant_ir_fmt_sign(off as uintb, 0, op, display_format::NONE, false);
+        } else {
+            let types = arch.types();
+            let char_ptr = types
+                .get_type_char(1)
+                .and_then(|c| types.get_type_pointer(types.get_size_of_pointer(), c, 1));
+            self.push_op(&tokens::BINARY_PLUS, key);
+            if let Ok(cp) = &char_ptr {
+                self.push_cast_open(cp, op);
+            }
+            self.push_op(&tokens::ADDRESSOF, key);
+            self.push_partial_path(name, path, vn, op);
+            if let Ok(cp) = &char_ptr {
+                self.push_cast_close(cp);
+            }
+            self.push_constant_ir_fmt_sign(off as uintb, 0, op, display_format::NONE, false);
+        }
+    }
+
+    /// (kuna `partialaccess`) Open the cast to the pointer an access reads
+    /// through.
+    fn push_pointee_cast_open(&mut self, pointee: &crate::kuna_partialaccess::Pointee, op: OpId) {
+        match pointee {
+            crate::kuna_partialaccess::Pointee::Typed(ptr) => self.push_cast_open(ptr, op),
+            crate::kuna_partialaccess::Pointee::Int128 => {
+                self.push_op(&tokens::TYPECAST, Some(op_key(op)));
+                self.push_atom(&Atom::syntax(
+                    "unsigned __int128 *",
+                    TagType::TypeToken,
+                    crate::printlanguage::SyntaxHighlight::type_color,
+                ));
+            }
+        }
+    }
+
+    /// (kuna `partialaccess`) Close [`Self::push_pointee_cast_open`].
+    fn push_pointee_cast_close(&mut self, pointee: &crate::kuna_partialaccess::Pointee) {
+        if let crate::kuna_partialaccess::Pointee::Typed(ptr) = pointee {
+            self.push_cast_close(ptr);
+        }
+    }
+
+    /// (kuna `partialaccess`) Open the rendering that replaces a
+    /// `._<off>_<size>_` token; the symbol and its member path follow.
+    fn push_piece_open(&mut self, p: &crate::kuna_partialaccess::Piece, op: OpId) {
+        use crate::kuna_partialaccess::{Form, Piece};
+        match p {
+            Piece::Sub { name, .. } => {
+                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+                self.push_atom(&Atom::with_op(
+                    name.clone(),
+                    TagType::OpToken,
+                    crate::printlanguage::SyntaxHighlight::no_color,
+                    op_key(op),
+                ));
+                self.push_op(&tokens::COMMA, Some(op_key(op)));
+            }
+            Piece::Pointer { form, pointee, bytes } => {
+                match form {
+                    Form::Index(_) => self.push_op(&tokens::SUBSCRIPT, Some(op_key(op))),
+                    _ => self.push_op(&tokens::DEREFERENCE, Some(op_key(op))),
+                }
+                self.push_pointee_cast_open(pointee, op);
+                if let (Form::Bytes(_), Some(bytes)) = (form, bytes) {
+                    self.push_op(&tokens::BINARY_PLUS, Some(op_key(op)));
+                    self.push_cast_open(bytes, op);
+                }
+                match form {
+                    Form::Decay => {}
+                    Form::Element(_) => {
+                        self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+                        self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                    }
+                    _ => self.push_op(&tokens::ADDRESSOF, Some(op_key(op))),
+                }
+            }
+        }
+    }
+
+    /// (kuna `partialaccess`) Close what [`Self::push_piece_open`] opened.
+    fn push_piece_close(&mut self, p: &crate::kuna_partialaccess::Piece, op: OpId) {
+        use crate::kuna_partialaccess::{Form, Piece};
+        match p {
+            Piece::Sub { value_offset, .. } => {
+                self.push_constant_ir_fmt_sign(*value_offset as uintb, 0, op, display_format::NONE, false);
+            }
+            Piece::Pointer { form, pointee, bytes } => match form {
+                Form::Index(k) => {
+                    self.push_pointee_cast_close(pointee);
+                    self.push_constant_ir_fmt_sign(*k as uintb, 0, op, display_format::NONE, false);
+                }
+                Form::Base | Form::Decay => self.push_pointee_cast_close(pointee),
+                Form::Element(k) => {
+                    self.push_constant_ir_fmt_sign(*k as uintb, 0, op, display_format::NONE, false);
+                    self.push_pointee_cast_close(pointee);
+                }
+                Form::Bytes(off) => {
+                    if let Some(bytes) = bytes {
+                        self.push_cast_close(bytes);
+                    }
+                    self.push_constant_ir_fmt_sign(*off as uintb, 0, op, display_format::NONE, false);
+                    self.push_pointee_cast_close(pointee);
+                }
+            },
+        }
     }
 
     /// C++ `PrintC::pushAnnotation` (printc.cc:1929): render a volatile
