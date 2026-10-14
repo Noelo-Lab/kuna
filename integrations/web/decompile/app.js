@@ -2726,7 +2726,6 @@ async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit
         detail: `${row.directive}: ${row.detail || 'the code changed under it'}. Edit or remove it under ${collab?.shared ? 'Changes' : 'Your changes'}.`,
       });
     }
-    // A refusal toasts once, when it first becomes refused.
     const newlyFatal = data.assertions.find((r) => r.fatal && !fresh.includes(r.directive) && !broke.includes(r) &&
       !session.keysOf(r.directive, req).some((k) => wasFatal.has(k)));
     if (newlyFatal) {
