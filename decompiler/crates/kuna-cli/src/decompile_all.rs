@@ -2392,18 +2392,15 @@ fn mode_override_pairs(mode: &str) -> Result<Vec<(String, String)>, String> {
 /// modes ignore the size. Callers PREPEND the overrides before the user's
 /// `--option` pairs so an explicit `--option` still wins (last-write, matching
 /// the console's `mode` then `option` ordering).
-fn resolved_override_pairs(
-    mode: Option<&str>,
-    binary_size: u64,
-) -> Result<(&'static str, Vec<(String, String)>), String> {
-    let (concrete, overrides) = kuna_decomp::modes::resolve_overrides_for_size(mode, binary_size)
+fn resolved_mode(mode: Option<&str>, binary_size: u64) -> Result<ResolvedMode, String> {
+    let (name, overrides) = kuna_decomp::modes::resolve_overrides_for_size(mode, binary_size)
         .ok_or_else(|| {
             let requested = mode.unwrap_or("auto");
             let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
             format!("unknown mode {requested:?} (known: {})", known.join(", "))
         })?;
-    let pairs = overrides.iter().map(|(o, v)| ((*o).to_string(), (*v).to_string())).collect();
-    Ok((concrete, pairs))
+    let options = overrides.iter().map(|(o, v)| ((*o).to_string(), (*v).to_string())).collect();
+    Ok(ResolvedMode { name, options })
 }
 
 /// Resolve the frontend mode policy and prepend its overrides to the user's
@@ -2435,9 +2432,9 @@ fn mode_and_options_for_binary(
     } else {
         0
     };
-    let (name, mut merged) = resolved_override_pairs(Some(requested), size)?;
-    merged.extend(explicit);
-    Ok(ResolvedMode { name, options: merged })
+    let mut resolved = resolved_mode(Some(requested), size)?;
+    resolved.options.extend(explicit);
+    Ok(resolved)
 }
 
 /// Parse `argv` for `cmd`, discarding the triage half.
@@ -3166,8 +3163,11 @@ mod mode_tests {
         ] {
             let mut expected = vec![("ctypes".to_string(), "on".to_string())];
             expected.extend(mode_override_pairs(concrete).unwrap());
-            assert_eq!(resolved_override_pairs(None, size).unwrap(), (concrete, expected.clone()));
-            assert_eq!(resolved_override_pairs(Some("auto"), size).unwrap(), (concrete, expected));
+            for requested in [None, Some("auto")] {
+                let resolved = resolved_mode(requested, size).unwrap();
+                assert_eq!(resolved.name, concrete);
+                assert_eq!(resolved.options, expected);
+            }
         }
     }
 
