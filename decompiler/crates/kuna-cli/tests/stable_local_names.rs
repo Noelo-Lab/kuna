@@ -6,9 +6,10 @@
 //! `v6`), and a second directive naming `v6` reached the wrong variable.
 //!
 //! Fixture: `kuna-analysis/tests/fixtures/stablenames_x86_64` (source beside
-//! it), whose `mix` prints thirteen numbered locals. Every case runs on both
-//! surfaces: the text one drives `decomp_dbg` through a console script,
-//! `--json` runs in-process.
+//! it), whose `mix` prints thirteen numbered locals, and the static glibc
+//! `mcount_x86_64`, whose `handle_intel.constprop.0` keeps many same-width
+//! temporaries at one instruction. Every case runs on both surfaces: the text
+//! one drives `decomp_dbg` through a console script, `--json` runs in-process.
 
 use std::collections::BTreeSet;
 
@@ -22,8 +23,13 @@ fn decompile(directives: &[&str]) -> String {
 
 /// [`decompile`] with `extra` command-line arguments.
 fn decompile_with(extra: &[&str], directives: &[&str]) -> String {
-    let binary = common::fixture("stablenames_x86_64");
-    let mut args = vec!["decompile", binary.as_str(), "mix"];
+    decompile_in("stablenames_x86_64", "mix", extra, directives)
+}
+
+/// [`decompile`] of `function` in `fixture`.
+fn decompile_in(fixture: &str, function: &str, extra: &[&str], directives: &[&str]) -> String {
+    let binary = common::fixture(fixture);
+    let mut args = vec!["decompile", binary.as_str(), function];
     args.extend(extra);
     for directive in directives {
         args.extend(["--assert", directive]);
@@ -78,8 +84,12 @@ fn renames_only(directives: &[&str], renames: &[(&str, &str)]) {
 }
 
 fn renames_only_with(extra: &[&str], directives: &[&str], renames: &[(&str, &str)]) {
-    let plain = decompile_with(extra, &[]);
-    let renamed = decompile_with(extra, directives);
+    renames_only_in("stablenames_x86_64", "mix", extra, directives, renames);
+}
+
+fn renames_only_in(fixture: &str, function: &str, extra: &[&str], directives: &[&str], renames: &[(&str, &str)]) {
+    let plain = decompile_in(fixture, function, extra, &[]);
+    let renamed = decompile_in(fixture, function, extra, directives);
     assert_eq!(
         lines_renamed(&renamed, renames),
         lines_renamed(&plain, &[]),
@@ -128,11 +138,12 @@ fn renaming_back_to_the_printed_name_changes_nothing() {
     assert_eq!(decompile(&["name v6 t", "name t v6"]), decompile(&[]));
 }
 
-/// `v7` is taken, so the local printed as `v7` takes the number the renamed
-/// local left: the two swap and nothing else moves.
+/// `v7` is taken, so the local printed as `v7` takes a number past the last;
+/// the number `v3` left stays unused, and nothing else moves.
 #[test]
-fn renaming_onto_another_locals_number_swaps_the_two() {
-    renames_only(&["name v3 v7"], &[("v7", "v3"), ("v3", "v7")]);
+fn renaming_onto_another_locals_number_gives_that_local_a_new_one() {
+    renames_only(&["name v3 v7"], &[("v7", "v3"), ("v14", "v7")]);
+    renames_only(&["name v1 c", "name v6 v9"], &[("c", "v1"), ("v9", "v6"), ("v14", "v9")]);
 }
 
 /// The rename binds the instance at the variable's representative, which
@@ -155,6 +166,17 @@ fn a_split_remainder_takes_a_new_number() {
 #[test]
 fn ghidra_names_keep_their_numbers() {
     renames_only_with(&["--option", "namestyle", "ghidra"], &["name iVar6 vowels"], &[("vowels", "iVar6")]);
+}
+
+/// Distinct locals hold temporaries of one width defined by one instruction,
+/// so a temporary is identified by the operation that defines it: keyed by
+/// its instruction alone, `name v5 x` printed the old `v3` as `v8`, so a
+/// second rename naming `v3` reached another local than the one shown.
+#[test]
+fn locals_sharing_temporaries_at_an_instruction_keep_their_numbers() {
+    let function = "handle_intel.constprop.0";
+    renames_only_in("mcount_x86_64", function, &[], &["name v5 x"], &[("x", "v5")]);
+    renames_only_in("mcount_x86_64", function, &[], &["name v5 x", "name v3 y"], &[("x", "v5"), ("y", "v3")]);
 }
 
 /// A retype that changes which storage the analysis merges keeps every

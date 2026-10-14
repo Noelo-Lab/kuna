@@ -764,20 +764,27 @@ different variable than the one the caller saw. A retype that splits or merges a
 variable shifted the numbers the same way.
 `decompiler/crates/kuna-decomp/src/p6_variables/kuna_stablenames.rs (carry)`
 now records the first decompile's numbering by identity when a directive
-touched the function: each numbered variable's pieces (the storage, width and
-use point of every instance, with temporaries and JOIN storage keyed by space
-alone because every decompile renumbers them) and each numbered Symbol's storage,
-plus the numbers the renamed locals held. The caller that replays the batch
-(the CLI's and the web page's second pass in `kuna-console/src/project.rs`, the
-console's `decompile` in `IfcDecompile`) hands the record to the drive through
+touched the function: each instance of a numbered variable by the operation
+that defines it (instruction address and creation time, which a decompile of
+the same code repeats; storage and width for an input), each numbered Symbol by
+its storage, and the numbers the renamed locals held. Storage alone is not an
+identity: a temporary is renumbered by every decompile, and distinct variables
+often have temporaries of one width at one instruction, so keying them by
+storage and instruction handed one variable's number to another. An instance
+whose defining operation the second decompile did not repeat (a retype changed
+the analysis) falls back to its storage, width and instruction, where those
+named a single number. The caller that replays the batch (the CLI's and the web
+page's second pass in `kuna-console/src/project.rs`, the console's `decompile`
+in `IfcDecompile`) hands the record to the drive through
 `Architecture::kuna_prior_names`, and the naming walk takes every default number
 from it (`varmap.rs (ScopeLocal::next_default_name)`, which then ignores
-`base`): a local takes the number its pieces or its Symbol had; a renamed
-local's number stays unused, also for the part of a merged variable the rename
-left unbound; a local whose number a rename took as its new name (`name v3 v7`)
-takes the number the renamed local left, so the two swap; and a local the first
-decompile did not have takes the first number past the last, while a variable
-that is gone leaves its number unused. A record is made only when a directive
+`base`): a local takes the number most of its instances had, or its Symbol had;
+a renamed local's number stays unused, also for the part of a merged variable
+the rename left unbound; and a local that cannot keep its number (a rename took
+the name, `name v3 v7`) or that the first decompile did not have takes the first
+number past the last, so a freed number never comes back on a different
+variable, which the web page would read as the renamed local. A variable that
+is gone leaves its number unused. A record is made only when a directive
 touched the function (or the function already carries one), so every other
 decompile numbers in sequence exactly as before, and the output of a run without
 a `name`/`type` directive is unchanged. This corrects which variable a directive

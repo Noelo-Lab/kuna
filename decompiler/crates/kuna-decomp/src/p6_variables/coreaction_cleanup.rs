@@ -3109,8 +3109,8 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     data.set_kuna_default_name_end(end);
 }
 
-/// Run a default-name allocation for `high` trying first the numbers its pieces
-/// had in the previous decompile (`crate::kuna_stablenames`); a no-op wrapper
+/// Run a default-name allocation for `high` trying first the numbers its
+/// instances had in the previous decompile (`crate::kuna_stablenames`); a no-op wrapper
 /// when no numbering is carried.
 fn with_prior_numbers<T>(
     data: &mut Funcdata,

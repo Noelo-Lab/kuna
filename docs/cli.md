@@ -568,9 +568,9 @@ be named when their definition identities are distinct.
 you were shown printed, so after `name v9 idx` the old `v10` is still `v10` and
 the next directive naming it still reaches it. The renamed local's number is
 left unused. A local that loses its number to a rename (`name v3 v7` when `v7`
-exists) takes the number the renamed one left, so the two swap; a local the
-directives created (a retype that splits a variable) takes a number past the
-last one printed, and a variable a retype merged away leaves its number unused.
+exists) and a local the directives created (a retype that splits a variable)
+take a number past the last one printed, so a number never comes back on a
+different variable; a variable a retype merged away leaves its number unused.
 
 Parameter `name` and `type` directives update the signature and its body uses.
 They retain the parameter's native storage, so a retype must occupy the same

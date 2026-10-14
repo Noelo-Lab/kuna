@@ -2238,7 +2238,6 @@ decomp_command!(
             }
             carried
         };
-        // The numbering the output those symbols were named against printed.
         let prior_names = dcp_mut(status)?
             .fd
             .as_ref()

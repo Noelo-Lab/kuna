@@ -7,19 +7,24 @@
 //! down one, and a following directive naming `v9` reached a different
 //! variable than the caller saw.
 //!
-//! [`carry`] records the first decompile's numbering by identity: the pieces
-//! of each numbered variable (storage, width and use point of every instance)
-//! and the storage of each numbered Symbol. The next decompile of the function
-//! then gives each local the number its pieces had (`varmap.rs
-//! (ScopeLocal::next_default_name)`):
+//! [`carry`] records the first decompile's numbering by identity: each
+//! instance of a numbered variable by the operation that defines it (the
+//! instruction address and the operation's creation time, which a decompile of
+//! the same code repeats) or, for an input, by its storage; and each numbered
+//! Symbol by its storage. The next decompile of the function gives each local
+//! the number its instances had (`varmap.rs (ScopeLocal::next_default_name)`).
+//! An instance whose defining operation the analysis did not repeat falls back
+//! to its storage, width and instruction when those name one number; a
+//! temporary is keyed by its space alone there, since every decompile
+//! renumbers temporaries, and several often share an instruction.
 //!
-//! - a renamed local's number stays unused, so is skipped by every other local,
-//!   including the part of a merged variable a rename left unbound;
-//! - a local whose number a rename took as its new name (`name v3 v7` gives
-//!   `v7`) takes the number a renamed local left, else a fresh one;
-//! - a local the first decompile did not have (a split, a retype that changes
-//!   the analysis) takes a number past the first decompile's last, and a
-//!   variable that is gone leaves its number unused.
+//! - a renamed local's number stays unused, also for the part of a merged
+//!   variable the rename left unbound;
+//! - a local that cannot keep its number (a rename took the name, `name v3 v7`)
+//!   and a local the first decompile did not have (a split, a retype that
+//!   changes the analysis) take a number past the first decompile's last, so a
+//!   freed number never names a different local; a variable that is gone
+//!   leaves its number unused.
 //!
 //! Without a carried record the pass numbers in sequence, exactly as before.
 
@@ -32,17 +37,23 @@ use kuna_base::types::int4;
 use crate::context::HighVariableId;
 use crate::funcdata::Funcdata;
 
-/// A piece of a variable: its storage, width and use point (the defining
-/// instruction, or the entry minus one for an input). A temporary or a JOIN is
-/// renumbered by every decompile, so only its space is kept.
-pub type Piece = (Address, int4, Address);
+/// An instance of a variable by its defining operation: the instruction
+/// address and creation time (invalid and `u32::MAX` for an input), then its
+/// storage and width.
+pub type Def = (Address, u32, Address, int4);
+
+/// The looser identity of an instance: its storage, width and use point (the
+/// defining instruction, or the entry minus one for an input).
+pub type Place = (Address, int4, Address);
 
 /// One decompile's default numbering, handed to the next decompile of the
 /// same function.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PriorNames {
-    /// The number each piece of a numbered variable had.
-    pub pieces: BTreeMap<Piece, int4>,
+    /// The number each instance of a numbered variable had.
+    pub defs: BTreeMap<Def, int4>,
+    /// The same by [`Place`]; `None` where it named more than one number.
+    pub places: BTreeMap<Place, Option<int4>>,
     /// The number each numbered Symbol had, by its storage and width.
     pub symbols: BTreeMap<(Address, int4), int4>,
     /// The numbers renamed locals held.
@@ -55,7 +66,7 @@ pub struct PriorNames {
 
 impl PriorNames {
     pub fn is_empty(&self) -> bool {
-        self.pieces.is_empty() && self.symbols.is_empty() && self.vacated.is_empty() && self.given.is_empty()
+        self.defs.is_empty() && self.symbols.is_empty() && self.vacated.is_empty() && self.given.is_empty()
     }
 }
 
@@ -76,8 +87,8 @@ pub fn default_name_index(name: &str, angr: bool) -> Option<int4> {
     index(&name[at + 3..])
 }
 
-/// The pieces of `high` (its non-constant instances).
-fn pieces(fd: &Funcdata, high: HighVariableId) -> Vec<Piece> {
+/// The [`Def`] and [`Place`] of each non-constant instance of `high`.
+fn instances(fd: &Funcdata, high: HighVariableId) -> Vec<(Def, Place)> {
     let Some(h) = fd.high_bank().get(high) else { return Vec::new() };
     (0..h.num_instances())
         .map(|i| h.get_instance(i))
@@ -89,22 +100,37 @@ fn pieces(fd: &Funcdata, high: HighVariableId) -> Vec<Piece> {
                 IPTR_INTERNAL | IPTR_JOIN => Address::new(std::rc::Rc::clone(space), 0),
                 _ => addr.clone(),
             };
-            Some((storage, v.get_size(), fd.vn_use_point(vn)))
+            let def = v.get_def().filter(|_| v.is_written()).and_then(|op| fd.obank().get(op));
+            let (pc, time) = match def {
+                Some(op) => (op.get_addr().clone(), op.get_time()),
+                None => (Address::new_invalid(), u32::MAX),
+            };
+            let place = (storage.clone(), v.get_size(), fd.vn_use_point(vn));
+            Some(((pc, time, storage, v.get_size()), place))
         })
         .collect()
 }
 
-/// The numbers `high`'s pieces had, most-shared first; empty without a
+/// The numbers `high`'s instances had, most-shared first: by defining
+/// operation, or by place when no operation matches; empty without a
 /// carried record.
 pub fn candidates(fd: &Funcdata, high: HighVariableId) -> Vec<int4> {
     let prior = fd.kuna_prior_names();
-    if prior.pieces.is_empty() {
+    if prior.defs.is_empty() {
         return Vec::new();
     }
+    let found = instances(fd, high);
     let mut counts: BTreeMap<int4, usize> = BTreeMap::new();
-    for piece in pieces(fd, high) {
-        if let Some(&i) = prior.pieces.get(&piece) {
+    for (def, _) in &found {
+        if let Some(&i) = prior.defs.get(def) {
             *counts.entry(i).or_default() += 1;
+        }
+    }
+    if counts.is_empty() {
+        for (_, place) in &found {
+            if let Some(Some(i)) = prior.places.get(place) {
+                *counts.entry(*i).or_default() += 1;
+            }
         }
     }
     let mut out: Vec<(int4, usize)> = counts.into_iter().collect();
@@ -146,15 +172,9 @@ impl NameState {
         }
     }
 
-    /// Withdraw the preference without allocating.
-    pub fn clear_preferred(&mut self) {
-        self.preferred.clear();
-    }
-
-    /// The number for the next local: a preferred one no one holds; else,
-    /// when a rename took a preferred number's name, one a renamed local left;
-    /// else one past every number handed out. `free` says whether a rendered
-    /// name is unclaimed by a locked Symbol.
+    /// The number for the next local: a preferred one no one holds, else one
+    /// past every number handed out. `free` says whether a rendered name is
+    /// unclaimed by a locked Symbol.
     pub fn pick(&mut self, render: &dyn Fn(int4) -> String, free: &dyn Fn(&str) -> bool) -> int4 {
         let given = std::mem::take(&mut self.prior.given);
         let free = |name: &str| !given.contains(name) && free(name);
@@ -165,24 +185,12 @@ impl NameState {
 
     fn pick_free(&mut self, render: &dyn Fn(int4) -> String, free: &dyn Fn(&str) -> bool) -> int4 {
         let preferred = std::mem::take(&mut self.preferred);
-        let mut displaced = false;
-        for i in preferred {
-            if self.prior.vacated.contains(&i) || self.handed.contains(&i) {
-                continue;
-            }
-            if free(&render(i)) {
-                return self.hand(i);
-            }
-            displaced = true;
-        }
-        if displaced {
-            let vacant = self.prior.vacated.iter().copied().find(|i| !self.handed.contains(i) && free(&render(*i)));
-            if let Some(i) = vacant {
-                return self.hand(i);
-            }
+        let open = |i: int4, state: &NameState| !state.prior.vacated.contains(&i) && !state.handed.contains(&i);
+        if let Some(i) = preferred.into_iter().find(|&i| open(i, self) && free(&render(i))) {
+            return self.hand(i);
         }
         let mut i = self.overflow;
-        while self.prior.vacated.contains(&i) || self.handed.contains(&i) || !free(&render(i)) {
+        while !open(i, self) || !free(&render(i)) {
             i += 1;
         }
         self.overflow = i + 1;
@@ -211,7 +219,8 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
     }
     let angr = fd.get_arch().name_style_angr;
     let mut next = PriorNames {
-        pieces: BTreeMap::new(),
+        defs: BTreeMap::new(),
+        places: BTreeMap::new(),
         symbols: BTreeMap::new(),
         vacated: prior.vacated.clone(),
         given: prior.given.clone(),
@@ -222,8 +231,9 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
             continue;
         }
         let Some(i) = h.kuna_name().and_then(|name| default_name_index(name, angr)) else { continue };
-        for piece in pieces(fd, high) {
-            next.pieces.entry(piece).or_insert(i);
+        for (def, place) in instances(fd, high) {
+            next.defs.entry(def).or_insert(i);
+            next.places.entry(place).and_modify(|n| *n = n.filter(|&n| n == i)).or_insert(Some(i));
         }
     }
     let Some(lm) = fd.get_scope_local() else { return next };
@@ -276,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn a_local_keeps_its_number_and_a_displaced_one_takes_a_vacated_number() {
+    fn a_local_keeps_its_number_and_any_other_takes_one_past_the_last() {
         let prior = PriorNames {
             vacated: [3].into_iter().collect(),
             given: ["v7".to_string()].into_iter().collect(),
@@ -289,13 +299,13 @@ mod tests {
         state.prefer(vec![5]);
         assert_eq!(state.pick(&render, &|_| true), 5);
         state.prefer(vec![7]);
-        assert_eq!(state.pick(&render, &|_| true), 3);
+        assert_eq!(state.pick(&render, &|_| true), 12, "a number a rename took as its name");
         state.prefer(vec![5]);
-        assert_eq!(state.pick(&render, &|_| true), 12, "a number another local took");
+        assert_eq!(state.pick(&render, &|_| true), 13, "a number another local took");
         state.prefer(vec![3]);
-        assert_eq!(state.pick(&render, &|name| name != "v13"), 14, "a renamed local's number");
-        assert_eq!(state.pick(&render, &|_| true), 15, "a local the first decompile did not have");
-        assert_eq!(state.end(), 16);
+        assert_eq!(state.pick(&render, &|name| name != "v14"), 15, "a renamed local's number");
+        assert_eq!(state.pick(&render, &|_| true), 16, "a local the first decompile did not have");
+        assert_eq!(state.end(), 17);
     }
 
     #[test]
