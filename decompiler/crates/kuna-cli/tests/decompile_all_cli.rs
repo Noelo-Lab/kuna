@@ -417,8 +417,11 @@ fn fast_mode_matches_explicit_options_and_user_override_wins() {
         "--option",
         "fast_funcdisc",
         "on",
+        "--option",
+        "ctypes",
+        "on",
     ]);
-    assert_eq!(fast, explicit, "fast must equal its four explicit option overrides");
+    assert_eq!(fast, explicit, "fast must equal its five explicit option overrides");
 
     let noreturn = noreturn_fixture();
     let base = [
