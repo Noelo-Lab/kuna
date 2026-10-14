@@ -189,7 +189,8 @@ pub(crate) struct PoolConfig<'a> {
     /// the complete result set.
     pub(crate) want_pointer_arguments: bool,
     pub(crate) max_fn_seconds: u64,
-    pub(crate) max_fn_memory: u64,
+    /// `None` leaves each worker to the cgroup default.
+    pub(crate) max_fn_memory: Option<u64>,
     pub(crate) full_load: bool,
     /// How long the PARENT's own load took.  The stall watchdog cannot fire
     /// before a worker could plausibly have finished loading, and this is the
@@ -1033,9 +1034,10 @@ impl Worker {
             .arg("--mode")
             .arg(cfg.mode)
             .arg("--max-fn-seconds")
-            .arg(cfg.max_fn_seconds.to_string())
-            .arg("--max-fn-memory")
-            .arg(cfg.max_fn_memory.to_string());
+            .arg(cfg.max_fn_seconds.to_string());
+        if let Some(mib) = cfg.max_fn_memory {
+            cmd.arg("--max-fn-memory").arg(mib.to_string());
+        }
         if cfg.no_vars {
             cmd.arg("--no-vars");
         }
@@ -1428,13 +1430,16 @@ fn anomaly_lines(
 /// when an explicit `--jobs N` asks for more than that.
 ///
 /// `auto` is a promise not to wreck the machine, so it yields; an explicit
-/// number is an instruction, so it is obeyed with a warning.
+/// number is an instruction, so it is obeyed with a warning. Free memory is
+/// [`kuna_decomp::kuna_hostmem::available`]: under a cgroup v2 `memory.max`
+/// it is that cap's headroom when the cap is the tighter bound.
 fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
-    let (Some(per_worker), Some(available)) =
-        (worker_estimate(cfg.full_load), available_memory_bytes())
+    let (Some(per_worker), Some(free)) =
+        (worker_estimate(cfg.full_load), kuna_decomp::kuna_hostmem::available())
     else {
         return cfg.jobs;
     };
+    let available = free.bytes;
     // Two thirds of what is free: the parent keeps its own load on several of
     // these surfaces, and a worker's peak is an estimate, not a bound.
     let affordable = (available.saturating_mul(2) / 3 / per_worker.max(1)).max(1) as usize;
@@ -1442,19 +1447,21 @@ fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
         return cfg.jobs;
     }
     let gb = |b: u64| b as f64 / (1024.0 * 1024.0 * 1024.0);
+    let capped = if free.cgroup { " under a cgroup's memory.max" } else { "" };
     if cfg.jobs_auto {
         eprintln!(
             "[kuna {tag}] auto: {affordable} worker(s), not {} — one worker needs about {:.1} GB \
-             here and {:.1} GB is free. Pass --jobs N to override.",
+             here and {:.1} GB is free{capped}. Pass --jobs N to override.",
             cfg.jobs,
             gb(per_worker),
             gb(available)
         );
         return affordable;
     }
+    let place = if free.cgroup { capped } else { " on this machine" };
     eprintln!(
-        "[kuna {tag}] warning: {} workers at about {:.1} GB each is more than the {:.1} GB free \
-         on this machine; expect swapping or an OOM kill. {affordable} would fit.",
+        "[kuna {tag}] warning: {} workers at about {:.1} GB each is more than the {:.1} GB free\
+         {place}; expect swapping or an OOM kill. {affordable} would fit.",
         cfg.jobs,
         gb(per_worker),
         gb(available)
@@ -1473,7 +1480,7 @@ fn affordable_jobs(cfg: &PoolConfig, tag: &str) -> usize {
 /// constant costs dominate and the ratio means nothing.
 fn worker_estimate(full_load: bool) -> Option<u64> {
     Some(worker_estimate_from(
-        peak_rss_bytes()?,
+        kuna_decomp::kuna_hostmem::peak_resident_bytes()?,
         kuna_analysis::listing::kuna_pdecode::lane_peak_excess_bytes(),
         full_load,
     ))
@@ -1492,22 +1499,6 @@ fn worker_estimate_from(parent_peak: u64, lane_excess: u64, full_load: bool) -> 
     } else {
         (parent / 4).max(FLOOR)
     }
-}
-
-/// This process's peak resident size (Linux `VmHWM`).
-fn peak_rss_bytes() -> Option<u64> {
-    proc_kb("/proc/self/status", "VmHWM:")
-}
-
-/// Memory that can be handed out without swapping (Linux `MemAvailable`).
-fn available_memory_bytes() -> Option<u64> {
-    proc_kb("/proc/meminfo", "MemAvailable:")
-}
-
-fn proc_kb(path: &str, key: &str) -> Option<u64> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let line = text.lines().find(|l| l.starts_with(key))?;
-    Some(line.split_whitespace().nth(1)?.parse::<u64>().ok()? * 1024)
 }
 
 /// Plan the chunks: which targets each worker invocation gets, in dispatch
@@ -1606,6 +1597,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         proto: None,
         variables: Vec::new(),
         types: Vec::new(),
+        stack_objects: Vec::new(),
         globals: Vec::new(),
         field_calls: Vec::new(),
         line_mappings: Vec::new(),
@@ -1844,7 +1836,7 @@ impl Faults {
                     }
                 }
                 Fault::Stall => {
-                    eprintln!("{JOBS_FAULT_ENV}: injected stall at {addr:#x}");
+                    fault_line(format_args!("{JOBS_FAULT_ENV}: injected stall at {addr:#x}"));
                     loop {
                         std::thread::sleep(Duration::from_secs(3600));
                     }
@@ -1863,7 +1855,7 @@ impl Faults {
                 std::fs::OpenOptions::new().write(true).create_new(true).open(marker).is_ok()
             });
         if fire {
-            eprintln!("{JOBS_FAULT_ENV}: injected load abort");
+            fault_line(format_args!("{JOBS_FAULT_ENV}: injected load abort"));
             std::alloc::handle_alloc_error(std::alloc::Layout::new::<[u8; 1 << 20]>());
         }
     }
@@ -1877,6 +1869,14 @@ impl Faults {
     fn refuses_spawn(&self, n: usize) -> bool {
         self.spawn_after.is_some_and(|after| n >= after)
     }
+}
+
+/// Write one fault line to stderr in a single write. `eprintln!` writes each
+/// piece of its format separately, so two workers failing at once could splice
+/// their lines together on the shared pipe, and a test counting the lines
+/// would miss one.
+fn fault_line(line: std::fmt::Arguments) {
+    let _ = std::io::stderr().lock().write_all(format!("{line}\n").as_bytes());
 }
 
 // --- progress ----------------------------------------------------------------
@@ -2048,6 +2048,18 @@ mod tests {
                 definition: "struct mystruct {\n    int a;\n};\n".into(),
                 size: 4,
             }],
+            stack_objects: vec![kuna_decomp::kuna_stackobjectinfo::StackObjectInfo {
+                id: "object_401004_1".into(),
+                name: "frame_é".into(),
+                stack_offset: -0x18,
+                size: 8,
+                defined: false,
+                uses: vec![kuna_decomp::kuna_stackobjectinfo::StackObjectUseInfo {
+                    address: 0x401004,
+                    slot: 1,
+                    type_name: "struct Pair".into(),
+                }],
+            }],
             // (kuna `globalref`) One global, so the codec's flag byte is exercised.
             globals: vec![GlobalInfo {
                 address: 0x404010,
@@ -2101,6 +2113,7 @@ mod tests {
             && a.synth == b.synth
             && a.line_mappings == b.line_mappings
             && a.globals == b.globals
+            && a.stack_objects == b.stack_objects
             && a.types.len() == b.types.len()
             && a.types.iter().zip(&b.types).all(|(x, y)| {
                 x.name == y.name && x.definition == y.definition && x.size == y.size
@@ -2163,6 +2176,7 @@ mod tests {
             proto: None,
             variables: Vec::new(),
             types: Vec::new(),
+            stack_objects: Vec::new(),
             globals: Vec::new(),
             field_calls: Vec::new(),
             line_mappings: Vec::new(),
@@ -2214,6 +2228,7 @@ mod tests {
             proto: None,
             variables: Vec::new(),
             types: Vec::new(),
+            stack_objects: Vec::new(),
             globals: Vec::new(),
             field_calls: Vec::new(),
             line_mappings: Vec::new(),
@@ -2224,15 +2239,25 @@ mod tests {
             pointerargs: None,
             detail: None,
         };
-        let expected = b"KUNAJOBRES07\x01\x44\0\0\0\
-            \x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0\
-            \xff\xff\xff\xff\xff\xff\xff\xff\
-            \x01\0\0\0f\0\x01\x01\0\0\0e\0\0\
-            \0\0\0\0\0\0\0\0\0\0\0\0\
-            \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+        let expected = [
+            b"KUNAJOBRES07\x01\x48\0\0\0".as_slice(),
+            b"\x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0",
+            b"\xff\xff\xff\xff\xff\xff\xff\xff",
+            b"\x01\0\0\0f\0\x01\x01\0\0\0e\0\0",
+            b"\0\0\0\0", // aliases
+            b"\0\0\0\0", // line mappings
+            b"\0\0\0\0", // variables
+            b"\0\0\0\0", // types
+            b"\0\0\0\0", // stack objects
+            b"\0\0\0\0", // globals
+            b"\0\0\0\0", // field calls
+            b"\0\0\0\0", // callee hints
+            b"\0\0", // synth and pointer arguments
+        ]
+        .concat();
         ResultWriter::create(&path).unwrap().push(&result).unwrap();
         assert_eq!(std::fs::read(path).unwrap(), expected);
-        let decoded = decode_results(expected).unwrap();
+        let decoded = decode_results(&expected).unwrap();
         assert_eq!(decoded.len(), 1);
         assert!(same(&decoded[0], &result));
     }
@@ -2607,6 +2632,7 @@ mod tests {
             proto: None,
             variables: Vec::new(),
             types: Vec::new(),
+            stack_objects: Vec::new(),
             globals: Vec::new(),
             field_calls: Vec::new(),
             line_mappings: Vec::new(),
@@ -2647,7 +2673,7 @@ mod tests {
             want_callee_hints: false,
             want_pointer_arguments: false,
             max_fn_seconds,
-            max_fn_memory: 0,
+            max_fn_memory: Some(0),
             full_load: false,
             load_seconds,
             isa: None,
@@ -2721,7 +2747,7 @@ mod tests {
     /// and yields to what free memory holds; an explicit count is an instruction
     /// and is obeyed with a warning.  A request the machine can hold is never
     /// touched either way.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     #[test]
     fn auto_yields_to_free_memory_and_an_explicit_count_does_not() {
         let mut c = cfg(0, 0.0);

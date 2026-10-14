@@ -544,6 +544,7 @@ impl AnalysisOutput {
         self.cpp_sig.inferred.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_sig.msvc.iter_mut().for_each(|(_, p, _)| fix_proto(p));
         self.cpp_sig.msvc_legacy.iter_mut().for_each(|(_, p)| fix_proto(p));
+        self.cpp_sig.msvc_byval.iter_mut().for_each(|(_, d)| fix_proto(&mut d.pieces));
         self.format_sites.iter_mut().for_each(|f| fix_proto(&mut f.pieces));
     }
 }
@@ -579,6 +580,13 @@ pub struct CppSigFacts {
     /// read them before the MSVC arm existed, applied in place of [`Self::msvc`]
     /// when that gate is off.
     pub msvc_legacy: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    /// (kuna `msvcbyval`) The MSVC `__cdecl` imports in [`Self::msvc`] left open
+    /// at a by-value class, as whole declarations the call sites size.
+    pub msvc_byval: Vec<(u64, kuna_decomp::kuna_msvcbyval::ByvalDecl)>,
+    /// (kuna `msvcbyval`) The entries an MSVC name declares as building the
+    /// object at an address they are handed: a `__thiscall` constructor, or a
+    /// function returning a class through its hidden pointer.
+    pub msvc_builders: Vec<(u64, kuna_decomp::kuna_msvcbyval::Builder)>,
 }
 
 /// (kuna `cppproto`) The DWARF facts recovered by resolving a subprogram DIE
@@ -641,6 +649,8 @@ impl AnalysisOutput {
         self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
         self.cpp_sig.msvc.extend(other.cpp_sig.msvc);
         self.cpp_sig.msvc_legacy.extend(other.cpp_sig.msvc_legacy);
+        self.cpp_sig.msvc_byval.extend(other.cpp_sig.msvc_byval);
+        self.cpp_sig.msvc_builders.extend(other.cpp_sig.msvc_builders);
         self.format_sites.extend(other.format_sites);
         self.libctypes_glibc |= other.libctypes_glibc;
         self.libctypes_refused |= other.libctypes_refused;

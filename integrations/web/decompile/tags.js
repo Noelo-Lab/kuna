@@ -1,7 +1,7 @@
 // tags.js — the short notes kuna puts at the end of a line (`// no-return`,
-// `// branch-flip`, `// early-return x10`) in plain words, for the Explain
-// panel and the hover card. A note this file does not know is shown as the
-// decompiler wrote it. DOM-free.
+// `// branch-flip`, `// early-return x10`): taken out of the code the page
+// shows and kept per line, in plain words, for the Explain panel and the hover
+// card. A comment that is not one of kuna's notes stays in the code. DOM-free.
 
 const TAGS = {
   'no-return': () => 'The function called here never comes back (it ends the program or loops forever), so nothing after the call runs.',
@@ -67,9 +67,51 @@ export function explainTag(raw) {
   return { tag: raw, words: prefix ? prefix + words[0].toLowerCase() + words.slice(1) : words };
 }
 
+/** A comment's parts: kuna's notes, explained (`found`), and the rest as written (`kept`). */
+function readComment(comment) {
+  const found = [];
+  const kept = [];
+  for (const part of comment.split(SPLIT)) {
+    const note = explainTag(part.trim());
+    if (note) found.push(note);
+    else kept.push(part.trim());
+  }
+  return { found, kept };
+}
+
 /** The notes kuna left on `text`, explained; empty when there are none. */
 export function lineTags(text) {
   const comment = trailingComment(text || '');
-  if (!comment) return [];
-  return comment.split(SPLIT).map(explainTag).filter(Boolean);
+  return comment ? readComment(comment).found : [];
+}
+
+/**
+ * The code without kuna's end-of-line notes: `{code, tokens, notes}`, where
+ * `notes` maps a 1-based line to its notes in words (`lineTags`). Only a
+ * comment after code on its line is read, and any part of it that is not a
+ * note (a register name, a user note) stays. Line numbers and the columns of
+ * every other token are unchanged.
+ */
+export function splitNotes(code, tokens = []) {
+  const lines = (code || '').split('\n');
+  const notes = new Map();
+  const cuts = new Map();
+  lines.forEach((text, i) => {
+    const at = commentStart(text);
+    if (at < 0 || !text.slice(0, at).trim()) return;
+    const { found, kept } = readComment(text.slice(at + 2).trim());
+    if (!found.length) return;
+    const rest = kept.length ? `// ${kept.join(', ')}` : '';
+    lines[i] = rest ? text.slice(0, at) + rest : text.slice(0, at).trimEnd();
+    notes.set(i + 1, found);
+    cuts.set(i + 1, { at, rest });
+  });
+  if (!notes.size) return { code: code || '', tokens, notes };
+  const shown = [];
+  for (const t of tokens) {
+    const cut = cuts.get(t.line);
+    if (!cut || !Number.isInteger(t.col) || t.col < cut.at) shown.push(t);
+    else if (cut.rest && t.col === cut.at) shown.push({ ...t, text: cut.rest, len: cut.rest.length });
+  }
+  return { code: lines.join('\n'), tokens: shown, notes };
 }

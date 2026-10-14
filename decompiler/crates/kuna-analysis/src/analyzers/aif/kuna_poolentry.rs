@@ -84,7 +84,7 @@ pub struct PoolResult {
 /// The absolute literal target of one instruction, if its operand body carries a
 /// bare `[0xHEX]` (no register, no shift) — the form the ARM SLEIGH prints for a
 /// resolved PC-relative literal load.
-fn absolute_literal_target(operands: &str) -> Option<u64> {
+pub(super) fn absolute_literal_target(operands: &str) -> Option<u64> {
     let open = operands.find("[0x")?;
     let rest = &operands[open + 3..];
     let close = rest.find(']')?;
@@ -134,7 +134,7 @@ fn pcrel_literal_target(
 }
 
 /// One instruction's literal target under both display forms.
-fn literal_target(addr: u64, operands: &str, mode: &DecodeMode) -> Option<u64> {
+pub(super) fn literal_target(addr: u64, operands: &str, mode: &DecodeMode) -> Option<u64> {
     absolute_literal_target(operands)
         .or_else(|| pcrel_literal_target(addr, operands, || mode.pc_delta(addr)))
 }
@@ -154,15 +154,15 @@ fn literal_target(addr: u64, operands: &str, mode: &DecodeMode) -> Option<u64> {
 /// disables the `[pc,#imm]` reference form outright. That is a structural brake on
 /// top of the ISA fact that x86-64 RIP-relative loads target `.rodata` rather than
 /// `.text` interstices and that i386 has no PC-relative addressing at all.
-struct DecodeMode<'a> {
-    arch: &'a kuna_decomp::architecture::Architecture,
-    code_space: Rc<AddrSpace>,
+pub(super) struct DecodeMode<'a> {
+    pub(super) arch: &'a kuna_decomp::architecture::Architecture,
+    pub(super) code_space: Rc<AddrSpace>,
 }
 
 impl DecodeMode<'_> {
     /// PC bias of a `[pc,#imm]` literal at `addr`: Thumb +4, A32 +8, `None` where
     /// the language has no decode-mode context.
-    fn pc_delta(&self, addr: u64) -> Option<u64> {
+    pub(super) fn pc_delta(&self, addr: u64) -> Option<u64> {
         let at = kuna_base::address::Address::new(Rc::clone(&self.code_space), addr);
         let tmode = self
             .arch
@@ -218,9 +218,9 @@ fn referenced_words(
 }
 
 /// A 64-bit literal load covers TWO words; the second is loaded by nothing.
-fn wide(mnemonic: &str) -> bool {
+pub(super) fn wide(mnemonic: &str) -> bool {
     let m = mnemonic.to_ascii_lowercase();
-    m.starts_with("vldr.64") || m.starts_with("ldrd")
+    (m.starts_with("vldr") && m.ends_with(".64")) || m.starts_with("ldrd")
 }
 
 fn insert_literal(

@@ -18,8 +18,7 @@
 //! which is why the `decomp_dbg`-only flags are refused rather than ignored.
 
 use std::io::{Read, Write};
-use std::path::PathBuf;
-use std::process::Command;
+use std::path::{Path, PathBuf};
 
 use kuna_console::engine::{ArmIsa, ARM_ISA_ENV};
 use kuna_console::kuna_buildstamp;
@@ -62,9 +61,9 @@ pub struct DecompileArgs {
     pub raw_image: bool,
     /// Address assigned to raw file offset zero.
     pub base: Option<u64>,
-    /// The resolved per-function memory limit in MiB (`0` off), handed to
-    /// `decomp_dbg` as its `--max-fn-memory`.
-    pub max_fn_memory: u64,
+    /// The per-function memory limit in MiB (`0` off), handed to `decomp_dbg`
+    /// as its `--max-fn-memory`; `None` hands it the cgroup default.
+    pub max_fn_memory: Option<u64>,
 }
 
 /// A 0x-prefixed token auto-selects address mode (a bare hex-looking token is a
@@ -551,21 +550,17 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     let binary = binary.to_string_lossy().to_string();
     reject_unquotable("binary path", &binary)?;
 
-    let bin_path = if let Some(d) = &args.decomp_dbg {
-        PathBuf::from(d)
-    } else {
-        paths::decomp_dbg()
+    let engine = match &args.decomp_dbg {
+        Some(d) if !Path::new(d).exists() => {
+            return Err(format!("decomp_dbg not found at {d} (--decomp-dbg)"));
+        }
+        Some(d) => paths::Program { path: PathBuf::from(d), subcommand: None },
+        None => paths::decomp_dbg()?,
     };
     let pinned_by = match &args.decomp_dbg {
         Some(_) => Some("--decomp-dbg"),
         None => paths::pinned_by("KUNA_DECOMP_DBG"),
     };
-    if !bin_path.exists() {
-        return Err(match &args.decomp_dbg {
-            Some(d) => format!("decomp_dbg not found at {d} (--decomp-dbg)"),
-            None => paths::missing_decomp_dbg(),
-        });
-    }
 
     let specs = match &args.sleighpath {
         Some(s) => PathBuf::from(s),
@@ -624,10 +619,16 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         );
 
 
-        let mut cmd = Command::new(&bin_path);
+        let mut cmd = engine.command();
         cmd.arg("-s").arg(&specs).env("SLEIGHHOME", &specs);
-        if args.max_fn_memory > 0 {
-            cmd.arg("--max-fn-memory").arg(args.max_fn_memory.to_string());
+        match args.max_fn_memory {
+            Some(0) => {}
+            Some(mib) => {
+                cmd.arg("--max-fn-memory").arg(mib.to_string());
+            }
+            None => {
+                cmd.arg("--max-fn-memory").arg("cgroup");
+            }
         }
         cmd.env(
             kuna_buildstamp::PARENT_ENV,
@@ -660,7 +661,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             kuna_buildstamp::ChildKind::Engine,
             String::from_utf8_lossy(&output.stderr).into_owned(),
             "decomp_dbg",
-            &bin_path,
+            &engine.path,
             pinned_by,
         );
         let combined = format!("{stdout_text}\n{stderr_text}");
@@ -1041,7 +1042,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         isa,
         raw_image,
         base,
-        max_fn_memory: max_fn_memory.unwrap_or_else(|| decompile_all::default_fn_memory_mib(1)),
+        max_fn_memory,
     }))
 }
 
@@ -1070,8 +1071,9 @@ fn usage() {
          --language selects the output language; omitted, it follows the binary.\n\
          --max-fn-memory MiB stops the decompile once the process doing it holds\n\
          more than MiB resident and the function added 64 MiB or more, and\n\
-         reports that instead of being killed by the system (omitted: a share\n\
-         of the cgroup memory cap, or off; 0 disables).\n\
+         reports that instead of being killed by the system (omitted: under a\n\
+         cgroup memory cap, once it grew by the cap's margin and the cgroup\n\
+         nears its cap; 0 disables).\n\
          \n\
          --define-function <start[-end][=name] | @file> (repeatable) declares where a\n\
          function starts and ends: start names an entry discovery missed, the\n\
@@ -1327,7 +1329,7 @@ mod tests {
             isa: None,
             raw_image: false,
             base: None,
-            max_fn_memory: 0,
+            max_fn_memory: Some(0),
         }
     }
 

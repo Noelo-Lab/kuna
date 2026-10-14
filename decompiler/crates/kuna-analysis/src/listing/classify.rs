@@ -43,9 +43,14 @@ pub struct Classified {
 /// `flows` collects only *statically derivable* absolute targets: constant-space
 /// (p-code-relative) branch operands and indirect (BRANCHIND/CALLIND) ops never
 /// contribute a target. The fall-through is the last-op test (gotcha 2).
+///
+/// A predicated call (ARM `blgt`, A32 or in a Thumb IT block) lifts to a
+/// `CBRANCH` to the next instruction ahead of its `CALL`. That skip is the
+/// call's fall-through, not a callee, so it is not one of a call's `flows`.
 pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
     let fall_vma = vma.wrapping_add(len as u64);
     let mut flows: Vec<u64> = Vec::new();
+    let mut skips: Vec<usize> = Vec::new();
     let mut flow = FlowType::default();
 
     // Per-op target collection + kind/predicate accumulation. The op order is
@@ -57,6 +62,9 @@ pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
                 // Conditional branch: target unless the in0 is p-code-relative
                 // (constant space), which resolves to fall-through (gotcha 1).
                 if let Some(target) = absolute_branch_target(op) {
+                    if target == fall_vma {
+                        skips.push(flows.len());
+                    }
                     flows.push(target);
                 }
                 flow.kind = FlowKind::ConditionalBranch;
@@ -116,6 +124,11 @@ pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
     };
     flow.has_fallthrough = has_fallthrough;
     let fall_through = has_fallthrough.then_some(fall_vma);
+    if flow.is_call && has_fallthrough {
+        for at in skips.into_iter().rev() {
+            flows.remove(at);
+        }
+    }
 
     Classified { flow, flows, fall_through }
 }
@@ -201,6 +214,31 @@ mod tests {
         assert!(c.flow.has_fallthrough);
         assert_eq!(c.flows, vec![0x4000]);
         assert_eq!(c.fall_through, Some(0x1005));
+    }
+
+    /// A predicated call skips to the next instruction when its condition fails:
+    /// that skip is the fall-through, and the callee is the only call target.
+    #[test]
+    fn predicated_call_targets_only_its_callee() {
+        let (ram, _cst) = spaces();
+        let ops = vec![
+            op(OpCode::CPUI_CBRANCH, Some(vn(&ram, 0x1004))),
+            op(OpCode::CPUI_CALL, Some(vn(&ram, 0x4000))),
+        ];
+        let c = classify(&ops, 0x1000, 4);
+        assert!(c.flow.is_call);
+        assert_eq!(c.flows, vec![0x4000]);
+        assert_eq!(c.fall_through, Some(0x1004));
+    }
+
+    /// A call to the next instruction (the i386 `call $+5` get-PC idiom) keeps
+    /// that target: only a conditional skip is folded into the fall-through.
+    #[test]
+    fn call_to_the_next_instruction_keeps_its_target() {
+        let (ram, _cst) = spaces();
+        let ops = vec![op(OpCode::CPUI_CALL, Some(vn(&ram, 0x1005)))];
+        let c = classify(&ops, 0x1000, 5);
+        assert_eq!(c.flows, vec![0x1005]);
     }
 
     /// RETURN: terminal — no fall-through, no target.

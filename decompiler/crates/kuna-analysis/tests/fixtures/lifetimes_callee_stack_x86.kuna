@@ -1,0 +1,12 @@
+typedef struct CalleePair { int first; int second; };
+prototype overwrite_after_stack_read int overwrite_after_stack_read(void)
+prototype overwrite_after_stack_hidden int overwrite_after_stack_hidden(void)
+prototype read_after_stack_write int read_after_stack_write(void)
+prototype returned_pointer_read_before_overwrite int returned_pointer_read_before_overwrite(void)
+prototype returned_pointer_read_after_overwrite int returned_pointer_read_after_overwrite(void)
+prototype stack_return_pointer struct CalleePair *stack_return_pointer(const struct CalleePair *pair)
+prototype stack_read_pair int stack_read_pair(const struct CalleePair *pair)
+prototype stack_read_second int stack_read_second(const struct CalleePair *pair)
+prototype stack_hidden_read int stack_hidden_read(const struct CalleePair *pair)
+prototype stack_const_write int stack_const_write(const struct CalleePair *pair)
+data 0x402000 struct CalleePair *stack_saved_pointer

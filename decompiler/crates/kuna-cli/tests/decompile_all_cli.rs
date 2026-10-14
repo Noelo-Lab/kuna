@@ -142,9 +142,9 @@ fn write_thumb_te() -> PathBuf {
     path
 }
 
-/// A larger **ARM 32-bit** ELF fixture with functions the prologue-`<patternpairs>`
-/// matcher genuinely finds and the entry oracles do not (`0x3e0`, `0x410`,
-/// `0x3c520`) — the fixture the DIV-20 `funcstart_patterns` assertion needs.
+/// A larger **ARM 32-bit** ELF fixture with a function the prologue-`<patternpairs>`
+/// matcher genuinely finds and the entry oracles do not (`0x410`) — the fixture the
+/// DIV-20 `funcstart_patterns` assertion needs.
 ///
 /// `arm_thumb()` cannot serve that role: it holds exactly two functions, both
 /// already named by `.symtab`, so `funcstart_patterns` adds no real entry there.
@@ -417,8 +417,11 @@ fn fast_mode_matches_explicit_options_and_user_override_wins() {
         "--option",
         "fast_funcdisc",
         "on",
+        "--option",
+        "ctypes",
+        "on",
     ]);
-    assert_eq!(fast, explicit, "fast must equal its four explicit option overrides");
+    assert_eq!(fast, explicit, "fast must equal its five explicit option overrides");
 
     let noreturn = noreturn_fixture();
     let base = [
@@ -518,10 +521,8 @@ fn decompile_mode_requires_a_value() {
 /// more. The reliable driver fallback must match an explicit
 /// `--option funcstart_patterns on` and beat `off`.
 ///
-/// Runs on `entrymain_arm`, where the pass finds three functions nothing else does
-/// (`0x3e0`, `0x410`, `0x3c520`): 10 entries `off` vs 12 by default — 13 canonical,
-/// of which `0x3c520` falls outside every CODE section and so is listed by `kuna
-/// functions` but not decompiled. It used to run
+/// Runs on `entrymain_arm`, where the pass finds `0x410`, which nothing else does:
+/// 10 entries `off` vs 11 by default. It used to run
 /// on the two-function `arm_thumb()` fixture, where the "extra" entries the
 /// assertion counted were in fact duplicate records for functions already found —
 /// so the fixture swap is what keeps this assertion meaningful once issue #197
@@ -675,14 +676,15 @@ fn arm_functions_inventory_covers_every_decompile_all_entry() {
         inventory.len(),
         decompiled.len()
     );
-    // The two entries only the prologue matcher finds — the concrete pre-fix miss.
-    for want in [0x3e0u64, 0x410] {
-        assert!(
-            inventory.contains(&want),
-            "the ARM inventory is missing the funcstart_patterns discovery 0x{want:x}: {:x?}",
-            inventory
-        );
-    }
+    // The entry only the prologue matcher finds — the concrete pre-fix miss.
+    assert!(
+        inventory.contains(&0x410),
+        "the ARM inventory is missing the funcstart_patterns discovery 0x410: {:x?}",
+        inventory
+    );
+    // 0x3e0 is `_start + 4`; it was listed only as the fall-through of an A32
+    // misdecode of `_start` as a predicated `bleq` (GH-299).
+    assert!(!inventory.contains(&0x3e0), "0x3e0 is inside _start: {inventory:x?}");
     // The injection fired: the default inventory equals the explicit bundle.
     let explicit = run_json_addrs(
         "functions",
@@ -1217,31 +1219,38 @@ fn ordinary_functions_never_trip_the_memory_limit() {
     assert!(!ok && stderr.contains("invalid --max-fn-memory value \"6G\""), "{stderr}");
 }
 
-/// Without `--max-fn-memory`, a serial run under a capped cgroup takes the cap
-/// less max(512 MiB, 10%): 512 MiB under a faked 1 GiB cap, also on the `kuna
-/// decompile` text surface. A `--jobs 2` pool takes no default, and an explicit
-/// value wins.
+/// Without `--max-fn-memory`, a run under a capped cgroup takes the cgroup
+/// default, the serial run, every `--jobs` worker and `kuna decompile` alike:
+/// with a margin of max(512 MiB, 10%) of the cap, a function that has grown by
+/// the margin is stopped once the cgroup holds more than its cap less it, which
+/// is 512 MiB of a faked 1 GiB cap that is already full. The same cap with room left stops nothing (`big` then runs
+/// into its 1 s watchdog instead), and an explicit value, `0` included, wins.
 #[test]
-fn the_memory_limit_defaults_to_a_share_of_the_cgroup_cap() {
+fn the_memory_limit_defaults_to_the_cgroup_cap() {
     let Some(own) = std::fs::read_to_string("/proc/self/cgroup")
         .ok()
         .and_then(|m| m.lines().find_map(|l| l.strip_prefix("0::").map(str::to_string)))
     else {
         return;
     };
-    let root = tempfile::tempdir().unwrap();
-    let leaf = root.path().join(own.trim_start_matches('/'));
-    std::fs::create_dir_all(&leaf).unwrap();
-    std::fs::write(leaf.join("memory.max"), "1073741824\n").unwrap();
-    let env = [("KUNA_CGROUP_ROOT", root.path().to_str().unwrap())];
     let bin = repo_root().join("tests/hang-repro/escaped_locals");
     let bin = bin.to_str().unwrap();
     let sp = specs();
-    for (extra, mib) in [
-        (&[][..], 512),
-        (&["--max-fn-memory", "300"][..], 300),
-        (&["--jobs", "2", "--max-fn-seconds", "1"][..], 0),
+    let watchdog = "per-function decompile budget exceeded (1 s)";
+    for (current, extra, error) in [
+        ("1073741824", &[][..], "per-function memory limit exceeded (512 MiB)"),
+        ("1073741824", &["--jobs", "2"][..], "per-function memory limit exceeded (512 MiB)"),
+        ("1073741824", &["--max-fn-memory", "300"][..], "per-function memory limit exceeded (300 MiB)"),
+        ("1073741824", &["--max-fn-memory", "0", "--max-fn-seconds", "1"][..], watchdog),
+        ("104857600", &["--max-fn-seconds", "1"][..], watchdog),
+        ("104857600", &["--jobs", "2", "--max-fn-seconds", "1"][..], watchdog),
     ] {
+        let root = tempfile::tempdir().unwrap();
+        let leaf = root.path().join(own.trim_start_matches('/'));
+        std::fs::create_dir_all(&leaf).unwrap();
+        std::fs::write(leaf.join("memory.max"), "1073741824\n").unwrap();
+        std::fs::write(leaf.join("memory.current"), format!("{current}\n")).unwrap();
+        let env = [("KUNA_CGROUP_ROOT", root.path().to_str().unwrap())];
         let mut args = vec!["decompile-all", bin, "--json", "--sleighpath", &sp];
         if !extra.contains(&"--max-fn-seconds") {
             args.extend_from_slice(&["--max-fn-seconds", "0"]);
@@ -1249,23 +1258,22 @@ fn the_memory_limit_defaults_to_a_share_of_the_cgroup_cap() {
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna_env_with_timeout(&args, &env, Duration::from_secs(300))
             .expect("decompile-all did not terminate within the 300s outer bound");
-        assert!(ok, "{extra:?}: {stderr}");
-        if mib == 0 {
-            assert!(!stdout.contains("memory limit exceeded"), "{extra:?}: a pool has no default:\n{stdout}");
-            assert!(stdout.contains("per-function decompile budget exceeded (1 s)"), "{extra:?}:\n{stdout}");
-        } else {
-            let error = format!("per-function memory limit exceeded ({mib} MiB)");
-            assert!(stdout.contains(&error), "{extra:?}: expected {error}:\n{stdout}");
+        assert!(ok, "{current} {extra:?}: {stderr}");
+        assert!(stdout.contains(error), "{current} {extra:?}: expected {error}:\n{stdout}");
+        assert!(stdout.contains("return a0 * 3 + 1;"), "{current} {extra:?}: after must decompile:\n{stdout}");
+        if error == watchdog {
+            assert!(!stdout.contains("memory limit exceeded"), "{current} {extra:?}:\n{stdout}");
         }
-        assert!(stdout.contains("return a0 * 3 + 1;"), "{extra:?}: after must decompile:\n{stdout}");
+        if current == "1073741824" && extra.is_empty() {
+            let (_, stderr, ok) = run_kuna_env_with_timeout(
+                &["decompile", bin, "big", "--sleighpath", &sp],
+                &env,
+                Duration::from_secs(300),
+            )
+            .expect("decompile did not terminate within the 300s outer bound");
+            assert!(!ok && stderr.contains(error), "{stderr}");
+        }
     }
-    let (_, stderr, ok) = run_kuna_env_with_timeout(
-        &["decompile", bin, "big", "--sleighpath", &sp],
-        &env,
-        Duration::from_secs(300),
-    )
-    .expect("decompile did not terminate within the 300s outer bound");
-    assert!(!ok && stderr.contains("per-function memory limit exceeded (512 MiB)"), "{stderr}");
 }
 
 /// The past-pathological function of the stripped-ELF hang repro now
@@ -3924,6 +3932,55 @@ fn jobs_auto_and_the_plain_c_surface_match_serial() {
     }
 }
 
+/// `--jobs auto` sizes the pool from what a cgroup v2 `memory.max` still
+/// leaves, not from the machine's free memory: a faked 1 GiB cap whose cgroup
+/// already holds 900 MiB that reclaim cannot free has room for one worker, and
+/// the run says which bound it hit. An explicit `--jobs 3` is warned about in
+/// the same words and kept.
+#[test]
+fn jobs_auto_fits_the_cgroup_memory_cap() {
+    let Some(own) = std::fs::read_to_string("/proc/self/cgroup")
+        .ok()
+        .and_then(|m| m.lines().find_map(|l| l.strip_prefix("0::").map(str::to_string)))
+    else {
+        return;
+    };
+    let root = tempfile::tempdir().unwrap();
+    let leaf = root.path().join(own.trim_start_matches('/'));
+    std::fs::create_dir_all(&leaf).unwrap();
+    std::fs::write(leaf.join("memory.max"), "1073741824\n").unwrap();
+    std::fs::write(leaf.join("memory.current"), "943718400\n").unwrap();
+    std::fs::write(
+        leaf.join("memory.stat"),
+        "anon 734003200\nfile 209715200\nactive_file 0\ninactive_file 0\nshmem 209715200\n",
+    )
+    .unwrap();
+    let env = [("KUNA_CGROUP_ROOT", root.path().to_str().unwrap())];
+    let bin = fauxware();
+    let sp = specs();
+    let base =
+        ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
+    let (want, stderr, ok) = run_kuna_env(&base, &env);
+    assert!(ok, "{stderr}");
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    for jobs in ["auto", "3"] {
+        if jobs == "auto" && cores < 2 {
+            continue;
+        }
+        let args: Vec<&str> = base.iter().copied().chain(["--jobs", jobs]).collect();
+        let (got, stderr, ok) = run_kuna_env(&args, &env);
+        assert!(ok, "--jobs {jobs}: {stderr}");
+        assert_eq!(got, want, "--jobs {jobs} moved the document");
+        let (said, workers) = if jobs == "auto" {
+            ("GB is free under a cgroup's memory.max. Pass --jobs N", "1 worker process(es)")
+        } else {
+            ("GB free under a cgroup's memory.max; expect", "3 worker process(es)")
+        };
+        assert!(stderr.contains(said), "--jobs {jobs}: expected {said:?}:\n{stderr}");
+        assert!(stderr.contains(workers), "--jobs {jobs}: expected {workers:?}:\n{stderr}");
+    }
+}
+
 /// A sharded run names every synthesized structure as the serial run does, on
 /// both surfaces and at every job count. `structsynthchain_x86_64` takes the
 /// convergence sweep (`fb` is decided again onto `fc`'s structure while `fa`
@@ -4574,7 +4631,7 @@ fn jobs_rerunning_a_dead_worker_never_loops() {
 fn jobs_a_worker_that_dies_in_its_load_loses_nothing() {
     let serial = fauxware_serial_json();
     let total = json_records(&serial).len();
-    let loads = |stderr: &str| stderr.matches("KUNA_JOBS_FAULT: injected load abort").count();
+    let loads = |stderr: &str| stderr.matches("KUNA_JOBS_FAULT").count();
 
     let (got, stderr, ok) = fauxware_pooled_with_fault("load-abort:1", "0");
     assert!(ok, "{stderr}");
@@ -4603,9 +4660,23 @@ fn jobs_a_worker_that_dies_in_its_load_loses_nothing() {
     let (got, stderr, ok) = run_kuna_env_with_timeout(&args, &[("KUNA_JOBS_FAULT", "load-abort:*")], cap)
         .expect("workers that die in every load wedged the pool");
     assert!(!ok, "{stderr}");
-    assert_eq!(json_records(&got).len(), total, "{got}");
+    let records = json_records(&got);
+    assert_eq!(records.len(), total, "{got}");
+    let addresses: std::collections::BTreeSet<u64> = records
+        .iter()
+        .map(|r| serde_json::from_str::<serde_json::Value>(r).unwrap()["address"].as_u64().unwrap())
+        .collect();
+    assert_eq!(addresses.len(), total, "every function exactly once:\n{got}");
+    let (gate, jobs) = (16, 2);
     let reruns = loads(&stderr) - total;
-    assert!((16..=17).contains(&reruns), "16 or 17 re-runs that could not start, not {reruns}:\n{stderr}");
+    assert!(
+        (gate..gate + jobs).contains(&reruns),
+        "{gate} re-runs that could not start, plus at most one that started alongside the last, not {reruns}:\n{stderr}"
+    );
+    let could_not_start = "; not re-run: its re-run could not start";
+    let run_stopped = "; not re-run: re-runs in this run had failed more often than workers had";
+    assert_eq!(got.matches(could_not_start).count(), reruns, "{got}");
+    assert_eq!(got.matches(run_stopped).count(), total - reruns, "{got}");
     assert_eq!(stderr.matches("are not re-run while that lasts").count(), 1, "{stderr}");
 }
 
@@ -7449,9 +7520,9 @@ fn callrettype_calls(listing: &str) -> std::collections::BTreeMap<String, Vec<(S
 /// global and a `long` compared signed.  The controls keep their casts: a callee
 /// whose unsigned result shares a variable with `strcmp`'s signed one, the
 /// `unsigned long` shift a `long` result is read through, a callee recovered
-/// `void`, which states nothing, and a `long *` result the merge ties into one
-/// variable with the `-1` and the count the function returns (`cached`, which
-/// must stay `unsigned long` rather than turn into a pointer), and two callers
+/// `void`, which states nothing, and a `long *` result stored in an integer
+/// cache while the function returns `-1` or a count (`cached`, which must stay
+/// `unsigned long` rather than turn into a pointer), and two callers
 /// that zero-extend a callee's `short` and `int` result in place before
 /// returning it (`unsigned short use_s16_as_u`, `unsigned int
 /// use_neg_as_unsigned`, called through their printed prototypes, where a
@@ -7473,7 +7544,7 @@ fn a_call_result_typed_by_its_callee_round_trips_through_the_printed_c() {
         "skip_blanks", "count_upper", "upper_after_blanks", "upper_of_rest", "first_of", "first_char",
         "signed_delta", "is_behind", "clamp_delta", "hash_of", "pick", "after_colon", "fallback_name", "name_len",
         "pick_stream", "stream_no", "s16", "use_s16_as_u", "neg32", "use_neg_as_unsigned", "widen_signed", "tick",
-        "keep_widened", "keep_across", "halve", "pass_widened", "mark", "marked_len",
+        "keep_widened", "keep_across", "halve", "pass_widened", "mark", "marked_len", "cached",
     ];
     const O2: &[&str] = &[
         "first_of", "first_char", "signed_delta", "is_behind", "clamp_delta", "hash_of", "pick", "after_colon",
@@ -7488,6 +7559,14 @@ int main(void) {
   char buf[] = "  AbC";
   char buf2[] = "xyzw";
   char buf3[] = "Hi!Hi!!";
+  unsigned long keys[] = {0, 5, 99, 100, 500};
+  for (unsigned i = 0; i < 5; ++i) {
+    long good[4] = {0, 1, 7, 0}, empty[4] = {0};
+    unsigned long key = keys[i];
+    if (cached(good, key) != ((key && key < 100) ? key : key + 7)) return 1;
+    if ((!key || key >= 100) && good[0] != (long)&good[2]) return 2;
+    if (cached(empty, key) != ((key && key < 100) ? key : ~0UL)) return 3;
+  }
   printf("%ld %ld %ld\n", (long)upper_after_blanks((long)buf), (long)upper_of_rest(buf),
          (long)((char *)skip_blanks(buf) - buf));
   printf("%d %d\n", (int)first_char((unsigned long)(buf2 + 1), 3L) - 17, (int)first_char((unsigned long)buf2, 0L));
@@ -7541,8 +7620,8 @@ int main(void) {
                 "(unsigned int)hash_of(a0) % 7",
                 "  mark(a0);\n",
                 "unsigned long cached(long *a0,unsigned long a1)",
-                "        v1 = 0xffffffffffffffff;",
-                "    v1 = lookup((long *)*a0,a1);",
+                "        return 0xffffffffffffffff;",
+                "    a1 = lookup((long *)*a0,a1);",
                 "unsigned short use_s16_as_u(",
                 "unsigned int use_neg_as_unsigned(",
                 "unsigned long keep_widened(",
@@ -7632,7 +7711,10 @@ int main(void) {
                             "#include <stdbool.h>\n#include <stdio.h>\n#include <string.h>\n\
                              #define stderr_ptr (&stderr)\n#define stdout_ptr (&stdout)\n\
                              #define CONCAT22(h, l) ((unsigned int)(unsigned short)(h) << 16 | (unsigned short)(l))\n\
-                             char *g_fallback = \"fallback\";\nvolatile int g_ticks;\n{printed}\n{main}"
+                             char *g_fallback = \"fallback\";\nvolatile int g_ticks;\n\
+                             long *table_of(long *c) {{ return c[1] ? &c[2] : NULL; }}\n\
+                             unsigned long lookup(long *t, unsigned long k) {{ return (unsigned long)t[0] + k; }}\n\
+                             {printed}\n{main}"
                         ),
                     )
                     .unwrap();

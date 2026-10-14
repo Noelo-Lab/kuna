@@ -9,6 +9,9 @@ mod argument_errors_cli;
 
 #[path = "conditional_register_lifetimes.rs"]
 mod conditional_register_lifetimes;
+
+#[path = "conditional_stack_bytes.rs"]
+mod conditional_stack_bytes;
 #[path = "arm_conditional_switch.rs"]
 mod arm_conditional_switch;
 #[path = "arm_constant_shift.rs"]
@@ -62,6 +65,9 @@ mod call_result_high_word_reads;
 #[path = "call_result_pair_returns.rs"]
 mod call_result_pair_returns;
 
+#[path = "callee_memory_lifetimes.rs"]
+mod callee_memory_lifetimes;
+
 #[path = "caller_stack_cli.rs"]
 mod caller_stack_cli;
 
@@ -73,6 +79,9 @@ mod compact_switch_cli;
 
 #[path = "contiguous_byte_frame.rs"]
 mod contiguous_byte_frame;
+
+#[path = "cookie_pointer_return_271.rs"]
+mod cookie_pointer_return_271;
 
 #[path = "crypto_cli.rs"]
 mod crypto_cli;
@@ -226,11 +235,20 @@ mod powerpc_isa_selection;
 #[path = "push_immediate_ret_cli.rs"]
 mod push_immediate_ret_cli;
 
+#[path = "pushed_stack_bytes.rs"]
+mod pushed_stack_bytes;
+
 #[path = "recursive_records_cli.rs"]
 mod recursive_records_cli;
 
+#[path = "register_lifetime_assertions.rs"]
+mod register_lifetime_assertions;
+
 #[path = "register_pair_params.rs"]
 mod register_pair_params;
+
+#[path = "register_parameter_replay.rs"]
+mod register_parameter_replay;
 
 #[path = "relocation_diagnostics.rs"]
 mod relocation_diagnostics;
@@ -240,6 +258,9 @@ mod retcallchain_cli;
 
 #[path = "runtime_hints_cli.rs"]
 mod runtime_hints_cli;
+
+#[path = "saved_xmm_msabi.rs"]
+mod saved_xmm_msabi;
 
 #[path = "signed_stack_index.rs"]
 mod signed_stack_index;
@@ -258,6 +279,21 @@ mod split_struct_params;
 
 #[path = "sse_minss_cli.rs"]
 mod sse_minss_cli;
+
+#[path = "stack_alias_preservation.rs"]
+mod stack_alias_preservation;
+
+#[path = "stack_float_snapshot.rs"]
+mod stack_float_snapshot;
+
+#[path = "stack_object_discovery.rs"]
+mod stack_object_discovery;
+
+#[path = "stack_object_lifetimes.rs"]
+mod stack_object_lifetimes;
+
+#[path = "stack_parameter_lifetimes.rs"]
+mod stack_parameter_lifetimes;
 
 #[path = "store_alias.rs"]
 mod store_alias;
@@ -357,3 +393,6 @@ mod zext_pair_returns;
 
 #[path = "common_allocation_cli.rs"]
 mod common_allocation_cli;
+
+#[path = "call_outparam_snapshot.rs"]
+mod call_outparam_snapshot;
