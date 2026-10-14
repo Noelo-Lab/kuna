@@ -219,7 +219,7 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
         end: prior.end.max(fd.kuna_default_name_end()),
     };
     for (high, h) in fd.high_bank().iter() {
-        if h.kuna_symbol_offset() >= 0 || h.kuna_global() {
+        if h.kuna_global() {
             continue;
         }
         let Some(i) = h.kuna_name().and_then(|name| default_name_index(name, angr)) else { continue };
@@ -230,10 +230,12 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
     let Some(lm) = fd.get_scope_local() else { return next };
     let directives = fd.kuna_directive_symbols();
     for (sym, addr, size, name) in lm.named_symbol_storage() {
-        if directives.iter().any(|d| d.symbol == sym) {
-            continue;
-        }
-        if let Some(i) = default_name_index(&name, angr) {
+        let name = match directives.iter().find(|d| d.symbol == sym) {
+            Some(d) if !lm.database().symbol(sym).is_name_locked() => &d.printed,
+            Some(_) => continue,
+            None => &name,
+        };
+        if let Some(i) = default_name_index(name, angr) {
             next.symbols.entry((addr, size)).or_insert(i);
         }
     }

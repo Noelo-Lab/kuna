@@ -280,7 +280,8 @@ fn a_name_renamed_away_and_given_to_another_local_is_ambiguous() {
 }
 
 /// The untouched local's default skips the names the swap locked: it used to
-/// take `v1` itself and push the caller's `v1` to `v1_1`.
+/// take `v1` itself and push the caller's `v1` to `v1_1`. A local whose name a
+/// lone rename takes gets the renamed local's number, and no other local moves.
 #[test]
 fn a_swap_among_three_locals_keeps_every_name() {
     let expected = ["int4 v3; // ebx", "int4 v2; // r12d", "int4 v1; // r13d"];
@@ -295,7 +296,7 @@ fn a_swap_among_three_locals_keeps_every_name() {
     applies(
         "three_locals",
         &["name v3 v1"],
-        &["int4 v1; // r13d", "int4 v2; // ebx", "int4 v3; // r12d"],
+        &["int4 v1; // r13d", "int4 v2; // r12d", "int4 v3; // ebx"],
     );
 }
 
