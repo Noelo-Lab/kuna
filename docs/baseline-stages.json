@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2930,
-    2930
+    2946,
+    2946
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -912,7 +912,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 304 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 305 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -2397,6 +2397,22 @@
     "data:larger objects preserve incoming rather than synthetic definitions",
     "data:late logical bindings never emit an undefined frame name",
     "data:later incarnation retains its independent named call view",
+    "data:libcnames #10: a local only passed to write takes write's parameter name n",
+    "data:libcnames #11: strcmp's s1 and s2 on one local disagree, so it keeps its vN",
+    "data:libcnames #12: the rename names the first descriptor src",
+    "data:libcnames #13: and no local takes the freed fd",
+    "data:libcnames #14: renaming v5 to read's library name leaves that local its number",
+    "data:libcnames #15: and the next rename reaches it by that number",
+    "data:libcnames #16: fd_2 is declared under the same spelling through every rename",
+    "data:libcnames #1: with no option line (the shipped default) open's result is a vN",
+    "data:libcnames #2: and read's count and descriptor are vNs too",
+    "data:libcnames #3: with the option on the first descriptor is fd",
+    "data:libcnames #4: the second open is fd_2, also after every rename",
+    "data:libcnames #5: read's result is n and it reads from fd",
+    "data:libcnames #6: the buffer keeps the number it has with the option off, in every pass",
+    "data:libcnames #7: strlen's results are len and len_2 and malloc's is p",
+    "data:libcnames #8: a value used inside an expression names nothing",
+    "data:libcnames #9: fopen's result is fp",
     "data:load retains declared array",
     "data:locked layouts expose one pointer per logical view",
     "data:locked layouts keep their declared physical object",

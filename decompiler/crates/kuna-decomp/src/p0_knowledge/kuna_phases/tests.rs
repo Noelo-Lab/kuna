@@ -38,9 +38,9 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_304() {
-    assert_eq!(kuna_num_settables(), 304);
-    assert_eq!(SETTABLE_TABLE.len(), 304);
+fn settable_count_is_305() {
+    assert_eq!(kuna_num_settables(), 305);
+    assert_eq!(SETTABLE_TABLE.len(), 305);
 }
 
 #[test]
@@ -1021,7 +1021,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `bytearrayc`; its P9 row sits mid-table.
     // +2 for `wideslice` and `devectorize`.
     // +1 for `addrtakenentry`; its P1 row sits mid-table beside `thunkentry`.
-    assert_eq!(json.matches("},\n").count(), 303);
+    assert_eq!(json.matches("},\n").count(), 304);
 }
 
 #[test]
