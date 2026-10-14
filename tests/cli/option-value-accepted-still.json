@@ -7,6 +7,9 @@
     "{{BIN}}",
     "main",
     "--option",
+    "elfmain",
+    "off",
+    "--option",
     "realtypes",
     "off"
   ],

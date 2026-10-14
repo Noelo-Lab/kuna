@@ -407,6 +407,13 @@ pub struct AnalysisOutput {
     /// emits them here instead. The libc and Win32 signature passes all use this
     /// stream for concrete resolver entries. See [`crate::protos`].
     pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    /// The C runtime declaration `elfmain` has for an executable's own
+    /// symbol-named `main`, keyed by entry address (an ARM Thumb symbol's mode
+    /// bit cleared). The commit keeps it OFF the symbol; the drive applies it
+    /// inside `main`'s own analysis, naming and typing only the parameters that
+    /// analysis recovers (`kuna_decomp::kuna_elfmaindecl`). The full
+    /// three-parameter pieces, named argc/argv/envp.
+    pub main_decl_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
     /// The names a PE imports from a C runtime DLL, whose functions are `__cdecl`
     /// whatever the image's default convention is. The commit boundary declares
     /// the prototypes parked under these names with that model.
@@ -537,6 +544,7 @@ impl AnalysisOutput {
         self.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
         self.prototypes.iter_mut().for_each(fix_proto);
         self.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
+        self.main_decl_at.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_dwarf.symbols.iter_mut().for_each(|s| fix(&mut s.name));
         self.cpp_dwarf.locals.iter_mut().for_each(|l| fix(&mut l.name));
         self.cpp_dwarf.prototypes.iter_mut().for_each(|(_, p)| fix_proto(p));
@@ -634,6 +642,7 @@ impl AnalysisOutput {
         self.wide_strings32.extend(other.wide_strings32);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
+        self.main_decl_at.extend(other.main_decl_at);
         self.c_runtime_imports.extend(other.c_runtime_imports);
         self.context_paints.extend(other.context_paints);
         self.inventory_context_paints.extend(other.inventory_context_paints);

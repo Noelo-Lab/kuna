@@ -560,6 +560,9 @@ pub struct Funcdata {
     /// (kuna `calleevote`) The types every caller of this function passes for its
     /// inputs, copied off the `Architecture` after the flow build.
     kuna_calleevote_inputs: Option<std::rc::Rc<crate::kuna_calleevote::CallerTypes>>,
+    /// (kuna `elfmain`) The C runtime's `main` declaration this function's inputs
+    /// take, when it is an executable's own `main`. See [`crate::kuna_elfmaindecl`].
+    kuna_elfmain: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>,
     /// (kuna `calleevote fields`) Every caller of this function is a known direct call.
     kuna_calleevote_closed: bool,
     /// (kuna `elemptr`) The globals this function must not type as element
@@ -770,6 +773,7 @@ impl Funcdata {
             kuna_moved_back_returns: Vec::new(),
             kuna_pairs_first_low: false,
             kuna_calleevote_inputs: None,
+            kuna_elfmain: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
             kuna_elemptr_adopt: None,
@@ -1357,6 +1361,17 @@ impl Funcdata {
     /// (kuna `calleevote`) What this function's callers pass for its inputs.
     pub fn kuna_calleevote_inputs(&self) -> Option<&crate::kuna_calleevote::CallerTypes> {
         self.kuna_calleevote_inputs.as_deref()
+    }
+
+    /// (kuna `elfmain`) Give this function's inputs the C runtime's `main`
+    /// declaration, as far as its own analysis recovers them.
+    pub fn kuna_set_elfmain(&mut self, runtime: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>) {
+        self.kuna_elfmain = runtime;
+    }
+
+    /// (kuna `elfmain`) The C runtime's `main` declaration for this function.
+    pub fn kuna_elfmain(&self) -> Option<&crate::kuna_elfmaindecl::Runtime> {
+        self.kuna_elfmain.as_deref()
     }
 
     /// (kuna `calleevote fields`) Mark every caller of this function as known.
