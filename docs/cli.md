@@ -507,8 +507,9 @@ kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'
 #   unsigned long *v6;  // rax        (was: unsigned long v6;)
 ```
 
-A bare `type <local> <T>` states no name, so the retyped local may come back
-under a different `vN`; `type v6 unsigned long *vmtop` pins a name outright.
+A bare `type <local> <T>` states no name, so the retyped local keeps its `vN`
+while the retype leaves the variable whole; `type v6 unsigned long *vmtop` pins
+a name outright.
 Register assertions identify a definition at its native address and width.
 Saved copies, joins and later reuse of that register remain distinct. JOIN
 values, temporaries and ambiguous definition addresses use a validated
@@ -562,6 +563,14 @@ name was also printed (`name v2 v1` after `name v1 v2`, or a rotation): it
 renames the local printed under the identifier. Two register locals that share a
 register at different widths (`char *s; // rax` and `uint4 v1; // eax`) can both
 be named when their definition identities are distinct.
+
+**A directive renumbers no other local.** Every local keeps the `vN` the output
+you were shown printed, so after `name v9 idx` the old `v10` is still `v10` and
+the next directive naming it still reaches it. The renamed local's number is
+left unused. A local that loses its number to a rename (`name v3 v7` when `v7`
+exists) takes the number the renamed one left, so the two swap; a local the
+directives created (a retype that splits a variable) takes a number past the
+last one printed, and a variable a retype merged away leaves its number unused.
 
 Parameter `name` and `type` directives update the signature and its body uses.
 They retain the parameter's native storage, so a retype must occupy the same

@@ -390,10 +390,9 @@ fn check_width(size: int4, ct: &Datatype) -> Result<(), String> {
 /// better (the target keeps the name the caller typed) but produced INVALID C
 /// when the `vN` allocator did not consult the scope: it handed the same `v5` to
 /// an unrelated temporary and the printer declared `v5` twice in one body
-/// (measured on the witness for `type v5 char *` and `type v7 short`).  The cost
-/// of the safe choice is that a retyped local can come back under a different
-/// number; the storage comment (`// rax`) is what identifies it across the two
-/// passes, and an explicit `type v6 <T> <newname>` pins a name outright.
+/// (measured on the witness for `type v5 char *` and `type v7 short`).  The
+/// naming pass gives it back the number its pieces had (`kuna_stablenames`),
+/// and an explicit `type v6 <T> <newname>` pins a name outright.
 fn bind_printed_local(
     fd: &mut Funcdata,
     target: &PrintedLocal,

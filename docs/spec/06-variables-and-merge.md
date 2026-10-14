@@ -753,6 +753,36 @@ that DWARF local is not bound to a printed variable, so the printed numbering
 can start past it. The change is names only; upstream `buildVariableName` bumps
 the index past a taken name the same way.
 
+**A directive renames one local and renumbers none.** A `name`/`type` directive
+(`--assert`, or the console's `rename`/`retype`) is read against the output of
+one decompile and applied by the next, and the next used to number its locals
+from scratch: the renamed local now binds its Symbol and takes no number, so
+every local after it in location order moved down one. After `name v9 idx` the
+old `v10` printed as `v9`, and a later directive naming `v9` (the web page sends
+every edit as a directive naming what the first decompile printed) reached a
+different variable than the one the caller saw. A retype that splits or merges a
+variable shifted the numbers the same way.
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stablenames.rs (carry)`
+now records the first decompile's numbering by identity when a directive
+touched the function: each numbered variable's pieces (the storage, width and
+use point of every instance, with temporaries and JOIN storage keyed by space
+alone because every decompile renumbers them) and each numbered Symbol's storage,
+plus the numbers the renamed locals held. The caller that replays the batch
+(the CLI's and the web page's second pass in `kuna-console/src/project.rs`, the
+console's `decompile` in `IfcDecompile`) hands the record to the drive through
+`Architecture::kuna_prior_names`, and the naming walk takes every default number
+from it (`varmap.rs (ScopeLocal::next_default_name)`, which then ignores
+`base`): a local takes the number its pieces or its Symbol had; a renamed
+local's number stays unused, also for the part of a merged variable the rename
+left unbound; a local whose number a rename took as its new name (`name v3 v7`)
+takes the number the renamed local left, so the two swap; and a local the first
+decompile did not have takes the first number past the last, while a variable
+that is gone leaves its number unused. A record is made only when a directive
+touched the function (or the function already carries one), so every other
+decompile numbers in sequence exactly as before, and the output of a run without
+a `name`/`type` directive is unchanged. This corrects which variable a directive
+reaches, so it is unconditional.
+
 Two recommendation paths share a name on purpose. A name recommendation
 recorded for a storage location names every high at that storage alike, as the
 renamed Symbol does upstream; it is only recorded, so a later callee name cannot
