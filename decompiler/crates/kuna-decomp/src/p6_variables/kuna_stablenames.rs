@@ -34,8 +34,8 @@
 //! A `type` that keeps a local's width and kind ([`retypes_as_unit`]) is
 //! carried with the record too, and typed onto every instance of the local
 //! after the merge ([`retype_targets`]), so the analysis does not split it. A
-//! type inference has to read ([`reaches_inference`]) is also locked before
-//! inference runs on every varnode an operation of the variable defines
+//! pointer type inference has to read ([`reaches_inference`]) is also locked
+//! before inference runs on every varnode an operation of the variable defines
 //! ([`lock_retyped`]), and the merge then follows the previous decompile's
 //! variables where the keys still identify them ([`same_variable`]).
 //!
@@ -505,7 +505,7 @@ pub struct UnitRetype {
 /// The unit retype of a `from` variable to `to`, when it keeps the width and
 /// kind ([`retypes_as_unit`]).
 pub fn unit_retype(from: &crate::dtype::Datatype, to: &std::rc::Rc<crate::dtype::Datatype>) -> Option<UnitRetype> {
-    retypes_as_unit(from, to).then(|| UnitRetype { ct: to.clone(), infer: reaches_inference(from, to) })
+    retypes_as_unit(from, to).then(|| UnitRetype { ct: to.clone(), infer: reaches_inference(to) })
 }
 
 /// Does retyping a `from` variable to `to` keep its width and kind: integer
@@ -641,28 +641,56 @@ fn replays_inference(fd: &Funcdata) -> bool {
     fd.kuna_prior_names().retypes.values().any(|retype| retype.infer)
 }
 
-/// Must type inference read a unit retype from `from` to `to`, because what
-/// it decides depends on the new type: a pointer whose pointee it reads
-/// through ([`reads_through`]), or a type that prints the constants the
-/// variable meets in its own way where the old one did not (an enumeration
-/// names them, `bool` spells them, a character type quotes them). Any other
-/// unit retype is applied after the merge alone ([`retype_targets`]): what the
-/// first decompile inferred still prints valid C under the new declaration.
-pub fn reaches_inference(from: &crate::dtype::Datatype, to: &crate::dtype::Datatype) -> bool {
-    reads_through(to) || (literals(to) != (0, "") && literals(to) != literals(from))
+/// Must type inference read a unit retype to `to`: a pointer whose pointee it
+/// reads through ([`reads_through`]), where inference is what turns the offsets
+/// read through it into fields, elements and calls. Any other unit retype is
+/// applied after the merge alone ([`retype_targets`]): what the first decompile
+/// inferred still prints valid C under the new declaration.
+pub fn reaches_inference(to: &crate::dtype::Datatype) -> bool {
+    reads_through(to)
 }
 
-/// How a type prints the constants it is given: by an enumeration's names,
-/// as `bool`, as characters, or as numbers.
-fn literals(t: &crate::dtype::Datatype) -> (u8, &str) {
+/// Does `ct` print the constants it is given in its own way: by an
+/// enumeration's names, as `bool`, or as characters?
+pub fn prints_literals(ct: &crate::dtype::Datatype) -> bool {
     use crate::dtype::type_metatype::*;
-    match t.get_metatype() {
-        _ if t.is_enum_type() => (1, t.get_name()),
-        TYPE_ENUM_INT | TYPE_ENUM_UINT => (1, t.get_name()),
-        TYPE_BOOL => (2, ""),
-        _ if t.is_char_print() => (3, ""),
-        _ => (0, ""),
+    ct.is_enum_type() || ct.is_char_print() || matches!(ct.get_metatype(), TYPE_ENUM_INT | TYPE_ENUM_UINT | TYPE_BOOL)
+}
+
+/// The constants of `size` bytes the variable made of `instances` meets
+/// directly: copied into it, or compared with it. Type inference would give
+/// them the variable's type; applied after the merge, the retype gives it them
+/// here, and nothing further away.
+pub fn met_constants(fd: &Funcdata, instances: &[VarnodeId], size: int4) -> Vec<VarnodeId> {
+    let constant = |vn: Option<VarnodeId>| {
+        vn.filter(|&vn| fd.vbank().get(vn).is_some_and(|v| v.is_constant() && v.get_size() == size))
+    };
+    let mut out = Vec::new();
+    for &vn in instances {
+        let Some(v) = fd.vbank().get(vn) else { continue };
+        if let Some(def) = v.get_def().and_then(|op| fd.obank().get(op)) {
+            if def.code() == OpCode::CPUI_COPY {
+                out.extend(constant(def.get_in(0)));
+            }
+        }
+        for op in v.descend_iter() {
+            let Some(o) = fd.obank().get(op) else { continue };
+            if matches!(
+                o.code(),
+                OpCode::CPUI_INT_EQUAL
+                    | OpCode::CPUI_INT_NOTEQUAL
+                    | OpCode::CPUI_INT_LESS
+                    | OpCode::CPUI_INT_LESSEQUAL
+                    | OpCode::CPUI_INT_SLESS
+                    | OpCode::CPUI_INT_SLESSEQUAL
+            ) {
+                out.extend((0..o.num_input()).filter_map(|slot| constant(o.get_in(slot))));
+            }
+        }
     }
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// Is `ct` a pointer whose pointee the analysis reads through: a structure,

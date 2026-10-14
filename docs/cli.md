@@ -504,15 +504,18 @@ finds the variable by its instances and names all of it, so a merged register
 local is never split, re-merged with a neighbour or retyped by being renamed.
 A `type` that keeps the variable's width and kind (an integer to an integer, a
 float to a float, a pointer to a pointer) types the whole variable the same
-way: only its declaration and the casts at its uses change. A pointer to a
-structure, union, array or function, an enumeration, `bool` or a character type
-also reaches type inference, on every part of the variable, so its fields and
-enumerators print; the variable keeps its name and number, but its type can
-reach its copies and the signature and reshape their expressions. A `type` that
-changes the
+way: only its declaration, the casts at its uses and, for an enumeration,
+`bool` or a character type, the constants it is assigned or compared with
+change. A pointer to a structure, union, array or function also reaches type
+inference, on every part of the variable, so its fields print; the variable
+keeps its name and number, but its type can reach its copies and the signature
+and reshape their expressions. A `type` that changes the
 width maps a locked symbol over the variable's storage at its use point, and
 can split or merge the variable. A new name that is a C keyword or a type's
-name (`name v6 int`, `name v6 uint4`) is `rejected`.
+name (`name v6 int`, `name v6 uint4`) is `rejected`. A `name` or `type` whose
+local the output does not then declare under that name, or with that type, is
+reported refused (`fatal`), with the reason, never `applied`: the C came back
+without it.
 
 ```bash
 kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'

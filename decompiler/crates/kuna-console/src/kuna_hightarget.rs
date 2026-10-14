@@ -192,19 +192,21 @@ fn printed_highs(fd: &Funcdata, name: &str) -> Vec<HighVariableId> {
 }
 
 /// Apply one `name`/`type` directive to the local `name` resolves to: rename it
-/// to `newname` (empty keeps the name) and, for a `type`, retype it to `retype`.
+/// to `newname` (empty keeps the name) and, for a `type`, retype it to
+/// `retype`. Returns the Symbol the directive is recorded on, if any (a stack
+/// object's view has none).
 pub fn apply_local(
     fd: &mut Funcdata,
     name: &str,
     newname: &str,
     retype: Option<Rc<Datatype>>,
     maxduplicates: u32,
-) -> Result<(), String> {
+) -> Result<Option<SymbolId>, String> {
     if newname != name {
         check_local_name(fd, newname)?;
     }
     if kuna_decomp::kuna_stackobjectasserts::apply(fd, name, newname, retype.clone())? {
-        return Ok(());
+        return Ok(None);
     }
     let sym = match resolve_local(fd, name, retype.is_none().then_some(newname), maxduplicates)? {
         LocalTarget::Printed(target) => {
@@ -220,7 +222,7 @@ pub fn apply_local(
                 retyped: lock_type,
                 unit_type,
             });
-            return Ok(());
+            return Ok(Some(symbol));
         }
         LocalTarget::Symbol(sym) => sym,
     };
@@ -229,9 +231,10 @@ pub fn apply_local(
         .iter()
         .find(|d| d.symbol == sym)
         .and_then(|d| d.bound.as_ref().map(|(_, size, _)| *size));
+    let has_instances = bound_size.is_some() || symbol_storage_has_varnodes(fd, sym);
     let unit_type = fd
         .get_scope_local()
-        .filter(|lm| lm.symbol_category(sym) != symbol_category::FUNCTION_PARAMETER)
+        .filter(|lm| has_instances && lm.symbol_category(sym) != symbol_category::FUNCTION_PARAMETER)
         .and_then(|lm| lm.database().symbol(sym).dtype.clone())
         .zip(retype.as_ref())
         .and_then(|(from, to)| kuna_decomp::kuna_stablenames::unit_retype(&from, to));
@@ -288,7 +291,32 @@ pub fn apply_local(
     if retype_given {
         fd.kuna_set_directive_retype(sym, unit_type);
     }
-    Ok(())
+    Ok(Some(sym))
+}
+
+/// Does any varnode live in `sym`'s storage? A local only ever reached
+/// through its address has none, so there is no instance to carry a unit
+/// retype to and its Symbol takes the type, as its storage is the variable's
+/// whole identity.
+fn symbol_storage_has_varnodes(fd: &Funcdata, sym: SymbolId) -> bool {
+    let Some(lm) = fd.get_scope_local() else { return false };
+    let storage: Vec<(Address, int4)> = lm
+        .named_symbol_storage()
+        .into_iter()
+        .filter(|(s, ..)| *s == sym)
+        .map(|(_, addr, size, _)| (addr, size))
+        .collect();
+    fd.vbank().iter_loc().any(|vn| {
+        fd.vbank().get(vn).is_some_and(|v| {
+            !v.is_constant()
+                && !v.is_annotation()
+                && storage.iter().any(|(addr, size)| {
+                    v.get_addr().get_space().map(|s| s.get_index()) == addr.get_space().map(|s| s.get_index())
+                        && v.get_addr().get_offset() < addr.get_offset().wrapping_add(*size as u64)
+                        && addr.get_offset() < v.get_addr().get_offset().wrapping_add(v.get_size() as u64)
+                })
+        })
+    })
 }
 
 /// Find the HighVariable the printer declared as `name`; `Ok(None)` when no

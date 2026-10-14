@@ -389,6 +389,26 @@ fn an_enumeration_retype_names_its_constants() {
     }
 }
 
+/// A local the function only passes by address (`read`'s buffer) has no
+/// instance to carry a retype to, so its Symbol takes the type: the retype
+/// used to leave `char v1` in place while reporting itself applied.
+#[test]
+fn an_address_only_local_takes_its_retype() {
+    let fixture = "retypeoutparam_x86_64";
+    let e4 = "typedef enum E4 { E_ZERO = 0, E_ONE = 1 } E4;";
+    for (function, directives, decl) in [
+        ("rd", &["type v1 unsigned char v1"][..], "  unsigned char v1;"),
+        ("rd", &["type v1 bool v1"][..], "  bool v1;"),
+        ("rd", &["type v1 unsigned char"][..], "  unsigned char v1;"),
+        ("rd", &["name v1 ch", "type ch unsigned char ch"][..], "  unsigned char ch;"),
+        ("rdn", &["type v1 int v1"][..], "  int v1;"),
+        ("rdn", &[e4, "type v1 E4 v1"][..], "  E4 v1;"),
+    ] {
+        let code = decompile_in(fixture, function, &[], directives);
+        assert!(code.contains(decl), "{function} {directives:?}:\n{code}");
+    }
+}
+
 /// A local cannot take a C keyword or a type's name: `name v6 int` used to
 /// print `int int;`.
 #[test]

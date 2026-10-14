@@ -355,8 +355,8 @@ committing any pending stack-symbol type recommendations
 (`decompiler/crates/kuna-decomp/src/p6_variables/funcdata_spacebase.rs
 (apply_type_recommendations)`), then type-locks a replayed `type` directive whose
 type inference has to read (a pointer to a structure, union, array or function,
-a relative pointer, an enumeration, `bool` or a character type) on every
-Varnode an operation of the retyped variable defines
+or a relative pointer) on every Varnode an operation of the retyped variable
+defines
 (`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stablenames.rs
 (lock_retyped)`, chapter 06), so each of them is a seed and a wall.
 

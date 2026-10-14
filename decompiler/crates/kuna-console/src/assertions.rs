@@ -1101,42 +1101,219 @@ pub fn apply_symbol_scoped(
     fd: &mut Funcdata,
     name: &str,
     single: bool,
-) -> bool {
+) -> Option<Vec<Expected>> {
     let directives = prog.assertions().to_vec();
     let mut applied_any = false;
+    let mut touched: Vec<(usize, kuna_decomp::database::SymbolId, Option<Rc<Datatype>>)> = Vec::new();
     for (i, directive) in directives.iter().enumerate() {
         if !directive.body.is_symbol_scoped() || !binds_to(&directive.body, name, single) {
             continue;
         }
         let outcome = match apply_one_symbol_scoped(prog, fd, &directive.body) {
-            Ok(()) => {
+            Ok((symbol, retype)) => {
                 applied_any = true;
+                touched.extend(symbol.map(|symbol| (i, symbol, retype)));
                 directive.applied()
             }
             Err(detail) => directive.rejected(detail),
         };
         prog.set_assertion_outcome(i, outcome);
     }
-    applied_any
+    applied_any.then(|| expected_locals(fd, &touched))
 }
 
 fn apply_one_symbol_scoped(
     prog: &ConsoleProgram,
     fd: &mut Funcdata,
     body: &Body,
-) -> Result<(), String> {
+) -> Result<(Option<kuna_decomp::database::SymbolId>, Option<Rc<Datatype>>), String> {
     let maxduplicates = if prog.arch().dynamic_hash_maxdup_high { 16 } else { 8 };
     match body {
         Body::Name { symbol, newname, .. } => {
-            crate::kuna_hightarget::apply_local(fd, symbol, newname, None, maxduplicates)
+            Ok((crate::kuna_hightarget::apply_local(fd, symbol, newname, None, maxduplicates)?, None))
         }
         Body::Type { symbol, decl, .. } => {
             let (ct, newname) = crate::grammar::parse_type(decl, prog.arch().types(), data_org(prog))
                 .map_err(|e| e.explain().to_string())?;
-            crate::kuna_hightarget::apply_local(fd, symbol, &newname, Some(ct), maxduplicates)
+            let applied = crate::kuna_hightarget::apply_local(fd, symbol, &newname, Some(ct.clone()), maxduplicates)?;
+            Ok((applied, Some(ct)))
         }
         _ => Err("internal: not a symbol-scoped directive".into()),
     }
+}
+
+/// What a batch of `name`/`type` directives must leave in the next decompile:
+/// each touched local declared under its final name, with the last type a
+/// directive gave it, and the directives that answer for it.
+pub struct Expected {
+    directives: Vec<usize>,
+    name: String,
+    retype: Option<Rc<Datatype>>,
+}
+
+/// The [`Expected`] of each local the `touched` directives (index, Symbol,
+/// retype) left on `fd`'s scope.
+pub fn expected_locals(
+    fd: &Funcdata,
+    touched: &[(usize, kuna_decomp::database::SymbolId, Option<Rc<Datatype>>)],
+) -> Vec<Expected> {
+    let Some(lm) = fd.get_scope_local() else { return Vec::new() };
+    let mut out: Vec<(kuna_decomp::database::SymbolId, Expected)> = Vec::new();
+    for (index, symbol, retype) in touched {
+        if !fd.kuna_directive_symbols().iter().any(|d| d.symbol == *symbol) {
+            continue;
+        }
+        let Some(record) = lm.database().try_symbol(*symbol) else { continue };
+        let name = if record.is_name_undefined() || record.name.is_empty() {
+            match fd.kuna_directive_symbols().iter().find(|d| d.symbol == *symbol) {
+                Some(d) => d.printed.clone(),
+                None => continue,
+            }
+        } else {
+            record.name.clone()
+        };
+        match out.iter_mut().find(|(sym, _)| sym == symbol) {
+            Some((_, expected)) => {
+                expected.directives.push(*index);
+                expected.name = name;
+                if retype.is_some() {
+                    expected.retype = retype.clone();
+                }
+            }
+            None => out.push((*symbol, Expected { directives: vec![*index], name, retype: retype.clone() })),
+        }
+    }
+    out.into_iter().map(|(_, expected)| expected).collect()
+}
+
+/// Check the C a replayed batch printed against what it must show
+/// ([`Expected`]): a directive whose local `code` does not declare under its
+/// name, or with its type, did not reach the output, so it is reported refused
+/// rather than applied.
+pub fn verify_printed(prog: &mut ConsoleProgram, code: &str, expected: &[Expected]) {
+    let directives = prog.assertions().to_vec();
+    for (i, reason) in unapplied(prog.arch(), code, expected) {
+        if let Some(directive) = directives.get(i) {
+            prog.set_assertion_outcome(i, directive.refused(reason));
+        }
+    }
+}
+
+/// The directives (by the index [`expected_locals`] was given) whose local the
+/// C `code` does not declare under its name or with its type, each with the
+/// reason. Only C is read; another output language reports nothing.
+pub fn unapplied(
+    arch: &kuna_decomp::architecture::Architecture,
+    code: &str,
+    expected: &[Expected],
+) -> Vec<(usize, String)> {
+    if arch.print().out_lang() != kuna_decomp::kuna_lang::OutLang::C {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for local in expected {
+        let reason = match printed_declaration(code, &local.name) {
+            None => Some(format!("nothing is declared as `{}` after it", local.name)),
+            Some(declared) => local.retype.as_ref().and_then(|ct| {
+                let spelled = kuna_decomp::printc::type_to_c_string(arch, ct);
+                (squeeze(&spelled) != squeeze(&declared)).then(|| {
+                    format!("`{}` is still declared as `{}`, not `{}`", local.name, declared.trim(), spelled.trim())
+                })
+            }),
+        };
+        if let Some(reason) = reason {
+            out.extend(local.directives.iter().map(|&i| (i, reason.clone())));
+        }
+    }
+    out
+}
+
+/// The type `code` declares `name` with, the name taken out (`char [32]` for
+/// `char v4 [32]`): among the function's parameters, or the declarations that
+/// open its body.
+fn printed_declaration(code: &str, name: &str) -> Option<String> {
+    let lines: Vec<&str> = code.lines().collect();
+    let open = lines.iter().position(|line| line.trim_end() == "{")?;
+    let declares = |text: &str| -> Option<String> {
+        let text = text.trim();
+        let pointer = format!("(*{name})");
+        if text.contains(&pointer) {
+            return Some(text.replacen(&pointer, "(*)", 1));
+        }
+        let end = text.find(|c: char| c == '[').unwrap_or(text.len());
+        let (head, tail) = text.split_at(end);
+        let head = head.trim_end();
+        let before = head.strip_suffix(name)?;
+        if before.chars().last().is_some_and(|c| c.is_ascii_alphanumeric() || c == '_') || before.trim().is_empty() {
+            return None;
+        }
+        Some(format!("{}{tail}", before))
+    };
+    let signature = open.checked_sub(1).map_or("", |line| lines[line]);
+    let signature = signature.split("//").next().unwrap_or(signature);
+    let stop = signature.rfind(')');
+    let start = stop.and_then(|stop| {
+        let mut depth = 0;
+        signature[..stop].char_indices().rev().find_map(|(i, c)| match c {
+            ')' => {
+                depth += 1;
+                None
+            }
+            '(' if depth == 0 => Some(i),
+            '(' => {
+                depth -= 1;
+                None
+            }
+            _ => None,
+        })
+    });
+    if let (Some(start), Some(stop)) = (start, stop) {
+        let mut depth = 0;
+        let mut piece = String::new();
+        for c in signature[start + 1..stop].chars() {
+            match c {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                ',' if depth == 0 => {
+                    if let Some(found) = declares(&piece) {
+                        return Some(found);
+                    }
+                    piece.clear();
+                    continue;
+                }
+                _ => {}
+            }
+            piece.push(c);
+        }
+        if let Some(found) = declares(&piece) {
+            return Some(found);
+        }
+    }
+    for line in &lines[open + 1..] {
+        let declaration = match line.split_once("; //") {
+            Some((declaration, _)) => declaration,
+            None => {
+                let text = line.trim();
+                let statement = text.contains('=')
+                    || (text.contains('(') && !text.contains("(*"))
+                    || ["return", "if", "while", "for", "do", "switch", "goto", "break", "continue"]
+                        .iter()
+                        .any(|word| text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').next() == Some(*word));
+                match text.strip_suffix(';') {
+                    Some(declaration) if !statement => declaration,
+                    _ => break,
+                }
+            }
+        };
+        if let Some(found) = declares(declaration) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn squeeze(text: &str) -> String {
+    text.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
 /// Does any directive assert a read-only range?

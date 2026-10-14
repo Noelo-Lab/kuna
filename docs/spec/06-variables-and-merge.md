@@ -846,26 +846,37 @@ nothing else reaches the analysis, so the merge is the first decompile's, and
 only the declaration and the casts at the variable's uses change: `v7 < v5`
 becomes `v7 < (long)v5`.
 
-Some retypes change what type inference decides, and those still reach it
-(`kuna_stablenames.rs (reaches_inference)`): a pointer whose pointee the
-analysis reads through, on either side of the retype (a structure, union, array
-or function, or a relative pointer, `reads_through`), where inference turns the
-offsets read through it into fields, elements and calls; and a type that prints
-the constants the variable meets differently (an enumeration names them,
-`bool` spells them, a character type quotes them), since a constant's type is
-whatever inference gives it. Applied after the merge alone, `type v1 state` on
-an `int` holding `enum state` printed `v1 = 3` where the Symbol had printed
-`v1 = RUN`. `kuna_stablenames.rs (lock_retyped)` locks such a type, at the
-start of every type inference (`p5_types/coreaction_infertypes.rs
-(run_infer_types)`), on each varnode whose defining operation (instruction and
-creation time) defined an instance of the retyped variable in the first
-decompile. The shape and place keys are not used here: before the analysis
-settles they also fit other varnodes, which the lock would type too (in iproute2
-`rtnl_nexthopdump_req` it reached the loop's other pointer and re-laid the
-stack frame around it). Every part of the variable is read through the type,
-and the parts agree when the merge compares their types, where a Symbol over the
-representative typed one part and left the rest to inference (a part defined by
-`malloc`'s `void *` return kept its own type and split off).
+A type that prints the constants the variable meets in its own way (an
+enumeration names them, `bool` spells them, a character type quotes them,
+`kuna_stablenames.rs (prints_literals)`) gives its type to those constants too:
+applied to the instances alone, `type v1 state` on an `int` holding `enum
+state` printed `v1 = 3` where the Symbol had printed `v1 = RUN`.
+`retype_whole_variable` types each constant copied into the variable or
+compared with it (`kuna_stablenames.rs (met_constants)`), which is where type
+inference would have taken the type, and nothing further away: inference would
+also carry it into the variable's copies, into arithmetic (`a0[7] + E_ONE`) and
+across the frame, which this does not.
+
+A local the function only ever passes by address (`read(0,&c,1)`) has no
+instance at all, so nothing could carry its type; `kuna_hightarget.rs
+(apply_local)` retypes its stack Symbol instead, as before, since the storage
+is the variable's whole identity and nothing can split.
+
+A pointer whose pointee the analysis reads through (a structure, union, array
+or function, or a relative pointer, `kuna_stablenames.rs (reads_through)`) is
+the one unit retype that still reaches type inference (`reaches_inference`),
+which turns the offsets read through it into fields, elements and calls.
+`kuna_stablenames.rs (lock_retyped)` locks it, at the start of every type
+inference (`p5_types/coreaction_infertypes.rs (run_infer_types)`), on each
+varnode whose defining operation (instruction and creation time) defined an
+instance of the retyped variable in the first decompile. The shape and place
+keys are not used here: before the analysis settles they also fit other
+varnodes, which the lock would type too (in iproute2 `rtnl_nexthopdump_req` it
+reached the loop's other pointer and re-laid the stack frame around it). Every
+part of the variable is read through the type, and the parts agree when the
+merge compares their types, where a Symbol over the representative typed one
+part and left the rest to inference (a part defined by `malloc`'s `void *`
+return kept its own type and split off).
 
 The type also changes which operations the analysis builds, so the first
 decompile's keys can miss the retyped variable's instances, and the naming pass
@@ -889,6 +900,21 @@ retype that changes the width or the kind still maps the locked, isolated
 Symbol and may split or merge, since it changes what the analysis reads. A run
 without a `type` directive is unchanged, as are the datatests and the stages,
 and this corrects what a directive reaches, so it is unconditional.
+
+**A directive that does not reach the output says so.** A `name` or `type`
+used to report `applied` once it bound, whatever the next decompile printed: a
+retype of a local only passed by address was carried by instances it did not
+have and dropped. `kuna-console/src/assertions.rs (expected_locals)` records,
+per local a batch touched, the name it must be declared under and the type the
+last `type` gave it, and `assertions.rs (unapplied)` reads the C the replay
+printed: its parameters and the declarations that open the body, the name taken
+out and the rest compared with the type's own spelling. A local not declared
+under its name, or declared with another type, reports each directive that
+touched it refused, with the reason (`verify_printed` on the in-process path;
+the console prints `Rejected <command>: <reason>` at the next `print C`), and
+`kuna decompile` says the C was produced without it. A retype that changes the
+width, which can leave the old declaration in place, is now reported this way
+instead of `applied`.
 
 **A new name must be one the declaration can print.**
 `kuna-console/src/kuna_hightarget.rs (check_local_name)` rejects a `name`, or

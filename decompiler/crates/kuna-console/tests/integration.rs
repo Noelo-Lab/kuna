@@ -217,6 +217,9 @@ mod verify_litpoolconst;
 #[path = "verify_loader_data_symbols.rs"]
 mod verify_loader_data_symbols;
 
+#[path = "verify_localchecks.rs"]
+mod verify_localchecks;
+
 #[path = "verify_macho_import_slots.rs"]
 mod verify_macho_import_slots;
 

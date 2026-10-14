@@ -3150,15 +3150,29 @@ fn name_local_highs_angr(data: &mut Funcdata) {
 /// Type every instance of `high` as `ct` and lock it, after the merge and before
 /// the casts are placed, so a unit retype (`kuna_stablenames::retypes_as_unit`)
 /// declares the whole variable with the new type and the casts follow from it.
+/// A type that prints constants its own way (`kuna_stablenames::prints_literals`)
+/// also types the constants the variable is assigned or compared with.
 fn retype_whole_variable(data: &mut Funcdata, high: crate::context::HighVariableId, ct: std::rc::Rc<crate::dtype::Datatype>) {
     let instances: Vec<crate::context::VarnodeId> = match data.high_bank().get(high) {
         Some(h) => (0..h.num_instances()).map(|i| h.get_instance(i)).collect(),
         None => return,
     };
-    for vn in instances {
+    let literals = if crate::kuna_stablenames::prints_literals(&ct) {
+        crate::kuna_stablenames::met_constants(data, &instances, ct.get_size())
+    } else {
+        Vec::new()
+    };
+    for vn in instances.into_iter().chain(literals.iter().copied()) {
         if let Some(v) = data.vbank_mut().get_mut(vn) {
             if v.get_size() == ct.get_size() {
                 v.update_type_locked(ct.clone(), true, true);
+            }
+        }
+    }
+    for vn in literals {
+        if let Some(constant) = data.vbank().get(vn).and_then(|v| v.get_high()) {
+            if let Some(h) = data.high_bank_mut().get_mut(constant) {
+                h.type_dirty();
             }
         }
     }
