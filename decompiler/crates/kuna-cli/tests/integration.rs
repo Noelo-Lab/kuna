@@ -1,6 +1,9 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "aif_lea_padding.rs"]
+mod aif_lea_padding;
+
 #[path = "ambiguous_selector_cli.rs"]
 mod ambiguous_selector_cli;
 
