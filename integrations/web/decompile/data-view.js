@@ -43,11 +43,16 @@ export function readInt(bytes, off, size, little = true) {
 }
 
 const printable = (b) => (b >= 0x20 && b < 0x7f) || b === 0x09 || b === 0x0a || b === 0x0d;
+const textByte = (b) => printable(b) || b === 0x1b;
 
-/** The NUL-terminated printable text at `off` (within `end`), as `{text, size}` with the NUL, or null. */
+/**
+ * The NUL-terminated text at `off` (within `end`), as `{text, size}` with the
+ * NUL, or null: printable characters, line breaks, tabs and the escape
+ * character that starts a terminal colour code.
+ */
 export function cString(bytes, off, end = bytes.length, min = 1) {
   let k = off;
-  while (k < end && k < bytes.length && printable(bytes[k])) k++;
+  while (k < end && k < bytes.length && textByte(bytes[k])) k++;
   if (k >= end || k >= bytes.length || bytes[k] !== 0 || k - off < min) return null;
   return { text: String.fromCharCode(...bytes.subarray(off, k)), size: k - off + 1 };
 }
@@ -56,7 +61,8 @@ export function cString(bytes, off, end = bytes.length, min = 1) {
 export function quote(text, max = MAX_TEXT) {
   const cut = text.length > max;
   const body = (cut ? text.slice(0, max) : text)
-    .replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+    .replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
+    .replace(/[\x00-\x1f\x7f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
   return `"${body}"${cut ? '…' : ''}`;
 }
 
@@ -536,7 +542,8 @@ export function rowHtml(row, { depth = 0, selected = false, open = false, key = 
  */
 export function renderData(model, { selected = null, open = new Set() } = {}) {
   const s = model.section;
-  let html = `<div class="dv-sec"><b>${escapeHtml(s?.name || 'Memory')}</b> <span>${escapeHtml(sectionWords(s))}</span></div>`;
+  const range = s ? ` · ${bare(s.address_hex)}–${bare(hx(BigInt(s.address_hex) + BigInt(s.size)))}` : '';
+  let html = `<div class="dv-sec"><b>${escapeHtml(s?.name || 'Memory')}</b> <span>${escapeHtml(sectionWords(s) + range)}</span></div>`;
   let nameCh = 6;
   let typeCh = 4;
   const measure = (rows, depth) => {

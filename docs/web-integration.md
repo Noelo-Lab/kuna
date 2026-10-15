@@ -162,19 +162,21 @@ driver (`--option protoorder`, `docs/cli.md`), while this command calls the shar
 batch directly, so the browser's call-argument types and `struct_N` numbering are the
 ones `--option protoorder off` produces.
 
-**The study view's commands: `inspect`, `read`, `xrefs`, `strings`, and `--assert`.** Every command also
+**The study view's commands: `inspect`, `read`, `xrefs`, `strings`, `data`, `uses`, and `--assert`.** Every command also
 takes a repeatable `--assert <directive>` — the CLI's override plane, parsed by the same
 grammar (`kuna_console::assertsyntax`, one directive per value; a value with a line break
 is refused) and applied in the CLI's order (read-only propagation when a `readonly` range
 implies it, `set_assertions` + the image-scoped directives before the analysis commit, the
 program-scoped ones after it, the function- and symbol-scoped ones inside the decompile
-loop). Four more commands serve the study view:
+loop). Six more commands serve the study view:
 
 ```
 kuna_wasm <binary> <spec-root> inspect <name|0xADDR> [--mode M] [--language L] [--assert D]...
 kuna_wasm <binary> <spec-root> read <0xADDR> <LEN> [--assert D]...
 kuna_wasm <binary> <spec-root> xrefs <name|0xADDR> [--mode M] [--assert D]...
 kuna_wasm <binary> <spec-root> strings [--mode M] [--assert D]...
+kuna_wasm <binary> <spec-root> data <0xADDR> [LEN] [--assert D]...
+kuna_wasm <binary> <spec-root> uses <0xADDR> <LEN> [--mode M] [--assert D]...
 ```
 
 Because every request is a fresh process, the page's edit session IS its directive list: it
@@ -210,7 +212,8 @@ Compact JSON, every address a number plus an `_hex` twin:
    types:[{name, definition, size}],
    globals:[{name, address, address_hex, declaration, size}],
    tokens:[{line, col, len, kind, color, text,
-            address?, address_hex?, callee?, callee_hex?, var?, decl?, type?}],
+            address?, address_hex?, callee?, callee_hex?, var?, decl?, type?,
+            global?, global_hex?}],
    tokens_error: null | string,
    instructions:[{address, address_hex, offset, size, bytes, mnemonic, operands, text,
                   file_offset, lines}],
@@ -229,7 +232,14 @@ members appear only when known: `address` is the instruction the token stands fo
 comment's or label's own address in the code space), `callee` the entry a call's name
 names, `var` an index into `variables` (register-only locals have no row), `decl` is
 `local`, `param`, `return` or `function` inside a declaration, and `type` names the type
-of a `type` token or the aggregate of a `field`. `instructions` is the `kuna disassemble
+of a `type` token or the aggregate of a `field`. `global` is the address of the global
+data a `variable` token names: a symbol of the global scope the function's own scope does
+not shadow (`primes`, a library global such as `stderr`, a name a `data` directive gave),
+mapped whole in the default data space with a type that is not code, or a global the
+decompiler names by its address (`dat_4040`). `globals` lists the globals the code names:
+the decompiler's own (`dat_4040`, with the declaration the project header gives it) and
+then the named ones, each declared with the type the global scope gives it (an untyped
+symbol has the C spelling of its size, `char primes[32]`). `instructions` is the `kuna disassemble
 --follow` walk over the function's extent (`kuna_console::disasm`, the CLI's own walker:
 branch targets start rows, literal pools fold to `.word`, undecodable bytes are `.byte`),
 at most 4096 rows (`instructions_truncated`); `bytes` is lowercase hex and honours `bytes`
@@ -267,7 +277,41 @@ read as text, so none of them is a use: a branch into a literal, a reference to 
 function's entry or its Thumb address, a word pointing into code (a jump table, a function
 pointer), and a load or store into a literal inside code (a literal pool; firmware keeps
 its strings in code and uses them by address). `in_code` marks a row inside an executable
-section. `list` adds `language`, `target`, `sections:[{name, address, address_hex, size,
+section.
+
+`data <0xADDR> [LEN]` is the Data tab's window, loaded with the discovery walk off, as
+`read` is: `{binary, address, address_hex, start, start_hex, size, span, bytes,
+pointer_size, target, section, items:[{name, address, address_hex, size, type,
+declaration, layout}], targets:[{at, at_hex, to, to_hex, name, offset, text}],
+assertions}`. With a length the window is `[ADDR, ADDR+LEN)`; without one it starts 128
+bytes ahead of the item holding the address and spans at least 512 bytes, both ends widened
+to whole items; either way at most 16 KiB and never outside the section holding the
+address (`section` is that `list` row, null outside every section). `bytes` (`size` of the
+`span`) are the window as loaded, overlays applied, stopping where the mapped run does; the
+bytes past a section's file data read as the loader's zeros. `items` are the global data
+symbols that overlap the window: the symbol table's, the debug info's, the string literals'
+and those `data` directives give, each with its type in C, its declaration and a `layout`
+the page decodes values by: `{kind, size, type}` with `kind` one of `int`, `char`, `bool`,
+`float`, `enum`, `pointer` (and `to`, the target's layout one level down), `array` (`elem`,
+`count`), `struct` and `union` (`fields:[{name, offset, type}]`, at most 256), `code`,
+`void`, or `unknown` for a type nobody gave; integers and enums carry `signed`. `targets`
+are the window's pointer-aligned words that hold an address inside an allocated section:
+the function or data symbol there (`name`, `offset` into it) and the NUL-terminated
+printable text that starts there (`text`, outside code). The symbol table types a global
+only by its size, so the types come from the student: the Data tab's *Change type* is a
+`data` directive like any other.
+
+`uses <0xADDR> <LEN>` lists the instructions that use the data in `[ADDR, ADDR+LEN)`, from
+the reference walk `strings` builds: `{binary, address, address_hex, size, uses:[{to,
+to_hex, name, address, address_hex, at, at_hex, kind, instruction, via}], assertions}`,
+`to` the byte the instruction names (`data`, `read` or `write`, as for a string), in
+address then instruction order. A use through a pointer word (`via`) is a read of a
+pointer-aligned word in an initialized data section whose value is the start of a data
+symbol in the range, the range's first byte, or a byte the code names directly; a word that
+holds its own address is not one. The same exclusions as for strings hold: a branch, a
+function's entry, a word pointing into code and a load or store into code.
+
+`list` adds `language`, `target`, `sections:[{name, address, address_hex, size,
 file_offset, file_size, executable, writable}]` (allocated sections, in address order;
 `file_size` is how many of the section's bytes the file holds from `file_offset`, which a
 PE section's virtual size can exceed; `writable` follows the segment that maps the
@@ -472,7 +516,7 @@ need at first sight is off by default or one click away.
 |--------------------|-----------------------------------------------|------------------|
 | Search functions   | main                        Rename  Signature | Explain       ›  |
 | ▾ Your program (3) |                                               | This function    |
-|    main            | [Code|Assembly|Side by side|Bytes|Stack]      | Takes 2 inputs   |
+|    main            | [Code|Assembly|Side by side|Bytes|Stack|Data] | Takes 2 inputs   |
 |    add             |  5 ▌ total = sum_to(add(argc,5));             | Calls and        |
 |    sum_to          |  6 ▌ printf("%ld\n",total);   ┌ Line 5 → 2 ┐  | callers          |
 | ▸ Startup &        |                               │ 11b5 call  │  | Variables        |
@@ -521,8 +565,8 @@ search box is the §4.1 matcher; while it holds text, a group with matches opens
 counts `shown of total`, and clearing it puts the groups back the way they were.
 
 **Views and defaults.** *Code* (C, or Rust under ⋯ → *Show code as*), *Assembly*, *Side
-by side* (the code next to its assembly), *Bytes*, *Stack*; keys `1` `2` `3` `4` for
-Code, Assembly, Bytes, Stack and `s` for side by side. Every default is chosen for a
+by side* (the code next to its assembly), *Bytes*, *Stack*, *Data* (the program's data, below);
+keys `1` `2` `3` `4` `5` for Code, Assembly, Bytes, Stack, Data and `s` for side by side. Every default is chosen for a
 first look, and every
 one is a control under *View options*: instruction bytes hidden (the single view and
 side by side keep separate settings), the C shown as a heading above its assembly
@@ -592,6 +636,7 @@ source tree):
 | `mnemonics.js` / `stack-frame.js` / `xrefs-view.js` / `help.js` | instruction notes and idioms; the frame diagram; calls and callers in words and the `x` cross-references dialog; the help dialog |
 | `wrap-c.js` / `tags.js` | where a long C line splits (the Hex-Rays rules); kuna's end-of-line notes (`// branch-flip`, `// early-return x10`) taken out of the shown code and kept by line, in words, for the Explain panel and the hover card |
 | `strings-view.js` | the sidebar's Strings list: its three groups, the users of each string, the search and the row cap |
+| `data-view.js` | the Data tab's rows: the items and unlabelled bytes of a window, values decoded by type, the page's own declarations as layouts, who uses an item |
 | `prefs.js` / `addr.js` | view settings (`kuna.d2.prefs`, v3 with the v1 and v2 migrations) and `hintsOn`; addresses as hex strings and BigInt |
 | `collab/` | *Working together* (below), loaded with a dynamic `import()` only when a session starts or an invite or reply link is opened: `collab.js` (dialogs, the roster, following), `sync.js` (the page's side: the Session ⇄ register sync, joining and leaving, where a session is stored), `group.js` (the protocol: hello, snapshots, relayed introductions, file transfer, digests, limits), `link.js` (WebRTC and BroadcastChannel links), `replica.js` (registers, `validOp`, digests, the register-based undo), `wire.js` (messages and their checks, invite and reply codes), `sdp.js`, `presence.js` (pointers and pings), `collab.css`; all but `collab.js`, `link.js` and `presence.js` are DOM-free (SHA-256 is `../sha256.js`, shared with the page) |
 
@@ -656,8 +701,8 @@ from the pane, and a `ResizeObserver` re-lays only the rows that change.
 In side by side every operand cell carries its full text as a `title`, and `b` toggles
 the bytes column for the current layout (each layout keeps its own setting).
 
-**Keys** (none fire while typing in a field): `/` search · `Space` C ⇄ assembly · `1-4`
-C code, Assembly, Bytes, Stack · `s` side by side · `o` address format · `b` bytes column
+**Keys** (none fire while typing in a field): `/` search · `Space` C ⇄ assembly · `1-5`
+C code, Assembly, Bytes, Stack, Data · `s` side by side · `o` address format · `b` bytes column
 · `↑↓` lines/rows · `←→` names on a line · `Enter` open the callee · `n` rename · `y`
 retype (on a function name: signature) · `;` note · `g` go to · `x` cross-references ·
 `e` the Explain panel ·
@@ -751,8 +796,9 @@ with the reason under it, until a byte is patched) writes each run at its file o
 into a copy of the file and downloads `<name>.patched.<ext>`; bytes no file byte
 backs (`.bss`, an image without a section table) are reported and nothing is downloaded.
 A Mach-O needs re-signing (`codesign -f -s -`); a PE's checksum no longer matches. `g` to
-an address outside every function shows the bytes there (from the file, else a `read`
-without directives, so a byte's original is the file's even when it is patched). A
+an address outside every function shows it in the *Data* tab, and its *Show bytes* shows
+the bytes there (from the file, else a `read` without directives, so a byte's original is
+the file's even when it is patched). A
 section whose file data is shorter than its size (`file_size`, a PE section's
 zero-filled tail) has no file offset past it.
 
@@ -790,9 +836,40 @@ when nothing else is running) and lists the text in three groups: *Used by the c
 functions use it ("Used in check ×2 through the pointer secret"). A function's name opens
 it with the using instruction selected, so the line of code holding the string is
 highlighted, and clicking it again steps to its next use there; clicking the string goes
-to its first use, or for an unused one shows its bytes. The search works as the function
+to its first use, or for an unused one shows it in the *Data* tab. The search works as the function
 search does (terms or `/regex/`, `/` to focus it) and opens the groups it matches in. At
 most 300 rows of a group are drawn; the search reaches the rest.
+
+**The Data tab.** Double-clicking a global in the code (`primes`, `&primes`, `primes[i]`,
+`origin.x`, a library global such as `stderr`, a `dat_4040`, a renamed one) opens the
+*Data* tab at it, the way a decompiler jumps to the data; a function's name still opens the
+function and a local's still renames it. In the assembly a data address in an operand
+(`[0x4040]`, `lea rax, [0x4040]`) is a link, labelled with the global's name when the code
+names it, and goes there too, as do `g` to an address outside every function and a string
+nobody uses. Every one of them is a history entry, so Back returns to where the student
+was, the view included. The tab asks the engine for `data` (the section around the address,
+with the program-wide directives, so renames, retypes and patches show) and lists it as
+rows of address, name, type and value: the section's name and what it holds ("data the
+program can change", "data that never changes", "data that starts as zeros") head it, the
+item holding the address is selected and scrolled to, and buttons read the data before
+and after it, or the section before and after. Values are decoded by type
+(`data-view.js`): integers in decimal and hex, text as a C string (a terminal colour code
+included), a pointer as what it points at (a function, an item, an array element, a struct
+field, a string), clickable — a function opens, data moves within the tab —, and arrays and
+structs as a summary that opens to their elements and fields. A global the symbol table
+names only by its size is its bytes (16 to a line), unless they read as text or as a
+pointer to something named, so its type column says "32 bytes" until the student gives it
+one. Bytes no item claims read as text, a pointer, a run of zeros or hex; bytes a section's
+file data does not reach say "0 when the program starts". In a stripped program the
+decompiler's own declarations (`int dat_4040[]`, `int (*dat_4078)(unsigned int)`) type
+what the code names. The bar above the rows says what is selected and where, and who uses
+it: the engine's `uses` for the window, asked for once while the tab is on screen, grouped
+by function ("Used by main ×2"); a function's name opens it at the using instruction.
+*Rename* and *Change type* (`n` and `y` in the tab) write the same `data` directive the
+code's rename of a global does, *Show bytes* opens the Bytes view's hex dump there. `↑↓`
+move through the rows, `→`/`←` open and fold, `Enter` follows a pointer. A program opened
+afresh starts in the code, not the Data tab. Before any data is shown the tab says to
+double-click a global and lists the data the open function uses.
 
 **Working together.** Several people can work on one program at once, with no server:
 each person's page renames, retypes, notes and patches, and everyone sees the others'
@@ -1116,7 +1193,13 @@ skips it as too costly):
    by `test/make-inspect-fixtures.mjs` (`test/fixtures/inspect-{main,sum_to,add}.json`,
    `list-sample.json`). **`test/decompile-strings.mjs`** (build-free) covers the
    Strings list: groups, one-line text, users with their pointers, escaping, search and
-   the row cap. **`test/decompile-base64.mjs`** (build-free) pins which pasted texts
+   the row cap. **`test/decompile-data.mjs`** (build-free) covers the Data tab's rows on
+   the native `data` and `uses` documents for `fixtures/globals.elf` (untyped, retyped by
+   `data` directives, `.bss`) and its stripped twin (`data-globals*.json`,
+   `inspect-globals-stripped.json`, `uses-globals.json`): integers, text, pointers to
+   functions, items, elements and strings, arrays and structs and what they open to, bytes
+   that start as zeros, unlabelled bytes, who uses an item, escaping.
+   **`test/decompile-base64.mjs`** (build-free) pins which pasted texts
    decode, to which bytes, and the name a pasted program gets. **`test/decompile-worker.mjs`** drives `inspect`, `read`,
    `xrefs`, `strings` and `--assert` through the real Worker (`strings` on
    `fixtures/crackme.elf`), and pins the refusal error the page
@@ -1177,7 +1260,7 @@ skips it as too costly):
    off until a program is open, loads the committed fixture through the file input with a
    `DataTransfer` (`worker-harness.mjs` `openSample`; the site ships no sample program),
    checks `main` opens without a click with only its name in the header and the views in
-   the order Code · Assembly · Side by side · Bytes · Stack, that hovering a line, a name
+   the order Code · Assembly · Side by side · Bytes · Stack · Data, that hovering a line, a name
    or an instruction shows no card while hints are off but still marks the line, that
    *Collaborate* then has its tooltip and opens the dialog, that `?student=true` turns
    hints on, that the theme toggle sets `data-theme`, hovers line 5 and checks the card counts
@@ -1236,12 +1319,21 @@ skips it as too costly):
    `.local` names need). It first connects two peer connections inside one page, and
    prints SKIPPED only when that gathers no candidate or cannot connect; after that any
    failure fails the test. `--late 60` applies the reply a minute after it was made.
-   None of these four runs in CI. Run them locally before a change to the page lands
+   **`test/decompile-data-browser.mjs`** drives the Data tab on `fixtures/globals.elf`:
+   double-clicking a global opens it (selected, in view, values decoded, who uses it) and
+   no rename dialog, a local still renames and `n` on a global still names it, "Used by"
+   and a pointer to a function open the function with Back and Forward returning, a pointer
+   to data moves within the tab, *Change type* decodes an int table and a struct and
+   *Rename* reaches the code, a `.bss` buffer starts as zeros, a data operand in the
+   assembly goes to it, the light theme and 1024, 820 and 600 px, and the stripped twin
+   (`--shots DIR` saves screenshots).
+   None of these five runs in CI. Run them locally before a change to the page lands
    (each skips, exit 0, when there is no Chrome; `CHROME=` picks one):
 
    ```bash
    integrations/web/build.sh
    node integrations/web/test/decompile-browser.mjs
+   node integrations/web/test/decompile-data-browser.mjs
    node integrations/web/test/decompile-collab-browser.mjs
    node integrations/web/test/decompile-collab-page.mjs
    node integrations/web/test/decompile-collab-rtc.mjs

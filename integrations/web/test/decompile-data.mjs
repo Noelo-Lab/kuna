@@ -29,6 +29,8 @@ assert.equal(cString(b, 8, b.length, 4), null, 'shorter than the minimum');
 assert.equal(cString(b, 11), null, 'no NUL, no string');
 assert.equal(quote('a"b\n\\'), '"a\\"b\\n\\\\"');
 assert.equal(quote('x'.repeat(10), 4), '"xxxx"…');
+assert.deepEqual(cString(Uint8Array.from([0x1b, 0x5b, 0x33, 0x6d, 0x41, 0]), 0), { text: '\x1b[3mA', size: 6 }, 'a terminal colour code is text');
+assert.equal(quote('\x1b[3mA\x07'), '"\\x1b[3mA\\x07"', 'control characters read as C escapes');
 assert.equal(intText(1000n, 4), '1000 · 0x3e8');
 assert.equal(intText(7n, 4), '7', 'a digit needs no hex');
 assert.equal(intText(-1n, 4), '-1 · 0xffffffff');
