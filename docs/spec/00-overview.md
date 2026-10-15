@@ -891,8 +891,15 @@ unpacked rather than read in place
 directory, where `<id>` hashes every path and byte of the table. Each unpack is
 written to a private staging directory and renamed into place only after its
 `.complete` marker is written, so a reader never sees a partial tree, concurrent
-first runs settle on one copy, and a tree without the marker is replaced. A
-release whose specs did not change therefore reuses the tree already on disk.
+first runs settle on one copy, and a tree without the marker is replaced. Creation
+and repair hold an exclusive file lock for that content ID and recheck the marker
+after acquiring it. This prevents concurrent repair from deleting a newly
+published tree and avoids duplicate unpacking. The sibling lock file remains on
+disk so all writers lock the same file; the operating system releases the lock
+when its handle closes, including on process exit. A caller waits at most 30
+seconds for the lock, then moves on to the next cache location, so a stopped or
+hung holder cannot hang every later run. A release whose specs did not change
+reuses the finished tree without acquiring the lock.
 
 The spec root resolves in this order: `KUNA_SPECS`, then `KUNA_ROOT`'s `specs/`,
 then the built-in tree, then the first directory that holds a
