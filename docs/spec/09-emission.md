@@ -17,6 +17,15 @@ qualification. Value conversions ignore qualifiers (`cast.rs (cast_standard)`),
 so a store through `volatile float *p` prints `*p = x;` with no cast; only a
 pointer conversion that drops a `volatile` pointee still needs one.
 
+A volatile annotation that covers only part of its mapped symbol renders the
+covered member. An element of an array of scalars prints as `name[index]`;
+every other partial cover (a struct field, an element of a multidimensional
+array, a field inside an array element) uses the partial-symbol walk, including
+through typedefs. A four-byte read at offset 20 in `volatile int cursor[3][2]` prints
+`cursor[2][1]`, and one at offset 4 in `volatile struct S s` (`int a; int b;`)
+prints `s.b`, not the bare symbol name. Each annotation still represents one
+access of the original width.
+
 This phase renders the finished decompilation: it inserts the explicit
 cast/field-access operations a C compiler would need to *see* the recovered
 types (§9.1), then walks the structured block tree of chapter 08 and the SSA

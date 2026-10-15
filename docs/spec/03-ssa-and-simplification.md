@@ -179,8 +179,14 @@ and any other overlap still raises the upstream error.
 no single write covers it (`size > 4 && maxwritesize < size`), the range is
 split at every varnode boundary observed inside it before phis are placed
 (`heritage.rs (Heritage::refinement)`): ranges over 1024 bytes are never
-refined, and a 1-byte/3-byte adjacent split is healed back to 4
-(`remove13_refinement`). Refinement rewrites the disjoint covers (local and
+refined, and a 1-byte/3-byte adjacent split is normally healed back to a
+four-byte piece (`Heritage::remove13Refinement`, implemented through
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_inputrefinement.rs`). The
+join is skipped when that four-byte piece would partially overlap a known
+input: an input starts or ends at the junction and extends beyond the joined
+piece. Inputs contained wholly within the piece retain the ordinary join.
+This prevents inconsistent refinements from constructing a range that spans
+two known input varnodes. Refinement rewrites the disjoint covers (local and
 global) in place and re-enters the walk at the first partition. Its inverse
 exists too: when a *larger* range arrives over addresses already heritaged at a
 smaller size, the stale MULTIEQUAL/INDIRECT/return-COPY markers from the earlier
@@ -2113,9 +2119,12 @@ from zero. After the wide-slice reduction the vector arm is S copies of the
 scalar body in a different order. The action matches the whole shape on SSA and
 proves it: the accumulators and the induction variable start at zero; each lane
 zero-extends a disjoint E-byte slice of a load at `base + i*E + c`, and the
-lanes tile exactly S elements for a power-of-two S the guard bounds; the fold
-adds every accumulator once; the scalar loop starts at `length & -S` with the
-fold, or at zero with zero, steps one element and exits at `length`; both exits
+lanes tile exactly S elements for a power-of-two S the guard bounds. The lane
+count must equal S before checking offsets in place, so a large stride encoded
+in the input cannot cause an allocation proportional to S; expected offsets
+must not overflow. The fold adds every accumulator once; the scalar loop starts
+at `length & -S` with the fold, or at zero with zero, steps one element and
+exits at `length`; both exits
 hand back their sums (the early return and the scalar exit, or a shared join
 whose other phis agree slot for slot); no block of the arm, the remainder loop,
 the else block or the scalar exit writes global storage, so nothing the

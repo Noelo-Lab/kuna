@@ -1691,12 +1691,18 @@ impl VarnodeBank {
         addr
     }
 
-    /// Remove a Varnode from the container and reclaim it (C++ `destroy`).
-    pub fn destroy(&mut self, vn: VarnodeId) -> KunaResult<()> {
+    /// Check deletion eligibility before any cross-bank cleanup.
+    pub(crate) fn check_destroy(&self, vn: VarnodeId) -> KunaResult<()> {
         let v = &self.arena[vn];
         if v.def.is_some() || !v.has_no_descend() {
             return Err(KunaError::lowlevel("Deleting integrated varnode"));
         }
+        Ok(())
+    }
+
+    /// Remove a Varnode from the container and reclaim it (C++ `destroy`).
+    pub fn destroy(&mut self, vn: VarnodeId) -> KunaResult<()> {
+        self.check_destroy(vn)?;
         let lk = self.arena[vn].lociter.take().expect("destroy: missing lociter");
         self.loc_tree.remove(&lk);
         if lk.flag_class().raw() != 0 {

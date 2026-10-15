@@ -647,6 +647,11 @@ kuna_options! { self, p1;
         self.returndup_orchain = val;
         Ok(msg)
     },
+    "rettriangle" => {
+        let (val, msg) = crate::p8_structure::kuna_rettriangle::OptionRetTriangle.apply(p1)?;
+        self.returndup_triangle = val;
+        Ok(msg)
+    },
     "earlyreturn" => {
         let (val, msg) =
             crate::p8_structure::kuna_earlyreturn::OptionEarlyReturn.apply(p1)?;

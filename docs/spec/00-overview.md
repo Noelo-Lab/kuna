@@ -2093,7 +2093,11 @@ global object's entire byte range volatile, so `--assert 'data 0x20000 volatile 
 has the same access semantics as a separate volatile range assertion.
 Declarator binding matters: `volatile int *p` qualifies the pointed-to data,
 while `int *volatile p` qualifies the mapped pointer itself. An array inherits
-its element qualifier. Function-local mappings carry the symbol attribute only;
+its element qualifier, including through nested arrays and typedefs. The property
+comes from the resolved type: `typedef volatile int VolWord;` followed by
+`data 0x20000 VolWord cursor` marks the mapped word volatile, while a pointer to
+`VolWord` does not make the pointer's own storage volatile. Function-local mappings
+carry the symbol attribute only;
 the global property map does not describe stack-local storage. Volatility remains
 a storage property.
 
@@ -2788,6 +2792,13 @@ still orders the way it did — `decompiler/crates/kuna-decomp/src/substrate/op.
 the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as a
 `BlockCopy` mirror of the CFG when structuring begins
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_sblocks_copy)`).
+
+Deleting a varnode through `Funcdata::delete_varnode` first checks the bank's
+deletion precondition: the node must have neither a defining operation nor any
+readers. A rejected deletion leaves the node, both bank indexes, HighVariable
+membership, and storage-source metadata unchanged. Once eligible, the node is
+detached from its HighVariable while its location is still available; an empty
+HighVariable is erased, followed by the node and its storage-source metadata.
 
 Registering an input varnode also applies the prototype's saved-register and
 return-address effects. This is unconditional registration behavior, not a

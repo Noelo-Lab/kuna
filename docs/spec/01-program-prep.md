@@ -4947,7 +4947,11 @@ i386 PE corpus and 56 in the ARM one (Wine's stubs, an empty `-O0` function's
 `nop; bx lr`), and `-fpatchable-function-entry` starts every function with one.
 `mov edi,edi` is never padding — it is the MSVC hot-patch prologue that opens 7,827
 true starts in the PE corpus — and neither is any self-move on a 64-bit target,
-where a 32-bit one zero-extends its register. A refusal is a plain reject, not a
+where a 32-bit one zero-extends its register. A self-`lea` on a wide target is
+padding only when both operands name the same full-width x86-64 general-purpose register.
+`lea esi,[esi]` and `lea r8d,[r8d]` clear the upper half of their destination, so
+entry discovery retains them even though the printed register names match. A
+full-width `lea rsi,[rsi]` still counts as padding. A refusal is a plain reject, not a
 body claim, so the cursor moves on through the filler. Like `aifbracket` it runs
 only in the plain gap walk. Scored against unstripped twins in the default mode it
 loses no true function start on any corpus and gains 50 on the i386 PEs (the
