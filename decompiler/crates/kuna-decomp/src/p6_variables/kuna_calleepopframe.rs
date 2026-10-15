@@ -33,9 +33,11 @@
 //!   (when that write is the next call's return-address push, the lowering
 //!   folded into it, less the push; a push of an argument is no
 //!   re-reservation);
-//! * every pointer-sized slot of `[esp, esp + n)` at the call instruction is
-//!   stored to between the previous call in the block (or its start) and this
-//!   one, so the `n` bytes are the arguments the caller just wrote.
+//! * every pointer-sized slot of `[esp, esp + n)` at the call instruction has
+//!   at least one byte stored to it between the previous call in the block (or
+//!   its start) and this one, so the `n` bytes are the arguments the caller just
+//!   wrote. A by-value aggregate narrower than its slot leaves the padding
+//!   unwritten, so one written byte is enough.
 //!
 //! The caller's frame is the evidence, not the callee's identity, so this also
 //! covers a call through a register the target was spilled to and reloaded
@@ -95,7 +97,7 @@ pub fn guess_extra_pop(
     }
     let (base, delta) = decompose(data, spacebase, call_sp)?;
     let first = delta.checked_add(step)?;
-    stores_cover(data, spacebase, call, base, first, n).then_some(RETURN_ADDRESS_ONLY + n)
+    stores_cover(data, spacebase, call, base, first, n, step).then_some(RETURN_ADDRESS_ONLY + n)
 }
 
 /// `n` when the first stack-pointer write after `call` in its block is
@@ -167,8 +169,9 @@ fn instruction_kind(data: &Funcdata, op: OpId) -> Instruction {
     }
 }
 
-/// Whether stores since the previous call cover every byte of the bounded
-/// argument range. Partial and overlapping stores contribute only their bytes.
+/// Whether stores since the previous call write at least one byte of every
+/// `step`-sized slot of the bounded argument range. A narrow store fills a
+/// whole slot: an aggregate smaller than a slot leaves its padding unwritten.
 fn stores_cover(
     data: &Funcdata,
     spacebase: &Address,
@@ -176,6 +179,7 @@ fn stores_cover(
     base: VarnodeId,
     first: int4,
     size: int4,
+    step: int4,
 ) -> bool {
     let mut covered = [false; MAX_ARG_BYTES as usize];
     let mut cur = call;
@@ -198,7 +202,7 @@ fn stores_cover(
             covered[lo..hi].fill(true);
         }
     }
-    covered[..size as usize].iter().all(|&byte| byte)
+    covered[..size as usize].chunks(step as usize).all(|slot| slot.contains(&true))
 }
 
 /// The offset from `base` of the address `addr`: a stack-pointer reference at

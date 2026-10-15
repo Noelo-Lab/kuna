@@ -71,22 +71,39 @@ fn frame_guess(stores: &[(i32, i32)], adjustment: i32) -> Option<i32> {
 }
 
 #[test]
-fn partial_stores_do_not_prove_complete_arguments() {
-    assert_eq!(frame_guess(&[(0, 1)], -4), None);
-    assert_eq!(frame_guess(&[(0, 2)], -4), None);
-    assert_eq!(frame_guess(&[(0, 5)], -8), None);
-    assert_eq!(frame_guess(&[(0, 2), (3, 1)], -4), None);
-    assert_eq!(frame_guess(&[(0, 2), (1, 2)], -4), None);
+fn a_narrow_store_writes_its_slot() {
+    assert_eq!(frame_guess(&[(0, 1)], -4), Some(8));
+    assert_eq!(frame_guess(&[(0, 2)], -4), Some(8));
+    assert_eq!(frame_guess(&[(0, 5)], -8), Some(12));
+    assert_eq!(frame_guess(&[(0, 2), (3, 1)], -4), Some(8));
+    assert_eq!(frame_guess(&[(2, 1)], -4), Some(8));
 }
 
 #[test]
-fn complete_stores_and_split_stores_prove_argument_bytes() {
+fn padded_small_aggregates_prove_their_slots() {
+    assert_eq!(frame_guess(&[(0, 1), (4, 4)], -8), Some(12));
+    assert_eq!(frame_guess(&[(0, 2), (4, 4)], -8), Some(12));
+    assert_eq!(frame_guess(&[(2, 1), (0, 2), (4, 4)], -8), Some(12));
+    assert_eq!(frame_guess(&[(0, 4), (4, 2), (8, 4)], -12), Some(16));
+}
+
+#[test]
+fn complete_and_split_stores_prove_their_slots() {
     assert_eq!(frame_guess(&[(0, 4)], -4), Some(8));
     assert_eq!(frame_guess(&[(0, 8)], -8), Some(12));
     assert_eq!(frame_guess(&[(0, 2), (2, 2)], -4), Some(8));
-    assert_eq!(frame_guess(&[(-1, 4)], -4), None);
-    assert_eq!(frame_guess(&[(-1, 5)], -4), Some(8));
     assert_eq!(frame_guess(&[(0, 2), (1, 3)], -4), Some(8));
+    assert_eq!(frame_guess(&[(-1, 5)], -4), Some(8));
+}
+
+#[test]
+fn an_unwritten_slot_leaves_the_pop_unknown() {
+    assert_eq!(frame_guess(&[], -4), None);
+    assert_eq!(frame_guess(&[(0, 4)], -8), None);
+    assert_eq!(frame_guess(&[(4, 4)], -8), None);
+    assert_eq!(frame_guess(&[(0, 1), (8, 4)], -12), None);
+    assert_eq!(frame_guess(&[(-4, 4)], -4), None);
+    assert_eq!(frame_guess(&[(4, 1)], -4), None);
 }
 
 #[test]
