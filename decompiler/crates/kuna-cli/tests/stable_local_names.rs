@@ -484,9 +484,10 @@ fn a_suffixed_rename_is_applied_as_printed() {
 /// A local the printer suffixed is edited by the name it shows: renamed,
 /// renamed again and retyped by it, whether an earlier directive in the batch
 /// gave it the name (`is_vowel_1` beside the function `is_vowel`, `a0_1`
-/// beside the parameter) or two locals were given one name (`dup` and
-/// `dup_1`, each reaching the local shown under it). These answered `No
-/// symbol named:` and `More than one symbol named:`.
+/// beside the parameter, a stack array and a local only passed by address)
+/// or two locals were given one name (`dup` and `dup_1`, each reaching the
+/// local shown under it). These answered `No symbol named:` and `More than
+/// one symbol named:`.
 #[test]
 fn a_suffixed_name_reaches_the_local_shown_under_it() {
     let code = decompile(&["name v6 is_vowel", "name is_vowel_1 vowels"]);
@@ -501,6 +502,10 @@ fn a_suffixed_name_reaches_the_local_shown_under_it() {
     assert!(code.contains("  int vowels; // r8d") && code.contains(" dup; // r9 | rsi"), "{code}");
     let code = decompile(&["name v6 dup", "name v7 dup", "name dup last"]);
     assert!(code.contains("  int dup; // r8d") && code.contains(" last; // r9 | rsi"), "{code}");
+    let code = decompile(&["name v4 mix", "name mix_1 buf"]);
+    assert!(code.contains("  char buf [32]; // stack - 0x48"), "{code}");
+    let code = decompile_in("retypeoutparam_x86_64", "rd", &[], &["name v1 read", "name read_1 ch"]);
+    assert!(code.contains("  char ch; // stack - 0x1") && code.contains("read(0,&ch,1)"), "{code}");
 }
 
 /// The console reads a suffixed name against the print of its last decompile:
@@ -519,24 +524,28 @@ fn console_suffixed_names_reach_their_locals() {
     assert!(last.contains("uint4 vowels; // r8d") && last.contains(" last; // r9 | rsi"), "{last}");
 }
 
-/// A stack local's retype that changes its width is refused before it
-/// applies, as a register local's is, so the C stays as it was: a narrower
-/// type shrank the local and its remainder came back as another, a wider
-/// scalar or a type past the end of the stack re-laid or dropped it. A
-/// structure, union or array may grow it over the frame, a buffer the
-/// analysis saw only the start of, and one of the same width retypes it.
+/// A stack local's retype to a scalar of another width is refused before it
+/// applies, as a register local's is, and so is a type past the end of the
+/// stack, so the C stays as it was: a narrower scalar shrank the local and its
+/// remainder came back as another, a wider one or one past the end of the
+/// stack re-laid or dropped it. A structure, union or array states the
+/// object's extent, so it may grow the local over the frame or narrow it.
 #[test]
 fn a_stack_retype_that_changes_the_width_is_refused_before_it_applies() {
     let plain = decompile(&[]);
     for (directive, reason) in [
-        ("type v4 char[16]", "Storage is 32 bytes, the stated type is 16"),
         ("type v4 long", "Storage is 32 bytes, the stated type is 8"),
+        ("type v4 unsigned char", "Storage is 32 bytes, the stated type is 1"),
     ] {
         let (code, rows) = outcomes("stablenames_x86_64", "mix", &[directive]);
         assert_eq!(rows, vec![("rejected".to_string(), Some(reason.to_string()))], "{directive}");
         assert_eq!(code.trim_end(), plain.trim_end(), "{directive}");
     }
-    for (directive, decl) in [("type v4 unsigned char[32]", "  unsigned char v4 [32];"), ("type v4 char[64]", "  char v4 [64];")] {
+    for (directive, decl) in [
+        ("type v4 unsigned char[32]", "  unsigned char v4 [32];"),
+        ("type v4 char[64]", "  char v4 [64];"),
+        ("type v4 char[16]", "  char v4 [16];"),
+    ] {
         let code = decompile(&[directive]);
         assert!(code.contains(decl), "{directive}:\n{code}");
     }

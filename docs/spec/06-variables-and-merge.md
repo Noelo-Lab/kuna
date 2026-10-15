@@ -997,7 +997,7 @@ one name the later in declaration order prints `dup_1`. No local carries such a
 name, so a directive naming it answered `No symbol named: score_1` (and the
 shared one `More than one symbol named: dup (2)`), although the output and the
 "applied as" note offered exactly that edit. When an identifier resolves to no
-local, `kuna-console/src/kuna_hightarget.rs (resolve_shown)` prints the
+local, or to more than one, `kuna-console/src/kuna_hightarget.rs (resolve_shown)` prints the
 function with a printer of its own (`printc.rs (declarations_of)`), after
 giving each local the batch has renamed so far its new name, so it reads the
 names the next decompile shows, and takes the one local declared under the
@@ -1006,21 +1006,24 @@ recorded, any other as the last decompile printed it. A local whose name
 another local shares is carried under the suffixed name it was reached by
 (`kuna_stablenames.rs (relabel)`), so the next decompile tells the two apart.
 An identifier that resolves is read as before, a library name (`fd_2`) still
-through its number first, and the extra print runs only for an identifier
-nothing else answers to.
+through its number first; a name the batch start printed for one local and an
+earlier directive gave another is still rejected as ambiguous; and the extra
+print runs only for an identifier that did not resolve.
 
-**A stack local's retype keeps its width.** A register local's retype to
-another width is rejected before it applies (`Storage is 4 bytes, the stated
-type is 8`), but a stack local's Symbol took any width: a narrower type shrank
-the local and its remainder came back as another (`type v24 unsigned char` on
-`char v24 [20]` printed `char v62 [19]` and no `v24`), a wider scalar
-swallowed its neighbours and was then reported refused, and a type running
-past the end of the stack left the Symbol unmapped. `kuna_hightarget.rs
-(check_stack_width)` refuses these before anything changes, with the same
-reason, so the C is the one the caller had. A structure, union or array that
-grows the local over the frame, a buffer the analysis saw only the start of
-(`type v1 char[16]` over `char v1 [8]`), still applies, as does a type of the
-same width (`unsigned char[20]` or `int[5]` for `char [20]`).
+**A stack local's scalar retype keeps its width.** A register local's
+retype to another width is rejected before it applies (`Storage is 4 bytes,
+the stated type is 8`), but a stack local's Symbol took any width: a narrower
+scalar shrank the local and its remainder came back as another (`type v24
+unsigned char` on `char v24 [20]` printed `char v62 [19]` and no `v24`), a
+wider one swallowed its neighbours and was then reported refused, and a type
+running past the end of the stack left the Symbol unmapped.
+`kuna_hightarget.rs (check_stack_width)` refuses these before anything
+changes, with the same reason, so the C is the one the caller had. A
+structure, union or array states the extent of the object at that address, so
+it still applies at any width that stays on the stack: it grows a buffer the
+analysis saw only the start of (`type v1 char[16]` over `char v1 [8]`) or
+narrows one to its declared extent (`unsigned int[10]` over a 48-byte slot), as
+a type of the same width (`unsigned char[20]`, `int[5]`) retypes it.
 
 **A new name must be one the declaration can print.**
 `kuna-console/src/kuna_hightarget.rs (check_local_name)` rejects a `name`, or

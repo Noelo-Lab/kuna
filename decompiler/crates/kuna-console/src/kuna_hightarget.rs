@@ -47,10 +47,10 @@
 //!    depend on their order, and `name a b` with `name b a` is a swap;
 //! 2. failing that, the variable an earlier directive in the batch gave that
 //!    name, so `name v1 rc` followed by `type rc unsigned int` retypes `rc`;
-//! 3. failing both, the variable a print of the function declares under it,
-//!    with the batch's renames given first: a name the printer suffixed
-//!    (`score_1` beside a function `score`) reaches the local shown under it
-//!    ([`resolve_shown`]).
+//! 3. when neither gives one variable, the one a print of the function
+//!    declares under it, with the batch's renames given first: a name the
+//!    printer suffixed (`score_1` beside a function `score`) reaches the local
+//!    shown under it ([`resolve_shown`]).
 //!
 //! Where both readings exist and name different variables -- `name v1 v2`, then
 //! `type v2 ...` -- nothing says which was meant, and the directive is rejected
@@ -214,8 +214,8 @@ fn library_number(fd: &Funcdata, name: &str) -> Option<String> {
     (!given).then_some(number)
 }
 
-/// The local a print of `fd` declares as `shown` where no local answers to
-/// that name: the printer suffixes a name another identifier already holds
+/// The local a print of `fd` declares as `shown` where no single local answers
+/// to that name: the printer suffixes a name another identifier already holds
 /// (`score_1` beside a function `score`, the second of two locals named
 /// `dup`). The print first gives each local the batch renamed its new name,
 /// so a name an earlier directive gave is read as the printer shows it.
@@ -257,7 +257,7 @@ fn resolve_shown(
         return Some(Ok((LocalTarget::Symbol(*sym), shown.to_string())));
     }
     let h = fd.high_bank().get(local.high)?;
-    let linked = h.kuna_link_symbol().filter(|sym| {
+    let linked = h.kuna_link_symbol().or(h.kuna_ref_symbol()).filter(|sym| {
         fd.get_scope_local().is_some_and(|lm| lm.database().try_symbol(*sym).is_some_and(|s| !s.is_name_undefined()))
     });
     if let Some(sym) = linked {
@@ -283,7 +283,8 @@ fn resolve_shown(
 
 /// Each local the batch so far renamed, by the Symbol the directive recorded,
 /// with its new name: the high a directive bound, or else the highs that
-/// print the Symbol's storage or the identifier the pass printed for it.
+/// print the Symbol (its storage, or a reference to it, as `&v2` or a stack
+/// array) or the identifier the pass printed for it.
 fn batch_renames(fd: &Funcdata) -> Vec<(SymbolId, HighVariableId, String)> {
     let Some(lm) = fd.get_scope_local() else { return Vec::new() };
     let mut out = Vec::new();
@@ -298,7 +299,7 @@ fn batch_renames(fd: &Funcdata) -> Vec<(SymbolId, HighVariableId, String)> {
                 let linked: Vec<HighVariableId> = fd
                     .high_bank()
                     .iter()
-                    .filter(|(_, h)| h.kuna_link_symbol() == Some(d.symbol))
+                    .filter(|(_, h)| h.kuna_link_symbol() == Some(d.symbol) || h.kuna_ref_symbol() == Some(d.symbol))
                     .map(|(id, _)| id)
                     .collect();
                 if linked.is_empty() { printed_highs(fd, &d.printed) } else { linked }
@@ -309,34 +310,52 @@ fn batch_renames(fd: &Funcdata) -> Vec<(SymbolId, HighVariableId, String)> {
     out
 }
 
-/// The stack storage a local's Symbol covers; `None` for a parameter or a
-/// Symbol off the stack.
-fn stack_storage(fd: &Funcdata, sym: SymbolId) -> Option<(Address, int4)> {
+/// The stack storage a local's Symbol covers, and the widths the local is
+/// printed at: its storage's, its type's and, for a scalar, each local the
+/// Symbol names (a slot written whole and read in part prints at the whole
+/// width). `None` for a parameter or a Symbol off the stack.
+fn stack_storage(fd: &Funcdata, sym: SymbolId) -> Option<(Address, Vec<int4>)> {
+    use kuna_decomp::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
     let lm = fd.get_scope_local()?;
     if lm.symbol_category(sym) == symbol_category::FUNCTION_PARAMETER {
         return None;
     }
-    lm.named_symbol_storage()
+    let (addr, size) = lm
+        .named_symbol_storage()
         .into_iter()
         .filter(|(s, addr, ..)| *s == sym && addr.get_space().is_some_and(|space| space.get_type() == IPTR_SPACEBASE))
         .map(|(_, addr, size, _)| (addr, size))
-        .max_by_key(|(_, size)| *size)
+        .max_by_key(|(_, size)| *size)?;
+    let mut widths = vec![size];
+    let dtype = lm.database().symbol(sym).dtype.clone();
+    if let Some(dtype) = &dtype {
+        widths.push(dtype.get_size());
+        if matches!(dtype.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION) {
+            return Some((addr, widths));
+        }
+    }
+    for (_, h) in fd.high_bank().iter().filter(|(_, h)| h.kuna_link_symbol() == Some(sym)) {
+        widths.extend((0..h.num_instances()).filter_map(|i| fd.vbank().get(h.get_instance(i)).map(|v| v.get_size())));
+    }
+    Some((addr, widths))
 }
 
-/// Refuse a type a stack local of `size` bytes at `addr` cannot take whole:
-/// only the same width, or a structure, union or array that grows it over
-/// the frame (a buffer the analysis saw only the start of) and still ends
-/// inside the stack space. Any other width change would leave the local
-/// declared as before, or not at all, with its neighbours re-laid around the
-/// new width.
-fn check_stack_width(addr: &Address, size: int4, ct: &Datatype) -> Result<(), String> {
+/// Refuse a type a stack local printed at `widths` and stored from `addr`
+/// cannot take whole: a scalar of none of those widths, which leaves the local
+/// declared as before or not at all, with its neighbours re-laid around the
+/// new width, or a type that runs past the end of the stack. A structure,
+/// union or array states the extent of the object at that address, so it may
+/// grow the local over the frame (a buffer the analysis saw only the start
+/// of) or narrow it.
+fn check_stack_width(addr: &Address, widths: &[int4], ct: &Datatype) -> Result<(), String> {
     use kuna_decomp::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
-    let grows = ct.get_size() > size && matches!(ct.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION);
-    if ct.get_size() != size && !grows {
+    let size = widths.iter().copied().max().unwrap_or(0);
+    let composite = matches!(ct.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION);
+    if !composite && !widths.contains(&ct.get_size()) {
         return Err(format!("Storage is {size} bytes, the stated type is {}", ct.get_size()));
     }
     let end = addr.get_offset().checked_add(ct.get_size() as u64 - 1);
-    if grows && addr.get_space().is_some_and(|space| end.is_none_or(|end| end > space.get_highest())) {
+    if ct.get_size() > size && addr.get_space().is_some_and(|space| end.is_none_or(|end| end > space.get_highest())) {
         return Err(format!(
             "Storage is {size} bytes, the stated type is {} and runs past the end of the stack",
             ct.get_size()
@@ -367,6 +386,7 @@ pub fn apply_local(
     }
     let (target, name) = match resolve_local(fd, name, retype.is_none().then_some(newname), maxduplicates) {
         Ok(target) => (target, name.to_string()),
+        Err(error) if error.starts_with("Ambiguous name") => return Err(error),
         Err(error) => match arch.and_then(|arch| resolve_shown(fd, arch, name, maxduplicates)) {
             Some(found) => found?,
             None => return Err(error),
@@ -407,8 +427,8 @@ pub fn apply_local(
         check_width(size, ct)?;
     }
     if let (None, Some(ct)) = (bound_size, retype.as_ref()) {
-        if let Some((addr, size)) = stack_storage(fd, sym) {
-            check_stack_width(&addr, size, ct)?;
+        if let Some((addr, widths)) = stack_storage(fd, sym) {
+            check_stack_width(&addr, &widths, ct)?;
         }
     }
     let retype_given = retype.is_some();
