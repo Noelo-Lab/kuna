@@ -501,6 +501,20 @@ pub fn snapshot(fd: &Funcdata) -> Vec<(String, Keys)> {
     out
 }
 
+/// Record `high`'s instances under `name` in `fd`'s snapshot: a directive
+/// that reached it by the name the printer gave it, where another local
+/// carries the same name, is carried under that printed name.
+pub fn relabel(fd: &mut Funcdata, high: HighVariableId, name: &str) {
+    let keys = instances(fd, high);
+    let mut snapshot = fd.kuna_name_snapshot().to_vec();
+    for (label, entry) in &mut snapshot {
+        if keys.contains(entry) {
+            *label = name.to_string();
+        }
+    }
+    fd.set_kuna_name_snapshot(snapshot);
+}
+
 /// A retype carried to the next decompile as the type of the whole printed
 /// variable ([`unit_retype`]); `infer` when type inference has to read it
 /// ([`reaches_inference`]).

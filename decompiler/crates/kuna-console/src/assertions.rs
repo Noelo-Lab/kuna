@@ -1130,12 +1130,12 @@ fn apply_one_symbol_scoped(
     let maxduplicates = if prog.arch().dynamic_hash_maxdup_high { 16 } else { 8 };
     match body {
         Body::Name { symbol, newname, .. } => {
-            Ok((crate::kuna_hightarget::apply_local(fd, symbol, newname, None, maxduplicates)?, None))
+            Ok((crate::kuna_hightarget::apply_local(fd, symbol, newname, None, maxduplicates, Some(prog.arch()))?, None))
         }
         Body::Type { symbol, decl, .. } => {
             let (ct, newname) = crate::grammar::parse_type(decl, prog.arch().types(), data_org(prog))
                 .map_err(|e| e.explain().to_string())?;
-            let applied = crate::kuna_hightarget::apply_local(fd, symbol, &newname, Some(ct.clone()), maxduplicates)?;
+            let applied = crate::kuna_hightarget::apply_local(fd, symbol, &newname, Some(ct.clone()), maxduplicates, Some(prog.arch()))?;
             Ok((applied, Some(ct)))
         }
         _ => Err("internal: not a symbol-scoped directive".into()),
