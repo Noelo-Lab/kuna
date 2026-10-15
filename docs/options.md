@@ -1081,6 +1081,10 @@ Three tiers:
 | byte-for-byte comparison against upstream ghidra naming | [`namestyle`](#namestyle) |
 | undefined8/xunknownN placeholder types wanted for upstream comparison (flip off) | [`realtypes`](#realtypes) |
 | size-guessed unsigned long/int/char types shown for values the inference never typed | [`realtypes`](#realtypes) |
+| a DWARF or asserted by-value struct parameter is declared as a pointer | [`indirectargs`](#indirectargs) |
+| calls pass &local to a function declared to take the struct by value | [`indirectargs`](#indirectargs) |
+| function pointer type spells T * for a by-value aggregate parameter | [`indirectargs`](#indirectargs) |
+| want the raw ABI pointer for a large struct parameter (flip off) | [`indirectargs`](#indirectargs) |
 | a void function ends with a redundant return; the source does not have | [`voidtailreturn`](#voidtailreturn) |
 | GED counts one extra exit node against an otherwise perfect function | [`voidtailreturn`](#voidtailreturn) |
 | the last statement of a void function is a bare return | [`voidtailreturn`](#voidtailreturn) |
@@ -3411,6 +3415,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On (default) emits real C types for un-inferred values; off restores the upstream xunknownN/undefined<N> rendering for byte-for-byte comparison.
 - **Where / provenance:** P9/literal-format · kuna · presentation-default · kuna-realtypes
 - **Example:** `option realtypes off`
+
+### `indirectargs` -- on | off, default `on`
+
+- **Symptoms:** a DWARF or asserted by-value struct parameter is declared as a pointer; calls pass &local to a function declared to take the struct by value; function pointer type spells T * for a by-value aggregate parameter; want the raw ABI pointer for a large struct parameter (flip off).
+- **What it does:** Print a parameter that the locked prototype declares by value but the ABI passes through a hidden pointer (a cspec convert_to_ptr or pointermax rule: AArch64, RISC-V and PowerPC aggregates over 16 bytes, MS x64 aggregates not 1/2/4/8 bytes and long double, SPARC aggregates) at its declared value type. The callee signature and function-pointer declarators spell `T v` instead of `T *v`; the callee reads the ABI pointer as `&v`, so field accesses print `v.f` and a pointer local `T *v_addr = &v` carries any update of the pointer register; a call against such a prototype passes the pointed-to value. Ordinary pointer parameters, hidden-return pointers and array parameters keep their pointer view. Off prints the ABI pointer everywhere, as upstream Ghidra does.
+- **When to flip:** On (default) when the prototype comes from DWARF, a library seed or an --assert and you want the source-level signature. Flip off to see the ABI calling contract literally, for example when a hand-written caller passes aliased storage and the callee's writes through that pointer matter to the caller.
+- **Where / provenance:** P9/indirect-value-parameters · kuna · presentation-default · indirect-value-arguments
+- **Example:** `option indirectargs off`
 
 ### `voidtailreturn` -- on | off, default `off`
 

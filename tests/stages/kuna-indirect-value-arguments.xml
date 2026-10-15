@@ -96,6 +96,13 @@
   <com>lo fu collision_cursor</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option indirectargs off</com>
+  <com>lo fu stack_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu indirect_value</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="local aggregate is passed by value" min="1" max="1">value_sink\(v[0-9]+\);</stringmatch>
@@ -104,7 +111,7 @@
 <stringmatch name="indirect call passes aggregate value" min="1" max="1">\(\*fn\)\(v[0-9]+\);</stringmatch>
 <stringmatch name="function pointer signature uses source aggregate" min="1" max="1">void \(\*fn\)\(Pair\)</stringmatch>
 <stringmatch name="callee signature uses source aggregate" min="1" max="1">int4 value_reader\(Pair value\)</stringmatch>
-<stringmatch name="by-value callee reads parameter address" min="1" max="4">return \(&amp;value\)-&gt;b \+ \(&amp;value\)-&gt;a;</stringmatch>
+<stringmatch name="by-value callee reads parameter fields" min="3" max="3">return value\.b \+ value\.a;</stringmatch>
 <stringmatch name="mutable ABI pointer has its own local" min="2" max="2">Link \*value_addr = &amp;value;</stringmatch>
 <stringmatch name="pointer callback keeps pointer contract" min="1" max="1">void \(\*ptr_fn\)\(Pair \*\)</stringmatch>
 <stringmatch name="pointer callback receives local address" min="1" max="1">\(\*ptr_fn\)\(&amp;v[0-9]+\);</stringmatch>
@@ -113,4 +120,7 @@
 <stringmatch name="mutable ABI pointer advances through its local" min="2" max="2">value_addr = value_addr-&gt;next;</stringmatch>
 <stringmatch name="by-value parameter never used as pointer" min="0" max="0">value-&gt;</stringmatch>
 <stringmatch name="unused parameter name is reserved for pointer alias" min="1" max="1">Link \*value_addr_1 = &amp;value;</stringmatch>
+<stringmatch name="indirectargs off: call passes the ABI pointer" min="1" max="1">value_sink\(&amp;v[0-9]+\);</stringmatch>
+<stringmatch name="indirectargs off: indirect call passes the ABI pointer" min="1" max="1">\(\*fn\)\(&amp;v[0-9]+\);</stringmatch>
+<stringmatch name="indirectargs off: function pointer signature keeps the ABI pointer" min="1" max="1">void \(\*fn\)\(Pair \*\)</stringmatch>
 </decompilertest>

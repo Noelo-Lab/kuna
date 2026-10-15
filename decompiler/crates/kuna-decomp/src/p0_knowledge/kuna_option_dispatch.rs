@@ -723,6 +723,7 @@ kuna_options! { self, p1;
     },
     "realtypes" => on_off!(realtypes, "Real-C-type rendering for unknowns"),
     "ctypes" => on_off!(ctypes, "valid-C core type spelling"),
+    "indirectargs" => on_off!(indirect_args, "Indirect value-parameter rendering"),
     "framelayout" => on_off!(framelayout, "recovered stack-frame reporting"),
     "bytehonest" => on_off!(byte_honest, "uncommitted-byte width reporting"),
     "slotptr" => on_off!(slot_ptr, "frame-slot pointer typing"),

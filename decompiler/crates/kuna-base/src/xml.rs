@@ -2089,7 +2089,6 @@ mod tests {
         // and kuna-libcnames / a local takes the name of the library call it meets
         // and kuna-indirect-value-arguments / declared aggregate value arguments
         assert_eq!(count, 548, "corpus file count drifted");
-        
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

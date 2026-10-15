@@ -4846,6 +4846,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "indirectargs"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "indirect-value-parameters"
+strength = "HARD"
+rewind = "P9"
+issue = "indirect-value-arguments"
+summary = "Print a parameter that the locked prototype declares by value but the ABI passes through a hidden pointer (a cspec convert_to_ptr or pointermax rule: AArch64, RISC-V and PowerPC aggregates over 16 bytes, MS x64 aggregates not 1/2/4/8 bytes and long double, SPARC aggregates) at its declared value type. The callee signature and function-pointer declarators spell `T v` instead of `T *v`; the callee reads the ABI pointer as `&v`, so field accesses print `v.f` and a pointer local `T *v_addr = &v` carries any update of the pointer register; a call against such a prototype passes the pointed-to value. Ordinary pointer parameters, hidden-return pointers and array parameters keep their pointer view. Off prints the ABI pointer everywhere, as upstream Ghidra does."
+use_when = "On (default) when the prototype comes from DWARF, a library seed or an --assert and you want the source-level signature. Flip off to see the ABI calling contract literally, for example when a hand-written caller passes aliased storage and the callee's writes through that pointer matter to the caller."
+example = "option indirectargs off"
+source_decompiler = "kuna"
+inspiration = "SPARC32 call against an asserted `void sink(Pair value)` printed `sink(&v1)` while the source passes `sink(v1)`"
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "a DWARF or asserted by-value struct parameter is declared as a pointer|calls pass &local to a function declared to take the struct by value|function pointer type spells T * for a by-value aggregate parameter|want the raw ABI pointer for a large struct parameter (flip off)"
+live_field = "indirect_args"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "voidtailreturn"
 values = "on|off"
 default = "off"

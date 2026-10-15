@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2961,
-    2961
+    2964,
+    2964
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -912,7 +912,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 305 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 306 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -1876,7 +1876,7 @@
     "data:both interior formals initialize the shared extent",
     "data:both uses of unchanged contents retained",
     "data:branch alternatives are defined",
-    "data:by-value callee reads parameter address",
+    "data:by-value callee reads parameter fields",
     "data:by-value parameter never used as pointer",
     "data:byte array retains base",
     "data:byte arrays accept unscaled element indices",
@@ -2340,6 +2340,9 @@
     "data:ilp32long ppc #5c: ctypes pick prototype",
     "data:ilp32long ppc #6: no 8-byte integer spells unsigned long",
     "data:indirect call passes aggregate value",
+    "data:indirectargs off: call passes the ABI pointer",
+    "data:indirectargs off: function pointer signature keeps the ABI pointer",
+    "data:indirectargs off: indirect call passes the ABI pointer",
     "data:indirectonly #1: off assigns the remainder across into the escaped slot",
     "data:indirectonly #2: on folds the remainder back into that same slot",
     "data:indirectonly #3: on computes the call result straight into the slot",

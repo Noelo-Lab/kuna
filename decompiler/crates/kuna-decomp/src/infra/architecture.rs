@@ -1359,6 +1359,9 @@ pub struct Architecture {
     /// front-end and the benchmark.  Read by the printc declarator chokepoints
     /// (`RealTypeCtx`).
     pub ctypes: bool,
+    /// (kuna `indirectargs`) Render a parameter the ABI passes through a hidden
+    /// pointer at its declared value type in C, instead of as that pointer.
+    pub indirect_args: bool,
     /// (kuna `framelayout`) Report the union of every stack-frame slot any
     /// `restructure_varnode` pass recovered on the `decompile-all --json`
     /// `variables` surface, not only the slots that survived to the final pass.
@@ -2919,6 +2922,7 @@ impl Architecture {
             signedness: crate::kuna_typeround::SignPolicy::Upstream, // (kuna) option signedness; reset_defaults sets the shipped default
             realtypes: false,
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
+            indirect_args: false, // (kuna) option indirectargs; reset_defaults sets the shipped default
             framelayout: false, // (kuna) option framelayout; reset_defaults sets the shipped default
             byte_honest: false, // (kuna) option bytehonest; reset_defaults sets the shipped default
             slot_ptr: false, // (kuna) option slotptr; reset_defaults sets the shipped default
@@ -3265,6 +3269,7 @@ impl Architecture {
         self.signedness = crate::kuna_typeround::SignPolicy::Auto; // (kuna) default `auto`: a declaration is re-signed only when every signedness-sensitive reader of the value agrees, which makes each surviving cast on it a no-op and leaves every other token byte-identical. 0/675 datatests and PARITY OK on stages; `option signedness upstream` restores the declaration type inference produced
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` and `fast` presets and at every `auto` size, so valid C is the default RENDERING everywhere a real binary is decompiled
+        self.indirect_args = true; // (kuna) default-on: a by-value parameter the ABI passes through a hidden pointer keeps its declared value type; 0/675 datatests move
         self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions
         self.slot_ptr = true; // (kuna) option slotptr default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; evidence in docs/features/slotptr/default-on-evaluation.md
         self.byte_honest = true; // (kuna) default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +10 type_match-perfect / 121 improved / 0 worse over 5,298 scored decbench functions

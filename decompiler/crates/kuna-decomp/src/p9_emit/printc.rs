@@ -3108,7 +3108,7 @@ impl PrintC {
                     name = default_name.as_str();
                 }
                 self.signature_param_names.insert(i, name.to_string());
-                let ty = if self.out_lang == crate::kuna_lang::OutLang::C {
+                let ty = if self.out_lang == crate::kuna_lang::OutLang::C && self.rt_ctx.indirect_args {
                     crate::kuna_indirectargs::source_type(proto, param)
                 } else { param.get_type().cloned() };
                 match ty {
@@ -7552,7 +7552,7 @@ impl PrintC {
     }
 
     fn emit_indirect_input_aliases(&mut self, fd: &Funcdata) {
-        if self.out_lang != crate::kuna_lang::OutLang::C { return; }
+        if self.out_lang != crate::kuna_lang::OutLang::C || !self.rt_ctx.indirect_args { return; }
         let inputs = crate::kuna_indirectargs::mutable_inputs(fd);
         if inputs.is_empty() { return; }
         let mut occupied: Vec<String> = fd.high_bank().iter()
@@ -7599,6 +7599,7 @@ impl PrintC {
         proto: Option<&crate::fspec::FuncProto>,
     ) {
         if self.out_lang != crate::kuna_lang::OutLang::C
+            || !self.rt_ctx.indirect_args
             || !crate::kuna_indirectargs::is_indirect_value(
                 proto, slot, fd.vbank().get(vn).map(|value| value.get_size()).unwrap_or(0),
             )
@@ -7607,7 +7608,9 @@ impl PrintC {
             return;
         }
         let mut mods = self.context.mods();
-        if self.check_array_deref(fd, vn) && !self.context.is_set(modifiers::FORCE_POINTER) {
+        if (self.check_array_deref(fd, vn) || self.is_value_indirect_input(fd, vn))
+            && !self.context.is_set(modifiers::FORCE_POINTER)
+        {
             mods |= modifiers::PRINT_LOAD_VALUE;
         } else {
             self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
@@ -7864,7 +7867,7 @@ impl PrintC {
             Some(v) => v,
             None => return,
         };
-        let usearray = self.check_array_deref(fd, ptr);
+        let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = self.context.mods();
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
             m |= modifiers::PRINT_LOAD_VALUE;
@@ -7890,7 +7893,7 @@ impl PrintC {
             None => return,
         };
         let val = fd.obank().get(op).and_then(|o| o.get_in(2));
-        let usearray = self.check_array_deref(fd, ptr);
+        let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = mods;
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
             m |= modifiers::PRINT_STORE_VALUE;
@@ -9297,12 +9300,10 @@ impl PrintC {
         if let Some(high) = v.get_high() {
             let named = self.emitted_high_symbol(fd, high);
             if let Some((name, sym_off, sym_type)) = named {
-                if self.out_lang == crate::kuna_lang::OutLang::C
-                    && v.is_input()
-                    && !self.indirect_input_aliases.contains(&high)
-                    && crate::kuna_indirectargs::is_indirect_input(fd, vn)
-                {
-                    self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+                if self.is_value_indirect_input(fd, vn) {
+                    if !self.context.is_set(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE) {
+                        self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+                    }
                     self.push_atom(&Atom::with_op_vn(
                         name, TagType::VarToken,
                         crate::printlanguage::SyntaxHighlight::var_color,
@@ -9766,7 +9767,7 @@ impl PrintC {
         let mut valueon = (self.context.mods()
             & (modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE))
             != 0;
-        let flex = self.is_value_flexible_ir(fd, in0);
+        let flex = self.is_value_flexible_ir(fd, in0) || self.is_value_indirect_input(fd, in0);
         let word_size = ptype.get_word_size().unwrap_or(1);
         let metameta = ct.get_metatype();
 
@@ -10119,6 +10120,21 @@ impl PrintC {
             // Union/other: functional fallback.
             self.op_func_ir(fd, arch, op);
         }
+    }
+
+    /// (kuna `indirectargs`) Is `vn` the ABI pointer input of a parameter printed
+    /// as its value, so that `&name` stands for it and `name` for its target?
+    fn is_value_indirect_input(&self, fd: &Funcdata, vn: VarnodeId) -> bool {
+        self.out_lang == crate::kuna_lang::OutLang::C
+            && self.rt_ctx.indirect_args
+            && fd.vbank().get(vn).is_some_and(|v| {
+                v.is_input()
+                    && v.get_high().is_some_and(|high| {
+                        !self.indirect_input_aliases.contains(&high)
+                            && self.emitted_high_symbol(fd, high).is_some()
+                    })
+            })
+            && crate::kuna_indirectargs::is_indirect_input(fd, vn)
     }
 
     /// C++ `isValueFlexible(vn)` (printc.cc:919): the value `vn` is an implied
@@ -11356,6 +11372,7 @@ impl RealTypeCtx {
             long_is_8: arch.types().get_size_of_long() == 8,
             ctypes: arch.ctypes,
             model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
+            indirect_args: arch.indirect_args,
         }
     }
 }

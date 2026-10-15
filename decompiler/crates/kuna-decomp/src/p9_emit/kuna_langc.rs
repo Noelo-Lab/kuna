@@ -197,7 +197,13 @@ impl TypeSpeller for CSpeller {
                         .expect("code modifier prototype");
                     let mut params = Vec::new();
                     for i in 0..proto.num_params() {
-                        let ty = proto.get_param(i).and_then(|param| crate::kuna_indirectargs::source_type(proto, param));
+                        let ty = proto.get_param(i).and_then(|param| {
+                            if cx.indirect_args {
+                                crate::kuna_indirectargs::source_type(proto, param)
+                            } else {
+                                param.get_type().cloned()
+                            }
+                        });
                         let text = ty
                             .map(|ty| {
                                 let (front, back) = self.declarator(cx, &ty);
