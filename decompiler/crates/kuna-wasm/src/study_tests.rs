@@ -1,8 +1,10 @@
 //! The study view's commands on the browser example (`sample.elf`): `inspect`
 //! against `decompile`, the instruction listing against the C and the file,
 //! `read`, and the `--assert` plane end to end; `strings` on the crackme
-//! example (`crackme.elf`); and the type definitions `inspect` prints above a
-//! function (`structs.elf`).
+//! example (`crackme.elf`); the type definitions `inspect` prints above a
+//! function (`structs.elf`); and the globals a function names, the `data`
+//! window around one and the `uses` of it (`globals.elf`, and its stripped
+//! twin).
 
 use std::path::PathBuf;
 
@@ -521,4 +523,141 @@ fn inspect_defines_the_types_a_function_uses_above_it() {
         .flat_map(|i| i["lines"].as_array().expect("lines").iter().filter_map(Value::as_u64))
         .collect();
     assert!(!lines.is_empty() && lines.iter().all(|&l| l > shift + 1), "{shift} {lines:?}");
+}
+
+fn token_globals(doc: &Value) -> Vec<(String, Option<String>)> {
+    doc["function"]["tokens"]
+        .as_array()
+        .expect("tokens")
+        .iter()
+        .filter(|t| t["kind"].as_str() == Some("variable") && t.get("var").is_none() && t.get("decl").is_none())
+        .map(|t| (t["text"].as_str().unwrap().to_string(), t["global_hex"].as_str().map(str::to_string)))
+        .collect()
+}
+
+/// Every token that names global data carries the global's address: a symbol
+/// the program names (`primes`) and one the decompiler names by its address
+/// (`dat_4040` in the stripped twin), and `globals` lists both kinds. A local
+/// never does.
+#[test]
+fn inspect_puts_the_address_of_global_data_on_its_tokens() {
+    let named = run_on("globals.elf", "inspect", &["main"], &[]).expect("inspect main");
+    let tokens = token_globals(&named);
+    let at = |name: &str| tokens.iter().find(|(t, _)| t == name).and_then(|(_, g)| g.clone());
+    assert_eq!(at("primes").as_deref(), Some("0x4040"), "{tokens:?}");
+    assert_eq!(at("greeting").as_deref(), Some("0x4020"));
+    assert_eq!(at("scratch").as_deref(), Some("0x40c0"));
+    assert_eq!(at("origin").as_deref(), Some("0x4060"));
+    assert_eq!(at("op").as_deref(), Some("0x4078"));
+    assert_eq!(at("favorite").as_deref(), Some("0x4080"));
+    assert_eq!(at("banner").as_deref(), Some("0x4070"));
+    assert!(tokens.iter().filter(|(t, _)| t.starts_with('v')).all(|(_, g)| g.is_none()), "{tokens:?}");
+    let globals = named["function"]["globals"].as_array().expect("globals");
+    let primes = globals.iter().find(|g| g["name"].as_str() == Some("primes")).expect("primes listed");
+    assert_eq!(primes["address_hex"].as_str(), Some("0x4040"));
+    assert_eq!(primes["size"].as_u64(), Some(32));
+
+    let retyped = run_on("globals.elf", "inspect", &["main"], &["data 0x4060 point origin"]).expect("inspect main");
+    assert!(retyped["function"]["code"].as_str().unwrap().contains("(*op)(origin.x)"));
+    assert!(token_globals(&retyped).iter().any(|(t, g)| t == "origin" && g.as_deref() == Some("0x4060")));
+
+    let stripped = run_on("globals-stripped.elf", "inspect", &["main"], &[]).expect("inspect main");
+    let tokens = token_globals(&stripped);
+    assert!(tokens.iter().any(|(t, g)| t == "dat_4040" && g.as_deref() == Some("0x4040")), "{tokens:?}");
+    let globals = stripped["function"]["globals"].as_array().expect("globals");
+    let minted = globals.iter().find(|g| g["name"].as_str() == Some("dat_4078")).expect("dat_4078 listed");
+    assert_eq!(minted["declaration"].as_str(), Some("int (*dat_4078)(unsigned int)"));
+}
+
+fn item<'a>(doc: &'a Value, name: &str) -> &'a Value {
+    doc["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .find(|i| i["name"].as_str() == Some(name))
+        .unwrap_or_else(|| panic!("{name} is an item: {:?}", doc["items"]))
+}
+
+/// `data` shows the section around a global: its labelled items with their
+/// types and layouts, the bytes as loaded, and what each pointer word points
+/// at. A retype is a `data` directive the window honours, a struct's fields
+/// included; a `.bss` buffer has no file bytes behind it.
+#[test]
+fn data_shows_the_typed_items_around_a_global() {
+    let doc = run_on("globals.elf", "data", &["0x4040"], &[]).expect("data");
+    assert_eq!(doc["section"]["name"].as_str(), Some(".data"));
+    assert_eq!(doc["pointer_size"].as_u64(), Some(8));
+    let start = doc["start"].as_u64().expect("start");
+    assert!(start <= 0x4020, "{doc:?}");
+    let bytes = doc["bytes"].as_str().expect("bytes");
+    let at = |addr: u64, len: usize| &bytes[(addr - start) as usize * 2..(addr - start) as usize * 2 + len * 2];
+    assert_eq!(at(0x4040, 8), "0200000003000000");
+    assert_eq!(at(0x4020, 12), hex(b"hello, data\0"));
+    assert_eq!(item(&doc, "primes")["size"].as_u64(), Some(32));
+    let targets = doc["targets"].as_array().expect("targets");
+    let to = |at: &str| targets.iter().find(|t| t["at_hex"].as_str() == Some(at)).unwrap_or_else(|| panic!("{at}: {targets:?}"));
+    assert_eq!(to("0x4078")["name"].as_str(), Some("twice"));
+    assert_eq!(to("0x4080")["name"].as_str(), Some("primes"));
+    assert_eq!(to("0x4080")["offset"].as_u64(), Some(12));
+    assert_eq!(to("0x4070")["text"].as_str(), Some("kuna data tab"));
+
+    let typed = run_on(
+        "globals.elf",
+        "data",
+        &["0x4060"],
+        &["data 0x4040 int primes[8]", "data 0x4060 point origin", "data 0x4078 int (*op)(int)"],
+    )
+    .expect("data");
+    let primes = &item(&typed, "primes")["layout"];
+    assert_eq!(primes["kind"].as_str(), Some("array"));
+    assert_eq!(primes["count"].as_u64(), Some(8));
+    assert_eq!(primes["elem"]["kind"].as_str(), Some("int"));
+    let origin = item(&typed, "origin");
+    assert_eq!(origin["declaration"].as_str(), Some("point origin"));
+    let fields: Vec<(&str, u64, &str)> = origin["layout"]["fields"]
+        .as_array()
+        .expect("fields")
+        .iter()
+        .map(|f| (f["name"].as_str().unwrap(), f["offset"].as_u64().unwrap(), f["type"]["kind"].as_str().unwrap()))
+        .collect();
+    assert_eq!(fields, vec![("x", 0, "int"), ("y", 4, "int"), ("label", 8, "pointer")]);
+    assert_eq!(item(&typed, "op")["declaration"].as_str(), Some("int (*op)(int)"));
+    assert_eq!(item(&typed, "op")["layout"]["to"]["kind"].as_str(), Some("code"));
+
+    let bss = run_on("globals.elf", "data", &["0x40c0"], &[]).expect("data");
+    assert_eq!(bss["section"]["name"].as_str(), Some(".bss"));
+    assert_eq!(bss["section"]["file_offset"], Value::Null);
+    assert_eq!(item(&bss, "scratch")["size"].as_u64(), Some(64));
+
+    let exact = run_on("globals.elf", "data", &["0x2010", "8"], &[]).expect("data");
+    assert_eq!(exact["start_hex"].as_str(), Some("0x2010"));
+    assert_eq!(exact["bytes"].as_str(), Some("e803000000000000"));
+    assert_eq!(exact["section"]["name"].as_str(), Some(".rodata"));
+    assert!(run_on("globals.elf", "data", &["0x4040", "0"], &[]).is_err());
+}
+
+/// `uses` names the instruction behind every use of the data in a range, with
+/// the byte it uses: `main` takes the address of `primes` and reads `op`.
+#[test]
+fn uses_names_the_instructions_that_use_the_data() {
+    let doc = run_on("globals.elf", "uses", &["0x4040", "0x48"], &[]).expect("uses");
+    let uses = doc["uses"].as_array().expect("uses");
+    let first = |to: &str| uses.iter().find(|u| u["to_hex"].as_str() == Some(to)).unwrap_or_else(|| panic!("{to}: {uses:?}"));
+    assert_eq!(first("0x4040")["name"].as_str(), Some("main"));
+    assert_eq!(first("0x4040")["kind"].as_str(), Some("data"));
+    assert!(first("0x4040")["instruction"].as_str().unwrap().contains("0x4040"));
+    assert_eq!(first("0x4078")["kind"].as_str(), Some("read"));
+    let main = run_on("globals.elf", "inspect", &["main"], &[]).expect("inspect main");
+    let sites: Vec<&str> = main["function"]["instructions"]
+        .as_array()
+        .expect("instructions")
+        .iter()
+        .filter_map(|i| i["address_hex"].as_str())
+        .collect();
+    for u in uses {
+        assert_eq!(u["address_hex"], main["function"]["address_hex"], "{u:?}");
+        assert!(sites.contains(&u["at_hex"].as_str().unwrap()), "{u:?}");
+        let to = u["to"].as_u64().unwrap();
+        assert!((0x4040..0x4088).contains(&to), "{u:?}");
+    }
 }

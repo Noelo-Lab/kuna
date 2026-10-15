@@ -127,17 +127,28 @@ fn function_json(prog: &ConsoleProgram, f: &FuncResult, kind: &str, sections: &[
     let types = arr(f.types.iter().map(|t| {
         Obj::new().str("name", &t.name).str("definition", &t.definition).num("size", t.size).end()
     }));
-    let globals = arr(f.globals.iter().map(|g| {
-        Obj::new()
-            .str("name", &g.name)
-            .addr("address", g.address)
-            .str("declaration", &g.declaration)
-            .num("size", g.size)
-            .end()
-    }));
+    let named = f.detail.as_ref().map_or(&[][..], |d| &d.globals[..]);
+    let globals = arr(f
+        .globals
+        .iter()
+        .map(|g| (g.name.as_str(), g.address, g.declaration.clone(), g.size))
+        .chain(
+            named
+                .iter()
+                .filter(|n| !f.globals.iter().any(|g| g.address == n.address))
+                .map(|n| (n.name.as_str(), n.address, crate::data::declare(&n.type_name, &n.name), n.size as i64)),
+        )
+        .map(|(name, address, declaration, size)| {
+            Obj::new()
+                .str("name", name)
+                .addr("address", address)
+                .str("declaration", &declaration)
+                .num("size", size)
+                .end()
+        }));
     let (tokens, tokens_error) = match (&f.detail, &f.code) {
         (Some(detail), _) => (
-            arr(detail.tokens.iter().map(|t| {
+            arr(detail.tokens.iter().enumerate().map(|(i, t)| {
                 let mut o = Obj::new()
                     .num("line", t.line)
                     .num("col", t.col)
@@ -159,6 +170,14 @@ fn function_json(prog: &ConsoleProgram, f: &FuncResult, kind: &str, sections: &[
                 }
                 if let Some(ty) = &t.type_text {
                     o = o.str("type", ty);
+                }
+                let named = detail.token_globals.get(i).copied().flatten().and_then(|g| detail.globals.get(g));
+                let minted = || {
+                    let plain = t.kind == kuna_decomp::prettyprint::TokenKind::Variable && t.var.is_none();
+                    f.globals.iter().find(|g| plain && g.name == t.text)
+                };
+                if let Some(address) = named.map(|g| g.address).or_else(|| minted().map(|g| g.address)) {
+                    o = o.addr("global", address);
                 }
                 o.end()
             })),
