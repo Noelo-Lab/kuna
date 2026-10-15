@@ -219,7 +219,9 @@ fn library_number(fd: &Funcdata, name: &str) -> Option<String> {
 /// (`score_1` beside a function `score`, the second of two locals named
 /// `dup`). The print first gives each local the batch renamed its new name,
 /// so a name an earlier directive gave is read as the printer shows it.
-/// `None` when the print declares no single local as `shown`; with the
+/// `None` when the print declares no single local as `shown`, or declares
+/// two locals the batch renamed under one line (their storage overlaps), so
+/// it cannot say which the next decompile shows as `shown`; with the
 /// target, the name to record the directive under.
 fn resolve_shown(
     fd: &mut Funcdata,
@@ -253,8 +255,12 @@ fn resolve_shown(
         return None;
     }
     let owner = |high: HighVariableId| print.declared_local(high).map(|local| local.high);
-    if let Some((sym, ..)) = renamed.iter().find(|(_, high, _)| owner(*high) == Some(local.high)) {
-        return Some(Ok((LocalTarget::Symbol(*sym), shown.to_string())));
+    let mut owners = renamed.iter().filter(|(_, high, _)| owner(*high) == Some(local.high)).map(|(sym, ..)| *sym);
+    if let Some(sym) = owners.next() {
+        if owners.any(|other| other != sym) {
+            return None;
+        }
+        return Some(Ok((LocalTarget::Symbol(sym), shown.to_string())));
     }
     let h = fd.high_bank().get(local.high)?;
     let linked = h.kuna_link_symbol().or(h.kuna_ref_symbol()).filter(|sym| {
@@ -354,7 +360,7 @@ fn check_stack_width(addr: &Address, widths: &[int4], ct: &Datatype) -> Result<(
     if !composite && !widths.contains(&ct.get_size()) {
         return Err(format!("Storage is {size} bytes, the stated type is {}", ct.get_size()));
     }
-    let end = addr.get_offset().checked_add(ct.get_size() as u64 - 1);
+    let end = (ct.get_size() as u64).checked_sub(1).and_then(|last| addr.get_offset().checked_add(last));
     if ct.get_size() > size && addr.get_space().is_some_and(|space| end.is_none_or(|end| end > space.get_highest())) {
         return Err(format!(
             "Storage is {size} bytes, the stated type is {} and runs past the end of the stack",

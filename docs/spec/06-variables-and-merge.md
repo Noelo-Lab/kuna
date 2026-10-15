@@ -1002,7 +1002,12 @@ function with a printer of its own (`printc.rs (declarations_of)`), after
 giving each local the batch has renamed so far its new name, so it reads the
 names the next decompile shows, and takes the one local declared under the
 identifier: a local the batch renamed through the Symbol the earlier directive
-recorded, any other as the last decompile printed it. A local whose name
+recorded, any other as the last decompile printed it. Where that print
+declares two locals the batch renamed under one line -- two locals given one
+name whose storage overlaps, `eax` within `rax`, which the print collapses
+while the next decompile declares them apart -- it cannot say which one is
+shown unsuffixed, and the directive is rejected as before rather than applied
+to either. A local whose name
 another local shares is carried under the suffixed name it was reached by
 (`kuna_stablenames.rs (relabel)`), so the next decompile tells the two apart.
 An identifier that resolves is read as before, a library name (`fd_2`) still
