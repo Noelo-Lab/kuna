@@ -634,6 +634,9 @@ fn data_shows_the_typed_items_around_a_global() {
     assert_eq!(exact["bytes"].as_str(), Some("e803000000000000"));
     assert_eq!(exact["section"]["name"].as_str(), Some(".rodata"));
     assert!(run_on("globals.elf", "data", &["0x4040", "0"], &[]).is_err());
+    let nowhere = run_on("globals.elf", "data", &["0xfffffffffffffff8"], &[]).expect("data at the top of memory");
+    assert_eq!(nowhere["size"].as_u64(), Some(0));
+    assert_eq!(nowhere["section"], Value::Null);
 }
 
 /// `uses` names the instruction behind every use of the data in a range, with
