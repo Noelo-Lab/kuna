@@ -347,9 +347,9 @@ fn parse_imm(tok: &str) -> Option<i64> {
     Some(if neg { -v } else { v })
 }
 
-/// Backward-scan the straight-line predecessors of the tail `call` (`call_idx`)
-/// for the defining write of the first int-arg register, returning true iff that
-/// write is a nonzero **constant** load.
+/// Backward-scan the straight-line predecessors of the call at `call_vma` for the
+/// defining write of the first int-arg register, returning true iff that write is
+/// a nonzero **constant** load.
 ///
 /// Conservative by construction: it stops (and returns false) at the first
 /// control-flow instruction or intervening `call` (beyond which the straight-line
@@ -357,20 +357,6 @@ fn parse_imm(tok: &str) -> Option<i64> {
 /// clobbered), and returns false for a zero literal (`error(0,…)` *returns*) or any
 /// non-literal / unrecognised definition. A false positive would mark a returning
 /// function no-return and drop live caller code, so every uncertain case is a no.
-#[cfg(test)]
-fn arg0_is_nonzero_const(body: &[(u64, &Insn)], call_idx: usize) -> bool {
-    for &(_, insn) in body[..call_idx].iter().rev() {
-        // A branch/return between here and the call breaks straight-line dominance.
-        if insn.flow.is_jump || insn.flow.is_terminal {
-            return false;
-        }
-        if let Some(result) = arg0_scan_result(insn) {
-            return result;
-        }
-    }
-    false
-}
-
 fn arg0_is_nonzero_const_before<B: InstructionBody + ?Sized>(
     body: &B,
     call_vma: u64,
@@ -868,6 +854,11 @@ mod tests {
             operands: operands.into(),
             pcode: None,
         }
+    }
+
+    fn arg0_is_nonzero_const(body: &[(u64, &Insn)], call_idx: usize) -> bool {
+        let index: BTreeMap<u64, &Insn> = body.iter().copied().collect();
+        arg0_is_nonzero_const_before(&index, body[call_idx].0, false)
     }
 
     #[test]
