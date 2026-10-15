@@ -195,7 +195,7 @@ try {
   assert.ok(await dblclickToken('scratch'));
   await dataShown('0x40c0', 'scratch in .bss');
   assert.match(await text('#datalist .dv-sec'), /^\.bss data that starts as zeros/);
-  assert.equal(await rowValue('0x40c0'), '0 when the program starts', 'nothing in the file backs it');
+  assert.equal(await rowValue('0x40c0'), 'uninitialized', 'nothing in the file backs it');
   assert.equal(await text('#datalist [data-act=dv-more]'), 'Previous section: .data', 'the section before is one click away');
   await noExceptions('a .bss buffer starts as zeros');
 
