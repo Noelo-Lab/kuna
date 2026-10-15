@@ -1,6 +1,9 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "coldentry_source_boundary.rs"]
+mod coldentry_source_boundary;
+
 #[path = "ambiguous_selector_cli.rs"]
 mod ambiguous_selector_cli;
 
