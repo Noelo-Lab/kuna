@@ -1,22 +1,35 @@
 //! Discover, render and validate the registered option catalog.
 //!
-//! The console supplies JSON; this module renders a table, indented JSON or
-//! the generated Markdown manual. Validation compares the catalog with
+//! The linked engine supplies static JSON by default; an explicit console
+//! override keeps external queries. This module renders a table, indented JSON
+//! or the generated Markdown manual. Validation compares the catalog with
 //! [`kuna_decomp::options::KUNA_OPTION_NAMES`] to reject missing or stale rows.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use kuna_console::kuna_buildstamp;
-use kuna_decomp::kuna_phases::emit_catalog_markdown;
+use kuna_decomp::kuna_phases::{emit_catalog_json, emit_catalog_json_one, emit_catalog_markdown};
 use kuna_decomp::options::KUNA_OPTION_NAMES;
 
 use crate::jsonfmt::{dumps_indent2, extract_json_span, parse, Json};
 use crate::paths;
 
-/// Run `decomp_dbg phase catalog [<option>]` and return the parsed JSON value
-/// (an array, or a single object when `option` is given).
+/// Read the local static catalog unless the caller selected an external console.
 fn run_catalog(option: Option<&str>, pinned_by: Option<&str>) -> Result<Json, String> {
+    if pinned_by.is_some() {
+        return run_external_catalog(option, pinned_by);
+    }
+    let out = match option {
+        Some(option) => emit_catalog_json_one(option, None)
+            .ok_or_else(|| format!("unknown option: {option:?}"))?,
+        None => emit_catalog_json(|_| None),
+    };
+    parse(&out).ok_or_else(|| "could not parse `phase catalog` JSON".to_string())
+}
+
+/// Run `decomp_dbg phase catalog [<option>]` for an explicit console override.
+fn run_external_catalog(option: Option<&str>, pinned_by: Option<&str>) -> Result<Json, String> {
     let engine = paths::decomp_dbg()?;
     let specs = paths::specs_dir();
     let cmd = match option {
@@ -212,13 +225,10 @@ pub fn cmd_text(option: Option<&str>, tier: Option<&str>, pinned_by: Option<&str
 
 /// `--check`: verify the catalog documents exactly the registered kuna options.
 ///
-/// The Rust-only replacement for `catalog.check_drift`: compare the option names
-/// the binary's `phase catalog` emits against the in-process registered set
-/// (`KUNA_OPTION_NAMES`).  A registered option with no catalog row is
-/// undiscoverable; a catalog row matching no registered option is stale.  The
-/// build-time codegen (`phases.toml` -> `SETTABLE_TABLE`) already fences the
-/// catalog/table consistency at compile time; this end-to-end check fences the
-/// catalog (what the binary emits) against the registration list.
+/// Compare the selected catalog's option names with this build's registered set
+/// (`KUNA_OPTION_NAMES`). A registered option with no row is undiscoverable;
+/// a row matching no registered option is stale. An explicit console override
+/// selects that binary's catalog; otherwise both sets come from this build.
 pub fn cmd_check(pinned_by: Option<&str>) -> i32 {
     let v = match run_catalog(None, pinned_by) {
         Ok(v) => v,

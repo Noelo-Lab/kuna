@@ -2993,6 +2993,14 @@ and an agent writes:
   unknown fields are rejected. Live mappings must supply all three fields or
   none. The rendered catalog is
   [docs/options.md](../options.md) and this spec never duplicates its metadata.
+  Default CLI catalog discovery calls the static emitter in-process: no console
+  subprocess, binary input or SLEIGH tree is needed. An explicit `--decomp-dbg`
+  override, or a non-empty `KUNA_DECOMP_DBG` when the flag is absent, selects the
+  external console's catalog instead; a missing selected binary remains an error.
+  Text and JSON retain the same rendering and tier filters on both routes.
+  `--check` compares the selected catalog with this CLI build's registered handlers;
+  `--markdown` always renders the local table. The compatibility flags `--engine`
+  and `--sleighpath` do not themselves select the external route.
   The CLI parses catalog JSON with the standard JSON parser while preserving
   field order, duplicate keys, and number spellings for its existing renderers.
   Conversion is bounded to 128 nested containers and rejects malformed or trailing
