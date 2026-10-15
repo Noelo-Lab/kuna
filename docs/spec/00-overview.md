@@ -2793,6 +2793,13 @@ the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as 
 `BlockCopy` mirror of the CFG when structuring begins
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_sblocks_copy)`).
 
+Deleting a varnode through `Funcdata::delete_varnode` first checks the bank's
+deletion precondition: the node must have neither a defining operation nor any
+readers. A rejected deletion leaves the node, both bank indexes, HighVariable
+membership, and storage-source metadata unchanged. Once eligible, the node is
+detached from its HighVariable while its location is still available; an empty
+HighVariable is erased, followed by the node and its storage-source metadata.
+
 Registering an input varnode also applies the prototype's saved-register and
 return-address effects. This is unconditional registration behavior, not a
 separate feature gate; `funcdata_varnode.rs (apply_input_effect_marking)` uses
