@@ -8971,11 +8971,16 @@ impl PrintC {
                 && sym_type.as_ref().map(|t| t.get_size() == size).unwrap_or(false);
             if !whole {
                 // Partial symbol (printc.cc:1953-1954 pushPartialSymbol).  For an
-                // array-of-element symbol the access maps to element
+                // array of scalars the access maps to element
                 // `sym_off / elsize` — the array-subscript shape
-                // push_vn_explicit_ir renders for symbol-bound highs.
+                // push_vn_explicit_ir renders for symbol-bound highs; any other
+                // partial cover takes the member walk (`s.b`, `a[2][1]`).
                 if let Some(st) = &sym_type {
-                    if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
+                    use crate::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
+                    let composite = st.get_array_base().is_some_and(|elem| {
+                        matches!(elem.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION)
+                    });
+                    if st.get_metatype() == TYPE_ARRAY && !composite {
                         if let Some(elem) = st.get_array_base() {
                             let elsize = elem.get_align_size().max(1);
                             if sym_off >= 0 && (sym_off % elsize) == 0 && st.get_size() > elsize {
@@ -9004,6 +9009,12 @@ impl PrintC {
                                 return;
                             }
                         }
+                    }
+                    if self.push_partial_symbol_ir(
+                        fd, arch, &name, std::rc::Rc::clone(st), sym_off as int8,
+                        size, vn, op, 1, false,
+                    ) {
+                        return;
                     }
                 }
             }

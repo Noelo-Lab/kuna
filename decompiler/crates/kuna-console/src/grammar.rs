@@ -2684,7 +2684,7 @@ pub fn parse_type(
 /// few hundred fields does not fit in that.
 const LINE_BUFFER: int4 = 65536;
 
-/// Parse a mapped object's type while retaining its outer volatile qualifier.
+/// Parse a mapped object's effective volatility, including typedefs and array elements.
 pub fn parse_type_with_volatile(
     input: &str,
     factory: &dyn TypeFactory,
@@ -2707,14 +2707,17 @@ pub fn parse_type_with_volatile(
     }
     let name = decl.get_identifier().to_string();
     let ty = decl.build_type(factory, &org)?;
-    let qualifiers = decl.mods.iter()
-        .find_map(|m| match m {
-            TypeModifier::Pointer { flags } => Some(*flags),
-            TypeModifier::Function { .. } => Some(0),
-            TypeModifier::Array { .. } => None,
-        })
-        .unwrap_or(decl.flags);
-    Ok((ty, name, qualifiers & flags::F_VOLATILE != 0))
+    let mut object = Rc::clone(&ty);
+    let volatile = loop {
+        if kuna_decomp::kuna_typequal::is_volatile(&object) {
+            break true;
+        }
+        let Some(element) = object.get_array_base() else {
+            break false;
+        };
+        object = element;
+    };
+    Ok((ty, name, volatile))
 }
 
 /// C++ `parse_protopieces(PrototypePieces &pieces,istream &s,Architecture *glb)`
