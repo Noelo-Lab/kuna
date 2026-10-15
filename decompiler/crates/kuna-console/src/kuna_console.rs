@@ -816,8 +816,11 @@ impl IfaceCommandAction for IfcKunaAssert {
                 let newname = tokens[1].clone();
                 let dcp = dcp_mut(status)?;
                 let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
-                let fd = dcp.local_symbol_fd(&oldname)?;
-                crate::kuna_hightarget::apply_local(fd, &oldname, &newname, None, maxduplicates)
+                dcp.local_symbol_fd(&oldname)?;
+                let (Some(fd), arch) = (dcp.fd.as_mut(), dcp.conf.as_ref().map(|p| p.arch())) else {
+                    return Err(IfaceError::execution("no function selected"));
+                };
+                crate::kuna_hightarget::apply_local(fd, &oldname, &newname, None, maxduplicates, arch)
                     .map_err(IfaceError::execution)?;
                 status.out(&applied_line);
                 self.assert_log.borrow_mut().push(record);

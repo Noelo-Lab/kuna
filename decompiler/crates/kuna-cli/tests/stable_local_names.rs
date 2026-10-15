@@ -481,6 +481,76 @@ fn a_suffixed_rename_is_applied_as_printed() {
     assert_eq!(rows, vec![("applied".to_string(), applied_as("dup_1")), ("applied".to_string(), None)]);
 }
 
+/// A local the printer suffixed is edited by the name it shows: renamed,
+/// renamed again and retyped by it, whether an earlier directive in the batch
+/// gave it the name (`is_vowel_1` beside the function `is_vowel`, `a0_1`
+/// beside the parameter) or two locals were given one name (`dup` and
+/// `dup_1`, each reaching the local shown under it). These answered `No
+/// symbol named:` and `More than one symbol named:`.
+#[test]
+fn a_suffixed_name_reaches_the_local_shown_under_it() {
+    let code = decompile(&["name v6 is_vowel", "name is_vowel_1 vowels"]);
+    assert!(code.contains("  int vowels; // r8d") && !code.contains("is_vowel_1"), "{code}");
+    let code = decompile(&["name v6 is_vowel", "name is_vowel_1 vowels", "name vowels count"]);
+    assert!(code.contains("  int count; // r8d"), "{code}");
+    let code = decompile(&["name v6 is_vowel", "type is_vowel_1 unsigned int"]);
+    assert!(code.contains("  unsigned int is_vowel_1; // r8d"), "{code}");
+    let code = decompile(&["name v6 a0", "name a0_1 vowels"]);
+    assert!(code.contains("  int vowels; // r8d") && code.contains("long mix(long a0,"), "{code}");
+    let code = decompile(&["name v6 dup", "name v7 dup", "name dup_1 vowels"]);
+    assert!(code.contains("  int vowels; // r8d") && code.contains(" dup; // r9 | rsi"), "{code}");
+    let code = decompile(&["name v6 dup", "name v7 dup", "name dup last"]);
+    assert!(code.contains("  int dup; // r8d") && code.contains(" last; // r9 | rsi"), "{code}");
+}
+
+/// The console reads a suffixed name against the print of its last decompile:
+/// of two locals a rename gave one name, `dup_1` and `dup` each reach the
+/// local printed under it, also in the decompile after.
+#[test]
+fn console_suffixed_names_reach_their_locals() {
+    let out = console(
+        "load function mix\ndecompile\nrename v6 dup\nrename v7 dup\ndecompile\nprint C\n\
+         rename dup_1 vowels\ndecompile\nprint C\nrename dup last\nretype vowels unsigned int\ndecompile\nprint C",
+    );
+    for refusal in ["No symbol", "More than one", "Rejected"] {
+        assert!(!out.contains(refusal), "{refusal}:\n{out}");
+    }
+    let last = out.rsplit("print C").next().unwrap();
+    assert!(last.contains("uint4 vowels; // r8d") && last.contains(" last; // r9 | rsi"), "{last}");
+}
+
+/// A stack local's retype that changes its width is refused before it
+/// applies, as a register local's is, so the C stays as it was: a narrower
+/// type shrank the local and its remainder came back as another, a wider
+/// scalar or a type past the end of the stack re-laid or dropped it. A
+/// structure, union or array may grow it over the frame, a buffer the
+/// analysis saw only the start of, and one of the same width retypes it.
+#[test]
+fn a_stack_retype_that_changes_the_width_is_refused_before_it_applies() {
+    let plain = decompile(&[]);
+    for (directive, reason) in [
+        ("type v4 char[16]", "Storage is 32 bytes, the stated type is 16"),
+        ("type v4 long", "Storage is 32 bytes, the stated type is 8"),
+    ] {
+        let (code, rows) = outcomes("stablenames_x86_64", "mix", &[directive]);
+        assert_eq!(rows, vec![("rejected".to_string(), Some(reason.to_string()))], "{directive}");
+        assert_eq!(code.trim_end(), plain.trim_end(), "{directive}");
+    }
+    for (directive, decl) in [("type v4 unsigned char[32]", "  unsigned char v4 [32];"), ("type v4 char[64]", "  char v4 [64];")] {
+        let code = decompile(&[directive]);
+        assert!(code.contains(decl), "{directive}:\n{code}");
+    }
+    for (function, directive, reason) in [
+        ("rdn", "type v1 long", "Storage is 4 bytes, the stated type is 8"),
+        ("rd", "type v1 char[4]", "Storage is 1 bytes, the stated type is 4 and runs past the end of the stack"),
+    ] {
+        let plain = decompile_in("retypeoutparam_x86_64", function, &[], &[]);
+        let (code, rows) = outcomes("retypeoutparam_x86_64", function, &[directive]);
+        assert_eq!(rows, vec![("rejected".to_string(), Some(reason.to_string()))], "{directive}");
+        assert_eq!(code.trim_end(), plain.trim_end(), "{directive}");
+    }
+}
+
 /// A local cannot take a C keyword or a type's name: `name v6 int` used to
 /// print `int int;`.
 #[test]

@@ -3762,6 +3762,18 @@ impl PrintC {
         &self.declared_locals
     }
 
+    /// (kuna) A printer of its own that has printed `fd` with `arch`'s
+    /// options, so [`declared_locals`](Self::declared_locals) and
+    /// [`declared_local`](Self::declared_local) say what a print of `fd` names
+    /// each local while `arch`'s printer keeps its state.
+    pub fn declarations_of(arch: &Architecture, fd: &Funcdata) -> PrintC {
+        let mut print = PrintC::new();
+        print.set_name(&arch.print().name);
+        print.options = arch.print().options;
+        print.doc_function_full(fd, arch);
+        print
+    }
+
     /// (kuna) The declaration `high` reads through in the last printed document:
     /// its own, or the one it was collapsed into.
     pub fn declared_local(&self, high: crate::context::HighVariableId) -> Option<&DeclaredLocal> {

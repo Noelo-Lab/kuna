@@ -983,12 +983,44 @@ local not declared at all, or declared with another type than the directive
 gave, reports each directive that touched it refused, with the reason
 (`verify_printed` on the in-process path; the console prints `Rejected
 <command>: <reason>` at the next `print C`), and `kuna decompile` says the C was
-produced without it. A retype that changes the width, which can leave the old
-declaration in place, is now reported this way instead of `applied`. The check also showed the console dropping every rename
+produced without it. The check also showed the console dropping every rename
 of a DWARF local: `kuna-console/src/ifacedecomp.rs (IfcDecompile)` re-seeded the
 function's DWARF locals after the Symbols it carried, at the same storage, and
 the DWARF name won; it now re-seeds only the DWARF locals the previous decompile
 did not map.
+
+**A local is edited by the name it shows.** The printer suffixes a name
+another identifier already holds
+(`p9_emit/kuna_dedupvardecls.rs (DeclNameUniquifier)`): `name v7 score` prints `score_1` beside a function
+`score`, a rename to a parameter's name prints `a0_1`, and of two locals given
+one name the later in declaration order prints `dup_1`. No local carries such a
+name, so a directive naming it answered `No symbol named: score_1` (and the
+shared one `More than one symbol named: dup (2)`), although the output and the
+"applied as" note offered exactly that edit. When an identifier resolves to no
+local, `kuna-console/src/kuna_hightarget.rs (resolve_shown)` prints the
+function with a printer of its own (`printc.rs (declarations_of)`), after
+giving each local the batch has renamed so far its new name, so it reads the
+names the next decompile shows, and takes the one local declared under the
+identifier: a local the batch renamed through the Symbol the earlier directive
+recorded, any other as the last decompile printed it. A local whose name
+another local shares is carried under the suffixed name it was reached by
+(`kuna_stablenames.rs (relabel)`), so the next decompile tells the two apart.
+An identifier that resolves is read as before, a library name (`fd_2`) still
+through its number first, and the extra print runs only for an identifier
+nothing else answers to.
+
+**A stack local's retype keeps its width.** A register local's retype to
+another width is rejected before it applies (`Storage is 4 bytes, the stated
+type is 8`), but a stack local's Symbol took any width: a narrower type shrank
+the local and its remainder came back as another (`type v24 unsigned char` on
+`char v24 [20]` printed `char v62 [19]` and no `v24`), a wider scalar
+swallowed its neighbours and was then reported refused, and a type running
+past the end of the stack left the Symbol unmapped. `kuna_hightarget.rs
+(check_stack_width)` refuses these before anything changes, with the same
+reason, so the C is the one the caller had. A structure, union or array that
+grows the local over the frame, a buffer the analysis saw only the start of
+(`type v1 char[16]` over `char v1 [8]`), still applies, as does a type of the
+same width (`unsigned char[20]` or `int[5]` for `char [20]`).
 
 **A new name must be one the declaration can print.**
 `kuna-console/src/kuna_hightarget.rs (check_local_name)` rejects a `name`, or
