@@ -223,6 +223,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "inputparamgap" => on_off(conf.input_param_gap),
         // (kuna `rustabi`) Three-valued, so it reports its own token.
         "rustabi" => kuna_decomp::kuna_rustabi::RustAbiMode::from_u8(conf.rust_abi).as_str(),
+        // (kuna `bejoin`) Three-valued, so it reports its own token.
+        "bejoin" => conf.be_join.as_str(),
         "condexeplace" => on_off(conf.condexe_block_placement),
         "sparcstructret" => on_off(conf.sparc_struct_return),
         "arraystride" => on_off(conf.recover_array_stride),

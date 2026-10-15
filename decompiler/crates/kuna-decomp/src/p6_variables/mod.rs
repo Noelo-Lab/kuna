@@ -25,6 +25,7 @@ pub mod kuna_stackobjectinfo;
 pub mod kuna_stackranges;
 pub mod kuna_undefname;
 pub mod kuna_stablenames;
+pub mod kuna_libcnames;
 pub mod varmap;
 pub mod coreaction_cleanup;
 pub mod kuna_callretfold;

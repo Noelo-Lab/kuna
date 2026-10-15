@@ -965,7 +965,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         if spoiled {
             return Ok(total);
         }
-        if !(reflow_requested && fd.has_restart_pending()) {
+        // (kuna `bejoin evidence`) A call resolved mid-pass to a proven
+        // callee read it unproven: run the pass again with its verdict.
+        if !(reflow_requested && fd.has_restart_pending()) && !crate::kuna_bejoin::wide_callee_missed(arch, fd) {
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
@@ -979,6 +981,8 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // silently loses its veto on every restarted function.  Cached, so this
         // is a map lookup per call.
         crate::kuna_rustabi::seed_callee_return_writes(arch, fd);
+        // (kuna `bejoin evidence`) And the wide-return verdicts.
+        crate::kuna_bejoin::seed_wide_returns(arch, fd);
         // (kuna `calleedeadarg`) Same story for the entry-liveness probe the
         // input-trial scoring seam consults.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
@@ -1355,6 +1359,11 @@ pub fn decompile_func_full_with_objects(
         // translator, so this is the last point the callee's instructions can be
         // read at all; inert unless `option rustabi` is live for this image.
         crate::kuna_rustabi::seed_callee_return_writes(arch, &mut fd);
+        // (kuna `bejoin evidence`) Take the wide-return verdicts for the
+        // function and its direct callees, read off their instructions while
+        // the translator is reachable; inert unless the model joins its pair
+        // high word first.
+        crate::kuna_bejoin::seed_wide_returns(arch, &mut fd);
         // (kuna `calleedeadarg`) Take the callee entry-liveness probe the
         // input-trial scoring seam consults, for the same reason and at the same
         // point; inert unless `option calleedeadarg` is live.
@@ -2442,6 +2451,13 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
             if category != crate::database::symbol_category::NO_CATEGORY {
                 continue; // already emitted as a parameter above
             }
+            // (kuna `libcnames`) A local printed under its library name is
+            // reported under it too; its Symbol keeps the number.
+            let name = fd
+                .kuna_library_aliases()
+                .iter()
+                .find(|a| a.shown && a.number == name)
+                .map_or(name, |a| a.alias.clone());
             let type_name = crate::kuna_bytehonest::exported_type_name(arch, &ct);
             out.push(VarInfo {
                 name,

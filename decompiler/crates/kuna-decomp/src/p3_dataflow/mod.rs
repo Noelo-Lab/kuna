@@ -33,9 +33,11 @@ pub mod kuna_compareform;
 pub mod kuna_indirectanchor; // (kuna) an op inserted after a guard INDIRECT anchors to the op it speaks for
 pub mod kuna_inputtile;
 pub mod kuna_calloverlap;
+pub(crate) mod kuna_multiregargs;
 pub mod kuna_indexaliasguard;
 pub mod kuna_stackeffects;
 pub mod kuna_calleememory;
+mod kuna_calleeflags;
 pub(crate) mod kuna_calleehomes;
 pub(crate) mod kuna_partialglobalload;
 pub(crate) mod kuna_stackstoreguard;
@@ -50,6 +52,7 @@ pub mod kuna_simdlane;
 pub mod kuna_cancelbytearithmetic;
 pub mod kuna_wideslice;
 pub mod kuna_devectorize;
+pub mod kuna_strlenscan;
 pub mod kuna_narrowload; // (kuna) a narrow LOAD keeps its own width
 pub(crate) mod kuna_volatileload;
 pub(crate) mod kuna_floatnegation;

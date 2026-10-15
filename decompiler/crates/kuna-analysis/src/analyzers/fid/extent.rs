@@ -92,7 +92,7 @@ mod tests {
             fall_through: Some(addr + len as u64),
             flow: Default::default(),
             flows: vec![],
-            mnemonic: String::new(),
+            mnemonic: String::new().into(),
             operands: String::new(),
             pcode: None,
         }

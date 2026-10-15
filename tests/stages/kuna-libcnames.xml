@@ -1,0 +1,95 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `libcnames`: a local that holds a library call's result, or that is
+    handed to a library call whole, keeps a `vN` name although the library
+    declares what it is: `v1 = open(a0,0)`, `read(v1,v4,0x200)`.
+
+    Stage / sub-stage: P6 "naming-policy".  The P0 assertion
+    `option libcnames on|off` decides whether a numbered local prints the
+    library's name for it.  The names ride on the prototypes the built-in libc
+    tables park (glibc's declared parameter names, plus a result name such as
+    `fd` for `open`, `n` for `read`, `len` for `strlen`, `p` for `malloc` and
+    `fp` for `fopen`).  The library name is a second name for the local: it
+    keeps its number, so every other local is numbered exactly as with the
+    option off, and a directive reaches it by either name.
+
+    The fixture is decompiler/crates/kuna-analysis/tests/fixtures/libcnames_x86_64
+    (gcc 11 -O2 -fno-inline, source beside it).
+
+    Pass 1 runs with no option line, so it pins the shipped default (off):
+    every local of `copy_file` is a `vN`.  Pass 2 turns the option on: the two
+    descriptors are `fd` and `fd_2` (a clash takes `_2` in call order), the
+    count is `n`, and the buffer and the total keep `v4` and `v5`.  `joined`'s
+    lengths are `len`/`len_2` and its buffer `p`, `first_line`'s stream `fp`,
+    and `emit`'s width, which only reaches `write`, takes write's parameter
+    name `n`.  `ordered` passes one local to `strcmp` as `s2` and then as `s1`:
+    names that only say which side of a call a value is on, and disagree, so it
+    keeps `v1`.  Then three console renames, each against the output before
+    it: `fd` to `src` leaves `fd_2` as it was and gives the freed `fd` to no
+    one; `v5` to `n` takes read's library name, so that local prints its
+    number `v3`; and `v3` to `got` reaches it by that number.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libcnames_x86_64</com>
+  <com>read symbols</com>
+  <com>lo fu copy_file</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libcnames on</com>
+  <com>lo fu copy_file</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu joined</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu first_line</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu emit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ordered</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy_file</com>
+  <com>decompile</com>
+  <com>rename fd src</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>rename v5 n</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>rename v3 got</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="libcnames #1: with no option line (the shipped default) open's result is a vN" min="1" max="1">^  v1 = open\(a0,0\);$</stringmatch>
+<stringmatch name="libcnames #2: and read's count and descriptor are vNs too" min="1" max="1">^    v3 = read\(v1,v4,0x200\);$</stringmatch>
+<stringmatch name="libcnames #3: with the option on the first descriptor is fd" min="1" max="1">^  int4 fd; // eax \| ebp$</stringmatch>
+<stringmatch name="libcnames #4: the second open is fd_2, also after every rename" min="4" max="4">^  fd_2 = open\(a1,0x241,0x1a4\);$</stringmatch>
+<stringmatch name="libcnames #5: read's result is n and it reads from fd" min="1" max="1">^    n = read\(fd,v4,0x200\);$</stringmatch>
+<stringmatch name="libcnames #6: the buffer keeps the number it has with the option off, in every pass" min="5" max="5">^  char v4 \[520\]; // stack - 0x228$</stringmatch>
+<stringmatch name="libcnames #7: strlen's results are len and len_2 and malloc's is p" min="1" max="1">^  len = strlen\(a0\);
+^  len_2 = strlen\(a1\);
+^  p = malloc\(len \+ 1 \+ len_2\);$</stringmatch>
+<stringmatch name="libcnames #8: a value used inside an expression names nothing" min="1" max="1">memcpy\(\(void \*\)\(\(int8\)p \+ len\),a1,len_2 \+ 1\);</stringmatch>
+<stringmatch name="libcnames #9: fopen's result is fp" min="1" max="1">^  fp = fopen\(a0,"r"\);</stringmatch>
+<stringmatch name="libcnames #10: a local only passed to write takes write's parameter name n" min="1" max="1">^  n = measure\(a1\);
+^  if \(write\(a0,a1,n\) &lt;= -1\)$</stringmatch>
+<stringmatch name="libcnames #11: strcmp's s1 and s2 on one local disagree, so it keeps its vN" min="1" max="1">^  if \(1 &lt;= strcmp\(a3,v1\)\)$</stringmatch>
+<stringmatch name="libcnames #12: the rename names the first descriptor src" min="3" max="3">^  src = open\(a0,0\);$</stringmatch>
+<stringmatch name="libcnames #13: and no local takes the freed fd" min="1" max="1">^    n = read\(src,v4,0x200\);$</stringmatch>
+<stringmatch name="libcnames #14: renaming v5 to read's library name leaves that local its number" min="1" max="1">^  int8 n; // r12
+^  int4 src; // eax \| ebp
+^  int8 v3; // rax$</stringmatch>
+<stringmatch name="libcnames #15: and the next rename reaches it by that number" min="1" max="1">^    got = read\(src,v4,0x200\);$</stringmatch>
+<stringmatch name="libcnames #16: fd_2 is declared under the same spelling through every rename" min="4" max="4">^  int4 fd_2; // eax \| r13d$</stringmatch>
+</decompilertest>

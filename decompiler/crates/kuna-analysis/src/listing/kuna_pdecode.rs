@@ -50,8 +50,8 @@ use kuna_sleigh::translate::Translate;
 
 use super::context::ContextPainter;
 use super::decode::decode_one;
-use super::model::{DiscoveredFunction, Insn, InsnLite, Reference};
 use super::kuna_insnstore::InstructionStore;
+use super::model::{DiscoveredFunction, Insn, InsnLite, Mnemonic, MnemonicPool, Reference};
 use super::walk::{
     self, CallbackEvidence, CallbackSink, InsnSink, RefCollector, StepCtx, Successors, WalkPolicy,
     WalkState,
@@ -454,11 +454,15 @@ impl Crossing {
 struct LaneInsns {
     seen: HashSet<u64>,
     out: Vec<(u64, InsnLite)>,
+    mnemonics: MnemonicPool,
 }
 
 impl InsnSink for LaneInsns {
     fn decoded(&self, vma: u64) -> bool {
         self.seen.contains(&vma)
+    }
+    fn intern_mnemonic(&mut self, text: &str) -> Mnemonic {
+        self.mnemonics.intern(text)
     }
     fn record(&mut self, insn: InsnLite) {
         self.seen.insert(insn.addr);
@@ -1369,7 +1373,7 @@ mod tests {
             fall_through: Some(addr + u64::from(len)),
             flow: Default::default(),
             flows: Vec::new(),
-            mnemonic: String::new(),
+            mnemonic: String::new().into(),
             operands: String::new(),
         }
     }
@@ -1567,14 +1571,24 @@ mod tests {
             capped < kb(17_727_772 - 14_079_200) + kb(1_000_000),
             "and must stay under what the walk actually grew by: {capped}"
         );
-        // The fast path is unchanged: there the subtraction is already under the
-        // lanes' footprint, so the cap does not bind.
-        let fast_after = before + kb(9_077_700 - 6_024_820) + insns as u64 * 298;
         let fast_shards = bytes_of(insns, size_of::<(u64, InsnLite)>());
+        let fast_footprint = lane_footprint(16, fast_shards);
+        // An excess below the current record footprint survives unchanged.
+        let fast_excess = fast_footprint / 2;
+        let fast_after = before + fast_excess + insns as u64 * SERIAL_MAP_BYTES_PER_INSN;
         assert_eq!(
-            lane_excess(before, fast_after, insns, lane_footprint(16, fast_shards)),
-            kb(9_077_700 - 6_024_820),
-            "the measured fast-path excess must survive the cap untouched"
+            lane_excess(before, fast_after, insns, fast_footprint),
+            fast_excess,
+            "the cap must not reduce an excess below the lanes' footprint"
+        );
+        // This old measurement predates compact records, so its excess may now
+        // exceed the physical cap instead of remaining below it.
+        let measured_excess = kb(9_077_700 - 6_024_820);
+        let measured_after = before + measured_excess + insns as u64 * SERIAL_MAP_BYTES_PER_INSN;
+        assert_eq!(
+            lane_excess(before, measured_after, insns, fast_footprint),
+            measured_excess.min(fast_footprint),
+            "the historical measurement must respect the current record footprint"
         );
     }
 }

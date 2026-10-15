@@ -467,6 +467,39 @@ the range is never partitioned by refinement (whose gate is `size > 4 && maxw <
 size`) and the 8-byte parameter and return entries inside it are invisible.
 Under `option calloverlap` two dedicated guards recover them.
 
+With `option multiregargs on` (the default), a physical register range
+completely covered by two or more general ABI input slots receives separate
+call trials before dead-code elimination, at every `calloverlap` level
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_multiregargs.rs
+(input_partition)`). A wide return can coalesce these slots even after the
+caller overwrites each component. The trials keep those current component
+values live; ordinary trial scoring still decides whether they are used.
+
+The same option keeps an unlocked function's entry inputs in independently
+recoverable ABI slots when their whole range cannot be a single input
+parameter. The whole entry value is a PIECE of those slot inputs, so a later
+wide read cannot hide the function's real arguments. Declared inputs and legal
+wide ABI parameters retain their representation. Existing unprotected illegal
+wide inputs are replaced in place by slot concatenations; complete holes in
+partially input ranges are filled directly with those slots. Partially locked
+parameters and protected input storage decline the rewrite. Existing write-masked
+wide tiles also retain their representation. In-place conversion is a backstop
+for input creation outside renaming or before a model was resolved. Non-general entries,
+overlapping or joined entries, gaps, partial coverage, protected input
+storage, and memory or stack ranges decline this partition. Complete
+partitions are bounded to eight slots and 64 bytes. With `multiregargs off`,
+both changes are disabled and the existing `calloverlap` behavior applies.
+
+The slot trials of one call all truncate the same PIECE of the range, so
+upstream `onlyOpUse` would see a value written into one slot reach the call
+again through a sibling slot and reject the trial as a double use. That drops
+a single argument the caller just wrote whenever the other half of the range
+still holds a stale or clobbered pair half, as in `ldd [p],%o0; call f;
+mov 3,%o0; call g`. Under `multiregargs`, the walk skips a SUBPIECE whose kept
+bytes lie wholly outside the PIECE input it reached the PIECE through
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_multiregargs.rs
+(subpiece_drops_reached_piece)`); that SUBPIECE cannot carry the value.
+
 On the input side (`heritage.rs (Heritage::guard_call_overlapping_input)`), the
 biggest input entry contained in the range is located, its address translated
 from the callee's to the caller's perspective, and a SUBPIECE inserted before
@@ -2106,6 +2139,65 @@ measured.
 `tests/stages/kuna-devectorize-effects.xml` keeps the vector arm of two
 hand-written sums whose exits disagree on a global store.
 
+**Inline string lengths** (`option strlenscan`, default **on**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_strlenscan.rs
+(ActionStrlenScan)`, in the fullloop tail right after `devectorize`. gcc up to
+version 9 (at -O1 and above) and older MSVC expand `strlen(s)` inline as
+`or rcx,-1; xor eax,eax; repnz scasb; not rcx` (ECX on 32-bit x86). The
+SLEIGH repeat prefix lifts the scan as a loop inside one instruction: a head
+`H` that leaves when the count is zero and otherwise enters a body `B`, which
+steps the count down and the pointer up, reads a byte, and returns to `H`
+while the byte differs from AL. Upstream prints it as a do/while over the
+string and `~count - 1` wherever the length is used. Once mainloop has settled
+the count and the byte searched for to constants, the action matches the two
+blocks on SSA. Every op of `H` and `B` sits at one instruction address, `H` is
+entered from one block outside and from `B`, `B` only from `H`, and both leave
+to the same exit `E`. It then proves the following. `H` holds exactly two phis,
+the count, which enters as the all-ones constant of its width, and the pointer.
+`H` leaves to `E` exactly when the count is zero; this is evaluated over
+boundary values of the count, the condition reading nothing but the count and
+constants. `B` decrements the count by one and increments the pointer by one, so
+the direction flag is clear. It reads one byte through the pointer and computes
+only pure values of loop values, its own results and constants. It returns to
+`H` exactly when that byte is not zero, which is checked for all 256 values and
+so also proves the byte searched for is zero. Nothing outside the loop reads a
+loop value except through `E`'s phis, and the count only through a bitwise NOT,
+the first step of every length computation built on it. Any other use of the
+count declines the rewrite. The count starts at all ones and loses one per byte,
+so it reaches zero only after the whole address space has been read; the
+zero-count exit is never taken and the loop ends after `strlen(s) + 1` bytes
+with the terminator read. The rewrite places `len = strlen(s)` at the top of
+`B` (a `CALLOTHER` of the typed builtin `BUILTIN_STRLEN`, `char *` in, an
+unsigned integer of the count's width out; `p5_types/coreaction_infertypes.rs
+(output_type_local)` and `input_type_local` read those types). It then gives
+every value `B` hands to `E` its final-iteration value: the count
+`~(len + 1)`, which the NOT after the loop folds back to `len + 1`
+(`RuleNegateNegate`); the pointer `s + len + 1`; and the byte read, zero, from
+which the flags follow. Finally it removes the zero-count edge and the back
+edge (`remove_branch`), so `H` and `B` run once and the next mainloop pass folds
+the rest. Every scan a function holds is matched first and rewritten in the same
+pass, so the fullloop repeats once however many there are. The builtin keeps the
+call flag `CALLOTHER` carries, because its value depends on memory: a store, a
+call or a `free` after the scan changes what a later `strlen` would return. So
+it is ordered like a call. `ActionMarkExplicit` inlines it only where the
+call-return fold allows (one reader, in the same block, with nothing between
+them), the implied-cover check keeps it from moving past a store or a call,
+the multiplier never duplicates it into several readers, and two of them on
+different paths are never merged at a join. The printed `strlen` is therefore
+taken where the scan was. A scan for any other byte (a `memchr`-like loop), one
+whose count starts elsewhere, one whose raw count is read, and one stepping
+backward keep their loops.
+`tests/stages/kuna-strlenscan.xml` runs gcc 9 -O1 functions in both passes. The
+default pass shows `return strlen(a0);`, a length read twice as one variable,
+two lengths in one expression in order, a length taken before the store and
+before the call that follow the scan, an inlined `strcat` taking its length once
+before its two stores, a length on each side of a branch read after the join,
+and the two non-length scans still loops. With the option off every scan is a
+loop with `~v3 - 1`. `kuna-cli/tests/strlenscan_round_trip.rs` prints gcc 9
+-O1/-Os x86-64 and -O1 i386 builds with the option off and on, and compiles the
+x86-64 ones beside the source, with buffers whose bytes past the terminator are
+not zero, to check each printed function computes the same values.
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space
@@ -2427,6 +2519,36 @@ escape discharge requires the stricter Win64 home proof. This lets repeated
 home reloads survive known disjoint
 field writes without guessing from a pointee layout. Unknown or overlapping
 actual addresses decline; other spill invalidation stays unchanged.
+
+An exact pointer-width spill wholly below the callee's entry stack pointer can
+also retain its origin across an incoming-pointer write, conditional on the
+same physical disjointness proof for that cell and every write footprint.
+This does not declare negative frame bytes unobservable: an argument can point
+at the callee's spill, and an overlapping or unresolved actual address rejects
+the summary before its effects or return states are used. Partial frame stores
+still invalidate the entire pointer spill. Conditions from every visited path
+share the existing bounded metadata budget with home-spill conditions.
+
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_calleeflags.rs` distinguishes
+one-byte comparison/carry results from address fragments. Instruction-local
+scratch feeding only those Boolean results retains its exact frame origin;
+this covers the parity calculation accompanying a stack adjustment. Every use
+before a scratch definition is replaced must have the exact width and lead to
+a proved Boolean result. Memory uses, partial overlaps, unrelated register
+results and unpublished scratch with no such use retain the loss marker.
+Partial overwrites of pointer registers remain losses even for Boolean results.
+Frame-derived flags retain their origin in the abstract state: copying one to
+memory, exposing it through modeled return storage, or using it in an unproved
+calculation still rejects observation proofs. Internally overwritten flags do
+not cause the entire leaf summary to lose its frame provenance.
+
+A leaf that loads its return target from entry-frame byte zero also requires
+every incoming-pointer write to be disjoint from that exact return slot. The
+architecture must declare the corresponding stack return address. An argument
+can designate the return slot while missing every private spill; its write
+could then transfer control outside the analyzed leaf. Unknown addresses and
+even partial overlaps therefore reject the entire summary, including write
+preservation queries. Register-link returns do not acquire a stack-slot rule.
 
 The driver takes the summaries before heritage and re-seeds them after reflow;
 each target is cached per image. Decode errors, nested or indirect calls,

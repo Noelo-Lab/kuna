@@ -2685,6 +2685,7 @@ async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit
     if (!isCurrent(op)) return false;
     const data = normalizeInspect(doc);
     const wasApplied = new Set([...session.outcomes].filter(([, o]) => o.status === 'applied').map(([k]) => k));
+    const wasFatal = new Set([...session.outcomes].filter(([, o]) => o.fatal).map(([k]) => k));
     session.recordOutcomes(data.assertions, req);
     if (snap && !collab?.shared) session.pushUndo(snap);
     persist();
@@ -2725,8 +2726,10 @@ async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit
         detail: `${row.directive}: ${row.detail || 'the code changed under it'}. Edit or remove it under ${collab?.shared ? 'Changes' : 'Your changes'}.`,
       });
     }
-    if (data.assertions.some((r) => r.fatal)) {
-      toast('The code shown was made without one of your changes.', { kind: 'err', detail: data.assertions.find((r) => r.fatal).detail || '' });
+    const newlyFatal = data.assertions.find((r) => r.fatal && !fresh.includes(r.directive) && !broke.includes(r) &&
+      !session.keysOf(r.directive, req).some((k) => wasFatal.has(k)));
+    if (newlyFatal) {
+      toast('The code shown was made without one of your changes.', { kind: 'err', detail: newlyFatal.detail || '' });
     }
     const dt = Math.round(performance.now() - t0);
     const bad = mine.some((r) => r.status === 'rejected');

@@ -3832,6 +3832,12 @@ pub struct PrototypePieces {
     /// `(slot, storage)` after the model-driven `update_all_types`.  Empty is the
     /// normal (model-derived) case.
     pub input_storage: Vec<(int4, ParameterPieces)>,
+    /// (kuna `libcnames`) The library's own names for this prototype's
+    /// parameters and result, when the prototype came from a built-in library
+    /// table. Kept apart from [`Self::innames`] so the callee's printed
+    /// signature and the name locks stay as they were; only the naming pass
+    /// reads them, and only under `option libcnames`.
+    pub kuna_library_names: Option<&'static crate::kuna_libcnames::LibraryNames>,
 }
 
 // =============================================================================

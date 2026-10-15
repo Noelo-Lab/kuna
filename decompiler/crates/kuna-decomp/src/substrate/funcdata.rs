@@ -149,6 +149,11 @@ pub struct DirectiveSymbol {
     /// storage, width and analysis-local high identity. The identity is used only
     /// within the batch; replay continues to use the scoped definition witness.
     pub bound: Option<(Address, int4, crate::context::HighVariableId)>,
+    /// Did a `type` directive in the batch retype it.
+    pub retyped: bool,
+    /// The type a `type` directive gave the whole printed variable, when it keeps
+    /// the variable's width and kind (`kuna_stablenames::retypes_as_unit`).
+    pub unit_type: Option<crate::kuna_stablenames::UnitRetype>,
 }
 
 pub struct Funcdata {
@@ -414,6 +419,13 @@ pub struct Funcdata {
     /// The numbering the naming pass handed out, by instance identity; see
     /// `kuna_stablenames::snapshot`.
     kuna_name_snapshot: Vec<(String, crate::kuna_stablenames::Keys)>,
+    /// The local each replayed rename or retype reached, by the name the
+    /// previous decompile printed it under; see
+    /// `kuna_stablenames::directive_targets`.
+    kuna_directive_targets: std::collections::BTreeMap<String, crate::context::HighVariableId>,
+    /// (kuna `libcnames`) The library name each numbered local answers to; see
+    /// [`crate::kuna_libcnames::LibraryAlias`].
+    kuna_library_aliases: Vec<crate::kuna_libcnames::LibraryAlias>,
     /// (kuna, ghidra Phase 4) WIRE-ONLY symbols the encode-time link pass
     /// synthesized for named HighVariables the analysis deliberately left
     /// symbol-less — see [`crate::database::WireSymbol`].  They are encoded
@@ -435,6 +447,11 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
     >,
+    /// (kuna `bejoin evidence`) The model's output pair, the wide-return
+    /// verdicts of this function and its callees, and the callees a call asked
+    /// about without one. Seeded by the driver
+    /// ([`crate::kuna_bejoin::seed_wide_returns`]).
+    kuna_wide: Option<crate::kuna_bejoin::WideView>,
     /// (kuna `calleedeadarg`) Per direct-call-target evidence about the registers
     /// the callee is *proven* never to read before writing, keyed by
     /// `(space index, entry offset)`.  Seeded by the driver after the flow build
@@ -737,10 +754,13 @@ impl Funcdata {
             kuna_default_name_end: 1,
             kuna_record_names: false,
             kuna_name_snapshot: Vec::new(),
+            kuna_directive_targets: std::collections::BTreeMap::new(),
+            kuna_library_aliases: Vec::new(),
             kuna_wire_symbols: Vec::new(),
             kuna_wrapped_wire_storage: std::collections::BTreeMap::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
+            kuna_wide: None,
             kuna_callee_entry_dead: std::collections::HashMap::new(),
             kuna_hiddenret_vetoed: std::collections::HashSet::new(),
             kuna_own_entry_dead: None,
@@ -954,6 +974,19 @@ impl Funcdata {
         self.kuna_directive_symbols.push(entry);
     }
 
+    /// (kuna `--assert`) Record that a `type` directive retyped `symbol`, and
+    /// the unit type it gave the printed variable, if any.
+    pub fn kuna_set_directive_retype(
+        &mut self,
+        symbol: crate::database::SymbolId,
+        unit_type: Option<crate::kuna_stablenames::UnitRetype>,
+    ) {
+        if let Some(entry) = self.kuna_directive_symbols.iter_mut().find(|d| d.symbol == symbol) {
+            entry.retyped = true;
+            entry.unit_type = unit_type;
+        }
+    }
+
     /// (kuna `--assert`) The previous decompile's default numbering to keep.
     pub fn kuna_prior_names(&self) -> &crate::kuna_stablenames::PriorNames {
         &self.kuna_prior_names
@@ -986,8 +1019,42 @@ impl Funcdata {
         &self.kuna_name_snapshot
     }
 
+    /// (kuna `--assert`) The local each replayed rename or retype reached, by
+    /// the name the previous decompile printed it under.
+    pub fn kuna_directive_targets(&self) -> &std::collections::BTreeMap<String, crate::context::HighVariableId> {
+        &self.kuna_directive_targets
+    }
+
+    pub fn set_kuna_directive_targets(
+        &mut self,
+        targets: std::collections::BTreeMap<String, crate::context::HighVariableId>,
+    ) {
+        self.kuna_directive_targets = targets;
+    }
+
     pub fn set_kuna_name_snapshot(&mut self, snapshot: Vec<(String, crate::kuna_stablenames::Keys)>) {
         self.kuna_name_snapshot = snapshot;
+    }
+
+    /// (kuna `bejoin evidence`) Hold the wide-return verdicts the driver took
+    /// for this function and its callees.
+    pub fn kuna_set_wide(&mut self, wide: crate::kuna_bejoin::WideView) {
+        self.kuna_wide = Some(wide);
+    }
+
+    /// (kuna `bejoin evidence`) The wide-return verdicts and the model's pair,
+    /// when the driver took them.
+    pub fn kuna_wide(&self) -> Option<&crate::kuna_bejoin::WideView> {
+        self.kuna_wide.as_ref()
+    }
+
+    /// (kuna `libcnames`) The library names the naming pass gave numbered locals.
+    pub fn kuna_library_aliases(&self) -> &[crate::kuna_libcnames::LibraryAlias] {
+        &self.kuna_library_aliases
+    }
+
+    pub fn set_kuna_library_aliases(&mut self, aliases: Vec<crate::kuna_libcnames::LibraryAlias>) {
+        self.kuna_library_aliases = aliases;
     }
 
     /// (kuna `rustabi`) Record what a probe of `entry`'s body proved about the

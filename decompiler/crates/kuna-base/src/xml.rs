@@ -2083,8 +2083,13 @@ mod tests {
         // and kuna-declorder / locals print in natural number order
         // and kuna-elfmain-named / an executable's own `main` gets the C runtime's
         // declaration, as far as its own analysis recovers its parameters
+        // and kuna-bejoin-evidence, -sparc, -armeb / a big-endian pair joins
+        // high word first on proof (GH-904)
+        // and kuna-strlenscan / an inline repnz scasb length prints as strlen
+        // and kuna-libcnames / a local takes the name of the library call it meets
+        // and kuna-register-pair-call-args / overwritten register-pair argument slots
         // and kuna-arm-frame-inventory / validated A32 frames join the default inventory
-        assert_eq!(count, 543, "corpus file count drifted");
+        assert_eq!(count, 549, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

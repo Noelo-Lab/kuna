@@ -224,7 +224,12 @@ kuna_options! { self, p1;
     "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
     "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
-    "bejoin" => on_off!(be_join, "High-word-first register pair join"),
+    "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
+    "bejoin" => {
+        let (mode, msg) = crate::kuna_bejoin::BeJoinMode::parse(p1)?;
+        self.be_join = mode;
+        Ok(msg)
+    },
     "rustabi" => {
         let (mode, msg) = crate::kuna_rustabi::parse_rust_abi_mode(p1)?;
         self.rust_abi = mode.as_u8();
@@ -526,6 +531,7 @@ kuna_options! { self, p1;
     },
     "wideslice" => on_off!(wide_slice_reduce, "Wide SSA slice reduction"),
     "devectorize" => on_off!(devectorize_reduction, "Vectorized reduction re-roll"),
+    "strlenscan" => on_off!(strlen_scan, "inline repnz scasb string length as strlen"),
     "regionstructure" => {
         let (val, msg) =
             crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
@@ -727,6 +733,7 @@ kuna_options! { self, p1;
     "castternary" => on_off!(cast_ternary, "conditional-arm cast elision"),
     "callrettype" => on_off!(call_ret_type, "callee-stated call return types"),
     "castnarrow" => on_off!(cast_narrow, "implied narrowing-cast elision"),
+    "libcnames" => on_off!(libc_names, "library-call local names"),
     "declorder" => {
         let (mode, msg) = crate::kuna_declorder::OptionDeclOrder.apply(p1)?;
         self.decl_order = mode;

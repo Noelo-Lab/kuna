@@ -174,6 +174,12 @@ pub struct IfaceDecompData {
     /// decision; it is what lets a test assert the fast path was actually taken
     /// rather than only that the output did not change.
     pub adopted_flows: u64,
+    /// (kuna) The `rename`/`retype` lines applied since the last `decompile`,
+    /// with the Symbol each touched and the type a `retype` gave.
+    pub pending_local_checks: Vec<(String, kuna_decomp::database::SymbolId, Option<std::rc::Rc<kuna_decomp::dtype::Datatype>>)>,
+    /// (kuna) What the last `decompile` must print for those lines, which the
+    /// next `print C` checks (`assertions::check_printed`).
+    pub printed_checks: Option<(Vec<String>, Vec<crate::assertions::Expected>)>,
 }
 
 /// (kuna) The provenance stamp of the `Funcdata` currently in `dcp.fd`, recorded
@@ -1379,6 +1385,8 @@ decomp_command!(
             flow_overrides,
         });
         dcp.fd = Some(fd);
+        dcp.pending_local_checks.clear();
+        dcp.printed_checks = None;
         Ok(())
     }
 );
@@ -1478,6 +1486,8 @@ decomp_command!(
             flow_overrides,
         });
         dcp.fd = Some(fd);
+        dcp.pending_local_checks.clear();
+        dcp.printed_checks = None;
         Ok(())
     }
 );
@@ -2145,6 +2155,11 @@ decomp_command!(
         let command_seq = status.command_seq;
         // Read the per-function values + take the program out so the engine work
         // borrows neither `status` nor `dcp` while the console output is written.
+        let mapped_before: Vec<kuna_base::address::Address> = dcp_mut(status)?
+            .fd
+            .as_ref()
+            .map(|fd| fd.mapped_symbol_specs().into_iter().map(|(_, _, addr, _)| addr).collect())
+            .unwrap_or_default();
         let (name, has_no_code, proc_started, entry, size, mut mapped_symbols, usepoint_symbols, dynamic_symbols, object_assertions, pending_proto, all_pending_protos, mut prog) = {
             let dcp = dcp_mut(status)?;
             let (name, has_no_code, proc_started, entry, size, mapped_symbols, usepoint_symbols, dynamic_symbols, object_assertions) = match &dcp.fd {
@@ -2194,7 +2209,11 @@ decomp_command!(
         // datatest path (which parks none). A function-local `map addr` the user set
         // by hand still wins: `seed_mapped_symbols` skips an address already mapped
         // (`add_symbol`'s overlap arm), and the hand-mapped symbols come first.
-        mapped_symbols.extend(prog.dwarf_locals_for(entry.get_offset()));
+        // A DWARF local the previous decompile already mapped stays as a
+        // directive left it: carried as a Symbol, or as a name and type.
+        mapped_symbols.extend(
+            prog.dwarf_locals_for(entry.get_offset()).into_iter().filter(|(_, _, addr, _)| !mapped_before.contains(addr)),
+        );
         // Re-park every parsed callee prototype on its global FunctionSymbol so the
         // pipeline's `ActionDefaultParams` copies the locked callee proto into the
         // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).
@@ -2243,6 +2262,14 @@ decomp_command!(
             .as_ref()
             .map(kuna_decomp::kuna_stablenames::carry)
             .unwrap_or_default();
+        let (check_lines, expected) = {
+            let dcp = dcp_mut(status)?;
+            let pending = std::mem::take(&mut dcp.pending_local_checks);
+            let touched: Vec<_> =
+                pending.iter().enumerate().map(|(i, (_, symbol, retype))| (i, *symbol, retype.clone())).collect();
+            let expected = dcp.fd.as_ref().map(|fd| crate::assertions::expected_locals(fd, &touched)).unwrap_or_default();
+            (pending.into_iter().map(|(line, ..)| line).collect::<Vec<_>>(), expected)
+        };
         // The `override prototype` facts stashed for this function (re-seeded on the
         // rebuilt IR), consumed at flow time as `Override::applyPrototype`.  The
         // shared decompile step may discover further per-call-site printf/scanf
@@ -2413,6 +2440,7 @@ decomp_command!(
                         )
                     })
                     .collect();
+                dcp.printed_checks = (!expected.is_empty()).then_some((check_lines, expected));
                 dcp.fd = Some(fd);
                 for line in &refusals {
                     status.out(line);
@@ -2530,7 +2558,7 @@ decomp_command!(
         // through the owned PrintC.  Output goes to the bulk stream (fileoptr),
         // which the Python tools capture via `openfile write`.  Render the C with
         // `dcp` borrowed, then drop the borrow before writing to the status.
-        let c = {
+        let (c, refusals) = {
             let dcp = dcp_mut(status)?;
             if dcp.fd.is_none() {
                 return Err(IfaceError::execution("No function selected"));
@@ -2544,9 +2572,24 @@ decomp_command!(
                 print_c(prog.arch_mut(), &fd)
             };
             dcp.fd = Some(fd);
-            text
+            let refusals: Vec<String> = match (dcp.printed_checks.take(), dcp.conf.as_ref(), dcp.fd.as_ref()) {
+                (Some((lines, expected)), Some(prog), Some(fd)) => {
+                    crate::assertions::check_printed(prog.arch(), fd, &text, &expected)
+                        .into_iter()
+                        .filter_map(|(i, shown)| match shown {
+                            crate::assertions::Shown::Refused(reason) => Some(format!("Rejected {}: {reason}\n", lines[i])),
+                            crate::assertions::Shown::AppliedAs(_) => None,
+                        })
+                        .collect()
+                }
+                _ => Vec::new(),
+            };
+            (text, refusals)
         };
         status.file_out(&c);
+        for line in &refusals {
+            status.out(line);
+        }
         Ok(())
     }
 );
@@ -2884,8 +2927,12 @@ decomp_command!(
         let dcp = dcp_mut(status)?;
         let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
         let fd = dcp.local_symbol_fd(&oldname)?;
-        crate::kuna_hightarget::apply_local(fd, &oldname, &newname, None, maxduplicates)
-            .map_err(IfaceError::execution)
+        let symbol = crate::kuna_hightarget::apply_local(fd, &oldname, &newname, None, maxduplicates)
+            .map_err(IfaceError::execution)?;
+        if let Some(symbol) = symbol {
+            dcp.pending_local_checks.push((format!("rename {oldname} {newname}"), symbol, None));
+        }
+        Ok(())
     }
 );
 
@@ -2916,7 +2963,7 @@ decomp_command!(
             return Err(IfaceError::parse("Must specify name of symbol"));
         }
         // C++: ct = parse_type(s,newname,dcp->conf).
-        let (ct, newname) = {
+        let (ct, newname, typetext) = {
             let dcp = dcp_mut(status)?;
             let prog = dcp
                 .conf
@@ -2926,14 +2973,19 @@ decomp_command!(
             let (addr_size, word_size) = prog.arch().data_org();
             let org = crate::grammar::DataOrg { addr_size, word_size };
             let typetext = s.rest();
-            crate::grammar::parse_type(&typetext, prog.arch().types(), org)
-                .map_err(|e| IfaceError::parse(e.explain().to_string()))?
+            let (ct, newname) = crate::grammar::parse_type(&typetext, prog.arch().types(), org)
+                .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
+            (ct, newname, typetext)
         };
         let dcp = dcp_mut(status)?;
         let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
         let fd = dcp.local_symbol_fd(&name)?;
-        crate::kuna_hightarget::apply_local(fd, &name, &newname, Some(ct), maxduplicates)
-            .map_err(IfaceError::execution)
+        let symbol = crate::kuna_hightarget::apply_local(fd, &name, &newname, Some(ct.clone()), maxduplicates)
+            .map_err(IfaceError::execution)?;
+        if let Some(symbol) = symbol {
+            dcp.pending_local_checks.push((format!("retype {name} {}", typetext.trim()), symbol, Some(ct)));
+        }
+        Ok(())
     }
 );
 

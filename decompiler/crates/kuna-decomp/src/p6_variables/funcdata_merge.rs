@@ -915,6 +915,12 @@ impl MergeContext for Funcdata {
     fn kuna_tied_phi_trim(&self) -> bool {
         self.get_arch().tied_phi_trim
     }
+    fn kuna_same_prior_variable(&self, a: HighVariableId, b: HighVariableId) -> Option<bool> {
+        crate::kuna_stablenames::same_variable(self, a, b)
+    }
+    fn kuna_prior_variable_groups(&self, highs: &[HighVariableId]) -> Vec<Vec<HighVariableId>> {
+        crate::kuna_stablenames::variable_groups(self, highs)
+    }
     fn vn_loads_across_write(&self, vn: VarnodeId) -> bool {
         crate::p6_variables::kuna_pointeevalue::load_crosses_write(self, vn)
     }

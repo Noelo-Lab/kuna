@@ -95,9 +95,11 @@ differential is described in `docs/history.md`.
 ## Where kuna finds the engine and the specs
 
 `kuna` runs two programs besides itself — the decompiler console `decomp_dbg`
-(behind `decompile` and `catalog`) and the SLEIGH compiler `slacomp` (behind
-`kuna specs`) — and both are built into it: `kuna decomp_dbg` and `kuna slacomp`
-are those programs, and `kuna` launches itself that way. It also needs a compiled
+(behind `decompile`) and the SLEIGH compiler `slacomp` (behind `kuna specs`) —
+and both are built into it: `kuna decomp_dbg` and `kuna slacomp` are those
+programs, and `kuna` launches itself that way. `catalog` reads the option table
+in-process and needs neither the console nor specs, unless `--decomp-dbg` or
+`KUNA_DECOMP_DBG` selects a separate console. The engine also needs a compiled
 SLEIGH tree, found in this order when nothing pins it:
 
 - **built in**: a release `kuna` (cargo feature `embed-specs`) carries the tree and
@@ -115,7 +117,7 @@ tree could not be unpacked.
 | Variable | What it pins |
 |---|---|
 | `KUNA_SPECS` | The SLEIGH tree passed as `-sleighpath` (`SLEIGHHOME` is the engine's own name for the same thing). Wins over a built-in tree. |
-| `KUNA_DECOMP_DBG` | A separate `decomp_dbg` binary to run instead of the built-in console. `kuna decompile --decomp-dbg PATH` does the same for one run. |
+| `KUNA_DECOMP_DBG` | A separate `decomp_dbg` binary to run instead of the built-in console; a non-empty value also makes `catalog` query that build. `--decomp-dbg PATH` does the same for one `decompile` or `catalog` run, and wins over the variable. |
 | `KUNA_DECOMP_TEST` | The `decomp_test_dbg` datatest harness (`kuna test --binary PATH`). It is not built in; it is looked for beside `kuna`, then in the checkout's `decompiler/target/<profile>/`, under its bare and `.exe` names. |
 | `KUNA_SLACOMP` | A separate `slacomp` binary for `kuna specs` to run instead of the built-in compiler. |
 | `KUNA_ROOT` | The repo root, when the binaries are not in-tree: `specs/`, `tests/datatests/` and `decompiler/target/<profile>/` are all read from it. |
@@ -499,11 +501,25 @@ including a `typedef` you asserted earlier in the same run.
 **`name`/`type` reach the register locals, not just the stack ones.** A local
 kuna prints with a storage comment — `unsigned long v6; // rax` — has no symbol
 behind it; naming one used to answer `No symbol named: v6` no matter how it was
-spelled. It now resolves. A `type` maps a locked symbol over that variable's
-storage at its use point, and the second pass types it there. A `name` alone
-changes nothing but the name: the second pass finds the variable by its
-instances and names all of it, so a merged register local is never split, re-
-merged with a neighbour or retyped by being renamed.
+spelled. It now resolves. A `name` alone changes nothing but the name: the second pass
+finds the variable by its instances and names all of it, so a merged register
+local is never split, re-merged with a neighbour or retyped by being renamed.
+A `type` that keeps the variable's width and kind (an integer to an integer, a
+float to a float, a pointer to a pointer) types the whole variable the same
+way: only its declaration, the casts at its uses and, for an enumeration,
+`bool` or a character type, the constants it is assigned or compared with
+change. A pointer to a structure, union, array or function also reaches type
+inference, on every part of the variable, so its fields print; the variable
+keeps its name and number, but its type can reach its copies and the signature
+and reshape their expressions. A `type` that changes the
+width maps a locked symbol over the variable's storage at its use point, and
+can split or merge the variable. A new name that is a C keyword or a type's
+name (`name v6 int`, `name v6 uint4`) is `rejected`. A `name` or `type` whose
+local the output does not then declare under that name, or with that type, is
+reported refused (`fatal`), with the reason, never `applied`: the C came back
+without it. A local the printer had to suffix, because the name already belongs
+to another identifier (`name v7 score` prints `score_1` when the program has a
+function `score`), is `applied`, with a detail saying what it was printed as.
 
 ```bash
 kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'
@@ -1734,9 +1750,9 @@ Behaviors specific to `decompile-all`:
   arms only the fast whole-binary 10-second policy and leaves its other commands
   unbudgeted. A function whose decompile drive exceeds the budget is cut off
   cooperatively (deadline probes at the action/rule-pool/heritage loop
-  boundaries, including each range heritage guards) and recorded as that
-  function's `error` (`"per-function decompile budget exceeded (N s)"`), the
-  batch continuing. This is not a hard process timer: it does not bound
+  boundaries, including each range heritage guards, and each region-structuring
+  round) and recorded as that function's `error`
+  (`"per-function decompile budget exceeded (N s)"`), the batch continuing. This is not a hard process timer: it does not bound
   discovery, unprobed decoder work, C/variable rendering, artifact
   construction, total export time, or memory. Driver policy, not a stage-model
   settable — zero output change for a function whose drive completes before
@@ -3390,9 +3406,11 @@ kuna catalog --check             # fail on catalog/registration drift (CI)
 kuna catalog --tier transform    # filter to the transform-tier control surface
 ```
 
-Parses the decompiler's `phase catalog` JSON (single source of truth: `settableTable`,
-generated from `decompiler/crates/kuna-decomp/phases.toml`) into the documented, flippable
-assertion list. `--json` emits a JSON **array** with one object per option —
+By default, reads the static catalog directly from the linked engine library, without
+starting `decomp_dbg` or loading SLEIGH specs. The single source of truth is
+`settableTable`, generated from `decompiler/crates/kuna-decomp/phases.toml`; the console's
+`phase catalog` command uses the same emitter. `--json` emits a JSON **array** with one
+object per option —
 `[{option,values,default,destructive_as_default,phase,subphase,strength,rewind,issue,summary,
 use_when,example,source_decompiler,inspiration,change_kind,tier,symptoms}]` — and `--option
 NAME` keeps that shape with one element, so a consumer reads both the same way. `--tier`
@@ -3400,7 +3418,17 @@ filters the array exactly as it filters the table. It and
 `kuna docs --json` (`[{topic,title,summary,bytes}]`) are the two array-rooted documents;
 every other subcommand's `--json` is an object (`{binary,...}`, `{modes:[...]}`), and each
 `--help` names its root. `--markdown` output is tier-grouped and symptom-indexed; `--check`
-cross-checks the catalog against `kuna_decomp::options::KUNA_OPTION_NAMES` in-process.
+cross-checks the selected catalog against this `kuna` build's
+`kuna_decomp::options::KUNA_OPTION_NAMES` in-process.
+
+`--decomp-dbg PATH`, or a non-empty `KUNA_DECOMP_DBG` when that flag is absent, opts
+text, JSON and check modes into the existing external console query. The flag takes
+precedence over the environment; a missing explicitly selected binary is an error,
+not a fallback to the local catalog. Build-identity warnings stay on stderr.
+`--sleighpath` and `--engine` remain accepted for compatibility; neither selects an
+external query on its own, and only that route uses their engine/specs configuration.
+`--markdown` always describes this `kuna` build, even with an external override.
+
 The rendered catalog is `docs/options.md`; the model behind it is `docs/phases.md` /
 `docs/spec/`; the defaults are recorded in `docs/history.md`.
 

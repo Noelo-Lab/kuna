@@ -46,6 +46,9 @@ mod arm_wrapper_returns;
 #[path = "arm_xref_roots.rs"]
 mod arm_xref_roots;
 
+#[path = "thumbswitch_guards.rs"]
+mod thumbswitch_guards;
+
 #[path = "asserted_enum_layout.rs"]
 mod asserted_enum_layout;
 
@@ -75,6 +78,8 @@ mod caller_stack_cli;
 
 #[path = "castnarrow_round_trip.rs"]
 mod castnarrow_round_trip;
+#[path = "strlenscan_round_trip.rs"]
+mod strlenscan_round_trip;
 
 #[path = "coff_strings.rs"]
 mod coff_strings;
@@ -180,6 +185,9 @@ mod limits_cli;
 
 #[path = "local_name_batch.rs"]
 mod local_name_batch;
+
+#[path = "library_names.rs"]
+mod library_names;
 
 #[path = "stable_local_names.rs"]
 mod stable_local_names;
@@ -412,3 +420,6 @@ mod call_outparam_snapshot;
 mod global_load_call_order;
 #[path = "integer_float_rounding.rs"]
 mod integer_float_rounding;
+
+#[path = "multireg_call_inputs.rs"]
+mod multireg_call_inputs;

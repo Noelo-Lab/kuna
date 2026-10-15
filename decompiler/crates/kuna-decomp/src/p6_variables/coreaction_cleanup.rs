@@ -798,6 +798,9 @@ fn base_explicit(data: &Funcdata, vn: crate::context::VarnodeId, mut maxref: int
     } else if v.is_proto_partial() {
         return -1;
     }
+    if crate::kuna_stablenames::holds_retype(data, vn) {
+        return -1;
+    }
     // def->code()==PIECE && in0 isProtoPartial -> explicit.
     {
         let dop = data.obank().get(def).unwrap();
@@ -2599,6 +2602,9 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     let prior = data.kuna_prior_names().clone();
     let tallies = crate::kuna_stablenames::tallies(data);
     let targets = crate::kuna_stablenames::rename_targets(data, &tallies);
+    let retyped = crate::kuna_stablenames::retype_targets(data, &tallies);
+    let reached = crate::kuna_stablenames::directive_targets(data, &tallies);
+    data.set_kuna_directive_targets(reached);
     let assigned = crate::kuna_stablenames::assign_numbers(data, &tallies);
     if let Some(lm) = data.get_scope_local_mut() {
         lm.install_prior_names(prior);
@@ -2646,6 +2652,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         .iter()
         .filter_map(|(_, h)| h.kuna_name().map(str::to_string))
         .collect();
+    let library = crate::kuna_libcnames::candidates(data);
     for vn in vlist {
         // C++ `if (curvn->isFree()) continue;` (coreaction.cc:3058) — runs ahead of
         // both the per-space spacebase rename and the body-high naming.
@@ -3134,9 +3141,50 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     crate::kuna_undefname::finish_undefined_names(data, &mut base);
     let end = data.get_scope_local().map_or(base, |lm| base.max(lm.prior_names_end()));
     data.set_kuna_default_name_end(end);
+    for (high, ct) in retyped {
+        retype_whole_variable(data, high, ct);
+    }
     if data.kuna_record_names() {
         let snapshot = crate::kuna_stablenames::snapshot(data);
         data.set_kuna_name_snapshot(snapshot);
+    }
+    crate::kuna_libcnames::apply(data, &library);
+}
+
+/// Type every instance of `high` as `ct` and lock it, after the merge and before
+/// the casts are placed, so a unit retype (`kuna_stablenames::retypes_as_unit`)
+/// declares the whole variable with the new type and the casts follow from it.
+/// A type that prints constants its own way (`kuna_stablenames::prints_literals`)
+/// also types the constants the variable is assigned or compared with.
+fn retype_whole_variable(data: &mut Funcdata, high: crate::context::HighVariableId, ct: std::rc::Rc<crate::dtype::Datatype>) {
+    let instances: Vec<crate::context::VarnodeId> = match data.high_bank().get(high) {
+        Some(h) => (0..h.num_instances()).map(|i| h.get_instance(i)).collect(),
+        None => return,
+    };
+    let literals = if crate::kuna_stablenames::prints_literals(&ct) {
+        crate::kuna_stablenames::met_constants(data, &instances, ct.get_size())
+    } else {
+        Vec::new()
+    };
+    for vn in instances.into_iter().chain(literals.iter().copied()) {
+        if let Some(v) = data.vbank_mut().get_mut(vn) {
+            if v.get_size() == ct.get_size() {
+                v.update_type_locked(ct.clone(), true, true);
+            }
+        }
+    }
+    for vn in literals {
+        if let Some(constant) = data.vbank().get(vn).and_then(|v| v.get_high()) {
+            if let Some(h) = data.high_bank_mut().get_mut(constant) {
+                h.type_dirty();
+            }
+        }
+    }
+    if let Some(h) = data.high_bank_mut().get_mut(high) {
+        h.type_dirty();
+        if h.kuna_symbol_type().is_some_and(|t| t.get_size() == ct.get_size()) {
+            h.set_symbol_type(ct);
+        }
     }
 }
 

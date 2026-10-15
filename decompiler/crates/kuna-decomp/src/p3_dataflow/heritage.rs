@@ -2006,10 +2006,30 @@ impl Heritage {
                 let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
                 let _ = fd.op_insert_input(op, vn, nin);
             }
-        } else if ic == Containment::ContainedBy
-            && overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_IN
-        {
-            Self::guard_call_overlapping_input(fd, fc, addr, trans_addr, size);
+        } else if ic == Containment::ContainedBy {
+            let partition = fd.get_arch().multi_reg_args.then(|| {
+                super::kuna_multiregargs::input_partition(
+                    fc.proto(), fd.get_arch().manage(), trans_addr, size,
+                )
+            }).flatten();
+            if let Some(pieces) = partition {
+                if pieces.iter().all(|piece| {
+                    crate::kuna_armfloatreturn::call_input_allowed(
+                        fd, fc, &piece.get_addr(), piece.size as int4,
+                    )
+                }) {
+                    for piece in pieces {
+                        let piece_addr = piece.get_addr();
+                        if fc.get_active_input().which_trial(&piece_addr, piece.size as int4) < 0 {
+                            Self::truncated_input_trial(fd, fc, addr, size, &piece_addr, piece.size as int4);
+                        }
+                    }
+                    return;
+                }
+            }
+            if overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_IN {
+                Self::guard_call_overlapping_input(fd, fc, addr, trans_addr, size);
+            }
         }
     }
 
@@ -3462,10 +3482,75 @@ impl Heritage {
         bigout
     }
 
+    /// Keep an unlocked entry value in the ABI's independently recoverable slots.
+    fn entry_partition(
+        &self, fd: &crate::funcdata::Funcdata, addr: &Address, size: int4,
+    ) -> Option<Vec<kuna_num::pcoderaw::VarnodeData>> {
+        let proto = fd.get_func_proto();
+        if !fd.get_arch().multi_reg_args || !proto.has_model()
+            || proto.is_input_locked() || proto.possible_input_param(addr, size)
+        { return None; }
+        let pieces = super::kuna_multiregargs::input_partition(
+            proto, fd.get_arch().manage(), addr, size,
+        )?;
+        if !pieces.iter().all(|p| proto.possible_input_param(&p.get_addr(), p.size as int4)) {
+            return None;
+        }
+        let end = addr.get_offset().checked_add(size as u64)?;
+        for input in fd.vbank().iter_def_flag(crate::varnode::varnode_flags::input) {
+            let vn = fd.vbank().get(input)?;
+            let a = vn.get_addr();
+            if a.get_space()?.get_index() != addr.get_space()?.get_index() { continue; }
+            let vnend = a.get_offset().checked_add(vn.get_size() as u64)?;
+            if vnend <= addr.get_offset() || a.get_offset() >= end { continue; }
+            if vn.is_type_lock() || vn.is_name_lock() || vn.is_locked_input()
+                || vn.is_unaffected() || vn.is_return_address() || vn.is_persist()
+                || vn.is_addr_tied() || (a == addr && vn.get_size() == size && vn.is_write_mask())
+            {
+                return None;
+            }
+            if !(a == addr && vn.get_size() == size)
+                && !pieces.iter().any(|p| p.get_addr() == *a && p.size as int4 == vn.get_size())
+            { return None; }
+        }
+        Some(pieces)
+    }
+
+    fn build_entry_partition(
+        &self, fd: &mut crate::funcdata::Funcdata, addr: &Address, size: int4,
+        partition: &[kuna_num::pcoderaw::VarnodeData],
+    ) -> kuna_base::error::KunaResult<crate::context::VarnodeId> {
+        let existing = fd.vbank().iter_def_flag(crate::varnode::varnode_flags::input)
+            .find(|&id| fd.vbank().get(id).is_some_and(|v| v.get_addr() == addr && v.get_size() == size));
+        let whole = if let Some(vn) = existing {
+            fd.vbank_mut().make_free(vn);
+            vn
+        } else { fd.new_varnode(size, addr, None) };
+        let mut pieces = Vec::with_capacity(partition.len());
+        for part in partition {
+            let piece = crate::p3_dataflow::kuna_inputtile::new_tiled_input(
+                fd, part.size as int4, &part.get_addr(),
+            )?;
+            fd.vbank_mut().get_mut(piece).expect("entry input slot").set_write_mask();
+            pieces.push(piece);
+        }
+        Ok(self.concat_pieces(fd, &pieces, None, whole))
+    }
+
+    fn new_entry_input(
+        &self, fd: &mut crate::funcdata::Funcdata, size: int4, addr: &Address,
+    ) -> kuna_base::error::KunaResult<crate::context::VarnodeId> {
+        if let Some(partition) = self.entry_partition(fd, addr, size) {
+            return self.build_entry_partition(fd, addr, size, &partition);
+        }
+        crate::p3_dataflow::kuna_inputtile::new_tiled_input(fd, size, addr)
+    }
+
     /// Fill input holes in a heritaged range (C++ `Heritage::guardInput`,
     /// `heritage.cc:1953`).  When a single input fills the range it links
     /// automatically and we return; otherwise the gaps are filled with input
-    /// Varnodes and concatenated.
+    /// Varnodes and concatenated. `multiregargs` rewrites illegal wide entry
+    /// inputs and fills complete ABI holes per slot before concatenation.
     fn guard_input(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
@@ -3479,6 +3564,12 @@ impl Heritage {
         if input.len() == 1
             && fd.vbank().get(input[0]).expect("guard_input: stale input").get_size() == size
         {
+            if let Some(partition) = self.entry_partition(fd, addr, size) {
+                let whole = self.build_entry_partition(fd, addr, size, &partition)
+                    .expect("guard_input: ABI entry partition");
+                fd.vbank_mut().get_mut(whole).expect("guard_input: partition output")
+                    .set_active_heritage();
+            }
             return; // single input fills everything; links in automatically
         }
         // Make sure the input range is filled (no holes), then concatenate the
@@ -3489,25 +3580,28 @@ impl Heritage {
         let end = cur.wrapping_add(size as u64);
         let mut newinput: Vec<crate::context::VarnodeId> = Vec::new();
         while cur < end {
-            let vn = if i < input.len() {
-                let candidate = input[i];
-                let voff = fd.vbank().get(candidate).expect("guard_input: input vn").get_addr().get_offset();
-                if voff > cur {
-                    let sz = (voff - cur) as int4;
-                    let hole = fd.new_varnode(sz, &Address::new(Rc::clone(&spc), cur), None);
-                    fd.set_input_varnode(hole).expect("guard_input: setInputVarnode hole")
+            let candidate = input.get(i).copied();
+            let next = candidate.map(|vn| fd.vbank().get(vn).expect("guard_input: input vn")
+                .get_addr().get_offset()).unwrap_or(end);
+            if next > cur {
+                let gap = Address::new(Rc::clone(&spc), cur);
+                let width = (next - cur) as int4;
+                if let Some(partition) = self.entry_partition(fd, &gap, width) {
+                    for piece in partition {
+                        let vn = fd.new_varnode(piece.size as int4, &piece.get_addr(), None);
+                        newinput.push(fd.set_input_varnode(vn).expect("guard_input: ABI hole slot"));
+                    }
                 } else {
-                    i += 1;
-                    candidate
+                    let vn = fd.new_varnode(width, &gap, None);
+                    newinput.push(fd.set_input_varnode(vn).expect("guard_input: input hole"));
                 }
+                cur = next;
             } else {
-                let sz = (end - cur) as int4;
-                let tail = fd.new_varnode(sz, &Address::new(Rc::clone(&spc), cur), None);
-                fd.set_input_varnode(tail).expect("guard_input: setInputVarnode tail")
-            };
-            let vnsize = fd.vbank().get(vn).expect("guard_input: vn size").get_size();
-            newinput.push(vn);
-            cur = cur.wrapping_add(vnsize as u64);
+                let vn = candidate.expect("guard_input: input candidate");
+                i += 1;
+                cur = cur.wrapping_add(fd.vbank().get(vn).expect("guard_input: vn size").get_size() as u64);
+                newinput.push(vn);
+            }
         }
         if newinput.len() == 1 {
             return; // will get linked in automatically
@@ -3866,9 +3960,9 @@ impl Heritage {
     /// filling successor MULTIEQUAL inputs by `getOutRevIndex`, recursing into
     /// dom-children, then popping this block's writes.
     ///
-    /// (kuna DIV-50) The three input-creation sites go through
-    /// [`kuna_inputtile::new_tiled_input`](crate::p3_dataflow::kuna_inputtile::new_tiled_input)
-    /// rather than `set_input_varnode` directly, so a request that lands on
+    /// The input-creation sites use `new_entry_input` for complete ABI slots,
+    /// then [`kuna_inputtile::new_tiled_input`](crate::p3_dataflow::kuna_inputtile::new_tiled_input)
+    /// to reconcile existing tiles, so a request that lands on
     /// `guard_input`'s leftover write-masked pieces is reconciled instead of
     /// aborting the function.
     //
@@ -3913,7 +4007,7 @@ impl Heritage {
                     let mut vnnew = match varstack.get(&key).and_then(|s| s.last().copied()) {
                         Some(top) => top,
                         None => {
-                            let nv = crate::p3_dataflow::kuna_inputtile::new_tiled_input(
+                            let nv = self.new_entry_input(
                                 fd, in_size, &key,
                             )
                             .unwrap_or_else(|e| {
@@ -3945,7 +4039,7 @@ impl Heritage {
                         if from_op == Some(op) {
                             let stacklen = varstack.get(&key).map(|s| s.len()).unwrap_or(0);
                             if stacklen == 1 {
-                                let nv = crate::p3_dataflow::kuna_inputtile::new_tiled_input(
+                                let nv = self.new_entry_input(
                                     fd, in_size, &key,
                                 )
                                 .unwrap_or_else(|e| {
@@ -4019,7 +4113,7 @@ impl Heritage {
                 let vnnew = match varstack.get(&key).and_then(|s| s.last().copied()) {
                     Some(top) => top,
                     None => {
-                        let nv = crate::p3_dataflow::kuna_inputtile::new_tiled_input(
+                        let nv = self.new_entry_input(
                             fd, in_size, &key,
                         )
                         .unwrap_or_else(|e| {
@@ -5660,6 +5754,216 @@ mod tests {
         }
         g.calc_forward_dominator(root, &[blocks[0]]);
         blocks
+    }
+
+    #[test]
+    fn complete_register_partition_extracts_call_slots_in_both_byte_orders() {
+        use kuna_num::opcodes::OpCode;
+        for big in [false, true] {
+            let mut manager = build_manager();
+            let register = Rc::new(AddrSpace::new(
+                spacetype::IPTR_PROCESSOR, "register", big, 4, 1, 3,
+                addrspace_flags::hasphysical, 1, 1,
+            ));
+            manager.insert_space(register.clone()).unwrap();
+            let mut context = ArchContext::new(manager);
+            context.multi_reg_args = true;
+            let arch = Rc::new(context);
+            let entry = Address::new(arch.manage().get_space_by_name("ram").unwrap().clone(), 0x1000);
+            let mut fd = Funcdata::new("func", "func", arch, entry.clone(), 0x10000000, 0x40).unwrap();
+            let block = build_cfg(&mut fd, 1, &[])[0];
+            let call = fd.new_op(1, entry.clone());
+            fd.op_set_opcode(call, typeop_skeleton(OpCode::CPUI_CALL));
+            let target = fd.new_constant(8, 0x2000);
+            fd.op_set_input(call, target, 0).unwrap();
+            fd.op_insert_end(call, block);
+            let mut model = crate::fspec::ProtoModel::new(fd.get_arch().manage());
+            model.build_param_list("standard").unwrap();
+            for (group, offset) in [0x24, 0x20].into_iter().enumerate() {
+                let entry = crate::fspec::ParamEntry::seed(
+                    group as int4, crate::dtype::type_class::TYPECLASS_GENERAL,
+                    register.clone(), offset, 4, 1, 0, 0, true, false,
+                    model.input().get_entry(), fd.get_arch().manage(),
+                ).unwrap();
+                model.input_mut().push_entry(entry);
+            }
+            model.input_mut().finish_decode();
+            let mut specs = crate::fspec::FuncCallSpecs::new(call, entry);
+            specs.proto_mut().set_internal(
+                Rc::new(model), Rc::new(crate::dtype::Datatype::new(0, crate::dtype::type_metatype::TYPE_VOID)),
+            );
+            specs.init_active_input();
+            let whole = Address::new(register.clone(), 0x20);
+            for _ in 0..2 {
+                Heritage::guard_call_input(&mut fd, &mut specs, &whole, &whole, 8, crate::kuna_calloverlap::LEVEL_OFF);
+            }
+            for (slot, offset) in [0x20, 0x24].into_iter().enumerate() {
+                let piece = Address::new(register.clone(), offset);
+                let input = fd.obank().get(call).unwrap().get_in(slot as int4 + 1).unwrap();
+                let value = fd.vbank().get(input).unwrap();
+                assert_eq!(value.get_addr(), &piece);
+                assert_eq!(value.get_size(), 4);
+                let subpiece = fd.obank().get(value.get_def().unwrap()).unwrap();
+                assert_eq!(subpiece.code(), OpCode::CPUI_SUBPIECE);
+                let amount = fd.vbank().get(subpiece.get_in(1).unwrap()).unwrap().get_addr().get_offset();
+                assert_eq!(amount, if big { 4 - slot as u64 * 4 } else { slot as u64 * 4 });
+            }
+            assert_eq!(fd.obank().get(call).unwrap().num_input(), 3);
+        }
+    }
+
+    fn entry_partition_fixture(big: bool, enabled: bool, wide: bool) -> (Funcdata, Address) {
+        let mut manager = build_manager();
+        let register = Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR, "register", big, 4, 1, 3,
+            addrspace_flags::hasphysical, 1, 1,
+        ));
+        manager.insert_space(register.clone()).unwrap();
+        let mut context = ArchContext::new(manager);
+        context.multi_reg_args = enabled;
+        let arch = Rc::new(context);
+        let entry = Address::new(arch.manage().get_space_by_name("ram").unwrap().clone(), 0x1000);
+        let mut fd = Funcdata::new("func", "func", arch, entry, 0x10000000, 0x40).unwrap();
+        let block = build_cfg(&mut fd, 1, &[])[0];
+        let root = fd.bblocks_ref().root.unwrap();
+        fd.bblocks_mut().set_start_block(root, block);
+        let mut model = crate::fspec::ProtoModel::new(fd.get_arch().manage());
+        model.build_param_list("standard").unwrap();
+        let ranges = if wide { vec![(0x20, 8)] } else { vec![(0x20, 4), (0x24, 4)] };
+        for (group, (offset, width)) in ranges.into_iter().enumerate() {
+            let entry = crate::fspec::ParamEntry::seed(
+                group as int4, crate::dtype::type_class::TYPECLASS_GENERAL,
+                register.clone(), offset, width, 1, 0, 0, true, false,
+                model.input().get_entry(), fd.get_arch().manage(),
+            ).unwrap();
+            model.input_mut().push_entry(entry);
+        }
+        model.input_mut().finish_decode();
+        fd.get_func_proto_mut().set_internal(
+            Rc::new(model), Rc::new(crate::dtype::Datatype::new(0, crate::dtype::type_metatype::TYPE_VOID)),
+        );
+        (fd, Address::new(register, 0x20))
+    }
+
+    #[test]
+    fn entry_partition_reuses_slots_and_replaces_an_illegal_wide_input() {
+        for big in [false, true] {
+            let (mut fd, addr) = entry_partition_fixture(big, true, false);
+            let original = fd.new_varnode(8, &addr, None);
+            fd.set_input_varnode(original).unwrap();
+            let heritage = Heritage::new();
+            let value = heritage.new_entry_input(&mut fd, 8, &addr).unwrap();
+            assert_eq!(value, original);
+            assert!(!fd.vbank().get(value).unwrap().is_input());
+            let piece = fd.obank().get(fd.vbank().get(value).unwrap().get_def().unwrap()).unwrap();
+            assert_eq!(piece.code(), kuna_num::opcodes::OpCode::CPUI_PIECE);
+            for slot in 0..2 {
+                let vn = fd.vbank().get(piece.get_in(slot).unwrap()).unwrap();
+                assert!(vn.is_input());
+                assert_eq!(vn.get_size(), 4);
+                assert_eq!(vn.get_addr().get_offset(), if big { 0x20 + slot as u64 * 4 } else { 0x24 - slot as u64 * 4 });
+            }
+            let again = heritage.new_entry_input(&mut fd, 8, &addr).unwrap();
+            assert!(fd.vbank().get(again).unwrap().is_written());
+            assert_eq!(fd.vbank().iter_def_flag(crate::varnode::varnode_flags::input).count(), 2);
+        }
+    }
+
+    #[test]
+    fn entry_partition_preserves_off_locked_legal_wide_and_partial_inputs() {
+        for (enabled, wide, locked) in [(false, false, false), (true, true, false), (true, false, true)] {
+            let (mut fd, addr) = entry_partition_fixture(true, enabled, wide);
+            fd.get_func_proto_mut().set_input_lock(locked);
+            let value = Heritage::new().new_entry_input(&mut fd, 8, &addr).unwrap();
+            assert!(fd.vbank().get(value).unwrap().is_input());
+            assert_eq!(fd.vbank().get(value).unwrap().get_size(), 8);
+        }
+        let (mut fd, addr) = entry_partition_fixture(true, true, false);
+        let partial = fd.new_varnode(2, &addr, None);
+        fd.set_input_varnode(partial).unwrap();
+        assert!(Heritage::new().entry_partition(&fd, &addr, 8).is_none());
+    }
+
+    #[test]
+    fn entry_partition_declines_protected_whole_inputs_and_locked_slots() {
+        for flags in [0,
+            crate::varnode::varnode_flags::typelock, crate::varnode::varnode_flags::namelock,
+            crate::varnode::varnode_flags::persist, crate::varnode::varnode_flags::addrtied] {
+            let (mut fd, addr) = entry_partition_fixture(true, true, false);
+            let whole = fd.new_varnode(8, &addr, None);
+            fd.set_input_varnode(whole).unwrap();
+            if flags == 0 { fd.vbank_mut().get_mut(whole).unwrap().set_write_mask(); }
+            else { fd.vbank_mut().get_mut(whole).unwrap().set_flags_pub(flags); }
+            assert!(Heritage::new().entry_partition(&fd, &addr, 8).is_none());
+            assert!(fd.vbank().get(whole).unwrap().is_input());
+        }
+        let (mut fd, addr) = entry_partition_fixture(true, true, false);
+        let slot = fd.new_varnode(4, &addr, None);
+        fd.set_input_varnode(slot).unwrap();
+        fd.vbank_mut().get_mut(slot).unwrap().set_flags_pub(crate::varnode::varnode_flags::typelock);
+        assert!(Heritage::new().entry_partition(&fd, &addr, 8).is_none());
+    }
+
+    #[test]
+    fn entry_partition_preserves_a_partially_locked_prototype() {
+        let (mut fd, addr) = entry_partition_fixture(true, true, false);
+        for i in 0..2 {
+            let piece = crate::fspec::ParameterPieces {
+                addr: Address::new(addr.get_space().unwrap().clone(), 0x20 + i as u64 * 4),
+                type_: Some(Rc::new(crate::dtype::Datatype::new(4, crate::dtype::type_metatype::TYPE_INT))),
+                flags: if i == 1 { crate::fspec::parameter_pieces_flags::TYPELOCK } else { 0 },
+            };
+            fd.get_func_proto_mut().set_param(i, "param", &piece);
+        }
+        assert!(!fd.get_func_proto().is_input_locked());
+        assert!(Heritage::new().entry_partition(&fd, &addr, 8).is_none());
+    }
+
+    #[test]
+    fn guard_input_rewrites_existing_whole_and_tiles_complete_holes() {
+        for big in [false, true] {
+            let (mut fd, addr) = entry_partition_fixture(big, true, false);
+            let whole = fd.new_varnode(8, &addr, None);
+            fd.set_input_varnode(whole).unwrap();
+            let mut heritage = Heritage::new();
+            heritage.guard_input(&mut fd, &addr, 8, &[whole]);
+            let value = fd.vbank().get(whole).unwrap();
+            assert!(value.is_written());
+            assert!(value.is_active_heritage());
+            assert!(!value.is_write_mask());
+            let block = fd.bblocks_ref().block(fd.bblocks_ref().root.unwrap()).get_block(0);
+            let copy = fd.new_op(1, fd.get_address().clone());
+            fd.op_set_opcode(copy, typeop_skeleton(kuna_num::opcodes::OpCode::CPUI_COPY));
+            let read = fd.new_varnode(8, &addr, None);
+            fd.vbank_mut().get_mut(read).unwrap().set_active_heritage();
+            fd.op_set_input(copy, read, 0).unwrap();
+            fd.new_unique_out(8, copy).unwrap();
+            fd.op_insert_end(copy, block);
+            heritage.domchild = vec![vec![]];
+            heritage.rename(&mut fd);
+            assert_eq!(fd.obank().get(copy).unwrap().get_in(0), Some(whole));
+            assert_eq!(fd.vbank().iter_def_flag(crate::varnode::varnode_flags::input).count(), 2);
+            let old_slots: Vec<_> = fd.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();
+            let tail_addr = Address::new(addr.get_space().unwrap().clone(), 0x28);
+            let tail = fd.new_varnode(4, &tail_addr, None);
+            fd.set_input_varnode(tail).unwrap();
+            Heritage::new().guard_input(&mut fd, &addr, 12, &[tail]);
+            let inputs: Vec<_> = fd.vbank().iter_def_flag(crate::varnode::varnode_flags::input)
+                .map(|id| fd.vbank().get(id).unwrap().get_size()).collect();
+            assert_eq!(inputs, [4, 4, 4]);
+            let final_op = fd.obank().iter_alive()
+                .filter(|&op| fd.obank().get(op).unwrap().code() == kuna_num::opcodes::OpCode::CPUI_PIECE)
+                .find(|&op| fd.obank().get(op).unwrap().get_out()
+                    .is_some_and(|vn| fd.vbank().get(vn).unwrap().get_size() == 12)).unwrap();
+            let final_piece = fd.obank().get(final_op).unwrap();
+            let final_value = fd.vbank().get(final_piece.get_out().unwrap()).unwrap();
+            assert!(final_value.is_written() && final_value.is_active_heritage());
+            assert_eq!(final_piece.get_in(if big { 1 } else { 0 }), Some(tail));
+            let pair = final_piece.get_in(if big { 0 } else { 1 }).unwrap();
+            let pair_op = fd.obank().get(fd.vbank().get(pair).unwrap().get_def().unwrap()).unwrap();
+            assert_eq!(pair_op.get_in(0), Some(old_slots[if big { 0 } else { 1 }]));
+            assert_eq!(pair_op.get_in(1), Some(old_slots[if big { 1 } else { 0 }]));
+        }
     }
 
     // ---- LocationMap ------------------------------------------------------

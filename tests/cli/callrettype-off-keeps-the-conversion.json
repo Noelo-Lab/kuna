@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "p-7f80d0338f1d",
+  "probe_id": "p-fbd051e665f2",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -34,8 +34,8 @@
       "char \\* skip_blanks\\(char \\*a0\\)",
       "v1 = \\(char \\*\\)skip_blanks\\(a0\\);",
       "FILE \\* pick_stream\\(int a0\\)",
-      "v1 = \\(FILE \\*\\)pick_stream\\(a0\\);",
-      "v1 = \\(a0\\) \\? \\(char \\*\\)after_colon\\(a0\\) : \\(char \\*\\)fallback_name\\(\\);"
+      "stream = \\(FILE \\*\\)pick_stream\\(a0\\);",
+      "s = \\(a0\\) \\? \\(char \\*\\)after_colon\\(a0\\) : \\(char \\*\\)fallback_name\\(\\);"
     ]
   },
   "notes": "OFF: the callee's own listing declares char * skip_blanks and FILE * pick_stream, but a call's result has no type of its own, so every caller that keeps it prints (char *)skip_blanks(a0) and (FILE *)pick_stream(a0)."
