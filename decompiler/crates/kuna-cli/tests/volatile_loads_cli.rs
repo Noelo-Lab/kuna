@@ -281,3 +281,46 @@ fn volatile_typedef_data_preserves_scalar_and_array_reads() {
         }
     }
 }
+
+#[test]
+fn volatile_struct_data_reads_name_the_covered_field() {
+    let path = common::scratch_file("volatile-struct-field", "bin");
+    for (declaration, offset, access) in [
+        ("volatile struct S s", 4, "s.b"),
+        ("VolS s", 4, "s.b"),
+        ("VolS cursor[3]", 20, "cursor[2].b"),
+        ("struct S volatile cursor[3]", 16, "cursor[2].a"),
+    ] {
+        std::fs::write(
+            &path,
+            [
+                0x8b, 0x04, 0x25, offset, 0x10, 0x60, 0x00,
+                0x8b, 0x14, 0x25, offset, 0x10, 0x60, 0x00,
+                0x01, 0xd0, 0xc3,
+            ],
+        )
+        .unwrap();
+        let (out, err, code) = common::run_kuna(&[
+            "decompile",
+            path.to_str().unwrap(),
+            "--addr",
+            "0x400000",
+            "--raw-image",
+            "--base",
+            "0x400000",
+            "--target",
+            "x86:LE:64:default:gcc",
+            "--assert-strict",
+            "--assert",
+            "function 0x400000=f",
+            "--assert",
+            "typedef struct S { int a; int b; };",
+            "--assert",
+            "typedef typedef volatile struct S VolS;",
+            "--assert",
+            &format!("data 0x601000 {declaration}"),
+        ]);
+        assert_eq!(code, 0, "{declaration}: {err}");
+        assert_eq!(out.matches(access).count(), 2, "{declaration}:\n{out}");
+    }
+}
