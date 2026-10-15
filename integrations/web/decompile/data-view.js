@@ -14,6 +14,10 @@ const MAX_TEXT = 200;
 const SUMMARY_ITEMS = 8;
 export const MAX_CHILDREN = 256;
 const LINE = 16;
+/** What bytes no file data backs read as: `.bss`, a section's zero-filled tail. */
+export const UNINIT = 'uninitialized';
+/** Its tooltip. */
+export const UNINIT_WHY = 'The file holds no bytes for this. It starts as zeros, unless the loader fills it in (a library variable such as stderr).';
 
 const SCALARS = new Map([
   ['char', ['char', 1, true]], ['signed char', ['char', 1, true]], ['unsigned char', ['char', 1, false]],
@@ -131,7 +135,7 @@ export function sectionWords(section) {
 
 function hexBytes(bytes, off, n) {
   const parts = [];
-  for (let k = 0; k < n && off + k < bytes.length; k++) parts.push(bytes[off + k].toString(16).padStart(2, '0'));
+  for (let k = Math.max(0, -off); k < n && off + k < bytes.length; k++) parts.push(bytes[off + k].toString(16).padStart(2, '0'));
   return parts.join(' ');
 }
 
@@ -246,8 +250,10 @@ function typeLabel(layout, it) {
 /** `{value, cls, link, count}` of `layout` at `addr`: what the row shows and how many children it has. */
 export function valueOf(m, addr, layout, size = layout.size) {
   const off = offOf(m, addr);
-  if (isUninit(m, addr)) return { value: '0 when the program starts', cls: 'dv-uninit', count: 0 };
-  if (off < 0 || off >= m.bytes.length) return { value: 'not in the file', cls: 'dv-muted', count: 0 };
+  if (isUninit(m, addr)) return { value: UNINIT, cls: 'dv-uninit', count: 0 };
+  if ((off < 0 || off >= m.bytes.length) && layout.kind !== 'array') {
+    return { value: '…', cls: 'dv-muted', count: layout.kind === 'struct' || layout.kind === 'union' ? childCount(layout, size) : 0 };
+  }
   const k = layout.kind;
   if (k === 'int' || k === 'enum' || (k === 'char' && size > 1)) {
     const v = layout.signed === false ? readUint(m.bytes, off, layout.size, m.little) : readInt(m.bytes, off, layout.size, m.little);
@@ -315,21 +321,36 @@ export function targetLabel(m, value, t = null) {
   return `${name} + ${hx(BigInt(delta))}`;
 }
 
+function childCount(layout, size) {
+  if (layout.kind === 'array') return layout.count ?? Math.floor(size / (layout.elem?.size || 1));
+  return (layout.fields || []).length;
+}
+
+/** The first element of an array at `addr` the window holds, and how many of its elements it holds from there. */
+function elemSpan(m, addr, elem, count) {
+  const size = BigInt(elem.size || 1);
+  const first = addr >= m.start ? 0 : Math.min(count, Number((m.start - addr + size - 1n) / size));
+  const last = Math.min(count, Number((m.start + BigInt(m.bytes.length) - addr) / size));
+  return { first, held: Math.max(0, last - first) };
+}
+
 function arrayValue(m, addr, layout, size) {
   const elem = layout.elem || { kind: 'unknown', size: 1 };
   const count = layout.count ?? Math.floor(size / (elem.size || 1));
   const off = offOf(m, addr);
+  if (off < 0 && (elem.kind === 'char' || elem.kind === 'unknown')) return unknownValue(m, addr, size);
   if (elem.kind === 'char' || (elem.kind === 'unknown' && elem.size === 1)) {
     const s = cString(m.bytes, off, Math.min(m.bytes.length, off + count), elem.kind === 'char' ? 0 : 2);
     if (s) return { value: quote(s.text), cls: 'dv-str', count: 0 };
     if (elem.kind === 'unknown') return unknownValue(m, addr, size);
   }
   if (elem.kind === 'unknown') return unknownValue(m, addr, size);
+  const { first, held } = elemSpan(m, addr, elem, count);
   const parts = [];
-  for (let i = 0; i < Math.min(count, SUMMARY_ITEMS); i++) {
+  for (let i = first; i < first + Math.min(held, SUMMARY_ITEMS); i++) {
     parts.push(shortValue(m, addr + BigInt(i * elem.size), elem));
   }
-  return { value: `{${parts.join(', ')}${count > SUMMARY_ITEMS ? ', …' : ''}}`, cls: 'dv-agg', count };
+  return { value: `{${first ? '…, ' : ''}${parts.join(', ')}${first + Math.min(held, SUMMARY_ITEMS) < count ? ', …' : ''}}`, cls: 'dv-agg', count };
 }
 
 function structValue(m, addr, layout) {
@@ -349,6 +370,9 @@ function shortValue(m, addr, layout) {
 
 function unknownValue(m, addr, size) {
   const off = offOf(m, addr);
+  if (off < 0) {
+    return { value: `… ${hexBytes(m.bytes, 0, Math.min(LINE, size + off))} …`, cls: 'dv-bytes', count: Math.ceil(size / LINE) };
+  }
   if ([1, 2, 4, 8].includes(size)) {
     if (size === m.pointerSize && pointsSomewhere(m, addr)) return pointerValue(m, addr, { size });
     const v = readUint(m.bytes, off, size, m.little);
@@ -367,8 +391,9 @@ export function childRows(m, row) {
   const { layout, addr } = row;
   const out = [];
   if (layout.kind === 'array' && layout.elem && layout.elem.kind !== 'unknown') {
-    const n = Math.min(row.count, MAX_CHILDREN);
-    for (let i = 0; i < n; i++) {
+    const { first, held } = elemSpan(m, addr, layout.elem, row.count);
+    const shown = isUninit(m, addr) ? row.count - first : held;
+    for (let i = first; i < first + Math.min(shown, MAX_CHILDREN); i++) {
       const a = addr + BigInt(i * layout.elem.size);
       out.push({ kind: 'elem', addr: a, hex: hx(a), size: layout.elem.size, name: `[${i}]`, type: layout.elem.type, layout: layout.elem, ...valueOf(m, a, layout.elem) });
     }
@@ -378,11 +403,13 @@ export function childRows(m, row) {
       out.push({ kind: 'field', addr: a, hex: hx(a), size: f.type.size, name: f.name, type: f.type.type, layout: f.type, ...valueOf(m, a, f.type) });
     }
   } else {
-    const n = Math.min(Math.ceil(row.size / LINE), MAX_CHILDREN);
-    for (let i = 0; i < n; i++) {
+    const held = Number(m.start + BigInt(m.bytes.length) - addr);
+    const lines = Math.min(Math.ceil(row.size / LINE), Math.max(0, Math.ceil(held / LINE)));
+    const from = addr >= m.start ? 0 : Math.min(lines, Number((m.start - addr) / BigInt(LINE)));
+    for (let i = from; i < Math.min(lines, from + MAX_CHILDREN); i++) {
       const a = addr + BigInt(i * LINE);
       const len = Math.min(LINE, row.size - i * LINE);
-      out.push({ kind: 'line', addr: a, hex: hx(a), size: len, name: '', type: '', layout: { kind: 'unknown', size: len }, value: isUninit(m, a) ? '0 when the program starts' : hexBytes(m.bytes, offOf(m, a), len), cls: isUninit(m, a) ? 'dv-uninit' : 'dv-bytes', count: 0 });
+      out.push({ kind: 'line', addr: a, hex: hx(a), size: len, name: '', type: '', layout: { kind: 'unknown', size: len }, value: isUninit(m, a) ? UNINIT : hexBytes(m.bytes, offOf(m, a), len), cls: isUninit(m, a) ? 'dv-uninit' : 'dv-bytes', count: 0 });
     }
   }
   return out;
@@ -407,7 +434,7 @@ export function gapRows(m, from, to) {
   while (a < to) {
     if (isUninit(m, a)) {
       flush();
-      push('uninit', a, Number(to - a), { type: '', value: `${Number(to - a)} bytes, 0 when the program starts`, cls: 'dv-uninit' });
+      push('uninit', a, Number(to - a), { type: '', value: `${Number(to - a)} bytes, ${UNINIT}`, cls: 'dv-uninit' });
       break;
     }
     if (a >= limit) {
@@ -532,7 +559,7 @@ export function rowHtml(row, { depth = 0, selected = false, open = false, key = 
     `<span class="dv-a">${bare(row.hex)}</span>` +
     `<span class="dv-n"${aliases}>${tw}<span class="dv-nm">${name}</span></span>` +
     `<span class="dv-t">${escapeHtml(type)}</span>` +
-    `<span class="dv-v ${row.cls || ''}">${value}</span></div>`;
+    `<span class="dv-v ${row.cls || ''}"${row.cls === 'dv-uninit' ? ` title="${escapeHtml(UNINIT_WHY)}"` : ''}>${value}</span></div>`;
 }
 
 /**
@@ -562,7 +589,7 @@ export function renderData(model, { selected = null, open = new Set() } = {}) {
         const kids = childRows(model, row);
         measure(kids, depth + 1);
         walk(kids, depth + 1, key);
-        if (row.count > kids.length) html += `<div class="dv-row dv-rest" style="--d:${depth + 1}"><span class="dv-a"></span><span class="dv-n"></span><span class="dv-t"></span><span class="dv-v dv-muted">and ${row.count - kids.length} more</span></div>`;
+        if (row.count > kids.length) html += `<div class="dv-row dv-rest" style="--d:${depth + 1}"><span class="dv-a"></span><span class="dv-n"></span><span class="dv-t"></span><span class="dv-v dv-muted">${row.count - kids.length} more not shown here</span></div>`;
       }
     }
   };

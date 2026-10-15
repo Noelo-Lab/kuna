@@ -94,9 +94,10 @@ checks.push('typed: arrays, structs, pointers');
 // ── bytes that start as zeros ──────────────────────────────────────────────
 const bss = dataModel(fixture('data-globals-bss.json'), { fnAt });
 assert.equal(bss.section.name, '.bss');
-assert.equal(top(bss, 'scratch').value, '0 when the program starts', 'nothing in the file backs .bss');
+assert.equal(top(bss, 'scratch').value, 'uninitialized', 'nothing in the file backs .bss');
 assert.equal(top(bss, 'scratch').cls, 'dv-uninit');
-assert.match(bss.rows.find((r) => r.kind === 'uninit').value, /^\d+ bytes, 0 when the program starts$/);
+assert.match(bss.rows.find((r) => r.kind === 'uninit').value, /^\d+ bytes, uninitialized$/);
+assert.match(renderData(bss), /class="dv-v dv-uninit" title="The file holds no bytes for this\./, 'and says why');
 checks.push('.bss');
 
 // ── stripped: the decompiler's own declarations ────────────────────────────
@@ -126,6 +127,24 @@ assert.equal(pointerValue(ptr, 0x1000n).link.kind, 'fn');
 const tail = raw([1, 2, 3, 4], { section: { name: '.data', address_hex: '0x1000', size: 64, file_offset: 0, file_size: 2 } });
 assert.deepEqual(gapRows(tail, 0x1000n, 0x1004n).map((r) => [r.kind, r.size]), [['bytes', 2], ['uninit', 2]], 'past the file data the bytes start as zeros');
 checks.push('unlabelled bytes');
+
+// ── an array larger than the window ────────────────────────────────────────
+const big = dataModel({
+  start_hex: '0x2000', span: 16, size: 16, bytes: Buffer.from(Uint32Array.from([100, 101, 102, 103]).buffer).toString('hex'), pointer_size: 8,
+  target: { endian: 'little' }, section: { name: '.data', address_hex: '0x1000', size: 0x4000, file_offset: 0, file_size: 0x4000, writable: true },
+  items: [{ name: 'table', address_hex: '0x1000', size: 0x2000, type: 'int[2048]', declaration: 'int table[2048]',
+    layout: { kind: 'array', size: 0x2000, type: 'int[2048]', count: 2048, elem: { kind: 'int', size: 4, type: 'int', signed: true } } }], targets: [],
+}, { fnAt });
+assert.equal(big.rows[0].value, '{…, 100, 101, 102, 103, …}', 'the summary shows the elements the window holds');
+assert.deepEqual(childRows(big, big.rows[0]).map((r) => [r.name, r.value]), [['[1024]', '100 · 0x64'], ['[1025]', '101 · 0x65'], ['[1026]', '102 · 0x66'], ['[1027]', '103 · 0x67']]);
+assert.equal(placeOf(big, 0x2008n).key, '0x1000/2', 'an address deep in it opens to its element');
+assert.match(renderData(big, { open: new Set(['0x1000']) }), /2044 more not shown here/);
+const blob = dataModel({ ...JSON.parse(JSON.stringify({ start_hex: '0x2000', span: 16, size: 16, bytes: '00112233445566778899aabbccddeeff', pointer_size: 8, target: { endian: 'little' }, targets: [],
+  section: { name: '.data', address_hex: '0x1000', size: 0x4000, file_offset: 0, file_size: 0x4000, writable: true } })),
+items: [{ name: 'blob', address_hex: '0x1000', size: 0x2000, type: 'char[8192]', declaration: '', layout: { kind: 'array', size: 0x2000, type: 'char[8192]', count: 8192, elem: { kind: 'unknown', size: 1, type: 'char' } } }] }, { fnAt });
+assert.equal(blob.rows[0].value, '… 00 11 22 33 44 55 66 77 88 99 aa bb cc dd ee ff …', 'an untyped one shows the bytes the window holds');
+assert.deepEqual(childRows(blob, blob.rows[0]).map((r) => [r.hex, r.value]), [['0x2000', '00 11 22 33 44 55 66 77 88 99 aa bb cc dd ee ff']]);
+checks.push('an array larger than the window');
 
 // ── who uses it ────────────────────────────────────────────────────────────
 const uses = fixture('uses-globals.json').uses;
