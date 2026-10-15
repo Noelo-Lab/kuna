@@ -187,6 +187,9 @@ mod local_name_batch;
 #[path = "library_names.rs"]
 mod library_names;
 
+#[path = "rettriangle_round_trip.rs"]
+mod rettriangle_round_trip;
+
 #[path = "stable_local_names.rs"]
 mod stable_local_names;
 

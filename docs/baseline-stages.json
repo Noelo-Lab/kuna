@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2969,
-    2969
+    2976,
+    2976
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -912,7 +912,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 306 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 307 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -2615,6 +2615,13 @@
     "data:retsplitglobal #1: the shared epilogue is cloned into all three predecessors with the option off and emitted once with it on",
     "data:retsplitglobal #2: every store of the epilogue is cloned, not just its head (the last one counts the same)",
     "data:retsplitglobal #3: the vectorised store loop the epilogue reads back is untouched by the split decision (three unrolled sites x two passes)",
+    "data:rettriangle #1: by default the join of a one-block if is split into an early return -- the bug",
+    "data:rettriangle #2: and so is the one behind a stack-protected buffer",
+    "data:rettriangle #3: with the option on the one-block if keeps one return",
+    "data:rettriangle #4: as does the one behind the buffer",
+    "data:rettriangle #5: a source guard clause compiles to the same shape and prints as the if",
+    "data:rettriangle #6: two conditions before the return print the same in both passes",
+    "data:rettriangle #7: seven returns by default, four with the option on",
     "data:returncopysplit #1: fix -- no per-element store into the read-only literal in either pass",
     "data:returncopysplit #2: fix -- no raw SUB81 truncation of the literal survives",
     "data:returncopysplit #3: the real copy site still reads the literal's low half per byte",

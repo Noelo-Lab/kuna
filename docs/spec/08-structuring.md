@@ -1179,6 +1179,39 @@ did write the cascade the gate is wrong (`coreutils factor`, GED 0 → 12).
 `docs/decbench/returndup-o0-measurement.md` and
 `docs/decbench/returndup-regression-triage.md` hold the corpus tables.
 
+### rettriangle — the join of a one-block `if`
+
+A shared constant-return block whose two predecessors are the arms of a
+one-block `if` is no guard either. The condition `C` goes straight to the
+return `R` or through one block `T` that is entered only from `C` and runs
+into `R`; splitting `R` prints `if (c) f(); return 0;` as
+`if (!c) return 0; f(); return 0;`, with one statement more and the return
+written twice, where IDA and Ghidra print the `if`. The common source of the
+shared block is a stack-protected function: once `stackguard` strips the canary
+check, every exit reaches one bare `return 0`. With `option rettriangle on`,
+`Funcdata::returndup_apply` drops such a block from its candidates
+(`decompiler/crates/kuna-decomp/src/p8_structure/kuna_rettriangle.rs
+(is_triangle_join)`): exactly two predecessors, one a two-way block whose other
+successor is the second predecessor, which has that block as its only
+predecessor and `R` as its only successor. Every other candidate of the
+function still splits, so the option can only make `returndup` fire less, and
+it is inert with `returndup off`.
+
+The same shape is also a source guard clause, `if (!ok) return 0; ...;
+return 0;`, which the option prints as `if (ok) { ... } return 0;`, so the binary
+cannot tell the two apart. Over a decbench sample (12 projects, 126 slices,
+`scripts.decbench.optsweep`) it moves O0 GED 31,382 → 31,219 and GED-perfect
++56 (64 functions to a perfect match, 8 off, McNemar z = +6.6), and O2 GED
+69,032 → 69,092 with GED-perfect +1; most of the O2 cost is in tar's pax
+decoders, whose source is the one-block `if` the option prints. Because the
+O2 aggregate rises, the option ships off and is a member of the `aggressive`
+preset, which `--mode auto` selects under 500 KiB.
+`tests/stages/kuna-rettriangle.xml` decompiles gcc -O0 functions with the
+default and with the option on, and
+`kuna-cli/tests/rettriangle_round_trip.rs` compiles the printed C of gcc
+-O0/-O2 and clang -O0 builds beside the source and checks each function
+returns and calls what the source does.
+
 ## 8.4 The quality signal
 
 What kuna can *measure* about a structuring today is the goto census. The

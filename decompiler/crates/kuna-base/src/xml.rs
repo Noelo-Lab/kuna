@@ -2088,7 +2088,8 @@ mod tests {
         // and kuna-strlenscan / an inline repnz scasb length prints as strlen
         // and kuna-libcnames / a local takes the name of the library call it meets
         // and kuna-register-pair-call-args / overwritten register-pair argument slots
-        assert_eq!(count, 548, "corpus file count drifted");
+        // and kuna-rettriangle / a one-block if keeps one return
+        assert_eq!(count, 549, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
