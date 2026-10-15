@@ -200,7 +200,7 @@ mod tests {
                 ..Default::default()
             },
             flows: flows.to_vec(),
-            mnemonic: String::new(),
+            mnemonic: String::new().into(),
             operands: String::new(),
             pcode: None,
         }

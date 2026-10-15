@@ -9050,11 +9050,16 @@ impl PrintC {
                 && sym_type.as_ref().map(|t| t.get_size() == size).unwrap_or(false);
             if !whole {
                 // Partial symbol (printc.cc:1953-1954 pushPartialSymbol).  For an
-                // array-of-element symbol the access maps to element
+                // array of scalars the access maps to element
                 // `sym_off / elsize` — the array-subscript shape
-                // push_vn_explicit_ir renders for symbol-bound highs.
+                // push_vn_explicit_ir renders for symbol-bound highs; any other
+                // partial cover takes the member walk (`s.b`, `a[2][1]`).
                 if let Some(st) = &sym_type {
-                    if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
+                    use crate::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
+                    let composite = st.get_array_base().is_some_and(|elem| {
+                        matches!(elem.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION)
+                    });
+                    if st.get_metatype() == TYPE_ARRAY && !composite {
                         if let Some(elem) = st.get_array_base() {
                             let elsize = elem.get_align_size().max(1);
                             if sym_off >= 0 && (sym_off % elsize) == 0 && st.get_size() > elsize {
@@ -9083,6 +9088,12 @@ impl PrintC {
                                 return;
                             }
                         }
+                    }
+                    if self.push_partial_symbol_ir(
+                        fd, arch, &name, std::rc::Rc::clone(st), sym_off as int8,
+                        size, vn, op, 1, false,
+                    ) {
+                        return;
                     }
                 }
             }
@@ -9727,6 +9738,26 @@ impl PrintC {
         &self.globalref
     }
 
+    fn push_member_base_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        base: VarnodeId,
+        op: OpId,
+        mods: uint4,
+        pointer: &std::rc::Rc<crate::dtype::Datatype>,
+    ) {
+        let cast = !self.options.nocasts
+            && crate::p9_emit::kuna_memberbase::needs_cast(fd, arch.decl_high_type, base, pointer);
+        if cast {
+            self.push_cast_open(pointer, op);
+        }
+        self.push_vn_ir_m(fd, arch, base, op, mods);
+        if cast {
+            self.push_cast_close(pointer);
+        }
+    }
+
     fn op_ptrsub_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let in0 = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
             Some(v) => v,
@@ -9879,7 +9910,7 @@ impl PrintC {
                     if is_rel {
                         self.push_type_pointer_rel_ir(op);
                     }
-                    self.push_vn_ir_m(fd, arch, in0, op, m);
+                    self.push_member_base_ir(fd, arch, in0, op, m, &ptype);
                 }
                 self.push_atom(&field_atom);
             } else {
@@ -9899,7 +9930,7 @@ impl PrintC {
                     if is_rel {
                         self.push_type_pointer_rel_ir(op);
                     }
-                    self.push_vn_ir_m(fd, arch, in0, op, m);
+                    self.push_member_base_ir(fd, arch, in0, op, m, &ptype);
                 }
                 self.push_atom(&field_atom);
                 if arrayvalue {

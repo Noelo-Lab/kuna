@@ -18,6 +18,7 @@ pub mod kuna_iteregion;
 pub mod kuna_loopbreak_recovery;
 pub mod kuna_loopcontinue;
 pub mod kuna_orchain;
+pub mod kuna_rettriangle;
 pub mod kuna_outline;
 pub mod kuna_earlyreturn;
 pub mod kuna_returndup;

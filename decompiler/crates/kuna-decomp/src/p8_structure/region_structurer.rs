@@ -62,11 +62,12 @@
 //!
 //! # Honest-partial safety
 //!
-//! The structurer never aborts the run.  If, against expectation, it cannot reduce
+//! If, against expectation, the structurer cannot reduce
 //! the graph to a single node (e.g. an un-virtualizable irreducible knot), the
 //! caller ([`ActionBlockStructure`](crate::blockaction::ActionBlockStructure))
 //! detects the non-collapsed graph and the structurer reports failure so the
-//! caller can re-seed and fall back to `CollapseStructure`.  Default-OFF the whole
+//! caller can re-seed and fall back to `CollapseStructure`. Budget exhaustion
+//! instead returns to the drive without attempting that fallback. Default-OFF the whole
 //! module is dead code and output is byte-identical.
 
 use kuna_base::error::KunaResult;
@@ -144,7 +145,10 @@ impl OptionRegionStructure {
 /// `CollapseStructure` path does.  Returns `Ok((false, _))` if the graph could not
 /// be collapsed to a single structured root (the caller re-seeds and falls back to
 /// `CollapseStructure` — the flips are then irrelevant and discarded).  Never panics.
-pub fn run_region_structurer(data: &mut Funcdata) -> KunaResult<(bool, Vec<BlockId>)> {
+pub fn run_region_structurer(
+    data: &mut Funcdata,
+    deadline: Option<std::time::Instant>,
+) -> KunaResult<(bool, Vec<BlockId>)> {
     // ---- 1. Region identification over the real CFG (W7 adapter proof) --------
     // recursive_structurer._analyze runs the RegionIdentifier first; here it both
     // proves build_from_block_graph().compute() on a live function and supplies a
@@ -239,7 +243,7 @@ pub fn run_region_structurer(data: &mut Funcdata) -> KunaResult<(bool, Vec<Block
         .with_condfold_sets(condfold_sets)
         .with_loop_refine(loop_refine, cyclic_loops, bb_addr)
         .with_edge_order(edge_order);
-    let ok = st.structure()?;
+    let ok = st.structure(deadline)?;
     let flips = if ok { st.take_pending_flips() } else { Vec::new() };
     if std::env::var_os("KUNA_RS_DEBUG").is_some() {
         eprintln!("[rs] structure -> ok={ok} flips={}", flips.len());
@@ -700,7 +704,7 @@ impl<'a> RegionStructurer<'a> {
 
     /// Drive the structuring to a single root.  Returns `Ok(true)` on success
     /// (one component remains), `Ok(false)` if it could not converge.
-    fn structure(&mut self) -> KunaResult<bool> {
+    fn structure(&mut self, deadline: Option<std::time::Instant>) -> KunaResult<bool> {
         // angr phoenix._analyze: iterate until one node remains.
         self.graph.clear_visit_count(self.graph_id);
 
@@ -716,6 +720,9 @@ impl<'a> RegionStructurer<'a> {
         // is bounded by `cap`.
         let mut precond_rounds: i64 = 0;
         loop {
+            if deadline.is_some_and(crate::decompile_drive::budget_spent) {
+                return Ok(false);
+            }
             precond_rounds += 1;
             if precond_rounds > cap {
                 break; // hang-guard; main loop's fallback still converges
@@ -727,6 +734,9 @@ impl<'a> RegionStructurer<'a> {
 
         let mut rounds: i64 = 0;
         while self.size() > 1 {
+            if deadline.is_some_and(crate::decompile_drive::budget_spent) {
+                return Ok(false);
+            }
             rounds += 1;
             if rounds > cap {
                 // Hang-guard: report non-convergence so the caller falls back.
@@ -3300,7 +3310,7 @@ mod tests {
         let (mut g, root, _) = graph(3, &[(0, 1)]);
         let mut st = RegionStructurer::new(&mut g, root);
         assert!(st.has_stranded_component());
-        assert!(!st.structure().unwrap());
+        assert!(!st.structure(None).unwrap());
         assert_eq!(g.block(root).get_size(), 3);
     }
 
@@ -3309,8 +3319,16 @@ mod tests {
         let (mut g, root, _) = graph(3, &[(0, 1), (1, 2)]);
         let mut st = RegionStructurer::new(&mut g, root);
         assert!(!st.has_stranded_component());
-        assert!(st.structure().unwrap());
+        assert!(st.structure(None).unwrap());
         assert_eq!(g.block(root).get_size(), 1);
+    }
+
+    #[test]
+    fn expired_budget_preserves_the_unfolded_graph() {
+        let (mut g, root, _) = graph(3, &[(0, 1), (1, 2)]);
+        let mut st = RegionStructurer::new(&mut g, root);
+        assert!(!st.structure(Some(std::time::Instant::now())).unwrap());
+        assert_eq!(g.block(root).get_size(), 3);
     }
 
     #[test]

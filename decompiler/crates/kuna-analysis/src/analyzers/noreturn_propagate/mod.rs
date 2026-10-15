@@ -164,16 +164,13 @@ fn collect_error_noreturn_callsites(
     }
     for (&entry, _) in listing.functions() {
         let next = listing.next_function_after(entry).map(|f| f.entry);
-        let body: Vec<(u64, &Insn)> = listing
-            .instructions_in_range(entry, next)
-            .map(|(&vma, insn)| (vma, insn))
-            .collect();
-        for i in 0..body.len() {
+        let body = ListingInstructionBody::new(listing, entry, next);
+        for (&vma, insn) in listing.instructions_in_range(entry, next) {
             // `call_is_terminal_error` = is_call && target is error && arg0 nonzero const
             // (its name is "terminal" because such a call never returns; it is valid at
             // any body position, not only the last).
-            if error_recog.call_is_terminal_error(&body, i) {
-                sites.push(body[i].0);
+            if error_recog.call_is_terminal_error(&body, vma, insn, false) {
+                sites.push(vma);
             }
         }
     }
@@ -201,6 +198,62 @@ struct ErrorRecognizer {
     /// Entry addresses (PLT stub + any defined funcsym) of `error`/`error_at_line`.
     /// Empty ⇒ the recognizer is inert (disabled, or no `error` import present).
     error_addrs: BTreeSet<u64>,
+}
+
+trait InstructionBody {
+    fn instruction_at(&self, vma: u64) -> Option<&Insn>;
+    fn instruction_before(&self, vma: u64) -> Option<(u64, &Insn)>;
+}
+
+struct ListingInstructionBody<'a> {
+    listing: &'a Listing,
+    entry: u64,
+    next: Option<u64>,
+}
+
+impl<'a> ListingInstructionBody<'a> {
+    fn new(listing: &'a Listing, entry: u64, next: Option<u64>) -> Self {
+        Self {
+            listing,
+            entry,
+            next,
+        }
+    }
+
+    fn contains(&self, vma: u64) -> bool {
+        vma >= self.entry && self.next.map_or(true, |next| vma < next)
+    }
+}
+
+impl<'a> InstructionBody for ListingInstructionBody<'a> {
+    fn instruction_at(&self, vma: u64) -> Option<&Insn> {
+        if self.contains(vma) {
+            self.listing.instruction_at(vma)
+        } else {
+            None
+        }
+    }
+
+    fn instruction_before(&self, vma: u64) -> Option<(u64, &Insn)> {
+        if !self.contains(vma) {
+            return None;
+        }
+        let (address, insn) = self.listing.instruction_entry_before(vma)?;
+        self.contains(address).then_some((address, insn))
+    }
+}
+
+#[cfg(test)]
+impl<'a> InstructionBody for BTreeMap<u64, &'a Insn> {
+    fn instruction_at(&self, vma: u64) -> Option<&Insn> {
+        self.get(&vma).copied()
+    }
+
+    fn instruction_before(&self, vma: u64) -> Option<(u64, &Insn)> {
+        self.range(..vma)
+            .next_back()
+            .map(|(&address, &insn)| (address, insn))
+    }
 }
 
 impl ErrorRecognizer {
@@ -242,25 +295,32 @@ impl ErrorRecognizer {
         self.error_addrs.contains(&entry)
     }
 
-    /// Is the last (tail) instruction of a body a `call error`/`call error_at_line`
+    /// Is the instruction at `call_vma` a `call error`/`call error_at_line`
     /// whose `status` argument is a **nonzero constant** — i.e. the call (and so the
     /// whole no-returning-path body) never returns?
     ///
-    /// `call_idx` indexes the tail CALL in `body`. Returns true only when (a) the
-    /// call target is an `error` address and (b) the last write to the first int-arg
-    /// register (x86-64 SysV `EDI`/`RDI`, the `int status`) before the call is a
-    /// `MOV reg, imm` with a nonzero literal. A zero status (`XOR EDI,EDI` /
-    /// `MOV EDI,0x0` — `error` *returns*) or any non-constant / unprovable definition
-    /// is rejected (conservative: a false positive would drop live caller code).
-    fn call_is_terminal_error(&self, body: &[(u64, &Insn)], call_idx: usize) -> bool {
-        let (_, call) = body[call_idx];
+    /// Returns true only when (a) the call target is an `error` address and (b) the
+    /// last write to the first int-arg register (x86-64 SysV `EDI`/`RDI`, the `int
+    /// status`) before the call is a `MOV reg, imm` with a nonzero literal. A zero
+    /// status (`XOR EDI,EDI` / `MOV EDI,0x0` — `error` *returns*) or any non-constant /
+    /// unprovable definition is rejected (conservative: a false positive would drop
+    /// live caller code). `require_contiguous` preserves the reachability walk's
+    /// stricter predecessor rule; the strict tail and call-site scans intentionally
+    /// retain their address-order semantics.
+    fn call_is_terminal_error<B: InstructionBody + ?Sized>(
+        &self,
+        body: &B,
+        call_vma: u64,
+        call: &Insn,
+        require_contiguous: bool,
+    ) -> bool {
         if !call.flow.is_call {
             return false;
         }
         if !call.flows.iter().any(|t| self.is_error(*t)) {
             return false;
         }
-        arg0_is_nonzero_const(body, call_idx)
+        arg0_is_nonzero_const_before(body, call_vma, require_contiguous)
     }
 }
 
@@ -269,7 +329,9 @@ impl ErrorRecognizer {
 /// of `rdi`; on any non-x86 target none of these appear as a destination operand,
 /// so the whole recognizer degrades to a clean no-op (no false positives).
 fn is_arg0_reg(reg: &str) -> bool {
-    matches!(reg.to_ascii_uppercase().as_str(), "RDI" | "EDI" | "DI" | "DIL")
+    ["RDI", "EDI", "DI", "DIL"]
+        .iter()
+        .any(|candidate| reg.eq_ignore_ascii_case(candidate))
 }
 
 /// Parse an operand token as an integer literal (SLEIGH x86 emits hex `0x2` /
@@ -285,9 +347,9 @@ fn parse_imm(tok: &str) -> Option<i64> {
     Some(if neg { -v } else { v })
 }
 
-/// Backward-scan the straight-line predecessors of the tail `call` (`call_idx`)
-/// for the defining write of the first int-arg register, returning true iff that
-/// write is a nonzero **constant** load.
+/// Backward-scan the straight-line predecessors of the call at `call_vma` for the
+/// defining write of the first int-arg register, returning true iff that write is
+/// a nonzero **constant** load.
 ///
 /// Conservative by construction: it stops (and returns false) at the first
 /// control-flow instruction or intervening `call` (beyond which the straight-line
@@ -295,35 +357,43 @@ fn parse_imm(tok: &str) -> Option<i64> {
 /// clobbered), and returns false for a zero literal (`error(0,…)` *returns*) or any
 /// non-literal / unrecognised definition. A false positive would mark a returning
 /// function no-return and drop live caller code, so every uncertain case is a no.
-fn arg0_is_nonzero_const(body: &[(u64, &Insn)], call_idx: usize) -> bool {
-    let mut i = call_idx;
-    while i > 0 {
-        i -= 1;
-        let insn = body[i].1;
+fn arg0_is_nonzero_const_before<B: InstructionBody + ?Sized>(
+    body: &B,
+    call_vma: u64,
+    require_contiguous: bool,
+) -> bool {
+    let mut vma = call_vma;
+    while let Some((previous_vma, insn)) = body.instruction_before(vma) {
+        if require_contiguous && insn.fall_through != Some(vma) {
+            return false;
+        }
         // A branch/return between here and the call breaks straight-line dominance.
         if insn.flow.is_jump || insn.flow.is_terminal {
             return false;
         }
-        let ops = insn.operands.trim();
-        let mut parts = ops.splitn(2, ',');
-        let dest = parts.next().unwrap_or("").trim();
-        let src = parts.next().unwrap_or("").trim();
-        let mnem = insn.mnemonic.trim().to_ascii_uppercase();
-        if is_arg0_reg(dest) {
-            // The nearest definition of the status register: decide here.
-            return match mnem.as_str() {
-                // `MOV EDI, <imm>`: nonzero literal ⇒ error() never returns.
-                "MOV" => parse_imm(src).is_some_and(|v| v != 0),
-                // `XOR EDI,EDI` / `SUB EDI,EDI`: sets zero ⇒ error() *returns*.
-                _ => false,
-            };
+        if let Some(result) = arg0_scan_result(insn) {
+            return result;
         }
-        // A call before the definition clobbers the caller-saved arg register.
-        if insn.flow.is_call {
-            return false;
-        }
+        vma = previous_vma;
     }
     false
+}
+
+fn arg0_scan_result(insn: &Insn) -> Option<bool> {
+    let ops = insn.operands.trim();
+    let mut parts = ops.splitn(2, ',');
+    let dest = parts.next().unwrap_or("").trim();
+    let src = parts.next().unwrap_or("").trim();
+    if is_arg0_reg(dest) {
+        // The nearest definition of the status register: decide here.
+        // `MOV EDI, <imm>`: nonzero literal ⇒ error() never returns.
+        return Some(
+            insn.mnemonic.as_str().trim().eq_ignore_ascii_case("MOV")
+                && parse_imm(src).is_some_and(|v| v != 0),
+        );
+    }
+    // A call before the definition clobbers the caller-saved arg register.
+    insn.flow.is_call.then_some(false)
 }
 
 /// Is `insn` an alignment NOP — the trailing padding a compiler emits after a
@@ -331,7 +401,11 @@ fn arg0_is_nonzero_const(body: &[(u64, &Insn)], call_idx: usize) -> bool {
 /// every padding form begins `NOP`)? Such padding is unreachable after a
 /// no-return call, so it is skipped when locating the *last real* instruction.
 fn is_padding_nop(insn: &Insn) -> bool {
-    insn.mnemonic.trim_start().to_ascii_uppercase().starts_with("NOP")
+    insn.mnemonic
+        .as_str()
+        .trim_start()
+        .get(..3)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("NOP"))
 }
 
 /// Is `callee` skippable as a propagation candidate — already modeled no-return /
@@ -365,22 +439,19 @@ fn function_is_no_return(
     error_recog: &ErrorRecognizer,
 ) -> bool {
     let next = listing.next_function_after(entry).map(|f| f.entry);
-    // The function body in address order.
-    let body: Vec<(u64, &Insn)> = listing
-        .instructions_in_range(entry, next)
-        .map(|(&vma, insn)| (vma, insn))
-        .collect();
-    if body.is_empty() {
-        return false;
-    }
+    let body = ListingInstructionBody::new(listing, entry, next);
 
     // Rule 1: the last *real* (non-padding) instruction must be a CALL — or a tail
     // JMP — to a callee already in the terminal set. Trailing alignment NOPs after
     // a no-return call are unreachable and skipped.
-    let Some(last_idx) = body.iter().rposition(|(_, insn)| !is_padding_nop(insn)) else {
+    let Some((last_vma, last)) = listing
+        .instructions_in_range(entry, next)
+        .rev()
+        .find(|(_, insn)| !is_padding_nop(insn))
+        .map(|(&vma, insn)| (vma, insn))
+    else {
         return false;
     };
-    let (last_vma, last) = body[last_idx];
     let last_is_terminal_transfer = (last.flow.is_call || last.flow.is_jump)
         && last.flows.iter().any(|t| terminal.contains(t));
     // (kuna, decbench F2) …or a tail `call error(nonzero,…)`: glibc error()/
@@ -388,7 +459,7 @@ fn function_is_no_return(
     // returns, so the wrapper is no-return even though `error` itself is NOT on the
     // Known no-return list (it returns for error(0,…)). Value-conditional, checked
     // per call site by the recognizer (arg0 is a nonzero literal).
-    let last_is_terminal_error = error_recog.call_is_terminal_error(&body, last_idx);
+    let last_is_terminal_error = error_recog.call_is_terminal_error(&body, last_vma, last, false);
     if !last_is_terminal_transfer && !last_is_terminal_error {
         return false;
     }
@@ -396,7 +467,7 @@ fn function_is_no_return(
     // Rules 2–4 over the reachable body (up to and including the last real
     // instruction; the padding tail past `last_vma` is unreachable, so it is not
     // scanned).
-    for &(vma, insn) in &body {
+    for (&vma, insn) in listing.instructions_in_range(entry, next) {
         if vma > last_vma {
             break;
         }
@@ -457,11 +528,7 @@ fn function_reaches_only_noreturn(
     error_recog: &ErrorRecognizer,
 ) -> bool {
     let next = listing.next_function_after(entry).map(|f| f.entry);
-    // Address-indexed body for O(log n) successor lookup.
-    let body: BTreeMap<u64, &Insn> = listing
-        .instructions_in_range(entry, next)
-        .map(|(&vma, insn)| (vma, insn))
-        .collect();
+    let body = ListingInstructionBody::new(listing, entry, next);
     reaches_only_noreturn_walk(&body, entry, next, terminal, error_recog)
 }
 
@@ -471,15 +538,15 @@ fn function_reaches_only_noreturn(
 /// tail) as a dead transfer, and return true iff **no `RETURN` is reachable** and at
 /// least one reachable path ends at such a transfer. Conservative: every uncertainty
 /// returns false. See [`function_reaches_only_noreturn`].
-fn reaches_only_noreturn_walk(
-    body: &BTreeMap<u64, &Insn>,
+fn reaches_only_noreturn_walk<B: InstructionBody + ?Sized>(
+    body: &B,
     entry: u64,
     next: Option<u64>,
     terminal: &BTreeSet<u64>,
     error_recog: &ErrorRecognizer,
 ) -> bool {
     let in_body = |vma: u64| vma >= entry && next.map_or(true, |n| vma < n);
-    if !body.contains_key(&entry) {
+    if body.instruction_at(entry).is_none() {
         return false;
     }
 
@@ -510,7 +577,7 @@ fn reaches_only_noreturn_walk(
         if !visited.insert(vma) {
             continue;
         }
-        let Some(&insn) = body.get(&vma) else {
+        let Some(insn) = body.instruction_at(vma) else {
             // Fell out of the body without a modelled transfer (should be caught by
             // the successor classifier, but stay safe).
             return false;
@@ -525,20 +592,10 @@ fn reaches_only_noreturn_walk(
         // `error(nonzero,…)` tail) ends this path: its fall-through is dead code.
         let transfers_to_noreturn = (insn.flow.is_call || insn.flow.is_jump)
             && insn.flows.iter().any(|t| terminal.contains(t));
-        // error(nonzero,…): the recognizer needs a `&[(u64,&Insn)]` window ending at
-        // the call; a one-element window is enough for its arg back-scan to look at the
-        // straight-line predecessors it re-reads from the Listing is not available here,
-        // so only match when this very instruction is the terminal error call by target.
-        let transfers_to_error = insn.flow.is_call
-            && insn.flows.iter().any(|t| error_recog.is_error(*t))
-            && {
-                // Reconstruct the straight-line window [block start .. this call] so the
-                // arg back-scan can prove `status != 0`. Walk back over fall-through
-                // predecessors within the body until a control instruction.
-                let win = straightline_window(body, entry, vma);
-                let call_idx = win.len() - 1;
-                error_recog.call_is_terminal_error(&win, call_idx)
-            };
+        // error(nonzero,…): use the same contiguous predecessor chain that the old
+        // temporary straight-line window supplied to the argument back-scan.
+        let transfers_to_error =
+            insn.flow.is_call && error_recog.call_is_terminal_error(body, vma, insn, true);
         // A CONDITIONAL jump (`ja`/`jne`/… — a jump that also FALLS THROUGH) to a
         // no-return target ends only its TAKEN arm; the fall-through (the normal,
         // non-taken path) must still be walked. This is the GCC -O2 hot/cold-split
@@ -625,37 +682,6 @@ fn reaches_only_noreturn_walk(
     hit_noreturn
 }
 
-/// Reconstruct the straight-line instruction window ending at the call `call_vma`
-/// (inclusive), walking back over contiguous fall-through predecessors within the
-/// body until a control-flow instruction or a gap. Used to give
-/// [`ErrorRecognizer::call_is_terminal_error`] the `[(vma, insn)]` slice its
-/// nonzero-`status` back-scan needs at a mid-body call site.
-fn straightline_window<'a>(
-    body: &BTreeMap<u64, &'a Insn>,
-    entry: u64,
-    call_vma: u64,
-) -> Vec<(u64, &'a Insn)> {
-    let mut win: Vec<(u64, &Insn)> = Vec::new();
-    // Collect contiguous predecessors whose fall-through chains into the call.
-    let mut cur = call_vma;
-    loop {
-        let Some(&insn) = body.get(&cur) else { break };
-        win.push((cur, insn));
-        if cur == entry {
-            break;
-        }
-        // Previous instruction in address order.
-        let Some((&pv, &pi)) = body.range(..cur).next_back() else { break };
-        // Only chain if the predecessor falls straight through to `cur`.
-        if pi.fall_through != Some(cur) || pi.flow.is_jump || pi.flow.is_terminal {
-            break;
-        }
-        cur = pv;
-    }
-    win.reverse();
-    win
-}
-
 /// Run the call-graph no-return propagation over the Listing and return the
 /// concluded functions as [`NoReturnFact`]s.
 ///
@@ -720,9 +746,8 @@ mod tests {
     // the cross-crate `verify_noreturn_propagate.rs` gate (a real x86-64 fixture
     // with a custom `my_die() { ...; abort(); }` wrapper called only ONCE — below
     // `noreturn_disc`'s ≥3 threshold and followed by NOP padding, so ONLY this
-    // pass concludes it no-return). A unit test here would need a hand-built
-    // `Listing`, whose private fields are not constructible outside the `listing`
-    // module; the rule predicates stay tiny and obviously-correct by inspection.
+    // pass concludes it no-return). The test-only Listing constructor also lets the
+    // borrowed body view exercise real address-index boundaries without a decoder.
 
     #[test]
     fn pass_identity_wiring() {
@@ -741,7 +766,7 @@ mod tests {
             fall_through: ft,
             flow,
             flows,
-            mnemonic: String::new(),
+            mnemonic: "".into(),
             operands: String::new(),
             pcode: None,
         }
@@ -831,6 +856,11 @@ mod tests {
         }
     }
 
+    fn arg0_is_nonzero_const(body: &[(u64, &Insn)], call_idx: usize) -> bool {
+        let index: BTreeMap<u64, &Insn> = body.iter().copied().collect();
+        arg0_is_nonzero_const_before(&index, body[call_idx].0, false)
+    }
+
     #[test]
     fn arg0_nonzero_const_recognizes_mov_edi_imm() {
         // …; MOV EDI,0x2 ; XOR EAX,EAX ; CALL error  → status 2 (nonzero).
@@ -864,6 +894,83 @@ mod tests {
         assert!(!arg0_is_nonzero_const(&vec![(0, &call)], 0));
     }
 
+    #[test]
+    fn listing_instruction_body_bounds_exact_and_predecessor_queries() {
+        let mut previous_function = insn("MOV", "EDI,0x2", false, false);
+        previous_function.addr = 0x80;
+        let mut call = insn("CALL", "0x500", true, false);
+        call.addr = 0x100;
+        call.flows = vec![0x500];
+        let next_function = mk_insn(
+            0x200,
+            None,
+            crate::listing::model::FlowType {
+                is_terminal: true,
+                ..Default::default()
+            },
+            vec![],
+        );
+        let listing = Listing::from_insns_for_test(
+            vec![previous_function, call.clone(), next_function],
+            true,
+        );
+        let body = ListingInstructionBody::new(&listing, 0x100, Some(0x200));
+
+        assert!(body.instruction_at(0x80).is_none());
+        assert!(body.instruction_at(0x100).is_some());
+        assert!(body.instruction_at(0x200).is_none());
+        assert!(body.instruction_before(0x100).is_none());
+        assert!(body.instruction_before(0x200).is_none());
+
+        let recog = ErrorRecognizer {
+            error_addrs: [0x500].into_iter().collect(),
+        };
+        assert!(
+            !recog.call_is_terminal_error(&body, 0x100, &call, false),
+            "a definition in the preceding function must not classify this call"
+        );
+    }
+
+    #[test]
+    fn error_argument_scans_preserve_strict_and_reach_gap_rules() {
+        let mut definition = insn("MOV", "EDI,0x2", false, false);
+        definition.addr = 0x100;
+        definition.fall_through = Some(0x105);
+        let mut call = insn("CALL", "0x500", true, false);
+        call.addr = 0x110;
+        call.flows = vec![0x500];
+        let listing = Listing::from_insns_for_test(vec![definition, call.clone()], true);
+        let body = ListingInstructionBody::new(&listing, 0x100, None);
+        let recog = ErrorRecognizer {
+            error_addrs: [0x500].into_iter().collect(),
+        };
+
+        assert!(
+            recog.call_is_terminal_error(&body, 0x110, &call, false),
+            "the strict scan keeps its legacy address-order behavior across a gap"
+        );
+        assert!(
+            !recog.call_is_terminal_error(&body, 0x110, &call, true),
+            "the reach scan requires an exact fall-through predecessor chain"
+        );
+
+        let mut definition = insn("MOV", "EDI,0x2", false, false);
+        definition.addr = 0x100;
+        definition.fall_through = Some(0x105);
+        let mut clobber = insn("CALL", "0x600", true, false);
+        clobber.addr = 0x105;
+        clobber.fall_through = Some(0x110);
+        let mut call = insn("CALL", "0x500", true, false);
+        call.addr = 0x110;
+        call.flows = vec![0x500];
+        let listing = Listing::from_insns_for_test(vec![definition, clobber, call.clone()], true);
+        let body = ListingInstructionBody::new(&listing, 0x100, None);
+        assert!(
+            !recog.call_is_terminal_error(&body, 0x110, &call, false),
+            "an intervening call still clobbers the argument register"
+        );
+    }
+
     // --- CFG-reachability rule (Ghidra targetOnlyCallsNoReturn port, DIV-19) --------
 
     /// Build an `Insn` with explicit flow shape for the reachability walk tests.
@@ -892,7 +999,7 @@ mod tests {
             fall_through,
             flow,
             flows,
-            mnemonic: String::new(),
+            mnemonic: "".into(),
             operands: String::new(),
             pcode: None,
         }
