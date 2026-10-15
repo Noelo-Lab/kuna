@@ -91,6 +91,39 @@ pub(super) fn input_partition(
     )
 }
 
+/// Whether `op` truncates `vn`, a PIECE output that an `onlyOpUse` walk
+/// reached through exactly one input, to bytes outside that input.
+pub(crate) fn subpiece_drops_reached_piece(
+    fd: &crate::funcdata::Funcdata,
+    op: crate::context::OpId,
+    vn: crate::context::VarnodeId,
+) -> bool {
+    if !fd.get_arch().multi_reg_args {
+        return false;
+    }
+    let Some(sub) = fd.obank().get(op) else { return false };
+    let Some(def) = fd.vbank().get(vn).and_then(|v| v.get_def()) else { return false };
+    let Some(piece) = fd.obank().get(def) else { return false };
+    if piece.code() != kuna_num::opcodes::OpCode::CPUI_PIECE {
+        return false;
+    }
+    let (Some(high), Some(low)) = (piece.get_in(0), piece.get_in(1)) else { return false };
+    let (Some(high), Some(low)) = (fd.vbank().get(high), fd.vbank().get(low)) else { return false };
+    let Some(offset) = sub.get_in(1).and_then(|c| fd.vbank().get(c)).map(|c| c.get_offset()) else {
+        return false;
+    };
+    let Some(size) = sub.get_out().and_then(|o| fd.vbank().get(o)).map(|o| o.get_size()) else {
+        return false;
+    };
+    let low_end = low.get_size() as u64;
+    let end = offset.saturating_add(size as u64);
+    match (high.is_mark(), low.is_mark()) {
+        (true, false) => end <= low_end,
+        (false, true) => offset >= low_end,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

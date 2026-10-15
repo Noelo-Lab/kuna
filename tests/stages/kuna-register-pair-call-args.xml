@@ -49,6 +49,10 @@
 <symbol space="ram" offset="0x1700" name="numeric"/>
 <bytechunk space="ram" offset="0x1800" readonly="true">81c3e00801000000</bytechunk>
 <symbol space="ram" offset="0x1800" name="push"/>
+<bytechunk space="ram" offset="0x1480" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1480" name="pair_take"/>
+<bytechunk space="ram" offset="0x2f00" readonly="true">9de3bf98d01e00007ffff95e01000000901020037ffff93b0100000081c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2f00" name="pair_then_single"/>
 </binaryimage>
 <script>
 <com>parse line extern uint8 producer(uint4 a,uint4 b);</com>
@@ -145,6 +149,19 @@
 <com>load function math_wrapper</com>
 <com>decompile</com>
 <com>print C</com>
+<com>option calloverlap off</com>
+<com>option multiregargs off</com>
+<com>load function pair_then_single</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option multiregargs on</com>
+<com>load function pair_then_single</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option calloverlap full</com>
+<com>load function pair_then_single</com>
+<com>decompile</com>
+<com>print C</com>
 <com>quit</com>
 </script>
 <stringmatch name="zero input survives all write orders" min="5" max="5">sink\(v[0-9]+,0,0xa8\);</stringmatch>
@@ -167,4 +184,7 @@
 <stringmatch name="entry value reaches the push call at every overlap level" min="3" max="3">push\(a0,numeric\(</stringmatch>
 <stringmatch name="disabled calls retain the old high return half" min="2" max="2">v[0-9]+ = \(unsigned int\)\(v[0-9]+ &gt;&gt; 0x20\);</stringmatch>
 <stringmatch name="disabled calls retain the old low return half" min="2" max="2">v[0-9]+ = \(unsigned int\)v[0-9]+;</stringmatch>
+<stringmatch name="disabled pair partition drops the loaded pair at the first call" min="1" max="1">pair_take\(\);</stringmatch>
+<stringmatch name="a stale pair half does not hide the next call's single argument" min="2" max="2">unknown_one\(3\);</stringmatch>
+<stringmatch name="the loaded pair reaches the first call as two slots" min="2" max="2">pair_take\(\(int4\)\(\(uint8\)\*a0 &gt;&gt; 0x20\),\(int4\)\*a0\);</stringmatch>
 </decompilertest>

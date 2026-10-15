@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2966,
-    2966
+    2969,
+    2969
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1735,6 +1735,7 @@
     "data:ZEXTWORD #7: abi, the zero-extended constant is returned whole",
     "data:ZEXTWORD #8: abi, both returns of zc return the register",
     "data:ZEXTWORD #9: a sign-extended word is unchanged either way",
+    "data:a stale pair half does not hide the next call's single argument",
     "data:adjacent object does not steal array reference",
     "data:all seven families are defined and option off adds none",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
@@ -2147,6 +2148,7 @@
     "data:disabled calls retain the old high return half",
     "data:disabled calls retain the old low return half",
     "data:disabled entry partition retains legacy missing input",
+    "data:disabled pair partition drops the loaded pair at the first call",
     "data:disabled retains biased literal",
     "data:double is stored in its declared field",
     "data:earlyreturn #1: OFF keeps the diamond's else-arm, ON hoists it away (else appears once, in the OFF pass only)",
@@ -2835,6 +2837,7 @@
     "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",
     "data:tee-O2 tail-jumps #4: the recovered tail call is logged (pass 2 on only)",
+    "data:the loaded pair reaches the first call as two slots",
     "data:truncarg #10: a sum that provably fits its byte gets no cast",
     "data:truncarg #11: a narrow parameter forwarded untouched keeps its promoted form",
     "data:truncarg #12: a byte nothing zero-extended gets no unsigned cast",

@@ -2381,6 +2381,9 @@ impl Funcdata {
                         }
                     }
                     OpCode::CPUI_SUBPIECE => {
+                        if crate::p3_dataflow::kuna_multiregargs::subpiece_drops_reached_piece(self, op, vn) {
+                            continue;
+                        }
                         let in1_off = o
                             .get_in(1)
                             .and_then(|v| self.vbank().get(v))

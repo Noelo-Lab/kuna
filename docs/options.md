@@ -3673,7 +3673,7 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 ### `multiregargs` -- on | off, default `on`
 
 - **Symptoms:** an overwritten register argument renders as a stale half of a previous wide value; a live entry argument disappears after a wide register read.
-- **What it does:** Track a wide physical register range as its complete, unambiguous integer ABI argument slots. Overwritten call arguments retain their current slot values. An unlocked function entry is built from separate slot inputs when the whole range cannot be one ABI parameter, so unused words do not suppress the real input parameter. Locked or legal wide inputs and ambiguous partitions keep the existing representation. Off preserves legacy call-overlap behavior.
+- **What it does:** Track a wide physical register range as its complete, unambiguous integer ABI argument slots. Overwritten call arguments retain their current slot values. An unlocked function entry is built from separate slot inputs when the whole range cannot be one ABI parameter, so unused words do not suppress the real input parameter. Trial scoring also stops counting a SUBPIECE that keeps only the other half of a PIECE as a second use of the value, so a stale pair half does not hide a single argument the caller just wrote. Locked or legal wide inputs and ambiguous partitions keep the existing representation. Off preserves legacy call-overlap behavior.
 - **When to flip:** Disable when comparing legacy argument recovery; enable when a wide register temporary hides a subsequently overwritten argument slot.
 - **Where / provenance:** P3/ssa-construction · kuna · correctness-fix · GH-1070
 - **Example:** `option multiregargs off`
