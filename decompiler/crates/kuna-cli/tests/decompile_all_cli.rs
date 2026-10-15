@@ -7168,12 +7168,12 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
     let fixtures: [(&str, &[&str], &[&str]); 3] = [
         (
             "foldcallret_sc_gcc_O0_x86_64",
-            &["v1 = tick(a0);", "if (a0 <= 5 || v1)", "gflag = (unsigned int)(5 < a0 && !v1);"],
+            &["v1 = tick(a0);", "if (6 <= a0 && !v1)", "gflag = (unsigned int)(5 < a0 && !v1);"],
             &["|| tick(", "&& !tick("],
         ),
         (
             "foldcallret_sc_clang_O0_x86_64",
-            &["if (tick(a0) || a0 <= 5)", "gflag = (unsigned int)(!tick(a0) && 5 < a0);"],
+            &["if (!tick(a0) && 6 <= a0)", "gflag = (unsigned int)(!tick(a0) && 5 < a0);"],
             &[],
         ),
         (
