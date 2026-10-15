@@ -224,6 +224,7 @@ kuna_options! { self, p1;
     "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
     "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
+    "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
     "bejoin" => {
         let (mode, msg) = crate::kuna_bejoin::BeJoinMode::parse(p1)?;
         self.be_join = mode;

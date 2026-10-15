@@ -118,3 +118,8 @@ decompiles.
 ```bash
 kuna decompile-all tests/hang-repro/escaped_locals --functions big --json --max-fn-seconds 1
 ```
+
+For adjustable public fixtures and memory-scaling measurements, see
+[the huge-function benchmark](huge-function.md). It generates both escaped stack
+objects and branch-heavy functions, records resource usage and decompilation
+errors, and supports option comparisons.

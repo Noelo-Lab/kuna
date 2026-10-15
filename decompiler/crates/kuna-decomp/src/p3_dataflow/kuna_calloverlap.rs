@@ -25,10 +25,12 @@
 //! tri-state rather than an on/off:
 //!
 //! * [`LEVEL_OFF`] — both branches inert; byte-identical to what kuna shipped
-//!   before this option.
+//!   before this option for a single partially covered ABI entry. Complete
+//!   multi-slot register ranges are separately controlled by `multiregargs`.
 //! * [`LEVEL_IN`] — the input guard only.  Recovers the dropped argument but
 //!   leaves the call's return value unrecovered.
-//! * [`LEVEL_FULL`] — both guards, which is upstream Ghidra's behavior.
+//! * [`LEVEL_FULL`] — both upstream partial-range guards. Complete register partitions
+//!   are registered at every level when `multiregargs` is on.
 //!
 //! The guards themselves are upstream `Heritage` methods and live with their
 //! siblings in [`crate::p3_dataflow::heritage`]; this module owns the option's
@@ -44,7 +46,7 @@ pub const LEVEL_OFF: int4 = 0;
 pub const LEVEL_IN: int4 = 1;
 
 /// `option calloverlap full` — the input guard plus the output guard
-/// (`tryOutputOverlapGuard`), i.e. upstream Ghidra's behavior.
+/// (`tryOutputOverlapGuard`); complete register partitions are independent.
 pub const LEVEL_FULL: int4 = 2;
 
 /// `option calloverlap off|in|full` (C++ has no equivalent — upstream is

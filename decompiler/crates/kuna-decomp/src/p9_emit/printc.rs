@@ -9637,6 +9637,26 @@ impl PrintC {
         &self.globalref
     }
 
+    fn push_member_base_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        base: VarnodeId,
+        op: OpId,
+        mods: uint4,
+        pointer: &std::rc::Rc<crate::dtype::Datatype>,
+    ) {
+        let cast = !self.options.nocasts
+            && crate::p9_emit::kuna_memberbase::needs_cast(fd, arch.decl_high_type, base, pointer);
+        if cast {
+            self.push_cast_open(pointer, op);
+        }
+        self.push_vn_ir_m(fd, arch, base, op, mods);
+        if cast {
+            self.push_cast_close(pointer);
+        }
+    }
+
     fn op_ptrsub_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let in0 = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
             Some(v) => v,
@@ -9789,7 +9809,7 @@ impl PrintC {
                     if is_rel {
                         self.push_type_pointer_rel_ir(op);
                     }
-                    self.push_vn_ir_m(fd, arch, in0, op, m);
+                    self.push_member_base_ir(fd, arch, in0, op, m, &ptype);
                 }
                 self.push_atom(&field_atom);
             } else {
@@ -9809,7 +9829,7 @@ impl PrintC {
                     if is_rel {
                         self.push_type_pointer_rel_ir(op);
                     }
-                    self.push_vn_ir_m(fd, arch, in0, op, m);
+                    self.push_member_base_ir(fd, arch, in0, op, m, &ptype);
                 }
                 self.push_atom(&field_atom);
                 if arrayvalue {
