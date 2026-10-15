@@ -74,11 +74,10 @@ The authored native code and the actual generated C return 67 under GCC and Clan
 
 ## Reproducing detached member emission
 
-This neutral tree fixture keeps one frame range live through both node-pointer and pointer-slot accesses. Run from the repository root with an unpatched `kuna` executable on `PATH` and matching x86 specs in `specs/`:
+This neutral tree fixture keeps one frame range live through both node-pointer and pointer-slot accesses. Run from the repository root with a built `kuna` executable on `PATH` and matching x86 specs in `specs/`:
 
 ```sh
-fixture=/tmp/tree_range_members.c
-curl -fsSL https://raw.githubusercontent.com/mgostIH/kuna/b04a033ae586c506916c5703074bb4585c3d0838/decompiler/crates/kuna-analysis/tests/fixtures/tree_range_members.c -o "$fixture"
+fixture=decompiler/crates/kuna-analysis/tests/fixtures/tree_range_members.c
 image=/tmp/kuna-member-tree-range.elf
 gcc -O2 -no-pie -fno-stack-protector -fcf-protection=none "$fixture" -o "$image"
 tree_range_addr=$(nm -n "$image" | awk '$3 == "tree_range" { print $1 }')
@@ -97,7 +96,7 @@ kuna decompile "$image" tree_range \
   | jq -r '.functions[0].code | split("\n")[] | select(test("->sentinel|&v5->left"))'
 ```
 
-On the unpatched emitter, this prints member expressions such as `v1 = v3->sentinel;` while `v3` is declared `uint8`, and `&v5->left` while `v5` is `Node **`. GCC reports `invalid type argument of '->'`; Clang reports that the member-reference base is not a pointer or a structure. The fix emits `v1 = ((Node *)v3)->sentinel;` and `&((Node *)v5)->left`. The focused integration test compiles and executes the generated C with GCC and Clang at `-O0` and `-O2`, with stack views enabled and disabled.
+Without the member-base cast, this printed member expressions such as `v1 = v3->sentinel;` while `v3` is declared `uint8`, and `&v5->left` while `v5` is `Node **`. GCC reports `invalid type argument of '->'`; Clang reports that the member-reference base is not a pointer or a structure. The emitter now prints `v1 = ((Node *)v3)->sentinel;` and `&((Node *)v5)->left`. The focused integration test compiles and executes the generated C with GCC and Clang at `-O0` and `-O2`, with stack views enabled and disabled.
 
 ## Conservative callee memory proofs
 
