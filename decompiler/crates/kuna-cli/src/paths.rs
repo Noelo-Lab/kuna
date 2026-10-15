@@ -1,26 +1,29 @@
-//! Locate the built engine binaries and the compiled SLEIGH tree — the Rust port
-//! of `kuna/paths.py`.
+//! Locate the engine programs and the compiled SLEIGH tree — the Rust port of
+//! `kuna/paths.py`.
 //!
-//! Two installations are first-class, and neither is a degraded form of the other:
+//! `kuna` is the whole toolchain: its hidden `decomp_dbg` and `slacomp`
+//! subcommands run the decompiler console and the SLEIGH compiler, so `kuna
+//! decompile` and `kuna specs` re-enter the running binary rather than look for
+//! siblings. A release build also carries the SLEIGH tree inside itself
+//! ([`crate::embedded_specs`]), which makes the one file a complete install.
+//!
+//! A build without the embedded tree finds one in either of two layouts:
 //!
 //! * **a repo checkout** — `kuna` is built to
 //!   `<root>/decompiler/target/[<triple>/]<profile>/kuna`, so the repo root is the
 //!   directory above the `decompiler`/`target` pair and `specs/` sits under it;
-//! * **a release archive** — `kuna`, `decomp_dbg` and `slacomp` are siblings in one
-//!   extracted directory and the separately downloaded `specs/` tree sits beside or
-//!   inside it. There is no repo root there, so nothing may be derived from one:
-//!   popping three parents off the archive directory lands on a path that exists
-//!   nowhere.
+//! * **an extracted directory** — a `specs/` tree beside or inside the directory
+//!   holding `kuna`. There is no repo root there, so nothing may be derived from
+//!   one: popping three parents off it lands on a path that exists nowhere.
 //!
-//! Every binary probe tries the bare name and the name plus the platform's
-//! executable suffix, so the Windows archive's `decomp_dbg.exe` resolves through
-//! the same code that resolves a unix `decomp_dbg`.  The environment overrides
-//! (`KUNA_ROOT`, `KUNA_SPECS`, `KUNA_DECOMP_DBG`, `KUNA_DECOMP_TEST`,
-//! `KUNA_SLACOMP`, `KUNA_RUST_PROFILE` — all documented in `docs/cli.md`) win over
-//! both layouts.
+//! The environment overrides (`KUNA_ROOT`, `KUNA_SPECS`, `KUNA_DECOMP_DBG`,
+//! `KUNA_DECOMP_TEST`, `KUNA_SLACOMP`, `KUNA_RUST_PROFILE` — all documented in
+//! `docs/cli.md`) win over all of this. `decomp_test_dbg` lives outside `kuna`
+//! and is still probed for under its bare and executable-suffixed names.
 
 use std::env;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 /// A non-empty environment variable read as a path (`OsString`, so a Windows
 /// path that is not valid UTF-8 still resolves).
@@ -107,15 +110,19 @@ fn first_spec_tree(dirs: &[PathBuf]) -> Option<PathBuf> {
 
 /// Root passed as `-sleighpath` / `SLEIGHHOME` (contains `Ghidra/Processors/...`).
 ///
-/// `KUNA_SPECS` and `KUNA_ROOT` pin it outright; otherwise the first
-/// [`specs_search_dirs`] entry that holds a tree wins, falling back to the first
-/// candidate so the caller still has something to name.
+/// `KUNA_SPECS` and `KUNA_ROOT` pin it outright; then the tree built into this
+/// binary, unpacked; otherwise the first [`specs_search_dirs`] entry that holds a
+/// tree wins, falling back to the first candidate so the caller still has
+/// something to name.
 pub fn specs_dir() -> PathBuf {
     if let Some(specs) = env_path("KUNA_SPECS") {
         return specs;
     }
     if let Some(root) = env_path("KUNA_ROOT") {
         return root.join("specs");
+    }
+    if let Some(Ok(dir)) = crate::embedded_specs::tree() {
+        return dir.clone();
     }
     let dirs = specs_search_dirs();
     first_spec_tree(&dirs).unwrap_or_else(|| dirs[0].clone())
@@ -135,7 +142,15 @@ pub fn require_specs_dir() -> Result<PathBuf, String> {
             ));
         }
     }
-    Err(format!("no SLEIGH specs found in {} -- {}", joined(&specs_search_dirs()), SPECS_HINT))
+    let unpack = match crate::embedded_specs::tree() {
+        Some(Err(e)) => format!(" (the SLEIGH tree built into kuna could not be unpacked: {e})"),
+        _ => String::new(),
+    };
+    Err(format!(
+        "no SLEIGH specs found in {}{unpack} -- {}",
+        joined(&specs_search_dirs()),
+        SPECS_HINT
+    ))
 }
 
 /// How to point kuna at a SLEIGH tree, for the failures that surface after the
@@ -233,21 +248,57 @@ pub fn pinned_by(env_var: &'static str) -> Option<&'static str> {
     env_path(env_var).map(|_| env_var)
 }
 
-pub fn decomp_dbg() -> PathBuf {
-    binary("decomp_dbg", "KUNA_DECOMP_DBG")
+/// A program `kuna` runs: a separate binary, or this `kuna` re-entered through
+/// one of its hidden subcommands.
+pub struct Program {
+    pub path: PathBuf,
+    pub subcommand: Option<&'static str>,
 }
 
-/// The [`missing_binary`] diagnostic for [`decomp_dbg`].
-pub fn missing_decomp_dbg() -> String {
-    missing_binary("decomp_dbg", "KUNA_DECOMP_DBG", "kuna-console")
+impl Program {
+    /// A `Command` for the program, the subcommand already in its arguments.
+    pub fn command(&self) -> Command {
+        let mut cmd = Command::new(&self.path);
+        if let Some(sub) = self.subcommand {
+            cmd.arg(sub);
+        }
+        cmd
+    }
+}
+
+/// The hidden subcommand that makes `kuna` the decompiler console.
+pub const DECOMP_DBG_SUBCOMMAND: &str = "decomp_dbg";
+
+/// The hidden subcommand that makes `kuna` the SLEIGH compiler.
+pub const SLACOMP_SUBCOMMAND: &str = "slacomp";
+
+/// `env_var`'s binary when it is set, otherwise this `kuna` running `subcommand`.
+fn builtin(env_var: &str, subcommand: &'static str) -> Result<Program, String> {
+    if let Some(path) = env_path(env_var) {
+        if !path.exists() {
+            return Err(format!(
+                "{subcommand} not found at {} ({env_var})",
+                path.display()
+            ));
+        }
+        return Ok(Program { path, subcommand: None });
+    }
+    let path = env::current_exe().map_err(|e| format!("cannot locate the kuna binary: {e}"))?;
+    Ok(Program { path, subcommand: Some(subcommand) })
+}
+
+/// The decompiler console `kuna decompile` and `kuna catalog` drive.
+pub fn decomp_dbg() -> Result<Program, String> {
+    builtin("KUNA_DECOMP_DBG", DECOMP_DBG_SUBCOMMAND)
 }
 
 pub fn decomp_test_dbg() -> PathBuf {
     binary("decomp_test_dbg", "KUNA_DECOMP_TEST")
 }
 
-pub fn slacomp() -> PathBuf {
-    binary("slacomp", "KUNA_SLACOMP")
+/// The SLEIGH compiler `kuna specs` runs.
+pub fn slacomp() -> Result<Program, String> {
+    builtin("KUNA_SLACOMP", SLACOMP_SUBCOMMAND)
 }
 
 #[cfg(test)]

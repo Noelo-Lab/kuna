@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `declorder`: a function with ten or more locals declares them in
+    character order, so `v10` and `v11` print between `v1` and `v2`.
+
+    Stage / sub-stage: P9 "naming-policy".  The P0 assertion
+    `option declorder natural|name` decides the printed order of the local
+    declarations; `natural` (the default) compares the digit runs of two names
+    as numbers, `name` keeps the plain string sort.
+
+    The fixture, gcc 11 -O0 (x86-64 SysV), keeps eleven call results live to
+    the final expression so each is its own local:
+
+        static long sink(long x) { return x * 5 + 1; }
+        long tally12(long a)
+        {
+            long c1 = sink(a);
+            long c2 = sink(c1);
+            ...
+            long c12 = sink(c11);
+            return c1 ^ c2 ^ ... ^ c12;
+        }
+
+    Pass 1 runs with no option line, so it pins the shipped default: `v1`
+    through `v11` in numeric order.  Pass 2 (`option declorder name`)
+    reproduces the bug: `v10` and `v11` are declared between `v1` and `v2`.
+-->
+<bytechunk space="ram" offset="0x100000">
+554889e548897df8488b55f84889d048c1e0024801d04883c0015dc3554889e54883ec6848897d98488b45984889c7e8ccffffff488945f8488b45f84889c7e8bcffffff488945f0488b45f04889c7e8acffffff488945e8488b45e84889c7e89cffffff488945e0488b45e04889c7e88cffffff488945d8488b45d84889c7e87cffffff488945d0488b45d04889c7e86cffffff488945c8488b45c84889c7e85cffffff488945c0488b45c04889c7e84cffffff488945b8488b45b84889c7e83cffffff488945b0488b45b04889c7e82cffffff488945a8488b45a84889c7e81cffffff488945a0488b45f8483345f0483345e8483345e0483345d8483345d0483345c8483345c0483345b8483345b0483345a8483345a0c9c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="sink"/>
+<symbol space="ram" offset="0x10001c" name="tally12"/>
+</binaryimage>
+<script>
+  <com>lo fu tally12</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option declorder name</com>
+  <com>lo fu tally12</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="declorder #1: with no option line (the shipped default) v2 follows v1" min="1" max="1">^  uint8 v1; //
+^  uint8 v2; //</stringmatch>
+<stringmatch name="declorder #2: and v10 follows v9" min="1" max="1">^  uint8 v9; //
+^  uint8 v10; //</stringmatch>
+<stringmatch name="declorder #3: and v11 is the last declaration before the body" min="1" max="1">^  uint8 v11; //
+^ *$</stringmatch>
+<stringmatch name="declorder #4: with the option set to name, v10 is declared right after v1 -- the bug" min="1" max="1">^  uint8 v1; //
+^  uint8 v10; //</stringmatch>
+<stringmatch name="declorder #5: and v2 right after v11" min="1" max="1">^  uint8 v11; //
+^  uint8 v2; //</stringmatch>
+<stringmatch name="declorder #6: both passes declare the same eleven locals" min="22" max="22">^  uint8 v[0-9]+; // rax \| stack - 0x[0-9a-f]+$</stringmatch>
+<stringmatch name="declorder #7: and print the same body" min="2" max="2">return v1 \^ v2 \^ v3 \^ v4 \^ v5 \^ v6 \^ v7 \^ v8 \^ v9 \^ v10 \^ v11 \^ sink\(v11\);</stringmatch>
+</decompilertest>

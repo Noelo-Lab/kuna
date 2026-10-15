@@ -223,12 +223,15 @@ fn msvc_gate_picks_one_reading_of_an_msvc_name() {
         first_var_arg_slot: -1,
         output_storage: None,
         input_storage: Vec::new(),
+        kuna_library_names: None,
     };
     let facts = || CppSigFacts {
         proven: vec![(0x10, pieces("itanium"))],
         inferred: Vec::new(),
         msvc: vec![(0x20, pieces("msvc"), Some("__thiscall"))],
         msvc_legacy: vec![(0x20, pieces("legacy"))],
+        msvc_byval: Vec::new(),
+        msvc_builders: Vec::new(),
     };
     let on = select(facts(), false, true);
     assert_eq!(on.iter().map(|s| s.pieces.name.as_str()).collect::<Vec<_>>(), ["itanium", "msvc"]);

@@ -1,0 +1,48 @@
+<decompilertest>
+  <!--Kuna #810 / P6 merge order and P9 memory versions. stackviews off keeps the old scalar frame model; on keeps conditional native stores and a genuine saved word without printing reconstructed frame writes.-->
+  <binaryimage arch="x86:LE:64:default:gcc">
+    <bytechunk space="ram" offset="0x401000">415455534883ec104989fc4889f548b80100000017000000488904244889e7e8500100004d85e47466418b042485c0745e498b5c24084c8d64c3f84c39e3774f488b034885c074478b0883f90175108b40048904244889e7e81c010000eb2783f902752248890424488b4d08483b4d10740a4889014883450808eb0a4889e7e82b010000eb004883c3084c39e376b131c04883c4105b5d415cc3415455534883ec104989fc4889f5c70424000000004889e7e8c20000004d85e47466418b042485c0745e498b5c24084c8d64c3f84c39e3774f488b034885c074478b0883f90175108b40048904244889e7e889000000eb2783f902752248890424488b4d08483b4d10740a4889014883450808eb0a4889e7e898000000eb004883c3084c39e376b131c04883c4105b5d415cc341544883ec1048893c244889e7e8300000004c8b2424c70424050000004889e7e827000000488d05070f0000488904244889e7e84a0000004c89e04883c410415cc348830702c3e90000000048893d800e00008b05820e000085c07510833d7b0e000000740748893dce0e0000488d0d6f0e00008b17891481ffc089055a0e0000c3488b07488905670e0000c3c705480e000001000000488d3dbd0e0000488d35660e0000e829feffff833d2a0e0000020f85be000000833d250e0000010f85b1000000833d1c0e0000170f85a4000000488d055b0e00004839051c0e00000f8590000000c705f00d000000000000c705e20d000000000000488d05230e0000488905340e0000488d05f50d0000488905060e0000488d3d3f0e0000488d35e80d0000e845feffff833dac0d0000027544833dab0d000000753b833da60d0000177532488d05e90d0000483905a20d0000752248bffeffffff78563412e89efeffff48b900000000795634124839c8750431ffeb05bf01000000b83c0000000f05</bytechunk>
+    <bytechunk space="ram" offset="0x402000">000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000028204000000000002820400000000000382040000000000001000000170000000000000064000000020000000e000000502040000000000058204000000000006020400000000000000000000000000004000000000000006820400000000000</bytechunk>
+    <symbol space="ram" offset="0x0000000000401000" name="frame_alias" />
+    <symbol space="ram" offset="0x000000000040109a" name="frame_seed" />
+    <symbol space="ram" offset="0x000000000040112d" name="frame_cached" />
+    <symbol space="ram" offset="0x000000000040116f" name="advance_word" />
+    <symbol space="ram" offset="0x0000000000401174" name="expose_input" />
+    <symbol space="ram" offset="0x0000000000401179" name="read_key" />
+    <symbol space="ram" offset="0x00000000004011af" name="read_item" />
+    <symbol space="ram" offset="0x00000000004011ba" name="_start" />
+  </binaryimage>
+  <script>
+    <com>parse line struct ChoiceArray { unsigned int count; unsigned char padding[4]; struct ChoiceItem **items; };</com>
+    <com>parse line struct ChoiceQueue { struct ChoiceItem **begin; struct ChoiceItem **end; struct ChoiceItem **capacity; };</com>
+    <com>parse line struct ChoiceItem { int kind; int key; };</com>
+    <com>parse line extern void frame_alias(struct ChoiceArray *array,struct ChoiceQueue *queue);</com>
+    <com>parse line extern void read_key(const int *key);</com>
+    <com>parse line extern void read_item(struct ChoiceItem *const *item);</com>
+    <com>parse line extern void expose_input(const struct ChoiceItem *item);</com>
+    <com>parse line extern void frame_seed(struct ChoiceArray *array,struct ChoiceQueue *queue);</com>
+    <com>parse line extern unsigned long long frame_cached(unsigned long long input);</com>
+    <com>parse line extern void advance_word(unsigned long long *word);</com>
+    <com>map address 0x402060 ChoiceItem item_two</com>
+    <com>option stackalias off</com>
+    <com>option stackviews off</com>
+    <com>lo fu frame_alias</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>option stackviews on</com>
+    <com>lo fu frame_alias</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu frame_seed</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu frame_cached</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>quit</com>
+  </script>
+  <stringmatch name="frame versions: seed writes only four bytes" min="1" max="1">view_uint4 = 0;</stringmatch>
+  <stringmatch name="frame versions: pointer store stays conditional" min="2" max="2">if \(v[0-9]+-&gt;kind == 2\) \{
+v[0-9]+\.view_uint8 = \(uint8\)v[0-9]+;</stringmatch>
+  <stringmatch name="frame versions: cached word remains independent" min="1" max="1">v[0-9]+ = v[0-9]+\.view_uint8;</stringmatch>
+</decompilertest>

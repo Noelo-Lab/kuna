@@ -7,6 +7,7 @@ pub mod consistency;
 pub mod encode;
 mod local_collisions;
 pub mod pcodecompile_actions;
+pub mod slacompmain;
 pub mod slgh_compile;
 pub mod slghparse;
 pub mod slghscan;

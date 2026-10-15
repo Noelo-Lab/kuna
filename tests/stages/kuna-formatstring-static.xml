@@ -118,6 +118,10 @@
     ninth double goes on the stack behind the four integer registers the call
     leaves unused, which the positional rules take for the end of the list,
     so the declared arguments are kept whatever those rules say.
+
+    The fmt_x86_64 and fmt_aarch64 passes turn `elfmain` off: the parameter
+    they pin is the one `main`'s body yields, which that option replaces with
+    the C runtime's `int argc`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -127,6 +131,7 @@ c3
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64</com>
+  <com>option elfmain off</com>
   <com>option listing on</com>
   <com>option formatstring off</com>
   <com>read symbols</com>
@@ -135,6 +140,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64</com>
+  <com>option elfmain off</com>
   <com>option listing on</com>
   <com>read symbols</com>
   <com>load function main</com>
@@ -142,6 +148,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64</com>
+  <com>option elfmain off</com>
   <com>option formatstring full</com>
   <com>read symbols</com>
   <com>load function main</com>
@@ -380,6 +387,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_aarch64</com>
+  <com>option elfmain off</com>
   <com>option listing on</com>
   <com>option formatstring off</com>
   <com>read symbols</com>
@@ -388,6 +396,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_aarch64</com>
+  <com>option elfmain off</com>
   <com>option listing on</com>
   <com>read symbols</com>
   <com>load function main</com>
@@ -395,6 +404,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_aarch64</com>
+  <com>option elfmain off</com>
   <com>option listing on</com>
   <com>option formatstring full</com>
   <com>read symbols</com>

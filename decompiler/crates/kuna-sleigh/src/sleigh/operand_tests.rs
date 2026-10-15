@@ -95,8 +95,8 @@ fn nested_operands_use_simulated_offsets_and_resolved_children() {
     for resolved in [false, true] {
         let (table, ctx, engine) = setup(resolved);
         let mut walker = ParserWalker::new(&ctx, &table, &engine);
-        walker.cur.point = Some(1);
-        walker.cur.depth = 1;
+        walker.cur.to_mut().point = Some(1);
+        walker.cur.to_mut().depth = 1;
         assert_eq!(
             walker.operand_value(0, 0, 0).unwrap(),
             if resolved { 0x1a } else { 0x16 }
@@ -155,4 +155,107 @@ fn constructor_off_the_walk_resolves_no_operands() {
         .to_string()
         .contains("not resolved"));
     assert_eq!(oob.operand_value(3, 0, 0).unwrap(), 0x14);
+}
+
+#[test]
+fn borrowed_builder_cursor_uses_target_tree_and_cross_addresses() {
+    let (table, mut target, engine) = setup(true);
+    let space = Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "ram",
+        false,
+        8,
+        1,
+        1,
+        0,
+        1,
+        1,
+    ));
+    target.addr = Address::new(Rc::clone(&space), 0x100);
+    target.naddr = Address::new(Rc::clone(&space), 0x104);
+    target.context[0] = 0x1234_5678;
+    let mut caller = ParserContext::new(1);
+    caller.addr = Address::new(Rc::clone(&space), 0x900);
+    caller.naddr = Address::new(Rc::clone(&space), 0x908);
+    caller.calladdr = Address::new(Rc::clone(&space), 0xabc);
+    caller.context[0] = u32::MAX;
+    let contexts: Vec<_> = [target, caller]
+        .into_iter()
+        .map(|ctx| ResolvedCtx {
+            addr: ctx.addr.clone(),
+            ctx: ParserContextGuard {
+                context: Some(ctx),
+                pool: Rc::new(RefCell::new(Vec::new())),
+            },
+        })
+        .collect();
+    let mut cache = PcodeCacher::new();
+    let mut builder = SleighBuilder {
+        labelbase: 0,
+        labelcount: 0,
+        cur: WalkCursor::new(),
+        cur_ctx: 0,
+        cross_ctx: Some(1),
+        contexts: &contexts,
+        table: &table,
+        templates: &[],
+        engine: &engine,
+        const_space: Rc::clone(&space),
+        uniq_space: space,
+        uniquemask: 0,
+        uniqueoffset: 0,
+        cache: &mut cache,
+    };
+    builder.cur.point = Some(0);
+    let mut walker = builder.walker();
+    assert!(matches!(walker.cur, Cow::Borrowed(_)));
+    assert_eq!(walker.get_addr().get_offset(), 0x900);
+    assert_eq!(walker.get_naddr().get_offset(), 0x908);
+    assert_eq!(walker.get_dest_addr().unwrap().get_offset(), 0xabc);
+    assert_eq!(walker.get_instruction_bytes(0, 1).unwrap(), 0x13);
+    assert_eq!(walker.get_context_bytes(0, 4).unwrap(), 0x1234_5678);
+    assert_eq!(walker.get_constructor().unwrap().ct_id, 0);
+
+    // Navigation on the temporary reader detaches, preserving the builder's
+    // position and breadcrumb path.
+    walker.push_operand(1).unwrap();
+    assert!(matches!(walker.cur, Cow::Owned(_)));
+    assert_eq!(walker.get_constructor().unwrap().ct_id, 1);
+    assert_eq!(builder.cur.point, Some(0));
+    assert_eq!(builder.cur.depth, 0);
+    assert_eq!(builder.cur.breadcrumb[0], 0);
+    walker.pop_operand().unwrap();
+    assert_eq!(walker.get_constructor().unwrap().ct_id, 0);
+    drop(walker);
+
+    builder.cur.point = Some(1);
+    builder.cur.depth = 1;
+    builder.cur.breadcrumb[0] = 2;
+    let mut walker = builder.walker();
+    walker.base_state();
+    assert_eq!(walker.get_constructor().unwrap().ct_id, 0);
+    assert_eq!(walker.cur.depth, 0);
+    assert_eq!(walker.cur.breadcrumb[0], 0);
+    assert_eq!(builder.cur.point, Some(1));
+    assert_eq!(builder.cur.depth, 1);
+    assert_eq!(builder.cur.breadcrumb[0], 2);
+}
+
+#[test]
+fn change_walker_reader_navigates_independently() {
+    let (table, mut ctx, engine) = setup(true);
+    let mut change = ParserWalkerChange::new(&mut ctx, &table, &engine);
+    change.base_state();
+    {
+        let mut reader = change.as_reader();
+        reader.push_operand(1).unwrap();
+        assert_eq!(reader.get_constructor().unwrap().ct_id, 1);
+        assert_eq!(change.cur.point, Some(0));
+        assert_eq!(change.cur.depth, 0);
+        assert_eq!(change.cur.breadcrumb[0], 0);
+        reader.pop_operand().unwrap();
+        assert_eq!(reader.get_constructor().unwrap().ct_id, 0);
+    }
+    change.push_operand(1).unwrap();
+    assert_eq!(change.as_reader().get_constructor().unwrap().ct_id, 1);
 }

@@ -8,9 +8,11 @@ pub mod coreaction_casts;
 pub mod printlanguage;
 pub mod printc;
 pub mod kuna_partialconcat;
+pub mod kuna_partialaccess;
 pub mod prettyprint;
 pub mod printjava;
 pub mod cast;
+pub mod kuna_unknowncasts;
 pub mod stringmanage;
 pub mod kuna_naming;
 pub mod kuna_varsources;
@@ -24,6 +26,11 @@ pub mod kuna_paramrefdecl;
 pub mod kuna_addressdecl;
 pub mod kuna_callerstack;
 pub mod kuna_bitcast;
+pub(crate) mod kuna_memberbase;
+pub mod kuna_stackmem;
+pub mod kuna_stackassign;
+pub mod kuna_stackbytes;
+pub mod kuna_stacklayout;
 pub mod kuna_truthycond;
 pub mod kuna_braceelide;
 pub mod kuna_labelstmt; // (kuna) every printed C label labels a statement
@@ -37,6 +44,8 @@ pub mod kuna_emptystrconst;
 pub mod kuna_truncarg;
 pub mod kuna_pointerargs; // (kuna) a scalar's address passed to a character-pointer parameter
 pub mod kuna_castimplied; // (kuna) casts C's own conversions already perform
+pub mod kuna_castnarrow; // (kuna) a narrowing C's own assignment, argument or return conversion performs keeps no cast
+pub mod kuna_declorder; // (kuna) the order local declarations print in
 pub mod kuna_castternary; // (kuna) a conditional arm keeps no cast the conditional performs
 pub mod kuna_castwiden; // (kuna) a 64-bit widening C performs by itself keeps no cast
 pub mod kuna_castarith; // (kuna) pointer arithmetic stays in pointer terms
@@ -51,3 +60,6 @@ pub mod kuna_rusttypes; // (kuna) the rust-language type speller
 pub mod kuna_ctypes; // (kuna) valid per-architecture C spelling of the core types
 pub mod coreaction_render;
 pub mod kuna_srcmap; // (kuna) the token-level source map of a rendered function
+
+pub(crate) mod kuna_stackmarkers;
+pub(crate) mod kuna_stackversions;

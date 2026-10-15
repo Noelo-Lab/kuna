@@ -551,6 +551,7 @@ pub fn universal_sched(
         name: "mainloop",
         children: vec![
             act!(ActionUnreachable::boxed("base")),
+            act!(crate::p3_dataflow::kuna_stackbytecopy::ActionStackByteCopy::boxed()),
             // (kuna) cleanupcode (option `cleanupcode`, default-ON, DIV-81): delete
             // the Rust drop/deallocate call sites (SEFCOM Oxidizer's
             // CleanupCodeRemover, whose STAGE is BEFORE_VARIABLE_RECOVERY).  Runs at
@@ -608,6 +609,7 @@ pub fn universal_sched(
             act!(crate::kuna_structsynth::ActionStructSynth::boxed("typerecovery")),
             act!(ActionRestructureVarnode::boxed("localrecovery")),
             stackstall,
+            act!(crate::p6_variables::kuna_savedregisterspills::ActionRestrictLocalSavedLanes::boxed()),
             act!(ActionRedundBranch::boxed("deadcontrolflow")),
             act!(ActionBlockStructure::boxed("blockrecovery")),
             act!(ActionConstantPtr::boxed("typerecovery")),
@@ -672,6 +674,13 @@ pub fn universal_sched(
             // mainloop's dead-code passes over the reduced graph before P8
             // structures it.
             act!(Box::new(crate::kuna_devectorize::ActionDevectorize::new(false, "returnsplit"))),
+            // (kuna) strlenscan (option `strlenscan`): collapse the loop SLEIGH
+            // lifts an inline `repnz scasb` string length to into `strlen`, by
+            // giving the loop its final values and removing its back edge and
+            // its never-taken count-exhausted exit.  Here with the edge-removal
+            // passes above: mainloop has settled the count and the searched byte
+            // to constants, and the repeating fullloop folds what it leaves.
+            act!(Box::new(crate::kuna_strlenscan::ActionStrlenScan::new(false, "returnsplit"))),
             act!(ActionReturnSplit::boxed("returnsplit")),
             // (kuna) angr SAILR gotoless `ReturnDuplicatorHigh` (option `returndup`,
             // default-OFF).  Runs right after ActionReturnSplit (the goto-driven

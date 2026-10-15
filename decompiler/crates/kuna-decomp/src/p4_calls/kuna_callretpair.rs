@@ -184,7 +184,7 @@ pub fn build_partial_pair(fc: &mut FuncCallSpecs, data: &mut Funcdata, trialvn: 
     {
         return false;
     }
-    let order = crate::kuna_bejoin::call_join_order(data, &probe);
+    let order = crate::kuna_bejoin::call_join_order(data, &probe, Some(fc.get_entry_address()));
     if order != probe.join_pair_order() {
         return false;
     }

@@ -1,0 +1,57 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--addr",
+    "0x1080",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/elfmainnamed_x86_64",
+    "binary_sha256": "23dc9dea791cc6afe9073ef17a4954df7aaa01f743b7a8e04134d0a8f8e462b4",
+    "binary_size": 16104,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/elfmainnamed_x86_64",
+    "selector": "0x1080",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[0].name",
+        "op": "eq",
+        "value": "main"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "int main(int argc,char **argv)\n"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "score(argv[1])"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "not_contains",
+        "value": "envp"
+      }
+    ]
+  },
+  "notes": "A gcc -O2 PIE that keeps its symbol table: crt1 hands this main to __libc_start_main, so it is declared the C runtime's way, int main(int argc, char **argv), with argv[1] an element of argv. Before: unsigned int main(int a0,struct_0 *a1) and score(a1->field_0x8). envp is never read, so it is not printed."
+}

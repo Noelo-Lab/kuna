@@ -11,14 +11,15 @@ static NEXT_SCRATCH_ID: AtomicU64 = AtomicU64::new(0);
 /// GCC 14/15 (Ubuntu 26.04's default `cc`) promote these C diagnostics to
 /// errors by default, and `-w` demotes warnings, not errors. Decompiler output
 /// routinely reuses a word as both integer and pointer, so append these to any
-/// `cc` invocation that compiles emitted C to keep it a warning there. A no-op
-/// on the older GCC the pre-26.04 runners ship.
+/// `cc` invocation that compiles emitted C to keep it a warning there. The
+/// negative warning form for GCC 15's return-mismatch is also accepted by older
+/// GCC, whose unknown `-Wno-error=...` form would instead reject the invocation.
 pub const CC_GCC15_DEMOTE: &[&str] = &[
     "-Wno-error=int-conversion",
     "-Wno-error=incompatible-pointer-types",
     "-Wno-error=implicit-function-declaration",
     "-Wno-error=implicit-int",
-    "-Wno-error=return-mismatch",
+    "-Wno-return-mismatch",
 ];
 
 pub fn repo_root() -> PathBuf {
