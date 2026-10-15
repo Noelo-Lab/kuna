@@ -823,7 +823,8 @@ fn option_values_live_value_present_for_110() {
     // with no `live_field`.
     // 135 -> 136: +1 for `strlenscan` (live_field = strlen_scan).
     // 136 -> 137: +1 for `libcnames` (live_field = libc_names).
-    assert_eq!(with_live, 137);
+    // 137 -> 138: +1 for `indirectargs` (live_field = indirect_args).
+    assert_eq!(with_live, 138);
 }
 
 #[test]
