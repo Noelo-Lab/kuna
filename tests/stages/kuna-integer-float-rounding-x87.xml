@@ -1,0 +1,41 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    x87 conversions run through the 80-bit extended format, which has no
+    float-format entry but holds every 64-bit integer (option intfloatround).
+    cmpf (gcc -m32 -O2 `(double)(float)x < y` with excess precision) compares
+    an exact fild against a double, lt1 compares fld1 against a double, and
+    l2d2f (gcc -m32 -O2 `(float)(double)x` of a long long) spills the exact
+    fild to a float slot and reloads it. The first pass runs
+    `option intfloatround off`, which drops that spill's rounding.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+db44240431c0dd442408dff1ddd80f97c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x10100" readonly="true">
+d9e8dd442404dfe9ddd80f97c00fb6c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x10200" readonly="true">
+83ec0cdf6c2410d95c2404d944240483c40cc3
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="cmpf"/>
+<symbol space="ram" offset="0x10100" name="lt1"/>
+<symbol space="ram" offset="0x10200" name="l2d2f"/>
+</binaryimage>
+<script>
+<com>parse line extern int cmpf(int x, double y);</com>
+<com>parse line extern int lt1(double x);</com>
+<com>parse line extern float8 l2d2f(int8 x);</com>
+<com>option intfloatround off</com>
+<com>lo fu l2d2f</com><com>decompile</com><com>print C</com>
+<com>option intfloatround on</com>
+<com>lo fu cmpf</com><com>decompile</com><com>print C</com>
+<com>lo fu lt1</com><com>decompile</com><com>print C</com>
+<com>lo fu l2d2f</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="x87 intfloatround off drops the float spill's rounding" min="1" max="1">return \(float8\)x;</stringmatch>
+<stringmatch name="x87 a spilled int64 keeps its float rounding" min="1" max="1">return \(float8\)\(float4\)x;</stringmatch>
+<stringmatch name="x87 an exact int32 fild still compares as a double" min="1" max="1">return \(uint4\)\(\(float8\)x &lt; y\);</stringmatch>
+<stringmatch name="x87 fld1 still folds to a double constant" min="1" max="1">return \(uint4\)\(1\.0 &lt; x\);</stringmatch>
+</decompilertest>

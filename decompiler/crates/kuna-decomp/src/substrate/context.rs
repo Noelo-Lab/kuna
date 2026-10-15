@@ -726,10 +726,10 @@ pub struct ArchContext {
     /// a detected rustc one.  Read by
     /// [`crate::p4_calls::kuna_callretpair::live`].
     pub call_ret_pair: bool,
-    /// (kuna) `option bejoin`: may a two-register value join with its high word
-    /// in the first register where the ABI puts it?  Read by
-    /// [`crate::p4_calls::kuna_bejoin::live`].
-    pub be_join: bool,
+    /// (kuna) `option bejoin`: when may a two-register value join with its
+    /// high word in the first register where the ABI puts it?  Read by
+    /// [`crate::p4_calls::kuna_bejoin::mode`].
+    pub be_join: crate::kuna_bejoin::BeJoinMode,
     /// (kuna) `option rustabi` (0 off / 1 auto / 2 always): keep a rustc
     /// two-register `ScalarPair` return intact; read by [`crate::kuna_rustabi`].
     pub rust_abi: u8,
@@ -984,6 +984,15 @@ pub struct ArchContext {
     /// (kuna) `calleeprotostack` — a declared callee's locked prototype states
     /// its stack contract.  See [`crate::p4_calls::kuna_calleeprotostack`].
     pub callee_proto_stack: bool,
+    /// (kuna) `msvcbyval` — size an MSVC `__cdecl` import's by-value class
+    /// argument at the call site.  See [`crate::p4_calls::kuna_msvcbyval`].
+    pub msvc_byval: bool,
+    /// (kuna `msvcbyval`) The declarations with a by-value class of unstated
+    /// size, by entry; snapshotted from the architecture at `build_arch_handle`.
+    pub msvc_byval_decls: Rc<crate::p4_calls::kuna_msvcbyval::ByvalDecls>,
+    /// (kuna `msvcbyval`) The entries an MSVC name declares as building an
+    /// object at an address they are handed.
+    pub msvc_builders: Rc<crate::p4_calls::kuna_msvcbyval::Builders>,
     /// (kuna) drop a trailing register argument a previous call's clobber put
     /// there (`argclobber`).  Read by
     /// [`crate::p4_calls::kuna_argclobber::drop_clobber_tail_arg`]; off by
@@ -1041,6 +1050,10 @@ pub struct ArchContext {
     /// callee's own body reads them (`calleereadarg`).  Read by
     /// [`crate::p4_calls::kuna_calleereadarg::capture`].
     pub callee_read_arg: bool,
+    /// (kuna) do not take a register the callee only pushes for its next call
+    /// as `calleereadarg` evidence (`pushpadread`).  Read by
+    /// [`crate::p4_calls::kuna_calleereadarg::capture`].
+    pub push_pad_read: bool,
     /// (kuna) drop the zero fill a narrow write leaves in the upper half of a
     /// returned vector register (`zerofillreturn`).  Read by
     /// [`crate::p4_calls::kuna_zerofillreturn::drop_zero_fill`].
@@ -1184,8 +1197,17 @@ pub struct ArchContext {
     /// indexed stack base reaches past upstream's four elements. Levels in
     /// [`crate::p6_variables::kuna_arrayextent`]; read by `gather_open`.
     pub array_extent: int4,
+    /// Keep physical frame writes live when conservative stack aliasing is requested.
+    pub stack_alias_deadstore: bool,
+    /// Operation-specific typed views over shared physical frame storage.
+    pub stack_views: bool,
+    /// (kuna `libcnames`) Name locals from the library calls they meet.
+    /// See [`crate::kuna_libcnames`].
+    pub libc_names: bool,
     /// Opt-in frame-bounded arrays for call-escaped integer storage.
     pub call_array_extent: bool,
+    /// (kuna `stackstruct`) Lay out an address-taken frame record as one structure.
+    pub stack_struct: bool,
     /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
     /// `RulePropagateCopy` marker propagation that would leave an address-tied
     /// `COPY` output holding a call's return value with no readers, so a
@@ -1200,6 +1222,14 @@ pub struct ArchContext {
     /// it.  Read by
     /// [`crate::p3_dataflow::kuna_loopcounterstore::declines`].
     pub loop_counter_store: bool,
+    /// (kuna) `option globalcallstore` (default-on): keep a global's COPY of a
+    /// loaded value whose only reader is the global's own marker. Read by
+    /// [`crate::p3_dataflow::kuna_globalcallstore::declines`].
+    pub global_call_store: bool,
+    /// (kuna) `option intfloatround` (default-on): keep an integer-to-float
+    /// conversion's rounding through `RuleFloatCast` and `SubfloatFlow`. Read
+    /// by [`crate::p3_dataflow::kuna_intfloatround`].
+    pub int_float_round: bool,
     /// (kuna) `option tiedphitrim` (default-on, DIV-182): `Merge::mergeOp` trims a
     /// loop head's direct read of an aliased location out of the forced merge.
     /// Read through `MergeContext::kuna_tied_phi_trim`.
@@ -1210,6 +1240,8 @@ pub struct ArchContext {
     pub wide_slice_reduce: bool,
     /// (kuna) `devectorize` — re-roll a vectorized reduction into its scalar loop.
     pub devectorize_reduction: bool,
+    /// (kuna) `strlenscan` — collapse an inline `repnz scasb` length into `strlen`.
+    pub strlen_scan: bool,
     /// Guard stack slots against stores through stack-derived pointers.
     pub stack_store_guard: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -1704,9 +1736,9 @@ impl ArchContext {
             // (kuna) `option callretpair` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             call_ret_pair: true,
-            // (kuna) `option bejoin` default-off; the real value is copied from
-            // the engine Architecture in `build_arch_handle`.
-            be_join: false,
+            // (kuna) `option bejoin`; the real value is copied from the engine
+            // Architecture in `build_arch_handle`.
+            be_join: crate::kuna_bejoin::BeJoinMode::Off,
             // (kuna) `option rustabi` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
@@ -1799,6 +1831,9 @@ impl ArchContext {
             callee_pop_slot: true,
             callee_pop_frame: true,
             callee_proto_stack: true,
+            msvc_byval: true,
+            msvc_byval_decls: Rc::new(Default::default()),
+            msvc_builders: Rc::new(Default::default()),
             // argclobber only drops a trailing argument the callee's own
             // recovered prototype says it never reads, and declines outright
             // when there is no callee to ask, so the fixture seam carries the
@@ -1821,6 +1856,7 @@ impl ArchContext {
             callee_dead_arg: true,
             hidden_ret_arg: true,
             callee_read_arg: true,       // calleereadarg (default-on)
+            push_pad_read: true,         // pushpadread (default-on)
             zero_fill_return: true,
             zero_call_regs: true,
             callee_preserves: true,
@@ -1845,13 +1881,20 @@ impl ArchContext {
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
             call_array_extent: false,
+            stack_struct: false,
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
+            stack_alias_deadstore: false,
+            stack_views: false, // stackviews (opt-in)
+            libc_names: false, // libcnames (opt-in)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
+            global_call_store: false,    // globalcallstore (Architecture::reset_defaults sets the shipped default: on)
+            int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
             split_store_keep: false,     // splitstorekeep (Architecture::reset_defaults sets the shipped default: on)
             wide_slice_reduce: false,    // wideslice (Architecture::reset_defaults sets the shipped default: on)
             devectorize_reduction: false, // devectorize (opt-in default-off)
+            strlen_scan: false, // strlenscan (live value copied from the Architecture)
             stack_store_guard: false,
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
@@ -2114,6 +2157,20 @@ impl ArchContext {
             .iter()
             .find(|(sp, off, _)| *sp == space_index && *off == offset)
             .map(|(_, _, m)| std::rc::Rc::clone(m))
+    }
+
+    /// (kuna `libcnames`) The library names the prototype parked on the
+    /// callee at `addr` carries, without copying the prototype.
+    pub fn callee_library_names(&self, addr: &Address) -> Option<&'static crate::kuna_libcnames::LibraryNames> {
+        if self.remote_scope.is_some() {
+            return None;
+        }
+        let space_index = addr.get_space()?.get_index();
+        let offset = addr.get_offset();
+        self.callee_protos
+            .iter()
+            .find(|(si, off, _)| *si == space_index && *off == offset)
+            .and_then(|(_, _, pieces)| pieces.kuna_library_names)
     }
 
     pub fn callee_proto_pieces(&self, addr: &Address) -> Option<crate::fspec::PrototypePieces> {

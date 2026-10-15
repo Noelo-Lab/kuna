@@ -2076,7 +2076,18 @@ mod tests {
         // (GH-299)
         // and kuna-thumbswitch / the Listing walk reads a Thumb tbb/tbh switch
         // table (GH-299)
-        assert_eq!(count, 516, "corpus file count drifted");
+        // and kuna-aifpoolslide / no AIF entry starts on a literal-pool word
+        // (GH-299)
+        // and kuna-pushpadread / a register a callee only pushes above a call's
+        // stack arguments is no argument it reads
+        // and kuna-declorder / locals print in natural number order
+        // and kuna-elfmain-named / an executable's own `main` gets the C runtime's
+        // declaration, as far as its own analysis recovers its parameters
+        // and kuna-bejoin-evidence, -sparc, -armeb / a big-endian pair joins
+        // high word first on proof (GH-904)
+        // and kuna-strlenscan / an inline repnz scasb length prints as strlen
+        // and kuna-libcnames / a local takes the name of the library call it meets
+        assert_eq!(count, 547, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

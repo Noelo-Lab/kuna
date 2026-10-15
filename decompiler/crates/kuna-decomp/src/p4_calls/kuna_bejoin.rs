@@ -88,11 +88,12 @@
 //! ([`joins_first_low`]), so a pair a call hands back and the function
 //! returns stays one value.
 //!
-//! The rule is a prior, not a proof, so it ships behind `option bejoin`, off
-//! by default (GH-904): off joins every pair first register low, as before.
-//! An `int` that leaves the stale low half of a 64-bit temporary in the second
-//! register compiles to the same registers as the `long long` that returns it
-//! whole -- `(a + b) >> 32` on PowerPC -O2 is `addc 4,4,6; addze 3,3; add
+//! The rule is a prior, not a proof, so it is `option bejoin on` (GH-904);
+//! `off` joins every pair first register low, as upstream does, and the
+//! default, `evidence`, joins in the ABI's order only on proof the value is
+//! that wide ([`evidence`]). With it on, an `int` that leaves the stale low
+//! half of a 64-bit temporary in the second register compiles to the same
+//! registers as the `long long` that returns it whole -- `(a + b) >> 32` on PowerPC -O2 is `addc 4,4,6; addze 3,3; add
 //! 3,3,5`, the code for `a + b`, and `((u64)a * b) >> 32` on ARM big-endian
 //! is the `umull` of `(u64)a * b` -- and reads as that `long long`. The other way
 //! round, `(u64)x << 32` leaves the same zero in the second register as a
@@ -124,33 +125,91 @@ const MAX_NODES: usize = 4096;
 /// 32-bit constant in two (`sethi` then `or`).
 const LITERAL_DEPTH: u32 = 4;
 
-/// The trial indexes `(low, high)` to join the two used output trials of
-/// `active` in: the ABI's order when [`low_word_returned`], first trial low
-/// otherwise.
-pub fn join_order(active: &ParamActive, data: &Funcdata, return_ops: &[OpId]) -> (int4, int4) {
-    let abi = active.join_pair_order();
-    if abi == (0, 1) || !live(data) || !low_word_returned(active, data, return_ops) {
-        (0, 1)
-    } else {
-        abi
+/// What `option bejoin` lets a pair whose ABI returns the first register high
+/// join as.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BeJoinMode {
+    /// First register low, always.
+    Off,
+    /// The ABI's order on proof the value is that wide ([`evidence`]).
+    #[default]
+    Evidence,
+    /// The ABI's order when the low word looks returned on purpose.
+    On,
+}
+
+impl BeJoinMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BeJoinMode::Off => "off",
+            BeJoinMode::Evidence => "evidence",
+            BeJoinMode::On => "on",
+        }
+    }
+
+    /// Parse an `option bejoin` value.
+    pub fn parse(p1: &str) -> kuna_base::error::KunaResult<(BeJoinMode, String)> {
+        let mode = match p1 {
+            "off" => BeJoinMode::Off,
+            "evidence" => BeJoinMode::Evidence,
+            "on" => BeJoinMode::On,
+            other => {
+                return Err(kuna_base::error::KunaError::parse(format!(
+                    "Unknown bejoin value: {other} (expected off|evidence|on)"
+                )))
+            }
+        };
+        Ok((mode, format!("High-word-first register pair join set to {}", mode.as_str())))
     }
 }
 
-/// Is `option bejoin` on: may a pair join in the ABI's order at all? Off,
-/// every pair joins first register low, as it did before the option.
-pub fn live(data: &Funcdata) -> bool {
+/// The trial indexes `(low, high)` to join the two used output trials of
+/// `active` in: the ABI's order when `option bejoin` finds the pair one value
+/// ([`evidence::proven`], or [`low_word_returned`] with it `on`), first trial
+/// low otherwise.
+pub fn join_order(active: &ParamActive, data: &Funcdata, return_ops: &[OpId]) -> (int4, int4) {
+    let abi = active.join_pair_order();
+    let wide = abi != (0, 1)
+        && match mode(data) {
+            BeJoinMode::Off => false,
+            BeJoinMode::Evidence => evidence::proven(data, data.get_address()),
+            BeJoinMode::On => low_word_returned(active, data, return_ops),
+        };
+    if wide {
+        abi
+    } else {
+        (0, 1)
+    }
+}
+
+/// The `option bejoin` mode in force.
+pub fn mode(data: &Funcdata) -> BeJoinMode {
     data.get_arch().be_join
 }
 
+/// May a pair join in the ABI's order at all? Off, every pair joins first
+/// register low, as it did before the option.
+pub fn live(data: &Funcdata) -> bool {
+    mode(data) != BeJoinMode::Off
+}
+
 /// The trial indexes `(low, high)` a call's two output trials in `active`
-/// join in: first register low when the option is off or the calling
-/// function's own pair joined that way ([`joins_first_low`]), the ABI's order
-/// otherwise.
-pub fn call_join_order(data: &Funcdata, active: &ParamActive) -> (int4, int4) {
-    if !live(data) || data.kuna_pairs_first_low() {
-        (0, 1)
-    } else {
+/// join in. With `bejoin on`: the ABI's order unless the calling function's
+/// own pair joined first register low ([`joins_first_low`]). With `evidence`:
+/// the ABI's order exactly when the callee at `callee` is proven to return
+/// its pair as one value ([`evidence::proven`]), the same verdict the
+/// callee's own RETURN joins by, whatever the calling function returns.
+/// First register low otherwise.
+pub fn call_join_order(data: &Funcdata, active: &ParamActive, callee: Option<&Address>) -> (int4, int4) {
+    let abi = match mode(data) {
+        BeJoinMode::Off => false,
+        BeJoinMode::On => !data.kuna_pairs_first_low(),
+        BeJoinMode::Evidence => callee.is_some_and(|e| evidence::proven(data, e)),
+    };
+    if abi {
         active.join_pair_order()
+    } else {
+        (0, 1)
     }
 }
 
@@ -2410,6 +2469,11 @@ fn pair_halves(data: &Funcdata, whole: VarnodeId) -> Option<(Address, i32, Addre
         _ => None,
     }
 }
+
+#[path = "kuna_bejoin/evidence.rs"]
+mod evidence;
+
+pub(crate) use evidence::{build_high_read, missed_proven as wide_callee_missed, seed as seed_wide_returns, WideCache, WideView};
 
 #[cfg(test)]
 #[path = "kuna_bejoin/tests.rs"]

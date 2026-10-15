@@ -585,6 +585,10 @@ impl Action for ActionDefaultParams {
             // pcodeinjectlib): the default models on the datatest path declare no
             // uponreturn injection, so this is a no-op here.
         }
+        // (kuna) `msvcbyval`: size an MSVC `__cdecl` import's by-value class at
+        // each call, now that every call's pop is known.  See
+        // [`crate::p4_calls::kuna_msvcbyval`].
+        crate::p4_calls::kuna_msvcbyval::size_slots(data);
         0
     }
 }
@@ -1967,8 +1971,11 @@ fn update_input_types(
             .or_else(|| data.high_get_type(vn))
             .unwrap_or_else(|| Rc::new(crate::dtype::Datatype::new(1, crate::dtype::type_metatype::TYPE_UNKNOWN)));
         let _ = is_persist;
+        // (kuna `elfmain`) A runtime argument of an executable's own `main` takes
+        // its runtime name. See `kuna_elfmaindecl`.
+        let name = crate::kuna_elfmaindecl::param_name(data, &addr, ty.get_size()).unwrap_or_default();
         let pieces = crate::fspec::ParameterPieces { addr, type_: Some(ty), flags: 0 };
-        data.get_func_proto_mut().store_set_input(count, "", &pieces);
+        data.get_func_proto_mut().store_set_input(count, &name, &pieces);
         count += 1;
         data.vbank_mut().get_mut(vn).expect("update_input_types: stale trial").set_mark();
     }

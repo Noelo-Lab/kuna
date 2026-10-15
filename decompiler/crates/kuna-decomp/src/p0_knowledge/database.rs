@@ -639,6 +639,8 @@ pub struct DynamicSymbolSpec {
     pub name: String,
     /// Symbol data-type (C++ `Symbol::type`).
     pub dtype: Rc<Datatype>,
+    /// Original name/type lock intent.
+    pub flags: uint4,
     /// First-use address of the dynamic SymbolEntry (C++ `getFirstUseAddress`).
     pub addr: Address,
     /// The dynamic hash identifying the Varnode (C++ `SymbolEntry::hash`).
@@ -1289,6 +1291,10 @@ impl Database {
         &self.symbols[id]
     }
 
+    pub fn try_symbol(&self, id: SymbolId) -> Option<&Symbol> {
+        self.symbols.get(id)
+    }
+
     /// Mutably borrow a symbol by id.
     pub fn symbol_mut(&mut self, id: SymbolId) -> &mut Symbol {
         self.kuna_gen += 1;
@@ -1934,6 +1940,7 @@ impl Database {
             out.push(DynamicSymbolSpec {
                 name: symbol.name.clone(),
                 dtype: ct,
+                flags: symbol.flags,
                 addr: entry.get_first_use_address(),
                 hash: entry.get_hash(),
                 category: symbol.category,
@@ -2596,6 +2603,18 @@ impl Database {
         size: int4,
         usepoint: &Address,
     ) -> Option<EntryRef> {
+        self.find_container_matching(scope, addr, size, usepoint, |_| true)
+    }
+
+    /// Select a containing entry from a particular symbol domain.
+    pub fn find_container_matching(
+        &self,
+        scope: ScopeId,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+        accepts: impl Fn(&Symbol) -> bool,
+    ) -> Option<EntryRef> {
         let space = addr.get_space()?;
         let space_index = space.get_index() as usize;
         let rangemap = self.scopes[scope].maptable.get(space_index)?.as_ref()?;
@@ -2613,8 +2632,8 @@ impl Database {
             if entry.get_last() >= end {
                 // We contain the range.
                 if entry.get_size() < oldsize || oldsize == -1 {
-                    let symflags = self.symbols[entry.symbol].flags;
-                    if entry.in_use(usepoint, symflags) {
+                    let symbol = &self.symbols[entry.symbol];
+                    if accepts(symbol) && entry.in_use(usepoint, symbol.flags) {
                         bestentry = Some(EntryRef::Mapped { space_index, idx });
                         if entry.get_size() == size {
                             break;
@@ -4110,8 +4129,10 @@ impl Database {
             .filter(|&sid| self.symbols[sid].get_category() < 0)
             .collect();
         for sid in candidates {
-            if self.symbols[sid].is_type_locked() {
-                // Only hold if TYPE locked; clear an unlocked, defined name.
+            if self.symbols[sid].is_type_locked()
+                || (self.symbols[sid].is_name_locked() && self.symbols[sid].is_isolated())
+            {
+                // Keep asserted identity; reset an unasserted recovered name.
                 if !self.symbols[sid].is_name_locked() && !self.symbols[sid].is_name_undefined() {
                     let newname = self.build_undefined_name(scope)?;
                     self.rename_symbol(sid, &newname)?;
@@ -4240,6 +4261,27 @@ impl Database {
         arch: &dyn DatabaseArch,
     ) -> KunaResult<()> {
         self.kuna_gen += 1;
+        for sid in self.undefined_symbols(scope) {
+            self.assign_default_name(scope, sid, base, arch)?;
+        }
+        Ok(())
+    }
+
+    /// One step of [`Self::assign_default_names`]: give `sid` its default name.
+    pub fn assign_default_name(
+        &mut self,
+        scope: ScopeId,
+        sid: SymbolId,
+        base: &mut int4,
+        arch: &dyn DatabaseArch,
+    ) -> KunaResult<()> {
+        self.kuna_gen += 1;
+        let nm = self.build_default_name(scope, sid, base, None, arch)?;
+        self.rename_symbol(sid, &nm)
+    }
+
+    /// The Symbols of `scope` whose name is still undefined, in name order.
+    pub fn undefined_symbols(&self, scope: ScopeId) -> Vec<SymbolId> {
         use std::ops::Bound::{Excluded, Unbounded};
         // C++: iter = nametree.upper_bound(Symbol("$$undef")); walk while names
         // are still "undefined".  Collect the undefined-named ids first (the
@@ -4248,17 +4290,30 @@ impl Database {
         // C++ probe is Symbol("$$undef") with nameDedup=0; upper_bound is the
         // first key strictly greater than ("$$undef", 0).
         let probe = NameKey { name: "$$undef".to_string(), name_dedup: 0 };
-        let undefined: Vec<SymbolId> = self.scopes[scope]
+        self.scopes[scope]
             .nametree
             .range((Excluded(probe), Unbounded))
             .take_while(|(k, _)| k.name.len() == 15 && k.name.starts_with("$$undef"))
             .map(|(_, &sid)| sid)
-            .collect();
-        for sid in undefined {
-            let nm = self.build_default_name(scope, sid, base, None, arch)?;
-            self.rename_symbol(sid, &nm)?;
-        }
-        Ok(())
+            .collect()
+    }
+
+    /// (kuna) Each Symbol of `scope` with its first mapped entry's storage,
+    /// width and name; Symbols without a mapped entry are left out.
+    pub fn scope_symbol_storage(&self, scope: ScopeId) -> Vec<(SymbolId, Address, int4, String)> {
+        self.scopes[scope]
+            .nametree
+            .values()
+            .filter_map(|&sid| {
+                let symbol = &self.symbols[sid];
+                let eref = *symbol.mapentry.first()?;
+                if matches!(eref, EntryRef::Dynamic(_)) {
+                    return None;
+                }
+                let entry = self.entry(scope, eref);
+                Some((sid, entry.get_addr().clone(), entry.get_size(), symbol.name.clone()))
+            })
+            .collect()
     }
 }
 

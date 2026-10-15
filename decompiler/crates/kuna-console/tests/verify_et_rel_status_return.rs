@@ -6,7 +6,7 @@
 //! guard-failure path passes the same value to an undefined no-return function.
 //! `status_caller` consumes the result through a relocated direct call.
 //!
-//! The status-return half is the two-pass gate for `option noreturnretuse`: OFF
+//! With library prototypes disabled, the status-return half is the two-pass gate for `option noreturnretuse`: OFF
 //! is the upstream behaviour, where the failure call's use of the same register
 //! vetoes the return trial and the helper recovers as `void`.
 
@@ -27,13 +27,15 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn decompile_pair(name: &str, noreturn_ret_use: bool) -> (String, String) {
+fn decompile_pair(name: &str, noreturn_ret_use: bool, library_prototypes: bool) -> (String, String) {
     let path = fixture(name);
     assert!(path.is_file(), "missing fixture {path:?}");
     let specs = repo_root().join("specs");
     let roots = vec![specs.to_string_lossy().into_owned()];
     let mut program = bootstrap_from_object(path.to_str().unwrap(), "", &roots)
         .unwrap_or_else(|error| panic!("{name}: bootstrap failed: {}", error.explain()));
+    program.arch_mut().analysis_libproto = library_prototypes;
+    program.arch_mut().analysis_libcsigs = library_prototypes;
     program.commit_pending_analysis().expect("analysis commit");
     program.arch_mut().noreturn_ret_use = noreturn_ret_use;
     let entries = program
@@ -66,7 +68,7 @@ fn arm_and_aarch64_status_helpers_keep_their_return_values() {
         && specs.join("AARCH64/data/languages/AARCH64.sla").is_file(), "required processor specs must be available");
 
     for name in ["et_rel_status_arm.o", "et_rel_status_aarch64.o"] {
-        let (helper, caller) = decompile_pair(name, true);
+        let (helper, caller) = decompile_pair(name, true, false);
         assert!(
             !helper.starts_with("void guarded_status"),
             "{name}: helper was forced to void:\n{helper}"
@@ -88,10 +90,21 @@ fn arm_and_aarch64_status_helpers_keep_their_return_values() {
             "{name}: relocated call lost callee identity:\n{caller}"
         );
 
-        let (upstream, _) = decompile_pair(name, false);
+        let (upstream, _) = decompile_pair(name, false, false);
         assert!(
             upstream.starts_with("void guarded_status"),
             "{name}: `noreturnretuse off` must restore the upstream void recovery:\n{upstream}"
         );
+    }
+}
+
+#[test]
+fn a_known_zero_argument_failure_does_not_consume_the_status_return() {
+    for name in ["et_rel_status_arm.o", "et_rel_status_aarch64.o"] {
+        let (helper, caller) = decompile_pair(name, false, true);
+        assert!(!helper.starts_with("void guarded_status"), "{name}: {helper}");
+        assert!(helper.contains("return "), "{name}: {helper}");
+        assert!(helper.contains("__stack_chk_fail();"), "{name}: {helper}");
+        assert!(caller.contains("guarded_status(") && caller.contains("return "), "{name}: {caller}");
     }
 }

@@ -138,6 +138,34 @@ fn by_value_parameter_opens_the_tail_of_a_cdecl_import() {
 }
 
 #[test]
+fn an_open_cdecl_import_keeps_its_whole_declaration_for_the_call_sites() {
+    let types = factory();
+    let nontrivial = nontrivial_classes(["??0Arr@@QAE@ABV0@@Z"].into_iter());
+    let sig = build(&decl("?MakeStack@@YA?AVArr@@V1@AAV1@1@Z"), &nontrivial, true, true, &types, 4, 1)
+        .expect("MakeStack is applied open");
+    let byval = sig.byval.expect("the one by-value class is all that is unstated");
+    assert_eq!(byval.at, 1, "after the hidden return pointer");
+    assert_eq!(byval.pieces.intypes.len(), 4, "hidden pointer, the class, x and y");
+    assert_eq!(byval.pieces.innames.len(), 4);
+    assert_eq!(byval.pieces.first_var_arg_slot, -1);
+    assert!(byval.pieces.intypes[2].get_ptr_to().is_some(), "Arr & is a pointer");
+    // Two classes by value, or a variadic tail, leave two sizes unknown.
+    assert!(build(&decl("?f@@YAXVArr@@V1@@Z"), &nontrivial, true, true, &types, 4, 1)
+        .is_some_and(|s| s.byval.is_none()));
+    assert!(build(&decl("?f@@YAXVArr@@ZZ"), &nontrivial, true, true, &types, 4, 1)
+        .is_some_and(|s| s.byval.is_none()));
+}
+
+#[test]
+fn constructors_are_marked() {
+    assert!(decl("??0Arr@@QAE@ABV0@@Z").ctor, "copy constructor");
+    assert!(decl("??0Arr@@QAE@XZ").ctor, "default constructor");
+    assert!(!decl("??1Arr@@QAE@XZ").ctor, "destructor");
+    assert!(!decl("?IsValid@Arr@@QAEHXZ").ctor);
+    assert!(!decl("?MakeStack@@YA?AVArr@@V1@AAV1@1@Z").ctor);
+}
+
+#[test]
 fn by_value_parameter_of_a_callee_pops_convention_is_refused() {
     // `public: class Arr __thiscall Arr::operator=(class Arr)`: the callee pops
     // the by-value slot, whose size the name does not give.

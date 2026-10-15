@@ -215,8 +215,11 @@ int main(void) {{
             }
             for optimization in ["-O0", "-O2"] {
                 let executable = common::scratch_file("overlapping-call-output", "exe");
-                let compiled = Command::new(compiler)
-                    .args([optimization, "-std=c11", "-fsanitize=address"])
+                let mut command = Command::new(compiler);
+                command.args([optimization, "-std=c11", "-fsanitize=address"]);
+                #[cfg(target_os = "linux")]
+                command.args(["-fno-pie", "-no-pie"]);
+                let compiled = command
                     .arg(&source)
                     .arg("-o")
                     .arg(&executable)
@@ -233,7 +236,8 @@ int main(void) {{
                     .unwrap();
                 assert!(
                     run.status.success(),
-                    "{compiler} {optimization}: {}",
+                    "{compiler} {optimization} ({}): {}",
+                    run.status,
                     String::from_utf8_lossy(&run.stderr)
                 );
             }

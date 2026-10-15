@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "p-d8610b4207a4",
+  "probe_id": "p-f3ee305cfad9",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -34,9 +34,9 @@
       "char \\* skip_blanks\\(char \\*a0\\)",
       "v1 = skip_blanks\\(a0\\);",
       "FILE \\* pick_stream\\(int a0\\)",
-      "v1 = pick_stream\\(a0\\);",
-      "v1 = after_colon\\(a0\\);",
-      "v1 = fallback_name\\(\\);",
+      "stream = pick_stream\\(a0\\);",
+      "s = after_colon\\(a0\\);",
+      "s = fallback_name\\(\\);",
       "return \\(unsigned long\\)signed_delta\\(a0,a1\\) >> 0x3f;",
       "\\(unsigned int\\)hash_of\\(a0\\) % 7",
       "  mark\\(a0\\);\\n"

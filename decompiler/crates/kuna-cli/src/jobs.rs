@@ -1597,6 +1597,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         proto: None,
         variables: Vec::new(),
         types: Vec::new(),
+        stack_objects: Vec::new(),
         globals: Vec::new(),
         field_calls: Vec::new(),
         line_mappings: Vec::new(),
@@ -1835,7 +1836,7 @@ impl Faults {
                     }
                 }
                 Fault::Stall => {
-                    eprintln!("{JOBS_FAULT_ENV}: injected stall at {addr:#x}");
+                    fault_line(format_args!("{JOBS_FAULT_ENV}: injected stall at {addr:#x}"));
                     loop {
                         std::thread::sleep(Duration::from_secs(3600));
                     }
@@ -1854,7 +1855,7 @@ impl Faults {
                 std::fs::OpenOptions::new().write(true).create_new(true).open(marker).is_ok()
             });
         if fire {
-            eprintln!("{JOBS_FAULT_ENV}: injected load abort");
+            fault_line(format_args!("{JOBS_FAULT_ENV}: injected load abort"));
             std::alloc::handle_alloc_error(std::alloc::Layout::new::<[u8; 1 << 20]>());
         }
     }
@@ -1868,6 +1869,14 @@ impl Faults {
     fn refuses_spawn(&self, n: usize) -> bool {
         self.spawn_after.is_some_and(|after| n >= after)
     }
+}
+
+/// Write one fault line to stderr in a single write. `eprintln!` writes each
+/// piece of its format separately, so two workers failing at once could splice
+/// their lines together on the shared pipe, and a test counting the lines
+/// would miss one.
+fn fault_line(line: std::fmt::Arguments) {
+    let _ = std::io::stderr().lock().write_all(format!("{line}\n").as_bytes());
 }
 
 // --- progress ----------------------------------------------------------------
@@ -2039,6 +2048,18 @@ mod tests {
                 definition: "struct mystruct {\n    int a;\n};\n".into(),
                 size: 4,
             }],
+            stack_objects: vec![kuna_decomp::kuna_stackobjectinfo::StackObjectInfo {
+                id: "object_401004_1".into(),
+                name: "frame_é".into(),
+                stack_offset: -0x18,
+                size: 8,
+                defined: false,
+                uses: vec![kuna_decomp::kuna_stackobjectinfo::StackObjectUseInfo {
+                    address: 0x401004,
+                    slot: 1,
+                    type_name: "struct Pair".into(),
+                }],
+            }],
             // (kuna `globalref`) One global, so the codec's flag byte is exercised.
             globals: vec![GlobalInfo {
                 address: 0x404010,
@@ -2092,6 +2113,7 @@ mod tests {
             && a.synth == b.synth
             && a.line_mappings == b.line_mappings
             && a.globals == b.globals
+            && a.stack_objects == b.stack_objects
             && a.types.len() == b.types.len()
             && a.types.iter().zip(&b.types).all(|(x, y)| {
                 x.name == y.name && x.definition == y.definition && x.size == y.size
@@ -2154,6 +2176,7 @@ mod tests {
             proto: None,
             variables: Vec::new(),
             types: Vec::new(),
+            stack_objects: Vec::new(),
             globals: Vec::new(),
             field_calls: Vec::new(),
             line_mappings: Vec::new(),
@@ -2205,6 +2228,7 @@ mod tests {
             proto: None,
             variables: Vec::new(),
             types: Vec::new(),
+            stack_objects: Vec::new(),
             globals: Vec::new(),
             field_calls: Vec::new(),
             line_mappings: Vec::new(),
@@ -2215,15 +2239,25 @@ mod tests {
             pointerargs: None,
             detail: None,
         };
-        let expected = b"KUNAJOBRES07\x01\x44\0\0\0\
-            \x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0\
-            \xff\xff\xff\xff\xff\xff\xff\xff\
-            \x01\0\0\0f\0\x01\x01\0\0\0e\0\0\
-            \0\0\0\0\0\0\0\0\0\0\0\0\
-            \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+        let expected = [
+            b"KUNAJOBRES07\x01\x48\0\0\0".as_slice(),
+            b"\x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0",
+            b"\xff\xff\xff\xff\xff\xff\xff\xff",
+            b"\x01\0\0\0f\0\x01\x01\0\0\0e\0\0",
+            b"\0\0\0\0", // aliases
+            b"\0\0\0\0", // line mappings
+            b"\0\0\0\0", // variables
+            b"\0\0\0\0", // types
+            b"\0\0\0\0", // stack objects
+            b"\0\0\0\0", // globals
+            b"\0\0\0\0", // field calls
+            b"\0\0\0\0", // callee hints
+            b"\0\0", // synth and pointer arguments
+        ]
+        .concat();
         ResultWriter::create(&path).unwrap().push(&result).unwrap();
         assert_eq!(std::fs::read(path).unwrap(), expected);
-        let decoded = decode_results(expected).unwrap();
+        let decoded = decode_results(&expected).unwrap();
         assert_eq!(decoded.len(), 1);
         assert!(same(&decoded[0], &result));
     }
@@ -2598,6 +2632,7 @@ mod tests {
             proto: None,
             variables: Vec::new(),
             types: Vec::new(),
+            stack_objects: Vec::new(),
             globals: Vec::new(),
             field_calls: Vec::new(),
             line_mappings: Vec::new(),

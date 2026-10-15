@@ -69,5 +69,5 @@ d05bc348c7c0ffffffff5bc3488d35750f000031ffe88effffff4889c7e8c6ffffffb83c0000000f
 <stringmatch name="CALLRETPAIR #3: on, both halves are SUBPIECEs of the call output instead of locals with no definition" min="1" max="1">return \*SUB168\(v1,0\) \+ SUB168\(v1,8\);</stringmatch>
 <stringmatch name="CALLRETPAIR #4: the unassigned rdx local survives in three of the four renderings, and is gone only where the pair formed" min="3" max="3">int8 v2; // rdx</stringmatch>
 <stringmatch name="CALLRETPAIR #5: the control keeps its bare call in BOTH passes, because the bounded callee decode proves no_payload never writes rdx" min="2" max="2">^  no_payload\(a0,a1,7\);$</stringmatch>
-<stringmatch name="CALLRETPAIR #6: on, the recovered return stops being the garbage pointer the discarded half left behind" min="1" max="1">int8 read_tag\(unsigned long a0,unsigned long a1\)</stringmatch>
+<stringmatch name="CALLRETPAIR #6: both modes keep the integer return separate from the pointer payload" min="2" max="2">int8 read_tag\(unsigned long a0,unsigned long a1\)</stringmatch>
 </decompilertest>

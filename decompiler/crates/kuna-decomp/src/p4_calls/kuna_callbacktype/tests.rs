@@ -591,6 +591,7 @@ fn declared(intypes: &[Rc<Datatype>], outtype: Option<Rc<Datatype>>) -> Prototyp
         first_var_arg_slot: -1,
         output_storage: None,
         input_storage: Vec::new(),
+        kuna_library_names: None,
     }
 }
 

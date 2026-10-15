@@ -21,6 +21,8 @@ pub mod ruleaction_8;
 pub mod kuna_addcarrychain;
 pub mod kuna_globalstorekeep;
 pub mod kuna_globalorderkeep;
+pub mod kuna_globalcallstore;
+pub mod kuna_intfloatround;
 pub mod kuna_mulblob; // (kuna) keep a widened multiply operand a value, not an aggregate
 pub mod kuna_booleanmask;
 pub mod kuna_ovlesssimplify;
@@ -32,8 +34,12 @@ pub mod kuna_indirectanchor; // (kuna) an op inserted after a guard INDIRECT anc
 pub mod kuna_inputtile;
 pub mod kuna_calloverlap;
 pub mod kuna_indexaliasguard;
+pub mod kuna_stackeffects;
+pub mod kuna_calleememory;
+pub(crate) mod kuna_calleehomes;
 pub(crate) mod kuna_partialglobalload;
 pub(crate) mod kuna_stackstoreguard;
+pub(crate) mod kuna_stackbytecopy;
 pub(crate) mod kuna_spillstoreguard;
 pub mod kuna_tiedstorekeep;
 pub mod kuna_loopcounterstore;
@@ -44,6 +50,7 @@ pub mod kuna_simdlane;
 pub mod kuna_cancelbytearithmetic;
 pub mod kuna_wideslice;
 pub mod kuna_devectorize;
+pub mod kuna_strlenscan;
 pub mod kuna_narrowload; // (kuna) a narrow LOAD keeps its own width
 pub(crate) mod kuna_volatileload;
 pub(crate) mod kuna_floatnegation;

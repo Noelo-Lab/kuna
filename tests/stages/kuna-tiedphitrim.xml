@@ -351,18 +351,18 @@ for \(; a0; a0 = a0 \+ -1\) \{
 v1\[0\] = v1\[0\] \* 0x1f \+ 7;
 \}
 return v1\[0\];</stringmatch>
-<stringmatch name="TIEDPHITRIM #11: both passes keep xa11's upstream merge, the loop's x stored into buf[0] only after the loop" min="2" max="2">while \(v1 = \(char\)v2, v6\[0\]\) \{
+<stringmatch name="TIEDPHITRIM #11: both passes keep xa11's upstream merge, the loop's x stored into buf[0] only after the loop" min="2" max="2">while \(v1 = v2, v6\[0\]\) \{
 v2 = v6\[0\] \+ 1 \+ v5;
 v3 = &amp;v4\[1\];
 v5 = v5 \* 3 \+ \(int4\)v6\[0\];
 v6\[0\] = \*v4;
 v4 = v3;
-v1 = \(char\)v2;
+v1 = v2;
 if \(v3 == &amp;v6\[0x1f\]\) break;
 \}
 v6\[0\] = v1;</stringmatch>
 <stringmatch name="TIEDPHITRIM #12: both passes keep xa13's upstream merge, the loop's x stored into buf[0] only after the loop" min="2" max="2">v5\[0\] = v5\[v3 &amp; 0x3f\];
-v1 = \(char\)v2;
+v1 = v2;
 if \(100000 &lt; v4\) break;
 \}
 v5\[0\] = v1;</stringmatch>
@@ -408,7 +408,7 @@ return use9\(&amp;v5\) \+ v4;</stringmatch>
 do \{
 v4 = v4 \* 3 \+ \(int4\)v1;
 v1 = v5\[v3\];
-v2 = \(int4\)v3;
+v2 = v3;
 v3 \+= 1;
 \} while \(v1 &amp;&amp; v2 &lt;= 0x1d\);
 \}

@@ -353,7 +353,7 @@ fn widening(ic: &ImpliedCasts, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeI
 /// The promoted types (a set of `INT`/`UINT`/`LONG`/`ULONG`) the operand `vn`
 /// has in C as printed where `reader` reads it, when the text says.  A widening
 /// read by `reader` is taken as printed with its cast.
-fn operand_set(ic: &ImpliedCasts, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, reader: OpId, depth: u32) -> Option<u8> {
+pub(crate) fn operand_set(ic: &ImpliedCasts, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, reader: OpId, depth: u32) -> Option<u8> {
     if depth > DEPTH {
         return None;
     }

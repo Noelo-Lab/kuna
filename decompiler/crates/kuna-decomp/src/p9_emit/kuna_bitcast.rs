@@ -14,7 +14,7 @@ pub(crate) struct Transfer {
 }
 
 /// A same-width `CAST` between an integer and a float, judged by the types the
-/// printed C declares: a named variable's declaration, else the value's own type.
+/// printed C declares: a named variable or field, else the value's own type.
 pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Transfer> {
     let operation = fd.obank().get(op)?;
     if operation.code() != OpCode::CPUI_CAST {
@@ -28,10 +28,13 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
     if !matches!(size, 4 | 8) || dst.get_size() != size {
         return None;
     }
-    let from_ty = crate::printc::declared_variable_type(fd, decl_high_type, input)
-        .unwrap_or_else(|| src.get_type_read_facing(op).clone());
-    let to_ty = crate::printc::declared_variable_type(fd, decl_high_type, out)
-        .unwrap_or_else(|| dst.get_type_def_facing().clone());
+    let slot = operation.get_slot(input);
+    let from_ty = crate::kuna_stackviews::access_type(fd, input, op, slot)
+        .or_else(|| declared_member_type(fd, decl_high_type, input))
+        .unwrap_or_else(|| fd.vn_type_read_facing(input, op));
+    let to_ty = crate::kuna_stackviews::access_type(fd, out, op, -1)
+        .or_else(|| declared_member_type(fd, decl_high_type, out))
+        .unwrap_or_else(|| fd.vn_type_def_facing(out));
     let from = from_ty.get_metatype();
     let to = to_ty.get_metatype();
     if from == type_metatype::TYPE_UNKNOWN && untyped_call_value(fd, input, 0) {
@@ -70,6 +73,70 @@ pub(crate) fn reinterprets_to_float(fd: &Funcdata, decl_high_type: bool, input: 
         type_metatype::TYPE_UNKNOWN => !untyped_call_value(fd, input, 0),
         _ => false,
     }
+}
+
+/// A detached frame snapshot keeps its bits when a native float op consumes it.
+pub(crate) fn stack_float_input(
+    fd: &Funcdata,
+    decl_high_type: bool,
+    op: OpId,
+    input: VarnodeId,
+) -> Option<Transfer> {
+    if !fd.get_arch().stack_views {
+        return None;
+    }
+    let code = fd.obank().get(op)?.code();
+    if !matches!(
+        code,
+        OpCode::CPUI_FLOAT_ABS
+            | OpCode::CPUI_FLOAT_ADD
+            | OpCode::CPUI_FLOAT_CEIL
+            | OpCode::CPUI_FLOAT_DIV
+            | OpCode::CPUI_FLOAT_EQUAL
+            | OpCode::CPUI_FLOAT_FLOAT2FLOAT
+            | OpCode::CPUI_FLOAT_FLOOR
+            | OpCode::CPUI_FLOAT_LESS
+            | OpCode::CPUI_FLOAT_LESSEQUAL
+            | OpCode::CPUI_FLOAT_MULT
+            | OpCode::CPUI_FLOAT_NAN
+            | OpCode::CPUI_FLOAT_NEG
+            | OpCode::CPUI_FLOAT_NOTEQUAL
+            | OpCode::CPUI_FLOAT_ROUND
+            | OpCode::CPUI_FLOAT_SQRT
+            | OpCode::CPUI_FLOAT_SUB
+            | OpCode::CPUI_FLOAT_TRUNC
+    ) {
+        return None;
+    }
+    let value = fd.vbank().get(input)?;
+    if value.is_implied() || !matches!(value.get_size(), 4 | 8) {
+        return None;
+    }
+    if !fd.get_func_proto().has_store() {
+        return None;
+    }
+    let emitted_type = crate::printc::declared_variable_type(fd, decl_high_type, input)?;
+    if emitted_type.get_size() != value.get_size()
+        || !matches!(
+            emitted_type.get_metatype(),
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT
+        )
+    {
+        return None;
+    }
+    let high = value.get_high().and_then(|id| fd.high_bank().get(id))?;
+    if !high.is_kuna_frame_snapshot() {
+        return None;
+    }
+    let factory = fd.get_arch().types()?;
+    Some(Transfer {
+        input,
+        target: factory
+            .get_base(value.get_size(), type_metatype::TYPE_FLOAT)
+            .ok()?,
+        size: value.get_size(),
+        to_float: true,
+    })
 }
 
 /// An untyped call has no integer C return contract. Its ABI storage alone
@@ -134,4 +201,39 @@ fn read_storage(fd: &Funcdata, op: OpId) -> Option<&crate::varnode::Varnode> {
         return None;
     }
     fd.vbank().get(cast.get_out()?)
+}
+
+fn declared_member_type(
+    fd: &Funcdata,
+    decl_high_type: bool,
+    id: VarnodeId,
+) -> Option<Rc<Datatype>> {
+    let declared = crate::printc::declared_variable_type(fd, decl_high_type, id)?;
+    if !fd.get_arch().stack_views {
+        return Some(declared);
+    }
+    let value = fd.vbank().get(id)?;
+    let stack = fd.get_arch().manage().get_stack_space()?;
+    let high = value.get_high().and_then(|id| fd.high_bank().get(id));
+    let frame_storage = value.get_space().get_index() == stack.get_index()
+        || high.is_some_and(|high| {
+            (0..high.num_instances()).any(|index| {
+                fd.vbank()
+                    .get(high.get_instance(index))
+                    .is_some_and(|value| value.get_space().get_index() == stack.get_index())
+            })
+        });
+    if !frame_storage {
+        return Some(declared);
+    }
+    let offset = high
+        .map(|high| high.get_symbol_offset().max(0))
+        .unwrap_or(0);
+    crate::kuna_stackviews::scalar_piece(
+        fd.get_arch().types()?,
+        Rc::clone(&declared),
+        offset,
+        value.get_size(),
+    )
+    .or(Some(declared))
 }

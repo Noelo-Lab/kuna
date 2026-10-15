@@ -146,8 +146,14 @@ pub struct DirectiveSymbol {
     /// The identifier the pass printed for the variable the Symbol stands for.
     pub printed: String,
     /// For a Symbol a directive mapped over a register-resident local, that
-    /// storage and its width, which a later stated type still has to match.
-    pub bound: Option<(Address, int4)>,
+    /// storage, width and analysis-local high identity. The identity is used only
+    /// within the batch; replay continues to use the scoped definition witness.
+    pub bound: Option<(Address, int4, crate::context::HighVariableId)>,
+    /// Did a `type` directive in the batch retype it.
+    pub retyped: bool,
+    /// The type a `type` directive gave the whole printed variable, when it keeps
+    /// the variable's width and kind (`kuna_stablenames::retypes_as_unit`).
+    pub unit_type: Option<crate::kuna_stablenames::UnitRetype>,
 }
 
 pub struct Funcdata {
@@ -229,6 +235,9 @@ pub struct Funcdata {
     /// re-declared, as `(offset, size, type)`; read by
     /// [`crate::kuna_castobject::reconcile`] once the variables are merged.
     cast_objects: std::cell::RefCell<Vec<(kuna_base::types::uintb, int4, std::rc::Rc<crate::dtype::Datatype>)>>,
+    /// (kuna `stackstruct`) Every frame record a `restructure_varnode` pass laid
+    /// out; later passes keep it while no access contradicts its bounds.
+    stack_records: std::cell::RefCell<Vec<crate::p6_variables::kuna_stackstruct::StackRecord>>,
     /// (kuna `stackstoreguard`) Set once a `restructure_varnode` pass lays out a
     /// guarded store's reach; later passes keep doing so
     /// (`p6_variables/kuna_storereach.rs`).
@@ -250,6 +259,7 @@ pub struct Funcdata {
     /// (kuna `stackstoreguard`) Set when the final layout spoiled what the
     /// guard needs; the drive then analyzes the function again without it.
     stack_store_guard_spoiled: std::cell::Cell<bool>,
+    stack_byte_copy_ops: std::collections::BTreeSet<OpId>,
     /// (kuna `condstmts`) Block start addresses structured as complex from the
     /// first structuring on; set by the drive and kept across `clear()`.
     kuna_condstmts_seed: std::collections::BTreeSet<Address>,
@@ -337,6 +347,15 @@ pub struct Funcdata {
         crate::unionresolve::ResolveEdge,
         crate::unionresolve::ResolvedUnion,
     >,
+    pub(crate) stack_write_views: std::collections::BTreeMap<OpId, crate::kuna_stackviews::StorageView>,
+    pub(crate) stack_objects: Vec<crate::kuna_stackobjects::StackObject>,
+    pub(crate) stack_object_assertions: Vec<crate::kuna_stackobjectasserts::ObjectAssertion>,
+    pub(crate) stack_object_bound_uses: std::collections::BTreeSet<(crate::kuna_stackobjects::SourcePoint, i32)>,
+    pub(crate) stack_alias_holds: Option<std::collections::BTreeSet<VarnodeId>>,
+    pub(crate) callee_memory: std::collections::HashMap<
+        (int4, kuna_base::types::uintb),
+        std::rc::Rc<crate::kuna_calleememory::CalleeMemory>,
+    >,
     /// Warning/header comments produced during flow analysis (C++
     /// `Funcdata::warning`/`warningHeader` push directly into
     /// `glb->commentdb`; `funcdata.cc:119,135`).
@@ -389,6 +408,24 @@ pub struct Funcdata {
     /// empty, so the entries are exactly one batch: the directives between two
     /// decompiles.
     kuna_directive_symbols: Vec<DirectiveSymbol>,
+    /// (kuna `--assert`) The previous decompile's default numbering, seeded by
+    /// the drive when a directive batch is replayed; see
+    /// [`crate::kuna_stablenames`].
+    kuna_prior_names: crate::kuna_stablenames::PriorNames,
+    /// One past the last default index the naming pass handed out.
+    kuna_default_name_end: int4,
+    /// Whether the naming pass records [`Self::kuna_name_snapshot`].
+    kuna_record_names: bool,
+    /// The numbering the naming pass handed out, by instance identity; see
+    /// `kuna_stablenames::snapshot`.
+    kuna_name_snapshot: Vec<(String, crate::kuna_stablenames::Keys)>,
+    /// The local each replayed rename or retype reached, by the name the
+    /// previous decompile printed it under; see
+    /// `kuna_stablenames::directive_targets`.
+    kuna_directive_targets: std::collections::BTreeMap<String, crate::context::HighVariableId>,
+    /// (kuna `libcnames`) The library name each numbered local answers to; see
+    /// [`crate::kuna_libcnames::LibraryAlias`].
+    kuna_library_aliases: Vec<crate::kuna_libcnames::LibraryAlias>,
     /// (kuna, ghidra Phase 4) WIRE-ONLY symbols the encode-time link pass
     /// synthesized for named HighVariables the analysis deliberately left
     /// symbol-less — see [`crate::database::WireSymbol`].  They are encoded
@@ -410,6 +447,11 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
     >,
+    /// (kuna `bejoin evidence`) The model's output pair, the wide-return
+    /// verdicts of this function and its callees, and the callees a call asked
+    /// about without one. Seeded by the driver
+    /// ([`crate::kuna_bejoin::seed_wide_returns`]).
+    kuna_wide: Option<crate::kuna_bejoin::WideView>,
     /// (kuna `calleedeadarg`) Per direct-call-target evidence about the registers
     /// the callee is *proven* never to read before writing, keyed by
     /// `(space index, entry offset)`.  Seeded by the driver after the flow build
@@ -512,6 +554,9 @@ pub struct Funcdata {
     /// writes the return register, which carries no argument, just before them
     /// (`xor %eax,%eax` is SysV's vector-register count).
     kuna_passthrough_vararg_calls: Vec<crate::context::OpId>,
+    /// (kuna `msvcbyval`) The calls whose by-value slot `ActionDefaultParams`
+    /// sized, with the constructor call that builds each.
+    kuna_msvc_byval_sites: Vec<crate::p4_calls::kuna_msvcbyval::ByvalSite>,
     /// (kuna `calleereadarg`) The CALL ops set up as variadic calls, recorded
     /// before heritage whatever `passthrough` decides.
     kuna_readarg_vararg_calls: Vec<crate::context::OpId>,
@@ -532,6 +577,9 @@ pub struct Funcdata {
     /// (kuna `calleevote`) The types every caller of this function passes for its
     /// inputs, copied off the `Architecture` after the flow build.
     kuna_calleevote_inputs: Option<std::rc::Rc<crate::kuna_calleevote::CallerTypes>>,
+    /// (kuna `elfmain`) The C runtime's `main` declaration this function's inputs
+    /// take, when it is an executable's own `main`. See [`crate::kuna_elfmaindecl`].
+    kuna_elfmain: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>,
     /// (kuna `calleevote fields`) Every caller of this function is a known direct call.
     kuna_calleevote_closed: bool,
     /// (kuna `elemptr`) The globals this function must not type as element
@@ -661,6 +709,7 @@ impl Funcdata {
             frame_slots: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             slot_evidence: std::cell::RefCell::new(Default::default()),
             cast_objects: std::cell::RefCell::new(Vec::new()),
+            stack_records: std::cell::RefCell::new(Vec::new()),
             store_reach_committed: std::cell::Cell::new(false),
             store_reach_checks: std::cell::RefCell::new(Default::default()),
             indexed_guard_stores: std::cell::RefCell::new(Default::default()),
@@ -668,6 +717,7 @@ impl Funcdata {
             guard_only_seen: std::cell::RefCell::new(Vec::new()),
             stack_store_guard_withdrawn: std::cell::Cell::new(false),
             stack_store_guard_spoiled: std::cell::Cell::new(false),
+            stack_byte_copy_ops: Default::default(),
             kuna_condstmts_seed: std::collections::BTreeSet::new(),
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
             jumpvec: Vec::new(),
@@ -687,6 +737,12 @@ impl Funcdata {
             affecting_ops_revision: 0,
             localoverride: crate::overrides::Override::new(),
             union_map: std::collections::BTreeMap::new(),
+            stack_write_views: std::collections::BTreeMap::new(),
+            stack_objects: Vec::new(),
+            stack_object_assertions: Vec::new(),
+            stack_object_bound_uses: std::collections::BTreeSet::new(),
+            stack_alias_holds: None,
+            callee_memory: std::collections::HashMap::new(),
             pending_comments: Vec::new(),
             kuna_infertypes_settled: false,
             kuna_call_target_types: std::collections::HashMap::new(),
@@ -694,10 +750,17 @@ impl Funcdata {
             kuna_pipeline_failure: None,
             kuna_rejected_flow: Vec::new(),
             kuna_directive_symbols: Vec::new(),
+            kuna_prior_names: Default::default(),
+            kuna_default_name_end: 1,
+            kuna_record_names: false,
+            kuna_name_snapshot: Vec::new(),
+            kuna_directive_targets: std::collections::BTreeMap::new(),
+            kuna_library_aliases: Vec::new(),
             kuna_wire_symbols: Vec::new(),
             kuna_wrapped_wire_storage: std::collections::BTreeMap::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
+            kuna_wide: None,
             kuna_callee_entry_dead: std::collections::HashMap::new(),
             kuna_hiddenret_vetoed: std::collections::HashSet::new(),
             kuna_own_entry_dead: None,
@@ -724,11 +787,13 @@ impl Funcdata {
             kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
+            kuna_msvc_byval_sites: Vec::new(),
             kuna_readarg_vararg_calls: Vec::new(),
             kuna_passthrough_variadic: false,
             kuna_moved_back_returns: Vec::new(),
             kuna_pairs_first_low: false,
             kuna_calleevote_inputs: None,
+            kuna_elfmain: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
             kuna_elemptr_adopt: None,
@@ -907,6 +972,89 @@ impl Funcdata {
             return;
         }
         self.kuna_directive_symbols.push(entry);
+    }
+
+    /// (kuna `--assert`) Record that a `type` directive retyped `symbol`, and
+    /// the unit type it gave the printed variable, if any.
+    pub fn kuna_set_directive_retype(
+        &mut self,
+        symbol: crate::database::SymbolId,
+        unit_type: Option<crate::kuna_stablenames::UnitRetype>,
+    ) {
+        if let Some(entry) = self.kuna_directive_symbols.iter_mut().find(|d| d.symbol == symbol) {
+            entry.retyped = true;
+            entry.unit_type = unit_type;
+        }
+    }
+
+    /// (kuna `--assert`) The previous decompile's default numbering to keep.
+    pub fn kuna_prior_names(&self) -> &crate::kuna_stablenames::PriorNames {
+        &self.kuna_prior_names
+    }
+
+    pub fn seed_prior_names(&mut self, prior: crate::kuna_stablenames::PriorNames) {
+        self.kuna_prior_names = prior;
+    }
+
+    /// One past the last default index the naming pass handed out.
+    pub fn kuna_default_name_end(&self) -> int4 {
+        self.kuna_default_name_end
+    }
+
+    pub fn set_kuna_default_name_end(&mut self, end: int4) {
+        self.kuna_default_name_end = end;
+    }
+
+    /// (kuna `--assert`) Should the naming pass record its numbering?
+    pub fn kuna_record_names(&self) -> bool {
+        self.kuna_record_names
+    }
+
+    pub fn set_kuna_record_names(&mut self, on: bool) {
+        self.kuna_record_names = on;
+    }
+
+    /// The numbering the naming pass recorded (empty unless asked to).
+    pub fn kuna_name_snapshot(&self) -> &[(String, crate::kuna_stablenames::Keys)] {
+        &self.kuna_name_snapshot
+    }
+
+    /// (kuna `--assert`) The local each replayed rename or retype reached, by
+    /// the name the previous decompile printed it under.
+    pub fn kuna_directive_targets(&self) -> &std::collections::BTreeMap<String, crate::context::HighVariableId> {
+        &self.kuna_directive_targets
+    }
+
+    pub fn set_kuna_directive_targets(
+        &mut self,
+        targets: std::collections::BTreeMap<String, crate::context::HighVariableId>,
+    ) {
+        self.kuna_directive_targets = targets;
+    }
+
+    pub fn set_kuna_name_snapshot(&mut self, snapshot: Vec<(String, crate::kuna_stablenames::Keys)>) {
+        self.kuna_name_snapshot = snapshot;
+    }
+
+    /// (kuna `bejoin evidence`) Hold the wide-return verdicts the driver took
+    /// for this function and its callees.
+    pub fn kuna_set_wide(&mut self, wide: crate::kuna_bejoin::WideView) {
+        self.kuna_wide = Some(wide);
+    }
+
+    /// (kuna `bejoin evidence`) The wide-return verdicts and the model's pair,
+    /// when the driver took them.
+    pub fn kuna_wide(&self) -> Option<&crate::kuna_bejoin::WideView> {
+        self.kuna_wide.as_ref()
+    }
+
+    /// (kuna `libcnames`) The library names the naming pass gave numbered locals.
+    pub fn kuna_library_aliases(&self) -> &[crate::kuna_libcnames::LibraryAlias] {
+        &self.kuna_library_aliases
+    }
+
+    pub fn set_kuna_library_aliases(&mut self, aliases: Vec<crate::kuna_libcnames::LibraryAlias>) {
+        self.kuna_library_aliases = aliases;
     }
 
     /// (kuna `rustabi`) Record what a probe of `entry`'s body proved about the
@@ -1282,6 +1430,17 @@ impl Funcdata {
         self.kuna_calleevote_inputs.as_deref()
     }
 
+    /// (kuna `elfmain`) Give this function's inputs the C runtime's `main`
+    /// declaration, as far as its own analysis recovers them.
+    pub fn kuna_set_elfmain(&mut self, runtime: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>) {
+        self.kuna_elfmain = runtime;
+    }
+
+    /// (kuna `elfmain`) The C runtime's `main` declaration for this function.
+    pub fn kuna_elfmain(&self) -> Option<&crate::kuna_elfmaindecl::Runtime> {
+        self.kuna_elfmain.as_deref()
+    }
+
     /// (kuna `calleevote fields`) Mark every caller of this function as known.
     pub fn kuna_set_calleevote_closed(&mut self, closed: bool) {
         self.kuna_calleevote_closed = closed;
@@ -1458,6 +1617,16 @@ impl Funcdata {
     /// (kuna `passthrough`) The CALL ops set up as variadic calls.
     pub fn kuna_passthrough_vararg_calls(&self) -> &[crate::context::OpId] {
         &self.kuna_passthrough_vararg_calls
+    }
+
+    /// (kuna `msvcbyval`) Record the calls whose by-value slot was sized.
+    pub fn kuna_set_msvc_byval_sites(&mut self, sites: Vec<crate::p4_calls::kuna_msvcbyval::ByvalSite>) {
+        self.kuna_msvc_byval_sites = sites;
+    }
+
+    /// (kuna `msvcbyval`) The calls whose by-value slot was sized.
+    pub fn kuna_msvc_byval_sites(&self) -> &[crate::p4_calls::kuna_msvcbyval::ByvalSite] {
+        &self.kuna_msvc_byval_sites
     }
 
     /// (kuna `calleereadarg`) Record the CALL ops set up as variadic calls.
@@ -2040,6 +2209,18 @@ impl Funcdata {
         self.frame_slots.borrow().iter().map(|(k, v)| (*k, v.clone())).collect()
     }
 
+    /// (kuna `stackstruct`) The frame records earlier passes laid out.
+    pub fn stack_records(&self) -> Vec<crate::p6_variables::kuna_stackstruct::StackRecord> {
+        self.stack_records.borrow().clone()
+    }
+
+    /// (kuna `stackstruct`) Remember a frame record, replacing one at the same start.
+    pub fn record_stack_record(&self, r: crate::p6_variables::kuna_stackstruct::StackRecord) {
+        let mut all = self.stack_records.borrow_mut();
+        all.retain(|o| o.start != r.start);
+        all.push(r);
+    }
+
     /// (kuna `castobject`) Remember the stack objects one pass re-declared.
     pub fn record_cast_objects(&self, objects: Vec<(kuna_base::types::uintb, int4, std::rc::Rc<crate::dtype::Datatype>)>) {
         let mut all = self.cast_objects.borrow_mut();
@@ -2063,6 +2244,14 @@ impl Funcdata {
     /// (kuna `stackstoreguard`) Is the guard on for this function?
     pub fn stack_store_guard(&self) -> bool {
         self.get_arch().stack_store_guard && !self.stack_store_guard_withdrawn.get()
+    }
+
+    pub(crate) fn note_stack_byte_copy_op(&mut self, op: OpId) {
+        self.stack_byte_copy_ops.insert(op);
+    }
+
+    pub(crate) fn is_stack_byte_copy_op(&self, op: OpId) -> bool {
+        self.stack_byte_copy_ops.contains(&op)
     }
 
     /// (kuna `stackstoreguard`) Record what this pass says the final layout
@@ -2205,9 +2394,8 @@ impl Funcdata {
 
     /// Re-create the given console-added dynamic (`map hash`) Symbols in this
     /// function's local scope (the dynamic counterpart of
-    /// [`seed_mapped_symbols`](Self::seed_mapped_symbols)).  The console set
-    /// `namelock|typelock` on each; re-applied here so `ActionDynamicSymbols` sees
-    /// the same dynamic-entry list the C++ `getScopeLocal()->beginDynamic()` does.
+    /// [`seed_mapped_symbols`](Self::seed_mapped_symbols)), preserving which
+    /// names and types were locked before rebuilding the IR.
     pub fn seed_dynamic_symbols(&mut self, specs: &[crate::database::DynamicSymbolSpec]) {
         use crate::database::symbol_category;
         use crate::varnode::varnode_flags;
@@ -2255,12 +2443,19 @@ impl Funcdata {
                     }
                     continue;
                 }
-                // A plain `map hash` dynamic symbol: namelock|typelock (the locks
-                // the console set on it).
+                // Preserve which properties were asserted, including name-only locals.
                 if let Ok(sym) =
                     lm.add_dynamic_symbol(&spec.name, std::rc::Rc::clone(&spec.dtype), &spec.addr, spec.hash)
                 {
-                    lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+                    let locks = spec.flags & (varnode_flags::namelock | varnode_flags::typelock);
+                    lm.set_attribute(sym, locks);
+                    if spec.dispflags & crate::database::symbol_dispflags::ISOLATE != 0 {
+                        if locks & varnode_flags::typelock != 0 {
+                            lm.set_symbol_isolated(sym, true);
+                        } else {
+                            lm.set_symbol_identity_isolated(sym);
+                        }
+                    }
                 }
             }
         }
@@ -3786,6 +3981,11 @@ impl Funcdata {
         // funcp.clearUnlockedOutput();                               -- STUB(W4)
         // unionMap.clear() (funcdata.cc:90): drop the union-field resolution cache.
         self.union_map.clear();
+        self.stack_write_views.clear();
+        self.stack_objects.clear();
+        self.stack_object_bound_uses.clear();
+        self.stack_alias_holds = None;
+        self.callee_memory.clear();
         self.clear_blocks();
         self.obank.clear();
         self.vbank.clear();
@@ -3818,12 +4018,14 @@ impl Funcdata {
         self.slot_evidence.borrow_mut().clear();
         self.kuna_passthrough_claims.clear();
         self.kuna_passthrough_vararg_calls.clear();
+        self.kuna_msvc_byval_sites.clear();
         self.kuna_readarg_vararg_calls.clear();
         self.kuna_passthrough_variadic = false;
         self.kuna_moved_back_returns.clear();
         self.store_reach_committed.set(false);
         *self.store_reach_checks.borrow_mut() = Default::default();
         self.indexed_guard_stores.borrow_mut().clear();
+        self.stack_byte_copy_ops.clear();
         self.indexed_guard_indirects.borrow_mut().clear();
         self.guard_only_seen.borrow_mut().clear();
         self.kuna_forced_return_planted.clear();
@@ -5189,26 +5391,7 @@ impl Funcdata {
         self.with_high_split(|hb, ctx| hb.get_mut(id).unwrap().has_name(ctx).unwrap_or(false))
     }
 
-    /// Build a \e dynamic Symbol associated with the given (constant) Varnode (C++
-    /// `Funcdata::buildDynamicSymbol`, `funcdata_varnode.cc:1304-1326`).
-    ///
-    /// If a Symbol is already attached, no change is made.  Otherwise a special
-    /// \e dynamic Symbol is created, associated with the Varnode via a hash of its
-    /// local data-flow (rather than its storage address), and attached to the
-    /// Varnode's HighVariable.
-    ///
-    /// Faithful to the C++ except for two merged-tree seams threaded in as
-    /// parameters (the same convention [`crate::dynamic::DynamicHash::unique_hash`]
-    /// uses): `maxduplicates` is the `glb->dynamic_hash_maxdup_high` collision
-    /// budget and `base1_unknown` is the EquateSymbol's `getBase(1,TYPE_UNKNOWN)`
-    /// type — both resolved from the `Architecture` at the call site.  Only the
-    /// constant arm is reached by the `force varnode` console command; the
-    /// non-constant `addDynamicSymbol` arm errs as a documented seam (the merged
-    /// tree has no Varnode→SymbolEntry retype link).
-    ///
-    /// On success the EquateSymbol id is parked on `high->kuna_equate_symbol`,
-    /// which is the merged-tree stand-in for the C++ `vn->setSymbolEntry(...)`
-    /// effect `high->getSymbol() == sym` (read by `PrintC::push_integer`).
+    /// Anchor a constant equate or a normal local to its dataflow hash.
     pub fn build_dynamic_symbol(
         &mut self,
         vn: VarnodeId,
@@ -5237,11 +5420,10 @@ impl Funcdata {
             .get(vn)
             .and_then(|v| v.get_high())
             .ok_or_else(|| KunaError::lowlevel("build_dynamic_symbol: varnode has no high"))?;
-        // Symbol already exists.
         if self
             .high_bank
             .get(high)
-            .and_then(|h| h.kuna_equate_symbol())
+            .and_then(|h| h.kuna_equate_symbol().or(h.kuna_dynamic_symbol()))
             .is_some()
         {
             return Ok(());
@@ -5251,13 +5433,18 @@ impl Funcdata {
         if hash == 0 {
             return Err(KunaError::lowlevel("Unable to find unique hash for varnode"));
         }
-        // The non-constant arm (addDynamicSymbol over high->getType()) needs the
-        // merged-tree Varnode→SymbolEntry retype link, which is a W4 seam; the
-        // `force varnode` command only ever reaches the constant arm.
         if !is_constant {
-            return Err(KunaError::lowlevel(
-                "kuna rust port: build_dynamic_symbol non-constant arm needs the W4 Varnode-SymbolEntry link",
-            ));
+            let dtype = self.with_high_split(|bank, ctx| {
+                bank.get_mut(high).expect("dynamic symbol: stale high").get_type(ctx, None)
+            });
+            let localmap = self.localmap.as_mut()
+                .ok_or_else(|| KunaError::lowlevel("build_dynamic_symbol: no local scope"))?;
+            let sym = localmap.add_dynamic_symbol("", dtype, &addr, hash)?;
+            let entry = localmap.database().dynamic_entries(localmap.scope_id()).into_iter()
+                .find(|entry| entry.symbol == sym)
+                .ok_or_else(|| KunaError::lowlevel("build_dynamic_symbol: missing entry"))?;
+            crate::kuna_dynamiclocals::bind(self, vn, &entry)?;
+            return Ok(());
         }
         let localmap = self
             .localmap
@@ -5330,31 +5517,20 @@ impl Funcdata {
         }
     }
 
-    /// C++ `Funcdata::attemptDynamicMapping` (`funcdata_varnode.cc:1335`): the
-    /// EARLY dynamic mapping, run mid-pipeline by `ActionDynamicMapping`.  Finds
-    /// the Varnode the dynamic SymbolEntry maps to and binds the Symbol's
-    /// properties (size/type-lock) to it — the C++ `setSymbolProperties`.
-    ///
-    /// The behavioural point of the early mapping (vs. the late, name-only one)
-    /// is to PIN the matched Varnode before the merge/copy-elimination passes:
-    /// binding the symbol marks the Varnode `mapped`, so it survives as an
-    /// explicit storage location (the dynamic-hash COPY the late hash later
-    /// targets) instead of being copy-propagated away.  The kuna stand-in is the
-    /// same as the late path (`kuna_name` + the `mapped` flag); the `updateType`/
-    /// type-lock retype is the documented W4 loss.  Returns `true` on a match.
+    /// Bind a dynamic symbol before type propagation and variable merging.
     pub fn attempt_dynamic_mapping(
         &mut self,
         entry: &crate::database::SymbolEntry,
     ) -> KunaResult<bool> {
         use crate::database::symbol_category;
         let sym_id = entry.symbol;
-        let (category, sym_name) = {
+        let category = {
             let localmap = match self.localmap.as_ref() {
                 Some(l) => l,
                 None => return Ok(false),
             };
             let sym = localmap.database().symbol(sym_id);
-            (sym.get_category(), sym.get_name().to_string())
+            sym.get_category()
         };
         if category == symbol_category::UNION_FACET {
             return self.apply_union_facet(entry);
@@ -5366,15 +5542,10 @@ impl Funcdata {
             Some(v) => v,
             None => return Ok(false),
         };
-        // Idempotent: the Varnode is already bound to a dynamic SymbolEntry (C++
-        // checks `vn->getSymbolEntry()`, `funcdata_varnode.cc:1348`).  The binding is
-        // parked on the Varnode (not the HighVariable, which may not exist yet at
-        // this early mapping or be rebuilt each heritage pass), so the re-run of this
-        // `rule_repeatapply` action does not re-report a change and loop forever.
-        if self.vn_high_has_dynamic_binding(vn) {
-            return Ok(false);
-        }
         if category == symbol_category::EQUATE {
+            if self.vn_high_has_dynamic_binding(vn) {
+                return Ok(false);
+            }
             // C++ `vn->setSymbolEntry(entry)` (varnode.cc:448) marks the matched
             // Varnode `Varnode::mapped`.  That `mapped` bit is load-bearing for the
             // EARLY mapping: it pins the dynamic-hash constant as explicit storage so
@@ -5395,51 +5566,10 @@ impl Funcdata {
             }
             return Ok(true);
         }
-        // C++ `Varnode::setSymbolProperties` (varnode.cc:429) updates the Varnode's
-        // type and (only when the Symbol is type-locked) binds `mapentry`; in either
-        // case the matched Varnode picks up the entry's flags (incl. `Varnode::mapped`
-        // via `getAllFlags`), pinning it explicit so it survives to the LATE pass.
-        // The kuna stand-in marks `mapped` here but does NOT bind the Varnode's
-        // symbol-entry: the NAME (and its struct type/offset) is attached to the
-        // HighVariable by the LATE `attemptDynamicMappingLate`, which must still run
-        // once a High exists (the early High is frequently absent).  When a High is
-        // already present the name is mirrored here too (idempotency key for this
-        // `rule_repeatapply` early pass — see `vn_high_has_dynamic_binding`).
-        use crate::varnode::varnode_flags;
-        let vn_size = self.vbank.get(vn).map(|v| v.get_size()).unwrap_or(0);
-        if entry.get_size() == vn_size {
-            if let Some(v) = self.vbank.get_mut(vn) {
-                v.set_flags_pub(varnode_flags::mapped);
-            }
-            if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
-                if let Some(h) = self.high_bank.get_mut(high) {
-                    h.set_kuna_name(sym_name);
-                    // (kuna LOSS-229) Bind the Symbol id on the high too (C++
-                    // `setSymbolProperties`/`high->setSymbol`) so the merge passes'
-                    // symbol guard (mergeTestRequired) keeps the dynamic temp distinct
-                    // from the field it copies — see ActionMergeRequired re-mapping.
-                    h.set_kuna_dynamic_symbol(sym_id);
-                }
-            }
-            return Ok(true);
-        }
-        Ok(false)
+        crate::kuna_dynamiclocals::bind(self, vn, entry)
     }
 
-    /// C++ `Funcdata::attemptDynamicMappingLate` (`funcdata_varnode.cc:1368`):
-    /// find the Varnode a dynamic SymbolEntry maps to (via [`crate::dynamic::DynamicHash`]) and
-    /// attach the Symbol's NAME to it.  Returns `true` if a Varnode was adjusted.
-    ///
-    /// STUB(W4): the merged tree has no Varnode→SymbolEntry retype link, so the
-    /// `vn->setSymbolEntry(entry)` effect is expressed as the kuna stand-in: the
-    /// matched HighVariable's `kuna_name` is set to the Symbol's name (read by the
-    /// printer as `getSymbol()->getDisplayName()`), and the matched Varnode is
-    /// marked `mapped` so the next cleanup-loop `ActionMarkExplicit::baseExplicit`
-    /// forces it explicit (C++ `isMapped()` arm, `coreaction.cc:3148`) — exactly
-    /// the C++ effect on the dynamic-hash temp.  The `union_facet`/`applyUnionFacet`
-    /// arm (no union facets in the merged-tree slices) and the `retypeSymbol`
-    /// type-propagation are documented losses; the equate arm reuses the existing
-    /// `kuna_equate_symbol` binding.
+    /// Refresh the dynamic symbol on the final high, following an inserted CAST.
     pub fn attempt_dynamic_mapping_late(
         &mut self,
         entry: &crate::database::SymbolEntry,
@@ -5449,7 +5579,7 @@ impl Funcdata {
         // front (snapshot so the `&mut self` DynamicHash search below does not alias
         // the scope borrow).
         let sym_id = entry.symbol;
-        let (category, sym_name, sym_name_undefined, sym_type_locked, sym_type) = {
+        let (category, sym_name, sym_name_undefined) = {
             let localmap = match self.localmap.as_ref() {
                 Some(l) => l,
                 None => return Ok(false), // no local scope: nothing dynamic to map
@@ -5459,8 +5589,6 @@ impl Funcdata {
                 sym.get_category(),
                 sym.get_name().to_string(),
                 sym.is_name_undefined(),
-                sym.is_type_locked(),
-                sym.dtype.clone(),
             )
         };
         if category == symbol_category::UNION_FACET {
@@ -5473,12 +5601,10 @@ impl Funcdata {
             Some(v) => v,
             None => return Ok(false),
         };
-        // Symbol already applied.  Stand-in: the matched high already carries a name
-        // OR an equate binding (idempotent re-run; see vn_high_has_dynamic_binding).
-        if self.vn_high_has_dynamic_binding(vn) {
-            return Ok(false);
-        }
         if category == symbol_category::EQUATE {
+            if self.vn_high_has_dynamic_binding(vn) {
+                return Ok(false);
+            }
             // C++ `setSymbolEntry` marks the Varnode `Varnode::mapped` (varnode.cc:448)
             // and binds the entry; mirror both here as in the early arm
             // (`attempt_dynamic_mapping`) so the re-run stays idempotent.
@@ -5528,31 +5654,7 @@ impl Funcdata {
             }
         }
 
-        // Bind the Symbol name to the matched high, and mark the Varnode `mapped` so
-        // ActionMarkExplicit forces it explicit.  The binding goes on the Varnode too
-        // (C++ `setSymbolEntry`) for idempotency.
-        if let Some(v) = self.vbank.get_mut(vn) {
-            v.set_kuna_symbol_entry(sym_id);
-        }
-        // The late mapping attaches only the NAME (C++: "the data-type and possibly
-        // other properties are not put on the Varnode"); the high keeps its own
-        // propagated type for rendering.
-        let _ = sym_type;
-        if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
-            if let Some(h) = self.high_bank.get_mut(high) {
-                h.set_kuna_name(sym_name);
-                // (kuna LOSS-229) mirror the early-arm symbol binding.
-                h.set_kuna_dynamic_symbol(sym_id);
-            }
-        }
-        // C++ retypes the Symbol from the Varnode's propagated type
-        // (`localmap->retypeSymbol`); the merged-tree Symbol type is not read back
-        // by the printer (the high renders through `kuna_symbol_type`), so the
-        // retype is a no-op stand-in here.  The type-lock-mismatch warning arm is
-        // likewise not reachable in the merged-tree slices (no type-locked dynamic
-        // symbols), recorded as a documented loss.
-        let _ = sym_type_locked;
-        Ok(true)
+        crate::kuna_dynamiclocals::bind(self, vn, entry)
     }
 
     /// The forced integer display format of the equate-Symbol bound to `vn`'s
@@ -6005,6 +6107,46 @@ mod tests {
             fd.high_bank().get(high).unwrap().kuna_name(),
             Some("user_renamed")
         );
+    }
+
+    #[test]
+    fn build_dynamic_local_preserves_inferred_type_and_is_idempotent() {
+        let mut manager = build_manager();
+        let register = Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR, "register", false, 8, 1, 5,
+            addrspace_flags::hasphysical, 1, 1,
+        ));
+        manager.insert_space(Rc::clone(&register)).unwrap();
+        manager.insert_space(Rc::new(kuna_base::space::SpacebaseSpace::new(
+            "stack", 6, 8, &register, 1, true, false,
+        ))).unwrap();
+        let arch = Rc::new(ArchContext::new(manager));
+        let ram = Rc::clone(arch.manage().get_space_by_name("ram").unwrap());
+        let mut fd = Funcdata::new(
+            "func", "func", arch, Address::new(Rc::clone(&ram), 0x1000), 0, 0x40,
+        ).unwrap();
+        let root = fd.bblocks_root_pub();
+        let block = fd.bblocks_mut().new_block_basic(root);
+        let input = fd.new_varnode(4, &Address::new(Rc::clone(&ram), 0x100), None);
+        let input = fd.set_input_varnode(input).unwrap();
+        let op = fd.new_op(2, Address::new(Rc::clone(&ram), 0x1000));
+        fd.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_ADD, 0, "ADD"));
+        let out = fd.new_varnode_out(4, &Address::new(ram, 0x200), op).unwrap();
+        fd.op_set_input(op, input, 0).unwrap();
+        fd.op_set_input(op, input, 1).unwrap();
+        fd.op_insert(op, block, None);
+        fd.structure_reset();
+        fd.set_high_level();
+        let dtype = fd.vbank().get(out).unwrap().get_type().clone();
+
+        fd.build_dynamic_symbol(out, 8, unk_type()).unwrap();
+        let symbol = fd.vbank().get(out).unwrap().kuna_symbol_entry().unwrap();
+        assert_eq!(fd.dynamic_symbol_specs().len(), 1);
+        assert!(Rc::ptr_eq(fd.vbank().get(out).unwrap().get_type(), &dtype));
+        assert!(!fd.vbank().get(out).unwrap().is_type_lock());
+        fd.build_dynamic_symbol(out, 8, unk_type()).unwrap();
+        assert_eq!(fd.dynamic_symbol_specs().len(), 1);
+        assert_eq!(fd.vbank().get(out).unwrap().kuna_symbol_entry(), Some(symbol));
     }
 
     /// Adversarial (Convert B2): binding a dynamic SymbolEntry to a Varnode marks

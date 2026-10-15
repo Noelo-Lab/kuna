@@ -185,6 +185,163 @@ fn a_function_rename_reaches_the_inventory_and_qualifies_later_directives() {
     assert_eq!(statuses, vec!["applied", "applied"]);
 }
 
+/// `inspect`'s C for `function` of `binary` under `asserts`, as sorted lines
+/// with each `(from, to)` identifier swapped.
+fn inspected_lines(binary: &str, function: &str, asserts: &[&str], renames: &[(&str, &str)]) -> Vec<String> {
+    let inspected = run_on(binary, "inspect", &[function], asserts).expect("inspect");
+    let code = inspected["function"]["code"].as_str().expect("code");
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut out: Vec<String> = code
+        .lines()
+        .map(|line| {
+            line.split_inclusive(|c: char| !word(c))
+                .map(|piece| {
+                    let name = piece.trim_end_matches(|c: char| !word(c));
+                    match renames.iter().find(|(from, _)| *from == name) {
+                        Some((_, to)) => format!("{to}{}", &piece[name.len()..]),
+                        None => piece.to_string(),
+                    }
+                })
+                .collect::<String>()
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// The page sends every rename on every request, each naming the local as the
+/// first decompile printed it, so a rename must not rename another local:
+/// `check`'s `len` (named after `strlen`'s result, `libcnames`) stays `len`
+/// when `v1` is renamed, and `v1` stays `v1` when `len` is.
+#[test]
+fn a_local_rename_moves_no_other_local_number() {
+    let plain = inspected_lines("crackme.elf", "check", &[], &[]);
+    assert!(plain.iter().any(|line| line.contains(" len; // ")), "{plain:?}");
+    assert!(plain.iter().any(|line| line.contains(" v1; // ")), "{plain:?}");
+    assert_eq!(inspected_lines("crackme.elf", "check", &["name v1 ok"], &[("ok", "v1")]), plain);
+    assert_eq!(inspected_lines("crackme.elf", "check", &["name len size"], &[("size", "len")]), plain);
+}
+
+/// The C of `check` in crackme under `asserts`, in `mode`.
+fn check_in_mode(mode: Option<&str>, asserts: &[&str]) -> String {
+    let (binary, specs) = fixture_named("crackme.elf");
+    let args = vec!["check".to_string()];
+    let asserts: Vec<String> = asserts.iter().map(|s| s.to_string()).collect();
+    let out = run_request(&Request {
+        binary: &binary,
+        spec_root: &specs,
+        cmd: "inspect",
+        args: &args,
+        mode,
+        language: None,
+        asserts: &asserts,
+    })
+    .expect("inspect check");
+    let doc: Value = serde_json::from_str(&out).expect("valid JSON");
+    assert!(
+        doc["assertions"].as_array().is_none_or(|a| a.iter().all(|o| o["status"] == "applied")),
+        "{mode:?} {asserts:?}: {}",
+        doc["assertions"]
+    );
+    doc["function"]["code"].as_str().expect("code").to_string()
+}
+
+/// `check`'s `len` keeps the number it has in Reliable, so a rename the page
+/// sent in Auto reaches the same local after a switch, whichever name it used.
+#[test]
+fn a_rename_reaches_the_same_local_after_a_mode_switch() {
+    for asserts in [["name len size"], ["name v2 size"]] {
+        for mode in [None, Some("reliable"), Some("aggressive")] {
+            let code = check_in_mode(mode, &asserts);
+            assert!(code.contains("  size = strlen(input);\n"), "{mode:?} {asserts:?}:\n{code}");
+        }
+    }
+}
+
+/// A rename to a number-shaped name is kept: `len` renamed `v7` prints `v7`,
+/// and the next rename reaches it by that name.
+#[test]
+fn a_number_shaped_rename_of_a_library_name_is_kept() {
+    let code = check_in_mode(None, &["name len v7"]);
+    assert!(code.contains("  v7 = strlen(input);\n") && !code.contains(" len;"), "{code}");
+    let code = check_in_mode(None, &["name len v7", "name v7 size"]);
+    assert!(code.contains("  size = strlen(input);\n"), "{code}");
+}
+
+/// A rename onto `len` leaves `strlen`'s local its number `v2`, and the next
+/// rename reaches it by that number.
+#[test]
+fn a_rename_onto_a_library_name_leaves_the_other_local_addressable() {
+    let code = check_in_mode(None, &["name v1 len"]);
+    assert!(code.contains("  v2 = strlen(input);\n") && code.contains("  len = 0;\n"), "{code}");
+    let code = check_in_mode(None, &["name v1 len", "name v2 size"]);
+    assert!(code.contains("  size = strlen(input);\n") && code.contains("  len = 0;\n"), "{code}");
+}
+
+/// Two renames in turn, the second naming the local the page showed as `v7`
+/// after the first: both survive and nothing else moves.
+#[test]
+fn two_renames_in_turn_both_survive() {
+    let plain = inspected_lines("long.elf", "main", &[], &[]);
+    let renamed = inspected_lines(
+        "long.elf",
+        "main",
+        &["name main::v6 word_count", "name main::v7 line_count"],
+        &[("word_count", "v6"), ("line_count", "v7")],
+    );
+    assert_eq!(renamed, plain);
+}
+
+/// A rename names the whole printed variable: `long.elf`'s `v2` lives in
+/// `eax` and two stack slots, and renaming it used to split off a new `v15`;
+/// renaming `v3` used to swallow `v1`. `v3` prints as `fopen`'s `fp`
+/// (`libcnames`), and the directive reaches it by its number.
+#[test]
+fn a_rename_names_the_whole_variable() {
+    let plain = inspected_lines("long.elf", "main", &[], &[]);
+    for (from, to, printed) in [("v2", "count", "v2"), ("v3", "input", "fp")] {
+        let directive = format!("name main::{from} {to}");
+        assert_eq!(inspected_lines("long.elf", "main", &[&directive], &[(to, printed)]), plain, "{directive}");
+    }
+}
+
+/// A retype that keeps a local's width types the whole printed variable:
+/// `type v2 unsigned int count` used to leave `v2`'s other definitions behind
+/// as a new `unsigned int v15`. Only the declaration and the casts at its uses
+/// change, whether the page retypes it alone or renames it first.
+#[test]
+fn a_same_width_retype_types_the_whole_variable() {
+    let uncast = |lines: Vec<String>| -> Vec<String> {
+        let mut out: Vec<String> = lines
+            .into_iter()
+            .map(|line| line.replace("(unsigned int)", "").replace("(int)", "").replace("  unsigned int v2;", "  int v2;"))
+            .collect();
+        out.sort();
+        out
+    };
+    let plain = uncast(inspected_lines("long.elf", "main", &[], &[]));
+    for asserts in [
+        &["type main::v2 unsigned int count"][..],
+        &["type main::v2 unsigned int"][..],
+        &["name main::v2 count", "type main::count unsigned int count"][..],
+    ] {
+        let retyped = uncast(inspected_lines("long.elf", "main", asserts, &[("count", "v2")]));
+        assert_eq!(retyped, plain, "{asserts:?}");
+    }
+}
+
+/// A rename to a name the program already uses (`score` is a function) is
+/// printed suffixed, and is applied: the page shows what it became instead of
+/// a refusal.
+#[test]
+fn a_rename_the_printer_suffixes_is_applied() {
+    let inspected = run_on("long.elf", "inspect", &["main"], &["name main::v7 score"]).expect("inspect");
+    assert!(inspected["function"]["code"].as_str().expect("code").contains("  int score_1;"));
+    let row = &inspected["assertions"].as_array().expect("array")[0];
+    assert_eq!(row["status"].as_str(), Some("applied"));
+    assert_eq!(row["detail"].as_str(), Some("applied as `score_1`: `score` is already another identifier here"));
+}
+
 /// A `bytes` overlay is what every later read of the image sees.
 #[test]
 fn a_byte_patch_reaches_read_and_the_listing() {

@@ -309,3 +309,62 @@ fn subfloat_trace_keeps_wide_binary_arithmetic_from_both_directions() {
         }
     }
 }
+
+#[test]
+fn subfloat_trace_preserves_integer_conversion_rounding() {
+    for (integer_size, original_size, can_lower) in [
+        (2, 8, true), (3, 8, true), (4, 8, false), (8, 8, false), (2, 16, true), (2, 10, true),
+        (4, 10, false),
+    ] {
+        let mut context = ArchContext::new(build_manager());
+        context.floatformats = [4, 8].into_iter().map(kuna_num::float::FloatFormat::new).collect();
+    context.int_float_round = true;
+        let context = Rc::new(context);
+        let ram = Rc::clone(context.manage().get_space_by_name("ram").unwrap());
+        let mut fd = Funcdata::new("convert", "convert", context, Address::new(ram, 0x1000), 0, 0x40).unwrap();
+        let input = mk_input(&mut fd, 0x40, integer_size);
+        let convert = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_FLOAT_INT2FLOAT);
+        wire_in(&mut fd, convert, input, 0);
+        let output = mk_reg(&mut fd, 0x80, original_size);
+        let output = wire_out(&mut fd, convert, output);
+        let narrow = mk_op(&mut fd, 0x104, 1, OpCode::CPUI_FLOAT_FLOAT2FLOAT);
+        wire_in(&mut fd, narrow, output, 0);
+        let result = mk_reg(&mut fd, 0x90, 4);
+        wire_out(&mut fd, narrow, result);
+
+        let mut trace = SubfloatFlow::new(&mut fd, output, 4);
+        assert_eq!(trace.do_trace(&mut fd).unwrap(), can_lower, "integer size={integer_size}, original float size={original_size}");
+        assert!(!fd.vbank().get(output).unwrap().is_mark());
+        assert_eq!(fd.vbank().get(output).unwrap().get_size(), original_size);
+    }
+}
+
+#[test]
+fn subfloat_trace_does_not_round_integer_before_square_root() {
+    let mut context = ArchContext::new(build_manager());
+    context.floatformats = [4, 8].into_iter().map(kuna_num::float::FloatFormat::new).collect();
+    context.int_float_round = true;
+    let context = Rc::new(context);
+    let ram = Rc::clone(context.manage().get_space_by_name("ram").unwrap());
+    let mut fd = Funcdata::new("root", "root", context, Address::new(ram, 0x1000), 0, 0x40).unwrap();
+    let input = mk_input(&mut fd, 0x40, 4);
+    let convert = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_FLOAT_INT2FLOAT);
+    wire_in(&mut fd, convert, input, 0);
+    let converted = mk_reg(&mut fd, 0x80, 8);
+    let converted = wire_out(&mut fd, convert, converted);
+    let sqrt = mk_op(&mut fd, 0x104, 1, OpCode::CPUI_FLOAT_SQRT);
+    wire_in(&mut fd, sqrt, converted, 0);
+    let root = mk_reg(&mut fd, 0x90, 8);
+    let root = wire_out(&mut fd, sqrt, root);
+    let narrow = mk_op(&mut fd, 0x108, 1, OpCode::CPUI_FLOAT_FLOAT2FLOAT);
+    wire_in(&mut fd, narrow, root, 0);
+    let result = mk_reg(&mut fd, 0xa0, 4);
+    wire_out(&mut fd, narrow, result);
+
+    let mut trace = SubfloatFlow::new(&mut fd, root, 4);
+    assert!(!trace.do_trace(&mut fd).unwrap());
+    for vn in [converted, root] {
+        assert!(!fd.vbank().get(vn).unwrap().is_mark());
+        assert_eq!(fd.vbank().get(vn).unwrap().get_size(), 8);
+    }
+}

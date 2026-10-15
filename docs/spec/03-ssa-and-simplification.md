@@ -697,6 +697,46 @@ integer extension) and the processor's stack space. For this family only byte
 STOREs already recorded by indexed stack-pointer discovery qualify; globals and
 unknown pointers retain the explicit `full` policy. The gate lives in
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackstoreguard.rs`.
+
+Before heritage, `kuna_stackbytecopy.rs` expands a short frame byte-copy loop
+whose control flow and scalar setup prove that it exits after two to four
+iterations. The loop must consist of one basic block with one byte LOAD and
+one byte STORE, a single outside predecessor, a self edge, and a conditional
+exit. Calls, other special operations, writes to the stack-pointer register,
+and accesses outside the stack's containing memory space reject the rewrite.
+The proof evaluates only known scalar values and stack-relative pointer
+arithmetic; memory reads remain unknown. It bounds the setup to 128 operations,
+the loop to 64 operations, and the simulation to four iterations. A larger or
+data-dependent trip count keeps the existing guard policy.
+
+If every destination byte is already known to hold a constant from the setup,
+the loop keeps the existing indexed-store guard path. The setup proof tracks
+constant frame writes of up to eight bytes, removes facts overwritten by a
+nonconstant frame write, and clears them at an unknown STORE. This leaves the
+constant-initialized buffer family unchanged while recovering pushed words
+and fresh scratch whose contents that guard cannot establish.
+
+Expansion copies every operation in its original order, including each load
+before its corresponding store. It introduces neither a bulk copy nor a new
+alias assumption, so overlapping copies retain their sequential byte semantics.
+Ordinary heritage then sees the concrete frame accesses: pushed scratch bytes
+no longer inherit a stale saved-register value after a complete overwrite, a
+partial overwrite retains the untouched bytes, and an earlier snapshot remains
+independent. No physical store is deleted by the rewrite. Each expanded loop
+increments the action's change count so the enclosing scheduler observes the
+control-flow rewrite. It is disabled by
+`stackstoreguard off` or `indexaliasguard off`; `stackviews` is not required.
+
+The expanded memory operations retain a function-local identity until analysis
+is cleared. Heritage refines a stack range containing one of these writes into
+individual bytes, including ranges of four bytes or less. It does not apply the
+ordinary one-plus-three coalescing policy to those ranges. This keeps a saved
+word, later byte writes, and partial reads in the same SSA memory state without
+normalizing each byte write into a replacement whole word. Register ranges and
+unrelated frame ranges retain the ordinary refinement policy. Wide reads are
+reconstructed from these bytes; chapter 05 describes why their source LOADs
+retain byte widths.
+
 A heritage pass also leaves the whole frame unguarded when one of those byte
 STOREs, or any other LOAD or STORE whose address comes from the stack pointer,
 has an address that does not resolve to the stack base plus constants plus
@@ -1001,6 +1041,12 @@ group):
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs` | signed div/mod idioms, segments, pointer flow, predication, float compares | `RuleSignDiv2`, `RuleSignMod2nOpt`, `RuleModOpt`, `RuleSegment`, `RulePtrFlow`, `RuleConditionalMove` (group `conditionalexe`), `RuleFloatCast`, `RuleIgnoreNan` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, cleanup-pool `RuleExpandLoad` |
 
+`RuleMultiCollapse` keeps its operand traversal, marked-output list and
+temporary rewrite operands in local inline scratch. Wide or deeply nested
+phis can spill to owned buffers without changing visit order. The lists add
+no persistent state to an operation or rule; both success and failure clear
+the same marks, and successful rewriting iterates copied IDs directly.
+
 `RulePullsubIndirect`
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs (RulePullsubIndirect)`)
 narrows an INDIRECT whose readers are all SUBPIECEs to the bytes they use, from
@@ -1131,6 +1177,29 @@ different definition assigned to the same Varnode clears that proof.
 Retained source facts identify their machine write. If stack heritage later
 reveals that a load was an outgoing reload of an existing local, its register
 fact can be withdrawn without removing a different write to that register.
+
+**Preserving memory-loaded global stores** (`option globalcallstore`, default on;
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalcallstore.rs`).
+A persistent store keeps its COPY instead of propagating a LOAD input into
+its sole marker use at the same address and width. Without the COPY, forced
+variable merging can place the assignment at an earlier load. In stack-reload
+cases, this can move a write before a call that observes the old global; a
+later call INDIRECT or loop MULTIEQUAL exposes the issue. For non-folding
+vector loads, retaining the COPY captures lane reads before stores to
+overlapping source memory. The predicate is rechecked on each visit; folding
+to a non-LOAD source releases this refusal to the existing rules. The
+computed-value reload control preserves the call-before-write order even
+without the refusal.
+Ordinary or shared readers and non-LOAD inputs retain their existing handling.
+A kept COPY prints its single-use LOAD inline at the store unless
+`kuna_loadorder` keeps the load's own variable because it is live across a
+store to a global it may read, and that check runs only at
+`option indexaliasguard global`. The refusal therefore applies only at that
+level (the default); at `off`, `load` or `full` it would print
+`gj = 0; gi = *a0;` for a load the binary makes before the store to `gj`.
+No new purity assumption is made. The option exists because keeping the COPY
+also changes correct output: a storage comment no longer lists the global,
+and a value the store kept can print as its own variable.
 
 **Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
 default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
@@ -1670,6 +1739,31 @@ narrowing, printing `(float)((double)accum + ((double)neg_theta - (double)local_
 Conversion-only round trips and arithmetic already performed in binary32
 retain their existing simplifications and grouping. This is a correctness
 constraint on both forward and backward traces, including divided SIMD lanes.
+
+Integer-to-float conversions also retain their rounding width (`option
+intfloatround`, default on;
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_intfloatround.rs`). `RuleFloatCast`
+combines an integer conversion followed by a floating conversion only when
+both floating widths match or the intermediate format can represent every
+signed source integer exactly. The required precision is one less than the
+integer bit width; binary32 has 24 significant bits and binary64 has 53. The
+80-bit extended format of x87 and 68k registers has no float-format entry and
+counts 64.
+Otherwise, signed32-to-binary32-to-binary64 keeps its first rounding, and
+signed64-to-binary64-to-binary32 keeps its possible double rounding.
+`SubfloatFlow` additionally requires the replacement format to represent every
+signed source integer exactly before moving a conversion through the traced
+network. Original-width exactness alone would allow new rounding ahead of
+comparisons, truncation, or square root. The replacement is never wider than
+the original, so its exactness implies the original's, and an x87 network
+narrows as before. A constant source needs only its own significant bits, so
+`fld1` and `fldz` still narrow. Other unknown formats decline the rewrite. This is an
+architecture-independent value-correctness repair; it makes no new floating
+exception or rounding-mode contract. It is an option because declining also
+moves correct output: an x87 comparison of an int64 conversion stays in long
+double where the narrowed form happened to be exact. `off` is upstream's
+unconditional fold.
+
 `subflow.rs (SplitDatatype)` (triggers `RuleSplitCopy`/`RuleSplitLoad`/
 `RuleSplitStore`, cleanup pool) splits a whole-struct COPY/LOAD/STORE into
 per-field transfers using recovered types — described with the type system in
@@ -2012,6 +2106,65 @@ measured.
 `tests/stages/kuna-devectorize-effects.xml` keeps the vector arm of two
 hand-written sums whose exits disagree on a global store.
 
+**Inline string lengths** (`option strlenscan`, default **on**) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_strlenscan.rs
+(ActionStrlenScan)`, in the fullloop tail right after `devectorize`. gcc up to
+version 9 (at -O1 and above) and older MSVC expand `strlen(s)` inline as
+`or rcx,-1; xor eax,eax; repnz scasb; not rcx` (ECX on 32-bit x86). The
+SLEIGH repeat prefix lifts the scan as a loop inside one instruction: a head
+`H` that leaves when the count is zero and otherwise enters a body `B`, which
+steps the count down and the pointer up, reads a byte, and returns to `H`
+while the byte differs from AL. Upstream prints it as a do/while over the
+string and `~count - 1` wherever the length is used. Once mainloop has settled
+the count and the byte searched for to constants, the action matches the two
+blocks on SSA. Every op of `H` and `B` sits at one instruction address, `H` is
+entered from one block outside and from `B`, `B` only from `H`, and both leave
+to the same exit `E`. It then proves the following. `H` holds exactly two phis,
+the count, which enters as the all-ones constant of its width, and the pointer.
+`H` leaves to `E` exactly when the count is zero; this is evaluated over
+boundary values of the count, the condition reading nothing but the count and
+constants. `B` decrements the count by one and increments the pointer by one, so
+the direction flag is clear. It reads one byte through the pointer and computes
+only pure values of loop values, its own results and constants. It returns to
+`H` exactly when that byte is not zero, which is checked for all 256 values and
+so also proves the byte searched for is zero. Nothing outside the loop reads a
+loop value except through `E`'s phis, and the count only through a bitwise NOT,
+the first step of every length computation built on it. Any other use of the
+count declines the rewrite. The count starts at all ones and loses one per byte,
+so it reaches zero only after the whole address space has been read; the
+zero-count exit is never taken and the loop ends after `strlen(s) + 1` bytes
+with the terminator read. The rewrite places `len = strlen(s)` at the top of
+`B` (a `CALLOTHER` of the typed builtin `BUILTIN_STRLEN`, `char *` in, an
+unsigned integer of the count's width out; `p5_types/coreaction_infertypes.rs
+(output_type_local)` and `input_type_local` read those types). It then gives
+every value `B` hands to `E` its final-iteration value: the count
+`~(len + 1)`, which the NOT after the loop folds back to `len + 1`
+(`RuleNegateNegate`); the pointer `s + len + 1`; and the byte read, zero, from
+which the flags follow. Finally it removes the zero-count edge and the back
+edge (`remove_branch`), so `H` and `B` run once and the next mainloop pass folds
+the rest. Every scan a function holds is matched first and rewritten in the same
+pass, so the fullloop repeats once however many there are. The builtin keeps the
+call flag `CALLOTHER` carries, because its value depends on memory: a store, a
+call or a `free` after the scan changes what a later `strlen` would return. So
+it is ordered like a call. `ActionMarkExplicit` inlines it only where the
+call-return fold allows (one reader, in the same block, with nothing between
+them), the implied-cover check keeps it from moving past a store or a call,
+the multiplier never duplicates it into several readers, and two of them on
+different paths are never merged at a join. The printed `strlen` is therefore
+taken where the scan was. A scan for any other byte (a `memchr`-like loop), one
+whose count starts elsewhere, one whose raw count is read, and one stepping
+backward keep their loops.
+`tests/stages/kuna-strlenscan.xml` runs gcc 9 -O1 functions in both passes. The
+default pass shows `return strlen(a0);`, a length read twice as one variable,
+two lengths in one expression in order, a length taken before the store and
+before the call that follow the scan, an inlined `strcat` taking its length once
+before its two stores, a length on each side of a branch read after the join,
+and the two non-length scans still loops. With the option off every scan is a
+loop with `~v3 - 1`. `kuna-cli/tests/strlenscan_round_trip.rs` prints gcc 9
+-O1/-Os x86-64 and -O1 i386 builds with the option off and on, and compiles the
+x86-64 ones beside the source, with buffers whose bytes past the terminator are
+not zero, to check each printed function computes the same values.
+
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
 (RuleConstSpaceLoad)`, oppool1, fires on LOAD. *Pattern:* a LOAD whose space
@@ -2190,6 +2343,11 @@ the Windows loader writes there. The action also folds to zero any varnode whose
 consumed bits and nonzero mask are
 disjoint (skipping constants and COPYs of nonzero constants, which would
 recurse).
+With `stackalias on`, physical frame writes held by the opt-in P6 policy retain
+that hold across this pass (chapter [06](06-variables-and-merge.md)). Clearing a
+hold that dead-code elimination immediately reinstates would prevent the main
+loop from converging; ordinary temporary holds keep their existing release rule.
+
 
 A read from a volatile range becomes a `read_volatile` user op only once its
 address is a constant: `RuleLoadVarnode` turns the LOAD into a COPY of the
@@ -2252,3 +2410,120 @@ branch, severing the dead edge
 constant-propagation result (P5 facts) edits the P2 control-flow artifact
 without any restart (§0.7): the next mainloop iteration simply re-heritages
 the smaller graph.
+
+
+With `stackviews on`, unresolved STOREs in the containing memory space guard
+escaped frame ranges with an INDIRECT memory version. A reloaded pointer need
+not remain syntactically derived from the stack pointer: it can still designate
+those bytes. The existing deferred alias checker gates these additional guards;
+literal global addresses retain their ordinary disjoint behavior. This prevents
+folding a direct stack read to the old constant after an indirect whole or byte
+write. Unknown call effects retain their existing frame guards.
+
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_calleememory.rs` derives
+read, write and pointer-escape summaries from a direct callee's instructions
+when `stackviews` or `stackalias` is enabled. A complete call-free body can
+identify constant byte ranges relative to incoming pointer registers and exact
+pointer-width stack argument slots. Copies,
+constant pointer displacements and exact private-frame spills preserve those
+origins; overlapping register writes invalidate them. Reads and writes from
+every visited branch and loop state contribute to the summary. Storing an
+incoming pointer outside the callee's frame records an escape, and return
+states retain pointer origins for the caller's output-storage check.
+
+An untouched incoming stack slot retains its entry offset independently of the
+callee's changing stack pointer. Exact private spills preserve that origin;
+partial slot writes and potentially aliasing stores invalidate it. Pointer
+origins from stack slots match the locked prototype's actual stack storage,
+including caller-cleaned cdecl arguments and x64 arguments beyond the register
+bank. Positive entry-frame reads and writes also contribute direct byte
+footprints: an access beyond the prototype's arguments is not treated as private
+memory or silently ignored. Those footprints are translated using the recovered
+call-site spacebase offset.
+
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_calleehomes.rs` distinguishes
+pointer writes into a verified Win64 home area from external pointer publication.
+The callee summary retains each possible home escape and its full write footprint,
+even if later writes partially overwrite the pointer. The caller may discharge
+that escape only for the locked, non-variadic prototype model's exact `[8,40)`
+home interval, mapped wholly into its own negative local frame. The caller scan
+must rule out reads and forwarding of the residual cell, including stack-value
+reads, pointer escapes and observations through other calls. The current
+callee's own home loads are expected and do not substitute for that caller proof.
+Other calls require the strict summary path, which checks lost provenance and
+unresolved frame fragments even when the other callee has no homes of its own.
+It does not recursively discharge further home escapes. Caller loads and stores
+through unresolved pointers also decline when stack ancestry has been lost;
+loading a pointer from a global does not prove that it cannot designate a home.
+Literal global memory addresses retain their disjoint treatment.
+Unknown calls, ambiguous
+addresses and exhausted budgets decline. Home write effects remain present for overlapping-frame
+preservation checks. Other positive stack slots and unknown pointer-sized stores
+retain the existing conservative treatment.
+
+Partial home reloads and unresolved loss of incoming pointer provenance
+prevent discharge, including fragments of other arguments and narrow or bulk
+frame reads whose contents may include pointer bits. Explicitly initialized
+scalar register values do not count as entry pointer fragments; partial overwrites of tracked pointers
+retain their original loss marker. Lost frame-pointer provenance is a
+call-observation barrier even without
+homes or when all actual arguments are constants: a published truncated stack
+address could expose caller bytes independently of those arguments. Exhausting
+the bounded loss metadata also declines observation proofs. Complete
+write footprints and return inference remain usable. Modeled return storage
+also checks unchanged input registers rather than
+only explicitly written values. The caller scan is bounded to 4096 operations
+and 128 ancestry nodes per value, with each mapped cell scanned once per query;
+neither the scan nor its call-site proof is cached across decompilation phases.
+
+When a write through an incoming pointer would invalidate a tracked home spill,
+the summary may retain its pointer origin only with an explicit non-alias
+condition between that write footprint and the home cell. Every such condition
+must be proved from the actual call-site addresses before any summary effects
+or return facts are used. These alias conditions use exact physical frame-cell
+translation on any supported ABI; they do not grant the cell privacy. Only
+escape discharge requires the stricter Win64 home proof. This lets repeated
+home reloads survive known disjoint
+field writes without guessing from a pointee layout. Unknown or overlapping
+actual addresses decline; other spill invalidation stays unchanged.
+
+The driver takes the summaries before heritage and re-seeds them after reflow;
+each target is cached per image. Decode errors, nested or indirect calls,
+user operations, indirect or internal p-code branches, unresolved memory
+addresses and exhausted budgets yield no proof. The initial bounds are 256
+instruction-state visits, 256 tracked values or effects, 64 spills or return
+states, and 64 KiB constant displacements. Only byte-addressed, negative-growth
+frames are supported. `const` and pointee layouts provide no memory-effect
+evidence.
+Return-address rewriting and bodies consisting only of return machinery also
+decline a proof, so placeholder return stubs cannot narrow external-call effects.
+
+With `stackviews`, a complete summary can leave a caller frame range unaffected
+when none of its possible writes reaches that range. The range must lie above
+the declared callee frame and argument area, including the full extent of every
+locked stack parameter rather than just the callee's extra-pop count; explicit
+effect overrides win. A call without an attached prototype store cannot provide
+this boundary or a parameter contract, so its effects remain unknown even when
+its body has a complete instruction summary.
+Unknown aliases retain the existing guard. The P6 physical-write policy also
+uses the possible reads and escapes to decide whether a call observes bytes
+before a later overwrite. An opaque return value alone is not a memory read:
+the subsequent CFG walk still stops at a possible dereference, another observer,
+or a path without the overwrite. This permits ordinary pointer-width integer
+results on 32-bit targets without accepting a returned-pointer read before the
+overwrite. Explicit returned incoming-pointer origins remain conservative
+observers. These proofs refine memory versions and write
+liveness; they do not create independent logical objects or invalidate old
+pointers.
+
+With explicit `stackviews` or `stackalias` recovery, the declared-callee and
+unknown-pointer-store guards test the complete frame range. An alias starting
+inside a wider heritaged value must prevent forwarding its pre-call bytes; testing
+only the first byte incorrectly declares that wider value unaffected. The existing
+negative-stack alias boundary is monotone, so testing both endpoints suffices.
+Positive-growth frames retain a conservative guard.
+
+For `mulblob`, an isolated dynamic name without a type lock still describes a
+numeric value. Mapping that name does not disable the widened-operand guard when
+the datatype is the fallback array and every reader satisfies the existing
+arithmetic/SUBPIECE checks. Explicit locked array types keep their structuring.

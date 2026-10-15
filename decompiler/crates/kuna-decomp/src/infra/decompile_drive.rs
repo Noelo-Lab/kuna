@@ -965,7 +965,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         if spoiled {
             return Ok(total);
         }
-        if !(reflow_requested && fd.has_restart_pending()) {
+        // (kuna `bejoin evidence`) A call resolved mid-pass to a proven
+        // callee read it unproven: run the pass again with its verdict.
+        if !(reflow_requested && fd.has_restart_pending()) && !crate::kuna_bejoin::wide_callee_missed(arch, fd) {
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
@@ -979,6 +981,8 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // silently loses its veto on every restarted function.  Cached, so this
         // is a map lookup per call.
         crate::kuna_rustabi::seed_callee_return_writes(arch, fd);
+        // (kuna `bejoin evidence`) And the wide-return verdicts.
+        crate::kuna_bejoin::seed_wide_returns(arch, fd);
         // (kuna `calleedeadarg`) Same story for the entry-liveness probe the
         // input-trial scoring seam consults.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
@@ -993,6 +997,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // (kuna `calleepreserves`) And for the call-guard seam's view of the
         // callee's writes; shares rustabi's cache, so this is a map lookup.
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, fd);
+        crate::kuna_calleememory::seed(arch, fd);
     }
     // Exceeded the cross-flow restart budget; keep the last analyzed IR.
     fd.set_restart_pending(false);
@@ -1178,6 +1183,26 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
     prefollowed: Option<Funcdata>,
 ) -> KunaResult<Funcdata> {
+    decompile_func_full_with_objects(arch, name, funcaddr, size, mapped_symbols, usepoint_symbols, dynamic_symbols, pending_proto, flow_overrides, proto_overrides, mapped_params, prefollowed, &[])
+}
+
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::mutable_key_type)]
+pub fn decompile_func_full_with_objects(
+    arch: &mut Architecture,
+    name: &str,
+    funcaddr: Address,
+    size: int4,
+    mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
+    usepoint_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4, Address, bool)],
+    dynamic_symbols: &[crate::database::DynamicSymbolSpec],
+    pending_proto: Option<&crate::fspec::PrototypePieces>,
+    flow_overrides: &[(Address, kuna_base::types::uint4)],
+    proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
+    mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
+    prefollowed: Option<Funcdata>,
+    object_assertions: &[crate::kuna_stackobjectasserts::ObjectAssertion],
+) -> KunaResult<Funcdata> {
     // (kuna decompile-all watchdog) Arm the per-function deadline from the
     // driver-set budget (`kuna decompile-all --max-fn-seconds N` sets
     // `kuna_fn_budget`; every other path leaves it `None`, so this is a `None`
@@ -1201,9 +1226,26 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     let staged_name_recs = std::mem::take(&mut arch.kuna_pending_name_recs);
     let staged_dyn_recs = std::mem::take(&mut arch.kuna_pending_dyn_recs);
     let staged_proto_model = arch.kuna_pending_proto_model.take();
+    let prior_names = arch.kuna_prior_names.clone();
+    let record_names = arch.kuna_record_names;
+    // (kuna `elfmain`) The C runtime's declaration for this function when it is
+    // an executable's own symbol-named `main` that no other stream declares.
+    let elfmain_rt = match &arch.elfmain_main_decl {
+        Some((at, pieces))
+            if pending_proto.is_none()
+                && at.get_offset() == funcaddr.get_offset()
+                && arch.symboltab.function_proto_pieces_across_scopes(&funcaddr).is_none() =>
+        {
+            arch.default_fp().and_then(|m| {
+                crate::kuna_elfmaindecl::Runtime::new(pieces, m, arch.types(), arch.manage())
+            })
+        }
+        _ => None,
+    };
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
-                       condstmts_seed: &std::collections::BTreeSet<Address>|
+                       condstmts_seed: &std::collections::BTreeSet<Address>,
+                       elfmain: Option<&crate::kuna_elfmaindecl::Runtime>|
      -> KunaResult<Funcdata> {
         // Kept for the parked-prototype lookup below (the flow build consumes the
         // address).
@@ -1219,6 +1261,9 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
                 proto_overrides,
             )?,
         };
+        crate::kuna_stackobjectasserts::seed(&mut fd, object_assertions);
+        fd.seed_prior_names(prior_names.clone());
+        fd.set_kuna_record_names(record_names);
         if unguarded {
             fd.withdraw_stack_store_guard();
         }
@@ -1279,6 +1324,13 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
                 .or_else(|| fd.get_arch().callee_proto_model(&entry_addr))
                 .or_else(|| crate::kuna_typedcallabi::undeclared_model(fd.get_arch(), pieces));
             fd.apply_locked_prototype_with_model(pieces, declared_model)?;
+        } else if let Some(rt) = elfmain {
+            // (kuna `elfmain`) Lock the `int` return alone; the inputs stay
+            // unlocked and take the runtime's names and types only as far as
+            // their own recovery goes (`kuna_elfmaindecl`).
+            fd.apply_locked_prototype_with_model(&rt.output, None)?;
+            fd.get_func_proto_mut().set_input_lock(false);
+            fd.kuna_set_elfmain(Some(rt.fresh()));
         }
         // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
         // when the IR is rebuilt, like `pending_proto`/`mapped_symbols`).  This makes
@@ -1307,6 +1359,11 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         // translator, so this is the last point the callee's instructions can be
         // read at all; inert unless `option rustabi` is live for this image.
         crate::kuna_rustabi::seed_callee_return_writes(arch, &mut fd);
+        // (kuna `bejoin evidence`) Take the wide-return verdicts for the
+        // function and its direct callees, read off their instructions while
+        // the translator is reachable; inert unless the model joins its pair
+        // high word first.
+        crate::kuna_bejoin::seed_wide_returns(arch, &mut fd);
         // (kuna `calleedeadarg`) Take the callee entry-liveness probe the
         // input-trial scoring seam consults, for the same reason and at the same
         // point; inert unless `option calleedeadarg` is live.
@@ -1329,6 +1386,7 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         // decode: the registers the callee is proven NOT to write; inert unless
         // `option calleepreserves` is live.
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, &mut fd);
+        crate::kuna_calleememory::seed(arch, &mut fd);
         // Report a pass panic as a per-function failure at the driver boundary.
         let res =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_pipeline(arch, &mut fd)));
@@ -1347,32 +1405,46 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
             }
         }
     };
-    // (kuna `stackstoreguard`) A function whose final layout spoiled what the
-    // guard needs is analyzed again from scratch, as `stackstoreguard off` would.
-    let mut seed = std::collections::BTreeSet::new();
-    let mut unguarded = false;
-    let mut result = match attempt(prefollowed, false, &seed) {
-        Ok(fd) if fd.stack_store_guard_spoiled() => {
-            unguarded = true;
-            attempt(None, true, &seed)
+    // (kuna `elfmain`) A `main` whose finished declaration is not exactly what the
+    // runtime seed typed and named is decompiled again without the seed.
+    let mut prefollowed = prefollowed;
+    let mut elfmain = elfmain_rt.as_ref();
+    let result = loop {
+        // (kuna `stackstoreguard`) A function whose final layout spoiled what the
+        // guard needs is analyzed again from scratch, as `stackstoreguard off` would.
+        let mut seed = std::collections::BTreeSet::new();
+        let mut unguarded = false;
+        let mut result = match attempt(prefollowed.take(), false, &seed, elfmain) {
+            Ok(fd) if fd.stack_store_guard_spoiled() => {
+                unguarded = true;
+                attempt(None, true, &seed, elfmain)
+            }
+            other => other,
+        };
+        // (kuna `condstmts`) A function whose final structure folded a block over the
+        // cap is analyzed again with that block complex from the first structuring on.
+        for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
+            let Ok(fd) = &result else { break };
+            let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
+            seed = next;
+            match attempt(None, unguarded, &seed, elfmain) {
+                Ok(fd) => result = Ok(fd),
+                Err(_) => break,
+            }
         }
-        other => other,
+        if elfmain.is_some() && !result.as_ref().is_ok_and(crate::kuna_elfmaindecl::settled) {
+            elfmain = None;
+            continue;
+        }
+        break result;
     };
-    // (kuna `condstmts`) A function whose final structure folded a block over the
-    // cap is analyzed again with that block complex from the first structuring on.
-    for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
-        let Ok(fd) = &result else { break };
-        let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
-        seed = next;
-        match attempt(None, unguarded, &seed) {
-            Ok(fd) => result = Ok(fd),
-            Err(_) => break,
-        }
-    }
     // (kuna decompile-all watchdog) Disarm the deadline once the drive is over so
     // no later, non-drive pipeline run (console sub-queries) consults a stale one.
     arch.kuna_fn_deadline = None;
-    result
+    result.and_then(|fd| {
+        crate::kuna_stackobjectasserts::validate(&fd).map_err(KunaError::lowlevel)?;
+        Ok(fd)
+    })
 }
 
 /// (kuna) Build the IR for `name` and run a **named reduced pipeline** variant
@@ -2309,7 +2381,7 @@ fn resolve_markup_provenance_with_addresses(
 /// `getStorage().getStackOffset()`, which the decbench `type_match` metric
 /// calibrates per binary against DWARF.  Stack spaces are byte-addressed
 /// (`word_size == 1`), so no `byte_to_address` scaling is needed.
-fn signed_space_offset(space: &Rc<kuna_base::space::AddrSpace>, off: u64) -> i64 {
+pub(crate) fn signed_space_offset(space: &Rc<kuna_base::space::AddrSpace>, off: u64) -> i64 {
     kuna_base::address::sign_extend(off as i64, space.get_addr_size() as i32 * 8 - 1)
 }
 
@@ -2379,6 +2451,13 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
             if category != crate::database::symbol_category::NO_CATEGORY {
                 continue; // already emitted as a parameter above
             }
+            // (kuna `libcnames`) A local printed under its library name is
+            // reported under it too; its Symbol keeps the number.
+            let name = fd
+                .kuna_library_aliases()
+                .iter()
+                .find(|a| a.shown && a.number == name)
+                .map_or(name, |a| a.alias.clone());
             let type_name = crate::kuna_bytehonest::exported_type_name(arch, &ct);
             out.push(VarInfo {
                 name,

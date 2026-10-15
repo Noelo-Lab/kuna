@@ -28,11 +28,12 @@
       "eq": 0
     },
     "stdout_matches": [
-      "char \\*v[0-9]+; // rax"
+      "char \\* lookup_service\\(char \\*a0,int \\*a1\\)",
+      "v[0-9]+ = \\*a0;"
     ],
     "stdout_absent": [
-      "unsigned long \\*v[0-9]+; // rax"
+      "unsigned long \\*(v[0-9]+);[\\s\\S]*?\\b\\1 = a0;"
     ]
   },
-  "notes": "In-repo twin of the reported case: one merged RAX declared at a type no use in the body was checked against. lookup_service assigns its char * parameter to v2 uncast, so `unsigned long *v2` contradicts its own body as the witness's `unsigned long long *v9` contradicts `(uint4)*v9`. The dataset image stays the witness in Reproduction."
+  "notes": "Require the byte read through the char-pointer input and reject an uncast assignment of that input to a word-pointer local. Separate register lifetimes may legitimately give lookup() its own word-pointer local; banning that declaration would reject correct output. verify_cover_miscompile.rs also executes the generated C across failed and successful lookups."
 }

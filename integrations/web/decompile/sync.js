@@ -1,8 +1,9 @@
 // sync.js — keep the study view's panes pointing at the same thing. A target
 // (`{line?, addr?, sym?, slot?}`) expands through the shared index into the
 // C lines, instruction addresses, symbols and stack slots it touches; every
-// registered view marks those, and a selection scrolls the other views to it.
-// Hover marks but never scrolls.
+// registered view marks those, and a selection scrolls the other views to it;
+// a view that comes on screen later scrolls to it then. Hover marks but never
+// scrolls.
 
 /** Expand a target into `{lines, addrs, syms, slots}` sets through `index`. */
 export function expand(target, index) {
@@ -48,6 +49,10 @@ export function createSync() {
   const markAll = (sets, cls, target) => {
     for (const view of views.values()) view.mark(sets, cls, target);
   };
+  const refresh = (view) => {
+    view.mark(selected ? expand(selected, index) : null, 'hl-sel', selected);
+    view.mark(hovered ? expand(hovered, index) : null, 'hl-hover', hovered);
+  };
 
   return {
     setIndex(next) {
@@ -61,9 +66,14 @@ export function createSync() {
     /** Re-apply the current marks to one view (after it re-renders). */
     refresh(name) {
       const view = views.get(name);
+      if (view) refresh(view);
+    },
+    /** A view that just came on screen: re-mark it and scroll it to `target` (the selection by default). */
+    show(name, target = selected) {
+      const view = views.get(name);
       if (!view) return;
-      view.mark(selected ? expand(selected, index) : null, 'hl-sel', selected);
-      view.mark(hovered ? expand(hovered, index) : null, 'hl-hover', hovered);
+      refresh(view);
+      if (target) view.reveal?.(target, expand(target, index), { arriving: true });
     },
     hover(target) {
       hovered = target;
