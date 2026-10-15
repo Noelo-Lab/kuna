@@ -2383,6 +2383,16 @@ not be pasted back at it, and the manual's own example
 (`prototype authenticate int authenticate(char *user,char *pass)`) was rejected
 as a syntax error.
 
+The declaration lexer retains its 65,536-byte line limit, but sizes its scratch
+buffer to the smaller of that limit and the input length, plus one EOF lookahead
+byte. Short type assertions do not allocate a full maximum-length line; long
+declarations and line-limit errors retain the same behavior. A newline that
+finishes a token is consumed only after extracting that token, allowing a type
+and its declarator on separate lines. An unterminated quoted token reports a
+parse error instead of resetting the buffer underneath the token. EOF after
+whitespace or a completed comment ends the declaration rather than producing a
+spurious token, so a file may end with a newline.
+
 The grammar therefore also accepts the standard C scalar specifiers
 (`decompiler/crates/kuna-console/src/grammar.rs (CParse::scalar_specifier)`):
 `void`, `char`, `short`, `int`, `long`, `float`, `double`, `signed`, `unsigned`,
