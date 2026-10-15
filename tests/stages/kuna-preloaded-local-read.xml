@@ -1,0 +1,33 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x1000" readonly="true">534883ec10488d7c240ce8f10000008b5c240c6685c07419c744240c17000000488d7c240ce8d601000089dfe8cf020000c744240c07000000488d7c240ce8bd0100008b44240c4883c4105bc3</bytechunk>
+<bytechunk space="ram" offset="0x1100" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0x1200" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0x1300" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="preload"/>
+<symbol space="ram" offset="0x1100" name="acquire"/>
+<symbol space="ram" offset="0x1200" name="mutate"/>
+<symbol space="ram" offset="0x1300" name="consume"/>
+</binaryimage>
+<script>
+<com>parse line extern int4 preload(void);</com>
+<com>parse line extern int2 acquire(volatile int4 *);</com>
+<com>parse line extern void mutate(volatile int4 *);</com>
+<com>parse line extern void consume(int4);</com>
+<com>option guardedreadtrim off</com>
+<com>load function preload</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option guardedreadtrim on</com>
+<com>load function preload</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="preloaded x86 stack read: capture stays before branch" min="2" max="2">acquire\([^;]*;
+  v[0-9]+ = v[0-9]+;
+  if \(</stringmatch>
+<stringmatch name="preloaded x86 stack read: guarded consumer retains saved value" min="2" max="2">mutate\([^;]*;
+    consume\(v[0-9]+\);</stringmatch>
+<stringmatch name="preloaded x86 stack read: volatile slot retained" min="2" max="99">volatile int</stringmatch>
+</decompilertest>

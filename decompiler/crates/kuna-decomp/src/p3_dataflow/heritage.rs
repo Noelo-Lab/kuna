@@ -3020,6 +3020,7 @@ impl Heritage {
             fd.vbank_mut().get_mut(invn).expect("guard_loads: COPY in vn").set_active_heritage();
             let _ = fd.op_set_input(copyop, invn, 0);
             fd.op_insert_before(copyop, guard.op);
+            crate::p3_dataflow::kuna_stackreadscope::mark_stack_read(fd, copyop);
             self.load_copy_ops.push(copyop);
             kept.push(guard);
         }
@@ -4491,31 +4492,6 @@ impl Heritage {
         fd.vbank_mut().get_mut(vn).expect("refine_input: vn").set_write_mask();
     }
 
-    /// If we see 1-3 or 3-1 pieces in the partition, replace with a 4 (C++
-    /// `Heritage::remove13Refinement`, `heritage.cc:1858`).
-    fn remove13_refinement(&self, refine: &mut [int4]) {
-        if refine.is_empty() {
-            return;
-        }
-        let mut pos = 0usize;
-        let mut lastsize = refine[pos];
-        pos += lastsize as usize;
-        while pos < refine.len() {
-            let cursize = refine[pos];
-            if cursize == 0 {
-                break;
-            }
-            if (lastsize == 1 && cursize == 3) || (lastsize == 3 && cursize == 1) {
-                refine[pos - lastsize as usize] = 4;
-                lastsize = 4;
-                pos += cursize as usize;
-            } else {
-                lastsize = cursize;
-                pos += lastsize as usize;
-            }
-        }
-    }
-
     /// Find the common refinement of all reads and writes in the address range
     /// and split them to match (C++ `Heritage::refinement`, `heritage.cc:1891`).
     ///
@@ -4559,7 +4535,31 @@ impl Heritage {
         }
         refine[lastpos] = size - lastpos as int4;
         if !byte_copy {
-            self.remove13_refinement(&mut refine);
+            let space = addr.get_space().expect("refinement: space");
+            crate::p3_dataflow::kuna_inputrefinement::coalesce(
+                &mut refine,
+                |start, junction, end| {
+                    inputvars.iter().any(|&vn| {
+                        let v = fd.vbank().get(vn).expect("refinement: input");
+                        let Some(input_space) = v.get_addr().get_space() else {
+                            return false;
+                        };
+                        if input_space.get_index() != space.get_index() {
+                            return false;
+                        }
+                        let input_start = space.wrap_offset(
+                            v.get_addr().get_offset().wrapping_sub(addr.get_offset()),
+                        ) as usize;
+                        let input_span = (input_start, input_start + v.get_size() as usize);
+                        crate::p3_dataflow::kuna_inputrefinement::span_straddles_join(
+                            input_span,
+                            start,
+                            junction,
+                            end,
+                        )
+                    })
+                },
+            );
         }
         let mut newvn: Vec<crate::context::VarnodeId> = Vec::new();
         for &vn in readvars {

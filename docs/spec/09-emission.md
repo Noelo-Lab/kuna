@@ -1028,6 +1028,28 @@ the computation is unchanged, and the upstream console knob
 `option nocastprinting` suppresses every cast token at print time without
 touching the inserted ops.
 
+Indirect ABI parameters retain their source value type in C (option
+`indirectargs`, default on). A parameter marked as indirect storage — one the
+locked prototype declares by value but a cspec `convert_to_ptr` or `pointermax`
+rule passes through a hidden pointer — represents a value carried by a
+pointer, unlike an ordinary pointer parameter. Direct and indirect calls render
+a dereferenced argument, using the existing member/array notation when
+possible, so `&v` collapses to `v`. Function pointer declarators and callee
+parameters use the pointee value type. In the callee, the ABI input pointer
+stands for the address of that C parameter: a bare read prints `&v`, while a
+field access, load or store through it prints the value itself (`v.f`, `v`)
+rather than `(&v)->f`. If that input belongs to a mutable pointer variable, a
+distinct pointer local is initialized to the parameter address and subsequent
+pointer updates use it. This changes no register, stack, copy-extent, or
+memory-effect recovery. Rendering follows the locked source prototype:
+required by-value storage is a callee-owned copy. A caller that deliberately
+passes aliased storage is still shown passing a copy, so callee writes through
+that ABI pointer are not reflected in the caller's C. Ordinary pointer
+parameters retain aliasing. Array parameter types keep their ABI pointer view;
+C adjusts array parameters to pointers, so they do not denote by-value objects.
+`option indirectargs off` prints the ABI pointer everywhere (parameter `T *v`,
+argument `&local`, function pointer `(T *)`), as upstream Ghidra does.
+
 ## 9.2 PrintC
 
 **Three layers.** The C back-end is a stack of three components in this

@@ -33,7 +33,8 @@
 //! corpus open with `nop` (Wine's stubs) and 56 in the ARM corpus (an empty `-O0`
 //! function is `nop; bx lr`). `mov edi,edi` is never padding — it is the MSVC
 //! hot-patch prologue that opens 7,827 true starts in the PE corpus — and neither
-//! is any self-move on a 64-bit target, where a 32-bit one zero-extends.
+//! is any self-move on a 64-bit target, where a 32-bit one zero-extends. A self-LEA
+//! on a wide target is padding only with a full-width x86-64 register.
 //!
 //! A refusal is a plain reject, not a body claim: the cursor moves on through the
 //! filler and probes what follows it as before.
@@ -152,7 +153,11 @@ pub(super) fn is_padding(insn: &ProbedInsn, wide: bool) -> bool {
         Some(_) => return false,
         None => inner,
     };
-    base.trim().eq_ignore_ascii_case(dst)
+    let full_width = !wide || [
+        "RAX", "RBX", "RCX", "RDX", "RSI", "RDI", "RBP", "RSP",
+        "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15",
+    ].iter().any(|register| dst.eq_ignore_ascii_case(register));
+    full_width && base.trim().eq_ignore_ascii_case(dst)
 }
 
 #[cfg(test)]
@@ -187,8 +192,8 @@ mod tests {
             assert!(is_padding(&insn("NOP", "word ptr CS:[EAX + EAX*0x1]"), wide));
             assert!(is_padding(&insn("INT3", ""), wide));
             assert!(is_padding(&insn("nop.w", ""), wide));
-            assert!(is_padding(&insn("LEA", "ESI,[ESI]"), wide));
-            assert!(is_padding(&insn("LEA", "ESI,[ESI + 0x0]"), wide));
+            assert_eq!(is_padding(&insn("LEA", "ESI,[ESI]"), wide), !wide);
+            assert_eq!(is_padding(&insn("LEA", "ESI,[ESI + 0x0]"), wide), !wide);
             assert!(!is_padding(&insn("LEA", "ESI,[ESI + 0x8]"), wide));
             assert!(!is_padding(&insn("LEA", "ECX,[ESP + 0x4]"), wide));
             assert!(!is_padding(&insn("MOV", "EBP,ESP"), wide));
@@ -203,4 +208,29 @@ mod tests {
         assert!(!is_padding(&insn("XCHG", "EAX,EAX"), true));
         assert!(!is_padding(&insn("LEA", "ESI,[RSI + 0x0]"), true));
     }
+
+    #[test]
+    fn wide_self_lea_preserves_the_whole_register() {
+        for register in [
+            "RAX", "RBX", "RCX", "RDX", "RSI", "RDI", "RBP", "RSP",
+            "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15",
+        ] {
+            for displacement in ["", " + 0x0"] {
+                let operands = format!("{register},[{register}{displacement}]");
+                assert!(is_padding(&insn("LEA", &operands), true), "{operands}");
+                assert!(is_padding(&insn("lea", &operands.to_ascii_lowercase()), true));
+            }
+        }
+        for register in [
+            "EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "EBP", "ESP",
+            "R8D", "R9D", "R10D", "R11D", "R12D", "R13D", "R14D", "R15D",
+        ] {
+            for displacement in ["", " + 0x0"] {
+                let operands = format!("{register},[{register}{displacement}]");
+                assert!(!is_padding(&insn("LEA", &operands), true), "{operands}");
+                assert!(!is_padding(&insn("lea", &operands.to_ascii_lowercase()), true));
+            }
+        }
+    }
+
 }

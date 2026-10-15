@@ -270,6 +270,9 @@ Three tiers:
 | option returndup off collapses the whole function to one short-circuit expression | [`orchain`](#orchain) |
 | a source guard testing several conditions with and/or becomes that many identical constant-return guards | [`orchain`](#orchain) |
 | the return-dupe slug on a function whose source wrote one short-circuit condition | [`orchain`](#orchain) |
+| if (!c) return 0; f(); return 0; where the source has if (c) f(); return 0; | [`rettriangle`](#rettriangle) |
+| a duplicated constant return right after a one-statement body | [`rettriangle`](#rettriangle) |
+| // return-dupe on a function whose only split is a short if before its return | [`rettriangle`](#rettriangle) |
 | inverted diamond: if (guard) { entire body } else { v = 0; } return v; | [`earlyreturn`](#earlyreturn) |
 | leading argument-validity check wraps the whole body instead of an early return | [`earlyreturn`](#earlyreturn) |
 | function opens with if (p != 0) { everything } where source wrote if (!p) return 0; | [`earlyreturn`](#earlyreturn) |
@@ -1085,6 +1088,10 @@ Three tiers:
 | byte-for-byte comparison against upstream ghidra naming | [`namestyle`](#namestyle) |
 | undefined8/xunknownN placeholder types wanted for upstream comparison (flip off) | [`realtypes`](#realtypes) |
 | size-guessed unsigned long/int/char types shown for values the inference never typed | [`realtypes`](#realtypes) |
+| a DWARF or asserted by-value struct parameter is declared as a pointer | [`indirectargs`](#indirectargs) |
+| calls pass &local to a function declared to take the struct by value | [`indirectargs`](#indirectargs) |
+| function pointer type spells T * for a by-value aggregate parameter | [`indirectargs`](#indirectargs) |
+| want the raw ABI pointer for a large struct parameter (flip off) | [`indirectargs`](#indirectargs) |
 | a void function ends with a redundant return; the source does not have | [`voidtailreturn`](#voidtailreturn) |
 | GED counts one extra exit node against an otherwise perfect function | [`voidtailreturn`](#voidtailreturn) |
 | the last statement of a void function is a bare return | [`voidtailreturn`](#voidtailreturn) |
@@ -1219,6 +1226,8 @@ Three tiers:
 | a signed ARM value is shifted left by a constant in the emitted C | [`armconstshift`](#armconstshift) |
 | UBSan reports a left shift of a negative value in recompiled ARM output | [`armconstshift`](#armconstshift) |
 | a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift) |
+| a local read appears before the machine branch that guards it | [`guardedreadtrim`](#guardedreadtrim) |
+| a call-written volatile stack local is read on the failure path | [`guardedreadtrim`](#guardedreadtrim) |
 | an overwritten register argument renders as a stale half of a previous wide value | [`multiregargs`](#multiregargs) |
 | a live entry argument disappears after a wide register read | [`multiregargs`](#multiregargs) |
 
@@ -1801,6 +1810,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-69). Flip OFF (`option orchain off`) to restore the pre-DIV-69 rendering, where one source `return a || (b && c);` (or a source `if (A && B && C)` guard) comes back as a cascade of `if (a) return 1;` / `if (b) return 0;` constant-return guards -- the shape `option returndup off` also removes, at the cost of every OTHER early-return recovery in the function. It is returndup-local and one-directional: it can only ever make `returndup` fire LESS, never more, and it is inert with `option returndup off`. Measured over the full decbench corpus (85,195 functions / 795 slices, three optimisation levels; `docs/decbench/returndup-o0-measurement.md` for the motivating ablation): +611 GED-perfect at O0 for -13 at O2 and -15 at O2-noinline, +583 net and -967 aggregate GED, 781 functions moved to a perfect structural match against 198 moved off (3.94 : 1), and every architecture net-positive. It is 92% of the +630 ceiling the post-hoc 'a short-circuit fold was lost' signal prices, at 94% byte-identity with the `returndup off` body on the 3,059 -O0 functions it fires for. The residual cost is real and is not observable from the binary: where the SOURCE wrote the guard cascade and the compiler merged it, declining the split is wrong (coreutils factor, GED 0 -> 12).
 - **Where / provenance:** P8/goto-quality · kuna · structure-recovery · decbench-returndup-o0-shortcircuit
 - **Example:** `option orchain on`
+
+### `rettriangle` -- on | off, default `off`
+
+- **Symptoms:** if (!c) return 0; f(); return 0; where the source has if (c) f(); return 0;; a duplicated constant return right after a one-statement body; // return-dupe on a function whose only split is a short if before its return.
+- **What it does:** Decline a `returndup` split at the join of a one-block `if`. `returndup` gives every predecessor of a shared constant-return block its own return, which recovers a source's early-return guards; but when the two predecessors are the two arms of a one-block `if` -- a two-way condition that goes straight to the return or through one block that runs into it -- the split prints `if (c) f(); return 0;` as `if (!c) return 0; f(); return 0;`, one statement more with the return written twice, where IDA and Ghidra print the `if`. When on, `kuna_rettriangle::is_triangle_join` drops such a return block from `returndup`'s candidates: exactly two predecessors, one a two-way block whose other successor is the second, which is entered only from it and leaves only to the return. Other candidates of the same function still split; the option can only make `returndup` fire less and is inert with `returndup off`. The same shape is also a source guard clause (`if (!ok) return 0; ...; return 0;`), which this prints as `if (ok) { ... } return 0;`, so it is a judgment call: over a decbench sample (12 projects, 126 slices; `scripts.decbench.optsweep`) it moves O0 GED 31,382 -> 31,219 and GED-perfect +56 (64 to, 8 off, McNemar z = +6.6), and O2 GED 69,032 -> 69,092 with GED-perfect +1, mostly tar's pax decoders whose source is the one-block `if` it prints. Shipped off; on in the `aggressive` preset. Over 8 stripped decbench binaries under `--mode aggressive`, 80 of 3,225 functions change, 160 fewer `return` statements.
+- **When to flip:** Turn ON when a short `if` before a constant return comes out as an early return plus a duplicated return, `if (!c) return 0; f(); return 0;`, where IDA prints `if (c) f(); return 0;`. The `aggressive` preset (what `--mode auto` picks under 500 KiB) already turns it on. Leave it off to keep `returndup`'s guard-clause form for every shared constant return.
+- **Where / provenance:** P8/goto-quality · ida · structure-recovery · kuna-rettriangle
+- **Example:** `option rettriangle on`
 
 ### `earlyreturn` -- on | off, default `on`
 
@@ -3426,6 +3443,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P9/literal-format · kuna · presentation-default · kuna-realtypes
 - **Example:** `option realtypes off`
 
+### `indirectargs` -- on | off, default `on`
+
+- **Symptoms:** a DWARF or asserted by-value struct parameter is declared as a pointer; calls pass &local to a function declared to take the struct by value; function pointer type spells T * for a by-value aggregate parameter; want the raw ABI pointer for a large struct parameter (flip off).
+- **What it does:** Print a parameter that the locked prototype declares by value but the ABI passes through a hidden pointer (a cspec convert_to_ptr or pointermax rule: AArch64, RISC-V and PowerPC aggregates over 16 bytes, MS x64 aggregates not 1/2/4/8 bytes and long double, SPARC aggregates) at its declared value type. The callee signature and function-pointer declarators spell `T v` instead of `T *v`; the callee reads the ABI pointer as `&v`, so field accesses print `v.f` and a pointer local `T *v_addr = &v` carries any update of the pointer register; a call against such a prototype passes the pointed-to value. Ordinary pointer parameters, hidden-return pointers and array parameters keep their pointer view. Off prints the ABI pointer everywhere, as upstream Ghidra does.
+- **When to flip:** On (default) when the prototype comes from DWARF, a library seed or an --assert and you want the source-level signature. Flip off to see the ABI calling contract literally, for example when a hand-written caller passes aliased storage and the callee's writes through that pointer matter to the caller.
+- **Where / provenance:** P9/indirect-value-parameters · kuna · presentation-default · indirect-value-arguments
+- **Example:** `option indirectargs off`
+
 ### `voidtailreturn` -- on | off, default `off`
 
 - **Symptoms:** a void function ends with a redundant return; the source does not have; GED counts one extra exit node against an otherwise perfect function; the last statement of a void function is a bare return.
@@ -3681,6 +3706,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check.
 - **Where / provenance:** P9/cast-policy · kuna · correctness-fix · arm-fixed-signed-lsl
 - **Example:** `option armconstshift on`
+
+### `guardedreadtrim` -- on | off, default `on`
+
+- **Symptoms:** a local read appears before the machine branch that guards it; a call-written volatile stack local is read on the failure path.
+- **What it does:** Place an interference-preserving COPY of call-written stack storage inside the direct successor dominating its affected reads, rather than eagerly after the call. Require original stack-read evidence, reject overlapping lowered reads anywhere in the call block and stale read blocks, and retain legacy placement when intervening effects or writes prevent the move. This preserves a machine guard around a local read, including observable volatile accesses.
+- **When to flip:** On by default in all modes, including reliable and aggressive. Turn off to restore legacy merge-trim placement when comparing output. Ordinary scalar captures may be value-equivalent, but the guarded rendering preserves their evaluation scope and avoids extra volatile reads on other paths.
+- **Where / provenance:** P6/merge-aggressiveness · kuna · correctness-fix · guarded-stack-read-trim
+- **Example:** `option guardedreadtrim off`
 
 ### `multiregargs` -- on | off, default `on`
 

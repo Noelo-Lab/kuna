@@ -63,3 +63,5 @@ pub mod kuna_srcmap; // (kuna) the token-level source map of a rendered function
 
 pub(crate) mod kuna_stackmarkers;
 pub(crate) mod kuna_stackversions;
+
+pub(crate) mod kuna_indirectargs;

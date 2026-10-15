@@ -46,7 +46,11 @@
 //!    the batch renamed it to -- so directives on different variables do not
 //!    depend on their order, and `name a b` with `name b a` is a swap;
 //! 2. failing that, the variable an earlier directive in the batch gave that
-//!    name, so `name v1 rc` followed by `type rc unsigned int` retypes `rc`.
+//!    name, so `name v1 rc` followed by `type rc unsigned int` retypes `rc`;
+//! 3. when neither gives one variable, the one a print of the function
+//!    declares under it, with the batch's renames given first: a name the
+//!    printer suffixed (`score_1` beside a function `score`) reaches the local
+//!    shown under it ([`resolve_shown`]).
 //!
 //! Where both readings exist and name different variables -- `name v1 v2`, then
 //! `type v2 ...` -- nothing says which was meant, and the directive is rejected
@@ -60,8 +64,9 @@
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::space::spacetype::{IPTR_CONSTANT, IPTR_INTERNAL, IPTR_JOIN};
+use kuna_base::space::spacetype::{IPTR_CONSTANT, IPTR_INTERNAL, IPTR_JOIN, IPTR_SPACEBASE};
 use kuna_base::types::int4;
+use kuna_decomp::architecture::Architecture;
 use kuna_decomp::context::{HighVariableId, VarnodeId};
 use kuna_decomp::database::{symbol_category, SymbolId};
 use kuna_decomp::dtype::Datatype;
@@ -209,6 +214,162 @@ fn library_number(fd: &Funcdata, name: &str) -> Option<String> {
     (!given).then_some(number)
 }
 
+/// The local a print of `fd` declares as `shown` where no single local answers
+/// to that name: the printer suffixes a name another identifier already holds
+/// (`score_1` beside a function `score`, the second of two locals named
+/// `dup`). The print first gives each local the batch renamed its new name,
+/// so a name an earlier directive gave is read as the printer shows it.
+/// `None` when the print declares no single local as `shown`, or declares
+/// two locals the batch renamed under one line (their storage overlaps), so
+/// it cannot say which the next decompile shows as `shown`; with the
+/// target, the name to record the directive under.
+fn resolve_shown(
+    fd: &mut Funcdata,
+    arch: &Architecture,
+    shown: &str,
+    maxduplicates: u32,
+) -> Option<Result<(LocalTarget, String), String>> {
+    let renamed = batch_renames(fd);
+    let saved: Vec<(HighVariableId, String)> = renamed
+        .iter()
+        .filter_map(|(_, high, _)| Some((*high, fd.high_bank().get(*high)?.kuna_name()?.to_string())))
+        .collect();
+    for (_, high, name) in &renamed {
+        if let Some(h) = fd.high_bank_mut().get_mut(*high).filter(|h| h.kuna_name().is_some()) {
+            h.set_kuna_name(name.clone());
+        }
+    }
+    let print = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        kuna_decomp::printc::PrintC::declarations_of(arch, fd)
+    }))
+    .ok();
+    for (high, name) in saved.into_iter().rev() {
+        if let Some(h) = fd.high_bank_mut().get_mut(high) {
+            h.set_kuna_name(name);
+        }
+    }
+    let print = print?;
+    let mut found = print.declared_locals().iter().filter(|local| local.name == shown);
+    let local = found.next()?.clone();
+    if found.next().is_some() {
+        return None;
+    }
+    let owner = |high: HighVariableId| print.declared_local(high).map(|local| local.high);
+    let mut owners = renamed.iter().filter(|(_, high, _)| owner(*high) == Some(local.high)).map(|(sym, ..)| *sym);
+    if let Some(sym) = owners.next() {
+        if owners.any(|other| other != sym) {
+            return None;
+        }
+        return Some(Ok((LocalTarget::Symbol(sym), shown.to_string())));
+    }
+    let h = fd.high_bank().get(local.high)?;
+    let linked = h.kuna_link_symbol().or(h.kuna_ref_symbol()).filter(|sym| {
+        fd.get_scope_local().is_some_and(|lm| lm.database().try_symbol(*sym).is_some_and(|s| !s.is_name_undefined()))
+    });
+    if let Some(sym) = linked {
+        return Some(Ok((LocalTarget::Symbol(sym), shown.to_string())));
+    }
+    let key = fd
+        .kuna_library_aliases()
+        .iter()
+        .find(|alias| alias.shown && alias.alias == local.base)
+        .map_or_else(|| local.base.clone(), |alias| alias.number.clone());
+    let shared = print.declared_locals().iter().filter(|other| other.base == local.base).count() > 1;
+    let target = match printed_local(fd, local.high, shown, maxduplicates) {
+        Ok(Some(target)) => target,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    if !shared {
+        return Some(Ok((LocalTarget::Printed(target), key)));
+    }
+    kuna_decomp::kuna_stablenames::relabel(fd, local.high, shown);
+    Some(Ok((LocalTarget::Printed(target), shown.to_string())))
+}
+
+/// Each local the batch so far renamed, by the Symbol the directive recorded,
+/// with its new name: the high a directive bound, or else the highs that
+/// print the Symbol (its storage, or a reference to it, as `&v2` or a stack
+/// array) or the identifier the pass printed for it.
+fn batch_renames(fd: &Funcdata) -> Vec<(SymbolId, HighVariableId, String)> {
+    let Some(lm) = fd.get_scope_local() else { return Vec::new() };
+    let mut out = Vec::new();
+    for d in fd.kuna_directive_symbols() {
+        let Some(symbol) = lm.database().try_symbol(d.symbol) else { continue };
+        if symbol.is_name_undefined() || symbol.name.is_empty() || symbol.name == d.printed {
+            continue;
+        }
+        let highs: Vec<HighVariableId> = match &d.bound {
+            Some((_, _, high)) => vec![*high],
+            None => {
+                let linked: Vec<HighVariableId> = fd
+                    .high_bank()
+                    .iter()
+                    .filter(|(_, h)| h.kuna_link_symbol() == Some(d.symbol) || h.kuna_ref_symbol() == Some(d.symbol))
+                    .map(|(id, _)| id)
+                    .collect();
+                if linked.is_empty() { printed_highs(fd, &d.printed) } else { linked }
+            }
+        };
+        out.extend(highs.into_iter().map(|high| (d.symbol, high, symbol.name.clone())));
+    }
+    out
+}
+
+/// The stack storage a local's Symbol covers, and the widths the local is
+/// printed at: its storage's, its type's and, for a scalar, each local the
+/// Symbol names (a slot written whole and read in part prints at the whole
+/// width). `None` for a parameter or a Symbol off the stack.
+fn stack_storage(fd: &Funcdata, sym: SymbolId) -> Option<(Address, Vec<int4>)> {
+    use kuna_decomp::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
+    let lm = fd.get_scope_local()?;
+    if lm.symbol_category(sym) == symbol_category::FUNCTION_PARAMETER {
+        return None;
+    }
+    let (addr, size) = lm
+        .named_symbol_storage()
+        .into_iter()
+        .filter(|(s, addr, ..)| *s == sym && addr.get_space().is_some_and(|space| space.get_type() == IPTR_SPACEBASE))
+        .map(|(_, addr, size, _)| (addr, size))
+        .max_by_key(|(_, size)| *size)?;
+    let mut widths = vec![size];
+    let dtype = lm.database().symbol(sym).dtype.clone();
+    if let Some(dtype) = &dtype {
+        widths.push(dtype.get_size());
+        if matches!(dtype.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION) {
+            return Some((addr, widths));
+        }
+    }
+    for (_, h) in fd.high_bank().iter().filter(|(_, h)| h.kuna_link_symbol() == Some(sym)) {
+        widths.extend((0..h.num_instances()).filter_map(|i| fd.vbank().get(h.get_instance(i)).map(|v| v.get_size())));
+    }
+    Some((addr, widths))
+}
+
+/// Refuse a type a stack local printed at `widths` and stored from `addr`
+/// cannot take whole: a scalar of none of those widths, which leaves the local
+/// declared as before or not at all, with its neighbours re-laid around the
+/// new width, or a type that runs past the end of the stack. A structure,
+/// union or array states the extent of the object at that address, so it may
+/// grow the local over the frame (a buffer the analysis saw only the start
+/// of) or narrow it.
+fn check_stack_width(addr: &Address, widths: &[int4], ct: &Datatype) -> Result<(), String> {
+    use kuna_decomp::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
+    let size = widths.iter().copied().max().unwrap_or(0);
+    let composite = matches!(ct.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION);
+    if !composite && !widths.contains(&ct.get_size()) {
+        return Err(format!("Storage is {size} bytes, the stated type is {}", ct.get_size()));
+    }
+    let end = (ct.get_size() as u64).checked_sub(1).and_then(|last| addr.get_offset().checked_add(last));
+    if ct.get_size() > size && addr.get_space().is_some_and(|space| end.is_none_or(|end| end > space.get_highest())) {
+        return Err(format!(
+            "Storage is {size} bytes, the stated type is {} and runs past the end of the stack",
+            ct.get_size()
+        ));
+    }
+    Ok(())
+}
+
 /// Apply one `name`/`type` directive to the local `name` resolves to: rename it
 /// to `newname` (empty keeps the name) and, for a `type`, retype it to
 /// `retype`. Returns the Symbol the directive is recorded on, if any (a stack
@@ -219,6 +380,7 @@ pub fn apply_local(
     newname: &str,
     retype: Option<Rc<Datatype>>,
     maxduplicates: u32,
+    arch: Option<&Architecture>,
 ) -> Result<Option<SymbolId>, String> {
     if newname != name {
         check_local_name(fd, newname)?;
@@ -228,7 +390,16 @@ pub fn apply_local(
     if kuna_decomp::kuna_stackobjectasserts::apply(fd, name, newname, retype.clone())? {
         return Ok(None);
     }
-    let sym = match resolve_local(fd, name, retype.is_none().then_some(newname), maxduplicates)? {
+    let (target, name) = match resolve_local(fd, name, retype.is_none().then_some(newname), maxduplicates) {
+        Ok(target) => (target, name.to_string()),
+        Err(error) if error.starts_with("Ambiguous name") => return Err(error),
+        Err(error) => match arch.and_then(|arch| resolve_shown(fd, arch, name, maxduplicates)) {
+            Some(found) => found?,
+            None => return Err(error),
+        },
+    };
+    let name = name.as_str();
+    let sym = match target {
         LocalTarget::Printed(target) => {
             let lock_type = retype.is_some();
             let unit_type =
@@ -260,6 +431,11 @@ pub fn apply_local(
         .and_then(|(from, to)| kuna_decomp::kuna_stablenames::unit_retype(&from, to));
     if let (Some(size), Some(ct)) = (bound_size, retype.as_ref()) {
         check_width(size, ct)?;
+    }
+    if let (None, Some(ct)) = (bound_size, retype.as_ref()) {
+        if let Some((addr, widths)) = stack_storage(fd, sym) {
+            check_stack_width(&addr, &widths, ct)?;
+        }
     }
     let retype_given = retype.is_some();
     let parameter = crate::kuna_paramasserts::prepare(fd, sym, retype.as_ref())?;
@@ -349,10 +525,21 @@ fn resolve_printed_local(
 ) -> Result<Option<PrintedLocal>, String> {
     let ids = printed_highs(fd, name);
     match ids.len() {
-        0 => return Ok(None),
-        1 => {}
-        n => return Err(format!("More than one variable named: {name} ({n})")),
+        0 => Ok(None),
+        1 => printed_local(fd, ids[0], name, maxduplicates),
+        n => Err(format!("More than one variable named: {name} ({n})")),
     }
+}
+
+/// The storage a directive binds for the printed local `high`, shown as
+/// `name`; `Ok(None)` when a Symbol already owns that storage.
+fn printed_local(
+    fd: &mut Funcdata,
+    high: HighVariableId,
+    name: &str,
+    maxduplicates: u32,
+) -> Result<Option<PrintedLocal>, String> {
+    let ids = [high];
     let rep = fd
         .high_name_representative(ids[0])
         .ok_or_else(|| format!("No storage for: {name}"))?;

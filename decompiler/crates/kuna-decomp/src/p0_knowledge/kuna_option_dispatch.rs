@@ -648,6 +648,11 @@ kuna_options! { self, p1;
         self.returndup_orchain = val;
         Ok(msg)
     },
+    "rettriangle" => {
+        let (val, msg) = crate::p8_structure::kuna_rettriangle::OptionRetTriangle.apply(p1)?;
+        self.returndup_triangle = val;
+        Ok(msg)
+    },
     "earlyreturn" => {
         let (val, msg) =
             crate::p8_structure::kuna_earlyreturn::OptionEarlyReturn.apply(p1)?;
@@ -725,6 +730,7 @@ kuna_options! { self, p1;
     },
     "realtypes" => on_off!(realtypes, "Real-C-type rendering for unknowns"),
     "ctypes" => on_off!(ctypes, "valid-C core type spelling"),
+    "indirectargs" => on_off!(indirect_args, "Indirect value-parameter rendering"),
     "framelayout" => on_off!(framelayout, "recovered stack-frame reporting"),
     "bytehonest" => on_off!(byte_honest, "uncommitted-byte width reporting"),
     "slotptr" => on_off!(slot_ptr, "frame-slot pointer typing"),
@@ -733,6 +739,7 @@ kuna_options! { self, p1;
     "castsign" => on_off!(cast_sign, "signed declarations for signed-only locals"),
     "castternary" => on_off!(cast_ternary, "conditional-arm cast elision"),
     "callrettype" => on_off!(call_ret_type, "callee-stated call return types"),
+    "guardedreadtrim" => on_off!(guarded_read_trim, "guarded stack-read trim placement"),
     "castnarrow" => on_off!(cast_narrow, "implied narrowing-cast elision"),
     "libcnames" => on_off!(libc_names, "library-call local names"),
     "declorder" => {

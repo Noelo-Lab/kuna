@@ -1217,6 +1217,8 @@ pub struct ArchContext {
     /// vanishing from the emitted C.  Read by
     /// [`crate::p3_dataflow::kuna_tiedstorekeep::declines`].
     pub tied_store_keep: bool,
+    /// Preserve guarded stack-read scope when inserting merge trims.
+    pub guarded_read_trim: bool,
     /// (kuna) `option loopcounterstore` (default-on, DIV-146): refuse the
     /// `RulePropagateCopy` marker propagation that would delete the write-back
     /// of a loop counter living in an address-tied frame slot, so the counter's
@@ -1415,6 +1417,10 @@ pub struct ArchContext {
     /// `Architecture::returndup_orchain`.  Read by
     /// `kuna_orchain::shortcircuit_shared_targets`.
     pub returndup_orchain: bool,
+    /// (kuna) `rettriangle`: decline a `returndup` split at the join of a
+    /// one-block `if` -- see `Architecture::returndup_triangle`.  Read by
+    /// `Funcdata::returndup_apply`.
+    pub returndup_triangle: bool,
     /// (kuna) `paramcopyhoist`: anchor an unmodified incoming parameter's trim COPY
     /// in the entry block rather than at the MULTIEQUAL slot's predecessor tail —
     /// see `Architecture::param_copy_hoist`.  Read by
@@ -1891,6 +1897,7 @@ impl ArchContext {
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)
             libc_names: false, // libcnames (opt-in)
+            guarded_read_trim: false,
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             global_field_store: false,
@@ -1933,6 +1940,7 @@ impl ArchContext {
             itecondlist: false,           // itecondlist (condition-list tolerance, default-off)
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
             returndup_orchain: false,     // orchain (short-circuit chain protection, default-off)
+            returndup_triangle: false,    // rettriangle (one-block-if join, copied from the Architecture)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             early_return: false, // earlyreturn (opt-in default-off)
             switch_return: false, // switchreturn (opt-in default-off)

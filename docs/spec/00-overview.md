@@ -2729,6 +2729,11 @@ record is honest.
 
 ## 0.3 The IR substrate
 
+Code-type identity distinguishes indirect value parameters from ordinary
+pointers even when their lowered types and ABI storage coincide. Interning
+must preserve that distinction so declaration order cannot change a call's
+source-level argument contract.
+
 When `TransformManager` materializes a lane of an existing varnode, storage
 addresses follow the target's byte order, but consumption masks always follow
 bit significance. `create_var_replacement` preserves the lane's original
@@ -2792,6 +2797,13 @@ still orders the way it did — `decompiler/crates/kuna-decomp/src/substrate/op.
 the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as a
 `BlockCopy` mirror of the CFG when structuring begins
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_sblocks_copy)`).
+
+Deleting a varnode through `Funcdata::delete_varnode` first checks the bank's
+deletion precondition: the node must have neither a defining operation nor any
+readers. A rejected deletion leaves the node, both bank indexes, HighVariable
+membership, and storage-source metadata unchanged. Once eligible, the node is
+detached from its HighVariable while its location is still available; an empty
+HighVariable is erased, followed by the node and its storage-source metadata.
 
 Registering an input varnode also applies the prototype's saved-register and
 return-address effects. This is unconditional registration behavior, not a

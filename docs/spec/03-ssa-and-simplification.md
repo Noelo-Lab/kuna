@@ -179,8 +179,14 @@ and any other overlap still raises the upstream error.
 no single write covers it (`size > 4 && maxwritesize < size`), the range is
 split at every varnode boundary observed inside it before phis are placed
 (`heritage.rs (Heritage::refinement)`): ranges over 1024 bytes are never
-refined, and a 1-byte/3-byte adjacent split is healed back to 4
-(`remove13_refinement`). Refinement rewrites the disjoint covers (local and
+refined, and a 1-byte/3-byte adjacent split is normally healed back to a
+four-byte piece (`Heritage::remove13Refinement`, implemented through
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_inputrefinement.rs`). The
+join is skipped when that four-byte piece would partially overlap a known
+input: an input starts or ends at the junction and extends beyond the joined
+piece. Inputs contained wholly within the piece retain the ordinary join.
+This prevents inconsistent refinements from constructing a range that spans
+two known input varnodes. Refinement rewrites the disjoint covers (local and
 global) in place and re-enters the walk at the first partition. Its inverse
 exists too: when a *larger* range arrives over addresses already heritaged at a
 smaller size, the stale MULTIEQUAL/INDIRECT/return-COPY markers from the earlier
@@ -2402,6 +2408,17 @@ that hold across this pass (chapter [06](06-variables-and-merge.md)). Clearing a
 hold that dead-code elimination immediately reinstates would prevent the main
 loop from converging; ordinary temporary holds keep their existing release rule.
 
+
+With `guardedreadtrim on`, a physical stack LOAD lowered by `RuleLoadVarnode`
+retains its original read block and byte range. Indexed frame LOAD guards also
+record their conservative range when heritage creates the preserving COPY.
+When copy propagation binds that read to call-written frame memory, the call
+is associated with that provenance before the COPY is removed.
+The original read ledger also survives COPY removal; removed CFG
+blocks fail the later placement check. P6 uses it to distinguish a guarded
+machine read from an unconditional preload whose value is used only under a
+branch (chapter [06](06-variables-and-merge.md)); functions without calls do not
+allocate this tracking state.
 
 A read from a volatile range becomes a `read_volatile` user op only once its
 address is a constant: `RuleLoadVarnode` turns the LOAD into a COPY of the

@@ -3210,6 +3210,14 @@ impl Funcdata {
             if !self.returndup_is_const_ret(parent) {
                 continue;
             }
+            // (kuna, `option rettriangle`) The join of a one-block `if` is no
+            // guard: splitting it prints `if (!c) return K; f(); return K;` for
+            // `if (c) f(); return K;`.
+            if self.get_arch().returndup_triangle
+                && crate::p8_structure::kuna_rettriangle::is_triangle_join(self, parent)
+            {
+                continue;
+            }
             if !parents.contains(&parent) {
                 parents.push(parent);
             }
