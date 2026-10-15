@@ -5949,12 +5949,13 @@ this PC-relative form — table and base both the instruction's own `inst_next` 
 is an answer. The table states no length either, so the count again comes from
 the range check: the `cmp rN,#n` the dispatch sits behind lifts to
 `INT_LESSEQUAL(n, rN)`, and when a conditional branch follows it within three
-instructions with nothing in between writing `rN`, the table has `n + 1`
-entries if that branch reads exactly the carry and the zero flag
-(`bhi`/`bls`, so `rN == n` is a case) and `n` if it reads only the carry
-(`bcs`/`bcc`). A branch on any other flags bounds nothing — a signed `bge`
-lets a negative index through — so neither it nor a dispatch with no check at
-all is read. Over the jump-table ceiling the first `jumptablemax` entries are
+instructions with nothing in between writing `rN` or overwriting the comparison
+flags, the table has `n + 1` entries if `bhi` sends indices above `n` away from
+the dispatch, and `n` if `bcs` sends indices at or above `n` away. The condition's
+p-code must establish that upper bound; reading the same flags with the opposite
+polarity (`bls` or `bcc`) is insufficient. A branch to the dispatch itself,
+intervening control flow, or a signed condition establishes no such bound, so
+neither it nor a dispatch with no check is read. Over the jump-table ceiling the first `jumptablemax` entries are
 read, and the xrefs walk records the switch as truncated like any other table. Because the offsets are
 unsigned and the cases are laid out after the table, an entry that lands inside
 the table, or outside the dispatcher's executable section, refuses the whole
