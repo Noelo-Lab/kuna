@@ -701,7 +701,10 @@ together*). The redraw holds the line under the cursor (or the selected line, el
 top line showing) at the same height in the pane, following it when lines above it come
 or go (a note added above it); the selection and the cursor stay, a renamed name keeps
 its selection under the new name, and nothing scrolls to its first use
-(`render-c.js` `diffLines` maps the old lines to the new). The engine refuses a retype that changes a local's storage size (`Storage
+(`render-c.js` `diffLines` maps the old lines to the new). Deleted rows map to an
+existing row without passing the next surviving anchor, including when the end
+of the function disappears. An unchanged body skips the quadratic diff table.
+The engine refuses a retype that changes a local's storage size (`Storage
 is 8 bytes, the stated type is 4`), so the retype dialog warns before sending one, sizing
 `long` by the target's data model (4 bytes on Windows). A directive the engine cannot
 parse fails the whole request (`error: --assert "<directive>": …`, exit 1): the page

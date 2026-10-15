@@ -31,7 +31,7 @@
 //! the range check right before it: a `cmp index,#n` (lifted to
 //! `INT_LESSEQUAL(n, index)`) whose carry a conditional branch to the default
 //! case reads, with nothing between them writing `index`; the table then has
-//! `n + 1` entries behind a `bhi`/`bls` and `n` behind a `bcs`/`bcc`. A
+//! `n + 1` entries when `bhi` branches away from the dispatch and `n` for `bcs`. A
 //! dispatch with no such check, or behind a branch on any other flags (a
 //! signed `bge`, which a negative index passes), reads nothing. Over the
 //! jump-table ceiling (`jumptablemax`) the first entries are read and the
@@ -46,6 +46,7 @@ use std::rc::Rc;
 
 use kuna_base::space::AddrSpace;
 use kuna_num::opcodes::OpCode;
+use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::translate::Translate;
 
 use super::kuna_poolref::PoolImage;
@@ -53,7 +54,7 @@ use super::kuna_switchtable::{
     fold, invalidate, is_constant, key_of, keys_overlap, value_of, Key, Val, DEFAULT_MAX_ENTRIES,
     MAX_TRACKED, MIN_ENTRIES,
 };
-use super::xrefs::{decode, in_range, FullCapture};
+use super::xrefs::{decode, in_range, FullCapture, FullOp};
 
 /// How far back from a `tbb`/`tbh` its range check may sit: the conditional
 /// branch and the `cmp`, with room for one instruction scheduled between them.
@@ -148,10 +149,10 @@ impl<'a> HalfwordTables<'a> {
 /// constant and then branch, or write `index` after the comparison.
 ///
 /// `cmp index,#n` sets the carry when `n <= index`. The branch on it reads
-/// exactly the carry and the zero flag when it is `bhi`/`bls`, which keeps
-/// `index == n` in range (`n + 1` cases), and the carry alone when it is
-/// `bcs`/`bcc`, which does not (`n` cases). A branch on any other flags (a
-/// signed `bge`/`bgt`, which a negative index passes) bounds nothing.
+/// carry and zero flags as `bhi` to exclude indices above `n` (`n + 1` cases),
+/// or carry as `bcs` to exclude indices at or above it (`n` cases). The branch
+/// must leave the path to the dispatch. Inverted or signed conditions, intervening
+/// control flow, and overwritten comparison flags establish no upper bound.
 fn guard_cases(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
@@ -170,44 +171,92 @@ fn guard_cases(
             return None;
         }
         let ops = cap.ops();
+        if ops.iter().any(|op| {
+            op.out.as_ref().and_then(|o| key_of(o, data)).is_some_and(|k| keys_overlap(k, index))
+                || matches!(op.opcode, OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND
+                    | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN)
+        }) {
+            return None;
+        }
         if let Some(inclusive) = inclusive {
+            let carry = ops.iter().rev().find(|op| {
+                op.out.as_ref().is_some_and(|out| flag_name(out, translate) == "CY")
+            }).and_then(|op| {
+                let source = if op.opcode == OpCode::CPUI_COPY { op.ins.first() } else { op.out.as_ref() };
+                source.and_then(|vn| key_of(vn, data))
+            });
             let bound = ops.iter().find_map(|op| {
                 let (n, reg) = (op.ins.first()?, op.ins.get(1)?);
                 (op.opcode == OpCode::CPUI_INT_LESSEQUAL
                     && is_constant(n)
-                    && key_of(reg, data) == Some(index))
+                    && key_of(reg, data) == Some(index)
+                    && carry.is_some()
+                    && op.out.as_ref().and_then(|out| key_of(out, data)) == carry)
                 .then_some(n.offset)
             });
             if let Some(n) = bound {
                 return usize::try_from(n).ok()?.checked_add(usize::from(inclusive));
             }
-        }
-        let writes_index = ops.iter().any(|op| {
-            op.out.as_ref().and_then(|o| key_of(o, data)).is_some_and(|k| keys_overlap(k, index))
-        });
-        if writes_index {
-            return None;
+            if ops.iter().any(|op| {
+                op.opcode == OpCode::CPUI_CBRANCH
+                    || op.out.as_ref().is_some_and(|out| matches!(flag_name(out, translate).as_str(), "CY" | "ZR"))
+            }) {
+                return None;
+            }
         }
         if inclusive.is_none() && ops.iter().any(|op| op.opcode == OpCode::CPUI_CBRANCH) {
-            let mut flags: Vec<String> = ops
-                .iter()
-                .flat_map(|op| op.ins.iter())
-                .filter(|vn| vn.size == 1 && matches!(key_of(vn, data), Some(Key::Reg(..))))
-                .filter_map(|vn| {
-                    Some(translate.get_register_name(vn.space.as_ref()?, vn.offset, 1))
-                })
-                .collect();
-            flags.sort_unstable();
-            flags.dedup();
-            inclusive = Some(match flags.iter().map(String::as_str).collect::<Vec<_>>()[..] {
-                ["CY", "ZR"] => true,
-                ["CY"] => false,
+            let mut branches = ops.iter().enumerate().filter(|(_, op)| op.opcode == OpCode::CPUI_CBRANCH);
+            let (at, branch) = branches.next()?;
+            let target = branch.ins.first()?;
+            if branches.next().is_some() || is_constant(target) || (cur..=from).contains(&target.offset) {
+                return None;
+            }
+            inclusive = Some(match guard_mask(branch.ins.get(1)?, &ops[..at], translate, data)? {
+                0b100 => true,
+                0b110 => false,
                 _ => return None,
             });
         }
         cur = prev;
     }
     None
+}
+
+fn flag_name(vn: &VarnodeData, translate: &dyn Translate) -> String {
+    if vn.size != 1 || !matches!(key_of(vn, None), Some(Key::Reg(..))) {
+        return String::new();
+    }
+    vn.space.as_ref().map_or_else(String::new, |space| translate.get_register_name(space, vn.offset, 1))
+}
+
+/// The condition for an index below, equal to, or above the unsigned bound.
+fn guard_mask(vn: &VarnodeData, ops: &[FullOp], translate: &dyn Translate, data: Option<&Rc<AddrSpace>>) -> Option<u8> {
+    if vn.size != 1 {
+        return None;
+    }
+    if is_constant(vn) {
+        return match vn.offset { 0 => Some(0), 1 => Some(0b111), _ => None };
+    }
+    let key = key_of(vn, data)?;
+    if let Some(at) = ops.iter().rposition(|op| op.out.as_ref().and_then(|out| key_of(out, data)) == Some(key)) {
+        let op = &ops[at];
+        let a = guard_mask(op.ins.first()?, &ops[..at], translate, data)?;
+        let b = || guard_mask(op.ins.get(1)?, &ops[..at], translate, data);
+        return match op.opcode {
+            OpCode::CPUI_COPY => Some(a),
+            OpCode::CPUI_BOOL_NEGATE => Some(a ^ 0b111),
+            OpCode::CPUI_BOOL_AND => Some(a & b()?),
+            OpCode::CPUI_BOOL_OR => Some(a | b()?),
+            OpCode::CPUI_BOOL_XOR | OpCode::CPUI_INT_NOTEQUAL => Some(a ^ b()?),
+            OpCode::CPUI_INT_EQUAL => Some((a ^ b()?) ^ 0b111),
+            _ => None,
+        };
+    }
+    match flag_name(vn, translate).as_str() {
+        "CY" => Some(0b110),
+        "ZR" => Some(0b010),
+        _ => None,
+    }
 }
 
 /// The first `limit` of the `cases` targets of a `width`-byte offset table at

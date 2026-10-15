@@ -71,7 +71,7 @@ fn setup(resolved: bool) -> (SymbolTable, ParserContext, Sleigh) {
     let mut parent = ConstructState::with_operands(5);
     parent.ct = Some(ct);
     parent.offset = 3;
-    parent.resolve[1] = Some(1);
+    parent.resolve = vec![2, 1];
     let mut child = ConstructState::with_operands(0);
     child.ct = Some(ConstructorRef {
         table_id: 0,
@@ -79,7 +79,10 @@ fn setup(resolved: bool) -> (SymbolTable, ParserContext, Sleigh) {
     });
     child.parent = Some(0);
     child.offset = 10;
-    ctx.state = vec![parent, child];
+    let mut first = ConstructState::with_operands(0);
+    first.parent = Some(0);
+    first.offset = 5;
+    ctx.state = vec![parent, child, first];
     for (i, b) in ctx.buf.iter_mut().enumerate() {
         *b = 0x10 + i as u8;
     }
@@ -93,68 +96,167 @@ fn setup(resolved: bool) -> (SymbolTable, ParserContext, Sleigh) {
 #[test]
 fn nested_operands_use_simulated_offsets_and_resolved_children() {
     for resolved in [false, true] {
-        let (table, ctx, engine) = setup(resolved);
-        let mut walker = ParserWalker::new(&ctx, &table, &engine);
-        walker.cur.to_mut().point = Some(1);
-        walker.cur.to_mut().depth = 1;
-        assert_eq!(
-            walker.operand_value(0, 0, 0).unwrap(),
-            if resolved { 0x1a } else { 0x16 }
-        );
-        assert_eq!(walker.operand_value(3, 0, 0).unwrap(), 0x14);
-        assert_eq!(walker.operand_value(4, 0, 0).unwrap(), 0);
+        let (table, ctx, mut engine) = setup(resolved);
+        engine.base.symtab = table.clone();
+        for table in [&table, &engine.base.symtab] {
+            let mut walker = ParserWalker::new(&ctx, table, &engine);
+            walker.cur.to_mut().point = Some(1);
+            walker.cur.to_mut().depth = 1;
+            assert_eq!(
+                walker.operand_value(0, 0, 0).unwrap(),
+                if resolved { 0x1a } else { 0x16 }
+            );
+            assert_eq!(walker.operand_value(3, 0, 0).unwrap(), 0x14);
+            assert_eq!(walker.operand_value(4, 0, 0).unwrap(), 0);
+        }
     }
 }
 
 #[test]
 fn invalid_and_recursive_operand_references_return_errors() {
-    let (table, mut ctx, engine) = setup(true);
-    ctx.state[0].resolve[1] = Some(usize::MAX);
-    let mut walker = ParserWalker::new(&ctx, &table, &engine);
-    walker.base_state();
-    assert!(walker.operand_value(-1, 0, 0).is_err());
-    assert!(walker.operand_value(5, 0, 0).is_err());
-    assert!(walker.operand_value(0, u32::MAX, 0).is_err());
-    assert!(walker.operand_value(0, 0, 99).is_err());
-    assert!(walker.operand_value(0, 0, 0).is_err());
-    assert!(walker
-        .operand_value(2, 0, 0)
-        .unwrap_err()
-        .to_string()
-        .contains("maximum operand expression depth"));
+    let (table, mut ctx, mut engine) = setup(true);
+    engine.base.symtab = table.clone();
+    ctx.state[0].resolve[1] = usize::MAX;
+    for table in [&table, &engine.base.symtab] {
+        let mut walker = ParserWalker::new(&ctx, table, &engine);
+        walker.base_state();
+        assert!(walker.operand_value(-1, 0, 0).is_err());
+        assert!(walker.operand_value(5, 0, 0).is_err());
+        assert!(walker.operand_value(0, u32::MAX, 0).is_err());
+        assert!(walker.operand_value(0, 0, 99).is_err());
+        assert!(walker.operand_value(0, 0, 0).is_err());
+        assert!(walker
+            .operand_value(2, 0, 0)
+            .unwrap_err()
+            .to_string()
+            .contains("maximum operand expression depth"));
+    }
 }
 
 #[test]
 fn constructor_off_the_walk_resolves_no_operands() {
-    let (table, ctx, engine) = setup(true);
+    let (table, ctx, mut engine) = setup(true);
+    engine.base.symtab = table.clone();
+    for table in [&table, &engine.base.symtab] {
+        let mut walker = ParserWalker::new(&ctx, table, &engine);
+        walker.base_state();
+        assert!(walker
+            .operand_value(0, 0, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("outside current context"));
+        let oob = OobWalker {
+            ctx: &ctx,
+            cross: None,
+            engine: &engine,
+            table,
+            state: OobState {
+                ct: ConstructorRef {
+                    table_id: 0,
+                    ct_id: 0,
+                },
+                offset: 3,
+                node: None,
+            },
+            depth: 1,
+        };
+        assert!(oob
+            .operand_value(1, 0, 0)
+            .unwrap_err()
+            .to_string()
+            .contains("not resolved"));
+        assert_eq!(oob.operand_value(3, 0, 0).unwrap(), 0x14);
+        assert_eq!(oob.operand_value(4, 0, 1).unwrap(), 0);
+        assert!(oob
+            .operand_value(5, 0, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("operand index"));
+    }
+}
+
+#[test]
+fn primitive_operand_plans_read_fresh_bytes_and_invalidate_after_spec_mutation() {
+    let (table, mut ctx, mut engine) = setup(true);
+    engine.base.symtab = table;
+    let evaluate = |ctx: &ParserContext, engine: &Sleigh| {
+        let mut walker = ParserWalker::new(ctx, &engine.base.symtab, engine);
+        walker.base_state();
+        walker.operand_value(3, 0, 0).unwrap()
+    };
+    assert_eq!(evaluate(&ctx, &engine), 0x14);
+    ctx.buf[4] = 0x77;
+    assert_eq!(evaluate(&ctx, &engine), 0x77);
+    let replacement = SleighSymbol::new_value(
+        b"field",
+        PatternValue::ConstantValue(crate::slghpatexpress::ConstantValue::new(42)),
+    );
+    *engine
+        .base_mut()
+        .symtab
+        .find_symbol_by_id_mut(6)
+        .unwrap()
+        .kind_mut() = replacement.kind().clone();
+    assert_eq!(evaluate(&ctx, &engine), 42);
+}
+
+#[test]
+fn primitive_operand_plans_preserve_read_bounds_and_wrapping_offsets() {
+    let (table, mut ctx, mut engine) = setup(false);
+    engine.base.symtab = table.clone();
+    for offset in [3, 14, 15, 16, u32::MAX] {
+        ctx.state[0].offset = offset;
+        for ct_id in [0, 1] {
+            let evaluate = |table: &SymbolTable| {
+                let mut walker = ParserWalker::new(&ctx, table, &engine);
+                walker.base_state();
+                walker
+                    .operand_value(3, 0, ct_id)
+                    .map_err(|error| error.to_string())
+            };
+            assert_eq!(evaluate(&engine.base.symtab), evaluate(&table));
+        }
+        let evaluate_nested = |table: &SymbolTable| {
+            let walker = OobWalker {
+                ctx: &ctx,
+                cross: None,
+                engine: &engine,
+                table,
+                state: OobState {
+                    ct: ConstructorRef {
+                        table_id: 0,
+                        ct_id: 0,
+                    },
+                    offset,
+                    node: None,
+                },
+                depth: 1,
+            };
+            walker
+                .operand_value(3, 0, 0)
+                .map_err(|error| error.to_string())
+        };
+        assert_eq!(
+            evaluate_nested(&engine.base.symtab),
+            evaluate_nested(&table)
+        );
+    }
+}
+
+#[test]
+fn unlinked_children_remain_errors_after_reset() {
+    let (table, mut ctx, engine) = setup(true);
+    let capacity = ctx.state[0].resolve.capacity();
+    {
+        let mut walker = ParserWalker::new(&ctx, &table, &engine);
+        walker.base_state();
+        assert!(walker.borrow_fixed_handle(2).unwrap_err().to_string().contains("not resolved"));
+    }
+    ctx.state[0].reset();
+    assert_eq!(ctx.state[0].resolve.capacity(), capacity);
     let mut walker = ParserWalker::new(&ctx, &table, &engine);
     walker.base_state();
-    assert!(walker
-        .operand_value(0, 0, 1)
-        .unwrap_err()
-        .to_string()
-        .contains("outside current context"));
-    let oob = OobWalker {
-        ctx: &ctx,
-        cross: None,
-        engine: &engine,
-        table: &table,
-        state: OobState {
-            ct: ConstructorRef {
-                table_id: 0,
-                ct_id: 0,
-            },
-            offset: 3,
-            node: None,
-        },
-        depth: 1,
-    };
-    assert!(oob
-        .operand_value(1, 0, 0)
-        .unwrap_err()
-        .to_string()
-        .contains("not resolved"));
-    assert_eq!(oob.operand_value(3, 0, 0).unwrap(), 0x14);
+    assert!(walker.borrow_fixed_handle(0).unwrap_err().to_string().contains("not resolved"));
 }
 
 #[test]
@@ -184,7 +286,7 @@ fn borrowed_builder_cursor_uses_target_tree_and_cross_addresses() {
         .map(|ctx| ResolvedCtx {
             addr: ctx.addr.clone(),
             ctx: ParserContextGuard {
-                context: Some(ctx),
+                context: Some(Box::new(ctx)),
                 pool: Rc::new(RefCell::new(Vec::new())),
             },
         })
@@ -216,8 +318,6 @@ fn borrowed_builder_cursor_uses_target_tree_and_cross_addresses() {
     assert_eq!(walker.get_context_bytes(0, 4).unwrap(), 0x1234_5678);
     assert_eq!(walker.get_constructor().unwrap().ct_id, 0);
 
-    // Navigation on the temporary reader detaches, preserving the builder's
-    // position and breadcrumb path.
     walker.push_operand(1).unwrap();
     assert!(matches!(walker.cur, Cow::Owned(_)));
     assert_eq!(walker.get_constructor().unwrap().ct_id, 1);

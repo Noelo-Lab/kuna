@@ -473,6 +473,39 @@ the range is never partitioned by refinement (whose gate is `size > 4 && maxw <
 size`) and the 8-byte parameter and return entries inside it are invisible.
 Under `option calloverlap` two dedicated guards recover them.
 
+With `option multiregargs on` (the default), a physical register range
+completely covered by two or more general ABI input slots receives separate
+call trials before dead-code elimination, at every `calloverlap` level
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_multiregargs.rs
+(input_partition)`). A wide return can coalesce these slots even after the
+caller overwrites each component. The trials keep those current component
+values live; ordinary trial scoring still decides whether they are used.
+
+The same option keeps an unlocked function's entry inputs in independently
+recoverable ABI slots when their whole range cannot be a single input
+parameter. The whole entry value is a PIECE of those slot inputs, so a later
+wide read cannot hide the function's real arguments. Declared inputs and legal
+wide ABI parameters retain their representation. Existing unprotected illegal
+wide inputs are replaced in place by slot concatenations; complete holes in
+partially input ranges are filled directly with those slots. Partially locked
+parameters and protected input storage decline the rewrite. Existing write-masked
+wide tiles also retain their representation. In-place conversion is a backstop
+for input creation outside renaming or before a model was resolved. Non-general entries,
+overlapping or joined entries, gaps, partial coverage, protected input
+storage, and memory or stack ranges decline this partition. Complete
+partitions are bounded to eight slots and 64 bytes. With `multiregargs off`,
+both changes are disabled and the existing `calloverlap` behavior applies.
+
+The slot trials of one call all truncate the same PIECE of the range, so
+upstream `onlyOpUse` would see a value written into one slot reach the call
+again through a sibling slot and reject the trial as a double use. That drops
+a single argument the caller just wrote whenever the other half of the range
+still holds a stale or clobbered pair half, as in `ldd [p],%o0; call f;
+mov 3,%o0; call g`. Under `multiregargs`, the walk skips a SUBPIECE whose kept
+bytes lie wholly outside the PIECE input it reached the PIECE through
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_multiregargs.rs
+(subpiece_drops_reached_piece)`); that SUBPIECE cannot carry the value.
+
 On the input side (`heritage.rs (Heritage::guard_call_overlapping_input)`), the
 biggest input entry contained in the range is located, its address translated
 from the callee's to the caller's perspective, and a SUBPIECE inserted before
@@ -2086,9 +2119,12 @@ from zero. After the wide-slice reduction the vector arm is S copies of the
 scalar body in a different order. The action matches the whole shape on SSA and
 proves it: the accumulators and the induction variable start at zero; each lane
 zero-extends a disjoint E-byte slice of a load at `base + i*E + c`, and the
-lanes tile exactly S elements for a power-of-two S the guard bounds; the fold
-adds every accumulator once; the scalar loop starts at `length & -S` with the
-fold, or at zero with zero, steps one element and exits at `length`; both exits
+lanes tile exactly S elements for a power-of-two S the guard bounds. The lane
+count must equal S before checking offsets in place, so a large stride encoded
+in the input cannot cause an allocation proportional to S; expected offsets
+must not overflow. The fold adds every accumulator once; the scalar loop starts
+at `length & -S` with the fold, or at zero with zero, steps one element and
+exits at `length`; both exits
 hand back their sums (the early return and the scalar exit, or a shared join
 whose other phis agree slot for slot); no block of the arm, the remainder loop,
 the else block or the scalar exit writes global storage, so nothing the
@@ -2492,6 +2528,36 @@ escape discharge requires the stricter Win64 home proof. This lets repeated
 home reloads survive known disjoint
 field writes without guessing from a pointee layout. Unknown or overlapping
 actual addresses decline; other spill invalidation stays unchanged.
+
+An exact pointer-width spill wholly below the callee's entry stack pointer can
+also retain its origin across an incoming-pointer write, conditional on the
+same physical disjointness proof for that cell and every write footprint.
+This does not declare negative frame bytes unobservable: an argument can point
+at the callee's spill, and an overlapping or unresolved actual address rejects
+the summary before its effects or return states are used. Partial frame stores
+still invalidate the entire pointer spill. Conditions from every visited path
+share the existing bounded metadata budget with home-spill conditions.
+
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_calleeflags.rs` distinguishes
+one-byte comparison/carry results from address fragments. Instruction-local
+scratch feeding only those Boolean results retains its exact frame origin;
+this covers the parity calculation accompanying a stack adjustment. Every use
+before a scratch definition is replaced must have the exact width and lead to
+a proved Boolean result. Memory uses, partial overlaps, unrelated register
+results and unpublished scratch with no such use retain the loss marker.
+Partial overwrites of pointer registers remain losses even for Boolean results.
+Frame-derived flags retain their origin in the abstract state: copying one to
+memory, exposing it through modeled return storage, or using it in an unproved
+calculation still rejects observation proofs. Internally overwritten flags do
+not cause the entire leaf summary to lose its frame provenance.
+
+A leaf that loads its return target from entry-frame byte zero also requires
+every incoming-pointer write to be disjoint from that exact return slot. The
+architecture must declare the corresponding stack return address. An argument
+can designate the return slot while missing every private spill; its write
+could then transfer control outside the analyzed leaf. Unknown addresses and
+even partial overlaps therefore reject the entire summary, including write
+preservation queries. Register-link returns do not acquire a stack-slot rule.
 
 The driver takes the summaries before heritage and re-seeds them after reflow;
 each target is cached per image. Decode errors, nested or indirect calls,

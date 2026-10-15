@@ -1158,6 +1158,53 @@ fn watchdog_stops_heritage_guard_placement() {
     assert!(elapsed < Duration::from_secs(10), "the 1 s watchdog took {elapsed:?} to stop big");
 }
 
+/// A chain of conditional updates spends its budget inside the region structurer.
+#[test]
+fn watchdog_stops_region_structuring_and_the_batch_continues() {
+    let mut bytes = vec![0x89, 0xf8];
+    for i in 0..1000u32 {
+        bytes.push(0xa9);
+        bytes.extend_from_slice(&(1u32 << (i % 16)).to_le_bytes());
+        bytes.extend_from_slice(&[0x74, 0x0b, 0x69, 0xc0]);
+        bytes.extend_from_slice(&(3 + 2 * (i % 61)).to_le_bytes());
+        bytes.push(0x05);
+        bytes.extend_from_slice(&(i + 1).to_le_bytes());
+        bytes.push(0x35);
+        bytes.extend_from_slice(&(i + 1).to_le_bytes());
+    }
+    bytes.push(0xc3);
+    let after = format!("0x{:x}", 0x1000 + bytes.len());
+    bytes.extend_from_slice(&[0x8d, 0x47, 0x01, 0xc3]);
+    let path = common::scratch_file("region-watchdog", "bin");
+    std::fs::write(&path, bytes).unwrap();
+    let start = Instant::now();
+    let result = run_kuna_with_timeout(
+        &[
+            "decompile-all", path.to_str().unwrap(), "--raw-image",
+            "--target", "x86:LE:64:default", "--base", "0x1000",
+            "--entry", "0x1000", "--entry", &after,
+            "--define-function", &format!("0x1000-{after}=stress"),
+            "--define-function", &format!("{after}=after"),
+            "--json", "--jobs", "1", "--max-fn-seconds", "1",
+            "--max-fn-memory", "512", "--option", "regionstructure", "on",
+            "--sleighpath", &specs(),
+        ],
+        Duration::from_secs(15),
+    );
+    let elapsed = start.elapsed();
+    std::fs::remove_file(path).unwrap();
+    let (stdout, stderr, _) = result.expect("region structuring exceeded the 15s outer bound");
+    let doc: serde_json::Value = serde_json::from_str(&stdout).expect(&stderr);
+    let functions = doc["functions"].as_array().unwrap();
+    let stress = functions.iter().find(|f| f["name"] == "stress").unwrap();
+    assert_eq!(stress["error"], "per-function decompile budget exceeded (1 s)", "{stdout}");
+    assert!(stress["code"].is_null(), "{stdout}");
+    let after = functions.iter().find(|f| f["name"] == "after").unwrap();
+    assert!(after["error"].is_null(), "{stdout}");
+    assert!(after["code"].as_str().unwrap().contains("return"), "{stdout}");
+    assert!(elapsed < Duration::from_secs(10), "the 1 s watchdog took {elapsed:?} to stop stress");
+}
+
 /// `--max-fn-memory` stops `big` in `tests/hang-repro/escaped_locals` once its
 /// process passes the limit, records that as `big`'s error, and the batch goes
 /// on to decompile `after`: in process, through a worker pool, and on the

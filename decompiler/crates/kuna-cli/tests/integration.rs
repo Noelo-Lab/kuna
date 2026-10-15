@@ -44,6 +44,9 @@ mod arm_wrapper_returns;
 #[path = "arm_xref_roots.rs"]
 mod arm_xref_roots;
 
+#[path = "thumbswitch_guards.rs"]
+mod thumbswitch_guards;
+
 #[path = "asserted_enum_layout.rs"]
 mod asserted_enum_layout;
 
@@ -415,6 +418,9 @@ mod call_outparam_snapshot;
 mod global_load_call_order;
 #[path = "integer_float_rounding.rs"]
 mod integer_float_rounding;
+
+#[path = "multireg_call_inputs.rs"]
+mod multireg_call_inputs;
 
 #[path = "narrow_register_inputs.rs"]
 mod narrow_register_inputs;
