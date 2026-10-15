@@ -8,7 +8,7 @@
 //      wasm port is a faithful decompiler, not a degraded one.
 //
 // It runs `list` + several `decompile` cases + a whole-binary `project` export
-// + the study view's `inspect`/`read`/`xrefs`/`strings` (with `--assert` directives) over each
+// + the study view's `inspect`/`read`/`xrefs`/`strings`/`data`/`uses` (with `--assert` directives) over each
 // committed fixture (x86-64 ELFs + AArch64 object) and diffs native vs
 // wasm (normalizing only the absolute `binary` path, which legitimately differs
 // between the host FS and the guest's virtual FS; `project` gets the same
@@ -73,6 +73,18 @@ const FIXTURES = [
     cases: [['inspect', 'make_item'], ['decompile', 'make_item']],
   },
   {
+    fixture: join(here, 'fixtures/globals.elf'),
+    arch: 'x86-64 globals',
+    cases: [['inspect', 'main'], ['data', '0x4040'], ['data', '0x40c0'], ['data', '0x2010', '8'],
+      ['data', '0x4060', '--assert', 'data 0x4060 point origin', '--assert', 'data 0x4040 int primes[8]'],
+      ['uses', '0x4000', '0x88']],
+  },
+  {
+    fixture: join(here, 'fixtures/globals-stripped.elf'),
+    arch: 'x86-64 globals stripped',
+    cases: [['inspect', 'main'], ['data', '0x4040']],
+  },
+  {
     fixture: join(here, 'fixtures/sample_macho.o'),
     arch: 'macho-x86-64',
     cases: [['list'], ['decompile'], ['decompile', '_add'], ['project', 'sample_macho.o'],
@@ -109,7 +121,7 @@ for (const { fixture, arch, cases } of FIXTURES) {
       fail(`native != wasm for \`${label}\``);
     }
     // project emits a files map, inspect one function, read the bytes
-    const want = { project: '"files"', inspect: '"function"', read: '"bytes"', xrefs: '"callers"', strings: '"uses"' }[c[0]]
+    const want = { project: '"files"', inspect: '"function"', read: '"bytes"', xrefs: '"callers"', strings: '"uses"', data: '"items"', uses: '"uses"' }[c[0]]
       || '"functions"';
     if (!n.includes(want)) fail(`\`${label}\` produced no ${want} payload`);
     console.log(`\x1b[32mOK\x1b[0m   ${label}  (${w.length} bytes, native==wasm)`);

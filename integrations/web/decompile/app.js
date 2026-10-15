@@ -501,6 +501,8 @@ async function indexBinary(source, { keep = null, shared = null } = {}) {
   state.inventory = null;
   state.current = null;
   state.cache.clear();
+  state.data = null;
+  if (state.view === 'data') setView(state.codeView);
   let bytes;
   let inventory;
   let globals = NO_DIRECTIVES;
@@ -2005,6 +2007,8 @@ function setView(view) {
     btn.setAttribute('aria-selected', String(on));
     btn.tabIndex = on ? 0 : -1;
   }
+  revealTab();
+  if (state.current) rail.setSelected(view === 'data' ? '' : selectedCard());
   for (const t of ['c', 'asm', 'bytes', 'stack', 'data']) $(paneFor(t)).hidden = !shown.includes(t);
   els.panes.classList.toggle('split', shown.length > 1);
   els.narrow.hidden = !(view === 'split' && shown.length === 1);
@@ -2032,6 +2036,17 @@ function followTarget() {
   return row ? { line: Number(row.dataset.line) } : sel;
 }
 const setTab = setView;
+
+/** Keep the selected view's tab in sight when the tabs scroll (a narrow window). */
+function revealTab() {
+  const btn = els.tabs.querySelector('[aria-selected=true]');
+  if (!btn || els.tabs.scrollWidth <= els.tabs.clientWidth) return;
+  const r = btn.getBoundingClientRect();
+  const box = els.tabs.getBoundingClientRect();
+  if (r.right > box.right) els.tabs.scrollLeft += r.right - box.right + 4;
+  else if (r.left < box.left) els.tabs.scrollLeft -= box.left - r.left + 4;
+}
+new ResizeObserver(revealTab).observe(els.tabs);
 
 els.tabs.addEventListener('click', (e) => {
   const btn = e.target.closest('[role=tab]');
@@ -3295,7 +3310,9 @@ function buildDataModel(doc) {
 /** Record where the student is in the current history entry, so Back comes back to it. */
 function stampHistory() {
   const st = history.state || {};
-  history.replaceState({ ...st, view: state.view, data: state.view === 'data' ? state.data?.hex ?? null : null }, '');
+  const d = state.data;
+  const at = d?.model && d.sel ? rowOf(d.model, d.sel)?.hex : null;
+  history.replaceState({ ...st, view: state.view, data: state.view === 'data' ? at || d?.hex || null : null }, '');
 }
 
 /** The function the page is on, for history entries. */
@@ -3331,7 +3348,7 @@ function loadData(target, { len = null, reveal = true } = {}) {
   const prev = state.data;
   const req = dataRequest();
   const key = dataKeyOf(req);
-  state.data = { ...(prev?.hex === target ? prev : { model: null, open: new Set() }), hex: target, focus: BigInt(target), key, loading: true, error: null };
+  state.data = { ...(prev || { model: null, open: new Set() }), hex: target, focus: BigInt(target), key, loading: true, error: null };
   openDataView();
   const run = async () => {
     if (state.data?.hex !== target || !state.data.loading || !state.binary) return;
@@ -3351,10 +3368,9 @@ function loadData(target, { len = null, reveal = true } = {}) {
       const doc = await withDirectives((list) => state.kuna.data(target, len, { assertions: list }), req);
       if (!isCurrent(op)) return;
       session.recordOutcomes(doc.assertions, req);
-      const keep = state.data?.model && state.data.key !== key ? null : state.data;
       state.data = {
         hex: target, focus: BigInt(target), key, doc, model: buildDataModel(doc), loading: false, error: null,
-        open: keep?.open || new Set(), sel: null, uses: null,
+        open: state.data?.open || new Set(), sel: null, uses: null,
       };
       selectDataAt(BigInt(target), { render: false });
       setStatus(`Showing the data at ${bare(target)}`, 'ok');
@@ -3416,6 +3432,15 @@ function dataEmptyHtml() {
 
 const sectionEnd = (sec) => (sec ? BigInt(sec.address_hex ?? sec.address) + BigInt(sec.size) : null);
 
+/** The data sections just before and after `sec` in the program (none of them code), or nulls. */
+function neighbourSections(sec) {
+  if (!sec) return [null, null];
+  const data = sections().filter((s) => !s.executable && s.size > 0)
+    .sort((a, b) => (BigInt(a.address_hex) < BigInt(b.address_hex) ? -1 : 1));
+  const at = data.findIndex((s) => s.address_hex === (sec.address_hex ?? hexOf(sec.address)));
+  return at < 0 ? [null, null] : [data[at - 1] || null, data[at + 1] || null];
+}
+
 function renderDataPane({ reveal = false } = {}) {
   const d = state.data;
   if (!d?.model) {
@@ -3427,10 +3452,14 @@ function renderDataPane({ reveal = false } = {}) {
   const { model } = d;
   const sec = model.section;
   const keep = els.dataList.scrollTop;
+  const [prev, next] = neighbourSections(sec);
+  const more = (to, label) => `<button class="d2-link dv-more" data-act="dv-more" data-to="${to}">${escapeHtml(label)}</button>`;
   const before = sec && model.start > BigInt(sec.address_hex ?? sec.address)
-    ? `<button class="d2-link dv-more" data-act="dv-more" data-to="${hexOf(model.start - 1n)}">Show the data before ${escapeHtml(bare(hexOf(model.start)))}</button>` : '';
+    ? more(hexOf(model.start - 1n), `Show the data before ${bare(hexOf(model.start))}`)
+    : prev ? more(hexOf(sectionEnd(prev) - 1n), `Previous section: ${prev.name || bare(prev.address_hex)}`) : '';
   const after = sec && model.end < sectionEnd(sec)
-    ? `<button class="d2-link dv-more" data-act="dv-more" data-to="${hexOf(model.end)}">Show the data after ${escapeHtml(bare(hexOf(model.end - 1n)))}</button>` : '';
+    ? more(hexOf(model.end), `Show the data after ${bare(hexOf(model.end - 1n))}`)
+    : next ? more(next.address_hex, `Next section: ${next.name || bare(next.address_hex)}`) : '';
   els.dataList.innerHTML = before + dataRowsHtml(model, { selected: d.sel, open: d.open }) + after;
   els.dataList.classList.toggle('dv-busy', !!d.loading);
   renderDataBar();
@@ -3452,7 +3481,9 @@ function renderDataBar() {
     return;
   }
   const { row, top } = pick;
-  const name = row === top ? row.name : `${top.name || bare(top.hex)}${/^\[/.test(row.name) ? '' : '.'}${row.name}`;
+  const base = top.name || bare(top.hex);
+  const name = row === top ? row.name
+    : row.name ? `${base}${row.name.startsWith('[') ? '' : '.'}${row.name}` : `${base} + ${hexOf(row.addr - top.addr)}`;
   const size = `${row.size} byte${row.size === 1 ? '' : 's'}`;
   const typed = row.type && !/ bytes?$/.test(row.type) && row.type !== 'text' && row.type !== 'pointer';
   let html = `<span class="dv-what">${name ? `<b>${escapeHtml(name)}</b> ` : ''}${typed ? `<code>${escapeHtml(row.type)}</code> · ` : ''}` +
@@ -3594,7 +3625,8 @@ els.dataBar.addEventListener('click', (e) => {
 
 /** Keys in the Data tab: ↑↓ move, → opens and ← folds, Enter follows a pointer, N renames and Y retypes. */
 function dataKey(e) {
-  if (state.view !== 'data' || !els.dataList.contains(document.activeElement) && document.activeElement !== els.dataList) return false;
+  const at0 = document.activeElement;
+  if (state.view !== 'data' || !(at0 === document.body || $('pane-data').contains(at0))) return false;
   const d = state.data;
   if (!d?.model) return false;
   const rows = [...els.dataList.querySelectorAll('.dv-row[data-key]')];
@@ -3612,7 +3644,7 @@ function dataKey(e) {
     }
     return true;
   }
-  if (e.key === 'Enter' && at >= 0) {
+  if (e.key === 'Enter' && at >= 0 && (at0 === els.dataList || at0 === document.body)) {
     const link = rows[at].querySelector('[data-act=dv-follow]');
     if (link) followData(link);
     return true;
