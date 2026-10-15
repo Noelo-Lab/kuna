@@ -47,6 +47,10 @@ name = "decompile_all_cli"
 path = "tests/decompile_all_cli.rs"
 
 [[test]]
+name = "catalog_cli"
+path = "tests/catalog_cli.rs"
+
+[[test]]
 name = "docs_cli"
 path = "tests/docs_cli.rs"
 

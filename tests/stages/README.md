@@ -179,6 +179,7 @@ writeup, not here.
 | `kuna-stackstruct.xml` | A local record read through `read(fd,&h,8)` printed its byte and short fields as `v1._4_2_`, which is not C, and no record type was declared (authored C, gcc/clang -O0/-O2) | P6 stack-frame-layout + P9 pointer-notation | `option stackstruct on\|off`, `option partialaccess on\|off` |
 | `kuna-declorder.xml` | A function with ten or more locals declared them in string order, `v1, v10, v11, v2, ...` (authored C, gcc -O0) | P9 naming-policy, local declaration order | `option declorder natural\|name` |
 | `kuna-strlenscan.xml` | gcc 9 expands `strlen` inline as `repnz scasb`, which printed as a do/while over the string and `~count - 1` (authored C, Ubuntu 20.04 gcc 9.4 -O1) | P3 simplification-quiescence, inline string length | `option strlenscan on\|off` |
+| `kuna-rettriangle.xml` | `returndup` split the shared return after a one-block `if`, printing `if (c) f(); return 0;` as `if (!c) return 0; f(); return 0;` (authored C, gcc -O0, stack-protected) | P8 goto-quality, return duplication | `option rettriangle on\|off` |
 
 `kuna-minss-nan.xml` pins an authored scalar MINSS and ratio/clamp probe.
 P3 and P9 preserve the negation of an ordered float comparison as `!(a < b)`
@@ -301,3 +302,4 @@ with undefined-behavior checks and exercises every case and signed boundaries.
 - `kuna-integer-float-rounding.xml`, `kuna-integer-float-rounding64.xml`, `kuna-integer-float-rounding-x87.xml`: an integer-to-float conversion keeps its rounding through a later float conversion or a narrower float trace (`option intfloatround`; the first passes run it `off`), while exact intermediates, x87 extended conversions and `fld1` still combine.
 
 `kuna-global-load-call-order.xml` keeps a post-call memory-loaded global write after the getter, including a later call, a loop marker and a no-final-call control. The CLI roundtrips check an impure getter, a computed-value reload control and overlapping x86-64 SIMD reads using GCC/Clang at O0/O2. Its first pass runs `option globalcallstore off`, which prints the write before the getter.
+- `kuna-register-pair-call-args.xml`: overwritten wide-return register components at an undeclared call, with single-half and unchanged-pair controls.

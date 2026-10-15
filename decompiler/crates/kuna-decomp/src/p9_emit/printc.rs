@@ -1590,6 +1590,8 @@ pub struct PrintC {
     /// Per-document spelling for a local HighVariable whose recovered name
     /// collides in the C function scope. Body references consume the same map.
     local_name_overrides: std::collections::HashMap<crate::context::HighVariableId, String>,
+    indirect_input_aliases: std::collections::HashSet<crate::context::HighVariableId>,
+    signature_param_names: std::collections::HashMap<i32, String>,
     /// Strict subpieces suppressed in favor of their overlap group's unique
     /// whole-value declaration. References resolve through the whole owner.
     local_name_aliases: std::collections::HashMap<crate::context::HighVariableId, crate::context::HighVariableId>,
@@ -1650,6 +1652,8 @@ impl PrintC {
             out_lang: crate::kuna_lang::OutLang::C,
             eol_warns: Vec::new(),
             local_name_overrides: std::collections::HashMap::new(),
+            indirect_input_aliases: std::collections::HashSet::new(),
+            signature_param_names: std::collections::HashMap::new(),
             local_name_aliases: std::collections::HashMap::new(),
             local_name_standalones: std::collections::HashSet::new(),
             declared_locals: Vec::new(),
@@ -2552,6 +2556,8 @@ impl PrintC {
     fn emit_function_document(&mut self, fd: &Funcdata, arch: &Architecture) {
         self.emit.set_output_stream();
         self.local_name_overrides.clear();
+        self.indirect_input_aliases.clear();
+        self.signature_param_names.clear();
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
         self.declared_locals.clear();
@@ -2645,6 +2651,7 @@ impl PrintC {
         // HighVariables directly (the `kuna_name` stand-in), which is the same set
         // of locals the scope would declare.
         let _emitted_decls = self.emit_local_var_decls(fd, arch);
+        self.emit_indirect_input_aliases(fd);
         if fd.sblocks_get_size() != 0 {
             self.emit_function_body(fd, arch);
         } else {
@@ -3100,13 +3107,17 @@ impl PrintC {
                     );
                     name = default_name.as_str();
                 }
-                match param.get_type() {
+                self.signature_param_names.insert(i, name.to_string());
+                let ty = if self.out_lang == crate::kuna_lang::OutLang::C && self.rt_ctx.indirect_args {
+                    crate::kuna_indirectargs::source_type(proto, param)
+                } else { param.get_type().cloned() };
+                match ty {
                     Some(ty) => {
-                        let (front, back) = declarator_parts(ty, self.rt_ctx);
+                        let (front, back) = declarator_parts(&ty, self.rt_ctx);
                         self.cast_implied.record_param(name, format!("{front}{back}"));
                         self.pointer_decls.record(name, &front, &back, false);
                         if !self.emit.emits_markup() && self.emit_fd.is_some() && !proto.is_dotdotdot()
-                            && crate::kuna_pointerargs::byte_pointer(ty)
+                            && crate::kuna_pointerargs::byte_pointer(&ty)
                         {
                             let slot = self
                                 .pointer_record
@@ -3760,6 +3771,18 @@ impl PrintC {
     /// (kuna) The locals the last printed document declared.
     pub fn declared_locals(&self) -> &[DeclaredLocal] {
         &self.declared_locals
+    }
+
+    /// (kuna) A printer of its own that has printed `fd` with `arch`'s
+    /// options, so [`declared_locals`](Self::declared_locals) and
+    /// [`declared_local`](Self::declared_local) say what a print of `fd` names
+    /// each local while `arch`'s printer keeps its state.
+    pub fn declarations_of(arch: &Architecture, fd: &Funcdata) -> PrintC {
+        let mut print = PrintC::new();
+        print.set_name(&arch.print().name);
+        print.options = arch.print().options;
+        print.doc_function_full(fd, arch);
+        print
     }
 
     /// (kuna) The declaration `high` reads through in the last printed document:
@@ -7439,6 +7462,7 @@ impl PrintC {
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let opc = fd.obank().get(op).expect("op_call_ir: stale op").code();
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+        let proto = fd.get_call_specs_index(op).map(|index| fd.get_call_specs(index).proto());
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
 
         if opc == OpCode::CPUI_CALLIND {
@@ -7477,7 +7501,7 @@ impl PrintC {
                 }
                 for i in 1..nin {
                     if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
-                        self.push_vn_ir(fd, arch, vn, op);
+                        self.push_call_argument_ir(fd, arch, vn, op, i, proto);
                     }
                 }
             } else {
@@ -7525,7 +7549,7 @@ impl PrintC {
                     } else {
                         None
                     };
-                    self.push_vn_ir(fd, arch, vn, op);
+                    self.push_call_argument_ir(fd, arch, vn, op, i, proto);
                     self.pointer_candidate = None;
                 }
             }
@@ -7537,6 +7561,73 @@ impl PrintC {
                 crate::printlanguage::SyntaxHighlight::no_color,
             ));
         }
+    }
+
+    fn emit_indirect_input_aliases(&mut self, fd: &Funcdata) {
+        if self.out_lang != crate::kuna_lang::OutLang::C || !self.rt_ctx.indirect_args { return; }
+        let inputs = crate::kuna_indirectargs::mutable_inputs(fd);
+        if inputs.is_empty() { return; }
+        let mut occupied: Vec<String> = fd.high_bank().iter()
+            .filter_map(|(high, _)| self.emitted_high_name(fd, high)).collect();
+        occupied.extend(self.signature_param_names.values().cloned());
+        let occupied = declaration_occupied_names(fd, occupied);
+        let mut names = crate::kuna_dedupvardecls::DeclNameUniquifier::new(
+            std::iter::empty::<&str>(), occupied.iter().map(String::as_str),
+        );
+        let globals = fd.get_arch().global_name_scope();
+        let taken = |name: &str| globals.as_ref().is_some_and(|g| g.has_symbol_name(name));
+        for input in inputs {
+            let parameter = self.signature_param_names.get(&input.slot).cloned()
+                .expect("indirect input alias requires an emitted parameter");
+            let high = input.highs[0];
+            let mut markup = MarkupRef::none();
+            markup.symref = fd.kuna_high_symbol_wire_id(high).or_else(|| {
+                decl_rep_varnode(fd, high).and_then(|vn| fd.vbank().get(vn))
+                    .map(|vn| vn.get_create_index() as uintb)
+            });
+            let name = names.unique_with(&format!("{parameter}_addr"), &taken);
+            for high in input.highs {
+                self.local_name_overrides.insert(high, name.clone());
+                self.indirect_input_aliases.insert(high);
+            }
+            let (front, back) = declarator_parts(&input.pointer_type, self.rt_ctx);
+            self.cast_implied.record_param(&name, format!("{front}{back}"));
+            self.pointer_decls.record(&name, &front, &back, false);
+            self.emit.tag_line();
+            let declaration = self.emit.begin_var_decl(&markup);
+            self.emit.tag_type(&front, SyntaxHighlight::TypeColor, &markup);
+            if !front.ends_with('*') { self.emit.spaces(1, 0); }
+            self.emit.tag_variable(&name, SyntaxHighlight::VarColor, &markup);
+            self.emit.print(&format!("{back} = &"), SyntaxHighlight::NoColor);
+            self.emit.tag_variable(&parameter, SyntaxHighlight::VarColor, &markup);
+            self.emit.end_var_decl(declaration);
+            self.emit.print(";", SyntaxHighlight::NoColor);
+        }
+        self.emit.tag_line();
+    }
+
+    fn push_call_argument_ir(
+        &mut self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId, slot: i32,
+        proto: Option<&crate::fspec::FuncProto>,
+    ) {
+        if self.out_lang != crate::kuna_lang::OutLang::C
+            || !self.rt_ctx.indirect_args
+            || !crate::kuna_indirectargs::is_indirect_value(
+                proto, slot, fd.vbank().get(vn).map(|value| value.get_size()).unwrap_or(0),
+            )
+        {
+            self.push_vn_ir(fd, arch, vn, op);
+            return;
+        }
+        let mut mods = self.context.mods();
+        if (self.check_array_deref(fd, vn) || self.is_value_indirect_input(fd, vn))
+            && !self.context.is_set(modifiers::FORCE_POINTER)
+        {
+            mods |= modifiers::PRINT_LOAD_VALUE;
+        } else {
+            self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+        }
+        self.push_vn_ir_m(fd, arch, vn, op, mods);
     }
 
     /// Recover the printed callee name for a direct CALL (C++ `PrintC::opCall`'s
@@ -7788,7 +7879,7 @@ impl PrintC {
             Some(v) => v,
             None => return,
         };
-        let usearray = self.check_array_deref(fd, ptr);
+        let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = self.context.mods();
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
             m |= modifiers::PRINT_LOAD_VALUE;
@@ -7814,7 +7905,7 @@ impl PrintC {
             None => return,
         };
         let val = fd.obank().get(op).and_then(|o| o.get_in(2));
-        let usearray = self.check_array_deref(fd, ptr);
+        let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = mods;
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
             m |= modifiers::PRINT_STORE_VALUE;
@@ -8971,11 +9062,16 @@ impl PrintC {
                 && sym_type.as_ref().map(|t| t.get_size() == size).unwrap_or(false);
             if !whole {
                 // Partial symbol (printc.cc:1953-1954 pushPartialSymbol).  For an
-                // array-of-element symbol the access maps to element
+                // array of scalars the access maps to element
                 // `sym_off / elsize` — the array-subscript shape
-                // push_vn_explicit_ir renders for symbol-bound highs.
+                // push_vn_explicit_ir renders for symbol-bound highs; any other
+                // partial cover takes the member walk (`s.b`, `a[2][1]`).
                 if let Some(st) = &sym_type {
-                    if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
+                    use crate::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
+                    let composite = st.get_array_base().is_some_and(|elem| {
+                        matches!(elem.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION)
+                    });
+                    if st.get_metatype() == TYPE_ARRAY && !composite {
                         if let Some(elem) = st.get_array_base() {
                             let elsize = elem.get_align_size().max(1);
                             if sym_off >= 0 && (sym_off % elsize) == 0 && st.get_size() > elsize {
@@ -9004,6 +9100,12 @@ impl PrintC {
                                 return;
                             }
                         }
+                    }
+                    if self.push_partial_symbol_ir(
+                        fd, arch, &name, std::rc::Rc::clone(st), sym_off as int8,
+                        size, vn, op, 1, false,
+                    ) {
+                        return;
                     }
                 }
             }
@@ -9221,6 +9323,17 @@ impl PrintC {
         if let Some(high) = v.get_high() {
             let named = self.emitted_high_symbol(fd, high);
             if let Some((name, sym_off, sym_type)) = named {
+                if self.is_value_indirect_input(fd, vn) {
+                    if !self.context.is_set(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE) {
+                        self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+                    }
+                    self.push_atom(&Atom::with_op_vn(
+                        name, TagType::VarToken,
+                        crate::printlanguage::SyntaxHighlight::var_color,
+                        op_key(op), vn_key(vn),
+                    ));
+                    return;
+                }
                 if self.options.bytearray_c
                     && fd.obank().get(op).and_then(|o| o.get_out()) != Some(vn)
                     && self.push_bytearray_read(fd, arch, vn, op)
@@ -9637,6 +9750,26 @@ impl PrintC {
         &self.globalref
     }
 
+    fn push_member_base_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        base: VarnodeId,
+        op: OpId,
+        mods: uint4,
+        pointer: &std::rc::Rc<crate::dtype::Datatype>,
+    ) {
+        let cast = !self.options.nocasts
+            && crate::p9_emit::kuna_memberbase::needs_cast(fd, arch.decl_high_type, base, pointer);
+        if cast {
+            self.push_cast_open(pointer, op);
+        }
+        self.push_vn_ir_m(fd, arch, base, op, mods);
+        if cast {
+            self.push_cast_close(pointer);
+        }
+    }
+
     fn op_ptrsub_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let in0 = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
             Some(v) => v,
@@ -9677,7 +9810,7 @@ impl PrintC {
         let mut valueon = (self.context.mods()
             & (modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE))
             != 0;
-        let flex = self.is_value_flexible_ir(fd, in0);
+        let flex = self.is_value_flexible_ir(fd, in0) || self.is_value_indirect_input(fd, in0);
         let word_size = ptype.get_word_size().unwrap_or(1);
         let metameta = ct.get_metatype();
 
@@ -9789,7 +9922,7 @@ impl PrintC {
                     if is_rel {
                         self.push_type_pointer_rel_ir(op);
                     }
-                    self.push_vn_ir_m(fd, arch, in0, op, m);
+                    self.push_member_base_ir(fd, arch, in0, op, m, &ptype);
                 }
                 self.push_atom(&field_atom);
             } else {
@@ -9809,7 +9942,7 @@ impl PrintC {
                     if is_rel {
                         self.push_type_pointer_rel_ir(op);
                     }
-                    self.push_vn_ir_m(fd, arch, in0, op, m);
+                    self.push_member_base_ir(fd, arch, in0, op, m, &ptype);
                 }
                 self.push_atom(&field_atom);
                 if arrayvalue {
@@ -10030,6 +10163,21 @@ impl PrintC {
             // Union/other: functional fallback.
             self.op_func_ir(fd, arch, op);
         }
+    }
+
+    /// (kuna `indirectargs`) Is `vn` the ABI pointer input of a parameter printed
+    /// as its value, so that `&name` stands for it and `name` for its target?
+    fn is_value_indirect_input(&self, fd: &Funcdata, vn: VarnodeId) -> bool {
+        self.out_lang == crate::kuna_lang::OutLang::C
+            && self.rt_ctx.indirect_args
+            && fd.vbank().get(vn).is_some_and(|v| {
+                v.is_input()
+                    && v.get_high().is_some_and(|high| {
+                        !self.indirect_input_aliases.contains(&high)
+                            && self.emitted_high_symbol(fd, high).is_some()
+                    })
+            })
+            && crate::kuna_indirectargs::is_indirect_input(fd, vn)
     }
 
     /// C++ `isValueFlexible(vn)` (printc.cc:919): the value `vn` is an implied
@@ -11267,6 +11415,7 @@ impl RealTypeCtx {
             long_is_8: arch.types().get_size_of_long() == 8,
             ctypes: arch.ctypes,
             model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
+            indirect_args: arch.indirect_args,
         }
     }
 }

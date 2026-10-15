@@ -24,8 +24,8 @@ use kuna_sleigh::translate::Translate;
 
 use super::classify::classify;
 use super::context::ContextPainter;
-use super::decode::decode_one;
-use super::model::{DiscoveredFunction, FlowKind, Insn, InsnLite, Reference, RefKind};
+use super::decode::decode_one_listing;
+use super::model::{DiscoveredFunction, FlowKind, Insn, InsnLite, Mnemonic, Reference, RefKind};
 use super::ListingDetail;
 use super::kuna_insnstore::InstructionStore;
 
@@ -55,6 +55,8 @@ pub(super) struct WalkState {
 pub(super) trait InsnSink {
     /// Has this address already been decoded?
     fn decoded(&self, vma: u64) -> bool;
+    /// Intern text in this serial store or parallel decode lane.
+    fn intern_mnemonic(&mut self, text: &str) -> Mnemonic;
     /// File the decoded record.
     fn record(&mut self, insn: InsnLite);
 }
@@ -70,6 +72,10 @@ impl InsnSink for InstructionStore {
         // preserve exactly that: one decoder per address, and a record that does
         // not depend on which worker produced it.
         self.contains_key(&vma)
+    }
+
+    fn intern_mnemonic(&mut self, text: &str) -> Mnemonic {
+        InstructionStore::intern_mnemonic(self, text)
     }
 
     fn record(&mut self, insn: InsnLite) {
@@ -268,12 +274,13 @@ where
         return false; // out-of-bounds gate (flow.rs:891 analog)
     }
 
-    let decoded = match decode_one(
+    let decoded = match decode_one_listing(
         ctx.translate,
         vma,
         ctx.code_space,
         ctx.detail.assembly,
         ctx.policy.stack_callbacks,
+        &mut |text| insns.intern_mnemonic(text),
     ) {
         Ok(d) => d,
         Err(_) => return false, // decode error: stop this path (mark gap)
@@ -300,7 +307,8 @@ where
     // assembly parse; register immediates and absolute LOAD addresses do
     // not trigger a second decode.
     let mnemonic = if !stack_values.is_empty() && decoded.mnemonic.is_empty() {
-        super::decode::mnemonic_at(ctx.translate, vma, ctx.code_space)
+        let text = super::decode::mnemonic_at(ctx.translate, vma, ctx.code_space);
+        insns.intern_mnemonic(&text)
     } else {
         decoded.mnemonic
     };
@@ -390,7 +398,8 @@ impl Successors for Worklists<'_> {
 /// every decode (out-of-bounds = stop-this-path). `code_space` is the space the
 /// `Address`es are built in. `arch` exposes the engine's `ContextDatabase`, into
 /// which `painter` paints the per-address decode mode (ARM `TMode` / MIPS
-/// `ISA_MODE`) **before** any [`decode_one`] runs (design §4.2 / PR5) — without
+/// `ISA_MODE`) **before** any [`super::decode::decode_one_listing`] runs
+/// (design §4.2 / PR5) — without
 /// it a Thumb/MIPS16 function misdecodes as A32/MIPS32. On x86-64 (no decode-mode
 /// context) the painter is empty and this is a no-op.
 ///
@@ -405,9 +414,9 @@ impl Successors for Worklists<'_> {
 /// INTERIOR of the function at its value, so no function is claimed there. Empty
 /// on every other architecture and whenever the option is off.
 ///
-/// `detail.assembly` is forwarded to [`decode_one`]: `false` leaves every
+/// `detail.assembly` is forwarded to [`super::decode::decode_one_listing`]: `false` leaves every
 /// [`Insn::mnemonic`]/[`Insn::operands`] empty and skips the second SLEIGH parse
-/// that produces them (see [`decode_one`] for the cost).
+/// that produces them (see [`super::decode::decode_one_listing`] for the cost).
 ///
 /// `detail.refs` selects whether the reference model is filed at all
 /// (the reference sink becomes a no-op). Every instruction contributes an
@@ -708,6 +717,10 @@ struct LastRecord<'a> {
 impl InsnSink for LastRecord<'_> {
     fn decoded(&self, vma: u64) -> bool {
         self.store.decoded(vma)
+    }
+
+    fn intern_mnemonic(&mut self, text: &str) -> Mnemonic {
+        self.store.intern_mnemonic(text)
     }
 
     fn record(&mut self, insn: InsnLite) {

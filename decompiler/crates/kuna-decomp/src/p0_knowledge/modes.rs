@@ -150,6 +150,11 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("regionedgeorder", "on"),
     ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
     ("orchain", "on"),   // the returndup gate DIV-69 measured; must follow returndup
+    // (kuna) Decline the returndup split at the join of a one-block `if`, so
+    // `if (c) f(); return 0;` is not printed as `if (!c) return 0; f(); return 0;`.
+    // Shipped OFF because the decbench O2 sample moved aggregate GED by +60 (it is
+    // -163 and +56 GED-perfect at O0); preset membership delivers it to the page.
+    ("rettriangle", "on"),
     ("iteexpr", "on"), // angr-style ?: recovery over computed-expression arms (readability)
     // Recover the scalar loop for readability. Kept in aggressive mode because
     // this hides the compiler's vector stride and duplicated loop body.

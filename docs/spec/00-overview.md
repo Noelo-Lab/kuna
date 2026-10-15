@@ -45,6 +45,12 @@ knows about the outside world it reads from the knowledge plane (§0.4) that the
 first tier populated. The analysis tier, symmetrically, never touches the
 per-function IR.
 
+The Listing keeps instruction records in bounded 1,024-row chunks and groups
+their private address-index rows into 4 KiB pages. Exact lookups binary-search
+within a page; range queries visit only intersecting pages and trim their boundary
+rows. The index key remains independent of mutable instruction addresses, and
+cloned Listings retain independent records.
+
 (kuna) The hand-off is a three-step *stash → flags → gated commit* protocol, and
 the order is load-bearing:
 
@@ -885,8 +891,15 @@ unpacked rather than read in place
 directory, where `<id>` hashes every path and byte of the table. Each unpack is
 written to a private staging directory and renamed into place only after its
 `.complete` marker is written, so a reader never sees a partial tree, concurrent
-first runs settle on one copy, and a tree without the marker is replaced. A
-release whose specs did not change therefore reuses the tree already on disk.
+first runs settle on one copy, and a tree without the marker is replaced. Creation
+and repair hold an exclusive file lock for that content ID and recheck the marker
+after acquiring it. This prevents concurrent repair from deleting a newly
+published tree and avoids duplicate unpacking. The sibling lock file remains on
+disk so all writers lock the same file; the operating system releases the lock
+when its handle closes, including on process exit. A caller waits at most 30
+seconds for the lock, then moves on to the next cache location, so a stopped or
+hung holder cannot hang every later run. A release whose specs did not change
+reuses the finished tree without acquiring the lock.
 
 The spec root resolves in this order: `KUNA_SPECS`, then `KUNA_ROOT`'s `specs/`,
 then the built-in tree, then the first directory that holds a
@@ -2080,7 +2093,11 @@ global object's entire byte range volatile, so `--assert 'data 0x20000 volatile 
 has the same access semantics as a separate volatile range assertion.
 Declarator binding matters: `volatile int *p` qualifies the pointed-to data,
 while `int *volatile p` qualifies the mapped pointer itself. An array inherits
-its element qualifier. Function-local mappings carry the symbol attribute only;
+its element qualifier, including through nested arrays and typedefs. The property
+comes from the resolved type: `typedef volatile int VolWord;` followed by
+`data 0x20000 VolWord cursor` marks the mapped word volatile, while a pointer to
+`VolWord` does not make the pointer's own storage volatile. Function-local mappings
+carry the symbol attribute only;
 the global property map does not describe stack-local storage. Volatility remains
 a storage property.
 
@@ -2376,6 +2393,16 @@ halves speaking different languages: a declaration kuna had just emitted could
 not be pasted back at it, and the manual's own example
 (`prototype authenticate int authenticate(char *user,char *pass)`) was rejected
 as a syntax error.
+
+The declaration lexer retains its 65,536-byte line limit, but sizes its scratch
+buffer to the smaller of that limit and the input length, plus one EOF lookahead
+byte. Short type assertions do not allocate a full maximum-length line; long
+declarations and line-limit errors retain the same behavior. A newline that
+finishes a token is consumed only after extracting that token, allowing a type
+and its declarator on separate lines. An unterminated quoted token reports a
+parse error instead of resetting the buffer underneath the token. EOF after
+whitespace or a completed comment ends the declaration rather than producing a
+spurious token, so a file may end with a newline.
 
 The grammar therefore also accepts the standard C scalar specifiers
 (`decompiler/crates/kuna-console/src/grammar.rs (CParse::scalar_specifier)`):
@@ -2702,6 +2729,11 @@ record is honest.
 
 ## 0.3 The IR substrate
 
+Code-type identity distinguishes indirect value parameters from ordinary
+pointers even when their lowered types and ABI storage coincide. Interning
+must preserve that distinction so declaration order cannot change a call's
+source-level argument contract.
+
 When `TransformManager` materializes a lane of an existing varnode, storage
 addresses follow the target's byte order, but consumption masks always follow
 bit significance. `create_var_replacement` preserves the lane's original
@@ -2766,29 +2798,61 @@ the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as 
 `BlockCopy` mirror of the CFG when structuring begins
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_sblocks_copy)`).
 
+Deleting a varnode through `Funcdata::delete_varnode` first checks the bank's
+deletion precondition: the node must have neither a defining operation nor any
+readers. A rejected deletion leaves the node, both bank indexes, HighVariable
+membership, and storage-source metadata unchanged. Once eligible, the node is
+detached from its HighVariable while its location is still available; an empty
+HighVariable is erased, followed by the node and its storage-source metadata.
+
 Registering an input varnode also applies the prototype's saved-register and
 return-address effects. This is unconditional registration behavior, not a
 separate feature gate; `funcdata_varnode.rs (apply_input_effect_marking)` uses
 the canonical `fspec.rs (effect_type)` values rather than maintaining copies.
 
-The varnode bank's two sorted trees are the container the decompiler touches most
-— a large function creates and destroys well over a million Varnodes, each one
-inserted into and removed from both — so their keys
-(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (LocKey, DefKey)`) do not
-store an `Address` or a `SeqNum` directly. They store the ordering triple those
-compare by, flattened into plain integers: the sentinel rank, the space index and
-the offset (`decompiler/crates/kuna-base/src/address.rs (Address::sort_key)`).
-Lexicographic comparison of the triple reproduces `Address::cmp` exactly — two
-Addresses sharing a space pointer share a rank and an index and fall through to
-the offset, which is what the pointer-equality fast path does — so the tree order
-is the C++ comparator's order, while the key itself becomes `Copy`: no reference
-counting on clone or drop, no pointer chase into an `AddrSpace` to compare, and a
-smaller node. Insertion also takes a single descent
-(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (VarnodeBank::xref)`):
-the "is an equivalent varnode already present" lookup and the insertion that
-follows it are the same search, because the `insert` flag set afterwards is
-outside the `(input|written)` mask the key is built from and so cannot move the
-entry.
+The varnode bank maintains a location tree for all Varnodes and a definition
+tree for inputs and written Varnodes. Free Varnodes have identical relative
+order in both indexes: address, size, then creation index. Definition iteration
+therefore appends a filtered location-tree view for the free class instead of
+inserting and erasing a duplicate definition entry. Free definition bounds are
+translated to location bounds with the same inclusion or exclusion; ranges
+ending in the input or written class never traverse that view
+(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (iter_free_def)`).
+Creation inserts a free node only in the location tree. Becoming input or written
+adds its definition entry; becoming free removes that entry and rekeys its
+location entry. Destroying a free node removes only its location entry. Both
+logical orders retain the same ids and comparator semantics. Immediate teardown
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs (destroy_varnode)`)
+clears the definition and class flags without reinserting a temporary free entry.
+High-variable and descendant cleanup read nodes by id, then destruction erases
+the retained indexed snapshot; no location or definition query runs in between
+(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (make_free_for_destroy)`).
+
+The keys (`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (LocKey, DefKey)`)
+store integer ordering fields rather than `Address` or `SeqNum` objects. Sentinel
+rank and signed space index share a packed prefix, followed by the offset;
+flipping the index's sign bit preserves signed order within each rank. The
+input/written/free wrap ordering is computed once when a key is constructed,
+including the combined input-and-written mask. Location keys also pack signed
+size, sign-biased, and the preordered class into a single unsigned prefix.
+One comparison therefore retains the original size-then-class ordering,
+including negative sizes and extreme range bounds. Converting a location key
+to a definition key restores the signed size and class without consulting the
+live Varnode.
+Storage address and size are immutable within a Varnode. Changing its input,
+written, or free class therefore reuses those fields from the old snapshot and
+replaces only the class and sequence payload, avoiding another address-space
+lookup (`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (LocKey::with_class)`).
+Creation constructs the key directly from the allocation's address, size,
+creation index, and optional definition; its free or written class is already
+known. A newly allocated node does not need a separate general key reconstruction.
+Written keys retain SeqNum's uniq-only equality check before comparing PC and
+time; free keys use the same uniq slot for their creation index. Each Varnode
+caches one location snapshot, from which definition keys are copied, so removals
+use the indexed state even if other Varnode flags have changed. Insertion takes
+a single location-tree descent (`decompiler/crates/kuna-decomp/src/substrate/varnode.rs
+(VarnodeBank::xref)`): the equivalent-node lookup and insertion share one search,
+and the subsequent `insert` flag is outside the key's input/written mask.
 
 Read-only block queries walk the stored Varnode descendants without copying
 them. Common-subexpression lookup returns the first eligible equal op in that
@@ -2987,6 +3051,14 @@ and an agent writes:
   unknown fields are rejected. Live mappings must supply all three fields or
   none. The rendered catalog is
   [docs/options.md](../options.md) and this spec never duplicates its metadata.
+  Default CLI catalog discovery calls the static emitter in-process: no console
+  subprocess, binary input or SLEIGH tree is needed. An explicit `--decomp-dbg`
+  override, or a non-empty `KUNA_DECOMP_DBG` when the flag is absent, selects the
+  external console's catalog instead; a missing selected binary remains an error.
+  Text and JSON retain the same rendering and tier filters on both routes.
+  `--check` compares the selected catalog with this CLI build's registered handlers;
+  `--markdown` always renders the local table. The compatibility flags `--engine`
+  and `--sleighpath` do not themselves select the external route.
   The CLI parses catalog JSON with the standard JSON parser while preserving
   field order, duplicate keys, and number spellings for its existing renderers.
   Conversion is bounded to 128 nested containers and rejects malformed or trailing

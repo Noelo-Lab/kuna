@@ -289,7 +289,7 @@ impl PatternBlock {
     /// C++ `PatternBlock::isInstructionMatch`.
     pub fn is_instruction_match(
         &self,
-        walker: &dyn PatternExpressionContext,
+        walker: &(impl PatternExpressionContext + ?Sized),
     ) -> KunaResult<bool> {
         if self.nonzerosize <= 0 {
             return Ok(self.nonzerosize == 0);
@@ -306,7 +306,7 @@ impl PatternBlock {
     }
 
     /// C++ `PatternBlock::isContextMatch`.
-    pub fn is_context_match(&self, walker: &dyn PatternExpressionContext) -> KunaResult<bool> {
+    pub fn is_context_match(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<bool> {
         if self.nonzerosize <= 0 {
             return Ok(self.nonzerosize == 0);
         }
@@ -405,7 +405,7 @@ impl InstructionPattern {
     }
 
     /// C++ `InstructionPattern::isMatch`.
-    pub fn is_match(&self, walker: &dyn PatternExpressionContext) -> KunaResult<bool> {
+    pub fn is_match(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<bool> {
         self.maskvalue.is_instruction_match(walker)
     }
 
@@ -468,7 +468,7 @@ impl ContextPattern {
     pub fn shift_instruction(&mut self, _sa: i32) {}
 
     /// C++ `ContextPattern::isMatch`.
-    pub fn is_match(&self, walker: &dyn PatternExpressionContext) -> KunaResult<bool> {
+    pub fn is_match(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<bool> {
         self.maskvalue.is_context_match(walker)
     }
 
@@ -538,7 +538,7 @@ impl CombinePattern {
     }
 
     /// C++ `CombinePattern::isMatch`.
-    pub fn is_match(&self, walker: &dyn PatternExpressionContext) -> KunaResult<bool> {
+    pub fn is_match(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<bool> {
         if !self.instr.is_match(walker)? {
             return Ok(false);
         }
@@ -741,7 +741,7 @@ impl DisjointPattern {
     }
 
     /// C++ virtual `isMatch` dispatch.
-    pub fn is_match(&self, walker: &dyn PatternExpressionContext) -> KunaResult<bool> {
+    pub fn is_match(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<bool> {
         match self {
             DisjointPattern::Instruction(p) => p.is_match(walker),
             DisjointPattern::Context(p) => p.is_match(walker),
@@ -838,7 +838,7 @@ impl OrPattern {
     }
 
     /// C++ `OrPattern::isMatch`.
-    pub fn is_match(&self, walker: &dyn PatternExpressionContext) -> KunaResult<bool> {
+    pub fn is_match(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<bool> {
         for pat in &self.orlist {
             if pat.is_match(walker)? {
                 return Ok(true);
@@ -1333,7 +1333,7 @@ impl Pattern {
     }
 
     /// C++ virtual `isMatch`: does this pattern match context.
-    pub fn is_match(&self, walker: &dyn PatternExpressionContext) -> KunaResult<bool> {
+    pub fn is_match(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<bool> {
         match self {
             Pattern::Disjoint(d) => d.is_match(walker),
             Pattern::Or(o) => o.is_match(walker),

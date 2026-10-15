@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_306() {
-    assert_eq!(kuna_num_settables(), 306);
-    assert_eq!(SETTABLE_TABLE.len(), 306);
+fn settable_count_is_309() {
+    assert_eq!(kuna_num_settables(), 309);
+    assert_eq!(SETTABLE_TABLE.len(), 309);
 }
 
 #[test]
-fn tier_counts_are_111_core_116_transform_79_analysis() {
+fn tier_counts_are_113_core_117_transform_79_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_111_core_116_transform_79_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (111, 116, 79));
+    assert_eq!((core, transform, analysis), (113, 117, 79));
 }
 
 #[test]
@@ -574,6 +574,7 @@ fn option_values_live_value_present_for_110() {
                             | "itecondlist"
                             | "returndup"
                             | "orchain"
+                            | "rettriangle"
                             | "earlyreturn"
                             | "switchreturn"
                             | "loopbreak_recovery"
@@ -823,7 +824,8 @@ fn option_values_live_value_present_for_110() {
     // with no `live_field`.
     // 135 -> 136: +1 for `strlenscan` (live_field = strlen_scan).
     // 136 -> 137: +1 for `libcnames` (live_field = libc_names).
-    assert_eq!(with_live, 138);
+    // 138 -> 139: +1 for `indirectargs` (live_field = indirect_args).
+    assert_eq!(with_live, 140);
 }
 
 #[test]
@@ -1021,7 +1023,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `bytearrayc`; its P9 row sits mid-table.
     // +2 for `wideslice` and `devectorize`.
     // +1 for `addrtakenentry`; its P1 row sits mid-table beside `thunkentry`.
-    assert_eq!(json.matches("},\n").count(), 305);
+    assert_eq!(json.matches("},\n").count(), 308);
 }
 
 #[test]

@@ -1,6 +1,9 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "aif_lea_padding.rs"]
+mod aif_lea_padding;
+
 #[path = "ambiguous_selector_cli.rs"]
 mod ambiguous_selector_cli;
 
@@ -43,6 +46,9 @@ mod arm_wrapper_returns;
 
 #[path = "arm_xref_roots.rs"]
 mod arm_xref_roots;
+
+#[path = "thumbswitch_guards.rs"]
+mod thumbswitch_guards;
 
 #[path = "asserted_enum_layout.rs"]
 mod asserted_enum_layout;
@@ -183,6 +189,9 @@ mod local_name_batch;
 
 #[path = "library_names.rs"]
 mod library_names;
+
+#[path = "rettriangle_round_trip.rs"]
+mod rettriangle_round_trip;
 
 #[path = "stable_local_names.rs"]
 mod stable_local_names;
@@ -417,3 +426,12 @@ mod global_load_call_order;
 mod integer_float_rounding;
 #[path = "guarded_local_read.rs"]
 mod guarded_local_read;
+
+#[path = "indirect_value_arguments.rs"]
+mod indirect_value_arguments;
+
+#[path = "multireg_call_inputs.rs"]
+mod multireg_call_inputs;
+
+#[path = "narrow_register_inputs.rs"]
+mod narrow_register_inputs;
