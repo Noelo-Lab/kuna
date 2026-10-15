@@ -79,6 +79,7 @@ pub fn decode_method(
         first_var_arg_slot: -1,
         output_storage: None,
         input_storage: Vec::new(),
+        kuna_library_names: None,
     })
 }
 

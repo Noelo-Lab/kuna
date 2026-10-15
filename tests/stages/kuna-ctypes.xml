@@ -26,7 +26,9 @@
     `long long` because `long` is 4 there) is pinned by the companion Rust gate
     `ctypes_per_arch`, which needs two architectures in one process.
 
-    Assertions span the combined output of both passes.
+    Assertions span the combined output of both passes. Both turn `elfmain`
+    off: the 4-byte parameter they pin is the one `main`'s body yields, which
+    that option replaces with the C runtime's `int argc`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -36,6 +38,7 @@ c3
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64</com>
+  <com>option elfmain off</com>
   <com>option ctypes off</com>
   <com>read symbols</com>
   <com>load function printf</com>
@@ -46,6 +49,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64</com>
+  <com>option elfmain off</com>
   <com>option ctypes on</com>
   <com>read symbols</com>
   <com>load function printf</com>

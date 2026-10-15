@@ -1,0 +1,140 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `strlenscan`: gcc 9 expands strlen inline as
+    `mov rcx,-1; mov eax,0; repnz scasb; not rcx`, and SLEIGH lifts the repeat
+    prefix as a loop inside the one instruction, so the C showed
+    `do { if (!v3) break; v3 -= 1; ... } while (v2);` and `~v3 - 1` where
+    the source has `strlen(s)`.
+
+    Stage / sub-stage: P3 "simplification-quiescence".  The P0 assertion
+    `option strlenscan on|off` decides whether the proved scan becomes the
+    `strlen` builtin, which is ordered like a call: it stays where the scan
+    was, ahead of a store or a call that follows, and is not merged across a
+    join.
+
+    The bytes are functions of decompiler/crates/kuna-analysis/tests/fixtures/
+    strlenscan.c built by Ubuntu 20.04's gcc 9.4 at -O1 (x86-64 SysV): name_len,
+    last_char and weighted_len (lengths), len_then_clear and len_then_wipe (a
+    length read after a store and after a call that change the string),
+    add_slash (`strcat(path, "/")` inlined as a scan and two byte stores),
+    len_join (one scan on each side of a branch, the length read after the
+    join), and scan_slash and raw_count (scans that are no string length).
+
+    Pass 1 runs with no option line, so it pins the shipped default.  Pass 2
+    (`option strlenscan off`) reproduces the bug: every scan is a loop.
+-->
+<bytechunk space="ram" offset="0x4011f6">
+f30f1efa48c7c1ffffffffb800000000f2ae4889c848f7d04883e801c3f30f1efa4989f849c7c1ffffffffb8000000004c89c9f2ae48f7d1488d51ff4c89c948
+89f7f2ae4889c848f7d04883e801b9000000004839c2721f4883ec084829c2498d3c10e862feffff85c00f94c10fb6c989c84883c408c389c8c3f30f1efa4154
+55534989fc48c7c1ffffffffb800000000f2ae4889cb48f7d34889dfe849feffff4889c54885c0740e4889da4c89e64889c7e823feffff4889e85b5d415cc3f3
+0f1efa4889fa48c7c1ffffffffb800000000f2ae48f7d14883e90174060fb6440affc3b8ffffffffc3f30f1efa49c7c0ffffffffb8000000004c89c1f2ae4889
+ca48f7d24c89c14889f7f2ae4889c848f7d0488d5452fd488d4410ffc3f30f1efac60700c3f30f1efa4889fa48c7c1ffffffffb800000000f2ae4889c848f7d0
+4883e801c60200c3f30f1efa534889fa48c7c1ffffffffb800000000f2ae48f7d1488d59ff4889d7e8b0ffffff4889d85bc3f30f1efa4155415455534883ec08
+4989fc49c7c5ffffffffbb000000004c89e989d8f2ae48f7d1488d7907e848fdffff4889c54c89e64889c7e80afdffff4c89e94889ef89d8f2ae48f7d1488d44
+0dff66c7002d78c64002004c89e94889ef89d8f2ae4889cb48f7d34883eb014889efe8c3fcffff4889d84883c4085b5d415c415dc3f30f1efa4883ec084889fa
+48c7c1ffffffffb800000000f2ae48f7d166c7440aff2f004889d7e8eafcffff4883c408c3f30f1efa4989f889f04889ce85c0742148c7c1ffffffffb8000000
+00f2ae48f7d14883e90148890a41c60000488d4164c348c7c1ffffffffb800000000f2ae48f7d14883e90148890eebe1f30f1efa48c7c1ffffffffb82f000000
+f2ae4889c8c3f30f1efa48c7c1ffffffffb800000000f2ae4889c8c3
+</bytechunk>
+<symbol space="ram" offset="0x4011f6" name="name_len"/>
+<symbol space="ram" offset="0x4012b5" name="last_char"/>
+<symbol space="ram" offset="0x4012df" name="weighted_len"/>
+<symbol space="ram" offset="0x401313" name="wipe"/>
+<symbol space="ram" offset="0x40131b" name="len_then_clear"/>
+<symbol space="ram" offset="0x40133e" name="len_then_wipe"/>
+<symbol space="ram" offset="0x4013eb" name="add_slash"/>
+<symbol space="ram" offset="0x40141b" name="len_join"/>
+<symbol space="ram" offset="0x401466" name="scan_slash"/>
+<symbol space="ram" offset="0x40147c" name="raw_count"/>
+<symbol space="ram" offset="0x4010a0" name="free"/>
+<symbol space="ram" offset="0x4010b0" name="strcpy"/>
+<symbol space="ram" offset="0x4010c0" name="strcmp"/>
+<symbol space="ram" offset="0x4010d0" name="memcpy"/>
+<symbol space="ram" offset="0x4010e0" name="malloc"/>
+<symbol space="ram" offset="0x401100" name="strcat"/>
+</binaryimage>
+<script>
+  <com>parse line extern char *strcat(char *d,char *s);</com>
+  <com>parse line extern void wipe(char *s);</com>
+  <com>lo fu name_len</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu last_char</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu weighted_len</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu len_then_clear</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu len_then_wipe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add_slash</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu len_join</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scan_slash</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu raw_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option strlenscan off</com>
+  <com>lo fu name_len</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu last_char</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu weighted_len</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu len_then_clear</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu len_then_wipe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add_slash</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu len_join</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scan_slash</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu raw_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="strlenscan #1: with no option line (the shipped default) a bare length is strlen" min="1" max="1">return strlen\(a0\);</stringmatch>
+<stringmatch name="strlenscan #2: a length read twice is one variable" min="1" max="1">return \(uint1\)a0\[v1 - 1\];</stringmatch>
+<stringmatch name="strlenscan #3: two lengths in one expression keep their order" min="1" max="1">^  v1 = strlen\(a0\);
+^  return strlen\(a1\) \+ \(v1 \+ 1\) \* 3 \+ -3;</stringmatch>
+<stringmatch name="strlenscan #4: a length is taken before the store that follows the scan" min="1" max="1">^  v1 = strlen\(a0\);
+^  \*a0 = '\\0';
+^  return v1;</stringmatch>
+<stringmatch name="strlenscan #5: and before a call that follows it" min="1" max="1">^  v1 = strlen\(a0\);
+^  wipe\(a0\);
+^  return v1;</stringmatch>
+<stringmatch name="strlenscan #6: an inlined strcat takes the length once, before its two stores" min="1" max="1">^  v1 = strlen\(a0\);
+^  \(&amp;a0\[v1\]\)\[0\] = '/';
+^  \(&amp;a0\[v1\]\)\[1\] = '\\0';
+^  strcat\(a0,a1\);</stringmatch>
+<stringmatch name="strlenscan #7: each side of a branch keeps its own length" min="1" max="1">^    v1 = strlen\(a0\);
+^    \*a2 = v1;
+^    \*a0 = '\\0';</stringmatch>
+<stringmatch name="strlenscan #8: and the other side its own" min="1" max="1">^    v1 = strlen\(a0\);
+^    \*a3 = v1;</stringmatch>
+<stringmatch name="strlenscan #9: the join reads the variable, not a length taken after the store" min="1" max="1">^  return v1 \+ 100;</stringmatch>
+<stringmatch name="strlenscan #10: nine lines read a length in the default pass, none with the option off" min="9" max="9">strlen\(</stringmatch>
+<stringmatch name="strlenscan #11: a scan for another byte keeps its loop in both passes" min="2" max="2">\} while \(v2 != '/'\);</stringmatch>
+<stringmatch name="strlenscan #12: as does a scan whose raw count is returned, once by default and with every length loop when off" min="11" max="11">\} while \(v2\);</stringmatch>
+<stringmatch name="strlenscan #13: with the option off a length is the loop's complemented count -- the bug" min="3" max="3">return ~v3 - 1;</stringmatch>
+</decompilertest>

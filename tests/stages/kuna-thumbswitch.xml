@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: the Listing walk reads a Thumb tbb/tbh switch table
+    (`option thumbswitch on|off`, default-ON).
+
+    Issue:      kuna GH-299 - aif plants mid-function entries; on Cortex-M
+                firmware most of them sit in switch case bodies behind a
+                tbb/tbh the walk could not follow.
+    Stage:      P1 code/data partition - the Listing walk's computed-jump
+                successors (`listing/kuna_thumbswitch.rs`).
+    P0 assert:  `option thumbswitch on|off`.
+
+    The XML wrapper only provides the harness architecture.  Every pass clears
+    it and loads `thumbswitch_le32` (generator `thumbswitch_le32.py` beside it):
+    a stripped Thumb ELF whose vector table makes `_start` the reset handler.
+    `_start` calls 22 leaves that open with `push {r4,lr}; movs r4,#n`,
+    `dispatch` at 0x8226 (`cmp r0,#3; bhi default; tbb [pc,r0]`, four cases),
+    `dispatch2` at 0x8254 (`cmp r0,#3; bcs default2; tbb [pc,r0]`, three
+    cases, then a zero pad byte) and `dispatch3` at 0x8274 (`cmp r0,#3; bge
+    default3; tbb [pc,r0]`, three cases, then a byte that reads as an offset
+    to the unreferenced `lone3` at 0x8290).  Case 1 of the first two, at
+    0x8238 and 0x8264, opens with the leaves' prologue and ends in its own
+    `pop {r4,pc}`.
+
+    Pass 1 (`mode aggressive`, `option thumbswitch off`) reproduces the bug:
+    the walk stops at every tbb, and the gap walk lists both case bodies as
+    sub_8238 and sub_8264.
+    Pass 2 (`mode aggressive`, shipped default) reads the first two tables,
+    four entries behind the bhi and three behind the bcs, decodes the cases as
+    the dispatchers' code, and lists neither.  The signed bge bounds nothing,
+    so `dispatch3`'s table is not read and `lone3` stays a function.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thumbswitch_le32</com>
+  <com>mode aggressive</com>
+  <com>option thumbswitch off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thumbswitch_le32</com>
+  <com>mode aggressive</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>phase catalog thumbswitch</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-THUMBSWITCH #1: the bhi-guarded dispatcher is a function in both passes" min="2" max="2">0x8226 sub_8226</stringmatch>
+<stringmatch name="KUNA-THUMBSWITCH #2: the bhi-guarded case body is a function only with the option off" min="1" max="1">0x8238 sub_8238</stringmatch>
+<stringmatch name="KUNA-THUMBSWITCH #3: the bcs-guarded dispatcher is a function in both passes" min="2" max="2">0x8254 sub_8254</stringmatch>
+<stringmatch name="KUNA-THUMBSWITCH #4: the bcs-guarded case body is a function only with the option off" min="1" max="1">0x8264 sub_8264</stringmatch>
+<stringmatch name="KUNA-THUMBSWITCH #5: the catalog documents it as a default-on P1 code/data-partition option" min="1" max="1">"option": "thumbswitch", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
+<stringmatch name="KUNA-THUMBSWITCH #6: a bge bounds no table, so the function after it is not read as a case" min="2" max="2">0x8290 sub_8290</stringmatch>
+</decompilertest>

@@ -29,6 +29,8 @@ pub(crate) fn run(
     bracket: Option<&super::kuna_aifbracket::BracketEvidence>,
 ) -> CheckedAif {
     let mut straight_line = std::collections::BTreeSet::new();
+    let poolslide = (arch.analysis_aifpoolslide && crate::loadimage_object::is_arm32_language(&arch.archid))
+        .then_some(arch);
     let mut entries = if let Some(prior) = pre_frame {
         super::run_aif_after_frames(
             listing,
@@ -39,6 +41,7 @@ pub(crate) fn run(
             arch.analysis_aifcorroborate,
             bracket,
             arch.analysis_aifnoppad,
+            poolslide,
             Some(&mut straight_line),
         )
     } else {
@@ -51,6 +54,7 @@ pub(crate) fn run(
             arch.analysis_aifcorroborate,
             bracket,
             arch.analysis_aifnoppad,
+            poolslide,
         )
     };
     let mut pool_entries = Vec::new();

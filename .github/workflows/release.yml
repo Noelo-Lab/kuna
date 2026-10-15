@@ -73,7 +73,7 @@ jobs:
           fi
 
   build:
-    needs: version
+    needs: [version, specs]
     if: needs.version.outputs.exists == 'false'
     strategy:
       fail-fast: false
@@ -122,10 +122,23 @@ jobs:
           workspaces: decompiler
           key: ${{ matrix.target }}
 
+      # The compiled SLEIGH tree, laid over the checkout's specs/ so the
+      # embed-specs build script finds every .sla where `make specs` leaves it.
+      - uses: actions/download-artifact@v4
+        with:
+          name: kuna-specs
+          path: specs-dl
+
+      - name: Install the compiled SLEIGH tree
+        shell: bash
+        run: tar xzf specs-dl/kuna-v${{ needs.version.outputs.version }}-specs.tar.gz
+
+      # `kuna` is the whole release: the console and the SLEIGH compiler are
+      # built in, and embed-specs carries the compiled SLEIGH tree.
       - name: Build release binaries
         working-directory: decompiler
         shell: bash
-        run: cargo build --release --target ${{ matrix.target }} -p kuna-cli -p kuna-console -p kuna-slacomp -p kuna-ghidra
+        run: cargo build --release --target ${{ matrix.target }} -p kuna-cli -p kuna-ghidra --features kuna-cli/embed-specs
 
       # x86_64-apple-darwin is cross-compiled on the arm64 runner; skip running it.
       - name: Smoke test (kuna --version reports the release version)
@@ -138,6 +151,22 @@ jobs:
           echo "$out"
           [ "$out" = "kuna ${{ needs.version.outputs.version }}" ]
 
+      # The binary alone, away from the checkout and with no spec override,
+      # must decompile: nothing beside it is shipped.
+      - name: Smoke test (kuna alone decompiles)
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        run: |
+          ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
+          alone="$(mktemp -d)"
+          cp "decompiler/target/${{ matrix.target }}/release/kuna$ext" "$alone/"
+          fixture="$PWD/decompiler/crates/kuna-analysis/tests/fixtures/fauxware"
+          cd "$alone"
+          out="$(env -u KUNA_SPECS -u SLEIGHHOME -u KUNA_ROOT ./kuna$ext decompile "$fixture" main)"
+          echo "$out"
+          grep -q 'main(' <<<"$out"
+
       - name: Package archive
         shell: bash
         run: |
@@ -147,7 +176,7 @@ jobs:
           ext=""
           if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
           mkdir -p "dist/$pkg"
-          cp "$bindir/kuna$ext" "$bindir/decomp_dbg$ext" "$bindir/slacomp$ext" "dist/$pkg/"
+          cp "$bindir/kuna$ext" "dist/$pkg/"
           cp LICENSE NOTICE "dist/$pkg/"
           cd dist
           if [ "${{ runner.os }}" = "Windows" ]; then
@@ -181,8 +210,9 @@ jobs:
           path: ghidra-bin/*
           if-no-files-found: error
 
-  # The compiled SLEIGH tree the binaries need at runtime -- .sla files are
-  # platform-independent, so build once and ship one asset for all OSes.
+  # The compiled SLEIGH tree -- .sla files are platform-independent, so build
+  # once. Every build job embeds it into kuna; it also ships as its own asset
+  # for KUNA_SPECS and the nightly baseline.
   specs:
     needs: version
     if: needs.version.outputs.exists == 'false'
@@ -327,5 +357,5 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "kuna v$ver" \
             --generate-notes \
-            --notes "$(printf 'Each archive ships `kuna` (the CLI), `decomp_dbg` (the decompiler console), and `slacomp` (the SLEIGH compiler).\n\nThe engine needs compiled SLEIGH specs at runtime: extract `kuna-v%s-specs.tar.gz` and point `KUNA_SPECS` at the extracted `specs/` directory. See docs/release.md.\n\n`kuna-v%s-KunaDecompiler-ghidra_%s.zip` is the ready-to-install KunaDecompiler extension for **Ghidra %s** (in Ghidra: File -> Install Extensions... -> `+` -> pick the zip -> restart -> enable KunaDecompilerPlugin). It bundles prebuilt `kuna_ghidra` backends for Linux x86_64/arm64, macOS x86_64/arm64, and Windows x86_64, so it installs fully airgapped: the Ghidra release zip plus this zip are the only two files needed -- no network, no Rust toolchain. The zip is version-locked to Ghidra %s; other Ghidra 12.x versions can choose "Install Anyway" at the version-mismatch dialog (compatibility unverified).' "$ver" "$ver" "$GHIDRA_VERSION" "$GHIDRA_VERSION" "$GHIDRA_VERSION")" \
+            --notes "$(printf 'Each archive ships `kuna`, one self-contained binary: the decompiler console and the SLEIGH compiler are built in, and so are the compiled SLEIGH specs (unpacked once into the user cache directory on first use). `kuna-v%s-specs.tar.gz` is the same spec tree, for `KUNA_SPECS`. See docs/release.md.\n\n`kuna-v%s-KunaDecompiler-ghidra_%s.zip` is the ready-to-install KunaDecompiler extension for **Ghidra %s** (in Ghidra: File -> Install Extensions... -> `+` -> pick the zip -> restart -> enable KunaDecompilerPlugin). It bundles prebuilt `kuna_ghidra` backends for Linux x86_64/arm64, macOS x86_64/arm64, and Windows x86_64, so it installs fully airgapped: the Ghidra release zip plus this zip are the only two files needed -- no network, no Rust toolchain. The zip is version-locked to Ghidra %s; other Ghidra 12.x versions can choose "Install Anyway" at the version-mismatch dialog (compatibility unverified).' "$ver" "$ver" "$GHIDRA_VERSION" "$GHIDRA_VERSION" "$GHIDRA_VERSION")" \
             dist/*

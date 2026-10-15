@@ -1305,6 +1305,9 @@ impl ObjectLoadImage {
     /// Function-symbol provenance retained for a relocatable object. Defined
     /// records carry section coordinates; undefined records carry their
     /// synthetic extern VMA and no object location.
+    /// These records contain functions only: undefined symbols require either
+    /// a function symbol kind or external call/branch relocation evidence.
+    /// Data-only external references have allocated VMAs but no record here.
     pub fn reloc_symbols(&self) -> &[crate::loader::reloc_object::RelocSymbolInfo] {
         &self.reloc_symbols
     }

@@ -744,6 +744,19 @@ fn struct_construction_lands_in_factory() {
 }
 
 #[test]
+fn struct_declaration_longer_than_4k_on_one_line() {
+    // One `--assert` directive is one line; a struct with 600 fields is ~5.9 KB.
+    let fields: String = (0..600).map(|i| format!("int4 f{i}; ")).collect();
+    let decl = format!("struct big {{ {fields}}};");
+    assert!(decl.len() > 4096);
+    let f = factory();
+    super::parse_c(&decl, &f, org(), &[], |_, _| panic!("not an extern prototype"))
+        .expect("a long struct declaration should parse");
+    let ct = f.find_by_name("big").unwrap().expect("big should exist in the factory");
+    assert_eq!(ct.get_size(), 2400);
+}
+
+#[test]
 fn enum_construction_lands_in_factory() {
     // `parse line enum { ... }` interns a completed enum: the value->name map is
     // installed so the type is no longer just a stub.  The enum size (and thus the

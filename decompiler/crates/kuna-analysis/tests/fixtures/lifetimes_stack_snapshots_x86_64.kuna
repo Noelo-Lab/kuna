@@ -1,0 +1,7 @@
+typedef struct LifetimeHandle { const int *value; };
+typedef struct LifetimeQueue { int **begin; int **end; int **capacity; };
+prototype publish_frame_word int publish_frame_word(struct LifetimeQueue *queue,int **source)
+prototype cached_stack_word unsigned long long cached_stack_word(unsigned long long input, void (*callback)(void *slot))
+prototype read_integer int read_integer(const int *word)
+prototype read_handle int read_handle(const struct LifetimeHandle *handle)
+data 0x402000 int datum

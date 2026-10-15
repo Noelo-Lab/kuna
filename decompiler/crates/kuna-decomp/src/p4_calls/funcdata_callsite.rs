@@ -562,7 +562,9 @@ pub fn build_output_from_trials(
     data: &mut Funcdata,
     trialvn: &[Option<VarnodeId>],
 ) {
-    if crate::p4_calls::kuna_callretpair::build_partial_pair(fc, data, trialvn) {
+    if crate::p4_calls::kuna_callretpair::build_partial_pair(fc, data, trialvn)
+        || crate::kuna_bejoin::build_high_read(fc, data, trialvn)
+    {
         return;
     }
     let op = fc.get_op();
@@ -601,7 +603,7 @@ pub fn build_output_from_trials(
         // halves become SUBPIECEs of it, instead of staying INDIRECT creations
         // that render as locals the function never assigns.
         let entry = fc.get_entry_address().clone();
-        let order = crate::kuna_bejoin::call_join_order(data, fc.get_active_output());
+        let order = crate::kuna_bejoin::call_join_order(data, fc.get_active_output(), Some(&entry));
         if crate::kuna_rustabi::build_call_output_pair(
             op,
             data,

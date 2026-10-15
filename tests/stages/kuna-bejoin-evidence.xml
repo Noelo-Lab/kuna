@@ -1,0 +1,109 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+<!--
+    kuna option bejoin evidence (the default): a two-register value on a
+    big-endian ABI joins high word first only on proof it is one wide value.
+
+    PowerPC returns a long long in r3:r4 with the HIGH word in r3.  Joined
+    first register low (option bejoin off, upstream's join), wide_mul printed
+    its halves swapped:
+        wide_mul:  return CONCAT44(a1 * a0,(int4)(... >> 0x20));   (bug)
+    An int worked out from the high half of a 64-bit temporary can compile to
+    the same bytes as the long long (sum_hi and sum64 below are both `addc
+    4,4,6; addze 3,3; add 3,3,5`), so only proof joins in the ABI's order:
+    the two halves of one product whose low half an instruction of its own
+    made (mullw beside mulhw), a sign extension (srawi 3,3,31 beside the value
+    in r4) or a zero extension (li 3,0 beside a value the function computed).
+    A declared 8-byte return is placed by the model in the ABI's order in
+    every mode.
+
+    Stage: P4 calls and prototypes (output-prototype), option bejoin.
+    Pass 1 is the default (evidence), pass 2 option bejoin off.
+
+    Source (clang 14 -O2 -c, target powerpc-linux-gnu, .text of the object):
+        typedef unsigned long long u64; typedef long long i64; typedef unsigned u32;
+        #define V(h, l) (((u64)(u32)(h) << 32) | (u32)(l))
+        i64 wide_mul(int a, int b) { return (i64)a * b; }
+          mulhw r5,r4,r3 / mullw r4,r4,r3 / mr r3,r5 / blr
+        i64 widen(int x) { return x; }
+          mr r4,r3 / srawi r3,r3,31 / blr
+        u64 zsum(u32 a, u32 b) { return a + b; }
+          add r4,r4,r3 / li r3,0 / blr
+        u64 sum64(u32 ah, u32 al, u32 bh, u32 bl) { return V(ah, al) + V(bh, bl); }
+        int sum_hi(u32 ah, u32 al, u32 bh, u32 bl) { return (int)((V(ah, al) + V(bh, bl)) >> 32); }
+          addc r4,r4,r6 / addze r3,r3 / add r3,r3,r5 / blr     (both)
+        int clr(volatile int *p) { (void)*p; return 0; }
+          mr r4,r3 / li r3,0 / lwz r4,0(r4) / blr
+    sum64 is declared (parse line); sum_hi, the same bytes, is not.
+
+    Asserts #1-#3: the default joins wide_mul, widen and zsum high word (r3)
+      first; off keeps each swapped.
+    Assert #4: the declared sum64 joins high word first in both passes.
+    Assert #5: sum_hi keeps the first-register-low join, which C's truncation
+      reads as its int, in both passes.
+    Assert #6: clr's volatile read beside a literal zero is no zero extension:
+      a load is no proof, so it keeps the old join in both passes.
+-->
+<bytechunk space="ram" offset="0x10000000" readonly="true">
+7ca418967c8419d67ca32b784e8000207c641b787c63fe704e8000207c841a14
+386000004e8000207c8430147c6301947c632a144e8000207c8430147c630194
+7c632a144e8000207c641b7838600000808400004e800020
+</bytechunk>
+<symbol space="ram" offset="0x10000000" name="wide_mul"/>
+<symbol space="ram" offset="0x10000010" name="widen"/>
+<symbol space="ram" offset="0x1000001c" name="zsum"/>
+<symbol space="ram" offset="0x10000028" name="sum64"/>
+<symbol space="ram" offset="0x10000038" name="sum_hi"/>
+<symbol space="ram" offset="0x10000048" name="clr"/>
+</binaryimage>
+<script>
+  <com>parse line extern unsigned long long sum64(unsigned int ah,unsigned int al,unsigned int bh,unsigned int bl);</com>
+  <com>lo fu wide_mul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu widen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zsum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu clr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bejoin off</com>
+  <com>lo fu wide_mul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu widen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zsum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu clr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoin-evidence #1: the default joins wide_mul's mulhw word (r3) high" min="1" max="1">return \(uint8\)\(\(int8\)a1 \* a0\) &amp; 0xffffffff00000000 \| \(uint8\)\(a1 \* a0\) &amp; 0xffffffff;</stringmatch>
+<stringmatch name="bejoin-evidence #1b: only off puts the low product first" min="1" max="1">return CONCAT44\(a1 \* a0,</stringmatch>
+<stringmatch name="bejoin-evidence #2: the default returns widen's argument sign-extended" min="1" max="1">int8 widen\(int4 a0\)</stringmatch>
+<stringmatch name="bejoin-evidence #2b: only off shifts widen's sign into the low word" min="1" max="1">return CONCAT44\(a0,a0 &gt;&gt; 0x1f\);</stringmatch>
+<stringmatch name="bejoin-evidence #3: the default returns zsum's sum zero-extended" min="1" max="1">return \(uint4\)\(a1 \+ a0\);</stringmatch>
+<stringmatch name="bejoin-evidence #3b: only off shifts zsum's sum into the high word" min="1" max="1">return \(uint8\)\(uint4\)\(a1 \+ a0\) &lt;&lt; 0x20;</stringmatch>
+<stringmatch name="bejoin-evidence #4: the declared sum64 joins r3 high in both passes" min="2" max="2">return CONCAT44\(ah \+ CARRY4\(al,bl\) \+ bh,al \+ bl\);</stringmatch>
+<stringmatch name="bejoin-evidence #5: sum_hi keeps r3 low in both passes, which truncates to its int" min="2" max="2">return CONCAT44\(a1 \+ a3,a0 \+ \(uint4\)CARRY4\(a1,a3\) \+ a2\);</stringmatch>
+<stringmatch name="bejoin-evidence #6: clr's loaded r4 keeps the old join in both passes" min="2" max="2">return \(uint8\)\*a0 &lt;&lt; 0x20;</stringmatch>
+</decompilertest>

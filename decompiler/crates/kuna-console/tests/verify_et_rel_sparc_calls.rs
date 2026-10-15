@@ -64,11 +64,11 @@ fn sparc_calls_and_split_immediates_resolve_to_their_targets() {
         "WDISP30 call lost its local callee:\n{caller}"
     );
     assert!(
-        caller.contains("printf(0x400040,counter_bump(a0));"),
+        caller.contains("printf(\"total %d\\n\",counter_bump(a0));"),
         "counter_bump's %o0 result did not reach printf's second argument:\n{caller}"
     );
     assert!(
-        caller.contains("printf(0x400040"),
+        caller.contains("printf(\"total %d\\n\""),
         "WDISP30 extern call or HI22/LO10 literal address did not resolve:\n{caller}"
     );
     assert!(!caller.contains("sub_"), "a relocated call lost callee identity:\n{caller}");

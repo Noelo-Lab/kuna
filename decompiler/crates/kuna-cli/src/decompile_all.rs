@@ -73,8 +73,8 @@ pub(crate) struct Args {
     /// `--max-fn-memory N` (the decompiling surfaces): stop a function once the
     /// process decompiling it holds more than N MiB resident and the function
     /// itself added at least 64 MiB, recording that function's `error`; `0`
-    /// disables. Omitted, [`default_fn_memory_mib`]. See [`arm_fn_budgets`].
-    pub(crate) max_fn_memory: u64,
+    /// disables. `None` (omitted) is the cgroup default. See [`arm_fn_budgets`].
+    pub(crate) max_fn_memory: Option<u64>,
     pub(crate) options: Vec<(String, String)>,
     /// `--define-function <start[-end][=name] | @file>` (repeatable): the
     /// caller-declared function boundaries, applied by [`load_program`] right
@@ -155,7 +155,7 @@ impl Args {
             entry_seeds: Vec::new(),
             no_vars: false,
             max_fn_seconds: 0,
-            max_fn_memory: 0,
+            max_fn_memory: Some(0),
             options: Vec::new(),
             func_decls: Vec::new(),
             assertions: Vec::new(),
@@ -1271,25 +1271,20 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
 
 /// Arm the per-function budgets `args` asks for: the wall-clock watchdog on the
 /// architecture, and the memory limit process-wide, since what it measures is
-/// the process's resident set.
+/// the process's resident set. With no `--max-fn-memory` the process takes the
+/// cgroup default ([`kuna_decomp::kuna_fnmemory::use_cgroup_default`]), the
+/// serial run and every `--jobs` worker alike.
 pub(crate) fn arm_fn_budgets(prog: &mut ConsoleProgram, args: &Args) {
     if args.max_fn_seconds > 0 {
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
-    kuna_decomp::kuna_fnmemory::set_limit_mib(args.max_fn_memory);
-}
-
-/// The memory limit (MiB) a serial run gets when `--max-fn-memory` is absent:
-/// a `processes` share of the cgroup memory cap it runs under, or `0` (off)
-/// outside a capped cgroup. A `--jobs N` pool gets no default, since a fixed
-/// share per worker stops functions the container could have held. See
-/// [`kuna_decomp::kuna_fnmemory::default_limit_mib`].
-pub(crate) fn default_fn_memory_mib(processes: u64) -> u64 {
-    if !kuna_decomp::kuna_fnmemory::supported() {
-        return 0;
+    match args.max_fn_memory {
+        Some(mib) => kuna_decomp::kuna_fnmemory::set_limit_mib(mib),
+        None => {
+            kuna_decomp::kuna_fnmemory::use_cgroup_default();
+        }
     }
-    kuna_decomp::kuna_fnmemory::default_limit_mib(processes)
 }
 
 /// Parse a `--max-fn-memory` value: MiB, `0` to disable. Refused where the
@@ -1300,9 +1295,9 @@ pub(crate) fn parse_max_fn_memory(v: &str) -> Result<u64, String> {
         .parse::<u64>()
         .map_err(|_| format!("invalid --max-fn-memory value {v:?} (MiB)"))?;
     if mib > 0 && !kuna_decomp::kuna_fnmemory::supported() {
-        return Err("--max-fn-memory needs the resident set, which this platform does not \
-                    report (/proc/self/status)"
-            .into());
+        return Err(
+            "--max-fn-memory needs the resident set, which this platform does not report".into()
+        );
     }
     Ok(mib)
 }
@@ -2089,6 +2084,23 @@ fn error_json(error: Option<&str>) -> Json {
     error.map(|e| Json::Str(e.to_string())).unwrap_or(Json::Null)
 }
 
+fn stack_object_json(object: &kuna_decomp::kuna_stackobjectinfo::StackObjectInfo) -> Json {
+    Json::Object(vec![
+        ("id".into(), Json::Str(object.id.clone())),
+        ("name".into(), Json::Str(object.name.clone())),
+        ("stack_offset".into(), Json::Number(object.stack_offset.to_string())),
+        ("size".into(), Json::Number(object.size.to_string())),
+        ("defined".into(), Json::Bool(object.defined)),
+        ("uses".into(), Json::Array(object.uses.iter().map(|use_| {
+            Json::Object(vec![
+                ("address".into(), Json::Number(use_.address.to_string())),
+                ("slot".into(), Json::Number(use_.slot.to_string())),
+                ("type".into(), Json::Str(use_.type_name.clone())),
+            ])
+        }).collect())),
+    ])
+}
+
 /// Build the `decompile-all --json` document.
 fn result_json(
     binary: &str,
@@ -2140,6 +2152,11 @@ fn result_json(
                     // Always present, `[]` unless the option is on.
                     ("types".into(), types),
                 ];
+                if !f.stack_objects.is_empty() {
+                    record.push(("stack_objects".into(), Json::Array(
+                        f.stack_objects.iter().map(stack_object_json).collect(),
+                    )));
+                }
                 if let Some(inside) = interior.get(&f.byte_address) {
                     record.push(("interior_to".into(), crate::interior::json(inside)));
                 }
@@ -2323,6 +2340,7 @@ mod provenance_json_tests {
                 definition: "struct mystruct {\n    int a;\n};\n".into(),
                 size: 4,
             }],
+            stack_objects: Vec::new(),
             globals: Vec::new(),
             field_calls: Vec::new(),
             line_mappings: vec![LineMapping {
@@ -2354,11 +2372,9 @@ mod provenance_json_tests {
 // --- argument parsing --------------------------------------------------------
 
 /// Expand a concrete decompiler mode into its owned `(option, value)`
-/// overrides. Callers PREPEND these before the user's `--option` pairs so an
-/// explicit `--option` still wins (last-write, matching the console's `mode`
-/// then `option` ordering). `auto` must first be resolved from binary metadata
-/// by [`mode_options_for_binary`].
-pub fn mode_override_pairs(mode: &str) -> Result<Vec<(String, String)>, String> {
+/// overrides, without `auto`'s own.
+#[cfg(test)]
+fn mode_override_pairs(mode: &str) -> Result<Vec<(String, String)>, String> {
     if kuna_decomp::modes::mode_is_automatic(mode) {
         return Err("mode `auto` requires input binary size".into());
     }
@@ -2371,19 +2387,20 @@ pub fn mode_override_pairs(mode: &str) -> Result<Vec<(String, String)>, String> 
     }
 }
 
-/// Resolve an omitted or explicit `auto` mode from `binary_size`; explicit
-/// concrete modes ignore the size.
-#[cfg(test)]
-fn mode_override_pairs_for_size(
-    mode: Option<&str>,
-    binary_size: u64,
-) -> Result<Vec<(String, String)>, String> {
-    let concrete = kuna_decomp::modes::resolve_mode_for_size(mode, binary_size).ok_or_else(|| {
-        let requested = mode.unwrap_or("auto");
-        let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
-        format!("unknown mode {requested:?} (known: {})", known.join(", "))
-    })?;
-    mode_override_pairs(concrete)
+/// Resolve an omitted or explicit `auto` mode from `binary_size` to its
+/// concrete preset and owned overrides (`auto`'s own first); explicit concrete
+/// modes ignore the size. Callers PREPEND the overrides before the user's
+/// `--option` pairs so an explicit `--option` still wins (last-write, matching
+/// the console's `mode` then `option` ordering).
+fn resolved_mode(mode: Option<&str>, binary_size: u64) -> Result<ResolvedMode, String> {
+    let (name, overrides) = kuna_decomp::modes::resolve_overrides_for_size(mode, binary_size)
+        .ok_or_else(|| {
+            let requested = mode.unwrap_or("auto");
+            let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
+            format!("unknown mode {requested:?} (known: {})", known.join(", "))
+        })?;
+    let options = overrides.iter().map(|(o, v)| ((*o).to_string(), (*v).to_string())).collect();
+    Ok(ResolvedMode { name, options })
 }
 
 /// Resolve the frontend mode policy and prepend its overrides to the user's
@@ -2407,31 +2424,17 @@ fn mode_and_options_for_binary(
     binary: &str,
     explicit: Vec<(String, String)>,
 ) -> Result<ResolvedMode, String> {
-    let concrete = concrete_mode_for_binary(mode, binary)?;
-    let mut merged = mode_override_pairs(concrete)?;
-    merged.extend(explicit);
-    Ok(ResolvedMode { name: concrete, options: merged })
-}
-
-fn concrete_mode_for_binary(
-    mode: Option<&str>,
-    binary: &str,
-) -> Result<&'static str, String> {
     let requested = mode.unwrap_or("auto");
-    if kuna_decomp::modes::mode_is_automatic(requested) {
-        let size = std::fs::metadata(binary)
+    let size = if kuna_decomp::modes::mode_is_automatic(requested) {
+        std::fs::metadata(binary)
             .map_err(|e| format!("cannot read input binary metadata for mode auto: {binary}: {e}"))?
-            .len();
-        kuna_decomp::modes::resolve_mode_for_size(Some(requested), size).ok_or_else(|| {
-            let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
-            format!("unknown mode {requested:?} (known: {})", known.join(", "))
-        })
+            .len()
     } else {
-        kuna_decomp::modes::resolve_mode_for_size(Some(requested), 0).ok_or_else(|| {
-            let known: Vec<&str> = kuna_decomp::modes::mode_names().collect();
-            format!("unknown mode {requested:?} (known: {})", known.join(", "))
-        })
-    }
+        0
+    };
+    let mut resolved = resolved_mode(Some(requested), size)?;
+    resolved.options.extend(explicit);
+    Ok(resolved)
 }
 
 /// Parse `argv` for `cmd`, discarding the triage half.
@@ -2712,11 +2715,7 @@ pub(crate) fn parse_args_with_filters(
     let max_fn_seconds = max_fn_seconds
         .unwrap_or_else(|| default_fn_budget_seconds(concrete_mode, whole_binary));
     let decompiles = matches!(cmd, "decompile-all" | "decompile-project" | "decompile-graph");
-    let max_fn_memory = match max_fn_memory {
-        Some(mib) => mib,
-        None if decompiles && jobs <= 1 => default_fn_memory_mib(1),
-        None => 0,
-    };
+    let max_fn_memory = if decompiles { max_fn_memory } else { Some(0) };
     // The pool re-execs this binary, so a policy it cannot express is one the
     // shards would silently drop rather than honour. Pool-only: on `functions`
     // the same flag buys decode lanes and no process is re-exec'd, so a raw
@@ -2853,8 +2852,10 @@ fn usage_decompile_all() {
          --max-fn-memory MiB stops a function once the process decompiling it\n\
          holds more than MiB resident and the function added 64 MiB or more;\n\
          that function becomes its own `error` record the same way. Omitted,\n\
-         a serial run takes the cgroup memory cap less max(512 MiB, 10%), and\n\
-         --jobs N or a run outside a capped cgroup has none; 0 disables.\n\
+         under a cgroup memory cap, with a margin of max(512 MiB, 10%), a\n\
+         function that grew by the margin is stopped once the cgroup holds more\n\
+         than the cap less it, serial or --jobs alike; outside one there is\n\
+         none; 0 disables.\n\
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
          in-process path). Output is merged in target order and is identical to\n\
@@ -2872,7 +2873,10 @@ fn usage_decompile_all() {
          worker re-run whole-binary\n\
          function discovery instead of taking the parent's inventory.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
-         2 MiB, and fast at 2 MiB or larger. Explicit --option values win.\n\
+         2 MiB, and fast at 2 MiB or larger, with ctypes and partialaccess on\n\
+         at every size (an explicit --mode reliable keeps the int4/uint8 names\n\
+         and the name._4_2_ members). Explicit --option\n\
+         values win.\n\
          An unfiltered run that discovers no function at all exits 1 with the\n\
          reason on stderr and in the document's run-level `error` field.\n\
          \n\
@@ -3160,9 +3164,16 @@ mod mode_tests {
             (kuna_decomp::modes::AUTO_RELIABLE_MIN_BYTES, "reliable"),
             (kuna_decomp::modes::AUTO_FAST_MIN_BYTES, "fast"),
         ] {
-            let expected = mode_override_pairs(concrete).unwrap();
-            assert_eq!(mode_override_pairs_for_size(None, size).unwrap(), expected);
-            assert_eq!(mode_override_pairs_for_size(Some("auto"), size).unwrap(), expected);
+            let mut expected = vec![
+                ("ctypes".to_string(), "on".to_string()),
+                ("partialaccess".to_string(), "on".to_string()),
+            ];
+            expected.extend(mode_override_pairs(concrete).unwrap());
+            for requested in [None, Some("auto")] {
+                let resolved = resolved_mode(requested, size).unwrap();
+                assert_eq!(resolved.name, concrete);
+                assert_eq!(resolved.options, expected);
+            }
         }
     }
 

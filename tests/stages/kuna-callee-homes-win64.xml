@@ -1,0 +1,31 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!-- Callee RCX/RDX homes remain pointer writes at return. Only the first
+     caller leaves those cells unread and unexposed. Save offsets differ. -->
+<bytechunk space="ram" offset="0x401000">4881ec880000000f297424400f297c2450440f29442460440f294c2470488d4c2420488d15f70f0000e8e7000000f30f10442420f30f584424240f287424400f287c2450440f28442460440f284c24704881c488000000c34881ec880100000f297424400f297c2450440f29442460440f294c2470488d4c2420488d159f0f0000e88f000000488b0424f30f1000f30f584424240f287424400f287c2450440f28442460440f284c24704881c488010000c34881ec880200000f297424400f297c2450440f29442460440f294c2470488d0424488905560f0000488d4c2420488d153a0f0000e82a000000f30f10442420f30f584424240f287424400f287c2450440f28442460440f284c24704881c488020000c348894c24084889542410488b4c2408488b542410f30f1002f30f1101488b4c2408488b542410f30f104204f30f114104488b4c2408488b542410f30f104208f30f114108488b4c2408488b542410f30f10420cf30f11410cc3</bytechunk>
+<bytechunk space="ram" offset="0x402020">0000a03f00002040000088410000b8410000000000000000</bytechunk>
+<symbol space="ram" offset="0x401000" name="fixture_home_clean"/>
+<symbol space="ram" offset="0x401058" name="fixture_home_read"/>
+<symbol space="ram" offset="0x4010b2" name="fixture_home_escape"/>
+<symbol space="ram" offset="0x401115" name="fixture_copy_rect"/>
+<symbol space="ram" offset="0x402020" name="rect_source"/>
+<symbol space="ram" offset="0x402030" name="home_alias"/>
+</binaryimage>
+<script>
+<com>parse line struct Rect { float x; float y; float width; float height; };</com>
+<com>map prototype 0x401000 float fixture_home_clean(void)</com>
+<com>map prototype 0x401058 float fixture_home_read(void)</com>
+<com>map prototype 0x4010b2 float fixture_home_escape(void)</com>
+<com>map prototype 0x401115 void fixture_copy_rect(Rect *destination, const Rect *source)</com>
+<com>map addr r0x402020 Rect rect_source</com>
+<com>map addr r0x402030 unsigned long long home_alias</com>
+<com>option stackviews on</com>
+<com>lo fu fixture_home_clean</com><com>decompile</com><com>print C</com>
+<com>lo fu fixture_home_read</com><com>decompile</com><com>print C</com>
+<com>lo fu fixture_home_escape</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="CALLEE-HOMES-WIN64 #1: unread private homes do not retain split XMM saves" min="0" max="0">stack - 0x(?:48|44|40|3c|38|34|30|2c|28|24|20|1c|18|14|10|c)\b</stringmatch>
+<stringmatch name="CALLEE-HOMES-WIN64 #2: a caller read of the residual home pointer keeps saves mapped" min="1" max="2">stack - 0x148\b</stringmatch>
+<stringmatch name="CALLEE-HOMES-WIN64 #3: exposing the home address keeps saves mapped" min="1" max="2">stack - 0x248\b</stringmatch>
+</decompilertest>

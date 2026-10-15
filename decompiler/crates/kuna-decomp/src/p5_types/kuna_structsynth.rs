@@ -647,7 +647,7 @@ const MAX_LITERAL: int4 = 16;
 
 /// Do these stored bytes read as text?  `None` when they are all zero, which a
 /// record's initializer stores as often as a string's terminator.
-fn bytes_text(bytes: &[u8]) -> Option<bool> {
+pub(crate) fn bytes_text(bytes: &[u8]) -> Option<bool> {
     if bytes.iter().all(|&b| b == 0) {
         return None;
     }
@@ -1017,6 +1017,18 @@ fn answer(
     }
 }
 
+/// (kuna `stackstruct`) The program-wide structure for a frame record's layout,
+/// only when it is exactly `size` bytes: a frame object cannot grow past the
+/// bytes its evidence proved, because the slots after it belong to other locals.
+pub(crate) fn answer_frame(
+    data: &Funcdata,
+    types: &dyn TypeFactory,
+    fields: Vec<TypeField>,
+    size: int4,
+) -> Option<Rc<Datatype>> {
+    answer(data, types, fields, size, &[], &[]).filter(|ct| ct.get_size() == size)
+}
+
 /// Every decline condition for a base, in one place.
 fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     let Some(v) = data.vbank().get(base) else { return false };
@@ -1037,6 +1049,11 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
         return false;
     }
     let Some(ct) = vn_type(data, base) else { return false };
+    // (kuna `elfmain`) A `main`'s runtime `argv`/`envp` is the vector, however
+    // few of its elements the body reads.
+    if crate::kuna_elfmaindecl::took_runtime_type(data, base, &ct) {
+        return false;
+    }
     let lone = data.kuna_calleevote_closed() && !pointee_is_given(data, base, &ct, e);
     let headless = lone
         && crate::kuna_structheadless::admits(data, base, &ct)

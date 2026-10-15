@@ -1,0 +1,31 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!-- Asset-free regression for 4-byte SLEIGH lanes of unaffected 16-byte XMM
+     effects. The two caller-local rectangles are disjoint from the save slots. -->
+<bytechunk space="ram" offset="0x401136">f30f1efa0f10020f1101c3</bytechunk>
+<bytechunk space="ram" offset="0x401215">4881ec880000000f297424400f297c2450440f29442460440f294c2470488d4c2420488d15e20d0000e8f3fefffff30f10442420f30f584424240f287424400f287c2450440f28442460440f284c24704881c488000000c3</bytechunk>
+<bytechunk space="ram" offset="0x402020">0000a03f00002040000088410000b841</bytechunk>
+<bytechunk space="ram" offset="0x401000">4881ecb80000000f29742420488d4c2420e8ea0200000f287424204881c4b8000000c3</bytechunk>
+<bytechunk space="ram" offset="0x401300">488b01c3</bytechunk>
+<symbol space="ram" offset="0x401000" name="fixture_observed_lane"/>
+<symbol space="ram" offset="0x401136" name="fixture_copy_rect"/>
+<symbol space="ram" offset="0x401215" name="fixture_spills_rect"/>
+<symbol space="ram" offset="0x401300" name="fixture_read_saved_lane"/>
+<symbol space="ram" offset="0x402020" name="rect_source"/>
+</binaryimage>
+<script>
+<com>parse line struct Rect { float x; float y; float width; float height; };</com>
+<com>map prototype 0x401215 float fixture_spills_rect(void)</com>
+<com>map prototype 0x401136 void fixture_copy_rect(Rect *destination, const Rect *source)</com>
+<com>map prototype 0x401000 unsigned long long fixture_observed_lane(void)</com>
+<com>map prototype 0x401300 unsigned long long fixture_read_saved_lane(const unsigned long long *source)</com>
+<com>map addr r0x402020 Rect rect_source</com>
+<com>option stackviews on</com>
+<com>lo fu fixture_spills_rect</com><com>decompile</com><com>print C</com>
+<com>lo fu fixture_observed_lane</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="SAVED-XMM-WIN64 fixture #1: unaffected XMM6-9 lane spills are absent from the local frame" min="0" max="0">stack - 0x(?:48|44|40|3c|38|34|30|2c|28|24|20|1c|18|14|10|c)</stringmatch>
+<stringmatch name="SAVED-XMM-WIN64 fixture #2: the disjoint caller-owned Rect still reaches its helper and return" min="1" max="1">return v[0-9]+(\[0\])?\.x \+ v[0-9]+(\[0\])?\.y;</stringmatch>
+<stringmatch name="SAVED-XMM-WIN64 fixture #3: an observed XMM spill stays mapped at its frame slot" min="1" max="1">stack - 0x98</stringmatch>
+</decompilertest>

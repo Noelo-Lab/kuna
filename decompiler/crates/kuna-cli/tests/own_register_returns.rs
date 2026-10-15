@@ -327,8 +327,8 @@ fn a_128_bit_pair_keeps_the_argument_returned_in_its_own_register() {
                 "unsigned long a0,unsigned long a1,unsigned long a2"
             };
             assert!(body.contains(&format!("undefined16 {name}({params})")), "{stem}\n{printed}");
-            assert!(body.contains(&format!("v1._8_8_ = {high};")), "{stem}\n{printed}");
-            assert!(body.contains("v1._0_8_ = a0;"), "{stem}\n{printed}");
+            assert!(body.contains(&format!("*(unsigned long *)&v1[8] = {high};")), "{stem}\n{printed}");
+            assert!(body.contains("*(unsigned long *)v1 = a0;"), "{stem}\n{printed}");
         }
         assert!(
             function(&printed, "keep_long").contains("unsigned long keep_long(unsigned long a0)"),

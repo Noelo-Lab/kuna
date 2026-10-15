@@ -30,6 +30,7 @@
 
 pub mod classify;
 mod kuna_compactrefs;
+mod kuna_insnindex;
 mod kuna_insnstore;
 pub mod context;
 pub mod decode;
@@ -52,6 +53,7 @@ mod kuna_picpool;
 mod kuna_poolref;
 mod kuna_ppclocalentry;
 mod kuna_switchtable;
+mod kuna_thumbswitch;
 mod kuna_unmappedentry;
 pub mod model;
 pub mod walk;
@@ -382,6 +384,16 @@ impl Listing {
         let want_stack_callbacks = arch.analysis_fast_funcdisc
             && matches!(file.architecture(), object::Architecture::I386 | object::Architecture::X86_64);
 
+        let tables = arch
+            .analysis_thumbswitch
+            .then(|| {
+                kuna_thumbswitch::HalfwordTables::new(
+                    file,
+                    arch.manage().get_default_data_space().cloned(),
+                    arch.max_jumptable_size as usize,
+                )
+            })
+            .flatten();
         let st = walk::walk(
             translate,
             arch,
@@ -398,6 +410,7 @@ impl Listing {
             plan,
             frames,
             resumed,
+            tables.as_ref(),
         );
 
         let refs = kuna_compactrefs::ReferenceIndex::new(st.refs);
@@ -471,6 +484,7 @@ impl Listing {
             detail,
             /* want_stack_callbacks = */ false,
             &WalkPlan::serial(),
+            None,
             None,
             None,
         );
@@ -582,7 +596,7 @@ impl Listing {
         &self,
         start: u64,
         end: Option<u64>,
-    ) -> impl Iterator<Item = (&u64, &Insn)> {
+    ) -> impl DoubleEndedIterator<Item = (&u64, &Insn)> {
         let end = end.map(|end| end.max(start));
         self.insns.range((
             Bound::Included(start),
@@ -592,7 +606,15 @@ impl Listing {
 
     /// The last decoded instruction that starts strictly before `vma`.
     pub fn instruction_before(&self, vma: u64) -> Option<&Insn> {
-        self.insns.range(..vma).next_back().map(|(_, insn)| insn)
+        self.instruction_entry_before(vma).map(|(_, insn)| insn)
+    }
+
+    /// The address and instruction of the last decoded instruction strictly before `vma`.
+    pub(crate) fn instruction_entry_before(&self, vma: u64) -> Option<(u64, &Insn)> {
+        self.insns
+            .range(..vma)
+            .next_back()
+            .map(|(&address, insn)| (address, insn))
     }
 
     /// The VMA of the first decoded instruction that starts strictly after `vma`
@@ -823,7 +845,7 @@ mod tests {
             fall_through: addr.checked_add(1),
             flow: Default::default(),
             flows: Vec::new(),
-            mnemonic: String::new().into(),
+            mnemonic: "".into(),
             operands: String::new(),
             pcode: None,
         }

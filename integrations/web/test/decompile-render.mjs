@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { highlight, highlightC, highlightRust, scan, escapeHtml } from '../assets/js/highlight-c.js';
 import {
   normalizeInspect, tokenLines, fallbackLines, lineSegments, buildIndex, renderC,
-  changedLines, localDecls, storageLabel, bandOf, preambleLength, preambleTypes,
+  changedLines, diffLines, localDecls, storageLabel, bandOf, preambleLength, preambleTypes,
 } from '../decompile/render-c.js';
 import { addrHex, signedHex } from '../decompile/addr.js';
 import { normalizePrefs, cycle, hintsOn, DEFAULT_PREFS, loadPrefs, savePrefs } from '../decompile/prefs.js';
@@ -18,7 +18,7 @@ import {
 import { entryOffset } from '../decompile/addr.js';
 import { parseRustSignature } from '../decompile/ctype.js';
 import { placeOverlay } from '../decompile/hover.js';
-import { expand } from '../decompile/sync.js';
+import { expand, createSync } from '../decompile/sync.js';
 
 /** The text a browser would show for our own renderer's markup: tags dropped, the five escapes decoded. */
 function visibleText(markup) {
@@ -76,6 +76,12 @@ assert.equal(plain.source, 'decompile');
 assert.equal(plain.hasInstructions, false);
 assert.match(plain.tokens_error, /inspect/);
 assert.equal(plain.proto, 'int main(int argc,char **argv)');
+const noted = normalizeInspect({ function: { name: 'f', address_hex: '0x10', code: 'int f(void) // return-dupe\n{\n  return 0;\n}',
+  tokens: [{ line: 1, col: 12, len: 14, text: '// return-dupe', kind: 'comment' }] } });
+assert.equal(noted.code, 'int f(void)\n{\n  return 0;\n}', 'kuna\'s notes leave the code');
+assert.deepEqual(noted.notes.get(1).map((t) => t.tag), ['return-dupe'], 'and are kept by line');
+assert.equal(noted.tokens.length, 0);
+assert.equal(noted.proto, 'int f(void)');
 checks.push('normalizeInspect (inspect + decompile)');
 
 // ── token stream: round trip, per-line fallback, no-token path ─────────────
@@ -173,6 +179,10 @@ assert.equal(bandOf(6), 0);
 assert.deepEqual([...changedLines('a\nb\nc', 'a\nB\nc\nd')], [2, 4]);
 assert.deepEqual([...changedLines(MAIN, MAIN.replace(/v1/g, 'total'))], [3, 4, 5, 6]);
 assert.equal(changedLines('', 'x').size, 0, 'nothing flashes on a first render');
+assert.deepEqual([1, 2, 3, 4].map(diffLines('a\nb\nc\nd', 'a\nnote\nb\nc\nd').lineOf), [1, 3, 4, 5], 'lines move past an inserted one');
+assert.deepEqual([1, 2, 3].map(diffLines('a\nb\nc', 'a\nB\nc').lineOf), [1, 2, 3], 'a changed line moves with the kept line above it');
+assert.deepEqual([1, 2, 3].map(diffLines('t1\nt2\nf\nx', 'f\nx').lineOf), [1, 1, 1], 'lines above a removed block stay with what follows');
+assert.equal(diffLines('', 'x').lineOf, null);
 assert.equal(addrHex(4504), '0x1198');
 assert.equal(addrHex('0X11AB'), '0x11ab');
 assert.equal(addrHex('0xffffffff81000000'), '0xffffffff81000000');
@@ -366,7 +376,19 @@ assert.deepEqual([...sets.addrs], ['0x11b5', '0x11c2']);
 assert.deepEqual([...expand({ addr: '0x11e1' }, mainIndex).lines], [6]);
 assert.ok(expand({ sym: 'v1' }, mainIndex).lines.has(7));
 assert.equal(expand(null, mainIndex).lines.size, 0);
-checks.push('placeOverlay/expand');
+const seen = [];
+const sync = createSync();
+sync.setIndex(mainIndex);
+sync.register('bytes', { mark: (s, cls) => seen.push(['mark', cls, s ? [...s.addrs] : null]), reveal: (t, s, how) => seen.push(['reveal', [...s.addrs], how]) });
+sync.select({ line: 5 }, { from: 'c', reveal: false });
+seen.length = 0;
+sync.show('bytes');
+assert.deepEqual(seen, [['mark', 'hl-sel', ['0x11b5', '0x11c2']], ['mark', 'hl-hover', null], ['reveal', ['0x11b5', '0x11c2'], { arriving: true }]],
+  'a view that comes on screen is marked and scrolled to the selection');
+seen.length = 0;
+sync.show('bytes', { addr: '0x11e1' });
+assert.deepEqual(seen.at(-1), ['reveal', ['0x11e1'], { arriving: true }], 'or to the place it is given');
+checks.push('placeOverlay/expand/show');
 
 // ── the type definitions above a function (structs.elf: make_item) ────────
 const item = normalizeInspect(fixture('inspect-make_item.json'));
@@ -391,7 +413,8 @@ assert.equal(itemSegs.preamble, sigAt);
 assert.ok(itemSegs.segs.slice(0, sigAt).flat().every((s) => !s.tok), 'the definitions are not clickable names');
 assert.ok(itemSegs.segs.slice(sigAt).flat().some((s) => s.tok?.kind === 'funcname'), 'the function keeps its tokens');
 const itemHtml = renderC(item, { segs: itemSegs.segs, preamble: itemSegs.preamble });
-assert.match(itemHtml, /^<div class="d2-chunk"><div class="d2-tyhead" role="presentation">.*<button class="d2-tytoggle" data-act="types-toggle" aria-expanded="true">Types this function uses<\/button> <span class="d2-tyn">1 type<\/span><\/span><\/div><div class="d2-cl d2-ty" id="c-L1"/);
+assert.match(itemHtml, /^<div class="d2-chunk"><div class="d2-tyhead" role="presentation">.*<button class="d2-tytoggle" data-act="types-toggle" aria-expanded="false">Types this function uses<\/button> <span class="d2-tyn">1 type<\/span><\/span><\/div><div class="d2-cl d2-ty" id="c-L1"/);
+assert.match(renderC(item, { segs: itemSegs.segs, preamble: itemSegs.preamble, typesOpen: true }), /aria-expanded="true">Types this function uses/, 'open only when asked');
 assert.equal((itemHtml.match(/class="d2-cl d2-ty"/g) || []).length, sigAt, 'one shaded row per preamble line');
 assert.match(itemHtml, new RegExp(`<div class="d2-cl" id="c-L${sigAt + 1}"`), 'the signature is an ordinary row');
 assert.match(itemHtml, /<span class="tok-kw">struct<\/span> <span class="tok-type">struct_0<\/span> \{/, 'highlighted, the type named as a type');

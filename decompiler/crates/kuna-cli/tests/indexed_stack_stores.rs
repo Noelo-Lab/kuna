@@ -950,6 +950,7 @@ fn no_worse_than_without_the_guard(stem: &str, functions: &[(&str, u32, &[u8])])
         &src,
         format!(
             r#"
+#include <string.h>
 {printed}
 {checks}
 int atoi(const char *);

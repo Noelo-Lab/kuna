@@ -112,6 +112,7 @@ pub(crate) mod kuna_addrtakenentry;
 pub mod kuna_aifbracket;
 pub mod kuna_aifcorroborate;
 pub mod kuna_aifnoppad;
+mod kuna_aifpoolslide;
 pub mod kuna_aifstrict;
 pub mod kuna_poolentry;
 pub(crate) mod kuna_entrychecks;
@@ -809,7 +810,8 @@ fn follow_subroutine(
 /// an aligned address or a hole's first byte. `aifcorroborate` (GH-313) restores
 /// upstream's second fingerprint test in [`kuna_aifcorroborate`]: an accept must
 /// either add information or match a prologue 50 discovered functions share.
-/// `aifnoppad` (GH-299) keeps every entry off padding and zero fill in [`kuna_aifnoppad`].
+/// `aifnoppad` (GH-299) keeps every entry off padding and zero fill in [`kuna_aifnoppad`],
+/// and `aifpoolslide` (GH-299) keeps it off literal-pool words in [`kuna_aifpoolslide`].
 #[allow(clippy::too_many_arguments)]
 pub fn run_aif(
     listing: &Listing,
@@ -820,10 +822,16 @@ pub fn run_aif(
     aifcorroborate: bool,
     aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
     aifnoppad: bool,
+    aifpoolslide: Option<&kuna_decomp::architecture::Architecture>,
 ) -> Vec<u64> {
     let _probe = arm_gap_probe_scope(translate);
+    let poolslide = aifpoolslide.map(|arch| (arch, Rc::clone(&code_space)));
     let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
-    run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate, aifbracket, aifnoppad)
+    let policy = GapWalk {
+        strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket, noppad: aifnoppad,
+        poolslide,
+    };
+    aif_candidates(listing, listing, &mut decoder, policy, &BTreeMap::new(), None, None)
 }
 
 /// Retain pre-frame validation extents while admitting starts only in current gaps.
@@ -837,13 +845,19 @@ pub(crate) fn run_aif_after_frames(
     aifcorroborate: bool,
     aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
     aifnoppad: bool,
+    aifpoolslide: Option<&kuna_decomp::architecture::Architecture>,
     mut straight_line: Option<&mut BTreeSet<u64>>,
 ) -> Vec<u64> {
     let _probe = arm_gap_probe_scope(translate);
+    let poolslide = aifpoolslide.map(|arch| (arch, Rc::clone(&code_space)));
     let mut decoder = GapDecoder::new(translate, code_space, listing.exec_ranges());
     decoder.prior_partition = Some(prior);
     decoder.straight_line = straight_line.is_some().then(BTreeSet::new);
-    let entries = run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate, aifbracket, aifnoppad);
+    let policy = GapWalk {
+        strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket, noppad: aifnoppad,
+        poolslide,
+    };
+    let entries = aif_candidates(listing, listing, &mut decoder, policy, &BTreeMap::new(), None, None);
     if let (Some(out), Some(reached)) = (straight_line.as_deref_mut(), decoder.straight_line.take()) {
         out.extend(reached);
     }
@@ -859,6 +873,7 @@ pub(crate) fn arm_gap_probe_scope(
     Some(scope)
 }
 
+#[cfg(test)]
 fn run_aif_with_decoder(
     listing: &Listing,
     decoder: &mut GapDecoder,
@@ -869,17 +884,19 @@ fn run_aif_with_decoder(
 ) -> Vec<u64> {
     let gap_walk = GapWalk {
         strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket, noppad: aifnoppad,
+        poolslide: None,
     };
     aif_candidates(listing, listing, decoder, gap_walk, &BTreeMap::new(), None, None)
 }
 
 /// The per-run AIF gap-walk policy flags.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct GapWalk<'e> {
     strict: bool,
     corroborate: bool,
     bracket: Option<&'e kuna_aifbracket::BracketEvidence>,
     noppad: bool,
+    poolslide: Option<(&'e kuna_decomp::architecture::Architecture, Rc<AddrSpace>)>,
 }
 
 /// Frame-prefix probes skip claimed spans and gaps containing no frame roots.
@@ -893,9 +910,12 @@ fn aif_candidates(
     roots: Option<&BTreeSet<u64>>,
     mut bodies: Option<&mut BTreeMap<u64, ProbedBody>>,
 ) -> Vec<u64> {
-    let GapWalk { strict: aifstrict, corroborate: aifcorroborate, bracket, noppad } = policy;
+    let GapWalk { strict: aifstrict, corroborate: aifcorroborate, bracket, noppad, poolslide } = policy;
     let bracket = bracket.filter(|_| roots.is_none());
     let mut padding = (noppad && roots.is_none()).then(|| kuna_aifnoppad::PaddingRuns::new(decoder));
+    let mut literals = poolslide.filter(|_| roots.is_none()).map(|(arch, code_space)| {
+        kuna_aifpoolslide::LiteralWords::from_listing(listing, kuna_poolentry::DecodeMode { arch, code_space })
+    });
     if corpus.function_count() < MINIMUM_FUNCTION_COUNT || corpus.num_instructions() == 0 {
         return Vec::new();
     }
@@ -969,11 +989,30 @@ fn aif_candidates(
                 }) => Probe::Uncorroborated(body),
                 other => other,
             };
+            // (kuna, `aifpoolslide`) A candidate on a literal-pool word plants its
+            // accept on the code after the pool; it is refused, consuming its body,
+            // when that is data, and rejected when its body never decoded there.
+            let pool_end = literals.as_ref().and_then(|lits| lits.run_end(gap_start));
+            let probe = match (probe, pool_end) {
+                (Probe::Accept(body), Some(end))
+                    if !literals.as_ref().is_some_and(|l| l.may_plant(end)) =>
+                {
+                    Probe::Uncorroborated(body)
+                }
+                (Probe::Accept(body), Some(end)) if body.contains(&end) => Probe::Accept(body),
+                (Probe::Uncorroborated(body), Some(_)) => Probe::Uncorroborated(body),
+                (_, Some(_)) => Probe::Reject,
+                (probe, None) => probe,
+            };
+            if let (Some(lits), Probe::Accept(body) | Probe::Uncorroborated(body)) = (&mut literals, &probe) {
+                lits.add_body(listing, decoder, body);
+            }
             match probe
             {
                 Probe::Accept(body) => {
-                    let entry = match filler {
-                        kuna_aifnoppad::Filler::Before(at) if body.contains(&at) => at,
+                    let entry = match (pool_end, filler) {
+                        (Some(end), _) => end,
+                        (None, kuna_aifnoppad::Filler::Before(at)) if body.contains(&at) => at,
                         _ => gap_start,
                     };
                     if let Some(bodies) = &mut bodies {
@@ -1249,7 +1288,7 @@ fn reconcile_frame_prefixes(
 ) -> BTreeMap<u64, u64> {
     let mut accepted = roots.clone();
     let mut replacements = BTreeMap::new();
-    let policy = GapWalk { strict, corroborate, bracket: None, noppad: false };
+    let policy = GapWalk { strict, corroborate, bracket: None, noppad: false, poolslide: None };
     let prefixes = aif_candidates(listing, corpus, decoder, policy, &claimed, Some(roots), Some(bodies));
     for prefix in prefixes {
         if !listing.is_undefined(prefix) {

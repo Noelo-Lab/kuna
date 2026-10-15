@@ -722,6 +722,9 @@ fn descend(
         0 => kuna_switchtable::DEFAULT_MAX_ENTRIES,
         n => n as usize,
     };
+    let thumb_tables = (arch.analysis_thumbswitch && sections_are_runtime)
+        .then(|| super::kuna_thumbswitch::HalfwordTables::new(file, data_space.clone(), max_entries))
+        .flatten();
 
     let preserve_bodies = sections_are_runtime
         && arch.analysis_funcstart_patterns
@@ -1122,6 +1125,14 @@ fn descend(
                             );
                         }
                     }
+                    // (kuna) `thumbswitch`: a Thumb `tbb`/`tbh` reads offsets,
+                    // not addresses. See [`super::kuna_thumbswitch`].
+                    if cases.is_empty() && stated.is_none() {
+                        if let Some(tables) = &thumb_tables {
+                            let decoded = |at: u64| st.decoded.contains(&at);
+                            (cases, stated) = tables.targets(translate, &code_space, &exec, &decoded, vma);
+                        }
+                    }
                     let over = stated.is_some_and(|n| n > max_entries);
                     if !cases.is_empty() || over {
                         st.switches.push(SwitchTable {
@@ -1270,15 +1281,19 @@ fn gap_entries(
     let mut listing = partition_listing(partition, funcs, exec);
     let _probe = crate::aif::arm_gap_probe_scope(translate);
     render_fingerprints(&mut listing, funcs, arch, translate, code_space, partition, contexts);
+    let poolslide = (arch.analysis_aifpoolslide && crate::loadimage_object::is_arm32_language(&arch.archid))
+        .then_some(arch);
     if let Some(prior) = frame {
         crate::aif::run_aif_after_frames(
             &listing, prior, translate, Rc::clone(code_space),
-            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket, arch.analysis_aifnoppad, None,
+            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket, arch.analysis_aifnoppad,
+            poolslide, None,
         )
     } else {
         crate::aif::run_aif(
             &listing, translate, Rc::clone(code_space), listing.exec_ranges(),
             arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket, arch.analysis_aifnoppad,
+            poolslide,
         )
     }
 }
