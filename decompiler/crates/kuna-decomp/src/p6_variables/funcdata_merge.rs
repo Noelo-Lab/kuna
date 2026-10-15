@@ -341,6 +341,14 @@ impl MergeContext for Funcdata {
             (out == Some(a) && input == Some(b)) || (out == Some(b) && input == Some(a))
         })
     }
+    fn fpu_trunc_root_high(&self, high: HighVariableId) -> bool {
+        self.kuna_fpu_trunc_views.iter().any(|id| {
+            self.obank().get(*id).is_some_and(|op| {
+                op.get_addlflags() & crate::op::pcodeop_addlflags::kuna_fpu_view_copy != 0
+                    && op.get_in(0).and_then(|vn| self.vbank().get(vn)).and_then(|vn| vn.get_high()) == Some(high)
+            })
+        })
+    }
     fn op_is_fpu_trunc_view(&self, op: OpId) -> bool {
         self.obank().get(op).is_some_and(|op| {
             op.get_addlflags() & crate::op::pcodeop_addlflags::kuna_fpu_view_copy != 0

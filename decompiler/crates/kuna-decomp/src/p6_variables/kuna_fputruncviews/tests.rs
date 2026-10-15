@@ -337,6 +337,26 @@ fn speculative_merges_cannot_rejoin_the_storage_view_and_logical_root() {
 }
 
 #[test]
+fn speculative_merges_keep_the_logical_root_off_unrelated_integers() {
+    let mut f = Fixture::new();
+    let root = f.root(M::TYPE_FLOAT);
+    f.floating_copy(root);
+    let seed = f.fd.new_constant(4, 7);
+    let (_, other) = f.value(f.right, 0x1020, OpCode::CPUI_COPY, &[seed], 4, M::TYPE_INT);
+    recover(&mut f.fd).unwrap();
+    let root_high = f.fd.vbank().get(root).unwrap().get_high().unwrap();
+    let other_high = f.fd.vbank().get(other).unwrap().get_high().unwrap();
+    assert!(keeps_root_alone(&f.fd, root_high, other_high));
+    assert!(keeps_root_alone(&f.fd, other_high, root_high));
+    f.fd.with_covermerge(|merge, fd| merge.merge_linear(fd, &mut [root_high, other_high]))
+        .unwrap();
+    assert_ne!(
+        f.fd.vbank().get(root).unwrap().get_high(),
+        f.fd.vbank().get(other).unwrap().get_high()
+    );
+}
+
+#[test]
 fn repeated_floating_read_slots_share_one_bridge() {
     let mut f = Fixture::new();
     let root = f.root(M::TYPE_FLOAT);

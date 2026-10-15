@@ -144,6 +144,7 @@ pub trait MergeContext: HighContext {
         false
     }
     fn fpu_trunc_view_highs(&self, _a: HighVariableId, _b: HighVariableId) -> bool { false }
+    fn fpu_trunc_root_high(&self, _high: HighVariableId) -> bool { false }
     fn op_is_fpu_trunc_view(&self, _op: OpId) -> bool {
         false
     }
@@ -1208,7 +1209,8 @@ impl Merge {
             let mut merged_into = false;
             for &out in &highstack {
                 let spec_ok = Self::merge_test_speculative(ctx, out, high)
-                    && !crate::kuna_fputruncviews::keeps_highs_apart(ctx, out, high);
+                    && !crate::kuna_fputruncviews::keeps_highs_apart(ctx, out, high)
+                    && !crate::kuna_fputruncviews::keeps_root_alone(ctx, out, high);
                 if spec_ok && self.merge(ctx, out, high, true)? {
                     merged_into = true;
                     break;

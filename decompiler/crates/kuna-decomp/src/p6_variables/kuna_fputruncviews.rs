@@ -342,6 +342,15 @@ pub(crate) fn keeps_highs_apart(
     ctx.fpu_trunc_views_enabled() && ctx.fpu_trunc_view_highs(a, b)
 }
 
+/// A logical integer root never joins an unrelated variable speculatively.
+pub(crate) fn keeps_root_alone(
+    ctx: &dyn MergeContext,
+    a: HighVariableId,
+    b: HighVariableId,
+) -> bool {
+    ctx.fpu_trunc_views_enabled() && (ctx.fpu_trunc_root_high(a) || ctx.fpu_trunc_root_high(b))
+}
+
 pub struct OptionFpuTruncViews;
 impl OptionFpuTruncViews {
     pub fn apply(&self, value: &str) -> KunaResult<(bool, String)> {

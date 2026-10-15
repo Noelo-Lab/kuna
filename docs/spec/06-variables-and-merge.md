@@ -1018,7 +1018,9 @@ recovery, an unlocked, unmapped conversion result that meets a floating view
 keeps an explicit integer local. A marked bit-preserving COPY carries the
 floating view through required marker merges. COPY and speculative merges keep
 the view separate from the logical integer, including when prior variable names
-would otherwise reunite them. The conversion is evaluated once; writes to observable storage,
+would otherwise reunite them. Speculative merges also never join the logical
+integer to another variable: a speculative partner sharing its register would
+otherwise take the conversion's signed type. The conversion is evaluated once; writes to observable storage,
 intervening clobbers and later genuine
 floating operations keep their existing order and storage views. Locked types,
 locked names and partial-width storage relationships are not rewritten. Existing
