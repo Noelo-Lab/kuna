@@ -2068,6 +2068,10 @@ impl Datatype {
         if myflags != opflags {
             return Ok(if myflags < opflags { -1 } else { 1 });
         }
+        let output_locked = proto.is_output_locked();
+        if output_locked != op_proto.is_output_locked() {
+            return Ok(if output_locked { 1 } else { -1 });
+        }
         Ok(2) // Carry on with comparison of parameters
     }
 
