@@ -26,6 +26,14 @@ through typedefs. A four-byte read at offset 20 in `volatile int cursor[3][2]` p
 prints `s.b`, not the bare symbol name. Each annotation still represents one
 access of the original width.
 
+A scalar access covering an entire array or aggregate still descends to the
+covered element or field; a one-element array does not decay to its address.
+The scalar-array shortcut requires the operation width to equal the element
+width. Other widths retain their byte range through the partial-symbol walk.
+With `partialaccess` enabled, pointer views of volatile annotations retain a
+volatile pointee, including sixteen-byte views, so changing the spelling does
+not change the access width or permit the C compiler to merge the accesses.
+
 This phase renders the finished decompilation: it inserts the explicit
 cast/field-access operations a C compiler would need to *see* the recovered
 types (§9.1), then walks the structured block tree of chapter 08 and the SSA

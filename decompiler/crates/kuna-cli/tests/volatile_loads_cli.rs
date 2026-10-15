@@ -324,3 +324,55 @@ fn volatile_struct_data_reads_name_the_covered_field() {
         assert_eq!(out.matches(access).count(), 2, "{declaration}:\n{out}");
     }
 }
+
+fn mapped_volatile_access(command: &str, hex: &str, declaration: &str) -> String {
+    let image: Vec<u8> = (0..hex.len()).step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect();
+    let path = common::scratch_file("volatile-access-width", "bin");
+    std::fs::write(&path, image).unwrap();
+    let (out, err, code) = common::run_kuna(&[
+        command, path.to_str().unwrap(), "--addr", "0x400000", "--raw-image",
+        "--base", "0x400000", "--target", "x86:LE:64:default:gcc", "--assert-strict",
+        "--assert", "typedef struct One { int value; };",
+        "--assert", "typedef typedef volatile struct One VolOne;",
+        "--assert", "typedef union OneUnion { int value; unsigned int bits; };",
+        "--assert", &format!("data 0x601000 {declaration}"),
+    ]);
+    std::fs::remove_file(path).unwrap();
+    assert_eq!(code, 0, "{declaration}: {err}");
+    out
+}
+
+#[test]
+fn volatile_whole_aggregates_name_the_scalar_access() {
+    let reads = "8b0425001060008b14250010600001d0c3";
+    for command in ["decompile", "decompile-all"] {
+        for (declaration, access) in [
+            ("volatile int cursor[1]", "cursor[0]"),
+            ("volatile int cursor[1][1]", "cursor[0][0]"),
+            ("VolOne cursor", "cursor.value"),
+            ("VolOne cursor[1]", "cursor[0].value"),
+        ] {
+            let out = mapped_volatile_access(command, reads, declaration);
+            assert_eq!(out.matches(access).count(), 2, "{declaration}:\n{out}");
+        }
+    }
+}
+
+#[test]
+fn volatile_array_accesses_keep_the_operation_width() {
+    for command in ["decompile", "decompile-all"] {
+        for (hex, declaration, access) in [
+            ("8b0425001060008b14250010600001d0c3", "volatile char cursor[8]", "*(volatile unsigned int *)cursor"),
+            ("8b0425041060008b14250410600001d0c3", "volatile char cursor[8]", "*(volatile unsigned int *)&cursor[4]"),
+            ("8b0425001060008b14250010600001d0c3", "volatile long long cursor[2]", "*(volatile unsigned int *)&cursor[0]"),
+            ("8b0425001060008b14250010600001d0c3", "volatile union OneUnion cursor", "*(volatile unsigned int *)&cursor"),
+            ("c704250010600078563412c704250010600021436587c3", "volatile char cursor[8]", "*(volatile unsigned int *)cursor"),
+            ("f30f10042500106000f30f10142500106000f30f58c2c3", "volatile char cursor[8]", "*(volatile unsigned int *)cursor"),
+            ("660f6f042500106000660f6f142500106000660ffcc2660f7ec0c3", "volatile char cursor[32]", "*(volatile unsigned __int128 *)cursor"),
+        ] {
+            let out = mapped_volatile_access(command, hex, declaration);
+            assert_eq!(out.matches(access).count(), 2, "{declaration}:\n{out}");
+        }
+    }
+}
