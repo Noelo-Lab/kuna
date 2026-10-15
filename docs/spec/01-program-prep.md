@@ -4117,6 +4117,20 @@ than pushing them onto a worklist itself, so a driver that routes successors
 somewhere else still runs the identical decode-and-claim policy. Indirect targets are recorded
 with their computed/indirect predicates but contribute no static successor.
 
+(kuna) Assembly capture retains operand bodies as per-instruction `String`s,
+but mnemonic spellings repeat heavily across a Listing. The walker interns each
+captured mnemonic into an immutable `Mnemonic` handle backed by shared text,
+with one pool per serial walk or parallel decode lane. Records on a lane then
+share one mnemonic allocation per distinct spelling; empty text uses an
+allocation-free sentinel. Parallel lanes keep independent pools, so this does
+not add a global lock, and identical spellings in different lanes may still
+have separate allocations. The public `decode_one` result remains `String`;
+`Insn` and `InsnLite` expose the string-like `Mnemonic` wrapper, so clients that
+construct those public records directly must convert text with `.into()` or use
+`Mnemonic::from`. This changes retained text ownership, not how assembly is
+rendered: the interning sink receives the same callback from
+`Translate::one_instruction_with_assembly` that `decode_one` captures.
+
 (kuna) That `Successors` seam is what lets the same walk run on **N decode
 lanes** under `kuna --jobs N`
 (`decompiler/crates/kuna-analysis/src/listing/kuna_pdecode.rs`). On a 147 MB
@@ -4639,9 +4653,12 @@ instruction store reduces the construction peak on every platform. Worker
 admission still uses the measured high-water mark, not the trimmed current RSS.
 
 Three things the walk deliberately does **not** always produce. First, the human
-assembly text on each instruction: capturing it means a *second* full SLEIGH parse
-of the same bytes (`Translate::print_assembly`) plus two heap strings per
-instruction, which roughly doubles the cost of the walk and is pure waste whenever
+assembly text on each instruction: capturing it means rendering every
+instruction's assembly (`Translate::one_instruction_with_assembly`, which still
+falls back to a second SLEIGH parse where the p-code parse cannot be reused), a
+real per-instruction cost on top of the lift. Operands remain one owned string
+per instruction, while repeated mnemonic spellings share one immutable text
+allocation per decode lane. Capturing assembly is still pure waste whenever
 nothing reads the text. Every bulk consumer of it — `noreturn_propagate`'s
 call/NOP idiom checks, `tailcallentry`, and `poolentry`'s literal-load operands —
 sits behind `listing`, so the walk captures text exactly when `listing` is on and

@@ -11,7 +11,7 @@ use std::ops::RangeBounds;
 use std::rc::Rc;
 
 use super::kuna_insnindex::InstructionIndex;
-use super::model::Insn;
+use super::model::{Insn, Mnemonic, MnemonicPool};
 
 const CHUNK_ROWS: usize = 1024;
 
@@ -19,6 +19,7 @@ const CHUNK_ROWS: usize = 1024;
 pub(super) struct InstructionStore {
     index: InstructionIndex,
     chunks: Vec<Rc<InstructionChunk>>,
+    mnemonics: MnemonicPool,
 }
 
 /// A bounded block of instruction records, shared between store snapshots.
@@ -35,6 +36,10 @@ impl Clone for InstructionChunk {
 }
 
 impl InstructionStore {
+    pub(super) fn intern_mnemonic(&mut self, text: &str) -> Mnemonic {
+        self.mnemonics.intern(text)
+    }
+
     pub fn insert(&mut self, address: u64, insn: Insn) -> Option<Insn> {
         let Self { index, chunks, .. } = self;
         let mut pending = Some(insn);
@@ -128,7 +133,7 @@ mod tests {
                 ..FlowType::default()
             },
             flows: vec![addr.wrapping_add(17)],
-            mnemonic: format!("op_{addr}"),
+            mnemonic: format!("op_{addr}").into(),
             operands: format!("target_{addr}"),
             pcode: Some(Box::new(vec![RawOp {
                 opcode: OpCode::CPUI_RETURN,
