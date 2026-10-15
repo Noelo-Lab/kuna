@@ -3894,6 +3894,12 @@ impl PrintC {
             Some(((front, back), count)) => ((front.clone(), back), Some((front, count))),
             None => (type_name, None),
         };
+        if self.options.partial_access && self.out_lang == crate::kuna_lang::OutLang::C
+            && arch.types().get_size_of_pointer() == 8
+            && crate::kuna_widelocal::scalar_bits(fd, high)
+        {
+            return ("unsigned __int128".into(), String::new(), None, comment);
+        }
         (decl_type, decl_back, array_count, comment)
     }
 

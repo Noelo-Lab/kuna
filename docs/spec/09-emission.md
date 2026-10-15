@@ -1348,6 +1348,18 @@ shifts a member of an array. What this does **not** fix is that container type
 itself. Recovering it needs either a scalar wide-integer type or a mid-end fold
 of the `CONCAT88(0,x) << 64` idiom; neither is done here.
 
+For C output with `partialaccess` enabled on a 64-bit target, an inferred
+sixteen-byte register temporary used only for bit extraction, copying, merging,
+or bitwise operations is declared `unsigned __int128` instead of `char[16]`
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_widelocal.rs`). This keeps a
+whole-width scalar load and its local assignment consistent. The rule requires
+unmapped, unlocked, non-address-tied values whose type is an inferred array of
+unknown bytes. It does not retype explicit arrays, parameters, globals, or
+addressable storage, and does not change the IR or the volatile access count.
+GCC/Clang's wide-integer extension is the same one used by the existing
+sixteen-byte pointer views. Other wide-container cases retain their existing
+rendering.
+
 **Standard C for mapped byte arrays.** `bytearrayc` (default **off**,
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_bytearrayc.rs`) provides a C11
 rendering choice for direct integer accesses of two, four or eight bytes within

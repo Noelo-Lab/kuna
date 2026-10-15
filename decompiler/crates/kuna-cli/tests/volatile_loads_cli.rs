@@ -376,3 +376,104 @@ fn volatile_array_accesses_keep_the_operation_width() {
         }
     }
 }
+
+#[test]
+fn inferred_simd_temporaries_have_scalar_declarations() {
+    let hex = "660f6f042500106000660f6f142500106000660ffcc2660f7ec0c3";
+    for command in ["decompile", "decompile-all"] {
+        let out = mapped_volatile_access(command, hex, "volatile char cursor[32]");
+        assert_eq!(out.matches("unsigned __int128 v").count(), 2, "{out}");
+        assert_eq!(
+            out.matches("*(volatile unsigned __int128 *)cursor").count(),
+            2,
+            "{out}"
+        );
+    }
+    let path = common::scratch_file("simd-declaration-controls", "bin");
+    let image: Vec<u8> = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+        .collect();
+    std::fs::write(&path, image).unwrap();
+    for extra in [
+        ["--option", "partialaccess", "off"].as_slice(),
+        ["--assert", "type v1 char[16]"].as_slice(),
+    ] {
+        let mut args = vec![
+            "decompile",
+            path.to_str().unwrap(),
+            "--addr",
+            "0x400000",
+            "--raw-image",
+            "--base",
+            "0x400000",
+            "--target",
+            "x86:LE:64:default:gcc",
+            "--assert-strict",
+            "--assert",
+            "data 0x601000 volatile char cursor[32]",
+        ];
+        args.extend_from_slice(extra);
+        let (out, err, code) = common::run_kuna(&args);
+        assert_eq!(code, 0, "{err}");
+        assert!(out.contains("char v1 [16]"), "{out}");
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn inferred_simd_temporaries_round_trip_through_native_c() {
+    use common::process;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("simd.c");
+    for offset in [0, 4, 8, 12] {
+        let shift = if offset == 0 {
+            String::new()
+        } else {
+            format!("660f73d8{offset:02x}")
+        };
+        let hex = format!("660f6f042500106000660f6f142500106000660ffcc2{shift}660f7ec0c3");
+        let out = mapped_volatile_access("decompile", &hex, "volatile char cursor[32]");
+        let bytes = (0..hex.len())
+            .step_by(2)
+            .map(|i| format!("0x{}", &hex[i..i + 2]))
+            .collect::<Vec<_>>()
+            .join(",");
+        let source = include_str!("fixtures/volatile_simd_native.c")
+            .replace("GENERATED_FUNCTION", &out)
+            .replace("ORIGINAL_BYTES", &bytes);
+        std::fs::write(&file, source).unwrap();
+        for cc in ["gcc", "clang"] {
+            if process::optional_output(Command::new(cc).arg("--version")).is_none() {
+                continue;
+            }
+            for optimization in ["-O0", "-O2"] {
+                let binary = dir.path().join(format!("{cc}{optimization}"));
+                let compiled = process::required_output(
+                    Command::new(cc)
+                        .args([
+                            optimization,
+                            "-fno-strict-aliasing",
+                            "-Werror=implicit-function-declaration",
+                        ])
+                        .arg(&file)
+                        .arg("-o")
+                        .arg(&binary),
+                );
+                assert!(
+                    compiled.status.success(),
+                    "{cc} {optimization}: {}",
+                    String::from_utf8_lossy(&compiled.stderr)
+                );
+                let result = process::required_output(&mut Command::new(&binary));
+                assert!(
+                    result.status.success(),
+                    "{cc} {optimization}: {:?}: {}",
+                    result.status,
+                    String::from_utf8_lossy(&result.stderr)
+                );
+            }
+        }
+    }
+}
