@@ -157,13 +157,12 @@ fn window(prog: &ConsoleProgram, sections: &[SectionRow], all: &[Item], addr: u6
         return (start, start.saturating_add(len.min(DATA_MAX)).min(hi));
     }
     let holder = all.iter().filter(|i| i.address <= addr && addr < i.end()).max_by_key(|i| i.address);
-    let (first, last) = holder.map_or((addr, addr + 1), |i| (i.address, i.end()));
-    let mut start = if last - first > DATA_MAX { addr.saturating_sub(BEFORE) } else { first.saturating_sub(BEFORE) };
-    start = start.max(lo) & !0xf;
-    start = start.max(lo);
+    let (first, last) = holder.map_or((addr, addr.saturating_add(1)), |i| (i.address, i.end()));
+    let mut start = if last.saturating_sub(first) > DATA_MAX { addr } else { first }.saturating_sub(BEFORE);
+    start = (start.max(lo) & !0xf).max(lo);
     if let Some(i) = all.iter().find(|i| i.address < start && start < i.end()) {
         if last.saturating_sub(i.address) <= DATA_MAX {
-            start = i.address;
+            start = i.address.max(lo);
         }
     }
     let mut end = last.max(start.saturating_add(SPAN)).min(start.saturating_add(DATA_MAX)).min(hi);
@@ -216,7 +215,7 @@ pub fn data_json(binary: &str, prog: &ConsoleProgram, addr: u64, len: Option<u64
     let big = prog.arch().archid.split(':').nth(1) == Some("BE");
     let functions: Vec<(u64, String)> =
         prog.function_entries_canonical().into_iter().map(|e| (e.addr.get_offset(), e.name)).collect();
-    let in_window = |i: &&Item| i.address < end.max(start + 1) && i.end() > start;
+    let in_window = |i: &&Item| i.address < end.max(start.saturating_add(1)) && i.end() > start;
     let shown: Vec<&Item> = all.iter().filter(in_window).collect();
     let item_rows = arr(shown.iter().map(|i| {
         let type_name = kuna_decomp::printc::type_to_c_string(prog.arch(), &i.ty);
@@ -230,11 +229,12 @@ pub fn data_json(binary: &str, prog: &ConsoleProgram, addr: u64, len: Option<u64
             .end()
     }));
     let mut targets = Vec::new();
-    if (1..=8).contains(&pointer_size) {
+    let held = start.saturating_add(got as u64);
+    let first = start.div_ceil(pointer_size.max(1)).checked_mul(pointer_size);
+    if let (true, Some(first)) = ((1..=8).contains(&pointer_size), first) {
         let width = pointer_size as usize;
-        let first = (start + pointer_size - 1) / pointer_size * pointer_size;
         let mut at = first;
-        while at + pointer_size <= start + got as u64 {
+        while at.checked_add(pointer_size).is_some_and(|next| next <= held) {
             let k = (at - start) as usize;
             let word = &bytes[k..k + width];
             let mut value: u64 = 0;
