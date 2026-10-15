@@ -4569,8 +4569,14 @@ nothing is filed.
 
 A context painter applies the ARM/MIPS decode-mode paints per address before each
 decode, so a Thumb or MIPS16 body disassembles in the right ISA. Each instruction
-is decoded by driving `Translate::one_instruction` with a capturing p-code sink
-(`decompiler/crates/kuna-analysis/src/listing/decode.rs (decode_one)`) and
+is decoded with a capturing p-code sink
+(`decompiler/crates/kuna-analysis/src/listing/decode.rs (decode_one)`). When
+assembly text is requested, `Translate::one_instruction_with_assembly` captures
+both results: SLEIGH reuses the p-code parse when safe, retaining its post-lift
+assembly fallback for context commits and delay slots. Other translators use the
+trait's sequential fallback. Assembly errors remain best-effort after a successful
+lift; a lift error ends the decode without an assembly retry. Without text, the
+walk calls `Translate::one_instruction` once. The resulting instruction is
 classified by a lifted transliteration of the S2 flow rules
 (`decompiler/crates/kuna-analysis/src/listing/classify.rs (classify)`), whose three
 load-bearing gotchas are worth restating: a constant-space branch operand is
