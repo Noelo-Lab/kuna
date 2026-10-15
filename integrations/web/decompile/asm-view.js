@@ -177,25 +177,36 @@ export function stackOperand(ops) {
 
 /**
  * Operands as HTML: code addresses become `a.xt[data-goto]` links (annotated
- * with the function they start), and a frame-relative memory operand becomes
- * `span.so[data-slot]` carrying its entry-relative stack offset when
- * `ctx.slotOf(reg, disp, insn)` can place it.
+ * with the function they start), an address `ctx.dataAt(hex)` places in data
+ * becomes an `a.xt.xd` link (annotated with the name it gives, if any), and a
+ * frame-relative memory operand becomes `span.so[data-slot]` carrying its
+ * entry-relative stack offset when `ctx.slotOf(reg, disp, insn)` can place it.
  */
 export function linkOperands(insn, ctx = {}) {
   const ops = insn.operands || '';
   const linkable = isBranch(insn.mnemonic) || isCall(insn.mnemonic) || /^(LEA|ADR|ADRP)$/i.test(insn.mnemonic);
   const easy = ctx.spelling !== 'exact' && !(insn.mnemonic || '').startsWith('.');
   const spell = (text) => escapeHtml(easy ? easyOperands(text) : text);
+  const dataOf = (pre, lit) => {
+    if (!ctx.dataAt || (insn.mnemonic || '').startsWith('.') || /-\s*$/.test(pre)) return null;
+    return ctx.dataAt('0x' + BigInt(lit).toString(16));
+  };
+  const hasData = !!ctx.dataAt && [...ops.matchAll(/[^]*?\b(0x[0-9a-f]+)\b/gi)].some((m) => dataOf(m[0].slice(0, -m[1].length), m[1]) != null);
   const piece = (text) => {
-    if (!linkable) return spell(text);
+    if (!linkable && !hasData) return spell(text);
     return text.replace(/[^]*?\b(0x[0-9a-f]+)\b|[^]+/gi, (chunk, lit) => {
       if (!lit) return spell(chunk);
       const pre = chunk.slice(0, chunk.length - lit.length);
       const hex = '0x' + BigInt(lit).toString(16);
-      const fn = ctx.fnByAddr?.get(hex);
-      if (!fn && !ctx.insnIndex?.has(hex)) return spell(chunk);
-      const label = fn && ctx.nameOf ? ` <span class="d2muted">&lt;${escapeHtml(ctx.nameOf(fn))}&gt;</span>` : '';
-      return `${spell(pre)}<a class="xt" data-goto="${hex}">${escapeHtml(lit)}</a>${label}`;
+      const fn = linkable ? ctx.fnByAddr?.get(hex) : null;
+      if (fn || (linkable && ctx.insnIndex?.has(hex))) {
+        const label = fn && ctx.nameOf ? ` <span class="d2muted">&lt;${escapeHtml(ctx.nameOf(fn))}&gt;</span>` : '';
+        return `${spell(pre)}<a class="xt" data-goto="${hex}">${escapeHtml(lit)}</a>${label}`;
+      }
+      const data = dataOf(pre, lit);
+      if (data == null) return spell(chunk);
+      const label = data ? ` <span class="d2muted">&lt;${escapeHtml(data)}&gt;</span>` : '';
+      return `${spell(pre)}<a class="xt xd" data-goto="${hex}">${escapeHtml(lit)}</a>${label}`;
     });
   };
   const so = stackOperand(ops);
