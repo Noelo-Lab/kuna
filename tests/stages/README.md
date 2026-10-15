@@ -1,5 +1,23 @@
 # Stage-model issue testcases
 
+`kuna-stack-byte-copy.xml` checks pushed scratch bytes, partial reads and a
+saved snapshot with `stackstoreguard` off and on. Its CLI companion compiles
+and executes the exact C at O2 in default, stackviews and stackalias modes, and checks
+that larger and data-dependent loops retain their control flow. The authored
+assembly also includes a sequential overlapping-copy control.
+
+`kuna-stackpointerfields.xml` checks that naming a logical frame object preserves
+pointer-field dereferences. Its CLI companion executes the native fixture and the
+unnamed and named C with GCC and Clang.
+
+`kuna-stackversions.xml` checks conditional frame-pointer publication, a four-byte
+seed and a real cached word. Its CLI companion executes an aliasing counterexample,
+fast/growth branches and the cached return with GCC and Clang at O0/O2.
+
+`kuna-stack-float-snapshot.xml` checks cached float lanes consumed by integer
+bit operations and native float arithmetic. Its CLI companion executes both
+Point lanes and a numeric conversion against the emitted C with GCC and Clang.
+
 kuna-owned datatests derived from **real, open decompiler issues** (sourced from the
 PHADE issue dataset), each demonstrating that the issue is fixable through the kuna
 stage model (`docs/phases.md`): a named sub-stage decision point,
@@ -98,6 +116,9 @@ writeup, not here.
 | `kuna-thunkentry.xml` | [Kuna #992](https://github.com/Noelo-Lab/kuna/issues/992) | P1 code/data partition (the target of a walk entry that is one direct `jmp` becomes a function; MSVC `/INCREMENTAL` thunk table) | `option thunkentry on\|off` |
 | `kuna-aifbracket.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (an AIF gap candidate whose own flow rejoins the known function around it is refused without boundary evidence) | `option aifbracket on\|off` |
 | `kuna-aifnoppad.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (no AIF gap entry starts on nop padding: padding in front of a known function is not probed, and an accept behind padding moves to the code after it) | `option aifnoppad on\|off` |
+| `kuna-condcall.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (a predicated call's skip to the next instruction is its fall-through, not a second call target, so the next instruction is not a function and the callee is not no-return) | default correctness fix (no option) |
+| `kuna-thumbswitch.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (the Listing walk reads a range-checked Thumb `tbb`/`tbh` offset table and decodes the case bodies as the dispatcher's own code, so no gap entry lands on a case) | `option thumbswitch on\|off` |
+| `kuna-aifpoolslide.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (an AIF gap candidate on a word a PC-relative load reads is pool data: its accept moves to the code after the pool) | `option aifpoolslide on\|off` |
 | `kuna-pushimmediateret.xml` | RE-friction duplicate needs `entry-point-push-return` + `push-immediate-ret-transfer` | S2 flow classification (a proven one-store `push immediate; ret` becomes a terminal branch; no target function is synthesized) | `option pushimmediateret on\|off` |
 | `kuna-subcommuteshift.xml` | RE-friction need `cancelling-byte-arithmetic-splits` | S3 simplification quiescence (exact modulo-256 multiply/shift cancellation) | `option cancelbytearithmetic on\|off` |
 | `kuna-wideslice.xml` | clang x86-64 `-O3` byte-sum regression | P3 SSA reduction (push demanded slices through 9..15-byte `PIECE`, byte shifts, and bitwise operations; the artificial aggregates heritage and the rule pool leave behind, without recognizing the source algorithm) | `option wideslice on\|off` |
@@ -143,6 +164,7 @@ writeup, not here.
 | `kuna-callretmulti.xml` | RE-friction need `call-result-folding-duplicates` (one call result is narrowed and consumed twice, either in one block or across a loop; the old implied-expression multiplier printed the call at both sinks) | P6 variable & storage model, explicit/implied marking (`foldcallret` keeps a derived fan-out explicit, preserving one evaluation) | pass 1 (`option foldcallret off`) pins the conservative form; pass 2 (`option foldcallret on`) proves the shipped fold also evaluates each call once |
 | `kuna-foldcallret-shortcircuit.xml` | kuna [GH-684](https://github.com/Noelo-Lab/kuna/issues/684) (a call combined with a comparison by a non-short-circuit `&` was folded into the right-hand operand of the `&&`/`||` the printer emits, so the printed C skipped a call the binary always makes) | P6 variable & storage model, explicit/implied marking (`foldcallret` declines a fold whose value reaches input 1 of a `BOOL_AND`/`BOOL_OR` on its way to the print point; correctness fix, no option) | default only: gcc -O0 and clang -O2 keep the spill, clang -O0 (call on the left) still folds |
 | `kuna-tiedphitrim.xml` | kuna [GH-468](https://github.com/Noelo-Lab/kuna/issues/468) follow-up (MSVC `/O2` `ab_o2.exe main`: a byte-sum loop over a stack buffer printed `while (v10[0]) { ... v10[0] = v10[v6]; }`, a store into the buffer the binary never performs; the gcc and clang-12 `-O2` builds print the same store as `v2 = *v1;`) | P6 variable & storage model, forced merge (`Merge::merge_op` trims a loop head's direct read of an aliased location, and `merge_opcode`/`merge_adjacent` do not fold the loop variable back) | `option tiedphitrim on\|off`, default on (DIV-182): pass 1 (default) pins the entering-edge copy for the MSVC, gcc and clang loops and gcc `outparam_walk`, pass 2 (off) pins the stores; a live store in a loop, a store after a join, an if/else join, a computed loop value, and gcc `xa11`/`xa13` (an in-loop value stored into the buffer after the loop) print identically in both passes; gcc `t8`/`t1`/`t1b` pin the exit byte stored into a neighbouring slot only after the loop |
+| `kuna-msvcstackguard.xml` (long chain extension) | RE-friction pointer-return regression: a 271-call cookie chain lost the factory pointer held in RAX after the checker | P7 cookie provenance -> P0 exact-site restart -> P3 return-storage preservation | crosses `calleeretpreserves off/on` with `msvcstackguard off/on`; verifies generic guarding loses the return, while exact preservation keeps the checker and removal/preservation both keep the factory result |
 | `kuna-msvcstackguard-return.xml` | RE-friction need `msvc-cookie-removal-changes` (P7 removal exposed one constant return at both arms of a shared `/GS` epilogue) | P7 exact cookie recognition -> P0 restart seed -> P3 call guard replay | crosses `msvcstackguard on|off` with `calleeretpreserves on|off`; the checker tail reaches a nested ordinary call before fast-fail |
 | `kuna-stackguard-tailcall.xml` | kuna [GH-866](https://github.com/Noelo-Lab/kuna/issues/866) (gcc `-O2`/`-Os` `-fstack-protector`: a canary checked right before a tail call kept `v1 = *(unsigned long *)(fs_offset + 0x28); ... v4 = v1;`) | P7 regions, stackguard (`ActionStripStackGuard` also resolves the canary slot forward from the `FS_OFFSET + 0x28` LOADs the compare reads) | `option stackguard on\|off`: pass 1 (default) pins t2/t2s/k2/w3 with no canary load and no `fs_offset`, pass 2 (off) keeps every check; t3 (check after a call, GH-183 shape) is the control; h6/h7 (no canary, a struct-field compare at offset 0x28) keep their stack stores and call arguments in both passes |
 | `kuna-declaring-double-score-return.xml` | RE-friction need `declaring-double-score-return` (locking a later `/GS` checker void disconnected an earlier `double` accumulation from XMM0) | P7 exact cookie recognition -> P0 restart seed -> P3 locked-void exact-slice return-storage preservation | `calleeretpreserves off|on`; loop-carried cookie proof, an XMM0 write before an unresolved nested call, and a real 16-byte XMM overlap whose low output lane survives while its upper scratch lane stays killed |
@@ -154,6 +176,9 @@ writeup, not here.
 | `kuna-arm-register-shift.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) (a variable ARM LSL can emit undefined C shifts for low-eight-bit counts 32 through 255) | P9 C emission, a guarded `CPUI_INT_LEFT` with unsigned shiftee, restricted to repeatable ARM operands; correctness fix, no option | default, single pass: preserves `count & 0xff`, checks `< 32`, emits an unsigned shift plus zero fallback, and avoids compound assignment when the guard applies |
 | `kuna-arm-register-shift-signed.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) follow-up (the shift's unsigned C repair must retain the signed value consumed by ARM signed compare and ASR) | P9 C emission, signed true/false conditional arms around the guarded unsigned LSL | default: output retains signed comparison and arithmetic shift behavior |
 | `kuna-call-array-extent.xml` | Synthetic call-escaped frame storage | P6 stack-frame-layout | `option callarrayextent on\|off` |
+| `kuna-stackstruct.xml` | A local record read through `read(fd,&h,8)` printed its byte and short fields as `v1._4_2_`, which is not C, and no record type was declared (authored C, gcc/clang -O0/-O2) | P6 stack-frame-layout + P9 pointer-notation | `option stackstruct on\|off`, `option partialaccess on\|off` |
+| `kuna-declorder.xml` | A function with ten or more locals declared them in string order, `v1, v10, v11, v2, ...` (authored C, gcc -O0) | P9 naming-policy, local declaration order | `option declorder natural\|name` |
+| `kuna-strlenscan.xml` | gcc 9 expands `strlen` inline as `repnz scasb`, which printed as a do/while over the string and `~count - 1` (authored C, Ubuntu 20.04 gcc 9.4 -O1) | P3 simplification-quiescence, inline string length | `option strlenscan on\|off` |
 
 `kuna-minss-nan.xml` pins an authored scalar MINSS and ratio/clamp probe.
 P3 and P9 preserve the negation of an ordered float comparison as `!(a < b)`
@@ -272,3 +297,7 @@ with undefined-behavior checks and exercises every case and signed boundaries.
 - `kuna-sparc-double-abs.xml`, `kuna-sparc64-double-abs.xml`: binary64 absolute value from a high-word `fabss`, without a numeric high-word cast.
 
 - `kuna-sparc-double-sign.xml`, `kuna-sparc64-double-sign.xml`: binary64 negation from a high-word `fnegs`, without a numeric high-word cast.
+
+- `kuna-integer-float-rounding.xml`, `kuna-integer-float-rounding64.xml`, `kuna-integer-float-rounding-x87.xml`: an integer-to-float conversion keeps its rounding through a later float conversion or a narrower float trace (`option intfloatround`; the first passes run it `off`), while exact intermediates, x87 extended conversions and `fld1` still combine.
+
+`kuna-global-load-call-order.xml` keeps a post-call memory-loaded global write after the getter, including a later call, a loop marker and a no-final-call control. The CLI roundtrips check an impure getter, a computed-value reload control and overlapping x86-64 SIMD reads using GCC/Clang at O0/O2. Its first pass runs `option globalcallstore off`, which prints the write before the getter.

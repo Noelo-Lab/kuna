@@ -129,6 +129,9 @@ pub const BUILTIN_MEMSET: uint4 = 0x10000006;
 /// (kuna) Built-in id for `syscall_error`, the failure flag a MIPS or PowerPC
 /// kernel leaves after a system call (`syscallregs`).
 pub const BUILTIN_SYSCALL_ERROR: uint4 = 0x10000007;
+/// (kuna) Built-in id for `strlen`, the length an inline `repnz scasb` scan
+/// computes (`strlenscan`).
+pub const BUILTIN_STRLEN: uint4 = 0x10000008;
 
 // ---------------------------------------------------------------------------
 // UserOpBase + UserPcodeOp hierarchy (userop.hh:47-318)
@@ -986,6 +989,14 @@ impl UserOpManage {
             }
             BUILTIN_SYSCALL_ERROR => {
                 UserPcodeOp::new_unspecialized(b"syscall_error", BUILTIN_SYSCALL_ERROR as int4)
+            }
+            BUILTIN_STRLEN => {
+                let ptr_size = types.get_size_of_pointer();
+                let word_size = types.get_default_data_space_word_size();
+                let c_type = types.get_type_char();
+                let ptr_type = types.get_type_pointer(ptr_size, c_type, word_size);
+                let len_type = types.get_base_int(ptr_size);
+                UserPcodeOp::new_datatype(b"strlen", BUILTIN_STRLEN as int4, Some(len_type), &[Some(ptr_type)])
             }
             _ => return Err(KunaError::lowlevel("Bad built-in userop id")),
         };

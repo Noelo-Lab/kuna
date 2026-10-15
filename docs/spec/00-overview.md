@@ -870,24 +870,46 @@ Four front-ends drive one engine assembly:
   typelock) and the host's declared types and names get re-derived instead of
   applied.
 
-(kuna) **Locating the engine and the specs.** Two installations are first class
-(`decompiler/crates/kuna-cli/src/paths.rs (binary, specs_dir)`), and neither is
-derived from the other. In a checkout `kuna` is built to
-`<root>/decompiler/target/[<triple>/]<profile>/kuna`, so the repo root is the
-directory above the `decompiler`/`target` pair and `specs/` sits under it. In an
-extracted release archive `kuna`, `decomp_dbg` and `slacomp` are siblings in one
-directory, the separately downloaded `specs/` tree is beside or inside it, and
-there is no repo root at all — popping three parents off the archive directory
-lands on a path that exists nowhere, so the pop is refused rather than reported.
-Each binary probe tries the bare name and then the platform's executable suffix,
-because the Windows archive ships `decomp_dbg.exe` and `Path::exists` applies no
-suffix of its own. The environment overrides (`KUNA_ROOT`, `KUNA_SPECS`,
-`KUNA_DECOMP_DBG`, `KUNA_DECOMP_TEST`, `KUNA_SLACOMP`, `KUNA_RUST_PROFILE`, all
-documented in `docs/cli.md`) win over both layouts. A probe that finds nothing
-names the directories it looked in: the in-tree path a checkout would have built
-to is not an answer on a machine that has no checkout, and a missing SLEIGH tree
-is reported where it is resolved rather than as the engine's downstream
-`No sleigh specification` — which reads as a problem with the binary.
+(kuna) **Locating the engine and the specs.** `kuna` is the whole toolchain
+(`decompiler/crates/kuna-cli/src/paths.rs (decomp_dbg, slacomp, specs_dir)`). The
+decompiler console and the SLEIGH compiler are library entry points
+(`decompiler/crates/kuna-console/src/consolemain.rs (main)`,
+`decompiler/crates/kuna-slacomp/src/slacompmain.rs (main)`) that the `decomp_dbg`
+and `slacomp` binaries and `kuna`'s own hidden `decomp_dbg` and `slacomp`
+subcommands all call, so `kuna decompile`, `kuna catalog` and `kuna specs` launch
+the running `kuna` again rather than look for siblings — a separate binary is used
+only when `KUNA_DECOMP_DBG` or `KUNA_SLACOMP` names one. The child is still a
+separate process, which keeps the per-run memory limit and crash isolation the
+console had as its own binary. A release `kuna` also carries the compiled SLEIGH
+tree (cargo feature `embed-specs`, an `include_bytes!` table that
+`decompiler/crates/kuna-cli/build.rs` generates from every file under `specs/`
+except the SLEIGH sources). The engine reads specs only through plain `std::fs`
+path reads — the same contract the WASI front-end relies on — so the table is
+unpacked rather than read in place
+(`decompiler/crates/kuna-cli/src/embedded_specs.rs (unpack)`): into
+`specs-<id>` under the per-user cache directory, falling back to the system temp
+directory, where `<id>` hashes every path and byte of the table. Each unpack is
+written to a private staging directory and renamed into place only after its
+`.complete` marker is written, so a reader never sees a partial tree, concurrent
+first runs settle on one copy, and a tree without the marker is replaced. A
+release whose specs did not change therefore reuses the tree already on disk.
+
+The spec root resolves in this order: `KUNA_SPECS`, then `KUNA_ROOT`'s `specs/`,
+then the built-in tree, then the first directory that holds a
+`Ghidra/Processors` tree among the checkout's `specs/`, a `specs/` inside or next
+to the directory holding `kuna`, and the current directory's. A checkout build is
+recognised by its path, `<root>/decompiler/target/[<triple>/]<profile>/kuna`; any
+other directory has no repo root, and popping three parents off it lands on a path
+that exists nowhere, so the pop is refused rather than reported. `decomp_test_dbg`
+is not built in: it is probed for beside `kuna` and in the checkout's
+`decompiler/target/<profile>/`, under its bare name and then the platform's
+executable suffix, because `Path::exists` applies no suffix of its own. The
+environment overrides (`KUNA_ROOT`, `KUNA_SPECS`, `KUNA_DECOMP_DBG`,
+`KUNA_DECOMP_TEST`, `KUNA_SLACOMP`, `KUNA_RUST_PROFILE`, all documented in
+`docs/cli.md`) win over everything else. A probe that finds nothing names the
+directories it looked in and why a built-in tree could not be unpacked: a missing
+SLEIGH tree is reported where it is resolved rather than as the engine's
+downstream `No sleigh specification` — which reads as a problem with the binary.
 
 `kuna specs --diff` is informational: it writes verification guidance without
 starting a compiler (`decompiler/crates/kuna-cli/src/specs.rs (run)`). It identifies
@@ -1515,12 +1537,33 @@ added at least 64 MiB (`kuna_fnmemory.rs (trips)`), so what the batch built
 up before a function began cannot stop it. A drive armed only by the limit
 gets a deadline a year out so the probes run. The trip holds for the rest of
 the drive, the function's `error` names the limit, and the drive releases free
-heap pages on the way out. Without the flag a serial run and `kuna decompile`
-take a default from the smallest finite cgroup v2 `memory.max` on the
-process's path to the root, less max(512 MiB, 10%) (`kuna_fnmemory.rs
-(default_limit_mib)`); a `--jobs N` pool and a run outside a capped cgroup
-have none. `--jobs` workers and `decomp_dbg` take the parent's resolved
-value. A function whose drive
+heap pages on the way out. Without the flag, a process under a finite cgroup
+v2 `memory.max` takes the cgroup default instead
+(`kuna_fnmemory.rs (use_cgroup_default)`): the serial run, every `--jobs`
+worker (the parent passes a value only when one was given) and `decomp_dbg`
+(`--max-fn-memory cgroup`). It budgets the container, not the process. With
+a margin of max(512 MiB, 10% of the cap), a drive trips once some capped
+cgroup on the path to the root holds more than its cap less the margin,
+counting `memory.current` without the file-backed LRU pages reclaim can drop
+(`decompiler/crates/kuna-decomp/src/infra/kuna_hostmem.rs
+(unreclaimable_bytes)`), AND the drive has itself grown by that cgroup's
+floor: the margin, or half the room the cap left the process when the drive
+started if that is less, and never under 64 MiB (`kuna_fnmemory.rs
+(cgroup_trips)`). The room term is what keeps a runaway under a small cap
+from reaching the cap before the floor. The cgroup files are read only on a
+sample that finds the drive grown that much, and a drive that starts within
+a tenth of the tightest limit first releases free heap pages, as under an
+explicit limit. A fixed per-process share of the cap would stop functions the
+container could have held while the other workers were small; the shared
+budget stops only a function that has grown by the floor while the container
+is inside its margin. Inside that band the stop is a judgment: a function
+that grew by the floor while other workers filled the container can be
+stopped although it would have fit, and which one it is varies from run to
+run, but each such stop usually replaces a worker the kernel would have
+killed outright. A run outside a capped cgroup has no default. The resident set
+is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, and on Windows the
+larger of the working set and the private commit; a platform that reports no
+resident set (macOS) refuses a non-zero limit. A function whose drive
 completes before expiry is byte-identical with or without a budget, and the
 console/parity paths never set one. It is not a hard wall around discovery,
 unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
@@ -1766,6 +1809,28 @@ The seeding is strictly additive — an address this load already resolves, or a
 it already carries, is left alone — because a name is installed into the scope its
 `::` path names, and replacing one buries a name the worker derived correctly.
 `--jobs-full-load` restores the parent's exact load in every worker.
+
+The pool's width is fixed after the parent's load, the only point at which the
+parent knows what a load costs (`decompiler/crates/kuna-cli/src/jobs.rs
+(affordable_jobs)`). A worker is priced at a quarter of the parent's peak
+resident set, less what its decode lanes added (256 MiB at least; the whole
+peak under `--jobs-full-load`), and the pool may take two thirds of the memory a
+new process could still take
+(`decompiler/crates/kuna-decomp/src/infra/kuna_hostmem.rs (available)`). On
+Linux that is `MemAvailable`, or the headroom of the cgroup v2 hierarchy the
+process runs in when that is smaller: each cgroup on the path to the root with
+a finite `memory.max` leaves that cap less its `memory.current` without the
+file-backed LRU pages reclaim can drop, and the smallest such headroom bounds
+the pool (`kuna_hostmem.rs (headroom_from)`), because a container's cap kills a
+worker long before the host runs short. On Windows it is the smaller of the
+free physical memory and the commit still available under the commit limit,
+and the parent's cost is the larger of its peak working set and its peak
+commit: Windows refuses an allocation past the commit limit rather than
+overcommitting, and the worker aborts. On macOS it is the physical memory times
+the percentage the memory status reports free, and the cost is `ru_maxrss`.
+`--jobs auto` comes down to what fits and names the bound it hit; an explicit
+`--jobs N` is kept and warned about. Where neither number is known, `auto` is
+the core count.
 
 Progress is written to stderr. Its ETA is withheld until each worker has completed
 its first chunk and then uses only the rate measured after that point, so every
@@ -2099,7 +2164,8 @@ its type lock; ordinary recovered local types remain inference hints.
 A parameter edit also crosses the prototype store. The standalone engine keeps
 its parameter Symbol separate from its prototype entry, so replaying only the
 Symbol can leave the old name or type in the signature while the body reads an
-uninitialized local. `kuna_hightarget.rs (carried_parameter_maps)` matches locked
+uninitialized local. `decompiler/crates/kuna-console/src/kuna_paramasserts.rs`
+matches locked
 parameter Symbols by category, slot and input storage, and carries their edited
 names and types through the existing parameter-map seed. When any parameter
 changes, the complete input list keeps its recovered slots, storage and parameter
@@ -2112,8 +2178,8 @@ from the forced prototype input, leaving a branch condition or return reading
 an uninitialized local even when the signature carries the edited name.
 
 A printed register alias of a later value uses the local-symbol channel instead.
-It may share an input parameter's register only when equal storage widths and
-disjoint CFG covers establish separate lifetimes. Replay must preserve both
+It may share an input parameter's register when the definition identity and
+storage width identify the later value independently. Replay must preserve both
 Symbols: parameter creation checks the entry usepoint, type seeding checks each
 Varnode's definition usepoint, and naming and declaration emission retain the
 selected Symbol identity. Renaming the later local then changes its assignments
@@ -2135,14 +2201,14 @@ Three properties of that mapping are load-bearing, each measured on
   A bare `type v6 <T>` therefore states no name, and the retyped local can come
   back under a different number; its storage comment is what identifies it across
   the two passes, and `type v6 <T> <newname>` pins a name outright.
-* **Only addressable storage is a target.** A `unique`-space temporary is
+* **Synthetic storage needs a dynamic anchor.** A `unique`-space temporary is
   renumbered on every IR rebuild and a `join` is a synthetic register pair, so a
   Symbol mapped over one binds nothing on the second pass and survives as a
   declared-but-unused local while the variable the caller aimed at is unchanged.
-  Reporting that as `applied` is the failure this plane exists to end, so such a
-  target is rejected with `Not addressable storage`. Naming a decompiler
-  temporary durably needs the dynamic-hash channel
-  (`Funcdata::seed_dynamic_recommendations`), which this does not use.
+  Such targets use the dynamic-hash channel
+  (`Funcdata::seed_dynamic_recommendations`). Before reporting `applied`, the
+  resolver verifies that the hash selects the same HighVariable and width;
+  unresolved or ambiguous identities are rejected.
 
 (kuna) **Every `name`/`type` in one batch reads its identifier against the same
 pass.** A batch is the directives applied between two decompiles: the
@@ -2177,14 +2243,25 @@ first reading applies; the second would only undo or chain the earlier rename
 onto a name another local still prints. A second directive on a local the batch
 already mapped edits that Symbol rather than mapping another, and it keeps the
 register's width, so `type rc char *` on a 4-byte register is still `Storage is
-4 bytes, the stated type is 8`. Two register locals whose storage overlaps --
-`char *s; // rax` and a later `uint4 v1; // eax` -- cannot both be given a
-Symbol: the second pass folds them into one variable (`s._0_4_ = 0`), so the
-later directive is rejected with `Storage of v1 overlaps s, which an earlier
-directive already changed`. That is the one rejection that depends on order, and
-it names the directive it lost to. On the stack, `name v2 credbuf` followed by
+4 bytes, the stated type is 8`. Different-width register locals whose storage overlaps --
+`char *s; // rax` and a later `uint4 v1; // eax` -- can receive distinct
+Symbols when their definition identities distinguish them. The second pass
+retains both values instead of folding the narrower value into `s._0_4_`.
+On the stack, `name v2 credbuf` followed by
 `type v2 char[8]` now retypes `credbuf` where it used to be rejected, and still
 maps one Symbol over the slot.
+
+Locals that the first pass already distinguishes may bind separate
+Symbols when `(storage, width, definition usepoint)` uniquely identifies each
+selected HighVariable. Their logical CFG covers need not be disjoint: copy
+propagation can keep an earlier register value live through a saved copy after
+the register is reused. The replay mapping retains its definition usepoint and
+is isolated from speculative merges. These identities survive separate console
+decompiles, including mixed-width locals and later reuse of parameter registers.
+Definitions sharing one native instruction address use a verified dynamic-hash
+anchor; an unresolved or ambiguous anchor still rejects the directive.
+Type seeding uses the definition usepoint, and naming retains the selected SymbolId;
+a storage-only re-query must not attach another lifetime's name or type.
 
 (kuna) **A `prototype` directive binds to `<func>`, whatever name its declaration
 carries.** The operand says which function the signature describes; the
@@ -2942,11 +3019,21 @@ and an agent writes:
   `decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs`, so a default-off
   option is either in the preset or listed there with its reason),
   and **`fast`** (`listing`, `funcstart_patterns`, and `aif` off to avoid
-  program-wide decode and speculative discovery). A fourth frontend policy,
-  **`auto`**, resolves from the raw input length before the Architecture is
-  built: `<500 KiB` selects `aggressive`, `500 KiB–<2 MiB` selects `reliable`,
-  and `>=2 MiB` selects `fast`. File-based CLI commands use `auto` when
-  `--mode` is omitted; the WASI/browser frontend uses the same Rust classifier.
+  program-wide decode and speculative discovery, `ctypes` and `partialaccess`
+  on). A fourth frontend
+  policy, **`auto`**, resolves from the raw input length before the Architecture
+  is built: `<500 KiB` selects `aggressive`, `500 KiB–<2 MiB` selects `reliable`,
+  and `>=2 MiB` selects `fast`. `auto` also carries its own override list,
+  applied before the selected preset's: `ctypes=on` and `partialaccess=on`, so
+  the C spelling of the core types and of a partial access (chapter
+  [09](09-emission.md) §9.2) does not change with input size.
+  Size selects how much discovery and recovery a run can afford; spelling costs
+  nothing and is not part of that trade. An explicit `--mode reliable` stays the
+  catalog defaults. One function,
+  `decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs (resolve_overrides_for_size)`,
+  returns the concrete preset with the full ordered override list, and the CLI,
+  the WASI/browser frontend and the ghidra-sim CLI oracle all apply it. File-based
+  CLI commands use `auto` when `--mode` is omitted.
   The interactive console accepts concrete `mode <name>` presets but cannot
   apply unresolved `auto`, because an Architecture has no input-file metadata.
   Overrides are applied *before* the user's `--option` (last-write, so an
@@ -2974,8 +3061,9 @@ MIPS so GOT-slot loads fold to import names,
 `decompiler/crates/kuna-console/src/engine.rs (bootstrap_from_object)`);
 (4) driver surface injections (`listing`, non-x86-64
 `funcstart_patterns`/`aif`, §0.2) for options the concrete preset did not name;
-(5) the concrete mode's runtime overrides followed by the user's
-`--option`/`kassert` lines (which override the mode); and finally
+(5) `auto`'s own overrides (when the mode was omitted or `auto`), the concrete
+mode's runtime overrides, then the user's `--option`/`kassert` lines (which
+override the mode); and finally
 (6) the per-function snapshot copy (§0.5), after which the value is frozen for that
 function's drive.
 Which defaults deliberately diverge from upstream, and the measurements behind

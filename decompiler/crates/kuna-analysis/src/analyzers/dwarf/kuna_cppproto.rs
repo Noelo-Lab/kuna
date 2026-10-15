@@ -262,6 +262,7 @@ pub(super) fn build_pieces(
         first_var_arg_slot: res.first_var_arg_slot,
         output_storage: None,
         input_storage: Vec::new(),
+        kuna_library_names: None,
     })
 }
 

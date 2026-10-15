@@ -70,8 +70,8 @@
     declaration) kept printing `&w`; under Ghidra names, which carry no storage
     comment, the two slots also printed identical `int8 w;` lines and were
     collapsed into one variable.  Renaming only `v2` to `v1` must not collide at
-    all: the untouched slot's default name skips the one the rename locked, so
-    the caller's `v1` stays on the slot it named.  gc: the local takes `release`'s name `node`
+    all: the untouched slot takes a number past the last rather than the one the
+    rename locked, so the caller's `v1` stays on the slot it named.  gc: the local takes `release`'s name `node`
     and is declared `node_1`; the `node[...]` array accesses are references to
     the global and must keep its name.  stackreturn: the slot is declared
     `perf_ret_1`, and its 2- and 4-byte views must follow it rather than read
@@ -299,10 +299,10 @@ return w \+ w_1 \* 100;</stringmatch>
 small_ret = \(int4\)perf_ret_1;
 perf_ret_1\._2_2_ = big\(2,0x1e\);
 big_ret = CONCAT44\(perf_ret_1\._4_4_,\(unsigned int\)perf_ret_1\);</stringmatch>
-<stringmatch name="calleenamedlocals #18: the slot renamed v1 keeps it and the other takes a fresh default" min="3" max="3">v2 = n \* 3;
-touchl\(&amp;v2\);
+<stringmatch name="calleenamedlocals #18: the slot renamed v1 keeps it and the other takes a fresh default" min="3" max="3">v3 = n \* 3;
+touchl\(&amp;v3\);
 v1 = n \* 5;
 touchl\(&amp;v1\);
-return v2 \+ v1 \* 100;</stringmatch>
+return v3 \+ v1 \* 100;</stringmatch>
 <stringmatch name="calleenamedlocals #19: no slot is declared under a suffix of the caller's v1" min="0" max="0">v1_1</stringmatch>
 </decompilertest>

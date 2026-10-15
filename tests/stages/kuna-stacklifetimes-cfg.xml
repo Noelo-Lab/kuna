@@ -1,0 +1,96 @@
+<!-- Kuna #810; P6 physical lifetime families / P9 storage presentation.
+     stackalias off/on checks conditional native writes. stackviews off reproduces
+     numeric float assignment; on preserves member bits and call memory versions. -->
+<decompilertest>
+  <binaryimage arch="x86:LE:64:default:gcc">
+    <bytechunk space="ram" offset="0x401000">4883ec18488925f50f0000c704240100000085ff7409c7042405000000eb07c7042407000000e8800000004883c418c34883ec18488925c50f0000c704240100000085ff7407c7042405000000e8590000004883c418c34883ec184889259e0f0000c7042401000000c704240700000083ef017ff4e8310000004883c418c34883ec18488925760f0000c7042401000000eb0ac704240700000083ef0185ff7ff2e8050000004883c418c3488b054e0f00008b00c331ffe844ffffff83f8077555bf01000000e835ffffff83f805754631ffe859ffffff83f801753abf01000000e84affffff83f805752b31ffe865ffffff83f807751f31ffe881ffffff83f8017513bf02000000e872ffffff83f807750431ffeb05bf01000000b83c0000000f05</bytechunk>
+    <bytechunk space="ram" offset="0x402000">0000000000000000</bytechunk>
+    <symbol space="ram" offset="0x401000" name="all_paths_overwrite" />
+    <symbol space="ram" offset="0x401030" name="one_path_overwrites" />
+    <symbol space="ram" offset="0x401057" name="loop_overwrites" />
+    <symbol space="ram" offset="0x40107f" name="loop_may_skip" />
+    <symbol space="ram" offset="0x4010ab" name="read_escaped" />
+    <bytechunk space="ram" offset="0x405000">534883ec10f30f1104244889e7e82100000089c3813424000040004889e7e8210000004889e7e80800000001d84883c4105bc3f30f1007f30f5905c10f0000f30f2cc0c38b078905b80f0000c3534883ec10c704240000803f4889e7e8d2ffffff89c3813424000040004889e7e8d2ffffff4889e7e8b9ffffff01d84883c4105bc3534889fb4883ec10c704240000803f4889e7e8abffffff4889e7ffd34889e7e89effffff4889e7e885ffffff4883c4105bc3c70700004040c3534883ec10f20f1104244889e7e82800000089c348b80000000000000800483104244889e7e8210000004889e7e80800000001d84883c4105bc3f20f1007f20f59050f0f0000f20f2cc0c3488b07488905080f0000c3</bytechunk>
+    <bytechunk space="ram" offset="0x406000">00000040000000000000803f0000000000000000000000400000000000000000</bytechunk>
+    <symbol space="ram" offset="0x405000" name="xor_view" />
+    <symbol space="ram" offset="0x40504d" name="constant_bits" />
+    <symbol space="ram" offset="0x405082" name="effect_bits" />
+    <symbol space="ram" offset="0x4050bb" name="double_bits" />
+    <symbol space="ram" offset="0x405033" name="read_float" />
+    <symbol space="ram" offset="0x4050f5" name="read_double" />
+    <symbol space="ram" offset="0x405044" name="observe_word" />
+    <symbol space="ram" offset="0x405106" name="observe_quad" />
+    <symbol space="ram" offset="0x4050b4" name="write_word" />
+  </binaryimage>
+  <script>
+    <com>map addr r0x402000 int4 *escaped_pointer</com>
+    <com>parse line extern int4 all_paths_overwrite(int4 value);</com>
+    <com>parse line extern int4 one_path_overwrites(int4 value);</com>
+    <com>parse line extern int4 loop_overwrites(int4 value);</com>
+    <com>parse line extern int4 loop_may_skip(int4 value);</com>
+    <com>parse line extern int4 read_escaped(void);</com>
+    <com>option stackalias off</com>
+    <com>lo fu one_path_overwrites</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>option stackalias on</com>
+    <com>lo fu all_paths_overwrite</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu one_path_overwrites</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu loop_overwrites</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu loop_may_skip</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>parse line struct FloatStorage { float4 value; };</com>
+    <com>parse line struct DoubleStorage { float8 value; };</com>
+    <com>parse line extern int4 xor_view(float4 initial);</com>
+    <com>parse line extern int4 double_bits(float8 initial);</com>
+    <com>parse line extern int4 constant_bits(void);</com>
+    <com>parse line extern int4 effect_bits(void (*writer)(uint4 *value));</com>
+    <com>parse line extern int4 read_float(const float4 *value);</com>
+    <com>parse line extern int4 read_double(const float8 *value);</com>
+    <com>parse line extern void observe_word(const uint4 *value);</com>
+    <com>parse line extern void observe_quad(const uint8 *value);</com>
+    <com>map addr r0x406000 float4 two</com>
+    <com>map addr r0x406004 uint4 observed_word</com>
+    <com>map addr r0x406010 float8 two_double</com>
+    <com>map addr r0x406018 uint8 observed_quad</com>
+    <com>option stackalias off</com>
+    <com>option stackviews off</com>
+    <com>lo fu xor_view</com>
+    <com>map addr s0xffffffffffffffe8 FloatStorage protected_float</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>option stackviews on</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu double_bits</com>
+    <com>map addr s0xffffffffffffffe8 DoubleStorage protected_double</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu constant_bits</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu effect_bits</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>quit</com>
+  </script>
+  <stringmatch name="stack lifetimes: the off control and observable paths retain initialization" min="3" max="3">^  .* = 1;$</stringmatch>
+  <stringmatch name="stack lifetimes: the fully overwritten branch values stay observable" min="1" max="1">= \(value\) \? 5 : 7;</stringmatch>
+  <stringmatch name="stack lifetimes: both loops preserve their physical write" min="2" max="2">^    .* = 7;$</stringmatch>
+  <stringmatch name="stack lifetimes: unknown memory observers remain in both modes" min="5" max="5">= read_escaped\(\);</stringmatch>
+  <stringmatch name="stack lifetimes: the off control uses a numeric float conversion" min="1" max="1">protected_float.value = \(float4\)\(\(uint4\)protected_float.value \^ 0x400000\);</stringmatch>
+  <stringmatch name="stack lifetimes: a declared float member receives the integer bits" min="1" max="1">protected_float.value = \(\(union \{ unsigned int from; float to;</stringmatch>
+  <stringmatch name="stack lifetimes: a declared double member receives the integer bits" min="1" max="1">protected_double.value = \(\(union \{ unsigned long long from; double to;</stringmatch>
+  <stringmatch name="stack lifetimes: call versions do not copy fields out of constants" min="0" max="0">\.bytes\._</stringmatch>
+  <stringmatch name="stack lifetimes: the real constant replacement stays written" min="1" max="1">v2.view_uint4 = 0x3fc00000;</stringmatch>
+  <stringmatch name="stack lifetimes: an unknown writer still executes" min="1" max="1">\(\*writer\)\(&amp;v1.view_uint4\);</stringmatch>
+  <stringmatch name="stack lifetimes: observations surround the unknown writer" min="2" max="2">observe_word\(&amp;v1.view_uint4\);</stringmatch>
+  <stringmatch name="stack lifetimes: a read uses bytes after the unknown writer" min="1" max="1">return read_float\(&amp;v1.view_float4\);</stringmatch>
+</decompilertest>

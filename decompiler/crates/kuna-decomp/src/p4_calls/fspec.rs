@@ -3832,6 +3832,12 @@ pub struct PrototypePieces {
     /// `(slot, storage)` after the model-driven `update_all_types`.  Empty is the
     /// normal (model-derived) case.
     pub input_storage: Vec<(int4, ParameterPieces)>,
+    /// (kuna `libcnames`) The library's own names for this prototype's
+    /// parameters and result, when the prototype came from a built-in library
+    /// table. Kept apart from [`Self::innames`] so the callee's printed
+    /// signature and the name locks stay as they were; only the naming pass
+    /// reads them, and only under `option libcnames`.
+    pub kuna_library_names: Option<&'static crate::kuna_libcnames::LibraryNames>,
 }
 
 // =============================================================================
@@ -4915,6 +4921,8 @@ pub trait ProtoParameter {
     fn get_address(&self) -> Address;
     /// Get the number of bytes occupied (C++ `getSize`).
     fn get_size(&self) -> int4;
+    /// Get the parameter's storage and lock properties.
+    fn get_flags(&self) -> uint4;
     /// Is the parameter data-type locked (C++ `isTypeLocked`).
     fn is_type_locked(&self) -> bool;
     /// Is the parameter name locked (C++ `isNameLocked`).
@@ -5002,6 +5010,9 @@ impl ProtoParameter for ParameterBasic {
     }
     fn get_size(&self) -> int4 {
         self.type_.as_ref().map(|t| t.get_size()).unwrap_or(0)
+    }
+    fn get_flags(&self) -> uint4 {
+        self.flags
     }
     fn is_type_locked(&self) -> bool {
         (self.flags & parameter_pieces_flags::TYPELOCK) != 0

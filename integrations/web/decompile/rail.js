@@ -35,7 +35,7 @@ const COLOR = /^#[0-9a-f]{6}$/i;
 function changesPart(model) {
   const items = model.edits.map((e) => {
     const [cls, sym, title] = MARK[e.status] || MARK.pending;
-    const why = (e.status === 'rejected' || e.status === 'refused') && e.detail ? `<small>${escapeHtml(e.detail)}</small>` : '';
+    const why = e.detail ? `<small>${escapeHtml(e.detail)}</small>` : '';
     const fatal = e.fatal ? '<small>the code shown was made without this change</small>' : '';
     const a = e.author && COLOR.test(e.author.color) ? e.author : null;
     const by = a ? ` class="by" style="--who:${a.color}"` : '';

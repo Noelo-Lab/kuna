@@ -1,0 +1,72 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!--
+    kuna option bejoin evidence (the default), GH-815: SPARC returns a long
+    long in %o0:%o1 with the HIGH word in %o0.  A function that widens an
+    argument after a call printed its halves swapped, or the argument
+    shifted into the high word (option bejoin off, upstream's join):
+        widen:   return CONCAT44(a0,a0 >> 0x1f);       (bug)
+        uwiden:  return (uint8)a0 << 0x20;             (bug)
+    The argument is moved into %i1 for restore to hand back in %o1 (`mov
+    %i0,%i1` in the call's delay slot) beside its sign (`sra %i0,31,%i0`) or a
+    zero: a sign or zero extension, which an int function has no reason to
+    compute, so the pair joins in the ABI's order.  The RETURN the call's
+    pcode keeps for a restore in its delay slot is never taken and is not
+    counted.  shi, an int over the high half of a 64-bit sum, leaves the low
+    sum in %i1 (`addcc %i3,%i1,%i1; addxcc %i2,%i0,%i0`), the code of the sum
+    itself, so it keeps the first-register-low join, which C's truncation
+    reads as its int.
+
+    Stage: P4 calls and prototypes (output-prototype), option bejoin.
+    Pass 1 is the default (evidence), pass 2 option bejoin off.  The call to
+    ext is left unrelocated and prints as sub_*.
+
+    Source (clang 14 -O2 -c -fintegrated-as, target sparc-linux-gnu, .text of the object):
+        typedef long long i64;
+        void ext(void);
+        long long widen(int x) { ext(); return x; }
+          save / call ext / mov %i0,%i1 / sra %i0,31,%i0 / ret / restore
+        unsigned long long uwiden(unsigned x) { ext(); return x; }
+          save / call ext / mov %i0,%i1 / ret / restore %g0,%g0,%o0
+        int shi(i64 a, i64 b) { return (int)((a + b) >> 32); }
+
+    Asserts #1-#2: the default returns widen's argument sign-extended and
+      uwiden's zero-extended; off prints each swapped.
+    Assert #3: shi keeps %o0 low in both passes.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+9de3bfa040000000b2100018b13e201f81c7e00881e800009de3bfa040000000
+b210001881c7e00891e800009de3bfa0b286c019b0c6801881c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="widen"/>
+<symbol space="ram" offset="0x10018" name="uwiden"/>
+<symbol space="ram" offset="0x1002c" name="shi"/>
+</binaryimage>
+<script>
+  <com>lo fu widen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu uwiden</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu shi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bejoin off</com>
+  <com>lo fu widen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu uwiden</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu shi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoin-evidence-sparc #1: the default returns both arguments whole" min="2" max="2">return a0;</stringmatch>
+<stringmatch name="bejoin-evidence-sparc #1b: the default widens to int8 and uint8" min="2" max="2">(int8 widen|uint8 uwiden)\((u)?int4 a0\)</stringmatch>
+<stringmatch name="bejoin-evidence-sparc #2: only off shifts widen's sign into the low word" min="1" max="1">return CONCAT44\(a0,a0 &gt;&gt; 0x1f\);</stringmatch>
+<stringmatch name="bejoin-evidence-sparc #2b: only off shifts uwiden's argument into the high word" min="1" max="1">return \(uint8\)a0 &lt;&lt; 0x20;</stringmatch>
+<stringmatch name="bejoin-evidence-sparc #3: shi keeps %o0 low in both passes, which truncates to its int" min="2" max="2">return CONCAT44\(a3 \+ a1,a2 \+ a0 \+ \(uint4\)CARRY4\(a3,a1\)\);</stringmatch>
+</decompilertest>

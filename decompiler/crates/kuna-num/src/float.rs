@@ -232,6 +232,11 @@ impl FloatFormat {
         res
     }
 
+    /// Number of significant binary digits, including an implicit leading bit.
+    pub fn get_precision(&self) -> i32 {
+        self.frac_size + i32::from(self.jbitimplied)
+    }
+
     /// Get the size of the encoding in bytes.
     pub fn get_size(&self) -> i32 {
         self.size

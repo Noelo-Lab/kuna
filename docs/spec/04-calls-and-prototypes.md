@@ -1661,6 +1661,41 @@ classified:
   extern in a relocatable object, a PLT import with no library prototype) gives
   no evidence and changes nothing. `off` leaves every list as the other rules
   settle it.
+
+  A register the callee only pushes above a call's stack arguments -- an
+  alignment pad -- is no read either (`pushpadread`, default-on,
+  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs (at_call)`).
+  x86 compilers align an odd number of stack arguments by pushing whatever
+  register is at hand before them: gcc 9 at -O2 and gcc 11 at -Os push an `rdx`
+  the body never set ahead of three bytes for `__snprintf_chk`. The push copies
+  the register, so the walk recorded a read of `rdx` and every caller's call
+  gained a third argument, whatever the caller last left in `rdx` (a loop bound,
+  an end pointer); where that was the caller's own incoming `rdx`, the caller
+  gained a parameter too. A push alone cannot be told from a real forwarded
+  argument, though -- gcc forwards a register as a stack argument with the same
+  `push %reg` then `add $N,%rsp`. So the discriminator is POSITIVE evidence of
+  how many stack arguments the nested call takes: a push BELOW that count is a
+  real argument the callee reads and is kept; only a push ABOVE it is the pad.
+  The evidence is the format resolver (chapter 1): for a printf-family call with
+  a constant format it already recovers the full argument list, and the number
+  of those arguments the ABI puts on the stack is parked by the call's VMA
+  (`Architecture::format_stack_args`), so the probe, reaching that call in the
+  callee's body, reads the count straight off. The walk follows each push as a
+  stack slot at its offset from the stack pointer; at the call the slots rising
+  without a gap from the return address are the arguments, and the lowest `N` of
+  them (the call's stack arguments) count as reads while any above `N` do not.
+  `show`'s pad lies above `__snprintf_chk`'s three; `report` forwarding its
+  third argument as the sixth of `printf`'s variadic arguments (its seventh counting the format) lies below. A read of the slot through the
+  stack pointer before the call (a `pop`, a `mov` from the stack), a use of the
+  stack pointer the walk cannot place (copied into another register, offset into
+  one, realigned), or a call whose stack-argument count is UNKNOWN -- a
+  non-format callee like a nine-parameter `nine`, an indirect call, or any call
+  when the Listing (and so the resolver) is off -- leaves every slot a read.
+  That is the conservative answer: without positive evidence a push is a read,
+  so the rule never drops a real argument and a phantom is the worst it can
+  leave. Only this rule's question changes; the dead-argument veto and every
+  other reader of the walk see every push as a read. `off` counts every push
+  again.
 - A definitely-unused trial has its dataflow **freed immediately** — the CALL
   input is replaced with constant 0 so dead-code elimination can reap the
   producer. This is why P4 must iterate with DCE inside mainloop.
@@ -1754,12 +1789,131 @@ never joined at all (`ActionParamDouble` below is a no-op), so a `long long`
 argument prints as its two registers in the ABI's order and no order assumption
 applies there.
 
-On those ABIs, with the (kuna) `bejoin` option on, the pair joins in the ABI's
-order only when its second register holds a low word the function returns on
-purpose
-(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (join_order)`).
-The option is off by default (below): off, every pair joins first register
-low, as upstream does, so default output on those ABIs is upstream's.
+On those ABIs the (kuna) `bejoin` option decides the order
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (join_order)`):
+`off` joins every pair first register low, as upstream does; `evidence`, the
+default, joins in the ABI's order only on proof that the RETURNs hand back one
+value twice a register's width; `on` joins in the ABI's order when the second
+register holds a low word the function seems to return on purpose.
+
+With `evidence`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (seed, proven)`)
+the order is a fact about one function that its own RETURN and every call to
+it must agree on, in any order and in any run: a whole `decompile-all`, a run
+narrowed by `--functions` or `--addr`, `--jobs N`, a single `kuna decompile`,
+a Ghidra or web session. So it is decided from that function's instructions
+alone. Before any pipeline runs, the driver walks the raw p-code of the
+function and of every function it calls directly. Each function is walked
+at most once per image (the verdicts are cached on the `Architecture`, and,
+like the other per-image callee probes, kept for the session: a host that
+patches bytes does not retake them), and return recovery and the call-output
+seams both read the verdict for the entry they concern. A call
+`ActionDeindirect` resolves only mid-pass (a constant-propagated function
+pointer, a `-mlong-calls` call through a register) asks about a callee with
+no verdict at hand and reads it as not proven; after the pass the driver
+takes that callee's verdict, and if it is proven runs the pass again with it
+(`missed_proven`), so the call still reads the verdict of its callee alone.
+The model's pair is
+the first two general registers of its output list when its `<join>` rule
+puts the first one high (`r3:r4`, `$2:$3`, `%o0:%o1`, `r0:r1`, AVR's `R25:R24`,
+AArch64 big-endian's `x0:x1` for a 16-byte value); on any other model nothing
+is walked and nothing changes.
+
+The walk follows every path from the entry to a RETURN, or to a call that
+does not return, over symbolic values
+(a register's value at the entry, a literal, an operation on values, or an
+opaque value: a load, a call's result or clobber, a partly written register),
+taking a branch whose condition folds to a literal one way only (SPARC's
+`call` p-code keeps a RETURN for a `restore` in its delay slot behind
+`didrestore == 0`, never taken) and starting from the processor's tracked
+register values. A call keeps the registers the model says it leaves alone.
+An `int` worked out from the high half of a 64-bit temporary can leave the
+temporary's low half in the second register, and then compiles to exactly the
+bytes of the `long long` that returns the temporary whole: `umull r1,r0,r1,r0`
+on ARM big-endian is both `((u64)a * b) >> 32` and `(u64)a * b`, and `addc
+4,4,6; addze 3,3; add 3,3,5` on PowerPC is both `(a + b) >> 32` and `a + b`.
+No reading of those bytes tells the two apart. So the pair joins in the ABI's
+order only when every path's RETURN holds, in the pair, with both registers
+written by the function and neither read again before the RETURN by another
+instruction, one of:
+
+* a sign extension: the first register is the second register's value
+  shifted right arithmetically by all but one of its bits (`mr 4,3; srawi
+  3,3,31`), the shift instruction (with the carry it computes for nothing) the
+  value's only reader;
+* a zero extension: the first register is a literal zero, and nothing reads
+  the value;
+* the two halves of one product of two extended words: the first register the
+  product's high half (`SUBPIECE(p, 4)`, or `SUBPIECE(p >> 32, 0)`), the
+  second its low half made by an instruction of its own and read by nothing,
+  either a separate low product of the same two words (PowerPC's `mullw`
+  beside `mulhw`) or a move out of the register the multiply left it in
+  (MIPS's `mflo` beside `mfhi`, ARMv6's `umull r2,r3,r1,r0` then `mov
+  r1,r2`). A low half the multiply itself writes into the second register
+  (ARMv7's `umull r1,r0`, SPARC's `umul %i1,%i0,%i1`), or that only a
+  register window's `restore` carries there, proves nothing: the instruction
+  writes it whether or not the function returns it.
+
+Every read counts, on every path, a path that ends in a call that does not
+return included: gcc -Os hoists an error path's computation into a branch
+delay slot (`beqz a0; addiu v1,a1,1` before `jal exit`), so the RETURN of
+`return 0` finds a value in `$3` that only the path calling `exit` reads, and
+that value is no zero extension. An extended value must be made on purpose:
+computed by the function, or another register's argument moved there, read
+through zero and sign extensions; not a literal, not the second register's own entry value
+(`srawi 3,4,31` is both `(long long)b` and `b >> 31`), not a load (a volatile
+read, `(void)*p; return 0;`, leaves what it read in `r4` beside the zero on
+PowerPC -O2 and in `$3` on MIPS gcc -O2), not a call's result or clobber, not
+a piece of a wider value. A call reads every argument register holding a
+value the function put there. A loop on the way to a RETURN, an indirect
+jump, a branch into another function's entry (a tail call), an operation
+given no register inputs, an undecodable instruction, or a walk over its
+budget (64 paths, 20,000 p-code operations) proves nothing, and so does an
+"entry" whose first instruction calls itself, the placeholder an unrelocated
+call in an object file leaves behind (stopping there keeps the walks of an
+object full of them cheap). Every other pair
+keeps the first-register-low join, which C's truncation reads as the right
+`int`, and a genuine `long long` there still prints with its halves swapped:
+a 64-bit sum or difference, a load of both words, a product the multiply
+writes whole, a value a call hands back (`return g() >> 32` of a `long long
+g()` leaves `g`'s low word in the second register, the code of `return g()`).
+
+A call's two-register output joins in the ABI's order exactly when its callee
+is proven (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
+(call_join_order)`), whatever the calling function itself returns, so the
+call reads the value the callee's printed C returns; a self-recursive call
+reads the function's own verdict. A caller of a proven callee that reads only
+the first register reads the value's high word, so the call is given the pair
+as its output and the read becomes its high piece, `(int)((uint8)g() >>
+0x20)`, rather than the whole of a narrower result, which C's truncation would
+read as the low word
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (build_high_read)`).
+A caller that reads only the second register goes through the arm below
+(`build_partial_pair`), which needs more evidence about the callee and may
+still print the register as a local nothing assigns, as before. A callee
+whose bytes are not there (an import) is not proven, and a call kuna does not
+resolve to its callee (an indirect call through a value it cannot follow, a
+MIPS PIC call to a preemptible function through its GOT slot in a shared
+object) reads no verdict, so both sides keep the old join.
+
+A declared return type needs no proof: a DWARF, library or `--assert
+prototype` 8-byte return locks the output, and the model places it in the
+ABI's order in every mode (DWARF-described ARM big-endian and MIPS gcc
+objects print every such `long long` right).
+
+Against `off`, the default changes no function whose DWARF or source return
+type is narrower than eight bytes over 698 objects of bash, cronie,
+diffutils, dpkg, findutils, grep, kmod, libbsd, libedit, Lua, openssh, shadow
+and sysvinit built for PowerPC, SPARC and ARM big-endian with clang and for
+MIPS with gcc at -O0 and -O2, SQLite and zlib for the same four targets, and
+every shape GH-904 lists built for each target at -O0 to -O3 and -Os, ARMv6,
+Thumb-2 and MIPS PIC, with the callers placed before or after their callees
+and decompiled whole, narrowed, with `--jobs 2` or one at a time; the
+functions it changes return a 64-bit value and print it right, and their
+callers read it right. Little-endian output is byte-identical.
+
+With `bejoin on`, the pair joins in the ABI's order only when its second
+register holds a low word the function returns on purpose.
 Ancestor realism makes a pair of any function whose second register reaches the
 RETURN holding something, and a function returning one register often leaves
 something there: SPARC's `restore` copies `%i1` back into `%o1` on every function
@@ -2012,18 +2166,17 @@ option on each shape is read one way:
   does. These print right by default and print the whole 64-bit value with
   the option on.
 
-The default is off (GH-904). The second kind is rare in real code and the
-first is common, but the rule decides from the instructions alone, and the
+`on` is not the default (GH-904). The second kind is rare in real code and
+the first is common, but the rule decides from the instructions alone, and the
 `int` that works over the high half of a 64-bit temporary is a family, not
 one shape: each new look at it found another arithmetic form that compiles to
 the `long long`'s registers. A default must not turn a correct `int` into a
-wrong `long long`, so default output keeps upstream's join on every target, and
-the option is for a reader who has checked a big-endian or AVR function's
-return against its disassembly. A sound default needs positive evidence that
-the value is 64 bits wide: a declared, DWARF or asserted 8-byte return type,
-callers that read both registers after the call as one value, or a 64-bit
-operation whose two halves both reach every RETURN without being narrowed.
-With the option on, over 24,257 functions of nine corpora (e2fsprogs, coreutils and
+wrong `long long`, so the default, `evidence`, takes only the proofs above,
+and `on` is for a reader who has checked a big-endian or AVR function's
+return against its disassembly. Callers that read both registers after the
+call as one value would be a fourth proof; it needs every caller decompiled
+before its callee, the reverse of `decompile-all`'s order, and is not taken.
+With `on`, over 24,257 functions of nine corpora (e2fsprogs, coreutils and
 gnulib, libexpat, libbsd, dpkg, diffutils, findutils, sysvinit, Lua,
 libselinux, iproute2, rsyslog, openssh, bash, cronie, libedit, grep, kmod,
 shadow, zlib, dash, gnutls, base-passwd and gzip) built with clang for
@@ -2622,6 +2775,110 @@ home slot its caller allocated and passes the slot by reference (every Qt
 before the call was dead. The gather is deferred and cached for the length of one heritage pass, so a function
 that never reaches the locked branch never pays for it.
 
+### (kuna) `msvcbyval` — an MSVC by-value class sized at the call
+
+An MSVC name states every parameter's type but not the size of a class passed by
+value, so `msvcsig` (01) applies a `__cdecl` import's parameters up to the class
+and leaves the rest of the list open, as for a variadic call. The open tail is
+then left to the trials, and the trials cannot take it: MSVC reserves the class's
+outgoing slot (`push ecx`, or `sub esp,n`), copy-constructs the argument into it
+through a pointer (`mov ecx,esp; call ??0`), and `checkInputTrialUse` refuses
+every stack trial at or above an address the caller takes. So
+`?MakeStack@@YA?AVArr@@V1@AAV1@1@Z` (`Arr MakeStack(Arr, Arr &, Arr &)`) kept only
+its hidden return pointer, and the pushes for the class's slot and the two
+references rendered as stores before the call. `msvcsig` therefore also parks the
+whole declaration of such an import — every parameter, the class as a
+placeholder — when that class is the one thing it does not state (no second
+by-value class, no `...`).
+
+The caller pops a `__cdecl` callee's arguments, so where the next instruction
+after the call is a single `add esp,k`, `k` is the argument bytes. A `pop` raises
+the stack pointer the same way but also reads the stack, and a run of pops (MSVC
+`/O1` cleanup) cannot be told from a `pop ebp` epilogue locally, so only an
+`add esp,k` is read and a pop cleanup is declined. So is one followed by another
+bare `add esp` before the next call, branch or return
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (split_cleanup)`):
+the cleanup may be split (`add esp,8; add esp,4`), and its first half is not
+all of it. At the end of
+`ActionDefaultParams`, once every call has its prototype and its pop, each call
+to a parked declaration whose prototype is still the open one is read this way
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (size_slots)`):
+the call takes the full declaration, the class an `undefined` of the slot's width
+(an `undefined1` array past 8 bytes), locked under the call's own `__cdecl`
+model, before `ActionFuncLink` reads it. The size is the call site's, not the
+import's; a call with no such cleanup keeps the open tail.
+
+`k` by itself over-counts: a compiler may fold padding above the arguments, a
+local, or an earlier call's deferred pop into the same `add esp`, and any of
+those would over-size the class and shift the parameters after it. So the raw
+p-code of the call's block is walked back from the call, tracking the stack
+pointer by its constant adjustments to the top of the argument area, and the
+class's size is taken from the stack itself, not from `k`, in one of two ways:
+
+- **A class with a copy constructor** (and the `GetArr()`-style by-value return)
+  is built through a pointer, not pushed, so its slot is exactly the one
+  reservation the builder captured — the `push ecx` (4 bytes) or `sub esp,n` (n
+  bytes) the builder's `this` or return pointer sits at the bottom of. The sizing
+  is accepted only when the declared parameters plus that reservation account for
+  the whole cleanup (`known + reservation == k`); a padding `sub esp` or a local
+  released by the same `add esp` makes `k` larger and is declined. This is what
+  keeps `Take3(5, x)` with 8 bytes of padding, or `MakeStack` with 8 bytes of
+  dead `push ecx` locals, from absorbing those bytes into the class.
+- **A trivially copyable aggregate** has no constructor and is stored directly,
+  so every byte of the argument area is a push: the slot is `k` less the declared
+  parameters only when no byte of `[4, k+4)` is a reservation nothing wrote (a
+  padding or local gap), which is declined.
+
+Either way, once the slot is placed, an address formed from the stack pointer
+into a still-live byte of the argument area outside the slot declines the
+sizing: that byte is a local the same `add esp` releases (its address handed to
+a call such as `Fill(&r)`, or a value read through it), not an argument.
+
+Known limits, where the stack carries no evidence that tells the shapes apart
+and the feature prints a wrong size: a single reservation larger than the class
+(`sub esp,12` for a 4-byte class, its padding folded into the same instruction)
+reads as a 12-byte class, since MSVC reserves exactly the class's 4-byte-aligned
+size and nothing else bounds it; and for a trivially copyable aggregate, a value
+pushed above the arguments that the function never reads or addresses (a dead
+`push 0` local) and that the same `add esp` releases reads as part of the
+aggregate. An 8-byte class reserved by two `push ecx` is declined rather than
+sized, since only the one reservation the builder captured is counted.
+
+The walk declines, too, when an earlier call on the way pops an amount its model
+or locked prototype does not state exactly (a deferred pop), when the stack
+pointer is written as anything but itself plus a constant, when a reservation
+straddles the top of the area, or when the walk leaves the block. And the full
+declaration must lay out under the `__cdecl` model exactly as the walk placed it,
+which declines an 8-byte class after an odd number of 4-byte slots, where the
+model aligns the 8-byte parameter to a boundary the stack does not use.
+
+**The object.** A slot whose address the caller forms during the walk is an
+object as well as an argument, so `ActionRestrictLocal` leaves it mapped instead
+of marking it as the call's parameter storage
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (keeps_slot_mapped)`),
+and whatever fills it through that address prints as the same local the call is
+passed. The walk also finds the call that builds the object: for an earlier
+call whose MSVC name makes it a `__thiscall` constructor (`??0`), the latest
+write of `ecx` before it is the `this` it receives; for one whose applied MSVC
+declaration returns a class by value, the latest push to its first stack
+argument is its hidden return pointer (both recorded at the analysis commit).
+That value is traced back through register copies to the stack pointer, and
+when it is the start of the class's slot while the slot is still unreserved
+further back, that call builds the argument. `Heritage::guardCalls` (§4.3,
+*Effect lists*) then gives the builder a `killedbycall` effect on every range
+inside the slot instead of `unknown_effect`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_msvcbyval.rs (constructed_ranges, constructs)`):
+the slot's value after the call is one the call creates, not one it may modify,
+so the `ecx` value `push ecx` stored to reserve the slot is dead, and the
+function no longer gains `ecx` as a parameter it only pushed. `Build` becomes
+`Arr::Arr((Arr *)&v1,a1); MakeStack(a0,v1,a1,a2);` with three parameters, and
+`MakeStack(GetArr(), x, y)` becomes `GetArr((Arr *)&v1); MakeStack(a0,v1,a1,a2);`.
+Where no builder is found, the slot is still mapped and keeps the value pushed to
+reserve it, which is what the machine code passes.
+
+Inert without `msvcsig`, and a class passed by value to a callee-pops convention
+is still refused there (its pop would depend on the missing size).
+
 ### (kuna) `callpush` — a call's own return-address push
 
 An x86 `call` lifts as three p-code ops at one instruction address: the stack
@@ -2874,8 +3131,8 @@ concatenated from two halves, never a lone recovered return register. Where ever
 half is uncomputed — the synthesized-return case — the low, first-in-class
 register is kept so the function's output storage still agrees across every
 RETURN. A pair joined first register high is left alone: return recovery joins
-one that way only when its low word is part of the value (see the join order
-above; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
+one that way only when its low word is part of the value, and a declared
+return is placed that way by the model (see the join order above; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
 (first_register_holds_high)`).
 
 When only the high half carries a value and it is the second register of an
@@ -2904,8 +3161,8 @@ same function returning 5 kept its `PIECE` and was repaired to `return 5;`.
 
 So on a pair joined first register low on an ABI that returns the first
 register high (PowerPC, MIPS o32, SPARC and ARM big-endian, wherever return
-recovery keeps the old join: `Funcdata::kuna_pairs_first_low`, recorded with
-`bejoin` on or off), the repair reads `ZEXT(hi) << 8k` as the pair of `hi` and
+recovery keeps the old join: `Funcdata::kuna_pairs_first_low`, recorded in
+every `bejoin` mode), the repair reads `ZEXT(hi) << 8k` as the pair of `hi` and
 a `k`-byte zero and decides it as it decides any other: when the high half is
 uncomputed by the placement test above and was not moved back, the RETURN
 returns a `k`-byte zero, the low register's width
@@ -3710,8 +3967,9 @@ is run through the model's own `derive_output_map`; the pair is taken only when
 the model uses exactly both, and the probe's join order says which is the high
 half. A shift by 32 names the half it reads, so the pair is formed only when the
 call's join order is the ABI's: on a big-endian ABI (`r3:r4`, `$v0:$v1`) that
-takes `option bejoin on`, because the shipped first-register-low join (GH-904)
-would print a read of the low word `r4` as the high one. The CALL then
+takes `option bejoin on`, or, with the default `evidence`, a callee whose own
+recovery returned the pair high word first, because the first-register-low
+join would print a read of the low word `r4` as the high one. The CALL then
 gains the pair as a `join` output, each read becomes a `SUBPIECE` of it at its
 own byte offset (`DL` is byte 4, `r1:1` byte 4, `r0` byte 0), and the INDIRECT
 creations are destroyed. When one trial was already used, as in the Cortex-M

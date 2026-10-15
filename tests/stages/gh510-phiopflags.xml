@@ -99,7 +99,7 @@ c3204839f375be488b5c24504088f8488b7c2468488b6c2458488b7424604883c430415f415e41
 </script>
 <stringmatch name="GH510 #1: the function is decompiled instead of abandoned (no LOSS-131 record)" min="0" max="0">LOSS-131</stringmatch>
 <stringmatch name="GH510 #2: no parameterless error stub survives" min="0" max="0">void scan_list\(void\)</stringmatch>
-<stringmatch name="GH510 #3: the record loop is recovered" min="1" max="99">while</stringmatch>
+<stringmatch name="GH510 #3: the record loop is recovered" min="1" max="99">(while|for) \(</stringmatch>
 <stringmatch name="GH510 #4: the first helper call is recovered" min="1" max="99">sub_140002000</stringmatch>
 <stringmatch name="GH510 #5: the second helper call is recovered" min="1" max="99">sub_140002100</stringmatch>
 </decompilertest>

@@ -310,6 +310,20 @@ impl ResultWriter {
             put_str(&mut body, &t.definition);
             body.extend_from_slice(&t.size.to_le_bytes());
         }
+        put_u32(&mut body, r.stack_objects.len() as u32);
+        for object in &r.stack_objects {
+            put_str(&mut body, &object.id);
+            put_str(&mut body, &object.name);
+            body.extend_from_slice(&object.stack_offset.to_le_bytes());
+            body.extend_from_slice(&object.size.to_le_bytes());
+            body.push(u8::from(object.defined));
+            put_u32(&mut body, object.uses.len() as u32);
+            for use_ in &object.uses {
+                put_u64(&mut body, use_.address);
+                body.extend_from_slice(&use_.slot.to_le_bytes());
+                put_str(&mut body, &use_.type_name);
+            }
+        }
         // (kuna `globalref`) The globals the body names by address, for the
         // project header the parent writes.
         put_u32(&mut body, r.globals.len() as u32);
@@ -443,6 +457,31 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         let tsize = r.i64()?;
         types.push(TypeInfo { name: tname, definition, size: tsize });
     }
+    let no = r.u32()? as usize;
+    let mut stack_objects = r.sized(no);
+    for _ in 0..no {
+        let id = r.string()?;
+        let name = r.string()?;
+        let stack_offset = r.i64()?;
+        let size = r.i64()?;
+        let defined = match r.u8()? {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+        let nu = r.u32()? as usize;
+        let mut uses = r.sized(nu);
+        for _ in 0..nu {
+            uses.push(kuna_decomp::kuna_stackobjectinfo::StackObjectUseInfo {
+                address: r.u64()?,
+                slot: r.u32()? as i32,
+                type_name: r.string()?,
+            });
+        }
+        stack_objects.push(kuna_decomp::kuna_stackobjectinfo::StackObjectInfo {
+            id, name, stack_offset, size, defined, uses,
+        });
+    }
     let ng = r.u32()? as usize;
     let mut globals = r.sized(ng);
     for _ in 0..ng {
@@ -495,6 +534,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         error,
         proto,
         variables,
+        stack_objects,
         types,
         globals,
         field_calls,

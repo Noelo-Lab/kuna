@@ -1,0 +1,4 @@
+prototype multiply_names void multiply_names(unsigned long long input)
+prototype multiply_names32 void multiply_names32(unsigned int input)
+prototype observe_number void observe_number(unsigned long long value)
+data 0x402000 unsigned long long total

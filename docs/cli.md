@@ -94,25 +94,30 @@ differential is described in `docs/history.md`.
 
 ## Where kuna finds the engine and the specs
 
-`kuna` drives two sibling binaries — `decomp_dbg` (the engine behind `decompile`
-and `catalog`) and `slacomp` (behind `kuna specs`) — plus a compiled SLEIGH tree.
-Both shipped layouts resolve with no configuration:
+`kuna` runs two programs besides itself — the decompiler console `decomp_dbg`
+(behind `decompile` and `catalog`) and the SLEIGH compiler `slacomp` (behind
+`kuna specs`) — and both are built into it: `kuna decomp_dbg` and `kuna slacomp`
+are those programs, and `kuna` launches itself that way. It also needs a compiled
+SLEIGH tree, found in this order when nothing pins it:
 
-- **a release archive**: `kuna`, `decomp_dbg` and `slacomp` extracted side by side
-  (on Windows as `kuna.exe`, `decomp_dbg.exe`, `slacomp.exe`), with the
-  `kuna-v<ver>-specs` archive's `specs/` tree beside or inside that directory;
-- **a repo checkout**: `decompiler/target/<profile>/`, with the repo's `specs/`.
+- **built in**: a release `kuna` (cargo feature `embed-specs`) carries the tree and
+  unpacks it once, under a name derived from its contents, into the per-user cache
+  directory — `%LOCALAPPDATA%\kuna`, `~/Library/Caches/kuna`, or
+  `$XDG_CACHE_HOME/kuna` (default `~/.cache/kuna`) — falling back to the system
+  temp directory;
+- **a repo checkout**: the repo's `specs/`, above `decompiler/target/<profile>/`;
+- **beside the binary**: a `specs/` directory inside or next to the one holding
+  `kuna`, then one in the current directory.
 
-Each probe tries the bare name and the platform's executable suffix, so a Windows
-install resolves the same way a unix one does. A probe that finds nothing names
-the directories it looked in.
+A probe that finds nothing names the directories it looked in, and why a built-in
+tree could not be unpacked.
 
 | Variable | What it pins |
 |---|---|
-| `KUNA_SPECS` | The SLEIGH tree passed as `-sleighpath` (`SLEIGHHOME` is the engine's own name for the same thing). |
-| `KUNA_DECOMP_DBG` | The `decomp_dbg` binary. `kuna decompile --decomp-dbg PATH` does the same for one run. |
-| `KUNA_DECOMP_TEST` | The `decomp_test_dbg` datatest harness (`kuna test --binary PATH`). |
-| `KUNA_SLACOMP` | The `slacomp` binary `kuna specs` runs. |
+| `KUNA_SPECS` | The SLEIGH tree passed as `-sleighpath` (`SLEIGHHOME` is the engine's own name for the same thing). Wins over a built-in tree. |
+| `KUNA_DECOMP_DBG` | A separate `decomp_dbg` binary to run instead of the built-in console. `kuna decompile --decomp-dbg PATH` does the same for one run. |
+| `KUNA_DECOMP_TEST` | The `decomp_test_dbg` datatest harness (`kuna test --binary PATH`). It is not built in; it is looked for beside `kuna`, then in the checkout's `decompiler/target/<profile>/`, under its bare and `.exe` names. |
+| `KUNA_SLACOMP` | A separate `slacomp` binary for `kuna specs` to run instead of the built-in compiler. |
 | `KUNA_ROOT` | The repo root, when the binaries are not in-tree: `specs/`, `tests/datatests/` and `decompiler/target/<profile>/` are all read from it. |
 | `KUNA_RUST_PROFILE` | The `decompiler/target/<profile>` directory the in-tree fallback reads (default `release`). |
 | `KUNA_DECODE_JOBS` | Decode lanes for the discovery walk, without `--jobs` — what `--jobs N` exports for the duration of the load (capped at 32, forced to `1` in pool workers). |
@@ -121,15 +126,16 @@ the directories it looked in.
 | `KUNA_DECODE_SELFCHECK` | `1` runs both walks, compares them field by field and returns the serial result; `abort` panics on a difference. Keeps the runtime's panic report, as `KUNA_DECODE_STATS` does. |
 | `KUNA_DECODE_STATS` | `1` prints one line of lane/interval/round/crossing/decode counts and the walk, merge and lane-memory figures. It also keeps the runtime's panic report for a lane fault, which the fallback otherwise silences. |
 | `KUNA_DECODE_FAULT` | Test-only: `<n>` panics lane `n` once, `spawn:<n>` makes lane `n`'s spawn fail — the two fallback paths. |
-| `KUNA_CGROUP_ROOT` | Test-only: the directory read in place of `/sys/fs/cgroup` when the `--max-fn-memory` default looks for a cgroup memory cap. |
+| `KUNA_CGROUP_ROOT` | Test-only: the directory read in place of `/sys/fs/cgroup` by the `--max-fn-memory` cgroup default and when `--jobs auto` reads a cgroup's headroom. |
 | `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
 
-An override wins over both layouts, and one pointing at nothing is reported as
+An override wins over all of these, and one pointing at nothing is reported as
 such rather than silently re-probed.
 
-The engine binary can also come from a different build than `kuna`: an override
-pointing at another install, or a `decomp_dbg` left behind when only `kuna` was
-rebuilt. `kuna` passes its build identity to every `decomp_dbg` and
+A separate engine binary can come from a different build than `kuna`: an
+override pointing at another install, or a `decomp_test_dbg` left behind when
+only `kuna` was rebuilt. (The built-in console is `kuna` itself, so it always
+matches.) `kuna` passes its build identity to every `decomp_dbg` and
 `decomp_test_dbg` it runs (as `KUNA_PARENT_BUILD`). A child from another build
 answers, and `kuna` prints one warning on stderr naming both, then carries on:
 
@@ -493,23 +499,74 @@ including a `typedef` you asserted earlier in the same run.
 **`name`/`type` reach the register locals, not just the stack ones.** A local
 kuna prints with a storage comment — `unsigned long v6; // rax` — has no symbol
 behind it; naming one used to answer `No symbol named: v6` no matter how it was
-spelled. It now resolves: the directive maps a locked symbol over that
-variable's storage at its use point, and the second pass types it there.
+spelled. It now resolves. A `name` alone changes nothing but the name: the second pass
+finds the variable by its instances and names all of it, so a merged register
+local is never split, re-merged with a neighbour or retyped by being renamed.
+A `type` that keeps the variable's width and kind (an integer to an integer, a
+float to a float, a pointer to a pointer) types the whole variable the same
+way: only its declaration, the casts at its uses and, for an enumeration,
+`bool` or a character type, the constants it is assigned or compared with
+change. A pointer to a structure, union, array or function also reaches type
+inference, on every part of the variable, so its fields print; the variable
+keeps its name and number, but its type can reach its copies and the signature
+and reshape their expressions. A `type` that changes the
+width maps a locked symbol over the variable's storage at its use point, and
+can split or merge the variable. A new name that is a C keyword or a type's
+name (`name v6 int`, `name v6 uint4`) is `rejected`. A `name` or `type` whose
+local the output does not then declare under that name, or with that type, is
+reported refused (`fatal`), with the reason, never `applied`: the C came back
+without it. A local the printer had to suffix, because the name already belongs
+to another identifier (`name v7 score` prints `score_1` when the program has a
+function `score`), is `applied`, with a detail saying what it was printed as.
 
 ```bash
 kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'
 #   unsigned long *v6;  // rax        (was: unsigned long v6;)
 ```
 
-Two consequences worth knowing before you use it. A bare `type <local> <T>`
-states no name, so the retyped local may come back under a different `vN` — the
-storage comment identifies it across the two passes, and
-`type v6 unsigned long *vmtop` pins a name outright. And a local the decompiler
-holds in a temporary rather than in a register or on the stack has no location
-a symbol can be mapped to. Its source comment can still report a register copy
-removed during simplification; `// tmp` means no machine home was recovered. The
-directive is `rejected` with `Not addressable storage` rather than accepted and
-dropped.
+A bare `type <local> <T>` states no name, so the retyped local keeps its `vN`
+while the retype leaves the variable whole; `type v6 unsigned long *vmtop` pins
+a name outright.
+Register assertions identify a definition at its native address and width.
+Saved copies, joins and later reuse of that register remain distinct. JOIN
+values, temporaries and ambiguous definition addresses use a validated
+dataflow anchor. A missing or ambiguous anchor rejects the directive rather
+than applying it to another value.
+
+With `option stackviews on`, the console command `print stack objects` lists
+logical frame objects at declared address uses: calls, typed pointer assignments,
+volatile writes, and declared pointer returns. Each record includes its
+physical range, native use addresses and the reaching definitions of its bytes.
+Repeated unchanged contents share a record; overwrites can create another at
+the same address. `uncertain` records retain incoming bytes or opaque effects.
+These records do not allocate separate storage or stop escaped pointers aliasing.
+The record's `object_<address>_<slot>` identifier accepts ordinary `name` and
+`type` directives. Equal layouts reused at one address can therefore receive
+independent names and types:
+
+```text
+name obj_reuse::object_40104b_1 initial
+name obj_reuse::object_401064_1 replacement
+type obj_reuse::initial struct SemanticPair
+```
+
+`decompile --json` and `decompile-all --json` expose these selectors in a
+per-function `stack_objects` array when objects were recovered. Each row has
+`id`, `name`, `stack_offset`, `size`, `defined`, and `uses`; each use has its native
+`address`, input `slot`, and declared pointee `type`. `name` initially equals
+`id`, then reflects an applied object name. Pass `id` to a function-scoped
+`name`/`type` directive. Native addresses follow the CLI's address units; treat
+selectors as opaque identifiers. `--no-vars` suppresses these records.
+
+For an existing mapped frame layout, a logical name can appear as a typed
+`<name>_view` pointer into that physical object. Repeated uses of the same family
+share one pointer; different families can name the same address independently.
+The declared frame object keeps its layout. Name collisions add a numeric suffix.
+
+The asserted type must be complete and occupy the same number of bytes. Named
+objects appear as members of the shared backing, such as `frame.initial.left`
+and `read_pair(&frame.replacement)`. Each native use must still match its byte
+family after replay. Packed or ambiguous writes can retain raw storage views.
 
 **Every `name`/`type` in one run reads the output you were shown.** Each
 directive's identifier is looked up in the C kuna printed before any of them
@@ -521,9 +578,21 @@ is both a printed name and a name an earlier directive gave a different local
 as an ambiguous name, naming both locals. The exception is a `name` whose new
 name was also printed (`name v2 v1` after `name v1 v2`, or a rotation): it
 renames the local printed under the identifier. Two register locals that share a
-register at different widths (`char *s; // rax` and `uint4 v1; // eax`) cannot
-both be named in one run: the second is `rejected` with `Storage of v1 overlaps
-s`.
+register at different widths (`char *s; // rax` and `uint4 v1; // eax`) can both
+be named when their definition identities are distinct.
+
+**A directive renumbers no other local.** Every local keeps the `vN` the output
+you were shown printed, so after `name v9 idx` the old `v10` is still `v10` and
+the next directive naming it still reaches it. The renamed local's number is
+left unused. A local that loses its number to a rename (`name v3 v7` when `v7`
+exists) and a local the directives created (a retype that splits a variable)
+take a number past the last one printed, so a number never comes back on a
+different variable; a variable a retype merged away leaves its number unused.
+
+Parameter `name` and `type` directives update the signature and its body uses.
+They retain the parameter's native storage, so a retype must occupy the same
+number of bytes. Renames also survive reuse of the incoming stack area and
+repeated console decompiles.
 
 **Write the type in C.** The standard scalar keywords — `void`, `char`, `short`,
 `int`, `long`, `float`, `double`, `signed`, `unsigned`, `_Bool`, `wchar_t` — are
@@ -916,7 +985,12 @@ control. See `docs/spec/09-emission.md` §9.6.
 Omitting `--mode` selects `auto`: files below 500 KiB use `aggressive`, files
 from 500 KiB up to 2 MiB use `reliable`, and files at least 2 MiB use `fast`.
 The raw on-disk byte length is used, with exact cutovers at 512,000 and
-2,097,152 bytes. A later explicit `--option` wins over the resolved preset.
+2,097,152 bytes. `auto` also turns `ctypes` and `partialaccess` on at every
+size, so core types print as C (`int`, `unsigned long`, `double`) and a partial
+access of a variable as a typed pointer access (`((short *)&v1)[2]`) whichever
+preset it selects; an explicit `--mode reliable` keeps the catalog's
+`int4`/`uint8`/`float8` and Ghidra's `v1._4_2_`. A later
+explicit `--option` wins over the resolved preset.
 Address-selected single-function decompilation suppresses a preset-provided
 `fast_funcdisc` whole-image walk because the requested entry is already known.
 Name selection keeps it enabled so generated `sub_<addr>` names can resolve;
@@ -1697,20 +1771,38 @@ Behaviors specific to `decompile-all`:
   measures again, and a stopped function hands its own back before the next
   one starts.
 
-  The limit is per process: the serial run, each `--jobs N` worker, and the
-  `decomp_dbg` child of `kuna decompile`. Under a container memory cap with
-  `--jobs N`, N workers and the parent share the cap, so an explicit value
-  that keeps them all inside it is roughly (cap minus a few hundred MiB) /
-  (N + 1); every worker gets the value given. A serial run (`--jobs 1`) and
-  `kuna decompile` take a **default** when the flag is absent and the process
-  runs under a finite cgroup v2 `memory.max` (the smallest one on the path to
-  the root, as `systemd-run --scope -p MemoryMax=6G` sets): the cap less
-  max(512 MiB, 10%). A 6 GiB cap gives 5,529 MiB. A `--jobs N` pool, and any
-  run outside a capped cgroup, has no default: a fixed share per worker would
-  stop functions the container could have held while the other workers were
-  small. An explicit value, `0` included, always wins. A function the limit never stops is unchanged.
-  It reads `/proc/self/status`, so on a platform without it a non-zero value
-  is refused and there is no default. A function the limit stops usually has an
+  An explicit limit is per process: the serial run, each `--jobs N` worker,
+  and the `decomp_dbg` child of `kuna decompile` each get the value given.
+  When the flag is absent and the process runs under a finite cgroup v2
+  `memory.max` (`docker run --memory`, `systemd-run -p MemoryMax=6G`), every
+  one of those processes takes the **cgroup default** instead, which budgets
+  the container rather than the process. Its margin is max(512 MiB, 10% of
+  the cap): a function that has itself grown by the margin is stopped once a
+  capped cgroup on the path to the root holds more than its cap less the
+  margin (5,529 MiB of a 6 GiB cap, after 614 MiB of growth), counting
+  `memory.current` without the file-backed pages reclaim can drop
+  (`active_file` + `inactive_file`). Under a small cap the growth needed is
+  half the room the cap left the process when the function started, if that
+  is less (and never under 64 MiB), so a runaway is stopped before the cap
+  is reached. Every `--jobs` worker therefore shares the one budget, and a
+  worker whose function is taking the container to its cap records that
+  function's memory `error` instead of being killed. A function that grew by
+  less is never stopped, nor is one that grows while the container has room.
+  Inside the margin band the stop is a judgment, not a measurement: a
+  function that grew by the margin while other workers filled the container
+  can be stopped although it would have fit, which of them it is varies from
+  run to run, and each such stop usually stands in for a worker the kernel
+  would have killed. The cgroup is read only on a 50 ms sample that finds
+  the function grown that much, and a function that starts within a tenth
+  of the limit first hands free heap pages back. The error names the limit,
+  as for an explicit value. A pool wider than the container can hold even
+  without its big functions (each worker's load counts) can still be
+  killed; `--jobs N` lowers it. An explicit
+  value, `0` included, always wins; outside a capped cgroup there is no
+  default, and a function the limit never stops is unchanged. It reads the
+  resident set (`VmRSS` on Linux; on Windows the larger of the working set and
+  the private commit), so on a platform without one (macOS) a non-zero value
+  is refused. A function the limit stops usually has an
   alternative that keeps some output: `--max-size N` leaves functions over N
   bytes out of the run, and `--option maxinstruction N` truncates their flow
   (see *The instruction budget*).
@@ -1801,7 +1893,23 @@ Behaviors specific to `decompile-all`:
     hands over; `--jobs-full-load` puts each worker back on the parent's own load
     and its memory. `--jobs auto` takes this machine's parallelism capped at 16,
     then lowers that to what free memory holds and says so; an explicit
-    `--jobs N` is obeyed with a warning instead.
+    `--jobs N` is obeyed with a warning instead. The pool takes two thirds of
+    the free memory, at a quarter of the parent's peak resident set per worker
+    (256 MiB at least; the whole peak with `--jobs-full-load`). Free memory is
+    Linux `MemAvailable`, or, under a cgroup v2 `memory.max` (`docker run
+    --memory`, `systemd-run -p MemoryMax=`), what that cap still leaves when
+    it is the tighter bound: for each capped cgroup
+    on the path to the root, its `memory.max` less its `memory.current`
+    without the file-backed LRU pages (`active_file` + `inactive_file`) that
+    reclaim can drop. The message then says `free under a cgroup's
+    memory.max`. On Windows it is the smaller of the free physical memory and
+    the commit still available, since Windows refuses an allocation past its
+    commit limit (the worker then aborts with `0xc0000409`), and a worker's
+    cost is priced from the larger of the parent's peak working set and its
+    peak commit. On macOS it is `hw.memsize` times `kern.memorystatus_level`,
+    priced from `ru_maxrss`. A cgroup v1 limit is not read (only
+    `MemAvailable` applies); on other platforms `auto` is the core count,
+    untrimmed.
   - **Small runs are slower.** A worker pays a whole program load before its first
     function (17 s on that PE), so a run only wins once the work exceeds one such
     load — a few hundred functions there, and nothing at all on a handful of

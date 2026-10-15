@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="ARM:BE:32:v8">
+<!--
+    kuna option bejoin evidence (the default) on ARM big-endian, which
+    returns a long long in r0:r1 with the HIGH word in r0.
+    `umull r1,r0,r1,r0` is the whole of both `(u64)a * b` and `((u64)a * b)
+    >> 32`: one instruction writes both halves whether or not the function
+    returns the low one.  No reading of those bytes tells the long long from
+    the int, so both keep the first-register-low join, which C's truncation
+    reads as mulhi's int (uwide_mul stays swapped, as upstream prints it).
+    uwiden moves its argument into r1 beside a literal zero in r0, a zero
+    extension, and joins in the ABI's order.
+
+    Stage: P4 calls and prototypes (output-prototype), option bejoin.
+    Pass 1 is the default (evidence), pass 2 option bejoin off.
+
+    Source (clang 14 -O2 -c, target armebv7-linux-gnueabi, .text of the object):
+        typedef unsigned long long u64; typedef unsigned u32;
+        u64 uwide_mul(u32 a, u32 b) { return (u64)a * b; }
+        u32 mulhi(u32 a, u32 b) { return ((u64)a * b) >> 32; }
+          umull r1,r0,r1,r0 / bx lr                 (both)
+        u64 uwiden(u32 x) { return x; }
+          mov r1,r0 / mov r0,#0 / bx lr
+
+    Assert #1: uwide_mul and mulhi read alike, r0 low, in both passes.
+    Assert #2: the default returns uwiden's argument zero-extended; off
+      shifts it into the high word.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+e0801091e12fff1ee0801091e12fff1ee1a01000e3a00000e12fff1e
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="uwide_mul"/>
+<symbol space="ram" offset="0x10008" name="mulhi"/>
+<symbol space="ram" offset="0x10010" name="uwiden"/>
+</binaryimage>
+<script>
+  <com>lo fu uwide_mul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mulhi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu uwiden</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bejoin off</com>
+  <com>lo fu uwide_mul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mulhi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu uwiden</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoin-evidence-armeb #1: umull's halves keep r0 low in both passes, which truncates to mulhi's int" min="4" max="4">return CONCAT44\(\(int4\)\(\(uint8\)a0 \* a1\),\(int4\)\(\(uint8\)a0 \* a1 &gt;&gt; 0x20\)\);</stringmatch>
+<stringmatch name="bejoin-evidence-armeb #2: the default returns uwiden's argument zero-extended" min="1" max="1">return a0;</stringmatch>
+<stringmatch name="bejoin-evidence-armeb #2b: only off shifts uwiden's argument into the high word" min="1" max="1">return \(uint8\)a0 &lt;&lt; 0x20;</stringmatch>
+</decompilertest>

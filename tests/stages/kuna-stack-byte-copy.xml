@@ -1,0 +1,51 @@
+<decompilertest>
+  <!--Kuna #810 / P3 heritage guard. With stackstoreguard off, pushed scratch bytes read as the saved seed and an earlier snapshot disappears. On expands proven short byte copies in instruction order; stackviews remains optional. The CLI companion compiles each exact body at O2.-->
+  <binaryimage arch="ARM:LE:32:v5t:default">
+    <bytechunk space="ram" offset="0x10000">08402de90010a0e10d20a0e10430a0e301c0d1e401c0c2e4013053e2fbffff1a0000dde50110dde50220dde5810080e0020180e00880bde804d04de20010a0e10d20a0e10430a0e301c0d1e401c0c2e4013053e2fbffff1a00009de50110dde5ff04c0e3010c80e104d08de21eff2fe138402de90150a0e10d40a0e10010a0e10430a0e30120d1e4013053e20120c4e4fbffff1a000055e30500001a0130dde50250dde50000dde5830080e0050180e03880bde80000dde50110dde50220dde5010180e0820080e03880bde80130a0e108402de90010a0e10d20a0e10330a0e301c0d1e401c0c2e4013053e2fbffff1a00009de50880bde80130a0e118402de900409de50010a0e10d20a0e10430a0e301c0d1e401c0c2e4013053e2fbffff1a00009de5040020e01880bde80030a0e118402de90d10a0e101208de20330a0e301c0d1e401c0c2e4013053e2fbffff1a00009de51880bde80230a0e138402de90150a0e10d40a0e10010a0e10430a0e30120d1e4013053e20120c4e4fbffff1a000055e30500001a0130dde50250dde50000dde5830080e0050180e03880bde80000dde50110dde50220dde5010180e0820080e03880bde808d04de20010a0e10d20a0e10530a0e301c0d1e401c0c2e4013053e2fbffff1a00009de50110dde5ff04c0e3010c80e108d08de21eff2fe104d04de20130a0e10010a0e10d20a0e101c0d1e401c0c2e4013053e2fbffff1a00009de50110dde5ff04c0e3010c80e104d08de21eff2fe1</bytechunk>
+    <symbol space="ram" offset="0x10000" name="PushedByteSum" />
+    <symbol space="ram" offset="0x10038" name="StackByteCopyViews" />
+    <symbol space="ram" offset="0x10070" name="PushedByteBranches" />
+    <symbol space="ram" offset="0x100cc" name="PushedByteSeed" />
+    <symbol space="ram" offset="0x100f8" name="PushedByteSnapshot" />
+    <symbol space="ram" offset="0x1012c" name="PushedByteOverlap" />
+    <symbol space="ram" offset="0x10158" name="PushedByteBranchesSeed" />
+    <symbol space="ram" offset="0x101b8" name="LargeStackByteCopy" />
+    <symbol space="ram" offset="0x101f0" name="DynamicStackByteCopy" />
+  </binaryimage>
+  <script>
+    <com>parse line extern unsigned int PushedByteSum(const unsigned char *source);</com>
+    <com>parse line extern unsigned int StackByteCopyViews(const unsigned char *source);</com>
+    <com>parse line extern unsigned int PushedByteBranches(const unsigned char *source, unsigned int selector);</com>
+    <com>parse line extern unsigned int PushedByteSeed(const unsigned char *source, unsigned int seed);</com>
+    <com>parse line extern unsigned int PushedByteSnapshot(const unsigned char *source, unsigned int seed);</com>
+    <com>parse line extern unsigned int PushedByteOverlap(unsigned int seed);</com>
+    <com>parse line extern unsigned int PushedByteBranchesSeed(const unsigned char *source, unsigned int selector, unsigned int seed);</com>
+    <com>parse line extern unsigned int LargeStackByteCopy(const unsigned char *source);</com>
+    <com>parse line extern unsigned int DynamicStackByteCopy(const unsigned char *source, unsigned int count);</com>
+    <com>option stackviews off</com>
+    <com>option stackstoreguard off</com>
+    <com>lo fu PushedByteBranchesSeed</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu PushedByteSnapshot</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>option stackstoreguard on</com>
+    <com>lo fu PushedByteBranchesSeed</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>lo fu PushedByteSnapshot</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>option stackviews on</com>
+    <com>lo fu PushedByteBranchesSeed</com>
+    <com>decompile</com>
+    <com>print C</com>
+    <com>quit</com>
+  </script>
+  <stringmatch name="stack bytes: legacy seed reads" min="2" max="2">return \(seed &amp; 0xff\)</stringmatch>
+  <stringmatch name="stack bytes: legacy snapshot lost" min="1" max="1">return 0;</stringmatch>
+  <stringmatch name="stack bytes: legacy copies retain loops" min="2" max="2">do \{</stringmatch>
+  <stringmatch name="stack bytes: snapshot remains independent" min="1" max="1">\^ seed</stringmatch>
+  <stringmatch name="stack bytes: scalar members absent" min="0" max="0">\._[012]_1_</stringmatch>
+</decompilertest>

@@ -2147,6 +2147,9 @@ impl Rule for RuleFloatCast {
                 return 1;
             }
         } else if opc2 == OpCode::CPUI_FLOAT_INT2FLOAT && opc1 == OpCode::CPUI_FLOAT_FLOAT2FLOAT {
+            if !super::kuna_intfloatround::combines(data.get_arch(), insize2, insize1, outsize) {
+                return 0;
+            }
             // Convert integer straight into final float size
             data.op_set_input(op, vn2, 0).expect("floatcast: int2float in0");
             data.op_set_opcode(op, typeop_for(OpCode::CPUI_FLOAT_INT2FLOAT));

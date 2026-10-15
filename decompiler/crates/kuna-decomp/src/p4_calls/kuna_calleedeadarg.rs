@@ -195,6 +195,13 @@ pub struct CalleeEntryDead {
     /// emits to reserve stack with dead registers). Read by
     /// [`Self::reads_low_byte`].
     live_read_bytes: ByteSet,
+    /// [`Self::live_read_bytes`] without the reads of a register a path only
+    /// pushes as an alignment pad ABOVE a call's stack arguments: `push %rdx` of
+    /// a register the body never set, ahead of `__snprintf_chk`'s three stack
+    /// arguments. The pad is told from a real forwarded stack argument by the
+    /// call's stack-argument count ([`at_call`]), which comes from the format
+    /// resolver. Read by [`Self::reads_low_byte`] with `pads`.
+    unpadded_read_bytes: ByteSet,
     /// The register bytes left out of [`Self::live_read_bytes`] because the
     /// read only stored them with a single store. A variadic callee whose
     /// register save gcc bounds to the `va_arg`s it can reach stores just those
@@ -346,10 +353,12 @@ impl CalleeEntryDead {
     /// argument occupies, so a wide read of a register whose low byte the
     /// callee wrote first (`mov 0x8(%rbx),%cl; lea -0x4(%rcx),%edx`) is not an
     /// input, and without the reads [`Self::live_read_bytes`] leaves out. A
-    /// read that only stores the register counts with `stores`. A walk that met
-    /// an undecodable instruction answers `false`. Read by
+    /// read that only stores the register counts with `stores`, and one that
+    /// only pushes it as an alignment pad above a call's stack arguments
+    /// ([`Self::unpadded_read_bytes`]) does not count with `pads`. A walk that
+    /// met an undecodable instruction answers `false`. Read by
     /// [`crate::p4_calls::kuna_calleereadarg`].
-    pub fn reads_low_byte(&self, addr: &Address, size: int4, stores: bool) -> bool {
+    pub fn reads_low_byte(&self, addr: &Address, size: int4, stores: bool, pads: bool) -> bool {
         if !self.complete || self.undecodable || size <= 0 {
             return false;
         }
@@ -362,7 +371,8 @@ impl CalleeEntryDead {
         } else {
             addr.get_offset()
         };
-        self.live_read_bytes.contains(&(self.reg_idx, low))
+        let live = if pads { &self.unpadded_read_bytes } else { &self.live_read_bytes };
+        live.contains(&(self.reg_idx, low))
             || (stores && self.stored_read_bytes.contains(&(self.reg_idx, low)))
     }
 
@@ -370,7 +380,7 @@ impl CalleeEntryDead {
     /// significant end, the widest counted read of that end consumes, rounded
     /// up to a power of two. `None` unless [`Self::reads_low_byte`] holds.
     pub fn low_read_width(&self, addr: &Address, size: int4) -> Option<int4> {
-        if !self.reads_low_byte(addr, size, true) {
+        if !self.reads_low_byte(addr, size, true, false) {
             return None;
         }
         let (off, end) = (addr.get_offset(), addr.get_offset().wrapping_add(size as u64));
@@ -396,6 +406,7 @@ impl CalleeEntryDead {
     #[cfg(test)]
     pub(crate) fn with_written_byte(mut self, b: u64) -> Self {
         self.live_read_bytes.remove(&(self.reg_idx, b));
+        self.unpadded_read_bytes.remove(&(self.reg_idx, b));
         self
     }
 
@@ -584,6 +595,10 @@ impl CalleeEntryDead {
                 .iter()
                 .flat_map(|&(idx, off, sz)| (off..off + sz.max(0) as u64).map(move |b| (idx, b)))
                 .collect(),
+            unpadded_read_bytes: reads
+                .iter()
+                .flat_map(|&(idx, off, sz)| (off..off + sz.max(0) as u64).map(move |b| (idx, b)))
+                .collect(),
             reads,
             cuts: cuts.into_iter().map(|c| c.into_iter().collect()).collect(),
             opaque_cuts: Vec::new(),
@@ -604,8 +619,17 @@ impl CalleeEntryDead {
     #[cfg(test)]
     pub(crate) fn with_stored_byte(mut self, b: u64) -> Self {
         if self.live_read_bytes.remove(&(self.reg_idx, b)) {
+            self.unpadded_read_bytes.remove(&(self.reg_idx, b));
             self.stored_read_bytes.insert((self.reg_idx, b));
         }
+        self
+    }
+
+    /// Turn the read of byte `b` into a push nothing read back, so a consumer
+    /// can unit-test `pads` without a translator.
+    #[cfg(test)]
+    pub(crate) fn with_padded_byte(mut self, b: u64) -> Self {
+        self.unpadded_read_bytes.remove(&(self.reg_idx, b));
         self
     }
 
@@ -895,7 +919,8 @@ pub(crate) fn probe_cached(
             &arch.userops,
             crate::kuna_syscallregs::SyscallFamily::from_archid(&arch.archid),
         );
-        let probed = probe_entry_with(arch.translate(), entry, reg_idx, follow, &traps);
+        let probed =
+            probe_entry_with(arch.translate(), entry, reg_idx, follow, &traps, &arch.format_stack_args);
         arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
     }
     arch.kuna_callee_dead_cache.get(&key).cloned()
@@ -974,6 +999,171 @@ impl kuna_sleigh::translate::PcodeEmit for EntryEmit {
 struct Frame {
     at: Address,
     written: ByteSet,
+    pushed: Pushed,
+}
+
+/// The stack slots a path has pushed registers into, and which register bytes
+/// it never wrote went there, while nothing has read the slot back.
+#[derive(Clone, Default)]
+struct Pushed {
+    /// The stack pointer the pushes moved, `(offset, size)` in the register space.
+    sp: Option<(u64, u32)>,
+    /// Each slot as `(offset from the current stack pointer, width, bytes)`.
+    slots: Vec<(i64, i64, ByteSet)>,
+}
+
+impl Pushed {
+    /// Count every pending push as a read after all: something read the stack
+    /// in a way the walk cannot place, or the path left for code it does not see.
+    fn flush(&mut self, res: &mut CalleeEntryDead) {
+        for (_, _, bytes) in self.slots.drain(..) {
+            res.unpadded_read_bytes.extend(bytes);
+        }
+    }
+
+    /// Count the pushes in `[off, off+size)` as reads: the stack was read there.
+    fn read_back(&mut self, res: &mut CalleeEntryDead, off: i64, size: i64) {
+        let (hit, keep): (Vec<_>, Vec<_>) =
+            self.slots.drain(..).partition(|(o, w, _)| *o < off + size && off < *o + *w);
+        self.slots = keep;
+        for (_, _, bytes) in hit {
+            res.unpadded_read_bytes.extend(bytes);
+        }
+    }
+
+    /// The stack pointer moved down by `d` bytes (up, for a negative `d`); a
+    /// slot it moved back past is dropped (the frame released it).
+    fn shift(&mut self, d: i64) {
+        for slot in &mut self.slots {
+            slot.0 += d;
+        }
+        self.slots.retain(|(o, _, _)| *o >= 0);
+    }
+
+    /// Is `v` the stack pointer itself?
+    fn is_sp(&self, v: &VarnodeData, reg_idx: int4) -> bool {
+        self.sp.is_some_and(|(off, size)| {
+            v.offset == off && v.size == size && v.space.as_ref().is_some_and(|s| s.get_index() == reg_idx)
+        })
+    }
+
+    /// Follow one op's use of the stack pointer. `derived` holds the offset from
+    /// it of every temporary computed from it so far in this instruction (`None`
+    /// when not a constant), `pushing` the bytes the instruction's push copied,
+    /// and `moved` how far the instruction has moved the stack pointer down.
+    fn track(
+        &mut self,
+        op: &RawOp,
+        res: &mut CalleeEntryDead,
+        derived: &mut HashMap<u64, Option<i64>>,
+        pushing: &mut ByteSet,
+        moved: &mut i64,
+    ) {
+        let reg_idx = res.reg_idx;
+        let unique = |v: &VarnodeData| v.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_INTERNAL);
+        let at = |v: &VarnodeData| -> Option<Option<i64>> {
+            if self.is_sp(v, reg_idx) {
+                Some(Some(0))
+            } else if unique(v) {
+                derived.get(&v.offset).copied()
+            } else {
+                None
+            }
+        };
+        let constant = |v: &VarnodeData| {
+            v.space.as_ref().filter(|s| s.get_type() == spacetype::IPTR_CONSTANT).map(|_| {
+                let bits = 64 - 8 * v.size.min(8);
+                ((v.offset << bits) as i64) >> bits
+            })
+        };
+        // The constant operand of `base + c` or `c + base`, and `base - c`.
+        let offset = |op: &RawOp, base: &dyn Fn(&VarnodeData) -> bool| -> Option<i64> {
+            match (op.opc, op.ins.as_slice()) {
+                (OpCode::CPUI_INT_ADD, [a, b]) if base(a) => constant(b),
+                (OpCode::CPUI_INT_ADD, [a, b]) if base(b) => constant(a),
+                (OpCode::CPUI_INT_SUB, [a, b]) if base(a) => constant(b).map(|c| -c),
+                _ => None,
+            }
+        };
+        if op.out.as_ref().is_some_and(|o| self.is_sp(o, reg_idx)) {
+            let step = offset(op, &|v| self.is_sp(v, reg_idx)).map(|c| -c);
+            match step {
+                Some(d) => {
+                    self.shift(d);
+                    *moved += d;
+                }
+                None => self.flush(res),
+            }
+            return;
+        }
+        match op.opc {
+            OpCode::CPUI_LOAD => match op.ins.get(1).and_then(at) {
+                Some(Some(off)) => {
+                    let size = op.out.as_ref().map_or(1, |o| o.size as i64);
+                    self.read_back(res, off, size);
+                }
+                Some(None) => self.flush(res),
+                None => {}
+            },
+            OpCode::CPUI_STORE => {
+                if op.ins.get(2).and_then(at).is_some() {
+                    self.flush(res);
+                    return;
+                }
+                if let (Some(Some(off)), Some(value)) = (op.ins.get(1).and_then(at), op.ins.get(2)) {
+                    let size = value.size as i64;
+                    self.slots.retain(|(o, w, _)| !(*o < off + size && off < *o + *w));
+                    if unique(value) {
+                        self.slots.push((off, size, std::mem::take(pushing)));
+                    }
+                }
+            }
+            _ => {
+                let from = op.ins.iter().filter_map(at).next();
+                let Some(from) = from else {
+                    if let Some(o) = op.out.as_ref().filter(|o| unique(o)) {
+                        derived.remove(&o.offset);
+                    }
+                    return;
+                };
+                match op.out.as_ref() {
+                    Some(o) if unique(o) => {
+                        let off = match (op.opc, from) {
+                            (OpCode::CPUI_COPY, d) => d,
+                            (_, Some(d)) => offset(op, &|v| at(v).is_some()).map(|c| d + c),
+                            _ => None,
+                        };
+                        derived.insert(o.offset, off);
+                    }
+                    Some(o) if o.size > 1 => self.flush(res),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// At a call: classify the registers pushed for it. `n` is the number of
+    /// stack arguments the call takes (from the format resolver, `None` when
+    /// unknown). The slots rise without a gap from the return address the call
+    /// pushed `moved` bytes below them; the lowest `n` of that run are the stack
+    /// arguments the callee reads, so they COUNT as reads, and any slot above
+    /// them is an alignment pad the call never reads, so it does NOT. A gap, or
+    /// an unknown `n`, leaves every slot a read -- the conservative answer, since
+    /// without positive evidence a push is treated as a real read.
+    fn at_call(&mut self, res: &mut CalleeEntryDead, moved: i64, n: Option<usize>) {
+        self.slots.sort_by_key(|s| s.0);
+        let mut next = moved;
+        for (off, width, bytes) in self.slots.drain(..) {
+            let contiguous = off == next;
+            if contiguous {
+                next += width;
+            }
+            let pad = contiguous && matches!(n, Some(n) if off - moved >= 8 * n as i64);
+            if !pad {
+                res.unpadded_read_bytes.extend(bytes);
+            }
+        }
+    }
 }
 
 /// Decode a callee body and report which register bytes it is *proven* never to
@@ -1002,17 +1192,21 @@ pub fn probe_entry<T: kuna_sleigh::translate::Translate + ?Sized>(
     reg_idx: int4,
     follow: bool,
 ) -> CalleeEntryDead {
-    probe_entry_with(tr, entry, reg_idx, follow, &[])
+    probe_entry_with(tr, entry, reg_idx, follow, &[], &std::collections::BTreeMap::new())
 }
 
 /// [`probe_entry`], recording where a path reaches one of the system-call user
-/// ops `traps` ([`CalleeEntryDead::traps_unwritten`]).
+/// ops `traps` ([`CalleeEntryDead::traps_unwritten`]). `stack_args` gives the
+/// stack-argument count of each format call by its VMA, so a register the callee
+/// only pushes above a call's arguments (an alignment pad) is told from one it
+/// forwards as a stack argument.
 pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
     tr: &T,
     entry: &Address,
     reg_idx: int4,
     follow: bool,
     traps: &[uint4],
+    stack_args: &std::collections::BTreeMap<u64, usize>,
 ) -> CalleeEntryDead {
     let mut res = CalleeEntryDead { reg_idx, complete: true, ..CalleeEntryDead::default() };
     let Some(entry_space) = entry.get_space() else {
@@ -1023,18 +1217,19 @@ pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.complete = false;
         return res;
     }
-    let start = vec![Frame { at: entry.clone(), written: ByteSet::new() }];
+    let start = vec![Frame { at: entry.clone(), written: ByteSet::new(), pushed: Pushed::default() }];
     let mut skips = Vec::new();
-    walk(tr, &mut res, start, if follow { Skips::Aside(&mut skips) } else { Skips::Dropped }, traps);
+    walk(tr, &mut res, start, if follow { Skips::Aside(&mut skips) } else { Skips::Dropped }, traps, stack_args);
     if res.complete && !skips.is_empty() {
         let mut late = CalleeEntryDead { reg_idx, complete: true, ..CalleeEntryDead::default() };
-        walk(tr, &mut late, skips, Skips::Walked, traps);
+        walk(tr, &mut late, skips, Skips::Walked, traps, stack_args);
         res.skipped = Some(Box::new(late));
     }
     if !res.complete {
         res.reads.clear();
         res.reads_live.clear();
         res.live_read_bytes.clear();
+        res.unpadded_read_bytes.clear();
         res.stored_read_bytes.clear();
         res.cuts.clear();
         res.opaque_cuts.clear();
@@ -1064,12 +1259,13 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
     mut todo: Vec<Frame>,
     mut skips: Skips<'_>,
     traps: &[uint4],
+    stack_args: &std::collections::BTreeMap<u64, usize>,
 ) {
     let mut visited: HashMap<(int4, u64), ByteSet> = HashMap::new();
     let mut budget = MAX_PROBE_INSTRUCTIONS;
     let follow = !matches!(skips, Skips::Dropped);
     let mut found = Vec::new();
-    while let Some(frame) = todo.pop() {
+    while let Some(mut frame) = todo.pop() {
         let Some(sp) = frame.at.get_space() else {
             res.complete = false;
             break;
@@ -1080,6 +1276,7 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
         // at least every read-before-write this one would.
         if let Some(prev) = visited.get(&key) {
             if prev.is_subset(&frame.written) {
+                frame.pushed.flush(res);
                 continue;
             }
         }
@@ -1095,13 +1292,14 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
             // Undecodable: the path ends where the walk cannot see.
             _ => {
                 res.undecodable = true;
+                frame.pushed.flush(res);
                 res.opaque_cuts.push(frame.written.clone());
                 res.cuts.push(frame.written);
                 continue;
             }
         };
         let skip = if follow { Some(&mut found) } else { None };
-        match step_instruction(res, &emit, frame.written, &frame.at, len, skip, traps) {
+        match step_instruction(res, &emit, frame.written, frame.pushed, &frame.at, len, skip, traps, stack_args) {
             Some(next) => todo.extend(next),
             None => break,
         }
@@ -1156,7 +1354,10 @@ fn end_at_return(
 ) -> Option<Vec<Frame>> {
     match skip {
         Some(out) if targets.len() == before.len() => out.extend(
-            targets.iter().zip(before).map(|(t, w)| Frame { at: t.clone(), written: w.clone() }),
+            targets
+                .iter()
+                .zip(before)
+                .map(|(t, w)| Frame { at: t.clone(), written: w.clone(), pushed: Pushed::default() }),
         ),
         _ => res.lost |= !targets.is_empty(),
     }
@@ -1224,14 +1425,17 @@ fn compares_with_itself(op: &RawOp) -> bool {
 /// should continue with (empty when the path ended). `None` means the summary
 /// was abandoned. With `skip`, the paths that branch past a return inside this
 /// instruction are pushed there.
+#[allow(clippy::too_many_arguments)]
 fn step_instruction(
     res: &mut CalleeEntryDead,
     emit: &EntryEmit,
     written: ByteSet,
+    mut pushed: Pushed,
     at: &Address,
     len: i32,
     skip: Option<&mut Vec<Frame>>,
     traps: &[uint4],
+    stack_args: &std::collections::BTreeMap<u64, usize>,
 ) -> Option<Vec<Frame>> {
     let incoming = written.clone();
     let mut cur = written;
@@ -1247,7 +1451,18 @@ fn step_instruction(
         })
         .count()
         >= 2;
+    let push = push_copies(emit, res.reg_idx);
+    if let Some((sp, _)) = &push {
+        if pushed.sp.is_some_and(|s| s != *sp) {
+            pushed.flush(res);
+        }
+        pushed.sp = Some(*sp);
+    }
+    let mut derived: HashMap<u64, Option<i64>> = HashMap::new();
+    let mut this_push = ByteSet::new();
+    let mut moved = 0;
     for (k, op) in emit.ops.iter().enumerate() {
+        let pushing = push.as_ref().is_some_and(|(_, ks)| ks.contains(&k));
         // Reads. An instruction that branches inside itself is scored against
         // the set it was entered with, since a conditionally-executed write
         // earlier in the same instruction may not have run.
@@ -1274,10 +1489,24 @@ fn step_instruction(
                     for b in off..off + v.size as u64 {
                         if !base.contains(&(idx, b)) {
                             into.insert((idx, b));
+                            if !stored {
+                                let unpadded = if pushing { &mut this_push } else { &mut res.unpadded_read_bytes };
+                                unpadded.insert((idx, b));
+                            }
                         }
                     }
                 }
             }
+        }
+        if pushed.sp.is_some() {
+            pushed.track(op, res, &mut derived, &mut this_push, &mut moved);
+        }
+        if op.opc == OpCode::CPUI_STORE {
+            res.unpadded_read_bytes.append(&mut this_push);
+        }
+        if matches!(op.opc, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            let n = stack_args.get(&at.get_offset()).copied();
+            pushed.at_call(res, moved, n);
         }
         match op.opc {
             // Control transfer into code this walk is not reading. A direct
@@ -1297,6 +1526,7 @@ fn step_instruction(
                 return Some(Vec::new());
             }
             OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCHIND => {
+                pushed.flush(res);
                 if op.opc == OpCode::CPUI_CALLOTHER
                     && op.ins.first().is_some_and(|v| traps.contains(&(v.offset as uint4)))
                 {
@@ -1318,6 +1548,7 @@ fn step_instruction(
             // whose whole body is `ret` reads nothing, and treating that as
             // proof would delete the arguments of every stub and thunk.
             OpCode::CPUI_RETURN => {
+                pushed.flush(res);
                 res.cuts.push(cur);
                 return end_at_return(res, &targets, &before, skip);
             }
@@ -1326,6 +1557,7 @@ fn step_instruction(
             // register file: the walk cannot say which register it names.
             OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
                 if op.ins.first().map(|v| v.offset as int4) == Some(res.reg_idx) {
+                    pushed.flush(res);
                     res.opaque_cuts.push(cur.clone());
                     res.cuts.push(cur);
                     res.lost |= !targets.is_empty();
@@ -1347,6 +1579,7 @@ fn step_instruction(
                         }
                     }
                     None => {
+                        pushed.flush(res);
                         res.opaque_cuts.push(cur.clone());
                         res.cuts.push(cur);
                         res.lost |= !targets.is_empty();
@@ -1376,13 +1609,54 @@ fn step_instruction(
             }
         }
     }
-    let mut next: Vec<Frame> =
-        targets.into_iter().map(|t| Frame { at: t, written: cur.clone() }).collect();
+    let mut next: Vec<Frame> = targets
+        .into_iter()
+        .map(|t| Frame { at: t, written: cur.clone(), pushed: pushed.clone() })
+        .collect();
     if !ends_flow {
-        next.push(Frame { at: at + len as i64, written: cur });
+        next.push(Frame { at: at + len as i64, written: cur, pushed });
     }
     Some(next)
 }
+
+/// The stack pointer a single-register push in `emit` stores through, with the
+/// ops that copy the pushed register into the temporary it stores.
+///
+/// x86 spells `push %rdx` as `tmp = RDX; RSP = RSP - 8; *[RSP] = tmp`: a STORE
+/// through a register the same instruction moves, of a temporary a COPY of
+/// another register filled.
+fn push_copies(emit: &EntryEmit, reg_idx: int4) -> Option<((u64, u32), Vec<usize>)> {
+    let in_regs = |v: &VarnodeData| v.space.as_ref().is_some_and(|s| s.get_index() == reg_idx);
+    let same = |a: &VarnodeData, b: &VarnodeData| {
+        a.offset == b.offset
+            && a.size == b.size
+            && matches!((a.space.as_ref(), b.space.as_ref()), (Some(x), Some(y)) if x.get_index() == y.get_index())
+    };
+    let mut found: Option<((u64, u32), Vec<usize>)> = None;
+    for (j, store) in emit.ops.iter().enumerate() {
+        let [_, addr, value] = store.ins.as_slice() else { continue };
+        if store.opc != OpCode::CPUI_STORE || !in_regs(addr) || in_regs(value) {
+            continue;
+        }
+        let moved = emit.ops[..j].iter().any(|o| {
+            matches!(o.opc, OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB)
+                && o.out.as_ref().is_some_and(|out| same(out, addr))
+                && o.ins.first().is_some_and(|i| same(i, addr))
+        });
+        let copy = emit.ops[..j].iter().rposition(|o| o.out.as_ref().is_some_and(|out| same(out, value)));
+        let Some(k) = copy.filter(|_| moved) else { continue };
+        let copied = &emit.ops[k];
+        if copied.opc != OpCode::CPUI_COPY || !copied.ins.first().is_some_and(|i| in_regs(i) && !same(i, addr)) {
+            continue;
+        }
+        if found.as_ref().is_some_and(|(sp, _)| *sp != (addr.offset, addr.size)) {
+            return None;
+        }
+        found.get_or_insert_with(|| ((addr.offset, addr.size), Vec::new())).1.push(k);
+    }
+    found
+}
+
 
 /// Is input `i` of `opc` an address/annotation operand rather than a data read?
 fn skip_input(opc: OpCode, i: usize) -> bool {

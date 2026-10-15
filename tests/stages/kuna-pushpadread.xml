@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A register a callee only pushes as an alignment pad above a call's stack
+    arguments is no argument it reads (option pushpadread on|off, default on),
+    while one it forwards AS a stack argument is.
+
+    The XML wrapper only provides the harness architecture; every pass loads an
+    in-tree x86-64 ELF through the CLI's own loader and turns the Listing on,
+    which is what runs the load-time format-string resolver the probe reads the
+    per-call stack-argument counts from.
+
+    pushpad_x86_64 (gcc -O2, show built -Os) is the pad shape: show aligns the
+    three stack arguments of __snprintf_chk by first pushing an rdx it never
+    set, and run holds an end pointer in rdx at its call to show. Pass 1
+    (pushpadread off) reads that pad push as show taking rdx, so the call gains
+    a third argument. Pass 2 (the default) reads the format string: the pad
+    lies above __snprintf_chk's three stack arguments, so it is no read and the
+    call keeps the two arguments show takes.
+
+    pushpadfwd_x86_64 (gcc -O2) is the shape the rule must not break: report
+    forwards its third argument as the sixth of printf's variadic arguments
+    (its seventh counting the format), pushing it exactly as show
+    pushes the pad, and forward forwards its third argument as the ninth of a
+    nine-parameter same-binary callee. Pass 3 and 4 (the default) keep both:
+    the forwarded register is a real stack argument (below the format count, or
+    to a callee whose arity the probe cannot read, so counted as read).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pushpad_x86_64</com>
+  <com>option listing on</com>
+  <com>option pushpadread off</com>
+  <com>read symbols</com>
+  <com>load function run</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pushpad_x86_64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function run</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pushpadfwd_x86_64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function report</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pushpadfwd_x86_64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function forward</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PUSHPADREAD #1: off, the pad push reads as an argument the call passes on" min="1" max="1">show\(&amp;v1,cells,a2\);</stringmatch>
+<stringmatch name="PUSHPADREAD #2: default, the pad above the format call's arguments is no argument" min="1" max="1">show\(&amp;v2,cells\);</stringmatch>
+<stringmatch name="PUSHPADREAD #3: default, an argument forwarded as a format call's stack argument survives" min="1" max="1">logit\(0x2020,a0-&gt;field_0x0,a0-&gt;field_0x8\);</stringmatch>
+<stringmatch name="PUSHPADREAD #4: default, an argument forwarded to a same-binary nine-parameter callee survives" min="1" max="1">nine\(v9,v3,v1,v2,v8,v7,v6,v5,v4\);</stringmatch>
+</decompilertest>

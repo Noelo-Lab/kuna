@@ -23,6 +23,7 @@ kuna-analysis.workspace = true
 object.workspace = true
 
 [dev-dependencies]
+object = { workspace = true, features = ["write"] }
 # The register<->global over-merge render gate (`tests/verify_global_regmerge.rs`)
 # asserts, via a word-boundary regex, that no raw register / `Unique<hex>` leaks.
 regex.workspace = true

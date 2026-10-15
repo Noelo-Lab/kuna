@@ -148,6 +148,17 @@ impl<'a> PoolImage<'a> {
         })
     }
 
+    /// The unsigned `width`-byte (1 or 2) word at `vma` in a read-only section.
+    pub(super) fn uword_at(&self, vma: u64, width: u32) -> Option<u64> {
+        let b = self.bytes_at(vma, width)?;
+        Some(match (width, self.little_endian) {
+            (1, _) => u64::from(b[0]),
+            (2, true) => u64::from(u16::from_le_bytes(b.try_into().ok()?)),
+            (2, false) => u64::from(u16::from_be_bytes(b.try_into().ok()?)),
+            _ => return None,
+        })
+    }
+
     /// The `width` bytes of read-only image content at `vma`.
     fn bytes_at(&self, vma: u64, width: u32) -> Option<&'a [u8]> {
         let i = self.ro.partition_point(|&(lo, _, _)| lo <= vma).checked_sub(1)?;

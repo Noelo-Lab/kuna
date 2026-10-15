@@ -72,9 +72,9 @@ artifact builders, moved there from `kuna-cli` so wasm32-wasip1 can reach them w
 *exact* engine entry points:
 
 ```
-metadata(binary).len() → auto_mode_for_size(...) // <500 KiB aggressive; <2 MiB reliable; else fast
+metadata(binary).len() → resolve_overrides_for_size(...) // <500 KiB aggressive; <2 MiB reliable; else fast; auto adds ctypes=on, partialaccess=on
   → bootstrap_from_object(binary, "", [spec_root])   // load image + resolve arch + build translator
-  → apply concrete mode + command-scoped discovery policy + non-conflicting driver injections
+  → apply resolved overrides + command-scoped discovery policy + non-conflicting driver injections
   → commit_pending_analysis()                                   // the `read symbols` seam
   → kuna_console::project::decompile_targets(...)  // the same loop kuna decompile-all runs
 ```
@@ -146,7 +146,9 @@ document — `{binary, name, count, ok, failed, files:{"<name>.c", "<name>.h", "
 "README.md"}}` (artifacts named after `<display-name>`, default the binary's basename;
 whole binary only). Omitted mode and explicit `--mode auto` use the shared
 native/browser policy: `<500 KiB` selects `aggressive`, `500 KiB–<2 MiB`
-selects `reliable`, and `>=2 MiB` selects `fast`. Because `project` is
+selects `reliable`, and `>=2 MiB` selects `fast`, each with `auto`'s own
+`ctypes=on` and `partialaccess=on`, so the browser prints C type names and C
+partial accesses at every size. Because `project` is
 whole-binary only, the fast selection runs `fast_funcdisc`: the downloaded C/H
 inventory contains directly reached and validated indirect-only internal
 functions while the exhaustive prologue and AIF scans remain off. The page's
@@ -561,7 +563,12 @@ address" —, the lines that use it, *Rename* and *Change type*), an instruction
 at 11b5, 29 bytes into main", what the mnemonic does, its C line, *Replace with NOP*,
 *Edit bytes*, *Add a note*), a C line (its instructions, and each note kuna left at its
 end — `// branch-flip`, `// no-return`, `// early-return x10` — in words, which the hover
-card shows too) or a stack slot. `e` opens and closes the panel. *This function*: its inputs and
+card shows too) or a stack slot. The page keeps those notes out of the code it shows
+(and so out of what is copied from it, the Assembly headings and the `x` rows): it takes
+them off each line when the function arrives and keeps them by line for these cards
+(`tags.js` `splitNotes`). Every other comment stays, such as a declaration's `// rax`
+and a note of the student's own. The *Download C code* files are the decompiler's own
+output, as the command line writes it, and keep them. `e` opens and closes the panel. *This function*: its inputs and
 return type in words, *Calls and callers*, *Variables*, and behind disclosures the
 variables only the debug info has and the types. *Your changes*: one plain line per edit
 ("Renamed v1 → total", "Patched 1 byte at 11af"; the directive is its tooltip) with a
@@ -583,7 +590,7 @@ source tree):
 | `groups.js` | the function list's three groups and the function to open first |
 | `bytes-view.js` / `arch.js` | the hex dump and the patched file; no-op fills |
 | `mnemonics.js` / `stack-frame.js` / `xrefs-view.js` / `help.js` | instruction notes and idioms; the frame diagram; calls and callers in words and the `x` cross-references dialog; the help dialog |
-| `wrap-c.js` / `tags.js` | where a long C line splits (the Hex-Rays rules); kuna's end-of-line notes (`// branch-flip`, `// early-return x10`) in words for the Explain panel and the hover card |
+| `wrap-c.js` / `tags.js` | where a long C line splits (the Hex-Rays rules); kuna's end-of-line notes (`// branch-flip`, `// early-return x10`) taken out of the shown code and kept by line, in words, for the Explain panel and the hover card |
 | `strings-view.js` | the sidebar's Strings list: its three groups, the users of each string, the search and the row cap |
 | `prefs.js` / `addr.js` | view settings (`kuna.d2.prefs`, v3 with the v1 and v2 migrations) and `hintsOn`; addresses as hex strings and BigInt |
 | `collab/` | *Working together* (below), loaded with a dynamic `import()` only when a session starts or an invite or reply link is opened: `collab.js` (dialogs, the roster, following), `sync.js` (the page's side: the Session ⇄ register sync, joining and leaving, where a session is stored), `group.js` (the protocol: hello, snapshots, relayed introductions, file transfer, digests, limits), `link.js` (WebRTC and BroadcastChannel links), `replica.js` (registers, `validOp`, digests, the register-based undo), `wire.js` (messages and their checks, invite and reply codes), `sdp.js`, `presence.js` (pointers and pings), `collab.css`; all but `collab.js`, `link.js` and `presence.js` are DOM-free (SHA-256 is `../sha256.js`, shared with the page) |
@@ -593,7 +600,12 @@ engine's `instructions[].lines`, `line_mappings` and the addresses on that line'
 (each alone can be sparse — the provenance maps calls and returns, not every move). A
 line and its instructions share a colour band. Hovering marks the other panes without
 scrolling them; selecting (a line, an instruction, a variable, a stack slot) marks every
-pane, scrolls the others to it and fills the Explain panel's card. The hover card waits
+pane, scrolls the others to it and fills the Explain panel's card. A pane that comes on
+screen afterwards (switching to *Bytes* or *Assembly* by tab, key or Side by side) opens
+marked and scrolled to it as well: the selected instruction, else the first instruction of
+the selected line (or of the line under the code's cursor, for a variable), centred when
+it is not already in view. *Code* follows only a selected instruction, so it never jumps
+to a variable's first use (`sync.js` `show`). The hover card waits
 450 ms by default (View options → Hover delay: Instant, Short 250, Normal, Slow 800,
 Off; with *Show hints* off there is no card at all), switches instantly while open, and hides on pointer-out (120 ms grace), scroll,
 wheel, blur, mousedown and `Escape`; a touch long-press (500 ms) and arrow-key
@@ -679,13 +691,17 @@ rejects an address qualifier, and a name qualifier must be the function's curren
 function's **current** name (`name summation::v1 i` after `function 0x1161=summation`).
 `list` gets the global directives minus function renames; the sidebar overlays the
 session's names itself. Each edit snapshots the session, re-inspects with the previous
-render still up (a thin progress bar; scroll and selection kept), flashes the lines that
-changed, and records every `assertions[]` row against the record that produced it:
+render still up (a thin progress bar), redraws without moving the view, flashes the lines
+that changed, and records every `assertions[]` row against the record that produced it:
 *Your changes* marks it applied (✓) or rejected (✗, with the engine's reason, also
 toasted). A
 rejected directive stays in the session; a request that fails or is cancelled restores
 the snapshot (working alone; in a live session the change stays, see *Working
-together*). The engine refuses a retype that changes a local's storage size (`Storage
+together*). The redraw holds the line under the cursor (or the selected line, else the
+top line showing) at the same height in the pane, following it when lines above it come
+or go (a note added above it); the selection and the cursor stay, a renamed name keeps
+its selection under the new name, and nothing scrolls to its first use
+(`render-c.js` `diffLines` maps the old lines to the new). The engine refuses a retype that changes a local's storage size (`Storage
 is 8 bytes, the stated type is 4`), so the retype dialog warns before sending one, sizing
 `long` by the target's data model (4 bytes on Windows). A directive the engine cannot
 parse fails the whole request (`error: --assert "<directive>": …`, exit 1): the page
@@ -757,10 +773,9 @@ says why.
 
 **Type definitions.** When a function names a struct, union, enum or typedef (a
 `struct_0` the decompiler worked out, a DWARF struct, a library type such as `FILE`), the
-Code view opens with their definitions under the heading *Types this function uses*, on a
-shaded block, and the function starts below them. The heading folds the block; a block of
-more than 30 lines (a debug-info or C++ program can name dozens of types) starts folded,
-and a student's own choice holds for the rest of the visit. Folded, the keyboard starts at
+Code view puts their definitions above the function under the heading *Types this function
+uses*, on a shaded block that starts folded. The heading opens and folds the block, and a
+student's own choice holds for the rest of the visit. Folded, the keyboard starts at
 the signature; the Stack view's "only in the debug info" test ignores the block. It is the engine's own text, so
 line numbers match `kuna decompile --option structdefs on`; it is highlighted but not
 clickable (a field name is not a variable to rename), and selecting one of its lines says
@@ -1087,7 +1102,7 @@ skips it as too costly):
    version-1 migration, the type definitions above a function), **`test/decompile-wrap.mjs`**
    (where long C lines split under the Hex-Rays rules, that only spaces and redundant
    brackets go, the rows' hanging blocks, kuna's end-of-line notes in
-   words, the `x` dialog's helpers, instruction grouping by basic block from `flow`),
+   words and taken out of the code, the `x` dialog's helpers, instruction grouping by basic block from `flow`),
    **`test/decompile-groups.mjs`** (which group a function lands
    in, `main` first, the function opened first),
    **`test/decompile-session.mjs`** (directive merging and pinning, unqualified vs
@@ -1245,7 +1260,9 @@ Fixtures (all benign, small, reproducible from the committed source via the comm
 header): `sample.elf` (x86-64 ELF, rich body — call chain + `for`-loop), `sample_aarch64.o`
 (AArch64), `sample_macho.o` (Mach-O x86-64 — a second *format*), `crackme.elf` (x86-64
 ELF, a flag check whose strings are used directly and through a pointer), `structs.elf`
-(x86-64 ELF without debug info, whose `struct item` the decompiler works out as `struct_0`). **PE** executables were
+(x86-64 ELF without debug info, whose `struct item` the decompiler works out as `struct_0`), `long.elf` (x86-64
+ELF, a 120-line `main` whose locals are used far below their declarations, for edits that
+must not move the view). **PE** executables were
 verified separately against a real PE (152 functions) through the browser lazy path; no
 benign PE is committed because this environment has no PE linker.
 

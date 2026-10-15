@@ -1,0 +1,50 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">9de3bfa021000008d1042000d127bffc4000003c01000000d107bffc95a209a02500000cd524a0002700000cd124e004400000740100000081c7e00881e80000</bytechunk>
+<bytechunk space="ram" offset="0x1400" readonly="true">9de3bfa021000008d1042000d127bffc7fffff3c01000000d107bffc95a209a02500000cd524a0002700000cd124e004010000000100000081c7e00881e80000</bytechunk>
+<bytechunk space="ram" offset="0x1800" readonly="true">9de3bfa021000008d1042000d127bffc7ffffe3c01000000d107bffc95a209a02500000cd524a0002700000cd124e004a81000002b00000caa156100ad2d2002c0254016a805200180a5200304bffffc0100000081c7e00881e80000</bytechunk>
+<bytechunk space="ram" offset="0x3100" readonly="false">00000000000000000000000000000000</bytechunk>
+<bytechunk space="ram" offset="0x1100" readonly="true">81c3e00801000000</bytechunk>
+<bytechunk space="ram" offset="0x1200" readonly="true">81c3e00801000000</bytechunk>
+<bytechunk space="ram" offset="0x2000" readonly="true">3f800000</bytechunk>
+<bytechunk space="ram" offset="0x3000" readonly="false">0000000000000000</bytechunk>
+<symbol space="ram" offset="0x1000" name="caller"/>
+<symbol space="ram" offset="0x1400" name="no_finish"/>
+<symbol space="ram" offset="0x1800" name="loop_clear"/>
+<symbol space="ram" offset="0x1100" name="get"/>
+<symbol space="ram" offset="0x1200" name="finish"/>
+</binaryimage>
+<script>
+<com>map address r0x2000 float4 input</com>
+<com>map address r0x3000 float4 result</com>
+<com>map address r0x3004 float4 after</com>
+<com>map address r0x3100 uint4 scratch[4]</com>
+<com>parse line extern void caller(void);</com>
+<com>parse line extern void loop_clear(void);</com>
+<com>parse line extern void no_finish(void);</com>
+<com>parse line extern float4 get(void);</com>
+<com>parse line extern void finish(void);</com>
+<com>option globalcallstore off</com>
+<com>load function caller</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option globalcallstore on</com>
+<com>load function caller</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function no_finish</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function loop_clear</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="store order: division call precedes the later global write" min="3" max="3">result = [^;]*get\(\);
+  after = </stringmatch>
+<stringmatch name="store order: exactly one global write per function" min="4" max="4">^  after = </stringmatch>
+<stringmatch name="store order: globalcallstore off writes the global before the call" min="1" max="1">after = [^;]*;
+  result = [^;]*get\(\);</stringmatch>
+<stringmatch name="store order: final call remains after both writes" min="1" max="1">after = [^;]*;
+  finish\(\);</stringmatch>
+</decompilertest>

@@ -3033,6 +3033,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (kuna, GH-299) The AIF filler reject, shaping the `aif` accept list the
         // same way; registered for the same fail-open reason.
         "aifnoppad" => arch.analysis_aifnoppad,
+        // (kuna, GH-299) The AIF literal-pool slide, shaping the `aif` accept list
+        // the same way; registered for the same fail-open reason.
+        "aifpoolslide" => arch.analysis_aifpoolslide,
         // (kuna) Tail-call function-entry recovery — default-OFF (discovers more
         // functions, so it changes emitted C by construction). Listing consumer;
         // the live gate is the pre-invocation check in `run_listing_consumers`.
@@ -4362,6 +4365,11 @@ fn commit_analysis_output(
     //     mangling entails, `inferred` those plus the class-evidence inferences,
     //     `off` neither. `msvcsig` picks which reading of an MSVC name applies.
     let cppsig_mode = prog.arch().analysis_cppsig;
+    let (msvc_byval, msvc_builders) = if cppsig_mode.enabled() && prog.arch().analysis_msvcsig {
+        (std::mem::take(&mut out.cpp_sig.msvc_byval), std::mem::take(&mut out.cpp_sig.msvc_builders))
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let cppsig_protos = if cppsig_mode.enabled() {
         kuna_analysis::demangle::kuna_cppsig::select(
             std::mem::take(&mut out.cpp_sig),
@@ -4635,6 +4643,41 @@ fn commit_analysis_output(
         prog.arch_mut().format_call_overrides = parked;
     }
 
+    // (kuna `pushpadread`) The stack-argument count per format call site, carried
+    // for the callee-body probe (not the varargs typing above, so independent of
+    // the `formatstring` gate). gcc pushes a format call's stack arguments below
+    // an alignment pad, and the probe uses this count to tell the two apart.
+    if prog.arch().push_pad_read && !out.format_sites.is_empty() {
+        let model = prog.arch().default_fp().cloned();
+        let stack_idx = prog.arch().manage().get_stack_space().map(|sp| sp.get_index());
+        if let (Some(model), Some(stack_idx)) = (model, stack_idx) {
+            let mut map: std::collections::BTreeMap<u64, usize> = std::collections::BTreeMap::new();
+            for site in &out.format_sites {
+                let mut res = Vec::new();
+                if model
+                    .assign_parameter_storage(
+                        &site.pieces,
+                        &mut res,
+                        true,
+                        prog.arch().types(),
+                        prog.arch().manage(),
+                    )
+                    .is_ok()
+                {
+                    // res[0] is the return; the parameters follow. A parameter
+                    // whose storage is in the stack space is a stack argument.
+                    let n = res
+                        .iter()
+                        .skip(1)
+                        .filter(|p| p.addr.get_space().is_some_and(|sp| sp.get_index() == stack_idx))
+                        .count();
+                    map.insert(site.callpoint, n);
+                }
+            }
+            prog.arch_mut().format_stack_args = Rc::new(map);
+        }
+    }
+
     // 3b. FID re-identification (the kuna analog of Ghidra's FID identification
     //     analyzer): RENAME a function whose instruction-stream fingerprint matched
     //     a known-library record. Unlike the SymFact arm (step 1) — an idempotent
@@ -4884,6 +4927,15 @@ fn commit_analysis_output(
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
     }
 
+    // 4b. The C runtime declaration `elfmain` has for an executable's own
+    //     `main`. Not parked on the symbol: the drive locks only its `int`
+    //     return and names and types the parameters `main`'s own analysis
+    //     recovers (`kuna_decomp::kuna_elfmaindecl`). Any prototype another
+    //     stream parks on `main` (DWARF) wins outright.
+    for (addr, pieces) in out.main_decl_at {
+        prog.arch_mut().elfmain_main_decl = Some((Address::new(Rc::clone(code_space), addr), pieces));
+    }
+
     // 5. Library prototypes (the kuna analog of ApplyDataArchiveAnalyzer): park each
     //    on its named global callee. `ActionDefaultParams` later copies the callee's
     //    prototype into the caller's call spec, so the argument constants get typed
@@ -4941,6 +4993,11 @@ fn commit_analysis_output(
     //     the symbol, as a `prototype` directive is, because a call through a PE
     //     import slot reads the symbol's prototype, not the parked pieces; and
     //     the address is recorded so the flow can make such a call direct.
+    //     (kuna `msvcbyval`) An MSVC import applied open at a by-value class also
+    //     parks its whole declaration for the call sites to size, and the entries
+    //     that build an object at an address they are handed (a constructor, or an
+    //     applied declaration returning a class by value) are recorded.
+    let mut msvc_applied: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
     for sig in cppsig_protos {
         let kuna_analysis::demangle::kuna_cppsig::SelectedSig { addr, pieces, model, msvc } = sig;
         let a = Address::new(Rc::clone(code_space), addr);
@@ -4959,8 +5016,21 @@ fn commit_analysis_output(
             if let Some(space) = a.get_space() {
                 prog.arch_mut().msvcsig_import_slots.insert((space.get_index(), addr));
             }
+            msvc_applied.insert(addr);
         }
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
+    }
+    let space_index = code_space.get_index();
+    for (addr, decl) in msvc_byval {
+        if msvc_applied.contains(&addr) {
+            Rc::make_mut(&mut prog.arch_mut().msvc_byval_decls).insert((space_index, addr), decl);
+        }
+    }
+    for (addr, kind) in msvc_builders {
+        let applied = kind == kuna_decomp::kuna_msvcbyval::Builder::This || msvc_applied.contains(&addr);
+        if applied {
+            Rc::make_mut(&mut prog.arch_mut().msvc_builders).insert((space_index, addr), kind);
+        }
     }
 
     // 5a. (kuna `cppproto`) The DWARF prototypes bound by ENTRY ADDRESS. Applied

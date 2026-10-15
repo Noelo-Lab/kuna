@@ -83,6 +83,8 @@ pub const TYPELOCK: uint4 = 1;
 /// Boolean property: only a constant is COPYed into the range
 /// (C++ `RangeHint::copy_constant = 2`, `varmap.hh:103`).
 pub const COPY_CONSTANT: uint4 = 2;
+/// A recovered shared-storage layout takes priority over ordinary hints.
+pub const SHARED_STORAGE: uint4 = 4;
 
 // ===========================================================================
 // RangeHint (varmap.hh:90-127, varmap.cc:30-335)
@@ -279,6 +281,12 @@ impl RangeHint {
             }
         } else if self.is_type_lock() {
             return Ok(true);
+        }
+
+        let shared = self.flags & SHARED_STORAGE != 0;
+        let other_shared = b.flags & SHARED_STORAGE != 0;
+        if shared != other_shared {
+            return Ok(shared);
         }
 
         if self.range_type == RangeType::Open && b.range_type != RangeType::Open {
@@ -955,6 +963,9 @@ pub struct ScopeLocal {
     /// (C++ `Symbol::setIsolated`).  Read by
     /// [`Self::has_isolated_symbols`]; see that method for why it is monotone.
     isolated_present: bool,
+    /// (kuna `--assert`) The previous decompile's numbering, for
+    /// [`Self::next_default_name`].
+    name_state: crate::kuna_stablenames::NameState,
 }
 
 impl ScopeLocal {
@@ -984,6 +995,7 @@ impl ScopeLocal {
             name_recommend: Vec::new(),
             dyn_recommend: Vec::new(),
             isolated_present: false,
+            name_state: Default::default(),
         })
     }
 
@@ -1227,7 +1239,22 @@ impl ScopeLocal {
         base: &mut int4,
         arch: &dyn crate::database::DatabaseArch,
     ) -> KunaResult<()> {
-        self.db.assign_default_names(self.scope, base, arch)
+        if !self.name_state.active() {
+            return self.db.assign_default_names(self.scope, base, arch);
+        }
+        for sym in self.db.undefined_symbols(self.scope) {
+            if let Some(name) = self.renamed_symbol_name(sym) {
+                self.db.rename_symbol(sym, &name)?;
+                continue;
+            }
+            let mut number = *base;
+            if self.db.symbol(sym).get_category() != crate::database::symbol_category::FUNCTION_PARAMETER {
+                self.prefer_symbol_names(sym);
+                number = self.pick_default_number(&|i| format!("v{i}"));
+            }
+            self.db.assign_default_name(self.scope, sym, &mut number, arch)?;
+        }
+        Ok(())
     }
 
     /// C++ `Scope::queryProperties` (`database.cc:1268`) on the local stack scope:
@@ -1409,6 +1436,62 @@ impl ScopeLocal {
         Ok(Some(sym))
     }
 
+    /// A reused stack local does not replace the incoming parameter symbol.
+    pub fn add_param_symbol_for_stack_reuse(
+        &mut self,
+        i: int4,
+        name: &str,
+        ct: Rc<Datatype>,
+        addr: &Address,
+        restricted_usepoint: &Address,
+    ) -> KunaResult<Option<crate::database::SymbolId>> {
+        if addr.get_space().is_none_or(|space| space.get_index() != self.space.get_index()) {
+            return self.add_param_symbol(i, name, ct, addr, restricted_usepoint);
+        }
+        let invalid = Address::new_invalid();
+        let parameter = self.db.find_container_matching(
+            self.scope,
+            addr,
+            ct.get_size(),
+            &invalid,
+            |symbol| symbol.get_category() == crate::database::symbol_category::FUNCTION_PARAMETER,
+        );
+        if let Some(parameter) = parameter {
+            let entry = self.db.entry(self.scope, parameter);
+            if entry.get_addr() == addr && entry.get_size() == ct.get_size() {
+                let symbol = entry.symbol;
+                self.db.set_category(
+                    self.scope,
+                    symbol,
+                    crate::database::symbol_category::FUNCTION_PARAMETER,
+                    i,
+                );
+                return Ok(Some(symbol));
+            }
+        }
+        let existing = self.db
+            .find_container(self.scope, addr, ct.get_size(), &invalid)
+            .filter(|&entry| {
+                let entry = self.db.entry(self.scope, entry);
+                entry.get_addr() == addr
+                    && entry.get_size() == ct.get_size()
+                    && self.db.symbol(entry.symbol).dtype.as_ref()
+                        .is_some_and(|ty| Rc::ptr_eq(ty, &ct))
+            })
+            .map(|entry| self.db.entry(self.scope, entry).symbol);
+        let symbol = match existing {
+            Some(symbol) => symbol,
+            None => self.db.add_symbol_mapped(self.scope, name, ct, addr, &invalid)?.0,
+        };
+        self.db.set_category(
+            self.scope,
+            symbol,
+            crate::database::symbol_category::FUNCTION_PARAMETER,
+            i,
+        );
+        Ok(Some(symbol))
+    }
+
     /// C++ `Scope::addCodeLabel` reached via `getScopeLocal()->addCodeLabel`
     /// (`IfcMaplabel` fd-local form).
     pub fn add_code_label(
@@ -1464,6 +1547,12 @@ impl ScopeLocal {
     pub fn set_symbol_isolated(&mut self, sym: crate::database::SymbolId, val: bool) {
         self.isolated_present |= val;
         self.db.symbol_mut(sym).set_isolated(val);
+    }
+
+    /// Isolate a named value without declaring its inferred type.
+    pub fn set_symbol_identity_isolated(&mut self, sym: crate::database::SymbolId) {
+        self.isolated_present = true;
+        self.db.symbol_mut(sym).dispflags |= crate::database::symbol_dispflags::ISOLATE;
     }
 
     /// (kuna) Can any Symbol in this scope answer `true` to
@@ -1758,7 +1847,15 @@ impl ScopeLocal {
     /// (`name v3 v1`) keeps its Symbol through the second pass, and handing the
     /// same `v1` to an untouched neighbour made the printer suffix one of the two
     /// -- often the caller's.  Without such a Symbol this is `render(base++)`.
-    pub fn next_default_name(&self, base: &mut int4, render: impl Fn(int4) -> String) -> String {
+    ///
+    /// When a directive batch is replayed the previous decompile's numbering
+    /// is kept instead (see [`crate::kuna_stablenames`]): the number comes from
+    /// [`Self::prefer_names`] and the Symbol being named, and `base` is unused.
+    pub fn next_default_name(&mut self, base: &mut int4, render: impl Fn(int4) -> String) -> String {
+        if self.name_state.active() {
+            *base += 1;
+            return render(self.pick_default_number(&render));
+        }
         loop {
             let name = render(*base);
             *base += 1;
@@ -1766,6 +1863,97 @@ impl ScopeLocal {
                 return name;
             }
         }
+    }
+
+    fn pick_default_number(&mut self, render: &dyn Fn(int4) -> String) -> int4 {
+        let (db, scope) = (&self.db, self.scope);
+        let free = |name: &str| !db.find_by_name(scope, name).iter().any(|&s| db.symbol(s).is_name_locked());
+        self.name_state.pick(render, &free)
+    }
+
+    /// (kuna `--assert`) Start a naming pass that keeps `prior`'s numbering.
+    pub fn install_prior_names(&mut self, prior: crate::kuna_stablenames::PriorNames) {
+        self.name_state = crate::kuna_stablenames::NameState::new(prior);
+    }
+
+    /// The numbers the next default name should try first (empty clears them).
+    pub fn prefer_names(&mut self, numbers: Vec<int4>) {
+        if self.name_state.active() {
+            self.name_state.prefer(numbers);
+        }
+    }
+
+    /// Record which local each name-only rename names.
+    pub fn set_rename_targets(&mut self, targets: std::collections::BTreeMap<crate::context::HighVariableId, String>) {
+        self.name_state.set_targets(targets);
+    }
+
+    /// Record the number each local keeps (`kuna_stablenames::assign_numbers`).
+    pub fn set_assigned_numbers(&mut self, assigned: std::collections::BTreeMap<crate::context::HighVariableId, int4>) {
+        self.name_state.set_assigned(assigned);
+    }
+
+    /// The number `high` keeps under a carried numbering.
+    pub fn assigned_number(&self, high: crate::context::HighVariableId) -> Option<int4> {
+        self.name_state.assigned(high)
+    }
+
+    /// The name a name-only rename gives `high` (`kuna_stablenames::rename_targets`).
+    pub fn rename_target(&self, high: crate::context::HighVariableId) -> Option<String> {
+        self.name_state.target(high).map(str::to_string)
+    }
+
+    /// Let a renamed local's number be handed out again (`kuna_stablenames::orphaned`).
+    pub fn release_prior_number(&mut self, number: int4) {
+        self.name_state.release(number);
+    }
+
+    /// Try the number `sym` had in the previous decompile first.
+    fn prefer_symbol_names(&mut self, sym: crate::database::SymbolId) {
+        if let Some((addr, size)) = self.prior_symbol_storage(sym) {
+            self.name_state.prefer_symbol(&addr, size);
+        }
+    }
+
+    /// The storage and width `sym` is known by in a carried numbering, or
+    /// `None` when none is carried.
+    fn prior_symbol_storage(&self, sym: crate::database::SymbolId) -> Option<(Address, int4)> {
+        if !self.name_state.active() {
+            return None;
+        }
+        let &eref = self.db.symbol(sym).mapentry.first()?;
+        if matches!(eref, crate::database::EntryRef::Dynamic(_)) {
+            return None;
+        }
+        let entry = self.db.entry(self.scope, eref);
+        Some((entry.get_addr().clone(), entry.get_size()))
+    }
+
+    /// The name for undefined-named `sym`: the one a carried rename gave it,
+    /// else the next default name.
+    fn default_symbol_name(&mut self, sym: crate::database::SymbolId, base: &mut int4) -> String {
+        if let Some(name) = self.renamed_symbol_name(sym) {
+            return name;
+        }
+        self.prefer_symbol_names(sym);
+        self.next_default_name(base, |i| format!("v{i}"))
+    }
+
+    /// The name a carried rename gave `sym`. Two renamed slots may share a
+    /// name, as their Symbols did; the printer tells the declarations apart.
+    fn renamed_symbol_name(&self, sym: crate::database::SymbolId) -> Option<String> {
+        let (addr, size) = self.prior_symbol_storage(sym)?;
+        self.name_state.symbol_rename(&addr, size).map(str::to_string)
+    }
+
+    /// One past every number the naming pass handed out under a kept numbering.
+    pub fn prior_names_end(&self) -> int4 {
+        self.name_state.end()
+    }
+
+    /// Each Symbol with its first entry's storage, width and name.
+    pub fn named_symbol_storage(&self) -> Vec<(crate::database::SymbolId, Address, int4, String)> {
+        self.db.scope_symbol_storage(self.scope)
     }
 
     /// C++ `ActionNameVars`'s namerec rename (coreaction.cc:3087-3094): if the
@@ -1832,7 +2020,7 @@ impl ScopeLocal {
         // access is `sym_off == 0 && size == entry_size` (the entire mapped entry).
         let undefined = self.db.symbol(sym).is_name_undefined();
         if undefined && sym_off == 0 && size == entry_size {
-            match override_name {
+            match override_name.filter(|_| self.renamed_symbol_name(sym).is_none()) {
                 // lookForFuncParamNames: renameSymbol(makeNameUnique(namerec)) — the
                 // callee parameter name wins over `vN` and does not consume `base`.
                 Some(nm) => {
@@ -1841,7 +2029,7 @@ impl ScopeLocal {
                 }
                 None => {
                     // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm).
-                    let newname = self.next_default_name(base, |i| format!("v{i}"));
+                    let newname = self.default_symbol_name(sym, base);
                     // makeNameUnique then renameSymbol.
                     let _ = self.db.rename_symbol(sym, &newname);
                 }
@@ -1890,7 +2078,7 @@ impl ScopeLocal {
         }
         // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm); then
         // scope->renameSymbol(sym, newname).
-        let newname = self.next_default_name(base, |i| format!("v{i}"));
+        let newname = self.default_symbol_name(sym, base);
         let _ = self.db.rename_symbol(sym, &newname);
         Some(newname)
     }
@@ -1934,6 +2122,15 @@ impl ScopeLocal {
         addr: &Address,
         usepoint: &Address,
     ) -> Option<LinkEntryInfo> {
+        self.query_container_for_link_width(addr, 1, usepoint)
+    }
+
+    pub fn query_container_for_link_width(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<LinkEntryInfo> {
         // C++ `Funcdata::linkSymbol` (`funcdata_varnode.cc:1190`):
         //   queryProperties(vn->getAddr(), 1, vn->getUsePoint(*this), fl) -> findContainer.
         // The `usepoint` is the Varnode's use address (def-op address if written,
@@ -1945,7 +2142,23 @@ impl ScopeLocal {
         // directive's usepoint-scoped Symbol) only matches when the usepoint falls in
         // its range.  Threading the real usepoint here is what lets such a Symbol bind
         // at the register read it is scoped to (the `tmp` retstruct return Symbol).
-        let eref = self.db.find_container(self.scope, addr, 1, usepoint)?;
+        let eref = self.db.find_container(self.scope, addr, size, usepoint)?;
+        Some(self.link_entry_info(addr, eref))
+    }
+
+    pub fn query_container_for_link_matching(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+        accepts: impl Fn(&crate::database::Symbol) -> bool,
+    ) -> Option<LinkEntryInfo> {
+        let entry = self.db
+            .find_container_matching(self.scope, addr, size, usepoint, accepts)?;
+        Some(self.link_entry_info(addr, entry))
+    }
+
+    fn link_entry_info(&self, addr: &Address, eref: crate::database::EntryRef) -> LinkEntryInfo {
         let entry = self.db.entry(self.scope, eref);
         let sym = entry.symbol;
         let entry_addr = entry.get_addr().clone();
@@ -1955,7 +2168,7 @@ impl ScopeLocal {
         let symbol = self.db.symbol(sym);
         let sym_off =
             (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
-        Some(LinkEntryInfo {
+        LinkEntryInfo {
             symbol: sym,
             display_name: symbol.get_display_name().to_string(),
             sym_off,
@@ -1965,7 +2178,7 @@ impl ScopeLocal {
             category: symbol.get_category(),
             is_name_undefined: symbol.is_name_undefined(),
             is_isolated: symbol.is_isolated(),
-        })
+        }
     }
 
     /// Read `Symbol::isIsolated()` for a SymbolId in this scope (C++
@@ -2055,7 +2268,7 @@ impl ScopeLocal {
             (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
         // ActionNameVars::apply: rename the undefined-named Symbol to `vN` once.
         if self.db.symbol(sym).is_name_undefined() {
-            let newname = self.next_default_name(base, |i| format!("v{i}"));
+            let newname = self.default_symbol_name(sym, base);
             let _ = self.db.rename_symbol(sym, &newname);
         }
         let symbol = self.db.symbol(sym);
@@ -2223,12 +2436,11 @@ impl ScopeLocal {
         Some(SyncOverlap { all_flags, entry_size, sized_type: sized, symbol_id: sym, extraflags })
     }
 
-    /// The `ActionInferTypes::buildLocaltypes` type-locked-symbol seed (C++
-    /// `coreaction.cc:5275-5281`).  When a (non-type-locked) Varnode at
-    /// `(addr, size)` is covered by a SymbolEntry whose owning Symbol *is*
-    /// type-locked, the local data-type is seeded from the exact piece of the
-    /// Symbol's type at the access offset, rather than floating from the local
-    /// def/use flow (`Varnode::getLocalType`).
+    /// Storage-only compatibility form of the `ActionInferTypes::buildLocaltypes`
+    /// type-locked-symbol seed (C++ `coreaction.cc:5275-5281`). For a live
+    /// Varnode, use [`build_localtype_seed_at`] so a register Symbol is resolved
+    /// at the Varnode's definition usepoint, as `linkSymbol` does. This form is
+    /// for callers that only have a storage address and size.
     ///
     /// Returns:
     /// * `Some(ct)` — the seeded exact-piece type (the caller adopts it),
@@ -2236,11 +2448,8 @@ impl ScopeLocal {
     ///   null/`TYPE_UNKNOWN` (the caller falls through to `getLocalType`, i.e.
     ///   "let the data-type float even though the parent symbol is type-locked").
     ///
-    /// `vn->getSymbolEntry()` is the SymbolEntry `linkSymbol`/`coverVarnodes`
-    /// cache on the Varnode; here it is resolved freshly via `findOverlap`
-    /// (`queryProperties`), the exact lookup that cache mirrors, so the seed is
-    /// available on every InferTypes round without depending on the link pass
-    /// having already run.
+    /// The entry is resolved freshly via `findOverlap`; the usepoint-aware
+    /// production path is [`build_localtype_seed_at`].
     pub fn build_localtype_seed(
         &self,
         addr: &Address,
@@ -2259,7 +2468,12 @@ impl ScopeLocal {
         usepoint: &Address,
         types: &dyn TypeFactory,
     ) -> Option<Rc<Datatype>> {
-        let eref = self.db.find_container(self.scope, addr, 1, usepoint)?;
+        let width = if crate::p0_knowledge::kuna_wrappedstackmap::pieces(addr, size).is_some() {
+            1
+        } else {
+            size
+        };
+        let eref = self.db.find_container(self.scope, addr, width, usepoint)?;
         self.build_localtype_seed_from_entry(eref, addr, size, types)
     }
 

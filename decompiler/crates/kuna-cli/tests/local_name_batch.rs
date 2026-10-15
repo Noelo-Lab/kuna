@@ -197,14 +197,15 @@ fn a_renamed_local_answers_to_either_name() {
 /// `v2` and the one just given that name.  Nothing says which a later `type` or
 /// `name` means, so it is rejected rather than picked, whichever of the two is on
 /// the stack and whichever in a register.  Only a rename to another printed name
-/// (a swap) reads the printed one.
+/// (a swap) reads the printed one.  The local that lost its name takes a number
+/// past the last.
 #[test]
 fn a_printed_name_given_to_another_local_is_ambiguous() {
     for (function, from, to, declared) in [
-        ("two_locals", "v1", "v2", "int4 v1; // r12d"),
+        ("two_locals", "v1", "v2", "int4 v3; // r12d"),
         ("stack_pair", "v1", "v2", "int4 v2; // stack - 0x10"),
-        ("mixed_pair", "v2", "v1", "int4 v2; // ebx"),
-        ("mixed_pair", "v1", "v2", "int4 v1; // stack - 0xc"),
+        ("mixed_pair", "v2", "v1", "int4 v3; // ebx"),
+        ("mixed_pair", "v1", "v2", "int4 v3; // stack - 0xc"),
     ] {
         let rename = format!("name {from} {to}");
         for second in [
@@ -243,11 +244,9 @@ fn later_directives_keep_the_rejections() {
     );
 }
 
-/// `pick_flag` holds a pointer in rax and then an int in eax.  Given a Symbol
-/// each, the second pass folded them into one variable (`text._0_4_ = 0`), so
-/// the later directive is rejected and names the one it lost to.
+/// A pointer in RAX and a later EAX flag have distinct definition identities.
 #[test]
-fn overlapping_register_locals_reject_the_later_directive() {
+fn mixed_width_register_locals_keep_both_assertions() {
     let prototypes = [
         "prototype lookup char *lookup(void)",
         "prototype probe int probe(char *s)",
@@ -255,15 +254,12 @@ fn overlapping_register_locals_reject_the_later_directive() {
     ];
     let text = "name s text";
     let flag = "name v1 flag";
-    for (order, applied, rejected_detail) in [
-        ([text, flag], "char *text; // rax", "\"name v1 flag\": \"Storage of v1 overlaps s, which an earlier directive already changed\""),
-        ([flag, text], "uint4 flag; // eax", "\"name s text\": \"Storage of s overlaps v1, which an earlier directive already changed\""),
-    ] {
+    for order in [[text, flag], [flag, text]] {
         let directives: Vec<&str> = prototypes.iter().copied().chain(order).collect();
-        let (code, rejected) = decompile("pick_flag", &directives);
-        assert_eq!(rejected, [rejected_detail], "{code}");
-        assert!(contains_declaration(&code, applied), "{code}");
-        assert!(!code.contains("_0_4_"), "two locals were folded into one:\n{code}");
+        let code = applies("pick_flag", &directives, &["char *text; // rax", "uint4 flag; // eax"]);
+        assert!(code.contains("if (text)"), "{code}");
+        assert!(code.contains("flag = probe(text) != 0;"), "{code}");
+        assert!(!code.contains("_0_4_"), "{code}");
     }
 }
 
@@ -285,7 +281,8 @@ fn a_name_renamed_away_and_given_to_another_local_is_ambiguous() {
 }
 
 /// The untouched local's default skips the names the swap locked: it used to
-/// take `v1` itself and push the caller's `v1` to `v1_1`.
+/// take `v1` itself and push the caller's `v1` to `v1_1`. A local whose name a
+/// lone rename takes gets a number past the last, and no other local moves.
 #[test]
 fn a_swap_among_three_locals_keeps_every_name() {
     let expected = ["int4 v3; // ebx", "int4 v2; // r12d", "int4 v1; // r13d"];
@@ -300,7 +297,7 @@ fn a_swap_among_three_locals_keeps_every_name() {
     applies(
         "three_locals",
         &["name v3 v1"],
-        &["int4 v1; // r13d", "int4 v2; // ebx", "int4 v3; // r12d"],
+        &["int4 v1; // r13d", "int4 v2; // r12d", "int4 v4; // ebx"],
     );
 }
 

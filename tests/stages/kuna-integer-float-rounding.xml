@@ -1,0 +1,26 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<bytechunk space="ram" offset="0x10000" readonly="true">
+03000080c500400085a0188281a0192281c3e00801000000
+</bytechunk>
+<bytechunk space="ram" offset="0x10100" readonly="true">
+03000080c500400085a0190281a018c281c3e00801000000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="rounded"/>
+<symbol space="ram" offset="0x10100" name="exact_intermediate"/>
+</binaryimage>
+<script>
+<com>parse line extern double rounded(void);</com>
+<com>parse line extern float exact_intermediate(void);</com>
+<com>map address r0x20000 int value</com>
+<com>option intfloatround off</com>
+<com>lo fu rounded</com><com>decompile</com><com>print C</com>
+<com>option intfloatround on</com>
+<com>lo fu rounded</com><com>decompile</com><com>print C</com>
+<com>lo fu exact_intermediate</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="intfloatround off folds the float rounding away" min="1" max="1">return \(float8\)value;</stringmatch>
+<stringmatch name="integer rounding survives a float-to-double widening" min="1" max="1">return \(float8\)\(float4\)value;</stringmatch>
+<stringmatch name="exact signed32-to-double intermediate still combines" min="1" max="1">return \(float4\)value;</stringmatch>
+</decompilertest>

@@ -6,7 +6,8 @@
 import assert from 'node:assert/strict';
 import { wrapPlan, applyPlan } from '../decompile/wrap-c.js';
 import { lineHtml } from '../decompile/render-c.js';
-import { lineTags, commentStart } from '../decompile/tags.js';
+import { lineTags, commentStart, splitNotes } from '../decompile/tags.js';
+import { tokenLines } from '../decompile/render-c.js';
 import { useKind, renderRefsDialog } from '../decompile/xrefs-view.js';
 import { inferLines } from '../decompile/asm-view.js';
 
@@ -92,6 +93,37 @@ assert.deepEqual(lineTags('  usage(1); // no-return, warn: odd, really, here, br
 assert.match(lineTags('  x = 1; // jt: return-dupe x2')[0].words, /^About this switch: the machine code/);
 assert.match(lineTags('  f(); // inlined: memcpy')[0].words, /memcpy/);
 checks.push('lineTags');
+
+const NOTED = [
+  'unsigned long f(int a0) // return-dupe',
+  '{',
+  '  long v1; // rax',
+  '  puts("a // b"); // no-return, warn: odd, really',
+  '  // a note of your own',
+  '  if (a0 == 3) { // branch-flip',
+  '  g(); // rbx, tail-call',
+  '}',
+].join('\n');
+const tok = (line, col, text, kind) => ({ line, col, len: text.length, text, kind });
+const NOTED_TOKENS = [
+  tok(1, 0, 'unsigned long', 'type'), tok(1, 14, 'f', 'funcname'), tok(1, 15, '(', 'syntax'), tok(1, 16, 'int', 'type'),
+  tok(1, 20, 'a0', 'variable'), tok(1, 22, ')', 'syntax'), tok(1, 24, '// return-dupe', 'comment'),
+  tok(4, 2, 'puts', 'funcname'), tok(4, 6, '(', 'syntax'), tok(4, 7, '"a // b"', 'const'), tok(4, 15, ')', 'syntax'), tok(4, 16, ';', 'syntax'),
+  tok(4, 18, '// no-return, warn: odd, really', 'comment'),
+  tok(7, 2, 'g', 'funcname'), tok(7, 3, '(', 'syntax'), tok(7, 4, ')', 'syntax'), tok(7, 5, ';', 'syntax'), tok(7, 7, '// rbx, tail-call', 'comment'),
+];
+const split = splitNotes(NOTED, NOTED_TOKENS);
+assert.deepEqual(split.code.split('\n'), [
+  'unsigned long f(int a0)', '{', '  long v1; // rax', '  puts("a // b");', '  // a note of your own', '  if (a0 == 3) {', '  g(); // rbx', '}',
+], 'the notes leave the code; a register comment, a note of your own and a // inside a string stay');
+assert.deepEqual([...split.notes].map(([line, list]) => [line, list.map((t) => t.tag)]),
+  [[1, ['return-dupe']], [4, ['no-return', 'warn: odd, really']], [6, ['branch-flip']], [7, ['tail-call']]], 'each line keeps its notes');
+assert.match(split.notes.get(6)[0].words, /flipped this if/, 'in words');
+assert.ok(!split.tokens.some((t) => /return-dupe|no-return/.test(t.text)), 'the note tokens are gone');
+assert.deepEqual(split.tokens.find((t) => t.line === 7 && t.kind === 'comment'), tok(7, 7, '// rbx', 'comment'), 'a comment keeps what is not a note');
+assert.ok([0, 3, 6].every((i) => tokenLines(split.code, split.tokens)[i] !== null), 'the tokens still spell each line');
+assert.equal(splitNotes('int f(void)\n{\n  long v1; // rax\n}', NOTED_TOKENS).tokens, NOTED_TOKENS, 'no notes, nothing changes');
+checks.push('splitNotes');
 
 // ── the x dialog ───────────────────────────────────────────────────────────
 assert.equal(useKind('  v1 = *a2;', 'v1'), 'sets');
