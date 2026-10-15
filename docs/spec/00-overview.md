@@ -2093,7 +2093,11 @@ global object's entire byte range volatile, so `--assert 'data 0x20000 volatile 
 has the same access semantics as a separate volatile range assertion.
 Declarator binding matters: `volatile int *p` qualifies the pointed-to data,
 while `int *volatile p` qualifies the mapped pointer itself. An array inherits
-its element qualifier. Function-local mappings carry the symbol attribute only;
+its element qualifier, including through nested arrays and typedefs. The property
+comes from the resolved type: `typedef volatile int VolWord;` followed by
+`data 0x20000 VolWord cursor` marks the mapped word volatile, while a pointer to
+`VolWord` does not make the pointer's own storage volatile. Function-local mappings
+carry the symbol attribute only;
 the global property map does not describe stack-local storage. Volatility remains
 a storage property.
 

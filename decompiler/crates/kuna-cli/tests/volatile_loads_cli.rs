@@ -221,3 +221,106 @@ fn a_volatile_data_assertion_keeps_each_read_in_decompile_all() {
         assert!(!out.contains("cursor * 2"), "{declaration}:\n{out}");
     }
 }
+
+#[test]
+fn volatile_typedef_data_preserves_scalar_and_array_reads() {
+    let path = common::scratch_file("volatile-data-all", "bin");
+    for (declaration, offset, volatile, access) in [
+        ("volatile int cursor", 0, true, "cursor"),
+        ("int volatile cursor", 0, true, "cursor"),
+        ("VolWord cursor", 0, true, "cursor"),
+        ("VolWord cursor[2]", 4, true, "cursor[1]"),
+        ("VolWords cursor[3]", 0, true, "cursor[0][0]"),
+        ("VolWords cursor[3]", 20, true, "cursor[2][1]"),
+        ("volatile int cursor[3][2]", 20, true, "cursor[2][1]"),
+        ("int cursor", 0, false, "cursor"),
+        ("int cursor[2]", 4, false, "cursor[1]"),
+        ("int cursor[3][2]", 20, false, "cursor[2][1]"),
+    ] {
+        std::fs::write(
+            &path,
+            [
+                0x8b, 0x04, 0x25, offset, 0x10, 0x60, 0x00,
+                0x8b, 0x14, 0x25, offset, 0x10, 0x60, 0x00,
+                0x01, 0xd0, 0xc3,
+            ],
+        )
+        .unwrap();
+        for command in ["decompile", "decompile-all"] {
+            let (out, err, code) = common::run_kuna(&[
+                command,
+                path.to_str().unwrap(),
+                "--addr",
+                "0x400000",
+                "--raw-image",
+                "--base",
+                "0x400000",
+                "--target",
+                "x86:LE:64:default:gcc",
+                "--assert-strict",
+                "--assert",
+                "function 0x400000=f",
+                "--assert",
+                "typedef typedef volatile int VolWord;",
+                "--assert",
+                "typedef typedef VolWord VolWords[2];",
+                "--assert",
+                &format!("data 0x601000 {declaration}"),
+            ]);
+            assert_eq!(code, 0, "{command} {declaration}: {err}");
+            assert_eq!(
+                out.matches(access).count(),
+                if volatile { 2 } else { 1 },
+                "{command} {declaration}:\n{out}",
+            );
+            assert_eq!(
+                out.matches("cursor").count(),
+                if volatile { 2 } else { 1 },
+                "{command} {declaration}:\n{out}",
+            );
+        }
+    }
+}
+
+#[test]
+fn volatile_struct_data_reads_name_the_covered_field() {
+    let path = common::scratch_file("volatile-struct-field", "bin");
+    for (declaration, offset, access) in [
+        ("volatile struct S s", 4, "s.b"),
+        ("VolS s", 4, "s.b"),
+        ("VolS cursor[3]", 20, "cursor[2].b"),
+        ("struct S volatile cursor[3]", 16, "cursor[2].a"),
+    ] {
+        std::fs::write(
+            &path,
+            [
+                0x8b, 0x04, 0x25, offset, 0x10, 0x60, 0x00,
+                0x8b, 0x14, 0x25, offset, 0x10, 0x60, 0x00,
+                0x01, 0xd0, 0xc3,
+            ],
+        )
+        .unwrap();
+        let (out, err, code) = common::run_kuna(&[
+            "decompile",
+            path.to_str().unwrap(),
+            "--addr",
+            "0x400000",
+            "--raw-image",
+            "--base",
+            "0x400000",
+            "--target",
+            "x86:LE:64:default:gcc",
+            "--assert-strict",
+            "--assert",
+            "function 0x400000=f",
+            "--assert",
+            "typedef struct S { int a; int b; };",
+            "--assert",
+            "typedef typedef volatile struct S VolS;",
+            "--assert",
+            &format!("data 0x601000 {declaration}"),
+        ]);
+        assert_eq!(code, 0, "{declaration}: {err}");
+        assert_eq!(out.matches(access).count(), 2, "{declaration}:\n{out}");
+    }
+}

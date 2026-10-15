@@ -15,6 +15,19 @@ use super::{
 #[test]
 fn mapped_object_volatile_qualifiers_follow_declarator_binding() {
     let f = factory();
+    for declaration in [
+        "typedef volatile int4 VolWord;",
+        "typedef VolWord VolAlias;",
+        "typedef int4 PlainWord;",
+        "typedef int4 WordArray[2];",
+        "typedef VolWord VolWords[2];",
+        "typedef int4 *volatile VolPointer;",
+        "typedef volatile int4 *VolPointee;",
+        "typedef VolPointer PointerArray[2];",
+        "typedef VolPointee PointeeArray[2];",
+    ] {
+        super::parse_c(declaration, &f, org(), &[], |_, _| Ok(())).unwrap();
+    }
     for (source, expected) in [
         ("volatile int4 word", true),
         ("int4 volatile word", true),
@@ -26,6 +39,25 @@ fn mapped_object_volatile_qualifiers_follow_declarator_binding() {
         ("int4 (*volatile pointer)[2]", true),
         ("volatile int4 (*pointer)[2]", false),
         ("int4 word", false),
+        ("PlainWord word", false),
+        ("VolWord word", true),
+        ("VolAlias word", true),
+        ("VolWord words[2][3]", true),
+        ("WordArray words", false),
+        ("volatile WordArray words", true),
+        ("VolWords words", true),
+        ("VolWords words[3]", true),
+        ("VolWord *pointer", false),
+        ("VolWords *pointer", false),
+        ("VolWords *volatile pointer", true),
+        ("VolPointer pointer", true),
+        ("VolPointer pointers[2]", true),
+        ("VolPointer *pointer", false),
+        ("VolPointee pointer", false),
+        ("VolPointee pointers[2]", false),
+        ("volatile VolPointee pointer", true),
+        ("PointerArray pointers", true),
+        ("PointeeArray pointers", false),
     ] {
         let (_, _, volatile) = super::parse_type_with_volatile(source, &f, org()).unwrap();
         assert_eq!(volatile, expected, "{source}");
