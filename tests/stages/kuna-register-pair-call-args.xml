@@ -1,0 +1,190 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!-- Independent register-pair argument regression: a declared wide return is overwritten before an undeclared call. -->
+<bytechunk space="ram" offset="0x1100" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1100" name="producer"/>
+<bytechunk space="ram" offset="0x1200" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1200" name="sink"/>
+<bytechunk space="ram" offset="0x2000" readonly="true">9de3bf0090100018921000197ffffc3d01000000d03fbff8a407bf3092102000941020a8901000127ffffc7601000000f03fbff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2000" name="both"/>
+<bytechunk space="ram" offset="0x2100" readonly="true">9de3bf0090100018921000197ffffbfd01000000d03fbff8a407bf3092102007941020a8901000127ffffc3601000000f03fbff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2100" name="nonzero"/>
+<bytechunk space="ram" offset="0x2200" readonly="true">9de3bf0090100018921000197ffffbbd01000000d03fbff8a407bf3090100012941020a8921020007ffffbf601000000f03fbff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2200" name="reversed"/>
+<bytechunk space="ram" offset="0x2300" readonly="true">9de3bf0090100018921000197ffffb7d01000000d03fbff8a407bf3001000000941020a8901000127ffffbb692102000f03fbff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2300" name="delay"/>
+<bytechunk space="ram" offset="0x2400" readonly="true">9de3bf0090100018921000197ffffb3d01000000d03fbff8a407bf3001000000941020a8901000127ffffb7601000000f03fbff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2400" name="high_only"/>
+<bytechunk space="ram" offset="0x2500" readonly="true">9de3bf0090100018921000197ffffafd01000000d03fbff8a407bf3092102000941020a8010000007ffffb3601000000f03fbff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2500" name="low_only"/>
+<bytechunk space="ram" offset="0x2600" readonly="true">9de3bf0090100018921000197ffffabd01000000d03fbff8a407bf3001000000941020a8010000007ffffaf601000000f03fbff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2600" name="unchanged_pair"/>
+<bytechunk space="ram" offset="0x2800" readonly="true">9de3bf0090100018921000197ffffa3d01000000d03fbff8a407bf300100000001000000901020017ffffaf601000000f03fbff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2800" name="one_argument"/>
+<bytechunk space="ram" offset="0x1400" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1400" name="unknown_one"/>
+<bytechunk space="ram" offset="0x2900" readonly="true">9de3bf0090100018921000197ffff9fd01000000d03fbff8a407bf300100000001000000901020017ffffa5601000000f03fbff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2900" name="one_variadic"/>
+<bytechunk space="ram" offset="0x2a00" readonly="true">9de3bf0090100018921000197ffff9bd01000000d03fbff8a407bf3001000000941020a8010000007ffffa3601000000f03fbff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2a00" name="declared_wide"/>
+<bytechunk space="ram" offset="0x2b00" readonly="true">9de3bf0090102005921020077ffffa1d01000000d03fbff8010000000100000001000000010000000100000001000000f03fbff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2b00" name="unknown_wide_output"/>
+<bytechunk space="ram" offset="0x1280" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1280" name="variadic"/>
+<bytechunk space="ram" offset="0x1300" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1300" name="wide_sink"/>
+<bytechunk space="ram" offset="0x1380" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1380" name="unknown_producer"/>
+<bytechunk space="ram" offset="0x2c00" readonly="true">9de3bf0090100018921000197ffff93d01000000d03fbff8f027bff0c107bff085a01a20c527bff0d207bff09007bf30941020a87ffff97301000000f01fbff881c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2c00" name="convert_argument"/>
+<bytechunk space="ram" offset="0x2d00" readonly="true">9de3bf0090100018921000197ffff8fd01000000d03fbff8f037bff0d217bff080a260001280000301000000921023e89007bf30941020a87ffff93201000000f01fbff881c7e00881e8000000000000</bytechunk>
+<symbol space="ram" offset="0x2d00" name="interval_argument"/>
+<bytechunk space="ram" offset="0x2e00" readonly="true">9de3bf00901020017ffff97e0100000081c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2e00" name="single_without_wide"/>
+<bytechunk space="ram" offset="0x4000" readonly="true">9de3bf90b2102001901000187ffff57d92100019c13fbff07ffff5bad01fbff0c13fbff8f41fbff8901000189210001a7ffff5f49410001b81c7e00891e80019</bytechunk>
+<symbol space="ram" offset="0x4000" name="math_wrapper"/>
+<bytechunk space="ram" offset="0x1600" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1600" name="number"/>
+<bytechunk space="ram" offset="0x1700" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1700" name="numeric"/>
+<bytechunk space="ram" offset="0x1800" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1800" name="push"/>
+<bytechunk space="ram" offset="0x1480" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1480" name="pair_take"/>
+<bytechunk space="ram" offset="0x2f00" readonly="true">9de3bf98d01e00007ffff95e01000000901020037ffff93b0100000081c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x2f00" name="pair_then_single"/>
+</binaryimage>
+<script>
+<com>parse line extern uint8 producer(uint4 a,uint4 b);</com>
+<com>parse line extern uint4 both(uint4 a,uint4 b);</com>
+<com>parse line extern uint4 nonzero(uint4 a,uint4 b);</com>
+<com>parse line extern uint4 reversed(uint4 a,uint4 b);</com>
+<com>parse line extern uint4 delay(uint4 a,uint4 b);</com>
+<com>parse line extern uint4 high_only(uint4 a,uint4 b);</com>
+<com>parse line extern uint4 low_only(uint4 a,uint4 b);</com>
+<com>parse line extern uint4 unchanged_pair(uint4 a,uint4 b);</com>
+<com>option multiregargs off</com>
+<com>load function both</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function nonzero</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option multiregargs on</com>
+<com>load function both</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function nonzero</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function reversed</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function delay</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function high_only</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function low_only</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function unchanged_pair</com>
+<com>decompile</com>
+<com>print C</com>
+<com>parse line extern void single_without_wide(void);</com>
+<com>load function single_without_wide</com>
+<com>decompile</com>
+<com>print C</com>
+<com>parse line extern void variadic(int4 first,...);</com>
+<com>parse line extern void wide_sink(uint8 value,uint4 size);</com>
+<com>parse line extern uint4 one_argument(uint4 a,uint4 b);</com>
+<com>load function one_argument</com>
+<com>decompile</com>
+<com>print C</com>
+<com>parse line extern uint4 one_variadic(uint4 a,uint4 b);</com>
+<com>load function one_variadic</com>
+<com>decompile</com>
+<com>print C</com>
+<com>parse line extern uint4 declared_wide(uint4 a,uint4 b);</com>
+<com>load function declared_wide</com>
+<com>decompile</com>
+<com>print C</com>
+<com>parse line extern uint4 unknown_wide_output(uint4 a,uint4 b);</com>
+<com>load function unknown_wide_output</com>
+<com>decompile</com>
+<com>print C</com>
+<com>parse line extern uint4 convert_argument(uint4 a,uint4 b);</com>
+<com>load function convert_argument</com>
+<com>decompile</com>
+<com>print C</com>
+<com>parse line extern uint4 interval_argument(uint4 a,uint4 b);</com>
+<com>load function interval_argument</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option calloverlap full</com>
+<com>load function both</com>
+<com>decompile</com>
+<com>print C</com>
+<com>parse line extern void sink(void *dest,int value,uint4 size);</com>
+<com>decompile</com>
+<com>print C</com>
+<com>parse line extern float8 number(void *context,int4 index);</com>
+<com>parse line extern float8 numeric(float8 value);</com>
+<com>parse line extern void push(void *context,float8 value);</com>
+<com>option multiregargs off</com>
+<com>load function math_wrapper</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option multiregargs on</com>
+<com>option calloverlap off</com>
+<com>load function math_wrapper</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option calloverlap in</com>
+<com>load function math_wrapper</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option calloverlap full</com>
+<com>load function math_wrapper</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option calloverlap off</com>
+<com>option multiregargs off</com>
+<com>load function pair_then_single</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option multiregargs on</com>
+<com>load function pair_then_single</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option calloverlap full</com>
+<com>load function pair_then_single</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="zero input survives all write orders" min="5" max="5">sink\(v[0-9]+,0,0xa8\);</stringmatch>
+<stringmatch name="nonzero overwrite survives" min="1" max="1">sink\(v[0-9]+,7,0xa8\);</stringmatch>
+<stringmatch name="untouched low return half remains an input" min="1" max="1">sink\(v[0-9]+,\(int4\)v[0-9]+,0xa8\);</stringmatch>
+<stringmatch name="untouched high return half remains an input" min="1" max="1">sink\(\(int4\)\(producer\(a,b\) &gt;&gt; 0x20\),0,0xa8\);</stringmatch>
+<stringmatch name="untouched complete pair remains an input" min="1" max="1">sink\(\(int4\)\(v[0-9]+ &gt;&gt; 0x20\),\(int4\)v[0-9]+,0xa8\);</stringmatch>
+<stringmatch name="unknown single-slot call does not acquire a stale argument" min="0" max="0">unknown_one\([^)]*v[0-9]+</stringmatch>
+<stringmatch name="stale high slot does not invent a variadic argument" min="1" max="1">variadic\(1\);</stringmatch>
+<stringmatch name="declared wide input keeps its complete value" min="1" max="1">wide_sink\(producer\(a,b\),0xa8\);</stringmatch>
+<stringmatch name="coalesced unknown output retains input constants" min="1" max="1">unknown_producer\(5,7\);</stringmatch>
+<stringmatch name="converted floating argument survives the wide range" min="1" max="1">v[0-9]+ = \(int4\).*\.to;</stringmatch>
+<stringmatch name="saved narrow interval keeps its zero fallback" min="1" max="1">v[0-9]+ = 1000;</stringmatch>
+<stringmatch name="saved narrow interval is passed to the call" min="1" max="1">sink\(v[0-9]+,\(uint2\)v[0-9]+,0xa8\);</stringmatch>
+<stringmatch name="two disabled calls and the converted call use variable-valued arguments" min="3" max="3">sink\(v[0-9]+,v[0-9]+,0xa8\);</stringmatch>
+<stringmatch name="single argument without a wide return remains visible" min="1" max="1">unknown_one\(1\);</stringmatch>
+<stringmatch name="disabled entry partition retains legacy missing input" min="1" max="1">math_wrapper\(void\)</stringmatch>
+<stringmatch name="unlocked entry input survives every overlap level" min="3" max="3">math_wrapper\(void \*a0\)</stringmatch>
+<stringmatch name="entry value reaches the number call at every overlap level" min="3" max="3">number\(a0,1\)</stringmatch>
+<stringmatch name="entry value reaches the push call at every overlap level" min="3" max="3">push\(a0,numeric\(</stringmatch>
+<stringmatch name="disabled calls retain the old high return half" min="2" max="2">v[0-9]+ = \(unsigned int\)\(v[0-9]+ &gt;&gt; 0x20\);</stringmatch>
+<stringmatch name="disabled calls retain the old low return half" min="2" max="2">v[0-9]+ = \(unsigned int\)v[0-9]+;</stringmatch>
+<stringmatch name="disabled pair partition drops the loaded pair at the first call" min="1" max="1">pair_take\(\);</stringmatch>
+<stringmatch name="a stale pair half does not hide the next call's single argument" min="2" max="2">unknown_one\(3\);</stringmatch>
+<stringmatch name="the loaded pair reaches the first call as two slots" min="2" max="2">pair_take\(\(int4\)\(\(uint8\)\*a0 &gt;&gt; 0x20\),\(int4\)\*a0\);</stringmatch>
+</decompilertest>

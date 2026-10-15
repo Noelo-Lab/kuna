@@ -467,6 +467,39 @@ the range is never partitioned by refinement (whose gate is `size > 4 && maxw <
 size`) and the 8-byte parameter and return entries inside it are invisible.
 Under `option calloverlap` two dedicated guards recover them.
 
+With `option multiregargs on` (the default), a physical register range
+completely covered by two or more general ABI input slots receives separate
+call trials before dead-code elimination, at every `calloverlap` level
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_multiregargs.rs
+(input_partition)`). A wide return can coalesce these slots even after the
+caller overwrites each component. The trials keep those current component
+values live; ordinary trial scoring still decides whether they are used.
+
+The same option keeps an unlocked function's entry inputs in independently
+recoverable ABI slots when their whole range cannot be a single input
+parameter. The whole entry value is a PIECE of those slot inputs, so a later
+wide read cannot hide the function's real arguments. Declared inputs and legal
+wide ABI parameters retain their representation. Existing unprotected illegal
+wide inputs are replaced in place by slot concatenations; complete holes in
+partially input ranges are filled directly with those slots. Partially locked
+parameters and protected input storage decline the rewrite. Existing write-masked
+wide tiles also retain their representation. In-place conversion is a backstop
+for input creation outside renaming or before a model was resolved. Non-general entries,
+overlapping or joined entries, gaps, partial coverage, protected input
+storage, and memory or stack ranges decline this partition. Complete
+partitions are bounded to eight slots and 64 bytes. With `multiregargs off`,
+both changes are disabled and the existing `calloverlap` behavior applies.
+
+The slot trials of one call all truncate the same PIECE of the range, so
+upstream `onlyOpUse` would see a value written into one slot reach the call
+again through a sibling slot and reject the trial as a double use. That drops
+a single argument the caller just wrote whenever the other half of the range
+still holds a stale or clobbered pair half, as in `ldd [p],%o0; call f;
+mov 3,%o0; call g`. Under `multiregargs`, the walk skips a SUBPIECE whose kept
+bytes lie wholly outside the PIECE input it reached the PIECE through
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_multiregargs.rs
+(subpiece_drops_reached_piece)`); that SUBPIECE cannot carry the value.
+
 On the input side (`heritage.rs (Heritage::guard_call_overlapping_input)`), the
 biggest input entry contained in the range is located, its address translated
 from the callee's to the caller's perspective, and a SUBPIECE inserted before
