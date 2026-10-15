@@ -2777,24 +2777,49 @@ return-address effects. This is unconditional registration behavior, not a
 separate feature gate; `funcdata_varnode.rs (apply_input_effect_marking)` uses
 the canonical `fspec.rs (effect_type)` values rather than maintaining copies.
 
-The varnode bank's two sorted trees are the container the decompiler touches most
-— a large function creates and destroys well over a million Varnodes, each one
-inserted into and removed from both — so their keys
-(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (LocKey, DefKey)`) do not
-store an `Address` or a `SeqNum` directly. They store the ordering triple those
-compare by, flattened into plain integers: the sentinel rank, the space index and
-the offset (`decompiler/crates/kuna-base/src/address.rs (Address::sort_key)`).
-Lexicographic comparison of the triple reproduces `Address::cmp` exactly — two
-Addresses sharing a space pointer share a rank and an index and fall through to
-the offset, which is what the pointer-equality fast path does — so the tree order
-is the C++ comparator's order, while the key itself becomes `Copy`: no reference
-counting on clone or drop, no pointer chase into an `AddrSpace` to compare, and a
-smaller node. Insertion also takes a single descent
-(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (VarnodeBank::xref)`):
-the "is an equivalent varnode already present" lookup and the insertion that
-follows it are the same search, because the `insert` flag set afterwards is
-outside the `(input|written)` mask the key is built from and so cannot move the
-entry.
+The varnode bank maintains a location tree for all Varnodes and a definition
+tree for inputs and written Varnodes. Free Varnodes have identical relative
+order in both indexes: address, size, then creation index. Definition iteration
+therefore appends a filtered location-tree view for the free class instead of
+inserting and erasing a duplicate definition entry. Free definition bounds are
+translated to location bounds with the same inclusion or exclusion; ranges
+ending in the input or written class never traverse that view
+(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (iter_free_def)`).
+Creation inserts a free node only in the location tree. Becoming input or written
+adds its definition entry; becoming free removes that entry and rekeys its
+location entry. Destroying a free node removes only its location entry. Both
+logical orders retain the same ids and comparator semantics. Immediate teardown
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs (destroy_varnode)`)
+clears the definition and class flags without reinserting a temporary free entry.
+High-variable and descendant cleanup read nodes by id, then destruction erases
+the retained indexed snapshot; no location or definition query runs in between
+(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (make_free_for_destroy)`).
+
+The keys (`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (LocKey, DefKey)`)
+store integer ordering fields rather than `Address` or `SeqNum` objects. Sentinel
+rank and signed space index share a packed prefix, followed by the offset;
+flipping the index's sign bit preserves signed order within each rank. The
+input/written/free wrap ordering is computed once when a key is constructed,
+including the combined input-and-written mask. Location keys also pack signed
+size, sign-biased, and the preordered class into a single unsigned prefix.
+One comparison therefore retains the original size-then-class ordering,
+including negative sizes and extreme range bounds. Converting a location key
+to a definition key restores the signed size and class without consulting the
+live Varnode.
+Storage address and size are immutable within a Varnode. Changing its input,
+written, or free class therefore reuses those fields from the old snapshot and
+replaces only the class and sequence payload, avoiding another address-space
+lookup (`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (LocKey::with_class)`).
+Creation constructs the key directly from the allocation's address, size,
+creation index, and optional definition; its free or written class is already
+known. A newly allocated node does not need a separate general key reconstruction.
+Written keys retain SeqNum's uniq-only equality check before comparing PC and
+time; free keys use the same uniq slot for their creation index. Each Varnode
+caches one location snapshot, from which definition keys are copied, so removals
+use the indexed state even if other Varnode flags have changed. Insertion takes
+a single location-tree descent (`decompiler/crates/kuna-decomp/src/substrate/varnode.rs
+(VarnodeBank::xref)`): the equivalent-node lookup and insertion share one search,
+and the subsequent `insert` flag is outside the key's input/written mask.
 
 Read-only block queries walk the stored Varnode descendants without copying
 them. Common-subexpression lookup returns the first eligible equal op in that
