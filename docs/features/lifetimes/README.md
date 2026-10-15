@@ -72,6 +72,32 @@ The JSON exposes `object_401017_1` and `object_40102c_1`, both at stack offset -
 
 The authored native code and the actual generated C return 67 under GCC and Clang at both `-O0` and `-O2`.
 
+## Reproducing detached member emission
+
+This neutral tree fixture keeps one frame range live through both node-pointer and pointer-slot accesses. Run from the repository root with a built `kuna` executable on `PATH` and matching x86 specs in `specs/`:
+
+```sh
+fixture=decompiler/crates/kuna-analysis/tests/fixtures/tree_range_members.c
+image=/tmp/kuna-member-tree-range.elf
+gcc -O2 -no-pie -fno-stack-protector -fcf-protection=none "$fixture" -o "$image"
+tree_range_addr=$(nm -n "$image" | awk '$3 == "tree_range" { print $1 }')
+consume_range_addr=$(nm -n "$image" | awk '$3 == "consume_range" { print $1 }')
+tree_range_addr=$(printf '%x' "0x$tree_range_addr")
+consume_range_addr=$(printf '%x' "0x$consume_range_addr")
+kuna decompile "$image" tree_range \
+  --target x86:LE:64:default:windows --mode reliable --json --assert-strict \
+  --option structdefs on --option stackviews on --option stackalias off \
+  --sleighpath specs \
+  --assert 'typedef struct Node { struct Node *left; struct Node *parent; struct Node *right; unsigned char color; bool sentinel; unsigned char padding[2]; int key; int tag; };' \
+  --assert 'typedef struct Tree { Node *head; unsigned long long size; };' \
+  --assert 'typedef struct Range { Node *first; Node *last; };' \
+  --assert "prototype 0x${tree_range_addr} void tree_range(Tree *tree,int key,int tag)" \
+  --assert "prototype 0x${consume_range_addr} void consume_range(Tree *tree,const Range *range)" \
+  | jq -r '.functions[0].code | split("\n")[] | select(test("->sentinel|&v5->left"))'
+```
+
+Without the member-base cast, this printed member expressions such as `v1 = v3->sentinel;` while `v3` is declared `uint8`, and `&v5->left` while `v5` is `Node **`. GCC reports `invalid type argument of '->'`; Clang reports that the member-reference base is not a pointer or a structure. The emitter now prints `v1 = ((Node *)v3)->sentinel;` and `&((Node *)v5)->left`. The focused integration test compiles and executes the generated C with GCC and Clang at `-O0` and `-O2`, with stack views enabled and disabled.
+
 ## Conservative callee memory proofs
 
 A declared `const` pointer is not evidence that the callee neither writes nor
@@ -84,6 +110,60 @@ Literal global addresses proved disjoint from that home remain a positive contro
 The focused regressions live in `saved_xmm_msabi.rs`,
 `kuna_calleehomes/tests.rs` and `kuna_calleememory.rs`. The native saved-XMM test
 compares original assembly with generated C using GCC and Clang at O0 and O2.
+
+## Reproducing disjoint private spills
+
+This neutral x86-64 Linux input uses a Win64 helper. The assembly saves XMM6–XMM9
+in the caller's frame, then passes a separate 16-byte rectangle to a helper
+whose four writes do not overlap those saves. The checked-in source files are
+[`savedxmm_msabi.S`](../../../decompiler/crates/kuna-analysis/tests/fixtures/savedxmm_msabi.S)
+and [`savedxmm_msabi.c`](../../../decompiler/crates/kuna-analysis/tests/fixtures/savedxmm_msabi.c).
+With Clang and matching x86-64 specs, build and decompile it with:
+
+```sh
+cargo build --manifest-path decompiler/Cargo.toml -p kuna-cli
+kuna_bin=decompiler/target/debug/kuna
+image=/tmp/savedxmm-clang-o0
+clang -std=c11 -O0 -no-pie \
+  -Wl,--section-start=.saved_xmm_rect=0x700000 \
+  decompiler/crates/kuna-analysis/tests/fixtures/savedxmm_msabi.S \
+  decompiler/crates/kuna-analysis/tests/fixtures/savedxmm_msabi.c \
+  -o "$image"
+"$image"
+symbol() { nm -n "$image" | awk -v wanted="$1" '$3 == wanted { print "0x" $1; exit }'; }
+target_addr=$(symbol fixture_spills_rect)
+copy_addr=$(symbol fixture_copy_rect)
+rect_addr=$(symbol rect_source)
+"$kuna_bin" decompile "$image" fixture_spills_rect \
+  --target x86:LE:64:default:windows --mode reliable --json --assert-strict \
+  --option stackviews on --option structdefs on --sleighpath specs \
+  --assert 'typedef struct Rect { float x; float y; float width; float height; };' \
+  --assert "prototype $target_addr float fixture_spills_rect(void)" \
+  --assert "prototype $copy_addr void fixture_copy_rect(Rect *destination,const Rect *source)" \
+  --assert "data $rect_addr Rect rect_source"
+```
+
+On the alias-only baseline, the emitted function contains sixteen referenced
+`unsigned int` locals for the save lanes, including:
+
+```c
+unsigned int v18; // stack - 0x48 | xmm6_da
+unsigned int v19; // stack - 0x44 | xmm6_db
+/* ... */
+unsigned int v32; // stack - 0x10 | xmm9_dc
+unsigned int v33; // stack - 0xc | xmm9_dd
+```
+
+With the private-spill proof, those locals and their copy assignments disappear
+from emitted code; the caller-owned rectangle remains:
+
+```c
+Rect v1 [2]; // stack - 0x68 | xmm0_da
+fixture_copy_rect(v1,&rect_source);
+return v1[0].x + v1[0].y;
+```
+
+The native fixture checks all sixteen seeded XMM values and the 3.75 result.
 
 ## Performance scope
 

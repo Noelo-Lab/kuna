@@ -635,7 +635,14 @@ A hang-guard caps the rounds at `2*n^2 + 64` (`region_structurer.rs
 (round_cap)`) so a mis-port fails cleanly instead of spinning; the cap, a
 stuck knot, or a schema error all make `structure()` report non-convergence,
 upon which `ActionBlockStructure` re-seeds and falls back to
-`CollapseStructure` (§8.1) — the structurer never aborts the run.
+`CollapseStructure` (§8.1).
+
+The condition-folding and schema loops also check the current function's time
+and memory budget before each round. Exhaustion stops the attempt, and
+`ActionBlockStructure` returns without re-seeding or invoking the fallback
+structurer. The drive then reports the usual per-function budget error instead
+of printing the unfinished graph; later functions in a batch still run. With no
+budget, these checks do not change the folding order or output.
 
 A doomed attempt is also cut short. Every schema except the switch-loop
 absorb merges components along edges, and no step adds an edge, so a live

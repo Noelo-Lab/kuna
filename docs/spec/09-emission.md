@@ -1492,6 +1492,17 @@ the merged variable's type representative), which prints
 render before; on `main` one `tar` O0 function printed it
 (`a0->field_0x8 = PTRSUB(dat_9f6a8,0);`).
 
+With `stackviews`, a structure or union member's operation-facing pointer type
+can differ from its base variable's C declaration. A detached address snapshot
+may be an integer, or a temporary may hold both a node address and the address
+of a pointer slot. `decompiler/crates/kuna-decomp/src/p9_emit/kuna_memberbase.rs
+(needs_cast)` compares that declaration with the pointer used to select the
+field. Differing same-width integer or pointer representations receive an
+explicit pointer cast before `->`. The member offset follows the selected
+pointee; snapshot declarations and byte arithmetic keep their existing
+representations. Matching types, implied expressions, relative pointers and
+explicit `nocasts` retain their ordinary rendering.
+
 **Precedence without an AST.** Operators and leaves are not buffered into a
 tree; they stream through a reverse-polish stack. `printc.rs (PrintC::push_op)`
 pushes an operator's static token — the singleton table `printc.rs (tokens)`

@@ -210,13 +210,72 @@ fn inspected_lines(binary: &str, function: &str, asserts: &[&str], renames: &[(&
 }
 
 /// The page sends every rename on every request, each naming the local as the
-/// first decompile printed it, so a rename must not renumber another local:
-/// `check`'s `v2` stays `v2` when `v1` is renamed.
+/// first decompile printed it, so a rename must not rename another local:
+/// `check`'s `len` (named after `strlen`'s result, `libcnames`) stays `len`
+/// when `v1` is renamed, and `v1` stays `v1` when `len` is.
 #[test]
 fn a_local_rename_moves_no_other_local_number() {
     let plain = inspected_lines("crackme.elf", "check", &[], &[]);
-    assert!(plain.iter().any(|line| line.contains(" v2; // ")), "{plain:?}");
+    assert!(plain.iter().any(|line| line.contains(" len; // ")), "{plain:?}");
+    assert!(plain.iter().any(|line| line.contains(" v1; // ")), "{plain:?}");
     assert_eq!(inspected_lines("crackme.elf", "check", &["name v1 ok"], &[("ok", "v1")]), plain);
+    assert_eq!(inspected_lines("crackme.elf", "check", &["name len size"], &[("size", "len")]), plain);
+}
+
+/// The C of `check` in crackme under `asserts`, in `mode`.
+fn check_in_mode(mode: Option<&str>, asserts: &[&str]) -> String {
+    let (binary, specs) = fixture_named("crackme.elf");
+    let args = vec!["check".to_string()];
+    let asserts: Vec<String> = asserts.iter().map(|s| s.to_string()).collect();
+    let out = run_request(&Request {
+        binary: &binary,
+        spec_root: &specs,
+        cmd: "inspect",
+        args: &args,
+        mode,
+        language: None,
+        asserts: &asserts,
+    })
+    .expect("inspect check");
+    let doc: Value = serde_json::from_str(&out).expect("valid JSON");
+    assert!(
+        doc["assertions"].as_array().is_none_or(|a| a.iter().all(|o| o["status"] == "applied")),
+        "{mode:?} {asserts:?}: {}",
+        doc["assertions"]
+    );
+    doc["function"]["code"].as_str().expect("code").to_string()
+}
+
+/// `check`'s `len` keeps the number it has in Reliable, so a rename the page
+/// sent in Auto reaches the same local after a switch, whichever name it used.
+#[test]
+fn a_rename_reaches_the_same_local_after_a_mode_switch() {
+    for asserts in [["name len size"], ["name v2 size"]] {
+        for mode in [None, Some("reliable"), Some("aggressive")] {
+            let code = check_in_mode(mode, &asserts);
+            assert!(code.contains("  size = strlen(input);\n"), "{mode:?} {asserts:?}:\n{code}");
+        }
+    }
+}
+
+/// A rename to a number-shaped name is kept: `len` renamed `v7` prints `v7`,
+/// and the next rename reaches it by that name.
+#[test]
+fn a_number_shaped_rename_of_a_library_name_is_kept() {
+    let code = check_in_mode(None, &["name len v7"]);
+    assert!(code.contains("  v7 = strlen(input);\n") && !code.contains(" len;"), "{code}");
+    let code = check_in_mode(None, &["name len v7", "name v7 size"]);
+    assert!(code.contains("  size = strlen(input);\n"), "{code}");
+}
+
+/// A rename onto `len` leaves `strlen`'s local its number `v2`, and the next
+/// rename reaches it by that number.
+#[test]
+fn a_rename_onto_a_library_name_leaves_the_other_local_addressable() {
+    let code = check_in_mode(None, &["name v1 len"]);
+    assert!(code.contains("  v2 = strlen(input);\n") && code.contains("  len = 0;\n"), "{code}");
+    let code = check_in_mode(None, &["name v1 len", "name v2 size"]);
+    assert!(code.contains("  size = strlen(input);\n") && code.contains("  len = 0;\n"), "{code}");
 }
 
 /// Two renames in turn, the second naming the local the page showed as `v7`
@@ -235,13 +294,14 @@ fn two_renames_in_turn_both_survive() {
 
 /// A rename names the whole printed variable: `long.elf`'s `v2` lives in
 /// `eax` and two stack slots, and renaming it used to split off a new `v15`;
-/// renaming `v3` used to swallow `v1`.
+/// renaming `v3` used to swallow `v1`. `v3` prints as `fopen`'s `fp`
+/// (`libcnames`), and the directive reaches it by its number.
 #[test]
 fn a_rename_names_the_whole_variable() {
     let plain = inspected_lines("long.elf", "main", &[], &[]);
-    for (from, to) in [("v2", "count"), ("v3", "input")] {
+    for (from, to, printed) in [("v2", "count", "v2"), ("v3", "input", "fp")] {
         let directive = format!("name main::{from} {to}");
-        assert_eq!(inspected_lines("long.elf", "main", &[&directive], &[(to, from)]), plain, "{directive}");
+        assert_eq!(inspected_lines("long.elf", "main", &[&directive], &[(to, printed)]), plain, "{directive}");
     }
 }
 

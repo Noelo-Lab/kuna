@@ -372,10 +372,7 @@ impl GrammarLexer {
     fn new(maxbuffer: int4) -> GrammarLexer {
         GrammarLexer {
             buffersize: maxbuffer,
-            // One extra slot for the EOF "simulate a space" write, which the C++
-            // performs at buffer[bufend++] after the `bufend >= buffersize`
-            // "Line too long" guard already bounded bufend to <= buffersize.
-            buffer: vec![0u8; (maxbuffer.max(0) as usize) + 1],
+            buffer: Vec::new(),
             bufstart: 0,
             bufend: 0,
             curlineno: 0,
@@ -426,6 +423,8 @@ impl GrammarLexer {
         self.filename = filename.to_string();
         self.has_file = true;
         self.input = content;
+        // A line cannot exceed the input; keep one extra slot for the EOF space.
+        self.buffer.resize(self.input.len().min(self.buffersize.max(0) as usize) + 1, 0);
         self.input_pos = 0;
         self.endoffile = false;
     }
@@ -456,6 +455,10 @@ impl GrammarLexer {
             if lookahead == 9 || lookahead == 11 || lookahead == 12 || lookahead == 13 {
                 lookahead = b' ';
             } else if lookahead == b'\n' {
+                if matches!(self.state, LexState::Doublequote | LexState::Singlequote | LexState::Singlebackslash) {
+                    self.set_error("Incomplete token");
+                    return tok::BADTOKEN;
+                }
                 newline = true;
                 lookahead = b' ';
             } else {
@@ -614,7 +617,7 @@ impl GrammarLexer {
             self.set_error("Syntax error");
             return tok::BADTOKEN;
         }
-        if newline {
+        if newline && res == 0 {
             self.bump_line();
         }
         res
@@ -682,12 +685,13 @@ impl GrammarLexer {
             self.buffer[self.bufend as usize] = b' '; // Simulate a space
             self.bufend += 1;
             tok_kind = self.move_state(b' '); // to let the final token resolve
-            if tok_kind == 0
-                && self.state != LexState::Start
-                && self.state != LexState::EndoflineComment
-            {
-                self.set_error("Incomplete token");
-                tok_kind = tok::BADTOKEN;
+            if tok_kind == 0 {
+                if matches!(self.state, LexState::Start | LexState::EndoflineComment) {
+                    tok_kind = tok::ENDOFFILE;
+                } else {
+                    self.set_error("Incomplete token");
+                    tok_kind = tok::BADTOKEN;
+                }
             }
         }
 

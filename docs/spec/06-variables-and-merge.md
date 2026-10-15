@@ -734,6 +734,62 @@ well as the scope (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 ... sequence. Two highs that denote one object are unaffected: they share a
 name through their shared Symbol, never through a recommendation.
 
+**A library call names the locals it meets (`libcnames`, default off, on
+under `--mode aggressive`).** A prototype a built-in libc table parks carries
+the library's names for its parameters and result (chapter 01), which the
+recommendation above never sees: they are not `innames` and lock nothing. The
+library name is a second name for a numbered local, never a replacement for
+its number. `decompiler/crates/kuna-decomp/src/p6_variables/kuna_libcnames.rs
+(candidates)` reads the evidence before the naming walk, the walk numbers
+every local exactly as it does with the option off and records that numbering
+for a directive replay, and only then does `kuna_libcnames.rs (apply)` give a
+candidate still printed under its number the library's name, recording the
+pair on the function (`Funcdata::kuna_library_aliases`). So `v4` is the same
+variable whether or not the option is on, and the locals after a named one do
+not renumber. The evidence, strongest first: the value a library call returns
+(`fd = open(a0,0);`), counted only when every library result the local holds
+has the same name; a library argument the local is passed whole as, when the
+name says what the value is (`read(fd,...)` names `fd`, `write(a0,a1,n)` names
+`n`); and the same for a name that only says which side of one call a value is
+on (`dest`/`src`, `s1`/`s2`, `haystack`/`needle`, ...), which counts only when
+every such name the local receives is the same one, so a pointer that is one
+`strcmp`'s `s2` and the next one's `s1` keeps its `vN`. Within a kind the
+earliest call decides, then the lowest slot, and a name equal to a type the
+printed code can mention (`tm`, `FILE`, a DWARF typedef: anything the type
+factory knows by that name) or to a C or Rust keyword is passed over for the
+next evidence. Evidence follows a value through the implied copies and casts
+the printer folds into the statement (`x = (T)call()`, `call((T)x)`) and
+through nothing else, so a value used inside an expression (`malloc(len + 1)`)
+names nothing. The local must be one the walk numbered: not an input, a
+global, a constant or a structure piece, and not a speculative merge of
+several classes. A clash takes `_2`, `_3`, ... in the order of the evidence
+(`fd`, `fd_2` for two `open`s), and no spelling repeats a name any variable of
+the function prints, any global the program names (`GlobalQuery::has_symbol_name`,
+whether or not the function reads it), the scope holds, a callee or the
+function itself has.
+
+A directive reaches such a local by either name.
+`decompiler/crates/kuna-console/src/kuna_hightarget.rs (library_number)`
+reads a library name as the number it stands for, and the printed-local lookup
+answers a number for the local printed under its library name, so a replay
+record and the stable numbering above only ever see numbers, and a directive
+the web page recorded in one mode reaches the same local after a switch to
+another: `name fd src` and `name v1 src` both rename the descriptor, with the
+option on or off (off, the library names are still decided, for this lookup
+only, whenever a directive may name a local). The one exception is a library
+name an earlier directive of the batch gave to another local: that rename took
+the name, so it names that local. A name a rename gave or a name-locked
+Symbol holds is the caller's or the binary's even when it is shaped like a
+number, and no library name is printed over it (`name fd v9` prints `v9`).
+Under a carried naming record (`PriorNames::aliases`, by the number the
+local's instances had) a local keeps the spelling it printed, also when a
+rename took its number; a
+spelling a rename took or vacated (`PriorNames::vacated_names`), or that
+another local printed, goes to no one else, and a local whose spelling a
+rename took prints its number. After `name fd src` the second descriptor is
+still `fd_2` and no local becomes `fd`; after `name v5 n`, read's result prints
+`v3` and `name v3 got` reaches it.
+
 **A default name skips one a caller locked.** The `vN` allocator (and the
 `<prefix>Var<N>` arm under Ghidra names) used to hand out `v<base++>` without
 looking at the scope, so after `name v3 v1` the untouched local that came first
@@ -917,7 +973,10 @@ replay printed by the declaration the printer emitted for it
 (`p9_emit/printc.rs (declared_locals)`): the declaration of the HighVariable
 the replay gave the directive to (`kuna_stablenames.rs (directive_targets)`),
 else one the naming pass gave the expected name and no other directive took; a
-parameter is read from the signature. A local declared under a suffixed name
+parameter is read from the signature. A replay records a local printed under
+its library name (`libcnames`, above) by its number, so a declaration under
+that library name counts for the number as well: `type fd unsigned int` and
+`type v1 unsigned int` both find `unsigned int fd;`. A local declared under a suffixed name
 (`score_1`, because the program already has a function `score`) took the
 directive: it reports `applied`, with a note saying what it was printed as. A
 local not declared at all, or declared with another type than the directive

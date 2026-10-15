@@ -11,23 +11,22 @@
 //! `Varnode`s in a `Funcdata`-owned slotmap arena keyed by [`VarnodeId`]; here
 //! [`VarnodeBank`] owns that arena directly (the bank *is* the varnode store).
 //! `def` becomes `Option<OpId>`, `descend` a [`SmallVec`] of [`OpId`] with the
-//! exact C++ `push_back`/erase-by-value order, and the cached `set::iterator`s
-//! become **stored keys** ([`LocKey`]/[`DefKey`]) so the xref operations
-//! (`xref`/`makeFree`/`setInput`/`setDef`/`destroy`) do the same precise
-//! `erase(iter)` + reinsert the C++ does.
+//! exact C++ `push_back`/erase-by-value order. Each node caches one [`LocKey`]
+//! snapshot; the definition index derives its [`DefKey`] from that snapshot.
 //!
 //! ## ADR 0002 (ordered containers) realization
 //!
-//! `loc_tree`/`def_tree` are `BTreeMap<LocKey,VarnodeId>` /
-//! `BTreeMap<DefKey,VarnodeId>`.  [`LocKey::cmp`]/[`DefKey::cmp`] transcribe
-//! `VarnodeCompareLocDef`/`VarnodeCompareDefLoc` (`varnode.cc:34-79`)
-//! field-by-field, **including** the `(f1-1) < (f2-1)` wrap that orders
-//! input < written < free and the `create_index` tie-break for frees.  The
-//! key carries everything the comparator reads — address, size, flag class,
-//! the def's `SeqNum` (written) or `create_index` (free) — so the trees never
-//! dereference an op to compare, and `beginLoc`/`endLoc`/`beginDef`/`endDef`
-//! become `BTreeMap::range` queries over *constructed bound keys* that mirror
-//! the C++ `searchvn` template assignments exactly.
+//! `loc_tree` holds all Varnodes in location order; `def_tree` holds inputs and
+//! written Varnodes in definition order. Free Varnodes have the same relative
+//! order in both indexes, so definition queries use a filtered location view
+//! for their free tail instead of maintaining duplicate entries.
+//!
+//! [`LocKey::cmp`]/[`DefKey::cmp`] preserve `VarnodeCompareLocDef`/`DefLoc`
+//! (`varnode.cc:34-79`), including input < written < free, the creation-index
+//! tie-break for frees, and SeqNum's uniq-only equality. Keys contain plain
+//! integer ordering fields, with the free creation index sharing the written
+//! sequence's uniq slot. Constructed range bounds mirror the C++ `searchvn`
+//! assignments and lower_bound/upper_bound operations.
 
 use std::collections::BTreeMap;
 use std::ops::Bound;
@@ -168,38 +167,28 @@ type DescendVec = SmallVec<[OpId; 4]>;
 // Comparator keys (ADR 0002): transcribe VarnodeCompareLocDef / DefLoc exactly
 // ---------------------------------------------------------------------------
 
-/// The ordering triple of an [`Address`] flattened into plain integers.
-///
-/// `Address::cmp` orders by `(sentinel rank, space index, offset)`; storing
-/// those three fields directly keeps the comparator identical while making the
-/// tree key `Copy` — no `Rc` traffic on clone or drop, and no pointer chase
-/// into the `AddrSpace` on a comparison.  The trees are the decompiler's
-/// hottest container (millions of inserts and removals per function).
+/// Address ordering without reference counts or address-space dereferences.
+/// Sentinel rank and signed space index share a u64 prefix; flipping the index's
+/// sign bit preserves signed order within each rank. The offset follows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct AddrKey {
-    /// Offset within the space (last in the comparison order).
     offset: u64,
-    /// `AddrSpace::get_index()`, or `0` for the two sentinels.
-    index: i32,
-    /// `0` = null / invalid, `1` = a real space, `2` = the `m_maximal` sentinel.
-    rank: u8,
+    space: u64,
 }
 
 impl AddrKey {
     #[inline]
     fn of(a: &Address) -> AddrKey {
         let (rank, index, offset) = a.sort_key();
-        AddrKey { offset, index, rank }
+        let space = ((rank as u64) << 32) | ((index as u32 ^ 0x8000_0000) as u64);
+        AddrKey { offset, space }
     }
 }
 
 impl Ord for AddrKey {
     #[inline]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.rank
-            .cmp(&other.rank)
-            .then_with(|| self.index.cmp(&other.index))
-            .then_with(|| self.offset.cmp(&other.offset))
+        self.space.cmp(&other.space).then_with(|| self.offset.cmp(&other.offset))
     }
 }
 impl PartialOrd for AddrKey {
@@ -220,7 +209,7 @@ struct SeqKey {
 impl Default for SeqKey {
     /// Matches `SeqNum::default()` (a null pc and `uniq == 0`).
     fn default() -> SeqKey {
-        SeqKey { pc: AddrKey { offset: 0, index: 0, rank: 0 }, uniq: 0 }
+        SeqKey { pc: AddrKey { offset: 0, space: 0x8000_0000 }, uniq: 0 }
     }
 }
 
@@ -231,22 +220,21 @@ impl SeqKey {
     }
 }
 
-/// Masked input/written flags, ordered as input < written < free using
-/// wrapping subtraction; the free class is zero before subtracting one.
+/// Masked input/written flags with wrapping subtraction precomputed, ordering
+/// input < written < free. `raw` restores the original masked flags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FlagClass(uint4);
 
 impl FlagClass {
-    /// The raw `flags & (input|written)` value (one of 0, input, written).
+    /// The raw `flags & (input|written)` value, including the combined mask.
     fn raw(self) -> uint4 {
-        self.0
+        self.0.wadd(1)
     }
 }
 
 impl Ord for FlagClass {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // -1 forces free varnodes to come last
-        self.0.wsub(1).cmp(&other.0.wsub(1))
+        self.0.cmp(&other.0)
     }
 }
 impl PartialOrd for FlagClass {
@@ -258,7 +246,7 @@ impl PartialOrd for FlagClass {
 /// Extract the `(input|written)` class from a flag word (C++
 /// `flags & (Varnode::input|Varnode::written)`).
 fn flag_class_of(flags: uint4) -> FlagClass {
-    FlagClass(flags & (varnode_flags::input | varnode_flags::written))
+    FlagClass((flags & (varnode_flags::input | varnode_flags::written)).wsub(1))
 }
 
 /// The seqnum step of the varnode comparators.
@@ -283,19 +271,37 @@ fn seqnum_step(a: &SeqKey, b: &SeqKey) -> std::cmp::Ordering {
 ///
 /// Captures every field the comparator reads so the `BTreeMap` orders without
 /// dereferencing an op.  For written varnodes `seqnum` holds the def's
-/// `SeqNum`; for free varnodes `create_index` provides the final tie-break.
+/// `SeqNum`; for free varnodes its uniq slot holds the creation-index tie-break.
 #[derive(Debug, Clone, Copy)]
 pub struct LocKey {
     /// Storage location (C++ `getAddr()`)
     addr: AddrKey,
-    /// Size in bytes (C++ `getSize()`)
-    size: int4,
-    /// `(input|written)` flag class (C++ `getFlags()&(input|written)`)
-    flagclass: FlagClass,
-    /// The def `SeqNum`, consulted only when `flagclass == written`
+    /// Signed size, sign-biased, followed by the preordered flag class.
+    size_class: u64,
+    /// The def sequence, or the free creation index in its uniq slot.
     seqnum: SeqKey,
-    /// Creation index, consulted only when `flagclass == 0` (free)
-    create_index: uint4,
+}
+
+impl LocKey {
+    #[inline]
+    fn new(addr: AddrKey, size: int4, flagclass: FlagClass, seqnum: SeqKey) -> Self {
+        let size_class = ((size as u32 ^ 0x8000_0000) as u64) << 32 | flagclass.0 as u64;
+        Self { addr, size_class, seqnum }
+    }
+
+    #[inline]
+    fn flag_class(&self) -> FlagClass {
+        FlagClass(self.size_class as u32)
+    }
+
+    /// Class changes preserve the immutable storage address and size.
+    fn with_class(self, flagclass: FlagClass, seqnum: SeqKey) -> Self {
+        Self {
+            addr: self.addr,
+            size_class: (self.size_class & 0xffff_ffff_0000_0000) | flagclass.0 as u64,
+            seqnum,
+        }
+    }
 }
 
 impl PartialEq for LocKey {
@@ -313,22 +319,14 @@ impl Ord for LocKey {
         if ord != Ordering::Equal {
             return ord;
         }
-        let ord = self.size.cmp(&other.size);
+        let ord = self.size_class.cmp(&other.size_class);
         if ord != Ordering::Equal {
             return ord;
         }
-        let ord = self.flagclass.cmp(&other.flagclass);
-        if ord != Ordering::Equal {
-            return ord;
-        }
-        // f1 == f2 from here on
-        if self.flagclass.raw() == varnode_flags::written {
-            let ord = seqnum_step(&self.seqnum, &other.seqnum);
-            if ord != Ordering::Equal {
-                return ord;
-            }
-        } else if self.flagclass.raw() == 0 {
-            return self.create_index.cmp(&other.create_index);
+        if self.flag_class().raw() == varnode_flags::written {
+            return seqnum_step(&self.seqnum, &other.seqnum);
+        } else if self.flag_class().raw() == 0 {
+            return self.seqnum.uniq.cmp(&other.seqnum.uniq);
         }
         Ordering::Equal
     }
@@ -349,10 +347,25 @@ pub struct DefKey {
     size: int4,
     /// `(input|written)` flag class
     flagclass: FlagClass,
-    /// The def `SeqNum`, consulted only when `flagclass == written`
+    /// The def sequence, or the free creation index in its uniq slot.
     seqnum: SeqKey,
-    /// Creation index, consulted only when `flagclass == 0` (free)
-    create_index: uint4,
+}
+
+impl From<LocKey> for DefKey {
+    fn from(k: LocKey) -> Self {
+        Self {
+            addr: k.addr,
+            size: ((k.size_class >> 32) as u32 ^ 0x8000_0000) as int4,
+            flagclass: k.flag_class(),
+            seqnum: k.seqnum,
+        }
+    }
+}
+
+impl From<DefKey> for LocKey {
+    fn from(k: DefKey) -> Self {
+        Self::new(k.addr, k.size, k.flagclass, k.seqnum)
+    }
 }
 
 impl PartialEq for DefKey {
@@ -386,7 +399,7 @@ impl Ord for DefKey {
             return ord;
         }
         if self.flagclass.raw() == 0 {
-            return self.create_index.cmp(&other.create_index);
+            return self.seqnum.uniq.cmp(&other.seqnum.uniq);
         }
         Ordering::Equal
     }
@@ -520,10 +533,8 @@ pub struct Varnode {
     /// *dataType; ... } temp` — the `dataType` field).  Set/read only by
     /// `ActionInferTypes`; `None` outside a propagation pass.
     temp_type: Option<Rc<Datatype>>,
-    /// Cached key into the loc tree (replaces the C++ `lociter`)
+    /// Shared ordering snapshot for the location and definition indexes.
     lociter: Option<LocKey>,
-    /// Cached key into the def tree (replaces the C++ `defiter`)
-    defiter: Option<DefKey>,
     /// Every op reading this varnode as input (C++ `list<PcodeOp *> descend`)
     descend: DescendVec,
     /// Addresses covered by def->use of this Varnode (STUB(W7))
@@ -561,7 +572,6 @@ impl Varnode {
             type_: dt,
             temp_type: None,
             lociter: None,
-            defiter: None,
             descend: SmallVec::new(),
             cover: None,
             consumed: u64::MAX, // ~((uintb)0)
@@ -1289,6 +1299,14 @@ impl Varnode {
         }
     }
 
+    fn set_free(&mut self) {
+        self.set_def(None);
+        self.def_seqnum = None;
+        self.clear_flags(
+            varnode_flags::insert | varnode_flags::input | varnode_flags::indirect_creation,
+        );
+    }
+
     /// Put a new operator in the descendant list and set the cover dirty flag
     /// (C++ `Varnode::addDescend`, `varnode.cc:330`).
     ///
@@ -1568,7 +1586,7 @@ pub struct VarnodeBank {
     arena: SlotMap<VarnodeId, Varnode>,
     /// Varnodes sorted by location then def (C++ `loc_tree`)
     loc_tree: BTreeMap<LocKey, VarnodeId>,
-    /// Varnodes sorted by def then location (C++ `def_tree`)
+    /// Inputs and written Varnodes sorted by def then location (C++ `def_tree`).
     def_tree: BTreeMap<DefKey, VarnodeId>,
     /// The unique space, cached at construction (C++ `uniq_space`)
     uniq_space: Rc<AddrSpace>,
@@ -1643,43 +1661,21 @@ impl VarnodeBank {
         self.arena.get_mut(id)
     }
 
-    /// Build the location-tree key for the varnode at `id`.
-    fn loc_key_of(&self, id: VarnodeId) -> LocKey {
-        let vn = &self.arena[id];
-        LocKey {
-            addr: AddrKey::of(&vn.loc),
-            size: vn.size,
-            flagclass: flag_class_of(vn.flags),
-            seqnum: vn.def_seqnum.as_ref().map(SeqKey::of).unwrap_or_default(),
-            create_index: vn.create_index,
-        }
-    }
-
-    /// Build the definition-tree key for the varnode at `id`.
-    fn def_key_of(&self, id: VarnodeId) -> DefKey {
-        let vn = &self.arena[id];
-        DefKey {
-            addr: AddrKey::of(&vn.loc),
-            size: vn.size,
-            flagclass: flag_class_of(vn.flags),
-            seqnum: vn.def_seqnum.as_ref().map(SeqKey::of).unwrap_or_default(),
-            create_index: vn.create_index,
-        }
-    }
-
-    /// Create a \e free Varnode and insert it into both trees (C++ `create`).
+    /// Create a \e free Varnode in the location tree (C++ `create`).
     pub fn create(&mut self, s: int4, m: Address, ct: Rc<Datatype>) -> VarnodeId {
+        let lk = LocKey::new(
+            AddrKey::of(&m),
+            s,
+            flag_class_of(0),
+            SeqKey { uniq: self.create_index, ..SeqKey::default() },
+        );
         let mut vn = Varnode::new(s, m, ct);
         vn.create_index = self.create_index;
         self.create_index = self.create_index.wadd(1);
         let id = self.arena.insert(vn);
         // Frees can always be inserted without duplication.
-        let lk = self.loc_key_of(id);
-        let dk = self.def_key_of(id);
         self.arena[id].lociter = Some(lk);
-        self.arena[id].defiter = Some(dk);
         self.loc_tree.insert(lk, id);
-        self.def_tree.insert(dk, id);
         id
     }
 
@@ -1702,23 +1698,28 @@ impl VarnodeBank {
             return Err(KunaError::lowlevel("Deleting integrated varnode"));
         }
         let lk = self.arena[vn].lociter.take().expect("destroy: missing lociter");
-        let dk = self.arena[vn].defiter.take().expect("destroy: missing defiter");
         self.loc_tree.remove(&lk);
-        self.def_tree.remove(&dk);
+        if lk.flag_class().raw() != 0 {
+            self.def_tree.remove(&DefKey::from(lk));
+        }
         self.arena.remove(vn);
         Ok(())
     }
 
-    /// Insert a Varnode into both sorted trees, unifying with an equivalent
-    /// existing free varnode if present (C++ `xref`, `varnode.cc:1310`).
+    /// Insert an input or written Varnode into both trees, unifying with an
+    /// equivalent existing Varnode if present (C++ `xref`, `varnode.cc:1310`).
     ///
     /// If the loc tree already contains an equivalent varnode, the existing one
     /// is kept: `replace_reads` patches every op reading `vn` onto it, `vn` is
     /// removed from the arena, and the existing id is returned.  Otherwise the
     /// varnode is freshly inserted, marked `insert`, and added to the def tree.
-    fn xref(&mut self, vn: VarnodeId, replace_reads: &mut ReplaceReads) -> KunaResult<VarnodeId> {
+    fn xref(
+        &mut self,
+        vn: VarnodeId,
+        lk: LocKey,
+        replace_reads: &mut ReplaceReads,
+    ) -> KunaResult<VarnodeId> {
         use std::collections::btree_map::Entry;
-        let lk = self.loc_key_of(vn);
         // One descent, not two: the lookup and the insertion are the same
         // search.  The `insert` flag set below is outside the (input|written)
         // mask, so it does not change the loc/def keys and the entry placed
@@ -1738,9 +1739,8 @@ impl VarnodeBank {
         }
         self.arena[vn].set_flags(varnode_flags::insert);
         self.arena[vn].lociter = Some(lk);
-        let dk = self.def_key_of(vn);
+        let dk = DefKey::from(lk);
         self.def_tree.insert(dk, vn); // new in def_tree
-        self.arena[vn].defiter = Some(dk);
         Ok(vn)
     }
 
@@ -1757,13 +1757,16 @@ impl VarnodeBank {
         if v.is_constant() {
             return Err(KunaError::lowlevel("Making input out of constant varnode"));
         }
-        // Erase the free version of the varnode from both trees.
+        // Erase the previous ordering snapshot.
         let lk = self.arena[vn].lociter.take().expect("set_input: missing lociter");
-        let dk = self.arena[vn].defiter.take().expect("set_input: missing defiter");
         self.loc_tree.remove(&lk);
-        self.def_tree.remove(&dk);
+        if lk.flag_class().raw() != 0 {
+            self.def_tree.remove(&DefKey::from(lk));
+        }
         self.arena[vn].set_input_flag(); // Set the input flag
-        self.xref(vn, replace_reads)
+        let seqnum = self.arena[vn].def_seqnum.as_ref().map(SeqKey::of).unwrap_or_default();
+        let lk = lk.with_class(flag_class_of(varnode_flags::input), seqnum);
+        self.xref(vn, lk, replace_reads)
     }
 
     /// Change a Varnode to be defined by the given op (C++ `setDef`).
@@ -1785,34 +1788,40 @@ impl VarnodeBank {
             return Err(KunaError::lowlevel("Assignment to constant"));
         }
         let lk = self.arena[vn].lociter.take().expect("set_def: missing lociter");
-        let dk = self.arena[vn].defiter.take().expect("set_def: missing defiter");
         self.loc_tree.remove(&lk);
-        self.def_tree.remove(&dk);
+        if lk.flag_class().raw() != 0 {
+            self.def_tree.remove(&DefKey::from(lk));
+        }
         self.arena[vn].set_def(Some(def.id)); // Change the varnode to be defined
+        let seqnum = SeqKey::of(&def.seqnum);
         self.arena[vn].def_seqnum = Some(def.seqnum);
-        self.xref(vn, replace_reads)
+        let lk = lk.with_class(flag_class_of(varnode_flags::written), seqnum);
+        self.xref(vn, lk, replace_reads)
     }
 
     /// Convert a Varnode to be \e free (C++ `makeFree`).
     pub fn make_free(&mut self, vn: VarnodeId) {
         let lk = self.arena[vn].lociter.take().expect("make_free: missing lociter");
-        let dk = self.arena[vn].defiter.take().expect("make_free: missing defiter");
         self.loc_tree.remove(&lk);
-        self.def_tree.remove(&dk);
+        if lk.flag_class().raw() != 0 {
+            self.def_tree.remove(&DefKey::from(lk));
+        }
 
-        self.arena[vn].set_def(None); // Clear things that make vn non-free
-        self.arena[vn].def_seqnum = None;
-        self.arena[vn].clear_flags(
-            varnode_flags::insert | varnode_flags::input | varnode_flags::indirect_creation,
-        );
+        self.arena[vn].set_free();
 
         // Re-insert as free varnode.
-        let lk = self.loc_key_of(vn);
-        let dk = self.def_key_of(vn);
+        let seqnum = SeqKey { uniq: self.arena[vn].create_index, ..SeqKey::default() };
+        let lk = lk.with_class(flag_class_of(0), seqnum);
         self.arena[vn].lociter = Some(lk);
-        self.arena[vn].defiter = Some(dk);
         self.loc_tree.insert(lk, vn);
-        self.def_tree.insert(dk, vn);
+    }
+
+    /// Clear a definition for immediate destruction, retaining the indexed key.
+    /// Teardown must not query either index before calling `destroy`.
+    pub(crate) fn make_free_for_destroy(&mut self, vn: VarnodeId) {
+        let v = &mut self.arena[vn];
+        v.lociter.as_ref().expect("make_free: missing lociter");
+        v.set_free();
     }
 
     /// Create a Varnode already in the def tree as if it were the output of the
@@ -1825,13 +1834,19 @@ impl VarnodeBank {
         def: DefOpInfo,
         replace_reads: &mut ReplaceReads,
     ) -> KunaResult<VarnodeId> {
+        let lk = LocKey::new(
+            AddrKey::of(&m),
+            s,
+            flag_class_of(varnode_flags::written),
+            SeqKey::of(&def.seqnum),
+        );
         let mut vn = Varnode::new(s, m, ct);
         vn.create_index = self.create_index;
         self.create_index = self.create_index.wadd(1);
         vn.set_def(Some(def.id));
         vn.def_seqnum = Some(def.seqnum);
         let id = self.arena.insert(vn);
-        self.xref(id, replace_reads)
+        self.xref(id, lk, replace_reads)
     }
 
     /// Create a unique Varnode as output of the given op (C++ `createDefUnique`).
@@ -1885,23 +1900,21 @@ impl VarnodeBank {
         end: &Address,
     ) -> impl Iterator<Item = VarnodeId> + '_ {
         let space_index = start.get_space().map(|s| s.get_index());
-        let begin = LocProbe::Lower(LocKey {
-            addr: AddrKey::of(start),
-            size: 0,
-            flagclass: flag_class_of(varnode_flags::input),
-            seqnum: SeqKey::of(&(SeqNum::default())),
-            create_index: 0,
-        });
+        let begin = LocProbe::Lower(LocKey::new(
+            AddrKey::of(start),
+            0,
+            flag_class_of(varnode_flags::input),
+            SeqKey::of(&(SeqNum::default())),
+        ));
         let finish = if end.get_offset() < start.get_offset() {
             LocProbe::End
         } else {
-            LocProbe::Lower(LocKey {
-                addr: AddrKey::of(end),
-                size: 0,
-                flagclass: flag_class_of(varnode_flags::input),
-                seqnum: SeqKey::of(&(SeqNum::default())),
-                create_index: 0,
-            })
+            LocProbe::Lower(LocKey::new(
+                AddrKey::of(end),
+                0,
+                flag_class_of(varnode_flags::input),
+                SeqKey::of(&(SeqNum::default())),
+            ))
         };
         self.iter_loc_probe(begin, finish).take_while(move |&id| {
             self.arena[id].get_addr().get_space().map(|s| s.get_index()) == space_index
@@ -1910,7 +1923,9 @@ impl VarnodeBank {
 
     /// Iterate all varnode ids in definition order (C++ `beginDef()`..`endDef()`).
     pub fn iter_def(&self) -> impl Iterator<Item = VarnodeId> + '_ {
-        self.def_tree.values().copied()
+        self.def_tree.values().copied().chain(
+            self.loc_tree.iter().filter_map(|(k, &id)| (k.flag_class().raw() == 0).then_some(id))
+        )
     }
 
     /// Iterate varnode ids whose location lies in `[start, end)` of the loc
@@ -1991,64 +2006,58 @@ impl VarnodeBank {
     fn begin_loc_flag(&self, s: int4, addr: &Address, fl: uint4) -> LocProbe {
         if fl == varnode_flags::input {
             // searchvn{size=s, loc=addr, flags=input} ; lower_bound
-            return LocProbe::Lower(LocKey {
-                addr: AddrKey::of(addr),
-                size: s,
-                flagclass: flag_class_of(varnode_flags::input),
-                seqnum: SeqKey::of(&(SeqNum::default())),
-                create_index: 0,
-            });
+            return LocProbe::Lower(LocKey::new(
+                AddrKey::of(addr),
+                s,
+                flag_class_of(varnode_flags::input),
+                SeqKey::of(&(SeqNum::default())),
+            ));
         }
         if fl == varnode_flags::written {
             // searchvn{size=s, loc=addr, flags=written, def=&searchop(minimal seq)} ; lower_bound
-            return LocProbe::Lower(LocKey {
-                addr: AddrKey::of(addr),
-                size: s,
-                flagclass: flag_class_of(varnode_flags::written),
-                seqnum: SeqKey::of(&(SeqNum::new_extreme(mach_extreme::m_minimal))),
-                create_index: 0,
-            });
+            return LocProbe::Lower(LocKey::new(
+                AddrKey::of(addr),
+                s,
+                flag_class_of(varnode_flags::written),
+                SeqKey::of(&(SeqNum::new_extreme(mach_extreme::m_minimal))),
+            ));
         }
         // fl == 0 (free): searchvn{size=s, loc=addr, flags=written, def=&searchop(maximal seq)} ; upper_bound
-        LocProbe::Upper(LocKey {
-            addr: AddrKey::of(addr),
-            size: s,
-            flagclass: flag_class_of(varnode_flags::written),
-            seqnum: SeqKey::of(&(SeqNum::new_extreme(mach_extreme::m_maximal))),
-            create_index: 0,
-        })
+        LocProbe::Upper(LocKey::new(
+            AddrKey::of(addr),
+            s,
+            flag_class_of(varnode_flags::written),
+            SeqKey::of(&(SeqNum::new_extreme(mach_extreme::m_maximal))),
+        ))
     }
 
     /// `endLoc(int4 s,const Address &addr,uint4 fl)` (`varnode.cc:1712`).
     fn end_loc_flag(&self, s: int4, addr: &Address, fl: uint4) -> LocProbe {
         if fl == varnode_flags::written {
             // searchvn{loc=addr, size=s, flags=written, def=&searchop(maximal seq)} ; upper_bound
-            return LocProbe::Upper(LocKey {
-                addr: AddrKey::of(addr),
-                size: s,
-                flagclass: flag_class_of(varnode_flags::written),
-                seqnum: SeqKey::of(&(SeqNum::new_extreme(mach_extreme::m_maximal))),
-                create_index: 0,
-            });
+            return LocProbe::Upper(LocKey::new(
+                AddrKey::of(addr),
+                s,
+                flag_class_of(varnode_flags::written),
+                SeqKey::of(&(SeqNum::new_extreme(mach_extreme::m_maximal))),
+            ));
         }
         if fl == varnode_flags::input {
             // searchvn{loc=addr, size=s, flags=input} ; upper_bound
-            return LocProbe::Upper(LocKey {
-                addr: AddrKey::of(addr),
-                size: s,
-                flagclass: flag_class_of(varnode_flags::input),
-                seqnum: SeqKey::of(&(SeqNum::default())),
-                create_index: 0,
-            });
+            return LocProbe::Upper(LocKey::new(
+                AddrKey::of(addr),
+                s,
+                flag_class_of(varnode_flags::input),
+                SeqKey::of(&(SeqNum::default())),
+            ));
         }
         // fl == 0 (free): searchvn{loc=addr, size=s+1, flags=input} ; lower_bound
-        LocProbe::Lower(LocKey {
-            addr: AddrKey::of(addr),
-            size: s + 1,
-            flagclass: flag_class_of(varnode_flags::input),
-            seqnum: SeqKey::of(&(SeqNum::default())),
-            create_index: 0,
-        })
+        LocProbe::Lower(LocKey::new(
+            AddrKey::of(addr),
+            s + 1,
+            flag_class_of(varnode_flags::input),
+            SeqKey::of(&(SeqNum::default())),
+        ))
     }
 
     /// `beginLoc(int4 s,const Address &addr,const Address &pc,uintm uniq)`
@@ -2057,26 +2066,24 @@ impl VarnodeBank {
         // find earliest
         let u = uniq.unwrap_or(0);
         // searchvn{size=s, loc=addr, flags=written, def=&searchop(pc,u)} ; lower_bound
-        LocProbe::Lower(LocKey {
-            addr: AddrKey::of(addr),
-            size: s,
-            flagclass: flag_class_of(varnode_flags::written),
-            seqnum: SeqKey::of(&(SeqNum::new(pc.clone(), u))),
-            create_index: 0,
-        })
+        LocProbe::Lower(LocKey::new(
+            AddrKey::of(addr),
+            s,
+            flag_class_of(varnode_flags::written),
+            SeqKey::of(&(SeqNum::new(pc.clone(), u))),
+        ))
     }
 
     /// `endLoc(int4 s,const Address &addr,const Address &pc,uintm uniq)`
     /// (`varnode.cc:1781`).
     fn end_loc_pc(&self, s: int4, addr: &Address, pc: &Address, uniq: uintm) -> LocProbe {
         // (the C++ does NOT remap ~0 here) ; upper_bound
-        LocProbe::Upper(LocKey {
-            addr: AddrKey::of(addr),
-            size: s,
-            flagclass: flag_class_of(varnode_flags::written),
-            seqnum: SeqKey::of(&(SeqNum::new(pc.clone(), uniq))),
-            create_index: 0,
-        })
+        LocProbe::Upper(LocKey::new(
+            AddrKey::of(addr),
+            s,
+            flag_class_of(varnode_flags::written),
+            SeqKey::of(&(SeqNum::new(pc.clone(), uniq))),
+        ))
     }
 
     // --- Public location range queries (the beginLoc/endLoc overloads) -----
@@ -2092,13 +2099,12 @@ impl VarnodeBank {
     /// next-space-or-Max endpoint.
     pub fn loc_space_ids(&self, space: &Rc<AddrSpace>) -> Vec<VarnodeId> {
         let begin = Address::new(Rc::clone(space), 0);
-        let lo = LocProbe::Lower(LocKey {
-            addr: AddrKey::of(&begin),
-            size: 0,
-            flagclass: flag_class_of(varnode_flags::input),
-            seqnum: SeqKey::of(&(SeqNum::default())),
-            create_index: 0,
-        });
+        let lo = LocProbe::Lower(LocKey::new(
+            AddrKey::of(&begin),
+            0,
+            flag_class_of(varnode_flags::input),
+            SeqKey::of(&(SeqNum::default())),
+        ));
         let mut out = Vec::new();
         for id in self.iter_loc_probe(lo, LocProbe::End) {
             if !Rc::ptr_eq(self.arena[id].get_space(), space) {
@@ -2117,21 +2123,19 @@ impl VarnodeBank {
         addr: &Address,
     ) -> impl Iterator<Item = VarnodeId> + '_ {
         // beginLoc: searchvn{size=s, loc=addr} ; lower_bound  (flag = input)
-        let begin = LocProbe::Lower(LocKey {
-            addr: AddrKey::of(addr),
-            size: s,
-            flagclass: flag_class_of(varnode_flags::input),
-            seqnum: SeqKey::of(&(SeqNum::default())),
-            create_index: 0,
-        });
+        let begin = LocProbe::Lower(LocKey::new(
+            AddrKey::of(addr),
+            s,
+            flag_class_of(varnode_flags::input),
+            SeqKey::of(&(SeqNum::default())),
+        ));
         // endLoc: searchvn{size=s+1, loc=addr} ; lower_bound
-        let end = LocProbe::Lower(LocKey {
-            addr: AddrKey::of(addr),
-            size: s + 1,
-            flagclass: flag_class_of(varnode_flags::input),
-            seqnum: SeqKey::of(&(SeqNum::default())),
-            create_index: 0,
-        });
+        let end = LocProbe::Lower(LocKey::new(
+            AddrKey::of(addr),
+            s + 1,
+            flag_class_of(varnode_flags::input),
+            SeqKey::of(&(SeqNum::default())),
+        ));
         self.iter_loc_probe(begin, end)
     }
 
@@ -2171,8 +2175,32 @@ impl VarnodeBank {
         &self,
         start: DefProbe,
         end: DefProbe,
-    ) -> impl Iterator<Item = VarnodeId> + '_ {
-        self.def_tree.range((start.into_start(), end.into_end())).map(|(_, &id)| id)
+    ) -> impl DoubleEndedIterator<Item = VarnodeId> + '_ {
+        let bounds = (start.into_start(), end.into_end());
+        self.def_tree.range(bounds).map(|(_, &id)| id).chain(self.iter_free_def(bounds))
+    }
+
+    /// Free nodes have identical relative order in the location and definition indexes.
+    fn iter_free_def(
+        &self,
+        (start, end): (Bound<DefKey>, Bound<DefKey>),
+    ) -> impl DoubleEndedIterator<Item = VarnodeId> + '_ {
+        let start = match start {
+            Bound::Included(k) if k.flagclass.raw() == 0 => Bound::Included(LocKey::from(k)),
+            Bound::Excluded(k) if k.flagclass.raw() == 0 => Bound::Excluded(LocKey::from(k)),
+            _ => Bound::Unbounded,
+        };
+        let end = match end {
+            Bound::Included(k) if k.flagclass.raw() == 0 => Some(Bound::Included(LocKey::from(k))),
+            Bound::Excluded(k) if k.flagclass.raw() == 0 => Some(Bound::Excluded(LocKey::from(k))),
+            Bound::Unbounded => Some(Bound::Unbounded),
+            _ => None,
+        };
+        end.into_iter().flat_map(move |end| {
+            self.loc_tree
+                .range((start, end))
+                .filter_map(|(k, &id)| (k.flag_class().raw() == 0).then_some(id))
+        })
     }
 
     /// `beginDef(uint4 fl)` (`varnode.cc:1850`).
@@ -2188,7 +2216,6 @@ impl VarnodeBank {
                 size: 0,
                 flagclass: flag_class_of(varnode_flags::written),
                 seqnum: SeqKey::of(&(SeqNum::new_extreme(mach_extreme::m_minimal))),
-                create_index: 0,
             });
         }
         // fl == 0 (free): searchvn{loc=maximal, flags=written, def=&searchop(maximal seq)} ; upper_bound
@@ -2197,7 +2224,6 @@ impl VarnodeBank {
             size: 0,
             flagclass: flag_class_of(varnode_flags::written),
             seqnum: SeqKey::of(&(SeqNum::new_extreme(mach_extreme::m_maximal))),
-            create_index: 0,
         })
     }
 
@@ -2210,7 +2236,6 @@ impl VarnodeBank {
                 size: 0,
                 flagclass: flag_class_of(varnode_flags::written),
                 seqnum: SeqKey::of(&(SeqNum::new_extreme(mach_extreme::m_minimal))),
-                create_index: 0,
             });
         }
         if fl == varnode_flags::written {
@@ -2220,7 +2245,6 @@ impl VarnodeBank {
                 size: 0,
                 flagclass: flag_class_of(varnode_flags::written),
                 seqnum: SeqKey::of(&(SeqNum::new_extreme(mach_extreme::m_maximal))),
-                create_index: 0,
             });
         }
         // fl == 0 (free): def_tree.end()
@@ -2249,7 +2273,6 @@ impl VarnodeBank {
                 size: 0,
                 flagclass: flag_class_of(varnode_flags::input),
                 seqnum: SeqKey::of(&(SeqNum::default())),
-                create_index: 0,
             }));
         }
         // fl == 0 (free): searchvn{loc=addr, flags=0(free)} ; upper_bound
@@ -2258,7 +2281,6 @@ impl VarnodeBank {
             size: 0,
             flagclass: flag_class_of(0),
             seqnum: SeqKey::of(&(SeqNum::default())),
-            create_index: 0,
         }))
     }
 
@@ -2274,7 +2296,6 @@ impl VarnodeBank {
                 size: 1000000,
                 flagclass: flag_class_of(varnode_flags::input),
                 seqnum: SeqKey::of(&(SeqNum::default())),
-                create_index: 0,
             }));
         }
         // fl == 0 (free): searchvn{loc=addr, size=1000000, flags=0(free)} ; lower_bound
@@ -2283,7 +2304,6 @@ impl VarnodeBank {
             size: 1000000,
             flagclass: flag_class_of(0),
             seqnum: SeqKey::of(&(SeqNum::default())),
-            create_index: 0,
         }))
     }
 
@@ -2521,21 +2541,98 @@ mod tests {
     }
 
     fn make_loc_key(addr: Address, size: int4, fl: uint4, seq: SeqNum, ci: uint4) -> LocKey {
-        LocKey {
-            addr: AddrKey::of(&addr),
+        LocKey::new(
+            AddrKey::of(&addr),
             size,
-            flagclass: flag_class_of(fl),
-            seqnum: SeqKey::of(&seq),
-            create_index: ci,
-        }
+            flag_class_of(fl),
+            if fl & (varnode_flags::input | varnode_flags::written) == 0 {
+                SeqKey { uniq: ci, ..SeqKey::of(&seq) }
+            } else { SeqKey::of(&seq) },
+        )
     }
     fn make_def_key(addr: Address, size: int4, fl: uint4, seq: SeqNum, ci: uint4) -> DefKey {
         DefKey {
             addr: AddrKey::of(&addr),
             size,
             flagclass: flag_class_of(fl),
-            seqnum: SeqKey::of(&seq),
-            create_index: ci,
+            seqnum: if fl & (varnode_flags::input | varnode_flags::written) == 0 {
+                SeqKey { uniq: ci, ..SeqKey::of(&seq) }
+            } else { SeqKey::of(&seq) },
+        }
+    }
+
+
+    #[test]
+    fn packed_address_order_matches_sentinels_and_signed_space_indexes() {
+        let mut addrs = vec![
+            Address::default(),
+            Address::new_extreme(mach_extreme::m_minimal),
+            Address::new_extreme(mach_extreme::m_maximal),
+        ];
+        for index in [i32::MIN, -1, 0, 1, i32::MAX] {
+            let sp = Rc::new(AddrSpace::new(
+                spacetype::IPTR_PROCESSOR,
+                "test",
+                false,
+                8,
+                1,
+                index,
+                0,
+                0,
+                0,
+            ));
+            for offset in [0, 1, u64::MAX] {
+                addrs.push(Address::new(Rc::clone(&sp), offset));
+            }
+        }
+        for a in &addrs {
+            for b in &addrs {
+                assert_eq!(AddrKey::of(a).cmp(&AddrKey::of(b)), a.cmp(b));
+            }
+        }
+        assert_eq!(SeqKey::default(), SeqKey::of(&SeqNum::default()));
+    }
+
+    #[test]
+    fn packed_size_class_preserves_signed_order_and_roundtrips() {
+        let addr = AddrKey::of(&Address::default());
+        let mut keys = Vec::new();
+        for size in [int4::MIN, -1, 0, 1, 1000000, int4::MAX] {
+            for flags in [
+                0,
+                varnode_flags::input,
+                varnode_flags::written,
+                varnode_flags::input | varnode_flags::written,
+            ] {
+                let key = LocKey::new(addr, size, flag_class_of(flags), SeqKey::default());
+                let def = DefKey::from(key);
+                assert_eq!(def.size, size);
+                assert_eq!(def.flagclass.raw(), flags);
+                assert_eq!(LocKey::from(def), key);
+                for next in [
+                    0,
+                    varnode_flags::input,
+                    varnode_flags::written,
+                    varnode_flags::input | varnode_flags::written,
+                ] {
+                    let seq = SeqKey {
+                        uniq: uint4::MAX,
+                        ..SeqKey::default()
+                    };
+                    let changed = DefKey::from(key.with_class(flag_class_of(next), seq));
+                    assert_eq!(changed.addr, addr);
+                    assert_eq!(changed.size, size);
+                    assert_eq!(changed.flagclass.raw(), next);
+                    assert_eq!(changed.seqnum, seq);
+                }
+                keys.push((size, flags, key));
+            }
+        }
+        for &(sa, fa, a) in &keys {
+            for &(sb, fb, b) in &keys {
+                let expected = sa.cmp(&sb).then_with(|| fa.wsub(1).cmp(&fb.wsub(1)));
+                assert_eq!(a.cmp(&b), expected);
+            }
         }
     }
 
@@ -2556,7 +2653,10 @@ mod tests {
             Address::new(space(&m, 3), 0x10), // register:0x10
         ];
         let sizes: [int4; 3] = [1, 4, 8];
-        let classes: [uint4; 3] = [0, varnode_flags::input, varnode_flags::written];
+        let classes: [uint4; 4] = [
+            0, varnode_flags::input, varnode_flags::written,
+            varnode_flags::input | varnode_flags::written,
+        ];
         let seqs: Vec<SeqNum> = vec![
             SeqNum::new(Address::new(space(&m, 2), 0x100), 0),
             SeqNum::new(Address::new(space(&m, 2), 0x100), 5),
@@ -2797,6 +2897,170 @@ mod tests {
         assert_eq!(all, vec![input, written]);
     }
 
+
+    #[test]
+    fn free_definition_ranges_match_full_tree() {
+        eprintln!(
+            "index layout: LocKey={} DefKey={} Varnode={} snapshot={}",
+            std::mem::size_of::<LocKey>(),
+            std::mem::size_of::<DefKey>(),
+            std::mem::size_of::<Varnode>(),
+            std::mem::size_of::<Option<LocKey>>()
+        );
+        let m = build_manager();
+        let mut bank = VarnodeBank::new(&m, 0).unwrap();
+        let mut idc = 0;
+        for i in 0..48 {
+            let addr = Address::new(space(&m, 2), (i % 6) * 16);
+            let id = bank.create(1 << (i % 4), addr, dt(1 << (i % 4)));
+            if i % 3 == 0 {
+                bank.set_input(id, &mut no_replace()).unwrap();
+            } else if i % 3 == 1 {
+                let def = def_info(&mut idc, Address::new(space(&m, 2), i * 4), i as uint4 + 1);
+                bank.set_def(id, def, &mut no_replace()).unwrap();
+            }
+        }
+        for pass in 0..3 {
+            let full: BTreeMap<DefKey, VarnodeId> = bank
+                .arena
+                .iter()
+                .map(|(id, v)| {
+                    let key = make_def_key(
+                        v.loc.clone(),
+                        v.size,
+                        v.flags,
+                        v.def_seqnum.clone().unwrap_or_default(),
+                        v.create_index,
+                    );
+                    (key, id)
+                })
+                .collect();
+            assert_eq!(
+                bank.iter_def().collect::<Vec<_>>(),
+                full.values().copied().collect::<Vec<_>>()
+            );
+            let mut probes = vec![DefProbe::Begin];
+            for class in [varnode_flags::input, varnode_flags::written, 0] {
+                for off in [0, 16, 48, 96] {
+                    let key = make_def_key(
+                        Address::new(space(&m, 2), off),
+                        4,
+                        class,
+                        SeqNum::new(Address::new(space(&m, 2), 40), 11),
+                        17,
+                    );
+                    probes.push(DefProbe::Lower(key));
+                    probes.push(DefProbe::Upper(key));
+                }
+            }
+            probes.push(DefProbe::End);
+            for start in &probes {
+                for end in &probes {
+                    let bounds = (start.clone().into_start(), end.clone().into_end());
+                    match bounds {
+                        (
+                            Bound::Included(a) | Bound::Excluded(a),
+                            Bound::Included(b) | Bound::Excluded(b),
+                        ) if a > b => continue,
+                        (Bound::Excluded(a), Bound::Excluded(b)) if a == b => continue,
+                        _ => {}
+                    }
+                    let expected: Vec<_> = full.range(bounds).map(|(_, &id)| id).collect();
+                    let actual: Vec<_> = bank.iter_def_probe(start.clone(), end.clone()).collect();
+                    assert_eq!(actual, expected, "pass={pass} bounds={bounds:?}");
+                    let reverse: Vec<_> = bank
+                        .iter_def_probe(start.clone(), end.clone())
+                        .rev()
+                        .collect();
+                    assert_eq!(reverse, expected.into_iter().rev().collect::<Vec<_>>());
+                }
+            }
+            let written: Vec<_> = bank.iter_def_flag(varnode_flags::written).take(3).collect();
+            for id in written {
+                bank.make_free(id);
+            }
+            let free = bank.iter_def_flag(0).next().unwrap();
+            bank.destroy(free).unwrap();
+            bank.create(4, Address::new(space(&m, 2), 16), dt(4));
+        }
+    }
+
+
+    #[test]
+    fn definition_view_preserves_uniq_only_seqnum_equality() {
+        let m = build_manager();
+        let mut bank = VarnodeBank::new(&m, 0).unwrap();
+        let mut idc = 0;
+        let high = bank.create(4, Address::new(space(&m, 2), 0x400), dt(4));
+        let low = bank.create(4, Address::new(space(&m, 2), 0x100), dt(4));
+        let early = def_info(&mut idc, Address::new(space(&m, 2), 0x10), 7);
+        let late = def_info(&mut idc, Address::new(space(&m, 2), 0x20), 7);
+        bank.set_def(high, early, &mut no_replace()).unwrap();
+        bank.set_def(low, late, &mut no_replace()).unwrap();
+        assert_eq!(
+            bank.iter_def_flag(varnode_flags::written)
+                .collect::<Vec<_>>(),
+            vec![low, high]
+        );
+        let duplicate = bank.create(4, Address::new(space(&m, 2), 0x400), dt(4));
+        let other_pc = def_info(&mut idc, Address::new(space(&m, 2), 0x30), 7);
+        let retained = bank
+            .set_def(duplicate, other_pc, &mut no_replace())
+            .unwrap();
+        assert_eq!(retained, high);
+        assert!(bank.get(duplicate).is_none());
+        bank.make_free(low);
+        assert_eq!(bank.iter_def().collect::<Vec<_>>(), vec![high, low]);
+    }
+
+    #[test]
+    fn definition_views_use_index_snapshots() {
+        let m = build_manager();
+        let mut bank = VarnodeBank::new(&m, 0).unwrap();
+        let mut idc = 0;
+        let older = bank.create(4, Address::new(space(&m, 2), 16), dt(4));
+        let def = def_info(&mut idc, Address::new(space(&m, 2), 8), 7);
+        bank.set_def(older, def, &mut no_replace()).unwrap();
+        let newer = bank.create(4, Address::new(space(&m, 2), 16), dt(4));
+        bank.get_mut(newer)
+            .unwrap()
+            .set_flags_pub(varnode_flags::written);
+        assert_eq!(bank.iter_def_flag(0).collect::<Vec<_>>(), vec![newer]);
+        bank.get_mut(newer)
+            .unwrap()
+            .clear_flags_pub(varnode_flags::written);
+        bank.make_free(older);
+        assert_eq!(
+            bank.iter_def_flag(0).collect::<Vec<_>>(),
+            vec![older, newer]
+        );
+        bank.destroy(older).unwrap();
+        assert_eq!(bank.iter_def_flag(0).collect::<Vec<_>>(), vec![newer]);
+        bank.clear();
+        assert!(bank.iter_def().next().is_none());
+    }
+
+    #[test]
+    fn failed_unification_stays_out_of_definition_views() {
+        let m = build_manager();
+        let mut bank = VarnodeBank::new(&m, 0).unwrap();
+        let addr = Address::new(space(&m, 2), 16);
+        let kept = bank.create(4, addr.clone(), dt(4));
+        bank.set_input(kept, &mut no_replace()).unwrap();
+        let orphan = bank.create(4, addr, dt(4));
+        assert!(bank
+            .set_input(orphan, &mut |_, _, _| Err(KunaError::lowlevel(
+                "replacement failed"
+            )))
+            .is_err());
+        assert!(bank.get(orphan).is_some());
+        assert_eq!(bank.num_varnodes(), 1);
+        assert_eq!(bank.iter_loc().collect::<Vec<_>>(), vec![kept]);
+        assert_eq!(bank.iter_def().collect::<Vec<_>>(), vec![kept]);
+        bank.clear();
+        assert_eq!(bank.num_varnodes(), 0);
+    }
+
     /// find_input / find_covering_input / find_covered_input on inputs.
     ///
     /// The def-tree finders match the C++'s `lower_bound`-then-step-back idiom,
@@ -2904,6 +3168,29 @@ mod tests {
         assert!(vn.get_def().is_none());
         let frees: Vec<VarnodeId> = bank.iter_loc_flag(4, &addr, 0).collect();
         assert_eq!(frees, vec![w]);
+    }
+
+    #[test]
+    fn immediate_destroy_removes_the_written_snapshot() {
+        let m = build_manager();
+        let mut bank = VarnodeBank::new(&m, 0).unwrap();
+        let addr = Address::new(space(&m, 2), 0x700);
+        let written = bank.create(4, addr.clone(), dt(4));
+        let free = bank.create(4, addr, dt(4));
+        let mut idc = 0;
+        let def = def_info(&mut idc, Address::new(space(&m, 2), 0x30), 1);
+        bank.set_def(written, def, &mut no_replace()).unwrap();
+        assert!(bank.destroy(written).is_err());
+        let key = bank.arena[written].lociter.unwrap();
+        bank.make_free_for_destroy(written);
+        assert!(bank.arena[written].is_free());
+        assert!(bank.arena[written].get_def().is_none());
+        assert_eq!(bank.arena[written].lociter, Some(key));
+        assert_eq!(bank.loc_tree.get(&key), Some(&written));
+        bank.destroy(written).unwrap();
+        assert_eq!(bank.iter_loc().collect::<Vec<_>>(), vec![free]);
+        assert_eq!(bank.iter_def().collect::<Vec<_>>(), vec![free]);
+        assert_eq!(bank.num_varnodes(), 1);
     }
 
     /// destroy removes a free varnode; rejects an integrated one.

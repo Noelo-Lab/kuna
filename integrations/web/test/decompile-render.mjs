@@ -183,6 +183,29 @@ assert.deepEqual([1, 2, 3, 4].map(diffLines('a\nb\nc\nd', 'a\nnote\nb\nc\nd').li
 assert.deepEqual([1, 2, 3].map(diffLines('a\nb\nc', 'a\nB\nc').lineOf), [1, 2, 3], 'a changed line moves with the kept line above it');
 assert.deepEqual([1, 2, 3].map(diffLines('t1\nt2\nf\nx', 'f\nx').lineOf), [1, 1, 1], 'lines above a removed block stay with what follows');
 assert.equal(diffLines('', 'x').lineOf, null);
+assert.deepEqual([1, 2, 3].map(diffLines('a\nb\nc', 'a').lineOf), [1, 1, 1], 'deleted trailing lines anchor to a surviving row');
+assert.deepEqual([1, 2, 3].map(diffLines('a\nb\nc', 'x').lineOf), [1, 1, 1], 'a complete replacement still has a valid anchor');
+assert.deepEqual([1, 2, 3].map(diffLines('a\nb\nc', '').lineOf), [1, 1, 1], 'an empty document retains its one empty row');
+assert.deepEqual([1, 2, 3, 4].map(diffLines('a\na\na\nb', 'a\nb\na').lineOf), [1, 2, 2, 2], 'deleted rows cannot move past the next surviving anchor');
+const lineSequences = [['a'], ['b']];
+for (let size = 2; size <= 4; size++) {
+  for (const prefix of lineSequences.filter((s) => s.length === size - 1)) {
+    for (const line of ['a', 'b']) lineSequences.push([...prefix, line]);
+  }
+}
+for (const before of lineSequences) for (const after of lineSequences) {
+  const { changed, lineOf } = diffLines(before.join('\n'), after.join('\n'));
+  const mapped = before.map((_, i) => lineOf(i + 1));
+  assert.ok(mapped.every((n, i) => n >= 1 && n <= after.length && (!i || n >= mapped[i - 1])), 'every anchor is ordered and points to an existing row');
+  const kept = after.filter((_, i) => !changed.has(i + 1));
+  let cursor = 0;
+  for (const line of before) if (line === kept[cursor]) cursor++;
+  assert.equal(cursor, kept.length, 'unchanged rows form a subsequence of the old document');
+  if (before.join('\n') === after.join('\n')) {
+    assert.equal(changed.size, 0);
+    assert.deepEqual(mapped, before.map((_, i) => i + 1));
+  }
+}
 assert.equal(addrHex(4504), '0x1198');
 assert.equal(addrHex('0X11AB'), '0x11ab');
 assert.equal(addrHex('0xffffffff81000000'), '0xffffffff81000000');
