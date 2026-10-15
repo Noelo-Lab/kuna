@@ -276,10 +276,16 @@ context from the engine-local pool
 (`decompiler/crates/kuna-sleigh/src/sleigh.rs (Sleigh::checkout_context)`).
 Checkout resets the parse state, addresses, context words, commit records, and
 root node; each child node is reset before it is allocated. The state arena and
-its allocation capacities are retained across instructions. Simultaneously
+its allocation capacities are retained across instructions. Reset empties each
+node's child list without clearing its reserved slots; resolution appends children
+in operand order as plain arena indices. The list length marks the resolved prefix,
+so links need no separate null tag. An operand not yet linked remains unresolved, including during
+instruction-local context evaluation. Simultaneously
 live main-instruction, `inst_next2`, and delay-slot resolutions hold distinct
 contexts, and a guard returns each context after successful translation or an
-error. The engine stores no instruction-result cache; ordinary translations
+error. The pool keeps each context in a box, transferring ownership through
+pointer moves while retaining its address and scratch allocations. The engine
+stores no instruction-result cache; ordinary translations
 resolve the bytes and painted context on every call.
 
 Assembly-only rendering borrows the engine's reusable mnemonic and operand
@@ -318,6 +324,40 @@ Changing an override invalidates a key when it changes the decoded context;
 equivalent database and override values still match. This certificate does not suppress any
 translation or context effects inside SLEIGH itself.
 
+Constructor matching and operand-expression evaluation retain the concrete
+walker type when available, allowing direct instruction and context reads.
+Symbol validation, context operations, assembly rendering and handle templates
+retain that type through their calls as well. Runtime walkers lend resolved
+handles to scalar template reads instead of cloning the handle and all its
+address-space references. Exports and emitted varnodes still own the spaces
+they retain. Other walker implementations can supply owned handles through the
+same interface (`decompiler/crates/kuna-sleigh/src/kuna_handleview.rs`).
+Erased walkers still use the same interfaces. Decision branches and terminal
+patterns retain their original order, and matching captures the same pattern
+leaf before any later context changes. Expression leaves evaluate directly;
+compound expressions retain left-to-right evaluation and wrapping arithmetic.
+
+Decoded compound expressions prepare an evaluation plan on their first runtime use
+(`decompiler/crates/kuna-sleigh/src/kuna_expressionplan.rs`). It folds only
+literal constant subtrees and combines operations with leaf or constant operands,
+preserving the order of all instruction, context, address and
+operand reads. Subtraction followed by an arithmetic shift and a one-bit mask
+executes as one step with the same wrapping arithmetic and masked shift count.
+Other right subtrees use bounded scratch storage; expressions requiring more
+scratch retain tree evaluation. The original tree remains the
+source for encoding, inspection and replacement-value evaluation. Mutable child
+access and operand remapping invalidate the plan. Preparation does not evaluate
+a division by zero; its failure remains conditional on runtime evaluation.
+
+Constructor-relative primitive operands also bind their token-field or literal
+definitions on first use (`decompiler/crates/kuna-sleigh/src/kuna_operandplan.rs`).
+Each read computes the original out-of-band offset and evaluates against the
+current instruction bytes. Variable offsets, missing definitions and other
+expressions retain ordinary symbol resolution and its failure order. Mutable
+specification access invalidates these engine-local bindings; independent
+symbol-table walkers use ordinary resolution. Subsequent reads access the bound
+definitions directly, entering initialization helpers only for a missing plan.
+
 **Instruction-byte window.** A parser context buffers a fixed 16 bytes of the
 instruction stream, the longest encoding any supported processor admits. Reads
 out of that window are bounded by their *starting* byte: a read that begins at or
@@ -332,6 +372,13 @@ rather than rejecting the instruction (the C++ reads whatever memory follows the
 buffer). Without this an x86-64 15-byte alignment NOP — clang's `-O2` loop
 padding — failed to decode, truncating flow at the padding and dropping the loop
 it preceded from the emitted function.
+
+Where a four-byte word fits in the buffer, common one-to-four-byte reads use a
+packed big-endian word
+(`decompiler/crates/kuna-sleigh/src/kuna_instructionbytes.rs`). Bit fields wholly
+inside that word use shifts of the packed value. Tail reads and wider or unusual
+fields retain zero padding and masked shifts. Little-endian fields up to eight
+bytes use native byte swaps; other widths retain the original bytewise behavior.
 
 **Decode-error policy** (`flow.rs (FlowInfo::handle_decode_error)`). An
 unimplemented instruction is, per the flags, treated as a NOP
