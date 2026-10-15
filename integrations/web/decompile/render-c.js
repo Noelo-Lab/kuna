@@ -388,8 +388,8 @@ function tokenHtml(t, ctx) {
   let callee = addrHex(t.callee_hex ?? t.callee);
   if (!callee && t.kind === 'funcname') callee = ctx.fnByName?.get(t.text)?.address_hex || null;
   let gaddr = null;
-  if (t.kind === 'variable') {
-    gaddr = ctx.globalsByName?.get(t.text) || null;
+  if (t.kind === 'variable' && !Number.isInteger(t.var) && !t.decl) {
+    gaddr = addrHex(t.global_hex ?? t.global) || ctx.globalsByName?.get(t.text) || null;
     if (!gaddr) {
       const m = /^dat_([0-9a-f]+)$/i.exec(t.text);
       if (m) gaddr = addrHex('0x' + m[1]);
