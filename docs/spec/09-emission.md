@@ -1492,6 +1492,17 @@ the merged variable's type representative), which prints
 render before; on `main` one `tar` O0 function printed it
 (`a0->field_0x8 = PTRSUB(dat_9f6a8,0);`).
 
+With `stackviews`, a structure or union member's operation-facing pointer type
+can differ from its base variable's C declaration. A detached address snapshot
+may be an integer, or a temporary may hold both a node address and the address
+of a pointer slot. `decompiler/crates/kuna-decomp/src/p9_emit/kuna_memberbase.rs
+(needs_cast)` compares that declaration with the pointer used to select the
+field. Differing same-width integer or pointer representations receive an
+explicit pointer cast before `->`. The member offset follows the selected
+pointee; snapshot declarations and byte arithmetic keep their existing
+representations. Matching types, implied expressions, relative pointers and
+explicit `nocasts` retain their ordinary rendering.
+
 **Precedence without an AST.** Operators and leaves are not buffered into a
 tree; they stream through a reverse-polish stack. `printc.rs (PrintC::push_op)`
 pushes an operator's static token — the singleton table `printc.rs (tokens)`
@@ -2302,6 +2313,29 @@ dedupvardecls off` restores the one-line-per-HighVariable behavior for the two
 option-controlled collapses; overlap-owner collapsing and collision suffixing
 remain active because unique, correctly bound C identifiers are an output
 validity invariant rather than a presentation choice.
+
+**(kuna) declorder — the order the declarations print in.** The collapses
+and the suffix allocation above walk the locals sorted by name, a plain string
+sort under which every two-digit name lands between `v1` and `v2`: a function
+with eleven numbered locals declared `v1, v10, v11, v2, ..., v9`. Once the
+final spellings are known, and only then, the option `declorder` (P9
+`naming-policy`, default `natural`) reorders the surviving declarations
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_declorder.rs (order_decls)`).
+`natural` compares two names character by character, except that where both
+have an ASCII digit run at the same position the runs compare by numeric
+value: leading zeros dropped, then the shorter run first, then digit by digit,
+so no run is too long to compare. Two names whose runs differ only in leading
+zeros fall back to plain string order, which keeps the order total and agrees
+with name equality (`kuna_declorder.rs (natural_cmp)`). The same eleven locals
+then declare `v1, v2, ..., v9, v10, v11`, the order IDA declares its numbered
+locals in. Because the reorder runs after the collapses and the suffixes, the
+choice of which declaration survives a collapse and which spelling takes a
+suffix is the name-sorted one either way; only the order of the declaration
+lines changes. The reorder applies to angr-style names, the default
+`namestyle`: Ghidra-style names carry hexadecimal offsets (`local_1c`,
+`uStack_a8`) that a decimal comparison would scramble, so under
+`namestyle ghidra` the declarations keep the string order. `option declorder
+name` keeps the string order everywhere.
 
 ## 9.4 Strings & comments
 

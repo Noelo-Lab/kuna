@@ -688,11 +688,10 @@ pub struct Architecture {
     /// rustc one.  Read by [`crate::p4_calls::kuna_callretpair`] through the
     /// `ArchContext` handle.
     pub call_ret_pair: bool,
-    /// (kuna) `option bejoin`: join a two-register value with its high word in
-    /// the first register where the ABI puts it there, when its low word looks
-    /// returned on purpose.  Read by [`crate::p4_calls::kuna_bejoin`] through the
-    /// `ArchContext` handle.
-    pub be_join: bool,
+    /// (kuna) `option bejoin`: when a two-register value joins with its high
+    /// word in the first register where the ABI puts it there.  Read by
+    /// [`crate::p4_calls::kuna_bejoin`] through the `ArchContext` handle.
+    pub be_join: crate::kuna_bejoin::BeJoinMode,
     /// (kuna) `option rustabi`: how hard to try to keep a rustc two-register
     /// (`ScalarPair`) return intact -- 0 off, 1 auto (only on a detected rustc
     /// image), 2 always.  Read by [`crate::kuna_rustabi`] through the
@@ -787,6 +786,9 @@ pub struct Architecture {
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
     pub stack_views: bool,
+    /// (kuna `libcnames`) Name locals from the library calls they meet.
+    /// See [`crate::kuna_libcnames`].
+    pub libc_names: bool,
     /// (kuna GH-8724) Re-express a strided-induction offset as counter*stride
     /// (C++ `recover_array_stride`).
     pub recover_array_stride: bool,
@@ -1023,6 +1025,16 @@ pub struct Architecture {
     /// (option `loopcounterstore`, default-on, DIV-146).  See
     /// [`crate::p3_dataflow::kuna_loopcounterstore`].
     pub loop_counter_store: bool,
+    /// (kuna) Keep a global's COPY of a loaded value whose only reader is the
+    /// global's own marker, so the write stays after the call or loop edge
+    /// that observes the old value (option `globalcallstore`, default-on).
+    /// See [`crate::p3_dataflow::kuna_globalcallstore`].
+    pub global_call_store: bool,
+    /// (kuna) Keep the rounding of an integer-to-float conversion that a
+    /// later float conversion or a narrower float trace would fold away
+    /// (option `intfloatround`, default-on).  See
+    /// [`crate::p3_dataflow::kuna_intfloatround`].
+    pub int_float_round: bool,
     /// (kuna) `Merge::mergeOp` trims a loop head's direct read of an aliased
     /// location out of the forced merge, so the values the loop loads do not
     /// print as stores into that location (option `tiedphitrim`, default-on,
@@ -1043,6 +1055,9 @@ pub struct Architecture {
     /// loop (option `devectorize`, opt-in default-off).  See
     /// [`crate::p3_dataflow::kuna_devectorize`].
     pub devectorize_reduction: bool,
+    /// (kuna) Collapse an inline `repnz scasb` string length into `strlen`
+    /// (option `strlenscan`).  See [`crate::p3_dataflow::kuna_strlenscan`].
+    pub strlen_scan: bool,
     /// Guard stack slots against stores through stack-derived pointers.
     pub stack_store_guard: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -1421,6 +1436,9 @@ pub struct Architecture {
     /// whose type is spelled exactly as the cast's: C's own conversion there is
     /// that very conversion.  See [`crate::kuna_castnarrow`].
     pub cast_narrow: bool,
+    /// (kuna `declorder`) The order the body's local declarations print in.
+    /// See [`crate::kuna_declorder`].
+    pub decl_order: crate::kuna_declorder::DeclOrder,
     /// (kuna `cortexmpriv`) Assume the Cortex-M core is privileged, folding away
     /// the `isCurrentModePrivileged()` guard the vendored ARM SLEIGH wraps around
     /// every VERSION_7M MRS/MSR (`kuna_cortexmpriv`).
@@ -1469,6 +1487,12 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_rustabi::CalleeReturnWrites>,
     >,
+    /// (kuna `bejoin evidence`) Per-image cache of the wide-return proof
+    /// ([`crate::kuna_bejoin::seed_wide_returns`]): the model's pair, each
+    /// function's verdict, keyed by its `(space index, entry offset)` so a
+    /// function and every caller of it read the same one, and the instructions
+    /// the walks decoded.
+    pub kuna_wide: crate::kuna_bejoin::WideCache,
     /// (kuna `calleedeadarg`) Per-image cache of the callee entry-liveness probe
     /// ([`crate::kuna_calleedeadarg::probe_callee_entry_dead`]), keyed by the
     /// callee's `(space index, entry offset)`.  Each distinct function body is
@@ -1733,10 +1757,11 @@ pub struct Architecture {
     /// guess (the value is consumed outside the image) and the two slots exist
     /// only because this `main` happens to read them. The declaration is applied
     /// LOCKED, so a body-driven parameter in a register past the third is not
-    /// kept. ELF only, refused on an image that names no
-    /// `__libc_start_main`, on an address that already carries a function symbol,
-    /// and on one whose image already spells a symbol `main`. Off restores the
-    /// `sub_<addr>` / width-only form exactly.
+    /// kept. An image that names its own `main` keeps the name and gets the
+    /// declaration. ELF only, refused on an image that names no
+    /// `__libc_start_main` and on an address that carries a function symbol
+    /// other than `main`. Off restores the `sub_<addr>` / width-only form
+    /// exactly.
     pub analysis_elfmain: bool,
     /// (kuna) Reject a discovered function entry that falls strictly inside a
     /// single-function `.eh_frame` FDE body (`fdeinterior`); default **on**.
@@ -2104,6 +2129,12 @@ pub struct Architecture {
     /// reaches the varargs-override path, so it is independent of `--option
     /// formatstring`.
     pub format_stack_args: std::rc::Rc<std::collections::BTreeMap<u64, usize>>,
+    /// (kuna `elfmain`) The C runtime's `int main(int argc, char **argv, char
+    /// **envp)` for an executable's own symbol-named `main`, with its entry.
+    /// Not parked on the symbol: the drive locks only its `int` return and names
+    /// and types the parameters `main`'s own analysis recovers
+    /// ([`crate::kuna_elfmaindecl`]).
+    pub elfmain_main_decl: Option<(Address, crate::fspec::PrototypePieces)>,
     /// (kuna `formatstring`) The call points, among the prototype overrides of
     /// the drive in progress, whose override a resolved format string produced.
     /// Set by the console's decompile step around each drive; the flow build
@@ -2763,7 +2794,7 @@ impl Architecture {
             stack_addr_arg_trial: false,
             exclusive_arg_use: false, // (kuna) option exclusivearguse; reset_defaults sets the shipped default
             call_ret_pair: false, // (kuna) option callretpair; reset_defaults sets the shipped default
-            be_join: false, // (kuna) option bejoin; reset_defaults sets the shipped default
+            be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
             source_is_rust: false, // (kuna) a load-time fact; set by the console's `load file`
             source_is_go: false, // (kuna) a load-time fact; set by the console's `load file`
@@ -2781,6 +2812,7 @@ impl Architecture {
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             stack_views: false,
+            libc_names: false, // (kuna) option libcnames; reset_defaults sets the shipped default
             recover_array_stride: false,
             recover_lowered_switch: false,
             lowered_switch_labels: false,
@@ -2839,10 +2871,13 @@ impl Architecture {
             array_extent: 0, // (kuna) option arrayextent; reset_defaults sets the shipped default
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
+            global_call_store: false, // (kuna) option globalcallstore; reset_defaults sets the shipped default (on)
+            int_float_round: false, // (kuna) option intfloatround; reset_defaults sets the shipped default (on)
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
             split_store_keep: false, // (kuna) option splitstorekeep; reset_defaults sets the shipped default (on)
             wide_slice_reduce: false, // (kuna) option wideslice; reset_defaults sets the shipped default (on)
             devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
+            strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
             stack_store_guard: false,
             region_structure: true,
             guard_arm: false,
@@ -2894,6 +2929,7 @@ impl Architecture {
             call_ret_type: false, // (kuna) option callrettype; reset_defaults sets the shipped default
             cast_widen: crate::kuna_castwiden::CastWidenMode::Off, // (kuna) option castwiden; reset_defaults sets the shipped default
             cast_narrow: false, // (kuna) option castnarrow; reset_defaults sets the shipped default
+            decl_order: crate::kuna_declorder::DeclOrder::Name, // (kuna) option declorder; reset_defaults sets the shipped default
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
@@ -2901,6 +2937,7 @@ impl Architecture {
             kuna_fn_budget: None,   // (kuna) decompile-all watchdog: no budget by default
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
             kuna_callee_write_cache: std::collections::HashMap::new(),
+            kuna_wide: crate::kuna_bejoin::WideCache::default(),
             kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_callee_memory_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
@@ -2990,6 +3027,7 @@ impl Architecture {
             analysis_formatstring: crate::kuna_formatstring::FormatStringMode::Off,
             format_call_overrides: std::collections::BTreeMap::new(),
             format_stack_args: std::rc::Rc::new(std::collections::BTreeMap::new()),
+            elfmain_main_decl: None,
             format_override_callpoints: std::collections::BTreeSet::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
@@ -3123,7 +3161,7 @@ impl Architecture {
         self.stack_addr_arg_trial = false;
         self.exclusive_arg_use = true; // (kuna) DIV-PENDING default-on: a LOAD/STORE on a path that provably cannot co-execute with a call is not a competing use of the value the call is passed, so it no longer sinks the call's input trial. 0/675 byte-identical on the datatest corpus. Restore the upstream rejection with `option exclusivearguse off`
         self.call_ret_pair = true; // (kuna) DIV-162 default-on: the multi-trial arm of `FuncCallSpecs::buildOutputFromTrials` (fspec.cc:5777) shipped as a stub, so a CALL whose cspec output rule asked for a register pair got NO output and both halves rendered as locals the function never assigns. Completing it is upstream behaviour and is not language-specific -- a 16-byte aggregate return in RAX:RDX is ordinary System V C. 0/675 byte-identical on the datatest corpus. Restore the stub with `option callretpair off`
-        self.be_join = false; // (kuna) option bejoin default off (#904): a big-endian or AVR pair whose low word looks returned joins high word first, as the ABI returns it, but the rule is a prior, not a proof -- an int that works over the high half of a 64-bit temporary compiles to the same registers as the long long and would read as that long long. Turn it on with `option bejoin on`
+        self.be_join = crate::kuna_bejoin::BeJoinMode::Evidence; // (kuna) option bejoin default `evidence` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart); `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
@@ -3136,6 +3174,7 @@ impl Architecture {
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_views = false;
+        self.libc_names = false; // (kuna) option libcnames default-off: six stage assertions of other features spell a `vN` it names; ON in the `aggressive` preset, which `auto` selects under 500 KiB
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
@@ -3186,6 +3225,8 @@ impl Architecture {
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation
+        self.global_call_store = true; // (kuna) default-on (0/675 datatest assertions): RulePropagateCopy keeps a global's COPY of a loaded value whose only reader is the global's marker, so the write stays after the call that observes the old value; `option globalcallstore off` restores the propagation
+        self.int_float_round = true; // (kuna) default-on (0/675 datatest assertions): RuleFloatCast and SubfloatFlow keep an integer-to-float conversion's rounding unless the float it passes through holds the integer exactly; `option intfloatround off` restores the unconditional fold
         self.hide_shadow = true; // (kuna) default-on: the upstream ActionHideShadow body, which kuna carried as an inert stub. Consolidates two copies of one value into one chain so ActionCopyMarker can hide the repeated assignment (0/675 ablation, stages PARITY OK; 434 of 444 stripped ELFs byte-identical and the other 10 each lose a duplicated assignment); `option hideshadow off` restores the stub's behaviour exactly
         self.tied_phi_trim = true; // (kuna) DIV-182 default-on: Merge::mergeOp trims a loop head's direct read of an aliased location, so the values the loop loads do not print as stores into it (0/675 ablation); `option tiedphitrim off` restores upstream's merge
         self.split_store_keep = true; // (kuna) DIV-153 default-on: Heritage::refineWrite carries the stack_store mark onto its refinement pieces, so an overlapping-range frame store stays a direct write and is not swept by ActionDeadCode (0/675 ablation); `option splitstorekeep off` restores upstream's unmarked pieces
@@ -3234,6 +3275,8 @@ impl Architecture {
         self.call_ret_type = true; // (kuna) option callrettype default-on: a call's result takes the return type its callee stated earlier in a callee-first run; 0/675 datatest assertions and 0 stage assertions moved (single-function surfaces state nothing), one test-cli probe moved to the intended form, the 444-slice typesweep +6 perfect and 0 lost, casts 35,588 -> 34,808 on the census corpus (393 functions fewer, 25 more); docs/features/callrettype/default-on-evaluation.md
         self.cast_widen = crate::kuna_castwiden::CastWidenMode::Literal; // (kuna) option castwiden default `literal`: a 64-bit widening C's usual arithmetic or assignment conversion performs prints no cast, and an 8-byte literal beside one prints its L/UL suffix; 5/675 datatest assertions (upstream's pinned form) opt out per test, 18 stage assertions of other options moved to the new form, 444-slice typesweep identical, casts 35,588 -> 34,062 on the castbench shared set with 0 functions more; docs/features/castwiden/default-on-evaluation.md
         self.cast_narrow = true; // (kuna) option castnarrow default-on: leaves out only an integer truncation or sign change that an assignment, store, trusted argument or return of exactly the cast's type performs itself
+        self.decl_order = crate::kuna_declorder::DeclOrder::Natural; // (kuna) option declorder default `natural`: locals declare v1, v2, ..., v10; only the order of declaration lines moves, 0/675 datatest assertions
+        self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.caller_reads = true; // (kuna) option callerreads default-on: inert without the Listing, so 0/675 datatest assertions move
@@ -3987,12 +4030,16 @@ impl Architecture {
         ctx.array_extent = self.array_extent; // arrayextent
         ctx.stack_alias_deadstore = self.stack_alias_deadstore; // stackalias
         ctx.stack_views = self.stack_views;
+        ctx.libc_names = self.libc_names; // libcnames
         ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
+        ctx.global_call_store = self.global_call_store; // globalcallstore
+        ctx.int_float_round = self.int_float_round; // intfloatround
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim
         ctx.split_store_keep = self.split_store_keep; // splitstorekeep
         ctx.wide_slice_reduce = self.wide_slice_reduce; // wideslice
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
+        ctx.strlen_scan = self.strlen_scan; // strlenscan
         ctx.stack_store_guard = self.stack_store_guard;
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
@@ -4888,7 +4935,7 @@ impl Architecture {
     /// front-loaded here).
     fn register_string_builtins(&mut self) -> KunaResult<()> {
         use crate::userop::{
-            BUILTIN_MEMCPY, BUILTIN_MEMSET, BUILTIN_STRINGDATA, BUILTIN_STRNCPY,
+            BUILTIN_MEMCPY, BUILTIN_MEMSET, BUILTIN_STRINGDATA, BUILTIN_STRLEN, BUILTIN_STRNCPY,
             BUILTIN_SYSCALL_ERROR, BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE,
             BUILTIN_WCSNCPY,
         };
@@ -4921,6 +4968,8 @@ impl Architecture {
             userops.register_builtin(BUILTIN_MEMSET, &adapter)?;
             // (kuna syscallregs) the MIPS/PowerPC system-call failure flag.
             userops.register_builtin(BUILTIN_SYSCALL_ERROR, &adapter)?;
+            // (kuna strlenscan) the length an inline `repnz scasb` computes.
+            userops.register_builtin(BUILTIN_STRLEN, &adapter)?;
             Ok(())
         })();
         self.userops = userops;

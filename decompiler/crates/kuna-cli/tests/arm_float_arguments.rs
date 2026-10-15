@@ -880,9 +880,9 @@ fn mixed_input_banks_and_variadic_base_storage_agree() {
         "{code}"
     );
     assert!(
-        code.contains("show2((double)(long long)a0 + (double)(long long)a0,a0);")
-            || (code.contains("v2 = (double)(long long)a0;")
-                && code.contains("show2(v2 + v2,a0);")),
+        code.contains("show2((double)(long long)argc + (double)(long long)argc,argc);")
+            || (code.contains("v2 = (double)(long long)argc;")
+                && code.contains("show2(v2 + v2,argc);")),
         "{code}"
     );
 }

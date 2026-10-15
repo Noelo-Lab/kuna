@@ -48,8 +48,7 @@
 //! exists, so an IAT slot and its veneer remain typed without retyping the export.
 
 use super::{
-    resolved_import_addrs, seed_named_prototypes, seed_resolved_prototypes,
-    unambiguous_imported_function_names, Sig, Ty,
+    seed_named_prototypes, seed_resolved_prototypes, Sig, Ty,
 };
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 use kuna_decomp::kuna_typedcallabi;
@@ -664,8 +663,8 @@ impl AnalysisPass for LibcSigsPass {
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
-        let imported = unambiguous_imported_function_names(ctx.file, ctx.bytes);
-        let resolved = resolved_import_addrs(ctx.file, ctx.bytes);
+        let (resolved, reloc_imports) = super::loaded_import_addrs(ctx.file, ctx.bytes, ctx.image);
+        let imported = super::loaded_function_names(ctx.file, ctx.bytes, &reloc_imports, true);
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &imported, LIBC_EXT, types, word_size, super::L);
@@ -812,7 +811,7 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
         let bytes = std::fs::read(path).expect("read fauxware fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
-        let imported = unambiguous_imported_function_names(&file, &bytes);
+        let imported = super::super::loaded_function_names(&file, &bytes, &[], true);
         for want in ["read", "open", "exit"] {
             assert!(imported.contains(want), "fauxware imports {want}: {imported:?}");
             assert!(LIBC_EXT.iter().any(|(n, _)| n == &want), "table should know {want}");

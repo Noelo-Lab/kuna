@@ -66,6 +66,8 @@ fn decompile_main(arch: &str, formatstring_on: bool) -> String {
         .expect("bootstrap fixture with built processor specs");
     // Commit the load-time analysis facts (libproto, PLT import names, etc.) — what
     // `read symbols` does — so the `printf` proto is recovered before the decompile.
+    // The untyped varargs are `main`'s body-driven parameters; `elfmain` declares them.
+    prog.arch_mut().set_kuna_option("elfmain", "off").expect("elfmain flips off");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     if formatstring_on {
         prog.arch_mut()

@@ -965,7 +965,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         if spoiled {
             return Ok(total);
         }
-        if !(reflow_requested && fd.has_restart_pending()) {
+        // (kuna `bejoin evidence`) A call resolved mid-pass to a proven
+        // callee read it unproven: run the pass again with its verdict.
+        if !(reflow_requested && fd.has_restart_pending()) && !crate::kuna_bejoin::wide_callee_missed(arch, fd) {
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
@@ -979,6 +981,8 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // silently loses its veto on every restarted function.  Cached, so this
         // is a map lookup per call.
         crate::kuna_rustabi::seed_callee_return_writes(arch, fd);
+        // (kuna `bejoin evidence`) And the wide-return verdicts.
+        crate::kuna_bejoin::seed_wide_returns(arch, fd);
         // (kuna `calleedeadarg`) Same story for the entry-liveness probe the
         // input-trial scoring seam consults.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
@@ -1224,9 +1228,24 @@ pub fn decompile_func_full_with_objects(
     let staged_proto_model = arch.kuna_pending_proto_model.take();
     let prior_names = arch.kuna_prior_names.clone();
     let record_names = arch.kuna_record_names;
+    // (kuna `elfmain`) The C runtime's declaration for this function when it is
+    // an executable's own symbol-named `main` that no other stream declares.
+    let elfmain_rt = match &arch.elfmain_main_decl {
+        Some((at, pieces))
+            if pending_proto.is_none()
+                && at.get_offset() == funcaddr.get_offset()
+                && arch.symboltab.function_proto_pieces_across_scopes(&funcaddr).is_none() =>
+        {
+            arch.default_fp().and_then(|m| {
+                crate::kuna_elfmaindecl::Runtime::new(pieces, m, arch.types(), arch.manage())
+            })
+        }
+        _ => None,
+    };
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
-                       condstmts_seed: &std::collections::BTreeSet<Address>|
+                       condstmts_seed: &std::collections::BTreeSet<Address>,
+                       elfmain: Option<&crate::kuna_elfmaindecl::Runtime>|
      -> KunaResult<Funcdata> {
         // Kept for the parked-prototype lookup below (the flow build consumes the
         // address).
@@ -1305,6 +1324,13 @@ pub fn decompile_func_full_with_objects(
                 .or_else(|| fd.get_arch().callee_proto_model(&entry_addr))
                 .or_else(|| crate::kuna_typedcallabi::undeclared_model(fd.get_arch(), pieces));
             fd.apply_locked_prototype_with_model(pieces, declared_model)?;
+        } else if let Some(rt) = elfmain {
+            // (kuna `elfmain`) Lock the `int` return alone; the inputs stay
+            // unlocked and take the runtime's names and types only as far as
+            // their own recovery goes (`kuna_elfmaindecl`).
+            fd.apply_locked_prototype_with_model(&rt.output, None)?;
+            fd.get_func_proto_mut().set_input_lock(false);
+            fd.kuna_set_elfmain(Some(rt.fresh()));
         }
         // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
         // when the IR is rebuilt, like `pending_proto`/`mapped_symbols`).  This makes
@@ -1333,6 +1359,11 @@ pub fn decompile_func_full_with_objects(
         // translator, so this is the last point the callee's instructions can be
         // read at all; inert unless `option rustabi` is live for this image.
         crate::kuna_rustabi::seed_callee_return_writes(arch, &mut fd);
+        // (kuna `bejoin evidence`) Take the wide-return verdicts for the
+        // function and its direct callees, read off their instructions while
+        // the translator is reachable; inert unless the model joins its pair
+        // high word first.
+        crate::kuna_bejoin::seed_wide_returns(arch, &mut fd);
         // (kuna `calleedeadarg`) Take the callee entry-liveness probe the
         // input-trial scoring seam consults, for the same reason and at the same
         // point; inert unless `option calleedeadarg` is live.
@@ -1374,28 +1405,39 @@ pub fn decompile_func_full_with_objects(
             }
         }
     };
-    // (kuna `stackstoreguard`) A function whose final layout spoiled what the
-    // guard needs is analyzed again from scratch, as `stackstoreguard off` would.
-    let mut seed = std::collections::BTreeSet::new();
-    let mut unguarded = false;
-    let mut result = match attempt(prefollowed, false, &seed) {
-        Ok(fd) if fd.stack_store_guard_spoiled() => {
-            unguarded = true;
-            attempt(None, true, &seed)
+    // (kuna `elfmain`) A `main` whose finished declaration is not exactly what the
+    // runtime seed typed and named is decompiled again without the seed.
+    let mut prefollowed = prefollowed;
+    let mut elfmain = elfmain_rt.as_ref();
+    let result = loop {
+        // (kuna `stackstoreguard`) A function whose final layout spoiled what the
+        // guard needs is analyzed again from scratch, as `stackstoreguard off` would.
+        let mut seed = std::collections::BTreeSet::new();
+        let mut unguarded = false;
+        let mut result = match attempt(prefollowed.take(), false, &seed, elfmain) {
+            Ok(fd) if fd.stack_store_guard_spoiled() => {
+                unguarded = true;
+                attempt(None, true, &seed, elfmain)
+            }
+            other => other,
+        };
+        // (kuna `condstmts`) A function whose final structure folded a block over the
+        // cap is analyzed again with that block complex from the first structuring on.
+        for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
+            let Ok(fd) = &result else { break };
+            let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
+            seed = next;
+            match attempt(None, unguarded, &seed, elfmain) {
+                Ok(fd) => result = Ok(fd),
+                Err(_) => break,
+            }
         }
-        other => other,
+        if elfmain.is_some() && !result.as_ref().is_ok_and(crate::kuna_elfmaindecl::settled) {
+            elfmain = None;
+            continue;
+        }
+        break result;
     };
-    // (kuna `condstmts`) A function whose final structure folded a block over the
-    // cap is analyzed again with that block complex from the first structuring on.
-    for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
-        let Ok(fd) = &result else { break };
-        let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
-        seed = next;
-        match attempt(None, unguarded, &seed) {
-            Ok(fd) => result = Ok(fd),
-            Err(_) => break,
-        }
-    }
     // (kuna decompile-all watchdog) Disarm the deadline once the drive is over so
     // no later, non-drive pipeline run (console sub-queries) consults a stale one.
     arch.kuna_fn_deadline = None;
@@ -2409,6 +2451,13 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
             if category != crate::database::symbol_category::NO_CATEGORY {
                 continue; // already emitted as a parameter above
             }
+            // (kuna `libcnames`) A local printed under its library name is
+            // reported under it too; its Symbol keeps the number.
+            let name = fd
+                .kuna_library_aliases()
+                .iter()
+                .find(|a| a.shown && a.number == name)
+                .map_or(name, |a| a.alias.clone());
             let type_name = crate::kuna_bytehonest::exported_type_name(arch, &ct);
             out.push(VarInfo {
                 name,

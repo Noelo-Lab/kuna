@@ -177,6 +177,8 @@ writeup, not here.
 | `kuna-arm-register-shift-signed.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) follow-up (the shift's unsigned C repair must retain the signed value consumed by ARM signed compare and ASR) | P9 C emission, signed true/false conditional arms around the guarded unsigned LSL | default: output retains signed comparison and arithmetic shift behavior |
 | `kuna-call-array-extent.xml` | Synthetic call-escaped frame storage | P6 stack-frame-layout | `option callarrayextent on\|off` |
 | `kuna-stackstruct.xml` | A local record read through `read(fd,&h,8)` printed its byte and short fields as `v1._4_2_`, which is not C, and no record type was declared (authored C, gcc/clang -O0/-O2) | P6 stack-frame-layout + P9 pointer-notation | `option stackstruct on\|off`, `option partialaccess on\|off` |
+| `kuna-declorder.xml` | A function with ten or more locals declared them in string order, `v1, v10, v11, v2, ...` (authored C, gcc -O0) | P9 naming-policy, local declaration order | `option declorder natural\|name` |
+| `kuna-strlenscan.xml` | gcc 9 expands `strlen` inline as `repnz scasb`, which printed as a do/while over the string and `~count - 1` (authored C, Ubuntu 20.04 gcc 9.4 -O1) | P3 simplification-quiescence, inline string length | `option strlenscan on\|off` |
 
 `kuna-minss-nan.xml` pins an authored scalar MINSS and ratio/clamp probe.
 P3 and P9 preserve the negation of an ordered float comparison as `!(a < b)`
@@ -295,3 +297,7 @@ with undefined-behavior checks and exercises every case and signed boundaries.
 - `kuna-sparc-double-abs.xml`, `kuna-sparc64-double-abs.xml`: binary64 absolute value from a high-word `fabss`, without a numeric high-word cast.
 
 - `kuna-sparc-double-sign.xml`, `kuna-sparc64-double-sign.xml`: binary64 negation from a high-word `fnegs`, without a numeric high-word cast.
+
+- `kuna-integer-float-rounding.xml`, `kuna-integer-float-rounding64.xml`, `kuna-integer-float-rounding-x87.xml`: an integer-to-float conversion keeps its rounding through a later float conversion or a narrower float trace (`option intfloatround`; the first passes run it `off`), while exact intermediates, x87 extended conversions and `fld1` still combine.
+
+`kuna-global-load-call-order.xml` keeps a post-call memory-loaded global write after the getter, including a later call, a loop marker and a no-final-call control. The CLI roundtrips check an impure getter, a computed-value reload control and overlapping x86-64 SIMD reads using GCC/Clang at O0/O2. Its first pass runs `option globalcallstore off`, which prints the write before the getter.

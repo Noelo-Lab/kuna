@@ -4927,6 +4927,15 @@ fn commit_analysis_output(
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
     }
 
+    // 4b. The C runtime declaration `elfmain` has for an executable's own
+    //     `main`. Not parked on the symbol: the drive locks only its `int`
+    //     return and names and types the parameters `main`'s own analysis
+    //     recovers (`kuna_decomp::kuna_elfmaindecl`). Any prototype another
+    //     stream parks on `main` (DWARF) wins outright.
+    for (addr, pieces) in out.main_decl_at {
+        prog.arch_mut().elfmain_main_decl = Some((Address::new(Rc::clone(code_space), addr), pieces));
+    }
+
     // 5. Library prototypes (the kuna analog of ApplyDataArchiveAnalyzer): park each
     //    on its named global callee. `ActionDefaultParams` later copies the callee's
     //    prototype into the caller's call spec, so the argument constants get typed

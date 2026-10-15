@@ -235,3 +235,267 @@ fn a_retype_that_changes_merging_keeps_every_number() {
     let plain = declared(&decompile(&[]));
     assert_eq!(declared(&decompile(&["type v8 unsigned long"])), plain);
 }
+
+/// Retyping leaves the C as it was apart from the retyped declaration
+/// (`decl`: as retyped, as printed before) and the `casts` at its uses.
+fn retypes_only_in(
+    fixture: &str,
+    function: &str,
+    directives: &[&str],
+    renames: &[(&str, &str)],
+    decl: (&str, &str),
+    casts: &[&str],
+) {
+    let plain = decompile_in(fixture, function, &[], &[]);
+    let retyped = decompile_in(fixture, function, &[], directives);
+    assert!(retyped.contains(decl.0), "{directives:?}:\n{retyped}");
+    let uncast = |code: &str| casts.iter().fold(code.to_string(), |code, cast| code.replace(cast, ""));
+    assert_eq!(
+        lines_renamed(&uncast(&retyped.replacen(decl.0, decl.1, 1)), renames),
+        lines_renamed(&uncast(&plain), &[]),
+        "{directives:?} changed more than the declaration and its casts:\n{plain}\n---\n{retyped}"
+    );
+}
+
+/// A retype that keeps a local's width types the whole printed variable:
+/// `type v5 unsigned long` used to split `v5`'s `rax` part off as a new
+/// `v14`, `type v13 long` merged `v12` and `v5` differently and added a
+/// `v14`, and in `handle_intel` `type v6 unsigned long` and `type v9 int` each
+/// added a `v11`.
+#[test]
+fn a_same_width_retype_types_the_whole_variable() {
+    retypes_only_in(
+        "stablenames_x86_64",
+        "mix",
+        &["type v5 unsigned long"],
+        &[],
+        ("  unsigned long v5;", "  long v5;"),
+        &["(unsigned long)", "(long)"],
+    );
+    retypes_only_in("stablenames_x86_64", "mix", &["type v13 long"], &[], ("  long v13;", "  unsigned long v13;"), &[]);
+    retypes_only_in("stablenames_x86_64", "mix", &["type v8 unsigned long"], &[], ("  unsigned long v8;", "  long v8;"), &[]);
+    let function = "handle_intel.constprop.0";
+    retypes_only_in("mcount_x86_64", function, &["type v6 unsigned long"], &[], ("  unsigned long v6;", "  long v6;"), &[]);
+    retypes_only_in("mcount_x86_64", function, &["type v9 int"], &[], ("  int v9;", "  unsigned int v9;"), &["(unsigned int)"]);
+}
+
+/// The page's order: name a local, then retype it under the new name.
+#[test]
+fn a_rename_then_a_retype_types_the_whole_variable() {
+    retypes_only_in(
+        "stablenames_x86_64",
+        "mix",
+        &["name v5 hash", "type hash unsigned long hash"],
+        &[("hash", "v5")],
+        ("  unsigned long hash;", "  long hash;"),
+        &["(unsigned long)", "(long)"],
+    );
+}
+
+/// The console carries a retype across every later decompile, also once the
+/// retyped local is renamed.
+#[test]
+fn console_retypes_survive_later_decompiles() {
+    let script = "load function mix\ndecompile\nprint C\nretype v5 unsigned long\ndecompile\nprint C\n\
+                  decompile\nprint C\nrename v5 hash\ndecompile\nprint C";
+    let out = console(script);
+    let printed: Vec<String> = out
+        .split(" mix(")
+        .skip(1)
+        .map(|block| format!(" mix({}", block.find("\n}\n").map_or(block, |end| &block[..end + 2])))
+        .collect();
+    assert_eq!(printed.len(), 4, "{out}");
+    let uncast = |code: &str| code.replace("(uint8)", "").replace("(int8)", "");
+    let plain = lines_renamed(&uncast(&printed[0]), &[]);
+    for (code, decl, renames) in [
+        (&printed[1], "  uint8 v5;", &[][..]),
+        (&printed[2], "  uint8 v5;", &[][..]),
+        (&printed[3], "  uint8 hash;", &[("hash", "v5")][..]),
+    ] {
+        assert!(code.contains(decl), "{decl}:\n{code}");
+        let code = uncast(&code.replacen(decl, &decl.replace("uint8", "int8"), 1));
+        assert_eq!(lines_renamed(&code, renames), plain, "{decl}:\n{}\n---\n{code}", printed[0]);
+    }
+}
+
+/// A retype to a pointer to a structure still drives type inference, which
+/// is what prints the fields read through it.
+#[test]
+fn a_structure_pointer_retype_prints_fields() {
+    let fixture = "globalpointee_gcc_O2_x86_64";
+    let typedef = "typedef struct rec { int a; short b; short pad; long x; long y; int c; } rec;";
+    let code = decompile_in(fixture, "r_rec", &[], &[typedef, "type v3 rec *"]);
+    assert!(code.contains("  rec *v3;") && code.contains("v1 = v3->b;"), "{code}");
+    assert_eq!(declared(&code), declared(&decompile_in(fixture, "r_rec", &[], &[])));
+}
+
+/// Such a retype types every definition of the variable: `name_len`'s `v1`
+/// holds either call's result, and the type used to reach only one of them,
+/// splitting the other off as `char *v2`.
+#[test]
+fn a_structure_pointer_retype_keeps_the_variable_whole() {
+    let fixture = "callrettype_gcc_O2_x86_64";
+    let typedef = "typedef struct S { long f0; long f1; } S;";
+    let code = decompile_in(fixture, "name_len", &[], &[typedef, "type v1 S *"]);
+    assert_eq!(declared(&code), declared(&decompile_in(fixture, "name_len", &[], &[])), "{code}");
+    assert_eq!(code.matches("v1 = (S *)").count(), 2, "{code}");
+}
+
+/// The retyped variable keeps the name a directive pins on it while the type
+/// reshapes the code around it: `walk`'s pointer is found by its lock once the
+/// first decompile's keys miss it (it printed as `v3`), and `squeeze`'s stays
+/// declared where the reshaped loop could inline it (it vanished).
+#[test]
+fn a_structure_pointer_retype_keeps_its_name() {
+    let fixture = "retypeptr_x86_64";
+    let typedef = "typedef struct S { long a; long b; } S;";
+    for (function, directive, decl) in
+        [("walk", "type v2 S *v2", "  S *v2;"), ("walk", "type v2 S *", "  S *v2;"), ("squeeze", "type v1 S *v1", "  S *v1;")]
+    {
+        let code = decompile_in(fixture, function, &[], &[typedef, directive]);
+        assert!(code.contains(decl), "{function} {directive}:\n{code}");
+        assert_eq!(declared(&code), declared(&decompile_in(fixture, function, &[], &[])), "{code}");
+    }
+}
+
+/// The type is locked only on what the variable's own operations define:
+/// `mix`'s `v10` points into the stack buffer `v4`, and a lock that also
+/// took varnodes of the same storage and instruction re-laid the frame
+/// around the pointer, losing `v4`.
+#[test]
+fn a_structure_pointer_retype_locks_only_the_variable() {
+    let typedef = "typedef struct S { long a; long b; int c; int d; char *e; long f[4]; } S;";
+    let code = decompile(&[typedef, "type v10 S *v10"]);
+    assert!(code.contains("  S *v10;"), "{code}");
+    assert_eq!(declared(&code), declared(&decompile(&[])), "{code}");
+}
+
+/// A retype to an enumeration also reaches type inference, which is what
+/// names the constants the variable meets: applied after the merge alone,
+/// `v1 = RUN` printed `v1 = 3`.
+#[test]
+fn an_enumeration_retype_names_its_constants() {
+    let fixture = "retypeenum_x86_64";
+    let state = "typedef enum state { IDLE = 0, RUN = 3, DONE = 9 } state;";
+    let code = decompile_in(fixture, "step", &[], &[state, "type v1 state v1"]);
+    for line in ["  state v1;", "v1 = IDLE;", "(v1 == RUN)", "v1 = DONE;"] {
+        assert!(code.contains(line), "{line}:\n{code}");
+    }
+    assert_eq!(declared(&code), declared(&decompile_in(fixture, "step", &[], &[])), "{code}");
+    let color = "typedef enum color { RED = 0, GREEN = 1, BLUE = 7 } color;";
+    let code = decompile_in(fixture, "pick", &[], &[color, "type v2 color"]);
+    for line in ["  color v2;", "v2 = RED;", "v2 = BLUE;", "v2 = GREEN;"] {
+        assert!(code.contains(line), "{line}:\n{code}");
+    }
+}
+
+/// A local the function only passes by address (`read`'s buffer) has no
+/// instance to carry a retype to, so its Symbol takes the type: the retype
+/// used to leave `char v1` in place while reporting itself applied.
+#[test]
+fn an_address_only_local_takes_its_retype() {
+    let fixture = "retypeoutparam_x86_64";
+    let e4 = "typedef enum E4 { E_ZERO = 0, E_ONE = 1 } E4;";
+    for (function, directives, decl) in [
+        ("rd", &["type v1 unsigned char v1"][..], "  unsigned char v1;"),
+        ("rd", &["type v1 bool v1"][..], "  bool v1;"),
+        ("rd", &["type v1 unsigned char"][..], "  unsigned char v1;"),
+        ("rd", &["name v1 ch", "type ch unsigned char ch"][..], "  unsigned char ch;"),
+        ("rdn", &["type v1 int v1"][..], "  int v1;"),
+        ("rdn", &[e4, "type v1 E4 v1"][..], "  E4 v1;"),
+    ] {
+        let code = decompile_in(fixture, function, &[], directives);
+        assert!(code.contains(decl), "{function} {directives:?}:\n{code}");
+    }
+}
+
+/// A stack local read whole and by halves is three locals under one Symbol,
+/// printed by one declaration, and the retype goes to the whole one: a half
+/// that tied with it took the type, and the declaration kept its old one.
+#[test]
+fn a_stack_local_read_by_halves_is_retyped_whole() {
+    let fixture = "retypehalves_x86_64";
+    let plain = decompile_in(fixture, "control", &[], &[]);
+    assert!(plain.contains("  unsigned long v6; // rdx | stack - 0x38"), "{plain}");
+    let code = decompile_in(fixture, "control", &[], &["type v6 long"]);
+    assert!(code.contains("  long v6; // rdx | stack - 0x38"), "{code}");
+    assert_eq!(declared(&code), declared(&plain), "{code}");
+}
+
+/// A DWARF-named local takes a rename and a retype on both surfaces: the
+/// console re-seeded the DWARF local over the Symbol the directive had
+/// renamed, so the text surface kept printing `n`.
+#[test]
+fn a_dwarf_local_takes_its_rename_and_retype() {
+    let fixture = "castsign_dwarf_gcc_O0_x86_64";
+    for (directive, decl) in [("name n count", "  unsigned long count;"), ("type n long count", "  long count;")] {
+        let code = decompile_in(fixture, "sign_of", &[], &[directive]);
+        assert!(code.contains(decl), "{directive}:\n{code}");
+    }
+}
+
+/// The `--json` outcome of each directive on `function`, after checking that
+/// the text surface exits 0 on them.
+fn outcomes(fixture: &str, function: &str, directives: &[&str]) -> (String, Vec<(String, Option<String>)>) {
+    let binary = common::fixture(fixture);
+    let mut args = vec!["decompile", binary.as_str(), function];
+    for directive in directives {
+        args.extend(["--assert", directive]);
+    }
+    let (_, stderr, code) = common::run_kuna(&args);
+    assert_eq!(code, 0, "{directives:?}: {stderr}");
+    args.push("--json");
+    let (doc, stderr, _) = common::run_kuna(&args);
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap_or_else(|e| panic!("{e}: {stderr}\n{doc}"));
+    let code = parsed.pointer("/functions/0/code").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+    let rows = parsed["assertions"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .map(|row| (row["status"].as_str().unwrap_or_default().to_string(), row["detail"].as_str().map(str::to_string)))
+                .collect()
+        })
+        .unwrap_or_default();
+    (code, rows)
+}
+
+/// A rename the printer has to suffix, because the name already belongs to
+/// another identifier (a function, a parameter, another renamed local), took
+/// effect: it is applied, and says what it was printed as. The check that
+/// reads the printed C finds the local by its declaration, so a parameter or
+/// another local that merely carries the requested name proves nothing.
+#[test]
+fn a_suffixed_rename_is_applied_as_printed() {
+    let applied_as = |name: &str| Some(format!("applied as `{name}`: `{}` is already another identifier here", name.trim_end_matches("_1")));
+    for (directive, decl, printed) in [
+        ("name v6 is_vowel", "  int is_vowel_1;", "is_vowel_1"),
+        ("name v6 mix", "  int mix_1;", "mix_1"),
+        ("name v6 a0", "  int a0_1;", "a0_1"),
+    ] {
+        let (code, rows) = outcomes("stablenames_x86_64", "mix", &[directive]);
+        assert!(code.contains(decl), "{directive}:\n{code}");
+        assert_eq!(rows, vec![("applied".to_string(), applied_as(printed))], "{directive}");
+    }
+    let (code, rows) = outcomes("stablenames_x86_64", "mix", &["name v6 dup", "name v7 dup"]);
+    assert!(code.contains("  int dup_1; // r8d") && code.contains(" dup; // r9 | rsi"), "{code}");
+    assert_eq!(rows, vec![("applied".to_string(), applied_as("dup_1")), ("applied".to_string(), None)]);
+}
+
+/// A local cannot take a C keyword or a type's name: `name v6 int` used to
+/// print `int int;`.
+#[test]
+fn a_keyword_or_type_name_is_refused() {
+    let binary = common::fixture("stablenames_x86_64");
+    for (directive, reason) in [
+        ("name v6 int", "`int` is a C keyword"),
+        ("name v6 uint4", "`uint4` names a type"),
+        ("type v6 unsigned int while", "`while` is a C keyword"),
+    ] {
+        let (text, stderr, code) = common::run_kuna(&["decompile", binary.as_str(), "mix", "--assert", directive]);
+        assert_eq!(code, 0, "{directive}: {stderr}");
+        assert!(stderr.contains("rejected") && stderr.contains(reason), "{directive}: {stderr}");
+        assert!(text.contains(" v6;"), "{directive}:\n{text}");
+    }
+    let out = console("load function mix\ndecompile\nrename v6 int\nretype v6 unsigned int while");
+    assert!(out.contains("`int` is a C keyword") && out.contains("`while` is a C keyword"), "{out}");
+}

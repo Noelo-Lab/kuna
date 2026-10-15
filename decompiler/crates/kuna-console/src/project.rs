@@ -712,9 +712,10 @@ pub fn decompile_pulled(
         // console's `decompile` / `rename` / `decompile` sequence). Emitted only
         // when such a directive actually bound to this function, so every other
         // invocation keeps its current cost.
+        let mut replayed: Vec<crate::assertions::Expected> = Vec::new();
         let result = match step.result {
             Ok(mut fd) if replay => {
-                if crate::assertions::apply_symbol_scoped(prog, &mut fd, &name, single_target) {
+                if let Some(expected) = crate::assertions::apply_symbol_scoped(prog, &mut fd, &name, single_target) {
                     let carried = crate::assertions::carried_symbols(&fd);
                     let carried_usepoint = crate::assertions::carried_usepoint_symbols(&fd);
                     let carried_dynamic = crate::assertions::carried_dynamic_symbols(&fd);
@@ -739,6 +740,7 @@ pub fn decompile_pulled(
                     )
                     .result;
                     prog.arch_mut().kuna_prior_names = Default::default();
+                    replayed = expected;
                     second
                 } else {
                     Ok(fd)
@@ -869,7 +871,9 @@ pub fn decompile_pulled(
                     (code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)
                 }));
                 match rendered {
-                    Ok((code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => sink(FuncResult {
+                    Ok((code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => {
+                    crate::assertions::verify_printed(prog, &fd, &code, &replayed);
+                    sink(FuncResult {
                         name,
                         address,
                         byte_address,
@@ -889,7 +893,8 @@ pub fn decompile_pulled(
                         synth: None,
                         pointerargs,
                         detail,
-                    }),
+                    })
+                    }
                     Err(_) => sink(FuncResult {
                         name,
                         address,

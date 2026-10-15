@@ -734,6 +734,62 @@ well as the scope (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 ... sequence. Two highs that denote one object are unaffected: they share a
 name through their shared Symbol, never through a recommendation.
 
+**A library call names the locals it meets (`libcnames`, default off, on
+under `--mode aggressive`).** A prototype a built-in libc table parks carries
+the library's names for its parameters and result (chapter 01), which the
+recommendation above never sees: they are not `innames` and lock nothing. The
+library name is a second name for a numbered local, never a replacement for
+its number. `decompiler/crates/kuna-decomp/src/p6_variables/kuna_libcnames.rs
+(candidates)` reads the evidence before the naming walk, the walk numbers
+every local exactly as it does with the option off and records that numbering
+for a directive replay, and only then does `kuna_libcnames.rs (apply)` give a
+candidate still printed under its number the library's name, recording the
+pair on the function (`Funcdata::kuna_library_aliases`). So `v4` is the same
+variable whether or not the option is on, and the locals after a named one do
+not renumber. The evidence, strongest first: the value a library call returns
+(`fd = open(a0,0);`), counted only when every library result the local holds
+has the same name; a library argument the local is passed whole as, when the
+name says what the value is (`read(fd,...)` names `fd`, `write(a0,a1,n)` names
+`n`); and the same for a name that only says which side of one call a value is
+on (`dest`/`src`, `s1`/`s2`, `haystack`/`needle`, ...), which counts only when
+every such name the local receives is the same one, so a pointer that is one
+`strcmp`'s `s2` and the next one's `s1` keeps its `vN`. Within a kind the
+earliest call decides, then the lowest slot, and a name equal to a type the
+printed code can mention (`tm`, `FILE`, a DWARF typedef: anything the type
+factory knows by that name) or to a C or Rust keyword is passed over for the
+next evidence. Evidence follows a value through the implied copies and casts
+the printer folds into the statement (`x = (T)call()`, `call((T)x)`) and
+through nothing else, so a value used inside an expression (`malloc(len + 1)`)
+names nothing. The local must be one the walk numbered: not an input, a
+global, a constant or a structure piece, and not a speculative merge of
+several classes. A clash takes `_2`, `_3`, ... in the order of the evidence
+(`fd`, `fd_2` for two `open`s), and no spelling repeats a name any variable of
+the function prints, any global the program names (`GlobalQuery::has_symbol_name`,
+whether or not the function reads it), the scope holds, a callee or the
+function itself has.
+
+A directive reaches such a local by either name.
+`decompiler/crates/kuna-console/src/kuna_hightarget.rs (library_number)`
+reads a library name as the number it stands for, and the printed-local lookup
+answers a number for the local printed under its library name, so a replay
+record and the stable numbering above only ever see numbers, and a directive
+the web page recorded in one mode reaches the same local after a switch to
+another: `name fd src` and `name v1 src` both rename the descriptor, with the
+option on or off (off, the library names are still decided, for this lookup
+only, whenever a directive may name a local). The one exception is a library
+name an earlier directive of the batch gave to another local: that rename took
+the name, so it names that local. A name a rename gave or a name-locked
+Symbol holds is the caller's or the binary's even when it is shaped like a
+number, and no library name is printed over it (`name fd v9` prints `v9`).
+Under a carried naming record (`PriorNames::aliases`, by the number the
+local's instances had) a local keeps the spelling it printed, also when a
+rename took its number; a
+spelling a rename took or vacated (`PriorNames::vacated_names`), or that
+another local printed, goes to no one else, and a local whose spelling a
+rename took prints its number. After `name fd src` the second descriptor is
+still `fd_2` and no local becomes `fd`; after `name v5 n`, read's result prints
+`v3` and `name v3 got` reaches it.
+
 **A default name skips one a caller locked.** The `vN` allocator (and the
 `<prefix>Var<N>` arm under Ghidra names) used to hand out `v<base++>` without
 looking at the scope, so after `name v3 v1` the untouched local that came first
@@ -823,9 +879,121 @@ its naming pass `kuna_stablenames.rs (rename_targets)` gives the new name to the
 local holding most of the renamed variable's instances, through the same paths
 a callee's parameter name takes (a Symbol the analysis rebuilt takes it in place
 of a number, `varmap.rs (ScopeLocal::default_symbol_name)`), and its number
-stays unused. A `type` directive still maps a locked Symbol and may split or
-merge, as a retype legitimately changes the analysis. Renaming only names, so
-this is unconditional.
+stays unused. Renaming only names, so this is unconditional.
+
+**A retype that keeps the width types the whole variable.** A `type` directive
+mapped the same type-locked, isolated Symbol, so it split a merged variable the
+same way, and the lock's type spread through copies into other locals. In the
+same fixture `type v5 unsigned long` turned `long v5; // r9 | rax | rdi | rsi`
+into `unsigned long v5; // r9 | rdi | rsi` plus a new `unsigned long v14; //
+rax`, and `type v8 unsigned long` retyped `v2` as well and moved `v5`'s `rax`
+into it. A retype that keeps the printed variable's width and kind
+(`kuna_stablenames.rs (retypes_as_unit)`: an integer, `bool` or enumeration to
+another of the same width, a float to a float, a pointer to a pointer) now types
+the variable as one unit, whether it is a register local or a stack local's
+Symbol. `kuna-console/src/kuna_hightarget.rs (apply_local)` records the type on
+the batch's directive, which is carried as a name rather than a Symbol,
+`kuna_stablenames.rs (carry)` hands the type on under the name the first
+decompile printed, and the next decompile's naming pass gives it to
+the local holding most of the variable's instances (`retype_targets`), locking
+it on every instance after the merge and before the casts are placed
+(`coreaction_cleanup.rs (retype_whole_variable)`). Only a local as wide as the
+new type can take it: a stack local read whole and by halves is several locals
+under one Symbol, all printed by one declaration, and the declaration is the
+whole one's. A half that tied with it took the type before, and the variable
+kept its old one. For most such retypes
+nothing else reaches the analysis, so the merge is the first decompile's, and
+only the declaration and the casts at the variable's uses change: `v7 < v5`
+becomes `v7 < (long)v5`.
+
+A type that prints the constants the variable meets in its own way (an
+enumeration names them, `bool` spells them, a character type quotes them,
+`kuna_stablenames.rs (prints_literals)`) gives its type to those constants too:
+applied to the instances alone, `type v1 state` on an `int` holding `enum
+state` printed `v1 = 3` where the Symbol had printed `v1 = RUN`.
+`retype_whole_variable` types each constant copied into the variable, tested
+for equality with it or combined with it bit by bit (`v1 |= F_R`;
+`kuna_stablenames.rs (met_constants)`), which is where type inference would
+have taken the type, and nothing further away: inference would also carry it
+into the variable's copies, into arithmetic (`a0[7] + E_ONE`) and across the
+frame, which this does not. An ordered comparison keeps its constant a number,
+as before.
+
+A local the function only ever passes by address (`read(0,&c,1)`) has no
+instance at all, so nothing could carry its type; `kuna_hightarget.rs
+(apply_local)` retypes its stack Symbol instead, as before, since the storage
+is the variable's whole identity and nothing can split.
+
+A pointer whose pointee the analysis reads through (a structure, union, array
+or function, or a relative pointer, `kuna_stablenames.rs (reads_through)`) is
+the one unit retype that still reaches type inference (`reaches_inference`),
+which turns the offsets read through it into fields, elements and calls.
+`kuna_stablenames.rs (lock_retyped)` locks it, at the start of every type
+inference (`p5_types/coreaction_infertypes.rs (run_infer_types)`), on each
+varnode whose defining operation (instruction and creation time) defined an
+instance of the retyped variable in the first decompile. The shape and place
+keys are not used here: before the analysis settles they also fit other
+varnodes, which the lock would type too (in iproute2 `rtnl_nexthopdump_req` it
+reached the loop's other pointer and re-laid the stack frame around it). Every
+part of the variable is read through the type, and the parts agree when the
+merge compares their types, where a Symbol over the representative typed one
+part and left the rest to inference (a part defined by `malloc`'s `void *`
+return kept its own type and split off).
+
+The type also changes which operations the analysis builds, so the first
+decompile's keys can miss the retyped variable's instances, and the naming pass
+falls back to the lock: an instance no key matches but that carries the locked
+type counts for the retyped variable (`kuna_stablenames.rs (matched_name)`), so
+the variable keeps its number and the name a directive gave it. It also stays
+explicit (`holds_retype`, asked by `coreaction_cleanup.rs (base_explicit)`): it
+was printed, and an expression the new type reshapes could otherwise inline it
+and leave its name on nothing. The merge follows the first decompile's
+variables wherever the keys still identify them: `kuna_stablenames.rs
+(same_variable)`, asked by `merge.rs (merge_test_adjacent)` and
+`merge_adjacent`, refuses to join highs whose instances belonged to different
+locals and lets highs that belonged to one local join whatever their types,
+and `kuna_stablenames.rs (variable_groups)` hands `merge_by_datatype` the parts
+of each local that its grouping by type kept apart. What does not hold: a high
+no key identifies merges by the usual rules, and inference carries the type
+into the variable's copies, as it carries any type, which can change their
+declarations and the signature, reshape their expressions, absorb a stack slot
+into a re-laid frame, or split a copy whose definitions no longer agree. A
+retype that changes the width or the kind still maps the locked, isolated
+Symbol and may split or merge, since it changes what the analysis reads. A run
+without a `type` directive is unchanged, as are the datatests and the stages,
+and this corrects what a directive reaches, so it is unconditional.
+
+**A directive that does not reach the output says so.** A `name` or `type`
+used to report `applied` once it bound, whatever the next decompile printed: a
+retype of a local only passed by address was carried by instances it did not
+have and dropped. `kuna-console/src/assertions.rs (expected_locals)` records,
+per local a batch touched, the name it must be declared under and the type the
+last `type` gave it, and `assertions.rs (check_printed)` finds each in the C the
+replay printed by the declaration the printer emitted for it
+(`p9_emit/printc.rs (declared_locals)`): the declaration of the HighVariable
+the replay gave the directive to (`kuna_stablenames.rs (directive_targets)`),
+else one the naming pass gave the expected name and no other directive took; a
+parameter is read from the signature. A replay records a local printed under
+its library name (`libcnames`, above) by its number, so a declaration under
+that library name counts for the number as well: `type fd unsigned int` and
+`type v1 unsigned int` both find `unsigned int fd;`. A local declared under a suffixed name
+(`score_1`, because the program already has a function `score`) took the
+directive: it reports `applied`, with a note saying what it was printed as. A
+local not declared at all, or declared with another type than the directive
+gave, reports each directive that touched it refused, with the reason
+(`verify_printed` on the in-process path; the console prints `Rejected
+<command>: <reason>` at the next `print C`), and `kuna decompile` says the C was
+produced without it. A retype that changes the width, which can leave the old
+declaration in place, is now reported this way instead of `applied`. The check also showed the console dropping every rename
+of a DWARF local: `kuna-console/src/ifacedecomp.rs (IfcDecompile)` re-seeded the
+function's DWARF locals after the Symbols it carried, at the same storage, and
+the DWARF name won; it now re-seeds only the DWARF locals the previous decompile
+did not map.
+
+**A new name must be one the declaration can print.**
+`kuna-console/src/kuna_hightarget.rs (check_local_name)` rejects a `name`, or
+the name a `type` states, that is a C keyword or a type the program knows by
+that name (`uint4`, an asserted `typedef`): `name v6 int` printed `int int;`.
 
 Two recommendation paths share a name on purpose. A name recommendation
 recorded for a storage location names every high at that storage alike, as the

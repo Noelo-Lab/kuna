@@ -31,7 +31,7 @@
     },
     "stdout_matches": [
       "void add\\(void \\*a0,char \\*a1\\)",
-      "v2\\[1\\] = 0x506070801020304;",
+      "p\\[1\\] = 0x506070801020304;",
       "long drop\\(void \\*a0\\)",
       "int advance\\(unsigned long \\*a0\\)",
       "int mkpipe\\(int \\*a0\\)"
@@ -41,5 +41,5 @@
     ]
   },
   "notes": "OFF: the frame-record fixture with nothing flowing from callers: add and drop keep void * with the node's word stores intact, advance keeps unsigned long *, mkpipe keeps the int * pipe declares.",
-  "probe_id": "a-0f5e19204e05"
+  "probe_id": "a-e92ad16fb7c5"
 }

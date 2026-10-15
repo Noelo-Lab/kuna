@@ -1049,6 +1049,11 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
         return false;
     }
     let Some(ct) = vn_type(data, base) else { return false };
+    // (kuna `elfmain`) A `main`'s runtime `argv`/`envp` is the vector, however
+    // few of its elements the body reads.
+    if crate::kuna_elfmaindecl::took_runtime_type(data, base, &ct) {
+        return false;
+    }
     let lone = data.kuna_calleevote_closed() && !pointee_is_given(data, base, &ct, e);
     let headless = lone
         && crate::kuna_structheadless::admits(data, base, &ct)

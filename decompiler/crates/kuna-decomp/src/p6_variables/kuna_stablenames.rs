@@ -31,6 +31,14 @@
 //!   freed number never names a different local; a variable that is gone
 //!   leaves its number unused.
 //!
+//! A `type` that keeps a local's width and kind ([`retypes_as_unit`]) is
+//! carried with the record too, and typed onto every instance of the local
+//! after the merge ([`retype_targets`]), so the analysis does not split it. A
+//! pointer type inference has to read ([`reaches_inference`]) is also locked
+//! before inference runs on every varnode an operation of the variable defines
+//! ([`lock_retyped`]), and the merge then follows the previous decompile's
+//! variables where the keys still identify them ([`same_variable`]).
+//!
 //! Without a carried record the pass numbers in sequence, exactly as before.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -40,7 +48,7 @@ use kuna_base::space::spacetype::{IPTR_FSPEC, IPTR_INTERNAL, IPTR_IOP, IPTR_JOIN
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
-use crate::context::HighVariableId;
+use crate::context::{HighVariableId, VarnodeId};
 use crate::funcdata::Funcdata;
 
 /// An instance by its defining operation: the instruction and creation time
@@ -61,7 +69,7 @@ pub type Keys = (Op, Shape, Place);
 
 /// One decompile's default numbering, handed to the next decompile of the
 /// same function.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default)]
 pub struct PriorNames {
     /// The name of the local each instance belonged to, by [`Op`]; `None`
     /// where the key belonged to more than one name.
@@ -76,6 +84,12 @@ pub struct PriorNames {
     pub vacated: BTreeMap<int4, String>,
     /// The default-shaped names a rename gave a local (`name v3 v7`).
     pub given: BTreeSet<String>,
+    /// The other names a directive's local was printed under before it was
+    /// renamed or retyped (a `libcnames` spelling such as `fd`): no other local
+    /// is given one again.
+    pub vacated_names: BTreeSet<String>,
+    /// (kuna `libcnames`) The library name each number printed as.
+    pub aliases: BTreeMap<int4, String>,
     /// One past the last number handed out.
     pub end: int4,
     /// Each name-only rename of a printed local: the name it was printed under
@@ -85,6 +99,20 @@ pub struct PriorNames {
     /// storage and width: the analysis rebuilds the Symbol, and the naming
     /// pass gives it this name instead of a number.
     pub symbol_renames: BTreeMap<(Address, int4), String>,
+    /// Each retype that keeps a printed local's width and kind
+    /// ([`retypes_as_unit`]): the name it was printed under and its new type,
+    /// applied to the whole variable after the merge ([`retype_targets`]).
+    pub retypes: BTreeMap<String, UnitRetype>,
+    /// The local each varnode's keys matched, as the merge asks it
+    /// ([`same_variable`]).
+    pub merged_names: std::cell::RefCell<MergeMemo>,
+}
+
+/// Each varnode's matched local, by an index into the names seen so far.
+#[derive(Clone, Debug, Default)]
+pub struct MergeMemo {
+    locals: std::collections::HashMap<VarnodeId, Option<u32>>,
+    names: BTreeMap<String, u32>,
 }
 
 impl PriorNames {
@@ -93,8 +121,11 @@ impl PriorNames {
             && self.symbols.is_empty()
             && self.vacated.is_empty()
             && self.given.is_empty()
+            && self.vacated_names.is_empty()
+            && self.aliases.is_empty()
             && self.renames.is_empty()
             && self.symbol_renames.is_empty()
+            && self.retypes.is_empty()
     }
 }
 
@@ -125,42 +156,71 @@ fn stable(addr: &Address) -> Address {
     }
 }
 
+/// The [`Keys`] of `vn`; `None` for a constant.
+fn keys_of(fd: &Funcdata, vn: VarnodeId) -> Option<Keys> {
+    let v = fd.vbank().get(vn).filter(|v| !v.is_constant())?;
+    let storage = stable(v.get_addr());
+    let place = (storage.clone(), v.get_size(), fd.vn_use_point(vn));
+    Some(match v.get_def().filter(|_| v.is_written()).and_then(|op| fd.obank().get(op)) {
+        Some(op) => {
+            let inputs = (0..op.num_input())
+                .filter_map(|slot| op.get_in(slot).and_then(|input| fd.vbank().get(input)))
+                .fold(0xcbf2_9ce4_8422_2325u64, |hash, input| {
+                    let addr = stable(input.get_addr());
+                    let space = addr.get_space().map_or(u64::MAX, |space| space.get_index() as u64);
+                    [space, addr.get_offset(), input.get_size() as u64]
+                        .into_iter()
+                        .fold(hash, |hash, word| (hash ^ word).wrapping_mul(0x0000_0100_0000_01b3))
+                });
+            let pc = op.get_addr().clone();
+            (
+                (pc.clone(), op.get_time(), storage.clone(), v.get_size()),
+                (pc, Some(op.code()), storage, v.get_size(), inputs),
+                place,
+            )
+        }
+        None => (
+            (Address::new_invalid(), u32::MAX, storage.clone(), v.get_size()),
+            (Address::new_invalid(), None, storage, v.get_size(), 0),
+            place,
+        ),
+    })
+}
+
 /// The [`Keys`] of each non-constant instance of `high`.
 fn instances(fd: &Funcdata, high: HighVariableId) -> Vec<Keys> {
+    instances_with_keys(fd, high).into_iter().map(|(_, keys)| keys).collect()
+}
+
+fn instances_with_keys(fd: &Funcdata, high: HighVariableId) -> Vec<(VarnodeId, Keys)> {
     let Some(h) = fd.high_bank().get(high) else { return Vec::new() };
-    (0..h.num_instances())
-        .map(|i| h.get_instance(i))
-        .filter_map(|vn| {
-            let v = fd.vbank().get(vn).filter(|v| !v.is_constant())?;
-            let storage = stable(v.get_addr());
-            let place = (storage.clone(), v.get_size(), fd.vn_use_point(vn));
-            let keys = match v.get_def().filter(|_| v.is_written()).and_then(|op| fd.obank().get(op)) {
-                Some(op) => {
-                    let inputs = (0..op.num_input())
-                        .filter_map(|slot| op.get_in(slot).and_then(|input| fd.vbank().get(input)))
-                        .fold(0xcbf2_9ce4_8422_2325u64, |hash, input| {
-                            let addr = stable(input.get_addr());
-                            let space = addr.get_space().map_or(u64::MAX, |space| space.get_index() as u64);
-                            [space, addr.get_offset(), input.get_size() as u64]
-                                .into_iter()
-                                .fold(hash, |hash, word| (hash ^ word).wrapping_mul(0x0000_0100_0000_01b3))
-                        });
-                    let pc = op.get_addr().clone();
-                    (
-                        (pc.clone(), op.get_time(), storage.clone(), v.get_size()),
-                        (pc, Some(op.code()), storage, v.get_size(), inputs),
-                        place,
-                    )
-                }
-                None => (
-                    (Address::new_invalid(), u32::MAX, storage.clone(), v.get_size()),
-                    (Address::new_invalid(), None, storage, v.get_size(), 0),
-                    place,
-                ),
-            };
-            Some(keys)
-        })
-        .collect()
+    (0..h.num_instances()).map(|i| h.get_instance(i)).filter_map(|vn| Some((vn, keys_of(fd, vn)?))).collect()
+}
+
+/// The local an instance belonged to: by its keys ([`prior_name`]), or else
+/// by the type lock [`lock_retyped`] put on it, when the type inference read
+/// changed the operations it comes from.
+fn matched_name<'a>(fd: &Funcdata, prior: &'a PriorNames, vn: VarnodeId, keys: &Keys) -> Option<&'a String> {
+    if let Some(name) = prior_name(prior, keys) {
+        return Some(name);
+    }
+    let v = fd.vbank().get(vn).filter(|v| v.is_type_lock())?;
+    let mut locked =
+        prior.retypes.iter().filter(|(_, retype)| retype.infer && std::rc::Rc::ptr_eq(&retype.ct, v.get_type()));
+    let (name, _) = locked.next()?;
+    locked.next().is_none().then_some(name)
+}
+
+/// The name the carried record holds for an instance: by its most precise key
+/// the record holds, and none where that key belonged to more than one name.
+fn prior_name<'a>(prior: &'a PriorNames, (op, shape, place): &Keys) -> Option<&'a String> {
+    match prior.ops.get(op) {
+        Some(name) => name.as_ref(),
+        None => match prior.shapes.get(shape) {
+            Some(name) => name.as_ref(),
+            None => prior.places.get(place).and_then(|name| name.as_ref()),
+        },
+    }
 }
 
 /// How many of `high`'s instances belonged to each name in the carried
@@ -170,17 +230,10 @@ fn instances(fd: &Funcdata, high: HighVariableId) -> Vec<Keys> {
 fn tally(fd: &Funcdata, high: HighVariableId) -> BTreeMap<String, (usize, usize)> {
     let prior = fd.kuna_prior_names();
     let mut counts: BTreeMap<String, (usize, usize)> = BTreeMap::new();
-    for (op, shape, place) in instances(fd, high) {
-        let name = match prior.ops.get(&op) {
-            Some(name) => name,
-            None => match prior.shapes.get(&shape) {
-                Some(name) => name,
-                None => prior.places.get(&place).unwrap_or(&None),
-            },
-        };
-        if let Some(name) = name {
+    for (vn, keys) in instances_with_keys(fd, high) {
+        if let Some(name) = matched_name(fd, prior, vn, &keys) {
             let count = counts.entry(name.clone()).or_default();
-            if op.2.get_space().is_some_and(|space| space.get_type() == IPTR_INTERNAL) {
+            if keys.0 .2.get_space().is_some_and(|space| space.get_type() == IPTR_INTERNAL) {
                 count.1 += 1;
             } else {
                 count.0 += 1;
@@ -448,6 +501,269 @@ pub fn snapshot(fd: &Funcdata) -> Vec<(String, Keys)> {
     out
 }
 
+/// A retype carried to the next decompile as the type of the whole printed
+/// variable ([`unit_retype`]); `infer` when type inference has to read it
+/// ([`reaches_inference`]).
+#[derive(Clone, Debug)]
+pub struct UnitRetype {
+    pub ct: std::rc::Rc<crate::dtype::Datatype>,
+    pub infer: bool,
+}
+
+/// The unit retype of a `from` variable to `to`, when it keeps the width and
+/// kind ([`retypes_as_unit`]).
+pub fn unit_retype(from: &crate::dtype::Datatype, to: &std::rc::Rc<crate::dtype::Datatype>) -> Option<UnitRetype> {
+    retypes_as_unit(from, to).then(|| UnitRetype { ct: to.clone(), infer: reaches_inference(to) })
+}
+
+/// Does retyping a `from` variable to `to` keep its width and kind: integer
+/// to integer (the signedness, or `bool`/`char` of that width), pointer to
+/// pointer, float to float? Such a retype changes how the variable is
+/// declared and cast, not what the analysis merges.
+pub fn retypes_as_unit(from: &crate::dtype::Datatype, to: &crate::dtype::Datatype) -> bool {
+    use crate::dtype::type_metatype::*;
+    let kind = |t: &crate::dtype::Datatype| match t.get_metatype() {
+        TYPE_INT | TYPE_UINT | TYPE_UNKNOWN | TYPE_BOOL | TYPE_ENUM_INT | TYPE_ENUM_UINT => Some(0),
+        TYPE_PTR | TYPE_PTRREL => Some(1),
+        TYPE_FLOAT => Some(2),
+        _ => None,
+    };
+    from.get_size() == to.get_size() && kind(from).is_some() && kind(from) == kind(to)
+}
+
+/// Is the directive on `sym` carried to the next decompile as a name (and a
+/// unit retype), not as a Symbol: a name-only rename, or a retype that keeps
+/// the printed variable's width and kind.
+pub fn is_carried_as_name(fd: &Funcdata, sym: crate::database::SymbolId) -> bool {
+    is_name_only(fd, sym) || fd.kuna_directive_symbols().iter().any(|d| d.symbol == sym && d.unit_type.is_some())
+}
+
+/// Lock each unit retype that drives inference ([`reaches_inference`]) on
+/// every varnode defined by an operation that defined an instance of the
+/// retyped variable in the previous decompile, before type inference reads
+/// the function, so the whole variable is read through the type and its parts
+/// still agree when the merge compares them. Only the defining operation
+/// itself identifies a varnode here: before the analysis settles, the shape
+/// and place of an instance also fit other varnodes, which the lock would
+/// type as well.
+pub fn lock_retyped(fd: &mut Funcdata) {
+    let locks: Vec<(VarnodeId, std::rc::Rc<crate::dtype::Datatype>)> = {
+        let prior = fd.kuna_prior_names();
+        if !prior.retypes.values().any(|retype| retype.infer) {
+            return;
+        }
+        *prior.merged_names.borrow_mut() = MergeMemo::default();
+        fd.vbank()
+            .iter_loc()
+            .filter_map(|vn| {
+                let name = prior.ops.get(&keys_of(fd, vn)?.0)?.as_ref()?;
+                let ct = &prior.retypes.get(name).filter(|retype| retype.infer)?.ct;
+                let v = fd.vbank().get(vn)?;
+                (v.get_size() == ct.get_size() && !v.is_annotation()).then(|| (vn, ct.clone()))
+            })
+            .collect()
+    };
+    for (vn, ct) in locks {
+        if let Some(v) = fd.vbank_mut().get_mut(vn) {
+            v.update_type_locked(ct, true, true);
+        }
+    }
+}
+
+/// Under a replayed retype that drives inference ([`reaches_inference`]), did
+/// `a` and `b` belong to one local of the previous decompile (`Some(true)`:
+/// every instance either matches names the same one), to different ones
+/// (`Some(false)`: no name in common), or is that unknown (`None`)? Inference
+/// changes types, and with them the speculative merges, which compare types;
+/// the merge follows the previous decompile's variables instead wherever the
+/// keys say what they were.
+pub fn same_variable(fd: &Funcdata, a: HighVariableId, b: HighVariableId) -> Option<bool> {
+    if !replays_inference(fd) {
+        return None;
+    }
+    let (na, nb) = (merged_names(fd, a), merged_names(fd, b));
+    if na.is_empty() || nb.is_empty() {
+        return None;
+    }
+    if na.len() == 1 && na == nb {
+        return Some(true);
+    }
+    if na.is_disjoint(&nb) {
+        return Some(false);
+    }
+    None
+}
+
+/// The locals `high`'s instances matched, remembered per varnode while the
+/// merge asks: the merge tests a pair of highs many times over.
+fn merged_names(fd: &Funcdata, high: HighVariableId) -> BTreeSet<u32> {
+    let Some(h) = fd.high_bank().get(high) else { return BTreeSet::new() };
+    let prior = fd.kuna_prior_names();
+    let mut memo = prior.merged_names.borrow_mut();
+    let MergeMemo { locals, names } = &mut *memo;
+    (0..h.num_instances())
+        .filter_map(|i| {
+            let vn = h.get_instance(i);
+            *locals.entry(vn).or_insert_with(|| {
+                let name = matched_name(fd, prior, vn, &keys_of(fd, vn)?)?;
+                let next = names.len() as u32;
+                Some(*names.entry(name.clone()).or_insert(next))
+            })
+        })
+        .collect()
+}
+
+/// The highs among `highs` that hold one local of the previous decompile and
+/// nothing else, grouped by that local, under a replayed retype that drives
+/// inference; empty otherwise. The merge by type cannot rejoin such a local
+/// once inference typed its parts apart.
+pub fn variable_groups(fd: &Funcdata, highs: &[HighVariableId]) -> Vec<Vec<HighVariableId>> {
+    if !replays_inference(fd) {
+        return Vec::new();
+    }
+    let current: BTreeSet<HighVariableId> = highs
+        .iter()
+        .filter_map(|&high| fd.high_bank().get(high).filter(|h| h.num_instances() > 0).map(|h| h.get_instance(0)))
+        .filter_map(|vn| fd.vbank().get(vn).and_then(|v| v.get_high()))
+        .collect();
+    let mut groups: BTreeMap<u32, Vec<HighVariableId>> = BTreeMap::new();
+    for high in current {
+        let names = merged_names(fd, high);
+        if names.len() == 1 {
+            groups.entry(names.into_iter().next().unwrap()).or_default().push(high);
+        }
+    }
+    groups.into_values().filter(|group| group.len() > 1).collect()
+}
+
+/// Does `vn` carry the type [`lock_retyped`] locked on the retyped variable?
+/// Such a variable stays explicit: it was printed, and its type may let the
+/// expression around it inline it, which would leave the name it was given
+/// on nothing.
+pub fn holds_retype(fd: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(v) = fd.vbank().get(vn).filter(|v| v.is_type_lock()) else { return false };
+    fd.kuna_prior_names().retypes.values().any(|retype| retype.infer && std::rc::Rc::ptr_eq(&retype.ct, v.get_type()))
+}
+
+fn replays_inference(fd: &Funcdata) -> bool {
+    fd.kuna_prior_names().retypes.values().any(|retype| retype.infer)
+}
+
+/// Must type inference read a unit retype to `to`: a pointer whose pointee it
+/// reads through ([`reads_through`]), where inference is what turns the offsets
+/// read through it into fields, elements and calls. Any other unit retype is
+/// applied after the merge alone ([`retype_targets`]): what the first decompile
+/// inferred still prints valid C under the new declaration.
+pub fn reaches_inference(to: &crate::dtype::Datatype) -> bool {
+    reads_through(to)
+}
+
+/// Does `ct` print the constants it is given in its own way: by an
+/// enumeration's names, as `bool`, or as characters?
+pub fn prints_literals(ct: &crate::dtype::Datatype) -> bool {
+    use crate::dtype::type_metatype::*;
+    ct.is_enum_type() || ct.is_char_print() || matches!(ct.get_metatype(), TYPE_ENUM_INT | TYPE_ENUM_UINT | TYPE_BOOL)
+}
+
+/// The constants of `size` bytes the variable made of `instances` meets
+/// directly: copied into it, tested for equality with it, or combined with it
+/// bit by bit (`v |= F_R`). Type inference would give them the variable's type;
+/// applied after the merge, the retype gives it them here, and nothing further
+/// away. An ordered comparison keeps its constant a number, as it printed
+/// before: C compares an enumeration as an integer.
+pub fn met_constants(fd: &Funcdata, instances: &[VarnodeId], size: int4) -> Vec<VarnodeId> {
+    let constant = |vn: Option<VarnodeId>| {
+        vn.filter(|&vn| fd.vbank().get(vn).is_some_and(|v| v.is_constant() && v.get_size() == size))
+    };
+    let mut out = Vec::new();
+    for &vn in instances {
+        let Some(v) = fd.vbank().get(vn) else { continue };
+        if let Some(def) = v.get_def().and_then(|op| fd.obank().get(op)) {
+            if def.code() == OpCode::CPUI_COPY {
+                out.extend(constant(def.get_in(0)));
+            }
+        }
+        for op in v.descend_iter() {
+            let Some(o) = fd.obank().get(op) else { continue };
+            if matches!(
+                o.code(),
+                OpCode::CPUI_INT_EQUAL
+                    | OpCode::CPUI_INT_NOTEQUAL
+                    | OpCode::CPUI_INT_OR
+                    | OpCode::CPUI_INT_AND
+                    | OpCode::CPUI_INT_XOR
+            ) {
+                out.extend((0..o.num_input()).filter_map(|slot| constant(o.get_in(slot))));
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Is `ct` a pointer whose pointee the analysis reads through: a structure,
+/// union, array or function, or a relative pointer? Type inference is what
+/// turns its offsets into fields, elements and calls.
+pub fn reads_through(ct: &crate::dtype::Datatype) -> bool {
+    use crate::dtype::type_metatype::*;
+    if ct.is_pointer_rel() {
+        return true;
+    }
+    match ct.get_metatype() {
+        TYPE_PTR => ct.get_ptr_to().is_some_and(|to| {
+            matches!(to.get_metatype(), TYPE_STRUCT | TYPE_UNION | TYPE_ARRAY | TYPE_PARTIALSTRUCT | TYPE_PARTIALUNION | TYPE_CODE)
+        }),
+        _ => false,
+    }
+}
+
+/// The local each unit retype types: the one holding most of the retyped
+/// variable's instances, as for [`rename_targets`], among the locals as wide as
+/// the new type. A stack local read whole and in halves is several locals of
+/// one Symbol, and the declaration is the whole one's.
+pub fn retype_targets(
+    fd: &Funcdata,
+    tallies: &[(HighVariableId, BTreeMap<String, (usize, usize)>)],
+) -> BTreeMap<HighVariableId, std::rc::Rc<crate::dtype::Datatype>> {
+    let retypes = &fd.kuna_prior_names().retypes;
+    directive_targets(fd, tallies)
+        .into_iter()
+        .filter_map(|(name, high)| retypes.get(&name).map(|retype| (high, retype.ct.clone())))
+        .collect()
+}
+
+/// The local each carried rename or unit retype reaches, by the name the
+/// previous decompile printed it under: the one holding most of that
+/// variable's instances, as for [`rename_targets`]; for a retype, among the
+/// locals as wide as its type ([`retype_targets`]).
+pub fn directive_targets(
+    fd: &Funcdata,
+    tallies: &[(HighVariableId, BTreeMap<String, (usize, usize)>)],
+) -> BTreeMap<String, HighVariableId> {
+    let prior = fd.kuna_prior_names();
+    let fits = |name: &str, high: HighVariableId| match prior.retypes.get(name) {
+        Some(retype) => width(fd, high) == Some(retype.ct.get_size()),
+        None => true,
+    };
+    let mut best: BTreeMap<&String, ((usize, usize), HighVariableId)> = BTreeMap::new();
+    for (high, counts) in tallies {
+        for (name, count) in counts {
+            if (prior.renames.contains_key(name) || prior.retypes.contains_key(name)) && fits(name, *high) {
+                if best.get(name).is_none_or(|(held, _)| *count > *held) {
+                    best.insert(name, (*count, *high));
+                }
+            }
+        }
+    }
+    best.into_iter().map(|(name, (_, high))| (name.clone(), high)).collect()
+}
+
+fn width(fd: &Funcdata, high: HighVariableId) -> Option<int4> {
+    let h = fd.high_bank().get(high)?;
+    (h.num_instances() > 0).then(|| fd.vbank().get(h.get_instance(0)).map(|v| v.get_size())).flatten()
+}
+
 /// Did a `name` directive rename `sym` without stating a type: a Symbol it
 /// mapped over a printed local, or a stack local's Symbol it renamed? Such a
 /// rename is carried as a name, not as a Symbol: a Symbol over one definition
@@ -482,9 +798,17 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
         symbols: BTreeMap::new(),
         vacated: prior.vacated.clone(),
         given: prior.given.clone(),
+        vacated_names: prior.vacated_names.clone(),
+        aliases: prior.aliases.clone(),
         end: prior.end.max(fd.kuna_default_name_end()),
         renames: BTreeMap::new(),
         symbol_renames: prior.symbol_renames.clone(),
+        retypes: prior
+            .retypes
+            .iter()
+            .map(|(from, retype)| (prior.renames.get(from).unwrap_or(from).clone(), retype.clone()))
+            .collect(),
+        merged_names: Default::default(),
     };
     for (name, (op, shape, place)) in fd.kuna_name_snapshot().iter().cloned() {
         record(&mut next.ops, op, &name);
@@ -505,12 +829,29 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
             next.symbols.entry((addr, size)).or_insert(i);
         }
     }
+    for alias in fd.kuna_library_aliases().iter().filter(|a| a.shown) {
+        if let Some(i) = default_name_index(&alias.number, angr) {
+            next.aliases.insert(i, alias.alias.clone());
+        }
+    }
     for directive in directives {
         let symbol = lm.database().symbol(directive.symbol);
+        match &directive.unit_type {
+            Some(retype) => {
+                next.retypes.insert(directive.printed.clone(), retype.clone());
+            }
+            None if directive.retyped => {
+                next.retypes.remove(&directive.printed);
+            }
+            None => {}
+        }
         if symbol.is_name_undefined() || !symbol.is_name_locked() {
             continue;
         }
-        if is_name_only(fd, directive.symbol) {
+        if let Some(alias) = fd.kuna_library_aliases().iter().find(|a| a.shown && a.number == directive.printed) {
+            next.vacated_names.insert(alias.alias.clone());
+        }
+        if is_carried_as_name(fd, directive.symbol) {
             renamed.insert(directive.printed.clone(), symbol.name.clone());
             if let Some((_, addr, size, _)) =
                 lm.named_symbol_storage().into_iter().find(|(sym, ..)| *sym == directive.symbol && directive.bound.is_none())
@@ -519,8 +860,13 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
             }
         }
         if !next.given.remove(&directive.printed) {
-            if let Some(i) = default_name_index(&directive.printed, angr) {
-                next.vacated.insert(i, symbol.name.clone());
+            match default_name_index(&directive.printed, angr) {
+                Some(i) => {
+                    next.vacated.insert(i, symbol.name.clone());
+                }
+                None => {
+                    next.vacated_names.insert(directive.printed.clone());
+                }
             }
         }
         if default_name_index(&symbol.name, angr).is_some() {

@@ -1830,6 +1830,9 @@ impl Rule for RulePropagateCopy {
                 // throw LowlevelError("Self-defined varnode") -- internal invariant.
                 panic!("RulePropagateCopy: Self-defined varnode");
             }
+            if crate::p3_dataflow::kuna_globalcallstore::declines(data, op, vn, invn) {
+                continue;
+            }
             if crate::p3_dataflow::kuna_globalorderkeep::declines(data, op, vn, invn) {
                 continue;
             }

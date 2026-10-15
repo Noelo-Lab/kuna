@@ -726,10 +726,10 @@ pub struct ArchContext {
     /// a detected rustc one.  Read by
     /// [`crate::p4_calls::kuna_callretpair::live`].
     pub call_ret_pair: bool,
-    /// (kuna) `option bejoin`: may a two-register value join with its high word
-    /// in the first register where the ABI puts it?  Read by
-    /// [`crate::p4_calls::kuna_bejoin::live`].
-    pub be_join: bool,
+    /// (kuna) `option bejoin`: when may a two-register value join with its
+    /// high word in the first register where the ABI puts it?  Read by
+    /// [`crate::p4_calls::kuna_bejoin::mode`].
+    pub be_join: crate::kuna_bejoin::BeJoinMode,
     /// (kuna) `option rustabi` (0 off / 1 auto / 2 always): keep a rustc
     /// two-register `ScalarPair` return intact; read by [`crate::kuna_rustabi`].
     pub rust_abi: u8,
@@ -1201,6 +1201,9 @@ pub struct ArchContext {
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
     pub stack_views: bool,
+    /// (kuna `libcnames`) Name locals from the library calls they meet.
+    /// See [`crate::kuna_libcnames`].
+    pub libc_names: bool,
     /// Opt-in frame-bounded arrays for call-escaped integer storage.
     pub call_array_extent: bool,
     /// (kuna `stackstruct`) Lay out an address-taken frame record as one structure.
@@ -1219,6 +1222,14 @@ pub struct ArchContext {
     /// it.  Read by
     /// [`crate::p3_dataflow::kuna_loopcounterstore::declines`].
     pub loop_counter_store: bool,
+    /// (kuna) `option globalcallstore` (default-on): keep a global's COPY of a
+    /// loaded value whose only reader is the global's own marker. Read by
+    /// [`crate::p3_dataflow::kuna_globalcallstore::declines`].
+    pub global_call_store: bool,
+    /// (kuna) `option intfloatround` (default-on): keep an integer-to-float
+    /// conversion's rounding through `RuleFloatCast` and `SubfloatFlow`. Read
+    /// by [`crate::p3_dataflow::kuna_intfloatround`].
+    pub int_float_round: bool,
     /// (kuna) `option tiedphitrim` (default-on, DIV-182): `Merge::mergeOp` trims a
     /// loop head's direct read of an aliased location out of the forced merge.
     /// Read through `MergeContext::kuna_tied_phi_trim`.
@@ -1229,6 +1240,8 @@ pub struct ArchContext {
     pub wide_slice_reduce: bool,
     /// (kuna) `devectorize` — re-roll a vectorized reduction into its scalar loop.
     pub devectorize_reduction: bool,
+    /// (kuna) `strlenscan` — collapse an inline `repnz scasb` length into `strlen`.
+    pub strlen_scan: bool,
     /// Guard stack slots against stores through stack-derived pointers.
     pub stack_store_guard: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
@@ -1723,9 +1736,9 @@ impl ArchContext {
             // (kuna) `option callretpair` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             call_ret_pair: true,
-            // (kuna) `option bejoin` default-off; the real value is copied from
-            // the engine Architecture in `build_arch_handle`.
-            be_join: false,
+            // (kuna) `option bejoin`; the real value is copied from the engine
+            // Architecture in `build_arch_handle`.
+            be_join: crate::kuna_bejoin::BeJoinMode::Off,
             // (kuna) `option rustabi` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
@@ -1872,12 +1885,16 @@ impl ArchContext {
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)
+            libc_names: false, // libcnames (opt-in)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
+            global_call_store: false,    // globalcallstore (Architecture::reset_defaults sets the shipped default: on)
+            int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
             split_store_keep: false,     // splitstorekeep (Architecture::reset_defaults sets the shipped default: on)
             wide_slice_reduce: false,    // wideslice (Architecture::reset_defaults sets the shipped default: on)
             devectorize_reduction: false, // devectorize (opt-in default-off)
+            strlen_scan: false, // strlenscan (live value copied from the Architecture)
             stack_store_guard: false,
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
@@ -2140,6 +2157,20 @@ impl ArchContext {
             .iter()
             .find(|(sp, off, _)| *sp == space_index && *off == offset)
             .map(|(_, _, m)| std::rc::Rc::clone(m))
+    }
+
+    /// (kuna `libcnames`) The library names the prototype parked on the
+    /// callee at `addr` carries, without copying the prototype.
+    pub fn callee_library_names(&self, addr: &Address) -> Option<&'static crate::kuna_libcnames::LibraryNames> {
+        if self.remote_scope.is_some() {
+            return None;
+        }
+        let space_index = addr.get_space()?.get_index();
+        let offset = addr.get_offset();
+        self.callee_protos
+            .iter()
+            .find(|(si, off, _)| *si == space_index && *off == offset)
+            .and_then(|(_, _, pieces)| pieces.kuna_library_names)
     }
 
     pub fn callee_proto_pieces(&self, addr: &Address) -> Option<crate::fspec::PrototypePieces> {

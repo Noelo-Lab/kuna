@@ -80,6 +80,13 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
                 return Rc::clone(out.get_type());
             }
         }
+        // (kuna strlenscan) `DatatypeUserOp::getOutputLocal` for the `strlen`
+        // builtin: the length is an unsigned integer of the output's width.
+        if in0_off == crate::userop::BUILTIN_STRLEN as u64 {
+            if let Some(Ok(t)) = arch.types().map(|t| t.get_base(out_size, type_metatype::TYPE_UINT)) {
+                return t;
+            }
+        }
     }
     // C++ `TypeOpCall::getOutputLocal` (typeop.cc:722) / `TypeOpCallind::getOutputLocal`
     // (typeop.cc:778): when the resolved `FuncCallSpecs` has a locked (committed)
@@ -131,6 +138,21 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
     if (opcode == OpCode::CPUI_CALL || opcode == OpCode::CPUI_CALLIND) && slot > 0 {
         if let Some(ct) = call_input_type_local(data, op, slot, opcode, recovered) {
             return ct;
+        }
+    }
+
+    // (kuna strlenscan) `DatatypeUserOp::getInputLocal` for the `strlen` builtin:
+    // its one argument is a `char *`.
+    if opcode == OpCode::CPUI_CALLOTHER
+        && slot == 1
+        && o.get_in(0).and_then(|v| data.vbank().get(v)).map(|v| v.get_offset())
+            == Some(crate::userop::BUILTIN_STRLEN as u64)
+    {
+        if let Some(tlst) = arch.types() {
+            let ws = data.get_arch().manage().get_default_data_space().map(|s| s.get_word_size()).unwrap_or(1);
+            if let Ok(ptr) = tlst.get_type_char(1).and_then(|c| tlst.get_type_pointer(in_size, c, ws)) {
+                return ptr;
+            }
         }
     }
 
@@ -422,6 +444,9 @@ fn build_localtypes(data: &mut Funcdata) {
         } else {
             crate::kuna_calleevote::input_vote(data, vn, &ct).unwrap_or(ct)
         };
+        // (kuna `elfmain`) An executable's own `main` gives the runtime arguments
+        // its body reads their runtime types, unlocked. See `kuna_elfmaindecl`.
+        let ct = if from_seed { ct } else { crate::kuna_elfmaindecl::input_type(data, vn).unwrap_or(ct) };
         // (kuna `ptrfromuse`) A function input whose only memory role is to be a
         // LOAD/STORE base has no pointer candidate in the fold above, because
         // `TypeOpIntAdd` votes `int<N>` for it and refuses to carry the pointer
@@ -670,6 +695,12 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
     // (kuna `elemptr`) A value stored through a pointer `elemptr` typed keeps
     // its own sign; see `kuna_elemptr::keeps_stored_sign`.
     if crate::kuna_elemptr::keeps_stored_sign(data, op, inslot, outslot, &newtype, &cur) {
+        return false;
+    }
+    // (kuna `elfmain`) A runtime argument of an executable's own `main` keeps its
+    // runtime type, without the type lock that would make it a realistic input
+    // to the next call. See `kuna_elfmaindecl`.
+    if crate::kuna_elfmaindecl::took_runtime_type(data, outvn, &cur) {
         return false;
     }
     if 0 > newtype.type_order(&cur).unwrap_or(0) {
@@ -1919,6 +1950,7 @@ pub fn run_infer_types(data: &mut Funcdata) -> bool {
     // input-Varnode type recommendations (the `this`-pointer collection is the
     // merged tree's only source; a no-op on a recommendation-free function).
     data.apply_type_recommendations();
+    crate::kuna_stablenames::lock_retyped(data);
     crate::kuna_charbyte::begin(data);
     build_localtypes(data);
     propagate_all(data);

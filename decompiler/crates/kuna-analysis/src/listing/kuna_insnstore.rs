@@ -1,19 +1,18 @@
-//! Instruction records in bounded chunks, with a small ordered address index.
-//! Tree nodes hold row numbers rather than the large instruction payload, so
-//! spare node slots do not reserve another full record. Chunks never relocate
-//! existing records or grow a second whole-image buffer during the walk.
+//! Instruction records in bounded chunks, with an ordered page address index.
+//! Tree nodes hold page buckets rather than large instruction payloads; each
+//! bucket stores sorted addresses and row numbers. Chunks never relocate records
+//! or grow a second whole-image buffer during the walk.
 
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
 use std::ops::RangeBounds;
 
+use super::kuna_insnindex::InstructionIndex;
 use super::model::Insn;
 
 const CHUNK_ROWS: usize = 1024;
 
 #[derive(Default)]
 pub(super) struct InstructionStore {
-    index: BTreeMap<u64, usize>,
+    index: InstructionIndex,
     chunks: Vec<Vec<Insn>>,
 }
 
@@ -36,40 +35,38 @@ impl Clone for InstructionStore {
 
 impl InstructionStore {
     pub fn insert(&mut self, address: u64, insn: Insn) -> Option<Insn> {
-        match self.index.entry(address) {
-            Entry::Occupied(entry) => {
-                let slot = *entry.get();
-                Some(std::mem::replace(
-                    &mut self.chunks[slot / CHUNK_ROWS][slot % CHUNK_ROWS],
-                    insn,
-                ))
+        let Self { index, chunks, .. } = self;
+        let mut pending = Some(insn);
+        let replaced = index.insert_with(address, || {
+            let slot = chunks
+                .last()
+                .map_or(0, |chunk| (chunks.len() - 1) * CHUNK_ROWS + chunk.len());
+            if slot % CHUNK_ROWS == 0 {
+                chunks.push(Vec::with_capacity(CHUNK_ROWS));
             }
-            Entry::Vacant(entry) => {
-                let slot = self.chunks.last().map_or(0, |chunk| {
-                    (self.chunks.len() - 1) * CHUNK_ROWS + chunk.len()
-                });
-                if slot % CHUNK_ROWS == 0 {
-                    self.chunks.push(Vec::with_capacity(CHUNK_ROWS));
-                }
-                self.chunks.last_mut().unwrap().push(insn);
-                entry.insert(slot);
-                None
-            }
-        }
+            chunks.last_mut().unwrap().push(pending.take().unwrap());
+            slot
+        });
+        replaced.map(|slot| {
+            std::mem::replace(
+                &mut chunks[slot / CHUNK_ROWS][slot % CHUNK_ROWS],
+                pending.take().unwrap(),
+            )
+        })
     }
 
     pub fn get(&self, address: &u64) -> Option<&Insn> {
-        let &slot = self.index.get(address)?;
+        let slot = self.index.get(*address)?;
         Some(&self.chunks[slot / CHUNK_ROWS][slot % CHUNK_ROWS])
     }
 
     pub fn get_mut(&mut self, address: &u64) -> Option<&mut Insn> {
-        let &slot = self.index.get(address)?;
+        let slot = self.index.get(*address)?;
         Some(&mut self.chunks[slot / CHUNK_ROWS][slot % CHUNK_ROWS])
     }
 
     pub fn contains_key(&self, address: &u64) -> bool {
-        self.index.contains_key(address)
+        self.index.contains_key(*address)
     }
 
     pub fn len(&self) -> usize {
@@ -81,16 +78,20 @@ impl InstructionStore {
     }
 
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&u64, &Insn)> {
-        self.range(..)
+        let chunks = &self.chunks;
+        self.index
+            .iter()
+            .map(move |(address, &slot)| (address, &chunks[slot / CHUNK_ROWS][slot % CHUNK_ROWS]))
     }
 
     pub fn range(
         &self,
         bounds: impl RangeBounds<u64>,
     ) -> impl DoubleEndedIterator<Item = (&u64, &Insn)> {
+        let chunks = &self.chunks;
         self.index
             .range(bounds)
-            .map(|(address, &slot)| (address, &self.chunks[slot / CHUNK_ROWS][slot % CHUNK_ROWS]))
+            .map(move |(address, &slot)| (address, &chunks[slot / CHUNK_ROWS][slot % CHUNK_ROWS]))
     }
 }
 
@@ -109,6 +110,8 @@ mod tests {
     use super::super::model::{FlowType, RawOp};
     use super::*;
     use kuna_num::opcodes::OpCode;
+    use std::collections::BTreeMap;
+    use std::ops::Bound;
 
     fn insn(addr: u64) -> Insn {
         Insn {
@@ -227,5 +230,206 @@ mod tests {
         );
         let capacity: usize = next.chunks.iter().map(Vec::capacity).sum();
         assert!(capacity - next.len() < CHUNK_ROWS);
+    }
+
+    #[test]
+    fn generated_sparse_page_queries_match_a_btree_map_oracle() {
+        let mut addresses: Vec<_> = (0..160u64)
+            .map(|n| ((n * 73 % 193) << 12) | (n * 997 % 4096))
+            .collect();
+        addresses.extend([0, 4095, 4096, 8191, 8192, u64::MAX - 1, u64::MAX]);
+
+        let mut store = InstructionStore::default();
+        let mut expected = BTreeMap::new();
+        for (ordinal, &address) in addresses.iter().rev().enumerate() {
+            let mut row = insn(address);
+            row.len = (ordinal % 11 + 1) as u32;
+            store.insert(address, row.clone());
+            expected.insert(address, row);
+        }
+
+        // Replacements must preserve one slot and return the prior record.
+        for &address in addresses.iter().step_by(9) {
+            let mut replacement = insn(address);
+            replacement.len = 77;
+            same(
+                &store.insert(address, replacement.clone()).unwrap(),
+                &expected.insert(address, replacement).unwrap(),
+            );
+        }
+
+        assert_eq!(store.len(), expected.len());
+        assert_eq!(
+            store.keys().collect::<Vec<_>>(),
+            expected.keys().collect::<Vec<_>>()
+        );
+        for (&address, expected_row) in &expected {
+            assert!(store.contains_key(&address));
+            same(store.get(&address).unwrap(), expected_row);
+        }
+        assert!(!store.contains_key(&1));
+
+        let alternate: InstructionStore = expected
+            .iter()
+            .rev()
+            .map(|(&address, row)| (address, row.clone()))
+            .collect();
+        for ((actual_address, actual), (alternate_address, alternate_row)) in
+            store.iter().zip(alternate.iter())
+        {
+            assert_eq!(actual_address, alternate_address);
+            same(actual, alternate_row);
+        }
+
+        // Bounds come from the data and mix inclusive/exclusive edges across
+        // ordinary, page-boundary, sparse, and extreme addresses.
+        let probes: Vec<_> = addresses.iter().step_by(7).copied().collect();
+        for (i, &left) in probes.iter().enumerate() {
+            for &right in probes.iter().skip(i) {
+                let (low, high) = (left.min(right), left.max(right));
+                for start in [Bound::Included(low), Bound::Excluded(low)] {
+                    for end in [Bound::Included(high), Bound::Excluded(high)] {
+                        if low == high
+                            && matches!(start, Bound::Excluded(_))
+                            && matches!(end, Bound::Excluded(_))
+                        {
+                            continue; // BTreeMap::range also rejects this pair.
+                        }
+                        let got: Vec<_> = store.range((start, end)).collect();
+                        let want: Vec<_> = expected.range((start, end)).collect();
+                        assert_eq!(got.len(), want.len());
+                        for ((actual_addr, actual), (want_addr, want)) in got.into_iter().zip(want)
+                        {
+                            assert_eq!(actual_addr, want_addr);
+                            same(actual, want);
+                        }
+                    }
+                }
+            }
+        }
+
+        for (start, end) in [
+            (Bound::Unbounded, Bound::Included(u64::MAX)),
+            (Bound::Excluded(0), Bound::Unbounded),
+            (Bound::Unbounded, Bound::Excluded(0)),
+            (Bound::Included(4096), Bound::Excluded(4096)),
+        ] {
+            let got: Vec<_> = store.range((start, end)).collect();
+            let want: Vec<_> = expected.range((start, end)).collect();
+            assert_eq!(got.len(), want.len());
+            for ((actual_addr, actual), (want_addr, want)) in got.into_iter().zip(want) {
+                assert_eq!(actual_addr, want_addr);
+                same(actual, want);
+            }
+        }
+        assert_eq!(
+            store
+                .range(..)
+                .rev()
+                .map(|(address, _)| address)
+                .collect::<Vec<_>>(),
+            expected.keys().rev().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn mutable_instruction_address_does_not_change_its_indexed_key() {
+        let mut store: InstructionStore = [4095, 4096, 8192]
+            .into_iter()
+            .map(|address| (address, insn(address)))
+            .collect();
+
+        store.get_mut(&4096).unwrap().addr = u64::MAX;
+
+        assert_eq!(store.get(&4096).unwrap().addr, u64::MAX);
+        assert!(store.get(&u64::MAX).is_none());
+        assert_eq!(
+            store.keys().copied().collect::<Vec<_>>(),
+            [4095, 4096, 8192]
+        );
+        assert_eq!(
+            store
+                .range(..)
+                .map(|(address, _)| *address)
+                .collect::<Vec<_>>(),
+            [4095, 4096, 8192]
+        );
+    }
+
+    #[test]
+    fn bounded_reverse_range_crosses_page_boundaries() {
+        let addresses = [4094, 4095, 4096, 8191, 8192, 8193];
+        let store: InstructionStore = addresses
+            .iter()
+            .rev()
+            .map(|&address| (address, insn(address)))
+            .collect();
+        let expected: BTreeMap<_, _> = addresses
+            .iter()
+            .map(|&address| (address, insn(address)))
+            .collect();
+        let bounds = (Bound::Included(4095), Bound::Excluded(8193));
+
+        let got = store
+            .range(bounds)
+            .rev()
+            .map(|(address, _)| *address)
+            .collect::<Vec<_>>();
+        let want = expected
+            .range(bounds)
+            .rev()
+            .map(|(&address, _)| address)
+            .collect::<Vec<_>>();
+
+        assert_eq!(got, want);
+        assert_eq!(got, [8192, 8191, 4096, 4095]);
+    }
+
+    #[test]
+    fn range_bound_validation_matches_btree_map_on_empty_and_populated_stores() {
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+
+        let invalid_bounds = [
+            (Bound::Included(8), Bound::Included(3)),
+            (Bound::Included(8), Bound::Excluded(3)),
+            (Bound::Excluded(8), Bound::Included(3)),
+            (Bound::Excluded(8), Bound::Excluded(3)),
+            (Bound::Excluded(5), Bound::Excluded(5)),
+        ];
+        let valid_empty_bounds = [
+            (Bound::Included(5), Bound::Excluded(5)),
+            (Bound::Excluded(5), Bound::Included(5)),
+        ];
+
+        for populated in [false, true] {
+            let mut store = InstructionStore::default();
+            let mut expected = BTreeMap::new();
+            if populated {
+                for address in [1, 5, 9] {
+                    store.insert(address, insn(address));
+                    expected.insert(address, insn(address));
+                }
+            }
+
+            for bounds in invalid_bounds {
+                let btree_panics = catch_unwind(AssertUnwindSafe(|| {
+                    let _ = expected.range(bounds).next();
+                }))
+                .is_err();
+                let store_panics = catch_unwind(AssertUnwindSafe(|| {
+                    let _ = store.range(bounds).next();
+                }))
+                .is_err();
+                assert_eq!(
+                    store_panics, btree_panics,
+                    "range behavior differs for populated={populated}, bounds={bounds:?}"
+                );
+            }
+
+            for bounds in valid_empty_bounds {
+                assert!(expected.range(bounds).next().is_none());
+                assert!(store.range(bounds).next().is_none());
+            }
+        }
     }
 }

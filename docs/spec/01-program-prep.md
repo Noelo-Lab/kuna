@@ -1661,6 +1661,22 @@ moves.
   This is required on PE, where the IAT slot and its `FF 25` veneer are separate
   `FunctionSymbol`s with the same name and a direct call reads the veneer's
   prototype by entry address.
+  ELF relocatable objects also contribute the loader's proven external code targets,
+  including undefined `STT_NOTYPE` symbols reached by call relocations. Their
+  synthetic target addresses receive the same signature as ordinary imports;
+  data-only relocations and undefined symbols without code relocation evidence
+  or a function symbol kind do not qualify. A same-spelled
+  definition still suppresses ambiguous name-only parking. The `libcsigs` and
+  `libctypes` passes use this same import evidence.
+  The extension adds no option of its own: it is more evidence for the same
+  passes, so `libproto`, `libcsigs` and `libctypes` off together decompile a
+  relocatable object exactly as before. Code imports
+  the loader cannot establish, including untyped x86 `PC32` direct calls and
+  `GOTPCRELX` indirect calls, remain outside this additional evidence stream.
+  LOSS: typing one callee can move an untyped neighbour's argument inference
+  (stale i386 `-O0` outgoing stack slots, the AArch64 `x8` result register), and
+  in an i386 PIC object, whose `GOTOFF` addresses the loader leaves unresolved,
+  a `char *` parameter renders such a garbage address as a string literal.
 - **(kuna) Measured libc signatures** (`libcsigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libcsigs.rs (LibcSigsPass)`):
   the second, larger half of the same table, closing most of the LOSS above. Which
@@ -1724,6 +1740,27 @@ moves.
   address-keyed copy at each resolver address. Thus an IAT slot and veneer remain
   typed even when a same-spelled export suppresses the global key; the export
   itself remains untouched.
+- **(kuna) Library parameter and result names** (for `libcnames`,
+  `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libcnames.rs (library_names)`):
+  every prototype the three libc tables above build carries the library's own
+  names for its parameters and, where the result has one, for its return value,
+  in `PrototypePieces::kuna_library_names`. They travel with exactly the
+  prototypes the tables park, so the imports-only rule and the order in which
+  DWARF replaces a table prototype apply to them unchanged, and they are kept
+  out of `innames`: the callee's signature prints as before and no parameter
+  becomes name-locked. Only the naming pass reads them, under `option libcnames`
+  (chapter 06). The parameter names are the glibc 2.35 header declarations with
+  the leading underscores stripped (`read (int __fd, void *__buf, size_t
+  __nbytes)` gives `fd, buf, nbytes`), read from the plain headers first and the
+  FORTIFY ones for the entry points only those declare; a slot the header leaves
+  unnamed stays empty. `__isoc99_X`, the GCC FORTIFY builtins `__X_chk` and
+  `__X_2` have no declaration of their own and take `X`'s names for the slots
+  they share with it. A return name is given only where the result is one kind
+  of thing whatever the arguments (`fd` for `open`/`socket`/`dup`/`mkstemp`, `n`
+  for `read`/`write`/`fread`, `len` for `strlen`, `p` for an allocation or a
+  pointer into a string, `fp` for an opened stream, `pid`, `dirp`, `entry`, `c`
+  for a read character); `fcntl` and `ioctl`, whose result depends on the
+  command, have none. 567 entries: 554 name parameters, 91 name the result.
 - **(kuna) Named libc aggregate types** (`libctypes`, values `off|opaque|glibc`,
   default opaque,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs (LibcTypesPass)`,
@@ -3868,7 +3905,8 @@ looking for a read of the third argument register would see nothing in either
 case, and of the two mistakes only one is wrong output — an `envp` the program
 ignores is an unused parameter in a declaration that is true of every hosted C
 program, while an `envp` dropped from a program that uses it is a lie. The
-declaration the runtime actually makes is therefore the one applied.
+declaration the runtime actually makes is therefore the one applied on the
+stripped path, where the body-read arity is not probed.
 
 The lock costs something in the other direction, and the corpus says how much. A
 `main` whose body reads an argument register *past* the third keeps that read
@@ -3913,12 +3951,98 @@ four bytes read as an address. So the pass additionally requires the image to na
 version suffix stripped; that is the C runtime's own name, and a fully stripped
 static image that states neither is refused rather than guessed at. It further
 refuses a non-ELF image, a recovered address equal to `_start` or outside every
-executable section, an address that already carries a function symbol — a
-non-stripped ELF names it `main` itself and that name wins through the commit's
-idempotent cross-scope probe, which is why no unstripped fixture and no parity
-assertion can move — and an image that already spells a symbol `main` anywhere,
-which would make the by-name park ambiguous in the way `retain_unambiguous_names`
-guards against in §1.7.
+executable section, and an address that already carries a function symbol other
+than `main`, whose name stays.
+
+An executable that keeps its symbol table names `main` itself, and that name
+stays, but the declaration does not come with it: the symbol is a name, and a
+`main` whose body alone is read comes out with anonymous slots — the in-tree
+`elfmainnamed_x86_64` fixture prints `unsigned int main(int a0,struct_0 *a1)`,
+with `score(a1->field_0x8)` where its source says `score(argv[1])`. crt1
+references `main` by name and the static linker resolves that reference to the
+image's global `main`, so in an image that names `__libc_start_main` its defined
+function `main` IS the routine the runtime calls, whether or not oracle 4 can
+read `_start` (it has no i386 or MIPS arm, and a musl crt1 is a different shape).
+
+Here the declaration may only name and type the parameters `main`'s own analysis
+recovers — never add one and never drop one. Adding one is wrong because a
+declared parameter is a live input: a `main(void)` that calls `printf` would hand
+it `argc` (`printf("%d",tick(CONCAT44(v1,argc)))`), and a `-O0` `main` would
+merge an undeclared-but-spilled third register with later `rdx` scratch. Dropping
+one is wrong because the body's reads of it become unassigned locals. Nothing the
+pass can read at load time gives that count: a `main` that passes `argc` and
+`argv` straight to its first call reads them only through the call, and gcc's
+interprocedural register allocation lets `argv` sit in `rsi` across a helper
+call before it is read. So the count is taken from the analysis itself, at
+decompile time.
+
+The pass parks the full `int main(int argc, char **argv, char **envp)` through
+`AnalysisOutput::main_decl_at`, keyed by ADDRESS (the symbol's, an ARM mode bit
+cleared), and the commit keeps it OFF the symbol, in
+`Architecture::elfmain_main_decl`. When the drive reaches that entry with no
+other prototype for it — no operator declaration, nothing another stream parked
+(a DWARF `main` is decompiled against DWARF alone) — it lays the declaration out
+under the default calling convention
+(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_elfmaindecl.rs (Runtime)`), locks
+only its `int` return (the inputs stay unlocked), and seeds the function with
+the storage, name and type of `argc`, `argv` and `envp`
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (decompile_func_full_with_objects)`).
+Parameter recovery runs with the same machinery as with the option off; the one
+input to it that changes is the locked `int` return. That return can also remove
+an argument the option-off analysis invents for a call, a value only passed
+through the registers it would otherwise have recovered as the return:
+`protoorder_cyclestruct_x86_64` prints `look(v2)` where the option-off output has
+`look(v3,v2)` and the source `look(&leaf)`. Every such case found agrees with
+the source. The seed itself is consulted only through one question,
+`decompiler/crates/kuna-decomp/src/p1_partition/kuna_elfmaindecl.rs (read_slots)`: are the
+function inputs the body reads, in any storage the convention passes a parameter
+in, exactly the first k runtime slots? When they are, type inference gives each
+such input its runtime type
+(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_elfmaindecl.rs (input_type)`, at the
+same unlocked seam `calleevote` votes through in `build_localtypes`); the type
+holds through propagation (`propagate_type_edge` does not overwrite it) and record
+synthesis gives way to it (`kuna_structsynth.rs (accepts)` refuses a runtime
+`argv`), but it carries no type lock, so the ancestor-realistic trials at the next
+call treat the input as they treat any recovered parameter. And
+`coreaction_protos.rs (update_input_types)` gives the recovered parameter its
+runtime name (`param_name`). The whole declaration is therefore applied in the one
+decompile the function was getting anyway.
+
+`decompiler/crates/kuna-decomp/src/p1_partition/kuna_elfmaindecl.rs (settled)` checks the
+finished function: its parameters must be no parameter at all where the body reads
+no runtime argument, or exactly the first k runtime slots, each named. Otherwise —
+a `main` that reads `argv` but not `argc` (the recovery fills the unread slot
+ahead of it), or `envp` alone, or hands `argc` to a callee as the whole 64-bit
+register `argc` is the low half of, or reads past the third argument — it is
+decompiled again without the seed and prints exactly what it prints with the
+option off; the locked `int` return was the only thing the seed had changed. That
+second decompile repeats `main`'s whole decompile, so a `main` that falls back
+costs it twice: on small crackme mains that is 10-20 ms, 6-13% of the whole
+process, and a large one pays its full decompile again. So
+the fixture prints `int main(int argc,char **argv)` with `score(argv[1])`, a
+`main(void)` prints `int main(void)`, and a `main` that reads `envp` declares all
+three. The body differs from the option-off output only by the parameters' names
+and types, the casts those types remove (and the locals that fold together once
+two values share a type), and the `int` return: `return 0xffffffff;` prints as
+`return -1;`, and a tail call whose value `main` returns as `return f();`. The
+`int` return can restructure a very large `main` too, and costs there: an
+8,000-line crackme `main` decompiles 6.7% slower (176.5 s to 188.4 s). Callers
+of `main` see no declaration. In a whole-binary run `main`'s calls reach its
+callees as any function's do, so what changed there carries one step further: a
+callee handed `*argv` can take `char *` from `calleevote`, and a callee whose
+value `main` now returns can take an `int` return from `voidret` (in-tree,
+`fmtedge_x86_64`'s `show`, and the tail-called `accepted`, `emit` and `probe` of
+three other fixtures).
+
+The claim is refused on anything but an executable — `ET_EXEC`, or an `ET_DYN`
+carrying a program interpreter or a `DT_FLAGS_1` with `DF_1_PIE` (a static-pie)
+— so a shared library that exports `main` (an `LD_PRELOAD` shim, a plugin) is
+left alone; when the image spells `main` more than once at different addresses,
+or as anything but a defined function; and when oracle 4 decodes a different
+address than the symbol's, since then two pieces of evidence disagree. An image
+with no `__libc_start_main` name is refused here too: a bare-metal `main` is
+called by a reset handler with nothing in its argument registers, and nothing
+licenses `argc`/`argv` there.
 
 Naming an address a second time makes one thing visible that was latent before it:
 `--define-function <start>[-<end>]=<name>` and a discovery pass can now reach the
@@ -4445,8 +4569,14 @@ nothing is filed.
 
 A context painter applies the ARM/MIPS decode-mode paints per address before each
 decode, so a Thumb or MIPS16 body disassembles in the right ISA. Each instruction
-is decoded by driving `Translate::one_instruction` with a capturing p-code sink
-(`decompiler/crates/kuna-analysis/src/listing/decode.rs (decode_one)`) and
+is decoded with a capturing p-code sink
+(`decompiler/crates/kuna-analysis/src/listing/decode.rs (decode_one)`). When
+assembly text is requested, `Translate::one_instruction_with_assembly` captures
+both results: SLEIGH reuses the p-code parse when safe, retaining its post-lift
+assembly fallback for context commits and delay slots. Other translators use the
+trait's sequential fallback. Assembly errors remain best-effort after a successful
+lift; a lift error ends the decode without an assembly retry. Without text, the
+walk calls `Translate::one_instruction` once. The resulting instruction is
 classified by a lifted transliteration of the S2 flow rules
 (`decompiler/crates/kuna-analysis/src/listing/classify.rs (classify)`), whose three
 load-bearing gotchas are worth restating: a constant-space branch operand is
@@ -4468,15 +4598,17 @@ only the ARM inventories change: 37 entries fewer in all, 23 of them right after
 predicated call and the rest mid-body entries that sat in the functions those
 entries had cut short, with no symbol-table start lost.
 
-The instruction model stores records in 1,024-row chunks, with a B-tree of
-`(address, row number)` pairs for ordered lookup
+The instruction model stores records in 1,024-row chunks. Its private address
+index groups sorted `(address, row number)` pairs into 4 KiB pages, with a B-tree
+of populated page keys for ordered lookup
 (`decompiler/crates/kuna-analysis/src/listing/kuna_insnstore.rs (InstructionStore)`).
-A partly filled tree node reserves small row numbers rather than full instruction
-records, and growing the walk allocates at most one more chunk without copying a
-whole-image buffer. Every record retains its flow targets, assembly and lazy
-p-code fields. Exact, range and interior queries still borrow the original
-record in address order. Replacing an address reuses its row; ARM frame-preserving
-rebuilds clone the records and index before extending them. Serial and parallel
+Exact lookups binary-search one page; range queries visit only intersecting pages
+and slice the boundary pages at their search positions. Growing the walk allocates
+bounded chunks without copying a whole-image buffer. Every record retains its
+flow targets, assembly and lazy p-code fields. Exact, range and interior queries
+still borrow the original record in address order. The index key remains
+independent of mutable instruction addresses. Replacing an address reuses its row;
+ARM frame-preserving rebuilds clone the records and index before extending them. Serial and parallel
 walks use the same store. This changes allocation and lookup layout, not the
 instruction partition or the facts any consumer receives.
 

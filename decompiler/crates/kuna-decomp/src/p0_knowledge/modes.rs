@@ -210,6 +210,12 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // the upstream `code *` spellings and applies no mode; preset membership is
     // what makes a call through a table entry or a local compile as C by default.
     ("calltargettype", "on"),
+    // (kuna) Name a local after the library call that returns it or takes it
+    // whole (`fd = open(...)`, `read(fd, ...)`). Shipped default OFF because six
+    // stage assertions of other features spell the `vN` it names; preset
+    // membership is what makes it the default rendering for the web page and for
+    // every binary `auto` decompiles under 500 KiB.
+    ("libcnames", "on"),
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),
@@ -523,13 +529,14 @@ mod tests {
         /// serial `kuna decompile-all`. The other surfaces cannot act on it, so
         /// preset membership would change nothing.
         ///
-        /// `bejoin` joins a big-endian or AVR two-register value high word first
-        /// when its low word looks returned on purpose. The rule reads the
+        /// `bejoin on` joins a big-endian or AVR two-register value high word
+        /// first when its low word looks returned on purpose. The rule reads the
         /// instructions, not a type, and an `int` that works over the high half
         /// of a 64-bit temporary compiles to the `long long`'s registers, so with
         /// it on that correct `int` prints as a wrong `long long` (GH-904). In
         /// the preset it would be the default output under 500 KiB, which is
-        /// exactly what it is opt-in to avoid.
+        /// exactly what it is opt-in to avoid; every mode keeps the default,
+        /// `evidence`, which joins that way only on proof.
         /// `armframes` expands ARM reference coverage with validated frame roots.
         /// On a stripped 400,556-byte BusyBox it grows the reachable walk from
         /// 2,271 instructions to about 74,000 and raises query time from 0.78 s

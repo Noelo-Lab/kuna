@@ -5,7 +5,10 @@
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
-    "main"
+    "main",
+    "--option",
+    "elfmain",
+    "off"
   ],
   "cwd": "{{WORK}}",
   "env": {
