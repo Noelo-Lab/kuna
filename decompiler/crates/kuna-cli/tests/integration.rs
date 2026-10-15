@@ -429,3 +429,6 @@ mod indirect_value_arguments;
 
 #[path = "multireg_call_inputs.rs"]
 mod multireg_call_inputs;
+
+#[path = "narrow_register_inputs.rs"]
+mod narrow_register_inputs;
