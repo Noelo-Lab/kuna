@@ -890,8 +890,10 @@ and repair hold an exclusive file lock for that content ID and recheck the marke
 after acquiring it. This prevents concurrent repair from deleting a newly
 published tree and avoids duplicate unpacking. The sibling lock file remains on
 disk so all writers lock the same file; the operating system releases the lock
-when its handle closes, including on process exit. A release whose specs did not
-change reuses the finished tree without acquiring the lock.
+when its handle closes, including on process exit. A caller waits at most 30
+seconds for the lock, then moves on to the next cache location, so a stopped or
+hung holder cannot hang every later run. A release whose specs did not change
+reuses the finished tree without acquiring the lock.
 
 The spec root resolves in this order: `KUNA_SPECS`, then `KUNA_ROOT`'s `specs/`,
 then the built-in tree, then the first directory that holds a

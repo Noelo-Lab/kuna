@@ -10,6 +10,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::{Duration, Instant};
 
 #[cfg(feature = "embed-specs")]
 mod generated {
@@ -18,6 +19,10 @@ mod generated {
 
 /// Written last into a finished unpack; a tree without it is not used.
 const COMPLETE: &str = ".complete";
+
+/// How long a caller waits on another process's unpack before trying the next
+/// cache location; an unpack takes well under a second.
+const LOCK_WAIT: Duration = Duration::from_secs(30);
 
 /// The unpacked tree, or why no cache location would take it. `None` when this
 /// build carries no specs.
@@ -71,6 +76,15 @@ fn cache_bases() -> Vec<PathBuf> {
 /// The tree for `id` under `base`, unpacking `files` there first if no finished
 /// copy exists.
 pub(crate) fn unpack(base: &Path, id: &str, files: &[(&str, &[u8])]) -> Result<PathBuf, String> {
+    unpack_within(base, id, files, LOCK_WAIT)
+}
+
+fn unpack_within(
+    base: &Path,
+    id: &str,
+    files: &[(&str, &[u8])],
+    wait: Duration,
+) -> Result<PathBuf, String> {
     let dir = base.join(format!("specs-{id}"));
     if dir.join(COMPLETE).is_file() {
         return Ok(dir);
@@ -84,7 +98,7 @@ pub(crate) fn unpack(base: &Path, id: &str, files: &[(&str, &[u8])]) -> Result<P
         .truncate(false)
         .open(base.join(format!(".specs-{id}.lock")))
         .map_err(|e| e.to_string())?;
-    lock.lock().map_err(|e| e.to_string())?;
+    acquire(&lock, wait)?;
     if dir.join(COMPLETE).is_file() {
         return Ok(dir);
     }
@@ -116,6 +130,26 @@ pub(crate) fn unpack(base: &Path, id: &str, files: &[(&str, &[u8])]) -> Result<P
         Err(e) => e.to_string(),
         Ok(()) => format!("{} has no {COMPLETE} marker", dir.display()),
     })
+}
+
+/// Take `lock`, giving up after `wait` so a stopped or stuck holder sends the
+/// caller to the next cache location instead of hanging it.
+fn acquire(lock: &fs::File, wait: Duration) -> Result<(), String> {
+    let deadline = Instant::now() + wait;
+    let mut pause = Duration::from_millis(1);
+    loop {
+        match lock.try_lock() {
+            Ok(()) => return Ok(()),
+            Err(fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
+                std::thread::sleep(pause);
+                pause = (pause * 2).min(Duration::from_millis(25));
+            }
+            Err(fs::TryLockError::WouldBlock) => {
+                return Err(format!("another process held the unpack lock for over {wait:?}"));
+            }
+            Err(fs::TryLockError::Error(e)) => return Err(e.to_string()),
+        }
+    }
 }
 
 fn write_tree(staging: &Path, id: &str, files: &[(&str, &[u8])]) -> Result<(), String> {
@@ -222,6 +256,20 @@ mod tests {
             });
             assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
         }
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_held_lock_times_out_instead_of_hanging() {
+        let base = sandbox("held");
+        fs::create_dir_all(&base).unwrap();
+        let holder = fs::File::create(base.join(".specs-0123.lock")).unwrap();
+        holder.lock().unwrap();
+        let err = unpack_within(&base, "0123", FILES, Duration::from_millis(50)).unwrap_err();
+        assert!(err.contains("unpack lock"), "{err}");
+        assert!(!base.join("specs-0123").exists());
+        drop(holder);
+        assert!(unpack_within(&base, "0123", FILES, Duration::from_millis(50)).is_ok());
         let _ = fs::remove_dir_all(&base);
     }
 
