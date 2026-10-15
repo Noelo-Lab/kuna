@@ -4598,15 +4598,17 @@ only the ARM inventories change: 37 entries fewer in all, 23 of them right after
 predicated call and the rest mid-body entries that sat in the functions those
 entries had cut short, with no symbol-table start lost.
 
-The instruction model stores records in 1,024-row chunks, with a B-tree of
-`(address, row number)` pairs for ordered lookup
+The instruction model stores records in 1,024-row chunks. Its private address
+index groups sorted `(address, row number)` pairs into 4 KiB pages, with a B-tree
+of populated page keys for ordered lookup
 (`decompiler/crates/kuna-analysis/src/listing/kuna_insnstore.rs (InstructionStore)`).
-A partly filled tree node reserves small row numbers rather than full instruction
-records, and growing the walk allocates at most one more chunk without copying a
-whole-image buffer. Every record retains its flow targets, assembly and lazy
-p-code fields. Exact, range and interior queries still borrow the original
-record in address order. Replacing an address reuses its row; ARM frame-preserving
-rebuilds clone the records and index before extending them. Serial and parallel
+Exact lookups binary-search one page; range queries visit only intersecting pages
+and slice the boundary pages at their search positions. Growing the walk allocates
+bounded chunks without copying a whole-image buffer. Every record retains its
+flow targets, assembly and lazy p-code fields. Exact, range and interior queries
+still borrow the original record in address order. The index key remains
+independent of mutable instruction addresses. Replacing an address reuses its row;
+ARM frame-preserving rebuilds clone the records and index before extending them. Serial and parallel
 walks use the same store. This changes allocation and lookup layout, not the
 instruction partition or the facts any consumer receives.
 
