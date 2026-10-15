@@ -68,9 +68,6 @@ mod call_result_pair_returns;
 #[path = "callee_memory_lifetimes.rs"]
 mod callee_memory_lifetimes;
 
-#[path = "catalog_cli.rs"]
-mod catalog_cli;
-
 #[path = "caller_stack_cli.rs"]
 mod caller_stack_cli;
 

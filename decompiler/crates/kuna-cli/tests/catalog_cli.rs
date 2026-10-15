@@ -1,9 +1,32 @@
 //! Catalog discovery without an installed console, with opt-in external queries.
 
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::sync::Mutex;
 
 use kuna_decomp::kuna_phases::{emit_catalog_json, emit_catalog_json_one, emit_catalog_markdown};
+
+// A concurrent fork can inherit a just-written executable's writable descriptor
+// until exec, so the copy or the fake console fails with ETXTBSY when run.
+static PROCESS_SETUP: Mutex<()> = Mutex::new(());
+
+trait Captured {
+    fn captured(&mut self) -> Output;
+}
+
+impl Captured for Command {
+    fn captured(&mut self) -> Output {
+        let child = {
+            let _setup = PROCESS_SETUP.lock().unwrap_or_else(|e| e.into_inner());
+            self.stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap()
+        };
+        child.wait_with_output().unwrap()
+    }
+}
 
 struct Catalog {
     dir: tempfile::TempDir,
@@ -16,7 +39,10 @@ impl Catalog {
         let executable = dir
             .path()
             .join(format!("kuna{}", std::env::consts::EXE_SUFFIX));
-        std::fs::copy(env!("CARGO_BIN_EXE_kuna"), &executable).unwrap();
+        {
+            let _setup = PROCESS_SETUP.lock().unwrap_or_else(|e| e.into_inner());
+            std::fs::copy(env!("CARGO_BIN_EXE_kuna"), &executable).unwrap();
+        }
         Self { dir, executable }
     }
 
@@ -34,7 +60,7 @@ impl Catalog {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        self.command(args).output().unwrap()
+        self.command(args).captured()
     }
 
     #[cfg(unix)]
@@ -43,6 +69,7 @@ impl Catalog {
         std::fs::write(self.dir.path().join("catalog.json"), full).unwrap();
         std::fs::write(self.dir.path().join("one.json"), one).unwrap();
         let path = self.dir.path().join("decomp_dbg");
+        let _setup = PROCESS_SETUP.lock().unwrap_or_else(|e| e.into_inner());
         std::fs::write(
             &path,
             "#!/bin/sh\nprintf '%s\\n' \"$@\" > console-args\n\
@@ -119,8 +146,7 @@ fn standalone_catalog_needs_neither_console_nor_specs() {
         &catalog
             .command(&["--check"])
             .env("KUNA_DECOMP_DBG", "")
-            .output()
-            .unwrap(),
+            .captured(),
     );
 }
 
@@ -132,8 +158,7 @@ fn explicit_missing_console_still_fails_instead_of_falling_back() {
         let out = catalog
             .command(&args)
             .env("KUNA_DECOMP_DBG", &missing)
-            .output()
-            .unwrap();
+            .captured();
         assert_eq!(out.status.code(), Some(1));
         assert!(out.stdout.is_empty());
         let stderr = String::from_utf8(out.stderr).unwrap();
@@ -147,8 +172,7 @@ fn explicit_missing_console_still_fails_instead_of_falling_back() {
         &catalog
             .command(&["--markdown"])
             .env("KUNA_DECOMP_DBG", missing)
-            .output()
-            .unwrap(),
+            .captured(),
     );
 }
 
@@ -181,8 +205,7 @@ fn unselected_sibling_console_is_not_started_and_opt_in_is_byte_identical() {
         let external = catalog
             .command(&args)
             .env("KUNA_DECOMP_DBG", &console)
-            .output()
-            .unwrap();
+            .captured();
         assert!(
             marker.exists(),
             "explicit console was not started: {args:?}"
@@ -210,8 +233,7 @@ fn external_selection_preserves_precedence_legacy_flags_and_drift_check() {
             "custom-specs",
         ])
         .env("KUNA_DECOMP_DBG", catalog.dir.path().join("wrong-console"))
-        .output()
-        .unwrap();
+        .captured();
     succeeds(&out);
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(json[0]["option"], "external_only");
@@ -229,8 +251,7 @@ fn external_selection_preserves_precedence_legacy_flags_and_drift_check() {
     let out = catalog
         .command(&["--check"])
         .env("KUNA_DECOMP_DBG", console)
-        .output()
-        .unwrap();
+        .captured();
     assert_eq!(out.status.code(), Some(1));
     assert!(out.stdout.is_empty());
     let stderr = String::from_utf8(out.stderr).unwrap();
