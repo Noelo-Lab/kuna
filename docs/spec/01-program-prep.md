@@ -6178,6 +6178,16 @@ Two rules fold into the same fixpoint, both Ghidra-derived:
   per-site CALL_RETURN flow override
   (`decompiler/crates/kuna-cli/src/decompile_all.rs`) — the fall-through prune that
   stops the flow-follower from absorbing the next function.
+
+  These scans read through a borrowed view of the existing Listing, bounded to
+  `[function entry, next function entry)`, instead of copying each function's
+  instructions into temporary collections. The strict call-site scan keeps its
+  address-order predecessor rule: a gap between decoded instructions does not by
+  itself stop the scan, but instructions from the preceding function are out of
+  bounds. The reachability scan keeps the stricter straight-line rule from its
+  former predecessor window: every step must have an explicit fall-through to
+  the next instruction, so a gap breaks the argument proof. Both reject an
+  intervening call, branch, or terminal instruction before accepting a constant.
 - **CFG reachability** (`noreturn_reach`, DIV-19; the
   `targetOnlyCallsNoReturn` rule of Ghidra's discovered analyzer,
   `function_reaches_only_noreturn`): the tail rule is a subset — it cannot conclude
