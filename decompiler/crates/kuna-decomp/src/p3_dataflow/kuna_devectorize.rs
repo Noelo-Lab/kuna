@@ -451,6 +451,14 @@ fn returned_from(data: &Funcdata, r: BlockId, pred: BlockId) -> Option<VarnodeId
     }
 }
 
+fn lanes_tile(lanes: &[i64], stride: i64, elem: i64) -> bool {
+    i64::try_from(lanes.len()).ok() == Some(stride)
+        && lanes
+            .iter()
+            .enumerate()
+            .all(|(k, &offset)| (k as i64).checked_mul(elem) == Some(offset))
+}
+
 /// Match the vectorized reduction whose scalar remainder loop is block `h`;
 /// on success, the guard block and the index of its edge into the vector arm.
 /// In order it proves: the scalar body steps `j` by one and adds the element at
@@ -597,7 +605,7 @@ fn match_reduction(data: &Funcdata, h: BlockId) -> Option<(BlockId, int4)> {
         lanes.push(addr.off + if big_endian(data, load) { wide - n - e } else { n });
     }
     lanes.sort_unstable();
-    if lanes != (0..stride).map(|k| k * elem).collect::<Vec<_>>() {
+    if !lanes_tile(&lanes, stride, elem) {
         return None;
     }
     let mut leaves = Vec::new();

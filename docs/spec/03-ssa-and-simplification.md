@@ -2113,9 +2113,12 @@ from zero. After the wide-slice reduction the vector arm is S copies of the
 scalar body in a different order. The action matches the whole shape on SSA and
 proves it: the accumulators and the induction variable start at zero; each lane
 zero-extends a disjoint E-byte slice of a load at `base + i*E + c`, and the
-lanes tile exactly S elements for a power-of-two S the guard bounds; the fold
-adds every accumulator once; the scalar loop starts at `length & -S` with the
-fold, or at zero with zero, steps one element and exits at `length`; both exits
+lanes tile exactly S elements for a power-of-two S the guard bounds. The lane
+count must equal S before checking offsets in place, so a large stride encoded
+in the input cannot cause an allocation proportional to S; expected offsets
+must not overflow. The fold adds every accumulator once; the scalar loop starts
+at `length & -S` with the fold, or at zero with zero, steps one element and
+exits at `length`; both exits
 hand back their sums (the early return and the scalar exit, or a shared join
 whose other phis agree slot for slot); no block of the arm, the remainder loop,
 the else block or the scalar exit writes global storage, so nothing the
