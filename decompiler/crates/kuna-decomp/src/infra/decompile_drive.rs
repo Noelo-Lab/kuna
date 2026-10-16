@@ -3,6 +3,8 @@
 //! This connects the architecture's flow environment, restartable action tree,
 //! and printer, following upstream `IfcDecompile` and `IfcPrintC`.
 
+mod kuna_varrefs;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -2069,10 +2071,11 @@ impl CodeProvenance {
         fd: &Funcdata,
         variables: &mut [VarInfo],
     ) -> Vec<BTreeSet<u64>> {
+        let storage = kuna_varrefs::StorageIndex::new(fd, variables);
         variables
             .iter_mut()
             .map(|variable| {
-                let refs = self.variable_varrefs(fd, variable);
+                let refs = self.variable_varrefs(fd, variable, &storage);
                 let evidence = self.evidence_for_refs(&refs);
                 variable.line_numbers = evidence.line_numbers;
                 variable.addresses = evidence.addresses;
@@ -2084,8 +2087,10 @@ impl CodeProvenance {
     /// The varrefs whose uses are `variable`'s evidence: its storage, else the
     /// highs carrying its name, else its `&parameter` references -- the first
     /// set the rendered markup actually used.
-    fn variable_varrefs(&self, fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> {
-        let storage_refs = variable_storage_varrefs(fd, variable);
+    fn variable_varrefs(
+        &self, fd: &Funcdata, variable: &VarInfo, storage: &kuna_varrefs::StorageIndex,
+    ) -> BTreeSet<u64> {
+        let storage_refs = storage.varrefs(fd, variable);
         if !self.evidence_for_refs(&storage_refs).line_numbers.is_empty() {
             return storage_refs;
         }
@@ -2170,6 +2175,7 @@ fn parameter_storage(fd: &Funcdata, arg_index: usize) -> Option<(Address, i64)> 
     None
 }
 
+#[cfg(test)]
 fn variable_storage_varrefs(fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> {
     let mut matches = Vec::new();
     if variable.is_param {
