@@ -8,7 +8,7 @@ const SCRATCH_PREFIX: &str = "kuna-jobs-v2-";
 const OWNER_LOCK: &str = "owner.lock";
 
 pub(super) struct ScratchDir {
-    _owner: File,
+    _owner: Option<File>,
     dir: tempfile::TempDir,
 }
 
@@ -17,6 +17,8 @@ impl ScratchDir {
         Self::create_in(&std::env::temp_dir())
     }
 
+    /// A temporary filesystem without file locks gets no owner marker, so no
+    /// sweep can ever reclaim the directory.
     fn create_in(temp: &Path) -> Result<Self, String> {
         sweep_stale_scratch(temp);
         let create_error = |e| format!("cannot create the worker scratch dir in {}: {e}", temp.display());
@@ -43,8 +45,10 @@ impl ScratchDir {
             )?;
         }
         let pending = tempfile::NamedTempFile::new_in(dir.path()).map_err(create_error)?;
-        pending.as_file().try_lock().map_err(|e| format!("cannot lock the worker scratch owner: {e}"))?;
-        let owner = pending.persist(dir.path().join(OWNER_LOCK)).map_err(|e| create_error(e.error))?;
+        let owner = match pending.as_file().try_lock() {
+            Ok(()) => Some(pending.persist(dir.path().join(OWNER_LOCK)).map_err(|e| create_error(e.error))?),
+            Err(_) => None,
+        };
         Ok(Self { _owner: owner, dir })
     }
 

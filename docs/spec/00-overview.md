@@ -1664,7 +1664,9 @@ locked temporary file, so a concurrent sweep cannot mistake an owner still being
 initialized for an abandoned run. A sweep removes only versioned directories
 whose published owner marker it can lock without waiting; an inaccessible marker
 or lock error leaves the directory intact. Process IDs and ages do not prove
-abandonment across PID namespaces sharing the same temporary directory.
+abandonment across PID namespaces sharing the same temporary directory. When
+the temporary filesystem cannot lock files, the pool runs without a marker, so
+its directory is never a sweep candidate.
 
 Names use `kuna-jobs-v2-<pid>-<suffix>` so older PID-based sweepers do not recognize
 them as cleanup candidates. The PID remains diagnostic. Legacy and unmarked
