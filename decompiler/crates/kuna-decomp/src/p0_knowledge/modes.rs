@@ -150,6 +150,11 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("regionedgeorder", "on"),
     ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
     ("orchain", "on"),   // the returndup gate DIV-69 measured; must follow returndup
+    // (kuna) Decline the returndup split at the join of a one-block `if`, so
+    // `if (c) f(); return 0;` is not printed as `if (!c) return 0; f(); return 0;`.
+    // Shipped OFF because the decbench O2 sample moved aggregate GED by +60 (it is
+    // -163 and +56 GED-perfect at O0); preset membership delivers it to the page.
+    ("rettriangle", "on"),
     ("iteexpr", "on"), // angr-style ?: recovery over computed-expression arms (readability)
     // Recover the scalar loop for readability. Kept in aggressive mode because
     // this hides the compiler's vector stride and duplicated loop body.
@@ -210,6 +215,12 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // the upstream `code *` spellings and applies no mode; preset membership is
     // what makes a call through a table entry or a local compile as C by default.
     ("calltargettype", "on"),
+    // (kuna) Name a local after the library call that returns it or takes it
+    // whole (`fd = open(...)`, `read(fd, ...)`). Shipped default OFF because six
+    // stage assertions of other features spell the `vN` it names; preset
+    // membership is what makes it the default rendering for the web page and for
+    // every binary `auto` decompiles under 500 KiB.
+    ("libcnames", "on"),
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),

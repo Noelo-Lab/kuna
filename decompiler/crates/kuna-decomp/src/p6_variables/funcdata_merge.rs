@@ -1006,7 +1006,12 @@ impl MergeContext for Funcdata {
         };
         (in_vn, pc, is_multiequal)
     }
-    fn snip_reads_insert_point(&self, vn: VarnodeId) -> (BlockId, Address, Option<OpId>) {
+    fn snip_reads_insert_point(&self, vn: VarnodeId, reads: &[OpId]) -> (BlockId, Address, Option<OpId>) {
+        if let Some(block) = crate::p6_variables::kuna_guardedreadtrim::guarded_block(self, vn, reads) {
+            let pc = self.bblocks_block_start(block);
+            let pc = if pc.is_invalid() { self.do_snip_reads_insert_point(vn).1 } else { pc };
+            return (block, pc, None);
+        }
         self.do_snip_reads_insert_point(vn)
     }
     fn indirect_inherit_union(&mut self, _outvn: VarnodeId, _newop: OpId, _indop: OpId) {

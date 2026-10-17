@@ -213,6 +213,8 @@ pub mod pcodeop_addlflags {
     /// flag, so no separate NaN test may be dropped against it.  Set by
     /// [`crate::p3_dataflow::kuna_floatnegation`]; read by `RuleIgnoreNan`.
     pub const kuna_exactfloat: uint4 = 0x80000;
+    /// A COPY lowered from a physical stack LOAD, retaining its read provenance.
+    pub const kuna_stack_read: uint4 = 0x100000;
 }
 
 // ---------------------------------------------------------------------------

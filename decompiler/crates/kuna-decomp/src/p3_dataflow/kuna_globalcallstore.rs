@@ -12,7 +12,7 @@ use crate::kuna_indexaliasguard::LEVEL_GLOBAL;
 use kuna_num::opcodes::OpCode;
 
 pub fn declines(data: &Funcdata, op: OpId, global: VarnodeId, source: VarnodeId) -> bool {
-    if !data.get_arch().global_call_store || data.get_arch().index_alias_guard != LEVEL_GLOBAL {
+    if !data.get_arch().global_call_store || !load_order_enabled(data) {
         return false;
     }
     let Some(g) = data.vbank().get(global) else {
@@ -38,4 +38,9 @@ pub fn declines(data: &Funcdata, op: OpId, global: VarnodeId, source: VarnodeId)
         .and_then(|v| v.get_def())
         .and_then(|o| data.obank().get(o))
         .is_some_and(|load| load.code() == OpCode::CPUI_LOAD)
+}
+
+/// The level at which a retained COPY can safely print its LOAD input inline.
+pub(crate) fn load_order_enabled(data: &Funcdata) -> bool {
+    data.get_arch().index_alias_guard == LEVEL_GLOBAL
 }

@@ -276,6 +276,7 @@ pub struct Funcdata {
     vbank: VarnodeBank,
     /// Machine homes retained when equivalent values replace their Varnodes.
     kuna_storage_sources: std::collections::HashMap<VarnodeId, Vec<crate::kuna_varsources::StorageSource>>,
+    pub(crate) kuna_guarded_reads: crate::p3_dataflow::kuna_stackreadscope::ReadScopes,
     kuna_call_transport: std::collections::HashSet<VarnodeId>,
     kuna_call_transport_projections: std::collections::HashMap<VarnodeId, int4>,
     kuna_denied_storage_writes: std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
@@ -423,6 +424,9 @@ pub struct Funcdata {
     /// previous decompile printed it under; see
     /// `kuna_stablenames::directive_targets`.
     kuna_directive_targets: std::collections::BTreeMap<String, crate::context::HighVariableId>,
+    /// (kuna `libcnames`) The library name each numbered local answers to; see
+    /// [`crate::kuna_libcnames::LibraryAlias`].
+    kuna_library_aliases: Vec<crate::kuna_libcnames::LibraryAlias>,
     /// (kuna, ghidra Phase 4) WIRE-ONLY symbols the encode-time link pass
     /// synthesized for named HighVariables the analysis deliberately left
     /// symbol-less — see [`crate::database::WireSymbol`].  They are encoded
@@ -720,6 +724,7 @@ impl Funcdata {
             jumpvec: Vec::new(),
             vbank,
             kuna_storage_sources: std::collections::HashMap::new(),
+            kuna_guarded_reads: Default::default(),
             kuna_call_transport: std::collections::HashSet::new(),
             kuna_call_transport_projections: std::collections::HashMap::new(),
             kuna_denied_storage_writes: std::collections::HashMap::new(),
@@ -752,6 +757,7 @@ impl Funcdata {
             kuna_record_names: false,
             kuna_name_snapshot: Vec::new(),
             kuna_directive_targets: std::collections::BTreeMap::new(),
+            kuna_library_aliases: Vec::new(),
             kuna_wire_symbols: Vec::new(),
             kuna_wrapped_wire_storage: std::collections::BTreeMap::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
@@ -1042,6 +1048,15 @@ impl Funcdata {
     /// when the driver took them.
     pub fn kuna_wide(&self) -> Option<&crate::kuna_bejoin::WideView> {
         self.kuna_wide.as_ref()
+    }
+
+    /// (kuna `libcnames`) The library names the naming pass gave numbered locals.
+    pub fn kuna_library_aliases(&self) -> &[crate::kuna_libcnames::LibraryAlias] {
+        &self.kuna_library_aliases
+    }
+
+    pub fn set_kuna_library_aliases(&mut self, aliases: Vec<crate::kuna_libcnames::LibraryAlias>) {
+        self.kuna_library_aliases = aliases;
     }
 
     /// (kuna `rustabi`) Record what a probe of `entry`'s body proved about the
@@ -3977,6 +3992,7 @@ impl Funcdata {
         self.obank.clear();
         self.vbank.clear();
         self.kuna_storage_sources.clear();
+        self.kuna_guarded_reads = Default::default();
         self.kuna_call_transport.clear();
         self.kuna_call_transport_projections.clear();
         self.kuna_denied_storage_writes.clear();

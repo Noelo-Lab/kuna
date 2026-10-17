@@ -82,3 +82,5 @@ pub use p7_regions::*;
 pub use p8_structure::*;
 pub use p9_emit::*;
 pub use infra::*;
+
+pub(crate) use p9_emit::kuna_indirectargs;

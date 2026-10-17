@@ -84,6 +84,12 @@ pub struct PriorNames {
     pub vacated: BTreeMap<int4, String>,
     /// The default-shaped names a rename gave a local (`name v3 v7`).
     pub given: BTreeSet<String>,
+    /// The other names a directive's local was printed under before it was
+    /// renamed or retyped (a `libcnames` spelling such as `fd`): no other local
+    /// is given one again.
+    pub vacated_names: BTreeSet<String>,
+    /// (kuna `libcnames`) The library name each number printed as.
+    pub aliases: BTreeMap<int4, String>,
     /// One past the last number handed out.
     pub end: int4,
     /// Each name-only rename of a printed local: the name it was printed under
@@ -115,6 +121,8 @@ impl PriorNames {
             && self.symbols.is_empty()
             && self.vacated.is_empty()
             && self.given.is_empty()
+            && self.vacated_names.is_empty()
+            && self.aliases.is_empty()
             && self.renames.is_empty()
             && self.symbol_renames.is_empty()
             && self.retypes.is_empty()
@@ -493,6 +501,20 @@ pub fn snapshot(fd: &Funcdata) -> Vec<(String, Keys)> {
     out
 }
 
+/// Record `high`'s instances under `name` in `fd`'s snapshot: a directive
+/// that reached it by the name the printer gave it, where another local
+/// carries the same name, is carried under that printed name.
+pub fn relabel(fd: &mut Funcdata, high: HighVariableId, name: &str) {
+    let keys = instances(fd, high);
+    let mut snapshot = fd.kuna_name_snapshot().to_vec();
+    for (label, entry) in &mut snapshot {
+        if keys.contains(entry) {
+            *label = name.to_string();
+        }
+    }
+    fd.set_kuna_name_snapshot(snapshot);
+}
+
 /// A retype carried to the next decompile as the type of the whole printed
 /// variable ([`unit_retype`]); `infer` when type inference has to read it
 /// ([`reaches_inference`]).
@@ -790,6 +812,8 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
         symbols: BTreeMap::new(),
         vacated: prior.vacated.clone(),
         given: prior.given.clone(),
+        vacated_names: prior.vacated_names.clone(),
+        aliases: prior.aliases.clone(),
         end: prior.end.max(fd.kuna_default_name_end()),
         renames: BTreeMap::new(),
         symbol_renames: prior.symbol_renames.clone(),
@@ -819,6 +843,11 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
             next.symbols.entry((addr, size)).or_insert(i);
         }
     }
+    for alias in fd.kuna_library_aliases().iter().filter(|a| a.shown) {
+        if let Some(i) = default_name_index(&alias.number, angr) {
+            next.aliases.insert(i, alias.alias.clone());
+        }
+    }
     for directive in directives {
         let symbol = lm.database().symbol(directive.symbol);
         match &directive.unit_type {
@@ -833,6 +862,9 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
         if symbol.is_name_undefined() || !symbol.is_name_locked() {
             continue;
         }
+        if let Some(alias) = fd.kuna_library_aliases().iter().find(|a| a.shown && a.number == directive.printed) {
+            next.vacated_names.insert(alias.alias.clone());
+        }
         if is_carried_as_name(fd, directive.symbol) {
             renamed.insert(directive.printed.clone(), symbol.name.clone());
             if let Some((_, addr, size, _)) =
@@ -842,8 +874,13 @@ pub fn carry(fd: &Funcdata) -> PriorNames {
             }
         }
         if !next.given.remove(&directive.printed) {
-            if let Some(i) = default_name_index(&directive.printed, angr) {
-                next.vacated.insert(i, symbol.name.clone());
+            match default_name_index(&directive.printed, angr) {
+                Some(i) => {
+                    next.vacated.insert(i, symbol.name.clone());
+                }
+                None => {
+                    next.vacated_names.insert(directive.printed.clone());
+                }
             }
         }
         if default_name_index(&symbol.name, angr).is_some() {

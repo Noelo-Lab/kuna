@@ -38,6 +38,7 @@ use kuna_decomp::fspec::PrototypePieces;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
+mod kuna_libcnames;
 pub mod kuna_libcsigs;
 pub mod kuna_libctypes;
 pub mod kuna_win32sigs;
@@ -235,6 +236,7 @@ fn build_pieces(
         first_var_arg_slot: sig.vararg,
         output_storage: None,
         input_storage: Vec::new(),
+        kuna_library_names: kuna_libcnames::library_names(name).filter(|n| n.params.len() == sig.params.len()),
     })
 }
 

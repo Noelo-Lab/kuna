@@ -282,7 +282,27 @@ forbids a forced merge, the machinery edits the data flow until it doesn't:
    fills the slot (upstream `merge.cc:461` "snip must come after OP CAUSING
    EFFECT"; kuna GH-181, where `freecon` then frees the pre-call NULL).
    `Merge::trim_op_output` applies the same INDIRECT rule to its own
-   insert-after point. Windows spanning several addresses become
+   insert-after point. For a call-written stack value whose affected reads
+   are all dominated by one single-predecessor successor of the call block,
+   the original stack-LOAD ledger must contain positive evidence tied to the
+   call, with no overlapping lowered read anywhere in the call block and no removed or
+   invalid original read blocks. Reloads after a later write do not feed
+   these affected reads and do not prevent the repair. With that positive
+   evidence, the trim COPY is placed at the successor's start, before its
+   other accesses. It therefore does not
+   run on paths through the other successor. Phi inputs are reads on their
+   incoming edges. Calls, STOREs, CALLOTHERs and overlapping storage writes
+   after the defining call prevent this delay. Missing positive call-bound
+   provenance or stale original read blocks,
+   pre-branch machine reads, and wrapping frame ranges also keep the existing
+   placement. Other shapes retain the defining-op
+   placement; the repair does not reschedule through further nested guards.
+   The default-on `guardedreadtrim` option applies this scope-aware placement
+   to ordinary and volatile locals; off restores legacy insertion. Reliable
+   and aggressive inherit the same default. Ordinary scalar captures may
+   produce equivalent C values, whereas an extra volatile read is observable.
+   The option also disables provenance collection when off. Windows spanning
+   several addresses become
    VariableGroup pieces (`bank_group_with`). *(kuna divergence, documented at
    `merge.rs (Merge::merge_addr_tied)`)*: a forced merge that still intersects
    — a heavily-reused stack slot from compiler stack-coloring — is *skipped*,
@@ -734,6 +754,62 @@ well as the scope (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 ... sequence. Two highs that denote one object are unaffected: they share a
 name through their shared Symbol, never through a recommendation.
 
+**A library call names the locals it meets (`libcnames`, default off, on
+under `--mode aggressive`).** A prototype a built-in libc table parks carries
+the library's names for its parameters and result (chapter 01), which the
+recommendation above never sees: they are not `innames` and lock nothing. The
+library name is a second name for a numbered local, never a replacement for
+its number. `decompiler/crates/kuna-decomp/src/p6_variables/kuna_libcnames.rs
+(candidates)` reads the evidence before the naming walk, the walk numbers
+every local exactly as it does with the option off and records that numbering
+for a directive replay, and only then does `kuna_libcnames.rs (apply)` give a
+candidate still printed under its number the library's name, recording the
+pair on the function (`Funcdata::kuna_library_aliases`). So `v4` is the same
+variable whether or not the option is on, and the locals after a named one do
+not renumber. The evidence, strongest first: the value a library call returns
+(`fd = open(a0,0);`), counted only when every library result the local holds
+has the same name; a library argument the local is passed whole as, when the
+name says what the value is (`read(fd,...)` names `fd`, `write(a0,a1,n)` names
+`n`); and the same for a name that only says which side of one call a value is
+on (`dest`/`src`, `s1`/`s2`, `haystack`/`needle`, ...), which counts only when
+every such name the local receives is the same one, so a pointer that is one
+`strcmp`'s `s2` and the next one's `s1` keeps its `vN`. Within a kind the
+earliest call decides, then the lowest slot, and a name equal to a type the
+printed code can mention (`tm`, `FILE`, a DWARF typedef: anything the type
+factory knows by that name) or to a C or Rust keyword is passed over for the
+next evidence. Evidence follows a value through the implied copies and casts
+the printer folds into the statement (`x = (T)call()`, `call((T)x)`) and
+through nothing else, so a value used inside an expression (`malloc(len + 1)`)
+names nothing. The local must be one the walk numbered: not an input, a
+global, a constant or a structure piece, and not a speculative merge of
+several classes. A clash takes `_2`, `_3`, ... in the order of the evidence
+(`fd`, `fd_2` for two `open`s), and no spelling repeats a name any variable of
+the function prints, any global the program names (`GlobalQuery::has_symbol_name`,
+whether or not the function reads it), the scope holds, a callee or the
+function itself has.
+
+A directive reaches such a local by either name.
+`decompiler/crates/kuna-console/src/kuna_hightarget.rs (library_number)`
+reads a library name as the number it stands for, and the printed-local lookup
+answers a number for the local printed under its library name, so a replay
+record and the stable numbering above only ever see numbers, and a directive
+the web page recorded in one mode reaches the same local after a switch to
+another: `name fd src` and `name v1 src` both rename the descriptor, with the
+option on or off (off, the library names are still decided, for this lookup
+only, whenever a directive may name a local). The one exception is a library
+name an earlier directive of the batch gave to another local: that rename took
+the name, so it names that local. A name a rename gave or a name-locked
+Symbol holds is the caller's or the binary's even when it is shaped like a
+number, and no library name is printed over it (`name fd v9` prints `v9`).
+Under a carried naming record (`PriorNames::aliases`, by the number the
+local's instances had) a local keeps the spelling it printed, also when a
+rename took its number; a
+spelling a rename took or vacated (`PriorNames::vacated_names`), or that
+another local printed, goes to no one else, and a local whose spelling a
+rename took prints its number. After `name fd src` the second descriptor is
+still `fd_2` and no local becomes `fd`; after `name v5 n`, read's result prints
+`v3` and `name v3 got` reaches it.
+
 **A default name skips one a caller locked.** The `vN` allocator (and the
 `<prefix>Var<N>` arm under Ghidra names) used to hand out `v<base++>` without
 looking at the scope, so after `name v3 v1` the untouched local that came first
@@ -917,19 +993,62 @@ replay printed by the declaration the printer emitted for it
 (`p9_emit/printc.rs (declared_locals)`): the declaration of the HighVariable
 the replay gave the directive to (`kuna_stablenames.rs (directive_targets)`),
 else one the naming pass gave the expected name and no other directive took; a
-parameter is read from the signature. A local declared under a suffixed name
+parameter is read from the signature. A replay records a local printed under
+its library name (`libcnames`, above) by its number, so a declaration under
+that library name counts for the number as well: `type fd unsigned int` and
+`type v1 unsigned int` both find `unsigned int fd;`. A local declared under a suffixed name
 (`score_1`, because the program already has a function `score`) took the
 directive: it reports `applied`, with a note saying what it was printed as. A
 local not declared at all, or declared with another type than the directive
 gave, reports each directive that touched it refused, with the reason
 (`verify_printed` on the in-process path; the console prints `Rejected
 <command>: <reason>` at the next `print C`), and `kuna decompile` says the C was
-produced without it. A retype that changes the width, which can leave the old
-declaration in place, is now reported this way instead of `applied`. The check also showed the console dropping every rename
+produced without it. The check also showed the console dropping every rename
 of a DWARF local: `kuna-console/src/ifacedecomp.rs (IfcDecompile)` re-seeded the
 function's DWARF locals after the Symbols it carried, at the same storage, and
 the DWARF name won; it now re-seeds only the DWARF locals the previous decompile
 did not map.
+
+**A local is edited by the name it shows.** The printer suffixes a name
+another identifier already holds
+(`p9_emit/kuna_dedupvardecls.rs (DeclNameUniquifier)`): `name v7 score` prints `score_1` beside a function
+`score`, a rename to a parameter's name prints `a0_1`, and of two locals given
+one name the later in declaration order prints `dup_1`. No local carries such a
+name, so a directive naming it answered `No symbol named: score_1` (and the
+shared one `More than one symbol named: dup (2)`), although the output and the
+"applied as" note offered exactly that edit. When an identifier resolves to no
+local, or to more than one, `kuna-console/src/kuna_hightarget.rs (resolve_shown)` prints the
+function with a printer of its own (`printc.rs (declarations_of)`), after
+giving each local the batch has renamed so far its new name, so it reads the
+names the next decompile shows, and takes the one local declared under the
+identifier: a local the batch renamed through the Symbol the earlier directive
+recorded, any other as the last decompile printed it. Where that print
+declares two locals the batch renamed under one line -- two locals given one
+name whose storage overlaps, `eax` within `rax`, which the print collapses
+while the next decompile declares them apart -- it cannot say which one is
+shown unsuffixed, and the directive is rejected as before rather than applied
+to either. A local whose name
+another local shares is carried under the suffixed name it was reached by
+(`kuna_stablenames.rs (relabel)`), so the next decompile tells the two apart.
+An identifier that resolves is read as before, a library name (`fd_2`) still
+through its number first; a name the batch start printed for one local and an
+earlier directive gave another is still rejected as ambiguous; and the extra
+print runs only for an identifier that did not resolve.
+
+**A stack local's scalar retype keeps its width.** A register local's
+retype to another width is rejected before it applies (`Storage is 4 bytes,
+the stated type is 8`), but a stack local's Symbol took any width: a narrower
+scalar shrank the local and its remainder came back as another (`type v24
+unsigned char` on `char v24 [20]` printed `char v62 [19]` and no `v24`), a
+wider one swallowed its neighbours and was then reported refused, and a type
+running past the end of the stack left the Symbol unmapped.
+`kuna_hightarget.rs (check_stack_width)` refuses these before anything
+changes, with the same reason, so the C is the one the caller had. A
+structure, union or array states the extent of the object at that address, so
+it still applies at any width that stays on the stack: it grows a buffer the
+analysis saw only the start of (`type v1 char[16]` over `char v1 [8]`) or
+narrows one to its declared extent (`unsigned int[10]` over a 48-byte slot), as
+a type of the same width (`unsigned char[20]`, `int[5]`) retypes it.
 
 **A new name must be one the declaration can print.**
 `kuna-console/src/kuna_hightarget.rs (check_local_name)` rejects a `name`, or

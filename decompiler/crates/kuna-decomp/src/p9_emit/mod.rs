@@ -26,6 +26,7 @@ pub mod kuna_paramrefdecl;
 pub mod kuna_addressdecl;
 pub mod kuna_callerstack;
 pub mod kuna_bitcast;
+pub(crate) mod kuna_memberbase;
 pub mod kuna_stackmem;
 pub mod kuna_stackassign;
 pub mod kuna_stackbytes;
@@ -62,3 +63,5 @@ pub mod kuna_srcmap; // (kuna) the token-level source map of a rendered function
 
 pub(crate) mod kuna_stackmarkers;
 pub(crate) mod kuna_stackversions;
+
+pub(crate) mod kuna_indirectargs;

@@ -1158,6 +1158,53 @@ fn watchdog_stops_heritage_guard_placement() {
     assert!(elapsed < Duration::from_secs(10), "the 1 s watchdog took {elapsed:?} to stop big");
 }
 
+/// A chain of conditional updates spends its budget inside the region structurer.
+#[test]
+fn watchdog_stops_region_structuring_and_the_batch_continues() {
+    let mut bytes = vec![0x89, 0xf8];
+    for i in 0..1000u32 {
+        bytes.push(0xa9);
+        bytes.extend_from_slice(&(1u32 << (i % 16)).to_le_bytes());
+        bytes.extend_from_slice(&[0x74, 0x0b, 0x69, 0xc0]);
+        bytes.extend_from_slice(&(3 + 2 * (i % 61)).to_le_bytes());
+        bytes.push(0x05);
+        bytes.extend_from_slice(&(i + 1).to_le_bytes());
+        bytes.push(0x35);
+        bytes.extend_from_slice(&(i + 1).to_le_bytes());
+    }
+    bytes.push(0xc3);
+    let after = format!("0x{:x}", 0x1000 + bytes.len());
+    bytes.extend_from_slice(&[0x8d, 0x47, 0x01, 0xc3]);
+    let path = common::scratch_file("region-watchdog", "bin");
+    std::fs::write(&path, bytes).unwrap();
+    let start = Instant::now();
+    let result = run_kuna_with_timeout(
+        &[
+            "decompile-all", path.to_str().unwrap(), "--raw-image",
+            "--target", "x86:LE:64:default", "--base", "0x1000",
+            "--entry", "0x1000", "--entry", &after,
+            "--define-function", &format!("0x1000-{after}=stress"),
+            "--define-function", &format!("{after}=after"),
+            "--json", "--jobs", "1", "--max-fn-seconds", "1",
+            "--max-fn-memory", "512", "--option", "regionstructure", "on",
+            "--sleighpath", &specs(),
+        ],
+        Duration::from_secs(15),
+    );
+    let elapsed = start.elapsed();
+    std::fs::remove_file(path).unwrap();
+    let (stdout, stderr, _) = result.expect("region structuring exceeded the 15s outer bound");
+    let doc: serde_json::Value = serde_json::from_str(&stdout).expect(&stderr);
+    let functions = doc["functions"].as_array().unwrap();
+    let stress = functions.iter().find(|f| f["name"] == "stress").unwrap();
+    assert_eq!(stress["error"], "per-function decompile budget exceeded (1 s)", "{stdout}");
+    assert!(stress["code"].is_null(), "{stdout}");
+    let after = functions.iter().find(|f| f["name"] == "after").unwrap();
+    assert!(after["error"].is_null(), "{stdout}");
+    assert!(after["code"].as_str().unwrap().contains("return"), "{stdout}");
+    assert!(elapsed < Duration::from_secs(10), "the 1 s watchdog took {elapsed:?} to stop stress");
+}
+
 /// `--max-fn-memory` stops `big` in `tests/hang-repro/escaped_locals` once its
 /// process passes the limit, records that as `big`'s error, and the batch goes
 /// on to decompile `after`: in process, through a worker pool, and on the
@@ -2440,7 +2487,7 @@ fn a_frame_records_char_pointer_pointer_is_not_its_type() {
         if !ok {
             panic!("kuna decompile-all --option calleevote {value} failed: {stderr}");
         }
-        assert!(got.contains("v2[1] = 0x506070801020304;"), "{value}: the node's word store split:\n{got}");
+        assert!(got.contains("p[1] = 0x506070801020304;"), "{value}: the node's word store split:\n{got}");
         assert!(!got.contains("] = '\\x"), "{value}: a character store:\n{got}");
         assert!(!got.contains("drop(char **a0)"), "{value}: drop took the frame char **:\n{got}");
         assert!(got.contains("int advance(char **a0)"), "{value}: advance lost its char **:\n{got}");
@@ -5391,7 +5438,7 @@ int main(void) {
             "memmove((void *)a0->field_0x0,(void *)(a0->field_0x0 + (a0->field_0x8 - a0->field_0x10)),a0->field_0x10);",
             "memmove(a0->field_0x0,(void *)((long)a0->field_0x0 + (a0->field_0x8 - a0->field_0x10)),a0->field_0x10);",
         ),
-        ("v2 = strlen((char *)a0->field_0x10);", "v2 = strlen(a0->field_0x10);"),
+        ("len = strlen((char *)a0->field_0x10);", "len = strlen(a0->field_0x10);"),
         ("    long field_0x10;\n    long field_0x18;", "    long *field_0x10;\n    long *field_0x18;"),
         ("a0->field_0x0 = a0->field_0x0 + 8;", "a0->field_0x0 = &a0->field_0x0[1];"),
         ("v1 = (*(long (*)(unsigned long))a0->field_0x8)(a0->field_0x10);", "v1 = (*a0->field_0x8)(a0->field_0x10);"),
@@ -6162,7 +6209,7 @@ int main(void) {
             FUNCS,
             MAIN,
             WANT,
-            &[("v1 = (unsigned long)a0[a2];", "v1 = a0[a2];")],
+            &[("len = (unsigned long)a0[a2];", "len = a0[a2];")],
             OLD,
         ),
     ];
@@ -7121,12 +7168,12 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
     let fixtures: [(&str, &[&str], &[&str]); 3] = [
         (
             "foldcallret_sc_gcc_O0_x86_64",
-            &["v1 = tick(a0);", "if (a0 <= 5 || v1)", "gflag = (unsigned int)(5 < a0 && !v1);"],
+            &["v1 = tick(a0);", "if (6 <= a0 && !v1)", "gflag = (unsigned int)(5 < a0 && !v1);"],
             &["|| tick(", "&& !tick("],
         ),
         (
             "foldcallret_sc_clang_O0_x86_64",
-            &["if (tick(a0) || a0 <= 5)", "gflag = (unsigned int)(!tick(a0) && 5 < a0);"],
+            &["if (!tick(a0) && 6 <= a0)", "gflag = (unsigned int)(!tick(a0) && 5 < a0);"],
             &[],
         ),
         (
@@ -7641,10 +7688,10 @@ int main(void) {
             WANT,
             &[
                 ("v1 = (char *)skip_blanks(a0);", "v1 = skip_blanks(a0);"),
-                ("v1 = (FILE *)pick_stream(a0);", "v1 = pick_stream(a0);"),
+                ("stream = (FILE *)pick_stream(a0);", "stream = pick_stream(a0);"),
                 (
-                    "v1 = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
-                    "    v1 = after_colon(a0);\n  else {\n    v1 = fallback_name();",
+                    "s = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
+                    "    s = after_colon(a0);\n  else {\n    s = fallback_name();",
                 ),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
             ],
@@ -7668,11 +7715,11 @@ int main(void) {
             WANT,
             &[
                 ("v1 = (char *)skip_blanks(a0);", "v1 = skip_blanks(a0);"),
-                ("v1 = (FILE *)pick_stream(a0);", "v1 = pick_stream(a0);"),
+                ("stream = (FILE *)pick_stream(a0);", "stream = pick_stream(a0);"),
                 ("return (long)signed_delta(a0,a1) < 0;", "return signed_delta(a0,a1) < 0;"),
                 (
-                    "v1 = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
-                    "v1 = (a0) ? after_colon(a0) : fallback_name();",
+                    "s = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
+                    "s = (a0) ? after_colon(a0) : fallback_name();",
                 ),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
             ],
@@ -7692,7 +7739,7 @@ int main(void) {
             &[
                 ("v1 = (char *)after_colon(a0);", "v1 = after_colon(a0);"),
                 ("v1 = (char *)fallback_name();", "v1 = fallback_name();"),
-                ("v1 = (FILE *)pick_stream(a0);", "v1 = pick_stream(a0);"),
+                ("stream = (FILE *)pick_stream(a0);", "stream = pick_stream(a0);"),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
             ],
             &[

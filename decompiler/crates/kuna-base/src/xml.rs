@@ -2086,7 +2086,14 @@ mod tests {
         // and kuna-bejoin-evidence, -sparc, -armeb / a big-endian pair joins
         // high word first on proof (GH-904)
         // and kuna-strlenscan / an inline repnz scasb length prints as strlen
-        assert_eq!(count, 546, "corpus file count drifted");
+        // and kuna-libcnames / a local takes the name of the library call it meets
+        // and kuna-register-pair-call-args / overwritten register-pair argument slots
+        // and kuna-rettriangle / a one-block if keeps one return
+        // and kuna-narrow-register-inputs / mixed-width reads do not span known inputs
+        // and kuna-indirect-value-arguments / declared aggregate value arguments
+        // and guarded/preloaded local read controls on SPARC and x86
+        // and kuna-global-aggregate-store / kuna-global-array-member-store
+        assert_eq!(count, 557, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

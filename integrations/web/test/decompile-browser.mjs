@@ -423,7 +423,7 @@ try {
   await page.waitFor(`document.getElementById('asmcode').getAttribute('aria-activedescendant') === 'a-${sites[1]}'`, { what: 'the next use', timeout: 10000 });
   assert.match(await text('#ccode .d2-cl.hl-sel'), /strcmp\(input,secret\)/, 'a second click goes to its next use');
   const flip = await page.call(() => [...document.querySelectorAll('#ccode .d2-cl')].find((row) => /strlen\(secret\)/.test(row.textContent)).dataset.line);
-  assert.equal(await text(`#c-L${flip} .ct`), '  if (v2 != strlen(secret)) {', 'a flipped if reads as plain code');
+  assert.equal(await text(`#c-L${flip} .ct`), '  if (len != strlen(secret)) {', 'a flipped if reads as plain code');
   await page.click(`#c-L${flip} .ct`);
   assert.match(await text('#railsel .x-tag'), /^\/\/ branch-flip The decompiler flipped this if/, 'and says it was flipped once selected');
   assert.doesNotMatch(await text('#asmcode'), /branch-flip/, 'the assembly headings leave the note out too');
@@ -481,6 +481,39 @@ try {
   await setSelect('mode', 'auto');
   await page.waitFor(`[...document.querySelectorAll('#fnlist .fn')].some((row) => row.textContent === 'main')`, { what: 'crackme in Auto', timeout: 60000 });
   await idle('crackme in Auto');
+  await page.call(() => { [...document.querySelectorAll('#fnlist .fn')].find((row) => row.textContent === 'check').click(); return true; });
+  await page.click('#tab-c');
+  await page.waitFor(`document.getElementById('vname').textContent === 'check' && document.querySelector('#ccode .t[data-sym="len"]') !== null`, { what: 'check names strlen\'s result len', timeout: 60000 });
+  assert.match(await text('#ccode'), /\blen = strlen\(input\);/, 'a local holding strlen\'s result is named len');
+  assert.match(await text('#ccode'), /\bunsigned int v1;/, 'the other local keeps its number');
+  const renameOnPage = async (from, to, what) => {
+    await page.click(`#ccode .t[data-sym="${from}"]`);
+    await page.key('n');
+    await page.waitFor(`!document.getElementById('d2pop').hidden`, { what: `rename popover for ${from}` });
+    await page.type(to);
+    await page.key('Enter');
+    await page.waitFor(`new RegExp('\\\\b${to}\\\\b').test(document.getElementById('ccode').textContent)`, { what, timeout: 60000 });
+    await idle(what);
+  };
+  const allApplied = () => page.evaluate(`[...document.querySelectorAll('#sesslist .mk')].every((m) => m.title === 'applied')`);
+  await renameOnPage('v1', 'len', 'v1 renamed onto the library name len');
+  assert.match(await text('#ccode'), /\bv2 = strlen\(input\);/, 'strlen\'s local gives the name up and prints its number');
+  assert.match(await text('#ccode'), /\bunsigned int len;/, 'the renamed local takes len');
+  await renameOnPage('v2', 'size', 'the displaced local renamed by its number');
+  assert.match(await text('#ccode'), /\bsize = strlen\(input\);/, 'the next rename reaches it');
+  assert.match(await text('#ccode'), /\bunsigned int len;/, 'and the first rename holds');
+  assert.ok(await allApplied(), 'every edit applied');
+  await setSelect('mode', 'reliable');
+  await page.waitFor(`document.getElementById('vname').textContent === 'check' && document.getElementById('cancelbtn').disabled && /strlen\\(input\\)/.test(document.getElementById('ccode').textContent)`, { what: 'check in Reliable', timeout: 60000 });
+  await idle('check in Reliable');
+  assert.match(await text('#ccode'), /\bsize = strlen\(input\);/, 'after a switch to Reliable the rename is on the same local');
+  assert.match(await text('#ccode'), /\blen;/, 'and so is the other');
+  assert.ok(await allApplied(), 'every edit still applies');
+  assert.deepEqual((await toasts()).filter((t) => /No symbol|Ambiguous|not applied|rejected/i.test(t)), [], 'no edit is refused after the switch');
+  await setSelect('mode', 'auto');
+  await page.waitFor(`document.getElementById('vname').textContent === 'check' && document.getElementById('cancelbtn').disabled && /\\bsize = strlen/.test(document.getElementById('ccode').textContent)`, { what: 'check back in Auto', timeout: 60000 });
+  await idle('check back in Auto');
+  await noExceptions('rename onto a library name, rename the displaced local, switch modes');
   await page.call(() => { [...document.querySelectorAll('#fnlist .fn')].find((row) => row.textContent === 'main').click(); return true; });
   await page.click('#tab-c');
   await page.waitFor(`document.getElementById('vname').textContent === 'main' && /Enter the flag/.test(document.getElementById('ccode').textContent)`, { what: 'crackme main again', timeout: 60000 });
@@ -602,6 +635,37 @@ try {
   await editDeep('words_seen', 'y', 'unsigned int', `/unsigned int words_seen;/.test(document.getElementById('ccode').textContent)`);
   await page.key('s');
   await noExceptions('renaming a variable far down a long function keeps the view where it was (Code and Side by side)');
+
+  const editShown = async (from, key, value, after) => {
+    await page.call((s) => { document.querySelector(`#ccode .t[data-sym="${s}"]`).scrollIntoView({ block: 'center' }); return true; }, from);
+    await page.click(`#ccode .t[data-sym="${from}"]`);
+    await page.key(key);
+    await page.waitFor(`!document.getElementById('d2pop').hidden`, { what: `${key} popover for ${from}` });
+    await page.call(() => { document.querySelector('#d2pop input').select(); return true; });
+    await page.type(value);
+    await page.key('Enter');
+    await page.waitFor(after, { what: `${key} ${from} ${value}`, timeout: 60000 });
+    await idle(`${key} ${from} ${value}`);
+  };
+  const marks = () => page.evaluate(`[...document.querySelectorAll('#sesslist .mk')].map((m) => m.title)`);
+  const declares = (re) => page.call((src) => new RegExp(src).test(document.getElementById('ccode').textContent), re);
+  await editShown('v7', 'n', 'score', `document.querySelector('#ccode .t[data-sym="score_1"]') && !document.querySelector('#ccode .t[data-sym="v7"]')`);
+  await editShown('score_1', 'n', 'points', `document.querySelector('#ccode .t[data-sym="points"]') && !document.querySelector('#ccode .t[data-sym="score_1"]')`);
+  await editShown('points', 'n', 'tally', `document.querySelector('#ccode .t[data-sym="tally"]') && !document.querySelector('#ccode .t[data-sym="points"]')`);
+  await editShown('tally', 'y', 'unsigned int', `/unsigned int tally;/.test(document.getElementById('ccode').textContent)`);
+  assert.ok((await marks()).every((m) => m === 'applied'), `every edit by the shown name applied: ${await marks()}`);
+  assert.deepEqual((await toasts()).filter((t) => /No symbol|not applied|could not|without one/i.test(t)), [], 'no edit by the shown name is refused');
+  await page.click('[data-act="undo"]');
+  await page.waitFor(`/\\bint tally;/.test(document.getElementById('ccode').textContent)`, { what: 'undo the retype', timeout: 60000 });
+  await idle('undo the retype');
+  await page.click('[data-act="undo"]');
+  await page.waitFor(`/\\bint points;/.test(document.getElementById('ccode').textContent)`, { what: 'undo the second rename', timeout: 60000 });
+  await idle('undo the second rename');
+  await page.click('[data-act="undo"]');
+  await page.waitFor(`/\\bint score_1;/.test(document.getElementById('ccode').textContent)`, { what: 'undo the rename by the shown name', timeout: 60000 });
+  await idle('undo the rename by the shown name');
+  assert.ok(await declares('\\bint score_1;') && (await marks()).every((m) => m === 'applied'), 'undo walks back to score_1, every edit applied');
+  await noExceptions('a local the printer suffixed (score_1) is renamed, renamed again, retyped and undone by the name it shows');
 
   console.log(`DECOMPILE BROWSER OK — ${done.join('; ')}` + (skipped.length ? `; SKIPPED: ${skipped.join('; ')}` : ''));
 } finally {

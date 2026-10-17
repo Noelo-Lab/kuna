@@ -1,0 +1,34 @@
+<decompilertest>
+<!-- Independent SPARC record copy with a shared publish block before the copy block. -->
+<binaryimage arch="sparc:BE:32:default:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">
+9de3bf9021000004a014210080a6200012800006010000004000007e901000101080000c01000000400000769007bff080a220000280000701000000d41fbff0d43c0000d81fbff810bffff4d83c200881c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="update"/>
+<symbol space="ram" offset="0x1200" name="fill"/>
+<symbol space="ram" offset="0x1210" name="publish"/>
+</binaryimage>
+<script>
+  <com>parse line typedef struct Record { float a; float b; float c; float d; } Record;</com>
+  <com>parse line extern void update(int enabled);</com>
+  <com>parse line extern int fill(Record *value);</com>
+  <com>parse line extern void publish(Record *value);</com>
+  <com>map addr r0x1100 Record cache</com>
+  <com>option globalfieldstore off</com>
+  <com>lo fu update</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option globalfieldstore on</com>
+  <com>lo fu update</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="First aggregate field is published" min="1" max="1">cache\.a =</stringmatch>
+<stringmatch name="Second aggregate field is published" min="1" max="1">cache\.b =</stringmatch>
+<stringmatch name="Third aggregate field is published" min="1" max="1">cache\.c =</stringmatch>
+<stringmatch name="Fourth aggregate field is published" min="1" max="1">cache\.d =</stringmatch>
+<stringmatch name="Global aggregate fields do not become locals" min="0" max="0">float4 cache_[0-9]+;</stringmatch>
+<stringmatch name="Observer receives the complete global record" min="2" max="2">publish\(&amp;cache\);</stringmatch>
+<stringmatch name="Legacy scalar writes to the whole structure require the option off" min="2" max="2">cache = v[0-9]+\.[cd];</stringmatch>
+</decompilertest>

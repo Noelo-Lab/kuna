@@ -104,6 +104,8 @@ build failure. The options it enables:
   structure),
   `calltargettype` (an indirect call's target takes the function-pointer type
   the call states, so the call compiles as C),
+  `libcnames` (a local takes the name of the library call it meets:
+  `fd = open(a0,0);`, `n = read(fd,v1,0x200);`),
   `cortexmpriv` (DIV-99 - fold the Cortex-M `isCurrentModePrivileged()` guard;
   ARM-Cortex-M-gated by construction, so it is a measured no-op everywhere else)
 - **analysis tier**: `listing` (the master gate that enables the
