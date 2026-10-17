@@ -676,7 +676,17 @@ the port of `phoenix._last_resort_refinement` +
 components, compute forward immediate dominators, and bucket the candidates —
 *crossing* edges (neither endpoint dominates the other) are virtualized
 before *secondary* edges (destination dominates source); a forward tree edge
-is never chosen. Within the winning bucket (`sailr_order_within_bucket`): H1;
+is never chosen. Candidate dominance queries use an iterative dominator-tree
+interval index (`p8_structure/kuna_domindex.rs`) built once per immutable
+snapshot. Subtree containment replaces repeated parent-chain walks; absent
+nodes retain the chain walk's self-dominance behavior. The index is discarded
+with the snapshot, so graph changes cannot leave stale intervals. Interval
+slots are arrays indexed by node arena id (each snapshot has a fresh pool, so
+ids are dense): building costs one immediate-dominator lookup per node plus
+linear array work, and each query is two array reads independent of
+dominator-tree depth, so the index is cheaper than the chain walk even on the
+shallow trees of ordinary functions. Candidate order and ranking are unchanged.
+Within the winning bucket (`sailr_order_within_bucket`): H1;
 then H2 — remove each candidate, recompute post-dominators, and keep the
 edges whose removal yields the *most* post-dominators (most-linear result) —
 bounded by `region_structurer.rs (POSTDOM_MAX_EDGES)` = 10 candidate edges
