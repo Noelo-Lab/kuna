@@ -2232,6 +2232,14 @@ moves.
   and read back at *two* points: by a caller's `ActionDefaultParams` for the call
   site, and by the drive as the function's own locked prototype (04 §4.2 —
   `int main(int argc, char **argv)`, not `undefined16 main(uint4, void*)`);
+  A Fortran formal whose location is exactly `DW_OP_fbreg` followed by
+  `DW_OP_deref` receives a pointer to its described value type. The frame slot
+  holds an address; treating that value type as the ABI argument instead can
+  select floating registers and disconnect the incoming address. Plain frame
+  slots, including Fortran `VALUE` arguments, retain their value types. Other
+  source languages and composite expressions are not inferred from this pattern.
+  Both name-bound and address-bound prototype import paths apply this rule.
+
   a `DW_TAG_enumeration_type` becomes a real enum type — name, declared width,
   signedness, and the `DW_TAG_enumerator` value→name map (05 §5.1), which is what
   turns `quotearg_style(4, …)` into

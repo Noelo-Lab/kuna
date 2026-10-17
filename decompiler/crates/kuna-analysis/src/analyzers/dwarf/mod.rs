@@ -119,6 +119,7 @@ mod lines;
 pub use lines::DwarfLinesPass;
 
 mod kuna_cppproto;
+mod kuna_dwarfbyref;
 
 mod kuna_typedepth;
 use kuna_typedepth::TypeWalk;
@@ -251,6 +252,7 @@ struct DieSnap {
     /// that is its form (a frame-base-relative stack local — subtask 3). `None`
     /// for any other location form (`DW_OP_addr`, register, multi-op).
     fbreg_location: Option<i64>,
+    indirect_parameter: bool,
     /// Depth in the DIE tree (root unit DIE = 0).
     depth: isize,
     /// Offsets of this DIE's direct children, in order.
@@ -294,6 +296,7 @@ impl DieSnap {
             has_location: false,
             addr_location: None,
             fbreg_location: None,
+            indirect_parameter: false,
             depth,
             children: Vec::new(),
             origin_ref: None,
@@ -313,11 +316,18 @@ fn snapshot_unit(
     let mut map: BTreeMap<usize, DieSnap> = BTreeMap::new();
     // Parent stack of (offset, depth) to attach children to their parent.
     let mut stack: Vec<(usize, isize)> = Vec::new();
+    let mut language = None;
 
     let mut cursor = unit.entries();
     while let Ok(Some(entry)) = cursor.next_dfs() {
         let off = entry.offset().0;
         let depth = entry.depth();
+        if depth == 0 {
+            language = match entry.attr_value(gimli::DW_AT_language) {
+                Some(gimli::AttributeValue::Language(value)) => Some(value),
+                _ => None,
+            };
+        }
 
         // Pop the parent stack back to this DIE's parent level.
         while let Some(&(_, d)) = stack.last() {
@@ -429,6 +439,9 @@ fn snapshot_unit(
             snap.has_location = true;
             snap.addr_location = simple_addr_location(&loc);
             snap.fbreg_location = simple_fbreg_location(&loc);
+            snap.indirect_parameter = snap.tag == gimli::DW_TAG_formal_parameter
+                && kuna_dwarfbyref::is_fortran(language)
+                && kuna_dwarfbyref::indirect_location(&loc);
         }
 
         map.insert(off, snap);
@@ -959,6 +972,7 @@ fn build_pieces(
         match child.tag {
             gimli::DW_TAG_formal_parameter => {
                 let ty = build_datatype(child.type_ref, dies, types, word_size, &mut walk, false)?;
+                let ty = kuna_dwarfbyref::parameter_type(child, ty, types, word_size)?;
                 intypes.push(ty);
                 innames.push(child.name.clone());
             }
