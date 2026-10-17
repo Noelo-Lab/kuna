@@ -228,8 +228,9 @@ pub(super) fn register_targets(
 
     let mut vals: Vec<(Key, Val)> = Vec::new();
     let mut dispatch = None;
+    let mut index: Option<(u64, usize, Key)> = None;
     'slice: for (vma, ops) in &slice {
-        for op in ops {
+        for (i, op) in ops.iter().enumerate() {
             if op.opcode == OpCode::CPUI_BRANCHIND && *vma == from {
                 dispatch = op.ins.first().and_then(|vn| value_of(vn, &vals, data_space));
                 break 'slice;
@@ -238,6 +239,12 @@ pub(super) fn register_targets(
                 vals.retain(|(k, _)| survives(*k, preserved));
             }
             let folded = fold(op, &vals, data_space, pool);
+            if op.opcode == OpCode::CPUI_INT_ADD && matches!(folded, Some(Val::Indexed(_))) {
+                let unknown = op.ins.iter().find(|vn| value_of(vn, &vals, data_space).is_none());
+                if let Some(key) = unknown.and_then(|vn| key_of(vn, data_space)) {
+                    index = Some((*vma, i, key));
+                }
+            }
             let Some(out) = &op.out else { continue };
             let key = key_of(out, data_space);
             invalidate(&mut vals, key);
@@ -256,17 +263,85 @@ pub(super) fn register_targets(
     // Read only now, on a jump that really does index a table: without the
     // switch's own case count there is nothing to stop the scan at the end of
     // it, and a delta table's neighbour reads as more cases.
-    let limit = match guard_limit(translate, code_space, data_space, decoded, from, max_entries) {
-        Ok(limit) => limit,
-        Err(gap) => return TableRead { gap, ..TableRead::default() },
-    };
-    let cases = match table {
-        (table, Some(base)) => {
-            delta_targets(table, base, from, pool, exec, Some(limit), max_entries)
-        }
+    let read = |limit: usize| match table {
+        (table, Some(base)) => delta_targets(table, base, from, pool, exec, Some(limit), max_entries),
         (table, None) => targets(table, from, pool, exec, Some(limit), max_entries),
     };
-    TableRead { cases, stated: Some(limit), gap: None }
+    match guard_limit(translate, code_space, data_space, decoded, from, max_entries) {
+        Ok(limit) => TableRead { cases: read(limit), stated: Some(limit), gap: None },
+        Err(gap) => {
+            let masked = index.and_then(|at| mask_limit(translate, code_space, data_space, decoded, from, at, max_entries));
+            match masked.map(|n| (n, read(n))) {
+                Some((n, cases)) if cases.len() == n => TableRead { cases, stated: Some(n), gap: None },
+                _ => TableRead { gap, ..TableRead::default() },
+            }
+        }
+    }
+}
+
+/// How many entries a table needs whose index is masked rather than checked,
+/// or `None` unless that is provable here.
+///
+/// bash's readline dispatches on `and $0x7,%eax` under a guard that only
+/// bounds the selector from below (`cmp $0x7,%eax; jbe`), so the mask is the
+/// table's size. From the addend `at` (instruction, op, varnode) of the
+/// table-address sum the fold could not value, the index is followed back
+/// through scaling, copies and zero extensions to an `and` with a constant,
+/// with no conditional branch between it and the dispatch. The caller then
+/// requires every entry to be a case.
+fn mask_limit(
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+    data: Option<&Rc<AddrSpace>>,
+    decoded: &HashSet<u64>,
+    from: u64,
+    at: (u64, usize, Key),
+    max_entries: usize,
+) -> Option<usize> {
+    let (site, upto, mut key) = at;
+    let mut cap = FullCapture::default();
+    let mut cur = from;
+    let mut ends_at: Option<u64> = None;
+    let mut reached = false;
+    for step in 0..MAX_GUARD_INSNS {
+        let len = decode(translate, cur, code_space, &mut cap)?;
+        if ends_at.is_some_and(|end| cur.wrapping_add(u64::from(len)) != end) {
+            return None;
+        }
+        let ops = cap.ops();
+        if (step > 0 && !falls_through(ops)) || ops.iter().any(|op| op.opcode == OpCode::CPUI_CBRANCH) {
+            return None;
+        }
+        reached |= cur == site;
+        let ops = if cur == site { &ops[..upto.min(ops.len())] } else { ops };
+        for op in ops.iter().rev().filter(|_| reached) {
+            let Some(out) = op.out.as_ref().and_then(|vn| key_of(vn, data)) else { continue };
+            if !keys_overlap(out, key) {
+                continue;
+            }
+            let input = op.ins.first().and_then(|vn| key_of(vn, data));
+            if out != key {
+                // `rax = zext(eax)` leaves the `eax` being followed as it was.
+                if op.opcode == OpCode::CPUI_INT_ZEXT && input == Some(key) {
+                    continue;
+                }
+                return None;
+            }
+            let constant = |i: usize| op.ins.get(i).filter(|vn| is_constant(vn)).map(|vn| vn.offset);
+            key = match op.opcode {
+                OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT => input?,
+                OpCode::CPUI_INT_MULT | OpCode::CPUI_INT_LEFT if constant(1).is_some() => input?,
+                OpCode::CPUI_INT_AND => {
+                    let mask = constant(1)?;
+                    return usize::try_from(mask.checked_add(1)?).ok().filter(|&n| n <= max_entries);
+                }
+                _ => return None,
+            };
+        }
+        ends_at = Some(cur);
+        cur = previous(decoded, cur)?;
+    }
+    None
 }
 
 /// What [`register_targets`] read at one computed jump.
@@ -351,18 +426,20 @@ fn guard_limit(
 
 /// The case count a comparison among `writer[feeding]` (or, with an empty
 /// `writer`, among `branch[feeding]`) states for the dispatch on the guard's
-/// fall-through side: `sel < c` must send the out-of-range values to the
-/// branch target and the rest down to the dispatch.
+/// fall-through side: the out-of-range values must go to the branch target and
+/// the rest down to the dispatch.
 ///
-/// The condition is evaluated with the comparison true and then false, every
-/// other flag the comparison sets read as clear. `ja` after `cmp $c,sel`
-/// branches when it is false, so the dispatch sees `sel <= c`: `c + 1` cases.
-/// `jb` branches when it is true, so the dispatch sees `sel >= c`, which an
-/// unsigned comparison of a `w`-byte selector bounds at `2^(8w) - c` — gcc's
-/// `cmp $0xfffffffb,%r12d; jb default` ahead of a five-case table indexed by
-/// `sel + 5`. Read as `c + 1`, that one ran on into the next table. A lower
-/// bound that leaves more than `max_entries` values is no bound at all: it is
-/// the first of two checks, not a table's size.
+/// The comparison is a selector against a constant `c` in any of the four
+/// spellings (`sel < c` on x86, `c <= sel` on AArch64, signed or not), and the
+/// condition is evaluated with the comparison as it comes out for a selector
+/// above `c` and below it, every other flag the comparison sets read as clear.
+/// `ja` after `cmp $c,sel` branches for the large selector, so the dispatch
+/// sees `sel <= c`: `c + 1` cases. `jb` branches for the small one, so the
+/// dispatch sees `sel >= c`, which an unsigned comparison of a `w`-byte selector
+/// bounds at `2^(8w) - c` — gcc's `cmp $0xfffffffb,%r12d; jb default` ahead of a
+/// five-case table indexed by `sel + 5`. Read as `c + 1`, that one ran on into
+/// the next table. A lower bound that leaves more than `max_entries` values is
+/// no bound at all: it is the first of two checks, not a table's size.
 fn guard_cases(
     writer: &[FullOp],
     feeding: &[usize],
@@ -376,25 +453,42 @@ fn guard_cases(
     for &i in feeding {
         let op = &ops[i];
         let signed = match op.opcode {
-            OpCode::CPUI_INT_LESS => false,
-            OpCode::CPUI_INT_SLESS => true,
+            OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_LESSEQUAL => false,
+            OpCode::CPUI_INT_SLESS | OpCode::CPUI_INT_SLESSEQUAL => true,
             _ => continue,
         };
         let (Some(a), Some(b)) = (op.ins.first(), op.ins.get(1)) else { continue };
-        if is_constant(a) || !is_constant(b) || b.offset == 0 {
+        let (sel, c, above) = match (constant_in(&ops[..i], a, data), constant_in(&ops[..i], b, data)) {
+            (None, Some(c)) => (a, c, 0),
+            (Some(c), None) => (b, c, 1),
+            _ => continue,
+        };
+        if c == 0 {
             continue;
         }
         let taken = |x: u64| condition_when(writer, i, branch, at, x, data);
-        let n = match (taken(1), taken(0)) {
-            (Some(false), Some(true)) => b.offset.checked_add(1),
-            (Some(true), Some(false)) if !signed && a.size < 8 => (1u64 << (8 * a.size))
-                .checked_sub(b.offset)
+        let n = match (taken(above), taken(1 - above)) {
+            (Some(true), Some(false)) => c.checked_add(1),
+            (Some(false), Some(true)) if !signed && sel.size < 8 => (1u64 << (8 * sel.size))
+                .checked_sub(c)
                 .filter(|&n| n <= max_entries as u64),
             _ => None,
         };
         best = best.max(n);
     }
     usize::try_from(best?).ok()
+}
+
+/// `vn`'s value when it is a constant, or a temporary `ops` copied one into
+/// (AArch64 SLEIGH spells `cmp x8, #6` as `tmp = 6; tmpCY = tmp <= x8`).
+fn constant_in(ops: &[FullOp], vn: &VarnodeData, data: Option<&Rc<AddrSpace>>) -> Option<u64> {
+    if is_constant(vn) {
+        return Some(vn.offset);
+    }
+    let key = key_of(vn, data).filter(|k| matches!(k, Key::Tmp(..)))?;
+    let def = ops.iter().rev().find(|op| op.out.as_ref().and_then(|o| key_of(o, data)) == Some(key))?;
+    let src = def.ins.first().filter(|_| def.opcode == OpCode::CPUI_COPY)?;
+    is_constant(src).then_some(src.offset)
 }
 
 /// The guard's condition when the op at `set` (in `writer`, or in `branch`
