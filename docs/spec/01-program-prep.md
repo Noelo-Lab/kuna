@@ -5675,6 +5675,16 @@ contradicted too. On the stripped U-Boot O2-noinline image these rules leave
 recall at 92.0% and raise precision from 92.6% to 98.6%; `parse_label` and
 `malloc` stay whole.
 
+One inventory recovery shares its decodes. Frame validation, the AIF gap walks
+(including the prior inventory's), prefix reconciliation and every Listing
+rebuild decode the same image again. A decode is kept only when SLEIGH certifies
+it context-free, together with the effective context words it read. It is reused
+only while its address still reads those words, so a reused record is the
+record a fresh decode makes, and it reports no context commits. These records
+keep no p-code: the inventory never replays a frame body into a reference walk,
+so the inventory's own validation records keep none either
+(`decompiler/crates/kuna-analysis/src/listing/kuna_decodememo.rs`).
+
 Full reference expansion can substantially increase query cost. In a historical
 measurement on a 400,556-byte stripped ARM BusyBox ELF,
 `xrefs --to puts --kind call` initially reached 2,271 instructions; frame

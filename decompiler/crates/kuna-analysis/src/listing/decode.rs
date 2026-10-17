@@ -188,6 +188,7 @@ pub fn decode_one(
         want_assembly,
         want_stored_scalars,
         &mut asm,
+        None,
     )?;
     Ok(Decoded {
         len: captured.len,
@@ -200,6 +201,9 @@ pub fn decode_one(
 
 /// Decode for the Listing walker, interning mnemonic text in the serial store
 /// or current parallel lane as soon as the assembly callback provides it.
+///
+/// `key`, when given, receives the decode context that certifies a
+/// context-free decode (see [`super::kuna_decodememo`]).
 pub(super) fn decode_one_listing(
     translate: &dyn Translate,
     vma: u64,
@@ -207,6 +211,7 @@ pub(super) fn decode_one_listing(
     want_assembly: bool,
     want_stored_scalars: bool,
     intern: &mut impl FnMut(&str) -> Mnemonic,
+    key: Option<&mut Option<Vec<u32>>>,
 ) -> KunaResult<DecodedListing> {
     let mut asm = InterningAsmCapture::new(intern);
     let captured = capture_instruction(
@@ -216,6 +221,7 @@ pub(super) fn decode_one_listing(
         want_assembly,
         want_stored_scalars,
         &mut asm,
+        key,
     )?;
     Ok(DecodedListing {
         len: captured.len,
@@ -233,11 +239,14 @@ fn capture_instruction(
     want_assembly: bool,
     want_stored_scalars: bool,
     asm: &mut dyn AssemblyEmit,
+    key: Option<&mut Option<Vec<u32>>>,
 ) -> KunaResult<CapturedInstruction> {
     let addr = Address::new(Rc::clone(code_space), vma);
 
     let mut cap = OpCapture { want_stored_scalars, ..OpCapture::default() };
-    let len = if want_assembly {
+    let len = if let Some(key) = key.filter(|_| want_assembly) {
+        translate.one_instruction_reusable(&mut cap, asm, &addr, key)?
+    } else if want_assembly {
         translate.one_instruction_with_assembly(&mut cap, asm, &addr)?
     } else {
         translate.one_instruction(&mut cap, &addr)?
@@ -476,7 +485,7 @@ mod tests {
         let mut pool = super::super::model::MnemonicPool::default();
         let listed = decode_one_listing(&sleigh, 0x1000, &ram, true, true, &mut |text| {
             pool.intern(text)
-        })
+        }, None)
         .unwrap();
         assert_eq!(listed.len, decoded.len);
         assert_eq!(listed.mnemonic.as_str(), decoded.mnemonic.as_str());

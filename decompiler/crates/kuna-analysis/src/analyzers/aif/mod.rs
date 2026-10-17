@@ -102,6 +102,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use kuna_base::space::AddrSpace;
 use kuna_sleigh::translate::Translate;
@@ -204,7 +205,12 @@ struct GapDecoder<'a> {
     cache: BTreeMap<u64, Option<Rc<ProbedInsn>>>,
     spare: Option<Rc<ProbedInsn>>,
     frame_instructions: Option<Rc<BTreeMap<u64, Rc<ProbedInsn>>>>,
+    /// Context-certified decodes shared across one frame recovery; used only
+    /// while `keep_ops` is off.
+    memo: Option<Rc<crate::listing::kuna_decodememo::DecodeMemo>>,
     full_capture: Option<crate::listing::xrefs::FullCapture>,
+    /// Keep each certified decode's p-code for a later replay.
+    keep_ops: bool,
     /// Frame probes follow the not-taken path of a conditional return. Code
     /// reached only through a call's fall-through is speculative there: the call
     /// may not return, so an invalid speculative path ends instead of rejecting
@@ -283,7 +289,7 @@ impl<'a> GapDecoder<'a> {
     ) -> Self {
         GapDecoder {
             translate, code_space, exec_ranges, prior_partition: None, cache: BTreeMap::new(),
-            spare: None, frame_instructions: None, full_capture: None,
+            spare: None, frame_instructions: None, memo: None, full_capture: None, keep_ops: true,
             frame_probe: false, prologue_starts: None, straight_line: None, scratch: Decoded::default(), mnemonics: Vec::new(),
             visited: HashSet::new(), worklist: Vec::new(), linear_run: None, linear_events: VecDeque::new(),
             #[cfg(test)]
@@ -292,6 +298,15 @@ impl<'a> GapDecoder<'a> {
             decoded_addresses: Vec::new(),
             #[cfg(test)]
             validation_steps: 0,
+        }
+    }
+
+    /// Decode through `memo`, certifying the context of each new decode.
+    fn share(&mut self, memo: Option<&Rc<crate::listing::kuna_decodememo::DecodeMemo>>) {
+        if let Some(memo) = memo {
+            self.full_capture.get_or_insert_with(Default::default);
+            self.keep_ops = false;
+            self.memo = Some(Rc::clone(memo));
         }
     }
 
@@ -315,6 +330,10 @@ impl<'a> GapDecoder<'a> {
                 self.cache.insert(vma, Some(Rc::clone(&insn)));
                 return Some(insn);
             }
+        }
+        if let Some(insn) = self.remembered(vma) {
+            self.cache.insert(vma, Some(Rc::clone(&insn)));
+            return Some(insn);
         }
         let result = self.decode_uncached(vma);
         self.cache.insert(vma, result.clone());
@@ -353,27 +372,52 @@ impl<'a> GapDecoder<'a> {
             .cloned().expect("validated instruction has a decode record")
     }
 
+    /// The shared memo's record for `vma`, in this decoder's form.
+    fn remembered(&mut self, vma: u64) -> Option<Rc<ProbedInsn>> {
+        let memo = Rc::clone(self.memo.as_ref().filter(|_| !self.keep_ops)?);
+        let m = memo.get(self.translate, &self.code_space, vma)?;
+        let reusable = Some(memo.reusable(&m));
+        let (len, flow, fall_through, flows) = (m.len, m.flow, m.fall_through, m.flows.to_vec());
+        let (text, operands) = (Arc::clone(&m.mnemonic), m.operands.to_string());
+        drop(m);
+        let mnemonic = self.intern_mnemonic(&text);
+        Some(Rc::new(ProbedInsn {
+            len, kind: flow.kind, is_call: flow.is_call, is_terminal: flow.is_terminal,
+            fall_through, flows, mnemonic, operands, reusable,
+        }))
+    }
+
+    fn intern_mnemonic(&mut self, text: &str) -> Rc<str> {
+        if let Some(existing) = self.mnemonics.iter().find(|m| m.as_ref() == text) {
+            Rc::clone(existing)
+        } else {
+            let value: Rc<str> = Rc::from(text);
+            if self.mnemonics.len() == 16 { self.mnemonics.remove(0); }
+            self.mnemonics.push(Rc::clone(&value));
+            value
+        }
+    }
+
     fn decode_uncached(&mut self, vma: u64) -> Option<Rc<ProbedInsn>> {
         if !self.in_exec(vma) { return None; }
-        let reusable = if let Some(capture) = &mut self.full_capture {
+        let mut reusable = if let Some(capture) = &mut self.full_capture {
             crate::listing::kuna_decodereuse::capture(self.translate, vma, &self.code_space,
-                &mut self.scratch, capture).ok()?
+                &mut self.scratch, capture, self.keep_ops).ok()?
         } else {
             decode_one_with_assembly(self.translate, vma, &self.code_space, &mut self.scratch).ok()?;
             None
         };
+        if self.scratch.len == 0 { return None; }
+        let c = crate::listing::classify::classify(&self.scratch.ops, vma, self.scratch.len);
+        if let (Some(memo), Some(certified)) = (self.memo.as_ref().filter(|_| !self.keep_ops), &reusable) {
+            let decoded = &self.scratch;
+            reusable = Some(memo.keep(vma, certified.context(), decoded.len, c.flow, c.fall_through, &c.flows,
+                &decoded.mnemonic, &decoded.operands));
+        }
+        let text = std::mem::take(&mut self.scratch.mnemonic);
+        let mnemonic = self.intern_mnemonic(&text);
+        self.scratch.mnemonic = text;
         let decoded = &self.scratch;
-        if decoded.len == 0 { return None; }
-        let c = crate::listing::classify::classify(&decoded.ops, vma, decoded.len);
-        let mnemonic = if let Some(existing) = self.mnemonics.iter()
-            .find(|m| m.as_ref() == decoded.mnemonic) {
-            Rc::clone(existing)
-        } else {
-            let value: Rc<str> = Rc::from(decoded.mnemonic.as_str());
-            if self.mnemonics.len() == 16 { self.mnemonics.remove(0); }
-            self.mnemonics.push(Rc::clone(&value));
-            value
-        };
         if let Some(mut spare) = self.spare.take() {
             let record = Rc::get_mut(&mut spare).expect("retired record is exclusively owned");
             record.len = decoded.len;
@@ -826,9 +870,28 @@ pub fn run_aif(
     aifnoppad: bool,
     aifpoolslide: Option<&kuna_decomp::architecture::Architecture>,
 ) -> Vec<u64> {
+    run_aif_sharing(listing, translate, code_space, exec_ranges, aifstrict, aifcorroborate, aifbracket,
+        aifnoppad, aifpoolslide, None)
+}
+
+/// [`run_aif`] over decodes shared through `memo`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_aif_sharing(
+    listing: &Listing,
+    translate: &dyn Translate,
+    code_space: Rc<AddrSpace>,
+    exec_ranges: &[(u64, u64)],
+    aifstrict: bool,
+    aifcorroborate: bool,
+    aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
+    aifnoppad: bool,
+    aifpoolslide: Option<&kuna_decomp::architecture::Architecture>,
+    memo: Option<&Rc<crate::listing::kuna_decodememo::DecodeMemo>>,
+) -> Vec<u64> {
     let _probe = arm_gap_probe_scope(translate);
     let poolslide = aifpoolslide.map(|arch| (arch, Rc::clone(&code_space)));
     let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
+    decoder.share(memo);
     let policy = GapWalk {
         strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket, noppad: aifnoppad,
         poolslide,
@@ -849,10 +912,12 @@ pub(crate) fn run_aif_after_frames(
     aifnoppad: bool,
     aifpoolslide: Option<&kuna_decomp::architecture::Architecture>,
     mut straight_line: Option<&mut BTreeSet<u64>>,
+    memo: Option<&Rc<crate::listing::kuna_decodememo::DecodeMemo>>,
 ) -> Vec<u64> {
     let _probe = arm_gap_probe_scope(translate);
     let poolslide = aifpoolslide.map(|arch| (arch, Rc::clone(&code_space)));
     let mut decoder = GapDecoder::new(translate, code_space, listing.exec_ranges());
+    decoder.share(memo);
     decoder.prior_partition = Some(prior);
     decoder.straight_line = straight_line.is_some().then(BTreeSet::new);
     let policy = GapWalk {
@@ -1160,7 +1225,7 @@ pub fn raw_arm_prologue_seeds(
     arch: &kuna_decomp::architecture::Architecture, translate: &dyn Translate,
     code_space: Rc<AddrSpace>, exec_ranges: &[(u64, u64)],
 ) -> Vec<u64> {
-    raw_arm_frames(file, listing, arch, translate, code_space, exec_ranges, false).roots
+    raw_arm_frames(file, listing, arch, translate, code_space, exec_ranges, false, None).roots
 }
 
 pub fn raw_thumb_prologue_seeds(
@@ -1173,6 +1238,9 @@ pub fn raw_thumb_prologue_seeds(
     kuna_thumbframes::seeds(file, listing, translate, code_space, exec_ranges)
 }
 
+/// `memo`, for the inventory's recovery, shares every decode with the rest of
+/// that recovery; reference walks (`capture_xrefs`) keep replayable p-code.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn raw_arm_frames(
     file: &object::File,
     listing: &Listing,
@@ -1181,6 +1249,7 @@ pub(crate) fn raw_arm_frames(
     code_space: Rc<AddrSpace>,
     exec_ranges: &[(u64, u64)],
     capture_xrefs: bool,
+    memo: Option<&Rc<crate::listing::kuna_decodememo::DecodeMemo>>,
 ) -> ArmFrames {
     use object::read::Object;
     if file.architecture() != object::Architecture::Arm {
@@ -1196,6 +1265,10 @@ pub(crate) fn raw_arm_frames(
     decoder.frame_probe = true;
     decoder.full_capture = capture_xrefs.then(Default::default);
     let mut frames = ArmFrames::default();
+    if let Some(memo) = memo.filter(|_| !capture_xrefs) {
+        decoder.share(Some(memo));
+        frames = ArmFrames::sharing(memo);
+    }
     let mut accepted: BTreeSet<u64> = BTreeSet::new();
     let mut claimed: BTreeMap<u64, u32> = BTreeMap::new();
 

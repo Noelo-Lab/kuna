@@ -849,6 +849,7 @@ pub fn run_listing_consumers(
     // frame-expanded Listing contradicts it.
     if arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes {
         if let Some(code_space) = arch.manage().get_default_code_space() {
+            let memo = std::rc::Rc::new(crate::listing::kuna_decodememo::DecodeMemo::default());
             let mut frame_cache = crate::aif::raw_arm_frames(
                 &file,
                 &listing,
@@ -857,6 +858,7 @@ pub fn run_listing_consumers(
                 std::rc::Rc::clone(code_space),
                 listing.exec_ranges(),
                 false,
+                Some(&memo),
             );
             if !frame_cache.roots.is_empty() {
                 frames_recovered = true;
@@ -865,7 +867,7 @@ pub fn run_listing_consumers(
                     |seeds| crate::listing::Listing::build_with_meta_planned(
                         &file, image, arch, translate, seeds, &funcsym_seeds, &seed_names, detail, plan,
                     ),
-                    arch, translate, code_space, bracket(listing.exec_ranges()),
+                    arch, translate, code_space, bracket(listing.exec_ranges()), &memo,
                 );
                 let mut frames: std::collections::BTreeSet<u64> = frame_cache.roots.iter().copied().collect();
                 prior.restore(&mut frames, &frame_cache);
@@ -887,7 +889,7 @@ pub fn run_listing_consumers(
                     if arch.input_arm_isa_override { modes.retain_decoded_modes(); }
                     listing = crate::listing::Listing::build_tracking_frames(
                         &file, image, arch, translate, &seeds, &funcsym_seeds,
-                        &seed_names, detail, plan, Some(&mut modes),
+                        &seed_names, detail, plan, Some(&mut modes), Some(&memo),
                     );
                     let mut replacements = crate::aif::arm_frame_prefixes(
                         &mut frame_cache, &original, &listing, &frames, &[], frame_context.as_ref(),
@@ -932,6 +934,7 @@ pub fn run_listing_consumers(
                         let mut checked = crate::aif::kuna_entrychecks::run(
                             &listing, Some(&original), arch, translate,
                             std::rc::Rc::clone(code_space), pointers, bracket(listing.exec_ranges()),
+                            Some(&memo),
                         );
                         drop(probe);
                         checked.entries.retain(|root| !rejected.contains(root));
@@ -1104,7 +1107,7 @@ pub fn run_listing_consumers(
             let mut aif_out = AnalysisOutput::default();
             let checked = frame_aif.unwrap_or_else(|| crate::aif::kuna_entrychecks::run(
                 &listing, None, arch, translate, std::rc::Rc::clone(code_space), ptrentry_out.clone(),
-                bracket(listing.exec_ranges()),
+                bracket(listing.exec_ranges()), None,
             ));
             aif_out.entries = checked.entries;
             if !checked.pool_entries.is_empty() {

@@ -55,6 +55,7 @@ mod kuna_ppclocalentry;
 mod kuna_switchtable;
 mod kuna_thumbswitch;
 mod kuna_a32switch;
+pub(crate) mod kuna_decodememo;
 mod kuna_unmappedentry;
 pub mod model;
 pub mod walk;
@@ -251,7 +252,7 @@ impl Listing {
         plan: &WalkPlan,
     ) -> Listing {
         Self::build_tracking_frames(file, _image, arch, translate, seeds, funcsym_seeds,
-            seed_names, detail, plan, None)
+            seed_names, detail, plan, None, None)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -266,9 +267,10 @@ impl Listing {
         detail: ListingDetail,
         plan: &WalkPlan,
         frames: Option<&mut kuna_framemode::FrameModes>,
+        memo: Option<&kuna_decodememo::DecodeMemo>,
     ) -> Listing {
         Self::build_resuming(file, arch, translate, seeds, funcsym_seeds, seed_names, detail, plan,
-            frames, None)
+            frames, None, memo)
     }
 
     /// (kuna `addrtakenentry`) Continue this Listing's walk with `seeds`, the old
@@ -296,7 +298,7 @@ impl Listing {
             mode_runs: self.mode_runs,
         };
         Self::build_resuming(file, arch, translate, seeds, funcsym_seeds, seed_names, detail, plan,
-            None, Some(prior))
+            None, Some(prior), None)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -311,6 +313,7 @@ impl Listing {
         plan: &WalkPlan,
         frames: Option<&mut kuna_framemode::FrameModes>,
         resumed: Option<walk::WalkState>,
+        memo: Option<&kuna_decodememo::DecodeMemo>,
     ) -> Listing {
         debug_assert!(
             plan.built_from(arch),
@@ -414,6 +417,7 @@ impl Listing {
             resumed,
             tables.as_ref(),
             a32_tables.as_ref(),
+            memo,
         );
 
         let refs = kuna_compactrefs::ReferenceIndex::new(st.refs);
@@ -487,6 +491,7 @@ impl Listing {
             detail,
             /* want_stack_callbacks = */ false,
             &WalkPlan::serial(),
+            None,
             None,
             None,
             None,

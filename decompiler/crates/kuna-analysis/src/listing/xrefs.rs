@@ -789,7 +789,7 @@ fn descend(
                     );
                 }
                 let frames = crate::aif::raw_arm_frames(
-                    file, &listing, arch, translate, Rc::clone(&code_space), &exec, true,
+                    file, &listing, arch, translate, Rc::clone(&code_space), &exec, true, None,
                 );
                 let found = frames.roots.clone();
                 frame_cache = frames;
@@ -1287,7 +1287,7 @@ fn gap_entries(
         crate::aif::run_aif_after_frames(
             &listing, prior, translate, Rc::clone(code_space),
             arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket, arch.analysis_aifnoppad,
-            poolslide, None,
+            poolslide, None, None,
         )
     } else {
         crate::aif::run_aif(

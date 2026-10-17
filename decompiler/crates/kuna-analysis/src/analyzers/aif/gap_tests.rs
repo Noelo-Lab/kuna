@@ -515,3 +515,25 @@ fn reconciled_prefix_keeps_its_instruction_records_as_a_frame_root() {
         "a retained body span must retain its validated decode",
     );
 }
+
+#[test]
+fn a_rescan_through_the_shared_memo_decodes_nothing_again() {
+    let (engine, space, listing) = hidden_fixture("call");
+    let root = BASE + 0x404;
+    let memo = Rc::new(crate::listing::kuna_decodememo::DecodeMemo::default());
+    let mut decoder = GapDecoder::new(&engine, Rc::clone(&space), listing.exec_ranges());
+    decoder.share(Some(&memo));
+    let body = check_valid_subroutine_strict(&mut decoder, &listing, root, root, u64::MAX).unwrap();
+    let spans = body.into_iter().map(|at| (at, decoder.probe(at).unwrap().len)).collect();
+    let mut frames = ArmFrames::sharing(&memo);
+    frames.validated(root, spans, &mut decoder);
+    let roots = BTreeSet::from([root]);
+    let replacements = frames.reconcile(&listing, &listing, &mut decoder, &roots, &[], frame_policy());
+    assert_eq!(replacements, BTreeMap::from([(root, BASE + 0x400)]));
+    assert!(!decoder.decoded_addresses.is_empty());
+
+    let mut fresh = ArmFrames::sharing(&memo);
+    let mut repeated = GapDecoder::new(&engine, space, listing.exec_ranges());
+    assert_eq!(fresh.reconcile(&listing, &listing, &mut repeated, &roots, &[], frame_policy()), replacements);
+    assert!(repeated.decoded_addresses.is_empty(), "a rescan decoded {:x?} again", repeated.decoded_addresses);
+}

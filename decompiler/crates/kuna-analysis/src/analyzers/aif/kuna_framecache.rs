@@ -9,6 +9,9 @@ pub(crate) struct ArmFrames {
     bodies: BTreeMap<u64, Option<Vec<(u64, u32)>>>,
     prefixes: Option<PrefixScan>,
     instructions: Rc<BTreeMap<u64, Rc<ProbedInsn>>>,
+    /// The decodes shared across the inventory's frame recovery. No reference
+    /// walk replays those frames, so their decodes keep no p-code.
+    memo: Option<Rc<crate::listing::kuna_decodememo::DecodeMemo>>,
 }
 
 struct PrefixScan {
@@ -20,6 +23,11 @@ struct PrefixScan {
 }
 
 impl ArmFrames {
+    /// Frames whose recovery shares every decode through `memo`.
+    pub(super) fn sharing(memo: &Rc<crate::listing::kuna_decodememo::DecodeMemo>) -> Self {
+        ArmFrames { memo: Some(Rc::clone(memo)), ..ArmFrames::default() }
+    }
+
     pub(crate) fn replay(
         &self,
         at: u64,
@@ -139,7 +147,9 @@ impl ArmFrames {
             return BTreeMap::new();
         }
         decoder.frame_instructions = Some(Rc::clone(&self.instructions));
+        decoder.memo.clone_from(&self.memo);
         decoder.full_capture.get_or_insert_with(Default::default);
+        decoder.keep_ops = self.memo.is_none();
         decoder.cache.clear();
         decoder.linear_run = None;
         decoder.linear_events.clear();

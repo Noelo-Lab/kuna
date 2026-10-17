@@ -34,6 +34,7 @@ pub(crate) fn prior_inventory(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
     bracket: Option<&BracketEvidence>,
+    memo: &Rc<crate::listing::kuna_decodememo::DecodeMemo>,
 ) -> Prior {
     let _scope = translate.context_scope();
     let mut thumb = seeds.to_vec();
@@ -55,7 +56,7 @@ pub(crate) fn prior_inventory(
             Vec::new()
         };
         let checked = super::kuna_entrychecks::run(
-            base, None, arch, translate, Rc::clone(code_space), pointers, bracket,
+            base, None, arch, translate, Rc::clone(code_space), pointers, bracket, Some(memo),
         );
         entries.extend(checked.entries);
         entries.extend(checked.pool_entries);
