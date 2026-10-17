@@ -96,7 +96,10 @@ fn bootstrap(
     arch.sleigh_mut()
         .resolve_architecture(&db, "x86:LE:64:default:gcc")
         .unwrap();
-    assert!(arch.sleigh().language_index() >= 0, "x86-64 language was not resolved");
+    assert!(
+        arch.sleigh().language_index() >= 0,
+        "x86-64 language was not resolved"
+    );
     let specs = arch.sleigh().build_spec_file(&db).unwrap();
     let sla = std::fs::read(specs.slafile.unwrap()).unwrap();
     arch.sleigh_mut()
