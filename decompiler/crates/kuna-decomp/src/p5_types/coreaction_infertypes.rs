@@ -392,6 +392,7 @@ fn get_local_type(data: &Funcdata, vn: VarnodeId) -> (Rc<Datatype>, bool) {
 fn build_localtypes(data: &mut Funcdata) {
     let order: Vec<VarnodeId> = data.vbank().iter_loc().collect();
     let mut elem_cache = crate::kuna_elemptr::Cache::default();
+    crate::kuna_armfloatreturn::unlock_unspelled(data);
     let float_bits = crate::kuna_floatbits::Plan::of(data);
     if float_bits.types_a_return() {
         data.kuna_note_float_bits_return();

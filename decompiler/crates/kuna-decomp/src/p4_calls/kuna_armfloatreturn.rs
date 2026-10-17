@@ -441,6 +441,67 @@ pub fn type_returns(data: &mut Funcdata, active: &ParamActive) {
     }
 }
 
+/// Give a returned constant no float literal spells its bits back: a NaN
+/// payload or a signalling NaN that [`type_returns`] locked to a float would
+/// print as `NAN`, which compiles to other bits. Once the literal-pool load has
+/// folded, a function that returns one there gives up the lock, and its return
+/// is typed as `floatret` types it: the integer whose bits it is.
+pub fn unlock_unspelled(data: &mut Funcdata) {
+    if !data.get_arch().arm_float_return {
+        return;
+    }
+    let returned: Vec<VarnodeId> = data
+        .obank()
+        .iter_code(OpCode::CPUI_RETURN)
+        .filter_map(|op| {
+            data.obank()
+                .get(op)
+                .filter(|o| !o.is_dead() && o.get_halt_type() == 0 && o.num_input() == 2)
+                .and_then(|o| o.get_in(1))
+        })
+        .collect();
+    let Some(size) = returned
+        .iter()
+        .find(|&&vn| float_locked_return(data, vn))
+        .and_then(|&vn| data.vbank().get(vn))
+        .map(|v| v.get_size())
+    else {
+        return;
+    };
+    if returned.iter().all(|&vn| crate::kuna_floatreg::spells_exactly(data, vn)) {
+        return;
+    }
+    let Some(ty) = data
+        .get_arch()
+        .types()
+        .and_then(|t| t.get_base(size, type_metatype::TYPE_UNKNOWN).ok())
+    else {
+        return;
+    };
+    for vn in returned {
+        if let Some(value) = data.vbank_mut().get_mut(vn).filter(|v| v.is_type_lock()) {
+            value.update_type_locked(ty.clone(), false, true);
+        }
+    }
+}
+
+/// A returned value [`type_returns`] locked to the float of its width: the lock
+/// states the convention's type, not a declaration, so `floatbits` may still
+/// follow the bit ops that build it.
+pub fn float_locked_return(data: &Funcdata, vn: VarnodeId) -> bool {
+    data.get_arch().arm_float_return
+        && data.vbank().get(vn).is_some_and(|v| {
+            v.is_type_lock()
+                && v.get_type().get_metatype() == type_metatype::TYPE_FLOAT
+                && v.get_type().get_size() == v.get_size()
+                && v.descend_iter().any(|r| {
+                    data.obank()
+                        .get(r)
+                        .is_some_and(|o| o.code() == OpCode::CPUI_RETURN)
+                })
+        })
+}
+
 /// An 8-byte d-register input that no op reads whole: every use takes one
 /// 4-byte half, so it holds two floats (s0 and s1), not a double, and must not
 /// match the widened d-register entry. Kept when a later VFP input is read, so
