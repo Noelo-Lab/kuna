@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3049,
-    3049
+    3055,
+    3055
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -932,7 +932,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 312 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 313 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -1237,6 +1237,12 @@
     "data:MULBLOB #3: mulblob off reads the high half out of the blob product",
     "data:MULBLOB #4: default prints the high half over the operands themselves",
     "data:MULBLOB #5: default prints the low half the same way, with no blob left",
+    "data:NARROWARGS #1: default declares the uint16_t parameter unsigned short",
+    "data:NARROWARGS #2: off keeps the register-wide parameter",
+    "data:NARROWARGS #3: a left shift is not narrow evidence",
+    "data:NARROWARGS #4: a flag mask is not narrow evidence",
+    "data:NARROWARGS-X86 #1: default reads the int parameter at 32 bits",
+    "data:NARROWARGS-X86 #2: off keeps the 64-bit register",
     "data:NARROWEXT #10: abi, an unsigned int parameter is sign-extended",
     "data:NARROWEXT #11: off, a signed char parameter is zero-extended",
     "data:NARROWEXT #12: abi, a signed char parameter is sign-extended",
