@@ -3664,6 +3664,28 @@ tier = "transform"
 symptoms = "a uint8_t parameter prints as unsigned int and is only ever used as a1 & 0xff or (char)a1|an int parameter prints as unsigned long on x86-64 and is used as (unsigned int)a0|a caller passes v + 5 to a callee whose parameter is a byte and another caller passes v - 8 & 0xff"
 
 [[settable]]
+option = "regnarrow"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "ty17-narrow-register-locals"
+summary = "Declare a register local at the narrow width all of its values fit. A `uint8_t` loop counter on ARM lives in a whole register (`adds r5, #1; uxtb r5, r5`), a byte read with `ldrb` stays zero-extended in it, and an x86-64 `unsigned` written through `%eax` is zero-extended into `%rax`, so the SSA web that becomes the variable keeps the register's width and prints as `unsigned int` or `unsigned long` with `v = v + 1 & 0xff` in the body. Once `mainloop` settles, `fullloop`'s dead-code pass looks at every web of register varnodes that MULTIEQUALs join, and at a single register definition read twice or more: when the nonzero-bit analysis proves all of its values fit a low 1, 2 or 4 bytes whose top bit they can set, and every value entering the web is an explicit narrowing (a zero extension from at most that width of a value not tied to memory, a mask that keeps only those bytes, a constant or a copy), the web is rebuilt at the narrow width with upstream's `SubvariableFlow` in a zero-extended mode. Arithmetic whose result is read only in the low bytes (`v + 1` feeding the `& 0xff`) is narrowed with it, a value whose definition cannot be narrowed is read through its low bytes, and every other reader that needs the register's width (an index, a compare, a call argument, a store) reads the zero extension of the narrow value, which is exactly the value it read before: the p-code computes the same values, and the printer casts a narrow expression wherever C's promotion to `int` would change what a read sees (an extension, a comparison, a division, a right shift, a switch selector). A narrowed value nothing else types is declared unsigned; one loaded through a `char *` stays `char`. A web that reaches a function input, a RETURN or a user-op operand is left alone, and so are a single masked value with no MULTIEQUAL (every wide reader would mask it again) and a value small only by arithmetic (`x / 60`, `x >> 24`, a counter incremented a few times): it is as often an `int`. A copy can carry the narrowing into a stack slot that is not tied to memory (a `-O0` local). On ARM the shift guard prints such a narrowed count without a second cast."
+use_when = "On by default. The tell it fixes is a byte or halfword local printed `unsigned int` on ARM firmware (`v = v + 1 & 0xff`, `v = (unsigned int)*p` used as an index), or an `unsigned` counter printed `unsigned long` on x86-64 whose every value is a zero-extended 32-bit result. Set it off to get the register-wide declarations back, or when a local the source declares `int` or as an enum is only ever loaded from a byte field (an enum kept in a `uint8_t`, a `numRows` read from a `uint16_t`): the binary cannot tell the two apart. The p-code computes the same values either way. Measured with decbench's published type_match: 96 ARM firmware slices 3,232 -> 3,279 perfect functions (mean .3068 -> .3105; 492 functions better, 106 worse), the 96-binary nightly optimized sample 2,315 -> 2,337, the 444-slice x86-64 set 1,903 -> 1,905; the functions that lose a perfect score declare an enum or `int` the body only loads from a byte field."
+example = "option regnarrow on"
+live_field = "narrow_locals"
+live_true = "on"
+live_false = "off"
+source_decompiler = "kuna"
+inspiration = "decbench type_match census of register-resident locals (ARM firmware `uint8_t`/`uint16_t` locals typed `unsigned int`, x86-64 `int` locals typed `unsigned long`); upstream `SubvariableFlow` (subflow.cc) is the narrowing engine, extended with zero-extended full-width reads"
+change_kind = "type-inference"
+tier = "transform"
+symptoms = "a uint8_t loop counter prints as unsigned int v with v = v + 1 & 0xff|a byte loaded with ldrb is declared unsigned int and used as an index|an int local prints as unsigned long on x86-64 though every value is a zero-extended 32-bit result"
+
+[[settable]]
 option = "stackarggap"
 values = "on|off"
 default = "on"

@@ -149,6 +149,9 @@ enum PatchType {
     PushPatch,
     /// Zero extend logical value into FLOAT_INT2FLOAT operator.
     Int2FloatPatch,
+    /// (kuna `regnarrow`) Read the zero extension of the logical value in one
+    /// input slot of an op that needs the container's full width.
+    ZextUsePatch,
 }
 
 /// Operation with a new logical value as (part of) input, but output Varnode is
@@ -239,6 +242,25 @@ pub struct SubvariableFlow {
     /// (kuna `zextreturn`) RETURNs `try_return_pull` trims whose dropped bits
     /// are known zero, where the convention extends the narrow value by its sign.
     zext_returns: Vec<OpId>,
+    /// (kuna `regnarrow`) Every container this flow reaches whose bits above the
+    /// logical value are known zero may be read at full width: such a read takes
+    /// the zero extension of the logical value instead of failing the trace.
+    zext_uses: bool,
+    /// (kuna `regnarrow`) Containers the flow reads through their own low
+    /// bytes (a SUBPIECE after their definition) instead of tracing them: they
+    /// keep their width and every reader outside the flow.
+    leaves: Vec<RvId>,
+}
+
+/// (kuna `regnarrow`) How a zero-extended flow crosses one reading op.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ZextRoute {
+    /// Trace through the op as upstream does.
+    Trace,
+    /// The op reads the zero extension of the logical value.
+    Extend,
+    /// The flow cannot cross the op.
+    Abort,
 }
 
 impl SubvariableFlow {
@@ -313,6 +335,7 @@ impl SubvariableFlow {
         data: &mut Funcdata,
         vn: VarnodeId,
         mask: uintb,
+        leaf_ok: bool,
     ) -> (Option<RvId>, bool) {
         // Already seen before
         if data.vbank().get(vn).expect("set_replacement: stale vn").is_mark() {
@@ -365,11 +388,17 @@ impl SubvariableFlow {
                 }
             }
         } else {
+            if self.zext_uses && v.is_input() {
+                return (None, false);
+            }
             if self.bitsize >= 8 {
                 // Not a flag
                 // If the logical variable is not a flag, don't consider the case where multiple variables
                 // are packed into a single location, i.e. always consider it a single variable
-                if (!self.aggressive) && ((v.get_consume() & !mask) != 0) {
+                if (!self.aggressive) && ((v.get_consume() & !mask) != 0) && !self.zero_above(v, mask) {
+                    if leaf_ok && self.can_be_leaf(v, mask) {
+                        return (Some(self.add_leaf(data, vn, mask)), false);
+                    }
                     // If there is any use of value outside of the logical variable
                     return (None, false); // This probably means the whole thing is a variable, i.e. quit
                 }
@@ -611,7 +640,7 @@ impl SubvariableFlow {
                     Some(v) => v,
                     None => continue,
                 };
-                let (rep, inworklist) = self.set_replacement(data, retvn, rmask);
+                let (rep, inworklist) = self.set_replacement(data, retvn, rmask, false);
                 let rep = match rep {
                     Some(r) => r,
                     None => return Ok(false),
@@ -738,6 +767,153 @@ impl SubvariableFlow {
         ))
     }
 
+    /// (kuna `regnarrow`) Are the bits of `v` above the logical value known
+    /// zero, so that a full-width read of `v` can take the zero extension of the
+    /// logical value in its place?
+    fn zero_above(&self, v: &crate::varnode::Varnode, mask: uintb) -> bool {
+        self.zext_uses && (mask & 1) != 0 && (v.get_nz_mask() & !mask) == 0
+    }
+
+    /// (kuna `regnarrow`) Can the flow read `v`'s logical value as a SUBPIECE
+    /// of it: a written container whose logical value is its low bytes?
+    fn can_be_leaf(&self, v: &crate::varnode::Varnode, mask: uintb) -> bool {
+        self.zext_uses && v.is_written() && mask == calc_mask(self.flowsize)
+            && v.get_size() > self.flowsize
+    }
+
+    /// (kuna `regnarrow`) Enter `vn` in the flow as a leaf.
+    fn add_leaf(&mut self, data: &mut Funcdata, vn: VarnodeId, mask: uintb) -> RvId {
+        let res = self.new_rv(ReplaceVarnode { vn: Some(vn), replacement: None, mask, val: 0, def: None });
+        self.varmap.insert(vn, res);
+        data.vbank_mut().get_mut(vn).expect("add_leaf: stale vn").set_mark();
+        self.leaves.push(res);
+        res
+    }
+
+    /// (kuna `regnarrow`) Does the zero-extended flow trace `rvn`'s definition
+    /// back through a narrower copy of it, rather than reading it as a leaf?
+    fn traceable_def(&self, data: &Funcdata, rvn: RvId) -> bool {
+        let Some(v) = self.rv(rvn).vn.and_then(|vn| data.vbank().get(vn)) else { return false };
+        let Some(o) = v.get_def().and_then(|d| data.obank().get(d)) else { return true };
+        let mask = self.rv(rvn).mask;
+        let constant = |k: int4| o.get_in(k).and_then(|c| data.vbank().get(c)).is_some_and(|c| c.is_constant());
+        match o.code() {
+            OpCode::CPUI_COPY
+            | OpCode::CPUI_MULTIEQUAL
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_ZEXT
+            | OpCode::CPUI_INT_SEXT => true,
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_MULT => (mask & 1) != 0,
+            OpCode::CPUI_INT_LEFT => constant(1),
+            OpCode::CPUI_SUBPIECE => o.get_in(1).and_then(|c| data.vbank().get(c)).is_some_and(|c| c.get_offset() == 0),
+            _ => false,
+        }
+    }
+
+    /// (kuna `regnarrow`) How the zero-extended flow of `vn` crosses `op`, one
+    /// of its readers. An op whose result is a narrower copy of the value, or
+    /// whose result is read only in the logical bits, carries the flow on; an
+    /// op that must see the whole container reads the zero extension instead.
+    /// A returned value, read by the RETURN or by the copy in front of it, is
+    /// left to return recovery, which splits a RETURN of a phi into one return
+    /// per path; a user-op's register operand (a syscall number) keeps the
+    /// register's width.
+    fn zext_route(&self, data: &Funcdata, op: OpId, vn: VarnodeId, mask: uintb) -> ZextRoute {
+        let Some(o) = data.obank().get(op) else { return ZextRoute::Abort };
+        let read_low = |x: Option<VarnodeId>| {
+            x.and_then(|x| data.vbank().get(x)).is_some_and(|x| (x.get_consume() & !mask) == 0)
+        };
+        let plain_out = o.get_out().and_then(|x| data.vbank().get(x)).is_none_or(|x| {
+            !x.is_addr_tied() && !x.is_persist() && !x.is_addr_force()
+        });
+        if !plain_out {
+            return match o.code() {
+                OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL => ZextRoute::Abort,
+                _ => ZextRoute::Extend,
+            };
+        }
+        let constant = |k: int4| o.get_in(k).and_then(|c| data.vbank().get(c)).filter(|c| c.is_constant());
+        match o.code() {
+            OpCode::CPUI_MULTIEQUAL => ZextRoute::Trace,
+            OpCode::CPUI_SUBPIECE => {
+                if constant(1).is_some_and(|c| c.get_offset() == 0) {
+                    ZextRoute::Trace
+                } else {
+                    ZextRoute::Extend
+                }
+            }
+            OpCode::CPUI_INDIRECT | OpCode::CPUI_RETURN | OpCode::CPUI_CALLOTHER => ZextRoute::Abort,
+            OpCode::CPUI_COPY if Self::returned(data, o.get_out()) => ZextRoute::Abort,
+            OpCode::CPUI_COPY => ZextRoute::Trace,
+            OpCode::CPUI_INT_AND if constant(1).is_some() => {
+                if constant(1).is_some_and(|c| c.get_offset() & mask != 0) && read_low(o.get_out()) {
+                    ZextRoute::Trace
+                } else {
+                    ZextRoute::Extend
+                }
+            }
+            OpCode::CPUI_INT_OR if constant(1).is_some_and(|c| mask & !c.get_offset() == 0) => ZextRoute::Extend,
+            OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_ADD => {
+                if (mask & 1) != 0 && read_low(o.get_out()) {
+                    ZextRoute::Trace
+                } else {
+                    ZextRoute::Extend
+                }
+            }
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                if read_low(Some(vn)) && self.narrow_param(data, op, vn) {
+                    ZextRoute::Trace
+                } else if self.flowsize >= 4 {
+                    ZextRoute::Abort
+                } else {
+                    ZextRoute::Extend
+                }
+            }
+            _ => ZextRoute::Extend,
+        }
+    }
+
+    /// (kuna `regnarrow`) Is the parameter the call `op` passes `vn` in no
+    /// wider than the logical value? A wider one needs the zero extension, which
+    /// the argument trimming would drop again; below `int` the trimmed argument
+    /// keeps its extension as a cast (`kuna_truncarg`), but an `int`-wide one
+    /// would be converted by C from whatever sign it is declared with, so such
+    /// a web is not narrowed.
+    fn narrow_param(&self, data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
+        let Some(slot) = data.obank().get(op).map(|o| o.get_slot(vn)).filter(|&s| s >= 1) else { return false };
+        let Some(idx) = data.get_call_specs_index(op) else { return false };
+        data.get_call_specs(idx).proto().get_param(slot - 1).is_some_and(|p| p.get_size() <= self.flowsize)
+    }
+
+    /// (kuna `regnarrow`) Does a RETURN read `vn`, the copy heritage places
+    /// in front of a returned value?
+    fn returned(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
+        vn.and_then(|vn| data.vbank().get(vn)).is_some_and(|v| {
+            v.descend_iter()
+                .any(|op| data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_RETURN))
+        })
+    }
+
+    /// (kuna `regnarrow`) The first input slot of `op` holding `vn` that no
+    /// zero-extension patch has claimed yet.
+    fn unpatched_slot(&self, data: &Funcdata, op: OpId, vn: VarnodeId) -> Option<int4> {
+        let o = data.obank().get(op)?;
+        (0..o.num_input()).find(|&k| {
+            o.get_in(k) == Some(vn)
+                && !self
+                    .patchlist
+                    .iter()
+                    .any(|p| p.typ == PatchType::ZextUsePatch && p.patch_op == op && p.slot == k)
+        })
+    }
+
     // -------------------------------------------------------------------------
     // traceForward (subflow.cc:373-659)
     // -------------------------------------------------------------------------
@@ -762,6 +938,28 @@ impl SubvariableFlow {
             dcount += 1; // Count this descendant
             let mut slot = data.obank().get(op).expect("stale op").get_slot(rvn_vn);
             let code = data.obank().get(op).expect("stale op").code();
+            if self.zext_uses {
+                let mask = self.rv(rvn).mask;
+                match self.zext_route(data, op, rvn_vn, mask) {
+                    ZextRoute::Trace => {}
+                    ZextRoute::Abort => return Ok(false),
+                    ZextRoute::Extend => {
+                        if !self.zero_above(data.vbank().get(rvn_vn).expect("vn"), mask) {
+                            return Ok(false);
+                        }
+                        let Some(k) = self.unpatched_slot(data, op, rvn_vn) else { return Ok(false) };
+                        self.patchlist.push(PatchRecord {
+                            typ: PatchType::ZextUsePatch,
+                            patch_op: op,
+                            in1: rvn,
+                            in2: None,
+                            slot: k,
+                        });
+                        hcount += 1;
+                        continue;
+                    }
+                }
+            }
             match code {
                 OpCode::CPUI_COPY
                 | OpCode::CPUI_MULTIEQUAL
@@ -1710,7 +1908,7 @@ impl SubvariableFlow {
         slot: int4,
         vn: VarnodeId,
     ) -> KunaResult<bool> {
-        let (rep, inworklist) = self.set_replacement(data, vn, mask);
+        let (rep, inworklist) = self.set_replacement(data, vn, mask, slot >= 0);
         let rep = match rep {
             Some(r) => r,
             None => return Ok(false),
@@ -1739,7 +1937,7 @@ impl SubvariableFlow {
     /// The constructor's `createLink((ReplaceOp *)0, mask, 0, root)` — the only
     /// call with a null `rop` (C++ `SubvariableFlow::createLink` with `rop==0`).
     fn create_link_root(&mut self, data: &mut Funcdata, mask: uintb, vn: VarnodeId) -> KunaResult<bool> {
-        let (rep, inworklist) = self.set_replacement(data, vn, mask);
+        let (rep, inworklist) = self.set_replacement(data, vn, mask, false);
         let rep = match rep {
             Some(r) => r,
             None => return Ok(false),
@@ -1762,7 +1960,7 @@ impl SubvariableFlow {
         othervn: VarnodeId,
     ) -> KunaResult<bool> {
         let mask = self.rv(inrvn).mask;
-        let (rep, inworklist) = self.set_replacement(data, othervn, mask);
+        let (rep, inworklist) = self.set_replacement(data, othervn, mask, true);
         let rep = match rep {
             Some(r) => r,
             None => return Ok(false),
@@ -2073,6 +2271,15 @@ impl SubvariableFlow {
             }
             return self.trace_forward_sext(data, rvn);
         }
+        if self.zext_uses && self.rv(rvn).def.is_none() && !self.traceable_def(data, rvn) {
+            let vn = self.rv(rvn).vn.expect("process_next_work: rvn vn");
+            let v = data.vbank().get(vn).expect("process_next_work: stale vn");
+            if !self.can_be_leaf(v, self.rv(rvn).mask) {
+                return Ok(false);
+            }
+            self.leaves.push(rvn);
+            return Ok(true);
+        }
         if !self.trace_backward(data, rvn)? {
             return Ok(false);
         }
@@ -2094,6 +2301,19 @@ impl SubvariableFlow {
         sext: bool,
         big: bool,
     ) -> KunaResult<SubvariableFlow> {
+        Self::new_with(data, root, mask, aggr, sext, big, false)
+    }
+
+    /// [`Self::new`], with the (kuna `regnarrow`) zero-extended-use mode.
+    fn new_with(
+        data: &mut Funcdata,
+        root: VarnodeId,
+        mask: uintb,
+        aggr: bool,
+        sext: bool,
+        big: bool,
+        zext_uses: bool,
+    ) -> KunaResult<SubvariableFlow> {
         let mut sf = SubvariableFlow {
             flowsize: 0,
             bitsize: 0,
@@ -2109,6 +2329,8 @@ impl SubvariableFlow {
             pullcount: 0,
             zext_pulls: Vec::new(),
             zext_returns: Vec::new(),
+            zext_uses,
+            leaves: Vec::new(),
         };
         if mask == 0u64 {
             // fd = 0; return;  -- invalid engine
@@ -2190,10 +2412,24 @@ impl SubvariableFlow {
         if !retval {
             return Ok(false);
         }
-        if self.pullcount == 0 {
+        if self.pullcount == 0 && !self.zext_uses {
+            return Ok(false);
+        }
+        if self.zext_uses && !self.complete() {
             return Ok(false);
         }
         Ok(true)
+    }
+
+    /// (kuna `regnarrow`) Does every placeholder op have its output and all of
+    /// its inputs, so that [`Self::do_replacement`] cannot stop half way?
+    fn complete(&self) -> bool {
+        self.oplist.iter().all(|rop| {
+            rop.output.is_some()
+                && rop.op.is_some()
+                && rop.input.len() as int4 == rop.numparams
+                && rop.input.iter().all(|i| i.is_some())
+        })
     }
 
     /// Perform the discovered transform, making logical values explicit
@@ -2232,6 +2468,27 @@ impl SubvariableFlow {
             data.op_set_output(new_zext, old_vn)?;
             data.op_insert_after(new_zext, push_op);
             piter += 1;
+        }
+
+        // (kuna `regnarrow`) Read each leaf through a SUBPIECE after its definition.
+        for i in 0..self.leaves.len() {
+            let rvn = self.leaves[i];
+            if self.rv(rvn).def.is_some() {
+                continue;
+            }
+            let wide = self.rv(rvn).vn.expect("do_replacement: leaf vn");
+            let def = data.vbank().get(wide).and_then(|v| v.get_def()).expect("do_replacement: leaf def");
+            let lsb = (leastsigbit_set(self.rv(rvn).mask) / 8) as uintb;
+            let narrow = data.new_unique(self.flowsize, None);
+            self.rv_mut(rvn).replacement = Some(narrow);
+            let addr = data.obank().get(def).expect("do_replacement: stale leaf def").get_addr().clone();
+            let sub = data.new_op(2, addr);
+            data.op_set_opcode_code(sub, OpCode::CPUI_SUBPIECE);
+            data.op_set_output(sub, narrow)?;
+            data.op_set_input(sub, wide, 0)?;
+            let off = data.new_constant(4, lsb);
+            data.op_set_input(sub, off, 1)?;
+            data.op_insert_after(sub, def);
         }
 
         // Define all the outputs first
@@ -2354,6 +2611,22 @@ impl SubvariableFlow {
                 }
                 PatchType::PushPatch => {
                     // Shouldn't see these here, handled earlier
+                }
+                PatchType::ZextUsePatch => {
+                    let slot = self.patchlist[piter].slot;
+                    let in1 = self.patchlist[piter].in1;
+                    let narrow = self.get_replace_varnode(data, in1)?;
+                    let (wide, pull_addr) = {
+                        let o = data.obank().get(pullop).expect("do_replacement: stale pullop");
+                        (o.get_in(slot).expect("zext_use_patch: empty slot"), o.get_addr().clone())
+                    };
+                    let size = data.vbank().get(wide).expect("do_replacement: stale wide vn").get_size();
+                    let zext_op = data.new_op(1, pull_addr);
+                    data.op_set_opcode_code(zext_op, OpCode::CPUI_INT_ZEXT);
+                    let zout = data.new_unique_out(size, zext_op)?;
+                    data.op_set_input(zext_op, narrow, 0)?;
+                    data.op_insert_before(zext_op, pullop);
+                    data.op_set_input(pullop, zout, slot)?;
                 }
                 PatchType::Int2FloatPatch => {
                     let pull_addr = data
@@ -2823,6 +3096,26 @@ fn run_subflow(
     big: bool,
 ) -> int4 {
     run_subflow_returning(data, root, mask, aggr, sext, big).0
+}
+
+/// (kuna `regnarrow`) Narrow the flow of the logical value `mask` of `root`,
+/// letting every reader that needs a container's full width take the zero
+/// extension of the logical value when the container's other bits are known
+/// zero. The original Varnodes the flow rebuilt, when the function changed.
+pub fn run_zext_uses(data: &mut Funcdata, root: VarnodeId, mask: uintb) -> Option<(Vec<VarnodeId>, Vec<VarnodeId>)> {
+    let mut subflow = SubvariableFlow::new_with(data, root, mask, false, false, false, true).ok()?;
+    if !matches!(subflow.do_trace(data), Ok(true)) {
+        return None;
+    }
+    subflow.do_replacement(data).ok()?;
+    let narrow = subflow
+        .rvarena
+        .iter()
+        .filter(|r| r.vn.is_some())
+        .filter_map(|r| r.replacement)
+        .filter(|&r| data.vbank().get(r).is_some_and(|v| !v.is_constant()))
+        .collect();
+    Some((subflow.varmap.keys().copied().collect(), narrow))
 }
 
 /// [`run_subflow`], also answering whether the applied transform narrowed the
