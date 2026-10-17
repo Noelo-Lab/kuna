@@ -311,6 +311,11 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
             && !wider_than_return(arch, callee, data, outvn)
             && !(arch.kuna_voidret.float_bits.contains(&callee) && elsewhere_than_return(arch, callee, data, result))
             && !held_as_float(data, outvn, result)
+            && !arch
+                .kuna_voidret
+                .storage
+                .get(&callee)
+                .is_some_and(|(addr, size)| crate::kuna_armfloatreturn::convention_float_storage(data, addr, *size))
         {
             arch.kuna_voidret.float_refused.entry(callee).or_default().insert(own);
         }

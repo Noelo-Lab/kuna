@@ -3947,8 +3947,16 @@ impl Architecture {
         // `evalfp_current`) so the proto-recovery actions can set the function's
         // model and run output recovery against the real param lists.
         // (kuna) `armfloatreturn` widens the default model with the d-registers.
-        ctx.arm_float_return = crate::kuna_armfloatreturn::applies(self);
-        ctx.arm_float_args = crate::kuna_armfloatargs::applies(self);
+        let helper = crate::kuna_armfloatreturn::applies(self)
+            && entry
+                .and_then(|e| self.symboltab.function_display_name_across_scopes(e))
+                .is_some_and(|name| crate::kuna_armfloatreturn::base_pcs_helper(&name));
+        ctx.arm_float_return = crate::kuna_armfloatreturn::applies(self) && !helper;
+        ctx.arm_float_args = crate::kuna_armfloatargs::applies(self) && !helper;
+        ctx.arm_base_model = self
+            .defaultfp
+            .clone()
+            .filter(|_| crate::kuna_armfloatreturn::applies(self));
         ctx.float_arg_registers = crate::kuna_typedcallabi::image_evidence(self);
         ctx.soft_float_model = crate::kuna_typedcallabi::soft_model(self, ctx.float_arg_registers);
         ctx.soft_float_declarations = ctx
