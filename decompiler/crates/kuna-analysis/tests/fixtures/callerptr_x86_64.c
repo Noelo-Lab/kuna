@@ -12,13 +12,20 @@
  * what its own body says. `is_table` compares its argument with the address
  * of a table that holds a zero byte, and its callers pass a literal, a
  * string and a null: a `char *` would print that address as a string literal
- * cut at the zero, so it keeps its integer. `align8` rounds the address it is
- * handed up to a multiple of eight, a number, so it keeps its integer.
+ * cut at the zero, so it keeps its integer. `via` only forwards its argument
+ * to `is_tab2`, which compares it with the table: `via` may take the pointer,
+ * but `is_tab2`, whose one caller then passes a `char *`, keeps its integer.
+ * `hits` compares an address it derives from its argument with the table, and
+ * keeps its integer too. `align8` rounds the address it is handed up to a
+ * multiple of eight, a number, so it keeps its integer.
  *
  * Build (symbols kept but the table's, no DWARF):
  *   gcc -O2 -fno-inline -fno-stack-protector -fcf-protection=none \
  *       -o callerptr_x86_64 callerptr_x86_64.c
  *   strip -N table callerptr_x86_64
+ *   gcc -O0 -fno-stack-protector -fcf-protection=none \
+ *       -o callerptr_O0_x86_64 callerptr_x86_64.c
+ *   strip -N table callerptr_O0_x86_64
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,11 +62,22 @@ NI void remember(const char *s) { names[nnames++ & 7] = s; }
 NI unsigned long slot_of(const void *p) { return ((unsigned long)p >> 4) % 31; }
 NI int is_table(long p) { return p == (long)table; }
 NI uintptr_t align8(uintptr_t p) { return (p + 7) & ~(uintptr_t)7; }
+static volatile long sink;
+NI int is_tab2(long p) { return p == (long)table; }
+NI int via(long p) { sink = 1; return is_tab2(p); }
+NI int hits(long p, int n)
+{
+    int c = 0;
+    for (int i = 0; i < n; i++)
+        c += (p + i == (long)table);
+    return c;
+}
 NI long check(const char *a, long *w)
 {
     w[0] = a[0];
     return is_table((long)"xyz") + is_table((long)a) + is_table(0) + align8((uintptr_t)a) - (uintptr_t)a
-        + align8((uintptr_t)w) - (uintptr_t)w;
+        + align8((uintptr_t)w) - (uintptr_t)w + via((long)"xyz") + via((long)a) + via(0)
+        + hits((long)"xyz", 2) + hits((long)a, (int)w[0] & 1) + hits(0, 0);
 }
 NI int by_item(const void *a, const void *b)
 {

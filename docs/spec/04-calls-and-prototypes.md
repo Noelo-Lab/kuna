@@ -5930,6 +5930,19 @@ level down: every pointer-width value the callee loads through the value or
 stores through it takes `char *`, so a constant wider than a byte stored
 through any of those refuses it (`add(&cfg, path)` storing a new node into the
 record and then writing the node's words; `kuna_protoorder::splits_a_wide_constant`).
+A `char *` vote is refused, too, for a value the callee merges with a non-zero
+constant, or that it -- or an address it derives from it by adds, pointer
+arithmetic, copies, casts or merges -- compares with, adds to or subtracts from
+a constant inside the data space's pointer bounds that is not a string literal
+kuna recovered
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleevote.rs
+(prints_a_table_as_a_literal)`, which reads `kuna_charptr::constant_is_string`).
+The constant would take the `char *`, and the printer renders the readonly
+bytes there up to the first zero as a string literal: a 16-byte table with a
+zero in its third byte came out `return a0 == "\x01\x02";`, a literal that is
+both cut short and a new object, where `bool is_table(long p) { return p ==
+(long)table; }` is passed only strings. This is a strict output fix and holds
+for every vote the input fold takes, `callerptr`'s included.
 A pointer to a pointer that some caller passes as the address of one of its
 own frame objects (`&v4`) types that one object, not what follows it in the
 frame: a caller keeping a record whose first member is a `char *` passes
@@ -6101,23 +6114,18 @@ address the function takes but never indexes does not refuse the vote
 slot, and typing an eight-byte slot as an eight-byte pointer re-lays nothing.
 An indexed frame region and a frame struct or array still refuse.
 
-Three refusals are added (`kuna_callerptr.rs (refuses)`). An address the callee
+One refusal is added (`kuna_callerptr.rs (refuses)`): an address the callee
 derives from the value by a literal offset and then masks, shifts, divides or
-multiplies is a number (`masks_a_derived_address`): an alignment helper
+multiplies is a number (`masks_a_derived_address`), so an alignment helper
 `(p + 7) & ~7` over a `uintptr_t` keeps its integer, although the mask applies
-to the sum and not to the parameter. And a character pointer is not taken by a
-value the callee merges with an address it holds as a constant
-(`merged_with_a_constant`), or compares with, adds to or subtracts from a
-constant inside the data space's pointer bounds that is not a string literal
-kuna recovered (`meets_an_address_constant`). The constant would take the
-`char *` and print as a string literal, which ends at the first zero byte of a
-table that is not a string: the `elemptr` fixture's `w_pick`, whose callers pass
-a string or a null and which falls back to a 15-byte table with a zero inside
-(`if (!s) s = table;`), printed `a0 = "0!0\t...";`, and
-`is_table(long p) { return p == (long)table; }`, passed a literal, a string and
-a null, printed `return a0 == "\x01\x02";`. That printer behaviour is reachable
-on its own through `calleevote` when every caller passes a string; this rule
-only declines to add to it.
+to the sum and not to the parameter. A character pointer meets the
+string-literal refusal every vote meets (above): it is what keeps the `elemptr`
+fixture's `w_pick` -- whose callers pass a string or a null and which falls back
+to a 15-byte table with a zero inside (`if (!s) s = table;`) -- from printing
+`a0 = "0!0\t...";`, and it is why the refusal is applied to the ordinary
+statement too: a wrapper `via(long p)` that only forwards its argument takes
+the callers' `char *` here, and in the next round its callee `is_tab2`, whose
+one caller now passes a `char *`, would take it as a committed type.
 
 A function whose statement holds these votes and adds nothing else -- any
 committed type in it repeats the function's own type or the statement it
@@ -6155,10 +6163,12 @@ evidence, and a call in a switch case body the reference walk does not decode
 leaves its callee's caller set incomplete. The fixture
 `decompiler/crates/kuna-analysis/tests/fixtures/callerptr_x86_64.c` pins
 `push` (`void *`, three callers of three types), `remember` (`char *`, a
-literal, `getenv` and a null) and three controls that keep their integers:
-`slot_of` shifts the pointer it is handed, `align8` masks an address it derives
-from it, and `is_table` compares it with a table address that is no string (the
-fixture strips the table's symbol so the address is a bare constant).
+literal, `getenv` and a null) and controls that keep their integers: `slot_of`
+shifts the pointer it is handed, `align8` masks an address it derives from it,
+and `is_table`, `is_tab2` behind the forwarder `via`, and `hits` through
+`p + i`, compare it with a table address that is no string (the fixture strips
+the table's symbol so the address is a bare constant, and is built at -O2 and,
+as `callerptr_O0_x86_64`, at -O0).
 
 ### (kuna) `callrettype` — a call returns the type its callee declares
 

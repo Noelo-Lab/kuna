@@ -15,8 +15,8 @@
   "repeat": 1,
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callerptr_x86_64",
-    "binary_sha256": "699111c0fedc5c4bba7a14ec5f4f93f2e3674873d1f644cceeb7e10e8e9b001c",
-    "binary_size": 16520,
+    "binary_sha256": "4f46f2c42b019318b5d1d098155d8056bdaee5883219cf027f689c15e0033e40",
+    "binary_size": 16640,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callerptr_x86_64",
     "selector": "push",
@@ -31,13 +31,14 @@
       "void remember\\(char \\*a0\\)",
       "unsigned long slot_of\\(unsigned long a0\\)\\n\\{\\n  return \\(a0 >> 4\\) % 0x1f;",
       "bool is_table\\(long a0\\)",
-      "unsigned long align8\\(long a0\\)"
+      "unsigned long align8\\(long a0\\)",
+      "bool is_tab2\\(long a0\\)"
     ],
     "stdout_absent": [
       "void push\\(unsigned long a0\\)",
       "a0 == \\\""
     ]
   },
-  "notes": "DEFAULT: push's callers pass a record, a strdup result and a null (void *); remember's a literal, a getenv result and a null (char *). slot_of shifts, align8 masks and is_table compares with a table address that is no string: each keeps its integer.",
-  "probe_id": "a-f00288aa8757"
+  "notes": "DEFAULT: push's callers pass a record, a strdup result and a null (void *); remember's a literal, a getenv result and a null (char *). slot_of, align8, is_table, is_tab2 (behind the forwarder via) and hits keep their integers; no table address prints as a literal.",
+  "probe_id": "a-ec13c265b14c"
 }

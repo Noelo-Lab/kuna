@@ -100,84 +100,9 @@ pub fn pointer_vote(sites: &[&CallSite], j: usize, p: &Typed, void_ptr: &Rc<Data
 /// derives from the value by a literal offset and then masks, shifts, divides
 /// or multiplies refuses it too (`(p + 7) & ~7`, an alignment helper over a
 /// `uintptr_t`).
-///
-/// A character pointer is also refused for a value the callee merges with, or
-/// compares with, adds to or subtracts from, an address constant that is not a
-/// string literal: the constant would take the `char *` and print as a string
-/// literal, which ends at the first zero byte of a table that is not a string
-/// (`if (!s) s = table;`, `p == (long)table`).
 pub(crate) fn refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
-    let family = crate::kuna_protoorder::value_family(data, vn);
     crate::kuna_protoorder::input_refuses_declared(data, vn, ct)
-        || masks_a_derived_address(data, &family)
-        || (points_at_a_character(ct)
-            && (merged_with_a_constant(data, &family) || meets_an_address_constant(data, &family)))
-}
-
-/// Is `ct` a pointer to a one-byte character?
-fn points_at_a_character(ct: &Datatype) -> bool {
-    ct.get_ptr_to().is_some_and(|p| p.get_size() == 1 && p.is_char_print())
-}
-
-/// Does some member of `family` take a non-zero constant: copied from one, or
-/// the engine's `PTRSUB` off the constant zero?
-fn merged_with_a_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
-    let nonzero = |v: Option<VarnodeId>| v.and_then(|v| data.vbank().get(v)).is_some_and(|c| c.is_constant() && c.get_offset() != 0);
-    let zero = |v: Option<VarnodeId>| v.and_then(|v| data.vbank().get(v)).is_some_and(|c| c.is_constant() && c.get_offset() == 0);
-    family.iter().any(|&v| {
-        let Some(def) = data.vbank().get(v).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d)) else {
-            return false;
-        };
-        match def.code() {
-            OpCode::CPUI_COPY | OpCode::CPUI_CAST => nonzero(def.get_in(0)),
-            OpCode::CPUI_PTRSUB => zero(def.get_in(0)) && nonzero(def.get_in(1)),
-            _ => false,
-        }
-    })
-}
-
-/// Is some member of `family` compared with, added to or subtracted from a
-/// constant inside the default data space's pointer bounds that is not a
-/// string literal kuna recovered -- directly, or as the engine's `PTRSUB` off
-/// the constant zero?
-fn meets_an_address_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
-    let Some(spc) = data.get_arch().manage().get_default_data_space() else { return false };
-    let (lo, hi) = (spc.get_pointer_lower_bound(), spc.get_pointer_upper_bound());
-    let address = |op: OpId, other: Option<VarnodeId>| -> bool {
-        let Some(node) = other.and_then(|o| data.vbank().get(o)) else { return false };
-        let c = if node.is_constant() {
-            other
-        } else {
-            node.get_def()
-                .and_then(|d| data.obank().get(d))
-                .filter(|o| o.code() == OpCode::CPUI_PTRSUB)
-                .filter(|o| o.get_in(0).and_then(|b| data.vbank().get(b)).is_some_and(|b| b.is_constant() && b.get_offset() == 0))
-                .and_then(|o| o.get_in(1))
-        };
-        c.and_then(|c| data.vbank().get(c).map(|n| (c, n.get_offset())))
-            .is_some_and(|(c, off)| off >= lo && off <= hi && !crate::p5_types::kuna_charptr::constant_is_string(data, op, c))
-    };
-    family.iter().any(|&v| {
-        let Some(node) = data.vbank().get(v) else { return false };
-        node.descend_iter().any(|r| {
-            let Some(o) = data.obank().get(r) else { return false };
-            if !matches!(
-                o.code(),
-                OpCode::CPUI_INT_EQUAL
-                    | OpCode::CPUI_INT_NOTEQUAL
-                    | OpCode::CPUI_INT_LESS
-                    | OpCode::CPUI_INT_LESSEQUAL
-                    | OpCode::CPUI_INT_SLESS
-                    | OpCode::CPUI_INT_SLESSEQUAL
-                    | OpCode::CPUI_INT_ADD
-                    | OpCode::CPUI_INT_SUB
-            ) {
-                return false;
-            }
-            let other = if o.get_in(0) == Some(v) { o.get_in(1) } else { o.get_in(0) };
-            address(r, other)
-        })
-    })
+        || masks_a_derived_address(data, &crate::kuna_protoorder::value_family(data, vn))
 }
 
 /// Does the callee derive an address from a member of `family` by a literal

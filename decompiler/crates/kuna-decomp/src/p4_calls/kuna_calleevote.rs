@@ -655,13 +655,117 @@ pub fn input_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<R
     } else {
         crate::kuna_protoorder::input_refuses(data, vn, &want.ct)
     };
-    if !open || refuses {
+    if !open || refuses || prints_a_table_as_a_literal(data, vn, &want.ct) {
         return None;
     }
     if want.frame && crate::kuna_protoorder::reaches_past_the_pointee(data, vn, &want.ct) {
         return None;
     }
     Some(Rc::clone(&want.ct))
+}
+
+/// How far [`prints_a_table_as_a_literal`] follows the addresses a function
+/// derives from its input.
+const DERIVED_HOP_CAP: usize = 10;
+
+/// Would a character pointer `ct` on the function input `vn` print an address
+/// constant the function holds as a string literal that is not the object
+/// there? The constant takes the `char *` from the value it meets, and the
+/// printer renders the readonly bytes up to the first zero as a literal: a
+/// table with a zero inside comes out cut short (`return a0 == "\x01\x02";`
+/// for a 16-byte table), and the literal is a new object either way. So a
+/// character pointer is refused for a value the function merges with a
+/// non-zero constant (`if (!s) s = table;`), and for one that it -- or an
+/// address it derives from it by adds, pointer arithmetic, copies, casts or
+/// merges (`p + i == (long)table`) -- compares with, adds to or subtracts from
+/// a constant inside the data space's pointer bounds that is not a string
+/// literal kuna recovered (`kuna_charptr::constant_is_string`).
+pub(crate) fn prints_a_table_as_a_literal(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+    if !ct.get_ptr_to().is_some_and(|p| p.get_size() == 1 && p.is_char_print()) {
+        return false;
+    }
+    let family = crate::kuna_protoorder::value_family(data, vn);
+    merged_with_a_constant(data, &family) || meets_an_address_constant(data, &family)
+}
+
+/// Does some member of `family` take a non-zero constant: copied from one, or
+/// the engine's `PTRSUB` off the constant zero?
+fn merged_with_a_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
+    let nonzero = |v: Option<VarnodeId>| v.and_then(|v| data.vbank().get(v)).is_some_and(|c| c.is_constant() && c.get_offset() != 0);
+    let zero = |v: Option<VarnodeId>| v.and_then(|v| data.vbank().get(v)).is_some_and(|c| c.is_constant() && c.get_offset() == 0);
+    family.iter().any(|&v| {
+        let Some(def) = data.vbank().get(v).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d)) else {
+            return false;
+        };
+        match def.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST => nonzero(def.get_in(0)),
+            OpCode::CPUI_PTRSUB => zero(def.get_in(0)) && nonzero(def.get_in(1)),
+            _ => false,
+        }
+    })
+}
+
+/// Is a member of `family`, or an address derived from one, compared with,
+/// added to or subtracted from a constant inside the default data space's
+/// pointer bounds that is not a string literal kuna recovered -- directly, or
+/// as the engine's `PTRSUB` off the constant zero?
+fn meets_an_address_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
+    let Some(spc) = data.get_arch().manage().get_default_data_space() else { return false };
+    let (lo, hi) = (spc.get_pointer_lower_bound(), spc.get_pointer_upper_bound());
+    let address = |op: crate::context::OpId, other: Option<VarnodeId>| -> bool {
+        let Some(node) = other.and_then(|o| data.vbank().get(o)) else { return false };
+        let c = if node.is_constant() {
+            other
+        } else {
+            node.get_def()
+                .and_then(|d| data.obank().get(d))
+                .filter(|o| o.code() == OpCode::CPUI_PTRSUB)
+                .filter(|o| o.get_in(0).and_then(|b| data.vbank().get(b)).is_some_and(|b| b.is_constant() && b.get_offset() == 0))
+                .and_then(|o| o.get_in(1))
+        };
+        c.and_then(|c| data.vbank().get(c).map(|n| (c, n.get_offset())))
+            .is_some_and(|(c, off)| off >= lo && off <= hi && !crate::p5_types::kuna_charptr::constant_is_string(data, op, c))
+    };
+    let mut seen: HashSet<VarnodeId> = family.iter().copied().collect();
+    let mut work: std::collections::VecDeque<(VarnodeId, usize)> = family.iter().map(|&v| (v, 0)).collect();
+    while let Some((v, hops)) = work.pop_front() {
+        let Some(node) = data.vbank().get(v) else { continue };
+        for r in node.descend_iter() {
+            let Some(o) = data.obank().get(r) else { continue };
+            let other = if o.get_in(0) == Some(v) { o.get_in(1) } else { o.get_in(0) };
+            let carries = match o.code() {
+                OpCode::CPUI_INT_EQUAL
+                | OpCode::CPUI_INT_NOTEQUAL
+                | OpCode::CPUI_INT_LESS
+                | OpCode::CPUI_INT_LESSEQUAL
+                | OpCode::CPUI_INT_SLESS
+                | OpCode::CPUI_INT_SLESSEQUAL => {
+                    if address(r, other) {
+                        return true;
+                    }
+                    false
+                }
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => {
+                    if address(r, other) {
+                        return true;
+                    }
+                    o.code() == OpCode::CPUI_INT_ADD || o.get_in(0) == Some(v)
+                }
+                OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_INDIRECT => o.get_in(0) == Some(v),
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => true,
+                _ => false,
+            };
+            if !carries || hops + 1 >= DERIVED_HOP_CAP {
+                continue;
+            }
+            if let Some(out) = o.get_out() {
+                if seen.insert(out) {
+                    work.push_back((out, hops + 1));
+                }
+            }
+        }
+    }
+    false
 }
 
 #[cfg(test)]
