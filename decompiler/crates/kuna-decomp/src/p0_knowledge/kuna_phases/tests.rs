@@ -832,7 +832,8 @@ fn option_values_live_value_present_for_110() {
     // 141 -> 142: +1 for `fputruncviews` (live_field = fpu_trunc_views).
     // 142 -> 143: +1 for `reglocals` (live_field = reg_locals).
     // 143 -> 144: +1 for `narrowargs` (live_field = narrow_args).
-    assert_eq!(with_live, 144);
+    // 144 -> 145: +1 for `callerptr` (live_field = caller_ptr).
+    assert_eq!(with_live, 145);
 }
 
 #[test]

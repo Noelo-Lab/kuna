@@ -6094,7 +6094,13 @@ address the function takes but never indexes does not refuse the vote
 (`inside_a_frame_aggregate`'s `word_ok`): `hash_insert` keeps the entry
 `hash_insert_if_absent` writes through its `&matched_ent` out-parameter in that
 slot, and typing an eight-byte slot as an eight-byte pointer re-lays nothing.
-An indexed frame region and a frame struct or array still refuse.
+An indexed frame region and a frame struct or array still refuse. One refusal
+is added: a character pointer is not taken by a value the callee merges with an
+address it holds as a constant (`merged_with_a_constant`). The constant would
+take the `char *` and print as a string literal, which ends at the first zero
+byte of a table that is not a string: the `elemptr` fixture's `w_pick`, whose
+callers pass a string or a null and which falls back to a 15-byte table with a
+zero inside (`if (!s) s = table;`), printed `a0 = "0!0\t...";`.
 
 A function whose statement adds nothing but these votes -- any committed type in
 it repeats the function's own type or the statement it already had

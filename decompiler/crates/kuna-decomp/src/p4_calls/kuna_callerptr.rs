@@ -97,8 +97,36 @@ pub fn pointer_vote(sites: &[&CallSite], j: usize, p: &Typed, void_ptr: &Rc<Data
 /// prototype: another recovery's integer for the same slot says no more than
 /// "a pointer-width value", and a function that converts the pointer it holds
 /// to a number for a callee still holds a pointer.
+///
+/// A character pointer is also refused for a value the callee merges with an
+/// address it holds as a constant: the constant would take the `char *` and
+/// print as a string literal, which ends at the first zero byte of a table that
+/// is not a string (`if (!s) s = table;`).
 pub(crate) fn refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
     crate::kuna_protoorder::input_refuses_declared(data, vn, ct)
+        || (points_at_a_character(ct) && merged_with_a_constant(data, &crate::kuna_protoorder::value_family(data, vn)))
+}
+
+/// Is `ct` a pointer to a one-byte character?
+fn points_at_a_character(ct: &Datatype) -> bool {
+    ct.get_ptr_to().is_some_and(|p| p.get_size() == 1 && p.is_char_print())
+}
+
+/// Does some member of `family` take a non-zero constant: copied from one, or
+/// the engine's `PTRSUB` off the constant zero?
+fn merged_with_a_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
+    let nonzero = |v: Option<VarnodeId>| v.and_then(|v| data.vbank().get(v)).is_some_and(|c| c.is_constant() && c.get_offset() != 0);
+    let zero = |v: Option<VarnodeId>| v.and_then(|v| data.vbank().get(v)).is_some_and(|c| c.is_constant() && c.get_offset() == 0);
+    family.iter().any(|&v| {
+        let Some(def) = data.vbank().get(v).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d)) else {
+            return false;
+        };
+        match def.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST => nonzero(def.get_in(0)),
+            OpCode::CPUI_PTRSUB => zero(def.get_in(0)) && nonzero(def.get_in(1)),
+            _ => false,
+        }
+    })
 }
 
 /// Does the caller hold the argument `vn` as an address for a reason of its own,
