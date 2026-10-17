@@ -3102,7 +3102,11 @@ or is a constant a float literal spells (`returned_beside_ok`). A slot that
 fails refuses every input that reaches it, and the plan is taken again without
 them, so the helper prints float on both sides or on neither: `fb_mix(float x,
 u32 k)` ors its integer parameter into the bits it returns in `s0`, and keeps
-`unsigned int fb_mix(unsigned int,unsigned int)`. A returned value in an
+`unsigned int fb_mix(unsigned int,unsigned int)`. Under `armfloatreturn`
+(chapter 04) a value returned in `s0` or `d0` is already locked to the float
+of its width; the walk passes that lock as it would an unlocked value, so
+`copysignf` still takes two floats, while `fb_mix` returns the convention's
+float and keeps its integer parameters. A returned value in an
 integer register is the classifier's answer and keeps its own type, so
 `isnanf`, `signbit` and newlib's `isfinitef` take a float parameter only. The
 bit ops in the body then read a float, the cast pass inserts the cast each

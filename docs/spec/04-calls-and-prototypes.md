@@ -1,6 +1,7 @@
 # 04 — Calls & prototypes
 
-`armfloatargs on` (default off) recovers scalar ARM32 VFP inputs only when
+`armfloatargs on` (off in the catalog, on in the `aggressive` preset with
+`armfloatreturn`) recovers scalar ARM32 VFP inputs only when
 the container states the hard-float ABI and `armfloatreturn` is on. Alone it
 changes nothing: the inputs it recovers rely on that option's widened
 d-register model and on its rule that keeps an unused VFP parameter in its
@@ -6980,9 +6981,16 @@ The ARM default model (`ARM.cspec`) lists the VFP registers only as the 4-byte
 `vmov.f64 d0,#1.5; bx lr` prints `unsigned int fixed(void) { return 0; }`, and a
 `double` parameter read from `d0` is never a parameter at all.
 
-`armfloatreturn` (off by default; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_armfloatreturn.rs`)
+`armfloatreturn` (off in the catalog; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_armfloatreturn.rs`)
 changes this only for an ARM ELF whose container states the VFP procedure-call
-standard. The loader decides that once per image
+standard. Both options are members of the `aggressive` preset, which `auto`
+selects below 500 KiB, so they are the default output for such a binary; the
+`reliable` and `fast` presets and the datatest corpus keep them off. On a
+42-binary corpus of one C source built by gcc and clang for ARM and Thumb
+hard-float, softfp and soft-float, including single-precision Cortex-M4F and
+double-precision Cortex-M7, at -O0, -O2 and -Os, the soft-float and softfp images
+print byte-identically with the options on, and no prototype that was right
+becomes wrong. The loader decides that once per image
 (`decompiler/crates/kuna-analysis/src/loader/kuna_armfloatabi.rs`): a linked
 EABI5 executable or shared object must carry the hard-float ABI flag in its
 header, and any `.ARM.attributes` it has must agree; a relocatable object must
@@ -7026,7 +7034,17 @@ keeps the double. The machine code cannot tell every case apart: a `void`
 function that calls `half` last and leaves `d0` alone, or an `int` stored as
 well as returned, looks like one returning `half`'s double. After the output trials are scored, a single used trial in
 `s0` or `d0` gives the returned value a float or double type before constant
-folding can drop its storage.
+folding can drop its storage. That lock states the convention's type, not a
+declaration, so `floatbits` (chapter 05) still follows the bit operations that
+build such a value (`kuna_armfloatreturn.rs (float_locked_return)`): a
+`copysignf` written on the bits of its two inputs keeps two float parameters
+instead of two `unsigned int` ones. A returned constant no float literal spells,
+a NaN with a payload or a signalling NaN, would print as `NAN`, which compiles
+to other bits. Once the literal-pool load it comes from has folded, at the
+start of each type-inference pass, a function that returns such a constant in
+that register gives up the lock on every value it returns there
+(`kuna_armfloatreturn.rs (unlock_unspelled)`), and the return is typed as
+`floatret` types it: `unsigned int qp(void) { return 0x7fc00123; }`.
 
 A float result is written to `s0`, the low half of `d0`, so a function that
 converts a double to float leaves `d0` holding the new low word and the old high
