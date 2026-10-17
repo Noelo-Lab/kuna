@@ -1072,7 +1072,8 @@ This is a correctness fix and is unconditional: two distinct variables under
 one identifier make the emitted C read and write the wrong object, and make a
 `name` assertion ambiguous.
 
-The `fputruncviews` option separates a numerical `FLOAT_TRUNC` result from an
+The `fputruncviews` option (on by default; flipping it moves none of the 675
+datatest assertions) separates a numerical `FLOAT_TRUNC` result from an
 inferred floating storage view of the same-width bits. After address-tied
 recovery, an unlocked, unmapped conversion result that meets a floating view
 keeps an explicit integer local. A marked bit-preserving COPY carries the
@@ -1080,9 +1081,9 @@ floating view through required marker merges. COPY and speculative merges keep
 the view separate from the logical integer, including when prior variable names
 would otherwise reunite them. Speculative merges also never join the logical
 integer to another variable: a speculative partner sharing its register would
-otherwise take the conversion's signed type. The conversion is evaluated once; writes to observable storage,
-intervening clobbers and later genuine
-floating operations keep their existing order and storage views. Locked types,
+otherwise take the conversion's signed type. The conversion is evaluated once;
+writes to observable storage, intervening clobbers and later genuine floating
+operations keep their existing order and storage views. Locked types,
 locked names and partial-width storage relationships are not rewritten. Existing
 integer signedness is retained, and no synthetic type lock is introduced. Turning
 the option off restores existing mixed-variable recovery. This recovery is
