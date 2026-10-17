@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kuna Observatory</title>
+<style>
+@@BASE_CSS@@
+.launch { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 18px; }
+.launch a.card { display: block; text-decoration: none; color: var(--ink); }
+.launch a.card:hover { border-color: var(--accent); }
+.launch .card h3 { margin: 0 0 6px; }
+.launch .card p { margin: 0 0 10px; color: var(--ink-2); font-size: 13.5px; }
+.launch .card .state { font-size: 12.5px; font-family: var(--mono); }
+.launch .card .state.ok { color: var(--good); }
+.launch .card .state.no { color: var(--muted); }
+</style>
+<script>
+@@BASE_JS@@
+</script>
+</head>
+<body>
+@@DATA@@
+<main class="wrap">
+  <h1>Kuna Observatory</h1>
+  <p class="lede">Local, generated views of the kuna codebase: what the pieces are, how bytes
+  become C, where change concentrates, and what the tests cover. Regenerate with
+  <code>make observatory</code> (fast) and <code>make coverage</code> (heavy, on demand).
+  Raw data for agents lives beside these pages in <code>observatory/data/*.json</code>.</p>
+  <div class="launch" id="launch"></div>
+  <p class="hint" id="footnote"></p>
+</main>
+<script>
+"use strict";
+renderTopbar("index");
+const status = dataOf("status") || { datasets: {} };
+const launch = document.getElementById("launch");
+for (const [name, entry] of Object.entries(status.datasets)) {
+  const state = entry.available
+    ? `<span class="state ok">generated ${esc((entry.meta || {}).generated || "")}</span>`
+    : `<span class="state no">not generated — ${esc(entry.regen)}</span>`;
+  launch.insertAdjacentHTML("beforeend",
+    `<a class="card" href="./${name}.html"><h3>${esc(entry.title || name)}</h3><p>${esc(entry.blurb || "")}</p>${state}</a>`);
+}
+document.getElementById("footnote").textContent =
+  "Reference: docs/observatory.md · pages are self-contained and work over file://";
+</script>
+</body>
+</html>

@@ -17,7 +17,7 @@ PYTHON  ?= python3
 # (inside target/, which is gitignored, so a failed run leaves no repo litter).
 GHIDRA_SIM_LOG := $(ENGINE)/target/ghidra-sim.log
 
-.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test lint clean check-spec version
+.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test lint clean check-spec version observatory
 
 all: binaries specs
 
@@ -95,6 +95,11 @@ test-tools:
 # scheme release CI tags with; see docs/release.md).
 version:
 	@bash scripts/version.sh
+
+# The local codebase observatory: self-contained pages + raw JSON under
+# observatory/ (gitignored). See docs/observatory.md.
+observatory:
+	PYTHONPATH=$(ROOT) $(PYTHON) -m scripts.observatory.generate --out $(ROOT)/observatory
 
 # The Rust workspace's own unit/integration tests (the ported TEST() suites, the
 # golden differential vectors, the SLEIGH-compiler .sla content-parity tests, ...).

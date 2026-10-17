@@ -180,6 +180,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/re-pipeline.md` | The RE-friction loop: agents solve crackmes with kuna, record where it fails them, and close those gaps. The second, self-merging lane. |
 | `docs/decbench-loop.md` | The decbench benchmark / improvement campaign. |
 | `docs/modes.md` | `--mode auto\|reliable\|aggressive\|fast` option presets and size thresholds. |
+| `docs/observatory.md` | The local codebase observatory (`make observatory`): generated architecture/churn/coverage/walkthrough pages + their JSON contracts. |
 | `docs/missing-ghidra-analyses.md` | The `kuna-analysis` tier: the analyzer gap vs Ghidra, pass contract, commit gating. |
 | `docs/ghidra-integration.md` | kuna as Ghidra's decompiler core (architecture + wire protocol). |
 | `docs/web-integration.md` | The WASM/browser front-end and the project site. |

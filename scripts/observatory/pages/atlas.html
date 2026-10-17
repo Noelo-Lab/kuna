@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kuna Atlas</title>
+<style>
+@@BASE_CSS@@
+.stats { display: flex; gap: 26px; flex-wrap: wrap; margin: 14px 0 4px; }
+.stats div strong { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+.stats div span { color: var(--muted); font-size: 12.5px; }
+.pipeline { display: flex; flex-direction: column; gap: 6px; margin: 16px 0 8px; }
+.plane {
+  border: 1px dashed var(--baseline); border-radius: 8px; padding: 6px 12px;
+  color: var(--ink-2); font-size: 13px; background: var(--surface);
+}
+.plane b { font-family: var(--mono); }
+.flow { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; }
+.flow a {
+  display: block; border: 1px solid var(--border); border-top: 3px solid var(--baseline);
+  border-radius: 6px; padding: 6px 7px; background: var(--surface);
+  text-decoration: none; color: var(--ink); min-width: 0;
+}
+.flow a:hover { border-color: var(--accent); }
+.flow .pid { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.flow .pname { font-size: 12px; line-height: 1.25; display: block; margin: 2px 0 4px; }
+.flow .ploc { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.bandrow { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; }
+.bandrow .band {
+  grid-column: 3 / span 4; border: 1px solid var(--baseline); border-top: none;
+  border-radius: 0 0 6px 6px; text-align: center; color: var(--ink-2);
+  font-size: 11.5px; padding: 1px 0 2px;
+}
+.toolbar {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  position: sticky; top: 42px; background: var(--page); padding: 8px 0; z-index: 5;
+  border-bottom: 1px solid var(--grid);
+}
+.phase-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.phase-head h2 { margin: 0; scroll-margin-top: 110px; }
+.phase-head .sizes { color: var(--muted); font-size: 12.5px; font-family: var(--mono); }
+.phase-head .spec { font-size: 13px; margin-left: auto; }
+.artifact { color: var(--ink-2); font-size: 13.5px; margin: 6px 0 2px; max-width: 85ch; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 26px; margin-top: 8px; }
+@media (max-width: 820px) { .cols { grid-template-columns: 1fr; } .flow .pname { display: none; } }
+.tier { font-size: 11px; border-radius: 4px; padding: 0 5px; border: 1px solid var(--baseline); color: var(--ink-2); }
+.opts td.sum { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; max-width: 72ch; }
+.opts td.sum.open { -webkit-line-clamp: unset; }
+tr.opt.hide { display: none; }
+.opt summary { font-family: var(--mono); font-size: 13px; color: var(--ink); }
+.latent { color: var(--muted); font-size: 11px; border: 1px dashed var(--baseline); border-radius: 4px; padding: 0 4px; }
+#crate-dag { overflow-x: auto; }
+#crate-svg { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+#crate-svg text { font: 12px var(--mono); fill: var(--ink); }
+#crate-svg .edge { stroke: var(--baseline); fill: none; stroke-width: 1.2; }
+#crate-svg rect { fill: var(--page); stroke: var(--border); rx: 5px; }
+#crate-svg .sub { fill: var(--muted); font-size: 10px; }
+.sched { font-family: var(--mono); font-size: 12.5px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 6px; overflow-x: auto; }
+.srow { display: flex; align-items: center; gap: 8px; padding: 1px 6px; white-space: nowrap; }
+.srow:hover { background: var(--page); }
+.srow .idx { color: var(--muted); width: 38px; flex: none; }
+.srow .tgl { width: 14px; flex: none; color: var(--ink-2); cursor: pointer; user-select: none; text-align: center; }
+.srow .nm { color: var(--ink); }
+.srow.container .nm { font-weight: 700; }
+.srow.disabled .nm { color: var(--muted); text-decoration: line-through; }
+.srow .flag { color: var(--muted); font-size: 11px; }
+.srow .chips { margin-left: auto; display: flex; gap: 5px; }
+.srow .chip { font-size: 10.5px; padding: 0 6px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); margin: 8px 0; }
+</style>
+<script>
+@@BASE_JS@@
+</script>
+</head>
+<body>
+@@DATA@@
+<main class="wrap" id="main"></main>
+<script>
+"use strict";
+renderTopbar("atlas");
+const atlas = dataOf("atlas");
+const main = document.getElementById("main");
+if (!atlas) {
+  main.innerHTML = "<h1>Architecture atlas</h1>" + missingNotice("atlas");
+} else {
+  build(atlas);
+}
+
+function build(data) {
+  const totalLoc = data.crates.reduce((sum, crate) => sum + crate.loc, 0);
+  const passCount = data.schedule.passes.length;
+  main.insertAdjacentHTML("beforeend", `
+    <h1>Architecture atlas</h1>
+    <p class="lede">kuna turns bytes into C through ordered phases P1–P9 over an orthogonal
+    knowledge plane (P0), with Band B (P3–P6) iterating to a mutual fixed point. Folders are
+    the taxonomy; the real pass order is the schedule at the bottom. Normative algorithms:
+    <code>docs/spec/</code>; one-screen model: <code>docs/phases.md</code>.</p>
+    <div class="stats">
+      <div><strong>${fmt(data.crates.length)}</strong><span>workspace crates</span></div>
+      <div><strong>${fmt(totalLoc)}</strong><span>lines of Rust</span></div>
+      <div><strong>${fmt(data.counts.settable)}</strong><span>settable options</span></div>
+      <div><strong>${fmt(data.counts.subphase)}</strong><span>sub-phases</span></div>
+      <div><strong>${fmt(passCount)}</strong><span>scheduled passes</span></div>
+    </div>`);
+  renderPipeline(data);
+  renderToolbar();
+  for (const phase of data.phases) renderPhaseCard(phase, false);
+  main.insertAdjacentHTML("beforeend",
+    `<h2 id="shared">Shared layers</h2>
+     <p class="hint">Not pipeline stages: the IR substrate every phase reads, and the
+     orchestration framework that runs the schedule.</p>`);
+  for (const folder of data.extraFolders) renderPhaseCard(folder, true);
+  renderCrates(data.crates);
+  renderSchedule(data.schedule);
+  wireOptionFilter();
+}
+
+function renderPipeline(data) {
+  const byId = Object.fromEntries(data.phases.map((phase) => [phase.id, phase]));
+  const p0 = byId.P0;
+  const flowIds = ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9"];
+  const boxes = flowIds.map((id) => {
+    const phase = byId[id];
+    return `<a href="#card-${id}" style="border-top-color:${phaseColor(id)}">
+      <span class="pid">${id}</span><span class="pname">${esc(phase.name)}</span>
+      <span class="ploc">${fmt(phase.loc)} loc</span></a>`;
+  }).join("");
+  const shared = data.extraFolders.map((folder) =>
+    `<a href="#card-${esc(folder.folder)}">${esc(folder.folder)}/</a>`).join(" · ");
+  main.insertAdjacentHTML("beforeend", `
+    <div class="pipeline">
+      <a class="plane" href="#card-P0" style="text-decoration:none"><b>P0</b> ${esc(p0.name)}
+        — orthogonal: read by every phase on (re-)entry, survives every rewind</a>
+      <div class="flow">${boxes}</div>
+      <div class="bandrow"><div class="band">Band B — mutual fixed point</div></div>
+      <div class="plane">shared layers: ${shared} &nbsp;·&nbsp; program prep (loader/analyzer tier): <code>kuna-analysis</code></div>
+    </div>`);
+}
+
+function renderToolbar() {
+  main.insertAdjacentHTML("beforeend", `
+    <div class="toolbar">
+      <input type="search" id="opt-q" placeholder="filter options… (name, summary, symptom)" size="34">
+      <select id="opt-tier"><option value="">all tiers</option>
+        <option>core</option><option>transform</option><option>analysis</option></select>
+      <span class="hint" id="opt-count"></span>
+    </div>`);
+}
+
+function renderPhaseCard(phase, isShared) {
+  const id = isShared ? phase.folder : phase.id;
+  const name = isShared ? `${phase.folder}/` : `${phase.id} — ${phase.name}`;
+  const modules = phase.modules || [];
+  const top = modules.slice(0, 10);
+  const maxLoc = top.length ? top[0].loc : 1;
+  const moduleRows = (list) => list.map((module) => `
+    <tr><td class="mono">${esc(module.file)}${module.native ? "" : ""}</td>
+        <td class="num">${fmt(module.loc)}</td>
+        <td><div class="bar"><i style="width:${Math.max(2, (100 * module.loc) / maxLoc)}%;background:${phaseColor(id)}"></i></div></td></tr>`).join("");
+  const rest = modules.slice(10);
+  const spec = phase.specChapter
+    ? `<a class="spec mono" href="../${esc(phase.specChapter)}">${esc(phase.specChapter)}</a>` : "";
+  let body = `
+    <div class="phase-head">
+      <h2 id="card-${esc(id)}">${phaseChip(id, id)} ${esc(name)}</h2>
+      <span class="sizes">${fmt(phase.loc)} loc · ${fmt(phase.files)} files</span>${spec}
+    </div>
+    ${phase.artifact ? `<p class="artifact"><b>Owns:</b> ${esc(phase.artifact)}</p>` : ""}
+    ${phase.readsAs ? `<p class="artifact"><b>Reads as:</b> ${esc(phase.readsAs)} <span class="mono hint">(${esc(phase.folder)}/)</span></p>` : ""}`;
+  if (modules.length) {
+    body += `<div class="cols"><div>
+      <h3>Largest modules</h3>
+      <table class="grid"><tbody>${moduleRows(top)}</tbody></table>
+      ${rest.length ? `<details><summary>all ${modules.length} modules</summary>
+        <table class="grid"><tbody>${moduleRows(rest)}</tbody></table></details>` : ""}
+    </div><div>`;
+  } else {
+    body += `<div class="cols"><div></div><div>`;
+  }
+  if ((phase.subphases || []).length) {
+    body += `<h3>Sub-phases (decision points)</h3>
+      <table class="grid"><thead><tr><th>name</th><th>decision</th><th>strength</th><th>rewind</th></tr></thead><tbody>` +
+      phase.subphases.map((sub) => `
+        <tr><td class="mono">${esc(sub.name)}${sub.latent ? ' <span class="latent">LATENT</span>' : ""}</td>
+            <td>${esc(sub.decision)}</td><td class="mono">${esc(sub.strength)}</td>
+            <td class="mono">${esc(sub.rewind)}</td></tr>`).join("") + "</tbody></table>";
+  }
+  if ((phase.groups || []).length) {
+    body += `<h3>Action groups</h3><p style="margin:4px 0">` + phase.groups.map((group) =>
+      `<span class="chip" title="${esc(group.note)}">${esc(group.group)}</span>`).join(" ") + "</p>";
+  }
+  body += "</div></div>";
+  if ((phase.options || []).length) {
+    body += `<h3>Options (${phase.options.length})</h3>
+      <table class="grid opts"><thead><tr><th>option</th><th>tier</th><th>default</th><th>summary</th></tr></thead><tbody>` +
+      phase.options.map((option) => `
+        <tr class="opt" data-q="${esc((option.option + " " + option.summary + " " + option.symptoms).toLowerCase())}" data-tier="${esc(option.tier)}">
+          <td class="mono">${esc(option.option)}</td>
+          <td><span class="tier">${esc(option.tier)}</span></td>
+          <td class="mono">${esc(option.default)}</td>
+          <td class="sum" title="click to expand">${esc(option.summary)}</td></tr>`).join("") + "</tbody></table>";
+  }
+  if ((phase.surfaces || []).length) {
+    body += `<details><summary>${phase.surfaces.length} console/CLI surfaces</summary><p>` +
+      phase.surfaces.map((surface) => `<span class="chip">${esc(surface.surface)}</span>`).join(" ") + "</p></details>";
+  }
+  main.insertAdjacentHTML("beforeend", `<section class="card">${body}</section>`);
+}
+
+function wireOptionFilter() {
+  const query = document.getElementById("opt-q");
+  const tier = document.getElementById("opt-tier");
+  const count = document.getElementById("opt-count");
+  const rows = Array.from(document.querySelectorAll("tr.opt"));
+  const apply = () => {
+    const needle = query.value.trim().toLowerCase();
+    const wantTier = tier.value;
+    let shown = 0;
+    for (const row of rows) {
+      const ok = (!needle || row.dataset.q.includes(needle)) && (!wantTier || row.dataset.tier === wantTier);
+      row.classList.toggle("hide", !ok);
+      if (ok) shown += 1;
+    }
+    count.textContent = needle || wantTier ? `${shown} / ${rows.length} options` : `${rows.length} options`;
+  };
+  query.addEventListener("input", apply);
+  document.querySelectorAll(".opts td.sum").forEach((cell) =>
+    cell.addEventListener("click", () => cell.classList.toggle("open")));
+  tier.addEventListener("change", apply);
+  apply();
+}
+
+function renderCrates(crates) {
+  main.insertAdjacentHTML("beforeend", `
+    <h2 id="crates">Workspace crates</h2>
+    <p class="hint">Internal dependency graph (kuna-* edges only) and sizes.</p>
+    <div id="crate-dag"></div>
+    <section class="card"><table class="grid">
+      <thead><tr><th>crate</th><th>description</th><th class="num">files</th><th class="num">loc</th><th>depends on</th></tr></thead>
+      <tbody>${crates.map((crate) => `
+        <tr><td class="mono">${esc(crate.name)}</td><td>${esc(crate.description)}</td>
+            <td class="num">${fmt(crate.files)}</td><td class="num">${fmt(crate.loc)}</td>
+            <td class="mono hint">${crate.deps.map(esc).join(", ")}</td></tr>`).join("")}
+      </tbody></table></section>`);
+  const names = new Set(crates.map((crate) => crate.name));
+  const depth = {};
+  const depthOf = (name) => {
+    if (depth[name] !== undefined) return depth[name];
+    depth[name] = 0;
+    const crate = crates.find((item) => item.name === name);
+    const deps = (crate ? crate.deps : []).filter((dep) => names.has(dep));
+    depth[name] = deps.length ? 1 + Math.max(...deps.map(depthOf)) : 0;
+    return depth[name];
+  };
+  crates.forEach((crate) => depthOf(crate.name));
+  const layers = [];
+  for (const crate of crates) (layers[depth[crate.name]] ||= []).push(crate.name);
+  const boxW = 150, boxH = 30, gapX = 60, gapY = 14;
+  const width = layers.length * (boxW + gapX) - gapX + 20;
+  const height = Math.max(...layers.map((layer) => layer.length)) * (boxH + gapY) + 20;
+  const pos = {};
+  layers.forEach((layer, x) => layer.sort().forEach((name, y) => {
+    pos[name] = { x: 10 + x * (boxW + gapX), y: 10 + y * (boxH + gapY) };
+  }));
+  let svg = "";
+  for (const crate of crates) for (const dep of crate.deps) {
+    if (!names.has(dep)) continue;
+    const from = pos[dep], to = pos[crate.name];
+    const x1 = from.x + boxW, y1 = from.y + boxH / 2, x2 = to.x, y2 = to.y + boxH / 2;
+    svg += `<path class="edge" d="M${x1},${y1} C${x1 + gapX / 2},${y1} ${x2 - gapX / 2},${y2} ${x2},${y2}"/>`;
+  }
+  for (const crate of crates) {
+    const at = pos[crate.name];
+    svg += `<g><rect x="${at.x}" y="${at.y}" width="${boxW}" height="${boxH}"/>
+      <text x="${at.x + 8}" y="${at.y + 14}">${esc(crate.name)}</text>
+      <text class="sub" x="${at.x + 8}" y="${at.y + 25}">${fmt(crate.loc)} loc</text></g>`;
+  }
+  document.getElementById("crate-dag").innerHTML =
+    `<svg id="crate-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="crate dependency graph">${svg}</svg>`;
+}
+
+function renderSchedule(schedule) {
+  const phasesSeen = [...new Set(schedule.passes.map((pass) => pass.phase).filter(Boolean))].sort();
+  main.insertAdjacentHTML("beforeend", `
+    <h2 id="schedule">The real pass order</h2>
+    <p class="hint">${esc(schedule.note)} — parsed from <code>${esc(schedule.source)}</code>.
+    Each pass shows its action-group phase (semantic) and, when different, the folder its code
+    lives in (physical). <b>repeat</b> = loops until nothing applies · <b>!</b> = once per function.</p>
+    <div class="legend">${phasesSeen.map((phase) => phaseChip(phase, phase)).join(" ")}</div>
+    <div class="sched" id="sched"></div>
+    ${schedule.unmapped.length ? `<p class="hint">unmapped: ${schedule.unmapped.map(esc).join(", ")}</p>` : ""}`);
+  const host = document.getElementById("sched");
+  const passes = schedule.passes;
+  const rows = passes.map((pass, position) => {
+    const isContainer = position + 1 < passes.length && passes[position + 1].depth > pass.depth;
+    const chips = [];
+    if (pass.phase) chips.push(phaseChip(pass.phase, pass.phase));
+    if (pass.folderPhase && pass.folderPhase !== pass.phase) {
+      chips.push(phaseChip(pass.folderPhase, `in ${pass.folderPhase}`));
+    }
+    const flags = [pass.repeat ? "repeat" : "", pass.once ? "!" : ""].filter(Boolean).join(" ");
+    const title = [pass.kind, pass.group ? `group ${pass.group}` : "", pass.definedIn]
+      .filter(Boolean).join(" · ");
+    return `<div class="srow${isContainer ? " container" : ""}${pass.disabled ? " disabled" : ""}"
+      data-i="${position}" data-depth="${pass.depth}" title="${esc(title)}"
+      style="padding-left:${6 + pass.depth * 18}px">
+      <span class="idx">${String(pass.index).padStart(4, "0")}</span>
+      <span class="tgl">${isContainer ? "▾" : ""}</span>
+      <span class="nm">${esc(pass.name)}</span>
+      <span class="flag">${flags}</span>
+      <span class="chips">${chips.join("")}</span></div>`;
+  });
+  host.innerHTML = rows.join("");
+  host.addEventListener("click", (event) => {
+    const row = event.target.closest(".srow.container");
+    if (!row) return;
+    const start = Number(row.dataset.i);
+    const depth = Number(row.dataset.depth);
+    const toggle = row.querySelector(".tgl");
+    const collapse = toggle.textContent === "▾";
+    toggle.textContent = collapse ? "▸" : "▾";
+    for (let next = start + 1; next < passes.length && passes[next].depth > depth; next += 1) {
+      const target = host.querySelector(`[data-i="${next}"]`);
+      target.style.display = collapse ? "none" : "";
+      if (!collapse) {
+        const innerToggle = target.querySelector(".tgl");
+        if (innerToggle.textContent === "▸") innerToggle.textContent = "▾";
+      }
+    }
+  });
+}
+</script>
+</body>
+</html>
