@@ -179,8 +179,14 @@ and any other overlap still raises the upstream error.
 no single write covers it (`size > 4 && maxwritesize < size`), the range is
 split at every varnode boundary observed inside it before phis are placed
 (`heritage.rs (Heritage::refinement)`): ranges over 1024 bytes are never
-refined, and a 1-byte/3-byte adjacent split is healed back to 4
-(`remove13_refinement`). Refinement rewrites the disjoint covers (local and
+refined, and a 1-byte/3-byte adjacent split is normally healed back to a
+four-byte piece (`Heritage::remove13Refinement`, implemented through
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_inputrefinement.rs`). The
+join is skipped when that four-byte piece would partially overlap a known
+input: an input starts or ends at the junction and extends beyond the joined
+piece. Inputs contained wholly within the piece retain the ordinary join.
+This prevents inconsistent refinements from constructing a range that spans
+two known input varnodes. Refinement rewrites the disjoint covers (local and
 global) in place and re-enters the walk at the first partition. Its inverse
 exists too: when a *larger* range arrives over addresses already heritaged at a
 smaller size, the stale MULTIEQUAL/INDIRECT/return-COPY markers from the earlier
@@ -466,6 +472,39 @@ routine on x86-64: SLEIGH models `PXOR`, `POR`, `PAND`, `MOVDQA`, `MOVDQU`,
 the range is never partitioned by refinement (whose gate is `size > 4 && maxw <
 size`) and the 8-byte parameter and return entries inside it are invisible.
 Under `option calloverlap` two dedicated guards recover them.
+
+With `option multiregargs on` (the default), a physical register range
+completely covered by two or more general ABI input slots receives separate
+call trials before dead-code elimination, at every `calloverlap` level
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_multiregargs.rs
+(input_partition)`). A wide return can coalesce these slots even after the
+caller overwrites each component. The trials keep those current component
+values live; ordinary trial scoring still decides whether they are used.
+
+The same option keeps an unlocked function's entry inputs in independently
+recoverable ABI slots when their whole range cannot be a single input
+parameter. The whole entry value is a PIECE of those slot inputs, so a later
+wide read cannot hide the function's real arguments. Declared inputs and legal
+wide ABI parameters retain their representation. Existing unprotected illegal
+wide inputs are replaced in place by slot concatenations; complete holes in
+partially input ranges are filled directly with those slots. Partially locked
+parameters and protected input storage decline the rewrite. Existing write-masked
+wide tiles also retain their representation. In-place conversion is a backstop
+for input creation outside renaming or before a model was resolved. Non-general entries,
+overlapping or joined entries, gaps, partial coverage, protected input
+storage, and memory or stack ranges decline this partition. Complete
+partitions are bounded to eight slots and 64 bytes. With `multiregargs off`,
+both changes are disabled and the existing `calloverlap` behavior applies.
+
+The slot trials of one call all truncate the same PIECE of the range, so
+upstream `onlyOpUse` would see a value written into one slot reach the call
+again through a sibling slot and reject the trial as a double use. That drops
+a single argument the caller just wrote whenever the other half of the range
+still holds a stale or clobbered pair half, as in `ldd [p],%o0; call f;
+mov 3,%o0; call g`. Under `multiregargs`, the walk skips a SUBPIECE whose kept
+bytes lie wholly outside the PIECE input it reached the PIECE through
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_multiregargs.rs
+(subpiece_drops_reached_piece)`); that SUBPIECE cannot carry the value.
 
 On the input side (`heritage.rs (Heritage::guard_call_overlapping_input)`), the
 biggest input entry contained in the range is located, its address translated
@@ -1200,6 +1239,24 @@ level (the default); at `off`, `load` or `full` it would print
 No new purity assumption is made. The option exists because keeping the COPY
 also changes correct output: a storage comment no longer lists the global,
 and a value the store kept can print as its own variable.
+
+`globalfieldstore` (default on) keeps a typed global COPY spanning structure
+fields or an array-typed global view, including a complete global array,
+attached to its memory destination when read by a MULTIEQUAL or
+INDIRECT marker.
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalfieldstore.rs`
+keeps marker inputs attached to persistent `TYPE_PARTIALSTRUCT` and
+`TYPE_ARRAY` COPY outputs. Replacing that output with its register source can
+leave datatype splitting with register pieces that print as local assignments
+or scalar assignments to the complete structure, removing the original global
+field writes from emitted C. Scalar stores, complete structure values,
+ordinary readers, and nonpersistent aggregate values retain the existing
+propagation rules. The guard uses the view type known before propagation. A source defined directly by LOAD
+requires `indexaliasguard global`, the level that preserves its read before
+aliasing writes when the COPY prints that source inline. OFF restores legacy
+propagation, including correct outputs whose storage comments or variable
+merging the retained COPY also changes. The option is enabled in every mode;
+existing type and memory-order guards remain in force.
 
 **Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
 default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
@@ -2080,9 +2137,12 @@ from zero. After the wide-slice reduction the vector arm is S copies of the
 scalar body in a different order. The action matches the whole shape on SSA and
 proves it: the accumulators and the induction variable start at zero; each lane
 zero-extends a disjoint E-byte slice of a load at `base + i*E + c`, and the
-lanes tile exactly S elements for a power-of-two S the guard bounds; the fold
-adds every accumulator once; the scalar loop starts at `length & -S` with the
-fold, or at zero with zero, steps one element and exits at `length`; both exits
+lanes tile exactly S elements for a power-of-two S the guard bounds. The lane
+count must equal S before checking offsets in place, so a large stride encoded
+in the input cannot cause an allocation proportional to S; expected offsets
+must not overflow. The fold adds every accumulator once; the scalar loop starts
+at `length & -S` with the fold, or at zero with zero, steps one element and
+exits at `length`; both exits
 hand back their sums (the early return and the scalar exit, or a shared join
 whose other phis agree slot for slot); no block of the arm, the remainder loop,
 the else block or the scalar exit writes global storage, so nothing the
@@ -2348,6 +2408,17 @@ that hold across this pass (chapter [06](06-variables-and-merge.md)). Clearing a
 hold that dead-code elimination immediately reinstates would prevent the main
 loop from converging; ordinary temporary holds keep their existing release rule.
 
+
+With `guardedreadtrim on`, a physical stack LOAD lowered by `RuleLoadVarnode`
+retains its original read block and byte range. Indexed frame LOAD guards also
+record their conservative range when heritage creates the preserving COPY.
+When copy propagation binds that read to call-written frame memory, the call
+is associated with that provenance before the COPY is removed.
+The original read ledger also survives COPY removal; removed CFG
+blocks fail the later placement check. P6 uses it to distinguish a guarded
+machine read from an unconditional preload whose value is used only under a
+branch (chapter [06](06-variables-and-merge.md)); functions without calls do not
+allocate this tracking state.
 
 A read from a volatile range becomes a `read_volatile` user op only once its
 address is a constant: `RuleLoadVarnode` turns the LOAD into a COPY of the

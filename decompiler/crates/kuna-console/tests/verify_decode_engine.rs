@@ -133,7 +133,11 @@ fn agree_everywhere(name: &str) -> usize {
         );
         assert_eq!(c.flow, want.flow, "{name}: {vma:#x} flow class");
         assert_eq!(c.flows, want.flows, "{name}: {vma:#x} static targets");
-        assert_eq!(got.mnemonic, want.mnemonic, "{name}: {vma:#x} mnemonic");
+        assert_eq!(
+            got.mnemonic.as_str(),
+            want.mnemonic.as_str(),
+            "{name}: {vma:#x} mnemonic"
+        );
         assert_eq!(got.operands, want.operands, "{name}: {vma:#x} operands");
         // The `PUSH imm` callback provenance is not on the Listing, so compare
         // it against the parent engine directly -- only where this engine found

@@ -1,0 +1,33 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">9de3bfa04000003f9007bffcf007bffc80a220000248000801000000b2102017f227bffc400000779007bffc400000b590100018b0102007f027bffc400000719007bffcf007bffc81c7e00881e80000</bytechunk>
+<bytechunk space="ram" offset="0x1100" readonly="true">81c3e00801000000</bytechunk>
+<bytechunk space="ram" offset="0x1200" readonly="true">81c3e00801000000</bytechunk>
+<bytechunk space="ram" offset="0x1300" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1000" name="preload"/>
+<symbol space="ram" offset="0x1100" name="acquire"/>
+<symbol space="ram" offset="0x1200" name="mutate"/>
+<symbol space="ram" offset="0x1300" name="consume"/>
+</binaryimage>
+<script>
+<com>parse line extern int4 preload(void);</com>
+<com>parse line extern int2 acquire(volatile int4 *);</com>
+<com>parse line extern void mutate(volatile int4 *);</com>
+<com>parse line extern void consume(int4);</com>
+<com>option guardedreadtrim off</com>
+<com>load function preload</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option guardedreadtrim on</com>
+<com>load function preload</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="preloaded SPARC stack read: capture stays before branch" min="2" max="2">acquire\([^;]*;
+  v[0-9]+ = v[0-9]+;
+  if \(</stringmatch>
+<stringmatch name="preloaded SPARC stack read: guarded consumer retains saved value" min="2" max="2">mutate\([^;]*;
+    consume\(v[0-9]+\);</stringmatch>
+<stringmatch name="preloaded SPARC stack read: volatile slot retained" min="2" max="99">volatile int</stringmatch>
+</decompilertest>

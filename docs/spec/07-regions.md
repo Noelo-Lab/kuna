@@ -82,6 +82,13 @@ an address sum crosses 2^64.
   equivalent because the working copy is not mutated), and prunes dangling
   interior nodes to a fixpoint.
 
+Traversal membership uses hash sets without iterating their buckets, and
+postorder reuses one sorted successor buffer. Immediate-dominator convergence
+uses a reachable-node ordinal map and local parent vector; scratch space
+follows the current graph, rather than the historical node pool. The supplied
+ordered dominator map is still updated immediately and retains unrelated
+entries, preserving the caller-visible contract.
+
 **Dominators, incrementally.** Immediate dominators are Cooper–Harvey–Kennedy
 over the deterministic reverse postorder
 (`kuna_regiongraph.rs (kuna_immediate_dominators)`). Because the acyclic phase

@@ -483,7 +483,7 @@ impl MergeContext for Mock {
     ) -> kuna_base::error::KunaResult<OpId> {
         unimplemented!("copy_trim_op not under test")
     }
-    fn snip_reads_insert_point(&self, _vn: VarnodeId) -> (BlockId, Address, Option<OpId>) {
+    fn snip_reads_insert_point(&self, _vn: VarnodeId, _reads: &[OpId]) -> (BlockId, Address, Option<OpId>) {
         unimplemented!("snip_reads_insert_point not under test")
     }
     fn build_dominant_copy(

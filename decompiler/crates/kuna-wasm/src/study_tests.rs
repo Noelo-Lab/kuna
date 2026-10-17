@@ -342,6 +342,27 @@ fn a_rename_the_printer_suffixes_is_applied() {
     assert_eq!(row["detail"].as_str(), Some("applied as `score_1`: `score` is already another identifier here"));
 }
 
+/// The page edits a local by the name it shows: after `score` printed as
+/// `score_1`, a rename and a retype of `score_1` reach that local.
+#[test]
+fn a_local_is_edited_by_its_suffixed_name() {
+    let rows = |inspected: &serde_json::Value| -> Vec<(String, Option<String>)> {
+        inspected["assertions"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .map(|row| (row["status"].as_str().unwrap_or_default().to_string(), row["detail"].as_str().map(str::to_string)))
+            .collect()
+    };
+    let renamed = run_on("long.elf", "inspect", &["main"], &["name main::v7 score", "name main::score_1 total"]).expect("inspect");
+    assert!(renamed["function"]["code"].as_str().expect("code").contains("  int total;"));
+    assert_eq!(rows(&renamed), vec![("applied".to_string(), None), ("applied".to_string(), None)]);
+    let retyped =
+        run_on("long.elf", "inspect", &["main"], &["name main::v7 score", "type main::score_1 unsigned int"]).expect("inspect");
+    assert!(retyped["function"]["code"].as_str().expect("code").contains("  unsigned int score_1;"));
+    assert!(rows(&retyped).iter().all(|(status, _)| status == "applied"), "{:?}", rows(&retyped));
+}
+
 /// A `bytes` overlay is what every later read of the image sees.
 #[test]
 fn a_byte_patch_reaches_read_and_the_listing() {

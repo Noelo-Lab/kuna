@@ -2,54 +2,64 @@
 //! Tree nodes hold page buckets rather than large instruction payloads; each
 //! bucket stores sorted addresses and row numbers. Chunks never relocate records
 //! or grow a second whole-image buffer during the walk.
+//!
+//! Store snapshots share immutable instruction chunks. A write to a shared
+//! chunk clones just that chunk; appending through a partial tail detaches that
+//! tail once, while untouched full chunks remain shared.
 
 use std::ops::RangeBounds;
+use std::rc::Rc;
 
 use super::kuna_insnindex::InstructionIndex;
-use super::model::Insn;
+use super::model::{Insn, Mnemonic, MnemonicPool};
 
 const CHUNK_ROWS: usize = 1024;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(super) struct InstructionStore {
     index: InstructionIndex,
-    chunks: Vec<Vec<Insn>>,
+    chunks: Vec<Rc<InstructionChunk>>,
+    mnemonics: MnemonicPool,
 }
 
-impl Clone for InstructionStore {
+/// A bounded block of instruction records, shared between store snapshots.
+struct InstructionChunk {
+    rows: Vec<Insn>,
+}
+
+impl Clone for InstructionChunk {
     fn clone(&self) -> Self {
-        Self {
-            index: self.index.clone(),
-            chunks: self
-                .chunks
-                .iter()
-                .map(|chunk| {
-                    let mut copy = Vec::with_capacity(CHUNK_ROWS);
-                    copy.extend_from_slice(chunk);
-                    copy
-                })
-                .collect(),
-        }
+        let mut rows = Vec::with_capacity(CHUNK_ROWS);
+        rows.extend_from_slice(&self.rows);
+        Self { rows }
     }
 }
 
 impl InstructionStore {
+    pub(super) fn intern_mnemonic(&mut self, text: &str) -> Mnemonic {
+        self.mnemonics.intern(text)
+    }
+
     pub fn insert(&mut self, address: u64, insn: Insn) -> Option<Insn> {
         let Self { index, chunks, .. } = self;
         let mut pending = Some(insn);
         let replaced = index.insert_with(address, || {
             let slot = chunks
                 .last()
-                .map_or(0, |chunk| (chunks.len() - 1) * CHUNK_ROWS + chunk.len());
+                .map_or(0, |chunk| (chunks.len() - 1) * CHUNK_ROWS + chunk.rows.len());
             if slot % CHUNK_ROWS == 0 {
-                chunks.push(Vec::with_capacity(CHUNK_ROWS));
+                chunks.push(Rc::new(InstructionChunk {
+                    rows: Vec::with_capacity(CHUNK_ROWS),
+                }));
             }
-            chunks.last_mut().unwrap().push(pending.take().unwrap());
+            Rc::make_mut(chunks.last_mut().unwrap())
+                .rows
+                .push(pending.take().unwrap());
             slot
         });
         replaced.map(|slot| {
             std::mem::replace(
-                &mut chunks[slot / CHUNK_ROWS][slot % CHUNK_ROWS],
+                &mut Rc::make_mut(&mut chunks[slot / CHUNK_ROWS]).rows[slot % CHUNK_ROWS],
                 pending.take().unwrap(),
             )
         })
@@ -57,12 +67,12 @@ impl InstructionStore {
 
     pub fn get(&self, address: &u64) -> Option<&Insn> {
         let slot = self.index.get(*address)?;
-        Some(&self.chunks[slot / CHUNK_ROWS][slot % CHUNK_ROWS])
+        Some(&self.chunks[slot / CHUNK_ROWS].rows[slot % CHUNK_ROWS])
     }
 
     pub fn get_mut(&mut self, address: &u64) -> Option<&mut Insn> {
         let slot = self.index.get(*address)?;
-        Some(&mut self.chunks[slot / CHUNK_ROWS][slot % CHUNK_ROWS])
+        Some(&mut Rc::make_mut(&mut self.chunks[slot / CHUNK_ROWS]).rows[slot % CHUNK_ROWS])
     }
 
     pub fn contains_key(&self, address: &u64) -> bool {
@@ -81,7 +91,7 @@ impl InstructionStore {
         let chunks = &self.chunks;
         self.index
             .iter()
-            .map(move |(address, &slot)| (address, &chunks[slot / CHUNK_ROWS][slot % CHUNK_ROWS]))
+            .map(move |(address, &slot)| (address, &chunks[slot / CHUNK_ROWS].rows[slot % CHUNK_ROWS]))
     }
 
     pub fn range(
@@ -91,7 +101,7 @@ impl InstructionStore {
         let chunks = &self.chunks;
         self.index
             .range(bounds)
-            .map(move |(address, &slot)| (address, &chunks[slot / CHUNK_ROWS][slot % CHUNK_ROWS]))
+            .map(move |(address, &slot)| (address, &chunks[slot / CHUNK_ROWS].rows[slot % CHUNK_ROWS]))
     }
 }
 
@@ -123,7 +133,7 @@ mod tests {
                 ..FlowType::default()
             },
             flows: vec![addr.wrapping_add(17)],
-            mnemonic: format!("op_{addr}"),
+            mnemonic: format!("op_{addr}").into(),
             operands: format!("target_{addr}"),
             pcode: Some(Box::new(vec![RawOp {
                 opcode: OpCode::CPUI_RETURN,
@@ -200,36 +210,160 @@ mod tests {
             same(actual, expected);
         }
         assert_eq!(
-            store.chunks.iter().map(Vec::len).sum::<usize>(),
+            store
+                .chunks
+                .iter()
+                .map(|chunk| chunk.rows.len())
+                .sum::<usize>(),
             store.len()
         );
         assert!(store
             .chunks
             .iter()
-            .all(|chunk| chunk.capacity() == CHUNK_ROWS));
+            .all(|chunk| chunk.rows.capacity() == CHUNK_ROWS));
     }
 
     #[test]
-    fn a_cloned_partial_chunk_can_extend_without_changing_the_prior_listing() {
-        let prior: InstructionStore = (0..CHUNK_ROWS + 7)
+    fn cloned_chunks_detach_independently_for_mutation_and_replacement() {
+        let mut prior: InstructionStore = (0..CHUNK_ROWS * 2 + 2)
             .map(|n| (n as u64, insn(n as u64)))
             .collect();
         let mut next = prior.clone();
-        next.get_mut(&1).unwrap().mnemonic = "changed".into();
-        next.get_mut(&1).unwrap().flows.push(9000);
-        for n in CHUNK_ROWS + 7..CHUNK_ROWS * 3 + 5 {
-            next.insert(n as u64, insn(n as u64));
+
+        assert!(Rc::ptr_eq(&prior.chunks[0], &next.chunks[0]));
+        assert!(Rc::ptr_eq(&prior.chunks[1], &next.chunks[1]));
+        assert!(Rc::ptr_eq(&prior.chunks[2], &next.chunks[2]));
+
+        // Mutating the clone at the last row of a full chunk detaches that
+        // chunk. Its vectors and p-code remain independent of the prior.
+        {
+            let row = next.get_mut(&((CHUNK_ROWS - 1) as u64)).unwrap();
+            row.flows.push(9000);
+            row.operands.push_str("_changed");
+            row.pcode.as_mut().unwrap().push(RawOp {
+                opcode: OpCode::CPUI_COPY,
+                in0: None,
+            });
         }
-        same(prior.get(&1).unwrap(), &insn(1));
-        assert_eq!(prior.len(), CHUNK_ROWS + 7);
-        assert_eq!(next.len(), CHUNK_ROWS * 3 + 5);
-        assert!(prior.get(&(CHUNK_ROWS as u64 * 3)).is_none());
+        assert!(!Rc::ptr_eq(&prior.chunks[0], &next.chunks[0]));
+        assert!(Rc::ptr_eq(&prior.chunks[1], &next.chunks[1]));
+        assert!(Rc::ptr_eq(&prior.chunks[2], &next.chunks[2]));
         same(
-            next.get(&(CHUNK_ROWS as u64 * 3)).unwrap(),
-            &insn(CHUNK_ROWS as u64 * 3),
+            prior.get(&((CHUNK_ROWS - 1) as u64)).unwrap(),
+            &insn((CHUNK_ROWS - 1) as u64),
         );
-        let capacity: usize = next.chunks.iter().map(Vec::capacity).sum();
-        assert!(capacity - next.len() < CHUNK_ROWS);
+        assert_eq!(
+            prior
+                .get(&((CHUNK_ROWS - 1) as u64))
+                .unwrap()
+                .pcode
+                .as_ref()
+                .unwrap()
+                .len(),
+            1
+        );
+        let changed = next.get(&((CHUNK_ROWS - 1) as u64)).unwrap();
+        assert_eq!(changed.flows, [CHUNK_ROWS as u64 - 1 + 17, 9000]);
+        assert_eq!(
+            changed.operands,
+            format!("target_{}_changed", CHUNK_ROWS - 1)
+        );
+        assert_eq!(changed.pcode.as_ref().unwrap().len(), 2);
+
+        // Mutating the prior snapshot independently detaches its partial tail.
+        {
+            let row = prior.get_mut(&((CHUNK_ROWS * 2) as u64)).unwrap();
+            row.flows.push(8000);
+            row.operands.push_str("_prior");
+            row.pcode.as_mut().unwrap().pop();
+        }
+        assert!(Rc::ptr_eq(&prior.chunks[1], &next.chunks[1]));
+        assert!(!Rc::ptr_eq(&prior.chunks[2], &next.chunks[2]));
+        assert_eq!(
+            prior.get(&((CHUNK_ROWS * 2) as u64)).unwrap().flows.len(),
+            2
+        );
+        assert_eq!(next.get(&((CHUNK_ROWS * 2) as u64)).unwrap().flows.len(), 1);
+        assert_eq!(
+            prior.get(&((CHUNK_ROWS * 2) as u64)).unwrap().operands,
+            format!("target_{}_prior", CHUNK_ROWS * 2)
+        );
+        assert_eq!(
+            next.get(&((CHUNK_ROWS * 2) as u64)).unwrap().operands,
+            format!("target_{}", CHUNK_ROWS * 2)
+        );
+        assert!(prior
+            .get(&((CHUNK_ROWS * 2) as u64))
+            .unwrap()
+            .pcode
+            .as_ref()
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            next.get(&((CHUNK_ROWS * 2) as u64))
+                .unwrap()
+                .pcode
+                .as_ref()
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // Replacement in the clone detaches an untouched shared chunk, returns
+        // its old row, and cannot alter the prior snapshot.
+        let mut replacement = insn(CHUNK_ROWS as u64);
+        replacement.operands = "replacement".to_owned();
+        let mut removed = next.insert(CHUNK_ROWS as u64, replacement).unwrap();
+        same(&removed, &insn(CHUNK_ROWS as u64));
+        removed.flows.push(7000);
+        removed.operands.push_str("_removed");
+        assert!(!Rc::ptr_eq(&prior.chunks[1], &next.chunks[1]));
+        assert_eq!(
+            prior.get(&(CHUNK_ROWS as u64)).unwrap().operands,
+            format!("target_{}", CHUNK_ROWS)
+        );
+        assert_eq!(
+            next.get(&(CHUNK_ROWS as u64)).unwrap().operands,
+            "replacement"
+        );
+        assert_eq!(prior.get(&(CHUNK_ROWS as u64)).unwrap().flows.len(), 1);
+        assert_eq!(next.get(&(CHUNK_ROWS as u64)).unwrap().flows.len(), 1);
+    }
+
+    #[test]
+    fn appending_to_a_nested_clone_detaches_only_the_partial_tail() {
+        let prior: InstructionStore = (0..CHUNK_ROWS + 7)
+            .map(|n| (n as u64, insn(n as u64)))
+            .collect();
+        let next = prior.clone();
+        let mut newest = next.clone();
+
+        assert!(Rc::ptr_eq(&prior.chunks[0], &next.chunks[0]));
+        assert!(Rc::ptr_eq(&next.chunks[0], &newest.chunks[0]));
+        assert!(Rc::ptr_eq(&prior.chunks[1], &newest.chunks[1]));
+
+        for n in CHUNK_ROWS + 7..CHUNK_ROWS * 3 + 5 {
+            newest.insert(n as u64, insn(n as u64));
+        }
+
+        assert!(Rc::ptr_eq(&prior.chunks[0], &newest.chunks[0]));
+        assert!(!Rc::ptr_eq(&prior.chunks[1], &newest.chunks[1]));
+        same(prior.get(&1).unwrap(), &insn(1));
+        same(next.get(&1).unwrap(), &insn(1));
+        assert_eq!(prior.len(), CHUNK_ROWS + 7);
+        assert_eq!(next.len(), CHUNK_ROWS + 7);
+        assert_eq!(newest.len(), CHUNK_ROWS * 3 + 5);
+        assert!(prior.get(&((CHUNK_ROWS * 3) as u64)).is_none());
+        same(
+            newest.get(&((CHUNK_ROWS * 3) as u64)).unwrap(),
+            &insn((CHUNK_ROWS * 3) as u64),
+        );
+        let capacity: usize = newest
+            .chunks
+            .iter()
+            .map(|chunk| chunk.rows.capacity())
+            .sum();
+        assert!(capacity - newest.len() < CHUNK_ROWS);
     }
 
     #[test]

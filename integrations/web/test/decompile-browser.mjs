@@ -636,6 +636,37 @@ try {
   await page.key('s');
   await noExceptions('renaming a variable far down a long function keeps the view where it was (Code and Side by side)');
 
+  const editShown = async (from, key, value, after) => {
+    await page.call((s) => { document.querySelector(`#ccode .t[data-sym="${s}"]`).scrollIntoView({ block: 'center' }); return true; }, from);
+    await page.click(`#ccode .t[data-sym="${from}"]`);
+    await page.key(key);
+    await page.waitFor(`!document.getElementById('d2pop').hidden`, { what: `${key} popover for ${from}` });
+    await page.call(() => { document.querySelector('#d2pop input').select(); return true; });
+    await page.type(value);
+    await page.key('Enter');
+    await page.waitFor(after, { what: `${key} ${from} ${value}`, timeout: 60000 });
+    await idle(`${key} ${from} ${value}`);
+  };
+  const marks = () => page.evaluate(`[...document.querySelectorAll('#sesslist .mk')].map((m) => m.title)`);
+  const declares = (re) => page.call((src) => new RegExp(src).test(document.getElementById('ccode').textContent), re);
+  await editShown('v7', 'n', 'score', `document.querySelector('#ccode .t[data-sym="score_1"]') && !document.querySelector('#ccode .t[data-sym="v7"]')`);
+  await editShown('score_1', 'n', 'points', `document.querySelector('#ccode .t[data-sym="points"]') && !document.querySelector('#ccode .t[data-sym="score_1"]')`);
+  await editShown('points', 'n', 'tally', `document.querySelector('#ccode .t[data-sym="tally"]') && !document.querySelector('#ccode .t[data-sym="points"]')`);
+  await editShown('tally', 'y', 'unsigned int', `/unsigned int tally;/.test(document.getElementById('ccode').textContent)`);
+  assert.ok((await marks()).every((m) => m === 'applied'), `every edit by the shown name applied: ${await marks()}`);
+  assert.deepEqual((await toasts()).filter((t) => /No symbol|not applied|could not|without one/i.test(t)), [], 'no edit by the shown name is refused');
+  await page.click('[data-act="undo"]');
+  await page.waitFor(`/\\bint tally;/.test(document.getElementById('ccode').textContent)`, { what: 'undo the retype', timeout: 60000 });
+  await idle('undo the retype');
+  await page.click('[data-act="undo"]');
+  await page.waitFor(`/\\bint points;/.test(document.getElementById('ccode').textContent)`, { what: 'undo the second rename', timeout: 60000 });
+  await idle('undo the second rename');
+  await page.click('[data-act="undo"]');
+  await page.waitFor(`/\\bint score_1;/.test(document.getElementById('ccode').textContent)`, { what: 'undo the rename by the shown name', timeout: 60000 });
+  await idle('undo the rename by the shown name');
+  assert.ok(await declares('\\bint score_1;') && (await marks()).every((m) => m === 'applied'), 'undo walks back to score_1, every edit applied');
+  await noExceptions('a local the printer suffixed (score_1) is renamed, renamed again, retyped and undone by the name it shows');
+
   console.log(`DECOMPILE BROWSER OK — ${done.join('; ')}` + (skipped.length ? `; SKIPPED: ${skipped.join('; ')}` : ''));
 } finally {
   clearTimeout(guard);

@@ -75,7 +75,7 @@ use object::Object;
 use crate::loadimage_object::ObjectLoadImage;
 
 pub use model::{
-    CodeUnit, DiscoveredFunction, FlowKind, FlowType, Insn, RawOp, RefKind, Reference,
+    CodeUnit, DiscoveredFunction, FlowKind, FlowType, Insn, Mnemonic, RawOp, RefKind, Reference,
 };
 
 /// What a Listing build captures beyond the instruction partition.
@@ -83,9 +83,11 @@ pub use model::{
 /// The partition (which bytes are instructions, and which addresses are
 /// functions) is what the walk exists for; the disassembly TEXT and the
 /// cross-reference MODEL are each an extra, and each costs per instruction —
-/// the text a second full SLEIGH parse plus two heap `String`s, the references
-/// one collected edge and two sorted buffers for incoming/outgoing queries.
-/// Neither is free to build and discard on a large instruction partition.
+/// the text a second full SLEIGH parse, one owned operand `String` per
+/// instruction, and shared mnemonic storage per distinct spelling per decode
+/// lane; the references need one collected edge and two sorted buffers for
+/// incoming/outgoing queries. Neither is free to build and discard on a large
+/// instruction partition.
 ///
 /// Every consumer of either is gated on `--option listing on`, so a build that
 /// only wants the partition ([`ListingDetail::PARTITION_ONLY`]) is asking for
@@ -594,7 +596,7 @@ impl Listing {
         &self,
         start: u64,
         end: Option<u64>,
-    ) -> impl Iterator<Item = (&u64, &Insn)> {
+    ) -> impl DoubleEndedIterator<Item = (&u64, &Insn)> {
         let end = end.map(|end| end.max(start));
         self.insns.range((
             Bound::Included(start),
@@ -604,7 +606,15 @@ impl Listing {
 
     /// The last decoded instruction that starts strictly before `vma`.
     pub fn instruction_before(&self, vma: u64) -> Option<&Insn> {
-        self.insns.range(..vma).next_back().map(|(_, insn)| insn)
+        self.instruction_entry_before(vma).map(|(_, insn)| insn)
+    }
+
+    /// The address and instruction of the last decoded instruction strictly before `vma`.
+    pub(crate) fn instruction_entry_before(&self, vma: u64) -> Option<(u64, &Insn)> {
+        self.insns
+            .range(..vma)
+            .next_back()
+            .map(|(&address, insn)| (address, insn))
     }
 
     /// The VMA of the first decoded instruction that starts strictly after `vma`
@@ -835,7 +845,7 @@ mod tests {
             fall_through: addr.checked_add(1),
             flow: Default::default(),
             flows: Vec::new(),
-            mnemonic: String::new(),
+            mnemonic: "".into(),
             operands: String::new(),
             pcode: None,
         }

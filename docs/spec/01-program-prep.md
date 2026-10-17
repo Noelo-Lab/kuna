@@ -4117,6 +4117,20 @@ than pushing them onto a worklist itself, so a driver that routes successors
 somewhere else still runs the identical decode-and-claim policy. Indirect targets are recorded
 with their computed/indirect predicates but contribute no static successor.
 
+(kuna) Assembly capture retains operand bodies as per-instruction `String`s,
+but mnemonic spellings repeat heavily across a Listing. The walker interns each
+captured mnemonic into an immutable `Mnemonic` handle backed by shared text,
+with one pool per serial walk or parallel decode lane. Records on a lane then
+share one mnemonic allocation per distinct spelling; empty text uses an
+allocation-free sentinel. Parallel lanes keep independent pools, so this does
+not add a global lock, and identical spellings in different lanes may still
+have separate allocations. The public `decode_one` result remains `String`;
+`Insn` and `InsnLite` expose the string-like `Mnemonic` wrapper, so clients that
+construct those public records directly must convert text with `.into()` or use
+`Mnemonic::from`. This changes retained text ownership, not how assembly is
+rendered: the interning sink receives the same callback from
+`Translate::one_instruction_with_assembly` that `decode_one` captures.
+
 (kuna) That `Successors` seam is what lets the same walk run on **N decode
 lanes** under `kuna --jobs N`
 (`decompiler/crates/kuna-analysis/src/listing/kuna_pdecode.rs`). On a 147 MB
@@ -4607,10 +4621,15 @@ and slice the boundary pages at their search positions. Growing the walk allocat
 bounded chunks without copying a whole-image buffer. Every record retains its
 flow targets, assembly and lazy p-code fields. Exact, range and interior queries
 still borrow the original record in address order. The index key remains
-independent of mutable instruction addresses. Replacing an address reuses its row;
-ARM frame-preserving rebuilds clone the records and index before extending them. Serial and parallel
-walks use the same store. This changes allocation and lookup layout, not the
-instruction partition or the facts any consumer receives.
+independent of mutable instruction addresses. Replacing an address reuses its row.
+Rebuilds that preserve ARM frames copy the paged address index but share immutable
+record chunks. A shared chunk is copied only when a write reaches it through
+`get_mut` or replacement, or when the walk appends into a shared partial tail
+(`decompiler/crates/kuna-analysis/src/listing/kuna_insnstore.rs
+(InstructionChunk::clone)`). The copy retains full chunk capacity and leaves the
+prior Listing independent. Serial and parallel walks use the same store. This
+changes allocation and lookup layout, not the instruction partition or the facts
+any consumer receives.
 
 The optional lazy p-code list is an owned boxed vector, so an instruction with
 no retained p-code reserves a pointer-sized slot rather than a vector header
@@ -4634,9 +4653,12 @@ instruction store reduces the construction peak on every platform. Worker
 admission still uses the measured high-water mark, not the trimmed current RSS.
 
 Three things the walk deliberately does **not** always produce. First, the human
-assembly text on each instruction: capturing it means a *second* full SLEIGH parse
-of the same bytes (`Translate::print_assembly`) plus two heap strings per
-instruction, which roughly doubles the cost of the walk and is pure waste whenever
+assembly text on each instruction: capturing it means rendering every
+instruction's assembly (`Translate::one_instruction_with_assembly`, which still
+falls back to a second SLEIGH parse where the p-code parse cannot be reused), a
+real per-instruction cost on top of the lift. Operands remain one owned string
+per instruction, while repeated mnemonic spellings share one immutable text
+allocation per decode lane. Capturing assembly is still pure waste whenever
 nothing reads the text. Every bulk consumer of it — `noreturn_propagate`'s
 call/NOP idiom checks, `tailcallentry`, and `poolentry`'s literal-load operands —
 sits behind `listing`, so the walk captures text exactly when `listing` is on and
@@ -4925,7 +4947,11 @@ i386 PE corpus and 56 in the ARM one (Wine's stubs, an empty `-O0` function's
 `nop; bx lr`), and `-fpatchable-function-entry` starts every function with one.
 `mov edi,edi` is never padding — it is the MSVC hot-patch prologue that opens 7,827
 true starts in the PE corpus — and neither is any self-move on a 64-bit target,
-where a 32-bit one zero-extends its register. A refusal is a plain reject, not a
+where a 32-bit one zero-extends its register. A self-`lea` on a wide target is
+padding only when both operands name the same full-width x86-64 general-purpose register.
+`lea esi,[esi]` and `lea r8d,[r8d]` clear the upper half of their destination, so
+entry discovery retains them even though the printed register names match. A
+full-width `lea rsi,[rsi]` still counts as padding. A refusal is a plain reject, not a
 body claim, so the cursor moves on through the filler. Like `aifbracket` it runs
 only in the plain gap walk. Scored against unstripped twins in the default mode it
 loses no true function start on any corpus and gains 50 on the i386 PEs (the
@@ -5927,12 +5953,13 @@ this PC-relative form — table and base both the instruction's own `inst_next` 
 is an answer. The table states no length either, so the count again comes from
 the range check: the `cmp rN,#n` the dispatch sits behind lifts to
 `INT_LESSEQUAL(n, rN)`, and when a conditional branch follows it within three
-instructions with nothing in between writing `rN`, the table has `n + 1`
-entries if that branch reads exactly the carry and the zero flag
-(`bhi`/`bls`, so `rN == n` is a case) and `n` if it reads only the carry
-(`bcs`/`bcc`). A branch on any other flags bounds nothing — a signed `bge`
-lets a negative index through — so neither it nor a dispatch with no check at
-all is read. Over the jump-table ceiling the first `jumptablemax` entries are
+instructions with nothing in between writing `rN` or overwriting the comparison
+flags, the table has `n + 1` entries if `bhi` sends indices above `n` away from
+the dispatch, and `n` if `bcs` sends indices at or above `n` away. The condition's
+p-code must establish that upper bound; reading the same flags with the opposite
+polarity (`bls` or `bcc`) is insufficient. A branch to the dispatch itself,
+intervening control flow, or a signed condition establishes no such bound, so
+neither it nor a dispatch with no check is read. Over the jump-table ceiling the first `jumptablemax` entries are
 read, and the xrefs walk records the switch as truncated like any other table. Because the offsets are
 unsigned and the cases are laid out after the table, an entry that lands inside
 the table, or outside the dispatcher's executable section, refuses the whole
@@ -6173,6 +6200,16 @@ Two rules fold into the same fixpoint, both Ghidra-derived:
   per-site CALL_RETURN flow override
   (`decompiler/crates/kuna-cli/src/decompile_all.rs`) — the fall-through prune that
   stops the flow-follower from absorbing the next function.
+
+  These scans read through a borrowed view of the existing Listing, bounded to
+  `[function entry, next function entry)`, instead of copying each function's
+  instructions into temporary collections. The strict call-site scan keeps its
+  address-order predecessor rule: a gap between decoded instructions does not by
+  itself stop the scan, but instructions from the preceding function are out of
+  bounds. The reachability scan keeps the stricter straight-line rule from its
+  former predecessor window: every step must have an explicit fall-through to
+  the next instruction, so a gap breaks the argument proof. Both reject an
+  intervening call, branch, or terminal instruction before accepting a constant.
 - **CFG reachability** (`noreturn_reach`, DIV-19; the
   `targetOnlyCallsNoReturn` rule of Ghidra's discovered analyzer,
   `function_reaches_only_noreturn`): the tail rule is a subset — it cannot conclude

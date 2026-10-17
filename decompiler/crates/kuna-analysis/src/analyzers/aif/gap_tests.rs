@@ -68,7 +68,7 @@ fn padding_fixture(size: usize, count: usize) -> (Sleigh, Rc<AddrSpace>, Listing
                 fall_through: c.fall_through,
                 flow: c.flow,
                 flows: c.flows,
-                mnemonic: decoded.mnemonic,
+                mnemonic: decoded.mnemonic.into(),
                 operands: decoded.operands,
                 pcode: None,
             });
@@ -202,7 +202,7 @@ fn hidden_fixture(kind: &str) -> (Sleigh, Rc<AddrSpace>, Listing) {
                 fall_through: c.fall_through,
                 flow: c.flow,
                 flows: c.flows,
-                mnemonic: d.mnemonic,
+                mnemonic: d.mnemonic.into(),
                 operands: d.operands,
                 pcode: None,
             }

@@ -1335,10 +1335,15 @@ fn render_fingerprints(
     for &entry in funcs {
         let mut vma = entry;
         for _ in 0..2 {
-            let Some(insn) = listing.insns.get_mut(&vma) else { break };
+            let Some(len) = listing.insns.get(&vma).map(|insn| insn.len) else {
+                break;
+            };
             let text = assembly(translate, vma, code_space);
-            insn.mnemonic = text.split_whitespace().next().unwrap_or_default().to_string();
-            vma = vma.wrapping_add(u64::from(insn.len));
+            let mnemonic = listing
+                .insns
+                .intern_mnemonic(text.split_whitespace().next().unwrap_or_default());
+            listing.insns.get_mut(&vma).unwrap().mnemonic = mnemonic;
+            vma = vma.wrapping_add(u64::from(len));
         }
     }
 }
@@ -1363,7 +1368,7 @@ fn partition_listing(
                 fall_through: None,
                 flow: super::FlowType::default(),
                 flows: Vec::new(),
-                mnemonic: String::new(),
+                mnemonic: String::new().into(),
                 operands: String::new(),
                 pcode: None,
             },
