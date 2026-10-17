@@ -238,6 +238,8 @@ pub(super) struct StepCtx<'a> {
     pub detail: ListingDetail,
     /// `thumbswitch`: the table reader for a Thumb `tbb`/`tbh` dispatch.
     pub tables: Option<&'a super::kuna_thumbswitch::HalfwordTables<'a>>,
+    /// `armframes`: the table reader for an A32 jump-table dispatch.
+    pub a32_tables: Option<&'a super::kuna_a32switch::A32Tables<'a>>,
 }
 
 /// True if `vma` lands inside any executable range `[lo, hi)`.
@@ -371,6 +373,16 @@ where
             refs.file(vma, target, RefKind::Code);
         }
     }
+    let skip = vma.wrapping_add(u64::from(decoded.len));
+    if let Some(tables) = ctx.a32_tables
+        .filter(|_| c.flow.is_computed && c.flow.is_jump && c.flows.iter().all(|&t| t == skip))
+    {
+        let decoded = |at: u64| insns.decoded(at);
+        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma) {
+            out.insn(target);
+            refs.file(vma, target, RefKind::Code);
+        }
+    }
     true
 }
 
@@ -440,6 +452,7 @@ pub(super) fn walk(
     frames: Option<&mut super::kuna_framemode::FrameModes>,
     resumed: Option<WalkState>,
     tables: Option<&super::kuna_thumbswitch::HalfwordTables<'_>>,
+    a32_tables: Option<&super::kuna_a32switch::A32Tables<'_>>,
 ) -> WalkState {
     // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
     // ContextDatabase BEFORE we decode a single instruction — the timing the
@@ -454,7 +467,7 @@ pub(super) fn walk(
     }
 
     let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
-    let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail, tables };
+    let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail, tables, a32_tables };
 
     let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk, resumed);
     if let Some(mode) = flow_mode {

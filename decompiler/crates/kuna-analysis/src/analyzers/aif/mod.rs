@@ -121,6 +121,7 @@ mod kuna_armprologue;
 mod kuna_framecalls;
 mod kuna_framecache;
 mod kuna_framepool;
+pub(crate) mod kuna_frameflow;
 mod kuna_thumbframes;
 pub(crate) use kuna_framecache::ArmFrames;
 pub mod kuna_ptrentry;

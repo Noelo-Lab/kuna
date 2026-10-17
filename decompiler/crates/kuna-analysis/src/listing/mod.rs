@@ -54,6 +54,7 @@ mod kuna_poolref;
 mod kuna_ppclocalentry;
 mod kuna_switchtable;
 mod kuna_thumbswitch;
+mod kuna_a32switch;
 mod kuna_unmappedentry;
 pub mod model;
 pub mod walk;
@@ -394,6 +395,7 @@ impl Listing {
                 )
             })
             .flatten();
+        let a32_tables = kuna_a32switch::A32Tables::new(file, arch);
         let st = walk::walk(
             translate,
             arch,
@@ -411,6 +413,7 @@ impl Listing {
             frames,
             resumed,
             tables.as_ref(),
+            a32_tables.as_ref(),
         );
 
         let refs = kuna_compactrefs::ReferenceIndex::new(st.refs);
@@ -484,6 +487,7 @@ impl Listing {
             detail,
             /* want_stack_callbacks = */ false,
             &WalkPlan::serial(),
+            None,
             None,
             None,
             None,

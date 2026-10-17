@@ -5428,9 +5428,10 @@ stripped i386 PE as 61 of one function's 174 callers.
 
 (kuna) ARM reference walks also recover the
 LR-saving frame roots used by the Listing when both `funcstart_patterns` and
-`armframes` are enabled. `armframes` defaults off and is never injected by CLI
-discovery bundles or mode presets. With it off, reference discovery keeps its
-existing seeded/AIF walk and Listing keeps its Thumb-only inventory recovery.
+`armframes on` are enabled. The default `armframes inventory` recovers A32 frames
+for the function inventory only, and no CLI discovery bundle or mode preset
+selects `on`. Below `on`, reference discovery keeps its existing seeded/AIF walk;
+with `off`, the Listing also keeps its Thumb-only inventory recovery.
 
 Frame recovery never drops an inventory entry the option-off pipeline reports
 without evidence against it
@@ -5644,6 +5645,35 @@ full frame recovery adds 770 listed bodies and loses none; the corresponding
 Betaflight pilot exchanges one gained body for one lost body. Default recovery
 therefore targets A32 inventory roots. Short callbacks and vector-only handlers
 remain separate discovery sources.
+
+With `armframes` enabled, the Listing walk also follows an A32 jump table. GCC
+lowers an A32 switch to `cmp rN,#n` and a predicated `ldrls pc,[pc,rN,lsl #2]`
+with its table of case addresses 8 bytes past the dispatch, or to `addls
+pc,pc,rN,lsl #2` followed by one `b` per case. The dispatch's p-code is folded
+with the switch-table lattice; only those two PC-relative shapes answer. The
+case count comes from the guard, read as a Thumb `tbb` guard is, with the
+dispatch's own condition as the range branch when it is predicated. An
+unguarded dispatch reads nothing. Word-table entries must lie in the
+dispatcher's executable section. The cases become successors and code
+references of the dispatch
+(`decompiler/crates/kuna-analysis/src/listing/kuna_a32switch.rs`). Without this,
+frame recovery left every case block undefined. The AIF fingerprint histogram,
+which frame recovery fills with the whole program, then accepted case blocks as
+function entries and cut the dispatcher apart.
+
+A frame root is also withdrawn when the frame-expanded Listing enters it by
+straight-line flow, the way a contradicted mode withdraws it. The instruction
+just before the root must be a non-call that falls through or conditionally
+skips into it. Tracing back, its run must start at a function entry or a branch
+target. A shrink-wrapped routine saves LR a few instructions after its entry,
+and once a caller reaches that entry, its fall-through runs into the `push`. A
+run that begins at a call's fall-through is speculative and keeps the root: a
+literal pool after a no-return call decodes as such a run into the next routine
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_frameflow.rs`). A
+retained prior entry that a jump-table dispatch reaches is a case block and is
+contradicted too. On the stripped U-Boot O2-noinline image these rules leave
+recall at 92.0% and raise precision from 92.6% to 98.6%; `parse_label` and
+`malloc` stay whole.
 
 Full reference expansion can substantially increase query cost. In a historical
 measurement on a 400,556-byte stripped ARM BusyBox ELF,

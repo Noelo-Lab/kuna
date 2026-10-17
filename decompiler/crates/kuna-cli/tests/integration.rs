@@ -30,6 +30,8 @@ mod arm_float_returns;
 mod arm_frame_retain;
 #[path = "arm_frame_pool.rs"]
 mod arm_frame_pool;
+#[path = "arm_frame_switch.rs"]
+mod arm_frame_switch;
 
 #[path = "arm_interwork_cli.rs"]
 mod arm_interwork_cli;

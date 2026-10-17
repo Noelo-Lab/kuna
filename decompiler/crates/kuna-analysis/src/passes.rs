@@ -894,8 +894,11 @@ pub fn run_listing_consumers(
                         arch, translate, std::rc::Rc::clone(code_space),
                     );
                     replacements.retain(|&root, &mut prefix| !prior.shields(root, prefix, &frame_cache));
-                    let stale = if replacements.is_empty() { modes.stale().clone() }
-                        else { std::collections::BTreeSet::new() };
+                    let stale = if replacements.is_empty() {
+                        let mut stale = modes.stale().clone();
+                        stale.extend(crate::aif::kuna_frameflow::entered(&listing, &frames));
+                        stale
+                    } else { std::collections::BTreeSet::new() };
                     if !replacements.is_empty() || !stale.is_empty() {
                         rejected.extend(stale);
                         frames.retain(|root| !replacements.contains_key(root) && !rejected.contains(root));
