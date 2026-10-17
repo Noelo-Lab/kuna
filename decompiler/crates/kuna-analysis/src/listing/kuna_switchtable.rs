@@ -195,6 +195,35 @@ const MAX_GUARD_INSNS: usize = 16;
 /// back a predecessor's first byte can lie.
 const MAX_INSN_BYTES: u64 = 16;
 
+/// How far the register-chain read follows a dispatch before it gives up, and
+/// the largest table it reads.
+///
+/// `far` is the `switchreach` option (on by default): the 96-instruction slice
+/// that steps over calls through the registers in `preserved`, the multiply by
+/// one that is an unscaled index, the 16-instruction search for the range check,
+/// the masked index, and the re-read once the code above a dispatch is decoded
+/// (`TableRead::gap`). Off, the slice and the search stop at eight instructions
+/// and at the first call, which is how far the read reached before.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Reach<'a> {
+    pub max_entries: usize,
+    pub preserved: &'a [(u64, u64)],
+    pub far: bool,
+}
+
+impl Reach<'_> {
+    fn slice_insns(&self) -> usize {
+        if self.far { MAX_DISPATCH_INSNS } else { NEAR_INSNS }
+    }
+
+    fn guard_insns(&self) -> usize {
+        if self.far { MAX_GUARD_INSNS } else { NEAR_INSNS }
+    }
+}
+
+/// How far both searches reach with `switchreach` off.
+const NEAR_INSNS: usize = 8;
+
 /// The case bodies the computed jump at `from` dispatches to when its target
 /// register — not the instruction's own operand — carries the table.
 ///
@@ -217,14 +246,14 @@ pub(super) fn register_targets(
     branch: &VarnodeData,
     pool: &PoolImage,
     exec: &[(u64, u64)],
-    max_entries: usize,
-    preserved: &[(u64, u64)],
+    reach: &Reach,
 ) -> TableRead {
+    let max_entries = reach.max_entries;
     // Nothing is read for a jump whose target is not in a register or a
     // temporary: `jmp qword ptr [__imp_X]` branches on a data-space varnode and
     // is a forwarding veneer, which is the shape this must never walk back from.
     let Some(want) = key_of(branch, data_space) else { return TableRead::default() };
-    let (slice, gap) = dispatch_slice(translate, code_space, data_space, decoded, from, want, preserved);
+    let (slice, gap) = dispatch_slice(translate, code_space, data_space, decoded, from, want, reach);
 
     let mut vals: Vec<(Key, Val)> = Vec::new();
     let mut dispatch = None;
@@ -236,7 +265,7 @@ pub(super) fn register_targets(
                 break 'slice;
             }
             if leaves_registers_unknown(op.opcode) {
-                vals.retain(|(k, _)| survives(*k, preserved));
+                vals.retain(|(k, _)| survives(*k, reach.preserved));
             }
             let folded = fold(op, &vals, data_space, pool);
             if op.opcode == OpCode::CPUI_INT_ADD && matches!(folded, Some(Val::Indexed(_))) {
@@ -258,7 +287,7 @@ pub(super) fn register_targets(
     let table = match dispatch {
         Some(Val::Case { table, base }) => (table, Some(base)),
         Some(Val::Entry { table, width }) if width == pool.ptr_width() => (table, None),
-        _ => return TableRead { gap, ..TableRead::default() },
+        _ => return TableRead { gap: gap.filter(|_| reach.far), ..TableRead::default() },
     };
     // Read only now, on a jump that really does index a table: without the
     // switch's own case count there is nothing to stop the scan at the end of
@@ -267,13 +296,15 @@ pub(super) fn register_targets(
         (table, Some(base)) => delta_targets(table, base, from, pool, exec, Some(limit), max_entries),
         (table, None) => targets(table, from, pool, exec, Some(limit), max_entries),
     };
-    match guard_limit(translate, code_space, data_space, decoded, from, max_entries) {
+    match guard_limit(translate, code_space, data_space, decoded, from, reach) {
         Ok(limit) => TableRead { cases: read(limit), stated: Some(limit), gap: None },
         Err(gap) => {
-            let masked = index.and_then(|at| mask_limit(translate, code_space, data_space, decoded, from, at, max_entries));
+            let masked = index.filter(|_| reach.far).and_then(|at| {
+                mask_limit(translate, code_space, data_space, decoded, from, at, max_entries)
+            });
             match masked.map(|n| (n, read(n))) {
                 Some((n, cases)) if cases.len() == n => TableRead { cases, stated: Some(n), gap: None },
-                _ => TableRead { gap, ..TableRead::default() },
+                _ => TableRead { gap: gap.filter(|_| reach.far), ..TableRead::default() },
             }
         }
     }
@@ -382,13 +413,14 @@ fn guard_limit(
     data: Option<&Rc<AddrSpace>>,
     decoded: &HashSet<u64>,
     from: u64,
-    max_entries: usize,
+    reach: &Reach,
 ) -> Result<usize, Option<u64>> {
+    let max_entries = reach.max_entries;
     let mut cap = FullCapture::default();
     let mut cur = from;
     let mut ends_at: Option<u64> = None;
     let mut guard: Option<(Vec<FullOp>, usize, Vec<Key>)> = None;
-    for step in 0..MAX_GUARD_INSNS {
+    for step in 0..reach.guard_insns() {
         let len = decode(translate, cur, code_space, &mut cap).ok_or(None)?;
         if ends_at.is_some_and(|end| cur.wrapping_add(u64::from(len)) != end) {
             return Err(ends_at);
@@ -613,7 +645,7 @@ fn dispatch_slice(
     decoded: &HashSet<u64>,
     from: u64,
     want: Key,
-    preserved: &[(u64, u64)],
+    reach: &Reach,
 ) -> (Vec<(u64, Vec<FullOp>)>, Option<u64>) {
     let mut cap = FullCapture::default();
     let mut need: Vec<Key> = vec![want];
@@ -621,7 +653,7 @@ fn dispatch_slice(
     let mut cur = from;
     let mut ends_at: Option<u64> = None;
     let mut gap = None;
-    for step in 0..MAX_DISPATCH_INSNS {
+    for step in 0..reach.slice_insns() {
         let Some(len) = decode(translate, cur, code_space, &mut cap) else { break };
         // The step back trusted the closest decoded address below the previous
         // instruction; this is where that is confirmed, at no cost, by requiring
@@ -644,7 +676,7 @@ fn dispatch_slice(
             }
             relevant = true;
             need.retain(|n| !keys_overlap(*n, key));
-            if !models(op) {
+            if !models(op, reach.far) {
                 continue;
             }
             for input in &op.ins {
@@ -657,7 +689,7 @@ fn dispatch_slice(
         if relevant {
             out.push((cur, cap.ops().to_vec()));
         }
-        if stop && !need.is_empty() && need.iter().all(|k| survives(*k, preserved)) {
+        if stop && !need.is_empty() && need.iter().all(|k| survives(*k, reach.preserved)) {
             if !relevant {
                 out.push((cur, cap.ops().to_vec()));
             }
@@ -683,7 +715,7 @@ fn dispatch_slice(
 /// nothing before that multiply can change what the table is. A multiply by
 /// one is the exception: it is how x86 SLEIGH spells an unscaled index, and
 /// gcc -O0 puts the table base in that slot (`mov (%rdx,%rax,1),%eax`).
-fn models(op: &FullOp) -> bool {
+fn models(op: &FullOp, far: bool) -> bool {
     match op.opcode {
         OpCode::CPUI_COPY
         | OpCode::CPUI_INT_ADD
@@ -691,7 +723,7 @@ fn models(op: &FullOp) -> bool {
         | OpCode::CPUI_INT_ZEXT
         | OpCode::CPUI_INT_SEXT
         | OpCode::CPUI_LOAD => true,
-        OpCode::CPUI_INT_MULT => op.ins.iter().any(|vn| is_constant(vn) && vn.offset == 1),
+        OpCode::CPUI_INT_MULT => far && op.ins.iter().any(|vn| is_constant(vn) && vn.offset == 1),
         _ => false,
     }
 }

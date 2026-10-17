@@ -723,6 +723,11 @@ fn descend(
         n => n as usize,
     };
     let preserved = kuna_switchtable::preserved_registers(arch);
+    let reach = kuna_switchtable::Reach {
+        max_entries,
+        preserved: if arch.analysis_switchreach { &preserved } else { &[] },
+        far: arch.analysis_switchreach,
+    };
     // (kuna) `switchtable`: the dispatches whose read stopped for want of a
     // decoded instruction ending at the key, as `(dispatch, mode, branch)`.
     let mut waiting: HashMap<u64, Vec<(u64, _, VarnodeData)>> = HashMap::new();
@@ -993,8 +998,7 @@ fn descend(
                     Some(&branch),
                     p,
                     &exec,
-                    max_entries,
-                    &preserved,
+                    &reach,
                     thumb_tables.as_ref(),
                 );
                 if read.cases.is_empty() && read.stated.is_none() {
@@ -1165,8 +1169,7 @@ fn descend(
                             branch,
                             p,
                             &exec,
-                            max_entries,
-                            &preserved,
+                            &reach,
                             thumb_tables.as_ref(),
                         );
                         if let (Some(gap), Some(branch)) = (read.gap, branch) {
@@ -1658,13 +1661,12 @@ fn branch_cases(
     branch: Option<&VarnodeData>,
     pool: &PoolImage,
     exec: &[(u64, u64)],
-    max_entries: usize,
-    preserved: &[(u64, u64)],
+    reach: &kuna_switchtable::Reach,
     thumb_tables: Option<&super::kuna_thumbswitch::HalfwordTables<'_>>,
 ) -> kuna_switchtable::TableRead {
     let mut read = match branch {
         Some(branch) => kuna_switchtable::register_targets(
-            translate, code_space, data_space, decoded, vma, branch, pool, exec, max_entries, preserved,
+            translate, code_space, data_space, decoded, vma, branch, pool, exec, reach,
         ),
         None => kuna_switchtable::TableRead::default(),
     };

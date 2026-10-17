@@ -1675,6 +1675,15 @@ pub struct Architecture {
     /// `n + 1` offsets read, and each case body is walked as the dispatcher's own
     /// code. ARM images only; inert without `--option listing on`.
     pub analysis_thumbswitch: bool,
+    /// (kuna) How far the reference walk follows a register-chain jump-table
+    /// dispatch (`switchreach`); default **on**. On, it reads gcc's `-O0`
+    /// unscaled-index chain, a base hoisted above calls into a callee-saved
+    /// register, a range check up to sixteen instructions above the jump, a
+    /// masked index, and a dispatch decoded before the code that falls into
+    /// it. Off, the slice and the range-check search stop at eight
+    /// instructions and at the first call, so the case bodies of those
+    /// switches stay out of `kuna xrefs` and the callee-first call graph.
+    pub analysis_switchreach: bool,
     /// (kuna) Make the target of a jump thunk a function entry (`thunkentry`);
     /// default **on**. The Listing walk makes a function only at a CALL target,
     /// so the routine behind a function whose whole body is one direct `jmp`
@@ -3002,6 +3011,7 @@ impl Architecture {
             analysis_declaredlibcproto: false,
             analysis_unmappedentry: false,
             analysis_thumbswitch: true,
+            analysis_switchreach: true,
             analysis_thunkentry: false,
             analysis_addrtakenentry: false,
             analysis_ppclocalentry: false,
@@ -3389,6 +3399,8 @@ impl Architecture {
         self.analysis_unmappedentry = true;
         // (kuna, GH-299) Thumb tbb/tbh switch-table read -- default-ON (ARM only).
         self.analysis_thumbswitch = true;
+        // (kuna) Register-chain jump-table reach in the reference walk -- default-ON.
+        self.analysis_switchreach = true;
         // (kuna) Jump-thunk target function entries -- default-ON (x86 only).
         self.analysis_thunkentry = true;
         // (kuna) Address-taken code function entries -- default-ON (x86-64 only).

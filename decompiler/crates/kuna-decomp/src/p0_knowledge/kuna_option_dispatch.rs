@@ -852,6 +852,9 @@ kuna_options! { self, p1;
     "thumbswitch" => {
         on_off!(analysis_thumbswitch, "Thumb tbb/tbh switch-table read in the Listing walk (GH-299)")
     },
+    "switchreach" => {
+        on_off!(analysis_switchreach, "Register-chain jump-table reach in the reference walk")
+    },
     "thunkentry" => on_off!(analysis_thunkentry, "Jump-thunk target function entries"),
     "addrtakenentry" => {
         on_off!(analysis_addrtakenentry, "Address-taken code function entries")

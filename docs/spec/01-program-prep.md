@@ -6011,7 +6011,12 @@ entry, the gnulib image 89 to 100, the MSVC fixture 2 to 6. `kuna strings` over 
 (kuna) gcc's own dispatches kept most of a switch's callees out of that read all
 the same — 3,913 of the 186,139 direct call sites in 51 x86-64 decbench binaries,
 2,609 of them at `-O0`, where every computed jump of a PIE fails. Five things
-were in the way, and each is now read.
+were in the way, and each is now read. **Switch reach** (`switchreach`,
+default-on) gates how far the read follows a dispatch — the unscaled index, the
+long slice across calls, the sixteen-instruction search for the range check,
+the masked index and the re-read below; off, the slice and the search stop at
+eight instructions and at the first call, as they did. How the range check is
+read once it is found is not part of the option.
 
 *The `-O0` chain.* gcc spends seven instructions between its `ja` and the jump:
 `mov %eax,%eax; lea 0(,%rax,4),%rdx; lea jt(%rip),%rax; mov (%rdx,%rax,1),%eax;

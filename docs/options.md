@@ -729,6 +729,11 @@ Three tiers:
 | kuna functions reports a tbb or tbh function far smaller than its symbol | [`thumbswitch`](#thumbswitch) |
 | a function called only from a switch case is missing from a stripped firmware image | [`thumbswitch`](#thumbswitch) |
 | aif adds entries inside cortex-m switch statements | [`thumbswitch`](#thumbswitch) |
+| kuna xrefs reports 0 references to a function called only from a switch case | [`switchreach`](#switchreach) |
+| a function called from a switch case body has no caller in decompile-graph | [`switchreach`](#switchreach) |
+| calleevote refuses a function because its recorded calls differ from the call graph | [`switchreach`](#switchreach) |
+| protoorder decompiles a caller before the callees its switch cases call | [`switchreach`](#switchreach) |
+| every call inside a switch is missing from a gcc -O0 binary | [`switchreach`](#switchreach) |
 | a sub_ entry starts on a literal pool word one word before a real function | [`aifpoolslide`](#aifpoolslide) |
 | a stripped arm function list lists a function 4 bytes early | [`aifpoolslide`](#aifpoolslide) |
 | a function's first decoded instruction is a conditional addvs or a movs r0,#0 that no code reaches | [`aifpoolslide`](#aifpoolslide) |
@@ -2745,6 +2750,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default). It only fires at a PC-relative tbb/tbh that a range check bounds, so it adds code the switch provably dispatches to: a stripped Cortex-M function list loses the sub_ entries that were switch cases, and the functions those cases call are found. Flip off to reproduce the GH-299 measurement exactly, or when a hand-written tbb/tbh whose table is not where the range check says makes the walk decode a case region that is not code.
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · GH-299
 - **Example:** `--option thumbswitch off`
+
+### `switchreach` -- on | off, default `on`
+
+- **Symptoms:** kuna xrefs reports 0 references to a function called only from a switch case; a function called from a switch case body has no caller in decompile-graph; calleevote refuses a function because its recorded calls differ from the call graph; protoorder decompiles a caller before the callees its switch cases call; every call inside a switch is missing from a gcc -O0 binary.
+- **What it does:** Follow a register-chain jump-table dispatch as far as gcc spreads it, so the reference walk behind kuna xrefs and the callee-first call graph reaches every case body. Without it a function called only from a switch case had no caller: gcc -O0 puts the table base in the unscaled index slot (mov (%rdx,%rax,1),%eax, a multiply by one in x86 SLEIGH) with the range check ten instructions above the jump, and gcc -O2 schedules the case bodies' pushes between the ja and the jump, hoists the base out of a loop into a callee-saved register across calls, and lets a .cold fragment that sorts ahead of its parent reach the dispatch before the parent's prologue is decoded. On, the slice back from the dispatch reaches 96 instructions and steps over a call when everything it still wants is a register the default prototype model leaves unaffected, the multiply by one is followed as a copy, the range check is searched for within 16 instructions, an index masked by and $m with no range check states m + 1 cases (read only when all are cases), and a read that stopped for want of a decoded instruction is repeated by whichever body later decodes the instruction falling into the dispatch, which walks the cases as its own. Off, the slice and the search stop at eight instructions and at the first call. How the range check is read is not part of this option: the bound is a comparison that feeds the guard branch's condition, on the side the condition sends to the dispatch. Measured over 51 x86-64 decbench binaries (O0/O2/O2-noinline): direct call sites missing from the call graph fall from 3,913 of 186,139 to 156 (O0 2,609 to 28), the graph gains 1,868 edges and loses 3, two of them jumps from a table read past its end. On the published type metric the 444 campaign slices go 1,869 to 1,873 perfect functions (4 onto, 0 off, 20 better, 1 worse) and the nightly optimized sample 2,218 to 2,220 (2 onto, 0 off, 5 better, 2 worse). The datatest corpus never runs the reference walk, so it is byte-identical.
+- **When to flip:** On (default). It only adds case bodies that a range check, a mask or a full table bounds, so it completes the call graph: callers appear in kuna xrefs and decompile-graph, calleevote stops refusing functions whose recorded calls exceed the graph, and protoorder decompiles the callees a switch calls first. Flip off to reproduce the call graph from before, or to rule it out when a whole-binary run types a function differently and the function is reached from a switch case.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · jtxref-case-body-calls
+- **Example:** `--option switchreach off`
 
 ### `aifpoolslide` -- on | off, default `on`
 
