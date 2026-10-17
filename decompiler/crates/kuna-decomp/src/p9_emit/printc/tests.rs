@@ -2294,6 +2294,20 @@ mod w10_printc_cast_render {
     }
 
     #[test]
+    fn narrowed_float_bit_literals_fit_the_rust_word() {
+        let mut fd = build_fd();
+        let input = fd.new_constant(8, 0x1_0000_0001);
+        let op = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_SUBPIECE);
+        let mut printer = PrintC::new();
+        printer.set_name("rust");
+        printer.set_output_stream();
+        printer.op_bit_transfer_ir(&fd, &bare_arch(), op, crate::kuna_bitcast::Transfer {
+            input, target: named("float", 4, type_metatype::TYPE_FLOAT), size: 4, to_float: true,
+        });
+        assert_eq!(printer.emit_mut().output_str(), "f32::from_bits(0x1u32)");
+    }
+
+    #[test]
     fn integer_facing_truncations_read_the_declared_float_bits() {
         for size in [4, 8] {
             let manage = build_manager();

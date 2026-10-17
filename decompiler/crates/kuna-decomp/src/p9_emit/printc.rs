@@ -6673,7 +6673,7 @@ impl PrintC {
         let input = fd.vbank().get(transfer.input).unwrap();
         let bits = if transfer.size == 4 { "u32" } else { "u64" };
         let literal = |v: &crate::varnode::Varnode| {
-            Atom::syntax(format!("0x{:x}{bits}", v.get_offset()), TagType::Syntax, SyntaxHighlight::const_color)
+            Atom::syntax(format!("0x{:x}{bits}", if transfer.size == 4 { u64::from(v.get_offset() as u32) } else { v.get_offset() }), TagType::Syntax, SyntaxHighlight::const_color)
         };
         if rust && transfer.to_float {
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
@@ -7213,6 +7213,10 @@ impl PrintC {
             self.push_cast_open(&target, op);
             self.op_bit_transfer_ir(fd, arch, op, transfer);
             self.push_cast_close(&target);
+            return;
+        }
+        if let Some(transfer) = crate::kuna_subfloat::transfer(fd, arch.decl_high_type, op) {
+            self.op_bit_transfer_ir(fd, arch, op, transfer);
             return;
         }
         // Non-special-print SUBPIECE (printc.cc:892-897): isSubpieceCast decides

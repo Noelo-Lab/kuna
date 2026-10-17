@@ -457,3 +457,6 @@ mod narrow_register_inputs;
 
 #[path = "float_storage_truncation.rs"]
 mod float_storage_truncation;
+
+#[path = "float_subword_bits.rs"]
+mod float_subword_bits;
