@@ -458,7 +458,7 @@ fn fingerprint_over_listing(
         let insn = listing.instruction_at(vma)?;
         let len = insn.len;
         let mnemonic = if listing.has_assembly() {
-            insn.mnemonic.clone()
+            insn.mnemonic.to_string()
         } else {
             let (mnemonic, probed_len) = redecode(vma)?;
             if probed_len != len {
@@ -1624,7 +1624,7 @@ mod tests {
             fall_through: Some(addr + 4),
             flow: Default::default(),
             flows: Vec::new(),
-            mnemonic: mnemonic.to_string(),
+            mnemonic: mnemonic.to_string().into(),
             operands: String::new(),
             pcode: None,
         };

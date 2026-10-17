@@ -270,6 +270,9 @@ Three tiers:
 | option returndup off collapses the whole function to one short-circuit expression | [`orchain`](#orchain) |
 | a source guard testing several conditions with and/or becomes that many identical constant-return guards | [`orchain`](#orchain) |
 | the return-dupe slug on a function whose source wrote one short-circuit condition | [`orchain`](#orchain) |
+| if (!c) return 0; f(); return 0; where the source has if (c) f(); return 0; | [`rettriangle`](#rettriangle) |
+| a duplicated constant return right after a one-statement body | [`rettriangle`](#rettriangle) |
+| // return-dupe on a function whose only split is a short if before its return | [`rettriangle`](#rettriangle) |
 | inverted diamond: if (guard) { entire body } else { v = 0; } return v; | [`earlyreturn`](#earlyreturn) |
 | leading argument-validity check wraps the whole body instead of an early return | [`earlyreturn`](#earlyreturn) |
 | function opens with if (p != 0) { everything } where source wrote if (!p) return 0; | [`earlyreturn`](#earlyreturn) |
@@ -1061,6 +1064,10 @@ Three tiers:
 | call result stored to the frame but the store is missing from the emitted C so the later read looks uninitialized | [`tiedstorekeep`](#tiedstorekeep) |
 | indirect call through a stack slot that no statement ever writes | [`tiedstorekeep`](#tiedstorekeep) |
 | a stack local read after a call shows only its initialiser | [`tiedstorekeep`](#tiedstorekeep) |
+| global structure field stores become local assignments | [`globalfieldstore`](#globalfieldstore) |
+| array member writes target unrelated local arrays | [`globalfieldstore`](#globalfieldstore) |
+| a global structure is assigned individual scalar fields | [`globalfieldstore`](#globalfieldstore) |
+| a call sees stale fields after a cached record copy | [`globalfieldstore`](#globalfieldstore) |
 | a global is assigned before a call although the binary stores it after the call returns | [`globalcallstore`](#globalcallstore) |
 | a call that reads a global appears to see a value the caller stores only afterwards | [`globalcallstore`](#globalcallstore) |
 | a loop that walks a global list frees the head but never advances the global | [`globalcallstore`](#globalcallstore) |
@@ -1084,6 +1091,10 @@ Three tiers:
 | byte-for-byte comparison against upstream ghidra naming | [`namestyle`](#namestyle) |
 | undefined8/xunknownN placeholder types wanted for upstream comparison (flip off) | [`realtypes`](#realtypes) |
 | size-guessed unsigned long/int/char types shown for values the inference never typed | [`realtypes`](#realtypes) |
+| a DWARF or asserted by-value struct parameter is declared as a pointer | [`indirectargs`](#indirectargs) |
+| calls pass &local to a function declared to take the struct by value | [`indirectargs`](#indirectargs) |
+| function pointer type spells T * for a by-value aggregate parameter | [`indirectargs`](#indirectargs) |
+| want the raw ABI pointer for a large struct parameter (flip off) | [`indirectargs`](#indirectargs) |
 | a void function ends with a redundant return; the source does not have | [`voidtailreturn`](#voidtailreturn) |
 | GED counts one extra exit node against an otherwise perfect function | [`voidtailreturn`](#voidtailreturn) |
 | the last statement of a void function is a bare return | [`voidtailreturn`](#voidtailreturn) |
@@ -1218,6 +1229,10 @@ Three tiers:
 | a signed ARM value is shifted left by a constant in the emitted C | [`armconstshift`](#armconstshift) |
 | UBSan reports a left shift of a negative value in recompiled ARM output | [`armconstshift`](#armconstshift) |
 | a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift) |
+| a local read appears before the machine branch that guards it | [`guardedreadtrim`](#guardedreadtrim) |
+| a call-written volatile stack local is read on the failure path | [`guardedreadtrim`](#guardedreadtrim) |
+| an overwritten register argument renders as a stale half of a previous wide value | [`multiregargs`](#multiregargs) |
+| a live entry argument disappears after a wide register read | [`multiregargs`](#multiregargs) |
 
 ## Toggleable transforms
 
@@ -1798,6 +1813,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-69). Flip OFF (`option orchain off`) to restore the pre-DIV-69 rendering, where one source `return a || (b && c);` (or a source `if (A && B && C)` guard) comes back as a cascade of `if (a) return 1;` / `if (b) return 0;` constant-return guards -- the shape `option returndup off` also removes, at the cost of every OTHER early-return recovery in the function. It is returndup-local and one-directional: it can only ever make `returndup` fire LESS, never more, and it is inert with `option returndup off`. Measured over the full decbench corpus (85,195 functions / 795 slices, three optimisation levels; `docs/decbench/returndup-o0-measurement.md` for the motivating ablation): +611 GED-perfect at O0 for -13 at O2 and -15 at O2-noinline, +583 net and -967 aggregate GED, 781 functions moved to a perfect structural match against 198 moved off (3.94 : 1), and every architecture net-positive. It is 92% of the +630 ceiling the post-hoc 'a short-circuit fold was lost' signal prices, at 94% byte-identity with the `returndup off` body on the 3,059 -O0 functions it fires for. The residual cost is real and is not observable from the binary: where the SOURCE wrote the guard cascade and the compiler merged it, declining the split is wrong (coreutils factor, GED 0 -> 12).
 - **Where / provenance:** P8/goto-quality · kuna · structure-recovery · decbench-returndup-o0-shortcircuit
 - **Example:** `option orchain on`
+
+### `rettriangle` -- on | off, default `off`
+
+- **Symptoms:** if (!c) return 0; f(); return 0; where the source has if (c) f(); return 0;; a duplicated constant return right after a one-statement body; // return-dupe on a function whose only split is a short if before its return.
+- **What it does:** Decline a `returndup` split at the join of a one-block `if`. `returndup` gives every predecessor of a shared constant-return block its own return, which recovers a source's early-return guards; but when the two predecessors are the two arms of a one-block `if` -- a two-way condition that goes straight to the return or through one block that runs into it -- the split prints `if (c) f(); return 0;` as `if (!c) return 0; f(); return 0;`, one statement more with the return written twice, where IDA and Ghidra print the `if`. When on, `kuna_rettriangle::is_triangle_join` drops such a return block from `returndup`'s candidates: exactly two predecessors, one a two-way block whose other successor is the second, which is entered only from it and leaves only to the return. Other candidates of the same function still split; the option can only make `returndup` fire less and is inert with `returndup off`. The same shape is also a source guard clause (`if (!ok) return 0; ...; return 0;`), which this prints as `if (ok) { ... } return 0;`, so it is a judgment call: over a decbench sample (12 projects, 126 slices; `scripts.decbench.optsweep`) it moves O0 GED 31,382 -> 31,219 and GED-perfect +56 (64 to, 8 off, McNemar z = +6.6), and O2 GED 69,032 -> 69,092 with GED-perfect +1, mostly tar's pax decoders whose source is the one-block `if` it prints. Shipped off; on in the `aggressive` preset. Over 8 stripped decbench binaries under `--mode aggressive`, 80 of 3,225 functions change, 160 fewer `return` statements.
+- **When to flip:** Turn ON when a short `if` before a constant return comes out as an early return plus a duplicated return, `if (!c) return 0; f(); return 0;`, where IDA prints `if (c) f(); return 0;`. The `aggressive` preset (what `--mode auto` picks under 500 KiB) already turns it on. Leave it off to keep `returndup`'s guard-clause form for every shared constant return.
+- **Where / provenance:** P8/goto-quality · ida · structure-recovery · kuna-rettriangle
+- **Example:** `option rettriangle on`
 
 ### `earlyreturn` -- on | off, default `on`
 
@@ -3338,7 +3361,7 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 ### `calloverlap` -- off | in | full, default `off`
 
 - **Symptoms:** call emitted with no arguments or fewer arguments than the disassembly passes; call result read from a local that is never assigned; enclosing function loses its own parameter list and return type (void f(void)); argument register written whole-width by pxor movdqa movdqu por pand orpd or movq before the call; second call binds a stale pre-call value where the first call should have defined it.
-- **What it does:** Complete the two upstream call-overlap guards kuna shipped as comment-only stubs: Heritage::guardCallOverlappingInput (heritage.cc:1210) and Heritage::tryOutputOverlapGuard / guardOutputOverlap (heritage.cc:1249/1293). Heritage characterizes each heritaged range against every call site's prototype; when the range is strictly LARGER than the ABI storage inside it the characterization is ContainedBy, and the whole-range guards see nothing. That is routine on x86-64 because SLEIGH models PXOR, MOVDQA, MOVDQU, POR, PAND, MOVQ-to-xmm and ORPD as ONE 128-bit write to the whole XmmReg, so Heritage::refinement's `size > 4 && maxw < size` gate never partitions the range and the 8-byte SysV parameter and return entries inside it stay invisible. At `in` the input guard locates the biggest contained input entry, translates its address from the callee's to the caller's perspective, inserts a SUBPIECE before the CALL that truncates a fresh whole-range Varnode down to that entry, registers the truncated Varnode as an input trial and appends it to the CALL - the guard PROPOSES storage, the P4 trial machinery still judges it. At `full` the output guard additionally turns the biggest contained return entry into an INDIRECT creation at the call and PIECEs the surrounding bytes of the range back around it, so the range still has a definition at the call while the return entry alone carries the output trial, and the range's effect is downgraded to unaffected. The two levels exist because they are separable: `in` alone recovers the dropped argument but leaves the call's return value read from a stale pre-call definition.
+- **What it does:** With multiregargs on, complete, unambiguous multi-slot general-register partitions are registered independently at every option level; these partial-range guards apply only to the remaining cases. Complete the two upstream call-overlap guards kuna shipped as comment-only stubs: Heritage::guardCallOverlappingInput (heritage.cc:1210) and Heritage::tryOutputOverlapGuard / guardOutputOverlap (heritage.cc:1249/1293). Heritage characterizes each heritaged range against every call site's prototype; when the range is strictly LARGER than the ABI storage inside it the characterization is ContainedBy, and the whole-range guards see nothing. That is routine on x86-64 because SLEIGH models PXOR, MOVDQA, MOVDQU, POR, PAND, MOVQ-to-xmm and ORPD as ONE 128-bit write to the whole XmmReg, so Heritage::refinement's `size > 4 && maxw < size` gate never partitions the range and the 8-byte SysV parameter and return entries inside it stay invisible. At `in` the input guard locates the biggest contained input entry, translates its address from the callee's to the caller's perspective, inserts a SUBPIECE before the CALL that truncates a fresh whole-range Varnode down to that entry, registers the truncated Varnode as an input trial and appends it to the CALL - the guard PROPOSES storage, the P4 trial machinery still judges it. At `full` the output guard additionally turns the biggest contained return entry into an INDIRECT creation at the call and PIECEs the surrounding bytes of the range back around it, so the range still has a definition at the call while the return entry alone carries the output trial, and the range's effect is downgraded to unaffected. The two levels exist because they are separable: `in` alone recovers the dropped argument but leaves the call's return value read from a stale pre-call definition.
 - **When to flip:** Turn ON (`full`, which is upstream Ghidra's behavior) when a call is rendered with missing arguments and/or its result is read from a variable that is never assigned -- the classic rendering is `u(); sink = v1; return v1 + 1.0;` where `v1` has no definition, from the canonical gcc -O2 int-to-double idiom `movapd xmm1,xmm0; pxor xmm0,xmm0; cvtsi2sd xmm0,rdi; call u`. The whole enclosing function can also lose its own signature (`void mix(void)` for a `double mix(int,double)`), and a printf-family call can lose every floating-point vararg its format string asks for. PREFER `full` OVER `in`: measured over 268 decbench O2 binaries / 77,014 functions, `full` changes 283 functions (0.37%) with 94 that stop reading a never-assigned local against 6 that start, while input-only changes 209 with only 10 fixed against 12 newly introduced -- recovering the argument without recovering the return value leaves the call result stale. Use `in` only to bisect which half of the guard moved an output. DEFAULT OFF even though the flip is clean on both gate corpora (0/675 datatests, 0/411 stage assertions with the option forced on) and adds no decompile errors (4,024 error-marked functions before and after): the guards make the whole over-wide range live at the call, which EXPOSES two pre-existing kuna defects on the functions they touch. (1) 54 of the 283 changed functions (19%) render an XMM range that used to be a clean `float4 v9` as a 16-byte `char v9 [16]` with `v9[0] = ...; SUB164(v9,0)` lane traffic -- faithful, but noisier C. (2) At 6 call sites the recovered floating-point argument is emitted in slot 0, ahead of the format string (`log_out((float8)x,(float8)y,a0,"time: %5.2f/%5.2f")`), because `build_input_from_trials` does not interleave the integer and float ParamEntry groups back into source order for an unprototyped mixed call. Both are worth fixing before the default flips. Flip back off if a call gains an argument the disassembly does not support, or if a 16-byte lane rendering appears where a scalar read better.
 - **Where / provenance:** P3/call-guard · ghidra-upstream · correctness-fix · GH-275
 - **Example:** `option calloverlap full`
@@ -3374,6 +3397,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-105). The OFF symptom is C that says the program uses a value it never computed: a local initialised to NULL, a call whose result is assigned to a register temporary, and then an indirect call or a dereference through the still-NULL local -- `v108 = NULL; v12 = (void *)GetProcAddress(...); ... v7 = (*v108)(...);`. The dataflow underneath is correct (the CALLIND's target really is the GetProcAddress result); only the printed store is missing, which is worse than a wrong-looking expression because an analyst reads it as a null-pointer call and concludes the import is never used. Flip OFF to reproduce upstream Ghidra's propagation exactly, or to bisect whether a stack-frame variable's appearance came from this brake. Each clause of the predicate was bought by measurement, not by argument: dropping the from-a-call clause turns three upstream datatests' if/else diamonds into `?:` ternaries and degrades union field resolution (7/675 assertions move, 0/675 with it); letting it fire on `persist` globals -- which already have heritage's own RETURN-COPY keeping their last store printed -- made the `copytrim` datatest run for minutes instead of 0.16 s.
 - **Where / provenance:** P3/copy-propagation · kuna · correctness-fix · re-getprocaddress-result-discarded
 - **Example:** `option tiedstorekeep off`
+
+### `globalfieldstore` -- on | off, default `on`
+
+- **Symptoms:** global structure field stores become local assignments; array member writes target unrelated local arrays; a global structure is assigned individual scalar fields; a call sees stale fields after a cached record copy.
+- **What it does:** Preserve the memory destination of a typed global COPY spanning structure fields or an array-typed view when a marker reads it. Propagating the register source can let later datatype splitting print field writes as local assignments or assign scalar values to the whole structure. ON keeps persistent TYPE_PARTIALSTRUCT and TYPE_ARRAY COPY outputs attached to markers; scalar stores and complete structure values keep existing propagation. A source defined directly by LOAD requires indexaliasguard global so its read cannot move past an aliasing write.
+- **When to flip:** On by default. OFF reproduces missing global field publication after a filled local record is copied to a cached global and then passed to an observing call. This includes complete global arrays and array members. Keeping a COPY can also change storage comments and variable merging where the prior output was correct.
+- **Where / provenance:** P3/copy-propagation · kuna · correctness-fix · kuna-globalfieldstore
+- **Example:** `option globalfieldstore off`
 
 ### `globalcallstore` -- on | off, default `on`
 
@@ -3422,6 +3453,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On (default) emits real C types for un-inferred values; off restores the upstream xunknownN/undefined<N> rendering for byte-for-byte comparison.
 - **Where / provenance:** P9/literal-format · kuna · presentation-default · kuna-realtypes
 - **Example:** `option realtypes off`
+
+### `indirectargs` -- on | off, default `on`
+
+- **Symptoms:** a DWARF or asserted by-value struct parameter is declared as a pointer; calls pass &local to a function declared to take the struct by value; function pointer type spells T * for a by-value aggregate parameter; want the raw ABI pointer for a large struct parameter (flip off).
+- **What it does:** Print a parameter that the locked prototype declares by value but the ABI passes through a hidden pointer (a cspec convert_to_ptr or pointermax rule: AArch64, RISC-V and PowerPC aggregates over 16 bytes, MS x64 aggregates not 1/2/4/8 bytes and long double, SPARC aggregates) at its declared value type. The callee signature and function-pointer declarators spell `T v` instead of `T *v`; the callee reads the ABI pointer as `&v`, so field accesses print `v.f` and a pointer local `T *v_addr = &v` carries any update of the pointer register; a call against such a prototype passes the pointed-to value. Ordinary pointer parameters, hidden-return pointers and array parameters keep their pointer view. Off prints the ABI pointer everywhere, as upstream Ghidra does.
+- **When to flip:** On (default) when the prototype comes from DWARF, a library seed or an --assert and you want the source-level signature. Flip off to see the ABI calling contract literally, for example when a hand-written caller passes aliased storage and the callee's writes through that pointer matter to the caller.
+- **Where / provenance:** P9/indirect-value-parameters · kuna · presentation-default · indirect-value-arguments
+- **Example:** `option indirectargs off`
 
 ### `voidtailreturn` -- on | off, default `off`
 
@@ -3678,6 +3717,22 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check.
 - **Where / provenance:** P9/cast-policy · kuna · correctness-fix · arm-fixed-signed-lsl
 - **Example:** `option armconstshift on`
+
+### `guardedreadtrim` -- on | off, default `on`
+
+- **Symptoms:** a local read appears before the machine branch that guards it; a call-written volatile stack local is read on the failure path.
+- **What it does:** Place an interference-preserving COPY of call-written stack storage inside the direct successor dominating its affected reads, rather than eagerly after the call. Require original stack-read evidence, reject overlapping lowered reads anywhere in the call block and stale read blocks, and retain legacy placement when intervening effects or writes prevent the move. This preserves a machine guard around a local read, including observable volatile accesses.
+- **When to flip:** On by default in all modes, including reliable and aggressive. Turn off to restore legacy merge-trim placement when comparing output. Ordinary scalar captures may be value-equivalent, but the guarded rendering preserves their evaluation scope and avoids extra volatile reads on other paths.
+- **Where / provenance:** P6/merge-aggressiveness · kuna · correctness-fix · guarded-stack-read-trim
+- **Example:** `option guardedreadtrim off`
+
+### `multiregargs` -- on | off, default `on`
+
+- **Symptoms:** an overwritten register argument renders as a stale half of a previous wide value; a live entry argument disappears after a wide register read.
+- **What it does:** Track a wide physical register range as its complete, unambiguous integer ABI argument slots. Overwritten call arguments retain their current slot values. An unlocked function entry is built from separate slot inputs when the whole range cannot be one ABI parameter, so unused words do not suppress the real input parameter. Trial scoring also stops counting a SUBPIECE that keeps only the other half of a PIECE as a second use of the value, so a stale pair half does not hide a single argument the caller just wrote. Locked or legal wide inputs and ambiguous partitions keep the existing representation. Off preserves legacy call-overlap behavior.
+- **When to flip:** Disable when comparing legacy argument recovery; enable when a wide register temporary hides a subsequently overwritten argument slot.
+- **Where / provenance:** P3/ssa-construction · kuna · correctness-fix · GH-1070
+- **Example:** `option multiregargs off`
 
 ## Programmatic use
 

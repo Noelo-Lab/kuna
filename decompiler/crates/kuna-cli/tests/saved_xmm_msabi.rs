@@ -228,15 +228,15 @@ fn saved_xmm_spills_are_not_emitted_as_live_locals() {
     };
 
     let mut decompile_image = None;
-    let mut unoptimized_image = None;
+    let mut unoptimized_images = Vec::new();
     for compiler in &compilers {
         for optimization in ["-O0", "-O2"] {
             let image = build_native(compiler, optimization);
             required(&mut Command::new(&image));
             if decompile_image.is_none() && *compiler == first_compiler && optimization == "-O2" {
                 decompile_image = Some(image);
-            } else if *compiler == "gcc" && optimization == "-O0" {
-                unoptimized_image = Some(image);
+            } else if optimization == "-O0" {
+                unoptimized_images.push(image);
             } else {
                 std::fs::remove_file(image).unwrap();
             }
@@ -244,7 +244,7 @@ fn saved_xmm_spills_are_not_emitted_as_live_locals() {
     }
     let image = decompile_image.expect("built native decompilation fixture");
     assert_eq!(symbol_address(&image, "rect_source"), 0x700000);
-    for image in std::iter::once(image).chain(unoptimized_image) {
+    for image in std::iter::once(image).chain(unoptimized_images) {
         let document = decompile(&image);
         let target = function(&document, "fixture_spills_rect");
         assert!(target["error"].is_null(), "{document}");

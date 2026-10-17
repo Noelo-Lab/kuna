@@ -15,11 +15,12 @@
 //! an operand's defining expression without symbol state and still returns an
 //! error. This limitation does not mean the equation compiler is absent.
 
-use kuna_base::address::{byte_swap_inplace, sign_extend, zero_extend, Address};
+use kuna_base::address::{sign_extend, zero_extend, Address};
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::{Decoder, Encoder};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::Wrap;
+use std::sync::OnceLock;
 
 use crate::slghpattern::{
     sla, ContextPattern, DisjointPattern, InstructionPattern, Pattern, PatternBlock,
@@ -77,7 +78,7 @@ pub trait OperandValueResolver {
 /// C++ static `getInstructionBytes(ParserWalker&,int4,int4,bool)`:
 /// build an intb from the instruction bytes.
 fn instruction_bytes(
-    walker: &dyn PatternExpressionContext,
+    walker: &(impl PatternExpressionContext + ?Sized),
     bytestart: i32,
     byteend: i32,
     bigendian: bool,
@@ -104,7 +105,7 @@ fn instruction_bytes(
         res |= i64::from(tmp); // uintm -> intb: zero-extending u32 -> i64
     }
     if !bigendian {
-        byte_swap_inplace(&mut res, size);
+        res = crate::kuna_instructionbytes::little_endian(res, size);
     }
     Ok(res)
 }
@@ -112,7 +113,7 @@ fn instruction_bytes(
 /// C++ static `getContextBytes(ParserWalker&,int4,int4)`:
 /// build an intb from the context bytes.
 fn context_bytes(
-    walker: &dyn PatternExpressionContext,
+    walker: &(impl PatternExpressionContext + ?Sized),
     bytestart: i32,
     byteend: i32,
 ) -> KunaResult<i64> {
@@ -227,7 +228,7 @@ impl TokenField {
 
     /// C++ `TokenField::getValue`: construct value given specific
     /// instruction stream.
-    pub fn get_value(&self, walker: &dyn PatternExpressionContext) -> KunaResult<i64> {
+    pub fn get_value(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<i64> {
         let mut res = instruction_bytes(walker, self.bytestart, self.byteend, self.bigendian)?;
         // intb >> int4: shift is bitstart%8 from the constructor, but comes
         // raw from decode; out-of-range counts resolve x86-masked (ADR 0003)
@@ -342,7 +343,7 @@ impl ContextField {
     }
 
     /// C++ `ContextField::getValue`.
-    pub fn get_value(&self, walker: &dyn PatternExpressionContext) -> KunaResult<i64> {
+    pub fn get_value(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<i64> {
         let mut res = context_bytes(walker, self.startbyte, self.endbyte)?;
         // intb >> int4: same x86-masked transcription as TokenField (ADR 0003)
         res = res.wshr(self.shift as u32); // count masked mod 64 anyway
@@ -458,7 +459,7 @@ pub struct StartInstructionValue;
 
 impl StartInstructionValue {
     /// C++ `StartInstructionValue::getValue`.
-    pub fn get_value(&self, walker: &dyn PatternExpressionContext) -> KunaResult<i64> {
+    pub fn get_value(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<i64> {
         Ok(address_value(&walker.get_addr()))
     }
 
@@ -492,7 +493,7 @@ pub struct EndInstructionValue;
 
 impl EndInstructionValue {
     /// C++ `EndInstructionValue::getValue`.
-    pub fn get_value(&self, walker: &dyn PatternExpressionContext) -> KunaResult<i64> {
+    pub fn get_value(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<i64> {
         Ok(address_value(&walker.get_naddr()))
     }
 
@@ -530,7 +531,7 @@ pub struct Next2InstructionValue;
 
 impl Next2InstructionValue {
     /// C++ `Next2InstructionValue::getValue`.
-    pub fn get_value(&self, walker: &dyn PatternExpressionContext) -> KunaResult<i64> {
+    pub fn get_value(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<i64> {
         Ok(address_value(&walker.get_n2addr()?))
     }
 
@@ -612,7 +613,7 @@ impl OperandValue {
     /// C++ `OperandValue::getValue` — the body lives behind the
     /// [`PatternExpressionContext::operand_value`] hook (see its docs for
     /// the exact C++ code the implementor transcribes).
-    pub fn get_value(&self, walker: &dyn PatternExpressionContext) -> KunaResult<i64> {
+    pub fn get_value(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<i64> {
         walker.operand_value(self.index, self.table_id, self.ct_id)
     }
 
@@ -686,7 +687,7 @@ pub enum PatternValue {
 
 impl PatternValue {
     /// C++ virtual `getValue` dispatch over the `PatternValue` subclasses.
-    pub fn get_value(&self, walker: &dyn PatternExpressionContext) -> KunaResult<i64> {
+    pub fn get_value(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<i64> {
         match self {
             PatternValue::TokenField(v) => v.get_value(walker),
             PatternValue::ContextField(v) => v.get_value(walker),
@@ -800,6 +801,7 @@ impl PatternValue {
 pub struct BinaryExpression {
     left: Box<PatternExpression>,
     right: Box<PatternExpression>,
+    prepared: OnceLock<Option<Box<crate::kuna_expressionplan::ExpressionPlan>>>,
 }
 
 impl BinaryExpression {
@@ -808,6 +810,7 @@ impl BinaryExpression {
         BinaryExpression {
             left: Box::new(l),
             right: Box::new(r),
+            prepared: OnceLock::from(None),
         }
     }
 
@@ -823,9 +826,11 @@ impl BinaryExpression {
 
     /// Borrow the left child for expression rewrites.
     pub fn get_left_mut(&mut self) -> &mut PatternExpression {
+        self.prepared = OnceLock::from(None);
         &mut self.left
     }
     pub fn get_right_mut(&mut self) -> &mut PatternExpression {
+        self.prepared = OnceLock::from(None);
         &mut self.right
     }
 
@@ -844,12 +849,13 @@ impl BinaryExpression {
         trans: &dyn OperandValueResolver,
     ) -> KunaResult<BinaryExpression> {
         let el = decoder.open_element()?;
-        let left = PatternExpression::decode_expression(decoder, trans)?;
-        let right = PatternExpression::decode_expression(decoder, trans)?;
+        let left = PatternExpression::decode_tree(decoder, trans)?;
+        let right = PatternExpression::decode_tree(decoder, trans)?;
         decoder.close_element(el)?;
         Ok(BinaryExpression {
             left: Box::new(left),
             right: Box::new(right),
+            prepared: OnceLock::from(None),
         })
     }
 }
@@ -858,12 +864,13 @@ impl BinaryExpression {
 #[derive(Debug, Clone)]
 pub struct UnaryExpression {
     unary: Box<PatternExpression>,
+    prepared: OnceLock<Option<Box<crate::kuna_expressionplan::ExpressionPlan>>>,
 }
 
 impl UnaryExpression {
     /// C++ `UnaryExpression(PatternExpression *u)`.
     pub fn new(u: PatternExpression) -> UnaryExpression {
-        UnaryExpression { unary: Box::new(u) }
+        UnaryExpression { unary: Box::new(u), prepared: OnceLock::from(None) }
     }
 
     /// C++ `UnaryExpression::getUnary`.
@@ -873,6 +880,7 @@ impl UnaryExpression {
 
     /// Borrow the child for expression rewrites.
     pub fn get_unary_mut(&mut self) -> &mut PatternExpression {
+        self.prepared = OnceLock::from(None);
         &mut self.unary
     }
 
@@ -888,10 +896,11 @@ impl UnaryExpression {
         trans: &dyn OperandValueResolver,
     ) -> KunaResult<UnaryExpression> {
         let el = decoder.open_element()?;
-        let unary = PatternExpression::decode_expression(decoder, trans)?;
+        let unary = PatternExpression::decode_tree(decoder, trans)?;
         decoder.close_element(el)?;
         Ok(UnaryExpression {
             unary: Box::new(unary),
+            prepared: OnceLock::from(None),
         })
     }
 }
@@ -926,8 +935,38 @@ impl PatternExpression {
     /// explicit wrapping helpers.  Shift counts are evaluated expression
     /// values and resolve x86-masked; `Div` panics on a zero divisor (C++
     /// SIGFPE/UB, an internal invariant violation per ADR 0004).
-    pub fn get_value(&self, walker: &dyn PatternExpressionContext) -> KunaResult<i64> {
+    #[inline]
+    pub fn get_value(&self, walker: &(impl PatternExpressionContext + ?Sized)) -> KunaResult<i64> {
+        if let Self::Value(value) = self {
+            return value.get_value(walker);
+        }
+        let prepared = match self {
+            Self::Plus(b) | Self::Sub(b) | Self::Mult(b) | Self::LeftShift(b)
+            | Self::RightShift(b) | Self::And(b) | Self::Or(b) | Self::Xor(b)
+            | Self::Div(b) => &b.prepared,
+            Self::Minus(u) | Self::Not(u) => &u.prepared,
+            Self::Value(_) => unreachable!(),
+        };
+        let prepared = prepared.get_or_init(|| {
+            crate::kuna_expressionplan::ExpressionPlan::new(self).map(Box::new)
+        });
+        if let Some(plan) = prepared {
+            if plan.applies_to(self) {
+                return plan.get_value(walker);
+            }
+        }
         self.evaluate(&mut |value| value.get_value(walker))
+    }
+
+    /// Enable lazy plans for decoded roots; compiler-built trees retain tree evaluation.
+    pub(crate) fn prepare_runtime(&mut self) {
+        match self {
+            Self::Value(_) => {}
+            Self::Plus(b) | Self::Sub(b) | Self::Mult(b) | Self::LeftShift(b)
+            | Self::RightShift(b) | Self::And(b) | Self::Or(b) | Self::Xor(b)
+            | Self::Div(b) => b.prepared = OnceLock::new(),
+            Self::Minus(u) | Self::Not(u) => u.prepared = OnceLock::new(),
+        }
     }
 
     /// Evaluate leaves left to right with wrapping arithmetic in both modes.
@@ -1177,6 +1216,15 @@ impl PatternExpression {
     /// recognized here — the C++ factory omits it; see
     /// [`Next2InstructionValue`].
     pub fn decode_expression(
+        decoder: &mut dyn Decoder,
+        trans: &dyn OperandValueResolver,
+    ) -> KunaResult<PatternExpression> {
+        let mut expression = Self::decode_tree(decoder, trans)?;
+        expression.prepare_runtime();
+        Ok(expression)
+    }
+
+    fn decode_tree(
         decoder: &mut dyn Decoder,
         trans: &dyn OperandValueResolver,
     ) -> KunaResult<PatternExpression> {

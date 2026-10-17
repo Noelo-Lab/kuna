@@ -63,6 +63,7 @@ enum Origin {
 enum Value {
     Constant(u64),
     Pointer(Origin, i64),
+    FrameFlag,
     ReturnAddress,
     Unknown,
 }
@@ -117,8 +118,14 @@ fn pointer_sources(
 ) -> (BTreeSet<Origin>, BTreeSet<Storage>) {
     let mut roots = BTreeSet::new();
     let mut ranges = BTreeSet::new();
-    if let Value::Pointer(root, _) = state.read(input, register, stack) {
-        roots.insert(root);
+    match state.read(input, register, stack) {
+        Value::Pointer(root, _) => {
+            roots.insert(root);
+        }
+        Value::FrameFlag => {
+            roots.insert(Origin::Frame);
+        }
+        _ => (),
     }
     if let Some(key) = Storage::raw(input) {
         let mut initialized = false;
@@ -131,6 +138,9 @@ fn pointer_sources(
                 if let Value::Pointer(root, _) = value {
                     roots.insert(*root);
                     overlaps_pointer = true;
+                }
+                if *value == Value::FrameFlag {
+                    roots.insert(Origin::Frame);
                 }
             }
         }
@@ -162,11 +172,13 @@ struct DeferredFrameEscape {
 #[derive(Clone, Debug, Default)]
 pub struct CalleeMemory {
     complete: bool,
+    frame_return_read: bool,
     reads: BTreeSet<Effect>,
     writes: BTreeSet<Effect>,
     escapes: BTreeSet<Origin>,
     deferred_frame_escapes: BTreeSet<DeferredFrameEscape>,
     home_write_conditions: BTreeSet<(DeferredFrameEscape, Effect)>,
+    private_write_conditions: BTreeSet<(Effect, Effect)>,
     lossy_pointer_roots: BTreeSet<Origin>,
     lossy_pointer_ranges: BTreeSet<Storage>,
     lossy_pointer_overflow: bool,
@@ -219,15 +231,18 @@ fn note_partial_pointer_clobber(summary: &mut CalleeMemory, state: &State, outpu
             if let Value::Pointer(root, _) = value {
                 summary.note_lossy_root(*root);
             }
+            if *value == Value::FrameFlag {
+                summary.note_lossy_root(Origin::Frame);
+            }
         }
     }
 }
 
 #[derive(Clone)]
-struct RawOp {
-    code: OpCode,
-    out: Option<VarnodeData>,
-    inputs: Vec<VarnodeData>,
+pub(super) struct RawOp {
+    pub(super) code: OpCode,
+    pub(super) out: Option<VarnodeData>,
+    pub(super) inputs: Vec<VarnodeData>,
 }
 
 #[derive(Default)]
@@ -318,7 +333,7 @@ fn memory(
     } else {
         Value::Unknown
     };
-    if writing && value == Value::Unknown {
+    if writing && matches!(value, Value::Unknown | Value::FrameFlag) {
         let (roots, ranges) = pointer_sources(state, raw, register, stack);
         summary.note_lossy_sources(roots, ranges);
     }
@@ -365,6 +380,8 @@ fn memory(
                             Value::Unknown
                         }
                     });
+                summary.frame_return_read |=
+                    loaded == Value::ReturnAddress && offset == 0 && size == stack.size;
                 if loaded == Value::Unknown {
                     let lost_roots: Vec<_> = summary
                         .deferred_frame_escapes
@@ -381,6 +398,21 @@ fn memory(
         } else {
             let effect = Effect { root, offset, size };
             if writing {
+                let protected_private: Vec<_> = state
+                    .spills
+                    .iter()
+                    .filter_map(|(&(at, width), &value)| {
+                        (width == stack.size
+                            && at < 0
+                            && at.checked_add(i64::from(width)).is_some_and(|end| end <= 0)
+                            && matches!(value, Value::Pointer(..)))
+                        .then_some(Effect {
+                            root: Origin::Frame,
+                            offset: at,
+                            size: width,
+                        })
+                    })
+                    .collect();
                 let protected_homes: Vec<_> = state
                     .spills
                     .iter()
@@ -399,18 +431,27 @@ fn memory(
                         None
                     })
                     .collect();
-                if protected_homes.is_empty() {
+                if protected_homes.is_empty() && protected_private.is_empty() {
                     state.spills.clear();
                 } else {
                     state.spills.retain(|&(at, width), &mut value| {
                         width == stack.size
-                            && crate::p3_dataflow::kuna_calleehomes::is_home_slot(at, width)
+                            && (crate::p3_dataflow::kuna_calleehomes::is_home_slot(at, width)
+                                || (at < 0
+                                    && at
+                                        .checked_add(i64::from(width))
+                                        .is_some_and(|end| end <= 0)))
                             && matches!(value, Value::Pointer(..))
                     });
                     for home in protected_homes {
                         summary.home_write_conditions.insert((home, effect));
                     }
-                    (summary.home_write_conditions.len() <= MAX_VALUES).then_some(())?;
+                    for cell in protected_private {
+                        summary.private_write_conditions.insert((cell, effect));
+                    }
+                    (summary.home_write_conditions.len() + summary.private_write_conditions.len()
+                        <= MAX_VALUES)
+                        .then_some(())?;
                 }
                 state.arguments_clobbered = true;
                 summary.writes.insert(effect);
@@ -475,7 +516,8 @@ fn walk(
             return None;
         }
         let mut ends = false;
-        for op in ops {
+        let flag_only = super::kuna_calleeflags::flag_only_results(&ops);
+        for (op_index, op) in ops.into_iter().enumerate() {
             match op.code {
                 OpCode::CPUI_CALL
                 | OpCode::CPUI_CALLIND
@@ -540,7 +582,7 @@ fn walk(
                             (roots, ranges)
                         },
                     );
-                    let value = match op.code {
+                    let mut value = match op.code {
                         OpCode::CPUI_COPY | OpCode::CPUI_CAST
                             if op.inputs.first()?.size == out.size =>
                         {
@@ -551,6 +593,7 @@ fn walk(
                         }
                         _ => {
                             if out.size >= stack.size
+                                && !flag_only[op_index]
                                 && op.inputs.iter().any(|v| {
                                     matches!(state.read(v, register, stack), Value::Pointer(..))
                                 })
@@ -561,7 +604,21 @@ fn walk(
                         }
                     };
                     if value == Value::Unknown {
-                        result.note_lossy_sources(input_roots, input_ranges);
+                        if flag_only[op_index] {
+                            if input_roots.contains(&Origin::Frame) {
+                                value = Value::FrameFlag;
+                            }
+                            result.note_lossy_sources(
+                                input_roots
+                                    .into_iter()
+                                    .filter(|root| *root != Origin::Frame),
+                                input_ranges
+                                    .into_iter()
+                                    .filter(|range| !range.overlaps(stack)),
+                            );
+                        } else {
+                            result.note_lossy_sources(input_roots, input_ranges);
+                        }
                     }
                     substantive |= value != Value::ReturnAddress
                         && Storage::raw(out)
@@ -781,6 +838,34 @@ fn for_call<'a>(
     ) {
         return None;
     }
+    if summary.frame_return_read {
+        let return_address = fd.get_arch().default_return_addr.as_ref()?;
+        if !return_address
+            .space
+            .as_ref()
+            .is_some_and(|s| Rc::ptr_eq(s, &space))
+            || return_address.offset != 0
+            || return_address.size != space.get_addr_size() as u32
+        {
+            return None;
+        }
+        let (start, size) = crate::p3_dataflow::kuna_calleehomes::callee_frame_cell(
+            fd,
+            call,
+            0,
+            return_address.size,
+        )?;
+        if !(1..=16).contains(&size) {
+            return None;
+        }
+        for &effect in &summary.writes {
+            if effect.root != Origin::Frame
+                && reaches(fd, call, effect, start, size, (1u32 << size) - 1)?
+            {
+                return None;
+            }
+        }
+    }
     for &(home, effect) in &summary.home_write_conditions {
         if !summary.deferred_frame_escapes.contains(&home) {
             return None;
@@ -796,6 +881,18 @@ fn for_call<'a>(
         }
         let wanted = (1u32 << home_size) - 1;
         if reaches(fd, call, effect, home_start, home_size, wanted)? {
+            return None;
+        }
+    }
+    for &(cell, effect) in &summary.private_write_conditions {
+        let (start, size) = crate::p3_dataflow::kuna_calleehomes::callee_frame_cell(
+            fd,
+            call,
+            cell.offset,
+            cell.size,
+        )?;
+        if !(1..=16).contains(&size) || reaches(fd, call, effect, start, size, (1u32 << size) - 1)?
+        {
             return None;
         }
     }
@@ -897,7 +994,7 @@ fn home_discharge_returns_pointer(
     let may_alias_root = root_storage.is_some_and(|storage| storage.overlaps(output_key));
     for state in &summary.returns {
         match state.read(&output_value, register, stack) {
-            Value::Pointer(..) => return Some(true),
+            Value::Pointer(..) | Value::FrameFlag => return Some(true),
             Value::Unknown if may_alias_root => return Some(true),
             _ => (),
         }
@@ -1024,7 +1121,7 @@ fn unobserved_inner(
         for state in &summary.returns {
             for (&storage, &value) in &state.values {
                 if storage.overlaps(key) {
-                    if matches!(value, Value::Pointer(..)) {
+                    if matches!(value, Value::Pointer(..) | Value::FrameFlag) {
                         return None;
                     }
                 }
@@ -1413,6 +1510,336 @@ mod tests {
                 p.ret(),
             ]])
             .is_none());
+    }
+
+    fn private_pointer_reload_summary(p: &Program, partial: bool) -> Option<CalleeMemory> {
+        let slot = p.value(&p.unique, 0, 8);
+        let mut ops = vec![
+            p.op(
+                OpCode::CPUI_INT_ADD,
+                Some(slot.clone()),
+                vec![p.reg(0x30), p.c((-16i64) as u64)],
+            ),
+            p.op(
+                OpCode::CPUI_STORE,
+                None,
+                vec![p.c(1), slot.clone(), p.reg(0x20)],
+            ),
+            p.op(
+                OpCode::CPUI_STORE,
+                None,
+                vec![p.c(1), p.reg(0x20), p.value(&p.constant, 0x1234, 4)],
+            ),
+        ];
+        if partial {
+            let high_half = p.value(&p.unique, 8, 8);
+            ops.extend([
+                p.op(
+                    OpCode::CPUI_INT_ADD,
+                    Some(high_half.clone()),
+                    vec![slot.clone(), p.c(4)],
+                ),
+                p.op(
+                    OpCode::CPUI_STORE,
+                    None,
+                    vec![p.c(1), high_half, p.value(&p.constant, 0, 4)],
+                ),
+            ]);
+        }
+        ops.extend([
+            p.op(OpCode::CPUI_LOAD, Some(p.reg(0x18)), vec![p.c(1), slot]),
+            p.op(
+                OpCode::CPUI_LOAD,
+                Some(p.value(&p.register, 0, 4)),
+                vec![p.c(1), p.reg(0x18)],
+            ),
+            p.ret(),
+        ]);
+        p.run(vec![ops])
+    }
+
+    #[test]
+    fn private_pointer_reload_requires_disjoint_actual_write_bytes() {
+        let p = Program::new();
+        let summary = private_pointer_reload_summary(&p, false).unwrap();
+        let root = Origin::Register(Storage {
+            space: 2,
+            offset: 0x20,
+            size: 8,
+        });
+        assert!(summary.reads.contains(&Effect {
+            root,
+            offset: 0,
+            size: 4
+        }));
+        assert!(summary.deferred_frame_escapes.is_empty());
+        assert!(summary.home_write_conditions.is_empty());
+        assert!(private_pointer_reload_summary(&p, true).is_none());
+
+        for (offset, usable) in [
+            (-64, true),
+            (-116, true),
+            (-114, false),
+            (-112, false),
+            (-108, false),
+            (-104, true),
+        ] {
+            let mut fx = Fx::new();
+            let actual = fx.frame_pointer(offset);
+            let call = make_call_site(&mut fx, actual);
+            fx.fd
+                .callee_memory
+                .insert((fx.reg.get_index(), 0x2000), Rc::new(summary.clone()));
+            assert_eq!(
+                test_call_summary_is_usable(&fx.fd, call, (-32i64) as u64, 8),
+                usable,
+                "actual write at {offset}"
+            );
+        }
+        let mut fx = Fx::new();
+        let unknown = fx
+            .fd
+            .new_varnode(8, &Address::new(Rc::clone(&fx.reg), 0x88), None);
+        let call = make_call_site(&mut fx, unknown);
+        fx.fd
+            .callee_memory
+            .insert((fx.reg.get_index(), 0x2000), Rc::new(summary));
+        assert!(!test_call_summary_is_usable(
+            &fx.fd,
+            call,
+            (-32i64) as u64,
+            8
+        ));
+    }
+
+    #[test]
+    fn argument_writes_must_not_alias_the_frame_return_target() {
+        let p = Program::new();
+        let summary = p
+            .run(vec![vec![
+                p.op(
+                    OpCode::CPUI_STORE,
+                    None,
+                    vec![p.c(1), p.reg(0x20), p.value(&p.constant, 0x1234, 4)],
+                ),
+                p.op(
+                    OpCode::CPUI_LOAD,
+                    Some(p.reg(0x40)),
+                    vec![p.c(1), p.reg(0x30)],
+                ),
+                p.ret(),
+            ]])
+            .unwrap();
+        assert!(summary.frame_return_read);
+        for (offset, usable) in [
+            (-64, true),
+            (-100, true),
+            (-98, false),
+            (-96, false),
+            (-90, false),
+            (-88, true),
+        ] {
+            let mut fx = Fx::new();
+            let actual = fx.frame_pointer(offset);
+            let call = make_call_site(&mut fx, actual);
+            fx.fd
+                .callee_memory
+                .insert((fx.reg.get_index(), 0x2000), Rc::new(summary.clone()));
+            assert_eq!(
+                test_call_summary_is_usable(&fx.fd, call, (-32i64) as u64, 8),
+                usable,
+                "actual write at {offset}"
+            );
+        }
+        let mut fx = Fx::new();
+        let unknown = fx
+            .fd
+            .new_varnode(8, &Address::new(Rc::clone(&fx.reg), 0x88), None);
+        let call = make_call_site(&mut fx, unknown);
+        fx.fd
+            .callee_memory
+            .insert((fx.reg.get_index(), 0x2000), Rc::new(summary));
+        assert!(!test_call_summary_is_usable(
+            &fx.fd,
+            call,
+            (-32i64) as u64,
+            8
+        ));
+    }
+
+    #[test]
+    fn stack_adjustment_flags_do_not_publish_pointer_fragments() {
+        let p = Program::new();
+        for publish_byte in [false, true] {
+            let byte = p.value(&p.unique, 0, 1);
+            let mut ops = vec![
+                p.op(
+                    OpCode::CPUI_INT_CARRY,
+                    Some(p.value(&p.register, 0x58, 1)),
+                    vec![p.reg(0x30), p.c(16)],
+                ),
+                p.op(
+                    OpCode::CPUI_INT_SBORROW,
+                    Some(p.value(&p.register, 0x59, 1)),
+                    vec![p.reg(0x30), p.c(16)],
+                ),
+                p.op(
+                    OpCode::CPUI_INT_SUB,
+                    Some(p.reg(0x30)),
+                    vec![p.reg(0x30), p.c(16)],
+                ),
+                p.op(
+                    OpCode::CPUI_SUBPIECE,
+                    Some(byte.clone()),
+                    vec![p.reg(0x30), p.c(0)],
+                ),
+            ];
+            if publish_byte {
+                ops.push(p.op(
+                    OpCode::CPUI_STORE,
+                    None,
+                    vec![p.c(1), p.c(0x2000), byte.clone()],
+                ));
+            }
+            ops.extend([
+                p.op(
+                    OpCode::CPUI_POPCOUNT,
+                    Some(byte.clone()),
+                    vec![byte.clone()],
+                ),
+                p.op(
+                    OpCode::CPUI_INT_AND,
+                    Some(byte.clone()),
+                    vec![byte.clone(), p.value(&p.constant, 1, 1)],
+                ),
+                p.op(
+                    OpCode::CPUI_INT_EQUAL,
+                    Some(p.value(&p.register, 0x5a, 1)),
+                    vec![byte, p.value(&p.constant, 0, 1)],
+                ),
+                p.op(
+                    OpCode::CPUI_INT_ADD,
+                    Some(p.reg(0x30)),
+                    vec![p.reg(0x30), p.c(16)],
+                ),
+                p.ret(),
+            ]);
+            let summary = p.run(vec![ops]).unwrap();
+            assert_eq!(
+                summary.lossy_pointer_roots.contains(&Origin::Frame),
+                publish_byte
+            );
+        }
+    }
+
+    #[test]
+    fn flag_scratch_requires_exact_consumers_and_keeps_pointer_register_clobbers() {
+        let p = Program::new();
+        for (temporary_size, read_size, flag_size) in [(2, 1, 1), (1, 1, 2)] {
+            let temporary = p.value(&p.unique, 0, temporary_size);
+            let summary = p
+                .run(vec![vec![
+                    p.op(
+                        OpCode::CPUI_SUBPIECE,
+                        Some(temporary),
+                        vec![p.reg(0x30), p.c(0)],
+                    ),
+                    p.op(
+                        OpCode::CPUI_INT_EQUAL,
+                        Some(p.value(&p.register, 0x58, flag_size)),
+                        vec![
+                            p.value(&p.unique, 0, read_size),
+                            p.value(&p.constant, 0, read_size),
+                        ],
+                    ),
+                    p.ret(),
+                ]])
+                .unwrap();
+            assert!(summary.lossy_pointer_roots.contains(&Origin::Frame));
+        }
+        let summary = p
+            .run(vec![vec![
+                p.op(OpCode::CPUI_COPY, Some(p.reg(0x20)), vec![p.reg(0x30)]),
+                p.op(
+                    OpCode::CPUI_INT_EQUAL,
+                    Some(p.value(&p.register, 0x20, 1)),
+                    vec![p.reg(0x30), p.c(0)],
+                ),
+                p.ret(),
+            ]])
+            .unwrap();
+        assert!(summary.lossy_pointer_roots.contains(&Origin::Frame));
+    }
+
+    #[test]
+    fn full_width_parity_scratch_is_safe_only_when_it_cannot_publish() {
+        let p = Program::new();
+        for publish in [false, true] {
+            let masked = p.value(&p.unique, 0, 8);
+            let count = p.value(&p.unique, 16, 1);
+            let mut ops = vec![p.op(
+                OpCode::CPUI_INT_AND,
+                Some(masked.clone()),
+                vec![p.reg(0x30), p.c(0xff)],
+            )];
+            if publish {
+                ops.push(p.op(
+                    OpCode::CPUI_STORE,
+                    None,
+                    vec![p.c(1), p.c(0x2000), masked.clone()],
+                ));
+            }
+            ops.extend([
+                p.op(OpCode::CPUI_POPCOUNT, Some(count.clone()), vec![masked]),
+                p.op(
+                    OpCode::CPUI_INT_AND,
+                    Some(count.clone()),
+                    vec![count.clone(), p.value(&p.constant, 1, 1)],
+                ),
+                p.op(
+                    OpCode::CPUI_INT_EQUAL,
+                    Some(p.value(&p.register, 0x58, 1)),
+                    vec![count, p.value(&p.constant, 0, 1)],
+                ),
+                p.ret(),
+            ]);
+            let summary = p.run(vec![ops]);
+            if publish {
+                assert!(summary.is_none());
+            } else {
+                assert!(summary.unwrap().lossy_pointer_roots.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn frame_flags_are_observers_when_published_or_returned() {
+        let p = Program::new();
+        let flag = p.value(&p.register, 0x10, 1);
+        let compare = p.op(
+            OpCode::CPUI_INT_LESS,
+            Some(flag.clone()),
+            vec![p.reg(0x30), p.c(16)],
+        );
+        let unpublished = p.run(vec![vec![compare.clone(), p.ret()]]).unwrap();
+        assert!(unpublished.lossy_pointer_roots.is_empty());
+        let published = p
+            .run(vec![vec![
+                compare,
+                p.op(OpCode::CPUI_STORE, None, vec![p.c(1), p.c(0x2000), flag]),
+                p.ret(),
+            ]])
+            .unwrap();
+        assert!(published.lossy_pointer_roots.contains(&Origin::Frame));
+
+        let mut fx = Fx::new();
+        let actual = fx.frame_pointer(-64);
+        let call = make_call_site(&mut fx, actual);
+        fx.fd
+            .callee_memory
+            .insert((fx.reg.get_index(), 0x2000), Rc::new(unpublished));
+        set_call_output_register(&mut fx, call, 0x10);
+        assert_eq!(unobserved(&fx.fd, call, (-32i64) as u64, 8, 0xff), None);
     }
 
     #[test]

@@ -1,0 +1,33 @@
+<decompilertest>
+<!-- Independent SPARC record copy with a shared publish block before the copy block. -->
+<binaryimage arch="sparc:BE:32:default:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">
+9de3bf9021000004a014210080a6200012800006010000004000007e901000101080000c01000000400000769007bff080a220000280000701000000d41fbff0d43c0000d81fbff810bffff4d83c200881c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="update"/>
+<symbol space="ram" offset="0x1200" name="fill"/>
+<symbol space="ram" offset="0x1210" name="publish"/>
+</binaryimage>
+<script>
+  <com>parse line typedef struct Record { float first[2]; float second[2]; } Record;</com>
+  <com>parse line extern void update(int enabled);</com>
+  <com>parse line extern int fill(Record *value);</com>
+  <com>parse line extern void publish(Record *value);</com>
+  <com>map addr r0x1100 Record cache</com>
+  <com>option globalfieldstore off</com>
+  <com>lo fu update</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option globalfieldstore on</com>
+  <com>lo fu update</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="First array field is published" min="1" max="1">cache\.first\[0\] =</stringmatch>
+<stringmatch name="Second array field is published" min="1" max="1">cache\.first\[1\] =</stringmatch>
+<stringmatch name="Third array field is published" min="1" max="1">cache\.second\[0\] =</stringmatch>
+<stringmatch name="Fourth array field is published" min="1" max="1">cache\.second\[1\] =</stringmatch>
+<stringmatch name="Legacy array fields become locals only with the option off" min="1" max="1">float4 cache_[0-9]+ \[2\];</stringmatch>
+<stringmatch name="Observer receives the complete array record" min="2" max="2">publish\(&amp;cache\);</stringmatch>
+</decompilertest>

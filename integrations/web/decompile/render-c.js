@@ -506,6 +506,7 @@ export function diffLines(oldCode, newCode) {
   const changed = new Set();
   if (!oldCode) return { changed, lineOf: null };
   if (a.length * b.length > 4e6) return { changed, lineOf: null };
+  if (oldCode === newCode) return { changed, lineOf: (n) => n };
   const w = b.length + 1;
   const dp = new Uint32Array((a.length + 1) * w);
   for (let i = a.length - 1; i >= 0; i--) {
@@ -525,7 +526,12 @@ export function diffLines(oldCode, newCode) {
     else { changed.add(j + 1); j++; }
   }
   while (i < a.length) delta[i++] = last ?? 0;
-  return { changed, lineOf: (n) => (n >= 1 && n <= a.length ? Math.max(1, n + delta[n - 1]) : n) };
+  let next = b.length;
+  for (let k = a.length - 1; k >= 0; k--) {
+    next = Math.min(next, Math.max(1, k + 1 + delta[k]));
+    delta[k] = next;
+  }
+  return { changed, lineOf: (n) => (n >= 1 && n <= a.length ? delta[n - 1] : n) };
 }
 
 /** The 1-based lines of `newCode` an edit changed (`diffLines`). */

@@ -24,8 +24,8 @@
 //! comparator on the node's `(addr, ident)`).  Per ADR 0001 raw pointers
 //! become arena ids: a [`KunaNodeId`] (a `u32` index into a [`KunaNodePool`])
 //! replaces `KunaRegionNode *`.  Pointer identity is id equality; the
-//! "membership only" pointer sets become `BTreeSet<KunaNodeId>` keyed by raw
-//! id (deterministic, never iterated in an output-affecting way).  Every
+//! "membership only" pointer sets use `HashSet<KunaNodeId>` keyed by raw id
+//! (never iterated in an output-affecting way). Every
 //! container that the C++ *iterates* is keyed by the ordered [`KunaNodeKey`]
 //! `(addr, ident)`, exactly matching `KunaNodeOrder` (ADR 0002).
 //!
@@ -40,7 +40,7 @@
 //! ported, so [`KunaRegionNode::region`] is an opaque [`RegionPayloadId`]
 //! placeholder; the graph substrate never dereferences it.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, uint4, uintb, Wrap};
@@ -424,9 +424,22 @@ impl KunaRegionGraph {
 
     /// Out-neighbors in `KunaNodeOrder` (C++ `getSortedSuccs`).
     pub fn get_sorted_succs(&self, pool: &KunaNodePool, n: KunaNodeId) -> KunaResult<Vec<KunaNodeId>> {
-        let mut res: Vec<KunaNodeId> = self.get_succs(n)?.to_vec();
+        let mut res = self.get_succs(n)?.to_vec();
         res.sort_by(|&a, &b| pool.key(a).cmp(&pool.key(b)));
         Ok(res)
+    }
+
+    /// Fill reusable scratch with out-neighbors in `KunaNodeOrder`.
+    fn get_sorted_succs_into(
+        &self,
+        pool: &KunaNodePool,
+        n: KunaNodeId,
+        res: &mut Vec<KunaNodeId>,
+    ) -> KunaResult<()> {
+        res.clear();
+        res.extend_from_slice(self.get_succs(n)?);
+        res.sort_by(|&a, &b| pool.key(a).cmp(&pool.key(b)));
+        Ok(())
     }
 
     /// Snapshot in-edges (C++ `inEdges`).
@@ -551,8 +564,8 @@ pub fn kuna_dfs_back_edges(
         return Ok(());
     }
     // Membership only, never iterated (C++ `set<const KunaRegionNode *>`).
-    let mut visited: BTreeSet<KunaNodeId> = BTreeSet::new();
-    let mut finished: BTreeSet<KunaNodeId> = BTreeSet::new();
+    let mut visited: HashSet<KunaNodeId> = HashSet::new();
+    let mut finished: HashSet<KunaNodeId> = HashSet::new();
     struct Frame {
         node: KunaNodeId,
         children: Vec<KunaNodeId>,
@@ -601,18 +614,19 @@ pub fn kuna_dfs_postorder_deterministic(
     source: KunaNodeId,
     res: &mut Vec<KunaNodeId>,
 ) -> KunaResult<()> {
-    let mut visited: BTreeSet<KunaNodeId> = BTreeSet::new(); // Membership only
+    let mut visited: HashSet<KunaNodeId> = HashSet::new(); // Membership only
     let mut stack: Vec<(KunaNodeId, bool)> = Vec::new(); // (node, isPreVisit)
+    let mut successors = Vec::new();
     stack.push((source, true));
     while let Some(entry) = stack.pop() {
         if entry.1 && !visited.contains(&entry.0) {
             visited.insert(entry.0);
             stack.push((entry.0, false));
-            let succs = g.get_sorted_succs(pool, entry.0)?;
+            g.get_sorted_succs_into(pool, entry.0, &mut successors)?;
             // Pushed in ascending order so the LARGEST successor pops first.
-            for s in succs {
-                if !visited.contains(&s) {
-                    stack.push((s, true));
+            for &successor in &successors {
+                if !visited.contains(&successor) {
+                    stack.push((successor, true));
                 }
             }
         } else if !entry.1 {
@@ -1234,12 +1248,20 @@ pub fn kuna_immediate_dominators(
     // Cooper-Harvey-Kennedy over deterministic reverse postorder.
     let mut postorder: Vec<KunaNodeId> = Vec::new();
     kuna_dfs_postorder_deterministic(pool, g, start, &mut postorder)?;
-    let mut po_num: BTreeMap<KunaNodeId, int4> = BTreeMap::new(); // Lookup only
+    // Reachable nodes only: node ids come from an append-only pool, so indexing
+    // scratch by raw id would scale with all historical nodes, not this graph.
+    let mut po_index: HashMap<KunaNodeId, usize> = HashMap::with_capacity(postorder.len());
     for (i, &n) in postorder.iter().enumerate() {
-        po_num.insert(n, i as int4);
+        po_index.insert(n, i);
     }
 
     idom.insert(start, start);
+    // Dense parent state follows the reachable postorder. Seed it from the
+    // caller's map to preserve the existing behavior for pre-populated maps.
+    let mut idom_by_index: Vec<Option<KunaNodeId>> = postorder
+        .iter()
+        .map(|node| idom.get(node).copied())
+        .collect();
     let mut changed = true;
     while changed {
         changed = false;
@@ -1249,35 +1271,44 @@ pub fn kuna_immediate_dominators(
             if b == start {
                 continue;
             }
-            let mut new_idom: Option<KunaNodeId> = None;
-            let preds: Vec<KunaNodeId> = g.get_preds(b)?.to_vec();
-            for pred in preds {
-                if !po_num.contains_key(&pred) {
+            let mut new_idom: Option<usize> = None;
+            for &pred in g.get_preds(b)? {
+                let Some(&pred_index) = po_index.get(&pred) else {
                     continue; // Unreachable predecessor
-                }
-                if !idom.contains_key(&pred) {
+                };
+                if idom_by_index[pred_index].is_none() {
                     continue; // Not yet processed
                 }
                 if new_idom.is_none() {
-                    new_idom = Some(pred);
+                    new_idom = Some(pred_index);
                     continue;
                 }
                 // intersect(pred, new_idom)
-                let mut f1 = pred;
+                let mut f1 = pred_index;
                 let mut f2 = new_idom.unwrap();
                 while f1 != f2 {
-                    while po_num[&f1] < po_num[&f2] {
-                        f1 = idom[&f1];
+                    while f1 < f2 {
+                        let parent = idom_by_index[f1]
+                            .expect("processed dominator node must have an immediate dominator");
+                        f1 = *po_index
+                            .get(&parent)
+                            .expect("immediate dominator must be in the reachable postorder");
                     }
-                    while po_num[&f2] < po_num[&f1] {
-                        f2 = idom[&f2];
+                    while f2 < f1 {
+                        let parent = idom_by_index[f2]
+                            .expect("processed dominator node must have an immediate dominator");
+                        f2 = *po_index
+                            .get(&parent)
+                            .expect("immediate dominator must be in the reachable postorder");
                     }
                 }
                 new_idom = Some(f1);
             }
-            if let Some(ni) = new_idom {
-                let prev = idom.get(&b).copied();
+            if let Some(ni_index) = new_idom {
+                let ni = postorder[ni_index];
+                let prev = idom_by_index[i];
                 if prev != Some(ni) {
+                    idom_by_index[i] = Some(ni);
                     idom.insert(b, ni);
                     changed = true;
                 }
@@ -1655,6 +1686,66 @@ mod tests {
         }
     }
 
+    /// Reachability after removing one node. This deliberately does not use
+    /// dominator code or traversal order, so it can serve as a small oracle.
+    fn reachable_without(
+        graph: &KunaRegionGraph,
+        start: KunaNodeId,
+        removed: Option<KunaNodeId>,
+    ) -> BTreeSet<KunaNodeId> {
+        if removed == Some(start) {
+            return BTreeSet::new();
+        }
+        let mut reachable = BTreeSet::new();
+        let mut pending = vec![start];
+        while let Some(node) = pending.pop() {
+            if removed == Some(node) || !reachable.insert(node) {
+                continue;
+            }
+            pending.extend_from_slice(graph.get_succs(node).unwrap());
+        }
+        reachable
+    }
+
+    /// Compute immediate dominators by the definition: a node dominates a
+    /// reachable target iff deleting it makes that target unreachable.
+    fn idom_by_removal(
+        graph: &KunaRegionGraph,
+        start: KunaNodeId,
+    ) -> BTreeMap<KunaNodeId, KunaNodeId> {
+        let reachable = reachable_without(graph, start, None);
+        let mut dominators = BTreeMap::<KunaNodeId, BTreeSet<KunaNodeId>>::new();
+        for &node in &reachable {
+            let mut node_dominators = BTreeSet::new();
+            for &candidate in &reachable {
+                if candidate == node || !reachable_without(graph, start, Some(candidate)).contains(&node) {
+                    node_dominators.insert(candidate);
+                }
+            }
+            dominators.insert(node, node_dominators);
+        }
+
+        let mut result = BTreeMap::new();
+        for &node in &reachable {
+            if node == start {
+                result.insert(start, start);
+                continue;
+            }
+            let strict_dominators: BTreeSet<KunaNodeId> = dominators[&node]
+                .iter()
+                .copied()
+                .filter(|&candidate| candidate != node)
+                .collect();
+            let immediate = strict_dominators
+                .iter()
+                .copied()
+                .find(|candidate| dominators[candidate] == strict_dominators)
+                .expect("every reachable non-entry node has an immediate dominator");
+            result.insert(node, immediate);
+        }
+        result
+    }
+
     #[test]
     fn node_order_addr_then_ident() {
         let mut b = Builder::new();
@@ -1827,6 +1918,92 @@ mod tests {
         assert_eq!(idom[&bb], a);
         assert_eq!(idom[&c], bb);
         assert_eq!(idom[&d], c);
+    }
+
+    #[test]
+    fn immediate_dominators_match_removal_oracle_on_loops_and_unreachable_preds() {
+        let mut b = Builder::new();
+        let start = b.node(0x10);
+        let loop_head = b.node(0x20);
+        let loop_body = b.node(0x30);
+        let irreducible_a = b.node(0x40);
+        let irreducible_b = b.node(0x50);
+        let irreducible_join = b.node(0x60);
+        let exit = b.node(0x70);
+        let unreachable_a = b.node(0x80);
+        let unreachable_b = b.node(0x90);
+        let unrelated = b.node(0xa0);
+        let edges = [
+            (start, loop_head),
+            (loop_head, loop_body),
+            (loop_body, loop_head),
+            (loop_body, exit),
+            (start, irreducible_a),
+            (start, irreducible_b),
+            (irreducible_a, irreducible_join),
+            (irreducible_b, irreducible_join),
+            (irreducible_join, irreducible_a),
+            (irreducible_join, irreducible_b),
+            (irreducible_join, irreducible_join),
+            (irreducible_join, exit),
+            (unreachable_a, unreachable_b),
+            (unreachable_b, unreachable_a),
+            (unreachable_a, exit),
+        ];
+        let nodes = [start, loop_head, loop_body, irreducible_a, irreducible_b, irreducible_join, exit];
+        let graph = b.graph(&edges, &nodes);
+        let mut reversed_edges = edges.to_vec();
+        reversed_edges.reverse();
+        let permuted_graph = b.graph(&reversed_edges, &nodes);
+        let expected = idom_by_removal(&graph, start);
+
+        let mut actual = BTreeMap::new();
+        actual.insert(unrelated, unrelated);
+        kuna_immediate_dominators(&b.pool, &graph, start, &mut actual).unwrap();
+        for (&node, &parent) in &expected {
+            assert_eq!(actual.get(&node), Some(&parent), "node {node:?}");
+        }
+        assert_eq!(actual.get(&unrelated), Some(&unrelated));
+        assert!(!actual.contains_key(&unreachable_a));
+        assert!(!actual.contains_key(&unreachable_b));
+
+        let mut permuted = BTreeMap::new();
+        permuted.insert(unrelated, unrelated);
+        kuna_immediate_dominators(&b.pool, &permuted_graph, start, &mut permuted).unwrap();
+        assert_eq!(permuted, actual, "edge insertion order must not change dominators");
+    }
+
+    #[test]
+    fn generated_graph_dominators_match_removal_oracle_in_both_edge_orders() {
+        let mut random = 0x3a96_fda7_104d_b82cu64;
+        for sample in 0..64 {
+            let mut b = Builder::new();
+            for n in 0..32 {
+                b.node(0x1000 + n);
+            }
+            let nodes: Vec<_> = (0..2 + sample % 6)
+                .map(|n| b.node((n % 3) * 0x10))
+                .collect();
+            let mut edges = Vec::new();
+            for &from in &nodes {
+                for &to in &nodes {
+                    random = random.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    if random >> 62 == 0 {
+                        edges.push((from, to));
+                    }
+                }
+            }
+            let graph = b.graph(&edges, &nodes);
+            let expected = idom_by_removal(&graph, nodes[0]);
+            let mut actual = BTreeMap::new();
+            kuna_immediate_dominators(&b.pool, &graph, nodes[0], &mut actual).unwrap();
+            assert_eq!(actual, expected, "generated graph {sample}");
+            edges.reverse();
+            let reversed = b.graph(&edges, &nodes);
+            let mut actual = BTreeMap::new();
+            kuna_immediate_dominators(&b.pool, &reversed, nodes[0], &mut actual).unwrap();
+            assert_eq!(actual, expected, "reversed edge order in graph {sample}");
+        }
     }
 
     #[test]

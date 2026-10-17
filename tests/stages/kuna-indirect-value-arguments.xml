@@ -1,0 +1,126 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!-- Independent SPARC assembly; source in fixtures/indirect-value-arguments.s. -->
+<bytechunk space="ram" offset="0x1000" readonly="true">9de3bf90f027bff8f227bffc9007bff84000007c0100000081c7e00881e800009de3bf90f027bff8f227bffc9007bff8400000780100000081c7e00881e800009de3bfa0901000184000006e0100000081c7e00881e800009de3bf90f027bff8f227bffc9007bff89fc680000100000081c7e00881e800009de3bfa0f2060000f0062004b006001981c7e00881e80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000081c3e00801000000000000000000000081c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1000" name="stack_value"/>
+<symbol space="ram" offset="0x1020" name="stack_pointer"/>
+<symbol space="ram" offset="0x1040" name="pointer_value"/>
+<symbol space="ram" offset="0x1058" name="indirect_value"/>
+<symbol space="ram" offset="0x1078" name="value_reader"/>
+<symbol space="ram" offset="0x1200" name="value_sink"/>
+<symbol space="ram" offset="0x1210" name="pointer_sink"/>
+<bytechunk space="ram" offset="0x1300" readonly="true">9de3bfa0b0062004f2063ffcf0060000b006001981c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1300" name="advanced"/>
+<bytechunk space="ram" offset="0x1320" readonly="true">9de3bf98f027bffcf007bffcf2060000f0062004b006001981c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1320" name="spilled"/>
+<bytechunk space="ram" offset="0x1340" readonly="true">9de3bfa0f2060000b2066001f2260000f0062004b006001981c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1340" name="updated"/>
+<bytechunk space="ram" offset="0x1370" readonly="true">9de3bfa0b4102000b6102002f2062004b4068019f0060000b6a6e00112bffffc01000000b010001a81c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1370" name="cursor"/>
+<bytechunk space="ram" offset="0x1400" readonly="true">9de3bf90f027bff8f227bffc9007bff89fc680000100000081c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1400" name="indirect_pointer"/>
+<bytechunk space="ram" offset="0x1500" readonly="true">9de3bf90f027bff8f227bffc9007bff84000003c0100000081c7e00881e80000</bytechunk>
+<bytechunk space="ram" offset="0x1540" readonly="true">9de3bf90f027bff8f227bffc9007bff8400000300100000081c7e00881e80000</bytechunk>
+<bytechunk space="ram" offset="0x1600" readonly="true">81c3e00801000000</bytechunk>
+<bytechunk space="ram" offset="0x1610" readonly="true">81c3e00801000000</bytechunk>
+<symbol space="ram" offset="0x1500" name="stack_value_reverse"/>
+<symbol space="ram" offset="0x1540" name="stack_pointer_reverse"/>
+<symbol space="ram" offset="0x1600" name="value_sink_reverse"/>
+<symbol space="ram" offset="0x1610" name="pointer_sink_reverse"/>
+<bytechunk space="ram" offset="0x1700" readonly="true">9de3bf90c207a05c84102002b0100000c6006004b0060003c2004000c227a05c84a0a00112bffffb0100000081c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1700" name="stack_cursor"/>
+<bytechunk space="ram" offset="0x1740" readonly="true">9de3bfa0b4102000b6102002f2062004b4068019f0060000b6a6e00112bffffc01000000b010001a81c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1740" name="collision_cursor"/>
+</binaryimage>
+<script>
+  <com>parse line typedef struct Pair { int a; int b; } Pair;</com>
+  <com>parse line extern int advanced(Pair value);</com>
+  <com>parse line extern int spilled(Pair value);</com>
+  <com>parse line extern int updated(Pair value);</com>
+  <com>parse line typedef struct Link { struct Link *next; int count; } Link;</com>
+  <com>parse line extern int cursor(Link value);</com>
+  <com>parse line extern void pointer_sink(Pair *input);</com>
+  <com>parse line extern void value_sink(Pair value);</com>
+  <com>parse line extern void stack_value(int a,int b);</com>
+  <com>parse line extern void stack_pointer(int a,int b);</com>
+  <com>parse line extern void pointer_value(Pair *input);</com>
+  <com>parse line extern void indirect_value(int a,int b,void (*fn)(Pair value));</com>
+  <com>parse line extern int value_reader(Pair value);</com>
+  <com>parse line extern void indirect_pointer(int a,int b,void (*ptr_fn)(Pair *));</com>
+  <com>parse line typedef struct PairReverse { int a; int b; } PairReverse;</com>
+  <com>parse line extern void value_sink_reverse(PairReverse value);</com>
+  <com>parse line extern void pointer_sink_reverse(PairReverse *input);</com>
+  <com>parse line extern void stack_value_reverse(int a,int b);</com>
+  <com>parse line extern void stack_pointer_reverse(int a,int b);</com>
+  <com>parse line extern int stack_cursor(int a,int b,int c,int d,int e,int f,Link value);</com>
+  <com>parse line extern int collision_cursor(Link value,int value_addr);</com>
+  <com>lo fu stack_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_pointer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pointer_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu indirect_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu value_reader</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu advanced</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu spilled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu updated</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cursor</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu indirect_pointer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_value_reverse</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_pointer_reverse</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_cursor</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu collision_cursor</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option indirectargs off</com>
+  <com>lo fu stack_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu indirect_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="local aggregate is passed by value" min="1" max="1">value_sink\(v[0-9]+\);</stringmatch>
+<stringmatch name="pointer dereference is passed by value" min="1" max="1">value_sink\(\*input\);</stringmatch>
+<stringmatch name="ordinary pointer retains its address" min="1" max="1">pointer_sink\(&amp;v[0-9]+\);</stringmatch>
+<stringmatch name="indirect call passes aggregate value" min="1" max="1">\(\*fn\)\(v[0-9]+\);</stringmatch>
+<stringmatch name="function pointer signature uses source aggregate" min="1" max="1">void \(\*fn\)\(Pair\)</stringmatch>
+<stringmatch name="callee signature uses source aggregate" min="1" max="1">int4 value_reader\(Pair value\)</stringmatch>
+<stringmatch name="by-value callee reads parameter fields" min="3" max="3">return value\.b \+ value\.a;</stringmatch>
+<stringmatch name="mutable ABI pointer has its own local" min="2" max="2">Link \*value_addr = &amp;value;</stringmatch>
+<stringmatch name="pointer callback keeps pointer contract" min="1" max="1">void \(\*ptr_fn\)\(Pair \*\)</stringmatch>
+<stringmatch name="pointer callback receives local address" min="1" max="1">\(\*ptr_fn\)\(&amp;v[0-9]+\);</stringmatch>
+<stringmatch name="value-first interning preserves value contract" min="1" max="1">value_sink_reverse\(v[0-9]+\);</stringmatch>
+<stringmatch name="value-first interning preserves pointer contract" min="1" max="1">pointer_sink_reverse\(&amp;v[0-9]+\);</stringmatch>
+<stringmatch name="mutable ABI pointer advances through its local" min="2" max="2">value_addr = value_addr-&gt;next;</stringmatch>
+<stringmatch name="by-value parameter never used as pointer" min="0" max="0">value-&gt;</stringmatch>
+<stringmatch name="unused parameter name is reserved for pointer alias" min="1" max="1">Link \*value_addr_1 = &amp;value;</stringmatch>
+<stringmatch name="indirectargs off: call passes the ABI pointer" min="1" max="1">value_sink\(&amp;v[0-9]+\);</stringmatch>
+<stringmatch name="indirectargs off: indirect call passes the ABI pointer" min="1" max="1">\(\*fn\)\(&amp;v[0-9]+\);</stringmatch>
+<stringmatch name="indirectargs off: function pointer signature keeps the ABI pointer" min="1" max="1">void \(\*fn\)\(Pair \*\)</stringmatch>
+</decompilertest>
