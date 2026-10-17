@@ -17,8 +17,7 @@
 //! Origin (upstream Ghidra, the tree kuna was ported from):
 //! - matcher: `Ghidra/Features/Base/.../analysis/NoReturnFunctionAnalyzer.java`
 //!   (the `added` loop + `makeNoReturnFunction` namespace guard).
-//! - name set: `Ghidra/Features/Base/data/ElfFunctionsThatDoNotReturn`, vendored
-//!   verbatim at `decompiler/crates/kuna-analysis/data/ElfFunctionsThatDoNotReturn`.
+//! - name set: `Ghidra/Features/Base/data/ElfFunctionsThatDoNotReturn`, vendored with GNU Fortran additions at `decompiler/crates/kuna-analysis/data/ElfFunctionsThatDoNotReturn`.
 //! - source-language selection: `Ghidra/Features/Base/data/noReturnFunctionConstraints.xml`
 //!   adds a per-compiler list to the match set for an ELF whose compiler is
 //!   detected. The `compiler name="rustc"` arm adds `RustFunctionsThatDoNotReturn`;
@@ -42,7 +41,7 @@ use object::SymbolKind;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Phase};
 use crate::sourcelang::Compiler;
 
-/// The known-no-return name list, vendored verbatim from Ghidra
+/// The known-no-return name list, extended from Ghidra
 /// `Ghidra/Features/Base/data/ElfFunctionsThatDoNotReturn`.
 const ELF_NORETURN_LIST: &str = include_str!("../../data/ElfFunctionsThatDoNotReturn");
 
@@ -277,6 +276,21 @@ mod tests {
 
     fn sets() -> (Vec<String>, Vec<String>) {
         parse_list(ELF_NORETURN_LIST)
+    }
+
+    #[test]
+    fn fortran_fatal_diagnostics_exclude_recoverable_errors() {
+        for list in [ELF_NORETURN_LIST, PE_MAC_NORETURN_LIST] {
+            let (exact, wildcard) = parse_list(list);
+            for name in ["_gfortran_runtime_error", "_gfortran_runtime_error_at",
+                         "_gfortran_os_error", "_gfortran_os_error_at"] {
+                assert!(name_matches(name, &exact, &wildcard), "{name}");
+            }
+            for name in ["_gfortran_runtime_warning_at", "_gfortran_generate_error",
+                         "_gfortran_runtime_error_custom"] {
+                assert!(!name_matches(name, &exact, &wildcard), "{name}");
+            }
+        }
     }
 
     #[test]

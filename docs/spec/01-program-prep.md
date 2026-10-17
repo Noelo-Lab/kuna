@@ -6502,3 +6502,9 @@ Xref result formatting reuses the query's canonical inventory for names
 and fallback ownership. ARM address normalization and discovered-entry naming
 retain their existing precedence; formatting does not rebuild the inventory
 for each endpoint of every result row.
+
+GNU Fortran fatal runtime diagnostics (`_gfortran_runtime_error`,
+`_gfortran_runtime_error_at`, `_gfortran_os_error`, and `_gfortran_os_error_at`)
+terminate control flow on supported ELF, PE/COFF, and Mach-O inputs. Their exact
+names are included in the known no-return lists. Warnings and recoverable I/O
+errors are excluded; matching a runtime prefix alone does not imply termination.
