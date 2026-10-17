@@ -5667,10 +5667,14 @@ references of the dispatch
 (`decompiler/crates/kuna-analysis/src/listing/kuna_a32switch.rs`). Without this,
 frame recovery left every case block undefined. The AIF fingerprint histogram,
 which frame recovery fills with the whole program, then accepted case blocks as
-function entries and cut the dispatcher apart. A routine reached only by a tail branch
-from a case is now decoded as part of the switch, as the walk treats any
-tail-branch target; `tailcallentry` splits such routines off (6 of U-Boot
-O2-noinline's 2,836 functions).
+function entries and cut the dispatcher apart. Following a switch also decodes
+the code its cases reach, and the walk absorbs a routine reached only by a tail
+branch into the code that branches to it, as it does everywhere else. On stripped
+U-Boot O2-noinline that absorbs 7 of the 2,836 functions, all of which frame
+recovery without switch following lists: four tail-branch targets of `pointer`'s
+cases, and `memalign_simple`, `efi_process_event_queue` and `malloc_trim`, the
+tail-branch targets of functions the walk now reaches through a followed case.
+`tailcallentry` splits such routines off.
 
 A frame root is also withdrawn when the frame-expanded Listing enters it by
 straight-line flow, the way a contradicted mode withdraws it. The instruction
