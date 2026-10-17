@@ -1,39 +1,53 @@
 //! Dominator-tree intervals for repeated queries on one immutable P8 snapshot.
-
-use std::collections::BTreeMap;
+//!
+//! Interval slots are indexed by arena id, so the index is sized by the
+//! largest node id in the graph; P8 snapshots come from a fresh pool.
 
 use crate::p7_regions::kuna_regiongraph::{KunaIncrementalDominators, KunaNodeId, KunaRegionGraph};
 
+const ABSENT: u32 = u32::MAX;
+
 pub(super) struct DominanceIndex {
-    intervals: BTreeMap<KunaNodeId, (usize, usize)>,
+    intervals: Vec<(u32, u32)>,
 }
 
 impl DominanceIndex {
     pub(super) fn new(doms: &KunaIncrementalDominators, graph: &KunaRegionGraph) -> Self {
         let mut nodes = Vec::new();
         graph.get_nodes(&mut nodes);
-        let mut children: BTreeMap<KunaNodeId, Vec<KunaNodeId>> = BTreeMap::new();
+        let slots = nodes
+            .iter()
+            .map(|node| node.0 as usize + 1)
+            .max()
+            .unwrap_or(0);
+        let mut first_child = vec![ABSENT; slots];
+        let mut next_sibling = vec![ABSENT; slots];
         let mut roots = Vec::new();
-        for node in nodes {
+        for &node in &nodes {
             match doms.idom(node) {
-                Some(parent) if parent == node => roots.push(node),
-                Some(parent) => children.entry(parent).or_default().push(node),
-                None => {}
+                Some(parent) if parent == node => roots.push(node.0),
+                Some(parent) if (parent.0 as usize) < slots => {
+                    next_sibling[node.0 as usize] = first_child[parent.0 as usize];
+                    first_child[parent.0 as usize] = node.0;
+                }
+                _ => {}
             }
         }
-        let mut intervals: BTreeMap<KunaNodeId, (usize, usize)> = BTreeMap::new();
-        let mut clock = 0;
-        let mut stack: Vec<_> = roots.into_iter().map(|root| (root, false)).collect();
+        let mut intervals = vec![(ABSENT, ABSENT); slots];
+        let mut clock = 0u32;
+        let mut stack: Vec<(u32, bool)> = roots.into_iter().map(|root| (root, false)).collect();
         while let Some((node, exiting)) = stack.pop() {
             if exiting {
-                intervals.get_mut(&node).expect("entered dominator node").1 = clock;
-            } else {
-                intervals.insert(node, (clock, clock));
-                clock += 1;
-                stack.push((node, true));
-                if let Some(next) = children.get(&node) {
-                    stack.extend(next.iter().map(|&child| (child, false)));
-                }
+                intervals[node as usize].1 = clock;
+                continue;
+            }
+            intervals[node as usize] = (clock, clock);
+            clock += 1;
+            stack.push((node, true));
+            let mut child = first_child[node as usize];
+            while child != ABSENT {
+                stack.push((child, false));
+                child = next_sibling[child as usize];
             }
         }
         Self { intervals }
@@ -43,8 +57,14 @@ impl DominanceIndex {
         if dominator == node {
             return true;
         }
-        match (self.intervals.get(&dominator), self.intervals.get(&node)) {
-            (Some(&(begin, end)), Some(&(position, _))) => begin <= position && position < end,
+        let slot = |id: KunaNodeId| {
+            self.intervals
+                .get(id.0 as usize)
+                .copied()
+                .filter(|&(begin, _)| begin != ABSENT)
+        };
+        match (slot(dominator), slot(node)) {
+            (Some((begin, end)), Some((position, _))) => begin <= position && position < end,
             _ => false,
         }
     }
