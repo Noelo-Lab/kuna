@@ -2986,9 +2986,10 @@ fn a_reader_of_a_redone_wrapper_round_trips() {
 /// shape of crazyflie's `logf`. Before, `qnanf_` was `unsigned int` returning
 /// `0x7fc00000` and `logish` returned `(float)qnanf_()`, a value conversion of
 /// the NaN's bits that evaluates to 2143289344.0. `qp`, `sn` and `nn` return NaNs
-/// `NAN` cannot spell (a payload, a signalling NaN, a negative payload) and keep
-/// their bits, and `third` returns a `double` in `d0`, which the hard-float
-/// contract of the default preset (`armfloatreturn`) returns whole. `put` and `put2` store `core`'s float through an untyped pointer,
+/// `NAN` cannot spell (a payload, a signalling NaN, a negative payload); the
+/// hard-float contract of the default preset (`armfloatreturn`) returns them as
+/// floats reinterpreted from their exact bits, and `third` returns its `double`
+/// in `d0` whole. `put` and `put2` store `core`'s float through an untyped pointer,
 /// which printed `((unsigned int *)a1)[2] = core(a0)`, a conversion by value.
 /// The printed functions, compiled on the host, must compute what the source
 /// computes.
@@ -3002,16 +3003,16 @@ fn a_nan_returned_in_s0_round_trips() {
         "float qnanf_(void)",
         "return NAN;",
         "v1 = qnanf_();",
-        "unsigned int qp(void)",
-        "return 0x7fc00123;",
-        "return 0x7fa00000;",
-        "return 0xffc00005;",
+        "float qp(void)",
+        ".from = 0x7fc00123 }).to;",
+        ".from = 0x7fa00000 }).to;",
+        ".from = 0xffc00005 }).to;",
         "double third(void)",
         "return 0.3333333333333333;",
     ] {
         assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
     }
-    for bad in ["0x7fc00000", "(float)qnanf_", "float third", "float qp", "float sn", "float nn", "(unsigned int *)"] {
+    for bad in ["0x7fc00000", "(float)qnanf_", "float third", "(unsigned int *)"] {
         assert!(!stdout.contains(bad), "`{bad}` printed:\n{stdout}");
     }
     assert!(stdout.contains("*(float *)(a1 + a2 * 4) = core(a0);"), "put stores core's float:\n{stdout}");
