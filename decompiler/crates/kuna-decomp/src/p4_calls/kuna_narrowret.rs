@@ -185,7 +185,12 @@ fn tail_statement(data: &Funcdata, vn: VarnodeId) -> Option<NarrowReturn> {
     let v = data.vbank().get(vn)?;
     let mut def = v.get_def();
     for _ in 0..4 {
-        let Some(d) = def.and_then(|d| data.obank().get(d)).filter(|d| d.code() == OpCode::CPUI_COPY) else { break };
+        let Some(d) = def
+            .and_then(|d| data.obank().get(d))
+            .filter(|d| d.code() == OpCode::CPUI_COPY)
+        else {
+            break;
+        };
         let src = data.vbank().get(d.get_in(0)?)?;
         if src.get_addr() != v.get_addr() || src.get_size() != v.get_size() {
             return None;

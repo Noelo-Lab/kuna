@@ -4940,6 +4940,13 @@ This is the claim a declared callee already gets whenever the caller names the
 return register; its cost is a void wrapper that tail-calls a value-returning
 function, which is handed that value.
 
+Under `narrowret` the callees' statements may differ in width at the same
+register on a little-endian image: a callee whose own calls now read a narrow
+result can be recovered returning `eax` where its sibling still returns `rax`
+(lz4's `LZ4_compressHC2_continue`, one path to each). The claim then takes the
+widest of them, as both were before, instead of refusing and leaving the
+wrapper `void`.
+
 A callee with **no parameters** states its return the same way: `protoorder`
 records the return value of a function whose list is empty, where it used to
 decline the whole statement as saying nothing, so `int f(void) { return getv();
