@@ -439,6 +439,9 @@ pub struct Architecture {
     pub callbacktype: crate::kuna_callbacktype::CallbackTypeMode,
     /// (kuna `calleevote`) What the complete caller set of a function decides about it.
     pub calleevote: crate::kuna_calleevote::CalleeVoteMode,
+    /// (kuna `callerptr`) Does a pointer-width integer parameter every caller
+    /// passes some pointer or a null take a pointer?
+    pub caller_ptr: bool,
     /// (kuna `codescalar`) Refuse a `code` pointee as the data-type of a
     /// dereferenced value.
     ///
@@ -2775,6 +2778,7 @@ impl Architecture {
             protoorder: crate::kuna_protoorder::ProtoOrderMode::Off, // (kuna) option protoorder; reset_defaults sets the shipped default
             callbacktype: crate::kuna_callbacktype::CallbackTypeMode::Off, // (kuna) option callbacktype
             calleevote: crate::kuna_calleevote::CalleeVoteMode::Off, // (kuna) option calleevote
+            caller_ptr: false, // (kuna) option callerptr
             codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
             add_carry_chain: false,
             v850_indirect_branch: false,
@@ -3351,6 +3355,7 @@ impl Architecture {
         self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
         self.callbacktype = crate::kuna_callbacktype::CallbackTypeMode::On; // (kuna) option callbacktype default `on`: a function whose address reaches exactly one kind of declared callback slot takes that slot's prototype; evidence in docs/features/callbacktype/default-on-evaluation.md
+        self.caller_ptr = std::env::var("KUNA_CALLERPTR_EXP").is_ok(); // EXPERIMENT
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Cycles; // (kuna) option protoorder default `cycles`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, and a function in a recursive component states its types too (`types` is the same without them); `lock` also states the arity and stays opt-in
         self.codescalar = true; // (kuna) DIV-138 default-on: a `code` pointee is never a value type, so blocking it can only replace a widthless scalar with the size-correct default

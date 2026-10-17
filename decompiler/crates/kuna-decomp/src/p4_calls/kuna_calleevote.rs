@@ -104,6 +104,11 @@ pub struct Typed {
     /// A pointer to a pointer that is the address of one of the caller's own
     /// frame objects (`&v4`), or, for a statement, passed so by some caller.
     pub frame: bool,
+    /// The argument is the constant zero, a null pointer to any pointer type.
+    pub null: bool,
+    /// (`callerptr`) The caller holds the argument as an address for a reason of
+    /// its own ([`crate::kuna_callerptr::provably_a_pointer`]).
+    pub proven: bool,
 }
 
 /// One direct call: the caller, the call instruction, and what each argument
@@ -119,6 +124,9 @@ pub struct CallSite {
 #[derive(Debug)]
 pub struct CallerTypes {
     pub inputs: Vec<Typed>,
+    /// (`callerptr`) Every input came from [`crate::kuna_callerptr::pointer_vote`],
+    /// none from a committed type the callers agree on.
+    pub pointers_only: bool,
 }
 
 impl CallerTypes {
@@ -199,6 +207,12 @@ impl Ledger {
 }
 
 impl Ledger {
+    /// (`callerptr`) Is the statement about the function at `key` made of
+    /// pointer-class votes alone?
+    pub fn pointers_only(&self, key: (int4, uintb)) -> bool {
+        self.stated.get(&key).is_some_and(|s| s.pointers_only)
+    }
+
     /// [`forget_statements_naming`] over the ledger.
     pub fn forget_naming(&mut self, names: &[String]) {
         if names.is_empty() {
@@ -208,7 +222,7 @@ impl Ledger {
         for stated in self.stated.values_mut() {
             if stated.inputs.iter().any(names_one) {
                 let inputs = stated.inputs.iter().filter(|t| !names_one(t)).cloned().collect();
-                *stated = Rc::new(CallerTypes { inputs });
+                *stated = Rc::new(CallerTypes { inputs, pointers_only: stated.pointers_only });
             }
         }
         self.stated.retain(|_, stated| !stated.inputs.is_empty());
@@ -324,6 +338,7 @@ pub fn took_stated_type(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
 /// ones the last redo left untyped.
 pub fn record(arch: &mut Architecture, entry: &Address, fd: &mut Funcdata) {
     let Some(me) = key_of(entry) else { return };
+    let prove = arch.caller_ptr;
     let own = if arch.kuna_calleevote.own.contains_key(&me) { None } else { own_params(arch, entry, fd) };
     let mut calls: Vec<(Address, CallSite)> = Vec::new();
     for i in 0..fd.num_calls() {
@@ -347,9 +362,13 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &mut Funcdata) {
                 continue;
             };
             let ct = fd.high_get_type(vn).or_else(|| fd.vbank().get(vn).map(|v| Rc::clone(v.get_type())));
+            let null = fd.vbank().get(vn).is_some_and(|v| v.is_constant() && v.get_offset() == 0);
             args.push(ct.map(|ct| {
                 let frame = points_at_a_pointer(&ct) && crate::kuna_protoorder::addresses_a_frame_object(fd, vn);
-                Typed { addr, size, ct, frame }
+                let proven = prove
+                    && ct.get_metatype() == type_metatype::TYPE_PTR
+                    && crate::kuna_callerptr::provably_a_pointer(fd, vn);
+                Typed { addr, size, ct, frame, null, proven }
             }));
         }
         calls.push((callee, CallSite { caller: me.1, at, args }));
@@ -390,7 +409,7 @@ fn own_params(arch: &Architecture, entry: &Address, fd: &Funcdata) -> Option<Vec
         if addr.is_invalid() || p.get_size() <= 0 {
             return None;
         }
-        out.push(Typed { addr, size: p.get_size(), ct: Rc::clone(p.get_type()?), frame: false });
+        out.push(Typed { addr, size: p.get_size(), ct: Rc::clone(p.get_type()?), frame: false, null: false, proven: false });
     }
     Some(out)
 }
@@ -411,7 +430,8 @@ pub fn decide(
 ) -> Vec<(int4, uintb)> {
     let ptr_size = arch.types().get_size_of_pointer();
     let headless = arch.struct_headless.fires();
-    let decided = decide_ledger_under(&arch.kuna_calleevote, ptr_size, headless, expected);
+    let pointers = crate::kuna_callerptr::void_pointer(arch);
+    let decided = decide_ledger_with(&arch.kuna_calleevote, ptr_size, headless, pointers.as_ref(), expected);
     let changed = decided.iter().map(|(k, _)| *k).collect();
     for (key, stated) in decided {
         arch.kuna_calleevote.stated.insert(key, Rc::new(stated));
@@ -434,6 +454,19 @@ pub fn decide_ledger_under(
     ledger: &Ledger,
     ptr_size: int4,
     headless: bool,
+    expected: &dyn Fn((int4, uintb)) -> Option<Vec<uintb>>,
+) -> Vec<((int4, uintb), CallerTypes)> {
+    decide_ledger_with(ledger, ptr_size, headless, None, expected)
+}
+
+/// [`decide_ledger_under`], and with `pointers` (`callerptr`, the target's
+/// `void *`) a pointer-width integer parameter every caller passes some pointer
+/// or a null takes a pointer ([`crate::kuna_callerptr::pointer_vote`]).
+pub fn decide_ledger_with(
+    ledger: &Ledger,
+    ptr_size: int4,
+    headless: bool,
+    pointers: Option<&Rc<Datatype>>,
     expected: &dyn Fn((int4, uintb)) -> Option<Vec<uintb>>,
 ) -> Vec<((int4, uintb), CallerTypes)> {
     let mut decided: Vec<((int4, uintb), CallerTypes)> = Vec::new();
@@ -463,6 +496,7 @@ pub fn decide_ledger_under(
             continue;
         }
         let mut inputs: Vec<Typed> = Vec::new();
+        let mut pointers_only = true;
         for (j, p) in own.iter().enumerate() {
             if !uncommitted_under(&p.ct, ptr_size, headless) {
                 continue;
@@ -505,7 +539,12 @@ pub fn decide_ledger_under(
             }
             if let (true, Some(ct)) = (all, agreed) {
                 if uncommitted(&p.ct, ptr_size) || crate::kuna_structheadless::gives_a_pointee(&ct) {
-                    inputs.push(Typed { addr: p.addr.clone(), size: p.size, ct, frame });
+                    inputs.push(Typed { addr: p.addr.clone(), size: p.size, ct, frame, null: false, proven: false });
+                    pointers_only = false;
+                }
+            } else if let Some(void_ptr) = pointers {
+                if let Some(t) = crate::kuna_callerptr::pointer_vote(&sites, j, p, void_ptr) {
+                    inputs.push(t);
                 }
             }
         }
@@ -525,7 +564,7 @@ pub fn decide_ledger_under(
                 })
         });
         if !unchanged {
-            decided.push((*key, CallerTypes { inputs }));
+            decided.push((*key, CallerTypes { inputs, pointers_only }));
         }
     }
     decided
@@ -594,6 +633,9 @@ pub fn input_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<R
     let open = uncommitted(ct, ptr_size)
         || (uncommitted_under(ct, ptr_size, data.get_arch().struct_headless.fires())
             && crate::kuna_structheadless::gives_a_pointee(&want.ct));
+    if trace() {
+        eprintln!("[calleevote] input 0x{:x} @{:x} open={} refuses={}", data.get_address().get_offset(), v.get_addr().get_offset(), open, crate::kuna_protoorder::input_refuses(data, vn, &want.ct));
+    }
     if !open || crate::kuna_protoorder::input_refuses(data, vn, &want.ct) {
         return None;
     }

@@ -455,7 +455,17 @@ fn callee_vote_rounds(
                 ))
             })
             .collect();
-        let (admitted, declined) = admit_within_budget(queue, &mut budget, &mut spent);
+        let (pointers_only, queue): (Vec<_>, Vec<_>) =
+            queue.into_iter().partition(|(_, key)| prog.arch().kuna_calleevote.pointers_only(*key));
+        let (mut admitted, mut declined) = admit_within_budget(queue, &mut budget, &mut spent);
+        for (charge, key) in pointers_only {
+            if charge <= CALLEE_VOTE_MAX_LINES {
+                spent += charge;
+                admitted.insert(key);
+            } else {
+                declined.push((charge, key));
+            }
+        }
         for (charge, key) in declined {
             if kuna_decomp::kuna_calleevote::trace() {
                 eprintln!(
@@ -633,7 +643,17 @@ mod calleevote_stored_tests {
         for queue in [queue.clone(), queue.into_iter().rev().collect()] {
             let mut budget = 40;
             let mut spent = 0;
-            let (admitted, declined) = admit_within_budget(queue, &mut budget, &mut spent);
+            let (pointers_only, queue): (Vec<_>, Vec<_>) =
+            queue.into_iter().partition(|(_, key)| prog.arch().kuna_calleevote.pointers_only(*key));
+        let (mut admitted, mut declined) = admit_within_budget(queue, &mut budget, &mut spent);
+        for (charge, key) in pointers_only {
+            if charge <= CALLEE_VOTE_MAX_LINES {
+                spent += charge;
+                admitted.insert(key);
+            } else {
+                declined.push((charge, key));
+            }
+        }
             assert_eq!(admitted.len(), 1);
             assert!(admitted.contains(&(1, 0x2000)));
             assert_eq!(declined, [(40, (1, 0x3000)), (40, (2, 0x1000))]);
@@ -672,7 +692,17 @@ mod calleevote_stored_tests {
                 queue.iter().map(|&(c, k)| (k, c)).collect();
             let mut budget = printed * CALLEE_VOTE_BUDGET_PCT / 100;
             let mut spent = 0usize;
-            let (admitted, declined) = admit_within_budget(queue, &mut budget, &mut spent);
+            let (pointers_only, queue): (Vec<_>, Vec<_>) =
+            queue.into_iter().partition(|(_, key)| prog.arch().kuna_calleevote.pointers_only(*key));
+        let (mut admitted, mut declined) = admit_within_budget(queue, &mut budget, &mut spent);
+        for (charge, key) in pointers_only {
+            if charge <= CALLEE_VOTE_MAX_LINES {
+                spent += charge;
+                admitted.insert(key);
+            } else {
+                declined.push((charge, key));
+            }
+        }
             let mut taken: Vec<usize> = admitted.iter().map(|k| by_key[k]).collect();
             taken.sort_unstable();
             (

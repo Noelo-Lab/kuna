@@ -115,7 +115,7 @@ fn long8() -> Rc<Datatype> {
 }
 
 fn typed(space: &Rc<AddrSpace>, off: uintb, ct: &Rc<Datatype>) -> Typed {
-    Typed { addr: at(space, off), size: 8, ct: Rc::clone(ct), frame: false }
+    Typed { addr: at(space, off), size: 8, ct: Rc::clone(ct), frame: false, null: false, proven: false }
 }
 
 const CALLEE: (int4, uintb) = (1, 0x5c70);
@@ -278,7 +278,7 @@ fn a_declined_function_keeps_the_statement_its_kept_body_used() {
     l.keep(CALLEE);
     // A later round decides something else about it, and the budget is gone.
     let second = ptr_to(record("struct_9"));
-    l.stated.insert(CALLEE, Rc::new(CallerTypes { inputs: vec![typed(&reg(), 0x38, &second)] }));
+    l.stated.insert(CALLEE, Rc::new(CallerTypes { inputs: vec![typed(&reg(), 0x38, &second)], pointers_only: false }));
     l.decline(CALLEE);
     let kept = l.stated.get(&CALLEE).expect("the statement its body was printed with");
     assert!(Rc::ptr_eq(&kept.at(&at(&reg(), 0x38), 8).expect("stated").ct, &first));
@@ -345,7 +345,7 @@ fn only_the_input_naming_a_superseded_record_is_forgotten() {
     let mut l = Ledger::default();
     l.stated.insert(
         CALLEE,
-        Rc::new(CallerTypes { inputs: vec![typed(&r, 0x38, &rec), typed(&r, 0x30, &text)] }),
+        Rc::new(CallerTypes { inputs: vec![typed(&r, 0x38, &rec), typed(&r, 0x30, &text)], pointers_only: false }),
     );
     l.forget_naming(&["struct_2".to_string()]);
     let kept = l.stated.get(&CALLEE).expect("the character pointer is still stated");
