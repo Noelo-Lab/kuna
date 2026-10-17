@@ -528,3 +528,29 @@ fn a_parameter_that_is_already_a_pointer_takes_no_pointer_class_vote() {
     l.own.insert(CALLEE, vec![typed(&reg(), 0x38, &ptr_to(voidt()))]);
     assert!(caller_pointer_vote(&l).is_none());
 }
+
+/// (`callerptr`) A statement whose committed part only repeats what the
+/// function already has is charged as the pointer vote it adds, not as a new
+/// committed type.
+#[test]
+fn a_committed_vote_repeating_the_own_type_beside_a_pointer_vote_is_pointers_only() {
+    let r = reg();
+    let text = ptr_to(lone("struct_9"));
+    let mut l = Ledger::default();
+    l.own.insert(CALLEE, vec![typed(&r, 0x38, &text), typed(&r, 0x30, &long8())]);
+    let site = |caller: uintb, rec: &str| CallSite {
+        caller,
+        at: caller + 5,
+        args: vec![
+            Some(Typed { proven: true, ..typed(&r, 0x38, &text) }),
+            Some(Typed { proven: true, ..typed(&r, 0x30, &ptr_to(record(rec))) }),
+        ],
+    };
+    l.sites.insert(CALLEE, vec![site(0x6600, "struct_2"), site(0x6800, "struct_3")]);
+    let got = decide_ledger_with(&l, 8, false, Some(&ptr_to(voidt())), &all_calls(&l));
+    assert_eq!(got.len(), 1);
+    assert!(got[0].1.at(&at(&r, 0x38), 8).is_some_and(|t| !t.by_class), "the repeated record is stated");
+    assert!(got[0].1.pointers_only);
+    let pointer = got[0].1.at(&at(&r, 0x30), 8).expect("stated for rsi");
+    assert!(pointer.by_class && same_type(&pointer.ct, &ptr_to(voidt())));
+}

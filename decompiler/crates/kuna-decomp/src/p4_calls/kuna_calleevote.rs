@@ -127,8 +127,9 @@ pub struct CallSite {
 #[derive(Debug)]
 pub struct CallerTypes {
     pub inputs: Vec<Typed>,
-    /// (`callerptr`) Every input came from [`crate::kuna_callerptr::pointer_vote`],
-    /// none from a committed type the callers agree on.
+    /// (`callerptr`) Nothing in the statement but [`crate::kuna_callerptr::pointer_vote`]'s
+    /// votes is new: every committed type in it repeats the function's own type
+    /// or the statement it already had.
     pub pointers_only: bool,
 }
 
@@ -499,7 +500,6 @@ pub fn decide_ledger_with(
             continue;
         }
         let mut inputs: Vec<Typed> = Vec::new();
-        let mut pointers_only = true;
         for (j, p) in own.iter().enumerate() {
             if !uncommitted_under(&p.ct, ptr_size, headless) {
                 continue;
@@ -551,7 +551,6 @@ pub fn decide_ledger_with(
             if let (true, Some(ct)) = (all, agreed) {
                 if uncommitted(&p.ct, ptr_size) || crate::kuna_structheadless::gives_a_pointee(&ct) {
                     inputs.push(Typed { addr: p.addr.clone(), size: p.size, ct, frame, null: false, proven: false, by_class: false });
-                    pointers_only = false;
                 }
             } else if let Some(void_ptr) = pointers {
                 if let Some(t) = crate::kuna_callerptr::pointer_vote(&sites, j, p, void_ptr) {
@@ -575,6 +574,12 @@ pub fn decide_ledger_with(
                 })
         });
         if !unchanged {
+            let pointers_only = inputs.iter().filter(|t| !t.by_class).all(|t| {
+                own.iter().any(|p| p.addr == t.addr && p.size == t.size && same_type(&p.ct, &t.ct))
+                    || ledger.stated.get(key).is_some_and(|old| {
+                        old.inputs.iter().any(|o| o.addr == t.addr && o.frame == t.frame && same_type(&o.ct, &t.ct))
+                    })
+            });
             decided.push((*key, CallerTypes { inputs, pointers_only }));
         }
     }
