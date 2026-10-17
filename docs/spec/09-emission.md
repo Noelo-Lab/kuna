@@ -3439,3 +3439,10 @@ noninteger types, enums, widths above eight bytes and concatenations of unrelate
 halves keep their existing rendering. The option defaults on for C output; off
 restores the upstream CONCAT helper, and other output languages keep their own
 rendering.
+
+A low-word `SUBPIECE` from an eight-byte integer into a four-byte float
+reinterprets the extracted bits. C emits the existing union-based bit transfer,
+whose unsigned initializer first narrows to four bytes; Rust narrows to `u32`
+and uses `f32::from_bits`. A numeric float cast would instead convert the
+integer’s magnitude. High-word extraction retains its preceding shift. Native
+`FLOAT_INT2FLOAT` operations continue to perform numeric conversion.
