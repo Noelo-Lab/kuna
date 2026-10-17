@@ -2186,6 +2186,13 @@ marker ops are skipped since a later call's own INDIRECTs chain the earlier
 call's versions without any textual evaluation point). Anything else stays
 explicit: false negatives over reordering bugs.
 
+Both order checks walk the basic block's intrusive operation links from the call
+to the relevant endpoint, without first copying the entire block or searching
+for endpoint indices. The first check excludes the consuming operation; the print-point check includes
+its endpoint and keeps its existing expression-chain exemptions. Encountering
+a barrier or failing to reach the endpoint declines the fold. No operation-order
+cache is retained, so IR edits and order renumbering are observed immediately.
+
 A barrier set stated in opcodes is not the whole of "writes something the callee
 can read". Heritage promotes a write to a fixed global address into a plain
 `CPUI_COPY`, which no opcode test catches, so `int t = f(7); k = 42;

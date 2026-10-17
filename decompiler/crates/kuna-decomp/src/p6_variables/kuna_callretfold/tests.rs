@@ -298,6 +298,26 @@ mod shortcircuit {
     }
 
     #[test]
+    fn fold_spans_exclude_outside_barriers_and_reject_backward_uses() {
+        for (order, expected) in [([2, 0, 1], true), ([0, 1, 2], true), ([0, 2, 1], false), ([1, 0, 2], false)] {
+            let mut fd = build_fd();
+            let root = fd.bblocks_root_pub();
+            let block = fd.bblocks_mut().new_block_basic(root);
+            let target = fd.new_constant(8, 0x2000);
+            let (call, result) = op(&mut fd, OpCode::CPUI_CALL, &[target], 4);
+            let (use_op, output) = op(&mut fd, OpCode::CPUI_COPY, &[result], 4);
+            fd.vbank_mut().get_mut(output).unwrap().set_explicit();
+            let (barrier, _) = op(&mut fd, OpCode::CPUI_CALLOTHER, &[], 4);
+            let ops = [call, use_op, barrier];
+            for index in order {
+                fd.op_insert_end(ops[index], block);
+            }
+            assert_eq!(super::super::call_output_foldable(&fd, result), expected, "{order:?}");
+            assert_eq!(super::super::fold_print_point_is_order_safe(&fd, result), expected, "{order:?}");
+        }
+    }
+
+    #[test]
     fn a_separate_snapshot_of_this_calls_effect_keeps_the_call_before_the_branch() {
         for (own_effect, derived, classification, same_high) in [false, true].into_iter().flat_map(|own| {
             [OpCode::CPUI_COPY, OpCode::CPUI_CAST, OpCode::CPUI_INT_ADD].into_iter().flat_map(move |code| {
