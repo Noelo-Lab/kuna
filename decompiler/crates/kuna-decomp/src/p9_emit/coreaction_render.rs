@@ -1767,7 +1767,9 @@ impl Action for ActionDeadCode {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:4146 — ActionDeadCode::apply.
-        deadcode_apply(data)
+        let res = deadcode_apply(data);
+        self.base.count += crate::kuna_narrowargs::narrow_inputs(data);
+        res
     }
 }
 
@@ -2173,7 +2175,12 @@ fn dc_mark_consumed_parameters(data: &mut Funcdata, call_index: int4, worklist: 
         let mut slot_consumed: Vec<int4> = Vec::new();
         if !fully_consumed {
             for i in 1..n {
-                slot_consumed.push(fc.get_input_bytes_consumed(i));
+                let stated = crate::kuna_narrowargs::stated_bytes_consumed(data, fc, (i - 1) as usize);
+                slot_consumed.push(match (fc.get_input_bytes_consumed(i), stated) {
+                    (0, s) => s,
+                    (c, 0) => c,
+                    (c, s) => c.min(s),
+                });
             }
         }
         (call_op, fully_consumed, slot_consumed)

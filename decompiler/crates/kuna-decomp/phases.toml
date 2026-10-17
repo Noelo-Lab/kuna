@@ -3623,6 +3623,28 @@ tier = "core"
 symptoms = "a function signature takes only the first argument while the body reads later argument registers as undefined locals|int vN; // r8d and int vN; // r9d are declared and read with nothing ever assigning them|a Wayland/qsort/GTK callback reached only through a function-pointer table renders with one parameter instead of its ABI signature|the first condition of a handler tests a variable that has no definition|arguments the disassembly shows arriving in R8D/R9D are missing from the recovered prototype"
 
 [[settable]]
+option = "narrowargs"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P4"
+subphase = "own-input-prototype-recovery"
+strength = "HARD"
+rewind = "P4"
+issue = "ty17-narrow-register-parameters"
+summary = "Declare a register parameter at the narrow width its body actually reads. An ARM AAPCS or x86-64 caller passes a `uint8_t`, a `short` or an `int` in a whole register, so a callee that computes with the register at full width (`and.w r2, r1, #7`, `mov %edi,%eax` beside a forwarded `%rdi`) keeps the input Varnode register-wide and recovers `unsigned int` or `unsigned long`. After each `ActionDeadCode` pass the bits of every register input any use can observe are known; when they all lie in the low 1, 2 or 4 bytes of the register and reach that part's top bit, and the model has an integer argument entry holding both, the input is replaced by that low part zero-extended back to the register at the function entry. Every use then reads the same bits it read before, so no printed value changes, and `ActionInputPrototype` recovers the parameter at the narrow width. In the callee-first `decompile-all` run, the narrow parameter a callee states through `protoorder` caps the bytes `ActionDeadCode::markConsumedParameters` treats as consumed at each call to it (`FuncCallSpecs::getInputBytesConsumed`), so a caller that only forwards its own parameter there narrows too. A mask that stops below the part's top bit (`flags & 0x10`, `x & 7`) is not narrowed: it is as often an `int` of flags as a narrow value."
+use_when = "Off by default. Turn it on for ARM Cortex-M firmware or optimized x86-64 code where `uint8_t`/`uint16_t` parameters print as `unsigned int` and `int` parameters as `unsigned long`; the tell is a parameter used only as `a1 & 0xff`, `(char)a1`, or `(unsigned int)a1` forwarded to a callee that declares a narrow parameter. Callers of a narrowed callee may print a narrower argument expression (`(unsigned char)(v2 + 5)` for `v2 + 5`): the callee reads only those bytes."
+example = "option narrowargs on"
+live_field = "narrow_args"
+live_true = "on"
+live_false = "off"
+source_decompiler = "kuna"
+inspiration = "decbench type_match census of ARM firmware (betaflight, crazyflie, cleanflight): `uint8_t`/`uint16_t`/`_Bool` parameters typed at register width; upstream `FuncCallSpecs::getInputBytesConsumed` (fspec.cc:5877) is the consumed-bytes channel this fills from recovered callee prototypes"
+change_kind = "type-inference"
+tier = "transform"
+symptoms = "a uint8_t parameter prints as unsigned int and is only ever used as a1 & 0xff or (char)a1|an int parameter prints as unsigned long on x86-64 and is used as (unsigned int)a0|a caller passes v + 5 to a callee whose parameter is a byte and another caller passes v - 8 & 0xff"
+
+[[settable]]
 option = "stackarggap"
 values = "on|off"
 default = "on"

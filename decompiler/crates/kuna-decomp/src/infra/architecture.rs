@@ -923,6 +923,10 @@ pub struct Architecture {
     /// argument REGISTERS veto a later register the body reads before writing
     /// (option `inputparamgap`).  See [`crate::p4_calls::kuna_inputparamgap`].
     pub input_param_gap: bool,
+    /// (kuna) Declare a register parameter whose consumed bits fit a narrower
+    /// low part at that width (option `narrowargs`).  See
+    /// [`crate::p4_calls::kuna_narrowargs`].
+    pub narrow_args: bool,
     /// (kuna) At a CALL SITE, let an UNREFERENCED argument register whose next
     /// slot is on the stack end the argument list, instead of being filled in on
     /// the way to a stack trial (option `stackarggap`).  See
@@ -2872,6 +2876,7 @@ impl Architecture {
             callee_scratch_body: true,
             indirect_anchor: true,
             input_param_gap: true,
+            narrow_args: false,
             stack_arg_gap: true,
             vararg_stack_args: true,
             vararg_forward: true,
@@ -3235,6 +3240,7 @@ impl Architecture {
         self.indirect_anchor = true; // (kuna) DIV-PENDING default-on: an op inserted after a call's guard INDIRECT anchors to the CALL as upstream opInsertAfter does, instead of landing inside the guard run where it hides the return-value trial (0/675 ablation)
         self.stack_arg_gap = true; // (kuna) DIV-140 default-on: at a call site an argument register the caller never wrote ends the argument list when the next slot is on the stack, so a body-less import stops acquiring the caller's own untouched parameter plus a stack leftover as arguments (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
+        self.narrow_args = false; // (kuna) option narrowargs; default off
         self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
         self.vararg_forward = true; // (kuna) default-on: a declared parameter forwarded unchanged in its own register to a variadic call's variable part is an argument (0/675 ablation)
         self.vararg_shared_float = false; // (kuna) default-off: the register-choice reading holds only for -O0 code (post-RA scheduling defeats it at -O1+)
@@ -4047,6 +4053,7 @@ impl Architecture {
         ctx.callee_scratch_body = self.callee_scratch_body; // calleescratchbody
         ctx.indirect_anchor = self.indirect_anchor; // indirectanchor
         ctx.input_param_gap = self.input_param_gap; // inputparamgap
+        ctx.narrow_args = self.narrow_args; // narrowargs
         ctx.stack_arg_gap = self.stack_arg_gap; // stackarggap
         ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
         ctx.vararg_forward = self.vararg_forward; // varargforward

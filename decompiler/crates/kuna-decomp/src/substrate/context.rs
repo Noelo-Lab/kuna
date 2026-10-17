@@ -1090,6 +1090,9 @@ pub struct ArchContext {
     /// consults through
     /// [`crate::kuna_inputparamgap::trial_is_protected`].
     pub input_param_gap: bool,
+    /// (kuna) narrow a register parameter to the low part its uses consume
+    /// (`narrowargs`). Read by [`crate::kuna_narrowargs`].
+    pub narrow_args: bool,
     /// (kuna) at a CALL SITE, let an unreferenced argument register whose next
     /// slot is on the stack end the argument list (`stackarggap`).  Read by
     /// `ActionActiveParam`, which stamps it onto the
@@ -1876,6 +1879,7 @@ impl ArchContext {
             callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)
             indirect_anchor: true,      // indirectanchor (default-on)
             input_param_gap: true,
+            narrow_args: false,
             stack_arg_gap: true,         // stackarggap (DIV-140 default-on)
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             vararg_forward: true,        // varargforward (default-on)
