@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kuna Churn</title>
+<style>
+@@BASE_CSS@@
+.controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 14px 0; }
+.controls label { color: var(--muted); font-size: 12.5px; }
+#map-wrap { position: relative; }
+#map { display: block; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+#map rect.leaf { stroke: var(--surface); stroke-width: 2; cursor: pointer; }
+#map rect.leaf:hover { stroke: var(--ink); stroke-width: 1.5; }
+#map text.gname { font: 600 11.5px system-ui, sans-serif; fill: var(--ink-2); }
+#map text.lname { font: 10.5px var(--mono); fill: var(--ink); pointer-events: none; }
+#tip {
+  position: absolute; display: none; max-width: 420px; z-index: 20; pointer-events: none;
+  background: var(--surface); border: 1px solid var(--baseline); border-radius: 6px;
+  padding: 8px 10px; font-size: 12.5px; box-shadow: 0 2px 10px rgba(0,0,0,.18);
+}
+#tip .path { font-family: var(--mono); word-break: break-all; }
+#tip .row { color: var(--ink-2); }
+.scale { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); margin: 8px 0 20px; }
+.scale .ramp { width: 160px; height: 10px; border-radius: 5px; border: 1px solid var(--border); }
+</style>
+<script>
+@@BASE_JS@@
+</script>
+</head>
+<body>
+@@DATA@@
+<main class="wrap" id="main"></main>
+<script>
+"use strict";
+renderTopbar("churn");
+const churn = dataOf("churn");
+const main = document.getElementById("main");
+
+// Blue sequential ramp (reference palette steps 100..700), light & dark share
+// the hue; interpolation happens between adjacent steps.
+const RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+function rampColor(t) {
+  const x = Math.min(0.9999, Math.max(0, t)) * (RAMP.length - 1);
+  const i = Math.floor(x), f = x - i;
+  const a = RAMP[i], b = RAMP[i + 1];
+  const ch = (hex, k) => parseInt(hex.slice(1 + 2 * k, 3 + 2 * k), 16);
+  const mix = (k) => Math.round(ch(a, k) + f * (ch(b, k) - ch(a, k)));
+  return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
+}
+
+function build() {
+  main.insertAdjacentHTML("beforeend", `
+    <h1>Churn &amp; ownership</h1>
+    <p class="lede">Where change concentrates. Tile area is live size (or windowed churn);
+    color is the selected signal. Hover a tile for its history; groups follow
+    crate / phase-folder structure. Full history, agent commits detected by
+    [AUTOMATED] / Co-authored-by.</p>
+    <div class="controls">
+      <label>scope <select id="scope"></select></label>
+      <label>window <select id="window">
+        <option value="d30">30 days</option><option value="d90" selected>90 days</option>
+        <option value="d365">365 days</option><option value="all">all time</option></select></label>
+      <label>area <select id="metric">
+        <option value="loc" selected>file size (loc)</option>
+        <option value="churn">churn in window</option></select></label>
+      <label>color <select id="color">
+        <option value="churn" selected>churn intensity</option>
+        <option value="agent">agent share</option>
+        <option value="recency">recency</option></select></label>
+      <span class="hint" id="count"></span>
+    </div>
+    <div id="map-wrap"><svg id="map" height="640"></svg><div id="tip"></div></div>
+    <div class="scale"><span id="scale-lo"></span><div class="ramp" id="ramp"></div><span id="scale-hi"></span></div>
+    <h2>Group rollup</h2>
+    <section class="card"><table class="grid" id="rollup"></table></section>`);
+  const scope = document.getElementById("scope");
+  for (const area of ["decompiler", ...churn.areas.filter((a) => a !== "decompiler"), "(everything)"]) {
+    scope.insertAdjacentHTML("beforeend", `<option>${esc(area)}</option>`);
+  }
+  document.getElementById("ramp").style.background =
+    `linear-gradient(90deg, ${RAMP.join(",")})`;
+  for (const id of ["scope", "window", "metric", "color"]) {
+    document.getElementById(id).addEventListener("change", draw);
+  }
+  window.addEventListener("resize", () => { clearTimeout(draw._t); draw._t = setTimeout(draw, 120); });
+  draw();
+}
+
+function groupKey(file, scope) {
+  if (scope === "decompiler") {
+    if (file.crate === "kuna-decomp") return `kuna-decomp / ${file.phase || "(crate root)"}`;
+    return file.crate || "(workspace files)";
+  }
+  const parts = file.path.split("/");
+  if (scope === "(everything)") return parts[0];
+  return parts.length > 2 ? parts[1] : "(root files)";
+}
+
+function squarify(items, x, y, w, h, out) {
+  // Bruls et al.: grow each row while the worst aspect ratio keeps improving.
+  items = items.filter((item) => item.value > 0).sort((a, b) => b.value - a.value);
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  if (!total || w <= 1 || h <= 1) return;
+  const scale = (w * h) / total;
+  let start = 0;
+  while (start < items.length) {
+    const side = Math.min(w, h);
+    let rowSum = 0, best = Infinity, end = start;
+    for (; end < items.length; end += 1) {
+      const sum = rowSum + items[end].value;
+      const areas = items.slice(start, end + 1).map((item) => item.value * scale);
+      const s2 = (sum * scale) ** 2;
+      const worst = Math.max(
+        (side * side * Math.max(...areas)) / s2,
+        s2 / (side * side * Math.min(...areas)));
+      if (worst > best) break;
+      best = worst;
+      rowSum = sum;
+    }
+    const horizontal = w < h;
+    const thickness = (rowSum * scale) / (horizontal ? w : h);
+    let offset = 0;
+    for (let k = start; k < end; k += 1) {
+      const span = (items[k].value * scale) / thickness;
+      out.push({
+        item: items[k],
+        x: horizontal ? x + offset : x,
+        y: horizontal ? y : y + offset,
+        w: horizontal ? span : thickness,
+        h: horizontal ? thickness : span,
+      });
+      offset += span;
+    }
+    if (horizontal) { y += thickness; h -= thickness; } else { x += thickness; w -= thickness; }
+    start = end;
+  }
+}
+
+function draw() {
+  const scopeValue = document.getElementById("scope").value;
+  const windowKey = document.getElementById("window").value;
+  const metric = document.getElementById("metric").value;
+  const colorMode = document.getElementById("color").value;
+  const files = churn.files.filter((file) =>
+    scopeValue === "(everything)" ? true : file.area === scopeValue);
+  const value = (file) => {
+    const win = file.windows[windowKey];
+    return metric === "loc" ? file.loc : win.added + win.removed;
+  };
+  const now = new Date((churn.meta.generated || "").slice(0, 10) || Date.now());
+  const colorT = (file) => {
+    const win = file.windows[windowKey];
+    if (colorMode === "agent") return win.commits ? win.agentCommits / win.commits : 0;
+    if (colorMode === "recency") {
+      const days = (now - new Date(file.last)) / 86400000;
+      return Math.max(0, 1 - days / 365);
+    }
+    return Math.log1p(win.added + win.removed) / Math.log1p(draw._maxChurn || 1);
+  };
+  draw._maxChurn = Math.max(1, ...files.map((file) => {
+    const win = file.windows[windowKey];
+    return win.added + win.removed;
+  }));
+
+  const groups = new Map();
+  for (const file of files) {
+    const key = groupKey(file, scopeValue);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(file);
+  }
+  const svg = document.getElementById("map");
+  const width = svg.clientWidth || 1060;
+  const height = 640;
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  const groupItems = [...groups.entries()].map(([name, members]) => ({
+    name, members, value: members.reduce((sum, file) => sum + value(file), 0),
+  }));
+  const groupRects = [];
+  squarify(groupItems, 2, 2, width - 4, height - 4, groupRects);
+  let parts = [];
+  const leafIndex = [];
+  for (const rect of groupRects) {
+    const pad = 2, header = rect.h > 30 && rect.w > 60 ? 15 : 0;
+    if (header) {
+      let label = `${rect.item.name} · ${fmt(Math.round(rect.item.value))}`;
+      const maxChars = Math.floor((rect.w - 8) / 6.4);
+      if (label.length > maxChars) label = label.slice(0, Math.max(0, maxChars - 1)) + "…";
+      parts.push(`<text class="gname" x="${rect.x + 4}" y="${rect.y + 12}">${esc(label)}</text>`);
+    }
+    const inner = { x: rect.x + pad, y: rect.y + pad + header, w: rect.w - 2 * pad, h: rect.h - 2 * pad - header };
+    const total = rect.item.value || 1;
+    const pxPerUnit = Math.max(0, inner.w * inner.h) / total;
+    const kept = [], folded = [];
+    for (const file of rect.item.members) {
+      ((value(file) * pxPerUnit < 72) ? folded : kept).push(file);
+    }
+    const leaves = kept.map((file) => ({ file, value: value(file) }));
+    if (folded.length) {
+      leaves.push({
+        folded, value: folded.reduce((sum, file) => sum + value(file), 0),
+        file: null,
+      });
+    }
+    const leafRects = [];
+    squarify(leaves, inner.x, inner.y, inner.w, inner.h, leafRects);
+    for (const leaf of leafRects) {
+      const index = leafIndex.length;
+      leafIndex.push(leaf.item);
+      const fill = leaf.item.file
+        ? rampColor(colorT(leaf.item.file))
+        : "var(--grid)";
+      parts.push(`<rect class="leaf" data-i="${index}" x="${leaf.x}" y="${leaf.y}"
+        width="${Math.max(0, leaf.w)}" height="${Math.max(0, leaf.h)}" fill="${fill}"/>`);
+      if (leaf.item.file && leaf.w > 70 && leaf.h > 14) {
+        const name = leaf.item.file.path.split("/").pop();
+        const ink = colorT(leaf.item.file) > 0.55 ? "#fcfcfb" : "#0b0b0b";
+        parts.push(`<text class="lname" style="fill:${ink}" x="${leaf.x + 3}" y="${leaf.y + 11}">${
+          esc(name.length > leaf.w / 6.3 ? name.slice(0, Math.floor(leaf.w / 6.3) - 1) + "…" : name)}</text>`);
+      }
+    }
+  }
+  svg.innerHTML = parts.join("");
+  document.getElementById("count").textContent =
+    `${files.length} files · area = ${metric === "loc" ? "lines" : "lines changed"}`;
+  const labels = { churn: ["quiet", "most changed"], agent: ["0% agent", "100% agent"], recency: ["a year+ ago", "touched today"] };
+  document.getElementById("scale-lo").textContent = labels[colorMode][0];
+  document.getElementById("scale-hi").textContent = labels[colorMode][1];
+  wireTooltip(leafIndex, windowKey);
+  rollup(groups, windowKey, value);
+}
+
+function wireTooltip(leafIndex, windowKey) {
+  const tip = document.getElementById("tip");
+  const wrapBox = document.getElementById("map-wrap");
+  const svg = document.getElementById("map");
+  svg.onmousemove = (event) => {
+    const target = event.target.closest("rect.leaf");
+    if (!target) { tip.style.display = "none"; return; }
+    const item = leafIndex[Number(target.dataset.i)];
+    let html;
+    if (!item.file) {
+      html = `<div class="path">(${item.folded.length} smaller files)</div>`;
+    } else {
+      const file = item.file;
+      const win = file.windows[windowKey];
+      const share = win.commits ? Math.round((100 * win.agentCommits) / win.commits) : 0;
+      html = `<div class="path">${esc(file.path)}</div>
+        <div class="row">${fmt(file.loc)} loc · last touched ${esc(file.last)}</div>
+        <div class="row">window: +${fmt(win.added)} / −${fmt(win.removed)} in ${fmt(win.commits)} commits (${share}% agent)</div>
+        <div class="row">top: ${file.authors.map((author) => `${esc(author.name)} (${author.commits})`).join(", ") || "—"}</div>`;
+    }
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    const box = wrapBox.getBoundingClientRect();
+    tip.style.left = Math.min(event.clientX - box.left + 14, box.width - 430) + "px";
+    tip.style.top = (event.clientY - box.top + 14) + "px";
+  };
+  svg.onmouseleave = () => { tip.style.display = "none"; };
+}
+
+function rollup(groups, windowKey, value) {
+  const rows = [...groups.entries()].map(([name, members]) => {
+    const sum = { loc: 0, added: 0, removed: 0, commits: 0, agent: 0 };
+    for (const file of members) {
+      const win = file.windows[windowKey];
+      sum.loc += file.loc; sum.added += win.added; sum.removed += win.removed;
+      sum.commits += win.commits; sum.agent += win.agentCommits;
+    }
+    return { name, files: members.length, ...sum };
+  }).sort((a, b) => (b.added + b.removed) - (a.added + a.removed));
+  document.getElementById("rollup").innerHTML =
+    `<thead><tr><th>group</th><th class="num">files</th><th class="num">loc</th>
+      <th class="num">+ / − in window</th><th class="num">commits</th><th class="num">agent %</th></tr></thead><tbody>` +
+    rows.map((row) => `<tr><td class="mono">${esc(row.name)}</td>
+      <td class="num">${fmt(row.files)}</td><td class="num">${fmt(row.loc)}</td>
+      <td class="num">+${fmt(row.added)} / −${fmt(row.removed)}</td>
+      <td class="num">${fmt(row.commits)}</td>
+      <td class="num">${row.commits ? Math.round((100 * row.agent) / row.commits) : 0}</td></tr>`).join("") +
+    "</tbody>";
+}
+
+if (!churn) {
+  main.innerHTML = "<h1>Churn &amp; ownership</h1>" + missingNotice("churn");
+} else {
+  build();
+}
+</script>
+</body>
+</html>

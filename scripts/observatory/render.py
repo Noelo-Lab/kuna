@@ -13,6 +13,7 @@ PAGES_DIR = Path(__file__).parent / "pages"
 PAGES = {
     "index": [],
     "atlas": ["atlas"],
+    "churn": ["churn"],
 }
 
 # dataset -> nav/launcher card, for the status object every page embeds.
@@ -21,6 +22,12 @@ DATASETS = {
         "title": "Architecture atlas",
         "blurb": "The P0–P9 pipeline, each phase's modules, options and spec chapter, "
         "the crate graph, and the real pass schedule.",
+        "regen": "make observatory",
+    },
+    "churn": {
+        "title": "Churn & ownership",
+        "blurb": "A treemap of where change concentrates: live file size × windowed "
+        "churn × who changed it (agents vs people).",
         "regen": "make observatory",
     },
 }

@@ -8,10 +8,11 @@ cheaply. docs/observatory.md is the user-facing reference."""
 import argparse
 from pathlib import Path
 
-from scripts.observatory import atlas, common, render
+from scripts.observatory import atlas, churn, common, render
 
 GENERATORS = {
     "atlas": atlas.generate,
+    "churn": churn.generate,
 }
 
 

@@ -9,6 +9,7 @@ committed; regenerate at will. Generators live in `scripts/observatory/`
 | Page | Shows | Regenerate |
 |---|---|---|
 | `observatory/atlas.html` | The architecture atlas: the P0–P9 pipeline with per-phase cards (owned artifact, modules by size, sub-phases, options, console surfaces, owning `docs/spec/` chapter), the shared layers (`substrate/`, `infra/`), the workspace crate graph, and the real pass order. | `make observatory` |
+| `observatory/churn.html` | Churn & ownership: a squarified treemap of every tracked file (area = live size or windowed churn; color = churn intensity, agent share, or recency), with scope/window controls and a per-group rollup table. | `make observatory` |
 
 Each page inlines its data; the same data is written as raw JSON under
 `observatory/data/` for agents and scripts:
@@ -22,6 +23,13 @@ Each page inlines its data; the same data is written as raw JSON under
   group, phase, definedIn, folderPhase}` — `phase` is the action-group's
   phase (semantic, via `phases.toml` `[[group]]`), `folderPhase` the folder
   the defining module lives in (physical); they legitimately differ.
+- **`data/churn.json`** — `{schemaVersion, meta, windowsDays, areas, files[]}`;
+  per file: `{path, area, crate, phase, loc, last, authors[{name,commits}],
+  windows{all,d30,d90,d365}{added,removed,commits,agentCommits}}`. Full
+  no-merge history with `--find-renames`; agent commits are `[AUTOMATED]`
+  or Co-authored-by claude/codex/chatgpt/copilot; only currently-tracked
+  files under decompiler/scripts/tools/integrations/docs/tests are kept
+  (vendored `specs/` is excluded).
 
 ## Where the data comes from
 
