@@ -6,8 +6,8 @@
     input-prototype; default off in the catalog). `auto` selects aggressive
     below 500 KiB, so on such a binary the preset is the default output.
 
-    The script loads two relocatable objects built from armfloat_preset.c
-    (source beside them, clang 14 -O2): armfloat_preset_hard.o states the VFP
+    The script loads relocatable objects built from armfloat_preset.c and
+    armfloat_preset_m4f.c (sources beside them, clang 14 -O2): armfloat_preset_hard.o states the VFP
     procedure-call standard (Tag_ABI_VFP_args=1), armfloat_preset_soft.o is
     the same source for the base standard (-mfloat-abi=soft).
 
@@ -22,6 +22,18 @@
     Passes 3 and 4 run the soft-float object the same two ways: the image
     states the base standard, so neither option fires and both passes print
     every value in core registers.
+
+    The hard-float passes also pin what the preset must leave alone.
+    scale_err converts a double to float on one exit and returns oflow's
+    float through a tail call on the other, so it stays float. from_bits
+    hands back an integer parameter in s0, which keeps its integer type
+    rather than taking the float as a parameter its callers would convert by
+    value. save_vfp stores the whole VFP bank (vstmia r0,{d0-d15}), which is
+    no read of eight double parameters. Passes 5 and 6 load
+    armfloat_preset_m4f.o, a base-standard function a Cortex-M4F computes in
+    through the AEABI helpers, with declared prototypes that put its double
+    in d0: the call to __aeabi_dcmplt keeps its integer result in both
+    passes instead of becoming the double left live in d0.
 -->
 <bytechunk space="ram" offset="0x1000">1eff2fe1</bytechunk>
 <symbol space="ram" offset="0x1000" name="harness_stub"/>
@@ -48,6 +60,15 @@
   <com>lo fu payload</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu scale_err</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu from_bits</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu save_vfp</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloat_preset_hard.o</com>
   <com>read symbols</com>
@@ -65,6 +86,15 @@
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu payload</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scale_err</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu from_bits</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu save_vfp</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
@@ -101,6 +131,26 @@
   <com>lo fu payload</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloat_preset_m4f.o</com>
+  <com>read symbols</com>
+  <com>mode aggressive</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
+  <com>parse line extern long long fixit(double a);</com>
+  <com>parse line extern long long __aeabi_d2lz(double v);</com>
+  <com>lo fu fixit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloat_preset_m4f.o</com>
+  <com>read symbols</com>
+  <com>mode aggressive</com>
+  <com>parse line extern long long fixit(double a);</com>
+  <com>parse line extern long long __aeabi_d2lz(double v);</com>
+  <com>lo fu fixit</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="armfloat preset #1: off cuts scale's double return to its low word and loses its parameter" min="1" max="1">unsigned int scale\(void\)</stringmatch>
@@ -110,8 +160,13 @@
 <stringmatch name="armfloat preset #5: off reads backfill's double as two integer words" min="1" max="1">float backfill\(float a0,float a1,unsigned int a2,unsigned int a3\)</stringmatch>
 <stringmatch name="armfloat preset #6: the preset takes backfill's double beside the back-filled float" min="1" max="1">float backfill\(float a0,float a1,double a2\)</stringmatch>
 <stringmatch name="armfloat preset #7: a float built from its float inputs' bits keeps float parameters in both passes" min="2" max="2">float copysign_bits\(float a0,float a1\)</stringmatch>
-<stringmatch name="armfloat preset #8: a NaN payload keeps its bits in every pass" min="4" max="4">return 0x7fc00123;</stringmatch>
+<stringmatch name="armfloat preset #8: a NaN payload keeps its bits in every pass" min="4" max="4">0x7fc00123</stringmatch>
 <stringmatch name="armfloat preset #9: no pass prints the NaN payload as NAN" min="0" max="0">NAN</stringmatch>
 <stringmatch name="armfloat preset #10: the soft-float image passes its doubles in core registers in both passes" min="2" max="2">void scale\(unsigned int a0,unsigned int a1\)</stringmatch>
 <stringmatch name="armfloat preset #11: no soft-float function takes a floating parameter in either pass" min="6" max="6">(scale|mix|backfill)\(unsigned int a0</stringmatch>
+<stringmatch name="armfloat preset #12: the preset returns the NaN payload as a float, bit for bit" min="1" max="1">float payload\(void\)</stringmatch>
+<stringmatch name="armfloat preset #13: a float narrowed on one exit and a call's float on the other stays float in both passes" min="2" max="2">float scale_err\(float a0\)</stringmatch>
+<stringmatch name="armfloat preset #14: an integer handed back in s0 keeps its integer parameter in both passes" min="2" max="2">unsigned int from_bits\(unsigned int a0\)</stringmatch>
+<stringmatch name="armfloat preset #15: a register-bank save takes only its pointer in both passes" min="2" max="2">void save_vfp\((double|unsigned long long) \*a0\)</stringmatch>
+<stringmatch name="armfloat preset #16: an AEABI helper call keeps its integer result beside a declared double in both passes" min="2" max="2">if \(__aeabi_dcmplt\(\)\)</stringmatch>
 </decompilertest>
