@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-79a154fe439e",
+  "probe_id": "a-9f72c4253302",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -31,14 +31,14 @@
       "float qnanf_\\(void\\)",
       "return NAN;",
       "v1 = qnanf_\\(\\);",
-      "return 0x7fc00123;"
+      "\\.from = 0x7fc00123 \\}\\)\\.to;"
     ],
     "stdout_absent": [
       "0x7fc00000",
       "\\(float\\)qnanf_",
-      "float qp\\(",
-      "float third\\("
+      "float third\\(",
+      "return 0x7fc00123;"
     ]
   },
-  "notes": "Cortex-M4F: qnanf_ returns the quiet NaN in s0 and logish tail-calls it. A value returned in a float register is a float, so qnanf_ prints NAN and logish hands it back, not (float)qnanf_() of an unsigned int, which evaluated to 2143289344.0. qp's payload NaN keeps its bits; the low half of third's d0 is not a float."
+  "notes": "Cortex-M4F: qnanf_ returns the quiet NaN in s0 and logish tail-calls it, so qnanf_ prints NAN and logish hands it back, not (float)qnanf_() of an unsigned int (2143289344.0). qp's payload NaN keeps its exact bits, as a float reinterpreted from them under the default preset's hard-float contract; third returns its double whole."
 }
