@@ -65,13 +65,21 @@ fn every_case_body_callee_has_the_dispatcher_as_caller() {
                     "{cc} {opt:?}: {callee} is called from a case body of dispatch; callers {found:?}"
                 );
             }
-            // The option off reads gcc's -O0 chain no further than eight
-            // instructions, which is the defect: the case bodies stay undecoded.
-            if cc == "gcc" && opt == ["-O0"] {
-                let found = callers(&binary, "fc", &["--option", "switchreach", "off"]);
-                assert!(found.is_empty(), "switchreach off: fc has no caller; got {found:?}");
-            }
         }
     }
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The defect and the fix on fixed bytes: gcc's `-O0` dispatch in
+/// `switchtable_gcc_x86_64` (table base in the unscaled index slot, range check
+/// ten instructions up) has its case callees' caller only with `switchreach` on.
+#[test]
+fn switchreach_off_keeps_the_eight_instruction_reach() {
+    let binary = common::fixture("switchtable_gcc_x86_64");
+    let path = std::path::Path::new(&binary);
+    for callee in ["t_o0_0", "t_o0_1", "t_o0_2", "t_o0_3"] {
+        assert_eq!(callers(path, callee, &[]), ["o0_dispatch"], "{callee} with switchreach on");
+        let off = callers(path, callee, &["--option", "switchreach", "off"]);
+        assert!(off.is_empty(), "{callee} with switchreach off has no caller; got {off:?}");
+    }
 }
