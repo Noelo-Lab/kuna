@@ -1282,7 +1282,12 @@ because they can print as direct reads. Implied values are accepted only when
 their definitions recursively use the listed pure operations; an explicit
 written value can be reused by name after its defining statement has materialized
 it, including a call or load result. Other architectures, constant shifts, and
-non-repeatable ARM inputs keep their existing output. The 12-byte reproduction
+non-repeatable ARM inputs keep their existing output. Under `regnarrow` (chapter
+[03](03-ssa-and-simplification.md)) a count that is the implied zero extension of
+an unsigned narrow value prints as that value, since the guard already casts it
+and the shift reads it the same (`(unsigned int)v4 < 32u ? (unsigned int)1 << v4 :
+0u` where a narrowed counter printed `(unsigned int)(unsigned int)v4`;
+`unsigned_extension_source`). The 12-byte reproduction
 and emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml`; signed
 comparison and ASR consumers are in
 `tests/stages/kuna-arm-register-shift-signed.xml`.

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3089,
-    3089
+    3101,
+    3101
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -954,7 +954,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 316 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 317 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -1433,6 +1433,18 @@
     "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",
     "data:REALTYPES #4: no xunknown placeholder remains",
     "data:REALTYPES #5: no undefined placeholder remains",
+    "data:REGNARROW #1: default declares the uint8_t counter unsigned char",
+    "data:REGNARROW #2: off keeps the register-wide counter",
+    "data:REGNARROW #3: off re-truncates every increment",
+    "data:REGNARROW #4: a counter whose values do not fit a byte keeps its width",
+    "data:REGNARROW #5: a value small only by arithmetic keeps its width",
+    "data:REGNARROW-ARGS #1: a value passed to a wider parameter keeps its register",
+    "data:REGNARROW-ARGS #2: no int-wide argument declared from r12d",
+    "data:REGNARROW-ARGS #3: the rcx high half is a declared local",
+    "data:REGNARROW-ARGS #4: no global-looking register name",
+    "data:REGNARROW-X86 #1: default counts in 32 bits",
+    "data:REGNARROW-X86 #2: default indexes with the 32-bit counter",
+    "data:REGNARROW-X86 #3: off keeps the 64-bit register",
     "data:REGPIECE #1: the upper half of rax is a declared local",
     "data:REGPIECE #2: no global-looking register piece",
     "data:RETCALLHALF #1: the caller hands back the callee's whole result",
