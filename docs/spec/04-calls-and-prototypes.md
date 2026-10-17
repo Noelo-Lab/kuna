@@ -5935,7 +5935,10 @@ constant, or that it -- or an address it derives from it by adds, pointer
 arithmetic, copies, casts or merges, but not a difference of two pointers, which
 is a number -- compares with, adds to or subtracts from a constant that resolves
 to read-only memory (what the printer would render as a literal) and is not a
-string literal kuna recovered
+string literal kuna recovered, or adds the negation of one (`p - (long)table`,
+which would print `&a0[-0x2030]`); the walk visits at most a budget of derived
+values and refuses the vote when it runs out, so a comparison a dozen adds and
+merges away is still seen
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleevote.rs
 (prints_a_table_as_a_literal)`, which reads `kuna_charptr::constant_is_string`).
 The constant would take the `char *`, and the printer renders the readonly
@@ -6166,8 +6169,9 @@ leaves its callee's caller set incomplete. The fixture
 `push` (`void *`, three callers of three types), `remember` (`char *`, a
 literal, `getenv` and a null) and controls that keep their integers: `slot_of`
 shifts the pointer it is handed, `align8` masks an address it derives from it,
-and `is_table`, `is_tab2` behind the forwarder `via`, and `hits` through
-`p + i`, compare it with a table address that is no string (the fixture strips
+and `is_table`, `is_tab2` behind the forwarder `via`, `hits` through `p + i`
+and `far_cmp` through a dozen adds and merges compare it with a table address
+that is no string, which `off_in` subtracts (the fixture strips
 the table's symbol so the address is a bare constant, and is built at -O2 and,
 as `callerptr_O0_x86_64`, at -O0).
 

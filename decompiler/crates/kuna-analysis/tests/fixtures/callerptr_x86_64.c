@@ -16,8 +16,10 @@
  * to `is_tab2`, which compares it with the table: `via` may take the pointer,
  * but `is_tab2`, whose one caller then passes a `char *`, keeps its integer.
  * `hits` compares an address it derives from its argument with the table, and
- * keeps its integer too. `align8` rounds the address it is handed up to a
- * multiple of eight, a number, so it keeps its integer.
+ * keeps its integer too, and so does `far_cmp`, which reaches the comparison
+ * through a dozen adds and merges, and `off_in`, which subtracts the table's
+ * address. `align8` rounds the address it is handed up to a multiple of
+ * eight, a number, so it keeps its integer.
  *
  * Build (symbols kept but the table's, no DWARF):
  *   gcc -O2 -fno-inline -fno-stack-protector -fcf-protection=none \
@@ -65,6 +67,30 @@ NI uintptr_t align8(uintptr_t p) { return (p + 7) & ~(uintptr_t)7; }
 static volatile long sink;
 NI int is_tab2(long p) { return p == (long)table; }
 NI int via(long p) { sink = 1; return is_tab2(p); }
+long g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12;
+NI int far_cmp(long p)
+{
+    long a = p + g1;
+    if (g2)
+        a += g3;
+    a += g4;
+    if (g5)
+        a += g6;
+    a += g7;
+    if (g8)
+        a += g9;
+    a += g10;
+    if (g11)
+        a += g12;
+    a += g1 * 3;
+    if (g2 > 4)
+        a += g4 * 5;
+    a += g5 * 7;
+    if (g6 > 2)
+        a += g7 * 9;
+    return a == (long)table;
+}
+NI long off_in(long p) { return p - (long)table; }
 NI int hits(long p, int n)
 {
     int c = 0;
@@ -77,7 +103,9 @@ NI long check(const char *a, long *w)
     w[0] = a[0];
     return is_table((long)"xyz") + is_table((long)a) + is_table(0) + align8((uintptr_t)a) - (uintptr_t)a
         + align8((uintptr_t)w) - (uintptr_t)w + via((long)"xyz") + via((long)a) + via(0)
-        + hits((long)"xyz", 2) + hits((long)a, (int)w[0] & 1) + hits(0, 0);
+        + hits((long)"xyz", 2) + hits((long)a, (int)w[0] & 1) + hits(0, 0)
+        + far_cmp((long)"xyz") + far_cmp((long)a) + far_cmp(0)
+        + (off_in((long)"xyz") != 0) + (off_in((long)a) != 0) + (off_in(0) != 0);
 }
 NI int by_item(const void *a, const void *b)
 {

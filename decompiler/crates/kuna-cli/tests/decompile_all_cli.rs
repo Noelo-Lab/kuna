@@ -2501,10 +2501,11 @@ fn a_frame_records_char_pointer_pointer_is_not_its_type() {
 /// result and a null (`char *`). `slot_of` shifts the pointer it is handed,
 /// `align8` masks an address it derives from it, and `is_table`, `is_tab2`
 /// (behind the forwarder `via`, whose `char *` reaches it as an ordinary
-/// `calleevote` statement) and `hits` (through `p + i`) compare it with the
-/// address of a table holding a zero byte, which a `char *` would print as a
-/// cut-off string literal: all of them keep their integers, at -O2 and -O0,
-/// and `off` keeps every integer.
+/// `calleevote` statement), `hits` (through `p + i`) and `far_cmp` (through a
+/// dozen adds and merges) compare it with the address of a table holding a
+/// zero byte, which a `char *` would print as a cut-off string literal, and
+/// `off_in` subtracts that address: all of them keep their integers, at -O2
+/// and -O0, and `off` keeps every integer.
 #[test]
 fn a_parameter_every_caller_passes_a_pointer_is_one() {
     let sp = specs();
@@ -2532,10 +2533,13 @@ fn a_parameter_every_caller_passes_a_pointer_is_one() {
                 "bool is_table(long a0)",
                 "bool is_tab2(long a0)",
                 "int hits(long a0,int a1)",
+                "bool far_cmp(long a0)",
+                "long off_in(long a0)",
             ] {
                 assert!(got.contains(keeps), "{stem} {value}: `{keeps}` missing:\n{got}");
             }
             assert!(!got.contains("== \""), "{stem} {value}: a table address printed as a literal:\n{got}");
+            assert!(!got.contains("[-0x"), "{stem} {value}: a table address subtracted as a char index:\n{got}");
         }
     }
 }
