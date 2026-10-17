@@ -82,7 +82,7 @@ fn fixture(
         )
         .unwrap();
 
-    let root = fd.bblocks_root_pub();
+    let root = fd.bblocks_ref().root.expect("function block root");
     let block = fd.bblocks_mut().new_block_basic(root);
     let call_block = if join_call {
         let join = fd.bblocks_mut().new_block_basic(root);
@@ -94,13 +94,16 @@ fn fixture(
 
     let literal = fd.new_constant(1, 0x11);
     let source_op = fd.new_op(1, Address::new(Rc::clone(&ram), 0x1001));
-    fd.op_set_opcode_code(source_op, OpCode::CPUI_COPY);
+    fd.op_set_opcode(
+        source_op,
+        kuna_decomp::typeop::type_op_for(OpCode::CPUI_COPY),
+    );
     fd.op_set_input(source_op, literal, 0).unwrap();
     let source = fd.new_unique_out(1, source_op).unwrap();
     fd.op_insert(source_op, block, None);
 
     let store = fd.new_op(1, Address::new(Rc::clone(&ram), 0x1002));
-    fd.op_set_opcode_code(store, OpCode::CPUI_COPY);
+    fd.op_set_opcode(store, kuna_decomp::typeop::type_op_for(OpCode::CPUI_COPY));
     fd.op_set_input(store, source, 0).unwrap();
     let stored = fd.new_varnode_out(1, &object, store).unwrap();
     fd.vbank_mut()
@@ -111,7 +114,7 @@ fn fixture(
     fd.op_insert(store, block, None);
 
     let call = fd.new_op(1, Address::new(Rc::clone(&ram), 0x1003));
-    fd.op_set_opcode_code(call, OpCode::CPUI_CALL);
+    fd.op_set_opcode(call, kuna_decomp::typeop::type_op_for(OpCode::CPUI_CALL));
     let target = fd.new_code_ref(&Address::new(Rc::clone(&ram), 0x2000));
     fd.op_set_input(call, target, 0).unwrap();
     fd.op_insert(call, call_block, None);
