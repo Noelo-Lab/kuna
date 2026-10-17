@@ -290,3 +290,154 @@ fn the_delta_dispatch_materializes_no_table_address() {
         );
     }
 }
+
+/// One dispatch of `switchtable_gcc_x86_64`: the shapes gcc emits that the walk
+/// could not read, each with four case bodies that call or tail-jump to a
+/// function nothing else reaches.
+struct Gcc {
+    shape: &'static str,
+    dispatch: u64,
+    branch: u64,
+    cases: [u64; 4],
+    callees: [u64; 4],
+}
+
+const GCC: [Gcc; 8] = [
+    Gcc {
+        shape: "-O0: base in the unscaled index slot, cltq of eax, check ten up",
+        dispatch: 0x100000,
+        branch: 0x100036,
+        cases: [0x100039, 0x100040, 0x100047, 0x10004e],
+        callees: [0x1001a4, 0x1001a7, 0x1001aa, 0x1001ad],
+    },
+    Gcc {
+        shape: "-O2: case-body pushes scheduled between the ja and the jump",
+        dispatch: 0x100055,
+        branch: 0x100072,
+        cases: [0x100075, 0x10007b, 0x100081, 0x100087],
+        callees: [0x1001b0, 0x1001b3, 0x1001b6, 0x1001b9],
+    },
+    Gcc {
+        shape: "-O2: a store between the compare and its ja, a sub in the chain",
+        dispatch: 0x10008e,
+        branch: 0x1000ad,
+        cases: [0x1000b0, 0x1000b7, 0x1000be, 0x1000c5],
+        callees: [0x1001bc, 0x1001bf, 0x1001c2, 0x1001c5],
+    },
+    Gcc {
+        shape: "-O2: base hoisted into a callee-saved register across a call",
+        dispatch: 0x1000cf,
+        branch: 0x1000f5,
+        cases: [0x1000f8, 0x1000ff, 0x100106, 0x10010d],
+        callees: [0x1001c8, 0x1001cb, 0x1001ce, 0x1001d1],
+    },
+    Gcc {
+        shape: "a .cold fragment reaches the dispatch before the parent's prologue",
+        dispatch: 0x100123,
+        branch: 0x10013a,
+        cases: [0x10013d, 0x100144, 0x10014b, 0x100152],
+        callees: [0x1001d4, 0x1001d7, 0x1001da, 0x1001dd],
+    },
+    Gcc {
+        shape: "jb: the check bounds the selector from below, another table follows",
+        dispatch: 0x10015a,
+        branch: 0x100170,
+        cases: [0x100173, 0x100175, 0x100177, 0x100179],
+        callees: [0x1001e0, 0x1001e3, 0x1001e6, 0x1001e9],
+    },
+    Gcc {
+        shape: "an and-masked index under a lower-bound-only check",
+        dispatch: 0x10017c,
+        branch: 0x100194,
+        cases: [0x100197, 0x100199, 0x10019b, 0x10019d],
+        callees: [0x1001ec, 0x1001ef, 0x1001f2, 0x1001f5],
+    },
+    Gcc {
+        shape: "clang's x & 3 under an unrelated y <= 200 check, another table follows",
+        dispatch: 0x100231,
+        branch: 0x10024c,
+        cases: [0x10024e, 0x100250, 0x100252, 0x100254],
+        callees: [0x10026e, 0x100271, 0x100274, 0x100277],
+    },
+];
+
+/// clang's Duff's device (bash `internal_malloc`): eight cases behind `and
+/// $0x7`, with the byte count checked above and a `cmovae` (a conditional
+/// branch inside its own instruction) between the mask and the jump.
+const DUFF: Gcc8 = Gcc8 {
+    dispatch: 0x1001f8,
+    branch: 0x10021e,
+    cases: [0x100220, 0x100222, 0x100224, 0x100226, 0x100228, 0x10022a, 0x10022c, 0x10022e],
+    callees: [0x100256, 0x100259, 0x10025c, 0x10025f, 0x100262, 0x100265, 0x100268, 0x10026b],
+};
+
+struct Gcc8 {
+    dispatch: u64,
+    branch: u64,
+    cases: [u64; 8],
+    callees: [u64; 8],
+}
+
+/// The masked Duff's device reads exactly its eight cases: the cmov is no
+/// guard, and the byte-count check above it is looser than the mask.
+#[test]
+fn a_cmov_between_the_mask_and_the_jump_is_no_guard() {
+    let idx = index_of("switchtable_gcc_x86_64");
+    let mut jumps: Vec<u64> = idx
+        .refs_from_instruction(DUFF.branch)
+        .iter()
+        .filter(|r| r.kind == XrefKind::Jump)
+        .map(|r| r.to)
+        .collect();
+    jumps.sort_unstable();
+    assert_eq!(jumps, DUFF.cases);
+    for callee in DUFF.callees {
+        let owners: Vec<Option<u64>> =
+            idx.refs_to(callee).iter().map(|r| idx.function_containing(r.from)).collect();
+        assert_eq!(owners, [Some(DUFF.dispatch)], "{callee:#x}");
+    }
+}
+
+/// Each dispatch reaches exactly its four cases: a table the walk cannot read
+/// leaves the case bodies undecoded, and a bound it misreads runs on into the
+/// next table, whose entries are code addresses measured from the wrong base.
+#[test]
+fn every_gcc_dispatch_reaches_exactly_its_cases() {
+    let idx = index_of("switchtable_gcc_x86_64");
+    let mut wrong = Vec::new();
+    for fx in GCC {
+        let mut jumps: Vec<u64> = idx
+            .refs_from_instruction(fx.branch)
+            .iter()
+            .filter(|r| r.kind == XrefKind::Jump)
+            .map(|r| r.to)
+            .collect();
+        jumps.sort_unstable();
+        if jumps != fx.cases {
+            wrong.push(format!("{}: {jumps:#x?}", fx.shape));
+        }
+    }
+    assert!(wrong.is_empty(), "dispatches that do not reach exactly their cases:\n{}", wrong.join("\n"));
+}
+
+/// The call edge the bug report is about: a function called only from a case
+/// body has its caller, and the caller is the function that dispatches.
+#[test]
+fn a_function_called_only_from_a_case_body_has_its_dispatcher_as_caller() {
+    let idx = index_of("switchtable_gcc_x86_64");
+    let mut wrong = Vec::new();
+    for fx in GCC {
+        for callee in fx.callees {
+            let owners: Vec<Option<u64>> = idx
+                .refs_to(callee)
+                .iter()
+                .filter(|r| matches!(r.kind, XrefKind::Call | XrefKind::Jump))
+                .map(|r| idx.function_containing(r.from))
+                .collect();
+            if owners != [Some(fx.dispatch)] {
+                wrong.push(format!("{}: {callee:#x} reached from {owners:#x?}", fx.shape));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "case-body callees without their dispatcher:\n{}", wrong.join("\n"));
+}

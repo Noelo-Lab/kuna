@@ -12,7 +12,7 @@ pub(super) fn matches(
     off: usize,
 ) -> bool {
     let arm = is_arm_lr_prologue(data, off, little);
-    let thumb = is_thumb_lr_prologue_endian(data, off, little);
+    let thumb = arch.analysis_armframes_full && is_thumb_lr_prologue_endian(data, off, little);
     if !arm && !thumb {
         return false;
     }

@@ -144,6 +144,23 @@ pub fn high_comment(
     if !arch.name_style_angr {
         return None;
     }
+    let (homes, fallback) = high_homes(fd, arch, high)?;
+    if homes.is_empty() {
+        let (space, offset) = fallback?;
+        return Some(("tmp".to_string(), space, offset));
+    }
+    let text = homes.keys().cloned().collect::<Vec<_>>().join(" | ");
+    let (_, (space, offset)) = homes.into_iter().next()?;
+    Some((text, space, offset))
+}
+
+/// The storage homes [`high_comment`] lists for `high`, keyed by their text, and
+/// the storage of its first instance as the fallback for a high with none.
+pub fn high_homes(
+    fd: &Funcdata,
+    arch: &Architecture,
+    high: HighVariableId,
+) -> Option<(BTreeMap<String, (Rc<AddrSpace>, u64)>, Option<(Rc<AddrSpace>, u64)>)> {
     let own = high;
     let high = fd.high_bank().get(high)?;
     let mut homes = BTreeMap::new();
@@ -213,11 +230,5 @@ pub fn high_comment(
         }
     }
     remove_join_pieces(&mut homes);
-    if homes.is_empty() {
-        let (space, offset) = fallback?;
-        return Some(("tmp".to_string(), space, offset));
-    }
-    let text = homes.keys().cloned().collect::<Vec<_>>().join(" | ");
-    let (_, (space, offset)) = homes.into_iter().next()?;
-    Some((text, space, offset))
+    Some((homes, fallback))
 }

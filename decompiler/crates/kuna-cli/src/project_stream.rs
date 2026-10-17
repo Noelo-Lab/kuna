@@ -1090,7 +1090,7 @@ fn run_pooled<'scope, 'env>(
     run: &'env StreamRun,
     scope: &'scope std::thread::Scope<'scope, 'env>,
 ) -> Result<(Vec<String>, jobs::Retries), String> {
-    let cfg = pool_config(
+    let mut cfg = pool_config(
         args,
         /* want_proto= */ true,
         /* want_provenance= */ false,
@@ -1098,6 +1098,7 @@ fn run_pooled<'scope, 'env>(
         /* want_callee_hints= */ true,
         load_seconds,
     );
+    cfg.arm_frames = crate::decompile_all::worker_arm_frames(prog);
     let inventory = flatten_targets(&prog.function_entries_canonical());
     let send = Mutex::new(tx.clone());
     let pool = scope.spawn(move || {

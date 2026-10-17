@@ -870,6 +870,8 @@ fn run(
             policy,
             detail,
             tables: None,
+            a32_tables: None,
+            memo: None,
         };
         if !gate.wait() {
             return Err(Refusal::LaneFault);

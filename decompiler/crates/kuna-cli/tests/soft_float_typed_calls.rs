@@ -734,7 +734,11 @@ fn soft_float_arm_lays_declared_prototypes_out_in_core_registers() {
     let text = decompile_with(&arm_direct(false), &direct_prototypes());
     let s4 = function(&text, "s4");
     assert!(s4.contains("v1 = dmix(a,k << 1);"), "{s4}");
-    assert!(s4.contains("__aeabi_dmul(SUB84(v1,0),"), "{s4}");
+    assert!(
+        s4.contains("__aeabi_dmul((int)((union { double from; unsigned long long to; }){ .from = v1 }).to,"),
+        "{s4}"
+    );
+    assert!(!s4.contains("SUB84(v1,0)"), "{s4}");
     let s9 = function(&text, "s9");
     assert!(s9.contains("vsink(a,1.5,a);"), "{s9}");
     for register in ["// d0", "// d1", "// d2", "// s0", "// s1"] {

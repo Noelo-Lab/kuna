@@ -329,6 +329,31 @@ fn copy_pair_writes(
 }
 
 impl MergeContext for Funcdata {
+    fn fpu_trunc_views_enabled(&self) -> bool {
+        self.get_arch().fpu_trunc_views && !self.kuna_fpu_trunc_views.is_empty()
+    }
+    fn fpu_trunc_view_highs(&self, a: HighVariableId, b: HighVariableId) -> bool {
+        self.kuna_fpu_trunc_views.iter().any(|id| {
+            let Some(op) = self.obank().get(*id) else { return false; };
+            if op.get_addlflags() & crate::op::pcodeop_addlflags::kuna_fpu_view_copy == 0 { return false; }
+            let out = op.get_out().and_then(|vn| self.vbank().get(vn)).and_then(|vn| vn.get_high());
+            let input = op.get_in(0).and_then(|vn| self.vbank().get(vn)).and_then(|vn| vn.get_high());
+            (out == Some(a) && input == Some(b)) || (out == Some(b) && input == Some(a))
+        })
+    }
+    fn fpu_trunc_root_high(&self, high: HighVariableId) -> bool {
+        self.kuna_fpu_trunc_views.iter().any(|id| {
+            self.obank().get(*id).is_some_and(|op| {
+                op.get_addlflags() & crate::op::pcodeop_addlflags::kuna_fpu_view_copy != 0
+                    && op.get_in(0).and_then(|vn| self.vbank().get(vn)).and_then(|vn| vn.get_high()) == Some(high)
+            })
+        })
+    }
+    fn op_is_fpu_trunc_view(&self, op: OpId) -> bool {
+        self.obank().get(op).is_some_and(|op| {
+            op.get_addlflags() & crate::op::pcodeop_addlflags::kuna_fpu_view_copy != 0
+        })
+    }
     // --- HighVariable flag/type reads -------------------------------------
     fn high_is_type_lock(&mut self, high: HighVariableId) -> bool {
         self.with_high_split(|hb, ctx| hb.get_mut(high).map(|h| h.is_type_lock(ctx, None)).unwrap_or(false))

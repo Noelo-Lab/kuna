@@ -646,6 +646,7 @@ fn dispatch_if_enabled<T>(enabled: bool, run: impl FnOnce() -> T) -> Option<T> {
 /// [`crate::listing::kuna_pdecode`]). It is built once, by the caller, and reused
 /// across every rebuild below, so the callback generations and the ARM re-seeds
 /// pay for the engine recipe, the image share and the context snapshot once.
+#[allow(clippy::too_many_arguments)]
 pub fn run_listing_consumers(
     bytes: &[u8],
     image: &ObjectLoadImage,
@@ -656,6 +657,28 @@ pub fn run_listing_consumers(
     committed_entries: &[u64],
     cold_entries: &[u64],
     plan: &crate::listing::WalkPlan,
+) -> Vec<(&'static str, AnalysisOutput)> {
+    run_listing_consumers_replaying(
+        bytes, image, arch, translate, noreturn_seeds, callfixup_seeds, committed_entries, cold_entries,
+        plan, None,
+    )
+}
+
+/// [`run_listing_consumers`], with `frames_replay` standing in for the
+/// `armframes` search: a `--jobs` worker passes the parent's
+/// [`AnalysisOutput::arm_frames`] record and builds only its final Listing.
+#[allow(clippy::too_many_arguments)]
+pub fn run_listing_consumers_replaying(
+    bytes: &[u8],
+    image: &ObjectLoadImage,
+    arch: &Architecture,
+    translate: &dyn Translate,
+    noreturn_seeds: &[u64],
+    callfixup_seeds: &[u64],
+    committed_entries: &[u64],
+    cold_entries: &[u64],
+    plan: &crate::listing::WalkPlan,
+    frames_replay: Option<&crate::aif::kuna_framereplay::ArmFrameReplay>,
 ) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(file) = crate::loadimage_object::parse_object(bytes) else {
         return Vec::new();
@@ -844,116 +867,163 @@ pub fn run_listing_consumers(
     let mut inventory_context_paints = Vec::new();
     let mut retained_entries = Vec::new();
     let mut frames_recovered = false;
+    let mut frame_record = None;
     // Recover validated LR-saving ARM/Thumb frames in gaps before fingerprinting,
     // keeping every entry the frameless inventory would report unless the
-    // frame-expanded Listing contradicts it.
+    // frame-expanded Listing contradicts it. A `--jobs` worker replays the
+    // parent's recovery and builds only its final Listing.
     if arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes {
         if let Some(code_space) = arch.manage().get_default_code_space() {
-            let mut frame_cache = crate::aif::raw_arm_frames(
-                &file,
-                &listing,
-                arch,
-                translate,
-                std::rc::Rc::clone(code_space),
-                listing.exec_ranges(),
-                false,
+            let memo = std::rc::Rc::new(crate::listing::kuna_decodememo::DecodeMemo::new(listing.exec_ranges()));
+            let mut frame_cache = match frames_replay {
+                Some(_) => None,
+                None => Some(crate::aif::raw_arm_frames(
+                    &file,
+                    &listing,
+                    arch,
+                    translate,
+                    std::rc::Rc::clone(code_space),
+                    listing.exec_ranges(),
+                    false,
+                    Some(&memo),
+                )),
+            };
+            frames_recovered = frames_replay.map_or_else(
+                || frame_cache.as_ref().is_some_and(|cache| !cache.roots.is_empty()),
+                |replay| replay.recovered,
             );
-            if !frame_cache.roots.is_empty() {
-                frames_recovered = true;
-                let prior = crate::aif::kuna_frameretain::prior_inventory(
-                    &file, &listing, &seeds,
-                    |seeds| crate::listing::Listing::build_with_meta_planned(
-                        &file, image, arch, translate, seeds, &funcsym_seeds, &seed_names, detail, plan,
-                    ),
-                    arch, translate, code_space, bracket(listing.exec_ranges()),
-                );
-                let mut frames: std::collections::BTreeSet<u64> = frame_cache.roots.iter().copied().collect();
-                prior.restore(&mut frames, &frame_cache);
-                let mut rejected = std::collections::BTreeSet::new();
+            if frames_recovered {
                 let independent_seeds = seeds.clone();
                 let original = listing;
-                loop {
-                    seeds = independent_seeds.iter().copied().chain(frames.iter().copied())
-                        .chain(frame_pointers.iter().flatten().copied())
-                        .chain(frame_aif.iter().flat_map(|checked| checked.entries.iter().copied())).collect();
+                let build = |frames: &std::collections::BTreeSet<u64>,
+                             pointers: Option<&Vec<u64>>,
+                             aif: Option<&crate::aif::kuna_entrychecks::CheckedAif>,
+                             memo: Option<&crate::listing::kuna_decodememo::DecodeMemo>| {
+                    let mut seeds: Vec<u64> = independent_seeds.iter().copied().chain(frames.iter().copied())
+                        .chain(pointers.into_iter().flatten().copied())
+                        .chain(aif.iter().flat_map(|checked| checked.entries.iter().copied())).collect();
                     seeds.sort_unstable();
                     seeds.dedup();
-                    let frame_context = translate.context_scope();
                     let mut modes = crate::listing::kuna_framemode::FrameModes::preserving(
-                        &frames.iter().copied().chain(frame_aif.iter()
+                        &frames.iter().copied().chain(aif.iter()
                             .flat_map(|checked| checked.entries.iter().copied())).collect::<Vec<_>>(),
                         &original,
                     );
                     if arch.input_arm_isa_override { modes.retain_decoded_modes(); }
-                    listing = crate::listing::Listing::build_tracking_frames(
+                    let listing = crate::listing::Listing::build_tracking_frames(
                         &file, image, arch, translate, &seeds, &funcsym_seeds,
-                        &seed_names, detail, plan, Some(&mut modes),
+                        &seed_names, detail, plan, Some(&mut modes), memo,
                     );
-                    let mut replacements = crate::aif::arm_frame_prefixes(
-                        &mut frame_cache, &original, &listing, &frames, &[], frame_context.as_ref(),
-                        arch, translate, std::rc::Rc::clone(code_space),
-                    );
-                    replacements.retain(|&root, &mut prefix| !prior.shields(root, prefix, &frame_cache));
-                    let stale = if replacements.is_empty() { modes.stale().clone() }
-                        else { std::collections::BTreeSet::new() };
-                    if !replacements.is_empty() || !stale.is_empty() {
-                        rejected.extend(stale);
-                        frames.retain(|root| !replacements.contains_key(root) && !rejected.contains(root));
-                        frames.extend(replacements.into_values().filter(|root| !rejected.contains(root)));
-                        frame_aif = None;
-                        frame_pointers = None;
-                        continue;
-                    }
-                    if frame_pointers.is_none() {
-                        let probe = translate.context_scope();
-                        let found = crate::aif::code_pointer_table_seeds(
-                            &file, &listing, translate, std::rc::Rc::clone(code_space),
-                            listing.exec_ranges(),
-                        );
-                        drop(probe);
-                        let added = !found.is_empty();
-                        frame_pointers = Some(found);
-                        if added {
-                            continue;
-                        }
-                    }
-                    if arch.analysis_aif && frame_aif.is_none() {
-                        let probe = translate.context_scope();
-                        if let Some(scope) = &probe { let _ = scope.protect_variable(b"TMode"); }
-                        let pointers = if arch.analysis_ptrentry {
-                            crate::aif::kuna_ptrentry::pointer_entry_seeds(
-                                &file, &listing, translate, std::rc::Rc::clone(code_space),
-                                listing.exec_ranges(),
-                            )
-                        } else { Vec::new() };
-                        let mut checked = crate::aif::kuna_entrychecks::run(
-                            &listing, Some(&original), arch, translate,
-                            std::rc::Rc::clone(code_space), pointers, bracket(listing.exec_ranges()),
-                        );
-                        drop(probe);
-                        checked.entries.retain(|root| !rejected.contains(root));
-                        let added = !checked.entries.is_empty();
-                        frame_aif = Some(checked);
-                        if added {
-                            continue;
-                        }
-                    }
-                    let found: std::collections::BTreeSet<u64> = frame_aif.iter()
-                        .flat_map(|checked| checked.entries.iter().chain(&checked.pool_entries)
-                            .chain(&checked.pointer_entries))
-                        .copied().collect();
-                    let refuted: std::collections::BTreeSet<u64> = frame_aif.iter()
-                        .flat_map(|checked| checked.straight_line.iter().copied())
-                        .chain(rejected.iter().copied()).collect();
-                    retained_entries = prior.retained(
-                        &found, &refuted, &listing, translate, std::rc::Rc::clone(code_space),
-                    );
+                    (seeds, listing, modes)
+                };
+                if let Some(replay) = frames_replay {
+                    let frames = replay.frames.iter().copied().collect();
+                    frame_pointers = Some(replay.pointers.clone());
+                    frame_aif = replay.aif.as_ref().map(crate::aif::kuna_framereplay::AifReplay::checked);
+                    let frame_context = translate.context_scope();
+                    let modes;
+                    (seeds, listing, modes) = build(&frames, frame_pointers.as_ref(), frame_aif.as_ref(), None);
+                    retained_entries.clone_from(&replay.retained);
                     inventory_context_paints = modes.decoded_paints();
                     if let Some(context) = frame_context {
                         context.commit();
                     }
-                    break;
+                } else {
+                    let frame_cache = frame_cache.as_mut().unwrap();
+                    let prior = crate::aif::kuna_frameretain::prior_inventory(
+                        &file, &original, &seeds,
+                        |seeds| crate::listing::Listing::build_with_meta_planned(
+                            &file, image, arch, translate, seeds, &funcsym_seeds, &seed_names, detail, plan,
+                        ),
+                        arch, translate, code_space, bracket(original.exec_ranges()), &memo,
+                    );
+                    let mut frames: std::collections::BTreeSet<u64> = frame_cache.roots.iter().copied().collect();
+                    prior.restore(&mut frames, frame_cache);
+                    let mut rejected = std::collections::BTreeSet::new();
+                    loop {
+                        let frame_context = translate.context_scope();
+                        let modes;
+                        (seeds, listing, modes) =
+                            build(&frames, frame_pointers.as_ref(), frame_aif.as_ref(), Some(&memo));
+                        let mut replacements = crate::aif::arm_frame_prefixes(
+                            frame_cache, &original, &listing, &frames, &[], frame_context.as_ref(),
+                            arch, translate, std::rc::Rc::clone(code_space),
+                        );
+                        replacements.retain(|&root, &mut prefix| !prior.shields(root, prefix, frame_cache));
+                        let stale = if replacements.is_empty() {
+                            let mut stale = modes.stale().clone();
+                            stale.extend(crate::aif::kuna_frameflow::entered(&listing, &frames));
+                            stale
+                        } else { std::collections::BTreeSet::new() };
+                        if !replacements.is_empty() || !stale.is_empty() {
+                            rejected.extend(stale);
+                            frames.retain(|root| !replacements.contains_key(root) && !rejected.contains(root));
+                            frames.extend(replacements.into_values().filter(|root| !rejected.contains(root)));
+                            frame_aif = None;
+                            frame_pointers = None;
+                            continue;
+                        }
+                        if frame_pointers.is_none() {
+                            let probe = translate.context_scope();
+                            let found = crate::aif::code_pointer_table_seeds(
+                                &file, &listing, translate, std::rc::Rc::clone(code_space),
+                                listing.exec_ranges(),
+                            );
+                            drop(probe);
+                            let added = !found.is_empty();
+                            frame_pointers = Some(found);
+                            if added {
+                                continue;
+                            }
+                        }
+                        if arch.analysis_aif && frame_aif.is_none() {
+                            let probe = translate.context_scope();
+                            if let Some(scope) = &probe { let _ = scope.protect_variable(b"TMode"); }
+                            let pointers = if arch.analysis_ptrentry {
+                                crate::aif::kuna_ptrentry::pointer_entry_seeds(
+                                    &file, &listing, translate, std::rc::Rc::clone(code_space),
+                                    listing.exec_ranges(),
+                                )
+                            } else { Vec::new() };
+                            let mut checked = crate::aif::kuna_entrychecks::run(
+                                &listing, Some(&original), arch, translate,
+                                std::rc::Rc::clone(code_space), pointers, bracket(listing.exec_ranges()),
+                                Some(&memo),
+                            );
+                            drop(probe);
+                            checked.entries.retain(|root| !rejected.contains(root));
+                            let added = !checked.entries.is_empty();
+                            frame_aif = Some(checked);
+                            if added {
+                                continue;
+                            }
+                        }
+                        let found: std::collections::BTreeSet<u64> = frame_aif.iter()
+                            .flat_map(|checked| checked.entries.iter().chain(&checked.pool_entries)
+                                .chain(&checked.pointer_entries))
+                            .copied().collect();
+                        let refuted: std::collections::BTreeSet<u64> = frame_aif.iter()
+                            .flat_map(|checked| checked.straight_line.iter().copied())
+                            .chain(rejected.iter().copied()).collect();
+                        retained_entries = prior.retained(
+                            &found, &refuted, &listing, translate, std::rc::Rc::clone(code_space),
+                        );
+                        inventory_context_paints = modes.decoded_paints();
+                        if let Some(context) = frame_context {
+                            context.commit();
+                        }
+                        frame_record = Some(crate::aif::kuna_framereplay::ArmFrameReplay {
+                            recovered: true,
+                            frames: frames.iter().copied().collect(),
+                            pointers: frame_pointers.clone().unwrap_or_default(),
+                            aif: frame_aif.as_ref().map(crate::aif::kuna_framereplay::AifReplay::of),
+                            retained: retained_entries.clone(),
+                        });
+                        break;
+                    }
                 }
+            } else if frames_replay.is_none() {
+                frame_record = Some(crate::aif::kuna_framereplay::ArmFrameReplay::default());
             }
         }
     }
@@ -1101,7 +1171,7 @@ pub fn run_listing_consumers(
             let mut aif_out = AnalysisOutput::default();
             let checked = frame_aif.unwrap_or_else(|| crate::aif::kuna_entrychecks::run(
                 &listing, None, arch, translate, std::rc::Rc::clone(code_space), ptrentry_out.clone(),
-                bracket(listing.exec_ranges()),
+                bracket(listing.exec_ranges()), None,
             ));
             aif_out.entries = checked.entries;
             if !checked.pool_entries.is_empty() {
@@ -1186,10 +1256,11 @@ pub fn run_listing_consumers(
         mode_out.context_paints = mode_paints;
         out.push(("flowmode", mode_out));
     }
-    if !inventory_context_paints.is_empty() || !retained_entries.is_empty() {
+    if !inventory_context_paints.is_empty() || !retained_entries.is_empty() || frame_record.is_some() {
         let mut modes = AnalysisOutput::default();
         modes.inventory_context_paints = inventory_context_paints;
         modes.entries = retained_entries;
+        modes.arm_frames = frame_record;
         out.push(("armframes", modes));
     }
     sanitize_all_names(&mut out);

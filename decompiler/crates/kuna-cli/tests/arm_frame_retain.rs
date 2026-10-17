@@ -31,8 +31,10 @@ fn frame_recovery_keeps_the_tail_branch_target_the_default_inventory_finds() {
         .status()
         .expect("run authored fixture generator")
         .success());
+    let off = entries(&path, &["--option", "armframes", "off"]);
+    assert!(off.contains(&0x1600) && !off.contains(&0x1500), "{off:x?}");
     let default = entries(&path, &[]);
-    assert!(default.contains(&0x1600) && !default.contains(&0x1500), "{default:x?}");
+    assert!(default.contains(&0x1500) && default.contains(&0x1600), "{default:x?}");
     let frames = entries(&path, &["--option", "armframes", "on"]);
     assert!(frames.contains(&0x1500) && frames.contains(&0x1600), "{frames:x?}");
     std::fs::remove_file(path).unwrap();

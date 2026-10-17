@@ -631,7 +631,7 @@ pub fn universal_sched(
             act!(ActionLikelyTrash::boxed("protorecovery")),
             act!(ActionDirectWrite::boxed("protorecovery_a", true)),
             act!(ActionDirectWrite::boxed("protorecovery_b", false)),
-            act!(ActionDeadCode::boxed("deadcode")),
+            act!(ActionDeadCode::boxed_narrowing("deadcode")),
             act!(ActionDoNothing::boxed("deadcontrolflow")),
             act!(ActionSwitchNorm::boxed("switchnorm")),
             SchedNode::Action(Box::new(move || {

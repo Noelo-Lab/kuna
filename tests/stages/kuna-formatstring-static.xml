@@ -498,7 +498,9 @@ c3
 <stringmatch name="FMTSTATIC #19: scanf %lf stores a double, under static on x86-64 and full on both targets" min="3" max="3">float8 v1; // ([^\n]+ \| )?stack - 0x18( \| [^\n]+)?$</stringmatch>
 <stringmatch name="FMTSTATIC #20: x86-64 scanf %lf returns the double it read" min="2" max="2">float8 rd\(char \*a0\)</stringmatch>
 <stringmatch name="FMTSTATIC #21: ARM hard-float declines a %lf printf, as off" min="3" max="3">void show\(unsigned int a0,unsigned int a1,unsigned int a2\)</stringmatch>
-<stringmatch name="FMTSTATIC #22: ARM hard-float declines %lf after an int, as off" min="3" max="3">void show2\(unsigned int a0\)</stringmatch>
+<stringmatch name="FMTSTATIC #22: ARM hard-float declines %lf after an int, as off" min="3" max="3">void show2\(unsigned int a0\)
+\{
+__printf_chk\(2,"n=%d v=%lf\\n",a0\);</stringmatch>
 <stringmatch name="FMTSTATIC #23: ARM scanf %lf keeps the phantom trailing argument unless full is asked for" min="2" max="2">__isoc99_sscanf\(a0,"%lf",&amp;v1,0\);</stringmatch>
 <stringmatch name="FMTSTATIC #24: no %lf site is typed as an integer" min="0" max="0">void show2?\([a-z0-9]+ a0,unsigned long a1,unsigned long a2,</stringmatch>
 <stringmatch name="FMTSTATIC #25: Win64 %zu prints the whole size_t, not its low half" min="3" max="3">printf\("%zu\\n",a0 &lt;&lt; 0x20 \| 5\);</stringmatch>

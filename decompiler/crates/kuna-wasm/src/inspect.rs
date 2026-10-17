@@ -115,7 +115,7 @@ fn function_json(prog: &ConsoleProgram, f: &FuncResult, kind: &str, sections: &[
         Obj::new()
             .str("name", &v.name)
             .str("type", &v.type_name)
-            .str("kind", if v.is_param { "arg" } else { "stack" })
+            .str("kind", v.kind())
             .opt_num("arg_index", v.arg_index)
             .opt_num("stack_offset", v.stack_offset)
             .num("size", v.size)

@@ -181,6 +181,7 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
             // order, serially either (`warn_protoorder_inert`), so the serial
             // run these names come from is the plain one.
             /* serial_callee_first= */ false,
+            crate::decompile_all::worker_arm_frames(&prog),
         )?
         .results
     } else {

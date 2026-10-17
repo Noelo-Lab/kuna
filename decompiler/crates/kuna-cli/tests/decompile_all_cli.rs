@@ -2495,6 +2495,55 @@ fn a_frame_records_char_pointer_pointer_is_not_its_type() {
     }
 }
 
+/// (kuna `callerptr`) A parameter whose own body says nothing about it takes a
+/// pointer when every caller passes one: `push`'s callers pass a record, a
+/// `strdup` result and a null (`void *`), `remember`'s a literal, a `getenv`
+/// result and a null (`char *`). `slot_of` shifts the pointer it is handed,
+/// `align8` masks an address it derives from it, and `is_table`, `is_tab2`
+/// (behind the forwarder `via`, whose `char *` reaches it as an ordinary
+/// `calleevote` statement), `hits` (through `p + i`) and `far_cmp` (through a
+/// dozen adds and merges) compare it with the address of a table holding a
+/// zero byte, which a `char *` would print as a cut-off string literal, and
+/// `off_in` subtracts that address: all of them keep their integers, at -O2
+/// and -O0, and `off` keeps every integer.
+#[test]
+fn a_parameter_every_caller_passes_a_pointer_is_one() {
+    let sp = specs();
+    for stem in ["callerptr_x86_64", "callerptr_O0_x86_64"] {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(stem)
+            .to_str()
+            .unwrap()
+            .to_string();
+        for (value, push, remember) in [
+            ("on", "void push(void *a0)", "void remember(char *a0)"),
+            ("off", "void push(unsigned long a0)", "void remember(unsigned long a0)"),
+        ] {
+            let (got, stderr, ok) =
+                run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "callerptr", value]);
+            if !ok {
+                panic!("kuna decompile-all {stem} --option callerptr {value} failed: {stderr}");
+            }
+            assert!(got.contains(push), "{stem} {value}: `{push}` missing:\n{got}");
+            assert!(got.contains(remember), "{stem} {value}: `{remember}` missing:\n{got}");
+            for keeps in [
+                "unsigned long slot_of(unsigned long a0)",
+                "unsigned long align8(long a0)",
+                "bool is_table(long a0)",
+                "bool is_tab2(long a0)",
+                "int hits(long a0,int a1)",
+                "bool far_cmp(long a0)",
+                "long off_in(long a0)",
+            ] {
+                assert!(got.contains(keeps), "{stem} {value}: `{keeps}` missing:\n{got}");
+            }
+            assert!(!got.contains("== \""), "{stem} {value}: a table address printed as a literal:\n{got}");
+            assert!(!got.contains("[-0x"), "{stem} {value}: a table address subtracted as a char index:\n{got}");
+        }
+    }
+}
+
 /// (kuna `protoorder cycles` + `structsynth`) The convergence sweep decompiles a
 /// self-recursive function again once a later layout supersedes the structure
 /// its first decompile minted.  The redo must not read the statement that first

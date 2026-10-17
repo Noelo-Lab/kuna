@@ -439,6 +439,9 @@ pub struct Architecture {
     pub callbacktype: crate::kuna_callbacktype::CallbackTypeMode,
     /// (kuna `calleevote`) What the complete caller set of a function decides about it.
     pub calleevote: crate::kuna_calleevote::CalleeVoteMode,
+    /// (kuna `callerptr`) Does a pointer-width integer parameter every caller
+    /// passes some pointer or a null take a pointer?
+    pub caller_ptr: bool,
     /// (kuna `codescalar`) Refuse a `code` pointee as the data-type of a
     /// dereferenced value.
     ///
@@ -923,6 +926,10 @@ pub struct Architecture {
     /// argument REGISTERS veto a later register the body reads before writing
     /// (option `inputparamgap`).  See [`crate::p4_calls::kuna_inputparamgap`].
     pub input_param_gap: bool,
+    /// (kuna) Declare a register parameter whose consumed bits fit a narrower
+    /// low part at that width (option `narrowargs`).  See
+    /// [`crate::p4_calls::kuna_narrowargs`].
+    pub narrow_args: bool,
     /// (kuna) At a CALL SITE, let an UNREFERENCED argument register whose next
     /// slot is on the stack end the argument list, instead of being filled in on
     /// the way to a stack trial (option `stackarggap`).  See
@@ -1288,6 +1295,7 @@ pub struct Architecture {
     /// causes itself, so its result folds past the merge phalanx
     /// (`fold_call_ret_phi`, option `foldcallretphi`, default-on).
     pub fold_call_ret_phi: bool,
+    pub fpu_trunc_views: bool,
     /// (kuna) Run `Funcdata::markIndirectOnly` in `ActionMarkIndirectOnly`
     /// instead of the inert stub, so an illegal input read only through
     /// INDIRECTs is flagged `indirectonly` (`mark_indirect_only`, option
@@ -1407,6 +1415,12 @@ pub struct Architecture {
     /// nothing may touch the slot at another width.  Affects the JSON surface
     /// only: no p-code, no emitted C.
     pub slot_ptr: bool,
+    /// (kuna `reglocals`) Report the locals the C declares outside the stack
+    /// frame (registers, temporaries, values with no storage of their own) as
+    /// `kind: "register"` rows, under the printed name and declared type, with the
+    /// uses of the HighVariables each declaration covers as their evidence.
+    /// Affects the JSON surface only: no p-code, no emitted C.
+    pub reg_locals: bool,
     /// (kuna `voidtailreturn`) Elide the trailing bare `return;` of a void
     /// function -- the one the C source it came from does not have, because the
     /// source just falls off the end of the body.
@@ -1664,6 +1678,15 @@ pub struct Architecture {
     /// `n + 1` offsets read, and each case body is walked as the dispatcher's own
     /// code. ARM images only; inert without `--option listing on`.
     pub analysis_thumbswitch: bool,
+    /// (kuna) How far the reference walk follows a register-chain jump-table
+    /// dispatch (`switchreach`); default **on**. On, it reads gcc's `-O0`
+    /// unscaled-index chain, a base hoisted above calls into a callee-saved
+    /// register, a range check up to sixteen instructions above the jump, a
+    /// masked index, and a dispatch decoded before the code that falls into
+    /// it. Off, the slice and the range-check search stop at eight
+    /// instructions and at the first call, so the case bodies of those
+    /// switches stay out of `kuna xrefs` and the callee-first call graph.
+    pub analysis_switchreach: bool,
     /// (kuna) Make the target of a jump thunk a function entry (`thunkentry`);
     /// default **on**. The Listing walk makes a function only at a CALL target,
     /// so the routine behind a function whose whole body is one direct `jmp`
@@ -1835,8 +1858,9 @@ pub struct Architecture {
     /// byte-identical. Real-ELF/PE/Mach-O path only ⇒ the XML datatest oracle is
     /// structurally untouched.
     pub analysis_funcstart_patterns: bool,
-    /// Opt-in validated ARM/Thumb frame recovery, requiring funcstart_patterns.
+    /// Validated A32 inventory frames; full recovery also admits Thumb and xrefs.
     pub analysis_armframes: bool,
+    pub analysis_armframes_full: bool,
     /// (kuna) Widen the ARM Cortex-M hardware vector-table signature
     /// (`cortexmvectors`); default **off** (output-changing: it discovers more
     /// functions). The shipped signature confirms a table only when it starts a
@@ -2754,6 +2778,7 @@ impl Architecture {
             protoorder: crate::kuna_protoorder::ProtoOrderMode::Off, // (kuna) option protoorder; reset_defaults sets the shipped default
             callbacktype: crate::kuna_callbacktype::CallbackTypeMode::Off, // (kuna) option callbacktype
             calleevote: crate::kuna_calleevote::CalleeVoteMode::Off, // (kuna) option calleevote
+            caller_ptr: false, // (kuna) option callerptr
             codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
             add_carry_chain: false,
             v850_indirect_branch: false,
@@ -2864,6 +2889,7 @@ impl Architecture {
             callee_scratch_body: true,
             indirect_anchor: true,
             input_param_gap: true,
+            narrow_args: true,
             stack_arg_gap: true,
             vararg_stack_args: true,
             vararg_forward: true,
@@ -2922,6 +2948,7 @@ impl Architecture {
             recover_loop_break: false,
             fold_call_returns: false,
             fold_call_ret_phi: false,
+            fpu_trunc_views: false,
             mark_indirect_only: false,
             hide_shadow: false, // (kuna) option hideshadow; reset_defaults sets the shipped default (on)
             strip_stack_guard: false,
@@ -2940,6 +2967,7 @@ impl Architecture {
             framelayout: false, // (kuna) option framelayout; reset_defaults sets the shipped default
             byte_honest: false, // (kuna) option bytehonest; reset_defaults sets the shipped default
             slot_ptr: false, // (kuna) option slotptr; reset_defaults sets the shipped default
+            reg_locals: false, // (kuna) option reglocals; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
             cast_implied: false, // (kuna) option castimplied; reset_defaults sets the shipped default
             cast_sign: false, // (kuna) option castsign; reset_defaults sets the shipped default
@@ -2987,6 +3015,7 @@ impl Architecture {
             analysis_declaredlibcproto: false,
             analysis_unmappedentry: false,
             analysis_thumbswitch: true,
+            analysis_switchreach: true,
             analysis_thunkentry: false,
             analysis_addrtakenentry: false,
             analysis_ppclocalentry: false,
@@ -3008,7 +3037,8 @@ impl Architecture {
             analysis_pdatainterior: false,
             analysis_pdbinterior: false,
             analysis_funcstart_patterns: false,
-            analysis_armframes: false,
+            analysis_armframes: true,
+            analysis_armframes_full: false,
             analysis_cortexmvectors: false,
             analysis_ptrentry: false,
             analysis_poolentry: false,
@@ -3224,6 +3254,7 @@ impl Architecture {
         self.indirect_anchor = true; // (kuna) DIV-PENDING default-on: an op inserted after a call's guard INDIRECT anchors to the CALL as upstream opInsertAfter does, instead of landing inside the guard run where it hides the return-value trial (0/675 ablation)
         self.stack_arg_gap = true; // (kuna) DIV-140 default-on: at a call site an argument register the caller never wrote ends the argument list when the next slot is on the stack, so a body-less import stops acquiring the caller's own untouched parameter plus a stack leftover as arguments (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
+        self.narrow_args = true; // (kuna) option narrowargs default-on: a register parameter whose uses read only its low 1, 2 or 4 bytes is declared that wide, and a callee's stated narrow parameter caps how much of the argument its callers consume (0/675 datatests)
         self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
         self.vararg_forward = true; // (kuna) default-on: a declared parameter forwarded unchanged in its own register to a variadic call's variable part is an argument (0/675 ablation)
         self.vararg_shared_float = false; // (kuna) default-off: the register-choice reading holds only for -O0 code (post-RA scheduling defeats it at -O1+)
@@ -3275,6 +3306,7 @@ impl Architecture {
         self.switch_return = true; // (kuna) DIV-25 default-on. The continuation of earlyreturn (DIV-23) to WIDE multi-way switch-phi returns (`switch { case: v=K; break; } return v` above earlyreturn's 16-in-edge cap -> per-case `return K`); same per-edge const-peel machinery so it inherits earlyreturn's safety (peels only CONSTANT arms, so it cannot cause returndup's variable-return regression). The decbench ablation of the wide-switch delta on top of default earlyreturn-on measured NET-POSITIVE (+2 perfect matches, -107 summed GED, 3:0 improved:regressed across 17 sailr binaries, zero regressions). Per-test opt-out (`option switchreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = true; // (kuna) DIV-14 default-on (angr call-return folding; per-test opt-out on the datatests it changes)
+        self.fpu_trunc_views = true;
         self.fold_call_ret_phi = true; // (kuna) default-on: a call result foldcallret already proved order-safe folds even when the call reads a global it may also write (0/675 ablation, stages PARITY OK); `option foldcallretphi off` restores the spill
         self.strip_security_check = true; // (kuna) DIV-82 default-on: REMOVES CODE (strips rustc's bounds/slice/divide-by-zero panic branches, the SEFCOM Oxidizer SecurityCheckRemover port). Name-triggered on seven Rust-only `core::panicking`/`core::slice::index`/`core::str` helpers, so it is structurally inert on a C binary: 0/675 datatests and 0 changed lines over the C fixtures
         self.strip_stack_guard = true; // (kuna) DIV-14 default-on: REMOVES CODE (strips the -fstack-protector canary epilogue). Per-test opt-out (`option stackguard off`) on the 2 Partial-splitting datatests keeps the corpus byte-identical
@@ -3289,6 +3321,7 @@ impl Architecture {
         self.indirect_args = true; // (kuna) default-on: a by-value parameter the ABI passes through a hidden pointer keeps its declared value type; 0/675 datatests move
         self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions
         self.slot_ptr = true; // (kuna) option slotptr default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; evidence in docs/features/slotptr/default-on-evaluation.md
+        self.reg_locals = true; // (kuna) option reglocals default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +205 type_match-perfect / 0 lost, 2,207 improved / 10 worse over 10,748 scored functions of the 444 decbench slices
         self.byte_honest = true; // (kuna) default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +10 type_match-perfect / 121 improved / 0 worse over 5,298 scored decbench functions
         self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
@@ -3322,6 +3355,7 @@ impl Architecture {
         self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
         self.callbacktype = crate::kuna_callbacktype::CallbackTypeMode::On; // (kuna) option callbacktype default `on`: a function whose address reaches exactly one kind of declared callback slot takes that slot's prototype; evidence in docs/features/callbacktype/default-on-evaluation.md
+        self.caller_ptr = true; // (kuna) option callerptr default-on: inert without a callee-first pass, so 0/675 datatest assertions move; on the 444-slice decbench sweep 244 decisions gain and 1 is lost
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Cycles; // (kuna) option protoorder default `cycles`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, and a function in a recursive component states its types too (`types` is the same without them); `lock` also states the arity and stays opt-in
         self.codescalar = true; // (kuna) DIV-138 default-on: a `code` pointee is never a value type, so blocking it can only replace a widthless scalar with the size-correct default
@@ -3370,6 +3404,8 @@ impl Architecture {
         self.analysis_unmappedentry = true;
         // (kuna, GH-299) Thumb tbb/tbh switch-table read -- default-ON (ARM only).
         self.analysis_thumbswitch = true;
+        // (kuna) Register-chain jump-table reach in the reference walk -- default-ON.
+        self.analysis_switchreach = true;
         // (kuna) Jump-thunk target function entries -- default-ON (x86 only).
         self.analysis_thunkentry = true;
         // (kuna) Address-taken code function entries -- default-ON (x86-64 only).
@@ -3407,7 +3443,8 @@ impl Architecture {
         // (kuna) PDB-procedure-interior entry suppression — default-ON.
         self.analysis_pdbinterior = true;
         self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
-        self.analysis_armframes = false;
+        self.analysis_armframes = true;
+        self.analysis_armframes_full = false;
         self.analysis_cortexmvectors = false; // (kuna) widened Cortex-M vector signature default-off (output-changing)
         self.analysis_ptrentry = false; // (kuna) pointer-referenced ARM entries default-off (output-changing)
         self.analysis_poolentry = false; // (kuna) ARM literal-pool inference default-off
@@ -4033,6 +4070,7 @@ impl Architecture {
         ctx.callee_scratch_body = self.callee_scratch_body; // calleescratchbody
         ctx.indirect_anchor = self.indirect_anchor; // indirectanchor
         ctx.input_param_gap = self.input_param_gap; // inputparamgap
+        ctx.narrow_args = self.narrow_args; // narrowargs
         ctx.stack_arg_gap = self.stack_arg_gap; // stackarggap
         ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
         ctx.vararg_forward = self.vararg_forward; // varargforward
@@ -4123,6 +4161,7 @@ impl Architecture {
         ctx.switch_return = self.switch_return; // switchreturn
         ctx.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         ctx.fold_call_returns = self.fold_call_returns; // foldcallret
+        ctx.fpu_trunc_views = self.fpu_trunc_views;
         ctx.fold_call_ret_phi = self.fold_call_ret_phi; // foldcallretphi
         ctx.mark_indirect_only = self.mark_indirect_only; // indirectonly
         ctx.hide_shadow = self.hide_shadow; // hideshadow

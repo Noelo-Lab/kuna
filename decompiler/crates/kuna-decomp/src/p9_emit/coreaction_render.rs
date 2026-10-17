@@ -1743,12 +1743,20 @@ impl Action for ActionMapGlobals {
 /// `ActionDeadCode`, `coreaction.hh:565`).  `flags = 0`.
 pub struct ActionDeadCode {
     base: ActionBase,
+    /// (kuna `narrowargs`) This pass, after `mainloop` settles, also narrows
+    /// the function's register inputs ([`crate::kuna_narrowargs`]).
+    narrow_inputs: bool,
 }
 
 impl ActionDeadCode {
     /// Construct in group `g` (C++ `ActionDeadCode::ActionDeadCode`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
-        Box::new(ActionDeadCode { base: ActionBase::new(0, "deadcode", g) })
+        Box::new(ActionDeadCode { base: ActionBase::new(0, "deadcode", g), narrow_inputs: false })
+    }
+
+    /// (kuna `narrowargs`) The `fullloop` pass that also narrows register inputs.
+    pub fn boxed_narrowing(g: impl Into<String>) -> Box<dyn Action> {
+        Box::new(ActionDeadCode { base: ActionBase::new(0, "deadcode", g), narrow_inputs: true })
     }
 }
 
@@ -1763,11 +1771,15 @@ impl Action for ActionDeadCode {
         if !grouplist.contains(self.get_group()) {
             return None;
         }
-        Some(Box::new(ActionDeadCode { base: self.base.clone() }))
+        Some(Box::new(ActionDeadCode { base: self.base.clone(), narrow_inputs: self.narrow_inputs }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:4146 — ActionDeadCode::apply.
-        deadcode_apply(data)
+        let res = deadcode_apply(data);
+        if self.narrow_inputs {
+            self.base.count += crate::kuna_narrowargs::narrow_inputs(data);
+        }
+        res
     }
 }
 
@@ -2173,7 +2185,12 @@ fn dc_mark_consumed_parameters(data: &mut Funcdata, call_index: int4, worklist: 
         let mut slot_consumed: Vec<int4> = Vec::new();
         if !fully_consumed {
             for i in 1..n {
-                slot_consumed.push(fc.get_input_bytes_consumed(i));
+                let stated = crate::kuna_narrowargs::stated_bytes_consumed(data, fc, (i - 1) as usize);
+                slot_consumed.push(match (fc.get_input_bytes_consumed(i), stated) {
+                    (0, s) => s,
+                    (c, 0) => c,
+                    (c, s) => c.min(s),
+                });
             }
         }
         (call_op, fully_consumed, slot_consumed)

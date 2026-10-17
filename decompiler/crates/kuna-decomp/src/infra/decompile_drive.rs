@@ -3,6 +3,8 @@
 //! This connects the architecture's flow environment, restartable action tree,
 //! and printer, following upstream `IfcDecompile` and `IfcPrintC`.
 
+mod kuna_varrefs;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -1900,12 +1902,12 @@ pub struct VarInfo {
     /// (`int`, `char *`, `undefined8`, …) via [`crate::printc::type_to_c_string`].
     pub type_name: String,
     /// Signed frame-relative stack offset for a stack-resident variable; `None`
-    /// for a register-resident parameter (ghidra `getStorage().getStackOffset()`).
+    /// for a register-resident parameter or local (ghidra
+    /// `getStorage().getStackOffset()`).
     pub stack_offset: Option<i64>,
     /// Size in bytes (the variable's type size).
     pub size: i64,
-    /// `true` for a formal parameter (`kind="arg"`), `false` for a local
-    /// (`kind="stack"`).
+    /// `true` for a formal parameter, `false` for a local; see [`VarInfo::kind`].
     pub is_param: bool,
     /// ABI parameter index (dense, source order) for parameters; `None` for locals.
     pub arg_index: Option<usize>,
@@ -1913,6 +1915,21 @@ pub struct VarInfo {
     pub line_numbers: Vec<usize>,
     /// Machine instruction addresses associated with those pseudocode lines.
     pub addresses: Vec<u64>,
+}
+
+impl VarInfo {
+    /// The JSON `kind`: `arg` for a parameter, `stack` for a local with a frame
+    /// offset, `register` for a local the C declares outside the frame
+    /// ([`crate::kuna_reglocals`]).
+    pub fn kind(&self) -> &'static str {
+        if self.is_param {
+            "arg"
+        } else if self.stack_offset.is_some() {
+            "stack"
+        } else {
+            "register"
+        }
+    }
 }
 
 /// A type definition surfaced for the machine-readable batch output
@@ -2058,21 +2075,31 @@ pub struct CodeProvenance {
 
 impl CodeProvenance {
     /// Attach markup-backed use evidence to the corresponding reported variables.
-    pub fn apply_to_variables(&self, fd: &Funcdata, variables: &mut [VarInfo]) {
-        self.apply_to_variables_with_refs(fd, variables);
+    /// `arch`'s printer must hold the `print_c` of `fd` the markup came from.
+    pub fn apply_to_variables(&self, arch: &Architecture, fd: &Funcdata, variables: &mut [VarInfo]) {
+        self.apply_to_variables_with_refs(arch, fd, variables);
     }
 
     /// [`Self::apply_to_variables`], returning for each variable the varrefs
     /// its evidence came from (what a token map binds variable tokens by).
     pub fn apply_to_variables_with_refs(
         &self,
+        arch: &Architecture,
         fd: &Funcdata,
         variables: &mut [VarInfo],
     ) -> Vec<BTreeSet<u64>> {
+        let storage = kuna_varrefs::StorageIndex::new(fd, variables);
+        let mut declarations = None;
         variables
             .iter_mut()
             .map(|variable| {
-                let refs = self.variable_varrefs(fd, variable);
+                let refs = if variable.kind() == "register" {
+                    declarations
+                        .get_or_insert_with(|| crate::kuna_reglocals::DeclarationHighs::of(arch.print(), fd))
+                        .varrefs(fd, &variable.name)
+                } else {
+                    self.variable_varrefs(fd, variable, &storage)
+                };
                 let evidence = self.evidence_for_refs(&refs);
                 variable.line_numbers = evidence.line_numbers;
                 variable.addresses = evidence.addresses;
@@ -2084,8 +2111,10 @@ impl CodeProvenance {
     /// The varrefs whose uses are `variable`'s evidence: its storage, else the
     /// highs carrying its name, else its `&parameter` references -- the first
     /// set the rendered markup actually used.
-    fn variable_varrefs(&self, fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> {
-        let storage_refs = variable_storage_varrefs(fd, variable);
+    fn variable_varrefs(
+        &self, fd: &Funcdata, variable: &VarInfo, storage: &kuna_varrefs::StorageIndex,
+    ) -> BTreeSet<u64> {
+        let storage_refs = storage.varrefs(fd, variable);
         if !self.evidence_for_refs(&storage_refs).line_numbers.is_empty() {
             return storage_refs;
         }
@@ -2170,6 +2199,7 @@ fn parameter_storage(fd: &Funcdata, arg_index: usize) -> Option<(Address, i64)> 
     None
 }
 
+#[cfg(test)]
 fn variable_storage_varrefs(fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> {
     let mut matches = Vec::new();
     if variable.is_param {
@@ -2536,6 +2566,13 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
         if arch.slot_ptr {
             type_filler_slots_from_stores(arch, fd, &mut out, first_slot);
         }
+    }
+
+    // 4) (kuna `reglocals`) The locals the C declares outside the frame, read off
+    // the printer, which has just printed `fd`.
+    if arch.reg_locals {
+        let locals = crate::kuna_reglocals::register_locals(arch, fd, &out);
+        out.extend(locals);
     }
     out
 }

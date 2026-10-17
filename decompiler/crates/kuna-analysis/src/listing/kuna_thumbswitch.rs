@@ -113,7 +113,7 @@ impl<'a> HalfwordTables<'a> {
                     return (Vec::new(), None);
                 };
                 let Some(index) = index.filter(|_| table == base) else { return (Vec::new(), None) };
-                let Some(cases) = guard_cases(translate, code_space, data, decoded, from, index)
+                let Some(cases) = guard_cases(translate, code_space, data, decoded, from, index, false)
                     .filter(|&n| n >= MIN_ENTRIES)
                 else {
                     return (Vec::new(), None);
@@ -153,17 +153,23 @@ impl<'a> HalfwordTables<'a> {
 /// or carry as `bcs` to exclude indices at or above it (`n` cases). The branch
 /// must leave the path to the dispatch. Inverted or signed conditions, intervening
 /// control flow, and overwritten comparison flags establish no upper bound.
-fn guard_cases(
+/// A `predicated` dispatch (A32 `ldrls pc,...`) is its own range branch.
+pub(super) fn guard_cases(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
     data: Option<&Rc<AddrSpace>>,
     decoded: &dyn Fn(u64) -> bool,
     from: u64,
     index: Key,
+    predicated: bool,
 ) -> Option<usize> {
     let mut cap = FullCapture::default();
     let mut cur = from;
     let mut inclusive: Option<bool> = None;
+    if predicated {
+        decode(translate, from, code_space, &mut cap)?;
+        inclusive = Some(range_branch(cap.ops(), from, from, translate, data)??);
+    }
     for _ in 0..MAX_GUARD_INSNS {
         let prev = [2, 4].iter().filter_map(|&d| cur.checked_sub(d)).find(|&at| decoded(at))?;
         let len = decode(translate, prev, code_space, &mut cap)?;
@@ -204,22 +210,40 @@ fn guard_cases(
                 return None;
             }
         }
-        if inclusive.is_none() && ops.iter().any(|op| op.opcode == OpCode::CPUI_CBRANCH) {
-            let mut branches = ops.iter().enumerate().filter(|(_, op)| op.opcode == OpCode::CPUI_CBRANCH);
-            let (at, branch) = branches.next()?;
-            let target = branch.ins.first()?;
-            if branches.next().is_some() || is_constant(target) || (cur..=from).contains(&target.offset) {
-                return None;
+        if inclusive.is_none() {
+            if let Some(range) = range_branch(ops, cur, from, translate, data) {
+                inclusive = Some(range?);
             }
-            inclusive = Some(match guard_mask(branch.ins.get(1)?, &ops[..at], translate, data)? {
-                0b100 => true,
-                0b110 => false,
-                _ => return None,
-            });
         }
         cur = prev;
     }
     None
+}
+
+/// The range branch among `ops`: `None` when they hold no conditional branch,
+/// `Some(None)` when theirs is not one, and otherwise whether the case count
+/// includes the compared bound.
+fn range_branch(
+    ops: &[FullOp],
+    cur: u64,
+    from: u64,
+    translate: &dyn Translate,
+    data: Option<&Rc<AddrSpace>>,
+) -> Option<Option<bool>> {
+    let mut branches = ops.iter().enumerate().filter(|(_, op)| op.opcode == OpCode::CPUI_CBRANCH);
+    let (at, branch) = branches.next()?;
+    let range = || {
+        let target = branch.ins.first()?;
+        if branches.clone().next().is_some() || is_constant(target) || (cur..=from).contains(&target.offset) {
+            return None;
+        }
+        match guard_mask(branch.ins.get(1)?, &ops[..at], translate, data)? {
+            0b100 => Some(true),
+            0b110 => Some(false),
+            _ => None,
+        }
+    };
+    Some(range())
 }
 
 fn flag_name(vn: &VarnodeData, translate: &dyn Translate) -> String {

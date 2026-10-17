@@ -739,7 +739,7 @@ fn result_json(
             s.push_str("        {");
             s.push_str(&format!("\"name\": {}, ", json_str(&v.name)));
             s.push_str(&format!("\"type\": {}, ", json_str(&v.type_name)));
-            s.push_str(&format!("\"kind\": {}, ", json_str(if v.is_param { "arg" } else { "stack" })));
+            s.push_str(&format!("\"kind\": {}, ", json_str(v.kind())));
             s.push_str(&format!("\"arg_index\": {}, ", json_opt_num(v.arg_index.map(|i| i as i64))));
             s.push_str(&format!("\"stack_offset\": {}, ", json_opt_num(v.stack_offset)));
             s.push_str(&format!("\"size\": {}, ", v.size));

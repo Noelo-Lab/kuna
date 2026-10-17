@@ -415,13 +415,13 @@ fn unchanged_frame_evidence_does_not_decode_or_validate_the_gap_again() {
         .collect();
     frames.validated(root, spans, &mut decoder);
     let roots = BTreeSet::from([root]);
-    let replacements = frames.reconcile(&listing, &listing, &mut decoder, &roots, &[], true, false);
+    let replacements = frames.reconcile(&listing, &listing, &mut decoder, &roots, &[], frame_policy());
     assert_eq!(replacements, BTreeMap::from([(root, BASE + 0x400)]));
     assert!(!decoder.decoded_addresses.is_empty());
 
     let mut repeated = GapDecoder::new(&engine, space, listing.exec_ranges());
     assert_eq!(
-        frames.reconcile(&listing, &listing, &mut repeated, &roots, &[], true, false),
+        frames.reconcile(&listing, &listing, &mut repeated, &roots, &[], frame_policy()),
         replacements
     );
     assert!(
@@ -471,11 +471,11 @@ fn expanded_fingerprints_reuse_only_context_neutral_frame_instructions() {
     );
     let roots = BTreeSet::from([root]);
     assert!(frames
-        .reconcile(&listing, &unrelated, &mut decoder, &roots, &[], true, false)
+        .reconcile(&listing, &unrelated, &mut decoder, &roots, &[], frame_policy())
         .is_empty());
     let mut expanded = GapDecoder::new(&engine, space, listing.exec_ranges());
     assert_eq!(
-        frames.reconcile(&listing, &listing, &mut expanded, &roots, &[], true, false),
+        frames.reconcile(&listing, &listing, &mut expanded, &roots, &[], frame_policy()),
         BTreeMap::from([(root, BASE + 0x400)])
     );
     assert!(
@@ -485,4 +485,55 @@ fn expanded_fingerprints_reuse_only_context_neutral_frame_instructions() {
             .all(|at| !reusable.contains(at)),
         "corpus growth redecoded a validated frame body"
     );
+}
+
+fn frame_policy() -> GapWalk<'static> {
+    GapWalk { strict: true, corroborate: false, bracket: None, noppad: false, poolslide: None }
+}
+
+#[test]
+fn reconciled_prefix_keeps_its_instruction_records_as_a_frame_root() {
+    let (engine, space, listing) = hidden_fixture("call");
+    let root = BASE + 0x404;
+    let prefix = BASE + 0x400;
+    let mut decoder = GapDecoder::new(&engine, Rc::clone(&space), listing.exec_ranges());
+    decoder.full_capture = Some(Default::default());
+    let body = check_valid_subroutine_strict(&mut decoder, &listing, root, root, u64::MAX).unwrap();
+    let spans = body.into_iter().map(|at| (at, decoder.probe(at).unwrap().len)).collect();
+    let mut frames = ArmFrames::default();
+    frames.validated(root, spans, &mut decoder);
+    assert_eq!(
+        frames.reconcile(&listing, &listing, &mut decoder, &BTreeSet::from([root]), &[], frame_policy()),
+        BTreeMap::from([(root, prefix)]),
+    );
+
+    let mut rebuilt = GapDecoder::new(&engine, Rc::clone(&space), listing.exec_ranges());
+    assert!(frames.reconcile(&listing, &listing, &mut rebuilt, &BTreeSet::from([prefix]), &[], frame_policy()).is_empty());
+    assert_eq!(
+        frames.replay(prefix, &engine, &space, &mut Default::default()),
+        Some(4),
+        "a retained body span must retain its validated decode",
+    );
+}
+
+#[test]
+fn a_rescan_through_the_shared_memo_decodes_nothing_again() {
+    let (engine, space, listing) = hidden_fixture("call");
+    let root = BASE + 0x404;
+    let memo = Rc::new(crate::listing::kuna_decodememo::DecodeMemo::new(listing.exec_ranges()));
+    let mut decoder = GapDecoder::new(&engine, Rc::clone(&space), listing.exec_ranges());
+    decoder.share(Some(&memo));
+    let body = check_valid_subroutine_strict(&mut decoder, &listing, root, root, u64::MAX).unwrap();
+    let spans = body.into_iter().map(|at| (at, decoder.probe(at).unwrap().len)).collect();
+    let mut frames = ArmFrames::sharing(&memo);
+    frames.validated(root, spans, &mut decoder);
+    let roots = BTreeSet::from([root]);
+    let replacements = frames.reconcile(&listing, &listing, &mut decoder, &roots, &[], frame_policy());
+    assert_eq!(replacements, BTreeMap::from([(root, BASE + 0x400)]));
+    assert!(!decoder.decoded_addresses.is_empty());
+
+    let mut fresh = ArmFrames::sharing(&memo);
+    let mut repeated = GapDecoder::new(&engine, space, listing.exec_ranges());
+    assert_eq!(fresh.reconcile(&listing, &listing, &mut repeated, &roots, &[], frame_policy()), replacements);
+    assert!(repeated.decoded_addresses.is_empty(), "a rescan decoded {:x?} again", repeated.decoded_addresses);
 }

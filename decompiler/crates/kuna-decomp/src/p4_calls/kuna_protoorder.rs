@@ -323,6 +323,7 @@ fn inside_a_frame_aggregate(
     data: &Funcdata,
     node: &crate::varnode::Varnode,
     regions: &mut Option<Vec<(i64, Option<i64>)>>,
+    word_ok: bool,
 ) -> bool {
     let Some(scope) = data.get_scope_local() else { return false };
     let space = scope.get_space_id();
@@ -357,7 +358,8 @@ fn inside_a_frame_aggregate(
             .collect()
     });
     let o = signed(node.get_offset());
-    regions.iter().any(|&(c, end)| o >= c && end.is_none_or(|n| o < n))
+    let word = word_ok && node.get_size() == data.get_arch().types().map_or(8, |t| t.get_size_of_pointer());
+    regions.iter().any(|&(c, end)| o >= c && end.is_none_or(|n| o < n) && !(word && end == Some(c + 1)))
 }
 
 /// Is the LOAD `o` reached through an address computed from the value it
@@ -470,6 +472,8 @@ enum Reading<'a> {
     Argument(OpId, int4),
     Member(&'a std::collections::HashSet<OpId>),
     Input,
+    /// An input whose other calls speak only through a declared prototype.
+    DeclaredInput,
 }
 
 /// (kuna `calleevote`) Does anything the function does with its input `vn`
@@ -479,6 +483,15 @@ enum Reading<'a> {
 pub(crate) fn input_refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
     class_of(ct).is_none()
         || family_refuses(data, vn, Reading::Input, ct)
+        || indexes_a_pointer(data, vn)
+        || splits_a_wide_constant(data, &value_family(data, vn), ct, 0)
+}
+
+/// (kuna `callerptr`) [`input_refuses`], with the class a call reads the value as
+/// taken from a declared prototype only, never from another callee's recovery.
+pub(crate) fn input_refuses_declared(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+    class_of(ct).is_none()
+        || family_refuses(data, vn, Reading::DeclaredInput, ct)
         || indexes_a_pointer(data, vn)
         || splits_a_wide_constant(data, &value_family(data, vn), ct, 0)
 }
@@ -587,7 +600,7 @@ fn family_refuses(data: &Funcdata, vn: VarnodeId, reading: Reading, ct: &Datatyp
         let float_global = float_vote && node.is_persist() && node.get_size() == ct.get_size();
         if node.is_type_lock()
             || (node.is_persist() && !float_global)
-            || inside_a_frame_aggregate(data, node, &mut regions)
+            || inside_a_frame_aggregate(data, node, &mut regions, matches!(reading, Reading::DeclaredInput))
             || (v != vn && addresses_a_frame_object(data, v))
         {
             return true;
@@ -638,7 +651,12 @@ fn family_refuses(data: &Funcdata, vn: VarnodeId, reading: Reading, ct: &Datatyp
                         if o.get_in(s) != Some(v) || matches!(reading, Reading::Argument(c, k) if (c, k) == (r, s)) {
                             continue;
                         }
-                        match reader_class(data, r, s) {
+                        let read = if matches!(reading, Reading::DeclaredInput) {
+                            declared_reader_class(data, r, s)
+                        } else {
+                            reader_class(data, r, s)
+                        };
+                        match read {
                             Some(c) if Some(c) != class => return true,
                             Some(_) => {}
                             None if float_vote => {
@@ -1195,6 +1213,16 @@ fn reader_class(data: &Funcdata, call: OpId, slot: int4) -> Option<Class> {
         }
     }
     stated_argument_type(data, fc, slot).and_then(|t| class_of(t))
+}
+
+/// The class a call reads its argument `slot` as, when the parameter is declared.
+fn declared_reader_class(data: &Funcdata, call: OpId, slot: int4) -> Option<Class> {
+    let fc = data.get_call_specs(data.get_call_specs_index(call)?);
+    let param = fc.proto().get_param(slot - 1)?;
+    if !param.is_type_locked() {
+        return None;
+    }
+    param.get_type().and_then(|t| class_of(t))
 }
 
 /// The class a call's result is declared as, when its output is locked.

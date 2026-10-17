@@ -1577,6 +1577,13 @@ translation; it is `0` on every C render, and a non-zero one is also spoken as a
 `note:` on stderr. It does not change the run's verdict — a record with a
 `null` `error` and a non-zero `unstructured_gotos` is usable output with named
 lossy sites, which is what makes it worth filtering or re-running on.
+A variable's `kind` is `arg` for a parameter, `stack` for a local with a frame
+offset, and `register` for a local the C declares outside the stack frame (a register,
+a temporary, or a value with no storage of its own). A `register` row carries the
+declaration's own name, so it joins to its declaration line in `code`, and its type
+spelled as the other rows spell theirs (`char[16]` for `char v1 [16];`); its
+`stack_offset` and `arg_index` are `null`. `--option reglocals off` drops those rows
+and leaves the parameters and the frame.
 `line_mappings` maps 1-based
 lines in `code` to sorted, unique machine-instruction VMAs. Variable `line_numbers`
 come from the printer's `varref` tokens; variable `addresses` are the union of the
@@ -1585,7 +1592,7 @@ emitted. The references are captured from Kuna's markup emitter and resolved aga
 the live p-code IR, rather than inferred from the rendered text. The ordinary
 plain-text renderer still produces `code`, so its bytes are unchanged.
 Reported variables are joined to native varrefs by ABI or stack storage and recovered
-high-variable identity. Multiple high-variable fragments are combined only when they
+high-variable identity; a `register` row by the high-variables its declaration covers. Multiple high-variable fragments are combined only when they
 share the reported name and their stack storage lies inside the reported variable's byte
 range, or when a stack-address constant names its base. This lets element uses contribute
 to an array's evidence without crediting a same-named fragment from another frame object;

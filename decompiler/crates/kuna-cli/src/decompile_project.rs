@@ -263,6 +263,7 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
             load_seconds,
             synth_base(&prog),
             callee_first,
+            crate::decompile_all::worker_arm_frames(&prog),
         )?;
         (pooled.results, pooled.types)
     } else if callee_first {

@@ -53,6 +53,7 @@ pub mod kuna_formattail; // (kuna) a resolved format call keeps an open tail thr
 pub mod kuna_protoorder; // (kuna) a callee's recovered prototype, parked for the callers decompiled after it
 pub mod kuna_callbacktype; // (kuna) a callback takes the prototype of the slot it is passed to
 pub mod kuna_calleevote; // (kuna) a callee parameter takes the type every caller passes
+pub mod kuna_callerptr; // (kuna) a parameter every caller passes a pointer is a pointer
 pub mod kuna_callpush; // (kuna) a call's own return-address push is part of the call
 pub mod kuna_callrettype; // (kuna) a call returns the type its callee's recovery gave it
 pub mod kuna_condexeret; // (kuna) a return trial failed only on a path ActionConditionalExe removes gets one more pass
@@ -60,6 +61,7 @@ pub mod kuna_condexeretuse; // (kuna) a use of a returned value on the branch a 
 pub mod kuna_armfloatargs; // (kuna) an ARM hard-float function takes its scalar VFP inputs at their full widths
 pub mod kuna_armfloatreturn; // (kuna) an ARM hard-float function returns and takes whole VFP values
 pub mod kuna_narrowext; // (kuna) a narrow integer argument or return value is extended as the ABI states
+pub mod kuna_narrowargs; // (kuna) a parameter whose body reads only its low bytes is declared that narrow
 pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only under the image's float convention
 pub mod kuna_varargretreg; // (kuna) a variadic call's argument in the register its value returns in
 pub mod kuna_vfpvariadic; // (kuna) a declared ARM hard-float variadic function returns under the base standard

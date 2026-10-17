@@ -537,6 +537,9 @@ pub struct ConsoleProgram {
     /// datatest path (no Listing tier), so the gated build is a structural no-op
     /// there. Empty/`None` when the listing flag is off ⇒ zero cost.
     analysis_image: Option<(String, Vec<u8>)>,
+    /// (kuna `armframes`) The whole-image frame recovery: set before the commit,
+    /// it is replayed instead of searched; after it, the record that commit made.
+    arm_frames: Option<kuna_analysis::aif::kuna_framereplay::ArmFrameReplay>,
     /// (kuna) The loader's defined `STT_OBJECT` data symbols as `(addr, name,
     /// size)`, read from `.symtab`/`.dynsym` at load
     /// ([`ObjectLoadImage::data_symbols`]) and installed as named globals by
@@ -2001,6 +2004,17 @@ impl ConsoleProgram {
         Some(db.symbol(sid).get_name().to_string())
     }
 
+    /// (kuna `armframes`) Replay `record` at the analysis commit instead of
+    /// searching for frames: a `--jobs` worker passes its parent's.
+    pub fn replay_arm_frames(&mut self, record: kuna_analysis::aif::kuna_framereplay::ArmFrameReplay) {
+        self.arm_frames = Some(record);
+    }
+
+    /// (kuna `armframes`) What the analysis commit's frame recovery decided.
+    pub fn arm_frames(&self) -> Option<&kuna_analysis::aif::kuna_framereplay::ArmFrameReplay> {
+        self.arm_frames.as_ref()
+    }
+
     /// Replay a function inventory another process derived into this one, and
     /// install it through the loader-symbol seam ([`Self::read_loader_symbols`]).
     /// Returns how many entries were new here.
@@ -2705,7 +2719,7 @@ impl ConsoleProgram {
                         // share it takes is released with the plan, before any
                         // later writer of the loader's bytes.
                         let plan = kuna_analysis::listing::WalkPlan::from_env(arch);
-                        let consumer_out = kuna_analysis::passes::run_listing_consumers(
+                        let consumer_out = kuna_analysis::passes::run_listing_consumers_replaying(
                             &bytes,
                             &image,
                             arch,
@@ -2715,8 +2729,12 @@ impl ConsoleProgram {
                             &committed_entry_seeds,
                             &merged.fde_interior_entries,
                             &plan,
+                            self.arm_frames.as_ref(),
                         );
-                        for (id, out) in consumer_out {
+                        for (id, mut out) in consumer_out {
+                            if let Some(record) = out.arm_frames.take() {
+                                self.arm_frames = Some(record);
+                            }
                             if analysis_pass_enabled(self.arch(), id) {
                                 merged.merge(out);
                             }
@@ -3648,6 +3666,7 @@ fn empty_program(
         libctypes_glibc: false,
         libctypes_refused: false,
         analysis_image: None,
+        arm_frames: None,
         loader_data_objects: Vec::new(),
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),

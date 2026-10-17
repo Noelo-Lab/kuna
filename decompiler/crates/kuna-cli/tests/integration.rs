@@ -26,8 +26,15 @@ mod arm_float_arguments;
 #[path = "arm_float_returns.rs"]
 mod arm_float_returns;
 
+#[path = "narrow_args.rs"]
+mod narrow_args;
+
 #[path = "arm_frame_retain.rs"]
 mod arm_frame_retain;
+#[path = "arm_frame_pool.rs"]
+mod arm_frame_pool;
+#[path = "arm_frame_switch.rs"]
+mod arm_frame_switch;
 
 #[path = "arm_interwork_cli.rs"]
 mod arm_interwork_cli;
@@ -84,6 +91,9 @@ mod strlenscan_round_trip;
 
 #[path = "coff_strings.rs"]
 mod coff_strings;
+
+#[path = "coldentry_source_boundary.rs"]
+mod coldentry_source_boundary;
 
 #[path = "compact_switch_cli.rs"]
 mod compact_switch_cli;
@@ -306,6 +316,9 @@ mod stack_alias_preservation;
 #[path = "stack_float_snapshot.rs"]
 mod stack_float_snapshot;
 
+#[path = "register_locals_json.rs"]
+mod register_locals_json;
+
 #[path = "stack_object_discovery.rs"]
 mod stack_object_discovery;
 
@@ -408,6 +421,9 @@ mod xrefs_cli;
 #[path = "xrefs_own_export_plt.rs"]
 mod xrefs_own_export_plt;
 
+#[path = "xrefs_switch_case_calls.rs"]
+mod xrefs_switch_case_calls;
+
 #[path = "zero_extended_returns.rs"]
 mod zero_extended_returns;
 
@@ -440,3 +456,6 @@ mod multireg_call_inputs;
 mod narrow_register_inputs;
 #[path = "float_field_slices.rs"]
 mod float_field_slices;
+
+#[path = "float_storage_truncation.rs"]
+mod float_storage_truncation;

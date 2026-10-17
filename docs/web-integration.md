@@ -205,7 +205,7 @@ Compact JSON, every address a number plus an `_hex` twin:
  function:{name, address, address_hex, aliases, object_location, kind, size,
    code, error, proto, unstructured_gotos,
    line_mappings:[{line_number, addresses, addresses_hex}],
-   variables:[{name, type, kind:"arg"|"stack", arg_index, stack_offset, size,
+   variables:[{name, type, kind:"arg"|"stack"|"register", arg_index, stack_offset, size,
                line_numbers, addresses, addresses_hex}],
    types:[{name, definition, size}],
    globals:[{name, address, address_hex, declaration, size}],

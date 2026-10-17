@@ -248,6 +248,11 @@ const CALLEE_VOTE_MAX_LINES: usize = 32;
 /// vote redoes every candidate it has.
 const CALLEE_VOTE_BUDGET_PCT: usize = 5;
 
+/// (kuna `callerptr`) The share of the first pass's printed lines a statement
+/// made of pointer-class votes alone may spend on redos, apart from
+/// [`CALLEE_VOTE_BUDGET_PCT`], so it never takes a redo from a committed type.
+const CALLER_PTR_BUDGET_PCT: usize = 2;
+
 /// (kuna `calleevote`) What redoing this function is charged: the lines its
 /// first decompile printed.
 fn redo_charge(code: Option<&str>) -> usize {
@@ -424,6 +429,7 @@ fn callee_vote_rounds(
         })
         .sum();
     let mut budget = printed * CALLEE_VOTE_BUDGET_PCT / 100;
+    let mut pointer_budget = printed * CALLER_PTR_BUDGET_PCT / 100;
     let opening = budget;
     let mut spent = 0usize;
     let mut redone = 0usize;
@@ -455,7 +461,14 @@ fn callee_vote_rounds(
                 ))
             })
             .collect();
-        let (admitted, declined) = admit_within_budget(queue, &mut budget, &mut spent);
+        let caller_ptr = prog.arch().caller_ptr;
+        let (pointers_only, queue): (Vec<_>, Vec<_>) = queue
+            .into_iter()
+            .partition(|(_, key)| caller_ptr && prog.arch().kuna_calleevote.pointers_only(*key));
+        let (mut admitted, mut declined) = admit_within_budget(queue, &mut budget, &mut spent);
+        let (more, refused) = admit_within_budget(pointers_only, &mut pointer_budget, &mut spent);
+        admitted.extend(more);
+        declined.extend(refused);
         for (charge, key) in declined {
             if kuna_decomp::kuna_calleevote::trace() {
                 eprintln!(
@@ -533,8 +546,8 @@ fn admit_within_budget(
 }
 
 /// (kuna `calleevote`) Does a redo keep the first decompile's parameters and
-/// variables, by count? A caller's vote moves types only, so a redo that moves
-/// either is not the vote's doing: decompiling a function a second time in one
+/// frame variables (`register` rows aside), by count? A caller's vote moves
+/// types only, so a redo that moves either is not the vote's doing: decompiling a function a second time in one
 /// session can recover a stack parameter the first decompile did not (bash
 /// -O2 `sub_7ea70` gains an unused `unsigned int a6`), and such a redo keeps
 /// the first body.
@@ -556,7 +569,8 @@ fn same_arity(first: &FuncResult, again: &FuncResult) -> bool {
             inner.matches(',').count() + 1
         }
     };
-    first.variables.len() == again.variables.len()
+    let frame = |r: &FuncResult| r.variables.iter().filter(|v| v.kind() != "register").count();
+    frame(first) == frame(again)
         && params(first) == params(again)
         && declared(first) == declared(again)
 }

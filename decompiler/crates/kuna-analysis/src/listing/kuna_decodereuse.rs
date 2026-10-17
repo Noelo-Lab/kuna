@@ -16,6 +16,15 @@ pub(crate) struct ReusableDecode {
 }
 
 impl ReusableDecode {
+    /// A certificate of `context` alone, for decodes that are never replayed.
+    pub(crate) fn context_only(context: Vec<u32>) -> Self {
+        ReusableDecode { context, ops: Vec::new() }
+    }
+
+    pub(crate) fn context(&self) -> &[u32] {
+        &self.context
+    }
+
     pub fn matches(&self, translate: &dyn Translate, addr: &Address) -> bool {
         translate.matches_decode_context(addr, &self.context)
     }
@@ -39,12 +48,15 @@ impl ReusableDecode {
     }
 }
 
+/// `keep_ops` false certifies the context alone, for a caller that never
+/// replays the p-code.
 pub(crate) fn capture(
     translate: &dyn Translate,
     at: u64,
     space: &Rc<AddrSpace>,
     decoded: &mut Decoded,
     full: &mut FullCapture,
+    keep_ops: bool,
 ) -> KunaResult<Option<Rc<ReusableDecode>>> {
     let addr = Address::new(Rc::clone(space), at);
     decoded.mnemonic.clear();
@@ -62,7 +74,7 @@ pub(crate) fn capture(
     Ok(context.map(|context| {
         Rc::new(ReusableDecode {
             context,
-            ops: full.ops().to_vec(),
+            ops: if keep_ops { full.ops().to_vec() } else { Vec::new() },
         })
     }))
 }

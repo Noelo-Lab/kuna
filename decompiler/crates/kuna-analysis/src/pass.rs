@@ -507,6 +507,9 @@ pub struct AnalysisOutput {
     /// Carried for the same late consumer as [`Self::libctypes_glibc`], which
     /// must then answer from the width-stable `void *` tables too.
     pub libctypes_refused: bool,
+    /// (kuna `armframes`) What whole-image frame recovery decided, for a
+    /// `--jobs` worker to replay.
+    pub arm_frames: Option<crate::aif::kuna_framereplay::ArmFrameReplay>,
 }
 
 impl AnalysisOutput {
@@ -663,6 +666,9 @@ impl AnalysisOutput {
         self.format_sites.extend(other.format_sites);
         self.libctypes_glibc |= other.libctypes_glibc;
         self.libctypes_refused |= other.libctypes_refused;
+        if other.arm_frames.is_some() {
+            self.arm_frames = other.arm_frames;
+        }
     }
 }
 

@@ -381,6 +381,10 @@ kuna_options! { self, p1;
         self.arm_float_args = on_or_off(p1)?;
         Ok(format!("ARM floating argument recovery turned {p1}"))
     },
+    "narrowargs" => {
+        self.narrow_args = on_or_off(p1)?;
+        Ok(format!("Narrow register parameter recovery turned {p1}"))
+    },
     "narrowext" => {
         let (mode, msg) = crate::kuna_narrowext::OptionNarrowExt.apply(p1)?;
         self.narrow_ext = mode;
@@ -670,6 +674,11 @@ kuna_options! { self, p1;
         self.fold_call_returns = val;
         Ok(msg)
     },
+    "fputruncviews" => {
+        let (val, msg) = crate::kuna_fputruncviews::OptionFpuTruncViews.apply(p1)?;
+        self.fpu_trunc_views = val;
+        Ok(msg)
+    },
     "foldcallretphi" => {
         let (val, msg) =
             crate::kuna_foldcallretphi::OptionFoldCallRetPhi.apply(p1)?;
@@ -734,6 +743,7 @@ kuna_options! { self, p1;
     "framelayout" => on_off!(framelayout, "recovered stack-frame reporting"),
     "bytehonest" => on_off!(byte_honest, "uncommitted-byte width reporting"),
     "slotptr" => on_off!(slot_ptr, "frame-slot pointer typing"),
+    "reglocals" => on_off!(reg_locals, "register-local reporting"),
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
     "castsign" => on_off!(cast_sign, "signed declarations for signed-only locals"),
@@ -784,6 +794,7 @@ kuna_options! { self, p1;
         self.calleevote = mode;
         Ok(msg)
     },
+    "callerptr" => on_off!(caller_ptr, "Caller pointer-class parameter typing"),
     "callbacktype" => {
         let (mode, msg) = crate::kuna_callbacktype::OptionCallbackType.apply(p1)?;
         self.callbacktype = mode;
@@ -841,6 +852,9 @@ kuna_options! { self, p1;
     },
     "thumbswitch" => {
         on_off!(analysis_thumbswitch, "Thumb tbb/tbh switch-table read in the Listing walk (GH-299)")
+    },
+    "switchreach" => {
+        on_off!(analysis_switchreach, "Register-chain jump-table reach in the reference walk")
     },
     "thunkentry" => on_off!(analysis_thunkentry, "Jump-thunk target function entries"),
     "addrtakenentry" => {
@@ -908,7 +922,15 @@ kuna_options! { self, p1;
         on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
     },
     "armframes" => {
-        on_off!(analysis_armframes, "Validated ARM/Thumb frame recovery")
+        let (inventory, full) = if p1 == "inventory" {
+            (true, false)
+        } else {
+            let on = on_or_off(p1)?;
+            (on, on)
+        };
+        self.analysis_armframes = inventory;
+        self.analysis_armframes_full = full;
+        Ok(format!("Validated ARM frame recovery set to {p1}"))
     },
     "cortexmvectors" => {
         on_off!(analysis_cortexmvectors, "Widened ARM Cortex-M vector-table signature")

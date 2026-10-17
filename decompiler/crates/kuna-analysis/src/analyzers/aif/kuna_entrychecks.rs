@@ -27,6 +27,7 @@ pub(crate) fn run(
     code_space: Rc<AddrSpace>,
     pointer_entries: Vec<u64>,
     bracket: Option<&super::kuna_aifbracket::BracketEvidence>,
+    memo: Option<&Rc<crate::listing::kuna_decodememo::DecodeMemo>>,
 ) -> CheckedAif {
     let mut straight_line = std::collections::BTreeSet::new();
     let poolslide = (arch.analysis_aifpoolslide && crate::loadimage_object::is_arm32_language(&arch.archid))
@@ -43,9 +44,10 @@ pub(crate) fn run(
             arch.analysis_aifnoppad,
             poolslide,
             Some(&mut straight_line),
+            memo,
         )
     } else {
-        super::run_aif(
+        super::run_aif_sharing(
             listing,
             translate,
             Rc::clone(&code_space),
@@ -55,6 +57,7 @@ pub(crate) fn run(
             bracket,
             arch.analysis_aifnoppad,
             poolslide,
+            memo,
         )
     };
     let mut pool_entries = Vec::new();

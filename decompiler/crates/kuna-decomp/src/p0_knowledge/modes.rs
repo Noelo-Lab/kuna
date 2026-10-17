@@ -542,11 +542,6 @@ mod tests {
         /// the preset it would be the default output under 500 KiB, which is
         /// exactly what it is opt-in to avoid; every mode keeps the default,
         /// `evidence`, which joins that way only on proof.
-        /// `armframes` expands ARM reference coverage with validated frame roots.
-        /// On a stripped 400,556-byte BusyBox it grows the reachable walk from
-        /// 2,271 instructions to about 74,000 and raises query time from 0.78 s
-        /// to 2.05 s. This cost keeps recovery opt-in in every mode.
-        ///
         /// `mixedtailret` returns a value a function tested beside a tail call,
         /// and a `void` guard that leaves the tested value in the return
         /// register compiles to the same bytes (clang's ARM `thr`/`keep`), so
@@ -567,7 +562,7 @@ mod tests {
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
-              "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin", "armframes",
+              "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
               "armconstshift"];
 

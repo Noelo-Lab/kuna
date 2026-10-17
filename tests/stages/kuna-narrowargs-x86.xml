@@ -1,0 +1,30 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    narrowargs on x86-64: an int parameter read through the whole register.
+        store3:  mov rax, rdi; mov [rsi], eax; shr rax, 16; mov [rsi+4], ax; ret
+    Every use of rdi reaches only bits 0-31, so the parameter is a 32-bit
+    `unsigned int`, and the 64-bit view `(uint8)a0 >> 0x10` becomes
+    `(uint4)a0 >> 0x10`.  Without the option it is `unsigned long`.
+
+    Stage: P4 own-input prototype recovery.  P0 assertion: option narrowargs
+    on|off.  Pass 1 (default on) proves the fix (#1); pass 2 (off) the
+    register-wide parameter (#2).
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+4889f8890648c1e81066894604c3
+</bytechunk>
+</binaryimage>
+<script>
+  <com>map function r0x401000 store3</com>
+  <com>lo fu store3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option narrowargs off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="NARROWARGS-X86 #1: default reads the int parameter at 32 bits" min="1" max="1">void store3\(unsigned int a0,struct_0 \*a1\)</stringmatch>
+<stringmatch name="NARROWARGS-X86 #2: off keeps the 64-bit register" min="1" max="1">void store3\(unsigned long a0,struct_0 \*a1\)</stringmatch>
+</decompilertest>

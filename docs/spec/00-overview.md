@@ -1826,6 +1826,14 @@ over instead, replayed through the loader-symbol seam
 The seeding is strictly additive — an address this load already resolves, or a name
 it already carries, is left alone — because a name is installed into the scope its
 `::` path names, and replacing one buries a name the worker derived correctly.
+The ARM frame recovery (`armframes`) is the other half of a stripped A32 load, and
+its decisions shape more than the inventory: the final Listing it builds also
+decides decode modes, no-return facts and call returns. The parent therefore writes
+the recovery's outcome next to the inventory: the final frame roots, code-pointer
+and AIF entries, and the prior entries it retained. A worker replays that record
+and builds only the final Listing from it, which is the parent's Listing because
+every discarded round ran in a rolled-back decode context
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (replay_worker_arm_frames)`).
 `--jobs-full-load` restores the parent's exact load in every worker.
 
 The pool's width is fixed after the parent's load, the only point at which the
@@ -2809,6 +2817,21 @@ the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as 
 `BlockCopy` mirror of the CFG when structuring begins
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_sblocks_copy)`).
 
+Basic-block operation orders remain strictly increasing along the intrusive
+operation list. Insertion uses `before + (after - before) / 2`, so odd endpoints
+cannot round the new order down onto the predecessor, including near the
+unsigned maximum. This preserves distinct positions for variable-cover and
+operation-order comparisons. When no integer lies between the neighbors, the
+whole block is renumbered
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (bb_set_order)`). An
+insertion between two operations spreads the block over the full order space; an
+append at the block's end spreads it over the lower half only. Appends approach
+the top of the space by halving the remaining gap, so a block renumbered to end
+near the maximum would run out of room again within a few dozen appends, and
+building a block of tens of thousands of operations would renumber it thousands
+of times. With the upper half free, a renumber is followed by roughly 280
+appends before the next one.
+
 Deleting a varnode through `Funcdata::delete_varnode` first checks the bank's
 deletion precondition: the node must have neither a defining operation nor any
 readers. A rejected deletion leaves the node, both bank indexes, HighVariable
@@ -3516,3 +3539,17 @@ Reserving it creates no analysis varnode and changes no physical mapping or
 emitted C. Ghidra receives temporary storage for the logical local, rather than
 a persistable ordinary stack-variable location; ordinary symbol storage and
 register-plus-stack parameter JOINs keep their existing encoding.
+
+### Variable-use provenance lookup
+
+When attaching rendered line and address evidence to reported variables,
+`decompiler/crates/kuna-decomp/src/infra/decompile_drive/kuna_varrefs.rs`
+collects the requested parameter and stack-storage keys, then traverses the
+varnode bank once. Only matching storage buckets are retained for this render;
+there is no cache across IR edits. Parameter keys preserve exact address-space
+identity and byte width, and input varnodes take precedence at parameter storage.
+Stack keys preserve the existing address-space-index check and normalize offsets
+to the stack space's signed address width. Reused storage still requires a unique
+high variable or a unique matching name. The existing named-high and address-taken
+parameter fallbacks remain in their original order, so the index changes lookup
+cost rather than which rendered uses belong to a variable.

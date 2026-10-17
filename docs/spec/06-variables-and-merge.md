@@ -1072,6 +1072,34 @@ This is a correctness fix and is unconditional: two distinct variables under
 one identifier make the emitted C read and write the wrong object, and make a
 `name` assertion ambiguous.
 
+The `fputruncviews` option (on by default; flipping it moves none of the 675
+datatest assertions) separates a numerical `FLOAT_TRUNC` result from an
+inferred floating storage view of the same-width bits. After address-tied
+recovery, an unlocked, unmapped conversion result that meets a floating view
+keeps an explicit integer local. A marked bit-preserving COPY carries the
+floating view through required marker merges. COPY and speculative merges keep
+the view separate from the logical integer, including when prior variable names
+would otherwise reunite them. Speculative merges also never join the logical
+integer to another variable: a speculative partner sharing its register would
+otherwise take the conversion's signed type. The conversion is evaluated once;
+writes to observable storage, intervening clobbers and later genuine floating
+operations keep their existing order and storage views. Locked types,
+locked names and partial-width storage relationships are not rewritten. Existing
+integer signedness is retained, and no synthetic type lock is introduced. Turning
+the option off restores existing mixed-variable recovery. This recovery is
+independent of the unconditional bit-preserving integer extraction repair in P9.
+Marker classification considers the output and other incoming values; eligible
+numerical truncations count as integers regardless of traversal order. Actual
+call and return prototypes determine floating ABI views. Where the prototype
+is unknown, an existing inferred floating view is preserved only for an
+argument or return value the model passes in a float-class register
+(`kuna_floatreg.rs (passed_in_a_float_register)`); an argument the call takes
+in an integer register reads the logical integer, since copy propagation
+leaves `vmov r0,s18; bl sinki` reading the floating register. This does not
+recover missing ABI information. A mapped or name-locked root is deliberately
+left unchanged, so renaming that root can disable this split. Functions with no
+inserted bridge bypass the additional speculative-merge scans.
+
 ## 6.2 The stack frame
 
 Stack locals do not exist until this phase builds them; before it, the frame
@@ -1238,6 +1266,70 @@ byte range is contained by the reported variable, and admits an address constant
 only when it names the variable's base. Name plus containment prevents a
 fragment from a neighbouring frame object from acquiring the array's lines while
 preserving aggregate and element uses.
+
+**Reporting the declarations outside the frame (`option reglocals`).** The
+sections above report the parameters and the stack frame. At -O0 that is every
+local, but in an optimized function most of the locals the C declares live in a
+register, in a temporary, or in no storage at all (`int v1; // eax`), and none of
+them had a row: a consumer could not read their types, and decbench's
+`type_match`, which pairs a ground-truth variable with a reported row by argument
+index, then stack offset, then instruction-address overlap, scored every
+register-resident DWARF local as a miss. Under `option reglocals` (default ON)
+`extract_variables` appends a fourth section,
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_reglocals.rs
+(register_locals)`: the declarations the printer emitted for the function
+(`printc.rs (DeclaredLocal)`), in declaration order, minus every declaration whose
+printed name a parameter or frame row already carries and every one that is
+stack storage. That is a HighVariable bound to a stack Symbol, with stack
+storage only, with only the address constants of a frame object, or with a
+stack instance inside a reported frame row; and a declaration whose storage
+comment lists only stack homes (`kuna_varsources.rs (high_homes)`, over the
+declared high and every high declared through it), such as a temporary the
+printer declares as the copy of a frame slot (`unsigned long *v3; // stack -
+0x18` beside the frame row `local_18`). A declaration whose storage merges a
+register with a stack piece no frame row covers (a callee-saved spill, the
+return-address slot) is reported here rather than nowhere, while one whose
+storage is only stack slots no frame row reports stays unreported rather than
+being called a register, so `register` never labels stack storage. Each row has
+`kind: "register"`, a null `stack_offset` and `arg_index`, the printed name, so
+a consumer joins the row to its declaration line, and as its type the datatype
+the declarator spells (`DeclaredLocal::ty`) through the same
+`kuna_bytehonest.rs (exported_type_name)` the parameter and stack rows use. For
+a scalar that is the printed declarator (an uncommitted byte is spelled
+`undefined1`); for an array it is the array type, `char[16]` as for a frame
+row, where the declaration line splits it around the name (`char v1 [16]`).
+`size` is that datatype's size. Because the rows are
+read off the printer, they exist only when `extract_variables` follows the
+`print_c` of the same function: the printer stamps its declarations with the
+function's entry (`PrintC::declared_entry`), each declaration keeps the
+HighVariable it declares and the name the naming pass gave that high, and a
+mismatch on either yields no row rather than one from another function.
+
+The evidence is the same markup provenance the other rows carry, resolved
+through the declaration instead of through storage or name:
+`kuna_reglocals.rs (DeclarationHighs)` collects the declared HighVariable and
+every HighVariable the printer declared through it (`PrintC::declared_through`:
+collapsed pieces, Symbol duplicates and group members that print under the same
+name), and the row's `line_numbers` and `addresses` are those of the lines that
+reference any of their instances. Restricting `addresses` to the ops that define
+or read the instances was measured as the alternative and scored slightly worse
+(7 fewer perfect functions over the 444 slices below), so a register row's
+addresses mean exactly what a stack row's do.
+
+`kind` is not a stored field: a row is `arg` when it is a parameter, `stack` when
+it has a frame offset, and `register` otherwise (`decompile_drive.rs
+(VarInfo::kind)`), so the batch workers' wire format carries it unchanged. The
+option moves no p-code and no emitted C, and the two consumers that read
+`variables[]` as the frame keep their output: `decompile-project`'s `.asm`
+variable comments list parameters and frame rows only, and the callee-first
+redo check (`same_arity`) compares frame rows, so a redo that moves only the
+register declarations is accepted or refused exactly as before. Over the
+campaign's 444 x86-64 decbench slices (10,748 scored functions) the option moves
+4,344 register-resident ground-truth locals from missed to correctly typed and
+2,988 to matched with a different type, and 268 stack-located and 5 argument
+ground-truth variables that were missed are now matched correctly by address
+overlap. 53 previously correct matches are lost to a new row; 205 functions
+reach a perfect score, none leave it, 2,207 improve and 10 get worse.
 
 **Which offsets are frame (`option protoranges`, default on).** The local
 scope's window is the prototype's local range plus its parameter range, and
@@ -2420,7 +2512,7 @@ fewer single-def/single-use temporaries. Over those and 24 more stripped binarie
 (11,279 functions) the `--json` `variables[]` surface decbench scores keeps the
 same (kind, type, stack offset, size, argument index) multiset in every function,
 with only `vN` names and line spans moving; every declaration this removes is a
-register local, which `variables[]` never carried. Each hunk is a fold, one of
+register local, which `variables[]` had no row for until `option reglocals`. Each hunk is a fold, one of
 those operand hoists, a renumbering, or the declaration that went with them. A
 folded call is never moved past a call, a load, a store through a pointer, a
 global write or a branch, and never into an operand of `&&` or `||`. The most it crosses is an assignment to a local whose

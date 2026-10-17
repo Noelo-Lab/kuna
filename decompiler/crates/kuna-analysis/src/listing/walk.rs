@@ -22,9 +22,7 @@ use kuna_base::space::AddrSpace;
 use kuna_decomp::architecture::Architecture;
 use kuna_sleigh::translate::Translate;
 
-use super::classify::classify;
 use super::context::ContextPainter;
-use super::decode::decode_one_listing;
 use super::model::{DiscoveredFunction, FlowKind, Insn, InsnLite, Mnemonic, Reference, RefKind};
 use super::ListingDetail;
 use super::kuna_insnstore::InstructionStore;
@@ -238,6 +236,21 @@ pub(super) struct StepCtx<'a> {
     pub detail: ListingDetail,
     /// `thumbswitch`: the table reader for a Thumb `tbb`/`tbh` dispatch.
     pub tables: Option<&'a super::kuna_thumbswitch::HalfwordTables<'a>>,
+    /// `armframes`: the table reader for an A32 jump-table dispatch.
+    pub a32_tables: Option<&'a super::kuna_a32switch::A32Tables<'a>>,
+    /// `armframes`: the decodes certified by earlier frame-recovery rounds.
+    pub memo: Option<&'a super::kuna_decodememo::DecodeMemo>,
+}
+
+impl StepCtx<'_> {
+    /// The context commits of the last [`step`]'s decode.
+    fn last_context_commits(&self) -> Vec<kuna_sleigh::translate::ContextCommitRecord> {
+        if self.memo.is_some_and(|memo| memo.reused()) {
+            Vec::new()
+        } else {
+            self.translate.last_context_commits()
+        }
+    }
 }
 
 /// True if `vma` lands inside any executable range `[lo, hi)`.
@@ -274,22 +287,11 @@ where
         return false; // out-of-bounds gate (flow.rs:891 analog)
     }
 
-    let decoded = match decode_one_listing(
-        ctx.translate,
-        vma,
-        ctx.code_space,
-        ctx.detail.assembly,
-        ctx.policy.stack_callbacks,
-        &mut |text| insns.intern_mnemonic(text),
-    ) {
-        Ok(d) => d,
-        Err(_) => return false, // decode error: stop this path (mark gap)
+    // An undecodable or zero-length decode stops this path (mark gap).
+    let Some((decoded, c)) = super::kuna_decodememo::decode(ctx, vma, &mut |text| insns.intern_mnemonic(text))
+    else {
+        return false;
     };
-    if decoded.len == 0 {
-        return false; // zero-length decode would not advance; stop this path
-    }
-
-    let c = classify(&decoded.ops, vma, decoded.len);
 
     let fall_through = vma.wrapping_add(u64::from(decoded.len));
     let stack_values: Vec<u64> = if ctx.policy.stack_callbacks {
@@ -371,6 +373,16 @@ where
             refs.file(vma, target, RefKind::Code);
         }
     }
+    let skip = vma.wrapping_add(u64::from(decoded.len));
+    if let Some(tables) = ctx.a32_tables
+        .filter(|_| c.flow.is_computed && c.flow.is_jump && c.flows.iter().all(|&t| t == skip))
+    {
+        let decoded = |at: u64| insns.decoded(at);
+        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma) {
+            out.insn(target);
+            refs.file(vma, target, RefKind::Code);
+        }
+    }
     true
 }
 
@@ -440,6 +452,8 @@ pub(super) fn walk(
     frames: Option<&mut super::kuna_framemode::FrameModes>,
     resumed: Option<WalkState>,
     tables: Option<&super::kuna_thumbswitch::HalfwordTables<'_>>,
+    a32_tables: Option<&super::kuna_a32switch::A32Tables<'_>>,
+    memo: Option<&super::kuna_decodememo::DecodeMemo>,
 ) -> WalkState {
     // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
     // ContextDatabase BEFORE we decode a single instruction — the timing the
@@ -454,7 +468,9 @@ pub(super) fn walk(
     }
 
     let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
-    let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail, tables };
+    let ctx = StepCtx {
+        translate, code_space, exec_ranges, local_entries, policy, detail, tables, a32_tables, memo,
+    };
 
     let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk, resumed);
     if let Some(mode) = flow_mode {
@@ -586,7 +602,7 @@ fn walk_serial(
             let mut work = Worklists { insns: std::mem::take(&mut successors), funcs: &mut func_worklist };
             if step(ctx, vma, &mut insns, &mut funcs, &mut refs, &mut callbacks, &mut work) {
                 let insn = insns.get(&vma).unwrap();
-                let commits = if walk_context.is_some() { ctx.translate.last_context_commits() }
+                let commits = if walk_context.is_some() { ctx.last_context_commits() }
                     else { Vec::new() };
                 if let Some(selection) = &selection { selection.accept(insn.len); }
                 if let Some(frames) = &mut frames { frames.record(entry, vma, insn.len, mode); }
@@ -674,7 +690,7 @@ fn walk_items(
         match (store.last, mode) {
             (Some(last), Some(mode)) => {
                 let commits = if last.target.is_some() {
-                    ctx.translate.last_context_commits()
+                    ctx.last_context_commits()
                 } else {
                     Vec::new()
                 };

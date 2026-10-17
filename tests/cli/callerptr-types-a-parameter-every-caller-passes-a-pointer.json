@@ -1,0 +1,46 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callerptr_x86_64",
+    "binary_sha256": "fb7eb3341a553e3d1ef21cc34c8533fd52d8d0723622189ac4af4e709afd5ae7",
+    "binary_size": 17032,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callerptr_x86_64",
+    "selector": "push",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void push\\(void \\*a0\\)",
+      "void remember\\(char \\*a0\\)",
+      "unsigned long slot_of\\(unsigned long a0\\)\\n\\{\\n  return \\(a0 >> 4\\) % 0x1f;",
+      "bool is_table\\(long a0\\)",
+      "unsigned long align8\\(long a0\\)",
+      "bool is_tab2\\(long a0\\)",
+      "bool far_cmp\\(long a0\\)",
+      "long off_in\\(long a0\\)"
+    ],
+    "stdout_absent": [
+      "void push\\(unsigned long a0\\)",
+      "a0 == \\\""
+    ]
+  },
+  "notes": "DEFAULT: push's callers pass a record, a strdup result and a null (void *); remember's a literal, a getenv result and a null (char *). slot_of, align8, is_table, is_tab2 (behind via), hits, far_cmp and off_in keep their integers; no table address prints as a literal.",
+  "probe_id": "a-0d584d86c368"
+}

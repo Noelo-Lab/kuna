@@ -34,6 +34,7 @@ pub(crate) fn prior_inventory(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
     bracket: Option<&BracketEvidence>,
+    memo: &Rc<crate::listing::kuna_decodememo::DecodeMemo>,
 ) -> Prior {
     let _scope = translate.context_scope();
     let mut thumb = seeds.to_vec();
@@ -55,7 +56,7 @@ pub(crate) fn prior_inventory(
             Vec::new()
         };
         let checked = super::kuna_entrychecks::run(
-            base, None, arch, translate, Rc::clone(code_space), pointers, bracket,
+            base, None, arch, translate, Rc::clone(code_space), pointers, bracket, Some(memo),
         );
         entries.extend(checked.entries);
         entries.extend(checked.pool_entries);
@@ -122,7 +123,7 @@ impl Prior {
 
 /// True iff the frame-expanded Listing shows `entry` is not a function start: it
 /// is data, it lies inside a decoded instruction, or straight-line flow (a
-/// fall-through or a conditional branch) runs into it.
+/// fall-through, a conditional branch or a jump-table dispatch) runs into it.
 fn contradicted(listing: &Listing, entry: u64) -> bool {
     if listing.is_undefined(entry) {
         return false;
@@ -137,6 +138,7 @@ fn contradicted(listing: &Listing, entry: u64) -> bool {
         r.kind == RefKind::Code
             && listing.instruction_at(r.from).is_some_and(|insn| {
                 insn.fall_through == Some(entry)
+                    || insn.flow.kind == FlowKind::ComputedJump
                     || (insn.flows.contains(&entry) && insn.flow.kind != FlowKind::UnconditionalBranch)
             })
     })

@@ -1,0 +1,29 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default">
+<!-- SPARC shifts extract the low integer bits of a floating argument. -->
+<bytechunk space="ram" offset="0x1000">9de3bf90b12e2010b13e201081c7e00881e80000</bytechunk>
+<bytechunk space="ram" offset="0x1040">9de3bf90f027bffcc307bffc87a01a21c727bffcf007bffc81c7e00881e80000</bytechunk>
+<bytechunk space="ram" offset="0x1080">9de3bf90b12e2010b13e201081c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1000" name="low_bits"/>
+<symbol space="ram" offset="0x1040" name="numeric"/>
+<symbol space="ram" offset="0x1080" name="integer"/>
+</binaryimage>
+<script>
+<com>parse line extern int2 low_bits(float4 value);</com>
+<com>parse line extern int4 numeric(float4 value);</com>
+<com>parse line extern int2 integer(int4 value);</com>
+<com>option castnarrow off</com>
+<com>lo fu low_bits</com><com>decompile</com><com>print C</com>
+<com>lo fu numeric</com><com>decompile</com><com>print C</com>
+<com>lo fu integer</com><com>decompile</com><com>print C</com>
+<com>option castnarrow on</com>
+<com>lo fu low_bits</com><com>decompile</com><com>print C</com>
+<com>lo fu numeric</com><com>decompile</com><com>print C</com>
+<com>lo fu integer</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="FLOAT STORAGE TRUNCATION #1: extract the float bits with either cast policy" min="2" max="2">return \(int2\)\(\(union \{ float from; unsigned int to; \}\)\{ \.from = value \}\)\.to;</stringmatch>
+<stringmatch name="FLOAT STORAGE TRUNCATION #2: numeric conversion remains numeric" min="2" max="2">return \(int4\)value;</stringmatch>
+<stringmatch name="FLOAT STORAGE TRUNCATION #3: integer truncation keeps its cast with castnarrow off" min="1" max="1">return \(int2\)value;</stringmatch>
+<stringmatch name="FLOAT STORAGE TRUNCATION #4: integer conversion is implicit with castnarrow on" min="1" max="1">return value;</stringmatch>
+</decompilertest>

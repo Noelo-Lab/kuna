@@ -3566,15 +3566,23 @@ Ubuntu 22.04's stripped `/bin/bash` that is 18 entries in `[0x30c3d, 0x312b3]`.
 An address `t` strictly inside a single-function FDE body (the `fdeinterior`
 eligibility above) is added when (1) a direct `jmp rel32`/`jcc rel32` outside the
 body targets it — found by a byte scan of the executable sections for the `E9` /
-`0F 8x` encodings and confirmed by decoding the source; (2) a linear decode of the
-body from its start lands on `t`; and (3) the instruction before `t` is `ud2`,
+`0F 8x` encodings and confirmed at an instruction boundary anchored by a known
+FDE start, function symbol, or image entry point in the same executable section;
+(2) a linear decode of the body from its start lands on `t`; and (3) the instruction before `t` is `ud2`,
 `ret`, `hlt` or a direct `jmp`, so nothing inside the fragment flows into it. Guard
 3 keeps an ordinary function's shared tail (reached by its own fall-through as well
 as another function's jump) whole; an indirect `jmp` does not satisfy it, since the
 block after one is a switch case as often as an entry. Candidates are pre-filtered
 on the bytes before `t` and a body is decoded only up to its last surviving
-candidate, so the pass costs one scan of the executable bytes plus short decodes
-(about 2 ms on `bash`). It decodes through the engine `Translate`, so it runs as a
+candidate. Source candidates are checked in address order by walking instruction
+lengths from their nearest known start, once per prefix. The containing instruction
+must actually branch to `t`: an `E9` or `0F 8x` inside a `movabs` immediate supplies
+no incoming edge, while a genuine prefixed branch still does. Sources without an
+anchor in the same section are refused; a byte the decoder rejects (an instruction
+SLEIGH does not model, such as `serialize`) is stepped over one byte at a time, as a
+linear sweep does, so it does not hide the real branches after it. The pass costs
+one scan of executable bytes plus the target and source prefix decodes. It uses
+the engine `Translate`, so it runs as a
 deferred entry pass at the commit point, and its entries join the inventory *after*
 the `fdeinterior` filter (which would otherwise reject every one of them by
 construction). x86/x86-64 ELF only; inert without `.eh_frame`.
@@ -5428,9 +5436,10 @@ stripped i386 PE as 61 of one function's 174 callers.
 
 (kuna) ARM reference walks also recover the
 LR-saving frame roots used by the Listing when both `funcstart_patterns` and
-`armframes` are enabled. `armframes` defaults off and is never injected by CLI
-discovery bundles or mode presets. With it off, reference discovery keeps its
-existing seeded/AIF walk and Listing keeps its Thumb-only inventory recovery.
+`armframes on` are enabled. The default `armframes inventory` recovers A32 frames
+for the function inventory only, and no CLI discovery bundle or mode preset
+selects `on`. Below `on`, reference discovery keeps its existing seeded/AIF walk;
+with `off`, the Listing also keeps its Thumb-only inventory recovery.
 
 Frame recovery never drops an inventory entry the option-off pipeline reports
 without evidence against it
@@ -5562,6 +5571,14 @@ Mode correction also runs with AIF disabled
 (`decompiler/crates/kuna-analysis/src/listing/kuna_framemode.rs`).
 
 Frame recovery retains its original validation records across reconciliation.
+When `aifpoolslide` is enabled, frame-prefix reconciliation uses the same literal
+word evidence as the ordinary AIF gap pass, including loads from validated frame
+bodies before any prefix is considered. An accepted prefix on a referenced pool
+word moves to the code after the pool. Its retained decode records exclude the
+pool instructions, so neither their register writes nor their calls can supply
+frame evidence. If the corrected address is already a frame root, that root
+keeps its place; reconciliation never replaces an entry with itself
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_framepool.rs`).
 A prefix pass reuses frame validity and claimed spans, and retains accepted prefix
 bodies directly from the gap scan instead of validating them again. An unchanged
 root set and unchanged fingerprint acceptance thresholds reuse the prior scan;
@@ -5627,8 +5644,71 @@ late root replacement or contradicted frame mode rebuilds the reference walk. Di
 disabling `aif` does not. Recovery remains heuristic and bounded: frames with other
 prologues, undecodable paths or uncorroborated flow escapes can remain undiscovered.
 
-The extra coverage can substantially increase query cost, which is why frame
-recovery is explicitly opt-in. On a 400,556-byte stripped ARM BusyBox ELF,
+The `inventory` value is the default: it validates A32 frame starts in the
+function inventory while retaining the existing Thumb-only inventory path.
+The `on` value also validates Thumb frames and expands independent reference
+walks; `off` restores the prior discovery path. The same function-start and
+Listing prerequisites still apply. In the optimized DecBench U-Boot pilot,
+full frame recovery adds 770 listed bodies and loses none; the corresponding
+Betaflight pilot exchanges one gained body for one lost body. Default recovery
+therefore targets A32 inventory roots. Short callbacks and vector-only handlers
+remain separate discovery sources.
+
+With `armframes` enabled, the Listing walk also follows an A32 jump table. GCC
+lowers an A32 switch to `cmp rN,#n` and a predicated `ldrls pc,[pc,rN,lsl #2]`
+with its table of case addresses 8 bytes past the dispatch, or to `addls
+pc,pc,rN,lsl #2` followed by one `b` per case. The dispatch's p-code is folded
+with the switch-table lattice; only those two PC-relative shapes answer. The
+case count comes from the guard, read as a Thumb `tbb` guard is, with the
+dispatch's own condition as the range branch when it is predicated. An
+unguarded dispatch reads nothing. Word-table entries must lie in the
+dispatcher's executable section. The cases become successors and code
+references of the dispatch
+(`decompiler/crates/kuna-analysis/src/listing/kuna_a32switch.rs`). Without this,
+frame recovery left every case block undefined. The AIF fingerprint histogram,
+which frame recovery fills with the whole program, then accepted case blocks as
+function entries and cut the dispatcher apart. Following a switch also decodes
+the code its cases reach, and the walk absorbs a routine reached only by a tail
+branch into the code that branches to it, as it does everywhere else. On stripped
+U-Boot O2-noinline that absorbs 7 of the 2,836 functions, all of which frame
+recovery without switch following lists: four tail-branch targets of `pointer`'s
+cases, and `memalign_simple`, `efi_process_event_queue` and `malloc_trim`, the
+tail-branch targets of functions the walk now reaches through a followed case.
+`tailcallentry` splits such routines off.
+
+A frame root is also withdrawn when the frame-expanded Listing enters it by
+straight-line flow, the way a contradicted mode withdraws it. The instruction
+just before the root must be a non-call that falls through or conditionally
+skips into it. Tracing back, its run must start at a function entry or a branch
+target. A shrink-wrapped routine saves LR a few instructions after its entry,
+and once a caller reaches that entry, its fall-through runs into the `push`. A
+run that begins at a call's fall-through is speculative and keeps the root: a
+literal pool after a no-return call decodes as such a run into the next routine
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_frameflow.rs`). A
+retained prior entry that a jump-table dispatch reaches is a case block and is
+contradicted too. On the stripped U-Boot O2-noinline image these rules leave
+recall at 92.0% and raise precision from 92.6% to 98.6%; `parse_label` and
+`malloc` stay whole.
+
+One inventory recovery shares its decodes. Frame validation, the AIF gap walks
+(including the prior inventory's), prefix reconciliation and every Listing
+rebuild decode the same image again. A decode is kept only when SLEIGH certifies
+it context-free, together with the effective context words it read. It is reused
+only while its address still reads those words, so a reused record is the
+record a fresh decode makes, and it reports no context commits. These records
+keep no p-code: the inventory never replays a frame body into a reference walk,
+so the inventory's own validation records keep none either. A record is a
+fixed-size slot per halfword of executable code, with its text and flow targets
+in shared arenas, so the whole image's records cost about 16 bytes per halfword
+(`decompiler/crates/kuna-analysis/src/listing/kuna_decodememo.rs`).
+A `--jobs` worker does not search at all. The parent's recovery leaves a record of
+its final roots, code-pointer and AIF entries and retained prior entries
+(`AnalysisOutput::arm_frames`). The worker builds the final Listing from that
+record under the same context lifecycle
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_framereplay.rs`).
+
+Full reference expansion can substantially increase query cost. In a historical
+measurement on a 400,556-byte stripped ARM BusyBox ELF,
 `xrefs --to puts --kind call` initially reached 2,271 instructions; frame
 recovery expanded the walk to about 74,000. The recovered query found 70 call
 references instead of 43 and took roughly twice as long. Disabling `aif` with
@@ -5927,6 +6007,101 @@ sweep of the fixture corpus: no call-graph edge lost anywhere, and gained where 
 image has a delta switch — `mcount_x86_64` 495 to 508 functions reachable from the
 entry, the gnulib image 89 to 100, the MSVC fixture 2 to 6. `kuna strings` over the
 896 KB `mcount_x86_64`, which holds 470 computed jumps, 676 ms to 704 ms.
+
+(kuna) gcc's own dispatches kept most of a switch's callees out of that read all
+the same — 3,913 of the 186,139 direct call sites in 51 x86-64 decbench binaries,
+2,609 of them at `-O0`, where every computed jump of a PIE fails. Five things
+were in the way, and each is now read. **Switch reach** (`switchreach`,
+default-on) gates how far the read follows a dispatch — the unscaled index, the
+long slice across calls, the sixteen-instruction search for the range check,
+the masked index and the re-read below; off, the slice and the search stop at
+eight instructions and at the first call, as they did. How the range check is
+read once it is found is *not* gated, so the option off is not the old walk:
+ssh `-O2`'s dispatch at `0x42a26` in `main` reads 9 of its 13 cases on the old
+walk, all 13 with the option on, and none with it off.
+
+*The `-O0` chain.* gcc spends seven instructions between its `ja` and the jump:
+`mov %eax,%eax; lea 0(,%rax,4),%rdx; lea jt(%rip),%rax; mov (%rdx,%rax,1),%eax;
+cltq; lea jt(%rip),%rdx; add %rdx,%rax`. The table base sits in the *unscaled*
+index slot, which x86 SLEIGH spells as a multiply by one, so the slice follows a
+multiply by one as a copy (a multiply by anything else still prunes the
+selector's chain). The 32-bit load writes `rax = zext(eax)`, which retires the
+tracked `eax` before `cltq` reads it back, so a register with no value of its
+own reads as the low part of the wider register holding one, in the processor's
+byte order: a constant truncated, a table entry as it is. The range check is
+then ten instructions up, and it has a window of its own (sixteen instructions)
+rather than the slice's.
+
+*The range check.* The guard is the nearest conditional branch above the
+dispatch that leaves its own instruction — a `cmov` or a `rep` prefix branches
+only to the end of the instruction it is in, and clang's Duff's device in bash's
+`internal_malloc` has a `cmovae` between its mask and its jump — and the bound
+is a comparison that feeds that branch's condition —
+in the branch itself, or in the nearest instruction above it that writes what
+the condition reads. Instructions that leave the condition alone may sit in
+between (gcc `-O2` puts a `movb $0x3f,0x34(%rsp)` between `cmpb $0x56,0x9c(%rbx)`
+and its `ja`); a comparison anywhere else is not a bound, which drops the carry
+a `sub $0x18,%rsp` in the dispatch chain used to contribute and the carry of a
+`cmp` ahead of a `je`. Which side of the comparison the dispatch is on comes
+from evaluating the condition twice, with the comparison as it comes out for a
+selector above the constant `c` and for one below it and every other flag the
+comparison sets clear. A branch taken for the large selector leaves the
+dispatch `c + 1` cases. A branch taken for the small one leaves it the selectors
+from `c` up, which bounds an unsigned `w`-byte selector at `2^(8w) - c` when that
+is within `jumptablemax` and is no bound otherwise: bash's `cmp
+$0xfffffffb,%r12d; jb default` guards a five-case table indexed by `sel + 5`, and
+reading it as `0xfffffffb + 1` cases ran on into the table after it. The
+comparison may have its constant on either side and in a temporary of the same
+instruction, which is how AArch64 SLEIGH spells `cmp x8, #6` (`tmp = 6; tmpCY =
+tmp <= x8`). Nothing checks that the comparison is on the selector: the nearest
+one may test another value entirely. An index masked by `and $m`, followed back
+over the code that falls into the dispatch through scaling, copies and zero
+extensions, states at most `m + 1` cases whatever the range check says — clang
+guards `switch (x & 3)` under `if (y <= 200) *p = y;` with the `cmp $0xc8`, which
+read as 201 cases ran twenty entries into the next functions' tables, and the
+Duff's device checks the byte count against 32 above its `and $0x7` — and where
+no range check bounds the selector the mask is read only when all `m + 1`
+entries are cases.
+
+*A base far above the jump.* gcc `-O2` hoists the base out of a loop into a
+callee-saved register, as far as the prologue: diff's `main` loads its option
+table with `lea jt(%rip),%r15` right after the pushes and dispatches some sixty
+instructions and nine calls later. The slice reaches 96 instructions back; a
+call no longer ends it when everything it still wants is a register the default
+prototype model lists as unaffected, and the fold keeps only those values
+across the call. Stepping back over an instruction that does not fall through
+(a `jmp`, a `ret`) leaves the block, so the slice stops there.
+
+*Order.* The walk is breadth-first, and a `.cold` fragment that sorts ahead of
+its parent jumps back into the parent's loop, so a dispatch can be decoded
+before the code that falls into it. A read that stopped because no decoded
+instruction ends where the slice needed one records that address. When any body
+later decodes an instruction that falls through to it, that body reads the
+table again once its own queue drains and walks the cases as its own: it reaches
+the dispatch by falling into it, and it is the function the cold fragment
+belongs to.
+
+With all five, the 51 binaries miss 156 direct call sites instead of 3,913 —
+none at `-O0` outside tar and e2fsck — and the call graph gains 1,868 edges and
+loses three, two of which were jumps from a table read past its end. What is
+left is a selector the code never range-checks because its type cannot exceed
+the table (tar's `parse_expression` switches on a token type held in a byte,
+whose table is followed directly by another one, so there is no safe place to
+stop), and AArch64's byte and halfword tables scaled by four (`ldrb w11,
+[x9,x8]; add x10,x10,x11,lsl #2; br x10`), whose entries the fold does not
+compose, and a range check on another value than the selector with no mask to
+overrule it.
+
+A complete call graph is not a better one for every consumer. Case bodies are
+where an interpreter recurses, so the new edges merge recursive functions into
+larger strongly connected components of `decompile-all`'s callee-first plan, and
+`protoorder` (`cycles`) gives no member of a cycle the prototypes of its callees:
+bash `-O0`'s `execute_*` recursion grows from 206 to 367 functions and 33 of its
+signatures change, mostly to plainer integer types (`extract_arithmetic_subst`
+from `char *(char *,int *)` to `unsigned long(unsigned long,unsigned long)`,
+`execute_command`'s `struct_69 *` to `unsigned long`), as do dash's
+`subevalvar` and `evaltreenr` and coreutils `numfmt`'s `main`. With `protoorder
+off` those functions come out the same with the option on and off.
 
 (kuna) Both reads stop at the engine's own jump-table ceiling,
 `Architecture::max_jumptable_size` — 1024 unless `option jumptablemax <n>` raises

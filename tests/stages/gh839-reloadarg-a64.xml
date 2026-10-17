@@ -61,6 +61,6 @@ e0031faab30340f966000094e00313aaf30b40f9fd7bc2a862000014
   <com>quit</com>
 </script>
 <stringmatch name="GH839-A64 #1: fa1 and fa4 pass the saved frame pointer" min="4" max="4">  use\(v1\); // tail-call</stringmatch>
-<stringmatch name="GH839-A64 #2: fa2 prints the saved frame pointer" min="2" max="2">printf\("%d %p\\n",a0 &amp; 0xffffffff,v1\);</stringmatch>
+<stringmatch name="GH839-A64 #2: fa2 prints the saved frame pointer" min="2" max="2">printf\("%d %p\\n",a0,v1\);</stringmatch>
 <stringmatch name="GH839-A64 #3: fa3 passes the saved frame pointer" min="2" max="2">use3\(&amp;Stackfffffffffffffff0,v1\);</stringmatch>
 </decompilertest>

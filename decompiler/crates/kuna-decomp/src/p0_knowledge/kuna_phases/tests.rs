@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_310() {
-    assert_eq!(kuna_num_settables(), 310);
-    assert_eq!(SETTABLE_TABLE.len(), 310);
+fn settable_count_is_315() {
+    assert_eq!(kuna_num_settables(), 315);
+    assert_eq!(SETTABLE_TABLE.len(), 315);
 }
 
 #[test]
-fn tier_counts_are_114_core_117_transform_79_analysis() {
+fn tier_counts_are_115_core_120_transform_80_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_114_core_117_transform_79_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (114, 117, 79));
+    assert_eq!((core, transform, analysis), (115, 120, 80));
 }
 
 #[test]
@@ -398,6 +398,10 @@ fn option_values_live_value_present_for_110() {
         // an analysis-tier gate with no codegen live reader, like `unmappedentry`
         // above. Default-ON.
         "thumbswitch",
+        // (kuna) Register-chain jump-table reach in the reference walk -- an
+        // analysis-tier gate with no codegen live reader, like `thumbswitch`
+        // above. Default-ON.
+        "switchreach",
         // (kuna) Jump-thunk target function entries -- an analysis-tier gate with
         // no codegen live reader (read console-side via kuna_live_value), like
         // `unmappedentry` above. Default-ON.
@@ -825,7 +829,11 @@ fn option_values_live_value_present_for_110() {
     // 135 -> 136: +1 for `strlenscan` (live_field = strlen_scan).
     // 136 -> 137: +1 for `libcnames` (live_field = libc_names).
     // 138 -> 139: +1 for `indirectargs` (live_field = indirect_args).
-    assert_eq!(with_live, 141);
+    // 141 -> 142: +1 for `fputruncviews` (live_field = fpu_trunc_views).
+    // 142 -> 143: +1 for `reglocals` (live_field = reg_locals).
+    // 143 -> 144: +1 for `narrowargs` (live_field = narrow_args).
+    // 144 -> 145: +1 for `callerptr` (live_field = caller_ptr).
+    assert_eq!(with_live, 145);
 }
 
 #[test]
@@ -1023,7 +1031,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `bytearrayc`; its P9 row sits mid-table.
     // +2 for `wideslice` and `devectorize`.
     // +1 for `addrtakenentry`; its P1 row sits mid-table beside `thunkentry`.
-    assert_eq!(json.matches("},\n").count(), 309);
+    assert_eq!(json.matches("},\n").count(), 314);
 }
 
 #[test]
