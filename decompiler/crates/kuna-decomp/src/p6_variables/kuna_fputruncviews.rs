@@ -288,12 +288,17 @@ pub(crate) fn recover(fd: &mut Funcdata) -> KunaResult<()> {
             for slot in slots {
                 let ty = input_type(fd, user, slot);
                 let inferred_float_abi = slot > 0
-                    && matches!(
-                        code,
-                        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN
-                    )
                     && ty.get_metatype() == M::TYPE_UNKNOWN
-                    && current.get_metatype() == M::TYPE_FLOAT;
+                    && current.get_metatype() == M::TYPE_FLOAT
+                    && match code {
+                        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                            crate::kuna_floatreg::passed_in_a_float_register(fd, user, slot)
+                        }
+                        OpCode::CPUI_RETURN => fd.vbank().get(out).is_some_and(|node| {
+                            crate::kuna_floatreg::returned_in_a_float_register(fd, out, node)
+                        }),
+                        _ => false,
+                    };
                 if marker
                     || (code == OpCode::CPUI_COPY && !logical_copy)
                     || ty.get_metatype() == M::TYPE_FLOAT

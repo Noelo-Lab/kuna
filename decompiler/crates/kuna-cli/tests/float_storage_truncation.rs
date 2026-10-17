@@ -389,3 +389,96 @@ int main(void) {
     std::fs::remove_file(path).unwrap();
     std::fs::remove_file(c_path).unwrap();
 }
+
+#[test]
+fn an_integer_register_argument_reads_the_logical_integer() {
+    let mut image = vec![0; 0x104];
+    let body = decoded("00482de9048b2dedc09abdee608ab0ee100a19ee390000eb080a29ee048bbdec0088bde8");
+    image[..body.len()].copy_from_slice(&body);
+    image[0x100..].copy_from_slice(&decoded("1eff2fe1"));
+    let path = common::scratch_file("integer-register-argument", "bin");
+    std::fs::write(&path, image).unwrap();
+    let mut source = String::from("#include <stdint.h>\n#include <string.h>\nvoid sinki(int);\n");
+    for option in ["on", "off"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args([
+                "decompile",
+                path.to_str().unwrap(),
+                "0x1000",
+                "--raw-image",
+                "--base",
+                "0x1000",
+                "--target",
+                "ARM:LE:32:v8",
+                "--isa",
+                "arm",
+                "--define-function",
+                &format!("0x1000=scale_{option}"),
+                "--define-function",
+                "0x1100=sinki",
+                "--option",
+                "fputruncviews",
+                option,
+                "--json",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let code = json["functions"][0]["code"].as_str().unwrap();
+        let call = code.lines().find(|line| line.contains("sinki(")).unwrap();
+        assert!(!call.contains("union"), "{code}");
+        if option == "on" {
+            assert!(code.contains("unsigned int from; float to;"), "{code}");
+        }
+        source.push_str(code);
+        source.push('\n');
+    }
+    source.push_str(
+        r#"
+static int seen;
+void sinki(int value) { seen = value; }
+static int check(float (*fn)(float, float)) {
+    static const float values[] = {12345.75f, 3.5f, 0.25f, 7.0f, 100000.5f};
+    for (unsigned i = 0; i < sizeof values / sizeof values[0]; ++i) {
+        int bits = (int)values[i];
+        float view, product;
+        memcpy(&view, &bits, 4);
+        product = view * 0.5f;
+        seen = 0;
+        float result = fn(values[i], 0.5f);
+        if (seen != bits || memcmp(&result, &product, 4)) return 1;
+    }
+    return 0;
+}
+int main(void) { return check(scale_on) || check(scale_off); }
+"#,
+    );
+    let c_path = common::scratch_file("integer-register-argument", "c");
+    std::fs::write(&c_path, source).unwrap();
+    for compiler in ["gcc", "clang"] {
+        if Command::new(compiler).arg("--version").output().is_err() {
+            continue;
+        }
+        for optimization in ["-O0", "-O2"] {
+            let executable = common::scratch_file("integer-register-argument", "exe");
+            let build = Command::new(compiler)
+                .args(["-std=c11", "-Wall", "-Wextra", "-Werror", optimization])
+                .arg(&c_path)
+                .arg("-o")
+                .arg(&executable)
+                .output()
+                .unwrap();
+            assert!(
+                build.status.success(),
+                "{compiler} {optimization}: {}",
+                String::from_utf8_lossy(&build.stderr)
+            );
+            let run = Command::new(&executable).output().unwrap();
+            assert!(run.status.success(), "{compiler} {optimization}: {run:?}");
+            std::fs::remove_file(executable).unwrap();
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_file(c_path).unwrap();
+}

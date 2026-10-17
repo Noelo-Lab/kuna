@@ -1091,7 +1091,11 @@ independent of the unconditional bit-preserving integer extraction repair in P9.
 Marker classification considers the output and other incoming values; eligible
 numerical truncations count as integers regardless of traversal order. Actual
 call and return prototypes determine floating ABI views. Where the prototype
-is unknown, an existing inferred floating view is preserved; this does not
+is unknown, an existing inferred floating view is preserved only for an
+argument or return value the model passes in a float-class register
+(`kuna_floatreg.rs (passed_in_a_float_register)`); an argument the call takes
+in an integer register reads the logical integer, since copy propagation
+leaves `vmov r0,s18; bl sinki` reading the floating register. This does not
 recover missing ABI information. A mapped or name-locked root is deliberately
 left unchanged, so renaming that root can disable this split. Functions with no
 inserted bridge bypass the additional speculative-merge scans.
