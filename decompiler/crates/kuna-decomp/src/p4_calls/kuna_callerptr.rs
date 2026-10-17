@@ -96,15 +96,22 @@ pub fn pointer_vote(sites: &[&CallSite], j: usize, p: &Typed, void_ptr: &Rc<Data
 /// except that a call the value is handed to speaks only through a declared
 /// prototype: another recovery's integer for the same slot says no more than
 /// "a pointer-width value", and a function that converts the pointer it holds
-/// to a number for a callee still holds a pointer.
+/// to a number for a callee still holds a pointer. An address the callee
+/// derives from the value by a literal offset and then masks, shifts, divides
+/// or multiplies refuses it too (`(p + 7) & ~7`, an alignment helper over a
+/// `uintptr_t`).
 ///
-/// A character pointer is also refused for a value the callee merges with an
-/// address it holds as a constant: the constant would take the `char *` and
-/// print as a string literal, which ends at the first zero byte of a table that
-/// is not a string (`if (!s) s = table;`).
+/// A character pointer is also refused for a value the callee merges with, or
+/// compares with, adds to or subtracts from, an address constant that is not a
+/// string literal: the constant would take the `char *` and print as a string
+/// literal, which ends at the first zero byte of a table that is not a string
+/// (`if (!s) s = table;`, `p == (long)table`).
 pub(crate) fn refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+    let family = crate::kuna_protoorder::value_family(data, vn);
     crate::kuna_protoorder::input_refuses_declared(data, vn, ct)
-        || (points_at_a_character(ct) && merged_with_a_constant(data, &crate::kuna_protoorder::value_family(data, vn)))
+        || masks_a_derived_address(data, &family)
+        || (points_at_a_character(ct)
+            && (merged_with_a_constant(data, &family) || meets_an_address_constant(data, &family)))
 }
 
 /// Is `ct` a pointer to a one-byte character?
@@ -129,23 +136,114 @@ fn merged_with_a_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
     })
 }
 
-/// Does the caller hold the argument `vn` as an address for a reason of its own,
-/// rather than because a type was voted onto it? Its value -- every varnode a
-/// COPY, CAST, MULTIEQUAL or INDIRECT joins to it -- must be read or written
-/// through ([`dereferenced`]), be the address of a frame object or a string,
-/// come from or go to a declared pointer (a library's `void *malloc(size_t)`,
-/// `free(void *)`), or be a parameter the function's own callers stated a
-/// pointer for. A HighVariable's type alone is not enough: a register the
-/// function reuses for a size and a pointer is one variable, typed as the
-/// pointer, at every use.
-pub fn provably_a_pointer(data: &Funcdata, vn: VarnodeId) -> bool {
-    let family = crate::kuna_protoorder::value_family(data, vn);
-    if dereferenced(data, &family) {
-        return true;
-    }
+/// Is some member of `family` compared with, added to or subtracted from a
+/// constant inside the default data space's pointer bounds that is not a
+/// string literal kuna recovered -- directly, or as the engine's `PTRSUB` off
+/// the constant zero?
+fn meets_an_address_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
+    let Some(spc) = data.get_arch().manage().get_default_data_space() else { return false };
+    let (lo, hi) = (spc.get_pointer_lower_bound(), spc.get_pointer_upper_bound());
+    let address = |op: OpId, other: Option<VarnodeId>| -> bool {
+        let Some(node) = other.and_then(|o| data.vbank().get(o)) else { return false };
+        let c = if node.is_constant() {
+            other
+        } else {
+            node.get_def()
+                .and_then(|d| data.obank().get(d))
+                .filter(|o| o.code() == OpCode::CPUI_PTRSUB)
+                .filter(|o| o.get_in(0).and_then(|b| data.vbank().get(b)).is_some_and(|b| b.is_constant() && b.get_offset() == 0))
+                .and_then(|o| o.get_in(1))
+        };
+        c.and_then(|c| data.vbank().get(c).map(|n| (c, n.get_offset())))
+            .is_some_and(|(c, off)| off >= lo && off <= hi && !crate::p5_types::kuna_charptr::constant_is_string(data, op, c))
+    };
     family.iter().any(|&v| {
         let Some(node) = data.vbank().get(v) else { return false };
-        if crate::kuna_protoorder::addresses_a_frame_object(data, v) || addresses_a_string(data, v) {
+        node.descend_iter().any(|r| {
+            let Some(o) = data.obank().get(r) else { return false };
+            if !matches!(
+                o.code(),
+                OpCode::CPUI_INT_EQUAL
+                    | OpCode::CPUI_INT_NOTEQUAL
+                    | OpCode::CPUI_INT_LESS
+                    | OpCode::CPUI_INT_LESSEQUAL
+                    | OpCode::CPUI_INT_SLESS
+                    | OpCode::CPUI_INT_SLESSEQUAL
+                    | OpCode::CPUI_INT_ADD
+                    | OpCode::CPUI_INT_SUB
+            ) {
+                return false;
+            }
+            let other = if o.get_in(0) == Some(v) { o.get_in(1) } else { o.get_in(0) };
+            address(r, other)
+        })
+    })
+}
+
+/// Does the callee derive an address from a member of `family` by a literal
+/// offset and then treat it as a number: mask, shift, divide or multiply it?
+fn masks_a_derived_address(data: &Funcdata, family: &[VarnodeId]) -> bool {
+    let constant = |v: Option<VarnodeId>| v.and_then(|v| data.vbank().get(v)).is_some_and(|c| c.is_constant());
+    let mut seen: HashSet<VarnodeId> = family.iter().copied().collect();
+    let mut work: VecDeque<(VarnodeId, usize)> = family.iter().map(|&v| (v, 0)).collect();
+    while let Some((v, hops)) = work.pop_front() {
+        let Some(node) = data.vbank().get(v) else { continue };
+        for r in node.descend_iter() {
+            let Some(o) = data.obank().get(r) else { continue };
+            let derived = match o.code() {
+                OpCode::CPUI_INT_ADD => constant(if o.get_in(0) == Some(v) { o.get_in(1) } else { o.get_in(0) }),
+                OpCode::CPUI_INT_SUB => o.get_in(0) == Some(v) && constant(o.get_in(1)),
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST => true,
+                OpCode::CPUI_INT_AND
+                | OpCode::CPUI_INT_OR
+                | OpCode::CPUI_INT_XOR
+                | OpCode::CPUI_INT_MULT
+                | OpCode::CPUI_INT_DIV
+                | OpCode::CPUI_INT_SDIV
+                | OpCode::CPUI_INT_REM
+                | OpCode::CPUI_INT_SREM
+                | OpCode::CPUI_INT_LEFT
+                | OpCode::CPUI_INT_RIGHT
+                | OpCode::CPUI_INT_SRIGHT => {
+                    if hops > 0 {
+                        return true;
+                    }
+                    false
+                }
+                _ => false,
+            };
+            if !derived || hops + 1 >= HOP_CAP {
+                continue;
+            }
+            if let Some(out) = o.get_out() {
+                if seen.insert(out) {
+                    work.push_back((out, hops + 1));
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Does the caller hold the argument `vn` as an address for a reason of its own,
+/// rather than because a type was voted onto it? Its value -- `vn` and every
+/// varnode a COPY, CAST or INDIRECT joins to it, never a MULTIEQUAL, which
+/// merges other values -- must be read or written through ([`dereferenced`]),
+/// be the address of a frame object or a string, come from or go to a declared
+/// pointer (a library's `void *malloc(size_t)`, `free(void *)`), or be a
+/// parameter the function's own callers stated a pointer for. A HighVariable's
+/// type alone is not enough: a register the function reuses for a size and a
+/// pointer is one variable, typed as the pointer, at every use, and the merge
+/// that joins the two values is where the size would pick up the pointer's
+/// dereference.
+pub fn provably_a_pointer(data: &Funcdata, vn: VarnodeId) -> bool {
+    let value = same_value(data, vn);
+    if dereferenced(data, &value) {
+        return true;
+    }
+    value.iter().any(|&v| {
+        let Some(node) = data.vbank().get(v) else { return false };
+        if frame_address(data, v) || addresses_a_string(data, v) {
             return true;
         }
         if node.is_input() && stated_pointer(data, node.get_addr(), node.get_size()) {
@@ -160,9 +258,69 @@ pub fn provably_a_pointer(data: &Funcdata, vn: VarnodeId) -> bool {
     })
 }
 
+/// `vn` and every varnode a COPY, CAST or INDIRECT joins to it, in either
+/// direction: the one value, without the values a MULTIEQUAL merges with it.
+fn same_value(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
+    let mut out = vec![vn];
+    let mut seen: HashSet<VarnodeId> = HashSet::from([vn]);
+    let mut at = 0;
+    while at < out.len() && out.len() < 64 {
+        let v = out[at];
+        at += 1;
+        let Some(node) = data.vbank().get(v) else { continue };
+        let mut next: Vec<VarnodeId> = Vec::new();
+        if let Some(o) = node.get_def().and_then(|d| data.obank().get(d)) {
+            if matches!(o.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT) {
+                next.extend(o.get_in(0));
+            }
+        }
+        for r in node.descend_iter() {
+            let Some(o) = data.obank().get(r) else { continue };
+            let joins = match o.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST => true,
+                OpCode::CPUI_INDIRECT => o.get_in(0) == Some(v),
+                _ => false,
+            };
+            if joins {
+                next.extend(o.get_out());
+            }
+        }
+        for n in next {
+            if data.vbank().get(n).is_some_and(|x| !x.is_constant()) && seen.insert(n) {
+                out.push(n);
+            }
+        }
+    }
+    out
+}
+
+/// Is `v` computed from the stack pointer by copies and literal offsets alone
+/// -- the address of a frame object on every path?
+fn frame_address(data: &Funcdata, v: VarnodeId) -> bool {
+    let constant = |x: Option<VarnodeId>| x.and_then(|x| data.vbank().get(x)).is_some_and(|c| c.is_constant());
+    let mut at = Some(v);
+    for _ in 0..16 {
+        let Some(node) = at.and_then(|x| data.vbank().get(x)) else { return false };
+        if node.is_spacebase() && !node.is_constant() {
+            return true;
+        }
+        let Some(o) = node.get_def().and_then(|d| data.obank().get(d)) else { return false };
+        at = match o.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_PTRSUB | OpCode::CPUI_PTRADD => o.get_in(0),
+            OpCode::CPUI_INT_ADD if constant(o.get_in(1)) => o.get_in(0),
+            OpCode::CPUI_INT_ADD if constant(o.get_in(0)) => o.get_in(1),
+            OpCode::CPUI_INT_SUB if constant(o.get_in(1)) => o.get_in(0),
+            _ => return false,
+        };
+    }
+    false
+}
+
 /// Is some member of `family` the address of a LOAD or STORE, directly or
-/// through literal offsets and the base slot of the engine's pointer arithmetic?
-/// An add of two variables says nothing: either operand could be the base.
+/// through copies, literal offsets and the base slot of the engine's pointer
+/// arithmetic? An add of two variables says nothing: either operand could be
+/// the base. Nor does a MULTIEQUAL: its output holds other values on other
+/// paths, and the dereference may be the one those paths make.
 fn dereferenced(data: &Funcdata, family: &[VarnodeId]) -> bool {
     let mut seen: HashSet<VarnodeId> = family.iter().copied().collect();
     let mut work: VecDeque<(VarnodeId, usize)> = family.iter().map(|&v| (v, 0)).collect();
@@ -177,7 +335,7 @@ fn dereferenced(data: &Funcdata, family: &[VarnodeId]) -> bool {
                     }
                     false
                 }
-                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => true,
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST => true,
                 OpCode::CPUI_INDIRECT | OpCode::CPUI_PTRSUB | OpCode::CPUI_PTRADD => o.get_in(0) == Some(v),
                 OpCode::CPUI_INT_ADD => {
                     let other = if o.get_in(0) == Some(v) { o.get_in(1) } else { o.get_in(0) };

@@ -461,8 +461,10 @@ fn callee_vote_rounds(
                 ))
             })
             .collect();
-        let (pointers_only, queue): (Vec<_>, Vec<_>) =
-            queue.into_iter().partition(|(_, key)| prog.arch().kuna_calleevote.pointers_only(*key));
+        let caller_ptr = prog.arch().caller_ptr;
+        let (pointers_only, queue): (Vec<_>, Vec<_>) = queue
+            .into_iter()
+            .partition(|(_, key)| caller_ptr && prog.arch().kuna_calleevote.pointers_only(*key));
         let (mut admitted, mut declined) = admit_within_budget(queue, &mut budget, &mut spent);
         let (more, refused) = admit_within_budget(pointers_only, &mut pointer_budget, &mut spent);
         admitted.extend(more);

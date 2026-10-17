@@ -6066,11 +6066,16 @@ every use, and coreutils `cp` hands `sparse_copy` its buffer size from such a
 variable. So `record` asks of every pointer-typed argument whether the caller
 holds it as an address for a reason of its own
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callerptr.rs
-(provably_a_pointer)`), over the value's family -- every varnode a `COPY`,
-`CAST`, `MULTIEQUAL` or `INDIRECT` joins to it: it is the address of a `LOAD` or
-`STORE`, directly or through literal offsets and the base slot of the engine's
-`PTRADD`/`PTRSUB` (`dereferenced`; an add of two variables carries nothing,
-since either operand could be the base); it is the address of a frame object;
+(provably_a_pointer)`), over the value itself -- the argument and every varnode
+a `COPY`, `CAST` or `INDIRECT` joins to it (`same_value`), never a `MULTIEQUAL`:
+a merge's output holds other values on other paths, and openssh -O2
+`ssh-keygen`'s `ssh_krl_from_blob` copies a length into a register variable that
+on other paths holds a frame address and is dereferenced there, which made
+`bitmap_from_string`'s `size_t` a `void *`. The value is the address of a
+`LOAD` or `STORE`, directly or through copies, literal offsets and the base slot
+of the engine's `PTRADD`/`PTRSUB` (`dereferenced`; an add of two variables
+carries nothing, since either operand could be the base); it is computed from
+the stack pointer by copies and literal offsets alone (`frame_address`);
 it is a string literal (`kuna_charptr::constant_is_string`) -- any other
 constant is a number as often as an address, and coreutils -O0 `tr` passes
 `squeeze_filter` the buffer size `0x2000`, which is also the address of
@@ -6094,20 +6099,35 @@ address the function takes but never indexes does not refuse the vote
 (`inside_a_frame_aggregate`'s `word_ok`): `hash_insert` keeps the entry
 `hash_insert_if_absent` writes through its `&matched_ent` out-parameter in that
 slot, and typing an eight-byte slot as an eight-byte pointer re-lays nothing.
-An indexed frame region and a frame struct or array still refuse. One refusal
-is added: a character pointer is not taken by a value the callee merges with an
-address it holds as a constant (`merged_with_a_constant`). The constant would
-take the `char *` and print as a string literal, which ends at the first zero
-byte of a table that is not a string: the `elemptr` fixture's `w_pick`, whose
-callers pass a string or a null and which falls back to a 15-byte table with a
-zero inside (`if (!s) s = table;`), printed `a0 = "0!0\t...";`.
+An indexed frame region and a frame struct or array still refuse.
 
-A function whose statement adds nothing but these votes -- any committed type in
-it repeats the function's own type or the statement it already had
-(`CallerTypes::pointers_only`) -- is decompiled again within a budget of its own,
+Three refusals are added (`kuna_callerptr.rs (refuses)`). An address the callee
+derives from the value by a literal offset and then masks, shifts, divides or
+multiplies is a number (`masks_a_derived_address`): an alignment helper
+`(p + 7) & ~7` over a `uintptr_t` keeps its integer, although the mask applies
+to the sum and not to the parameter. And a character pointer is not taken by a
+value the callee merges with an address it holds as a constant
+(`merged_with_a_constant`), or compares with, adds to or subtracts from a
+constant inside the data space's pointer bounds that is not a string literal
+kuna recovered (`meets_an_address_constant`). The constant would take the
+`char *` and print as a string literal, which ends at the first zero byte of a
+table that is not a string: the `elemptr` fixture's `w_pick`, whose callers pass
+a string or a null and which falls back to a 15-byte table with a zero inside
+(`if (!s) s = table;`), printed `a0 = "0!0\t...";`, and
+`is_table(long p) { return p == (long)table; }`, passed a literal, a string and
+a null, printed `return a0 == "\x01\x02";`. That printer behaviour is reachable
+on its own through `calleevote` when every caller passes a string; this rule
+only declines to add to it.
+
+A function whose statement holds these votes and adds nothing else -- any
+committed type in it repeats the function's own type or the statement it
+already had (`CallerTypes::pointers_only`) -- is decompiled again within a
+budget of its own,
 `CALLER_PTR_BUDGET_PCT` (2) percent of the lines the first pass printed, beside
 `calleevote`'s 5% (`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs
-(callee_vote_rounds)`). Sharing the one budget let these shorter redos, admitted
+(callee_vote_rounds)`); a function of at most 32 lines is admitted either way, as
+`calleevote` admits it, so the 2% bounds the long bodies only. With the option off
+no statement holds such a vote and the pass charges exactly as before. Sharing the one budget let these shorter redos, admitted
 shortest first, take the room a committed `char **` needed in a later round:
 coreutils -O0 `ls`'s `quote_name_buf` lost the `char **inbuf` its callers pass.
 Charging a statement by what it *adds* matters for the same reason: a pointer
@@ -6133,8 +6153,10 @@ evidence, and a call in a switch case body the reference walk does not decode
 leaves its callee's caller set incomplete. The fixture
 `decompiler/crates/kuna-analysis/tests/fixtures/callerptr_x86_64.c` pins
 `push` (`void *`, three callers of three types), `remember` (`char *`, a
-literal, `getenv` and a null) and the control `slot_of`, which shifts the
-pointer it is handed and keeps its integer.
+literal, `getenv` and a null) and three controls that keep their integers:
+`slot_of` shifts the pointer it is handed, `align8` masks an address it derives
+from it, and `is_table` compares it with a table address that is no string (the
+fixture strips the table's symbol so the address is a bare constant).
 
 ### (kuna) `callrettype` — a call returns the type its callee declares
 

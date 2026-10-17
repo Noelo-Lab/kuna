@@ -2498,8 +2498,11 @@ fn a_frame_records_char_pointer_pointer_is_not_its_type() {
 /// (kuna `callerptr`) A parameter whose own body says nothing about it takes a
 /// pointer when every caller passes one: `push`'s callers pass a record, a
 /// `strdup` result and a null (`void *`), `remember`'s a literal, a `getenv`
-/// result and a null (`char *`). `slot_of` shifts the pointer it is handed and
-/// keeps its integer, and `off` keeps both integers.
+/// result and a null (`char *`). `slot_of` shifts the pointer it is handed,
+/// `align8` masks an address it derives from it, and `is_table` compares it
+/// with the address of a table holding a zero byte, which a `char *` would
+/// print as a cut-off string literal: all three keep their integers, and `off`
+/// keeps every integer.
 #[test]
 fn a_parameter_every_caller_passes_a_pointer_is_one() {
     let bin = repo_root()
@@ -2522,6 +2525,9 @@ fn a_parameter_every_caller_passes_a_pointer_is_one() {
         assert!(got.contains(store), "{value}: `{store}` missing:\n{got}");
         assert!(got.contains("unsigned long slot_of(unsigned long a0)"), "{value}: slot_of took a pointer:\n{got}");
         assert!(got.contains("return (a0 >> 4) % 0x1f;"), "{value}: slot_of's arithmetic moved:\n{got}");
+        assert!(got.contains("unsigned long align8(long a0)"), "{value}: align8 took a pointer:\n{got}");
+        assert!(got.contains("bool is_table(long a0)"), "{value}: is_table took a pointer:\n{got}");
+        assert!(!got.contains("a0 == \""), "{value}: the table address printed as a literal:\n{got}");
     }
 }
 

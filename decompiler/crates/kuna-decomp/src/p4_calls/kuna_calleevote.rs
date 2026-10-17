@@ -127,9 +127,9 @@ pub struct CallSite {
 #[derive(Debug)]
 pub struct CallerTypes {
     pub inputs: Vec<Typed>,
-    /// (`callerptr`) Nothing in the statement but [`crate::kuna_callerptr::pointer_vote`]'s
-    /// votes is new: every committed type in it repeats the function's own type
-    /// or the statement it already had.
+    /// (`callerptr`) The statement holds [`crate::kuna_callerptr::pointer_vote`]'s
+    /// votes and nothing else new: every committed type in it repeats the
+    /// function's own type or the statement it already had.
     pub pointers_only: bool,
 }
 
@@ -225,8 +225,9 @@ impl Ledger {
         let names_one = |t: &Typed| crate::kuna_protoorder::names_type(&t.ct, names);
         for stated in self.stated.values_mut() {
             if stated.inputs.iter().any(names_one) {
-                let inputs = stated.inputs.iter().filter(|t| !names_one(t)).cloned().collect();
-                *stated = Rc::new(CallerTypes { inputs, pointers_only: stated.pointers_only });
+                let inputs: Vec<Typed> = stated.inputs.iter().filter(|t| !names_one(t)).cloned().collect();
+                let pointers_only = stated.pointers_only && inputs.iter().any(|t| t.by_class);
+                *stated = Rc::new(CallerTypes { inputs, pointers_only });
             }
         }
         self.stated.retain(|_, stated| !stated.inputs.is_empty());
@@ -574,7 +575,7 @@ pub fn decide_ledger_with(
                 })
         });
         if !unchanged {
-            let pointers_only = inputs.iter().filter(|t| !t.by_class).all(|t| {
+            let pointers_only = inputs.iter().any(|t| t.by_class) && inputs.iter().filter(|t| !t.by_class).all(|t| {
                 own.iter().any(|p| p.addr == t.addr && p.size == t.size && same_type(&p.ct, &t.ct))
                     || ledger.stated.get(key).is_some_and(|old| {
                         old.inputs.iter().any(|o| o.addr == t.addr && o.frame == t.frame && same_type(&o.ct, &t.ct))

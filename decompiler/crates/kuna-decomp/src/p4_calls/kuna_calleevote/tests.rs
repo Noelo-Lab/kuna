@@ -554,3 +554,17 @@ fn a_committed_vote_repeating_the_own_type_beside_a_pointer_vote_is_pointers_onl
     let pointer = got[0].1.at(&at(&r, 0x30), 8).expect("stated for rsi");
     assert!(pointer.by_class && same_type(&pointer.ct, &ptr_to(voidt())));
 }
+
+/// (`callerptr`) A statement with no pointer-class vote in it is never charged
+/// to the pointer budget, so with the option off the redo budget is
+/// `calleevote`'s alone.
+#[test]
+fn a_statement_without_a_pointer_vote_is_not_pointers_only() {
+    let rec = ptr_to(record("struct_2"));
+    let l = ledger(&[(0x6600, Rc::clone(&rec)), (0x6800, Rc::clone(&rec))]);
+    let got = decide_ledger_with(&l, 8, false, Some(&ptr_to(voidt())), &all_calls(&l));
+    assert_eq!(got.len(), 1);
+    assert!(!got[0].1.pointers_only);
+    let got = decide_ledger(&l, 8, &all_calls(&l));
+    assert!(!got[0].1.pointers_only);
+}

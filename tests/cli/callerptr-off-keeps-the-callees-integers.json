@@ -18,8 +18,8 @@
   "repeat": 1,
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callerptr_x86_64",
-    "binary_sha256": "2ad143a6d4e0564d43eed908b9abdf95f81f6dcdb64bd501f7fd0defbbcc062f",
-    "binary_size": 16424,
+    "binary_sha256": "699111c0fedc5c4bba7a14ec5f4f93f2e3674873d1f644cceeb7e10e8e9b001c",
+    "binary_size": 16520,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callerptr_x86_64",
     "selector": "push",
