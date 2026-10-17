@@ -1326,7 +1326,7 @@ redo check (`same_arity`) compares frame rows, so a redo that moves only the
 register declarations is accepted or refused exactly as before. Over the
 campaign's 444 x86-64 decbench slices (10,748 scored functions) the option moves
 4,344 register-resident ground-truth locals from missed to correctly typed and
-2,989 to matched with a different type, and 268 stack-located and 5 argument
+2,988 to matched with a different type, and 268 stack-located and 5 argument
 ground-truth variables that were missed are now matched correctly by address
 overlap. 53 previously correct matches are lost to a new row; 205 functions
 reach a perfect score, none leave it, 2,207 improve and 10 get worse.
