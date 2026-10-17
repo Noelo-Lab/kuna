@@ -173,6 +173,7 @@ pub mod param_entry_flags {
     pub const OVERLAPPING: uint4 = 0x400;
     /// Entry is first in its storage class.
     pub const FIRST_STORAGE: uint4 = 0x800;
+    pub const IGNORE_TYPE_ALIGN: uint4 = 0x1000;
 }
 
 /// Characterization of how a memory range relates to a [`ParamEntry`] (C++
@@ -664,6 +665,7 @@ impl ParamEntry {
                 return Ok(res);
             }
         } else {
+            let type_align = super::kuna_stackparamalign::effective_alignment(self.flags, type_align, self.alignment);
             if type_align > self.alignment {
                 let tmp = (*slotnum * self.alignment) % type_align;
                 if tmp != 0 {

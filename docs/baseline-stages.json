@@ -1176,7 +1176,7 @@
     "data:MSVCBYVAL #13: GetArr returns into the slot as a local in both passes",
     "data:MSVCBYVAL #14: a pop-run cleanup is not read as a size (Sink declined)",
     "data:MSVCBYVAL #15: padding above a class-last argument is not absorbed (Take3 declined)",
-    "data:MSVCBYVAL #16: an 8-byte class the model misaligns is declined, not mis-sized (Take4)",
+    "data:MSVCBYVAL #16: an 8-byte class follows a 4-byte stack argument without extra padding (Take4)",
     "data:MSVCBYVAL #17: dead reserving pushes above the arguments leave shift8 declined",
     "data:MSVCBYVAL #18: a 6-byte class padded to 8 by sub esp,8 is still sized (Put)",
     "data:MSVCBYVAL #19: a local whose address is taken and that the cleanup releases is declined (podfold)",
