@@ -1065,4 +1065,112 @@ mod tests {
         assert!(targets(0x2001, 0x1008, &image(), &EXEC, None, DEFAULT_MAX_ENTRIES).is_empty());
         assert!(targets(0x8000, 0x1008, &image(), &EXEC, None, DEFAULT_MAX_ENTRIES).is_empty());
     }
+
+    fn spaces() -> (Rc<AddrSpace>, Rc<AddrSpace>, Rc<AddrSpace>) {
+        (
+            Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_PROCESSOR)),
+            Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_INTERNAL)),
+            Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_CONSTANT)),
+        )
+    }
+
+    fn vn(space: &Rc<AddrSpace>, offset: u64, size: u32) -> VarnodeData {
+        VarnodeData { space: Some(Rc::clone(space)), offset, size }
+    }
+
+    fn op(opcode: OpCode, out: Option<VarnodeData>, ins: Vec<VarnodeData>) -> FullOp {
+        FullOp { opcode, out, ins }
+    }
+
+    /// x86-64 writes `rax = zext(eax)` after a 32-bit load, which retires the
+    /// tracked `eax`; the `cltq` reading it back still sees the table entry.
+    #[test]
+    fn a_register_reads_as_the_low_part_of_the_wider_one_holding_it() {
+        let (reg, _, _) = spaces();
+        let entry = Val::Entry { table: 0x2000, width: 4 };
+        let vals = vec![(Key::Reg(0, 8), entry)];
+        assert_eq!(value_of(&vn(&reg, 0, 4), &vals, None), Some(entry));
+        assert_eq!(value_of(&vn(&reg, 4, 4), &vals, None), None, "the high half is not the entry");
+        let wide = vec![(Key::Reg(0, 8), Val::Const(0x1_0000_0002))];
+        assert_eq!(value_of(&vn(&reg, 0, 4), &wide, None), Some(Val::Const(2)));
+    }
+
+    /// `cmp $c,sel` as x86 SLEIGH lifts it: CF and ZF for the guard to read.
+    fn x86_cmp(reg: &Rc<AddrSpace>, uniq: &Rc<AddrSpace>, cst: &Rc<AddrSpace>, c: u64) -> Vec<FullOp> {
+        let (eax, cf, zf, diff) = (vn(reg, 0, 4), vn(reg, 0x200, 1), vn(reg, 0x206, 1), vn(uniq, 0x100, 4));
+        vec![
+            op(OpCode::CPUI_INT_LESS, Some(cf), vec![eax.clone(), vn(cst, c, 4)]),
+            op(OpCode::CPUI_INT_SUB, Some(diff.clone()), vec![eax, vn(cst, c, 4)]),
+            op(OpCode::CPUI_INT_EQUAL, Some(zf), vec![diff, vn(cst, 0, 4)]),
+        ]
+    }
+
+    /// The case count `guard_limit` reads for a compare `writer` and a branch
+    /// `branch` whose last op is the `CBRANCH`.
+    fn guarded(writer: &[FullOp], branch: &[FullOp], max: usize) -> Option<usize> {
+        let at = branch.len() - 1;
+        let want: Vec<Key> = branch[at].ins.get(1).and_then(|v| key_of(v, None)).into_iter().collect();
+        let (reads, _) = feeders(&branch[..at], want, None);
+        let reads: Vec<Key> = reads.into_iter().filter(|k| matches!(k, Key::Reg(..))).collect();
+        let written: Vec<Key> = writer
+            .iter()
+            .filter_map(|o| o.out.as_ref().and_then(|v| key_of(v, None)))
+            .filter(|w| reads.iter().any(|r| keys_overlap(*r, *w)))
+            .collect();
+        let (_, feeding) = feeders(writer, written, None);
+        guard_cases(writer, &feeding, branch, at, None, max)
+    }
+
+    /// `ja` sends the selectors above `c` away: the dispatch sees `c + 1`.
+    #[test]
+    fn a_ja_guard_bounds_the_table_from_above() {
+        let (reg, uniq, cst) = spaces();
+        let (cf, zf, t) = (vn(&reg, 0x200, 1), vn(&reg, 0x206, 1), |o| vn(&uniq, o, 1));
+        let ja = vec![
+            op(OpCode::CPUI_BOOL_NEGATE, Some(t(0x10)), vec![cf]),
+            op(OpCode::CPUI_BOOL_NEGATE, Some(t(0x11)), vec![zf]),
+            op(OpCode::CPUI_BOOL_AND, Some(t(0x12)), vec![t(0x10), t(0x11)]),
+            op(OpCode::CPUI_CBRANCH, None, vec![vn(&reg, 0x9000, 8), t(0x12)]),
+        ];
+        assert_eq!(guarded(&x86_cmp(&reg, &uniq, &cst, 5), &ja, 1024), Some(6));
+    }
+
+    /// `jb` sends the selectors below `c` away, so the dispatch sees `sel >= c`:
+    /// five values of a 32-bit selector above `0xfffffffb`, and no bound at all
+    /// above a small `c`, where the check is only the first of two.
+    #[test]
+    fn a_jb_guard_bounds_the_table_from_below() {
+        let (reg, uniq, cst) = spaces();
+        let jb = vec![op(OpCode::CPUI_CBRANCH, None, vec![vn(&reg, 0x9000, 8), vn(&reg, 0x200, 1)])];
+        assert_eq!(guarded(&x86_cmp(&reg, &uniq, &cst, 0xffff_fffb), &jb, 1024), Some(5));
+        assert_eq!(guarded(&x86_cmp(&reg, &uniq, &cst, 5), &jb, 1024), None);
+    }
+
+    /// `je` reads only ZF: the carry of the same `cmp` is no bound.
+    #[test]
+    fn a_compare_that_does_not_reach_the_condition_is_no_bound() {
+        let (reg, uniq, cst) = spaces();
+        let je = vec![op(OpCode::CPUI_CBRANCH, None, vec![vn(&reg, 0x9000, 8), vn(&reg, 0x206, 1)])];
+        assert_eq!(guarded(&x86_cmp(&reg, &uniq, &cst, 5), &je, 1024), None);
+    }
+
+    /// AArch64 spells `cmp x8, #6; b.hi` as `tmp = 6; tmpCY = tmp <= x8; CY =
+    /// tmpCY` and `CY && !ZR`.
+    #[test]
+    fn an_aarch64_guard_reads_the_constant_on_the_left() {
+        let (reg, uniq, cst) = spaces();
+        let (x8, tmp_cy, cy, zr) = (vn(&reg, 0x4040, 8), vn(&reg, 0x105, 1), vn(&reg, 0x102, 1), vn(&reg, 0x101, 1));
+        let six = vn(&uniq, 0x20, 8);
+        let subs = vec![
+            op(OpCode::CPUI_COPY, Some(six.clone()), vec![vn(&cst, 6, 8)]),
+            op(OpCode::CPUI_INT_LESSEQUAL, Some(tmp_cy.clone()), vec![six, x8]),
+            op(OpCode::CPUI_COPY, Some(cy.clone()), vec![tmp_cy]),
+        ];
+        let hi = vec![
+            op(OpCode::CPUI_BOOL_NEGATE, Some(vn(&uniq, 0x30, 1)), vec![zr]),
+            op(OpCode::CPUI_BOOL_AND, Some(vn(&uniq, 0x31, 1)), vec![cy, vn(&uniq, 0x30, 1)]),
+            op(OpCode::CPUI_CBRANCH, None, vec![vn(&reg, 0x9000, 8), vn(&uniq, 0x31, 1)]),
+        ];
+        assert_eq!(guarded(&subs, &hi, 1024), Some(7));
+    }
 }
