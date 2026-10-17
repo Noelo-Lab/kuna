@@ -106,6 +106,11 @@ build failure. The options it enables:
   the call states, so the call compiles as C),
   `libcnames` (a local takes the name of the library call it meets:
   `fd = open(a0,0);`, `n = read(fd,v1,0x200);`),
+  `armfloatreturn` and `armfloatargs` (an ARM hard-float function returns its
+  double whole in `d0` and takes its float and double parameters in their
+  `s` and `d` registers on both sides of a call; inert unless the ELF states
+  the VFP procedure-call standard, so soft-float and softfp images print
+  byte-identically),
   `cortexmpriv` (DIV-99 - fold the Cortex-M `isCurrentModePrivileged()` guard;
   ARM-Cortex-M-gated by construction, so it is a measured no-op everywhere else)
 - **analysis tier**: `listing` (the master gate that enables the

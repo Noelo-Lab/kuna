@@ -1,0 +1,117 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7">
+<!--
+    The ARM hard-float VFP contracts are members of the aggressive preset
+    (options armfloatreturn and armfloatargs, stage P4 output-prototype and
+    input-prototype; default off in the catalog). `auto` selects aggressive
+    below 500 KiB, so on such a binary the preset is the default output.
+
+    The script loads two relocatable objects built from armfloat_preset.c
+    (source beside them, clang 14 -O2): armfloat_preset_hard.o states the VFP
+    procedure-call standard (Tag_ABI_VFP_args=1), armfloat_preset_soft.o is
+    the same source for the base standard (-mfloat-abi=soft).
+
+    Pass 1 (hard, the preset with both options turned off) reproduces the
+    defect: scale's double return is cut to its low word and its d0 parameter
+    is lost, mix loses its double, and backfill's double arrives as two
+    integer words. Pass 2 (hard, the preset) takes and returns each double
+    whole, and backfill keeps the back-filled float in s1 beside the double in
+    d1. In both passes copysign_bits, a float built from the bits of its two
+    float inputs, keeps float parameters, and payload returns a quiet NaN with
+    a payload as its bits rather than as NAN, which compiles to other bits.
+    Passes 3 and 4 run the soft-float object the same two ways: the image
+    states the base standard, so neither option fires and both passes print
+    every value in core registers.
+-->
+<bytechunk space="ram" offset="0x1000">1eff2fe1</bytechunk>
+<symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloat_preset_hard.o</com>
+  <com>read symbols</com>
+  <com>mode aggressive</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
+  <com>lo fu scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu backfill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copysign_bits</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu payload</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloat_preset_hard.o</com>
+  <com>read symbols</com>
+  <com>mode aggressive</com>
+  <com>lo fu scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu backfill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copysign_bits</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu payload</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloat_preset_soft.o</com>
+  <com>read symbols</com>
+  <com>mode aggressive</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
+  <com>lo fu scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu backfill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu payload</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloat_preset_soft.o</com>
+  <com>read symbols</com>
+  <com>mode aggressive</com>
+  <com>lo fu scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu backfill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu payload</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="armfloat preset #1: off cuts scale's double return to its low word and loses its parameter" min="1" max="1">unsigned int scale\(void\)</stringmatch>
+<stringmatch name="armfloat preset #2: the preset takes and returns scale's double" min="1" max="1">double scale\(double a0\)</stringmatch>
+<stringmatch name="armfloat preset #3: off loses mix's double parameter" min="1" max="1">unsigned int mix\(float a0,int a1\)</stringmatch>
+<stringmatch name="armfloat preset #4: the preset takes mix's double, float and int" min="1" max="1">double mix\(double a0,float a1,int a2\)</stringmatch>
+<stringmatch name="armfloat preset #5: off reads backfill's double as two integer words" min="1" max="1">float backfill\(float a0,float a1,unsigned int a2,unsigned int a3\)</stringmatch>
+<stringmatch name="armfloat preset #6: the preset takes backfill's double beside the back-filled float" min="1" max="1">float backfill\(float a0,float a1,double a2\)</stringmatch>
+<stringmatch name="armfloat preset #7: a float built from its float inputs' bits keeps float parameters in both passes" min="2" max="2">float copysign_bits\(float a0,float a1\)</stringmatch>
+<stringmatch name="armfloat preset #8: a NaN payload keeps its bits in every pass" min="4" max="4">return 0x7fc00123;</stringmatch>
+<stringmatch name="armfloat preset #9: no pass prints the NaN payload as NAN" min="0" max="0">NAN</stringmatch>
+<stringmatch name="armfloat preset #10: the soft-float image passes its doubles in core registers in both passes" min="2" max="2">void scale\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="armfloat preset #11: no soft-float function takes a floating parameter in either pass" min="6" max="6">(scale|mix|backfill)\(unsigned int a0</stringmatch>
+</decompilertest>
