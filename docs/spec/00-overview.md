@@ -2803,8 +2803,15 @@ operation list. Insertion uses `before + (after - before) / 2`, so odd endpoints
 cannot round the new order down onto the predecessor, including near the
 unsigned maximum. This preserves distinct positions for variable-cover and
 operation-order comparisons. When no integer lies between the neighbors, the
-existing whole-block renumbering in
-`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (bb_set_order)` is used.
+whole block is renumbered
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (bb_set_order)`). An
+insertion between two operations spreads the block over the full order space; an
+append at the block's end spreads it over the lower half only. Appends approach
+the top of the space by halving the remaining gap, so a block renumbered to end
+near the maximum would run out of room again within a few dozen appends, and
+building a block of tens of thousands of operations would renumber it thousands
+of times. With the upper half free, a renumber is followed by roughly 280
+appends before the next one.
 
 Deleting a varnode through `Funcdata::delete_varnode` first checks the bank's
 deletion precondition: the node must have neither a defining operation nor any

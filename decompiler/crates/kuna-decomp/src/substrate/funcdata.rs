@@ -3769,9 +3769,10 @@ impl Funcdata {
     /// C++ `BlockBasic::insert` (`block.cc:2262`): set the
     /// op's parent, splice it onto the per-op intrusive basic-block list before
     /// `before`, then compute `ordbefore`/`ordafter` from neighbours and either
-    /// set an overflow-safe midpoint or recompute the whole order via
-    /// [`bb_set_order`](Funcdata::bb_set_order). The BRANCHIND `f_switch_out` mark is
-    /// applied via the block flags.
+    /// set an overflow-safe midpoint or recompute the whole order. An append that
+    /// finds no room renumbers into the lower half of the order space, so later
+    /// appends do not renumber the block again every few ops. The BRANCHIND
+    /// `f_switch_out` mark is applied via the block flags.
     pub fn bb_insert_op(&mut self, op: OpId, bl: BlockId, before: Option<OpId>) {
         if self.op_is_call_or_store(op) {
             self.affecting_ops_changed();
@@ -3819,7 +3820,8 @@ impl Funcdata {
             Some(b) => self.obank.get(b).expect("bb_insert_op").get_seq_num().get_order(),
         };
         if ordafter.wsub(ordbefore) <= 1 {
-            self.bb_set_order(bl);
+            let span = if before.is_none() { uintm::MAX / 2 } else { uintm::MAX };
+            self.bb_set_order_within(bl, span);
         } else {
             let mid = ordbefore.wadd(ordafter.wsub(ordbefore) / 2);
             self.obank.get_mut(op).expect("bb_insert_op").set_order(mid);
@@ -3862,12 +3864,17 @@ impl Funcdata {
     ///
     /// `step = (~0 / op.size()) - 1`; each op gets `count += step`.
     pub fn bb_set_order(&mut self, bl: BlockId) {
+        self.bb_set_order_within(bl, uintm::MAX);
+    }
+
+    /// Spread the orders of `bl`'s ops evenly over `[0, span]`.
+    fn bb_set_order_within(&mut self, bl: BlockId, span: uintm) {
         self.affecting_ops_changed();
         let n = self.bb_op_len(bl);
         if n == 0 {
             return;
         }
-        let step = (uintm::MAX / n as uintm).wsub(1);
+        let step = (span / n as uintm).wsub(1);
         let mut count: uintm = 0;
         let mut cur = self.bb_op_head(bl);
         while let Some(op) = cur {
@@ -5956,6 +5963,21 @@ mod tests {
         let orders: Vec<_> = fd.bb_ops(block).into_iter()
             .map(|id| fd.obank.get(id).unwrap().get_seq_num().get_order()).collect();
         assert!(orders.windows(2).all(|pair| pair[0] < pair[1]), "{orders:?}");
+    }
+
+    #[test]
+    fn bb_append_past_order_space_renumbers_rarely() {
+        let mut fd = build_fd();
+        let (block, _) = make_block_with_ops(&mut fd, 1);
+        let start = fd.affecting_ops_revision();
+        for i in 0..20_000u64 {
+            let op = fd.obank.create_at(1, Address::new(ram_space(&fd), 0x2000 + i));
+            fd.obank.change_opcode(op, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
+            fd.bb_insert_op(op, block, None);
+        }
+        assert_strict_block_order(&fd, block);
+        let renumbers = fd.affecting_ops_revision() - start;
+        assert!(renumbers <= 100, "{renumbers} renumbers");
     }
 
     #[test]
