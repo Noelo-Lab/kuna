@@ -63,7 +63,7 @@
 //! excluded from the answer: it is the other half of the callable, not a caller
 //! of it, which is what makes the two addresses answer identically.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -722,6 +722,10 @@ fn descend(
         0 => kuna_switchtable::DEFAULT_MAX_ENTRIES,
         n => n as usize,
     };
+    let preserved = kuna_switchtable::preserved_registers(arch);
+    // (kuna) `switchtable`: the dispatches whose read stopped for want of a
+    // decoded instruction ending at the key, as `(dispatch, mode, branch)`.
+    let mut waiting: HashMap<u64, Vec<(u64, _, VarnodeData)>> = HashMap::new();
     let thumb_tables = (arch.analysis_thumbswitch && sections_are_runtime)
         .then(|| super::kuna_thumbswitch::HalfwordTables::new(file, data_space.clone(), max_entries))
         .flatten();
@@ -904,6 +908,7 @@ fn descend(
                             !sections_are_runtime || in_range(&exec_set, s)
                         }).collect();
                         st = State::new(&seed_set, measure || preserve_bodies);
+                        waiting.clear();
                         func_queue = seed_set.iter().copied().collect();
                         frame_candidates = reconciled.into_iter().collect();
                         frame_modes = Some(super::kuna_framemode::FrameModes::new(&frame_candidates));
@@ -958,6 +963,9 @@ fn descend(
         }
         let entry_mode = walk_context.as_ref().and_then(|context| context.entry(entry));
         let mut insn_queue = VecDeque::from([(entry, entry_mode)]);
+        // (kuna) `switchtable`: the dispatches this body's decoding filled the gap
+        // above, to read again once it drains.
+        let mut woken: Vec<(u64, _, VarnodeData)> = Vec::new();
         // Only collected when a base exists: the admission rule needs the whole
         // body before any of it can be attributed (`kuna_picbase::scope`), and
         // buffering it costs nothing on the overwhelmingly common `None` path.
@@ -966,7 +974,41 @@ fn descend(
         // `add` that turns each into an address. Per function, because the values
         // it tracks are live only inside one straight-line run.
         let mut picpool = PicPool::default();
-        while let Some((vma, mode)) = insn_queue.pop_front() {
+        // (kuna) `switchtable`: a dispatch can be decoded before the code that
+        // falls into it -- breadth-first, or by a `.cold` fragment's jump back
+        // into its parent's loop ahead of the parent's own walk -- and the slice
+        // back from it stops at the gap. Whichever body later decodes the
+        // instruction ending at the gap reaches the dispatch by falling into
+        // it, so once that body drains it reads the table again and walks the
+        // cases as its own.
+        while let Some((vma, mode)) = insn_queue.pop_front().or_else(|| {
+            let p = pool.as_ref()?;
+            for (vma, mode, branch) in std::mem::take(&mut woken) {
+                let read = branch_cases(
+                    translate,
+                    &code_space,
+                    data_space.as_ref(),
+                    &st.decoded,
+                    vma,
+                    Some(&branch),
+                    p,
+                    &exec,
+                    max_entries,
+                    &preserved,
+                    thumb_tables.as_ref(),
+                );
+                if read.cases.is_empty() && read.stated.is_none() {
+                    if let Some(gap) = read.gap {
+                        waiting.entry(gap).or_default().push((vma, mode, branch));
+                    }
+                    continue;
+                }
+                let text = if read.cases.is_empty() { String::new() } else { assembly(translate, vma, &code_space) };
+                st.take_switch(vma, entry, &read.cases, read.stated, max_entries, &text);
+                insn_queue.extend(read.cases.iter().map(|&target| (target, mode)));
+            }
+            insn_queue.pop_front()
+        }) {
             if st.decoded.contains(&vma) {
                 continue; // already decoded (the VisitStat dedup)
             }
@@ -1019,6 +1061,9 @@ fn descend(
                     .map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() }),
             );
             let c = classify(&raw, vma, len);
+            if let Some(fall) = c.fall_through.filter(|_| !waiting.is_empty()) {
+                woken.extend(waiting.remove(&fall).into_iter().flatten());
+            }
             if let Some(flow) = st.flow.as_mut() {
                 flow.insns.push((vma, len, c.fall_through.is_some()));
                 if !c.flow.is_call {
@@ -1105,46 +1150,31 @@ fn descend(
                     // The base is on an instruction of its own and the entries
                     // are displacements on every x86-64 compiler, so ask what the
                     // branch register holds when the operand carried nothing.
+                    let branch = cap
+                        .ops()
+                        .iter()
+                        .find(|o| o.opcode == OpCode::CPUI_BRANCHIND)
+                        .and_then(|o| o.ins.first());
                     if cases.is_empty() {
-                        let branch = cap
-                            .ops()
-                            .iter()
-                            .find(|o| o.opcode == OpCode::CPUI_BRANCHIND)
-                            .and_then(|o| o.ins.first());
-                        if let Some(branch) = branch {
-                            (cases, stated) = kuna_switchtable::register_targets(
-                                translate,
-                                &code_space,
-                                data_space.as_ref(),
-                                &st.decoded,
-                                vma,
-                                branch,
-                                p,
-                                &exec,
-                                max_entries,
-                            );
+                        let read = branch_cases(
+                            translate,
+                            &code_space,
+                            data_space.as_ref(),
+                            &st.decoded,
+                            vma,
+                            branch,
+                            p,
+                            &exec,
+                            max_entries,
+                            &preserved,
+                            thumb_tables.as_ref(),
+                        );
+                        if let (Some(gap), Some(branch)) = (read.gap, branch) {
+                            if read.cases.is_empty() && read.stated.is_none() {
+                                waiting.entry(gap).or_default().push((vma, mode, branch.clone()));
+                            }
                         }
-                    }
-                    // (kuna) `thumbswitch`: a Thumb `tbb`/`tbh` reads offsets,
-                    // not addresses. See [`super::kuna_thumbswitch`].
-                    if cases.is_empty() && stated.is_none() {
-                        if let Some(tables) = &thumb_tables {
-                            let decoded = |at: u64| st.decoded.contains(&at);
-                            (cases, stated) = tables.targets(translate, &code_space, &exec, &decoded, vma);
-                        }
-                    }
-                    let over = stated.is_some_and(|n| n > max_entries);
-                    if !cases.is_empty() || over {
-                        st.switches.push(SwitchTable {
-                            dispatch: vma,
-                            function: entry,
-                            cases: stated,
-                            read: cases.len(),
-                            truncated: over || (stated.is_none() && cases.len() >= max_entries),
-                        });
-                    }
-                    if let Some(flow) = st.flow.as_mut() {
-                        flow.jumps.extend(cases.iter().map(|&to| (vma, to)));
+                        (cases, stated) = (read.cases, read.stated);
                     }
                     // A dispatch that names no address rendered nothing above,
                     // and a row whose instruction column is blank does not say
@@ -1152,10 +1182,8 @@ fn descend(
                     if !cases.is_empty() && text.is_empty() {
                         text = assembly(translate, vma, &code_space);
                     }
-                    for target in cases {
-                        st.file(vma, target, XrefKind::Jump, &text);
-                        insn_queue.push_back((target, mode));
-                    }
+                    st.take_switch(vma, entry, &cases, stated, max_entries, &text);
+                    insn_queue.extend(cases.iter().map(|&target| (target, mode)));
                 }
             }
 
@@ -1490,6 +1518,36 @@ impl State {
         }
     }
 
+    /// (kuna) `switchtable`: record the computed jump at `vma` in `function` as a
+    /// switch over `cases` (stating `stated` of them) and file a `Jump` to each
+    /// case body.
+    fn take_switch(
+        &mut self,
+        vma: u64,
+        function: u64,
+        cases: &[u64],
+        stated: Option<usize>,
+        max_entries: usize,
+        text: &str,
+    ) {
+        let over = stated.is_some_and(|n| n > max_entries);
+        if !cases.is_empty() || over {
+            self.switches.push(SwitchTable {
+                dispatch: vma,
+                function,
+                cases: stated,
+                read: cases.len(),
+                truncated: over || (stated.is_none() && cases.len() >= max_entries),
+            });
+        }
+        if let Some(flow) = self.flow.as_mut() {
+            flow.jumps.extend(cases.iter().map(|&to| (vma, to)));
+        }
+        for &target in cases {
+            self.file(vma, target, XrefKind::Jump, text);
+        }
+    }
+
     fn file(&mut self, from: u64, to: u64, kind: XrefKind, instruction: &str) {
         let r = Xref { from, to, kind, instruction: instruction.to_string() };
         self.by_target.entry(to).or_default().push(r.clone());
@@ -1587,6 +1645,40 @@ fn empty() -> XrefIndex {
 ///
 /// A translator panic on exotic bytes is contained to `None` — a query surface
 /// must never take the process down over one bad address.
+/// (kuna) `switchtable`: the case bodies of the computed jump at `vma` that
+/// branches on `branch`, read through its register chain or as a Thumb
+/// `tbb`/`tbh` table.
+#[allow(clippy::too_many_arguments)]
+fn branch_cases(
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+    data_space: Option<&Rc<AddrSpace>>,
+    decoded: &HashSet<u64>,
+    vma: u64,
+    branch: Option<&VarnodeData>,
+    pool: &PoolImage,
+    exec: &[(u64, u64)],
+    max_entries: usize,
+    preserved: &[(u64, u64)],
+    thumb_tables: Option<&super::kuna_thumbswitch::HalfwordTables<'_>>,
+) -> kuna_switchtable::TableRead {
+    let mut read = match branch {
+        Some(branch) => kuna_switchtable::register_targets(
+            translate, code_space, data_space, decoded, vma, branch, pool, exec, max_entries, preserved,
+        ),
+        None => kuna_switchtable::TableRead::default(),
+    };
+    // (kuna) `thumbswitch`: a Thumb `tbb`/`tbh` reads offsets, not addresses.
+    // See [`super::kuna_thumbswitch`].
+    if read.cases.is_empty() && read.stated.is_none() {
+        if let Some(tables) = thumb_tables {
+            let decoded = |at: u64| decoded.contains(&at);
+            (read.cases, read.stated) = tables.targets(translate, code_space, exec, &decoded, vma);
+        }
+    }
+    read
+}
+
 pub(super) fn decode(
     translate: &dyn Translate,
     vma: u64,
