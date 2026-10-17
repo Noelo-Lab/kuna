@@ -620,10 +620,14 @@ fn a_later_call_keeps_the_argument_computed_in_the_same_register() {
 
 /// A double a call left in d0 does not displace the int computed in r0, an
 /// unused d0 below a used d1 is one double, and two floats read as the halves
-/// of d0 are not one 8-byte parameter.
+/// of d0 are not one 8-byte parameter. `armfloatargs`, which the preset turns
+/// on beside it, then takes those halves as the two float parameters.
 #[test]
 fn an_int_return_beats_a_double_left_in_d0_by_a_call() {
     let fixture = common::fixture("armfloatreturn_armhf.o");
+    let (code, err, rc) = common::run_kuna(&["decompile-all", &fixture, "--mode", "aggressive"]);
+    assert_eq!(rc, 0, "{err}");
+    assert!(code.contains("double w2(float a0,float a1)"), "{code}");
     for option in ["off", "on"] {
         let (code, err, rc) = common::run_kuna(&[
             "decompile-all",
@@ -633,6 +637,9 @@ fn an_int_return_beats_a_double_left_in_d0_by_a_call() {
             "--option",
             "armfloatreturn",
             option,
+            "--option",
+            "armfloatargs",
+            "off",
         ]);
         assert_eq!(rc, 0, "{err}");
         assert!(!code.contains("w2(unsigned long long"), "{option}: {code}");
