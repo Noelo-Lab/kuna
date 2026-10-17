@@ -1715,16 +1715,28 @@ bytes past the gap's end, or when a constant-offset access touches a byte
 between the count and the gap's end. A fill length one byte short of a multiple
 of 16 that fits the gap and is not already a terminated count
 (`readlink(p, buf, sizeof buf - 1)` into `char buf[4096]`) counts as that
-multiple; an object size is exact and never moves. Otherwise the range ends at
-the count and the bytes past it keep no symbol, like any alignment padding.
+multiple; an object size is exact and never moves. The bump applies to every
+fill length, also to a function that writes its own terminator within the
+length (`fgets`, `snprintf`, `gethostname`), because `sizeof buf - 1` is common
+there too (`fgets(line, sizeof line - 1, fp)` into `char line[5120]`,
+`gethostname(name, 255)` into `char name[256]`); a full-size fill into a buffer
+one short of a multiple of 16 (`char line[255]; fgets(line, sizeof line, f)`)
+is therefore declared one byte longer. Limiting the bump to raw-byte writers
+(`read`, `readlink`, `recv`, `fread`) breaks those two real buffers and fixes
+none on the measured sets. Otherwise the range ends at the count and the bytes
+past it keep no symbol, like any alignment padding.
 
 What this guarantees is that every access the function makes through the
 buffer's own address at an offset the IR can bound (a constant offset, a
 library call with a constant or byte-count length, a terminator at a
 byte-count result) lies inside the declared array; an index or pointer walk the
-IR cannot bound keeps the whole gap. What a call outside the library tables does
-with the address (`strlen`, the binary's own functions) is the callee's, as it
-is for any array. The count is still a guess about the source in three known
+IR cannot bound keeps the whole gap. What the IR does not follow is not bounded
+by the frame, as for any array: what a call outside the length tables does with
+the address, including library writers that take no length the table reads
+(`strcat`, `strcpy`, `sprintf`, `sscanf` with a `%63s` field), `strlen` and the
+binary's own functions or a function pointer; an address stored to memory and
+loaded back; and a pointer into the buffer that a callee sets (`strtol`'s end
+pointer). So `fgets(buf, 0x38, f); strcat(buf, "!!!!!");` declares 56 bytes. The count is still a guess about the source in three known
 ways: a function that passes a shorter length than its buffer (`fgets(buf, 20,
 f)` into `char buf[24]`) gets the shorter array, since the frame cannot tell it
 from `char buf[20]`; at `_FORTIFY_SOURCE=2` the `str*`, `printf`, `fgets`,
