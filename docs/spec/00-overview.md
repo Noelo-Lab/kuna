@@ -1658,9 +1658,20 @@ The session holds a temporary-directory guard through inventory, worker and
 result handling, so normal return, errors and unwinding all release its files.
 Directory creation is exclusive and requests private Unix permissions before
 any content is written; the final mode remains 0700 regardless of umask. Missing
-temporary parents are still created. Names retain the owner-pid prefix used by
-workers and the existing orphan sweep; parent-liveness and stale-owner policies
-are unchanged.
+temporary parents are still created. The pool holds an exclusive `owner.lock`
+file lock until its guard drops. That marker is published by renaming an already
+locked temporary file, so a concurrent sweep cannot mistake an owner still being
+initialized for an abandoned run. A sweep removes only versioned directories
+whose published owner marker it can lock without waiting; an inaccessible marker
+or lock error leaves the directory intact. Process IDs and ages do not prove
+abandonment across PID namespaces sharing the same temporary directory. When
+the temporary filesystem cannot lock files, the pool runs without a marker, so
+its directory is never a sweep candidate.
+
+Names use `kuna-jobs-v2-<pid>-<suffix>` so older PID-based sweepers do not recognize
+them as cleanup candidates. The PID remains diagnostic. Legacy and unmarked
+directories are left alone because their ownership cannot be proved. Normal guard
+cleanup and the workers' parent-pipe cleanup still release their own directories.
 
 Synthesized-structure reconciliation is owned by
 `decompiler/crates/kuna-cli/src/jobs/synth.rs`. It keeps the first-pass and sweep
