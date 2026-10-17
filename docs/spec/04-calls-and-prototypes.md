@@ -7095,3 +7095,12 @@ return what they tail-call or call, and nine PLT stubs return the import's resul
 (`v1 = (*dat_17e58)(); return v1;` for `lseek`). Each prints the signature
 `decompile-all` prints. Only a function whose callers read it pays for a second
 drive.
+
+A stack resource may specify `stackalign="false"` on its `pentry` when
+argument slots use the resource alignment rather than the datatype's object
+alignment. Windows i386 stack arguments use four-byte slots even for types
+whose in-memory alignment is eight bytes. This keeps a double or pair structure
+immediately after a preceding integer or hidden return pointer, without changing
+the type's field offsets or object alignment. Entries without this attribute
+retain their existing alignment behavior, as does explicit `true`; disabling
+type alignment is rejected for non-stack and non-resource entries (`p4_calls/kuna_stackparamalign.rs`).

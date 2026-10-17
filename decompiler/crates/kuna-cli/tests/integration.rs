@@ -457,3 +457,6 @@ mod narrow_register_inputs;
 
 #[path = "float_storage_truncation.rs"]
 mod float_storage_truncation;
+
+#[path = "windows_stack_argument_alignment.rs"]
+mod windows_stack_argument_alignment;

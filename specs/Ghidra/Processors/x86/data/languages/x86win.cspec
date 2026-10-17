@@ -37,7 +37,7 @@
   <default_proto>
     <prototype name="__stdcall" extrapop="unknown" stackshift="4">
       <input>
-        <pentry minsize="1" maxsize="500" align="4">
+        <pentry minsize="1" maxsize="500" align="4" stackalign="false">
           <addr offset="4" space="stack"/>
         </pentry>
       </input>
@@ -75,7 +75,7 @@
   </default_proto>
   <prototype name="__cdecl" extrapop="4" stackshift="4">
     <input>
-      <pentry minsize="1" maxsize="500" align="4">
+      <pentry minsize="1" maxsize="500" align="4" stackalign="false">
         <addr offset="4" space="stack"/>
       </pentry>
     </input>
@@ -118,7 +118,7 @@
       <pentry minsize="1" maxsize="4">
         <register name="EDX"/>
       </pentry>
-      <pentry minsize="1" maxsize="500" align="4">
+      <pentry minsize="1" maxsize="500" align="4" stackalign="false">
         <addr offset="4" space="stack"/>
       </pentry>
     </input>
@@ -158,7 +158,7 @@
       <pentry minsize="1" maxsize="4">
         <register name="ECX"/>
       </pentry>
-      <pentry minsize="1" maxsize="500" align="4">
+      <pentry minsize="1" maxsize="500" align="4" stackalign="false">
         <addr offset="4" space="stack"/>
       </pentry>
     </input>

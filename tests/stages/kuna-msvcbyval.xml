@@ -32,9 +32,9 @@
                  into the slot through its hidden pointer
       msvcbyval_ce_i386.exe: the shapes the sizing must decline (a pop cleanup,
         padding or dead locals above the arguments, an addressed local the
-        cleanup releases, a split cleanup, a misaligned 8-byte class), checked in
-        the default pass, plus a padded 6-byte class and a plain 8-byte struct
-        that stay sized
+        cleanup releases, a split cleanup), checked in the default pass, plus
+        an 8-byte class after a scalar, a padded 6-byte class, and a plain
+        8-byte struct that stay sized
 
     Pass 1 (`option msvcbyval off`) is the BUG: MakeStack(a1) and Join() keep
     only the parameters before the class, and the pushed `ecx` that reserves
@@ -130,7 +130,7 @@ c3
 <stringmatch name="MSVCBYVAL #5: on, the copy constructor builds that same local" min="1" max="1">Arr::Arr\(\(Arr \*\)&amp;v1,a1\);</stringmatch>
 <stringmatch name="MSVCBYVAL #6: on, Build takes exactly its three parameters" min="1" max="1">Arr \* sub_401020\(Arr \*a0,Arr \*a1,Arr \*a2\)</stringmatch>
 <stringmatch name="MSVCBYVAL #7: on sizes the 8-byte Pair from sub esp,8" min="1" max="1">Join\(v1,a0\);</stringmatch>
-<stringmatch name="MSVCBYVAL #8: on, the Pair copy constructor builds the argument" min="1" max="1">Pair::Pair\(\(Pair \*\)&amp;v1,a0\);</stringmatch>
+<stringmatch name="MSVCBYVAL #8: on, the Pair copy constructor builds the argument" min="2" max="2">Pair::Pair\(\(Pair \*\)&amp;v1,a0\);</stringmatch>
 <stringmatch name="MSVCBYVAL #9: a deferred pop in the cleanup is declined in both passes" min="2" max="2">MakeStack\(a0\);</stringmatch>
 <stringmatch name="MSVCBYVAL #10: a local released by the cleanup is declined in both passes" min="2" max="2">MakeStack\(\(Arr \*\)&amp;v2\);</stringmatch>
 <stringmatch name="MSVCBYVAL #11: off, Fresh reads the reserving push of ecx as a parameter" min="1" max="1">Arr \* sub_401080\(unsigned int a0,Arr \*a1,unsigned int a2,unsigned int a3\)</stringmatch>
@@ -138,7 +138,7 @@ c3
 <stringmatch name="MSVCBYVAL #13: GetArr returns into the slot as a local in both passes" min="2" max="2">GetArr\(\(Arr \*\)&amp;v1\);</stringmatch>
 <stringmatch name="MSVCBYVAL #14: a pop-run cleanup is not read as a size (Sink declined)" min="1" max="1">Sink\(\);</stringmatch>
 <stringmatch name="MSVCBYVAL #15: padding above a class-last argument is not absorbed (Take3 declined)" min="1" max="1">Take3\(5\);</stringmatch>
-<stringmatch name="MSVCBYVAL #16: an 8-byte class the model misaligns is declined, not mis-sized (Take4)" min="1" max="1">Take4\(5\);</stringmatch>
+<stringmatch name="MSVCBYVAL #16: an 8-byte class follows a 4-byte stack argument without extra padding (Take4)" min="1" max="1">Take4\(5,v1\);</stringmatch>
 <stringmatch name="MSVCBYVAL #17: dead reserving pushes above the arguments leave shift8 declined" min="1" max="1">void sub_4011e0\(unsigned int a0,Arr \*a1,Arr \*a2,unsigned int a3\)</stringmatch>
 <stringmatch name="MSVCBYVAL #18: a 6-byte class padded to 8 by sub esp,8 is still sized (Put)" min="1" max="1">Put\(v1,v2\);</stringmatch>
 <stringmatch name="MSVCBYVAL #19: a local whose address is taken and that the cleanup releases is declined (podfold)" min="1" max="1">Take\(\*a1,a1\[1\],v1\);</stringmatch>

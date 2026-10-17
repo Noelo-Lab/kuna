@@ -6510,6 +6510,7 @@ impl Architecture {
         }
         // Storage address: <register name=".."/> or <addr space=".." offset=".."/>.
         let (space, addressbase) = self.decode_pentry_storage(pentry)?;
+        flags |= crate::p4_calls::kuna_stackparamalign::decode(pentry, &space, alignment, size)?;
         crate::fspec::ParamEntry::seed(
             group, type_, space, addressbase, size, minsize, alignment, flags, normalstack,
             grouped, prev, self.manage(),
