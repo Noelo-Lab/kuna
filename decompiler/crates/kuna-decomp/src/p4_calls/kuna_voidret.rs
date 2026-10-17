@@ -1275,7 +1275,10 @@ pub fn plant(data: &mut Funcdata) {
 }
 
 pub(crate) fn plant_piece(data: &mut Funcdata, addr: Address, size: int4) {
-    if crate::p4_calls::kuna_passthrough::suppresses_return_trial(data, &addr, size) || touched_beyond(data, &addr, size) {
+    if (crate::p4_calls::kuna_passthrough::suppresses_return_trial(data, &addr, size)
+        && !crate::kuna_armfloatreturn::forwarded_vfp_return(data, &addr, size))
+        || touched_beyond(data, &addr, size)
+    {
         return;
     }
     let rets: Vec<crate::context::OpId> = data

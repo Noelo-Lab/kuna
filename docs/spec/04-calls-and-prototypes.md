@@ -7046,6 +7046,18 @@ that register gives up the lock on every value it returns there
 (`kuna_armfloatreturn.rs (unlock_unspelled)`), and the return is typed as
 `floatret` types it: `unsigned int qp(void) { return 0x7fc00123; }`.
 
+A tail call that forwards its float parameters untouched, such as `atan2f`'s
+`b.w __ieee754_atan2f`, gets them from `passthrough`'s argument claims on `s0`
+and `s1`. When the callee states no return a tail call can take (it hands a
+parameter back on some path), the wrapper's return comes from `voidret`'s
+forced return in the register its callers read, and a passthrough claim on
+that register would refuse it. With the option on, a VFP return register that
+passthrough claims only as a forwarded argument still takes the forced return
+(`kuna_armfloatreturn.rs (forwarded_vfp_return)`): the call that takes the
+argument leaves its own result there, so `atan2f` returns
+`__ieee754_atan2f`'s float instead of printing `void` beside callers that
+read its result.
+
 A float result is written to `s0`, the low half of `d0`, so a function that
 converts a double to float leaves `d0` holding the new low word and the old high
 word. Before the return width is fixed, a bounded walk checks every normal

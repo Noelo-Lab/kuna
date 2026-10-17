@@ -9,3 +9,6 @@ NI double mix(int i, double x, float y) { return i * x + y; }
 NI float backfill(float a, double b, float c) { return a + (float)b * c; }
 NI float copysign_bits(float x, float y) { fu a = { x }, b = { y }; a.u = (a.u & 0x7fffffffu) | (b.u & 0x80000000u); return a.f; }
 NI float payload(void) { return __builtin_nanf("0x123"); }
+NI float inner(float y, float x) { if (y != y) return y; return y > x ? y - x : x * y; }
+NI float wrap(float y, float x) { return inner(y, x); }
+NI float use_wrap(float a, float b) { return wrap(a + 1.0f, b) * 2.0f; }
