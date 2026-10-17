@@ -1030,7 +1030,7 @@ pub fn capture(fc: &mut FuncCallSpecs, data: &Funcdata) -> Option<PendingPassThr
             .get(vn)
             .map(|v| v.is_input() && !v.is_written() && *v.get_addr() == addr && v.get_size() == size)
             .unwrap_or(false);
-        if !own_input && !crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, size) {
+        if !own_input && !crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, size) && !reassembled(data, vn, &addr, size) {
             continue;
         }
         if let Some(width) = stated_width(data, fc, &addr, size) {
@@ -1041,6 +1041,15 @@ pub fn capture(fc: &mut FuncCallSpecs, data: &Funcdata) -> Option<PendingPassThr
         fc.get_active_input().get_trial_mut(i).mark_no_use();
     }
     (!candidates.is_empty()).then_some(PendingPassThrough { op, candidates })
+}
+
+/// Is `vn` the function's own incoming integer register `[addr, addr+size)`
+/// put back together from the pieces heritage split it into, around a
+/// narrower result of a call read out of the same register (AArch64 `w0`
+/// returned by a tail call that also takes the incoming `x0`)?
+fn reassembled(data: &Funcdata, vn: VarnodeId, addr: &Address, size: int4) -> bool {
+    data.vbank().get(vn).is_some_and(|v| v.is_written())
+        && crate::kuna_armfloatargs::incoming_storage(data, vn).is_some_and(|(a, s)| a == *addr && s == size)
 }
 
 /// Extend each captured call's final argument list with the forwarded registers
@@ -1091,6 +1100,7 @@ fn extend_one(data: &mut Funcdata, p: &PendingPassThrough) -> bool {
             .filter(|v| {
                 (v.is_input() && *v.get_addr() == addr)
                     || crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, width)
+                    || reassembled(data, vn, &addr, v.get_size())
             })
             .map(|v| v.get_size())
         else {
