@@ -1408,6 +1408,12 @@ pub struct Architecture {
     /// nothing may touch the slot at another width.  Affects the JSON surface
     /// only: no p-code, no emitted C.
     pub slot_ptr: bool,
+    /// (kuna `reglocals`) Report the locals the C declares outside the stack
+    /// frame (registers, temporaries, values with no storage of their own) as
+    /// `kind: "register"` rows, under the printed name and declarator, with the
+    /// uses of the HighVariables each declaration covers as their evidence.
+    /// Affects the JSON surface only: no p-code, no emitted C.
+    pub reg_locals: bool,
     /// (kuna `voidtailreturn`) Elide the trailing bare `return;` of a void
     /// function -- the one the C source it came from does not have, because the
     /// source just falls off the end of the body.
@@ -2943,6 +2949,7 @@ impl Architecture {
             framelayout: false, // (kuna) option framelayout; reset_defaults sets the shipped default
             byte_honest: false, // (kuna) option bytehonest; reset_defaults sets the shipped default
             slot_ptr: false, // (kuna) option slotptr; reset_defaults sets the shipped default
+            reg_locals: false, // (kuna) option reglocals; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
             cast_implied: false, // (kuna) option castimplied; reset_defaults sets the shipped default
             cast_sign: false, // (kuna) option castsign; reset_defaults sets the shipped default
@@ -3294,6 +3301,7 @@ impl Architecture {
         self.indirect_args = true; // (kuna) default-on: a by-value parameter the ABI passes through a hidden pointer keeps its declared value type; 0/675 datatests move
         self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions
         self.slot_ptr = true; // (kuna) option slotptr default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; evidence in docs/features/slotptr/default-on-evaluation.md
+        self.reg_locals = true; // (kuna) option reglocals default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +205 type_match-perfect / 0 lost, 2,207 improved / 10 worse over 10,748 scored functions of the 444 decbench slices
         self.byte_honest = true; // (kuna) default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +10 type_match-perfect / 121 improved / 0 worse over 5,298 scored decbench functions
         self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md

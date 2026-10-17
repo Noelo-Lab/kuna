@@ -313,6 +313,9 @@ mod stack_alias_preservation;
 #[path = "stack_float_snapshot.rs"]
 mod stack_float_snapshot;
 
+#[path = "register_locals_json.rs"]
+mod register_locals_json;
+
 #[path = "stack_object_discovery.rs"]
 mod stack_object_discovery;
 

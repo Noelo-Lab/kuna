@@ -55,6 +55,7 @@ pub mod kuna_castobject;
 pub mod kuna_impliedrefs;
 pub mod kuna_bytehonest;
 pub mod kuna_slotptr;
+pub mod kuna_reglocals;
 pub mod kuna_hideshadow;
 pub mod kuna_pointeevalue;
 pub mod kuna_loadorder;

@@ -2307,7 +2307,7 @@ fn var_json(v: &VarInfo) -> Json {
         ("type".into(), Json::Str(v.type_name.clone())),
         (
             "kind".into(),
-            Json::Str(if v.is_param { "arg" } else { "stack" }.into()),
+            Json::Str(v.kind().into()),
         ),
         (
             "arg_index".into(),

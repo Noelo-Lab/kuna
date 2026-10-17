@@ -1153,6 +1153,10 @@ Three tiers:
 | a local that holds a FILE * or a libc record pointer is reported as eight bytes of unknown type | [`slotptr`](#slotptr) |
 | the variables array has fewer pointer-typed locals than the C body declares | [`slotptr`](#slotptr) |
 | a spilled pointer argument's home slot is reported as undefined8 | [`slotptr`](#slotptr) |
+| a local the C declares has no row in the JSON variables array | [`reglocals`](#reglocals) |
+| the variables array lists only parameters and stack slots at -O2 | [`reglocals`](#reglocals) |
+| an optimized function's vN locals are missing from decompile-all --json | [`reglocals`](#reglocals) |
+| type_match misses every register-resident local | [`reglocals`](#reglocals) |
 | int4/uint1/uint4/float8/float10 appear in the emitted C instead of C type names | [`ctypes`](#ctypes) |
 | the same function mixes `unsigned int` with `int4` | [`ctypes`](#ctypes) |
 | `code *` appears as a function-pointer type | [`ctypes`](#ctypes) |
@@ -3566,6 +3570,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default. A consumer reads `variables[]` as the recovered frame -- the `decompile-all --json` / `decompile-project` surface decbench's type_match scores and IDA's stack view and Binary Ninja's variable list are the analogues of -- and wants a -O0 local that holds a string, a `FILE *` or a `passwd *` reported as that pointer rather than as eight bytes of unknown type. The type reported is the one kuna's own C body gives the stored value, so where the body is wrong the slot is wrong the same way: a length computed as a pointer difference that the body prints as `&p[-(long)q]` reports `char *`, and a register variable that merges an `lseek` result with an `errno` pointer reports `int *`. Flip OFF to get the pre-feature surface, where every filler slot keeps the width-only spelling framelayout recorded. The emitted C never changes either way.
 - **Where / provenance:** P6/naming-policy · binja · presentation-default · kuna-slotptr
 - **Example:** `option slotptr off`
+
+### `reglocals` -- on | off, default `on`
+
+- **Symptoms:** a local the C declares has no row in the JSON variables array; the variables array lists only parameters and stack slots at -O2; an optimized function's vN locals are missing from decompile-all --json; type_match misses every register-resident local.
+- **What it does:** Report the locals the C body declares outside the stack frame -- a register, a temporary, or a value with no storage of its own, the `vN` of an optimized function -- on the `decompile-all --json` `variables` surface as `kind: "register"` rows. Before it the surface reported parameters (`arg`) and the stack frame (`stack`) only, so every local the C declared in a register had no row. The rows are exactly the declarations the printer just emitted that no parameter or frame row covers, under the printed name and the printed declarator (an uncommitted byte is still spelled `undefined1` under `bytehonest`), with `stack_offset` null, `size` the declared type's size, and as evidence the lines and instruction addresses of the uses of every HighVariable the declaration covers, the same markup-backed provenance the other rows carry. JSON surface only: no p-code and no emitted C; `decompile-project`'s `.asm` variable comments list the frame only and do not change.
+- **When to flip:** On by default. A consumer reads `variables[]` as the full list of what the function declares -- the `decompile-all --json` surface decbench's type_match scores by instruction-address overlap, and the analogue of the register variables IDA, Binary Ninja and Ghidra list. Flip OFF to get the pre-feature surface of parameters and stack-frame rows only. The emitted C never changes either way.
+- **Where / provenance:** P6/naming-policy · kuna · presentation-default · kuna-reglocals
+- **Example:** `option reglocals off`
 
 ### `ctypes` -- on | off, default `off`
 

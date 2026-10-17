@@ -839,7 +839,7 @@ pub fn decompile_pulled(
                             use_.address = prog.output_code_offset(use_.address);
                         }
                     }
-                    let var_refs = provenance.apply_to_variables_with_refs(&fd, &mut variables);
+                    let var_refs = provenance.apply_to_variables_with_refs(prog.arch(), &fd, &mut variables);
                     let detail = want_tokens.then(|| {
                         Box::new(crate::inspect::FuncDetail::resolve(
                             prog, &fd, &var_refs, &raw_tokens, &untrimmed, &code, &variables,
@@ -1676,6 +1676,32 @@ mod tests {
     }
 
     #[test]
+    fn a_register_local_has_no_asm_variable_comment() {
+        let row = |name: &str, stack_offset: Option<i64>| super::VarInfo {
+            name: name.into(),
+            type_name: "long".into(),
+            stack_offset,
+            size: 8,
+            is_param: false,
+            arg_index: None,
+            line_numbers: vec![],
+            addresses: vec![],
+        };
+        let mut r = streamed("long sub_1000(long);", "long");
+        r.variables.extend([row("local_18", Some(-0x18)), row("v1", None)]);
+        assert_eq!(
+            super::var_header_lines(&r),
+            "; arg:   a0 (long)\n; stack: local_18 @ [stack-0x18] (long)\n"
+        );
+        r.variables.retain(|v| v.kind() == "register");
+        assert_eq!(super::var_header_lines(&r), "");
+        assert_eq!(
+            crate::project_stream::render_variables_section(&[r]),
+            "\n; --- variables ---\n"
+        );
+    }
+
+    #[test]
     fn pointer_arguments_use_only_the_final_successful_results() {
         use kuna_decomp::kuna_pointerargs::{Call, Parameter, Position, Record};
         let storage = (("register".into(), 0x38), 8);
@@ -1915,7 +1941,8 @@ mod tests {
 
 /// The per-function variable comment block: `; arg:` lines (ABI order), then
 /// `; stack:` lines with the signed frame offset the decompiled name lives at.
-/// Empty when the function recovered no variables.
+/// A local outside the frame has no line. Empty when the function recovered no
+/// variables.
 pub(crate) fn var_header_lines(r: &FuncResult) -> String {
     let mut out = String::new();
     emit_var_header(r, &mut out);
@@ -1927,19 +1954,15 @@ fn emit_var_header(r: &FuncResult, out: &mut String) {
         out.push_str(&format!("; arg:   {} ({})\n", v.name, v.type_name));
     }
     for v in r.variables.iter().filter(|v| !v.is_param) {
-        match v.stack_offset {
-            Some(off) => {
-                let sign = if off < 0 { '-' } else { '+' };
-                out.push_str(&format!(
-                    "; stack: {} @ [stack{}0x{:x}] ({})\n",
-                    v.name,
-                    sign,
-                    off.unsigned_abs(),
-                    v.type_name
-                ));
-            }
-            None => out.push_str(&format!("; stack: {} ({})\n", v.name, v.type_name)),
-        }
+        let Some(off) = v.stack_offset else { continue };
+        let sign = if off < 0 { '-' } else { '+' };
+        out.push_str(&format!(
+            "; stack: {} @ [stack{}0x{:x}] ({})\n",
+            v.name,
+            sign,
+            off.unsigned_abs(),
+            v.type_name
+        ));
     }
 }
 

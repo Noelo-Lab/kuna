@@ -44,7 +44,7 @@ fn settable_count_is_311() {
 }
 
 #[test]
-fn tier_counts_are_114_core_118_transform_79_analysis() {
+fn tier_counts_are_115_core_118_transform_79_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_114_core_118_transform_79_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (114, 118, 79));
+    assert_eq!((core, transform, analysis), (115, 118, 79));
 }
 
 #[test]
@@ -826,7 +826,8 @@ fn option_values_live_value_present_for_110() {
     // 136 -> 137: +1 for `libcnames` (live_field = libc_names).
     // 138 -> 139: +1 for `indirectargs` (live_field = indirect_args).
     // 141 -> 142: +1 for `fputruncviews` (live_field = fpu_trunc_views).
-    assert_eq!(with_live, 142);
+    // 142 -> 143: +1 for `reglocals` (live_field = reg_locals).
+    assert_eq!(with_live, 143);
 }
 
 #[test]

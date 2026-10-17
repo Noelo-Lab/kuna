@@ -2052,6 +2052,18 @@ mod tests {
                     line_numbers: Vec::new(),
                     addresses: Vec::new(),
                 },
+                // (kuna `reglocals`) A local outside the frame: its `kind` is
+                // carried by `is_param` and `stack_offset` alone.
+                VarInfo {
+                    name: "v3".into(),
+                    type_name: "int".into(),
+                    stack_offset: None,
+                    size: 4,
+                    is_param: false,
+                    arg_index: None,
+                    line_numbers: vec![5],
+                    addresses: vec![0x40100c],
+                },
             ],
             // (kuna `structdefs`) One recovered type definition, so the frame
             // codec's `types` block is exercised by the round-trip below.
@@ -2137,6 +2149,7 @@ mod tests {
                     && x.stack_offset == y.stack_offset
                     && x.size == y.size
                     && x.is_param == y.is_param
+                    && x.kind() == y.kind()
                     && x.arg_index == y.arg_index
                     && x.line_numbers == y.line_numbers
                     && x.addresses == y.addresses

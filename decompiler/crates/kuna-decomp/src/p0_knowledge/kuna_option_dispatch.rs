@@ -739,6 +739,7 @@ kuna_options! { self, p1;
     "framelayout" => on_off!(framelayout, "recovered stack-frame reporting"),
     "bytehonest" => on_off!(byte_honest, "uncommitted-byte width reporting"),
     "slotptr" => on_off!(slot_ptr, "frame-slot pointer typing"),
+    "reglocals" => on_off!(reg_locals, "register-local reporting"),
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
     "castsign" => on_off!(cast_sign, "signed declarations for signed-only locals"),

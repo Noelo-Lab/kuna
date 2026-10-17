@@ -1601,6 +1601,8 @@ pub struct PrintC {
     local_name_standalones: std::collections::HashSet<crate::context::HighVariableId>,
     /// (kuna) The locals the last document declared, as [`DeclaredLocal`]s.
     declared_locals: Vec<DeclaredLocal>,
+    /// (kuna) The entry of the function the last document printed.
+    declared_entry: Option<Address>,
     /// Final C declarations, including storage and symbol overrides.
     pointer_decls: crate::kuna_pointerargs::Declarations,
     /// Pointer-argument facts are recorded only for a buffered driver that asked
@@ -1657,6 +1659,7 @@ impl PrintC {
             local_name_aliases: std::collections::HashMap::new(),
             local_name_standalones: std::collections::HashSet::new(),
             declared_locals: Vec::new(),
+            declared_entry: None,
             pointer_decls: crate::kuna_pointerargs::Declarations::default(),
             record_pointer_arguments: false,
             pointer_record: None,
@@ -2561,6 +2564,7 @@ impl PrintC {
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
         self.declared_locals.clear();
+        self.declared_entry = Some(fd.get_address().clone());
         self.pointer_decls.clear();
         self.begin_pointer_record(fd);
         // (kuna `signedness`) Round the declared signedness of this function's
@@ -3502,9 +3506,9 @@ impl PrintC {
             let mut dedup = crate::kuna_dedupvardecls::DeclDedup::new();
             let mut collapsed = Vec::new();
             decls.retain(|(high, name)| {
-                let (mut decl_type, mut decl_back, mut array_count, comment) =
+                let (mut decl_type, mut decl_back, mut array_count, comment, _) =
                     self.rendered_local_decl(fd, arch, *high);
-                if let Some((t, b, a)) = symbol_decl_type.get(high) {
+                if let Some((t, b, a, _)) = symbol_decl_type.get(high) {
                     decl_type = t.clone();
                     decl_back = b.clone();
                     array_count = a.clone();
@@ -3655,15 +3659,16 @@ impl PrintC {
                         .and_then(|h| fd.kuna_high_symbol_wire_id(h))
                 })
                 .or(decl_rep_index);
-            let (mut decl_type, mut decl_back, mut array_count, comment) =
+            let (mut decl_type, mut decl_back, mut array_count, comment, mut declared) =
                 self.rendered_local_decl(fd, arch, *high);
             let comment = source_comments.remove(high).or(comment);
             // (kuna) The Symbol-keyed collapse arbitrated a type disagreement between
             // the several highs of one Symbol.
-            if let Some((t, b, a)) = symbol_decl_type.get(high) {
+            if let Some((t, b, a, ty)) = symbol_decl_type.get(high) {
                 decl_type = t.clone();
                 decl_back = b.clone();
                 array_count = a.clone();
+                declared = ty.clone();
             }
             // (kuna `signedness`) A cast on this local may only be dropped as
             // redundant when the rounded type is what actually reached the
@@ -3686,6 +3691,7 @@ impl PrintC {
                     Some((_, count)) => format!("{decl_type} [{count}]{decl_back}"),
                     None => format!("{decl_type}{decl_back}"),
                 },
+                ty: declared,
             });
             self.pointer_decls.record(name, &decl_type, &decl_back, array_count.is_some());
             self.emit.tag_line();
@@ -3773,6 +3779,11 @@ impl PrintC {
         &self.declared_locals
     }
 
+    /// (kuna) The entry of the function the last printed document is of.
+    pub fn declared_entry(&self) -> Option<&Address> {
+        self.declared_entry.as_ref()
+    }
+
     /// (kuna) A printer of its own that has printed `fd` with `arch`'s
     /// options, so [`declared_locals`](Self::declared_locals) and
     /// [`declared_local`](Self::declared_local) say what a print of `fd` names
@@ -3783,6 +3794,21 @@ impl PrintC {
         print.options = arch.print().options;
         print.doc_function_full(fd, arch);
         print
+    }
+
+    /// (kuna) The highs of the last printed document that read through another
+    /// high's declaration, keyed by the declared high (which is not repeated).
+    pub fn declared_through(
+        &self,
+    ) -> std::collections::BTreeMap<crate::context::HighVariableId, Vec<crate::context::HighVariableId>> {
+        let mut out: std::collections::BTreeMap<_, Vec<_>> = std::collections::BTreeMap::new();
+        for (&high, &owner) in &self.local_name_aliases {
+            out.entry(owner).or_default().push(high);
+        }
+        for highs in out.values_mut() {
+            highs.sort();
+        }
+        out
     }
 
     /// (kuna) The declaration `high` reads through in the last printed document:
@@ -3824,8 +3850,9 @@ impl PrintC {
     /// (kuna) The fully-rendered declaration of one local high: the final declarator
     /// type, the declarator suffix that follows the name (`)[16]` for a pointer to
     /// an array, else empty), the `[count]` array adornment (when the mapped Symbol
-    /// — or the declaration representative itself — is an array), and the storage
-    /// comment.
+    /// — or the declaration representative itself — is an array), the storage
+    /// comment, and the datatype the declarator spells (the array itself for an
+    /// array declaration).
     ///
     /// Shared by [`Self::collapse_symbol_decls`] and the emit loop so the collapse
     /// compares exactly the bytes the emit loop would write.
@@ -3839,12 +3866,15 @@ impl PrintC {
         String,
         Option<(String, int4)>,
         Option<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>,
+        Option<std::rc::Rc<crate::dtype::Datatype>>,
     ) {
         // Type: the high's recovered type name (W8-unknown -> `undefined<N>`).
-        let (mut type_name, comment) = self.local_decl_type_and_comment(fd, arch, high);
+        let ((mut type_name, comment), mut declared) =
+            self.local_decl_type_and_comment(fd, arch, high);
         let rt = self.rt_ctx; // (kuna) realtypes ctx for the composite/array relabel
         if let Some(object) = crate::kuna_addressdecl::object_type(fd, high) {
             type_name = type_name_for_decl(&object, rt);
+            declared = Some(object);
         }
 
         // C++ `emitVarDecl` declares the whole *Symbol*'s type (printc.cc:1719
@@ -3868,6 +3898,7 @@ impl PrintC {
                 || mt == crate::dtype::type_metatype::TYPE_UNION
             {
                 type_name = type_name_for_decl(st, rt);
+                declared = Some(std::rc::Rc::clone(st));
             }
         }
         // Array member: if the mapped Symbol is an array, declare the base
@@ -3878,7 +3909,7 @@ impl PrintC {
             .get(high)
             .and_then(|h| {
                 let st = h.kuna_symbol_type()?;
-                array_decl_parts(st, rt)
+                array_decl_parts(st, rt).map(|parts| (parts, std::rc::Rc::clone(st)))
             })
             // No mapped-Symbol array: fall back to the declaration representative's
             // own data-type.  An anonymous `undefined1 [N]` array (an oversize
@@ -3888,19 +3919,22 @@ impl PrintC {
             // flattening it to a scalar `undefined<N>`.
             .or_else(|| {
                 let v = decl_rep_varnode(fd, high).and_then(|vn| fd.vbank().get(vn))?;
-                array_decl_parts(v.get_type(), rt)
+                array_decl_parts(v.get_type(), rt).map(|parts| (parts, std::rc::Rc::clone(v.get_type())))
             });
         let ((decl_type, decl_back), array_count) = match array_decl {
-            Some(((front, back), count)) => ((front.clone(), back), Some((front, count))),
+            Some((((front, back), count), array)) => {
+                declared = Some(array);
+                ((front.clone(), back), Some((front, count)))
+            }
             None => (type_name, None),
         };
         if self.options.partial_access && self.out_lang == crate::kuna_lang::OutLang::C
             && arch.types().get_size_of_pointer() == 8
             && crate::kuna_widelocal::scalar_bits(fd, high)
         {
-            return ("unsigned __int128".into(), String::new(), None, comment);
+            return ("unsigned __int128".into(), String::new(), None, comment, None);
         }
-        (decl_type, decl_back, array_count, comment)
+        (decl_type, decl_back, array_count, comment, declared)
     }
 
     /// (kuna) Collapse the declarations of the several HighVariables that share one
@@ -3984,13 +4018,13 @@ impl PrintC {
                 dropped.insert(i);
                 self.local_name_aliases.insert(decls[i].0, decls[keep].0);
             }
-            let rendered: Vec<DeclTypeOverride> = idxs
+            let (rendered, rendered_types): (Vec<_>, Vec<_>) = idxs
                 .iter()
                 .map(|&i| {
-                    let (t, b, a, _) = self.rendered_local_decl(fd, arch, decls[i].0);
-                    (t, b, a)
+                    let (t, b, a, _, ty) = self.rendered_local_decl(fd, arch, decls[i].0);
+                    ((t, b, a), ty)
                 })
-                .collect();
+                .unzip();
             if rendered.iter().all(|r| *r == rendered[0]) {
                 continue;
             }
@@ -4018,13 +4052,14 @@ impl PrintC {
             match symbol_type {
                 Some(st) => {
                     let (front, back) = type_name_for_decl(st, self.rt_ctx);
-                    overrides.insert(decls[keep].0, (front, back, None));
+                    overrides.insert(decls[keep].0, (front, back, None, Some(std::rc::Rc::clone(st))));
                 }
                 // No usable Symbol type: declare the widest member's own rendering.
                 None => {
                     let pos = widths.iter().position(|&w| w == wmax).unwrap_or(0);
                     if rendered[pos] != rendered[0] {
-                        overrides.insert(decls[keep].0, rendered[pos].clone());
+                        let (t, b, a) = rendered[pos].clone();
+                        overrides.insert(decls[keep].0, (t, b, a, rendered_types[pos].clone()));
                     }
                 }
             }
@@ -4040,15 +4075,19 @@ impl PrintC {
         overrides
     }
 
-    /// The declaration type and original storage key used by declaration collapse.
+    /// The declaration type and original storage key used by declaration collapse,
+    /// and the datatype that type spells.
     fn local_decl_type_and_comment(
         &self,
         fd: &Funcdata,
         arch: &Architecture,
         high: crate::context::HighVariableId,
-    ) -> ((String, String), Option<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>) {
+    ) -> (
+        ((String, String), Option<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>),
+        Option<std::rc::Rc<crate::dtype::Datatype>>,
+    ) {
         if fd.high_bank().get(high).is_none() {
-            return (("undefined1".to_string(), String::new()), None);
+            return ((("undefined1".to_string(), String::new()), None), None);
         }
         let rep = decl_rep_varnode(fd, high);
         // (kuna `declhightype`) The declared type is the merged high's own -- the
@@ -4063,7 +4102,7 @@ impl PrintC {
         let type_rep = type_rep.filter(|_| {
             crate::kuna_declhightype::declares_from_high(fd, high)
         });
-        let (type_name, comment) = match rep.and_then(|vn| fd.vbank().get(vn)) {
+        match rep.and_then(|vn| fd.vbank().get(vn)) {
             Some(v) => {
                 let decl_ty = type_rep
                     .and_then(|vn| fd.vbank().get(vn))
@@ -4074,11 +4113,10 @@ impl PrintC {
                 let decl_ty = self.sign_plan.decl_type(high).unwrap_or(decl_ty);
                 let tn = type_name_for_decl(decl_ty, self.rt_ctx);
                 let comment = crate::kuna_varsources::representative_comment(fd, arch, high, v);
-                (tn, comment)
+                ((tn, comment), Some(std::rc::Rc::clone(decl_ty)))
             }
-            None => (("undefined1".to_string(), String::new()), None),
-        };
-        (type_name, comment)
+            None => ((("undefined1".to_string(), String::new()), None), None),
+        }
     }
 
     /// Emit the structured function body into the open brace (C++
@@ -10982,10 +11020,10 @@ fn high_pointer_type(fd: &Funcdata, vn: VarnodeId) -> Option<std::rc::Rc<crate::
 }
 
 /// (kuna) The declarator a Symbol-keyed collapse imposes on the surviving
-/// declaration: the final type text, its post-name declarator suffix, and the
-/// `(base-type, count)` array adornment (`None` for a scalar).  Same shape as
-/// `rendered_local_decl`'s first three returns.
-type DeclTypeOverride = (String, String, Option<(String, int4)>);
+/// declaration: the final type text, its post-name declarator suffix, the
+/// `(base-type, count)` array adornment (`None` for a scalar), and the datatype
+/// they spell.  Same shape as `rendered_local_decl`'s returns less the comment.
+type DeclTypeOverride = (String, String, Option<(String, int4)>, Option<std::rc::Rc<crate::dtype::Datatype>>);
 
 /// (kuna) The declaration *representative* Varnode of a local high: the addr-tied
 /// (mapped, in-scope) storage member - the C++ symbol's `getFirstWholeMap()`
@@ -11065,14 +11103,16 @@ pub fn type_to_c_string(
 
 /// (kuna) One local declaration the printer emitted: the HighVariable it
 /// declares, the name the naming pass gave it, the name it was printed under
-/// (suffixed when it collided with another identifier), and its declarator with
-/// the name taken out (`char [16]`, `S *`).
+/// (suffixed when it collided with another identifier), its declarator with
+/// the name taken out (`char [16]`, `S *`), and the datatype that declarator
+/// spells when it spells one.
 #[derive(Clone, Debug)]
 pub struct DeclaredLocal {
     pub high: crate::context::HighVariableId,
     pub base: String,
     pub name: String,
     pub decl: String,
+    pub ty: Option<std::rc::Rc<crate::dtype::Datatype>>,
 }
 
 // ===========================================================================

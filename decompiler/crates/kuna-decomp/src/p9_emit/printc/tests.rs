@@ -269,7 +269,7 @@ mod stack_pointer_high_leaf {
             h.set_symbol_type(named_int(object_size));
             h.set_symbol_offset(0);
             let p = PrintC::new();
-            let (front, back, array, _) = p.rendered_local_decl(&fd, &bare_arch(), high);
+            let (front, back, array, _, _) = p.rendered_local_decl(&fd, &bare_arch(), high);
             assert_eq!(front, want, "reference={reference}, object_size={object_size}");
             assert!(back.is_empty() && array.is_none());
         }
@@ -324,7 +324,7 @@ mod stack_pointer_high_leaf {
             h.set_symbol_offset(0);
             h.set_kuna_ref_symbol(local);
             let p = PrintC::new();
-            let (front, _, _, _) = p.rendered_local_decl(&fd, &bare_arch(), high);
+            let (front, _, _, _, _) = p.rendered_local_decl(&fd, &bare_arch(), high);
             assert_eq!(front, want, "neighbour={neighbour:?}");
         }
     }

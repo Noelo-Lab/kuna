@@ -260,14 +260,17 @@ fn sweep_one(
 /// already took valid.  The section marker is unconditional — it is where a
 /// reader splits the sweep from the tails.
 pub fn render_variables_section(results: &[FuncResult]) -> String {
-    let mut ordered: Vec<&FuncResult> =
-        results.iter().filter(|r| !r.variables.is_empty()).collect();
-    ordered.sort_by(|a, b| a.address.cmp(&b.address).then_with(|| a.name.cmp(&b.name)));
+    let mut ordered: Vec<(&FuncResult, String)> = results
+        .iter()
+        .map(|r| (r, project::var_header_lines(r)))
+        .filter(|(_, lines)| !lines.is_empty())
+        .collect();
+    ordered.sort_by(|(a, _), (b, _)| a.address.cmp(&b.address).then_with(|| a.name.cmp(&b.name)));
     let mut out = String::from("\n; --- variables ---\n");
-    for r in ordered {
+    for (r, lines) in ordered {
         out.push('\n');
         out.push_str(&format!("; {}:  ; 0x{:x}\n", r.name, r.address));
-        out.push_str(&project::var_header_lines(r));
+        out.push_str(&lines);
     }
     out
 }

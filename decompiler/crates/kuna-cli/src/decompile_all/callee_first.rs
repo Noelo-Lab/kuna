@@ -556,7 +556,8 @@ fn same_arity(first: &FuncResult, again: &FuncResult) -> bool {
             inner.matches(',').count() + 1
         }
     };
-    first.variables.len() == again.variables.len()
+    let frame = |r: &FuncResult| r.variables.iter().filter(|v| v.kind() != "register").count();
+    frame(first) == frame(again)
         && params(first) == params(again)
         && declared(first) == declared(again)
 }

@@ -5504,6 +5504,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "reglocals"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "naming-policy"
+strength = "HARD"
+rewind = "P6"
+issue = "kuna-reglocals"
+summary = "Report the locals the C body declares outside the stack frame -- a register, a temporary, or a value with no storage of its own, the `vN` of an optimized function -- on the `decompile-all --json` `variables` surface as `kind: \"register\"` rows. Before it the surface reported parameters (`arg`) and the stack frame (`stack`) only, so every local the C declared in a register had no row. The rows are exactly the declarations the printer just emitted that no parameter or frame row covers, under the printed name and the printed declarator (an uncommitted byte is still spelled `undefined1` under `bytehonest`), with `stack_offset` null, `size` the declared type's size, and as evidence the lines and instruction addresses of the uses of every HighVariable the declaration covers, the same markup-backed provenance the other rows carry. JSON surface only: no p-code and no emitted C; `decompile-project`'s `.asm` variable comments list the frame only and do not change."
+use_when = "On by default. A consumer reads `variables[]` as the full list of what the function declares -- the `decompile-all --json` surface decbench's type_match scores by instruction-address overlap, and the analogue of the register variables IDA, Binary Ninja and Ghidra list. Flip OFF to get the pre-feature surface of parameters and stack-frame rows only. The emitted C never changes either way."
+example = "option reglocals off"
+source_decompiler = "kuna"
+inspiration = "decbench type_match matches a ground-truth local to a decompiler variable by argument index, stack offset, then instruction-address overlap; every register-resident DWARF local was an automatic miss for kuna because its `vN` never appeared in `variables[]`, while Binary Ninja, IDA and Ghidra export their register locals with addresses and match most of them. Over the 444 x86-64 decbench slices (10,748 scored functions) the flip moved 4,344 register-resident locals from missed to correctly typed, 205 functions onto a perfect score and none off, 2,207 up and 10 down."
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "a local the C declares has no row in the JSON variables array|the variables array lists only parameters and stack slots at -O2|an optimized function's vN locals are missing from decompile-all --json|type_match misses every register-resident local"
+live_field = "reg_locals"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "ctypes"
 values = "on|off"
 default = "off"

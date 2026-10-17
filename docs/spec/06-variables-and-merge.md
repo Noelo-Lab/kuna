@@ -1267,6 +1267,63 @@ only when it names the variable's base. Name plus containment prevents a
 fragment from a neighbouring frame object from acquiring the array's lines while
 preserving aggregate and element uses.
 
+**Reporting the declarations outside the frame (`option reglocals`).** The
+sections above report the parameters and the stack frame. At -O0 that is every
+local, but in an optimized function most of the locals the C declares live in a
+register, in a temporary, or in no storage at all (`int v1; // eax`), and none of
+them had a row: a consumer could not read their types, and decbench's
+`type_match`, which pairs a ground-truth variable with a reported row by argument
+index, then stack offset, then instruction-address overlap, scored every
+register-resident DWARF local as a miss. Under `option reglocals` (default ON)
+`extract_variables` appends a fourth section,
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_reglocals.rs
+(register_locals)`: the declarations the printer emitted for the function
+(`printc.rs (DeclaredLocal)`), in declaration order, minus every declaration whose
+printed name a parameter or frame row already carries and every one whose
+HighVariable is a frame object: stack storage only, address constants only, or a
+stack instance inside a reported frame row. A declaration whose high merges a
+register with a stack piece no frame row covers (a callee-saved spill, the
+return-address slot) is therefore reported here rather than nowhere, while one
+that lives only in a stack slot no frame row reports (96 declarations of the
+`betaflight` STM32F405 image) stays unreported rather than being called a
+register. Each row has `kind: "register"`,
+a null `stack_offset` and `arg_index`, the printed name, and the printed
+declarator as its type, so a consumer joins the row to its declaration line;
+the one exception is the `bytehonest` rule, which still spells an uncommitted
+byte `undefined1`. `size` is the size of the datatype the declarator spells
+(`DeclaredLocal::ty`, the array for an array declaration). Because the rows are
+read off the printer, they exist only when `extract_variables` follows the
+`print_c` of the same function: the printer stamps its declarations with the
+function's entry (`PrintC::declared_entry`), each declaration keeps the
+HighVariable it declares and the name the naming pass gave that high, and a
+mismatch on either yields no row rather than one from another function.
+
+The evidence is the same markup provenance the other rows carry, resolved
+through the declaration instead of through storage or name:
+`kuna_reglocals.rs (DeclarationHighs)` collects the declared HighVariable and
+every HighVariable the printer declared through it (`PrintC::declared_through`:
+collapsed pieces, Symbol duplicates and group members that print under the same
+name), and the row's `line_numbers` and `addresses` are those of the lines that
+reference any of their instances. Restricting `addresses` to the ops that define
+or read the instances was measured as the alternative and scored slightly worse
+(7 fewer perfect functions over the 444 slices below), so a register row's
+addresses mean exactly what a stack row's do.
+
+`kind` is not a stored field: a row is `arg` when it is a parameter, `stack` when
+it has a frame offset, and `register` otherwise (`decompile_drive.rs
+(VarInfo::kind)`), so the batch workers' wire format carries it unchanged. The
+option moves no p-code and no emitted C, and the two consumers that read
+`variables[]` as the frame keep their output: `decompile-project`'s `.asm`
+variable comments list parameters and frame rows only, and the callee-first
+redo check (`same_arity`) compares frame rows, so a redo that moves only the
+register declarations is accepted or refused exactly as before. Over the
+campaign's 444 x86-64 decbench slices (10,748 scored functions) the option moves
+4,344 register-resident ground-truth locals from missed to correctly typed and
+2,989 to matched with a different type, and 268 stack-located and 5 argument
+ground-truth variables that were missed are now matched correctly by address
+overlap. 53 previously correct matches are lost to a new row; 205 functions
+reach a perfect score, none leave it, 2,207 improve and 10 get worse.
+
 **Which offsets are frame (`option protoranges`, default on).** The local
 scope's window is the prototype's local range plus its parameter range, and
 `MapState` then clears the parameter range back out, so only the local range
@@ -2448,7 +2505,7 @@ fewer single-def/single-use temporaries. Over those and 24 more stripped binarie
 (11,279 functions) the `--json` `variables[]` surface decbench scores keeps the
 same (kind, type, stack offset, size, argument index) multiset in every function,
 with only `vN` names and line spans moving; every declaration this removes is a
-register local, which `variables[]` never carried. Each hunk is a fold, one of
+register local, which `variables[]` had no row for until `option reglocals`. Each hunk is a fold, one of
 those operand hoists, a renumbering, or the declaration that went with them. A
 folded call is never moved past a call, a load, a store through a pointer, a
 global write or a branch, and never into an operand of `&&` or `||`. The most it crosses is an assignment to a local whose
