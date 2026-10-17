@@ -6,6 +6,9 @@ use kuna_base::address::Address;
 use kuna_num::opcodes::OpCode;
 use std::collections::BTreeSet;
 
+const MAX_GUARD_SCAN_BLOCKS: usize = 256;
+const MAX_GUARD_SCAN_OPS: usize = 8192;
+
 pub(crate) fn moves_write(fd: &Funcdata, storage: HighVariableId, value: HighVariableId) -> bool {
     if !fd.get_arch().stack_views || storage == value {
         return false;
@@ -156,53 +159,23 @@ fn later_call_guard(
     };
     let mut pending = vec![(block, store_index + 1)];
     let mut visited = BTreeSet::new();
+    let mut scanned_ops = 0;
     while let Some((block, start)) = pending.pop() {
         if !visited.insert((block, start != 0)) {
             continue;
         }
-        if fd.bb_ops(block).iter().skip(start).any(|&id| {
-            let Some(indirect) = fd
-                .obank()
-                .get(id)
-                .filter(|op| !op.is_dead() && op.code() == OpCode::CPUI_INDIRECT)
-            else {
-                return false;
-            };
-            let Some(effect) = indirect.get_in(1).and_then(|vn| fd.vbank().get(vn)) else {
-                return false;
-            };
-            if fd
-                .get_arch()
-                .manage()
-                .get_iop_space()
-                .is_none_or(|iop| effect.get_space().get_index() != iop.get_index())
-            {
-                return false;
-            }
-            let call = crate::funcdata_varnode::op_iop_decode(effect.get_offset());
-            if !fd.obank().get(call).is_some_and(|op| op.is_call()) {
-                return false;
-            }
-            let Some(output) = indirect.get_out().and_then(|vn| fd.vbank().get(vn)) else {
-                return false;
-            };
-            if output.get_space().get_index() != stack.get_index()
-                || (output.get_addr().overlap(0, address, size) < 0
-                    && address.overlap(0, output.get_addr(), output.get_size()) < 0)
-            {
-                return false;
-            }
-            fd.get_scope_local()
-                .and_then(|scope| {
-                    scope.query_container_for_link_width(
-                        output.get_addr(),
-                        output.get_size(),
-                        &Address::new_invalid(),
-                    )
-                })
-                .is_some_and(|guarded| guarded.symbol == symbol)
-        }) {
+        if visited.len() > MAX_GUARD_SCAN_BLOCKS {
+            // Keep the store if a very large CFG prevents a cheap proof.
             return true;
+        }
+        for id in fd.bb_ops(block).iter().skip(start).copied() {
+            scanned_ops += 1;
+            if scanned_ops > MAX_GUARD_SCAN_OPS {
+                return true;
+            }
+            if is_matching_call_guard(fd, id, address, size, symbol, stack) {
+                return true;
+            }
         }
         let graph = fd.bblocks_ref();
         let flow = graph.block(block);
@@ -211,4 +184,54 @@ fn later_call_guard(
         }
     }
     false
+}
+
+fn is_matching_call_guard(
+    fd: &Funcdata,
+    id: crate::context::OpId,
+    address: &Address,
+    size: i32,
+    symbol: crate::database::SymbolId,
+    stack: &std::rc::Rc<kuna_base::space::AddrSpace>,
+) -> bool {
+    let Some(indirect) = fd
+        .obank()
+        .get(id)
+        .filter(|op| !op.is_dead() && op.code() == OpCode::CPUI_INDIRECT)
+    else {
+        return false;
+    };
+    let Some(effect) = indirect.get_in(1).and_then(|vn| fd.vbank().get(vn)) else {
+        return false;
+    };
+    if fd
+        .get_arch()
+        .manage()
+        .get_iop_space()
+        .is_none_or(|iop| effect.get_space().get_index() != iop.get_index())
+    {
+        return false;
+    }
+    let call = crate::funcdata_varnode::op_iop_decode(effect.get_offset());
+    if !fd.obank().get(call).is_some_and(|op| op.is_call()) {
+        return false;
+    }
+    let Some(output) = indirect.get_out().and_then(|vn| fd.vbank().get(vn)) else {
+        return false;
+    };
+    if output.get_space().get_index() != stack.get_index()
+        || (output.get_addr().overlap(0, address, size) < 0
+            && address.overlap(0, output.get_addr(), output.get_size()) < 0)
+    {
+        return false;
+    }
+    fd.get_scope_local()
+        .and_then(|scope| {
+            scope.query_container_for_link_width(
+                output.get_addr(),
+                output.get_size(),
+                &Address::new_invalid(),
+            )
+        })
+        .is_some_and(|guarded| guarded.symbol == symbol)
 }

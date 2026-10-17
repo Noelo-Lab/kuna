@@ -3113,8 +3113,9 @@ generated backing, the defining value must be in the same block and have no
 intervening memory access, call or frame store. A reachable later call's
 write-effect INDIRECT is also a barrier when it overlaps the same generated
 backing: merging the stored value into the backing could hide the store before
-the callee observes the object through its pointer. Otherwise the merge is
-refused; required markers use their normal trim copies. The real store remains
+the callee observes the object through its pointer. Either barrier refuses the
+merge, while a bounded reachability scan also keeps the store if it exhausts its
+search budget. Required markers use their normal trim copies. The real store remains
 explicit on its original branch. This matters when a helper lets another input
 alias the frame: reading an object pointer must not overwrite the object before
 its kind or key is examined. The guard runs only with `stackviews`.
