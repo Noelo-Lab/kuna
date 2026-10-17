@@ -655,6 +655,21 @@ fn an_int_return_beats_a_double_left_in_d0_by_a_call() {
     }
 }
 
+/// `armfloat_preset_hard.o`: `wrap` is `b inner`, a tail call that forwards its
+/// two floats, and `inner` hands its first parameter back on one path, so it
+/// states no return a tail call could take. `use_wrap` reads the result, so
+/// `wrap` returns `inner`'s float instead of nothing beside a caller that
+/// reads it.
+#[test]
+fn a_float_tail_wrapper_returns_its_callees_float() {
+    let fixture = common::fixture("armfloat_preset_hard.o");
+    let (code, err, rc) = common::run_kuna(&["decompile-all", &fixture]);
+    assert_eq!(rc, 0, "{err}");
+    assert!(code.contains("float wrap(float a0,float a1)"), "{code}");
+    assert!(code.contains("v1 = wrap(a0 + 1.0,a1);"), "{code}");
+    assert!(!code.contains("void wrap("), "{code}");
+}
+
 /// A double one path takes from a call and another computes is returned on both.
 #[test]
 fn a_double_returned_from_a_call_on_one_path_keeps_the_other_path() {

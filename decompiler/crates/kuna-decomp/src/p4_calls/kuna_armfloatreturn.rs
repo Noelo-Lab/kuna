@@ -485,6 +485,31 @@ pub fn unlock_unspelled(data: &mut Funcdata) {
     }
 }
 
+/// Is `[addr, addr+size)`, a VFP return register the function's callers read,
+/// claimed by `passthrough` only as an argument the function forwards? The call
+/// that takes it leaves its own result there, so a tail-call wrapper such as
+/// `atan2f`'s `b.w __ieee754_atan2f` both forwards the register and returns it.
+pub fn forwarded_vfp_return(data: &Funcdata, addr: &Address, size: i32) -> bool {
+    if !data.get_arch().arm_float_return || !data.get_func_proto().has_model() {
+        return false;
+    }
+    let vfp = data.get_func_proto().model().output().get_entry().iter().any(|e| {
+        e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) >= 0
+    });
+    let space = addr.get_space().map(|s| s.get_index());
+    let end = addr.get_offset() + size.max(0) as u64;
+    let claims: Vec<_> = data
+        .kuna_passthrough_claims()
+        .iter()
+        .filter(|c| {
+            c.addr.get_space().map(|s| s.get_index()) == space
+                && c.addr.get_offset() < end
+                && addr.get_offset() < c.addr.get_offset() + c.size.max(0) as u64
+        })
+        .collect();
+    vfp && !claims.is_empty() && claims.iter().all(|c| c.ret_owners.is_empty())
+}
+
 /// A returned value [`type_returns`] locked to the float of its width: the lock
 /// states the convention's type, not a declaration, so `floatbits` may still
 /// follow the bit ops that build it.
