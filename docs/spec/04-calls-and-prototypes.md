@@ -4846,7 +4846,14 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
   `rdx`, and rendered `void overrec(unsigned long *a0,unsigned long a1,long a2)`
   with `a1` in no statement, against the call site `overrec(v1)`;
 - the value at the call is the function's own input Varnode for exactly the
-  trial's storage.
+  trial's storage, or that input put back together from the pieces heritage
+  split it into around a narrower read of the same register (`reassembled`,
+  through copies, `PIECE`s and low `SUBPIECE`s of inputs). An AArch64 wrapper
+  `b geti` to `int geti(int *a0,int a1,int a2)` reads the callee's `w0` at its
+  RETURN beside the incoming `x0` it forwards; heritage splits `x0` into `w0`
+  and its high word, the call's argument is their `PIECE`, and kuna printed
+  `int wi(void) { return geti(); }`. A callee returning a full `x0` (a `long`)
+  left the register whole and was forwarded already.
 
 The variadic-call test itself reads the writing instruction's own ops as its own:
 `xor %eax,%eax` reads the register it zeroes, as its operand and again in `ZF =
