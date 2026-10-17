@@ -382,6 +382,12 @@ pub struct Funcdata {
     kuna_infertypes_settled: bool,
     /// Scheduled constant-pointer pass count for the opt-in array-base guard.
     pub(crate) kuna_global_array_anchor_passes: Option<u8>,
+    /// (kuna `regnarrow`) How many `fullloop` passes narrowed register-local webs.
+    pub(crate) kuna_regnarrow_runs: u8,
+    /// (kuna `regnarrow`) The narrow values those passes created.
+    pub(crate) kuna_regnarrow_values: std::collections::BTreeSet<VarnodeId>,
+    /// (kuna `regnarrow`) Seeds whose web the flow could not rebuild.
+    pub(crate) kuna_regnarrow_failed: std::collections::BTreeSet<VarnodeId>,
     /// (kuna `calltargettype`) The function-pointer type each indirect call
     /// states, for a call whose target is cast at the call: the cast names it.
     kuna_call_target_types: std::collections::HashMap<OpId, std::rc::Rc<crate::dtype::Datatype>>,
@@ -700,6 +706,9 @@ impl Funcdata {
             cast_phase_index: 0,
             min_laned_size,
             kuna_global_array_anchor_passes: None,
+            kuna_regnarrow_runs: 0,
+            kuna_regnarrow_values: std::collections::BTreeSet::new(),
+            kuna_regnarrow_failed: std::collections::BTreeSet::new(),
             laned_map: std::collections::BTreeMap::new(),
             size: sz,
             glb,
@@ -3969,6 +3978,9 @@ impl Funcdata {
     /// (`clearBlocks`, `obank.clear`, `vbank.clear`) and the flag/index reset are
     /// faithful.
     pub fn clear(&mut self) {
+        self.kuna_regnarrow_runs = 0;
+        self.kuna_regnarrow_values.clear();
+        self.kuna_regnarrow_failed.clear();
         self.kuna_fpu_trunc_views.clear();
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
