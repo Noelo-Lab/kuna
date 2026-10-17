@@ -9,7 +9,7 @@
 //! any use can observe. When they all lie in a low part of 1, 2 or 4 bytes and
 //! reach that part's top bit, the input is replaced by the part, zero-extended
 //! back to the register at the function's entry: every use reads the same
-//! bits it read before, so no printed value moves, and the parameter is
+//! bits it read before, so no value the function computes moves, and the parameter is
 //! recovered at the narrow width. In the callee-first whole-binary run the
 //! parameter a callee declares that way caps how much of the argument its
 //! callers' dead-code pass treats as consumed, so a value forwarded to it is
@@ -58,13 +58,16 @@ fn low_part(data: &Funcdata, addr: &Address, size: int4, w: int4) -> Option<Addr
         .then_some(part)
 }
 
-/// Is `vn` an input this function may narrow: a register that is not
-/// type-locked, that no `PIECE` joins into a wider value, and whose narrow
-/// consumption does not come from a shift? A left shift drops the high bits of
-/// any width of value, and a register shift amount is read through its low
-/// byte (`lsl r6, r7, lr` is `r7 << (lr & 0xff)`), so neither says anything
-/// about the value's type.
-fn narrowable(data: &Funcdata, vn: VarnodeId) -> bool {
+/// Is `vn` an input this function may narrow to `w` bytes: a register that is
+/// not type-locked, that no `PIECE` joins into a wider value, and whose narrow
+/// consumption does not come from a shift? A left shift (or a multiply by a
+/// multiple of 256) drops the high bits of any width of value, and a register
+/// shift amount is read through its low byte (`lsl r6, r7, lr` is
+/// `r7 << (lr & 0xff)`), so neither says anything about the value's type. The
+/// value is followed through copies, merges, casts and the arithmetic and
+/// bitwise operations whose low bits depend only on its low bits
+/// (`(a0 ^ 0x8000) << 0x10`), up to a mask that is itself no wider than `w`.
+fn narrowable(data: &Funcdata, vn: VarnodeId, w: int4) -> bool {
     let Some(v) = data.vbank().get(vn) else { return false };
     if !v.is_input() || v.is_type_lock() || v.is_addr_tied() || v.is_persist() {
         return false;
@@ -72,6 +75,9 @@ fn narrowable(data: &Funcdata, vn: VarnodeId) -> bool {
     if v.get_addr().get_space().is_none_or(|s| s.get_type() != kuna_base::space::spacetype::IPTR_PROCESSOR) {
         return false;
     }
+    let constant = |data: &Funcdata, vn: Option<VarnodeId>| {
+        vn.and_then(|vn| data.vbank().get(vn)).filter(|c| c.is_constant()).map(|c| c.get_offset())
+    };
     let mut family = vec![vn];
     let mut i = 0;
     while i < family.len() {
@@ -84,16 +90,43 @@ fn narrowable(data: &Funcdata, vn: VarnodeId) -> bool {
         for op in cur.descend_iter() {
             let Some(o) = data.obank().get(op) else { return false };
             let slot = (0..o.num_input()).find(|&k| o.get_in(k) == Some(id)).unwrap_or(0);
-            match o.code() {
+            let other = o.get_in(1 - slot.min(1));
+            let follow = match o.code() {
                 OpCode::CPUI_PIECE | OpCode::CPUI_INT_LEFT => return false,
-                OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT if slot == 1 => return false,
-                OpCode::CPUI_INT_AND if shifts_by(data, o.get_out()) => return false,
-                OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT | OpCode::CPUI_CAST => {
-                    if let Some(out) = o.get_out().filter(|out| !family.contains(out)) {
-                        family.push(out);
+                OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT => {
+                    if slot == 1 {
+                        return false;
                     }
+                    false
                 }
-                _ => {}
+                OpCode::CPUI_INT_MULT => {
+                    if constant(data, other).is_some_and(|c| c != 0 && c.trailing_zeros() >= 8) {
+                        return false;
+                    }
+                    true
+                }
+                OpCode::CPUI_INT_AND => {
+                    if shifts_by(data, o.get_out()) {
+                        return false;
+                    }
+                    !constant(data, other).is_some_and(|c| c & !calc_mask(w) == 0)
+                }
+                OpCode::CPUI_COPY
+                | OpCode::CPUI_MULTIEQUAL
+                | OpCode::CPUI_INDIRECT
+                | OpCode::CPUI_CAST
+                | OpCode::CPUI_INT_XOR
+                | OpCode::CPUI_INT_OR
+                | OpCode::CPUI_INT_ADD
+                | OpCode::CPUI_INT_SUB
+                | OpCode::CPUI_INT_NEGATE
+                | OpCode::CPUI_INT_2COMP => true,
+                _ => false,
+            };
+            if follow {
+                if let Some(out) = o.get_out().filter(|out| !family.contains(out)) {
+                    family.push(out);
+                }
             }
         }
     }
@@ -120,14 +153,14 @@ pub fn narrow_inputs(data: &mut Funcdata) -> int4 {
     let inputs: Vec<VarnodeId> = data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();
     let mut count = 0;
     for vn in inputs {
-        if !narrowable(data, vn) {
+        let Some((addr, size, consume)) = data.vbank().get(vn).map(|v| (v.get_addr().clone(), v.get_size(), v.get_consume()))
+        else {
             continue;
-        }
-        let (addr, size, consume) = {
-            let v = data.vbank().get(vn).expect("narrow_inputs: stale input");
-            (v.get_addr().clone(), v.get_size(), v.get_consume())
         };
         let Some(w) = narrow_width(consume, size) else { continue };
+        if !narrowable(data, vn, w) {
+            continue;
+        }
         if !data.get_func_proto().possible_input_param(&addr, size) {
             continue;
         }
@@ -147,6 +180,8 @@ pub fn narrow_inputs(data: &mut Funcdata) -> int4 {
     count
 }
 
+/// Replace input `vn` by its low `w` bytes at `part`, zero-extended at the
+/// entry. On failure the register-wide input is put back.
 fn replace(
     data: &mut Funcdata,
     vn: VarnodeId,
@@ -163,7 +198,18 @@ fn replace(
     data.total_replace(vn, out)?;
     data.delete_varnode(vn)?;
     let narrow = data.new_varnode(w, part, None);
-    let narrow = data.set_input_varnode(narrow)?;
+    let narrow = match data.set_input_varnode(narrow) {
+        Ok(narrow) => narrow,
+        Err(e) => {
+            let wide = data.new_varnode(size, addr, None);
+            let wide = data.set_input_varnode(wide)?;
+            data.total_replace(out, wide)?;
+            let zero = data.new_constant(w, 0);
+            data.op_set_input(op, zero, 0)?;
+            data.op_destroy_raw(op)?;
+            return Err(e);
+        }
+    };
     data.op_set_input(op, narrow, 0)?;
     data.op_insert_begin(op, topbl);
     Ok(())
@@ -178,6 +224,10 @@ pub fn stated_bytes_consumed(data: &Funcdata, fc: &FuncCallSpecs, slot: usize) -
         return 0;
     }
     let Some(stated) = data.kuna_protoorder_types(fc.get_entry_address()) else { return 0 };
+    let inputs = data.obank().get(fc.get_op()).map(|o| o.num_input());
+    if inputs != Some(fc.final_input_storage().len() as int4 + 1) {
+        return 0;
+    }
     let (Some((aaddr, asize)), Some((paddr, psize, ct))) =
         (fc.final_input_storage().get(slot), stated.inputs.get(slot))
     else {

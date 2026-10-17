@@ -2736,15 +2736,18 @@ reads that mask. When it fits the low 1, 2 or 4 bytes of the register and
 reaches the top bit of that part, the input is replaced by the part, and an
 `INT_ZEXT` at the top of the entry block writes the register-wide value every
 old reader now reads (`narrow_inputs`). The readers see the same consumed bits
-as before, so no printed value changes; `ActionInputPrototype` then recovers the
+as before, so every value the function computes is unchanged; `ActionInputPrototype` then recovers the
 parameter at the narrow width, typed from the narrow input as any other. Only an
 input that is a whole integer argument register of the function's model
 qualifies: never a float register, a stack slot, an input a `PIECE` joins
 into a wider value, or an input of a locked prototype. Two sources of a narrow mask
 are not evidence about the value and stop the rewrite: a left shift, which
-drops the high bits of a value of any width (`priority << 24`), and a register
-shift amount, which ARM reads through its low byte (`lsl r6, r7, lr` is
-`r7 << (lr & 0xff)`). A mask that stops below the part's top bit (`flags &
+drops the high bits of a value of any width (`priority << 24`, and a multiply
+by a multiple of 256 likewise), and a register shift amount, which ARM reads
+through its low byte (`lsl r6, r7, lr` is `r7 << (lr & 0xff)`). The input is
+followed to them through copies, merges, casts and the operations whose low
+bits depend only on its low bits (`(a0 ^ 0x8000) << 0x10`), and the walk stops
+at a mask no wider than the narrow part, which is evidence of its own. A mask that stops below the part's top bit (`flags &
 0x10`, a PLL field `pllm & 0x3f`, `x & 7`) is left alone too: over the decbench
 firmware those are as often `int` flags as narrow values.
 
