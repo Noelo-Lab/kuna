@@ -4162,7 +4162,7 @@ impl Database {
     ) {
         self.kuna_gen += 1;
         // EntryMap *rangemap = maptable[space->getIndex()]; if 0 return;
-        let entries: Vec<(SymbolId, uintb, uintb)> = {
+        let mut entries: Vec<(SymbolId, uintb, uintb)> = {
             let rangemap = match self.scopes[scope]
                 .maptable
                 .get(space_index)
