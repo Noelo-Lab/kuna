@@ -58,6 +58,61 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
     })
 }
 
+/// A low-end integer truncation reads a merged float variable's storage bits.
+pub(crate) fn truncated_float_storage(
+    fd: &Funcdata,
+    decl_high_type: bool,
+    op: OpId,
+) -> Option<(Transfer, Rc<Datatype>)> {
+    let operation = fd.obank().get(op)?;
+    if operation.code() != OpCode::CPUI_SUBPIECE {
+        return None;
+    }
+    let input = operation.get_in(0)?;
+    let source = fd.vbank().get(input)?;
+    if source.is_implied() {
+        return None;
+    }
+    let output = fd.vbank().get(operation.get_out()?)?;
+    let offset = fd.vbank().get(operation.get_in(1)?)?;
+    let size = source.get_size();
+    if offset.get_offset() != 0
+        || !matches!(size, 4 | 8)
+        || !matches!(output.get_size(), 1 | 2 | 4)
+        || output.get_size() >= size
+    {
+        return None;
+    }
+    let result_type = fd.vn_type_def_facing(operation.get_out()?);
+    if !matches!(
+        result_type.get_metatype(),
+        type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+    ) {
+        return None;
+    }
+    let declared = crate::kuna_stackviews::access_type(fd, input, op, operation.get_slot(input))
+        .or_else(|| declared_member_type(fd, decl_high_type, input))?;
+    if declared.get_metatype() != type_metatype::TYPE_FLOAT || declared.get_size() != size {
+        return None;
+    }
+    let types = fd.get_arch().types()?;
+    let widths_match = if size == 4 {
+        types.get_size_of_int() == 4 && types.get_size_of_float() == 4
+    } else {
+        types.get_size_of_long_long() == 8 && types.get_size_of_double() == 8
+    };
+    if !widths_match || result_type.is_enum_type() {
+        return None;
+    }
+    let target = types.get_base(size, type_metatype::TYPE_UINT).ok()?;
+    Some((Transfer {
+        input,
+        target,
+        size,
+        to_float: false,
+    }, result_type))
+}
+
 /// Whether a same-width `CAST` of `input` to a float prints as a reinterpretation
 /// of its bits: the integer side [`storage_transfer`] accepts, judged by the same
 /// printed type.

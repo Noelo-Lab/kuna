@@ -2093,8 +2093,10 @@ mod tests {
         // and kuna-indirect-value-arguments / declared aggregate value arguments
         // and guarded/preloaded local read controls on SPARC and x86
         // and kuna-global-aggregate-store / kuna-global-array-member-store
+        // and kuna-float-storage-truncation / integer extraction preserves float bits
+        // and kuna-fpu-trunc-views / separate logical integers from floating storage
         // and kuna-arm-frame-inventory / validated A32 frames join the default inventory
-        assert_eq!(count, 558, "corpus file count drifted");
+        assert_eq!(count, 560, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

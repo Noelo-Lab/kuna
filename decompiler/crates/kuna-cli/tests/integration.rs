@@ -89,6 +89,9 @@ mod strlenscan_round_trip;
 #[path = "coff_strings.rs"]
 mod coff_strings;
 
+#[path = "coldentry_source_boundary.rs"]
+mod coldentry_source_boundary;
+
 #[path = "compact_switch_cli.rs"]
 mod compact_switch_cli;
 
@@ -442,3 +445,6 @@ mod multireg_call_inputs;
 
 #[path = "narrow_register_inputs.rs"]
 mod narrow_register_inputs;
+
+#[path = "float_storage_truncation.rs"]
+mod float_storage_truncation;

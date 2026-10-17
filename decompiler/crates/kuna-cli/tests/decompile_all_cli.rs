@@ -4291,7 +4291,7 @@ fn jobs_leaves_no_scratch_directory_behind() {
     let pid = child.id();
     let status = child.wait().expect("wait on the kuna binary");
     assert!(status.success(), "pooled decompilation failed: {status}");
-    let mine = format!("kuna-jobs-{pid}-");
+    let mine = format!("kuna-jobs-v2-{pid}-");
     let left: Vec<String> = std::fs::read_dir(std::env::temp_dir())
         .into_iter()
         .flatten()
@@ -4300,6 +4300,41 @@ fn jobs_leaves_no_scratch_directory_behind() {
         .filter(|n| n.starts_with(&mine))
         .collect();
     assert!(left.is_empty(), "a finished --jobs run left {left:?} behind");
+}
+
+#[test]
+fn jobs_preserves_live_scratch_owners_and_reaps_released_locks() {
+    let base = tempfile::tempdir().unwrap();
+    let legacy = base.path().join("kuna-jobs-4294967295-live");
+    let held = base.path().join("kuna-jobs-v2-4294967295-live");
+    for dir in [&legacy, &held] {
+        std::fs::create_dir(dir).unwrap();
+        std::fs::write(dir.join("inventory.spec"), b"live inventory").unwrap();
+    }
+    let owner = std::fs::File::create(held.join("owner.lock")).unwrap();
+    owner.try_lock().unwrap();
+    let run = || {
+        process::required_output(
+            Command::new(env!("CARGO_BIN_EXE_kuna"))
+                .env("TMPDIR", base.path())
+                .env("TMP", base.path())
+                .env("TEMP", base.path())
+                .args(["decompile-all", &fauxware(), "--json", "--jobs", "2", "--sleighpath", &specs()])
+                .args(SERIAL_ORDER_OFF),
+        )
+    };
+    let first = run();
+    let doc: serde_json::Value = serde_json::from_slice(&first.stdout).unwrap();
+    assert_eq!(doc["count"], 21);
+    assert!(doc["functions"].as_array().unwrap().iter().all(|f| f["error"].is_null()));
+    for dir in [&legacy, &held] {
+        assert_eq!(std::fs::read(dir.join("inventory.spec")).unwrap(), b"live inventory");
+    }
+    drop(owner);
+    let second = run();
+    assert!(!held.exists(), "the released owner must be swept");
+    assert!(legacy.is_dir(), "unprovable legacy ownership must stay untouched");
+    assert_eq!(first.stdout, second.stdout);
 }
 
 /// Killing the parent must take the pool with it.  `--jobs` is for hour-long
@@ -4325,7 +4360,7 @@ fn killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it() {
             .collect()
     }
     fn scratch_of(pid: u32) -> Vec<PathBuf> {
-        let mine = format!("kuna-jobs-{pid}-");
+        let mine = format!("kuna-jobs-v2-{pid}-");
         std::fs::read_dir(std::env::temp_dir())
             .into_iter()
             .flatten()

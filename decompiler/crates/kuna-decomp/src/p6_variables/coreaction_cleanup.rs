@@ -668,6 +668,9 @@ impl Action for ActionMergeRequired {
             if merge.merge_addr_tied(data).is_err() {
                 return;
             }
+            if crate::kuna_fputruncviews::recover(data).is_err() {
+                return;
+            }
             if merge.group_partials(data).is_err() {
                 return;
             }

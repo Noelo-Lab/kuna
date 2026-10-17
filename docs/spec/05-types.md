@@ -124,10 +124,15 @@ pointer-equal and `Rc::ptr_eq` is a valid fast-path everywhere.
 `FuncProto::seed_locked_from_pieces`, preserving explicit parameter and return
 storage after the model assigns ordinary slots.
 An input-only declaration keeps its output unlocked. Both code-type comparators
-use each parameter's and the return value's storage address and size to break
-a tie between otherwise equal signatures, so an explicit slot-0 EDX declaration
-cannot reuse a cached slot-0 ECX prototype with the same C signature. Storage
-still participates when recursive type comparison reaches its depth limit.
+include the output lock in their surface comparison: the temporary void output
+of an input-only declaration must remain distinct from an explicitly declared,
+locked void return, regardless of insertion order. Repeating either declaration
+still reuses its own interned type. The distinction also holds at the recursive
+comparison depth limit. The comparators then use each parameter's and the return
+value's storage address and size to break a tie between otherwise equal
+signatures, so an explicit slot-0 EDX declaration cannot reuse a cached slot-0
+ECX prototype with the same C signature. Storage still participates when
+recursive type comparison reaches its depth limit.
 This matters for direct calls as well as function pointers: flow copies the
 function symbol's callable type before `ActionDefaultParams` can consult its
 parked prototype pieces.

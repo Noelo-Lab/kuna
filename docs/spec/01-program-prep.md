@@ -3566,15 +3566,23 @@ Ubuntu 22.04's stripped `/bin/bash` that is 18 entries in `[0x30c3d, 0x312b3]`.
 An address `t` strictly inside a single-function FDE body (the `fdeinterior`
 eligibility above) is added when (1) a direct `jmp rel32`/`jcc rel32` outside the
 body targets it — found by a byte scan of the executable sections for the `E9` /
-`0F 8x` encodings and confirmed by decoding the source; (2) a linear decode of the
-body from its start lands on `t`; and (3) the instruction before `t` is `ud2`,
+`0F 8x` encodings and confirmed at an instruction boundary anchored by a known
+FDE start, function symbol, or image entry point in the same executable section;
+(2) a linear decode of the body from its start lands on `t`; and (3) the instruction before `t` is `ud2`,
 `ret`, `hlt` or a direct `jmp`, so nothing inside the fragment flows into it. Guard
 3 keeps an ordinary function's shared tail (reached by its own fall-through as well
 as another function's jump) whole; an indirect `jmp` does not satisfy it, since the
 block after one is a switch case as often as an entry. Candidates are pre-filtered
 on the bytes before `t` and a body is decoded only up to its last surviving
-candidate, so the pass costs one scan of the executable bytes plus short decodes
-(about 2 ms on `bash`). It decodes through the engine `Translate`, so it runs as a
+candidate. Source candidates are checked in address order by walking instruction
+lengths from their nearest known start, once per prefix. The containing instruction
+must actually branch to `t`: an `E9` or `0F 8x` inside a `movabs` immediate supplies
+no incoming edge, while a genuine prefixed branch still does. Sources without an
+anchor in the same section are refused; a byte the decoder rejects (an instruction
+SLEIGH does not model, such as `serialize`) is stepped over one byte at a time, as a
+linear sweep does, so it does not hide the real branches after it. The pass costs
+one scan of executable bytes plus the target and source prefix decodes. It uses
+the engine `Translate`, so it runs as a
 deferred entry pass at the commit point, and its entries join the inventory *after*
 the `fdeinterior` filter (which would otherwise reject every one of them by
 construction). x86/x86-64 ELF only; inert without `.eh_frame`.

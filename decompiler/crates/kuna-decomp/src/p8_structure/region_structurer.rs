@@ -2870,6 +2870,7 @@ impl<'a> RegionStructurer<'a> {
         let fdoms = crate::p7_regions::kuna_regiongraph::KunaIncrementalDominators::new(
             &pool, &graph, head, false,
         )?;
+        let dominance = super::kuna_domindex::DominanceIndex::new(&fdoms, &graph);
 
         // Bucket the candidate edges by the dominance relationship.
         let mut crossing: Vec<&Edge> = Vec::new();
@@ -2877,8 +2878,8 @@ impl<'a> RegionStructurer<'a> {
         for e in candidates {
             let sn = id_of[&e.src];
             let dn = id_of[&e.dst];
-            let s_dom_d = fdoms.dominates(sn, dn);
-            let d_dom_s = fdoms.dominates(dn, sn);
+            let s_dom_d = dominance.dominates(sn, dn);
+            let d_dom_s = dominance.dominates(dn, sn);
             if !s_dom_d && !d_dom_s {
                 crossing.push(e); // all_edges_wo_dominance
             } else if !s_dom_d {

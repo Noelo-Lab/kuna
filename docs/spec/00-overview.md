@@ -1658,9 +1658,20 @@ The session holds a temporary-directory guard through inventory, worker and
 result handling, so normal return, errors and unwinding all release its files.
 Directory creation is exclusive and requests private Unix permissions before
 any content is written; the final mode remains 0700 regardless of umask. Missing
-temporary parents are still created. Names retain the owner-pid prefix used by
-workers and the existing orphan sweep; parent-liveness and stale-owner policies
-are unchanged.
+temporary parents are still created. The pool holds an exclusive `owner.lock`
+file lock until its guard drops. That marker is published by renaming an already
+locked temporary file, so a concurrent sweep cannot mistake an owner still being
+initialized for an abandoned run. A sweep removes only versioned directories
+whose published owner marker it can lock without waiting; an inaccessible marker
+or lock error leaves the directory intact. Process IDs and ages do not prove
+abandonment across PID namespaces sharing the same temporary directory. When
+the temporary filesystem cannot lock files, the pool runs without a marker, so
+its directory is never a sweep candidate.
+
+Names use `kuna-jobs-v2-<pid>-<suffix>` so older PID-based sweepers do not recognize
+them as cleanup candidates. The PID remains diagnostic. Legacy and unmarked
+directories are left alone because their ownership cannot be proved. Normal guard
+cleanup and the workers' parent-pipe cleanup still release their own directories.
 
 Synthesized-structure reconciliation is owned by
 `decompiler/crates/kuna-cli/src/jobs/synth.rs`. It keeps the first-pass and sweep
@@ -2806,6 +2817,21 @@ the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as 
 `BlockCopy` mirror of the CFG when structuring begins
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_sblocks_copy)`).
 
+Basic-block operation orders remain strictly increasing along the intrusive
+operation list. Insertion uses `before + (after - before) / 2`, so odd endpoints
+cannot round the new order down onto the predecessor, including near the
+unsigned maximum. This preserves distinct positions for variable-cover and
+operation-order comparisons. When no integer lies between the neighbors, the
+whole block is renumbered
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (bb_set_order)`). An
+insertion between two operations spreads the block over the full order space; an
+append at the block's end spreads it over the lower half only. Appends approach
+the top of the space by halving the remaining gap, so a block renumbered to end
+near the maximum would run out of room again within a few dozen appends, and
+building a block of tens of thousands of operations would renumber it thousands
+of times. With the upper half free, a renumber is followed by roughly 280
+appends before the next one.
+
 Deleting a varnode through `Funcdata::delete_varnode` first checks the bank's
 deletion precondition: the node must have neither a defining operation nor any
 readers. A rejected deletion leaves the node, both bank indexes, HighVariable
@@ -3513,3 +3539,17 @@ Reserving it creates no analysis varnode and changes no physical mapping or
 emitted C. Ghidra receives temporary storage for the logical local, rather than
 a persistable ordinary stack-variable location; ordinary symbol storage and
 register-plus-stack parameter JOINs keep their existing encoding.
+
+### Variable-use provenance lookup
+
+When attaching rendered line and address evidence to reported variables,
+`decompiler/crates/kuna-decomp/src/infra/decompile_drive/kuna_varrefs.rs`
+collects the requested parameter and stack-storage keys, then traverses the
+varnode bank once. Only matching storage buckets are retained for this render;
+there is no cache across IR edits. Parameter keys preserve exact address-space
+identity and byte width, and input varnodes take precedence at parameter storage.
+Stack keys preserve the existing address-space-index check and normalize offsets
+to the stack space's signed address width. Reused storage still requires a unique
+high variable or a unique matching name. The existing named-high and address-taken
+parameter fallbacks remain in their original order, so the index changes lookup
+cost rather than which rendered uses belong to a variable.

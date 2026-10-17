@@ -140,6 +140,14 @@ pub type BoundType = int4;
 /// `docs/rust-port/losses.md`); the [`Merge`] routine that calls them transcribes
 /// the surrounding structure verbatim so the body is correct once the hook fills.
 pub trait MergeContext: HighContext {
+    fn fpu_trunc_views_enabled(&self) -> bool {
+        false
+    }
+    fn fpu_trunc_view_highs(&self, _a: HighVariableId, _b: HighVariableId) -> bool { false }
+    fn fpu_trunc_root_high(&self, _high: HighVariableId) -> bool { false }
+    fn op_is_fpu_trunc_view(&self, _op: OpId) -> bool {
+        false
+    }
     // --- HighVariable flag/type reads (the C++ direct `high->is*`/`getType`) --
     // The bank lazily re-derives flags/type from members on read, so these take
     // `&mut self`; the `Funcdata` impl does the field-split borrow internally.
@@ -1202,7 +1210,9 @@ impl Merge {
         for high in order {
             let mut merged_into = false;
             for &out in &highstack {
-                let spec_ok = Self::merge_test_speculative(ctx, out, high);
+                let spec_ok = Self::merge_test_speculative(ctx, out, high)
+                    && !crate::kuna_fputruncviews::keeps_highs_apart(ctx, out, high)
+                    && !crate::kuna_fputruncviews::keeps_root_alone(ctx, out, high);
                 if spec_ok && self.merge(ctx, out, high, true)? {
                     merged_into = true;
                     break;
@@ -1309,6 +1319,9 @@ impl Merge {
                 if ctx.op_code(op) != opc {
                     continue;
                 }
+                if opc == OpCode::CPUI_COPY && crate::kuna_fputruncviews::keeps_apart(ctx, op) {
+                    continue;
+                }
                 let vn1 = ctx.op_out(op);
                 if !Self::merge_test_basic(ctx, vn1) {
                     continue;
@@ -1330,6 +1343,7 @@ impl Merge {
                     let h1 = ctx.vn_high(vn1).expect("merge_opcode: vn1 no high");
                     let h2 = ctx.vn_high(vn2).expect("merge_opcode: vn2 no high");
                     if Self::merge_test_required(ctx, h1, h2)
+                        && !crate::kuna_fputruncviews::keeps_highs_apart(ctx, h1, h2)
                         && !crate::p6_variables::kuna_globalvalue::keeps_apart(ctx, h1, h2)
                     {
                         self.merge(ctx, h1, h2, false)?; // required merge
@@ -1436,6 +1450,7 @@ impl Merge {
                 }
                 let high_in = ctx.vn_high(vn2).expect("merge_adjacent: vn2 no high");
                 if !Self::merge_test_adjacent(ctx, high_out, high_in)
+                    || crate::kuna_fputruncviews::keeps_highs_apart(ctx, high_out, high_in)
                     || crate::p6_variables::kuna_globalvalue::keeps_apart(ctx, high_out, high_in)
                 {
                     continue;

@@ -26,6 +26,14 @@ through typedefs. A four-byte read at offset 20 in `volatile int cursor[3][2]` p
 prints `s.b`, not the bare symbol name. Each annotation still represents one
 access of the original width.
 
+A scalar access covering an entire array or aggregate still descends to the
+covered element or field; a one-element array does not decay to its address.
+The scalar-array shortcut requires the operation width to equal the element
+width. Other widths retain their byte range through the partial-symbol walk.
+With `partialaccess` enabled, pointer views of volatile annotations retain a
+volatile pointee, including sixteen-byte views, so changing the spelling does
+not change the access width or permit the C compiler to merge the accesses.
+
 This phase renders the finished decompilation: it inserts the explicit
 cast/field-access operations a C compiler would need to *see* the recovered
 types (§9.1), then walks the structured block tree of chapter 08 and the SSA
@@ -147,6 +155,21 @@ them. These operations stay visible under cosmetic
 cast suppression. `FLOAT_INT2FLOAT`, `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` keep
 their numeric conversion behavior. The representation uses the target's
 ordinary 32-/64-bit integer and IEEE float storage widths.
+
+A low-end integer `SUBPIECE` of a named 32- or 64-bit float similarly reads
+storage bits before narrowing (`kuna_bitcast.rs (truncated_float_storage)`).
+The selected storage view or declared scalar member type governs this decision,
+even when a merged member's own type is integer: casting that float directly to a short performs a numeric conversion
+and loses an integer result transported through FPU storage. C first reads the
+same-width unsigned member of a union compound literal, then casts that word to
+the truncated integer type; Rust applies `to_bits()` before the narrowing cast.
+A float-facing input uses the same lowering instead of an opaque `SUB42`
+intrinsic. Each input is evaluated once. Nonzero-offset extraction, integer
+storage and numeric `FLOAT_TRUNC` operations keep their existing handling.
+The canonical union members must match the target widths (`float`/`unsigned
+int` at four bytes, or `double`/`unsigned long long` at eight); enums and
+nonmatching data organizations keep their existing handling.
+This is a storage-semantics repair without an inference option.
 
 **Floating comparison negation.** `printc.rs (PrintC::check_print_negation)`
 uses the shared opcode complement table, which excludes ordered float
@@ -1339,6 +1362,21 @@ whole-container operand reads `return v1._0_16_ << 0x40;` under
 shifts a member of an array. What this does **not** fix is that container type
 itself. Recovering it needs either a scalar wide-integer type or a mid-end fold
 of the `CONCAT88(0,x) << 64` idiom; neither is done here.
+
+For C output with `partialaccess` enabled on a 64-bit target, an inferred
+sixteen-byte register temporary used only for bit extraction, copying, merging,
+or bitwise operations is declared `unsigned __int128` instead of `char[16]`
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_widelocal.rs`). This keeps a
+whole-width scalar load and its local assignment consistent. The rule requires
+unmapped, unlocked, non-address-tied values whose type is an inferred array of
+unknown bytes. A value loaded through a pointer, or copied out of another array
+variable, keeps its array declaration: its right-hand side prints as an array
+(`*(char (*)[16])p`), which C would convert to a pointer and assign to the
+integer as an address instead of rejecting the statement. It does not retype
+explicit arrays, parameters, globals, or addressable storage, and does not
+change the IR or the volatile access count. GCC/Clang's wide-integer extension
+is the same one used by the existing sixteen-byte pointer views. Other
+wide-container cases retain their existing rendering.
 
 **Standard C for mapped byte arrays.** `bytearrayc` (default **off**,
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_bytearrayc.rs`) provides a C11

@@ -1454,6 +1454,7 @@ pub struct ArchContext {
     /// `check_implied_cover`'s inflate arm (option `foldcallretphi`,
     /// default-on).  Read by `check_implied_cover`.
     pub fold_call_ret_phi: bool,
+    pub fpu_trunc_views: bool,
     /// (kuna) Run `Funcdata::markIndirectOnly` instead of the inert stub
     /// (option `indirectonly`, opt-in default-off).  Read by
     /// `ActionMarkIndirectOnly`.
@@ -1946,6 +1947,7 @@ impl ArchContext {
             switch_return: false, // switchreturn (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (Architecture::reset_defaults sets the shipped default: on)
+            fpu_trunc_views: false,
             fold_call_ret_phi: false, // foldcallretphi (Architecture::reset_defaults sets the shipped default: on)
             mark_indirect_only: false, // indirectonly (opt-in default-off)
             hide_shadow: false,       // hideshadow (Architecture::reset_defaults sets the shipped default: on)
