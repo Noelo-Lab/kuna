@@ -6451,11 +6451,16 @@ function's narrow return when the prototype is neither declared nor
 output-locked, the recovered output is a register of 1 to 4 bytes narrower than
 the return register, every live RETURN carries the record and hands back a
 value of that width in that storage (or a constant), and every return computes
-its value (`every_return_computes_with`, global reads counted). The statement
-is the storage and width, and whether the value is a truth value: one byte that
-every RETURN computes as a comparison or a constant 0 or 1 through copies,
-merges and zero extensions (`boolbyte`'s def walk, `def_is_truth_valued`), not
-all of them constants. A function decompiled again records again; a redo the
+its value (`every_return_computes_with`, global reads counted). A value is a
+truth value when it is one byte that every RETURN computes as a comparison or a
+constant 0 or 1 through copies, merges and zero extensions (`boolbyte`'s def
+walk, `def_is_truth_valued`), not all of them constants; any other value must be
+able to set the top bit of its width (the union of the returned values'
+nonzero masks reaches it), since a value that never does is as often an `int`
+or enum of small numbers (diff's `analyze_hunk` returns a `changes` enum of 0 to
+3 built from two flags) as a narrow one. The statement is the storage and width,
+and the integer type the function's listing declares it returns when that is an
+integer of that width, or `bool` for a truth value. A function decompiled again records again; a redo the
 run discards puts the earlier statement back (`kuna_narrowret::restore`), as
 for `callrettype`.
 
@@ -6473,10 +6478,16 @@ narrow return; the new narrow Varnode is a write heritage ignores
 decide the caller's types: `RuleSubvarZext` narrows a result that is only
 compared, masked or stored as a byte, and a local holding the result beside
 other narrow values takes the narrow width when the rest of its web allows it.
+The stated type is the def-side vote of `TypeOpCall::getOutputLocal` for an
+unlocked output whose storage and width are the statement's (`stated_type`),
+and so the type the call expression has where `ActionSetCasts` converts it. The
+listing declares the callee `unsigned char`, so a byte compared with `0x80`
+prints `h25(..) == 0x80`; typed by the comparison alone it was a `char` and
+printed `h25(..) == '\x80'`, which C, reading the declared `unsigned char`,
+never finds equal.
 A stated truth value also marks the CALL a calculated boolean, so the result's
-nonzero mask is 1, its local type is `bool` (`truth_type`, the def-side vote of
-`TypeOpCall::getOutputLocal` for an unlocked output), and `boolbyte` accepts the
-call as a truth-valued definition of the byte that holds it.
+nonzero mask is 1, its type is `bool`, and `boolbyte` accepts the call as a
+truth-valued definition of the byte that holds it.
 
 Nothing is stated for an indirect call, a declared prototype (its callers hold
 a locked output already), a sign-extended return (`ldrsb`; the trim of a
