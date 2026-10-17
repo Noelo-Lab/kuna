@@ -6144,10 +6144,12 @@ own width (`((unsigned long *)a0)[v2]` for `*(unsigned long *)(a0 + v2 * 8)`);
 a value merged with the retyped one in a callee's return takes the pointer too
 (`void * sub_8514(void *a0,void *a1)`); and a local that held both the pointer
 and an integer may split in two, which renumbers the locals after it. Measured
-on the 444-slice decbench sweep against main cb68db18f (the published
-address-correspondence `type_match`), 250 parameter and stack decisions move
-onto the DWARF type and none off, and 187 functions score better and none
-worse; on the 96-binary optimized nightly sample 14 score better and none worse. What it cannot reach is most of the class: a callback reached only
+on the 444-slice decbench sweep against main 0e35a1ff5 (the published
+address-correspondence `type_match`), 244 decisions move onto the DWARF type and
+one off -- a register loop counter in diffutils -O2 `diff3`'s `dotlines` that
+address overlap stops matching once an address temporary folds into its uses --
+and 181 functions score better and one worse; on the 96-binary optimized
+nightly sample 15 score better and none worse. What it cannot reach is most of the class: a callback reached only
 through a pointer has no direct caller, a value nobody passes a pointer has no
 evidence, and a call in a switch case body the reference walk does not decode
 leaves its callee's caller set incomplete. The fixture
