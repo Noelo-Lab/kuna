@@ -422,6 +422,23 @@ fn inferred_simd_temporaries_have_scalar_declarations() {
 }
 
 #[test]
+fn loaded_simd_temporaries_keep_array_declarations() {
+    let hex = "f30f6f0766480f7ec0660f7ec1660f3a16c2014801c84801d0c3";
+    let image: Vec<u8> = (0..hex.len()).step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect();
+    let path = common::scratch_file("simd-loaded-declaration", "bin");
+    std::fs::write(&path, image).unwrap();
+    let (out, err, code) = common::run_kuna(&[
+        "decompile", path.to_str().unwrap(), "--addr", "0x400000", "--raw-image",
+        "--base", "0x400000", "--target", "x86:LE:64:default:gcc",
+    ]);
+    std::fs::remove_file(path).unwrap();
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("char v1 [16]"), "{out}");
+    assert!(!out.contains("unsigned __int128 v1"), "{out}");
+}
+
+#[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn inferred_simd_temporaries_round_trip_through_native_c() {
     use common::process;

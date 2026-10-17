@@ -1354,11 +1354,14 @@ or bitwise operations is declared `unsigned __int128` instead of `char[16]`
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_widelocal.rs`). This keeps a
 whole-width scalar load and its local assignment consistent. The rule requires
 unmapped, unlocked, non-address-tied values whose type is an inferred array of
-unknown bytes. It does not retype explicit arrays, parameters, globals, or
-addressable storage, and does not change the IR or the volatile access count.
-GCC/Clang's wide-integer extension is the same one used by the existing
-sixteen-byte pointer views. Other wide-container cases retain their existing
-rendering.
+unknown bytes. A value loaded through a pointer, or copied out of another array
+variable, keeps its array declaration: its right-hand side prints as an array
+(`*(char (*)[16])p`), which C would convert to a pointer and assign to the
+integer as an address instead of rejecting the statement. It does not retype
+explicit arrays, parameters, globals, or addressable storage, and does not
+change the IR or the volatile access count. GCC/Clang's wide-integer extension
+is the same one used by the existing sixteen-byte pointer views. Other
+wide-container cases retain their existing rendering.
 
 **Standard C for mapped byte arrays.** `bytearrayc` (default **off**,
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_bytearrayc.rs`) provides a C11
