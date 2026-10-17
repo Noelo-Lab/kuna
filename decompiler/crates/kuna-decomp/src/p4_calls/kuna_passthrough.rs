@@ -588,7 +588,9 @@ pub(crate) fn producing_call(data: &Funcdata, ret: OpId) -> Option<OpId> {
 /// function's own code. `None` unless the function's own output is recovered
 /// (not locked), every live RETURN is reached from a direct call with nothing
 /// between ([`touched_after`]), every one of those callees states a non-`void`
-/// return in the same storage, and that storage is a register or a register
+/// return in the same storage (under `narrowret`, on a little-endian image, at
+/// the same register and of any width, the widest taken), and that storage is
+/// a register or a register
 /// pair ([`register_pieces`]) the function's model returns in and no op of the
 /// function touches.
 ///
@@ -620,6 +622,8 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     let mut producers: Vec<OpId> = Vec::new();
     let mut paths: Vec<(OpId, OpId)> = Vec::new();
     let mut own: Vec<OpId> = Vec::new();
+    let narrow_tails = data.get_arch().narrow_ret
+        && !data.get_arch().manage().get_default_code_space().is_some_and(|c| c.is_big_endian());
     let beside_own = data.get_arch().mixed_tail_ret;
     for &r in &rets {
         let Some(call) = producing_call(data, r) else {
@@ -636,7 +640,8 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
         }
         let (addr, size, _) = data.kuna_protoorder_types(fc.get_entry_address())?.output.clone()?;
         match &storage {
-            Some((a, s)) if *a != addr || *s != size => return None,
+            Some((a, s)) if *a != addr || (*s != size && !narrow_tails) => return None,
+            Some((_, s)) => storage = Some((addr, size.max(*s))),
             _ => storage = Some((addr, size)),
         }
         if !producers.contains(&call) {
@@ -1030,7 +1035,7 @@ pub fn capture(fc: &mut FuncCallSpecs, data: &Funcdata) -> Option<PendingPassThr
             .get(vn)
             .map(|v| v.is_input() && !v.is_written() && *v.get_addr() == addr && v.get_size() == size)
             .unwrap_or(false);
-        if !own_input && !crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, size) {
+        if !own_input && !crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, size) && !reassembled(data, vn, &addr, size) {
             continue;
         }
         if let Some(width) = stated_width(data, fc, &addr, size) {
@@ -1041,6 +1046,15 @@ pub fn capture(fc: &mut FuncCallSpecs, data: &Funcdata) -> Option<PendingPassThr
         fc.get_active_input().get_trial_mut(i).mark_no_use();
     }
     (!candidates.is_empty()).then_some(PendingPassThrough { op, candidates })
+}
+
+/// Is `vn` the function's own incoming integer register `[addr, addr+size)`
+/// put back together from the pieces heritage split it into, around a
+/// narrower result of a call read out of the same register (AArch64 `w0`
+/// returned by a tail call that also takes the incoming `x0`)?
+fn reassembled(data: &Funcdata, vn: VarnodeId, addr: &Address, size: int4) -> bool {
+    data.vbank().get(vn).is_some_and(|v| v.is_written())
+        && crate::kuna_armfloatargs::incoming_storage(data, vn).is_some_and(|(a, s)| a == *addr && s == size)
 }
 
 /// Extend each captured call's final argument list with the forwarded registers
@@ -1091,6 +1105,7 @@ fn extend_one(data: &mut Funcdata, p: &PendingPassThrough) -> bool {
             .filter(|v| {
                 (v.is_input() && *v.get_addr() == addr)
                     || crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, width)
+                    || reassembled(data, vn, &addr, v.get_size())
             })
             .map(|v| v.get_size())
         else {

@@ -114,6 +114,10 @@ fn aarch64_image() -> Vec<u8> {
         func("getv", words(&[0x52800540, 0xd65f03c0]), &[]),
         // b getv
         func("f", words(&[0x14000000]), &[(0, "getv")]),
+        // ldr w8,[x0,w1,sxtw #2]; add w0,w8,w2; ret
+        func("geti", words(&[0xb861d808, 0x0b020100, 0xd65f03c0]), &[]),
+        // b geti
+        func("wi", words(&[0x14000000]), &[(0, "geti")]),
     ];
     object(Architecture::Aarch64, &funcs, |text, at, from, to| {
         let word = 0x14000000u32 | (((to as i64 - from as i64) >> 2) as u32 & 0x3ffffff);
@@ -167,6 +171,17 @@ fn an_x86_64_write_to_the_return_register_before_the_call_does_not_hide_its_resu
     let off = decompile(&x86_image(), false);
     assert!(function(&off, "fk").contains("void fk("), "{off}");
     assert!(function(&off, "twice").contains("void twice("), "{off}");
+}
+
+/// An AArch64 callee returning an `int` in `w0` takes `x0` as a pointer: the
+/// wrapper's RETURN reads `w0` beside the incoming `x0` it forwards, heritage
+/// splits `x0` around that read, and the forwarded argument is the two pieces
+/// put back together.
+#[test]
+fn an_aarch64_register_split_around_a_narrow_tail_result_is_still_forwarded() {
+    let text = decompile(&aarch64_image(), true);
+    assert!(function(&text, "wi").contains("int wi(int *a0,int a1,int a2)"), "{text}");
+    assert!(function(&text, "wi").contains("return geti(a0,a1,a2);"), "{text}");
 }
 
 #[test]
