@@ -12,20 +12,30 @@ PAGES_DIR = Path(__file__).parent / "pages"
 # page name -> datasets inlined into it; each later workstream adds its row.
 PAGES = {
     "index": [],
-    "atlas": ["atlas"],
+    "atlas": ["atlas", "coverage"],
     "churn": ["churn"],
+    "coverage": ["coverage"],
 }
 
 # dataset -> nav/launcher card, for the status object every page embeds.
 DATASETS = {
     "atlas": {
         "title": "Architecture atlas",
+        "nav": "Atlas",
         "blurb": "The P0–P9 pipeline, each phase's modules, options and spec chapter, "
         "the crate graph, and the real pass schedule.",
         "regen": "make observatory",
     },
+    "coverage": {
+        "title": "Test coverage",
+        "nav": "Coverage",
+        "blurb": "Merged line coverage from the workspace suite, the datatest/stages "
+        "corpora and the CLI probes, per crate and per phase folder.",
+        "regen": "make coverage",
+    },
     "churn": {
         "title": "Churn & ownership",
+        "nav": "Churn",
         "blurb": "A treemap of where change concentrates: live file size × windowed "
         "churn × who changed it (agents vs people).",
         "regen": "make observatory",

@@ -10,6 +10,7 @@ committed; regenerate at will. Generators live in `scripts/observatory/`
 |---|---|---|
 | `observatory/atlas.html` | The architecture atlas: the P0–P9 pipeline with per-phase cards (owned artifact, modules by size, sub-phases, options, console surfaces, owning `docs/spec/` chapter), the shared layers (`substrate/`, `infra/`), the workspace crate graph, and the real pass order. | `make observatory` |
 | `observatory/churn.html` | Churn & ownership: a squarified treemap of every tracked file (area = live size or windowed churn; color = churn intensity, agent share, or recency), with scope/window controls and a per-group rollup table. | `make observatory` |
+| `observatory/coverage.html` | Merged line coverage: workspace suite + datatest/stages corpora + tests/cli probes through instrumented binaries, per crate / per phase folder / per file, with the llvm-cov HTML report under `observatory/coverage/`. The atlas phase cards pick the numbers up too. | `make coverage` |
 
 Each page inlines its data; the same data is written as raw JSON under
 `observatory/data/` for agents and scripts:
@@ -23,6 +24,9 @@ Each page inlines its data; the same data is written as raw JSON under
   group, phase, definedIn, folderPhase}` — `phase` is the action-group's
   phase (semantic, via `phases.toml` `[[group]]`), `folderPhase` the folder
   the defining module lives in (physical); they legitimately differ.
+- **`data/coverage.json`** — `{schemaVersion, meta{sha,generated,runsFailed},
+  totals, crates[], phases[], files[]}`, each with
+  `lines{count,covered,percent}` (+ functions on the rollups).
 - **`data/churn.json`** — `{schemaVersion, meta, windowsDays, areas, files[]}`;
   per file: `{path, area, crate, phase, loc, last, authors[{name,commits}],
   windows{all,d30,d90,d365}{added,removed,commits,agentCommits}}`. Full
@@ -53,3 +57,20 @@ silently from the tree:
 Options:
 `python -m scripts.observatory.generate --out DIR [--only atlas] [--render-only]`
 (`--render-only` rebuilds the pages from whatever JSON already exists).
+
+## Coverage: prerequisites and caveats
+
+`make coverage` needs `rustup component add llvm-tools-preview` and
+`cargo install cargo-llvm-cov` (the script checks and says so). It always
+re-measures from scratch: a full instrumented build into
+`decompiler/target/llvm-cov-target` (a second build tree; debug info is
+forced off to keep it small) plus every suite — expect 30–60 minutes. Suite
+failures do not abort the measurement; they are reported as
+`meta.runsFailed` and the report covers what ran. Two sharp edges it handles
+for you: `KUNA_DECOMP_TEST` is pinned so the datatest runs cannot silently
+fall back to an uninstrumented `decomp_test_dbg`, and profile output uses a
+pool-merged `%16m` pattern so the thousands of spawned processes do not
+leave one `.profraw` each. A process killed by a watchdog/timeout loses its
+counters; if that matters for a run, llvm's continuous mode (`%c` in
+`LLVM_PROFILE_FILE` plus `-C llvm-args=-runtime-counter-relocation` in
+`RUSTFLAGS`) is the escape hatch.
