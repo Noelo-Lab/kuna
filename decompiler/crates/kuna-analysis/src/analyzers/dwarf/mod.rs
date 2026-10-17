@@ -119,6 +119,7 @@ mod lines;
 pub use lines::DwarfLinesPass;
 
 mod kuna_cppproto;
+pub(crate) mod kuna_dwarfcomplex;
 
 mod kuna_typedepth;
 use kuna_typedepth::TypeWalk;
@@ -232,6 +233,7 @@ struct DieSnap {
     discr_value: Option<i64>,
     /// `DW_AT_encoding` (`DW_ATE_*`) for `DW_TAG_base_type`.
     encoding: Option<gimli::DwAte>,
+    complex_max_size: i32,
     /// `DW_AT_count`/`DW_AT_upper_bound` (array subrange length).
     array_count: Option<u64>,
     /// `DW_AT_const_value` of a `DW_TAG_enumerator` — the enum member's value.
@@ -287,6 +289,7 @@ impl DieSnap {
             discr_ref: None,
             discr_value: None,
             encoding: None,
+            complex_max_size: 0,
             array_count: None,
             const_value: None,
             declaration: false,
@@ -585,6 +588,9 @@ fn build_datatype_at(
                     char_datatype(types, size, &die.name, encoding_signed(die.encoding))
                 }
                 Some(gimli::DW_ATE_boolean) => types.get_base(size, type_metatype::TYPE_BOOL).ok(),
+                Some(gimli::DW_ATE_complex_float) if size <= die.complex_max_size => {
+                    kuna_dwarfcomplex::complex_type(types, size)
+                }
                 Some(gimli::DW_ATE_float) => types.get_base(size, type_metatype::TYPE_FLOAT).ok(),
                 enc if encoding_signed(enc) == Some(false) => {
                     types.get_base(size, type_metatype::TYPE_UINT).ok()
@@ -1090,7 +1096,12 @@ impl AnalysisPass for DwarfPass {
         let mut units = dwarf.units();
         while let Ok(Some(header)) = units.next() {
             let Ok(unit) = dwarf.unit(header) else { continue };
-            let dies = snapshot_unit(&dwarf, &unit);
+            let mut dies = snapshot_unit(&dwarf, &unit);
+            if kuna_dwarfcomplex::supported_abi(ctx.file.format(), ctx.file.architecture(), &ctx.arch.archid) {
+                for die in dies.values_mut() {
+                    die.complex_max_size = if ctx.file.architecture() == object::Architecture::I386 { 8 } else { 16 };
+                }
+            }
 
             for snap in dies.values() {
                 match snap.tag {

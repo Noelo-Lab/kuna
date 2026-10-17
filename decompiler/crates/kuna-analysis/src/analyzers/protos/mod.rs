@@ -79,6 +79,8 @@ enum Ty {
     VoidPtr,
     /// `float` (4-byte IEEE 754 on every target these tables apply to).
     Float,
+    /// Two-component complex value, only seeded on explicitly supported ABIs.
+    Complex(i32),
     /// `double` (8-byte IEEE 754). `long double` has no fixed width and no Ty.
     Double,
     /// (kuna `libctypes`) A pointer to the NAMED libc/POSIX aggregate spelled by
@@ -205,6 +207,8 @@ fn build_ty(
             let v = types.get_type_void()?;
             types.get_type_pointer(ptr, v, word_size)
         }
+        Ty::Complex(size) => crate::analyzers::dwarf::kuna_dwarfcomplex::complex_type(types, size)
+            .ok_or_else(|| kuna_base::error::KunaError::lowlevel("unsupported complex layout")),
         Ty::Float => types.get_base(4, type_metatype::TYPE_FLOAT),
         Ty::Double => types.get_base(8, type_metatype::TYPE_FLOAT),
         Ty::NamedPtr(n) => {
