@@ -226,22 +226,21 @@ fn a_printed_name_given_to_another_local_is_ambiguous() {
 }
 
 /// A register-backed Symbol a directive created keeps its storage width for a
-/// later `type`, and a name two directives gave is ambiguous rather than a pick.
+/// later `type`. Of two locals two directives gave one name, the printer shows
+/// one as `x_1`, and a later directive reaches each by the name it shows; `x`
+/// used to be rejected as naming more than one symbol.
 #[test]
-fn later_directives_keep_the_rejections() {
+fn a_later_directive_keeps_the_width_and_reads_the_shown_name() {
     let (_, rejected) = decompile("two_locals", &["name v1 i", "type i char *"]);
     assert_eq!(
         rejected,
         ["\"type i char *\": \"Storage is 4 bytes, the stated type is 8\""]
     );
-    let (_, rejected) = decompile(
-        "two_locals",
-        &["name v1 x", "name v2 x", "type x unsigned int"],
-    );
-    assert_eq!(
-        rejected,
-        ["\"type x unsigned int\": \"More than one symbol named: x (2)\""]
-    );
+    for (third, declared) in [("type x unsigned int", "uint4 x; // ebx"), ("type x_1 unsigned int", "uint4 x_1; // r12d")] {
+        let (code, rejected) = decompile("two_locals", &["name v1 x", "name v2 x", third]);
+        assert!(rejected.is_empty(), "{third}: {rejected:?}");
+        assert!(contains_declaration(&code, declared), "{third}:\n{code}");
+    }
 }
 
 /// A pointer in RAX and a later EAX flag have distinct definition identities.

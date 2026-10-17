@@ -2729,6 +2729,11 @@ record is honest.
 
 ## 0.3 The IR substrate
 
+Code-type identity distinguishes indirect value parameters from ordinary
+pointers even when their lowered types and ABI storage coincide. Interning
+must preserve that distinction so declaration order cannot change a call's
+source-level argument contract.
+
 When `TransformManager` materializes a lane of an existing varnode, storage
 addresses follow the target's byte order, but consumption masks always follow
 bit significance. `create_var_replacement` preserves the lane's original

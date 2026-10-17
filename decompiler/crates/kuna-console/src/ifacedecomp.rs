@@ -2926,8 +2926,11 @@ decomp_command!(
         }
         let dcp = dcp_mut(status)?;
         let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
-        let fd = dcp.local_symbol_fd(&oldname)?;
-        let symbol = crate::kuna_hightarget::apply_local(fd, &oldname, &newname, None, maxduplicates)
+        dcp.local_symbol_fd(&oldname)?;
+        let (Some(fd), arch) = (dcp.fd.as_mut(), dcp.conf.as_ref().map(|p| p.arch())) else {
+            return Err(IfaceError::execution("no function selected"));
+        };
+        let symbol = crate::kuna_hightarget::apply_local(fd, &oldname, &newname, None, maxduplicates, arch)
             .map_err(IfaceError::execution)?;
         if let Some(symbol) = symbol {
             dcp.pending_local_checks.push((format!("rename {oldname} {newname}"), symbol, None));
@@ -2979,8 +2982,11 @@ decomp_command!(
         };
         let dcp = dcp_mut(status)?;
         let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
-        let fd = dcp.local_symbol_fd(&name)?;
-        let symbol = crate::kuna_hightarget::apply_local(fd, &name, &newname, Some(ct.clone()), maxduplicates)
+        dcp.local_symbol_fd(&name)?;
+        let (Some(fd), arch) = (dcp.fd.as_mut(), dcp.conf.as_ref().map(|p| p.arch())) else {
+            return Err(IfaceError::execution("no function selected"));
+        };
+        let symbol = crate::kuna_hightarget::apply_local(fd, &name, &newname, Some(ct.clone()), maxduplicates, arch)
             .map_err(IfaceError::execution)?;
         if let Some(symbol) = symbol {
             dcp.pending_local_checks.push((format!("retype {name} {}", typetext.trim()), symbol, Some(ct)));

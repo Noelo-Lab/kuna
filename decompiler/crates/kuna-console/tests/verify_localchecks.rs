@@ -54,10 +54,10 @@ fn a_directive_the_output_does_not_show_is_reported() {
     let (addr_size, word_size) = prog.arch().data_org();
     let (float8, _) = parse_type("double", prog.arch().types(), DataOrg { addr_size, word_size }).expect("parses");
 
-    let renamed = kuna_console::kuna_hightarget::apply_local(&mut fd, "v5", "hash", None, 8)
+    let renamed = kuna_console::kuna_hightarget::apply_local(&mut fd, "v5", "hash", None, 8, None)
         .expect("applies")
         .expect("binds a Symbol");
-    let retyped = kuna_console::kuna_hightarget::apply_local(&mut fd, "v7", "", Some(float8.clone()), 8)
+    let retyped = kuna_console::kuna_hightarget::apply_local(&mut fd, "v7", "", Some(float8.clone()), 8, None)
         .expect("applies")
         .expect("binds a Symbol");
     let expected = assertions::expected_locals(&fd, &[(0, renamed, None), (1, retyped, Some(float8))]);
@@ -67,7 +67,7 @@ fn a_directive_the_output_does_not_show_is_reported() {
     assert!(unapplied.contains(&(0, "nothing is declared as `hash` after it".into())), "{unapplied:?}");
     assert!(unapplied.iter().any(|(i, reason)| *i == 1 && reason.starts_with("`v7` is declared as")), "{unapplied:?}");
 
-    let untouched = kuna_console::kuna_hightarget::apply_local(&mut fd, "v2", "v2", None, 8)
+    let untouched = kuna_console::kuna_hightarget::apply_local(&mut fd, "v2", "v2", None, 8, None)
         .expect("applies")
         .expect("binds a Symbol");
     let expected = assertions::expected_locals(&fd, &[(2, untouched, None)]);

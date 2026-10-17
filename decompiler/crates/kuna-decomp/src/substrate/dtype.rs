@@ -2089,6 +2089,10 @@ impl Datatype {
                         .ok_or_else(|| Datatype::code_invariant_err("compareStorage"))?,
                 )
             };
+            let indirect = a.is_indirect_storage().cmp(&b.is_indirect_storage());
+            if indirect != std::cmp::Ordering::Equal {
+                return Ok(if indirect == std::cmp::Ordering::Less { -1 } else { 1 });
+            }
             let storage = a.get_address().cmp(&b.get_address()).then(a.get_size().cmp(&b.get_size()));
             if storage != std::cmp::Ordering::Equal {
                 return Ok(if storage == std::cmp::Ordering::Less { -1 } else { 1 });

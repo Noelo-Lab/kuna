@@ -259,6 +259,7 @@ impl Rule for RuleLoadVarnode {
         data.op_set_input(op, newvn, 0).expect("RuleLoadVarnode: opSetInput");
         data.op_remove_input(op, 1);
         set_opcode(data, op, OpCode::CPUI_COPY);
+        crate::p3_dataflow::kuna_stackreadscope::mark_stack_read(data, op);
         // C++ ruleaction.cc:4316-4324 — the spacebase-placeholder tail.  When the
         // converted COPY output is the stack-pointer placeholder the call set up,
         // clear the trigger and resolve the call's relative stack offset (the RSP

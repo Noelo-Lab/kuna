@@ -3,7 +3,8 @@
 // cases where the order of directives decides the outcome: a struct defined
 // before the struct and the global that use it; the later of two raw
 // directives winning; a rename that frees a name before the rename that takes
-// it. Each case replays the file a page on its own exports, and the file a page
+// it; a rename the printer suffixed, then edits by the suffixed name. Each
+// case replays the file a page on its own exports, and the file a page
 // in a live session exports (its directives in the registers' birth order,
 // built here from registers applied in the opposite order); no directive may
 // be rejected. Skips (exit 0) without a built `kuna` (make binaries).
@@ -24,15 +25,17 @@ if (!existsSync(kuna)) {
   process.exit(0);
 }
 const sample = join(root, 'integrations/web/test/fixtures/sample.elf');
+const long = join(root, 'integrations/web/test/fixtures/long.elf');
 const env = { ...process.env, SLEIGHHOME: process.env.SLEIGHHOME || join(root, 'specs') };
 const dir = mkdtempSync(join(tmpdir(), 'kuna-replay-'));
 const SUM = '0x1161';
-const names = new Map([['0x1198', 'main'], [SUM, 'sum_to']]);
+const LONG_MAIN = '0x1288';
+const names = new Map([['0x1198', 'main'], [SUM, 'sum_to'], [LONG_MAIN, 'main']]);
 
-function replay(session, target) {
+function replay(session, target, binary = sample) {
   const file = join(dir, 'sample.elf.kuna');
   writeFileSync(file, session.toFileText({ binary: 'sample.elf', target, nameOf: (a) => session.functionName(a) || names.get(a) || a }));
-  const res = spawnSync(kuna, ['decompile', sample, target, '--assert', `@${file}`], { env, encoding: 'utf8' });
+  const res = spawnSync(kuna, ['decompile', binary, target, '--assert', `@${file}`], { env, encoding: 'utf8' });
   assert.equal(res.status, 0, res.stderr);
   return { code: res.stdout, rejected: res.stderr.split('\n').filter((l) => /rejected/.test(l)) };
 }
@@ -63,15 +66,20 @@ const CASES = [
     s.setVar(SUM, 'v1', { name: 'i' });
     s.setVar(SUM, 'acc', { name: 'v1' });
   }, (code) => /\bint i;/.test(code)],
+  ['a rename the printer suffixed, then edits by the suffixed name', 'main', (s) => {
+    s.setVar(LONG_MAIN, 'v7', { name: 'score' });
+    s.setVar(LONG_MAIN, 'score_1', { name: 'points' });
+    s.setVar(LONG_MAIN, 'points', { type: 'unsigned int' });
+  }, (code) => /\bunsigned int points;/.test(code), long],
 ];
 
 const done = [];
 try {
-  for (const [what, target, edit, expect] of CASES) {
+  for (const [what, target, edit, expect, binary] of CASES) {
     const alone = new Session();
     edit(alone);
     for (const [who, session] of [['alone', () => alone], ['in a live session', () => shared(edit)]]) {
-      const { code, rejected } = replay(session(), target);
+      const { code, rejected } = replay(session(), target, binary);
       assert.deepEqual(rejected, [], `${what} (${who}): nothing rejected`);
       assert.ok(expect(code), `${what} (${who}): ${code.split('\n')[0]}`);
     }

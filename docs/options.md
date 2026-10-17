@@ -1062,6 +1062,10 @@ Three tiers:
 | call result stored to the frame but the store is missing from the emitted C so the later read looks uninitialized | [`tiedstorekeep`](#tiedstorekeep) |
 | indirect call through a stack slot that no statement ever writes | [`tiedstorekeep`](#tiedstorekeep) |
 | a stack local read after a call shows only its initialiser | [`tiedstorekeep`](#tiedstorekeep) |
+| global structure field stores become local assignments | [`globalfieldstore`](#globalfieldstore) |
+| array member writes target unrelated local arrays | [`globalfieldstore`](#globalfieldstore) |
+| a global structure is assigned individual scalar fields | [`globalfieldstore`](#globalfieldstore) |
+| a call sees stale fields after a cached record copy | [`globalfieldstore`](#globalfieldstore) |
 | a global is assigned before a call although the binary stores it after the call returns | [`globalcallstore`](#globalcallstore) |
 | a call that reads a global appears to see a value the caller stores only afterwards | [`globalcallstore`](#globalcallstore) |
 | a loop that walks a global list frees the head but never advances the global | [`globalcallstore`](#globalcallstore) |
@@ -1085,6 +1089,10 @@ Three tiers:
 | byte-for-byte comparison against upstream ghidra naming | [`namestyle`](#namestyle) |
 | undefined8/xunknownN placeholder types wanted for upstream comparison (flip off) | [`realtypes`](#realtypes) |
 | size-guessed unsigned long/int/char types shown for values the inference never typed | [`realtypes`](#realtypes) |
+| a DWARF or asserted by-value struct parameter is declared as a pointer | [`indirectargs`](#indirectargs) |
+| calls pass &local to a function declared to take the struct by value | [`indirectargs`](#indirectargs) |
+| function pointer type spells T * for a by-value aggregate parameter | [`indirectargs`](#indirectargs) |
+| want the raw ABI pointer for a large struct parameter (flip off) | [`indirectargs`](#indirectargs) |
 | a void function ends with a redundant return; the source does not have | [`voidtailreturn`](#voidtailreturn) |
 | GED counts one extra exit node against an otherwise perfect function | [`voidtailreturn`](#voidtailreturn) |
 | the last statement of a void function is a bare return | [`voidtailreturn`](#voidtailreturn) |
@@ -1219,6 +1227,8 @@ Three tiers:
 | a signed ARM value is shifted left by a constant in the emitted C | [`armconstshift`](#armconstshift) |
 | UBSan reports a left shift of a negative value in recompiled ARM output | [`armconstshift`](#armconstshift) |
 | a signed ARM shift overflows into the sign bit in recompiled output | [`armconstshift`](#armconstshift) |
+| a local read appears before the machine branch that guards it | [`guardedreadtrim`](#guardedreadtrim) |
+| a call-written volatile stack local is read on the failure path | [`guardedreadtrim`](#guardedreadtrim) |
 | an overwritten register argument renders as a stale half of a previous wide value | [`multiregargs`](#multiregargs) |
 | a live entry argument disappears after a wide register read | [`multiregargs`](#multiregargs) |
 
@@ -3378,6 +3388,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P3/copy-propagation · kuna · correctness-fix · re-getprocaddress-result-discarded
 - **Example:** `option tiedstorekeep off`
 
+### `globalfieldstore` -- on | off, default `on`
+
+- **Symptoms:** global structure field stores become local assignments; array member writes target unrelated local arrays; a global structure is assigned individual scalar fields; a call sees stale fields after a cached record copy.
+- **What it does:** Preserve the memory destination of a typed global COPY spanning structure fields or an array-typed view when a marker reads it. Propagating the register source can let later datatype splitting print field writes as local assignments or assign scalar values to the whole structure. ON keeps persistent TYPE_PARTIALSTRUCT and TYPE_ARRAY COPY outputs attached to markers; scalar stores and complete structure values keep existing propagation. A source defined directly by LOAD requires indexaliasguard global so its read cannot move past an aliasing write.
+- **When to flip:** On by default. OFF reproduces missing global field publication after a filled local record is copied to a cached global and then passed to an observing call. This includes complete global arrays and array members. Keeping a COPY can also change storage comments and variable merging where the prior output was correct.
+- **Where / provenance:** P3/copy-propagation · kuna · correctness-fix · kuna-globalfieldstore
+- **Example:** `option globalfieldstore off`
+
 ### `globalcallstore` -- on | off, default `on`
 
 - **Symptoms:** a global is assigned before a call although the binary stores it after the call returns; a call that reads a global appears to see a value the caller stores only afterwards; a loop that walks a global list frees the head but never advances the global; a variable's storage comment lists a global it is only copied into.
@@ -3425,6 +3443,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On (default) emits real C types for un-inferred values; off restores the upstream xunknownN/undefined<N> rendering for byte-for-byte comparison.
 - **Where / provenance:** P9/literal-format · kuna · presentation-default · kuna-realtypes
 - **Example:** `option realtypes off`
+
+### `indirectargs` -- on | off, default `on`
+
+- **Symptoms:** a DWARF or asserted by-value struct parameter is declared as a pointer; calls pass &local to a function declared to take the struct by value; function pointer type spells T * for a by-value aggregate parameter; want the raw ABI pointer for a large struct parameter (flip off).
+- **What it does:** Print a parameter that the locked prototype declares by value but the ABI passes through a hidden pointer (a cspec convert_to_ptr or pointermax rule: AArch64, RISC-V and PowerPC aggregates over 16 bytes, MS x64 aggregates not 1/2/4/8 bytes and long double, SPARC aggregates) at its declared value type. The callee signature and function-pointer declarators spell `T v` instead of `T *v`; the callee reads the ABI pointer as `&v`, so field accesses print `v.f` and a pointer local `T *v_addr = &v` carries any update of the pointer register; a call against such a prototype passes the pointed-to value. Ordinary pointer parameters, hidden-return pointers and array parameters keep their pointer view. Off prints the ABI pointer everywhere, as upstream Ghidra does.
+- **When to flip:** On (default) when the prototype comes from DWARF, a library seed or an --assert and you want the source-level signature. Flip off to see the ABI calling contract literally, for example when a hand-written caller passes aliased storage and the callee's writes through that pointer matter to the caller.
+- **Where / provenance:** P9/indirect-value-parameters · kuna · presentation-default · indirect-value-arguments
+- **Example:** `option indirectargs off`
 
 ### `voidtailreturn` -- on | off, default `off`
 
@@ -3681,6 +3707,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check.
 - **Where / provenance:** P9/cast-policy · kuna · correctness-fix · arm-fixed-signed-lsl
 - **Example:** `option armconstshift on`
+
+### `guardedreadtrim` -- on | off, default `on`
+
+- **Symptoms:** a local read appears before the machine branch that guards it; a call-written volatile stack local is read on the failure path.
+- **What it does:** Place an interference-preserving COPY of call-written stack storage inside the direct successor dominating its affected reads, rather than eagerly after the call. Require original stack-read evidence, reject overlapping lowered reads anywhere in the call block and stale read blocks, and retain legacy placement when intervening effects or writes prevent the move. This preserves a machine guard around a local read, including observable volatile accesses.
+- **When to flip:** On by default in all modes, including reliable and aggressive. Turn off to restore legacy merge-trim placement when comparing output. Ordinary scalar captures may be value-equivalent, but the guarded rendering preserves their evaluation scope and avoids extra volatile reads on other paths.
+- **Where / provenance:** P6/merge-aggressiveness · kuna · correctness-fix · guarded-stack-read-trim
+- **Example:** `option guardedreadtrim off`
 
 ### `multiregargs` -- on | off, default `on`
 

@@ -1240,6 +1240,24 @@ No new purity assumption is made. The option exists because keeping the COPY
 also changes correct output: a storage comment no longer lists the global,
 and a value the store kept can print as its own variable.
 
+`globalfieldstore` (default on) keeps a typed global COPY spanning structure
+fields or an array-typed global view, including a complete global array,
+attached to its memory destination when read by a MULTIEQUAL or
+INDIRECT marker.
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalfieldstore.rs`
+keeps marker inputs attached to persistent `TYPE_PARTIALSTRUCT` and
+`TYPE_ARRAY` COPY outputs. Replacing that output with its register source can
+leave datatype splitting with register pieces that print as local assignments
+or scalar assignments to the complete structure, removing the original global
+field writes from emitted C. Scalar stores, complete structure values,
+ordinary readers, and nonpersistent aggregate values retain the existing
+propagation rules. The guard uses the view type known before propagation. A source defined directly by LOAD
+requires `indexaliasguard global`, the level that preserves its read before
+aliasing writes when the COPY prints that source inline. OFF restores legacy
+propagation, including correct outputs whose storage comments or variable
+merging the retained COPY also changes. The option is enabled in every mode;
+existing type and memory-order guards remain in force.
+
 **Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
 default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
 `COPY`'s input instead. When the reader is an ordinary op that is pure gain: the
@@ -2390,6 +2408,17 @@ that hold across this pass (chapter [06](06-variables-and-merge.md)). Clearing a
 hold that dead-code elimination immediately reinstates would prevent the main
 loop from converging; ordinary temporary holds keep their existing release rule.
 
+
+With `guardedreadtrim on`, a physical stack LOAD lowered by `RuleLoadVarnode`
+retains its original read block and byte range. Indexed frame LOAD guards also
+record their conservative range when heritage creates the preserving COPY.
+When copy propagation binds that read to call-written frame memory, the call
+is associated with that provenance before the COPY is removed.
+The original read ledger also survives COPY removal; removed CFG
+blocks fail the later placement check. P6 uses it to distinguish a guarded
+machine read from an unconditional preload whose value is used only under a
+branch (chapter [06](06-variables-and-merge.md)); functions without calls do not
+allocate this tracking state.
 
 A read from a volatile range becomes a `read_volatile` user op only once its
 address is a constant: `RuleLoadVarnode` turns the LOAD into a COPY of the

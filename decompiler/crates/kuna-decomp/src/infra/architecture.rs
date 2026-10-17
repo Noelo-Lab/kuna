@@ -1021,6 +1021,8 @@ pub struct Architecture {
     /// `tiedstorekeep`, default-on, DIV-105).  See
     /// [`crate::p3_dataflow::kuna_tiedstorekeep`].
     pub tied_store_keep: bool,
+    /// Preserve guarded stack-read scope when inserting merge trims.
+    pub guarded_read_trim: bool,
     /// (kuna) Refuse the `RulePropagateCopy` marker propagation that would
     /// delete the write-back of a loop counter held in an address-tied frame
     /// slot, so the increment prints on the counter and the loop terminates
@@ -1032,6 +1034,8 @@ pub struct Architecture {
     /// that observes the old value (option `globalcallstore`, default-on).
     /// See [`crate::p3_dataflow::kuna_globalcallstore`].
     pub global_call_store: bool,
+    /// Preserve typed global field stores through marker propagation.
+    pub global_field_store: bool,
     /// (kuna) Keep the rounding of an integer-to-float conversion that a
     /// later float conversion or a narrower float trace would fold away
     /// (option `intfloatround`, default-on).  See
@@ -1365,6 +1369,9 @@ pub struct Architecture {
     /// front-end and the benchmark.  Read by the printc declarator chokepoints
     /// (`RealTypeCtx`).
     pub ctypes: bool,
+    /// (kuna `indirectargs`) Render a parameter the ABI passes through a hidden
+    /// pointer at its declared value type in C, instead of as that pointer.
+    pub indirect_args: bool,
     /// (kuna `framelayout`) Report the union of every stack-frame slot any
     /// `restructure_varnode` pass recovered on the `decompile-all --json`
     /// `variables` surface, not only the slots that survived to the final pass.
@@ -2877,8 +2884,10 @@ impl Architecture {
             call_array_extent: false,
             stack_struct: false,
             array_extent: 0, // (kuna) option arrayextent; reset_defaults sets the shipped default
+            guarded_read_trim: false,
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
+            global_field_store: false,
             global_call_store: false, // (kuna) option globalcallstore; reset_defaults sets the shipped default (on)
             int_float_round: false, // (kuna) option intfloatround; reset_defaults sets the shipped default (on)
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
@@ -2928,6 +2937,7 @@ impl Architecture {
             signedness: crate::kuna_typeround::SignPolicy::Upstream, // (kuna) option signedness; reset_defaults sets the shipped default
             realtypes: false,
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
+            indirect_args: false, // (kuna) option indirectargs; reset_defaults sets the shipped default
             framelayout: false, // (kuna) option framelayout; reset_defaults sets the shipped default
             byte_honest: false, // (kuna) option bytehonest; reset_defaults sets the shipped default
             slot_ptr: false, // (kuna) option slotptr; reset_defaults sets the shipped default
@@ -3237,6 +3247,7 @@ impl Architecture {
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation
         self.global_call_store = true; // (kuna) default-on (0/675 datatest assertions): RulePropagateCopy keeps a global's COPY of a loaded value whose only reader is the global's marker, so the write stays after the call that observes the old value; `option globalcallstore off` restores the propagation
+        self.global_field_store = true;
         self.int_float_round = true; // (kuna) default-on (0/675 datatest assertions): RuleFloatCast and SubfloatFlow keep an integer-to-float conversion's rounding unless the float it passes through holds the integer exactly; `option intfloatround off` restores the unconditional fold
         self.hide_shadow = true; // (kuna) default-on: the upstream ActionHideShadow body, which kuna carried as an inert stub. Consolidates two copies of one value into one chain so ActionCopyMarker can hide the repeated assignment (0/675 ablation, stages PARITY OK; 434 of 444 stripped ELFs byte-identical and the other 10 each lose a duplicated assignment); `option hideshadow off` restores the stub's behaviour exactly
         self.tied_phi_trim = true; // (kuna) DIV-182 default-on: Merge::mergeOp trims a loop head's direct read of an aliased location, so the values the loop loads do not print as stores into it (0/675 ablation); `option tiedphitrim off` restores upstream's merge
@@ -3277,6 +3288,7 @@ impl Architecture {
         self.signedness = crate::kuna_typeround::SignPolicy::Auto; // (kuna) default `auto`: a declaration is re-signed only when every signedness-sensitive reader of the value agrees, which makes each surviving cast on it a no-op and leaves every other token byte-identical. 0/675 datatests and PARITY OK on stages; `option signedness upstream` restores the declaration type inference produced
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` and `fast` presets and at every `auto` size, so valid C is the default RENDERING everywhere a real binary is decompiled
+        self.indirect_args = true; // (kuna) default-on: a by-value parameter the ABI passes through a hidden pointer keeps its declared value type; 0/675 datatests move
         self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions
         self.slot_ptr = true; // (kuna) option slotptr default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; evidence in docs/features/slotptr/default-on-evaluation.md
         self.byte_honest = true; // (kuna) default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +10 type_match-perfect / 121 improved / 0 worse over 5,298 scored decbench functions
@@ -3286,6 +3298,7 @@ impl Architecture {
         self.cast_ternary = true; // (kuna) option castternary default-on (provisional; see docs/features/castternary)
         self.call_ret_type = true; // (kuna) option callrettype default-on: a call's result takes the return type its callee stated earlier in a callee-first run; 0/675 datatest assertions and 0 stage assertions moved (single-function surfaces state nothing), one test-cli probe moved to the intended form, the 444-slice typesweep +6 perfect and 0 lost, casts 35,588 -> 34,808 on the census corpus (393 functions fewer, 25 more); docs/features/callrettype/default-on-evaluation.md
         self.cast_widen = crate::kuna_castwiden::CastWidenMode::Literal; // (kuna) option castwiden default `literal`: a 64-bit widening C's usual arithmetic or assignment conversion performs prints no cast, and an 8-byte literal beside one prints its L/UL suffix; 5/675 datatest assertions (upstream's pinned form) opt out per test, 18 stage assertions of other options moved to the new form, 444-slice typesweep identical, casts 35,588 -> 34,062 on the castbench shared set with 0 functions more; docs/features/castwiden/default-on-evaluation.md
+        self.guarded_read_trim = true;
         self.cast_narrow = true; // (kuna) option castnarrow default-on: leaves out only an integer truncation or sign change that an assignment, store, trusted argument or return of exactly the cast's type performs itself
         self.decl_order = crate::kuna_declorder::DeclOrder::Natural; // (kuna) option declorder default `natural`: locals declare v1, v2, ..., v10; only the order of declaration lines moves, 0/675 datatest assertions
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
@@ -4045,9 +4058,11 @@ impl Architecture {
         ctx.stack_alias_deadstore = self.stack_alias_deadstore; // stackalias
         ctx.stack_views = self.stack_views;
         ctx.libc_names = self.libc_names; // libcnames
+        ctx.guarded_read_trim = self.guarded_read_trim;
         ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
         ctx.global_call_store = self.global_call_store; // globalcallstore
+        ctx.global_field_store = self.global_field_store;
         ctx.int_float_round = self.int_float_round; // intfloatround
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim
         ctx.split_store_keep = self.split_store_keep; // splitstorekeep

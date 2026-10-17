@@ -519,7 +519,11 @@ local the output does not then declare under that name, or with that type, is
 reported refused (`fatal`), with the reason, never `applied`: the C came back
 without it. A local the printer had to suffix, because the name already belongs
 to another identifier (`name v7 score` prints `score_1` when the program has a
-function `score`), is `applied`, with a detail saying what it was printed as.
+function `score`), is `applied`, with a detail saying what it was printed as,
+and later directives reach it by that name (`name score_1 total`). A `type`
+that gives a stack local a scalar of another width is `rejected` before it
+applies (`Storage is 32 bytes, the stated type is 8`); a structure, union or
+array may grow or narrow it, within the stack.
 
 ```bash
 kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'

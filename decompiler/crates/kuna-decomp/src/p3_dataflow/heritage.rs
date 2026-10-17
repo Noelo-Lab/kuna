@@ -3020,6 +3020,7 @@ impl Heritage {
             fd.vbank_mut().get_mut(invn).expect("guard_loads: COPY in vn").set_active_heritage();
             let _ = fd.op_set_input(copyop, invn, 0);
             fd.op_insert_before(copyop, guard.op);
+            crate::p3_dataflow::kuna_stackreadscope::mark_stack_read(fd, copyop);
             self.load_copy_ops.push(copyop);
             kept.push(guard);
         }

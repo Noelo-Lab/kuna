@@ -58,5 +58,6 @@ pub(crate) mod kuna_volatileload;
 pub(crate) mod kuna_floatnegation;
 pub(crate) mod kuna_floatnegpiece;
 pub(crate) mod kuna_globalarrayanchor;
-
+pub(crate) mod kuna_globalfieldstore;
+pub(crate) mod kuna_stackreadscope;
 pub(crate) mod kuna_inputrefinement;

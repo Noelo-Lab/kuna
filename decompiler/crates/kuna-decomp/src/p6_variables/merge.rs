@@ -444,10 +444,12 @@ pub trait MergeContext: HighContext {
     /// `Merge::trimOpInput` prelude: the `(inVn, pc, isMultiequal)` it computes
     /// before allocating the trim COPY.
     fn trim_op_input_prep(&self, op: OpId, slot: int4) -> (VarnodeId, kuna_base::address::Address, bool);
-    /// `Merge::snipReads` insert-point resolution: `(block, pc, afterop)`.
+    /// `Merge::snipReads` insert point; guarded stack-read divergence lives in
+    /// `kuna_guardedreadtrim.rs`.
     fn snip_reads_insert_point(
         &self,
         vn: VarnodeId,
+        reads: &[OpId],
     ) -> (crate::context::BlockId, kuna_base::address::Address, Option<OpId>);
     /// `Merge::mergeIndirect` union-field inherit for the snipped INDIRECT.
     fn indirect_inherit_union(&mut self, outvn: VarnodeId, newop: OpId, indop: OpId);
@@ -1948,7 +1950,7 @@ impl Merge {
         if markedop.is_empty() {
             return Ok(());
         }
-        let (bl, pc, afterop) = ctx.snip_reads_insert_point(vn);
+        let (bl, pc, afterop) = ctx.snip_reads_insert_point(vn, markedop);
         let copyop = self.allocate_copy_trim(ctx, vn, pc, markedop[0])?;
         match afterop {
             None => ctx.op_insert_begin(copyop, bl),
@@ -2919,7 +2921,7 @@ mod tests {
         fn trim_op_input_prep(&self, _op: OpId, _slot: int4) -> (VarnodeId, Address, bool) {
             panic!("mock: trim_op_input_prep not under test")
         }
-        fn snip_reads_insert_point(&self, _vn: VarnodeId) -> (crate::context::BlockId, Address, Option<OpId>) {
+        fn snip_reads_insert_point(&self, _vn: VarnodeId, _reads: &[OpId]) -> (crate::context::BlockId, Address, Option<OpId>) {
             panic!("mock: snip_reads_insert_point not under test")
         }
         fn indirect_inherit_union(&mut self, _outvn: VarnodeId, _newop: OpId, _indop: OpId) {}
