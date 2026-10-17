@@ -4,6 +4,7 @@ use crate::context::HighVariableId;
 use crate::funcdata::Funcdata;
 use kuna_base::address::Address;
 use kuna_num::opcodes::OpCode;
+use std::collections::BTreeSet;
 
 pub(crate) fn moves_write(fd: &Funcdata, storage: HighVariableId, value: HighVariableId) -> bool {
     if !fd.get_arch().stack_views || storage == value {
@@ -153,46 +154,61 @@ fn later_call_guard(
     let Some(store_index) = ops.iter().position(|&id| id == store) else {
         return false;
     };
-    ops.iter().skip(store_index + 1).any(|&id| {
-        let Some(indirect) = fd
-            .obank()
-            .get(id)
-            .filter(|op| !op.is_dead() && op.code() == OpCode::CPUI_INDIRECT)
-        else {
-            return false;
-        };
-        let Some(effect) = indirect.get_in(1).and_then(|vn| fd.vbank().get(vn)) else {
-            return false;
-        };
-        if fd
-            .get_arch()
-            .manage()
-            .get_iop_space()
-            .is_none_or(|iop| effect.get_space().get_index() != iop.get_index())
-        {
-            return false;
+    let mut pending = vec![(block, store_index + 1)];
+    let mut visited = BTreeSet::new();
+    while let Some((block, start)) = pending.pop() {
+        if !visited.insert((block, start != 0)) {
+            continue;
         }
-        let call = crate::funcdata_varnode::op_iop_decode(effect.get_offset());
-        if !fd.obank().get(call).is_some_and(|op| op.is_call()) {
-            return false;
+        if fd.bb_ops(block).iter().skip(start).any(|&id| {
+            let Some(indirect) = fd
+                .obank()
+                .get(id)
+                .filter(|op| !op.is_dead() && op.code() == OpCode::CPUI_INDIRECT)
+            else {
+                return false;
+            };
+            let Some(effect) = indirect.get_in(1).and_then(|vn| fd.vbank().get(vn)) else {
+                return false;
+            };
+            if fd
+                .get_arch()
+                .manage()
+                .get_iop_space()
+                .is_none_or(|iop| effect.get_space().get_index() != iop.get_index())
+            {
+                return false;
+            }
+            let call = crate::funcdata_varnode::op_iop_decode(effect.get_offset());
+            if !fd.obank().get(call).is_some_and(|op| op.is_call()) {
+                return false;
+            }
+            let Some(output) = indirect.get_out().and_then(|vn| fd.vbank().get(vn)) else {
+                return false;
+            };
+            if output.get_space().get_index() != stack.get_index()
+                || (output.get_addr().overlap(0, address, size) < 0
+                    && address.overlap(0, output.get_addr(), output.get_size()) < 0)
+            {
+                return false;
+            }
+            fd.get_scope_local()
+                .and_then(|scope| {
+                    scope.query_container_for_link_width(
+                        output.get_addr(),
+                        output.get_size(),
+                        &Address::new_invalid(),
+                    )
+                })
+                .is_some_and(|guarded| guarded.symbol == symbol)
+        }) {
+            return true;
         }
-        let Some(output) = indirect.get_out().and_then(|vn| fd.vbank().get(vn)) else {
-            return false;
-        };
-        if output.get_space().get_index() != stack.get_index()
-            || (output.get_addr().overlap(0, address, size) < 0
-                && address.overlap(0, output.get_addr(), output.get_size()) < 0)
-        {
-            return false;
+        let graph = fd.bblocks_ref();
+        let flow = graph.block(block);
+        for i in 0..flow.size_out() {
+            pending.push((flow.get_out(i), 0));
         }
-        fd.get_scope_local()
-            .and_then(|scope| {
-                scope.query_container_for_link_width(
-                    output.get_addr(),
-                    output.get_size(),
-                    &Address::new_invalid(),
-                )
-            })
-            .is_some_and(|guarded| guarded.symbol == symbol)
-    })
+    }
+    false
 }

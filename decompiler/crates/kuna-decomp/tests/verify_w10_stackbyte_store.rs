@@ -17,6 +17,7 @@ use kuna_num::opcodes::OpCode;
 
 fn fixture(
     with_write_guard: bool,
+    join_call: bool,
 ) -> (
     Funcdata,
     kuna_decomp::context::HighVariableId,
@@ -83,6 +84,13 @@ fn fixture(
 
     let root = fd.bblocks_root_pub();
     let block = fd.bblocks_mut().new_block_basic(root);
+    let call_block = if join_call {
+        let join = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(block, join);
+        join
+    } else {
+        block
+    };
 
     let literal = fd.new_constant(1, 0x11);
     let source_op = fd.new_op(1, Address::new(Rc::clone(&ram), 0x1001));
@@ -106,7 +114,7 @@ fn fixture(
     fd.op_set_opcode_code(call, OpCode::CPUI_CALL);
     let target = fd.new_code_ref(&Address::new(Rc::clone(&ram), 0x2000));
     fd.op_set_input(call, target, 0).unwrap();
-    fd.op_insert(call, block, None);
+    fd.op_insert(call, call_block, None);
     if with_write_guard {
         fd.new_indirect_op(call, &object, 1, 0);
     }
@@ -119,7 +127,7 @@ fn fixture(
 
 #[test]
 fn a_later_call_guard_keeps_a_stackview_store_explicit() {
-    let (mut fd, backing, value) = fixture(true);
+    let (mut fd, backing, value) = fixture(true, false);
     assert!(
         !Merge::merge_test_required(&mut fd, backing, value),
         "a register value must not merge into frame bytes guarded across a writing call"
@@ -128,9 +136,18 @@ fn a_later_call_guard_keeps_a_stackview_store_explicit() {
 
 #[test]
 fn a_read_only_call_does_not_change_the_store_merge() {
-    let (mut fd, backing, value) = fixture(false);
+    let (mut fd, backing, value) = fixture(false, false);
     assert!(
         Merge::merge_test_required(&mut fd, backing, value),
         "without a write-effect INDIRECT, the existing adjacent-store merge remains allowed"
+    );
+}
+
+#[test]
+fn a_joined_call_guard_keeps_a_predecessor_stackview_store_explicit() {
+    let (mut fd, backing, value) = fixture(true, true);
+    assert!(
+        !Merge::merge_test_required(&mut fd, backing, value),
+        "a reachable join-block call must keep its predecessor's frame store explicit"
     );
 }
