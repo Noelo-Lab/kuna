@@ -500,6 +500,9 @@ pub struct Funcdata {
     /// (kuna `callrettype`) The recovered return value of each callee this
     /// function calls, copied off the `Architecture` like `kuna_protoorder_types`.
     kuna_callret_types: crate::kuna_callrettype::StatedReturns,
+    /// (kuna `narrowret`) The narrow value each callee this function calls
+    /// returns zero-extended, copied off the `Architecture`.
+    kuna_narrowret: crate::kuna_narrowret::NarrowReturns,
     /// (kuna `floatreg`) The statements this caller refused: what its callees
     /// still declare their results to be.
     kuna_callret_withdrawn: crate::kuna_callrettype::StatedReturns,
@@ -772,6 +775,7 @@ impl Funcdata {
             kuna_callee_forward: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_callret_types: std::collections::HashMap::new(),
+            kuna_narrowret: std::collections::HashMap::new(),
             kuna_callret_withdrawn: std::collections::HashMap::new(),
             kuna_callret_data: std::rc::Rc::new(Vec::new()),
             kuna_forced_return: Vec::new(),
@@ -1189,6 +1193,20 @@ impl Funcdata {
         stated: std::rc::Rc<crate::kuna_callrettype::StatedReturn>,
     ) {
         self.kuna_callret_types.insert(key, stated);
+    }
+
+    /// (kuna `narrowret`) Record the narrow value the callee filed under `key` returns.
+    pub fn kuna_set_narrowret(
+        &mut self,
+        key: (int4, kuna_base::types::uintb),
+        stated: std::rc::Rc<crate::kuna_narrowret::NarrowReturn>,
+    ) {
+        self.kuna_narrowret.insert(key, stated);
+    }
+
+    /// (kuna `narrowret`) The narrow value the callee filed under `key` returns.
+    pub fn kuna_narrowret(&self, key: (int4, kuna_base::types::uintb)) -> Option<&crate::kuna_narrowret::NarrowReturn> {
+        self.kuna_narrowret.get(&key).map(|r| r.as_ref())
     }
 
     /// (kuna `floatreg`) Record a statement this caller refused.

@@ -1424,6 +1424,7 @@ impl Action for ActionActiveReturn {
             let trialvn = check_output_trial_use(fc, data);
             let _ = fc.derive_output_map_self(&manager_rc);
             build_output_from_trials(fc, data, &trialvn);
+            crate::kuna_narrowret::narrow_call_output(data, fc);
             fc.clear_active_output();
             self.base.count += 1;
         }

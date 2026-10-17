@@ -6417,6 +6417,82 @@ and `--option protoorder off`. A single-function decompile therefore still
 prints the conversion that the whole-binary listing leaves out, the same
 property `protoorder`'s argument types have.
 
+### (kuna) `narrowret` — a call reads the narrow value its callee returns
+
+A function that returns a `uint8_t`, a `uint16_t` or a `bool` hands it back in a
+whole register. AAPCS requires the callee to extend it to 32 bits, an x86-64
+callee's own `movzbl` or 32-bit write extends it in practice (an `int` returned
+in `%eax` has the upper half of `%rax` clear), and a caller that relies on the
+extension reads the register at full width: `bl getb; adds r0, #3` or
+`call f; movslq`-free use of `%rax`. The CALL's recovered output is then the
+whole register, and every local that holds the result is declared `unsigned
+int` or `unsigned long` beside a callee the same listing declares `unsigned
+char getb(...)`. `callrettype` cannot help: it states a type only for an output
+already in exactly the callee's storage and width.
+
+**The proof, in the callee.** A callee whose returned value has known-zero
+upper bits already returns it narrow: `SubvariableFlow`'s RETURN pull
+(`try_return_pull`) trims the RETURN's input to the logical value of a flow
+seeded by a zero extension, a mask or a truncation, and the dead-code pass
+counts only the possibly-nonzero bits of a RETURN as consumed, so the trim is
+taken where nothing above the value is live. Each trim of a RETURN now records
+on the op (`pcodeop_addlflags::kuna_narrowret`, `kuna_narrowret::note_trim`)
+whether it dropped only bits the nonzero-bit mask proves zero
+(`kuna_truncarg::drops_only_zero_bits`); the record starts only at a trim of the
+whole return register (the widest general output entry of the model), so a
+return the trial recovered narrow from the start (`sete %al; ret`, whose
+`%rax` above the byte is whatever was there) proves nothing, and a later trim
+that drops a nonzero bit clears it. A RETURN op cloned by a return split keeps
+the record (`Funcdata::clone_op`).
+
+**The statement.** After each function's final decompile in the callee-first
+order (beside `callrettype`'s record), `kuna_narrowret::record` states the
+function's narrow return when the prototype is neither declared nor
+output-locked, the recovered output is a register of 1 to 4 bytes narrower than
+the return register, every live RETURN carries the record and hands back a
+value of that width in that storage (or a constant), and every return computes
+its value (`every_return_computes_with`, global reads counted). The statement
+is the storage and width, and whether the value is a truth value: one byte that
+every RETURN computes as a comparison or a constant 0 or 1 through copies,
+merges and zero extensions (`boolbyte`'s def walk, `def_is_truth_valued`), not
+all of them constants. A function decompiled again records again; a redo the
+run discards puts the earlier statement back (`kuna_narrowret::restore`), as
+for `callrettype`.
+
+**The call.** `seed` copies the statements for every callee onto the caller's
+`Funcdata`. When `ActionActiveReturn` has built a direct CALL's output from its
+trials, `narrow_call_output` looks the callee up: if the output is a register
+Varnode wider than the stated width whose low part (the low-addressed bytes on
+a little-endian space, the high-addressed ones on a big-endian one) is the
+stated storage, the CALL is made to write that narrow Varnode and a new
+`INT_ZEXT` after it writes the old output. Every reader reads the same bits it
+read before, now defined as the extension the callee performed, which is what
+the locked-output path (`commitNewOutputs`, `narrowext`) builds for a declared
+narrow return; the new narrow Varnode is a write heritage ignores
+(`set_write_mask`), read only by the extension. From there the existing passes
+decide the caller's types: `RuleSubvarZext` narrows a result that is only
+compared, masked or stored as a byte, and a local holding the result beside
+other narrow values takes the narrow width when the rest of its web allows it.
+A stated truth value also marks the CALL a calculated boolean, so the result's
+nonzero mask is 1, its local type is `bool` (`truth_type`, the def-side vote of
+`TypeOpCall::getOutputLocal` for an unlocked output), and `boolbyte` accepts the
+call as a truth-valued definition of the byte that holds it.
+
+Nothing is stated for an indirect call, a declared prototype (its callers hold
+a locked output already), a sign-extended return (`ldrsb`; the trim of a
+sign-extended value drops nonzero bits), or a return any trim narrowed through
+bits not proven zero. A call to a function the run has not decompiled yet (a
+recursive component's members) is left as it is. Everything is inert without a
+callee-first pass: `kuna decompile`, `--addr`, `--functions`, `--jobs N` and
+`--option protoorder off` narrow a function's own return exactly as with the
+option off and leave its calls register-wide.
+
+The cost is the `int` or enum local that holds a narrow callee's result: the
+binary evidence is the same instruction either way (`int i = getMotorCount();`
+beside a `uint8_t` return), and such a local now declares the narrow type. A
+caller that computes with the result at register width prints the widening
+(`(unsigned int)v1 * 3`), where it printed none before.
+
 ### (kuna) `zerofillreturn` — the zero fill above a returned vector lane
 
 AAPCS64 returns a `float` in `s0` and a `double` in `d0`, the low bytes of the

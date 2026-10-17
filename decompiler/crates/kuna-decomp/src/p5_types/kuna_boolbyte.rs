@@ -317,7 +317,7 @@ fn classify_use(data: &Funcdata, op: OpId, vn: VarnodeId) -> Use {
 /// Walk the def chain: is every value that can reach `vn` a literal 0/1 or a
 /// comparison result?  This is the def half of the predicate, and the reason a
 /// parity test (`x & 1`, whose mask is also 1) is not read as a flag.
-fn def_is_truth_valued(data: &Funcdata, vn: VarnodeId, depth: usize) -> bool {
+pub(crate) fn def_is_truth_valued(data: &Funcdata, vn: VarnodeId, depth: usize) -> bool {
     if depth > HOP_CAP {
         return false;
     }
@@ -344,6 +344,10 @@ fn def_is_truth_valued(data: &Funcdata, vn: VarnodeId, depth: usize) -> bool {
     // `TYPE_BOOL` for it, which is why this half of the rule usually has nothing
     // to add.  It matters for the copy chains that lead AWAY from one.
     if o.is_bool_output() {
+        return true;
+    }
+    // (kuna `narrowret`) A call whose callee states it returns a truth value.
+    if opcode == OpCode::CPUI_CALL && o.is_calculated_bool() && data.get_arch().narrow_ret {
         return true;
     }
     match opcode {
