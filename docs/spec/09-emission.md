@@ -385,6 +385,27 @@ cast (`coreaction_casts.rs (test_struct_offset0)`). Only when all of that
 fails is a real `CPUI_CAST` op inserted before the reader, with an implied
 unique output carrying the required type.
 
+**A signed read of an unsigned-printing expression (kuna).** The `U` suffix
+`mark_explicit_unsigned` gives a constant makes its whole C expression
+unsigned (`a0 - 1U`), and so does an operand declared `unsigned` or
+`undefinedN` at the expression's own width or wider, but the Varnode the
+expression computes keeps the signed type the rest of the function gave it.
+A reader that treats its input as signed -- `INT_SEXT`, `INT_SRIGHT`'s value,
+`INT_SLESS`/`INT_SLESSEQUAL`, `INT_SDIV`/`INT_SREM`, `FLOAT_INT2FLOAT` -- checks
+that signed type, finds nothing to cast, and the printed C applied unsigned
+semantics where the machine applies signed ones: glibc's `__sigismember`
+indexed its set by `(unsigned long)(long)(a1 - 1U) >> 6`, a zero extension
+of `sig - 1`, and `v34 - 0x18U >> 6` shifted logically where the binary shifts
+arithmetically. When the input of such a reader is an implied expression of
+an operation that takes the sign of its operands, and one operand prints
+unsigned at least as wide as the expression (a `U` literal is an
+`unsigned int` unless its value needs eight bytes, so `0x80U - (long)s` stays
+a signed `long`), `get_input_cast` asks for the signed integer of the input's
+size (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_signedread.rs (cast)`),
+and the read prints `(unsigned long)(int)(a1 - 1U) >> 6`. The suffix stays: an
+unsigned reader of the same expression (`4 < a4 + 2U`) still needs it. This is
+a correctness fix with no option.
+
 **Integer equality on float bits (kuna).** An `INT_EQUAL` or `INT_NOTEQUAL`
 compares bits, but when the more ordered operand type is a 4- or 8-byte float
 the upstream rule coerces both sides to the float, and the comparison printed

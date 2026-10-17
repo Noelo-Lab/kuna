@@ -48,25 +48,32 @@ pub(crate) fn cast(data: &mut Funcdata, op: OpId, slot: int4) -> Option<Rc<Datat
 
 /// Does the implied expression `def` computes print as an unsigned C value: is
 /// it an operation whose result takes the sign of its operands, with an
-/// operand that prints unsigned at `int` rank or wider?
+/// operand that prints unsigned at the expression's own width or wider? A
+/// narrower unsigned operand (`0x80U` beside a `long`) converts to the signed
+/// wider type.
 fn arithmetic_prints_unsigned(data: &mut Funcdata, def: OpId, depth: u32) -> bool {
     let Some(o) = data.obank().get(def) else { return false };
     let info = crate::typeop::type_op_info(o.code());
     if !info.inherits_sign() {
         return false;
     }
+    let Some(width) = o.get_out().and_then(|out| data.vbank().get(out)).map(|v| v.get_size().max(4)) else {
+        return false;
+    };
     let n = if info.inherits_sign_first_param_only() { 1 } else { o.num_input() };
     let ins: Vec<VarnodeId> = (0..n).filter_map(|i| o.get_in(i)).collect();
-    ins.into_iter().any(|vn| operand_prints_unsigned(data, vn, def, depth))
+    ins.into_iter().any(|vn| operand_prints_unsigned(data, vn, def, width, depth))
 }
 
-/// Does operand `vn` of `reader` print as an unsigned value of `int` rank or
-/// wider: a `U` constant, a variable declared `unsigned` or `undefinedN`, an
-/// unsigned arithmetic expression, or another expression of unsigned type?
-fn operand_prints_unsigned(data: &mut Funcdata, vn: VarnodeId, reader: OpId, depth: u32) -> bool {
+/// Does operand `vn` of `reader` print as an unsigned value at least `width`
+/// bytes wide: a `U` constant (an `unsigned int` literal unless its value needs
+/// more), a variable declared `unsigned` or `undefinedN`, an unsigned
+/// arithmetic expression, or another expression of unsigned type?
+fn operand_prints_unsigned(data: &mut Funcdata, vn: VarnodeId, reader: OpId, width: int4, depth: u32) -> bool {
     let Some(v) = data.vbank().get(vn) else { return false };
     if v.is_constant() {
-        return v.is_unsigned_print();
+        let literal = if v.get_offset() <= 0xffff_ffff { 4 } else { 8 };
+        return v.is_unsigned_print() && literal >= width;
     }
     let implied = v.is_written() && !v.is_explicit();
     if implied {
@@ -82,6 +89,5 @@ fn operand_prints_unsigned(data: &mut Funcdata, vn: VarnodeId, reader: OpId, dep
         type_metatype::TYPE_UNKNOWN => !implied,
         _ => false,
     };
-    unsigned && ty.get_size() >= 4
+    unsigned && ty.get_size() >= width
 }
-
