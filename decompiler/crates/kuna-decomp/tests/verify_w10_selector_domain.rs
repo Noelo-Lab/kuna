@@ -96,10 +96,29 @@ fn bootstrap(
     arch.sleigh_mut()
         .resolve_architecture(&db, "x86:LE:64:default:gcc")
         .unwrap();
+    assert!(arch.sleigh().language_index() >= 0, "x86-64 language was not resolved");
     let specs = arch.sleigh().build_spec_file(&db).unwrap();
     let sla = std::fs::read(specs.slafile.unwrap()).unwrap();
     arch.sleigh_mut()
         .build_translator(Box::new(DummyImg), &sla)
+        .unwrap();
+    if !specs.compilerfile.is_empty() {
+        if let Ok(cspec) = std::fs::read(&specs.compilerfile) {
+            arch.sleigh_mut().base_mut().unwrap().set_cspec_xml(cspec);
+        }
+    }
+    if !specs.processorfile.is_empty() {
+        if let Ok(pspec) = std::fs::read(&specs.processorfile) {
+            arch.sleigh_mut().base_mut().unwrap().set_pspec_xml(pspec);
+        }
+    }
+    arch.sleigh_mut()
+        .base_mut()
+        .unwrap()
+        .translate_mut()
+        .as_sleigh_mut()
+        .expect("standalone Sleigh engine")
+        .install_register_lookup()
         .unwrap();
     arch.sleigh_mut()
         .base_mut()
