@@ -128,6 +128,7 @@ fn narrow_return(data: &Funcdata) -> Option<NarrowReturn> {
     let mut any = false;
     let mut truth = true;
     let mut computed = false;
+    let mut nz = 0;
     for op in data.obank().iter_code(OpCode::CPUI_RETURN) {
         let o = data.obank().get(op)?;
         if o.is_dead() || o.get_halt_type() != 0 {
@@ -142,9 +143,14 @@ fn narrow_return(data: &Funcdata) -> Option<NarrowReturn> {
         }
         any = true;
         computed |= !v.is_constant();
+        nz |= v.get_nz_mask();
         truth = truth && crate::kuna_boolbyte::def_is_truth_valued(data, o.get_in(1)?, 0);
     }
     if !any || !crate::kuna_returnuncomputed::every_return_computes_with(data, true) {
+        return None;
+    }
+    let truth = truth && computed;
+    if !truth && (nz >> (8 * size - 1)) & 1 == 0 {
         return None;
     }
     let ct = out
@@ -152,7 +158,7 @@ fn narrow_return(data: &Funcdata) -> Option<NarrowReturn> {
         .filter(|t| t.get_size() == size)
         .filter(|t| match t.get_metatype() {
             type_metatype::TYPE_INT | type_metatype::TYPE_UINT => true,
-            type_metatype::TYPE_BOOL => truth && computed,
+            type_metatype::TYPE_BOOL => truth,
             _ => false,
         });
     Some(NarrowReturn {
