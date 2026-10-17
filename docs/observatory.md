@@ -10,6 +10,7 @@ committed; regenerate at will. Generators live in `scripts/observatory/`
 |---|---|---|
 | `observatory/atlas.html` | The architecture atlas: the P0–P9 pipeline with per-phase cards (owned artifact, modules by size, sub-phases, options, console surfaces, owning `docs/spec/` chapter), the shared layers (`substrate/`, `infra/`), the workspace crate graph, and the real pass order. | `make observatory` |
 | `observatory/churn.html` | Churn & ownership: a squarified treemap of every tracked file (area = live size or windowed churn; color = churn intensity, agent share, or recency), with scope/window controls and a per-group rollup table. | `make observatory` |
+| `observatory/walkthrough.html` | Bytes → C: one pinned function (`main` of the `aliasoverlap_x86_64` fixture) at every stage — bytes, disassembly, raw p-code (pre-analysis), final IR (post Band B), region tree, C — each pane naming its owning phase(s) and the command that produced it. Raw dumps land in `observatory/walkthrough/NN-*.txt`. | `make observatory` |
 | `observatory/coverage.html` | Merged line coverage: workspace suite + datatest/stages corpora + tests/cli probes through instrumented binaries, per crate / per phase folder / per file, with the llvm-cov HTML report under `observatory/coverage/`. The atlas phase cards pick the numbers up too. | `make coverage` |
 
 Each page inlines its data; the same data is written as raw JSON under
@@ -27,6 +28,9 @@ Each page inlines its data; the same data is written as raw JSON under
 - **`data/coverage.json`** — `{schemaVersion, meta{sha,generated,runsFailed},
   totals, crates[], phases[], files[]}`, each with
   `lines{count,covered,percent}` (+ functions on the rollups).
+- **`data/walkthrough.json`** — `{schemaVersion, meta{sha,generated,binary,
+  function}, stages[{id, file, title, phases[], role, producedBy, text}]}` with
+  ids `bytes|disasm|rawpcode|finalir|regions|c`.
 - **`data/churn.json`** — `{schemaVersion, meta, windowsDays, areas, files[]}`;
   per file: `{path, area, crate, phase, loc, last, authors[{name,commits}],
   windows{all,d30,d90,d365}{added,removed,commits,agentCommits}}`. Full

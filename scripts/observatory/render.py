@@ -15,6 +15,7 @@ PAGES = {
     "atlas": ["atlas", "coverage"],
     "churn": ["churn"],
     "coverage": ["coverage"],
+    "walkthrough": ["walkthrough"],
 }
 
 # dataset -> nav/launcher card, for the status object every page embeds.
@@ -32,6 +33,13 @@ DATASETS = {
         "blurb": "Merged line coverage from the workspace suite, the datatest/stages "
         "corpora and the CLI probes, per crate and per phase folder.",
         "regen": "make coverage",
+    },
+    "walkthrough": {
+        "title": "Bytes \u2192 C walkthrough",
+        "nav": "Walkthrough",
+        "blurb": "One real function traced through the engine: bytes, disassembly, "
+        "raw p-code, final IR, region tree, C.",
+        "regen": "make observatory",
     },
     "churn": {
         "title": "Churn & ownership",

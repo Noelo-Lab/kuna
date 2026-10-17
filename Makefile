@@ -99,7 +99,9 @@ version:
 # The local codebase observatory: self-contained pages + raw JSON under
 # observatory/ (gitignored). See docs/observatory.md.
 observatory:
-	PYTHONPATH=$(ROOT) $(PYTHON) -m scripts.observatory.generate --out $(ROOT)/observatory
+	@test -x $(BINDIR)/kuna || $(MAKE) binaries
+	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
+	PYTHONPATH=$(ROOT) $(PYTHON) -m scripts.observatory.generate --out $(ROOT)/observatory --kuna $(BINDIR)/kuna
 
 # Merged line coverage (workspace suite + datatests + stages + tests/cli)
 # through instrumented binaries via cargo-llvm-cov. Heavy: a full separate
