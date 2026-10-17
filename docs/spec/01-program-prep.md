@@ -6502,3 +6502,14 @@ Xref result formatting reuses the query's canonical inventory for names
 and fallback ownership. ARM address normalization and discovered-entry naming
 retain their existing precedence; formatting does not rebuild the inventory
 for each endpoint of every result row.
+
+On ELF SysV AMD64 and PE x64 Windows compiler specifications, DWARF
+complex float/double values are represented by two real fields at their full
+size and alignment. These ABIs classify the supported complex values like
+the corresponding pair structure. The type factory reuses validated complete
+layouts and avoids colliding with user-defined names. Other targets and wider
+complex formats are not assigned this representation. PE i386 uses this
+representation for complex float only; double-complex ABI recovery additionally
+requires correct stack argument alignment. Imported `cexpf` and
+`cexp` signatures use the same supported layouts and exact resolver addresses,
+so argument and return values use the correct register or hidden-buffer ABI.

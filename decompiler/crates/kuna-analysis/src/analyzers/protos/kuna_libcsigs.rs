@@ -52,6 +52,7 @@ use super::{
 };
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 use kuna_decomp::kuna_typedcallabi;
+use object::Object;
 
 /// Seed the measured libc signature extension onto imported functions.
 pub struct LibcSigsPass;
@@ -669,6 +670,15 @@ impl AnalysisPass for LibcSigsPass {
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &imported, LIBC_EXT, types, word_size, super::L);
         seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT, types, word_size, super::L);
+        if crate::analyzers::dwarf::kuna_dwarfcomplex::supported_abi(ctx.file.format(), ctx.file.architecture(), &ctx.arch.archid) {
+            let mut complex = vec![
+                ("cexpf", Sig { ret: Ty::Complex(8), params: &[Ty::Complex(8)], vararg: -1 }),
+                ("cexp", Sig { ret: Ty::Complex(16), params: &[Ty::Complex(16)], vararg: -1 }),
+            ];
+            if ctx.file.architecture() == object::Architecture::I386 { complex.truncate(1); }
+            seed_named_prototypes(&mut out, &imported, &complex, types, word_size, super::L);
+            seed_resolved_prototypes(&mut out, &resolved, &complex, types, word_size, super::L);
+        }
         if !kuna_typedcallabi::returns_doubles_whole(ctx.arch) {
             out.prototypes.retain(|p| !kuna_typedcallabi::declares_a_float(p));
             out.prototypes_at.retain(|(_, p)| !kuna_typedcallabi::declares_a_float(p));
