@@ -9,7 +9,7 @@ use std::process::Command;
 // c + 1 to put8 and returns 0 (`add r1, r1, #1; bl put8`).
 fn image() -> Vec<u8> {
     let words: [u32; 7] =
-        [0xe5c01000, 0xe12fff1e, 0xe92d4010, 0xe2811001, 0xebfffffb, 0xe3a00000, 0xe8bd8010];
+        [0xe5c01000, 0xe12fff1e, 0xe92d4010, 0xe2811001, 0xebfffffa, 0xe3a00000, 0xe8bd8010];
     let mut obj = Object::new(BinaryFormat::Elf, Architecture::Arm, Endianness::Little);
     let text = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
     obj.append_section_data(
