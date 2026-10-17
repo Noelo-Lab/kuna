@@ -1410,7 +1410,7 @@ pub struct Architecture {
     pub slot_ptr: bool,
     /// (kuna `reglocals`) Report the locals the C declares outside the stack
     /// frame (registers, temporaries, values with no storage of their own) as
-    /// `kind: "register"` rows, under the printed name and declarator, with the
+    /// `kind: "register"` rows, under the printed name and declared type, with the
     /// uses of the HighVariables each declaration covers as their evidence.
     /// Affects the JSON surface only: no p-code, no emitted C.
     pub reg_locals: bool,

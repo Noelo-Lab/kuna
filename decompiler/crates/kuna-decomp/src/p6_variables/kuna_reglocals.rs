@@ -5,9 +5,10 @@
 //! C body declares whose storage is a register, a temporary, or nothing at all
 //! (the `vN` of an optimized function) is in neither, so the surface reported no
 //! row for it while the C declared it.  [`register_locals`] reports exactly the
-//! declarations the printer just emitted that no parameter or frame row covers,
-//! under the printed name and declarator, so a consumer can join each row to its
-//! declaration line.  [`DeclarationHighs`] gives each row the uses of every
+//! declarations the printer just emitted that no parameter or frame row covers
+//! and that are not stack storage, under the printed name, so a consumer can
+//! join each row to its declaration line, and the declared type spelled as the
+//! other rows spell theirs.  [`DeclarationHighs`] gives each row the uses of every
 //! HighVariable its declaration covers, the same markup-backed evidence the
 //! other rows carry.
 //!
@@ -25,8 +26,9 @@ use crate::funcdata::Funcdata;
 use crate::infra::architecture::Architecture;
 use crate::printc::{DeclaredLocal, PrintC};
 
-/// Is `high` a frame object: stack storage only (or none but the address
-/// constants of a frame object), or a stack instance inside a reported frame row?
+/// Is `high` a frame object: bound to a stack Symbol, stack storage only (or
+/// none but the address constants of a frame object), or a stack instance
+/// inside a reported frame row?
 fn frame_object(
     fd: &Funcdata,
     high: HighVariableId,
@@ -34,15 +36,21 @@ fn frame_object(
     rows: &[(i64, i64)],
 ) -> bool {
     let Some(h) = fd.high_bank().get(high) else { return true };
+    let in_stack = |address: &kuna_base::address::Address| {
+        stack_space.is_some_and(|stack| address.get_space().map(|s| s.get_index()) == Some(stack.get_index()))
+    };
+    if let (Some(scope), Some(symbol)) = (fd.get_scope_local(), h.kuna_link_symbol()) {
+        if scope.symbol_storage(symbol).iter().any(|(address, _)| in_stack(address)) {
+            return true;
+        }
+    }
     let mut off_stack = false;
     for i in 0..h.num_instances() {
         let Some(v) = fd.vbank().get(h.get_instance(i)) else { continue };
         if v.is_constant() {
             continue;
         }
-        let stack = stack_space
-            .filter(|stack| v.get_addr().get_space().map(|s| s.get_index()) == Some(stack.get_index()));
-        let Some(stack) = stack else {
+        let Some(stack) = stack_space.filter(|_| in_stack(v.get_addr())) else {
             off_stack = true;
             continue;
         };
@@ -53,6 +61,23 @@ fn frame_object(
         }
     }
     !off_stack
+}
+
+/// Does every storage home the declaration's comment lists (`highs` are the
+/// declared high and the highs declared through it) lie on the stack?
+fn stack_homes_only(
+    fd: &Funcdata,
+    arch: &Architecture,
+    highs: &[HighVariableId],
+    stack_space: Option<&Rc<AddrSpace>>,
+) -> bool {
+    let Some(stack) = stack_space else { return false };
+    let mut homes = highs
+        .iter()
+        .filter_map(|&high| crate::kuna_varsources::high_homes(fd, arch, high))
+        .flat_map(|(homes, _)| homes.into_values())
+        .peekable();
+    homes.peek().is_some() && homes.all(|(space, _)| space.get_index() == stack.get_index())
 }
 
 fn widest_instance(fd: &Funcdata, high: HighVariableId) -> i64 {
@@ -87,17 +112,21 @@ pub fn register_locals(arch: &Architecture, fd: &Funcdata, reported: &[VarInfo])
         .filter_map(|v| v.stack_offset.map(|off| (off, off + v.size.max(1))))
         .collect();
     let stack_space = fd.get_scope_local().map(|scope| scope.get_space_id());
+    let through = arch.print().declared_through();
     declarations_of(arch.print(), fd)
         .iter()
         .filter(|local| declares_high_of(fd, local))
         .filter(|local| !taken.contains(local.name.as_str()))
         .filter(|local| !frame_object(fd, local.high, stack_space, &rows))
+        .filter(|local| {
+            let mut highs = vec![local.high];
+            highs.extend(through.get(&local.high).into_iter().flatten());
+            !stack_homes_only(fd, arch, &highs, stack_space)
+        })
         .map(|local| {
             let type_name = match &local.ty {
-                Some(ty) if arch.byte_honest && crate::kuna_bytehonest::is_uncommitted_byte(ty) => {
-                    "undefined1".to_string()
-                }
-                _ => local.decl.clone(),
+                Some(ty) => crate::kuna_bytehonest::exported_type_name(arch, ty),
+                None => local.decl.clone(),
             };
             let size = local
                 .ty

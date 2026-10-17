@@ -533,8 +533,8 @@ fn admit_within_budget(
 }
 
 /// (kuna `calleevote`) Does a redo keep the first decompile's parameters and
-/// variables, by count? A caller's vote moves types only, so a redo that moves
-/// either is not the vote's doing: decompiling a function a second time in one
+/// frame variables (`register` rows aside), by count? A caller's vote moves
+/// types only, so a redo that moves either is not the vote's doing: decompiling a function a second time in one
 /// session can recover a stack parameter the first decompile did not (bash
 /// -O2 `sub_7ea70` gains an unused `unsigned int a6`), and such a redo keeps
 /// the first body.

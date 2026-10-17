@@ -8,12 +8,16 @@ use serde_json::Value;
 use std::process::Command;
 
 fn run(reglocals: &str, jobs: &str) -> Value {
+    run_on("aliasoverlap_x86_64", "inside,indexed", reglocals, jobs)
+}
+
+fn run_on(fixture: &str, functions: &str, reglocals: &str, jobs: &str) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args([
             "decompile-all",
-            &common::fixture("aliasoverlap_x86_64"),
+            &common::fixture(fixture),
             "--functions",
-            "inside,indexed",
+            functions,
             "--jobs",
             jobs,
             "--json",
@@ -94,4 +98,26 @@ fn a_worker_process_reports_the_same_register_rows() {
     for name in ["inside", "indexed"] {
         assert_eq!(function(&serial, name)["variables"], function(&workers, name)["variables"], "{name}");
     }
+}
+
+#[test]
+fn a_register_array_is_spelled_like_a_frame_array() {
+    let doc = run_on("argclobber_pair_x86_64", "sub_401010", "on", "1");
+    let f = function(&doc, "sub_401010");
+    let code = f["code"].as_str().expect("code");
+    assert!(code.contains("char v1 [16]; // rdx:rax"), "{code}");
+    let registers = rows(f, "register");
+    assert_eq!(registers.len(), 1, "{f}");
+    assert_eq!(registers[0]["type"], "char[16]", "{f}");
+    assert_eq!(registers[0]["size"], 16, "{f}");
+}
+
+#[test]
+fn a_declaration_the_c_places_on_the_stack_is_not_a_register_row() {
+    let doc = run_on("arraycoverwidth_x86_64", "vm", "on", "1");
+    let f = function(&doc, "vm");
+    let code = f["code"].as_str().expect("code");
+    assert!(code.contains("char v1 [16]; // stack - 0x38"), "{code}");
+    assert!(rows(f, "register").is_empty(), "{f}");
+    assert!(rows(f, "stack").iter().any(|v| v["stack_offset"] == -0x38), "{f}");
 }

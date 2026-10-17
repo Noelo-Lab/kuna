@@ -1580,7 +1580,8 @@ lossy sites, which is what makes it worth filtering or re-running on.
 A variable's `kind` is `arg` for a parameter, `stack` for a local with a frame
 offset, and `register` for a local the C declares outside the stack frame (a register,
 a temporary, or a value with no storage of its own). A `register` row carries the
-declaration's own name and type, so it joins to its declaration line in `code`; its
+declaration's own name, so it joins to its declaration line in `code`, and its type
+spelled as the other rows spell theirs (`char[16]` for `char v1 [16];`); its
 `stack_offset` and `arg_index` are `null`. `--option reglocals off` drops those rows
 and leaves the parameters and the frame.
 `line_mappings` maps 1-based
