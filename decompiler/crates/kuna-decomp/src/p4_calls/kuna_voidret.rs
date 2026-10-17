@@ -309,6 +309,11 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
             && !wider_than_return(arch, callee, data, outvn)
             && !(arch.kuna_voidret.float_bits.contains(&callee) && elsewhere_than_return(arch, callee, data, result))
             && !held_as_float(data, outvn, result)
+            && !arch
+                .kuna_voidret
+                .storage
+                .get(&callee)
+                .is_some_and(|(addr, size)| crate::kuna_armfloatreturn::convention_float_storage(data, addr, *size))
         {
             arch.kuna_voidret.float_refused.entry(callee).or_default().insert(own);
         }
@@ -1266,7 +1271,10 @@ pub fn plant(data: &mut Funcdata) {
 }
 
 pub(crate) fn plant_piece(data: &mut Funcdata, addr: Address, size: int4) {
-    if crate::p4_calls::kuna_passthrough::suppresses_return_trial(data, &addr, size) || touched_beyond(data, &addr, size) {
+    if (crate::p4_calls::kuna_passthrough::suppresses_return_trial(data, &addr, size)
+        && !crate::kuna_armfloatreturn::forwarded_vfp_return(data, &addr, size))
+        || touched_beyond(data, &addr, size)
+    {
         return;
     }
     let rets: Vec<crate::context::OpId> = data

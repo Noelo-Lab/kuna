@@ -187,8 +187,8 @@ fn single_arguments_written_over_a_double_result_are_read_as_written() {
 fn armfloatargs_without_armfloatreturn_changes_nothing() {
     for bytes in [image(Some(1)), word_input_image(), backfill_image(false)] {
         assert_eq!(
-            decompile_with(&bytes, &["armfloatargs", "on"]),
-            decompile_with(&bytes, &["armfloatargs", "off"])
+            decompile_with(&bytes, &["armfloatreturn", "off", "armfloatargs", "on"]),
+            decompile_with(&bytes, &["armfloatreturn", "off", "armfloatargs", "off"])
         );
     }
 }

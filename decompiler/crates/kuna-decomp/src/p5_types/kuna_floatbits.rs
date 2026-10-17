@@ -180,7 +180,7 @@ fn walk(data: &Funcdata, input: VarnodeId, candidates: &[VarnodeId]) -> Option<W
             return None;
         }
         let node = data.vbank().get(v)?;
-        if node.is_type_lock() || node.is_persist() || in_data_space(data, node) {
+        if (node.is_type_lock() && !crate::kuna_armfloatreturn::float_locked_return(data, v)) || node.is_persist() || in_data_space(data, node) {
             return None;
         }
         for r in node.descend_iter() {
@@ -400,7 +400,7 @@ fn returned_beside_ok(data: &Funcdata, vn: VarnodeId, accepted: &[VarnodeId]) ->
         .all(|&w| {
             data.vbank().get(w).is_some_and(|n| {
                 n.get_size() == size
-                    && !n.is_type_lock()
+                    && (!n.is_type_lock() || crate::kuna_armfloatreturn::float_locked_return(data, w))
                     && if n.is_constant() { crate::kuna_floatreg::spells(data, w) } else { bits_of(data, w, accepted, true) }
             })
         })

@@ -935,7 +935,7 @@ pub(crate) fn returned_in_a_float_register(data: &Funcdata, vn: VarnodeId, node:
 /// and joins the family is made of (a literal-pool load folds to `s0 =
 /// COPY #0x7fc00123`).  `NAN` and `-NAN` are the canonical quiet NaNs; any
 /// other payload, and a signalling NaN, has no spelling.
-fn spells_exactly(data: &Funcdata, vn: VarnodeId) -> bool {
+pub(crate) fn spells_exactly(data: &Funcdata, vn: VarnodeId) -> bool {
     crate::kuna_protoorder::value_family(data, vn).into_iter().all(|v| {
         let Some(def) = data.vbank().get(v).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d)) else {
             return true;

@@ -1,6 +1,7 @@
 # 04 — Calls & prototypes
 
-`armfloatargs on` (default off) recovers scalar ARM32 VFP inputs only when
+`armfloatargs on` (off in the catalog, on in the `aggressive` preset with
+`armfloatreturn`) recovers scalar ARM32 VFP inputs only when
 the container states the hard-float ABI and `armfloatreturn` is on. Alone it
 changes nothing: the inputs it recovers rely on that option's widened
 d-register model and on its rule that keeps an unused VFP parameter in its
@@ -6578,9 +6579,16 @@ The ARM default model (`ARM.cspec`) lists the VFP registers only as the 4-byte
 `vmov.f64 d0,#1.5; bx lr` prints `unsigned int fixed(void) { return 0; }`, and a
 `double` parameter read from `d0` is never a parameter at all.
 
-`armfloatreturn` (off by default; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_armfloatreturn.rs`)
+`armfloatreturn` (off in the catalog; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_armfloatreturn.rs`)
 changes this only for an ARM ELF whose container states the VFP procedure-call
-standard. The loader decides that once per image
+standard. Both options are members of the `aggressive` preset, which `auto`
+selects below 500 KiB, so they are the default output for such a binary; the
+`reliable` and `fast` presets and the datatest corpus keep them off. Over 177
+probe binaries (six C sources built by gcc and clang for ARM and Thumb Linux
+and Cortex-M4F/M7, hard-float, softfp and soft-float, at -O0, -O2 and -Os), the
+soft-float and softfp images print byte-identically with the options on, and
+no function whose return and parameter types matched the source stops
+matching it. The loader decides that once per image
 (`decompiler/crates/kuna-analysis/src/loader/kuna_armfloatabi.rs`): a linked
 EABI5 executable or shared object must carry the hard-float ABI flag in its
 header, and any `.ARM.attributes` it has must agree; a relocatable object must
@@ -6624,7 +6632,41 @@ keeps the double. The machine code cannot tell every case apart: a `void`
 function that calls `half` last and leaves `d0` alone, or an `int` stored as
 well as returned, looks like one returning `half`'s double. After the output trials are scored, a single used trial in
 `s0` or `d0` gives the returned value a float or double type before constant
-folding can drop its storage.
+folding can drop its storage. That lock states the convention's type, not a
+declaration, so `floatbits` (chapter 05) still follows the bit operations that
+build such a value (`kuna_armfloatreturn.rs (float_locked_return)`): a
+`copysignf` written on the bits of its two inputs keeps two float parameters
+instead of two `unsigned int` ones. A returned constant no float literal spells,
+a NaN with a payload or a signalling NaN, would print as `NAN`, which compiles
+to other bits. Once the literal-pool load it comes from has folded, at the
+start of each type-inference pass, each such constant that reaches a RETURN
+through copies and merges keeps the unsigned integer of its width
+(`kuna_armfloatreturn.rs (unlock_unspelled)`), so the float return reinterprets
+its exact bits: `float qp(void) { return ((union { unsigned int from; float
+to; }){ .from = 0x7fc00123 }).to; }`. A function whose constant arrives any
+other way gives up the lock, and its return is typed as `floatret` types it.
+
+The lock is not placed where a returned value arrives unchanged, through
+copies and merges, from an input outside the VFP registers
+(`kuna_armfloatreturn.rs (core_input_leaf)`): `float from_bits(unsigned u)` is
+`vmov s0,r0; bx lr`, and a float lock would spread to the parameter, so each
+caller's integer would be converted by value. Such a function keeps the
+integer return `floatret` gives it, as with the option off. A caller that holds
+a callee's convention float as integer bits reinterprets it, so with the option
+on that read does not withdraw the callee's float return
+(`kuna_armfloatreturn.rs (convention_float_storage)`, read by `voidret`).
+
+A tail call that forwards its float parameters untouched, such as `atan2f`'s
+`b.w __ieee754_atan2f`, gets them from `passthrough`'s argument claims on `s0`
+and `s1`. When the callee states no return a tail call can take (it hands a
+parameter back on some path), the wrapper's return comes from `voidret`'s
+forced return in the register its callers read, and a passthrough claim on
+that register would refuse it. With the option on, a VFP return register that
+passthrough claims only as a forwarded argument still takes the forced return
+(`kuna_armfloatreturn.rs (forwarded_vfp_return)`): the call that takes the
+argument leaves its own result there, so `atan2f` returns
+`__ieee754_atan2f`'s float instead of printing `void` beside callers that
+read its result.
 
 A float result is written to `s0`, the low half of `d0`, so a function that
 converts a double to float leaves `d0` holding the new low word and the old high
@@ -6632,8 +6674,27 @@ word. Before the return width is fixed, a bounded walk checks every normal
 return: if each one returns such a piece -- a fresh 4-byte write joined to the
 high word of an earlier `d0` value, through copies and joins, where a
 predicated join may also carry that earlier value itself -- the trial shrinks
-to `s0`. Whole doubles, mixed-width exits, reassembled halves of one double,
-and incomplete or cyclic proofs keep the 8-byte trial. The walk cannot tell a
+to `s0`. An exit that hands back what a call left in `d0`, or `d0` as the
+function received it, is neutral: it fits a float result as well as a double,
+so it neither proves nor refutes the narrowing, and the trial shrinks when every
+other exit is such a piece and at least one exit is one. glibc's `expf`
+converts its double result on one exit and tail-calls `__math_oflowf` on
+another, and `logf` hands back its untouched argument on one; all stay
+`float`. Whole doubles, mixed-width exits, reassembled halves of one double,
+and incomplete or cyclic proofs keep the 8-byte trial.
+
+Two kinds of code use the VFP registers without float parameters or results,
+and the widened model leaves both alone. The AEABI run-time helpers and the
+libgcc soft-float routines behind them (`__aeabi_*`, `__adddf3`, `__fixdfdi`,
+`__floatundidf`, `__ltdf2`, ...) use the base standard in every image, even
+where a hard-float libgcc computes in VFP registers inside them. A function so
+named is decompiled under the unwidened default model, and so is every call
+to one (`kuna_armfloatreturn.rs (base_pcs_helper, helper_model)`), so a
+helper's integer result in `r0` is not displaced by a double the caller keeps
+live in `d0`. A register-bank save or restore, one instruction storing or
+loading eight or more VFP registers (the unwinder's `vstmia r0,{d0-d15}`), is
+neither a read of parameters nor a result
+(`kuna_armfloatreturn.rs (bank_saved_input, drop_bank_restores)`). The walk cannot tell a
 float result from code that deliberately edits the low word of a double; that
 code needs an explicit `double` output contract, which skips the walk.
 

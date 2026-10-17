@@ -525,6 +525,7 @@ impl Action for ActionDefaultParams {
                             // follows the image's float convention.
                             let seed_model = callee_model
                                 .or_else(|| crate::kuna_typedcallabi::undeclared_model(&arch, &pieces))
+                                .or_else(|| crate::kuna_armfloatreturn::helper_model(&arch, &pieces.name))
                                 .unwrap_or(dfp);
                             match fp.seed_locked_from_pieces(
                                 &pieces,
@@ -554,17 +555,21 @@ impl Action for ActionDefaultParams {
                 };
                 match callee_proto {
                     Some(calleeproto) => {
+                        let model = crate::kuna_armfloatreturn::helper_model(&arch, data.get_call_specs(i).get_name())
+                            .unwrap_or_else(|| evalfp.clone());
                         data.get_call_specs_mut(i).proto_mut().copy(&calleeproto);
                         let fc = data.get_call_specs(i);
-                        if !fc.proto().is_model_locked() && !fc.proto().has_matching_model(&evalfp) {
-                            data.get_call_specs_mut(i).proto_mut().set_model(Some(evalfp.clone()));
+                        if !fc.proto().is_model_locked() && !fc.proto().has_matching_model(&model) {
+                            data.get_call_specs_mut(i).proto_mut().set_model(Some(model));
                         }
                     }
                     None => {
                         // No source-declared callee prototype (a symbol with no
                         // Funcdata): set the default-model internal proto.  The
                         // register-parameter datatests resolve here.
-                        data.get_call_specs_mut(i).proto_mut().set_internal(evalfp.clone(), void_ty.clone());
+                        let model = crate::kuna_armfloatreturn::helper_model(&arch, data.get_call_specs(i).get_name())
+                            .unwrap_or_else(|| evalfp.clone());
+                        data.get_call_specs_mut(i).proto_mut().set_internal(model, void_ty.clone());
                         // (kuna) A console `map return <addr>`-only callee: keep the
                         // model-driven input recovery just established, but lock the
                         // custom return storage on top (the C++ `map return` locks
@@ -1883,6 +1888,7 @@ impl Action for ActionInputPrototype {
                 };
                 if data.get_func_proto().possible_input_param(&addr, size)
                     && !crate::kuna_armfloatreturn::split_double_input(data, vn)
+                    && !crate::kuna_armfloatreturn::bank_saved_input(data, vn)
                 {
                     let slot = active.get_num_trials();
                     active.register_trial(&addr, size);
