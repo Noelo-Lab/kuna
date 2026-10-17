@@ -215,6 +215,9 @@ pub(crate) struct PoolConfig<'a> {
     /// workers of any larger pool type neither, as a serial run that is not
     /// callee-first does not.
     pub(crate) elem_objects: bool,
+    /// (kuna `armframes`) The parent's frame-recovery record, which a worker
+    /// replays instead of searching the image again.
+    pub(crate) arm_frames: Option<String>,
 }
 
 /// How many decode lanes `--jobs` asks the discovery walk for.
@@ -468,6 +471,11 @@ impl Session {
             let path = scratch.path().join(INVENTORY_FILE);
             std::fs::write(&path, encode_spec(inventory))
                 .map_err(|e| format!("cannot write the worker inventory {}: {e}", path.display()))?;
+            if let Some(record) = &cfg.arm_frames {
+                let path = scratch.path().join(ARM_FRAMES_FILE);
+                std::fs::write(&path, record)
+                    .map_err(|e| format!("cannot write the worker frame record {}: {e}", path.display()))?;
+            }
         }
         Ok(Session {
             scratch,
@@ -1705,6 +1713,10 @@ pub(crate) fn write_type_block(scratch: &str, token: usize, rest: bool, text: &s
 /// worker that did not run its own discovery.
 pub(crate) const INVENTORY_FILE: &str = "inventory.spec";
 
+/// The parent's `armframes` record, replayed by every worker that did not run
+/// its own discovery.
+pub(crate) const ARM_FRAMES_FILE: &str = "armframes.record";
+
 /// The replayed synthesized structures a [`SynthWorker::Force`] worker installs.
 pub(crate) const SYNTH_TABLE_FILE: &str = "synth.table";
 
@@ -2683,6 +2695,7 @@ mod tests {
             synth_base: None,
             serial_callee_first: false,
             elem_objects: false,
+            arm_frames: None,
         }
     }
 

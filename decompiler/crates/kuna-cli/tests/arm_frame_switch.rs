@@ -1,5 +1,5 @@
 //! A32 switch case blocks and a shrink-wrapped `push` stay inside their
-//! functions.
+//! functions, and `--jobs` workers replay the parent's frame recovery.
 use crate::common;
 
 use serde_json::Value;
@@ -50,5 +50,20 @@ fn jump_table_cases_and_a_late_push_are_not_function_entries() {
 
     let prior = entries(&decompile_all(&path, &["--jobs", "1", "--option", "armframes", "off"]));
     assert!(!prior.contains(&DISPATCHER) && prior.contains(&CASES[0]), "{prior:x?}");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn jobs_workers_replay_the_parents_frame_recovery() {
+    let path = fixture("arm-frame-switch-jobs");
+    let serial = decompile_all(&path, &["--jobs", "1", "--option", "protoorder", "off"]);
+    assert!(entries(&serial).contains(&DISPATCHER));
+    for full in [false, true] {
+        let mut args = vec!["--jobs", "2", "--jobs-chunk", "4", "--option", "protoorder", "off"];
+        if full {
+            args.push("--jobs-full-load");
+        }
+        assert!(decompile_all(&path, &args) == serial, "--jobs 2 (full load {full}) differs from --jobs 1");
+    }
     std::fs::remove_file(path).unwrap();
 }

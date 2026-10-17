@@ -5684,6 +5684,11 @@ record a fresh decode makes, and it reports no context commits. These records
 keep no p-code: the inventory never replays a frame body into a reference walk,
 so the inventory's own validation records keep none either
 (`decompiler/crates/kuna-analysis/src/listing/kuna_decodememo.rs`).
+A `--jobs` worker does not search at all. The parent's recovery leaves a record of
+its final roots, code-pointer and AIF entries and retained prior entries
+(`AnalysisOutput::arm_frames`). The worker builds the final Listing from that
+record under the same context lifecycle
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_framereplay.rs`).
 
 Full reference expansion can substantially increase query cost. In a historical
 measurement on a 400,556-byte stripped ARM BusyBox ELF,

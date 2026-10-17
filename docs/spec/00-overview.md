@@ -1815,6 +1815,14 @@ over instead, replayed through the loader-symbol seam
 The seeding is strictly additive — an address this load already resolves, or a name
 it already carries, is left alone — because a name is installed into the scope its
 `::` path names, and replacing one buries a name the worker derived correctly.
+The ARM frame recovery (`armframes`) is the other half of a stripped A32 load, and
+its decisions shape more than the inventory: the final Listing it builds also
+decides decode modes, no-return facts and call returns. The parent therefore writes
+the recovery's outcome next to the inventory: the final frame roots, code-pointer
+and AIF entries, and the prior entries it retained. A worker replays that record
+and builds only the final Listing from it, which is the parent's Listing because
+every discarded round ran in a rolled-back decode context
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (replay_worker_arm_frames)`).
 `--jobs-full-load` restores the parent's exact load in every worker.
 
 The pool's width is fixed after the parent's load, the only point at which the

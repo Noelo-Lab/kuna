@@ -892,6 +892,7 @@ pub(crate) fn decompile_targets_pooled(
     load_seconds: f64,
     synth_base: Option<shard::Replay>,
     serial_callee_first: bool,
+    arm_frames: Option<String>,
 ) -> Result<jobs::PoolOutput, String> {
     let specs = flatten_targets(targets);
     let inventory = flatten_targets(inventory);
@@ -905,11 +906,35 @@ pub(crate) fn decompile_targets_pooled(
     );
     cfg.synth_base = synth_base;
     cfg.serial_callee_first = serial_callee_first;
+    cfg.arm_frames = arm_frames;
     cfg.elem_objects = targets.len() <= 1;
     cfg.want_pointer_arguments = true;
     let mut pooled = jobs::run_pool(&cfg, &specs, &inventory)?;
     kuna_console::project::reconcile_pointer_arguments(&mut pooled.results);
     Ok(pooled)
+}
+
+/// (kuna `armframes`) The parent's frame-recovery record, encoded for the pool.
+pub(crate) fn worker_arm_frames(prog: &ConsoleProgram) -> Option<String> {
+    prog.arm_frames().map(|record| record.encode())
+}
+
+/// (kuna `armframes`) Replay the parent's frame recovery in a worker that skips
+/// discovery, so its Listing is the parent's without the search.
+fn replay_worker_arm_frames(prog: &mut ConsoleProgram, args: &Args) -> Result<(), String> {
+    let Some(scratch) = args.jobs_worker.as_deref().filter(|_| !args.jobs_full_load) else {
+        return Ok(());
+    };
+    let path = std::path::Path::new(scratch).join(jobs::ARM_FRAMES_FILE);
+    if !path.is_file() {
+        return Ok(());
+    }
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("cannot read the worker frame record {}: {e}", path.display()))?;
+    let record = kuna_analysis::aif::kuna_framereplay::ArmFrameReplay::decode(&text)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    prog.replay_arm_frames(record);
+    Ok(())
 }
 
 /// (kuna `structsynth`) The ledger a sharded run replays its workers' lookups
@@ -973,6 +998,7 @@ pub(crate) fn pool_config<'a>(
         synth_base: None,
         serial_callee_first: false,
         elem_objects: false,
+        arm_frames: None,
     }
 }
 
@@ -1240,6 +1266,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
         let inventory = prog.function_entries_canonical();
         let assertions = prog.assertion_outcomes();
         let synth = synth_base(&prog);
+        let arm_frames = worker_arm_frames(&prog);
         drop(prog);
         let pooled = decompile_targets_pooled(
             args,
@@ -1251,6 +1278,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
             load_seconds,
             synth,
             callee_first,
+            arm_frames,
         )?;
         return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior });
     }
@@ -1650,6 +1678,7 @@ pub(crate) fn load_program(
         prog.set_assertions(args.assertions.clone());
         kuna_console::assertions::apply_image_scoped(&mut prog);
     }
+    replay_worker_arm_frames(&mut prog, args)?;
     prog.commit_pending_analysis()
         .map_err(|e| format!("read symbols (analysis commit) failed: {}", e.explain()))?;
     // AFTER the commit: a caller-declared boundary is an assertion that outranks
