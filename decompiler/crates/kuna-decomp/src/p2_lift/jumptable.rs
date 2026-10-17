@@ -2505,15 +2505,25 @@ impl JumpBasicModel {
                     proven = false;
                     break;
                 };
+                let usepoint = Address::new_invalid();
                 if loads.is_empty()
                     || loads.iter().any(|load| {
-                        let flags = fd.get_arch().query_global_properties(
-                            &load.addr,
-                            load.size,
-                            &Address::new_invalid(),
-                        );
-                        flags & crate::varnode::varnode_flags::readonly == 0
-                            || flags & crate::varnode::varnode_flags::volatil != 0
+                        load.size <= 0
+                            || load
+                                .addr
+                                .get_offset()
+                                .checked_add(load.size as u64 - 1)
+                                .is_none()
+                            || !(0..load.size).all(|offset| {
+                                let addr = &load.addr + i64::from(offset);
+                                let flags = fd.get_arch().query_global_properties(
+                                    &addr,
+                                    1,
+                                    &usepoint,
+                                );
+                                flags & crate::varnode::varnode_flags::readonly != 0
+                                    && flags & crate::varnode::varnode_flags::volatil == 0
+                            })
                     })
                 {
                     proven = false;
