@@ -2328,3 +2328,44 @@ fn w10_float_typeclass_pointermax_rule_appends_after_existing_rules() {
     // pointermax ConvertToPointer never fired and never shrank it to ptr size).
     assert_eq!(res[0].type_.as_ref().unwrap().get_size(), 10);
 }
+
+#[test]
+fn explicit_return_storage_removes_only_the_model_hidden_return_input() {
+    use crate::dtype::TypeFactoryImpl;
+    let (manager, reg) = manager_with_default_data_space();
+    let types = TypeFactoryImpl::new();
+    types.setup_sizes(Some(4), 8, 8);
+    let mut model = ProtoModel::new(&manager);
+    let mut inputs = ParamListStandard::new(ParamListKind::Standard);
+    for (group, offset) in [(0, 0x10), (1, 0x20), (2, 0x30)] {
+        inputs.push_entry(excl_entry(group, &reg, offset, 8, inputs.get_entry(), &manager));
+    }
+    inputs.finish_decode();
+    model.input = Some(inputs);
+    model.output = Some(single_small_out_model(&reg, &manager));
+    let model = Rc::new(model);
+    let float = float10_type();
+    let mut pieces = PrototypePieces {
+        name: "custom_result".into(), outtype: Some(float.clone()),
+        intypes: vec![int4_type(), int4_type()], innames: vec!["first".into(), "second".into()],
+        first_var_arg_slot: -1, ..Default::default()
+    };
+    let mut prototype = FuncProto::new();
+    prototype.attach_internal_store(types.get_type_void().unwrap());
+    prototype.set_pieces(&pieces, Some(model.clone()), &types, &manager).unwrap();
+    assert_eq!(prototype.num_params(), 3);
+    pieces.output_storage = Some(ParameterPieces {
+        addr: Address::new(reg.clone(), 0x100), type_: Some(float),
+        flags: parameter_pieces_flags::TYPELOCK,
+    });
+    pieces.input_storage.push((0, ParameterPieces {
+        addr: Address::new(reg.clone(), 0x80), type_: Some(int4_type()),
+        flags: parameter_pieces_flags::TYPELOCK,
+    }));
+    prototype.set_pieces(&pieces, Some(model), &types, &manager).unwrap();
+    assert_eq!(prototype.num_params(), 2);
+    assert_eq!(prototype.get_param(0).unwrap().get_address().get_offset(), 0x80);
+    assert_eq!(prototype.get_param(1).unwrap().get_address().get_offset(), 0x20);
+    assert_eq!(prototype.get_param(1).unwrap().get_name(), "second");
+    assert_eq!(prototype.get_output().get_address().get_offset(), 0x100);
+}

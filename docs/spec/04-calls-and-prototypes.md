@@ -7095,3 +7095,12 @@ return what they tail-call or call, and nine PLT stubs return the import's resul
 (`v1 = (*dat_17e58)(); return v1;` for `lseek`). Each prints the signature
 `decompile-all` prints. Only a function whose callers read it pays for a second
 drive.
+
+Explicit return storage suppresses model-derived hidden return parameters.
+When prototype pieces supply `output_storage`, input allocation uses a temporary
+void result before installing the specified output. This prevents an unsupported
+register return, such as ten-byte ST0 under a Windows i386 model, from creating
+a hidden return-pointer input that survives the storage override and changes
+stack-pop inference. Ordinary unspecified inputs retain their model-assigned
+slots, and partial input overrides still replace only the selected slots.
+Without explicit output storage, normal indirect return allocation is unchanged.
