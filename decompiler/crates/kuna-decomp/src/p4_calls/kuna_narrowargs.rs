@@ -180,8 +180,25 @@ pub fn narrow_inputs(data: &mut Funcdata) -> int4 {
     count
 }
 
+/// Does an input other than `vn` overlap `addr:size`?
+fn overlaps_another_input(data: &Funcdata, vn: VarnodeId, addr: &Address, size: int4) -> bool {
+    let space = addr.get_space().map(|s| s.get_index());
+    let (lo, hi) = (addr.get_offset(), addr.get_offset() + size as u64);
+    data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).any(|other| {
+        other != vn
+            && data.vbank().get(other).is_some_and(|o| {
+                let a = o.get_addr();
+                a.get_space().map(|s| s.get_index()) == space
+                    && a.get_offset() < hi
+                    && lo < a.get_offset() + o.get_size() as u64
+            })
+    })
+}
+
 /// Replace input `vn` by its low `w` bytes at `part`, zero-extended at the
-/// entry. On failure the register-wide input is put back.
+/// entry. Nothing changes when another input overlaps the register, the one
+/// case in which the narrow input could not be made; past that check a failure
+/// puts the register-wide input back.
 fn replace(
     data: &mut Funcdata,
     vn: VarnodeId,
@@ -190,6 +207,9 @@ fn replace(
     part: &Address,
     w: int4,
 ) -> kuna_base::error::KunaResult<()> {
+    if overlaps_another_input(data, vn, addr, size) {
+        return Err(kuna_base::error::KunaError::lowlevel("narrowargs: overlapping input varnodes".to_string()));
+    }
     let topbl = data.bblocks_get_block(0);
     let start = data.bblocks_block_start(topbl);
     let op = data.new_op(1, start);
