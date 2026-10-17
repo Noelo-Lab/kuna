@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3081,
-    3081
+    3087,
+    3087
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1772,6 +1772,12 @@
     "data:UNSIGNED-BYTE-VM-SELECTOR #3: low case remains in both passes",
     "data:UNSIGNED-BYTE-VM-SELECTOR #4: off reproduces the impossible negative label",
     "data:UNSIGNED-BYTE-VM-SELECTOR #5: default preserves the unsigned label",
+    "data:UNSIGNEDREAD #1: the widened difference is unsigned",
+    "data:UNSIGNEDREAD #2: no sign-extending widening of the int",
+    "data:UNSIGNEDREAD #3: the shifted difference is unsigned",
+    "data:UNSIGNEDREAD #4: no arithmetic shift of the int",
+    "data:UNSIGNEDREAD #5: the byte-sum selector is cast to its byte type",
+    "data:UNSIGNEDREAD #6: no int-wide selector",
     "data:VENEERTAILCALL #1: direct, a bounded veneer's transfer is lost to halt_missing",
     "data:VENEERTAILCALL #2: on, a veneer to a declared prototype tail-calls it, bounded or not",
     "data:VENEERTAILCALL #3: on, a bounded veneer tail-calls a helper with no prototype, A32 and Thumb",

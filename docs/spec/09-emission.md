@@ -406,6 +406,50 @@ and the read prints `(unsigned long)(int)(a1 - 1U) >> 6`. The suffix stays: an
 unsigned reader of the same expression (`4 < a4 + 2U`) still needs it. This is
 a correctness fix with no option.
 
+**An unsigned read of an expression C evaluates as signed (kuna).** The
+mirror case: C promotes an operand narrower than `int` to `int`, so
+`(*a1 ^ 0x80) - 0x80` over an `unsigned short *a1` is an `int` in C, and so
+is `(int)a0 + 1`, while `arithmeticOutputStandard` types the 32-bit Varnode
+they compute `unsigned int` (it takes the most ordered operand type and
+knows no promotion). A reader that treats its input as unsigned --
+`INT_ZEXT`, `INT_RIGHT`'s value, `INT_LESS`/`INT_LESSEQUAL`,
+`INT_DIV`/`INT_REM` -- found nothing to cast, and the C read the value as
+signed: `(unsigned long)((*a1 ^ 0x80) - 0x80)` sign-extended where the
+32-bit operation zero-extends, and `>> 3` shifted in copies of the sign bit.
+When such a reader's input is an implied expression at least as wide as
+`int`, typed unsigned, whose C type is a signed `int` or `long`, the read
+makes it unsigned (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_unsignedread.rs
+(cast)`): a plain non-negative constant operand of the expression's top
+operation gets the `U` suffix when that operation's result bits do not depend
+on its sign (`+`, `-`, `*`, `&`, `|`, `^`, negation; never a division,
+remainder or shift, whose meaning the suffix would change),
+or `UL` at eight bytes, so `(int)a0 + 1` prints `(int)a0 + 1U`; otherwise
+`get_input_cast` asks for the unsigned integer of the input's size, and the
+read prints `(unsigned long)(unsigned int)((*a1 ^ 0x80) - 0x80)`. The C
+type is worked out bottom-up from what the text states: a literal from its
+suffix and magnitude, a variable, a cast or a load from its type, an
+extension the cast strategy hides from its input, and arithmetic by C's usual
+conversions over promoted operands; anything else leaves the read alone. Neither
+happens when the input's nonzero-bit mask clears the top bit (the
+value is never negative, so both readings agree), or when the other operand
+of a compare, divide or remainder is unsigned at least as wide (C then
+converts this one itself). Expressions narrower than `int` are left to the
+upstream integer-promotion checks (`checkIntPromotionForCompare`,
+`checkIntPromotionForExtension`). This is a correctness fix with no option.
+
+**A switch on an expression narrower than `int` (kuna).** A `BRANCHIND`
+selector of one or two bytes is computed at its own width, so a byte
+`a0 + 1` is 0x80 when `a0` is 0x7f, but C adds the promoted operands as
+`int`: `switch(a0 + '\x01')` switched on 128 and missed the `case -0x80:`
+the binary takes. The upstream promotion checks cast such an expression where
+an extension or a comparison reads it, and nothing reads it at a switch. The
+printer now casts an implied selector narrower than `int` to its own type,
+`switch((char)(a0 + '\x01'))`, unless `intPromotionType` says its promoted
+value already extends the way that type does
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_narrowselector.rs (cast)`). The
+case labels already follow the selector's type. Only output languages with C's
+integer promotion get the cast. This is a correctness fix with no option.
+
 **A narrow equality of mixed sign (kuna).** An `INT_EQUAL` or `INT_NOTEQUAL`
 of operands narrower than `int` compares their bytes, but C promotes each side
 to `int` by the sign of its own type before it compares. The upstream rule casts

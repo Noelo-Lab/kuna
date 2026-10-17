@@ -6013,7 +6013,8 @@ impl PrintC {
                 };
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
                     let cast = lowered_switch_label_form(fd, arch, op, self.lang().caps.signed_text_byte)
-                        .and_then(|(_, cast)| cast);
+                        .and_then(|(_, cast)| cast)
+                        .or_else(|| self.narrow_selector_cast(fd, arch, op, vn));
                     if let Some(ct) = &cast {
                         self.push_cast_open(ct, op);
                     }
@@ -7344,6 +7345,25 @@ impl PrintC {
         let op_ref = ctx.op_ref(op);
         let read_ref = read_op.map(|r| ctx.op_ref(r));
         strat.is_extension_cast_implied(&ctx, op_ref, read_ref)
+    }
+
+    /// (kuna) The type the selector `vn` of the switch `op` prints cast to when
+    /// C's promotion would carry bits the narrow p-code drops.  See
+    /// [`crate::kuna_narrowselector`].
+    fn narrow_selector_cast(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        vn: VarnodeId,
+    ) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+        if !self.lang().caps.integer_promotion {
+            return None;
+        }
+        let strat = cast_strategy_for(arch)?;
+        let ctx = PrintCastContext::new(fd);
+        let vr = ctx.vn_ref(vn);
+        crate::kuna_narrowselector::cast(fd, arch, &strat, &ctx, vr, op)
     }
 
     /// (kuna `castimplied`) Does C's own conversion already perform the cast `op`

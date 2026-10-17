@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Reads of an expression C evaluates wider or with another sign than the
+    machine operation that computes it.
+        widen: movzx eax,word [rsi]; xor eax,0x80; add eax,-0x80
+               mov [rdi],rax; ret
+        shift: movzx eax,word [rdi]; xor eax,0x80; add eax,-0x80
+               shr eax,3; ret
+    Both 32-bit results are typed unsigned, but C promotes the loaded
+    unsigned short to int, so the printed `(*a1 ^ 0x80) - 0x80` is an int:
+    widening it to 64 bits sign-extends where the 32-bit operation
+    zero-extends, and `>> 3` shifts arithmetically where shr shifts in
+    zeros.  For a halfword of 0x80 the binary stores 0x00000000ffffff80 and
+    returns 0x1ffffff0; the old C stored 0xffffffffffffff80 and returned
+    0xfffffff0.  Such a read now makes the expression unsigned: here the
+    constant of its top operation prints 0x80U (with no such constant the
+    expression is cast to unsigned int).
+        sel (gcc -O0, switch ((unsigned char)(c + 1)) with cases 0x80..0x84):
+               movzx eax,byte [rbp-4]; add eax,1; movzx eax,al
+               add eax,-0x80; cmp eax,4; ja default; jmp [rax*8+0x402000]
+    The selector is a byte sum, but C adds the promoted char and 1 as ints:
+    for c = 0x7f the old `switch(a0 + '\x01')` switched on 128 and took the
+    default where the binary takes case 0x80 (printed -0x80).  A switch on
+    an expression narrower than int whose promotion is not known to extend
+    like its type now casts the selector to that type.
+
+    Stage: P9 emission (ActionSetCasts input casts; the switch selector).
+    A strict fix with no option: #1, #3 and #5 are the corrected reads, #2,
+    #4 and #6 the old ones.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+0fb706358000000083c080488907c3
+</bytechunk>
+<bytechunk space="ram" offset="0x401020" readonly="true">
+0fb707358000000083c080c1e803c3
+</bytechunk>
+<bytechunk space="ram" offset="0x401100" readonly="true">
+554889e589f88845fc0fb645fc83c0010fb6c083c08083f804772f89c0488b04c500204000ffe0
+b803000000eb21b805000000eb1ab807000000eb13b80b000000eb0cb80d000000eb05b8010000
+005dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+27114000000000002e1140000000000035114000000000003c114000000000004311400000000000
+</bytechunk>
+</binaryimage>
+<script>
+  <com>map function r0x401000 widen</com>
+  <com>map function r0x401020 shift</com>
+  <com>map function r0x401100 sel</com>
+  <com>lo fu widen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu shift</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sel</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="UNSIGNEDREAD #1: the widened difference is unsigned" min="1" max="1">\*a0 = \(\*a1 \^ 0x80\) - 0x80U;</stringmatch>
+<stringmatch name="UNSIGNEDREAD #2: no sign-extending widening of the int" min="0" max="0">\(uint8\)\(\(\*a1</stringmatch>
+<stringmatch name="UNSIGNEDREAD #3: the shifted difference is unsigned" min="1" max="1">return \(\*a0 \^ 0x80\) - 0x80U >> 3;</stringmatch>
+<stringmatch name="UNSIGNEDREAD #4: no arithmetic shift of the int" min="0" max="0">return \(\*a0 \^ 0x80\) - 0x80 >> 3;</stringmatch>
+<stringmatch name="UNSIGNEDREAD #5: the byte-sum selector is cast to its byte type" min="1" max="1">switch\(\(char\)\(a0 \+ '\\x01'\)\)</stringmatch>
+<stringmatch name="UNSIGNEDREAD #6: no int-wide selector" min="0" max="0">switch\(a0 \+</stringmatch>
+</decompilertest>
