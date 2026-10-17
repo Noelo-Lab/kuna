@@ -35,8 +35,9 @@ fn narrow_width(consume: uintb, size: int4) -> Option<int4> {
     (w < size && (consume >> (8 * w - 1)) & 1 == 1).then_some(w)
 }
 
-/// The integer argument register entry of the function's model that holds both
-/// `addr:size` and its low `w` bytes justified, and where the low part starts.
+/// The integer argument register entry of the function's model that is exactly
+/// `addr:size` and holds its low `w` bytes justified, and where the low part
+/// starts.
 fn low_part(data: &Funcdata, addr: &Address, size: int4, w: int4) -> Option<Address> {
     let proto = data.get_func_proto();
     if !proto.has_model() {
@@ -50,6 +51,7 @@ fn low_part(data: &Funcdata, addr: &Address, size: int4, w: int4) -> Option<Addr
         .iter()
         .any(|e| {
             e.get_type() == type_class::TYPECLASS_GENERAL
+                && e.get_size() == size
                 && e.justified_contain(addr, size) == 0
                 && e.justified_contain(&part, w) == 0
         })
@@ -57,7 +59,11 @@ fn low_part(data: &Funcdata, addr: &Address, size: int4, w: int4) -> Option<Addr
 }
 
 /// Is `vn` an input this function may narrow: a register that is not
-/// type-locked and that no `PIECE` joins into a wider value?
+/// type-locked, that no `PIECE` joins into a wider value, and whose narrow
+/// consumption does not come from a shift? A left shift drops the high bits of
+/// any width of value, and a register shift amount is read through its low
+/// byte (`lsl r6, r7, lr` is `r7 << (lr & 0xff)`), so neither says anything
+/// about the value's type.
 fn narrowable(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(v) = data.vbank().get(vn) else { return false };
     if !v.is_input() || v.is_type_lock() || v.is_addr_tied() || v.is_persist() {
@@ -66,7 +72,43 @@ fn narrowable(data: &Funcdata, vn: VarnodeId) -> bool {
     if v.get_addr().get_space().is_none_or(|s| s.get_type() != kuna_base::space::spacetype::IPTR_PROCESSOR) {
         return false;
     }
-    v.descend_iter().all(|op| data.obank().get(op).is_some_and(|o| o.code() != OpCode::CPUI_PIECE))
+    let mut family = vec![vn];
+    let mut i = 0;
+    while i < family.len() {
+        if family.len() > 64 {
+            return false;
+        }
+        let id = family[i];
+        i += 1;
+        let Some(cur) = data.vbank().get(id) else { return false };
+        for op in cur.descend_iter() {
+            let Some(o) = data.obank().get(op) else { return false };
+            let slot = (0..o.num_input()).find(|&k| o.get_in(k) == Some(id)).unwrap_or(0);
+            match o.code() {
+                OpCode::CPUI_PIECE | OpCode::CPUI_INT_LEFT => return false,
+                OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT if slot == 1 => return false,
+                OpCode::CPUI_INT_AND if shifts_by(data, o.get_out()) => return false,
+                OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT | OpCode::CPUI_CAST => {
+                    if let Some(out) = o.get_out().filter(|out| !family.contains(out)) {
+                        family.push(out);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    true
+}
+
+/// Is `vn` the amount of a shift?
+fn shifts_by(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
+    let Some(v) = vn.and_then(|vn| data.vbank().get(vn)) else { return false };
+    v.descend_iter().any(|op| {
+        data.obank().get(op).is_some_and(|o| {
+            matches!(o.code(), OpCode::CPUI_INT_LEFT | OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT)
+                && o.get_in(1) == vn
+        })
+    })
 }
 
 /// Replace every register input whose consumed bits fit a narrower low part by
