@@ -51,6 +51,7 @@ pub mod kuna_nulterminator;
 pub mod kuna_endptrbound;
 pub(crate) mod kuna_storereach;
 pub mod kuna_arrayextent;
+pub mod kuna_arraysize;
 pub mod kuna_castobject;
 pub mod kuna_impliedrefs;
 pub mod kuna_bytehonest;

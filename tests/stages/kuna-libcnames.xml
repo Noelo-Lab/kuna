@@ -76,7 +76,7 @@ c3
 <stringmatch name="libcnames #3: with the option on the first descriptor is fd" min="1" max="1">^  int4 fd; // eax \| ebp$</stringmatch>
 <stringmatch name="libcnames #4: the second open is fd_2, also after every rename" min="4" max="4">^  fd_2 = open\(a1,0x241,0x1a4\);$</stringmatch>
 <stringmatch name="libcnames #5: read's result is n and it reads from fd" min="1" max="1">^    n = read\(fd,v4,0x200\);$</stringmatch>
-<stringmatch name="libcnames #6: the buffer keeps the number it has with the option off, in every pass" min="5" max="5">^  char v4 \[520\]; // stack - 0x228$</stringmatch>
+<stringmatch name="libcnames #6: the buffer keeps the number it has with the option off, in every pass" min="5" max="5">^  char v4 \[512\]; // stack - 0x228$</stringmatch>
 <stringmatch name="libcnames #7: strlen's results are len and len_2 and malloc's is p" min="1" max="1">^  len = strlen\(a0\);
 ^  len_2 = strlen\(a1\);
 ^  p = malloc\(len \+ 1 \+ len_2\);$</stringmatch>

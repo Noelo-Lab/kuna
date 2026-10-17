@@ -1745,12 +1745,20 @@ impl ScopeLocal {
                         continue;
                     }
                 }
-                if cur.range_type == RangeType::Open {
+                let open = cur.range_type == RangeType::Open;
+                if open {
                     // C++ `cur.size = next->sstart - cur.sstart;` (intb diff
                     // truncated to int4); the gap is small and positive here.
                     cur.size = next.sstart.wrapping_sub(cur.sstart) as int4;
                 }
                 if self.adjust_fit(&mut cur) {
+                    if open {
+                        if let Some(size) =
+                            crate::p6_variables::kuna_arraysize::fit(&cur, cur_end, cur.size as intb, state)
+                        {
+                            cur.size = size;
+                        }
+                    }
                     self.create_entry(&cur, types)?;
                 }
                 cur = next;
@@ -2836,6 +2844,9 @@ pub struct MapState {
     /// (kuna `arrayextent`) The arrays `extend_unbounded` lengthened, settled
     /// once the hints are sorted.
     extended: Vec<crate::p6_variables::kuna_arrayextent::Extended>,
+    /// (kuna `arraysize`) Per signed offset an escaped address starts at, the
+    /// byte counts the calls receiving it state.
+    stated_sizes: std::collections::BTreeMap<intb, Vec<crate::p6_variables::kuna_arraysize::Stated>>,
 }
 
 impl MapState {
@@ -2863,6 +2874,7 @@ impl MapState {
             terminator_stores: std::collections::BTreeMap::new(),
             absorbing_bases: Vec::new(),
             extended: Vec::new(),
+            stated_sizes: std::collections::BTreeMap::new(),
         }
     }
 
@@ -3135,6 +3147,19 @@ impl MapState {
     /// (kuna `arrayextent`) Take the recorded lengthened arrays.
     pub(crate) fn take_extended(&mut self) -> Vec<crate::p6_variables::kuna_arrayextent::Extended> {
         std::mem::take(&mut self.extended)
+    }
+
+    /// (kuna `arraysize`) Record the byte counts calls state per escaped start.
+    pub(crate) fn set_stated_sizes(
+        &mut self,
+        sizes: std::collections::BTreeMap<intb, Vec<crate::p6_variables::kuna_arraysize::Stated>>,
+    ) {
+        self.stated_sizes = sizes;
+    }
+
+    /// (kuna `arraysize`) The byte counts calls state for the address at `sstart`.
+    pub(crate) fn stated_sizes(&self, sstart: intb) -> Option<&[crate::p6_variables::kuna_arraysize::Stated]> {
+        self.stated_sizes.get(&sstart).map(|v| v.as_slice())
     }
 
     /// (kuna `nulterminator`) Record one constant COPY into `(start, size)`;

@@ -2931,6 +2931,25 @@ tier = "core"
 symptoms = "a stack array is declared with 4 elements while a loop subscripts it further|the elements after the fourth of a local array are separate scalars that are assigned and never read|a recompiled function reads past a local array under AddressSanitizer|a masked or clamped index (`v[n & 7]`, `min(n, 5)`) subscripts a smaller declared array"
 
 [[settable]]
+option = "arraysize"
+values = "off|on|calls"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "stack-frame-layout"
+strength = "HARD"
+rewind = "P6"
+issue = "ty17-stack-array-size"
+summary = "End an escaped stack buffer at the byte count its calls state for it instead of at the next frame object. `ScopeLocal::restructure` (varmap.cc:1294) ends an open range where the next hint starts, and the compiler aligns a buffer of 16 bytes or more to 16, so the gap includes the padding before the next object: `char buf[8192]` below the stack-protector guard prints as `char buf[8200]`, `char buf[1001]` as `char buf[1016]`. `on`: each call that receives the exact start of the buffer states a byte count for it when it is a library buffer function with a constant length (`snprintf(buf, 0x400, ..)`, `fgets`, `read`, `readlink`, `strftime`, `memset`, `getcwd`, `fread`'s size times count) or a `_FORTIFY_SOURCE` `__*_chk` call whose destination object size is a constant; a call that returns how many bytes it stored states one byte more when the function indexes the buffer by that result (`n = readlink(p, buf, 4096); buf[n] = 0;`). The open range ends at the largest stated count when that count is at least 16 bytes, a whole number of elements, at most 15 bytes short of the gap (the padding a 16-byte alignment can leave), covers every hint the range absorbed and its index bound, and is not one byte short of the gap. A library count one byte short of a multiple of 16 (`readlink(p, buf, sizeof buf - 1)`) keeps that byte. The bytes past the array stay unmapped, as alignment padding does. `calls` also takes any constant argument of any other call that receives the buffer's start (`ftoastr(buf, 0x1f, ..)`, `nstrftime(buf, 0x3e9, ..)`), which is a guess about what the callee does with it. `off` keeps upstream's gap."
+use_when = "On by default. The tell it fixes is a local `char` buffer declared 1 to 15 bytes longer than the length every call passes with it (`char v3 [8200];` beside `fgets(v3,0x2000,fp)`), the extra bytes being the alignment padding up to the next local or the stack guard. Flip `off` to see the frame gap upstream assigns, or when a function deliberately passes a short length for a longer buffer (`fgets(buf, 20, fp)` into a 24-byte array is then declared `char buf[20]`). `calls` also sizes buffers passed with a constant to the binary's own functions (`umaxtostr`-style helpers take no length and stay as they are); it is off by default because a constant beside a buffer need not be its length."
+example = "option arraysize off"
+source_decompiler = "kuna"
+inspiration = "decbench type_match census (ty17): DWARF `char[8192]`/`char[256]`/`char[1024]` stack buffers recovered 8 bytes long below the stack-protector guard, `char[1001]` 15 bytes long, on gcc -O0/-O2 coreutils/shadow/tar and the nightly optimized sample; every rival (Ghidra, IDA, Binary Ninja, angr) prints the same gap"
+change_kind = "type-inference"
+tier = "transform"
+symptoms = "a local char buffer is declared 8 bytes longer than the length passed to fgets/snprintf/read with it, e.g. char v3 [8200] beside fgets(v3,0x2000,fp)|a stack array's size is a multiple of 16 plus 8 and it ends where the stack-protector canary slot starts|a buffer passed to __snprintf_chk(buf, n, 1, 0x100, ...) is declared longer than the 0x100 object size the call carries"
+
+[[settable]]
 option = "castobject"
 values = "on|off"
 default = "on"

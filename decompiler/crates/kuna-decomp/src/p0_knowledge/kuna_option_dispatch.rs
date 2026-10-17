@@ -519,6 +519,11 @@ kuna_options! { self, p1;
         self.array_extent = val;
         Ok(msg)
     },
+    "arraysize" => {
+        let (val, msg) = crate::p6_variables::kuna_arraysize::OptionArraySize.apply(p1)?;
+        self.array_size = val;
+        Ok(msg)
+    },
     "tiedstorekeep" => {
         on_off!(tied_store_keep, "Address-tied store copy-propagation brake")
     },

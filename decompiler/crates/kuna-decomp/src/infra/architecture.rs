@@ -1017,6 +1017,11 @@ pub struct Architecture {
     /// of its indices, `2` = also over contiguous write-only slots. See
     /// [`crate::p6_variables::kuna_arrayextent`] (option `arrayextent`).
     pub array_extent: int4,
+    /// (kuna) End an escaped stack buffer at the byte count its calls state:
+    /// `0` = upstream's gap, `1` = library call lengths, `2` = also constant
+    /// call arguments. See [`crate::p6_variables::kuna_arraysize`] (option
+    /// `arraysize`).
+    pub array_size: int4,
     /// Opt-in frame-bounded arrays for call-escaped integer storage.
     pub call_array_extent: bool,
     /// (kuna `stackstruct`) Lay out an address-taken frame record as one
@@ -2909,6 +2914,7 @@ impl Architecture {
             call_array_extent: false,
             stack_struct: false,
             array_extent: 0, // (kuna) option arrayextent; reset_defaults sets the shipped default
+            array_size: 0, // (kuna) option arraysize; reset_defaults sets the shipped default
             guarded_read_trim: false,
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
@@ -3272,6 +3278,7 @@ impl Architecture {
         self.call_array_extent = false;
         self.stack_struct = false;
         self.array_extent = crate::p6_variables::kuna_arrayextent::LEVEL_ON; // (kuna) GH-867 default-on: an indexed stack array covers the slots its known-bits bound reaches and, unbounded, the contiguous write-only slots after it (0/675 datatest)
+        self.array_size = crate::p6_variables::kuna_arraysize::LEVEL_ON; // (kuna) option arraysize default-on: an escaped stack buffer ends at the byte count a library call states for it when that count lies within the alignment padding below the gap (0/675 datatest)
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation
@@ -4090,6 +4097,7 @@ impl Architecture {
         ctx.call_array_extent = self.call_array_extent;
         ctx.stack_struct = self.stack_struct;
         ctx.array_extent = self.array_extent; // arrayextent
+        ctx.array_size = self.array_size; // arraysize
         ctx.stack_alias_deadstore = self.stack_alias_deadstore; // stackalias
         ctx.stack_views = self.stack_views;
         ctx.libc_names = self.libc_names; // libcnames

@@ -1202,6 +1202,10 @@ pub struct ArchContext {
     /// indexed stack base reaches past upstream's four elements. Levels in
     /// [`crate::p6_variables::kuna_arrayextent`]; read by `gather_open`.
     pub array_extent: int4,
+    /// (kuna) `option arraysize off|on|calls`: end an escaped stack buffer at
+    /// the byte count its calls state. Levels in
+    /// [`crate::p6_variables::kuna_arraysize`]; read by `restructure`.
+    pub array_size: int4,
     /// Keep physical frame writes live when conservative stack aliasing is requested.
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
@@ -1899,6 +1903,7 @@ impl ArchContext {
             call_array_extent: false,
             stack_struct: false,
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
+            array_size: 0,               // arraysize (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)
             libc_names: false, // libcnames (opt-in)

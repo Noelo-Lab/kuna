@@ -1642,6 +1642,62 @@ field, so on by default the pass over-extends a correctly-sized `char name[N]`
 to `[N+1]` in ordinary gcc/clang/MSVC output. It is therefore an opt-in tool:
 flip it on for a string-heavy target whose stack buffers are known to be
 NUL-terminated strings. Off, the layout is upstream's split.
+
+**An escaped buffer's length (kuna `arraysize`, default `on`).** An open range
+that `attempt_join` does not extend ends where the next hint starts, and
+`adjust_fit` trims it to the mapped range. For a buffer whose address escapes to
+a call that gap is the buffer plus the alignment padding after it: a compiler
+aligns a buffer of 16 bytes or more to 16, so `char buf[8192]` directly below
+the stack-protector guard slot (which the stack-guard strip leaves unmapped, so
+no array covers it) prints as `char buf[8200]`, `char buf[1001]` as
+`char buf[1016]`, and `char buf[21]` between two other buffers as `char
+buf[32]`. The source size is anywhere in the last 16 bytes of the gap, and the
+frame alone cannot say where. The call that receives the buffer often can.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_arraysize.rs (gather)`
+runs in `restructure_varnode` after the open hints are gathered. For every call
+it reads the argument a library buffer function takes the buffer in and the
+byte count it states for it (`kuna_arraysize.rs (LENGTH_CALLS)`): the length of
+`fgets`, `snprintf`, `read`, `readlink`, `strftime`, `getcwd`, `strncpy`,
+`memset`, `memcpy`, `getnameinfo` and their kin, the product of `fread`'s size
+and count, and for a `_FORTIFY_SOURCE` call (`__snprintf_chk`,
+`__memcpy_chk`, `__read_chk`, ...) the destination object size the compiler
+passes, which is exactly `sizeof` the object. A count is read only when the
+argument is a constant (or the `PTRSUB(#0, #c)` pointer constant the type pass
+makes of an integer that happens to be a mapped address), and it is filed under
+the escaped base (an alias-checker base with no index) the buffer argument may
+hold, through copies, casts, indirect effects and loop phis
+(`kuna_arraysize.rs (start_of)`): a program that passes a call that many bytes
+at the base on any path needs them there. A phi input that is no frame address
+(a callee-saved register's incoming value) does not stop the walk, but an
+argument that may hold two different bases files nothing, and neither does a
+walk past 64 Varnodes. When the call is one whose result is the number of bytes
+it stored (`read`, `readlink`, `recv`, `fread` with a size of 1, ...) and the
+function also indexes the buffer by that result
+(`n = readlink(p, buf, 4096); buf[n] = 0;`: an indexed alias-checker base at the
+same start whose index carries the call's output through copies, extensions,
+truncations and phis, `kuna_arraysize.rs (carries)`), the count is one more,
+since that index reaches the length itself. At `calls` every constant argument
+of a call outside that table is filed the same way under the base another of
+its arguments holds.
+
+In `ScopeLocal::restructure`, once `adjust_fit` has fixed the gap of an open
+range, `kuna_arraysize.rs (fit)` ends the range at the largest count filed
+under its start instead, when that count is at least 16 bytes, is a whole number
+of elements, is at most 15 bytes short of the gap (the padding a 16-byte
+alignment can leave: a count further short describes part of the buffer, and
+the range keeps its gap), is not one byte short of the gap (the
+`sizeof(buf) - 1` idiom leaves the last byte for a terminator the program
+writes through the pointer), and covers every hint the range absorbed and the
+elements its index bound reaches. A library count one byte short of a multiple
+of 16 that fits the gap (`readlink(p, buf, sizeof buf - 1)` into
+`char buf[4096]`) counts as that multiple. The bytes past the array keep no
+symbol, like any alignment padding. Only the extent changes: every access the
+function makes at a constant offset is a hint the range already covers, so no
+printed subscript leaves the declared array. A function that passes a short
+length for a longer buffer (`fgets(buf, 20, f)` into `char buf[24]`) gets the
+shorter array; the frame cannot distinguish that buffer from `char buf[20]`.
+`off` keeps upstream's gap.
 **A pointer walk's buffer and its end bound (kuna `endptrbound`, default on).**
 A loop that walks a stack buffer with a pointer stops on the address one past
 the buffer's last element, and nothing in the hint sources above says that
