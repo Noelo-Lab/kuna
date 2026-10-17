@@ -457,3 +457,6 @@ mod narrow_register_inputs;
 
 #[path = "float_storage_truncation.rs"]
 mod float_storage_truncation;
+
+#[path = "wide_right_shift.rs"]
+mod wide_right_shift;
