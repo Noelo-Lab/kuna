@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callerptr_x86_64",
+    "binary_sha256": "2ad143a6d4e0564d43eed908b9abdf95f81f6dcdb64bd501f7fd0defbbcc062f",
+    "binary_size": 16424,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callerptr_x86_64",
+    "selector": "push",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void push\\(void \\*a0\\)",
+      "void remember\\(char \\*a0\\)",
+      "unsigned long slot_of\\(unsigned long a0\\)\\n\\{\\n  return \\(a0 >> 4\\) % 0x1f;"
+    ],
+    "stdout_absent": [
+      "void push\\(unsigned long a0\\)"
+    ]
+  },
+  "notes": "DEFAULT: `push`'s callers pass a record, a strdup result and a null, so it takes `void *`; `remember`'s pass a literal, a getenv result and a null, so it takes `char *`. `slot_of` shifts the pointer it is handed and keeps its integer.",
+  "probe_id": "a-37b4ebd7d0cb"
+}

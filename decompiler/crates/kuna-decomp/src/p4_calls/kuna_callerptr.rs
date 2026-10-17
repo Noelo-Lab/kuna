@@ -73,9 +73,7 @@ pub fn pointer_vote(sites: &[&CallSite], j: usize, p: &Typed, void_ptr: &Rc<Data
         return None;
     }
     let first = passed.first()?;
-    let keep_byte = std::env::var("KUNA_CALLERPTR_BYTE").is_ok();
-    let agreed = passed.iter().all(|a| same_type(&a.ct, &first.ct))
-        && (committed(&first.ct) || (keep_byte && points_at_unknown_byte(&first.ct)));
+    let agreed = committed(&first.ct) && passed.iter().all(|a| same_type(&a.ct, &first.ct));
     let (ct, frame) = if agreed {
         (Rc::clone(&first.ct), passed.iter().any(|a| a.frame))
     } else {
@@ -90,18 +88,23 @@ pub fn pointer_vote(sites: &[&CallSite], j: usize, p: &Typed, void_ptr: &Rc<Data
             sites.len()
         );
     }
-    Some(Typed { addr: p.addr.clone(), size: p.size, ct, frame, null: false, proven: false })
+    Some(Typed { addr: p.addr.clone(), size: p.size, ct, frame, null: false, proven: false, by_class: true })
 }
 
-/// Is `ct` a pointer to one byte of unknown type (`undefined1 *`)?
-fn points_at_unknown_byte(ct: &Datatype) -> bool {
-    ct.get_ptr_to().is_some_and(|p| p.get_size() == 1 && p.get_metatype() == type_metatype::TYPE_UNKNOWN)
+/// Does anything the callee does with its input `vn` outrank the callers'
+/// pointer `ct`? `calleevote`'s refusals ([`crate::kuna_protoorder::input_refuses`]),
+/// except that a call the value is handed to speaks only through a declared
+/// prototype: another recovery's integer for the same slot says no more than
+/// "a pointer-width value", and a function that converts the pointer it holds
+/// to a number for a callee still holds a pointer.
+pub(crate) fn refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+    crate::kuna_protoorder::input_refuses_declared(data, vn, ct)
 }
 
 /// Does the caller hold the argument `vn` as an address for a reason of its own,
 /// rather than because a type was voted onto it? Its value -- every varnode a
 /// COPY, CAST, MULTIEQUAL or INDIRECT joins to it -- must be read or written
-/// through ([`dereferenced`]), be the address of a frame object or a global,
+/// through ([`dereferenced`]), be the address of a frame object or a string,
 /// come from or go to a declared pointer (a library's `void *malloc(size_t)`,
 /// `free(void *)`), or be a parameter the function's own callers stated a
 /// pointer for. A HighVariable's type alone is not enough: a register the
@@ -114,7 +117,7 @@ pub fn provably_a_pointer(data: &Funcdata, vn: VarnodeId) -> bool {
     }
     family.iter().any(|&v| {
         let Some(node) = data.vbank().get(v) else { return false };
-        if crate::kuna_protoorder::addresses_a_frame_object(data, v) || addresses_a_global(data, v) {
+        if crate::kuna_protoorder::addresses_a_frame_object(data, v) || addresses_a_string(data, v) {
             return true;
         }
         if node.is_input() && stated_pointer(data, node.get_addr(), node.get_size()) {
@@ -167,33 +170,28 @@ fn dereferenced(data: &Funcdata, family: &[VarnodeId]) -> bool {
     false
 }
 
-/// Is `v` the address of a global: a constant, or the engine's `PTRSUB` off the
-/// constant zero, that names an object the image holds?
-fn addresses_a_global(data: &Funcdata, v: VarnodeId) -> bool {
+/// Is `v` a string literal: a constant, or the engine's `PTRSUB` off the
+/// constant zero, that resolves to a character array kuna recovered
+/// (`kuna_charptr::constant_is_string`)? Any other constant is a number as
+/// often as an address -- `0x2000` is a buffer size and the address of
+/// `.init` -- so it proves nothing.
+fn addresses_a_string(data: &Funcdata, v: VarnodeId) -> bool {
     let Some(node) = data.vbank().get(v) else { return false };
-    let constant = if node.is_constant() {
-        Some(node)
+    let (reader, constant) = if node.is_constant() {
+        (node.descend_iter().next(), Some(v))
     } else {
-        node.get_def()
+        let def = node.get_def();
+        let base = def
             .and_then(|d| data.obank().get(d))
             .filter(|o| o.code() == OpCode::CPUI_PTRSUB)
             .filter(|o| o.get_in(0).and_then(|b| data.vbank().get(b)).is_some_and(|b| b.is_constant() && b.get_offset() == 0))
-            .and_then(|o| o.get_in(1))
-            .and_then(|c| data.vbank().get(c))
-            .filter(|c| c.is_constant())
+            .and_then(|o| o.get_in(1));
+        (def, base)
     };
-    let Some(c) = constant else { return false };
-    if c.get_offset() == 0 {
-        return false;
+    match (reader, constant) {
+        (Some(op), Some(c)) => crate::p5_types::kuna_charptr::constant_is_string(data, op, c),
+        _ => false,
     }
-    let glb = data.get_arch();
-    let at = Address::new_invalid();
-    glb.infer_ptr_spaces().iter().filter(|spc| spc.get_addr_size() as i32 == c.get_size()).any(|spc| {
-        let mut full = 0;
-        glb.resolve_constant(spc, c.get_offset(), c.get_size(), &at, &mut full)
-            .ok()
-            .is_some_and(|ram| glb.query_container_global(&ram, 1, &Address::new_invalid()).is_some())
-    })
 }
 
 /// Did the function's callers state a pointer for its input in this storage?

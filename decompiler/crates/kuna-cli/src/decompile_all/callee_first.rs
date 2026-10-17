@@ -248,6 +248,11 @@ const CALLEE_VOTE_MAX_LINES: usize = 32;
 /// vote redoes every candidate it has.
 const CALLEE_VOTE_BUDGET_PCT: usize = 5;
 
+/// (kuna `callerptr`) The share of the first pass's printed lines a statement
+/// made of pointer-class votes alone may spend on redos, apart from
+/// [`CALLEE_VOTE_BUDGET_PCT`], so it never takes a redo from a committed type.
+const CALLER_PTR_BUDGET_PCT: usize = 3;
+
 /// (kuna `calleevote`) What redoing this function is charged: the lines its
 /// first decompile printed.
 fn redo_charge(code: Option<&str>) -> usize {
@@ -424,6 +429,7 @@ fn callee_vote_rounds(
         })
         .sum();
     let mut budget = printed * CALLEE_VOTE_BUDGET_PCT / 100;
+    let mut pointer_budget = printed * CALLER_PTR_BUDGET_PCT / 100;
     let opening = budget;
     let mut spent = 0usize;
     let mut redone = 0usize;
@@ -458,14 +464,9 @@ fn callee_vote_rounds(
         let (pointers_only, queue): (Vec<_>, Vec<_>) =
             queue.into_iter().partition(|(_, key)| prog.arch().kuna_calleevote.pointers_only(*key));
         let (mut admitted, mut declined) = admit_within_budget(queue, &mut budget, &mut spent);
-        for (charge, key) in pointers_only {
-            if charge <= CALLEE_VOTE_MAX_LINES {
-                spent += charge;
-                admitted.insert(key);
-            } else {
-                declined.push((charge, key));
-            }
-        }
+        let (more, refused) = admit_within_budget(pointers_only, &mut pointer_budget, &mut spent);
+        admitted.extend(more);
+        declined.extend(refused);
         for (charge, key) in declined {
             if kuna_decomp::kuna_calleevote::trace() {
                 eprintln!(
@@ -646,14 +647,9 @@ mod calleevote_stored_tests {
             let (pointers_only, queue): (Vec<_>, Vec<_>) =
             queue.into_iter().partition(|(_, key)| prog.arch().kuna_calleevote.pointers_only(*key));
         let (mut admitted, mut declined) = admit_within_budget(queue, &mut budget, &mut spent);
-        for (charge, key) in pointers_only {
-            if charge <= CALLEE_VOTE_MAX_LINES {
-                spent += charge;
-                admitted.insert(key);
-            } else {
-                declined.push((charge, key));
-            }
-        }
+        let (more, refused) = admit_within_budget(pointers_only, &mut pointer_budget, &mut spent);
+        admitted.extend(more);
+        declined.extend(refused);
             assert_eq!(admitted.len(), 1);
             assert!(admitted.contains(&(1, 0x2000)));
             assert_eq!(declined, [(40, (1, 0x3000)), (40, (2, 0x1000))]);
@@ -691,18 +687,14 @@ mod calleevote_stored_tests {
             let by_key: std::collections::HashMap<(i32, u64), usize> =
                 queue.iter().map(|&(c, k)| (k, c)).collect();
             let mut budget = printed * CALLEE_VOTE_BUDGET_PCT / 100;
+    let mut pointer_budget = printed * CALLER_PTR_BUDGET_PCT / 100;
             let mut spent = 0usize;
             let (pointers_only, queue): (Vec<_>, Vec<_>) =
             queue.into_iter().partition(|(_, key)| prog.arch().kuna_calleevote.pointers_only(*key));
         let (mut admitted, mut declined) = admit_within_budget(queue, &mut budget, &mut spent);
-        for (charge, key) in pointers_only {
-            if charge <= CALLEE_VOTE_MAX_LINES {
-                spent += charge;
-                admitted.insert(key);
-            } else {
-                declined.push((charge, key));
-            }
-        }
+        let (more, refused) = admit_within_budget(pointers_only, &mut pointer_budget, &mut spent);
+        admitted.extend(more);
+        declined.extend(refused);
             let mut taken: Vec<usize> = admitted.iter().map(|k| by_key[k]).collect();
             taken.sort_unstable();
             (

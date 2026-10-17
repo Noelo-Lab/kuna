@@ -2495,6 +2495,36 @@ fn a_frame_records_char_pointer_pointer_is_not_its_type() {
     }
 }
 
+/// (kuna `callerptr`) A parameter whose own body says nothing about it takes a
+/// pointer when every caller passes one: `push`'s callers pass a record, a
+/// `strdup` result and a null (`void *`), `remember`'s a literal, a `getenv`
+/// result and a null (`char *`). `slot_of` shifts the pointer it is handed and
+/// keeps its integer, and `off` keeps both integers.
+#[test]
+fn a_parameter_every_caller_passes_a_pointer_is_one() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/callerptr_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    for (value, push, remember, store) in [
+        ("on", "void push(void *a0)", "void remember(char *a0)", "p[1] = (unsigned long)a0;"),
+        ("off", "void push(unsigned long a0)", "void remember(unsigned long a0)", "p[1] = a0;"),
+    ] {
+        let (got, stderr, ok) =
+            run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "callerptr", value]);
+        if !ok {
+            panic!("kuna decompile-all --option callerptr {value} failed: {stderr}");
+        }
+        assert!(got.contains(push), "{value}: `{push}` missing:\n{got}");
+        assert!(got.contains(remember), "{value}: `{remember}` missing:\n{got}");
+        assert!(got.contains(store), "{value}: `{store}` missing:\n{got}");
+        assert!(got.contains("unsigned long slot_of(unsigned long a0)"), "{value}: slot_of took a pointer:\n{got}");
+        assert!(got.contains("return (a0 >> 4) % 0x1f;"), "{value}: slot_of's arithmetic moved:\n{got}");
+    }
+}
+
 /// (kuna `protoorder cycles` + `structsynth`) The convergence sweep decompiles a
 /// self-recursive function again once a later layout supersedes the structure
 /// its first decompile minted.  The redo must not read the statement that first

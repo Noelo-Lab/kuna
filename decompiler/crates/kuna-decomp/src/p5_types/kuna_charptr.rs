@@ -625,7 +625,7 @@ fn defined_by_string_constant(data: &Funcdata, vn: VarnodeId) -> bool {
 /// already recovered at that address?  The resolution is
 /// `ActionConstantPtr::isPointer`'s (`coreaction.cc:1167`), and the answer is
 /// the covering global symbol's own data-type.
-fn constant_is_string(data: &Funcdata, op: OpId, cvn: VarnodeId) -> bool {
+pub(crate) fn constant_is_string(data: &Funcdata, op: OpId, cvn: VarnodeId) -> bool {
     let glb = data.get_arch();
     let Some(v) = data.vbank().get(cvn) else {
         return false;

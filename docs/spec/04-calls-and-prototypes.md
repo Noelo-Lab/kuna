@@ -6028,6 +6028,102 @@ triage filter, `--jobs N`, `decompile-project --stream`, a raw image and
 variable rows a function exports keep their number; only their types move.
 `KUNA_CALLEEVOTE_TRACE=1` prints every decision and its reason on stderr.
 
+### (kuna) `callerptr` — a parameter every caller passes a pointer is one
+
+`calleevote` states a parameter's type only where every direct call passes the
+same *committed* pointer: a record with a layout, a `char *`, a `char **`. That
+leaves out the commonest way a program hands an opaque value around. gnulib's
+`hash_insert (Hash_table *table, void const *entry)` stores its entry and
+compares it, and nothing it does with it is a dereference, so its own recovery
+types the parameter as a pointer-width integer; its callers hold the entry as
+the records they built (`struct_12 *` in one, `struct_5 *` in another), which
+are two types, so nothing is stated and the function prints
+`unsigned long sub_8514(void *a0,unsigned long a1)`. The same shape is a list
+insert passed a `malloc` result and a null, a table setter passed a string
+literal, a pointer to a frame object handed to a wrapper. Among the 2,179
+ground-truth pointer parameters kuna declared as integers on the 444-slice
+decbench sweep, 439 are passed a pointer by every direct caller in the printed
+C of the same binary.
+
+When `callerptr` is on (the default), `decide`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleevote.rs
+(decide_ledger_with)`) asks one more question of a parameter the existing rule
+left alone: is it a pointer whatever it points at? The answer comes from
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callerptr.rs (pointer_vote)`.
+The parameter must be one the callee's own recovery typed as a pointer-width
+integer or unknown -- a `void *` already says what this rule would. Every
+recorded call must pass, in exactly the storage the callee recovered the
+parameter in, either the constant zero (a null, which is a pointer of every
+type) or a value of the parameter's width that its caller typed as a pointer,
+and at least one call must pass a pointer. The vote is the callers' type when
+every pointer they pass is the same committed type (a `char *` beside a null),
+and `void *` otherwise, including where they agree on a pointer at nothing in
+particular (`long *`): the callers' pointee is then their own guess.
+
+A caller's HighVariable type is not evidence by itself. A register a function
+reuses for a size and then a pointer is one variable, typed as the pointer at
+every use, and coreutils `cp` hands `sparse_copy` its buffer size from such a
+variable. So `record` asks of every pointer-typed argument whether the caller
+holds it as an address for a reason of its own
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callerptr.rs
+(provably_a_pointer)`), over the value's family -- every varnode a `COPY`,
+`CAST`, `MULTIEQUAL` or `INDIRECT` joins to it: it is the address of a `LOAD` or
+`STORE`, directly or through literal offsets and the base slot of the engine's
+`PTRADD`/`PTRSUB` (`dereferenced`; an add of two variables carries nothing,
+since either operand could be the base); it is the address of a frame object;
+it is a string literal (`kuna_charptr::constant_is_string`) -- any other
+constant is a number as often as an address, and coreutils -O0 `tr` passes
+`squeeze_filter` the buffer size `0x2000`, which is also the address of
+`.init`; it is the result of a call whose declared prototype returns a pointer
+(`malloc`), or is handed to a declared pointer parameter (`free`); or it is a
+parameter of the caller's own that its callers stated a pointer for, which is
+how the vote reaches through a wrapper over the later rounds. Every non-null
+argument must pass that test.
+
+The statement is `calleevote`'s: it is decided over the same closed caller set,
+taken by `input_vote` in the same fold, and refused by the callee's own uses
+(`kuna_protoorder::input_refuses_declared`) -- an integer operation on the
+value, a member the pointee does not cover, a family member that is declared,
+global, or inside a frame aggregate -- with two differences, both recorded on
+the statement (`Typed::by_class`). A call the callee hands the value to speaks
+only through a declared prototype (`declared_reader_class`): another
+recovery's integer for the same slot says no more than "a pointer-width value",
+and `hash_insert` forwards its entry to `hash_insert_if_absent`, whose own
+recovery typed it `long`. And a pointer-width value in the frame slot at an
+address the function takes but never indexes does not refuse the vote
+(`inside_a_frame_aggregate`'s `word_ok`): `hash_insert` keeps the entry
+`hash_insert_if_absent` writes through its `&matched_ent` out-parameter in that
+slot, and typing an eight-byte slot as an eight-byte pointer re-lays nothing.
+An indexed frame region and a frame struct or array still refuse.
+
+A function whose statement is made of these votes alone (`CallerTypes::pointers_only`)
+is decompiled again within a budget of its own,
+`CALLER_PTR_BUDGET_PCT` (3) percent of the lines the first pass printed, beside
+`calleevote`'s 5% (`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs
+(callee_vote_rounds)`). Sharing the one budget let these shorter redos, admitted
+shortest first, take the room a committed `char **` needed in a later round:
+coreutils -O0 `ls`'s `quote_name_buf` lost the `char **inbuf` its callers pass.
+
+What it changes in a body is the parameter's spelling and what follows from it.
+An integer use of the value prints its cast (`p[1] = (unsigned long)a0;`,
+`a1 == (void *)*v3`); a field access over a `void *` keeps its byte arithmetic
+with a cast on the base, or is spelled as indexing where the access steps by its
+own width (`((unsigned long *)a0)[v2]` for `*(unsigned long *)(a0 + v2 * 8)`);
+a value merged with the retyped one in a callee's return takes the pointer too
+(`void * sub_8514(void *a0,void *a1)`); and a local that held both the pointer
+and an integer may split in two, which renumbers the locals after it. Measured
+on the 444-slice decbench sweep against main cb68db18f (the published
+address-correspondence `type_match`), 270 parameter and stack decisions move
+onto the DWARF type and none off, and 207 functions score better and none
+worse. What it cannot reach is most of the class: a callback reached only
+through a pointer has no direct caller, a value nobody passes a pointer has no
+evidence, and a call in a switch case body the reference walk does not decode
+leaves its callee's caller set incomplete. The fixture
+`decompiler/crates/kuna-analysis/tests/fixtures/callerptr_x86_64.c` pins
+`push` (`void *`, three callers of three types), `remember` (`char *`, a
+literal, `getenv` and a null) and the control `slot_of`, which shifts the
+pointer it is handed and keeps its integer.
+
 ### (kuna) `callrettype` — a call returns the type its callee declares
 
 `protoorder` carries a callee's recovered PARAMETER types to its call sites;

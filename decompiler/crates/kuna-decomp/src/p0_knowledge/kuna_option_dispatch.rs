@@ -794,6 +794,7 @@ kuna_options! { self, p1;
         self.calleevote = mode;
         Ok(msg)
     },
+    "callerptr" => on_off!(caller_ptr, "Caller pointer-class parameter typing"),
     "callbacktype" => {
         let (mode, msg) = crate::kuna_callbacktype::OptionCallbackType.apply(p1)?;
         self.callbacktype = mode;

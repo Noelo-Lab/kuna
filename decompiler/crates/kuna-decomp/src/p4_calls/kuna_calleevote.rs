@@ -109,6 +109,9 @@ pub struct Typed {
     /// (`callerptr`) The caller holds the argument as an address for a reason of
     /// its own ([`crate::kuna_callerptr::provably_a_pointer`]).
     pub proven: bool,
+    /// (`callerptr`) A statement that says the value is a pointer because every
+    /// caller passes one ([`crate::kuna_callerptr::pointer_vote`]).
+    pub by_class: bool,
 }
 
 /// One direct call: the caller, the call instruction, and what each argument
@@ -368,7 +371,7 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &mut Funcdata) {
                 let proven = prove
                     && ct.get_metatype() == type_metatype::TYPE_PTR
                     && crate::kuna_callerptr::provably_a_pointer(fd, vn);
-                Typed { addr, size, ct, frame, null, proven }
+                Typed { addr, size, ct, frame, null, proven, by_class: false }
             }));
         }
         calls.push((callee, CallSite { caller: me.1, at, args }));
@@ -409,7 +412,7 @@ fn own_params(arch: &Architecture, entry: &Address, fd: &Funcdata) -> Option<Vec
         if addr.is_invalid() || p.get_size() <= 0 {
             return None;
         }
-        out.push(Typed { addr, size: p.get_size(), ct: Rc::clone(p.get_type()?), frame: false, null: false, proven: false });
+        out.push(Typed { addr, size: p.get_size(), ct: Rc::clone(p.get_type()?), frame: false, null: false, proven: false, by_class: false });
     }
     Some(out)
 }
@@ -530,7 +533,15 @@ pub fn decide_ledger_with(
             if trace {
                 let seen: Vec<String> = sites.iter().map(|s| match s.args.get(j) {
                     Some(Some(a)) => {
-                        format!("{}@{:x}:{}{}", spell(&a.ct), a.addr.get_offset(), a.size, if a.frame { " frame" } else { "" })
+                        format!(
+                            "{}@{:x}:{}{}{}{}",
+                            spell(&a.ct),
+                            a.addr.get_offset(),
+                            a.size,
+                            if a.frame { " frame" } else { "" },
+                            if a.null { " null" } else { "" },
+                            if a.proven { " proven" } else { "" }
+                        )
                     }
                     Some(None) => "unread".into(),
                     None => "absent".into(),
@@ -539,7 +550,7 @@ pub fn decide_ledger_with(
             }
             if let (true, Some(ct)) = (all, agreed) {
                 if uncommitted(&p.ct, ptr_size) || crate::kuna_structheadless::gives_a_pointee(&ct) {
-                    inputs.push(Typed { addr: p.addr.clone(), size: p.size, ct, frame, null: false, proven: false });
+                    inputs.push(Typed { addr: p.addr.clone(), size: p.size, ct, frame, null: false, proven: false, by_class: false });
                     pointers_only = false;
                 }
             } else if let Some(void_ptr) = pointers {
@@ -633,10 +644,12 @@ pub fn input_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<R
     let open = uncommitted(ct, ptr_size)
         || (uncommitted_under(ct, ptr_size, data.get_arch().struct_headless.fires())
             && crate::kuna_structheadless::gives_a_pointee(&want.ct));
-    if trace() {
-        eprintln!("[calleevote] input 0x{:x} @{:x} open={} refuses={}", data.get_address().get_offset(), v.get_addr().get_offset(), open, crate::kuna_protoorder::input_refuses(data, vn, &want.ct));
-    }
-    if !open || crate::kuna_protoorder::input_refuses(data, vn, &want.ct) {
+    let refuses = if want.by_class {
+        crate::kuna_callerptr::refuses(data, vn, &want.ct)
+    } else {
+        crate::kuna_protoorder::input_refuses(data, vn, &want.ct)
+    };
+    if !open || refuses {
         return None;
     }
     if want.frame && crate::kuna_protoorder::reaches_past_the_pointee(data, vn, &want.ct) {
