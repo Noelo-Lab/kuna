@@ -6502,3 +6502,8 @@ Xref result formatting reuses the query's canonical inventory for names
 and fallback ownership. ARM address normalization and discovered-entry naming
 retain their existing precedence; formatting does not rebuild the inventory
 for each endpoint of every result row.
+
+Constant DWARF array subranges prefer an explicit count, otherwise computing
+`upper − lower + 1` with signed bounds. An omitted lower bound uses the source
+language’s default (one for Fortran, zero for C). Dynamic bounds are not
+interpreted as constants, and arithmetic overflow does not wrap into a length.
