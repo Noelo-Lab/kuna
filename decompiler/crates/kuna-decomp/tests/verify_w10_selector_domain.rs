@@ -13,6 +13,7 @@ use kuna_base::xml::{DocumentStorage, Element};
 use kuna_decomp::decompile_drive::{decompile_func, print_c};
 use kuna_decomp::options::register_option_elements;
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase};
+use kuna_decomp::varnode::varnode_flags;
 use kuna_decomp::xml_arch::XmlArchitectureCapability;
 
 use kuna_sleigh::loadimage::LoadImage;
@@ -144,6 +145,15 @@ fn decompile_dispatch(bytes: &[u8], readonly: bool) -> String {
     let (mut xarch, _image, _registry) = bootstrap(bytes, readonly);
     let arch = xarch.sleigh_mut().base_mut().unwrap();
     let ram = Rc::clone(arch.manage().get_space_by_name("ram").unwrap());
+    if readonly {
+        // `XmlArchitecture::open_image` loads bytes but does not run the normal
+        // post-spec readonly-range painting into the global symbol table. Mirror
+        // that loader fact so this regression exercises the immutable-map proof.
+        let start = Address::new(Rc::clone(&ram), 0x401000);
+        let end = Address::new(Rc::clone(&ram), 0x401000 + bytes.len() as u64);
+        arch.symboltab
+            .set_property_range(varnode_flags::readonly, &start, &end);
+    }
     let fd = decompile_func(arch, "dispatch", Address::new(ram, 0x401000), 0).unwrap();
     print_c(arch, &fd)
 }
