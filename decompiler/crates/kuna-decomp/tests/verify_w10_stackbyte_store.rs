@@ -1,0 +1,136 @@
+//! Required stackview byte stores stay separate from their register value when
+//! a later call has a write-effect INDIRECT for those bytes.
+
+use std::rc::Rc;
+
+use kuna_base::address::Address;
+use kuna_base::space::{
+    addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, IopSpace,
+    SpacebaseSpace, UniqueSpace,
+};
+use kuna_decomp::context::ArchContext;
+use kuna_decomp::dtype::{type_metatype, Datatype};
+use kuna_decomp::funcdata::Funcdata;
+use kuna_decomp::merge::Merge;
+use kuna_decomp::varnode::varnode_flags;
+use kuna_num::opcodes::OpCode;
+
+fn fixture(
+    with_write_guard: bool,
+) -> (
+    Funcdata,
+    kuna_decomp::context::HighVariableId,
+    kuna_decomp::context::HighVariableId,
+) {
+    let mut spaces = AddrSpaceManager::new();
+    spaces.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+    spaces
+        .insert_space(Rc::new(UniqueSpace::new(1, 0, false)))
+        .unwrap();
+    spaces.insert_space(Rc::new(IopSpace::new(2))).unwrap();
+    let register = Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "register",
+        false,
+        8,
+        1,
+        3,
+        addrspace_flags::hasphysical,
+        1,
+        1,
+    ));
+    spaces.insert_space(Rc::clone(&register)).unwrap();
+    let ram = Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "ram",
+        false,
+        8,
+        1,
+        4,
+        addrspace_flags::hasphysical,
+        1,
+        1,
+    ));
+    spaces.insert_space(Rc::clone(&ram)).unwrap();
+    let stack = Rc::new(SpacebaseSpace::new(
+        "stack", 5, 8, &register, 1, true, false,
+    ));
+    spaces.insert_space(Rc::clone(&stack)).unwrap();
+
+    let mut arch = ArchContext::new(spaces);
+    arch.stack_views = true;
+    let mut fd = Funcdata::new(
+        "build",
+        "build",
+        Rc::new(arch),
+        Address::new(Rc::clone(&ram), 0x1000),
+        0x1000,
+        0x40,
+    )
+    .unwrap();
+    let object = Address::new(Rc::clone(&stack), 0x20);
+    let mut backing = Datatype::new(3, type_metatype::TYPE_UNION);
+    backing.name = "stack_views_rgb".to_string();
+    fd.get_scope_local_mut()
+        .unwrap()
+        .add_symbol(
+            "backing",
+            Rc::new(backing),
+            &object,
+            &Address::new_invalid(),
+        )
+        .unwrap();
+
+    let root = fd.bblocks_root_pub();
+    let block = fd.bblocks_mut().new_block_basic(root);
+
+    let literal = fd.new_constant(1, 0x11);
+    let source_op = fd.new_op(1, Address::new(Rc::clone(&ram), 0x1001));
+    fd.op_set_opcode_code(source_op, OpCode::CPUI_COPY);
+    fd.op_set_input(source_op, literal, 0).unwrap();
+    let source = fd.new_unique_out(1, source_op).unwrap();
+    fd.op_insert(source_op, block, None);
+
+    let store = fd.new_op(1, Address::new(Rc::clone(&ram), 0x1002));
+    fd.op_set_opcode_code(store, OpCode::CPUI_COPY);
+    fd.op_set_input(store, source, 0).unwrap();
+    let stored = fd.new_varnode_out(1, &object, store).unwrap();
+    fd.vbank_mut()
+        .get_mut(stored)
+        .unwrap()
+        .set_flags_pub(varnode_flags::mapped | varnode_flags::addrtied);
+    fd.vbank_mut().get_mut(stored).unwrap().set_stack_store();
+    fd.op_insert(store, block, None);
+
+    let call = fd.new_op(1, Address::new(Rc::clone(&ram), 0x1003));
+    fd.op_set_opcode_code(call, OpCode::CPUI_CALL);
+    let target = fd.new_code_ref(&Address::new(Rc::clone(&ram), 0x2000));
+    fd.op_set_input(call, target, 0).unwrap();
+    fd.op_insert(call, block, None);
+    if with_write_guard {
+        fd.new_indirect_op(call, &object, 1, 0);
+    }
+    fd.set_high_level();
+
+    let backing = fd.vbank().get(stored).unwrap().get_high().unwrap();
+    let value = fd.vbank().get(source).unwrap().get_high().unwrap();
+    (fd, backing, value)
+}
+
+#[test]
+fn a_later_call_guard_keeps_a_stackview_store_explicit() {
+    let (mut fd, backing, value) = fixture(true);
+    assert!(
+        !Merge::merge_test_required(&mut fd, backing, value),
+        "a register value must not merge into frame bytes guarded across a writing call"
+    );
+}
+
+#[test]
+fn a_read_only_call_does_not_change_the_store_merge() {
+    let (mut fd, backing, value) = fixture(false);
+    assert!(
+        Merge::merge_test_required(&mut fd, backing, value),
+        "without a write-effect INDIRECT, the existing adjacent-store merge remains allowed"
+    );
+}
