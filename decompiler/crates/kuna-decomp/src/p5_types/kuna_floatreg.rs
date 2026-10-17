@@ -639,7 +639,7 @@ fn result_of_a_non_float_call(data: &Funcdata, vn: VarnodeId) -> bool {
 /// Does the call `call` pass its argument `slot` in a float-class register of
 /// its model?  Asked of where the argument lives, not of the value handed in:
 /// copy propagation leaves `vmov r0,s0; bl put3` reading `s0`.
-fn passed_in_a_float_register(data: &Funcdata, call: crate::context::OpId, slot: int4) -> bool {
+pub(crate) fn passed_in_a_float_register(data: &Funcdata, call: crate::context::OpId, slot: int4) -> bool {
     let Some(fc) = data.get_call_specs_index(call).map(|i| data.get_call_specs(i)) else { return false };
     let proto = fc.proto();
     let storage = fc

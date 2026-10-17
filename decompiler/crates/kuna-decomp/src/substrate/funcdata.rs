@@ -157,6 +157,7 @@ pub struct DirectiveSymbol {
 }
 
 pub struct Funcdata {
+    pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
     /// Creation index of first Varnode created after start of cleanup
@@ -692,6 +693,7 @@ impl Funcdata {
         };
 
         Ok(Funcdata {
+            kuna_fpu_trunc_views: Vec::new(),
             flags: 0,
             clean_up_index: 0,
             high_level_index: 0,
@@ -3967,6 +3969,7 @@ impl Funcdata {
     /// (`clearBlocks`, `obank.clear`, `vbank.clear`) and the flag/index reset are
     /// faithful.
     pub fn clear(&mut self) {
+        self.kuna_fpu_trunc_views.clear();
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
             | funcdata_flags::blocks_generated

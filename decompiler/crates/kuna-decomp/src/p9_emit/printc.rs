@@ -7168,6 +7168,14 @@ impl PrintC {
                 }
             }
         }
+        if let Some((transfer, target)) =
+            crate::kuna_bitcast::truncated_float_storage(fd, arch.decl_high_type, op)
+        {
+            self.push_cast_open(&target, op);
+            self.op_bit_transfer_ir(fd, arch, op, transfer);
+            self.push_cast_close(&target);
+            return;
+        }
         // Non-special-print SUBPIECE (printc.cc:892-897): isSubpieceCast decides
         // between opTypeCast and opFunc.
         // The cast arm was previously gated out because it tripped a spurious

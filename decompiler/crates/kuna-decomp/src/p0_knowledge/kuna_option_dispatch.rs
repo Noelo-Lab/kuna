@@ -670,6 +670,11 @@ kuna_options! { self, p1;
         self.fold_call_returns = val;
         Ok(msg)
     },
+    "fputruncviews" => {
+        let (val, msg) = crate::kuna_fputruncviews::OptionFpuTruncViews.apply(p1)?;
+        self.fpu_trunc_views = val;
+        Ok(msg)
+    },
     "foldcallretphi" => {
         let (val, msg) =
             crate::kuna_foldcallretphi::OptionFoldCallRetPhi.apply(p1)?;

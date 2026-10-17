@@ -445,6 +445,9 @@ Three tiers:
 | memcpy copies 0x40 bytes into a local declared char v13[12] | [`stackstruct`](#stackstruct) |
 | negative index displacement hides a declared global array | [`globalarrayanchor`](#globalarrayanchor) |
 | indexed stores use an address immediately before an array | [`globalarrayanchor`](#globalarrayanchor) |
+| numerical integer conversion is stored in a float local | [`fputruncviews`](#fputruncviews) |
+| short call argument uses inverse floating storage unions | [`fputruncviews`](#fputruncviews) |
+| one floating register carries both integers and genuine floating values | [`fputruncviews`](#fputruncviews) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -2170,6 +2173,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Enable when an indexed access is rendered with a literal address before the declared array or with a synthetic symbol instead of its declared array.
 - **Where / provenance:** P3/simplification-quiescence · kuna · opt-in-tool · mapped-array-negative-index-bias
 - **Example:** `option globalarrayanchor on`
+
+### `fputruncviews` -- on | off, default `on`
+
+- **Symptoms:** numerical integer conversion is stored in a float local; short call argument uses inverse floating storage unions; one floating register carries both integers and genuine floating values.
+- **What it does:** Keep an unlocked numerical float-to-integer conversion result in a logical integer local when the same storage also has a floating view. A separate bit-preserving copy carries the storage view through required merges; the numerical expression is evaluated once.
+- **When to flip:** An integer conversion transported through floating registers is printed through inverse float/integer storage unions. Locked types and names remain authoritative; observable floating storage writes, clobbers and later floating uses are retained. Turn off to restore mixed storage-variable recovery.
+- **Where / provenance:** P6/variable-merging · kuna · transform · kuna-fputruncviews
+- **Example:** `option fputruncviews off`
 
 ## Analysis & loader passes
 

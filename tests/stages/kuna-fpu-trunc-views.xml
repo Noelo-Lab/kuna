@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default">
+<bytechunk space="ram" offset="0x1000">9de3bf80db064000db27bff89007bff8400003fc01000000d51e00009ba01a4adb27bff8d007bff8912a2010913a20104000043401000000db0640009ba3492ddb27bff89007bff8400003ee01000000d007bff84000046b0100000081c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1000" name="transport"/>
+<bytechunk space="ram" offset="0x1100">9de3bf80db064000db27bff89007bff8400003bc0100000090100018400004790100000095a0002097a000219ba01a4adb27bff8d007bff8912a2010913a2010400003f001000000db0640009ba3492ddb27bff89007bff8400003aa01000000d007bff8400004270100000081c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1100" name="effect"/>
+<bytechunk space="ram" offset="0x1200">9de3bf80db064000db27bff89007bff84000037c0100000090100018400004390100000095a0002097a000219ba01a4adb27bff89007bff84000047201000000d007bff8912a2010913a2010400003ad01000000db0640009ba3492ddb27bff89007bff84000036701000000d007bff8400003e40100000081c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1200" name="clobber"/>
+<symbol space="ram" offset="0x2000" name="touch"/>
+<symbol space="ram" offset="0x2100" name="sink_word"/>
+<symbol space="ram" offset="0x2200" name="sink_float"/>
+<symbol space="ram" offset="0x2300" name="sample"/>
+<symbol space="ram" offset="0x2400" name="alter"/>
+<bytechunk space="ram" offset="0x1300">9de3bf80db064000db27bff89007bff84000033c0100000080a6a0001280000601000000d51e00009ba01a4a1080000301000000db064000db27bff8f007bff8400004700100000081c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1300" name="phi_0"/>
+<bytechunk space="ram" offset="0x1400">9de3bf80db064000db27bff89007bff8400002fc0100000080a6a0000280000501000000db0640001080000401000000d51e00009ba01a4adb27bff8f007bff8400004300100000081c7e00881e80000</bytechunk>
+<symbol space="ram" offset="0x1400" name="phi_1"/>
+<symbol space="ram" offset="0x2500" name="release"/>
+</binaryimage>
+<script>
+<com>parse line extern void touch(float4 *);</com>
+<com>parse line extern void sink_word(int2);</com>
+<com>parse line extern void sink_float(float4);</com>
+<com>parse line extern float8 sample(float8 *);</com>
+<com>parse line extern void alter(float4 *);</com>
+<com>parse line extern void transport(float8 *source,float4 *value);</com>
+<com>parse line extern void effect(float8 *source,float4 *value);</com>
+<com>parse line extern void clobber(float8 *source,float4 *value);</com>
+<com>parse line extern void release(void);</com>
+<com>parse line extern uint4 phi_0(float8 *source,float4 *value,int4 branch);</com>
+<com>parse line extern uint4 phi_1(float8 *source,float4 *value,int4 branch);</com>
+<com>option castnarrow off</com>
+<com>option fputruncviews off</com>
+<com>lo fu phi_0</com><com>decompile</com><com>print C</com>
+<com>lo fu phi_1</com><com>decompile</com><com>print C</com>
+<com>lo fu transport</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu effect</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clobber</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option fputruncviews on</com>
+<com>lo fu phi_0</com><com>decompile</com><com>print C</com>
+<com>lo fu phi_1</com><com>decompile</com><com>print C</com>
+<com>lo fu transport</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu effect</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clobber</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="FPU TRUNC VIEWS #1: keep the logical numeric result" min="3" max="3">v[0-9]+ = \(int4\)\*source;</stringmatch>
+<stringmatch name="FPU TRUNC VIEWS #2: evaluate the provider into integer locals" min="2" max="2">v[0-9]+ = \(int4\)sample\(source\);</stringmatch>
+<stringmatch name="FPU TRUNC VIEWS #3: keep genuine floating multiplication" min="6" max="6">= \*value \* \*value;</stringmatch>
+<stringmatch name="FPU TRUNC VIEWS #4: retain the floating storage write" min="5" max="5">unsigned int from; float to;.*\.from = v[0-9]+ \}\)\.to;</stringmatch>
+<stringmatch name="FPU TRUNC VIEWS #5: off or a clobber reads actual floating storage" min="4" max="4">float from; unsigned int to;.*\.from = v[0-9]+\[0\] \}\)\.to;</stringmatch>
+</decompilertest>

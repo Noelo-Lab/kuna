@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3026,
-    3026
+    3035,
+    3035
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -496,6 +496,10 @@
     "data:FASTFAILNORETURN #1: the parameter is returned directly once the interrupt ends the flow (default pass only)",
     "data:FASTFAILNORETURN #2: the unbalanced stack pointer becomes a tracked variable only in the fastfailnoreturn-off pass",
     "data:FASTFAILNORETURN #3: the parameter's own stack slot degenerates into an offset off that variable only in the fastfailnoreturn-off pass",
+    "data:FLOAT STORAGE TRUNCATION #1: extract the float bits with either cast policy",
+    "data:FLOAT STORAGE TRUNCATION #2: numeric conversion remains numeric",
+    "data:FLOAT STORAGE TRUNCATION #3: integer truncation keeps its cast with castnarrow off",
+    "data:FLOAT STORAGE TRUNCATION #4: integer conversion is implicit with castnarrow on",
     "data:FLOATBITS #10: x86-64 and AArch64 fabs print integer on both sides with the option off",
     "data:FLOATBITS #11: x86-64 and AArch64 fabs are double on both sides",
     "data:FLOATBITS #12: arithmetic on the bits keeps the integer",
@@ -621,6 +625,11 @@
     "data:FMTSTATIC #7: an alloca frame gains no argument past the format's one",
     "data:FMTSTATIC #8: Apple arm64 prints the computed value",
     "data:FMTSTATIC #9: Apple arm64 gains no phantom parameter",
+    "data:FPU TRUNC VIEWS #1: keep the logical numeric result",
+    "data:FPU TRUNC VIEWS #2: evaluate the provider into integer locals",
+    "data:FPU TRUNC VIEWS #3: keep genuine floating multiplication",
+    "data:FPU TRUNC VIEWS #4: retain the floating storage write",
+    "data:FPU TRUNC VIEWS #5: off or a clobber reads actual floating storage",
     "data:FUNCBOUNDFLOW #1: default does NOT merge neighbor; only the funcboundflow-off pass shows its body (exactly one occurrence across both passes)",
     "data:FUNCBOUNDFLOW #2: both passes resolve the unnamed no-return call to fatal(), so the sole difference is the boundary truncation",
     "data:FUNCPTRALIGN #1: the SLEIGH ISA-mode bit-clear never reaches the emitted C",
@@ -917,7 +926,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated ARM frames are default-off",
     "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 310 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 311 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",

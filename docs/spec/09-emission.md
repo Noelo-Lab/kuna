@@ -156,6 +156,21 @@ cast suppression. `FLOAT_INT2FLOAT`, `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` keep
 their numeric conversion behavior. The representation uses the target's
 ordinary 32-/64-bit integer and IEEE float storage widths.
 
+A low-end integer `SUBPIECE` of a named 32- or 64-bit float similarly reads
+storage bits before narrowing (`kuna_bitcast.rs (truncated_float_storage)`).
+The selected storage view or declared scalar member type governs this decision,
+even when a merged member's own type is integer: casting that float directly to a short performs a numeric conversion
+and loses an integer result transported through FPU storage. C first reads the
+same-width unsigned member of a union compound literal, then casts that word to
+the truncated integer type; Rust applies `to_bits()` before the narrowing cast.
+A float-facing input uses the same lowering instead of an opaque `SUB42`
+intrinsic. Each input is evaluated once. Nonzero-offset extraction, integer
+storage and numeric `FLOAT_TRUNC` operations keep their existing handling.
+The canonical union members must match the target widths (`float`/`unsigned
+int` at four bytes, or `double`/`unsigned long long` at eight); enums and
+nonmatching data organizations keep their existing handling.
+This is a storage-semantics repair without an inference option.
+
 **Floating comparison negation.** `printc.rs (PrintC::check_print_negation)`
 uses the shared opcode complement table, which excludes ordered float
 comparisons. Negating `FLOAT_LESS` or `FLOAT_LESSEQUAL`, whether through a

@@ -215,6 +215,8 @@ pub mod pcodeop_addlflags {
     pub const kuna_exactfloat: uint4 = 0x80000;
     /// A COPY lowered from a physical stack LOAD, retaining its read provenance.
     pub const kuna_stack_read: uint4 = 0x100000;
+    /// A floating storage-view COPY retaining a separate numerical integer result.
+    pub const kuna_fpu_view_copy: uint4 = 0x200000;
 }
 
 // ---------------------------------------------------------------------------

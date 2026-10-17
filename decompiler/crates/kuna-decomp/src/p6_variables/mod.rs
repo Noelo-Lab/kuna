@@ -30,6 +30,7 @@ pub mod varmap;
 pub mod coreaction_cleanup;
 pub mod kuna_callretfold;
 pub mod kuna_foldcallretphi;
+pub mod kuna_fputruncviews;
 pub mod kuna_indirectonly;
 pub mod dynamic;
 pub mod kuna_dynamiclocals;

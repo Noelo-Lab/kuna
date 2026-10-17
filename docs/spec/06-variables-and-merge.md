@@ -1072,6 +1072,34 @@ This is a correctness fix and is unconditional: two distinct variables under
 one identifier make the emitted C read and write the wrong object, and make a
 `name` assertion ambiguous.
 
+The `fputruncviews` option (on by default; flipping it moves none of the 675
+datatest assertions) separates a numerical `FLOAT_TRUNC` result from an
+inferred floating storage view of the same-width bits. After address-tied
+recovery, an unlocked, unmapped conversion result that meets a floating view
+keeps an explicit integer local. A marked bit-preserving COPY carries the
+floating view through required marker merges. COPY and speculative merges keep
+the view separate from the logical integer, including when prior variable names
+would otherwise reunite them. Speculative merges also never join the logical
+integer to another variable: a speculative partner sharing its register would
+otherwise take the conversion's signed type. The conversion is evaluated once;
+writes to observable storage, intervening clobbers and later genuine floating
+operations keep their existing order and storage views. Locked types,
+locked names and partial-width storage relationships are not rewritten. Existing
+integer signedness is retained, and no synthetic type lock is introduced. Turning
+the option off restores existing mixed-variable recovery. This recovery is
+independent of the unconditional bit-preserving integer extraction repair in P9.
+Marker classification considers the output and other incoming values; eligible
+numerical truncations count as integers regardless of traversal order. Actual
+call and return prototypes determine floating ABI views. Where the prototype
+is unknown, an existing inferred floating view is preserved only for an
+argument or return value the model passes in a float-class register
+(`kuna_floatreg.rs (passed_in_a_float_register)`); an argument the call takes
+in an integer register reads the logical integer, since copy propagation
+leaves `vmov r0,s18; bl sinki` reading the floating register. This does not
+recover missing ABI information. A mapped or name-locked root is deliberately
+left unchanged, so renaming that root can disable this split. Functions with no
+inserted bridge bypass the additional speculative-merge scans.
+
 ## 6.2 The stack frame
 
 Stack locals do not exist until this phase builds them; before it, the frame
