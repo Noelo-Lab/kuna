@@ -44,10 +44,12 @@
 //! inert on any image without `.eh_frame`. Targets are filtered for a preceding
 //! no-fall-through encoding before a body is decoded up to its last candidate.
 //! Source candidates are checked in address order, so each source range is walked
-//! once; undecodable or unanchored sources supply no evidence. Prefix bytes on a
-//! real branch remain part of its source instruction. The entries are reported on
-//! [`AnalysisOutput::fde_interior_entries`], which the commit adds after the
-//! `fdeinterior` suppression, since by construction every one is FDE-interior.
+//! once; unanchored sources supply no evidence, and a byte the decoder rejects is
+//! stepped over singly so one unsupported instruction does not hide the branches
+//! after it. Prefix bytes on a real branch remain part of its source instruction.
+//! The entries are reported on [`AnalysisOutput::fde_interior_entries`], which the
+//! commit adds after the `fdeinterior` suppression, since by construction every one
+//! is FDE-interior.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -163,6 +165,7 @@ pub fn cold_entries(
 
 /// Map byte-scan candidates to instructions decoded from a metadata-backed start.
 /// Candidates are visited in address order, so each anchored prefix is walked once.
+/// An undecodable byte is stepped over singly, as a linear sweep does.
 fn source_instructions(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
@@ -191,16 +194,11 @@ fn source_instructions(
         while !failed && next <= source {
             pc = next;
             let address = Address::new(Rc::clone(code_space), pc);
-            let Ok(len) = translate.instruction_length(&address) else {
-                failed = true;
-                break;
+            let len = match translate.instruction_length(&address) {
+                Ok(len) if len > 0 => len as u64,
+                _ => 1,
             };
-            if len <= 0 {
-                failed = true;
-                break;
-            }
-            let Some(end) = pc.checked_add(len as u64).filter(|&end| end <= hi)
-            else {
+            let Some(end) = pc.checked_add(len).filter(|&end| end <= hi) else {
                 failed = true;
                 break;
             };

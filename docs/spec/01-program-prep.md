@@ -3578,7 +3578,9 @@ candidate. Source candidates are checked in address order by walking instruction
 lengths from their nearest known start, once per prefix. The containing instruction
 must actually branch to `t`: an `E9` or `0F 8x` inside a `movabs` immediate supplies
 no incoming edge, while a genuine prefixed branch still does. Sources without an
-anchor in the same section, or beyond a failed decode, are refused. The pass costs
+anchor in the same section are refused; a byte the decoder rejects (an instruction
+SLEIGH does not model, such as `serialize`) is stepped over one byte at a time, as a
+linear sweep does, so it does not hide the real branches after it. The pass costs
 one scan of executable bytes plus the target and source prefix decodes. It uses
 the engine `Translate`, so it runs as a
 deferred entry pass at the commit point, and its entries join the inventory *after*

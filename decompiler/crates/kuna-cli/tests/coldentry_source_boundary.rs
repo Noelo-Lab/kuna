@@ -106,7 +106,7 @@ fn branch_bytes_inside_an_immediate_do_not_create_a_cold_entry() {
 
 #[test]
 fn real_rel32_branches_still_discover_cold_entries_with_or_without_source_fdes() {
-    for encoding in ["0xe9", "0x0f,0x84", "0x2e,0xe9", "0x2e,0x0f,0x84"] {
+    for encoding in ["0xe9", "0x0f,0x84", "0x2e,0xe9", "0x2e,0x0f,0x84", "0x0f,0x01,0xe8,0xe9"] {
         for frame in [true, false] {
             let source = format!("test %edi,%edi\n.byte {encoding}\n.long .Lsecond - (. + 4)\nret");
             let Some(fixture) = fixture(&source, frame) else {
