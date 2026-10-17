@@ -85,6 +85,9 @@ mod strlenscan_round_trip;
 #[path = "coff_strings.rs"]
 mod coff_strings;
 
+#[path = "coldentry_source_boundary.rs"]
+mod coldentry_source_boundary;
+
 #[path = "compact_switch_cli.rs"]
 mod compact_switch_cli;
 
