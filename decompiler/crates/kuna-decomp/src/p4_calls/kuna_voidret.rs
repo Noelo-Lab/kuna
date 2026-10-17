@@ -1080,7 +1080,10 @@ pub fn stale_readers(
         let float = arch.kuna_voidret.returns.get(callee) == Some(&Returns::Float);
         let withdrawn = arch.kuna_voidret.withdrawn.contains(callee);
         let widened = arch.kuna_voidret.wide.contains_key(callee);
-        let states = float || withdrawn || arch.kuna_callret_types.contains_key(callee);
+        let states = float
+            || withdrawn
+            || arch.kuna_callret_types.contains_key(callee)
+            || arch.kuna_narrowret.contains_key(callee);
         let scaled = arch.kuna_callret_types.get(callee).is_some_and(|s| {
             s.ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
                 && s.ct.get_ptr_to().is_some_and(|p| {

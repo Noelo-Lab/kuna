@@ -6449,20 +6449,32 @@ the record (`Funcdata::clone_op`).
 order (beside `callrettype`'s record), `kuna_narrowret::record` states the
 function's narrow return when the prototype is neither declared nor
 output-locked, the recovered output is a register of 1 to 4 bytes narrower than
-the return register, every live RETURN carries the record and hands back a
-value of that width in that storage (or a constant), and every return computes
-its value (`every_return_computes_with`, global reads counted). A value is a
+the return register, and every live RETURN hands back a value of that width in
+that storage (or a constant) that either carries the record or is the result
+of a direct call to a callee that states the same storage and width, read
+straight off the CALL, through copies of that storage onto itself, or as the
+call's output-trial creation that `passthrough` reads at a tail call
+(`tail_statement`): the register then holds what the callee left in it, the
+callee's zero extension. A function with no such pass-through return must
+compute every value it returns (`every_return_computes_with`, global reads
+counted). A value is a
 truth value when it is one byte that every RETURN computes as a comparison or a
 constant 0 or 1 through copies, merges and zero extensions (`boolbyte`'s def
 walk, `def_is_truth_valued`), not all of them constants; any other value must be
 able to set the top bit of its width (the union of the returned values'
 nonzero masks reaches it), since a value that never does is as often an `int`
 or enum of small numbers (diff's `analyze_hunk` returns a `changes` enum of 0 to
-3 built from two flags) as a narrow one. The statement is the storage and width,
+3 built from two flags) as a narrow one; a pass-through return inherits its
+callee's answer. The statement is the storage and width,
 and the integer type the function's listing declares it returns when that is an
-integer of that width, or `bool` for a truth value. A function decompiled again records again; a redo the
-run discards puts the earlier statement back (`kuna_narrowret::restore`), as
-for `callrettype`.
+integer of that width, or `bool` for a truth value. A function decompiled again
+records again; a redo the run discards puts the earlier statement back
+(`kuna_narrowret::restore`), as for `callrettype`. A callee whose statement a
+`voidret` redo changes counts as changed for its readers decompiled before it
+(`stale_readers`), as a changed `callrettype` statement does: an `-O0` wrapper
+`return h9(..)` recovered `void` until its callers' reads forced its return,
+and the caller decompiled against the `void` one typed the result from a
+comparison alone.
 
 **The call.** `seed` copies the statements for every callee onto the caller's
 `Funcdata`. When `ActionActiveReturn` has built a direct CALL's output from its
@@ -6484,7 +6496,9 @@ and so the type the call expression has where `ActionSetCasts` converts it. The
 listing declares the callee `unsigned char`, so a byte compared with `0x80`
 prints `h25(..) == 0x80`; typed by the comparison alone it was a `char` and
 printed `h25(..) == '\x80'`, which C, reading the declared `unsigned char`,
-never finds equal.
+never finds equal. A one-byte output that is exactly the `char` or `unsigned
+char` a callee with no statement declares, by `protoorder`'s record of its
+recovered return, takes that type the same way (`declared_character`).
 A stated truth value also marks the CALL a calculated boolean, so the result's
 nonzero mask is 1, its type is `bool`, and `boolbyte` accepts the call as a
 truth-valued definition of the byte that holds it.

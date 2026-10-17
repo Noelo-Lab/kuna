@@ -11,9 +11,10 @@
 //! RETURN's input to the narrow value, and [`note_trim`] marks a RETURN every
 //! trim of which, starting from the whole register, dropped only known-zero
 //! bits. In the callee-first `decompile-all` run [`record`] states, for a
-//! function whose every live RETURN is so marked and returns the same narrow
-//! storage, that storage, with the integer type the function declares it
-//! returns (a `bool` only when every RETURN computes a truth value). At a later
+//! function whose every live RETURN is so marked, or hands back unchanged the
+//! result of a stated callee, and returns the same narrow storage, that
+//! storage, with the integer type the function declares it returns (a `bool`
+//! only when every RETURN computes a truth value). At a later
 //! call to it whose recovered output is a wider part of the same register
 //! holding that storage as its low part, [`narrow_call_output`] makes the CALL
 //! write the narrow value and zero-extends it back into the old output: every
@@ -25,7 +26,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use kuna_base::address::Address;
+use kuna_base::address::{calc_mask, Address};
 use kuna_base::space::spacetype;
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
@@ -128,25 +129,32 @@ fn narrow_return(data: &Funcdata) -> Option<NarrowReturn> {
     let mut any = false;
     let mut truth = true;
     let mut computed = false;
+    let mut tails = false;
     let mut nz = 0;
     for op in data.obank().iter_code(OpCode::CPUI_RETURN) {
         let o = data.obank().get(op)?;
         if o.is_dead() || o.get_halt_type() != 0 {
             continue;
         }
-        let v = data.vbank().get(o.get_in(1)?)?;
-        if o.get_addlflags() & kuna_narrowret == 0 || v.get_size() != size {
-            return None;
-        }
-        if !v.is_constant() && *v.get_addr() != addr {
+        let vn = o.get_in(1)?;
+        let v = data.vbank().get(vn)?;
+        if v.get_size() != size || (!v.is_constant() && *v.get_addr() != addr) {
             return None;
         }
         any = true;
+        if o.get_addlflags() & kuna_narrowret == 0 {
+            let inner = tail_statement(data, vn)?;
+            tails = true;
+            computed = true;
+            truth = truth && inner.truth();
+            nz |= if inner.truth() { 1 } else { calc_mask(size) };
+            continue;
+        }
         computed |= !v.is_constant();
         nz |= v.get_nz_mask();
-        truth = truth && crate::kuna_boolbyte::def_is_truth_valued(data, o.get_in(1)?, 0);
+        truth = truth && crate::kuna_boolbyte::def_is_truth_valued(data, vn, 0);
     }
-    if !any || !crate::kuna_returnuncomputed::every_return_computes_with(data, true) {
+    if !any || (!tails && !crate::kuna_returnuncomputed::every_return_computes_with(data, true)) {
         return None;
     }
     let truth = truth && computed;
@@ -166,6 +174,37 @@ fn narrow_return(data: &Funcdata) -> Option<NarrowReturn> {
         size,
         ct: ct.cloned(),
     })
+}
+
+/// The statement of the callee whose result the RETURN input `vn` hands back
+/// unchanged, in the same storage: the output of a direct CALL, read directly,
+/// through copies of the same storage onto itself, or as the CALL's
+/// output-trial creation (`passthrough`'s tail return).  A function that
+/// returns a stated callee's result returns that callee's zero extension.
+fn tail_statement(data: &Funcdata, vn: VarnodeId) -> Option<NarrowReturn> {
+    let v = data.vbank().get(vn)?;
+    let mut def = v.get_def();
+    for _ in 0..4 {
+        let Some(d) = def.and_then(|d| data.obank().get(d)).filter(|d| d.code() == OpCode::CPUI_COPY) else { break };
+        let src = data.vbank().get(d.get_in(0)?)?;
+        if src.get_addr() != v.get_addr() || src.get_size() != v.get_size() {
+            return None;
+        }
+        def = src.get_def();
+    }
+    let d = data.obank().get(def?)?;
+    let call = match d.code() {
+        OpCode::CPUI_CALL => def?,
+        OpCode::CPUI_INDIRECT if d.is_indirect_creation() => {
+            let iop = data.vbank().get(d.get_in(1)?)?;
+            OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()))
+        }
+        _ => return None,
+    };
+    data.obank().get(call).filter(|c| c.code() == OpCode::CPUI_CALL)?;
+    let fc = data.get_call_specs(data.get_call_specs_index(call)?);
+    let stated = data.kuna_narrowret(key(fc.get_entry_address())?)?;
+    (stated.size == v.get_size() && stated.addr == *v.get_addr()).then(|| stated.clone())
 }
 
 /// Keep the narrow value `data`, the function entered at `entry`, returns, for
@@ -204,6 +243,23 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
 /// What the function filed under `k` states it returns, for [`restore`].
 pub fn statement(arch: &Architecture, k: (int4, uintb)) -> Option<Rc<NarrowReturn>> {
     arch.kuna_narrowret.get(&k).cloned()
+}
+
+/// Do two statements say the same: one storage, one width, one type?
+pub fn same_statement(a: Option<&NarrowReturn>, b: Option<&NarrowReturn>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.addr == b.addr
+                && a.size == b.size
+                && match (&a.ct, &b.ct) {
+                    (None, None) => true,
+                    (Some(x), Some(y)) => Rc::ptr_eq(x, y) || x.compare(y, 10).is_ok_and(|c| c == 0),
+                    _ => false,
+                }
+        }
+        _ => false,
+    }
 }
 
 /// Put back `stated`, what the function filed under `k` stated before a
@@ -328,23 +384,36 @@ pub fn narrow_call_output(data: &mut Funcdata, fc: &FuncCallSpecs) {
 }
 
 /// The type the callee of the CALL `op` (spec `fc`) declares it returns, for a
-/// call whose `size`-byte output is the narrow value the callee states: the
-/// def-side vote of `TypeOpCall::getOutputLocal` for an unlocked output, and so
-/// the type the call expression has where `ActionSetCasts` converts it.
+/// call whose `size`-byte output is the narrow value the callee states, or,
+/// with no statement, for a one-byte output that is exactly the character the
+/// callee's listing declares it returns: the def-side vote of
+/// `TypeOpCall::getOutputLocal` for an unlocked output, and so the type the
+/// call expression has where `ActionSetCasts` converts it.
 pub fn stated_type(data: &Funcdata, op: OpId, fc: &FuncCallSpecs, size: int4) -> Option<Rc<Datatype>> {
     if !data.get_arch().narrow_ret {
         return None;
     }
-    let stated = data.kuna_narrowret(key(fc.get_entry_address())?)?;
     let out = data
         .obank()
         .get(op)
         .filter(|o| o.code() == OpCode::CPUI_CALL)?
         .get_out()?;
-    if stated.size != size || !holds_low_part(data, out, stated) {
-        return None;
+    match data.kuna_narrowret(key(fc.get_entry_address())?) {
+        Some(stated) if stated.size == size && holds_low_part(data, out, stated) => stated.ct.clone(),
+        Some(_) => None,
+        None => declared_character(data, fc, out),
     }
-    stated.ct.clone()
+}
+
+/// The `char` or `unsigned char` the callee of `fc` declares it returns, when
+/// the call's output `out` is exactly that byte.  A caller that compares the
+/// byte with `0x80` otherwise types it from the comparison alone, and C reads
+/// the call at the declared type.
+fn declared_character(data: &Funcdata, fc: &FuncCallSpecs, out: VarnodeId) -> Option<Rc<Datatype>> {
+    let (addr, size, ct) = data.kuna_protoorder_types(fc.get_entry_address())?.output.as_ref()?;
+    let v = data.vbank().get(out)?;
+    let integer = matches!(ct.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT);
+    (*size == 1 && ct.get_size() == 1 && integer && v.get_size() == 1 && v.get_addr() == addr).then(|| Rc::clone(ct))
 }
 
 /// Is the decision trace on (`KUNA_NARROWRET_TRACE=1`)?
