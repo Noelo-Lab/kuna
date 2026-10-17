@@ -6016,7 +6016,9 @@ default-on) gates how far the read follows a dispatch — the unscaled index, th
 long slice across calls, the sixteen-instruction search for the range check,
 the masked index and the re-read below; off, the slice and the search stop at
 eight instructions and at the first call, as they did. How the range check is
-read once it is found is not part of the option.
+read once it is found is *not* gated, so the option off is not the old walk:
+ssh `-O2`'s dispatch at `0x42a26` in `main` reads 9 of its 13 cases on the old
+walk, all 13 with the option on, and none with it off.
 
 *The `-O0` chain.* gcc spends seven instructions between its `ja` and the jump:
 `mov %eax,%eax; lea 0(,%rax,4),%rdx; lea jt(%rip),%rax; mov (%rdx,%rax,1),%eax;
@@ -6031,7 +6033,10 @@ then ten instructions up, and it has a window of its own (sixteen instructions)
 rather than the slice's.
 
 *The range check.* The guard is the nearest conditional branch above the
-dispatch, and the bound is a comparison that feeds that branch's condition —
+dispatch that leaves its own instruction — a `cmov` or a `rep` prefix branches
+only to the end of the instruction it is in, and clang's Duff's device in bash's
+`internal_malloc` has a `cmovae` between its mask and its jump — and the bound
+is a comparison that feeds that branch's condition —
 in the branch itself, or in the nearest instruction above it that writes what
 the condition reads. Instructions that leave the condition alone may sit in
 between (gcc `-O2` puts a `movb $0x3f,0x34(%rsp)` between `cmpb $0x56,0x9c(%rbx)`
@@ -6048,10 +6053,15 @@ $0xfffffffb,%r12d; jb default` guards a five-case table indexed by `sel + 5`, an
 reading it as `0xfffffffb + 1` cases ran on into the table after it. The
 comparison may have its constant on either side and in a temporary of the same
 instruction, which is how AArch64 SLEIGH spells `cmp x8, #6` (`tmp = 6; tmpCY =
-tmp <= x8`). Where no range check bounds the selector, an index masked by `and
-$m` — followed back through scaling, copies and zero extensions with no
-conditional branch on the way — states `m + 1` cases, and the table is read
-only when all of them are cases.
+tmp <= x8`). Nothing checks that the comparison is on the selector: the nearest
+one may test another value entirely. An index masked by `and $m`, followed back
+over the code that falls into the dispatch through scaling, copies and zero
+extensions, states at most `m + 1` cases whatever the range check says — clang
+guards `switch (x & 3)` under `if (y <= 200) *p = y;` with the `cmp $0xc8`, which
+read as 201 cases ran twenty entries into the next functions' tables, and the
+Duff's device checks the byte count against 32 above its `and $0x7` — and where
+no range check bounds the selector the mask is read only when all `m + 1`
+entries are cases.
 
 *A base far above the jump.* gcc `-O2` hoists the base out of a loop into a
 callee-saved register, as far as the prologue: diff's `main` loads its option
@@ -6079,7 +6089,19 @@ the table (tar's `parse_expression` switches on a token type held in a byte,
 whose table is followed directly by another one, so there is no safe place to
 stop), and AArch64's byte and halfword tables scaled by four (`ldrb w11,
 [x9,x8]; add x10,x10,x11,lsl #2; br x10`), whose entries the fold does not
-compose.
+compose, and a range check on another value than the selector with no mask to
+overrule it.
+
+A complete call graph is not a better one for every consumer. Case bodies are
+where an interpreter recurses, so the new edges merge recursive functions into
+larger strongly connected components of `decompile-all`'s callee-first plan, and
+`protoorder` (`cycles`) gives no member of a cycle the prototypes of its callees:
+bash `-O0`'s `execute_*` recursion grows from 206 to 367 functions and 33 of its
+signatures change, mostly to plainer integer types (`extract_arithmetic_subst`
+from `char *(char *,int *)` to `unsigned long(unsigned long,unsigned long)`,
+`execute_command`'s `struct_69 *` to `unsigned long`), as do dash's
+`subevalvar` and `evaltreenr` and coreutils `numfmt`'s `main`. With `protoorder
+off` those functions come out the same with the option on and off.
 
 (kuna) Both reads stop at the engine's own jump-table ceiling,
 `Architecture::max_jumptable_size` — 1024 unless `option jumptablemax <n>` raises

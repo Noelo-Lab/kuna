@@ -296,30 +296,48 @@ pub(super) fn register_targets(
         (table, Some(base)) => delta_targets(table, base, from, pool, exec, Some(limit), max_entries),
         (table, None) => targets(table, from, pool, exec, Some(limit), max_entries),
     };
-    match guard_limit(translate, code_space, data_space, decoded, from, reach) {
-        Ok(limit) => TableRead { cases: read(limit), stated: Some(limit), gap: None },
-        Err(gap) => {
-            let masked = index.filter(|_| reach.far).and_then(|at| {
-                mask_limit(translate, code_space, data_space, decoded, from, at, max_entries)
-            });
-            match masked.map(|n| (n, read(n))) {
-                Some((n, cases)) if cases.len() == n => TableRead { cases, stated: Some(n), gap: None },
-                _ => TableRead { gap: gap.filter(|_| reach.far), ..TableRead::default() },
-            }
+    // A masked index bounds the table whatever the nearest check compares:
+    // clang guards `switch (x & 3)` under `if (y <= 200)` with the `cmp $0xc8`,
+    // and a mask tighter than the check is the table's size.
+    let masked = index.filter(|_| reach.far).and_then(|at| {
+        mask_limit(translate, code_space, data_space, decoded, from, at, max_entries)
+    });
+    match (guard_limit(translate, code_space, data_space, decoded, from, reach), masked) {
+        (Ok(limit), masked) => {
+            let limit = masked.map_or(limit, |n| n.min(limit));
+            TableRead { cases: read(limit), stated: Some(limit), gap: None }
         }
+        (Err(gap), masked) => match masked.map(|n| (n, read(n))) {
+            Some((n, cases)) if cases.len() == n => TableRead { cases, stated: Some(n), gap: None },
+            _ => TableRead { gap: gap.filter(|_| reach.far), ..TableRead::default() },
+        },
     }
+}
+
+/// The op index of the conditional branch that leaves `ops` (the instruction at
+/// `at`, `len` bytes long) for another instruction, if any. A `cmov`'s or a
+/// `rep` prefix's `CBRANCH` only skips the rest of its own instruction (it goes
+/// to `inst_next`, or to an op of the same instruction), so it is no guard.
+fn leaving_branch(ops: &[FullOp], at: u64, len: u32) -> Option<usize> {
+    let next = at.wrapping_add(u64::from(len));
+    ops.iter().rposition(|op| {
+        op.opcode == OpCode::CPUI_CBRANCH
+            && op.ins.first().is_some_and(|dest| !is_constant(dest) && !(at..=next).contains(&dest.offset))
+    })
 }
 
 /// How many entries a table needs whose index is masked rather than checked,
 /// or `None` unless that is provable here.
 ///
 /// bash's readline dispatches on `and $0x7,%eax` under a guard that only
-/// bounds the selector from below (`cmp $0x7,%eax; jbe`), so the mask is the
-/// table's size. From the addend `at` (instruction, op, varnode) of the
-/// table-address sum the fold could not value, the index is followed back
-/// through scaling, copies and zero extensions to an `and` with a constant,
-/// with no conditional branch between it and the dispatch. The caller then
-/// requires every entry to be a case.
+/// bounds the selector from below (`cmp $0x7,%eax; jbe`), and clang's Duff's
+/// device in `internal_malloc` on `and $0x7,%esi` under a `cmp $0x20,%rdx; ja`
+/// on the byte count, so the mask is the table's size. From the addend `at`
+/// (instruction, op, varnode) of the table-address sum the fold could not
+/// value, the index is followed back over the code that falls into the
+/// dispatch, through scaling, copies and zero extensions, to an `and` with a
+/// constant. The caller takes the smaller of this and the range check, and with
+/// no range check requires every entry to be a case.
 fn mask_limit(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
@@ -340,7 +358,7 @@ fn mask_limit(
             return None;
         }
         let ops = cap.ops();
-        if (step > 0 && !falls_through(ops)) || ops.iter().any(|op| op.opcode == OpCode::CPUI_CBRANCH) {
+        if step > 0 && !falls_through(ops) {
             return None;
         }
         reached |= cur == site;
@@ -431,7 +449,7 @@ fn guard_limit(
         let ops = cap.ops();
         match &guard {
             None => {
-                if let Some(at) = ops.iter().rposition(|op| op.opcode == OpCode::CPUI_CBRANCH) {
+                if let Some(at) = leaving_branch(ops, cur, len) {
                     let want: Vec<Key> = ops[at].ins.get(1).and_then(|vn| key_of(vn, data)).into_iter().collect();
                     let (reads, feeding) = feeders(&ops[..at], want, data);
                     if let Some(n) = guard_cases(&[], &feeding, ops, at, data, max_entries) {
@@ -1204,5 +1222,16 @@ mod tests {
             op(OpCode::CPUI_CBRANCH, None, vec![vn(&reg, 0x9000, 8), vn(&uniq, 0x31, 1)]),
         ];
         assert_eq!(guarded(&subs, &hi, 1024), Some(7));
+    }
+
+    /// A `cmov` branches only to the end of its own instruction and a `rep`
+    /// prefix to an op inside it; a `jcc` leaves for another instruction.
+    #[test]
+    fn only_a_branch_out_of_its_own_instruction_is_a_guard() {
+        let (reg, _, cst) = spaces();
+        let cbranch = |dest: VarnodeData| op(OpCode::CPUI_CBRANCH, None, vec![dest, vn(&reg, 0x200, 1)]);
+        assert_eq!(leaving_branch(&[cbranch(vn(&reg, 0x1004, 8))], 0x1000, 4), None, "cmov");
+        assert_eq!(leaving_branch(&[cbranch(vn(&cst, 2, 8))], 0x1000, 4), None, "rep");
+        assert_eq!(leaving_branch(&[cbranch(vn(&reg, 0x2000, 8))], 0x1000, 4), Some(0), "jcc");
     }
 }

@@ -1643,11 +1643,6 @@ fn empty() -> XrefIndex {
     }
 }
 
-/// Decode the instruction at `vma` into `cap`, keeping every input varnode, and
-/// return its byte length.
-///
-/// A translator panic on exotic bytes is contained to `None` — a query surface
-/// must never take the process down over one bad address.
 /// (kuna) `switchtable`: the case bodies of the computed jump at `vma` that
 /// branches on `branch`, read through its register chain or as a Thumb
 /// `tbb`/`tbh` table.
@@ -1681,6 +1676,11 @@ fn branch_cases(
     read
 }
 
+/// Decode the instruction at `vma` into `cap`, keeping every input varnode, and
+/// return its byte length.
+///
+/// A translator panic on exotic bytes is contained to `None` — a query surface
+/// must never take the process down over one bad address.
 pub(super) fn decode(
     translate: &dyn Translate,
     vma: u64,

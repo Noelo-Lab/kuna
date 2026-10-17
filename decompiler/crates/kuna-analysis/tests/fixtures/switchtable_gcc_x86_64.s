@@ -248,6 +248,77 @@ next_selector:
 	.size	\f, .-\f
 	.endr
 
+# clang's Duff's device (bash internal_malloc): the index is masked to three
+# bits, the nearest check bounds the byte count, and a cmov in between is a
+# conditional branch only inside its own instruction.
+	.globl	duff_dispatch
+	.type	duff_dispatch, @function
+duff_dispatch:
+	mov	%rdi, %rdx
+	cmp	$0x20, %rdx
+	ja	.Ldu_out
+	mov	%edx, %esi
+	and	$0x7, %esi
+	xor	%eax, %eax
+	cmp	$0x8, %rdx
+	cmovae	%rdx, %rax
+	lea	.Ldu_jt(%rip), %rcx
+	movslq	(%rcx,%rsi,4), %rdx
+	add	%rcx, %rdx
+	jmp	*%rdx
+.Ldu_c0:
+	jmp	t_du_0
+.Ldu_c1:
+	jmp	t_du_1
+.Ldu_c2:
+	jmp	t_du_2
+.Ldu_c3:
+	jmp	t_du_3
+.Ldu_c4:
+	jmp	t_du_4
+.Ldu_c5:
+	jmp	t_du_5
+.Ldu_c6:
+	jmp	t_du_6
+.Ldu_c7:
+	jmp	t_du_7
+.Ldu_out:
+	ret
+	.size	duff_dispatch, .-duff_dispatch
+
+# clang's `switch (x & 3)` under `if (y <= 200) *p = y;`: the nearest check
+# compares another value, and the mask is the table's size.
+	.globl	maskguard_dispatch
+	.type	maskguard_dispatch, @function
+maskguard_dispatch:
+	cmp	$0xc8, %esi
+	ja	.Lmg_skip
+	mov	%esi, (%rdx)
+.Lmg_skip:
+	and	$0x3, %edi
+	lea	.Lmg_jt(%rip), %rax
+	movslq	(%rax,%rdi,4), %rcx
+	add	%rax, %rcx
+	jmp	*%rcx
+.Lmg_c0:
+	jmp	t_mg_0
+.Lmg_c1:
+	jmp	t_mg_1
+.Lmg_c2:
+	jmp	t_mg_2
+.Lmg_c3:
+	jmp	t_mg_3
+	.size	maskguard_dispatch, .-maskguard_dispatch
+
+	.irp	f, t_du_0, t_du_1, t_du_2, t_du_3, t_du_4, t_du_5, t_du_6, t_du_7, t_mg_0, t_mg_1, t_mg_2, t_mg_3
+	.globl	\f
+	.type	\f, @function
+\f:
+	xor	%eax, %eax
+	ret
+	.size	\f, .-\f
+	.endr
+
 	.section	.rodata
 	.align	4
 .Lo0_jt:
@@ -266,3 +337,11 @@ next_selector:
 	.long	.Lma_c0-.Lma_jt, .Lma_c1-.Lma_jt, .Lma_c2-.Lma_jt, .Lma_c3-.Lma_jt
 .Lma_after:
 	.long	.Lo2_c0-.Lma_after, .Lo2_c1-.Lma_after, .Lo2_c2-.Lma_after, .Lo2_c3-.Lma_after
+.Ldu_jt:
+	.long	.Ldu_c0-.Ldu_jt, .Ldu_c1-.Ldu_jt, .Ldu_c2-.Ldu_jt, .Ldu_c3-.Ldu_jt
+	.long	.Ldu_c4-.Ldu_jt, .Ldu_c5-.Ldu_jt, .Ldu_c6-.Ldu_jt, .Ldu_c7-.Ldu_jt
+.Lmg_jt:
+	.long	.Lmg_c0-.Lmg_jt, .Lmg_c1-.Lmg_jt, .Lmg_c2-.Lmg_jt, .Lmg_c3-.Lmg_jt
+.Lmg_after:
+	.long	.Lo2_c0-.Lmg_after, .Lo2_c1-.Lmg_after, .Lo2_c2-.Lmg_after, .Lo2_c3-.Lmg_after
+	.long	.Lo0_c0-.Lmg_after, .Lo0_c1-.Lmg_after, .Lo0_c2-.Lmg_after, .Lo0_c3-.Lmg_after

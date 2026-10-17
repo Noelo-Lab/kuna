@@ -302,7 +302,7 @@ struct Gcc {
     callees: [u64; 4],
 }
 
-const GCC: [Gcc; 7] = [
+const GCC: [Gcc; 8] = [
     Gcc {
         shape: "-O0: base in the unscaled index slot, cltq of eax, check ten up",
         dispatch: 0x100000,
@@ -352,7 +352,51 @@ const GCC: [Gcc; 7] = [
         cases: [0x100197, 0x100199, 0x10019b, 0x10019d],
         callees: [0x1001ec, 0x1001ef, 0x1001f2, 0x1001f5],
     },
+    Gcc {
+        shape: "clang's x & 3 under an unrelated y <= 200 check, another table follows",
+        dispatch: 0x100231,
+        branch: 0x10024c,
+        cases: [0x10024e, 0x100250, 0x100252, 0x100254],
+        callees: [0x10026e, 0x100271, 0x100274, 0x100277],
+    },
 ];
+
+/// clang's Duff's device (bash `internal_malloc`): eight cases behind `and
+/// $0x7`, with the byte count checked above and a `cmovae` (a conditional
+/// branch inside its own instruction) between the mask and the jump.
+const DUFF: Gcc8 = Gcc8 {
+    dispatch: 0x1001f8,
+    branch: 0x10021e,
+    cases: [0x100220, 0x100222, 0x100224, 0x100226, 0x100228, 0x10022a, 0x10022c, 0x10022e],
+    callees: [0x100256, 0x100259, 0x10025c, 0x10025f, 0x100262, 0x100265, 0x100268, 0x10026b],
+};
+
+struct Gcc8 {
+    dispatch: u64,
+    branch: u64,
+    cases: [u64; 8],
+    callees: [u64; 8],
+}
+
+/// The masked Duff's device reads exactly its eight cases: the cmov is no
+/// guard, and the byte-count check above it is looser than the mask.
+#[test]
+fn a_cmov_between_the_mask_and_the_jump_is_no_guard() {
+    let idx = index_of("switchtable_gcc_x86_64");
+    let mut jumps: Vec<u64> = idx
+        .refs_from_instruction(DUFF.branch)
+        .iter()
+        .filter(|r| r.kind == XrefKind::Jump)
+        .map(|r| r.to)
+        .collect();
+    jumps.sort_unstable();
+    assert_eq!(jumps, DUFF.cases);
+    for callee in DUFF.callees {
+        let owners: Vec<Option<u64>> =
+            idx.refs_to(callee).iter().map(|r| idx.function_containing(r.from)).collect();
+        assert_eq!(owners, [Some(DUFF.dispatch)], "{callee:#x}");
+    }
+}
 
 /// Each dispatch reaches exactly its four cases: a table the walk cannot read
 /// leaves the case bodies undecoded, and a bound it misreads runs on into the
