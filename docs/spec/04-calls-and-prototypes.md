@@ -6096,13 +6096,19 @@ address the function takes but never indexes does not refuse the vote
 slot, and typing an eight-byte slot as an eight-byte pointer re-lays nothing.
 An indexed frame region and a frame struct or array still refuse.
 
-A function whose statement is made of these votes alone (`CallerTypes::pointers_only`)
-is decompiled again within a budget of its own,
-`CALLER_PTR_BUDGET_PCT` (3) percent of the lines the first pass printed, beside
+A function whose statement adds nothing but these votes -- any committed type in
+it repeats the function's own type or the statement it already had
+(`CallerTypes::pointers_only`) -- is decompiled again within a budget of its own,
+`CALLER_PTR_BUDGET_PCT` (2) percent of the lines the first pass printed, beside
 `calleevote`'s 5% (`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs
 (callee_vote_rounds)`). Sharing the one budget let these shorter redos, admitted
 shortest first, take the room a committed `char **` needed in a later round:
 coreutils -O0 `ls`'s `quote_name_buf` lost the `char **inbuf` its callers pass.
+Charging a statement by what it *adds* matters for the same reason: a pointer
+vote beside a one-field record the callers only hand back would otherwise turn
+a statement `calleevote` skips as a no-op into a charged redo, which is how
+openssh -O2 `ssh`'s `load_hostkeys_command` lost its two `char *` parameters to
+the budget in an earlier arm.
 
 What it changes in a body is the parameter's spelling and what follows from it.
 An integer use of the value prints its cast (`p[1] = (unsigned long)a0;`,
@@ -6113,9 +6119,9 @@ a value merged with the retyped one in a callee's return takes the pointer too
 (`void * sub_8514(void *a0,void *a1)`); and a local that held both the pointer
 and an integer may split in two, which renumbers the locals after it. Measured
 on the 444-slice decbench sweep against main cb68db18f (the published
-address-correspondence `type_match`), 270 parameter and stack decisions move
-onto the DWARF type and none off, and 207 functions score better and none
-worse. What it cannot reach is most of the class: a callback reached only
+address-correspondence `type_match`), 267 parameter and stack decisions move
+onto the DWARF type and none off, and 204 functions score better and none
+worse; on the 96-binary optimized nightly sample 18 score better and none worse. What it cannot reach is most of the class: a callback reached only
 through a pointer has no direct caller, a value nobody passes a pointer has no
 evidence, and a call in a switch case body the reference walk does not decode
 leaves its callee's caller set incomplete. The fixture
