@@ -3516,3 +3516,17 @@ Reserving it creates no analysis varnode and changes no physical mapping or
 emitted C. Ghidra receives temporary storage for the logical local, rather than
 a persistable ordinary stack-variable location; ordinary symbol storage and
 register-plus-stack parameter JOINs keep their existing encoding.
+
+### Variable-use provenance lookup
+
+When attaching rendered line and address evidence to reported variables,
+`decompiler/crates/kuna-decomp/src/infra/decompile_drive/kuna_varrefs.rs`
+collects the requested parameter and stack-storage keys, then traverses the
+varnode bank once. Only matching storage buckets are retained for this render;
+there is no cache across IR edits. Parameter keys preserve exact address-space
+identity and byte width, and input varnodes take precedence at parameter storage.
+Stack keys preserve the existing address-space-index check and normalize offsets
+to the stack space's signed address width. Reused storage still requires a unique
+high variable or a unique matching name. The existing named-high and address-taken
+parameter fallbacks remain in their original order, so the index changes lookup
+cost rather than which rendered uses belong to a variable.
