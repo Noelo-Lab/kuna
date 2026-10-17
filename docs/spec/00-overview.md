@@ -2798,6 +2798,14 @@ the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as 
 `BlockCopy` mirror of the CFG when structuring begins
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_sblocks_copy)`).
 
+Basic-block operation orders remain strictly increasing along the intrusive
+operation list. Insertion uses `before + (after - before) / 2`, so odd endpoints
+cannot round the new order down onto the predecessor, including near the
+unsigned maximum. This preserves distinct positions for variable-cover and
+operation-order comparisons. When no integer lies between the neighbors, the
+existing whole-block renumbering in
+`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (bb_set_order)` is used.
+
 Deleting a varnode through `Funcdata::delete_varnode` first checks the bank's
 deletion precondition: the node must have neither a defining operation nor any
 readers. A rejected deletion leaves the node, both bank indexes, HighVariable
