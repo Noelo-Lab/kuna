@@ -26,6 +26,14 @@ through typedefs. A four-byte read at offset 20 in `volatile int cursor[3][2]` p
 prints `s.b`, not the bare symbol name. Each annotation still represents one
 access of the original width.
 
+A scalar access covering an entire array or aggregate still descends to the
+covered element or field; a one-element array does not decay to its address.
+The scalar-array shortcut requires the operation width to equal the element
+width. Other widths retain their byte range through the partial-symbol walk.
+With `partialaccess` enabled, pointer views of volatile annotations retain a
+volatile pointee, including sixteen-byte views, so changing the spelling does
+not change the access width or permit the C compiler to merge the accesses.
+
 This phase renders the finished decompilation: it inserts the explicit
 cast/field-access operations a C compiler would need to *see* the recovered
 types (§9.1), then walks the structured block tree of chapter 08 and the SSA
@@ -1339,6 +1347,21 @@ whole-container operand reads `return v1._0_16_ << 0x40;` under
 shifts a member of an array. What this does **not** fix is that container type
 itself. Recovering it needs either a scalar wide-integer type or a mid-end fold
 of the `CONCAT88(0,x) << 64` idiom; neither is done here.
+
+For C output with `partialaccess` enabled on a 64-bit target, an inferred
+sixteen-byte register temporary used only for bit extraction, copying, merging,
+or bitwise operations is declared `unsigned __int128` instead of `char[16]`
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_widelocal.rs`). This keeps a
+whole-width scalar load and its local assignment consistent. The rule requires
+unmapped, unlocked, non-address-tied values whose type is an inferred array of
+unknown bytes. A value loaded through a pointer, or copied out of another array
+variable, keeps its array declaration: its right-hand side prints as an array
+(`*(char (*)[16])p`), which C would convert to a pointer and assign to the
+integer as an address instead of rejecting the statement. It does not retype
+explicit arrays, parameters, globals, or addressable storage, and does not
+change the IR or the volatile access count. GCC/Clang's wide-integer extension
+is the same one used by the existing sixteen-byte pointer views. Other
+wide-container cases retain their existing rendering.
 
 **Standard C for mapped byte arrays.** `bytearrayc` (default **off**,
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_bytearrayc.rs`) provides a C11

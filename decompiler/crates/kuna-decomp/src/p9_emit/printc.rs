@@ -3894,6 +3894,12 @@ impl PrintC {
             Some(((front, back), count)) => ((front.clone(), back), Some((front, count))),
             None => (type_name, None),
         };
+        if self.options.partial_access && self.out_lang == crate::kuna_lang::OutLang::C
+            && arch.types().get_size_of_pointer() == 8
+            && crate::kuna_widelocal::scalar_bits(fd, high)
+        {
+            return ("unsigned __int128".into(), String::new(), None, comment);
+        }
         (decl_type, decl_back, array_count, comment)
     }
 
@@ -8441,6 +8447,7 @@ impl PrintC {
         // (kuna `partialaccess`) The type an artificial `._<off>_<sz>_` member was
         // taken out of.
         let mut unnamed_in: Option<std::rc::Rc<crate::dtype::Datatype>> = None;
+        let volatile_annotation = fd.vbank().get(vn).is_some_and(|v| v.is_annotation() && v.is_volatile());
 
         while let Some(cur) = ct.clone() {
             // (kuna arraycoverwidth) The upstream whole-symbol break exits the
@@ -8460,7 +8467,10 @@ impl PrintC {
                 && fd.vbank().get(vn).is_some_and(|v| {
                     !matches!(v.get_type().get_metatype(), type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION)
                 });
+            let aggregate_annotation = volatile_annotation && matches!(cur.get_metatype(),
+                type_metatype::TYPE_ARRAY | type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION);
             if off == 0
+                && !aggregate_annotation
                 && !wide_array_cover
                 && !scalar_frame_cover
                 && (sz == 0
@@ -8536,7 +8546,7 @@ impl PrintC {
                         if newoff + sz as int8 > ftype.get_size() as int8 {
                             // Truncation spans more than one field: findTruncation
                             // returns null.  Fall to the `else if size==sz` check.
-                            if cur.get_size() == sz {
+                            if cur.get_size() == sz && !volatile_annotation {
                                 break;
                             }
                             // !succeeded artificial-field fallthrough below.
@@ -8549,7 +8559,7 @@ impl PrintC {
                     }
                     None => {
                         // else if (ct->getSize() == sz) break; (printc.cc:2091).
-                        if cur.get_size() == sz {
+                        if cur.get_size() == sz && !volatile_annotation {
                             break;
                         }
                     }
@@ -8916,10 +8926,10 @@ impl PrintC {
     fn push_pointee_cast_open(&mut self, pointee: &crate::kuna_partialaccess::Pointee, op: OpId) {
         match pointee {
             crate::kuna_partialaccess::Pointee::Typed(ptr) => self.push_cast_open(ptr, op),
-            crate::kuna_partialaccess::Pointee::Int128 => {
+            crate::kuna_partialaccess::Pointee::Int128 { volatile } => {
                 self.push_op(&tokens::TYPECAST, Some(op_key(op)));
                 self.push_atom(&Atom::syntax(
-                    "unsigned __int128 *",
+                    if *volatile { "volatile unsigned __int128 *" } else { "unsigned __int128 *" },
                     TagType::TypeToken,
                     crate::printlanguage::SyntaxHighlight::type_color,
                 ));
@@ -9058,8 +9068,10 @@ impl PrintC {
             let color = crate::printlanguage::SyntaxHighlight::special_color;
             // Whole-symbol when the access starts at the symbol base and spans the
             // whole type (C++ entry->getSize() == size).  Otherwise a partial cover.
-            let whole = sym_off == 0
-                && sym_type.as_ref().map(|t| t.get_size() == size).unwrap_or(false);
+            let whole = sym_off == 0 && sym_type.as_ref().is_some_and(|t| {
+                use crate::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
+                t.get_size() == size && !matches!(t.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION)
+            });
             if !whole {
                 // Partial symbol (printc.cc:1953-1954 pushPartialSymbol).  For an
                 // array of scalars the access maps to element
@@ -9074,7 +9086,7 @@ impl PrintC {
                     if st.get_metatype() == TYPE_ARRAY && !composite {
                         if let Some(elem) = st.get_array_base() {
                             let elsize = elem.get_align_size().max(1);
-                            if sym_off >= 0 && (sym_off % elsize) == 0 && st.get_size() > elsize {
+                            if sym_off >= 0 && (sym_off % elsize) == 0 && size == elem.get_size() && st.get_size() >= elsize {
                                 let index = sym_off / elsize;
                                 self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
                                 self.push_atom(&Atom::with_op_vn(

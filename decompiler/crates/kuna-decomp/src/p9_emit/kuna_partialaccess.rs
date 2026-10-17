@@ -66,7 +66,7 @@ pub enum Pointee {
     /// `T *` for a type the factory holds.
     Typed(Rc<Datatype>),
     /// `unsigned __int128 *`, which the factory has no type for.
-    Int128,
+    Int128 { volatile: bool },
 }
 
 /// The planned rendering of one partial access.
@@ -164,6 +164,7 @@ impl Piece {
             .map(|v| Rc::clone(v.get_type()))
             .filter(|t| readable(t, size))
             .filter(|t| t.get_metatype() != type_metatype::TYPE_UNKNOWN || !carries_float(fd, vn, op));
+        let volatile = fd.vbank().get(vn).is_some_and(|v| v.is_annotation() && v.is_volatile());
         let pointee = match own {
             Some(t) => Pointee::Typed(types.get_type_pointer(ptr_size, t, 1).ok()?),
             None if matches!(size, 4 | 8) && carries_float(fd, vn, op) => {
@@ -174,8 +175,16 @@ impl Piece {
                 let t = types.get_base(size, type_metatype::TYPE_UNKNOWN).ok()?;
                 Pointee::Typed(types.get_type_pointer(ptr_size, t, 1).ok()?)
             }
-            None if size == 16 && ptr_size == 8 => Pointee::Int128,
+            None if size == 16 && ptr_size == 8 => Pointee::Int128 { volatile },
+            None if volatile => return None,
             None => return Self::sub(fd, vn, op, off, size, container),
+        };
+        let pointee = match pointee {
+            Pointee::Typed(ptr) if volatile => {
+                let target = types.get_qualified_type(ptr.get_ptr_to()?, crate::kuna_typequal::VOLATILE).ok()?;
+                Pointee::Typed(types.get_type_pointer(ptr_size, target, 1).ok()?)
+            }
+            other => other,
         };
         let bytes_array = container.is_some_and(|c| {
             c.get_metatype() == type_metatype::TYPE_ARRAY && c.get_array_base().is_some_and(|e| e.get_size() == 1)
