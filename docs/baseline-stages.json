@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3041,
-    3041
+    3049,
+    3049
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1487,6 +1487,14 @@
     "data:SIGNED-STACK-INDEX #1: default reads the word written by the loop",
     "data:SIGNED-STACK-INDEX #2: off exposes stale initializer forwarding",
     "data:SIGNED-STACK-INDEX #3: both runs retain indexed writes",
+    "data:SIGNEDREAD #1: a sign extension of a0 - 1U goes through int",
+    "data:SIGNEDREAD #2: an arithmetic shift of a0 - 1U shifts the int",
+    "data:SIGNEDREAD #3: a signed compare of a0 - 1U compares the int",
+    "data:SIGNEDREAD #4: a signed divide of a0 - 7U divides the int",
+    "data:SIGNEDREAD #5: no unsigned expression is widened or shifted as if signed",
+    "data:SIGNEDREAD #6: the unsigned compare keeps its unsigned operand",
+    "data:SIGNEDREAD-A64 #1: the word index sign-extends sig - 1",
+    "data:SIGNEDREAD-A64 #2: no zero extension of sig - 1",
     "data:SPARC-EXTERNAL-TAIL #1: off still follows the jump into missing extern bytes",
     "data:SPARC-EXTERNAL-TAIL #2: default recovers the named tail call and delay-slot argument",
     "data:SPARC64 odd destination conversion reaches return",
