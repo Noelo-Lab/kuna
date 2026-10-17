@@ -3192,8 +3192,18 @@ read back from a different one.
 (guess_extra_pop)` guesses `4 + n` when the first write to the stack pointer
 after the call in its block is the call's result lowered by `n` (positive, at
 most 256, a multiple of the pointer size) and every pointer-sized slot of
-`[esp, esp + n)` at the call instruction is stored to between the previous call
-in the block, or the block start, and this one. When nothing reads the stack
+`[esp, esp + n)` at the call instruction has at least one byte stored to it
+between the previous call in the block, or the block start, and this one. The
+stores are tracked byte by byte over the bounded argument window, so a store
+may start anywhere in a slot, span several slots, or reach the window from
+below. One written byte is enough for its slot: GCC and Clang write a by-value
+aggregate narrower than its slot (`struct { char c; }`, a three-byte or
+six-byte struct) with byte and halfword stores and leave the padding
+unwritten, and requiring every byte would drop the guess for those callees and
+shift the rest of the frame by the popped bytes. A slot with no written byte
+leaves the guess unknown. A lowering whose negation or less-the-push
+adjustment does not fit the offset width declines instead of overflowing.
+When nothing reads the stack
 pointer between the `sub` and the next call, the additive normalization folds
 the lowering into that call's return-address push, so a first write that is a
 call's own push is read less the push; a first write that is a push of the next
