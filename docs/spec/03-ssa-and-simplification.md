@@ -1579,6 +1579,17 @@ had not enumerated (`INT_SRIGHT` out of `RuleBitUndistribute`, or a
 `RuleMultiCollapse`) unwound the entire decompilation — the caller saw one error
 record and no C at all for that function.
 
+**Commuting a right shift through zero extension.**
+`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_4.rs
+(RuleZextCommute)` rewrites `zext(V) >> n` into `zext(V >> n)` only when the
+count's constant value or nonzero-bit mask proves it is below `V`'s bit width.
+Otherwise it retains the wide shift. P-code defines a logical right shift at
+or beyond its operand width as zero, but narrowing such a shift can produce
+undefined C or an overflowing Rust shift. In particular, a zero-extended
+16- or 32-bit value shifted by a count masked to 63 must keep the 64-bit
+operation. Counts proven to fit the narrow value still commute. This is a
+correctness requirement, with no option.
+
 **Lowering a non-least-significant truncation.** A SUBPIECE carries a byte
 offset, and only the offset-0 form has a C spelling: it is a cast. Every other
 offset is a p-code-level slice with no operator in the language, so the printer

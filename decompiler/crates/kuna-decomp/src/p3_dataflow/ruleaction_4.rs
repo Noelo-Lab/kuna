@@ -933,7 +933,7 @@ impl Rule for RuleConcatZext {
 // =============================================================================
 
 /// \brief Commute INT_ZEXT with INT_RIGHT: `zext(V) >> W => zext(V >> W)`
-/// (C++ `RuleZextCommute`).
+/// (C++ `RuleZextCommute`). Counts must fit V so emitted shifts keep defined behavior.
 pub struct RuleZextCommute;
 
 impl RuleZextCommute {
@@ -975,6 +975,11 @@ impl Rule for RuleZextCommute {
         }
         let savn = in_vn(data, op, 1);
         if !is_constant(data, savn) && is_free(data, savn) {
+            return 0;
+        }
+        let amount = data.vbank().get(savn).expect("RuleZextCommute: shift amount");
+        let maximum = if amount.is_constant() { amount.get_offset() } else { amount.get_nz_mask() };
+        if maximum >= size_of(data, zextin) as uintb * 8 {
             return 0;
         }
 
