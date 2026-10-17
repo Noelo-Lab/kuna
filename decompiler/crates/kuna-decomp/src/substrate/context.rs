@@ -1014,6 +1014,10 @@ pub struct ArchContext {
     /// (kuna) `armfloatargs` is on and the image states the ARM VFP calling
     /// convention.  Read by [`crate::p4_calls::kuna_armfloatargs`].
     pub arm_float_args: bool,
+    /// (kuna) The default model before `armfloatreturn` widens it, kept for the
+    /// AEABI helpers that use the base standard in every image.  Read by
+    /// [`crate::p4_calls::kuna_armfloatreturn::helper_model`].
+    pub arm_base_model: Option<Rc<crate::fspec::ProtoModel>>,
     /// What the image says about floating-point arguments (`Some(false)`: they
     /// travel in integer registers).  Read by [`crate::p4_calls::kuna_typedcallabi`].
     pub float_arg_registers: Option<bool>,
@@ -1860,6 +1864,7 @@ impl ArchContext {
             arg_clobber: true, // (kuna) option argclobber (default on)
             arm_float_args: false, // (kuna) option armfloatargs (default off)
             arm_float_return: false, // (kuna) option armfloatreturn (default off)
+            arm_base_model: None,
             float_arg_registers: None,
             soft_float_model: None,
             soft_float_declarations: None,

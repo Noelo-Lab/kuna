@@ -18,6 +18,80 @@ pub fn applies(arch: &Architecture) -> bool {
         && arch.translate().loader_rc().borrow().arm_vfp_args()
 }
 
+/// Does `name` name a run-time helper that AAPCS keeps on the base (core-register)
+/// standard in every image: an `__aeabi_*` function, or a libgcc soft-float
+/// routine behind one (`__adddf3`, `__fixdfdi`, `__floatundidf`, `__ltdf2`, ...)?
+/// A hard-float libgcc may compute in VFP registers inside them, which the widened
+/// model would otherwise read as a double result in `d0`.
+pub fn base_pcs_helper(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix("__") else { return false };
+    if rest.starts_with("aeabi_") || rest == "extendsfdf2" || rest == "truncdfsf2" {
+        return true;
+    }
+    let mode = |m: &str| m == "sf" || m == "df";
+    let int = |m: &str| m == "si" || m == "di";
+    let arith = ["add", "sub", "mul", "div"]
+        .iter()
+        .any(|op| rest.strip_prefix(op).and_then(|r| r.strip_suffix('3')).is_some_and(mode));
+    let unary_or_cmp = ["neg", "eq", "ne", "lt", "le", "ge", "gt", "unord", "cmp"]
+        .iter()
+        .any(|op| rest.strip_prefix(op).and_then(|r| r.strip_suffix('2')).is_some_and(mode));
+    let fix = rest.strip_prefix("fix").map(|r| r.strip_prefix("uns").unwrap_or(r)).is_some_and(|r| {
+        r.len() == 4 && mode(&r[..2]) && int(&r[2..])
+    });
+    let float = rest.strip_prefix("float").map(|r| r.strip_prefix("un").unwrap_or(r)).is_some_and(|r| {
+        r.len() == 4 && int(&r[..2]) && mode(&r[2..])
+    });
+    arith || unary_or_cmp || fix || float
+}
+
+/// The model a call to `name` is laid out under where the option widened the
+/// default one: the unwidened default for a [`base_pcs_helper`], whose callers
+/// pass and read its values in core registers.
+pub fn helper_model(arch: &crate::context::ArchContext, name: &str) -> Option<Rc<ProtoModel>> {
+    arch.arm_base_model.clone().filter(|_| arch.arm_float_return && base_pcs_helper(name))
+}
+
+/// Does one instruction at `addr` access eight or more registers with `code`
+/// (`vstmia r0,{d0-d15}`, `vldmia`, `vpush`)?  That is a register-bank save or
+/// restore, not a use of the values as parameters or results.
+fn bank_access(data: &Funcdata, addr: &Address, code: OpCode) -> bool {
+    data.obank()
+        .iter_at(addr)
+        .filter(|(_, id)| data.obank().get(*id).is_some_and(|o| o.code() == code))
+        .count()
+        >= 8
+}
+
+/// A VFP input register whose only reads are stores of a register-bank save:
+/// the unwinder's `fstmiax {d0-d15},r0` writes every register it is handed, and
+/// none of them is a parameter.
+pub fn bank_saved_input(data: &Funcdata, vn: VarnodeId) -> bool {
+    if !data.get_arch().arm_float_return {
+        return false;
+    }
+    let Some(value) = data.vbank().get(vn) else { return false };
+    let entries = data.get_func_proto().model().input().get_entry();
+    let vfp = entries.iter().any(|e| {
+        e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(value.get_addr(), value.get_size()) >= 0
+    });
+    vfp && !value.has_no_descend()
+        && value.descend_iter().all(|id| {
+            data.obank().get(id).is_some_and(|o| {
+                o.code() == OpCode::CPUI_STORE && o.get_in(2) == Some(vn) && bank_access(data, o.get_addr(), OpCode::CPUI_STORE)
+            })
+        })
+}
+
+/// Is `vn` loaded by a register-bank restore (`vldmia r0,{d0-d15}`)?
+fn bank_restored(data: &Funcdata, vn: VarnodeId) -> bool {
+    data.vbank()
+        .get(vn)
+        .and_then(|v| v.get_def())
+        .and_then(|id| data.obank().get(id))
+        .is_some_and(|o| o.code() == OpCode::CPUI_LOAD && bank_access(data, o.get_addr(), OpCode::CPUI_LOAD))
+}
+
 /// A recovered prototype's open tail read as a closed list for the canonical-storage
 /// check: a variadic callee receives even its fixed floats in r0-r3, so a recovered
 /// VFP parameter already rules the variadic reading out.
@@ -221,7 +295,7 @@ fn partial_path(
     let Some(value) = data.vbank().get(vn).filter(|v| v.get_size() == 8) else {
         return false;
     };
-    if sources.contains(&vn) {
+    if sources.contains(&vn) || value.is_input() {
         return true;
     }
     let Some(op) = value.get_def().and_then(|id| data.obank().get(id)) else {
@@ -247,7 +321,7 @@ fn partial_path(
                     .is_some_and(|v| single_write(data, v, whole, budget) == Some(true))
             })
         }
-        _ => false,
+        _ => left_by_call(data, vn),
     }
 }
 
@@ -279,6 +353,32 @@ fn left_by_call(data: &Funcdata, vn: VarnodeId) -> bool {
             op.is_indirect_creation()
                 || matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
         })
+}
+
+/// Is every value reaching `vn` through copies and merges what a call left in
+/// the register, or the register as the function received it?  Neither says
+/// how wide the function's result is: an exit that hands back its untouched
+/// float parameter returns the whole of `d0` as it arrived.
+fn call_leftover(data: &Funcdata, vn: VarnodeId, budget: &mut usize) -> bool {
+    if *budget == 0 {
+        return false;
+    }
+    *budget -= 1;
+    let Some(value) = data.vbank().get(vn) else { return false };
+    if value.is_input() {
+        return true;
+    }
+    let Some(op) = value.get_def().and_then(|id| data.obank().get(id)) else {
+        return false;
+    };
+    match op.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST => op.get_in(0).is_some_and(|v| call_leftover(data, v, budget)),
+        OpCode::CPUI_MULTIEQUAL => {
+            op.num_input() > 0
+                && (0..op.num_input()).all(|i| op.get_in(i).is_some_and(|v| call_leftover(data, v, budget)))
+        }
+        _ => left_by_call(data, vn),
+    }
 }
 
 /// Retire a VFP return trial that only hands back what a call left in the
@@ -320,8 +420,30 @@ fn drop_call_leftovers(data: &Funcdata, active: &mut ParamActive, returns: &[cra
     }
 }
 
+/// Retire a VFP return trial whose value at every RETURN is what a register-bank
+/// restore loaded: `vldmia r0,{d0-d15}; bx lr` returns nothing.
+fn drop_bank_restores(data: &Funcdata, active: &mut ParamActive, returns: &[crate::context::OpId]) {
+    let entries = data.get_func_proto().model().output().get_entry();
+    for i in 0..active.get_num_trials() {
+        let t = active.get_trial(i);
+        let vfp = entries.iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(t.get_address(), t.get_size()) >= 0
+        });
+        let slot = t.get_slot();
+        if t.is_active()
+            && vfp
+            && returns.iter().all(|&id| {
+                data.obank().get(id).and_then(|o| o.get_in(slot)).is_some_and(|vn| bank_restored(data, vn))
+            })
+        {
+            active.get_trial_mut(i).mark_inactive();
+        }
+    }
+}
+
 /// Retire VFP return trials a call merely left behind, then preserve the narrow
-/// return width when every exit only writes its low word.
+/// return width when every exit only writes its low word or hands back what a
+/// call left there, and at least one exit writes the low word.
 pub fn narrow_returns(data: &mut Funcdata, active: &mut ParamActive) {
     if !data.get_arch().arm_float_return || data.get_func_proto().is_output_locked() {
         return;
@@ -339,6 +461,7 @@ pub fn narrow_returns(data: &mut Funcdata, active: &mut ParamActive) {
         return;
     }
     drop_call_leftovers(data, active, &returns);
+    drop_bank_restores(data, active, &returns);
     let single = data
         .get_func_proto()
         .model()
@@ -358,13 +481,18 @@ pub fn narrow_returns(data: &mut Funcdata, active: &mut ParamActive) {
         }
         let addr = trial.get_address().clone();
         let slot = trial.get_slot();
+        let mut partial = false;
         let proven = returns.iter().all(|&id| {
-            data.obank()
-                .get(id)
-                .and_then(|o| o.get_in(slot))
-                .is_some_and(|vn| partial_return(data, vn, &addr, &mut 64))
+            data.obank().get(id).and_then(|o| o.get_in(slot)).is_some_and(|vn| {
+                if partial_return(data, vn, &addr, &mut 256) {
+                    partial = true;
+                    true
+                } else {
+                    call_leftover(data, vn, &mut 64)
+                }
+            })
         });
-        if !proven {
+        if !proven || !partial {
             continue;
         }
         for &id in &returns {
@@ -422,6 +550,16 @@ pub fn type_returns(data: &mut Funcdata, active: &ParamActive) {
         return;
     };
     let returns: Vec<_> = data.obank().iter_code(OpCode::CPUI_RETURN).collect();
+    let forwards_core = returns.iter().any(|&op| {
+        data.obank()
+            .get(op)
+            .filter(|o| !o.is_dead() && o.get_halt_type() == 0 && o.num_input() == 2)
+            .and_then(|o| o.get_in(1))
+            .is_some_and(|vn| core_input_leaf(data, vn, &mut 32))
+    });
+    if forwards_core {
+        return;
+    }
     for op in returns {
         let Some(op) = data
             .obank()
@@ -441,11 +579,39 @@ pub fn type_returns(data: &mut Funcdata, active: &ParamActive) {
     }
 }
 
-/// Give a returned constant no float literal spells its bits back: a NaN
-/// payload or a signalling NaN that [`type_returns`] locked to a float would
-/// print as `NAN`, which compiles to other bits. Once the literal-pool load has
-/// folded, a function that returns one there gives up the lock, and its return
-/// is typed as `floatret` types it: the integer whose bits it is.
+/// Does a value reaching `vn` through copies and merges arrive unchanged from an
+/// input outside the VFP registers? `vmov s0,r0` hands back the bits of an
+/// integer parameter, which is its callers' to type: a float lock would spread
+/// to the parameter, and each caller's integer would then be converted by value.
+fn core_input_leaf(data: &Funcdata, vn: VarnodeId, budget: &mut usize) -> bool {
+    if *budget == 0 {
+        return false;
+    }
+    *budget -= 1;
+    let Some(value) = data.vbank().get(vn) else { return false };
+    if value.is_input() {
+        let entries = data.get_func_proto().model().input().get_entry();
+        return !entries.iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(value.get_addr(), value.get_size()) >= 0
+        });
+    }
+    let Some(op) = value.get_def().and_then(|id| data.obank().get(id)) else {
+        return false;
+    };
+    match op.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST => op.get_in(0).is_some_and(|v| core_input_leaf(data, v, budget)),
+        OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).any(|i| op.get_in(i).is_some_and(|v| core_input_leaf(data, v, budget))),
+        _ => false,
+    }
+}
+
+/// Keep the bits of a returned constant no float literal spells: a NaN payload
+/// or a signalling NaN that [`type_returns`] locked to a float would print as
+/// `NAN`, which compiles to other bits. Once the literal-pool load has folded,
+/// each such constant reaching a RETURN through copies and merges keeps the
+/// unsigned integer of its width, so the float return reinterprets its bits; a
+/// function whose constant arrives any other way gives up the lock, and its
+/// return is typed as `floatret` types it.
 pub fn unlock_unspelled(data: &mut Funcdata) {
     if !data.get_arch().arm_float_return {
         return;
@@ -471,6 +637,21 @@ pub fn unlock_unspelled(data: &mut Funcdata) {
     if returned.iter().all(|&vn| crate::kuna_floatreg::spells_exactly(data, vn)) {
         return;
     }
+    let mut constants = Vec::new();
+    if returned.iter().all(|&vn| unspelled_constants(data, vn, &mut constants, &mut 64)) && !constants.is_empty() {
+        let bits = data
+            .get_arch()
+            .types()
+            .and_then(|t| t.get_base(size, type_metatype::TYPE_UINT).ok());
+        if let Some(bits) = bits {
+            for c in constants {
+                if let Some(value) = data.vbank_mut().get_mut(c) {
+                    value.update_type_locked(bits.clone(), true, true);
+                }
+            }
+            return;
+        }
+    }
     let Some(ty) = data
         .get_arch()
         .types()
@@ -482,6 +663,28 @@ pub fn unlock_unspelled(data: &mut Funcdata) {
         if let Some(value) = data.vbank_mut().get_mut(vn).filter(|v| v.is_type_lock()) {
             value.update_type_locked(ty.clone(), false, true);
         }
+    }
+}
+
+/// Collect the constants no float literal spells that reach `vn` through
+/// copies and merges; `false` when the walk runs out.
+fn unspelled_constants(data: &Funcdata, vn: VarnodeId, out: &mut Vec<VarnodeId>, budget: &mut usize) -> bool {
+    if *budget == 0 {
+        return false;
+    }
+    *budget -= 1;
+    let Some(value) = data.vbank().get(vn) else { return false };
+    if value.is_constant() {
+        if !crate::kuna_floatreg::spells(data, vn) && !out.contains(&vn) {
+            out.push(vn);
+        }
+        return true;
+    }
+    let Some(op) = value.get_def().and_then(|id| data.obank().get(id)) else { return true };
+    match op.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST => op.get_in(0).is_none_or(|v| unspelled_constants(data, v, out, budget)),
+        OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).all(|i| op.get_in(i).is_none_or(|v| unspelled_constants(data, v, out, budget))),
+        _ => true,
     }
 }
 
@@ -508,6 +711,17 @@ pub fn forwarded_vfp_return(data: &Funcdata, addr: &Address, size: i32) -> bool 
         })
         .collect();
     vfp && !claims.is_empty() && claims.iter().all(|c| c.ret_owners.is_empty())
+}
+
+/// Is `[addr, addr+size)`, the storage a callee returns in, a VFP register under
+/// the option? The convention returns only a float there, so a caller holding
+/// its bits in an integer reinterprets the callee's float and does not refuse it.
+pub fn convention_float_storage(data: &Funcdata, addr: &Address, size: i32) -> bool {
+    data.get_arch().arm_float_return
+        && data.get_func_proto().has_model()
+        && data.get_func_proto().model().output().get_entry().iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) >= 0
+        })
 }
 
 /// A returned value [`type_returns`] locked to the float of its width: the lock
