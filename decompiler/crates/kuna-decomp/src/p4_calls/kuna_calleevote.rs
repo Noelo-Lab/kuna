@@ -678,8 +678,8 @@ const DERIVED_HOP_CAP: usize = 10;
 /// non-zero constant (`if (!s) s = table;`), and for one that it -- or an
 /// address it derives from it by adds, pointer arithmetic, copies, casts or
 /// merges (`p + i == (long)table`) -- compares with, adds to or subtracts from
-/// a constant inside the data space's pointer bounds that is not a string
-/// literal kuna recovered (`kuna_charptr::constant_is_string`).
+/// a constant in read-only memory that is not a string literal kuna recovered
+/// (`kuna_charptr::constant_is_string`).
 pub(crate) fn prints_a_table_as_a_literal(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
     if !ct.get_ptr_to().is_some_and(|p| p.get_size() == 1 && p.is_char_print()) {
         return false;
@@ -706,9 +706,10 @@ fn merged_with_a_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
 }
 
 /// Is a member of `family`, or an address derived from one, compared with,
-/// added to or subtracted from a constant inside the default data space's
-/// pointer bounds that is not a string literal kuna recovered -- directly, or
-/// as the engine's `PTRSUB` off the constant zero?
+/// added to or subtracted from a constant that resolves to read-only memory --
+/// what the printer renders as a literal -- and is not a string literal kuna
+/// recovered, directly or as the engine's `PTRSUB` off the constant zero? A
+/// difference of two pointers is a number, so the walk does not follow one.
 fn meets_an_address_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
     let Some(spc) = data.get_arch().manage().get_default_data_space() else { return false };
     let (lo, hi) = (spc.get_pointer_lower_bound(), spc.get_pointer_upper_bound());
@@ -723,8 +724,18 @@ fn meets_an_address_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
                 .filter(|o| o.get_in(0).and_then(|b| data.vbank().get(b)).is_some_and(|b| b.is_constant() && b.get_offset() == 0))
                 .and_then(|o| o.get_in(1))
         };
-        c.and_then(|c| data.vbank().get(c).map(|n| (c, n.get_offset())))
-            .is_some_and(|(c, off)| off >= lo && off <= hi && !crate::p5_types::kuna_charptr::constant_is_string(data, op, c))
+        let Some((c, off, size)) = c.and_then(|c| data.vbank().get(c).map(|n| (c, n.get_offset(), n.get_size()))) else {
+            return false;
+        };
+        if off < lo || off > hi || crate::p5_types::kuna_charptr::constant_is_string(data, op, c) {
+            return false;
+        }
+        let glb = data.get_arch();
+        let Some(point) = data.obank().get(op).map(|o| o.get_addr().clone()) else { return false };
+        let mut full = 0;
+        glb.resolve_constant(spc, off, size, &point, &mut full).ok().filter(|a| !a.is_invalid()).is_some_and(|ram| {
+            glb.query_global_properties(&ram, 1, &Address::new_invalid()) & crate::varnode::varnode_flags::readonly != 0
+        })
     };
     let mut seen: HashSet<VarnodeId> = family.iter().copied().collect();
     let mut work: std::collections::VecDeque<(VarnodeId, usize)> = family.iter().map(|&v| (v, 0)).collect();
@@ -749,7 +760,8 @@ fn meets_an_address_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
                     if address(r, other) {
                         return true;
                     }
-                    o.code() == OpCode::CPUI_INT_ADD || o.get_in(0) == Some(v)
+                    o.code() == OpCode::CPUI_INT_ADD
+                        || (o.get_in(0) == Some(v) && other.and_then(|c| data.vbank().get(c)).is_some_and(|c| c.is_constant()))
                 }
                 OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_INDIRECT => o.get_in(0) == Some(v),
                 OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => true,
