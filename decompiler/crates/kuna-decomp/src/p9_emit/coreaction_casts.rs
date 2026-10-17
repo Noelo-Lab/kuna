@@ -546,6 +546,9 @@ fn get_input_cast_equal(
     } else {
         Rc::clone(&type0)
     };
+    if let Some(integer) = integer_beside_bool(&reqtype, [&type0, &othertype]) {
+        reqtype = integer;
+    }
     if reqtype.get_metatype() == type_metatype::TYPE_FLOAT
         && matches!(reqtype.get_size(), 4 | 8)
         && !float_compare_is_exact(data, in0, in1)
@@ -562,7 +565,60 @@ fn get_input_cast_equal(
     }
     let slotvn = data.obank().get(op)?.get_in(slot)?;
     let slottype = data.vn_high_type_read_facing(slotvn, op);
-    strat.cast_standard(&reqtype, &slottype, false, false)
+    let standard = strat.cast_standard(&reqtype, &slottype, false, false);
+    let other = if slot == 0 { in1 } else { in0 };
+    if standard.is_none() && promotes_with_other_sign(data, strat, slotvn, other, &slottype, &reqtype) {
+        return Some(reqtype);
+    }
+    standard
+}
+
+/// (kuna) The integer operand type of an `==`/`!=` that orders after a
+/// `bool` of its size. Both sides compare as that integer instead: C converts a
+/// `bool` to an integer as the 0 or 1 it holds, but an integer to `bool` as
+/// whether it is nonzero, so `(bool)v == b` matches when `v` is 3 and `b` is 1.
+fn integer_beside_bool(reqtype: &Rc<Datatype>, types: [&Rc<Datatype>; 2]) -> Option<Rc<Datatype>> {
+    if reqtype.get_metatype() != type_metatype::TYPE_BOOL {
+        return None;
+    }
+    types
+        .into_iter()
+        .find(|t| {
+            matches!(t.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT)
+                && t.get_size() == reqtype.get_size()
+        })
+        .cloned()
+}
+
+/// (kuna) Would C widen `vn`, an input of a narrow `==`/`!=` printed as
+/// `slottype`, with the other sign than `reqtype`, the type both inputs compare
+/// as? The p-code compares the bytes; C promotes each side by its own type, so
+/// a `char` beside an `unsigned char` stops matching once the top bit is set.
+/// A side whose top bit is known clear (a constant like `0x7f`, a value
+/// masked to seven bits) promotes the same way whatever its type, and the
+/// comparison then holds exactly when the bytes do.
+fn promotes_with_other_sign(
+    data: &Funcdata,
+    strat: &CastStrategyC,
+    vn: VarnodeId,
+    other: VarnodeId,
+    slottype: &Datatype,
+    reqtype: &Datatype,
+) -> bool {
+    let Some(v) = data.vbank().get(vn) else { return false };
+    let integer = |t: &Datatype| matches!(t.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT);
+    if v.get_size() >= strat.promote_size() || !integer(slottype) || !integer(reqtype) {
+        return false;
+    }
+    if (slottype.get_metatype() == type_metatype::TYPE_INT) == (reqtype.get_metatype() == type_metatype::TYPE_INT) {
+        return false;
+    }
+    let top_bit_clear = |vn: VarnodeId| {
+        data.vbank()
+            .get(vn)
+            .is_some_and(|c| !kuna_base::address::signbit_negative(c.get_nz_mask(), c.get_size()))
+    };
+    !top_bit_clear(vn) && !top_bit_clear(other)
 }
 
 /// (kuna) Does a C float `==` of `a` and `b` decide what their bit test does?

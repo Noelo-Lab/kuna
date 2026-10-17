@@ -406,6 +406,28 @@ and the read prints `(unsigned long)(int)(a1 - 1U) >> 6`. The suffix stays: an
 unsigned reader of the same expression (`4 < a4 + 2U`) still needs it. This is
 a correctness fix with no option.
 
+**A narrow equality of mixed sign (kuna).** An `INT_EQUAL` or `INT_NOTEQUAL`
+of operands narrower than `int` compares their bytes, but C promotes each side
+to `int` by the sign of its own type before it compares. The upstream rule casts
+both sides to the more ordered of the two types only where an operand's
+promotion is unknown (an implied sum, a product); an operand that prints as its
+own type (a load, a call, a declared variable, a constant) keeps it. So a byte
+sum cast to `unsigned char` met a constant that kept the `char` type of the
+loaded byte, and `(unsigned char)(a1 + *a0) == '\x80'` was never true, since C
+compares 0..255 with -128; a `char` load beside an `unsigned char` variable
+differed the same way whenever the top bit was set. `coreaction_casts.rs
+(get_input_cast_equal)` now also casts an operand whose integer type has the
+other sign than the compared type, unless the nonzero-bit mask of either side
+says its top bit is clear (a constant like `0x7f`, a value masked to seven
+bits): such a side promotes the same either way, and the comparison then holds
+exactly when the bytes do (`promotes_with_other_sign`). The constant
+above is retyped and prints `0x80`, and a variable prints `(unsigned char)v`.
+The more ordered type can also be `bool`, and casting an integer to `bool`
+turns every nonzero value into 1: `(bool)*a0 == (a1 != 0)` held for a byte of 2
+where the binary's byte compare does not. An integer operand beside a `bool`
+of its size is the compared type instead (`integer_beside_bool`), and the
+comparison prints `*a0 == (a1 != 0)`. This is a correctness fix with no option.
+
 **Integer equality on float bits (kuna).** An `INT_EQUAL` or `INT_NOTEQUAL`
 compares bits, but when the more ordered operand type is a 4- or 8-byte float
 the upstream rule coerces both sides to the float, and the comparison printed

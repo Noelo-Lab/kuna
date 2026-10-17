@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3055,
-    3055
+    3059,
+    3059
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1243,6 +1243,10 @@
     "data:NARROWARGS #4: a flag mask is not narrow evidence",
     "data:NARROWARGS-X86 #1: default reads the int parameter at 32 bits",
     "data:NARROWARGS-X86 #2: off keeps the 64-bit register",
+    "data:NARROWEQUAL #1: both sides of the byte compare are unsigned",
+    "data:NARROWEQUAL #2: no signed char constant beside an unsigned byte",
+    "data:NARROWEQUAL #3: a byte compares with a flag as a byte",
+    "data:NARROWEQUAL #4: no bool cast of the byte",
     "data:NARROWEXT #10: abi, an unsigned int parameter is sign-extended",
     "data:NARROWEXT #11: off, a signed char parameter is zero-extended",
     "data:NARROWEXT #12: abi, a signed char parameter is sign-extended",
