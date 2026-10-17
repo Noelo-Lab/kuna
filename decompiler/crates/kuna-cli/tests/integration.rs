@@ -457,3 +457,6 @@ mod narrow_register_inputs;
 
 #[path = "float_storage_truncation.rs"]
 mod float_storage_truncation;
+
+#[path = "fortran_fatal_diagnostics.rs"]
+mod fortran_fatal_diagnostics;
