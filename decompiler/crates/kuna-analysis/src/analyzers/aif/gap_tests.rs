@@ -520,7 +520,7 @@ fn reconciled_prefix_keeps_its_instruction_records_as_a_frame_root() {
 fn a_rescan_through_the_shared_memo_decodes_nothing_again() {
     let (engine, space, listing) = hidden_fixture("call");
     let root = BASE + 0x404;
-    let memo = Rc::new(crate::listing::kuna_decodememo::DecodeMemo::default());
+    let memo = Rc::new(crate::listing::kuna_decodememo::DecodeMemo::new(listing.exec_ranges()));
     let mut decoder = GapDecoder::new(&engine, Rc::clone(&space), listing.exec_ranges());
     decoder.share(Some(&memo));
     let body = check_valid_subroutine_strict(&mut decoder, &listing, root, root, u64::MAX).unwrap();

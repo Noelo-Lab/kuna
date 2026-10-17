@@ -102,7 +102,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::rc::Rc;
-use std::sync::Arc;
 
 use kuna_base::space::AddrSpace;
 use kuna_sleigh::translate::Translate;
@@ -376,16 +375,14 @@ impl<'a> GapDecoder<'a> {
     /// The shared memo's record for `vma`, in this decoder's form.
     fn remembered(&mut self, vma: u64) -> Option<Rc<ProbedInsn>> {
         let memo = Rc::clone(self.memo.as_ref().filter(|_| !self.keep_ops)?);
-        let m = memo.get(self.translate, &self.code_space, vma)?;
-        let reusable = Some(memo.reusable(&m));
-        let (len, flow, fall_through, flows) = (m.len, m.flow, m.fall_through, m.flows.to_vec());
-        let (text, operands) = (Arc::clone(&m.mnemonic), m.operands.to_string());
-        drop(m);
-        let mnemonic = self.intern_mnemonic(&text);
-        Some(Rc::new(ProbedInsn {
-            len, kind: flow.kind, is_call: flow.is_call, is_terminal: flow.is_terminal,
-            fall_through, flows, mnemonic, operands, reusable,
-        }))
+        let (translate, space) = (self.translate, Rc::clone(&self.code_space));
+        memo.recall(translate, &space, vma, |m| {
+            Rc::new(ProbedInsn {
+                len: m.len, kind: m.flow.kind, is_call: m.flow.is_call, is_terminal: m.flow.is_terminal,
+                fall_through: m.fall_through, flows: m.flows.to_vec(), mnemonic: self.intern_mnemonic(m.mnemonic),
+                operands: m.operands.to_string(), reusable: Some(Rc::clone(m.reusable)),
+            })
+        })
     }
 
     fn intern_mnemonic(&mut self, text: &str) -> Rc<str> {
@@ -412,8 +409,10 @@ impl<'a> GapDecoder<'a> {
         let c = crate::listing::classify::classify(&self.scratch.ops, vma, self.scratch.len);
         if let (Some(memo), Some(certified)) = (self.memo.as_ref().filter(|_| !self.keep_ops), &reusable) {
             let decoded = &self.scratch;
-            reusable = Some(memo.keep(vma, certified.context(), decoded.len, c.flow, c.fall_through, &c.flows,
-                &decoded.mnemonic, &decoded.operands));
+            if let Some(shared) = memo.keep(vma, certified.context(), decoded.len, c.flow, c.fall_through,
+                &c.flows, &decoded.mnemonic, &decoded.operands) {
+                reusable = Some(shared);
+            }
         }
         let text = std::mem::take(&mut self.scratch.mnemonic);
         let mnemonic = self.intern_mnemonic(&text);

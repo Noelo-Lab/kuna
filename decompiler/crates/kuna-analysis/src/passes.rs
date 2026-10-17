@@ -874,7 +874,7 @@ pub fn run_listing_consumers_replaying(
     // parent's recovery and builds only its final Listing.
     if arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes {
         if let Some(code_space) = arch.manage().get_default_code_space() {
-            let memo = std::rc::Rc::new(crate::listing::kuna_decodememo::DecodeMemo::default());
+            let memo = std::rc::Rc::new(crate::listing::kuna_decodememo::DecodeMemo::new(listing.exec_ranges()));
             let mut frame_cache = match frames_replay {
                 Some(_) => None,
                 None => Some(crate::aif::raw_arm_frames(

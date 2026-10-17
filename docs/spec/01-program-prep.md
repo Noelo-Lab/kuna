@@ -5682,7 +5682,9 @@ it context-free, together with the effective context words it read. It is reused
 only while its address still reads those words, so a reused record is the
 record a fresh decode makes, and it reports no context commits. These records
 keep no p-code: the inventory never replays a frame body into a reference walk,
-so the inventory's own validation records keep none either
+so the inventory's own validation records keep none either. A record is a
+fixed-size slot per halfword of executable code, with its text and flow targets
+in shared arenas, so the whole image's records cost about 16 bytes per halfword
 (`decompiler/crates/kuna-analysis/src/listing/kuna_decodememo.rs`).
 A `--jobs` worker does not search at all. The parent's recovery leaves a record of
 its final roots, code-pointer and AIF entries and retained prior entries
