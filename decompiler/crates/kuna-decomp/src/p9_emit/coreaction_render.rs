@@ -1743,12 +1743,20 @@ impl Action for ActionMapGlobals {
 /// `ActionDeadCode`, `coreaction.hh:565`).  `flags = 0`.
 pub struct ActionDeadCode {
     base: ActionBase,
+    /// (kuna `narrowargs`) This pass, after `mainloop` settles, also narrows
+    /// the function's register inputs ([`crate::kuna_narrowargs`]).
+    narrow_inputs: bool,
 }
 
 impl ActionDeadCode {
     /// Construct in group `g` (C++ `ActionDeadCode::ActionDeadCode`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
-        Box::new(ActionDeadCode { base: ActionBase::new(0, "deadcode", g) })
+        Box::new(ActionDeadCode { base: ActionBase::new(0, "deadcode", g), narrow_inputs: false })
+    }
+
+    /// (kuna `narrowargs`) The `fullloop` pass that also narrows register inputs.
+    pub fn boxed_narrowing(g: impl Into<String>) -> Box<dyn Action> {
+        Box::new(ActionDeadCode { base: ActionBase::new(0, "deadcode", g), narrow_inputs: true })
     }
 }
 
@@ -1763,12 +1771,14 @@ impl Action for ActionDeadCode {
         if !grouplist.contains(self.get_group()) {
             return None;
         }
-        Some(Box::new(ActionDeadCode { base: self.base.clone() }))
+        Some(Box::new(ActionDeadCode { base: self.base.clone(), narrow_inputs: self.narrow_inputs }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:4146 — ActionDeadCode::apply.
         let res = deadcode_apply(data);
-        self.base.count += crate::kuna_narrowargs::narrow_inputs(data);
+        if self.narrow_inputs {
+            self.base.count += crate::kuna_narrowargs::narrow_inputs(data);
+        }
         res
     }
 }
