@@ -308,6 +308,16 @@ pub(crate) fn get_input_cast(
     op: OpId,
     slot: int4,
 ) -> Option<Rc<Datatype>> {
+    get_input_cast_op(data, strat, op, slot).or_else(|| crate::kuna_signedread::cast(data, op, slot))
+}
+
+/// The per-op-code body of [`get_input_cast`].
+fn get_input_cast_op(
+    data: &mut Funcdata,
+    strat: &CastStrategyC,
+    op: OpId,
+    slot: int4,
+) -> Option<Rc<Datatype>> {
     let opc = data.obank().get(op)?.code();
     match opc {
         // TypeOpCopy::getInputCast (typeop.cc:398-404): require input == output type.

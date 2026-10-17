@@ -14,6 +14,7 @@ pub mod prettyprint;
 pub mod printjava;
 pub mod cast;
 pub mod kuna_unknowncasts;
+pub mod kuna_signedread; // (kuna) a signed read of an expression that prints unsigned casts it back
 pub mod stringmanage;
 pub mod kuna_naming;
 pub mod kuna_varsources;
