@@ -2507,7 +2507,13 @@ impl JumpBasicModel {
                 };
                 if loads.is_empty()
                     || loads.iter().any(|load| {
-                        !fd.get_arch().is_global_read_only(&load.addr, load.size)
+                        let flags = fd.get_arch().query_global_properties(
+                            &load.addr,
+                            load.size,
+                            &Address::new_invalid(),
+                        );
+                        flags & crate::varnode::varnode_flags::readonly == 0
+                            || flags & crate::varnode::varnode_flags::volatil != 0
                     })
                 {
                     proven = false;
