@@ -2739,9 +2739,8 @@ old reader now reads (`narrow_inputs`). The readers see the same consumed bits
 as before, so no printed value changes; `ActionInputPrototype` then recovers the
 parameter at the narrow width, typed from the narrow input as any other. Only an
 input that is a whole integer argument register of the function's model
-qualifies (never a float register, a stack slot, a join or a piece another
-input already narrowed: an input `PIECE` joins into a wider value is left
-alone), and only when the prototype is not locked. Two sources of a narrow mask
+qualifies: never a float register, a stack slot, an input a `PIECE` joins
+into a wider value, or an input of a locked prototype. Two sources of a narrow mask
 are not evidence about the value and stop the rewrite: a left shift, which
 drops the high bits of a value of any width (`priority << 24`), and a register
 shift amount, which ARM reads through its low byte (`lsl r6, r7, lr` is
