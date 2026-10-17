@@ -245,6 +245,7 @@ pub(super) fn build_pieces(
         let origin = p.origin_ref.and_then(|o| dies.get(&o));
         let type_ref = p.type_ref.or_else(|| origin.and_then(|o| o.type_ref));
         let ty = build_param_type(type_ref, dies, types, word_size, &mut walk)?;
+        let ty = super::kuna_dwarfbyref::parameter_type(p, ty, types, word_size)?;
         let name = if p.name.is_empty() {
             origin.map(|o| o.name.clone()).unwrap_or_default()
         } else {
