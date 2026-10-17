@@ -3769,9 +3769,10 @@ impl Funcdata {
     /// C++ `BlockBasic::insert` (`block.cc:2262`): set the
     /// op's parent, splice it onto the per-op intrusive basic-block list before
     /// `before`, then compute `ordbefore`/`ordafter` from neighbours and either
-    /// recompute the whole order ([`bb_set_order`](Funcdata::bb_set_order)) or
-    /// set the midpoint (overflow-aware).  The BRANCHIND `f_switch_out` mark is
-    /// applied via the block flags.
+    /// set an overflow-safe midpoint or recompute the whole order. An append that
+    /// finds no room renumbers into the lower half of the order space, so later
+    /// appends do not renumber the block again every few ops. The BRANCHIND
+    /// `f_switch_out` mark is applied via the block flags.
     pub fn bb_insert_op(&mut self, op: OpId, bl: BlockId, before: Option<OpId>) {
         if self.op_is_call_or_store(op) {
             self.affecting_ops_changed();
@@ -3819,10 +3820,10 @@ impl Funcdata {
             Some(b) => self.obank.get(b).expect("bb_insert_op").get_seq_num().get_order(),
         };
         if ordafter.wsub(ordbefore) <= 1 {
-            self.bb_set_order(bl);
+            let span = if before.is_none() { uintm::MAX / 2 } else { uintm::MAX };
+            self.bb_set_order_within(bl, span);
         } else {
-            // beware overflow
-            let mid = (ordafter / 2).wadd(ordbefore / 2);
+            let mid = ordbefore.wadd(ordafter.wsub(ordbefore) / 2);
             self.obank.get_mut(op).expect("bb_insert_op").set_order(mid);
         }
 
@@ -3863,12 +3864,17 @@ impl Funcdata {
     ///
     /// `step = (~0 / op.size()) - 1`; each op gets `count += step`.
     pub fn bb_set_order(&mut self, bl: BlockId) {
+        self.bb_set_order_within(bl, uintm::MAX);
+    }
+
+    /// Spread the orders of `bl`'s ops evenly over `[0, span]`.
+    fn bb_set_order_within(&mut self, bl: BlockId, span: uintm) {
         self.affecting_ops_changed();
         let n = self.bb_op_len(bl);
         if n == 0 {
             return;
         }
-        let step = (uintm::MAX / n as uintm).wsub(1);
+        let step = (span / n as uintm).wsub(1);
         let mut count: uintm = 0;
         let mut cur = self.bb_op_head(bl);
         while let Some(op) = cur {
@@ -5906,6 +5912,94 @@ mod tests {
         let on = fd.obank.get(newop).unwrap().get_seq_num().get_order();
         let o1 = fd.obank.get(ops[1]).unwrap().get_seq_num().get_order();
         assert!(o0 < on && on < o1);
+    }
+
+    #[test]
+    fn bb_insert_preserves_order_between_odd_neighbors() {
+        for (left, right) in [(5, 7), (5, 9), (uintm::MAX - 2, uintm::MAX)] {
+            let mut fd = build_fd();
+            let (bl, ops) = make_block_with_ops(&mut fd, 2);
+            fd.obank.get_mut(ops[0]).unwrap().set_order(left);
+            fd.obank.get_mut(ops[1]).unwrap().set_order(right);
+            let newop = fd.obank.create_at(1, Address::new(ram_space(&fd), 0x2000));
+            fd.obank.change_opcode(newop, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
+            fd.bb_insert_op(newop, bl, Some(ops[1]));
+            let middle = fd.obank.get(newop).unwrap().get_seq_num().get_order();
+            assert!(left < middle && middle < right, "{left} < {middle} < {right}");
+            assert_eq!(fd.bb_ops(bl), vec![ops[0], newop, ops[1]]);
+            assert_eq!(fd.obank.get(ops[0]).unwrap().get_seq_num().get_order(), left);
+            assert_eq!(fd.obank.get(ops[1]).unwrap().get_seq_num().get_order(), right);
+        }
+    }
+
+    #[test]
+    fn bb_insert_natural_gap_exhaustion_keeps_distinct_cover_points() {
+        let mut fd = build_fd();
+        let (block, ops) = make_block_with_ops(&mut fd, 2);
+        fd.bb_set_order(block);
+        let left = ops[0];
+        let mut right = ops[1];
+        loop {
+            let a = fd.obank.get(left).unwrap().get_seq_num().get_order();
+            let b = fd.obank.get(right).unwrap().get_seq_num().get_order();
+            if b - a <= 3 { break; }
+            let inserted = fd.obank.create_at(1, Address::new(ram_space(&fd), 0x2000));
+            fd.obank.change_opcode(inserted, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
+            fd.bb_insert_op(inserted, block, Some(right));
+            right = inserted;
+        }
+        for _ in 0..2 {
+            let inserted = fd.obank.create_at(1, Address::new(ram_space(&fd), 0x2000));
+            fd.obank.change_opcode(inserted, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
+            fd.bb_insert_op(inserted, block, Some(right));
+        }
+        assert_strict_block_order(&fd, block);
+        let covers: Vec<_> = fd.bb_ops(block).iter()
+            .map(|id| fd.op_cover_point_pub(*id).get_uindex()).collect();
+        assert!(covers.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    fn assert_strict_block_order(fd: &Funcdata, block: BlockId) {
+        let orders: Vec<_> = fd.bb_ops(block).into_iter()
+            .map(|id| fd.obank.get(id).unwrap().get_seq_num().get_order()).collect();
+        assert!(orders.windows(2).all(|pair| pair[0] < pair[1]), "{orders:?}");
+    }
+
+    #[test]
+    fn bb_append_past_order_space_renumbers_rarely() {
+        let mut fd = build_fd();
+        let (block, _) = make_block_with_ops(&mut fd, 1);
+        let start = fd.affecting_ops_revision();
+        for i in 0..20_000u64 {
+            let op = fd.obank.create_at(1, Address::new(ram_space(&fd), 0x2000 + i));
+            fd.obank.change_opcode(op, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
+            fd.bb_insert_op(op, block, None);
+        }
+        assert_strict_block_order(&fd, block);
+        let renumbers = fd.affecting_ops_revision() - start;
+        assert!(renumbers <= 100, "{renumbers} renumbers");
+    }
+
+    #[test]
+    fn bb_insert_repeated_positions_preserve_list_and_cover_order() {
+        let mut fd = build_fd();
+        let (block, mut expected) = make_block_with_ops(&mut fd, 128);
+        let mut state = 17u32;
+        for i in 0..2000 {
+            state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+            let at = state as usize % (expected.len() + 1);
+            let inserted = fd.obank.create_at(1, Address::new(ram_space(&fd), 0x2000 + i));
+            fd.obank.change_opcode(inserted, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
+            fd.bb_insert_op(inserted, block, expected.get(at).copied());
+            expected.insert(at, inserted);
+            if i % 128 == 0 {
+                assert_strict_block_order(&fd, block);
+            }
+        }
+        assert_eq!(fd.bb_ops(block), expected);
+        assert_strict_block_order(&fd, block);
+        let covers: Vec<_> = expected.iter().map(|id| fd.op_cover_point_pub(*id).get_uindex()).collect();
+        assert!(covers.windows(2).all(|pair| pair[0] < pair[1]));
     }
 
     #[test]
