@@ -5932,9 +5932,10 @@ through any of those refuses it (`add(&cfg, path)` storing a new node into the
 record and then writing the node's words; `kuna_protoorder::splits_a_wide_constant`).
 A `char *` vote is refused, too, for a value the callee merges with a non-zero
 constant, or that it -- or an address it derives from it by adds, pointer
-arithmetic, copies, casts or merges -- compares with, adds to or subtracts from
-a constant inside the data space's pointer bounds that is not a string literal
-kuna recovered
+arithmetic, copies, casts or merges, but not a difference of two pointers, which
+is a number -- compares with, adds to or subtracts from a constant that resolves
+to read-only memory (what the printer would render as a literal) and is not a
+string literal kuna recovered
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleevote.rs
 (prints_a_table_as_a_literal)`, which reads `kuna_charptr::constant_is_string`).
 The constant would take the `char *`, and the printer renders the readonly
