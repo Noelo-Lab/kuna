@@ -63,6 +63,17 @@ impl NarrowReturn {
 /// The run's statements, keyed like `Architecture::kuna_callret_types`.
 pub type NarrowReturns = HashMap<(int4, uintb), Rc<NarrowReturn>>;
 
+/// What a caller computed with (`used`) and read (`read`) of a call output
+/// before [`narrow_call_output`] narrowed it, which `voidret` files for the
+/// call in place of what it reads of the narrowed output: the rules fold the
+/// caller's own extension of the register (`mov w8, w0`) into the zero
+/// extension the narrowing proved, and the result then looks read whole.
+#[derive(Clone, Debug)]
+pub struct ReadBefore {
+    pub used: Option<(Address, int4)>,
+    pub read: Option<(Address, int4)>,
+}
+
 fn key(entry: &Address) -> Option<(int4, uintb)> {
     Some((entry.get_space()?.get_index(), entry.get_offset()))
 }
@@ -353,6 +364,11 @@ pub fn narrow_call_output(data: &mut Funcdata, fc: &FuncCallSpecs) {
         let Some(at) = data.obank().get(op).map(|o| o.get_addr().clone()) else {
             return;
         };
+        let before = ReadBefore {
+            used: crate::kuna_voidret::used_storage(data, out),
+            read: data.vbank().get(out).and_then(crate::kuna_voidret::read_storage),
+        };
+        data.kuna_note_narrowret_read(op, before);
         data.op_unset_output(op);
         let ext = data.new_op(1, at);
         data.op_set_opcode_code(ext, OpCode::CPUI_INT_ZEXT);
@@ -392,13 +408,15 @@ pub fn narrow_call_output(data: &mut Funcdata, fc: &FuncCallSpecs) {
 }
 
 /// The type the callee of the CALL `op` (spec `fc`) declares it returns, for a
-/// call whose `size`-byte output is the narrow value the callee states, or,
-/// with no statement, for a one-byte output that is exactly the character the
-/// callee's listing declares it returns: the def-side vote of
-/// `TypeOpCall::getOutputLocal` for an unlocked output, and so the type the
-/// call expression has where `ActionSetCasts` converts it.
+/// call whose one-byte output is the narrow value the callee states, or, with
+/// no statement, exactly the character the callee's listing declares it
+/// returns: the def-side vote of `TypeOpCall::getOutputLocal` for an unlocked
+/// output, and so the type the call expression has where `ActionSetCasts`
+/// converts it.  A wider narrow value is `callrettype`'s to type: it states an
+/// integer wider than a byte, at exactly the storage and width the narrowed
+/// output now has.
 pub fn stated_type(data: &Funcdata, op: OpId, fc: &FuncCallSpecs, size: int4) -> Option<Rc<Datatype>> {
-    if !data.get_arch().narrow_ret {
+    if !data.get_arch().narrow_ret || size != 1 {
         return None;
     }
     let out = data
@@ -426,19 +444,31 @@ fn declared_character(data: &Funcdata, fc: &FuncCallSpecs, out: VarnodeId) -> Op
 
 /// The register-wide value a caller reads the result of a CALL through, when
 /// [`narrow_call_output`] narrowed its output `out`: the zero extension it
-/// wrote back into the register, while that extension is still there.
+/// wrote back into the register, read directly or through the conversion
+/// `ActionSetCasts` put between them, while that extension is still there.
 pub fn widened_read(data: &Funcdata, out: VarnodeId) -> VarnodeId {
-    data.vbank()
-        .get(out)
-        .and_then(|v| {
-            v.descend_iter().find_map(|op| {
-                data.obank()
-                    .get(op)
-                    .filter(|o| o.code() == OpCode::CPUI_INT_ZEXT && o.get_addlflags() & kuna_narrowret != 0)
-                    .and_then(|o| o.get_out())
-            })
-        })
-        .unwrap_or(out)
+    let mut cur = out;
+    for _ in 0..3 {
+        let Some(v) = data.vbank().get(cur) else { break };
+        let mut next = None;
+        for op in v.descend_iter() {
+            let Some(o) = data.obank().get(op) else { continue };
+            match o.code() {
+                OpCode::CPUI_INT_ZEXT if o.get_addlflags() & kuna_narrowret != 0 => {
+                    if let Some(wide) = o.get_out() {
+                        return wide;
+                    }
+                }
+                OpCode::CPUI_CAST | OpCode::CPUI_COPY => next = next.or(o.get_out()),
+                _ => {}
+            }
+        }
+        match next {
+            Some(n) => cur = n,
+            None => break,
+        }
+    }
+    out
 }
 
 /// Is the decision trace on (`KUNA_NARROWRET_TRACE=1`)?

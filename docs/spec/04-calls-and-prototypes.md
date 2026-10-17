@@ -6496,17 +6496,27 @@ narrow return; the new narrow Varnode is a write heritage ignores
 (`set_write_mask`), read only by the extension, which carries the op flag so
 that a question about how much of the register the caller reads
 (`callbacktype`'s refusal of a callee whose direct caller reads a wider return,
-`widened_read`) still sees the whole register. From there the existing passes
+`widened_read`) still sees the whole register. Before it narrows the output, the call notes
+what the caller computes with and reads of the whole register
+(`kuna_narrowret::ReadBefore`), and `voidret` files those for the call in place
+of what it reads of the narrowed one: once the extension is proven, the rules
+fold the caller's own extension of the register (AArch64's `mov w8, w0` before
+a 64-bit `sub`) into it, and the result would look read whole, while a caller
+that does compute with the whole register (`call z32m; add $1, %rax`) still
+widens a callee that zero-extends a word to the whole register, and its
+statement goes with it. From there the existing passes
 decide the caller's types: `RuleSubvarZext` narrows a result that is only
 compared, masked or stored as a byte, and a local holding the result beside
 other narrow values takes the narrow width when the rest of its web allows it.
-The stated type is the def-side vote of `TypeOpCall::getOutputLocal` for an
-unlocked output whose storage and width are the statement's (`stated_type`),
-and so the type the call expression has where `ActionSetCasts` converts it. The
-listing declares the callee `unsigned char`, so a byte compared with `0x80`
-prints `h25(..) == 0x80`; typed by the comparison alone it was a `char` and
-printed `h25(..) == '\x80'`, which C, reading the declared `unsigned char`,
-never finds equal. A one-byte output that is exactly the `char` or `unsigned
+For a one-byte statement the stated type is the def-side vote of
+`TypeOpCall::getOutputLocal` for an unlocked output whose storage and width are
+the statement's (`stated_type`), and so the type the call expression has where
+`ActionSetCasts` converts it; a wider one is `callrettype`'s to type, which
+states an integer wider than a byte at exactly the narrowed output's storage
+and width. The listing declares the callee `unsigned char`, so a byte compared
+with `0x80` prints `h25(..) == 0x80`; typed by the comparison alone it was a
+`char` and printed `h25(..) == '\x80'`, which C, reading the declared
+`unsigned char`, never finds equal. A one-byte output that is exactly the `char` or `unsigned
 char` a callee with no statement declares, by `protoorder`'s record of its
 recovered return, takes that type the same way (`declared_character`).
 A stated truth value also marks the CALL a calculated boolean, so the result's
