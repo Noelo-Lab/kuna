@@ -117,10 +117,11 @@ impl Action for ActionStart {
         }
         Some(Box::new(ActionStart { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++: data.startProcessing(); return 0;
         // STUB(W3-op/W4): Funcdata::startProcessing (the per-function p-code
         // gather / processing-start bookkeeping) is not in the merged tree.
+        crate::p4_calls::kuna_x87emptyreturn::capture(data);
         0
     }
 }
