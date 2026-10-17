@@ -2435,9 +2435,9 @@ impl JumpBasicModel {
     }
 
     /// Replace a loaded selector's full byte range with the values a bounded
-    /// upstream index actually produces, but only when every emulated load is
-    /// covered by a global read-only property. Without this proof, the current
-    /// memory image may not describe future map values.
+    /// upstream index actually produces, but only when every direct or implicit
+    /// load-image read is in global read-only, non-volatile memory. Without this
+    /// proof, the current memory image may not describe future map values.
     fn narrow_readonly_selector_domain(&mut self, fd: &Funcdata, maxtablesize: uint4) {
         // Model 2 adds a separate default value outside its base range. It does
         // not use this model-1 recovery path, but keep the provenance constraint
@@ -2490,6 +2490,7 @@ impl JumpBasicModel {
                     emul.seed_varnode_value(seed_vn, seed_val);
                 }
                 emul.set_load_collect(true);
+                emul.set_readonly_image_required(true);
                 if emul
                     .emulate_path(inputs.get_value(), &self.path_meld, start_op, start_vn)
                     .is_err()
@@ -2505,27 +2506,7 @@ impl JumpBasicModel {
                     proven = false;
                     break;
                 };
-                let usepoint = Address::new_invalid();
-                if loads.is_empty()
-                    || loads.iter().any(|load| {
-                        load.size <= 0
-                            || load
-                                .addr
-                                .get_offset()
-                                .checked_add(load.size as u64 - 1)
-                                .is_none()
-                            || !(0..load.size).all(|offset| {
-                                let addr = &load.addr + i64::from(offset);
-                                let flags = fd.get_arch().query_global_properties(
-                                    &addr,
-                                    1,
-                                    &usepoint,
-                                );
-                                flags & crate::varnode::varnode_flags::readonly != 0
-                                    && flags & crate::varnode::varnode_flags::volatil == 0
-                            })
-                    })
-                {
+                if loads.is_empty() {
                     proven = false;
                     break;
                 }
