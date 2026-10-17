@@ -670,7 +670,13 @@ fn return_reads(fd: &Funcdata) -> Vec<(uintb, Range)> {
         if o.is_dead() || o.code() != OpCode::CPUI_CALL {
             continue;
         }
-        let Some(v) = o.get_out().and_then(|vn| fd.vbank().get(vn)) else { continue };
+        let Some(v) = o
+            .get_out()
+            .map(|vn| crate::kuna_narrowret::widened_read(fd, vn))
+            .and_then(|vn| fd.vbank().get(vn))
+        else {
+            continue;
+        };
         let Some(space) = v.get_addr().get_space() else { continue };
         let storage = (space.get_index(), v.get_addr().get_offset(), v.get_size());
         if let Some(read) = set_part(storage, v.get_consume(), space.is_big_endian()) {

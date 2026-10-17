@@ -6493,7 +6493,10 @@ stated storage, the CALL is made to write that narrow Varnode and a new
 read before, now defined as the extension the callee performed, which is what
 the locked-output path (`commitNewOutputs`, `narrowext`) builds for a declared
 narrow return; the new narrow Varnode is a write heritage ignores
-(`set_write_mask`), read only by the extension. From there the existing passes
+(`set_write_mask`), read only by the extension, which carries the op flag so
+that a question about how much of the register the caller reads
+(`callbacktype`'s refusal of a callee whose direct caller reads a wider return,
+`widened_read`) still sees the whole register. From there the existing passes
 decide the caller's types: `RuleSubvarZext` narrows a result that is only
 compared, masked or stored as a byte, and a local holding the result beside
 other narrow values takes the narrow width when the rest of its web allows it.

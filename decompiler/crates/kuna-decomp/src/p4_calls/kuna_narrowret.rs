@@ -356,6 +356,9 @@ pub fn narrow_call_output(data: &mut Funcdata, fc: &FuncCallSpecs) {
         data.op_unset_output(op);
         let ext = data.new_op(1, at);
         data.op_set_opcode_code(ext, OpCode::CPUI_INT_ZEXT);
+        if let Some(e) = data.obank_mut().get_mut(ext) {
+            e.set_additional_flag(kuna_narrowret);
+        }
         if data.op_set_output(ext, out).is_err() {
             let _ = data.op_destroy_raw(ext);
             let _ = data.op_set_output(op, out);
@@ -419,6 +422,23 @@ fn declared_character(data: &Funcdata, fc: &FuncCallSpecs, out: VarnodeId) -> Op
     let v = data.vbank().get(out)?;
     let integer = matches!(ct.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT);
     (*size == 1 && ct.get_size() == 1 && integer && v.get_size() == 1 && v.get_addr() == addr).then(|| Rc::clone(ct))
+}
+
+/// The register-wide value a caller reads the result of a CALL through, when
+/// [`narrow_call_output`] narrowed its output `out`: the zero extension it
+/// wrote back into the register, while that extension is still there.
+pub fn widened_read(data: &Funcdata, out: VarnodeId) -> VarnodeId {
+    data.vbank()
+        .get(out)
+        .and_then(|v| {
+            v.descend_iter().find_map(|op| {
+                data.obank()
+                    .get(op)
+                    .filter(|o| o.code() == OpCode::CPUI_INT_ZEXT && o.get_addlflags() & kuna_narrowret != 0)
+                    .and_then(|o| o.get_out())
+            })
+        })
+        .unwrap_or(out)
 }
 
 /// Is the decision trace on (`KUNA_NARROWRET_TRACE=1`)?
