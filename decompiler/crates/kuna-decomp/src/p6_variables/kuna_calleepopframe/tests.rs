@@ -97,6 +97,11 @@ fn complete_and_split_stores_prove_their_slots() {
 }
 
 #[test]
+fn an_overlapping_aggregate_copy_proves_its_slots() {
+    assert_eq!(frame_guess(&[(3, 4), (0, 4), (8, 4)], -12), Some(16));
+}
+
+#[test]
 fn an_unwritten_slot_leaves_the_pop_unknown() {
     assert_eq!(frame_guess(&[], -4), None);
     assert_eq!(frame_guess(&[(0, 4)], -8), None);
