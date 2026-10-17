@@ -3625,7 +3625,7 @@ symptoms = "a function signature takes only the first argument while the body re
 [[settable]]
 option = "narrowargs"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 phase = "P4"
 subphase = "own-input-prototype-recovery"
@@ -3633,7 +3633,7 @@ strength = "HARD"
 rewind = "P4"
 issue = "ty17-narrow-register-parameters"
 summary = "Declare a register parameter at the narrow width its body actually reads. An ARM AAPCS or x86-64 caller passes a `uint8_t`, a `short` or an `int` in a whole register, so a callee that computes with the register at full width (`and.w r2, r1, #7`, `mov %edi,%eax` beside a forwarded `%rdi`) keeps the input Varnode register-wide and recovers `unsigned int` or `unsigned long`. After each `ActionDeadCode` pass the bits of every register input any use can observe are known; when they all lie in the low 1, 2 or 4 bytes of the register and reach that part's top bit, and the model has an integer argument entry holding both, the input is replaced by that low part zero-extended back to the register at the function entry. Every use then reads the same bits it read before, so no printed value changes, and `ActionInputPrototype` recovers the parameter at the narrow width. In the callee-first `decompile-all` run, the narrow parameter a callee states through `protoorder` caps the bytes `ActionDeadCode::markConsumedParameters` treats as consumed at each call to it (`FuncCallSpecs::getInputBytesConsumed`), so a caller that only forwards its own parameter there narrows too. A mask that stops below the part's top bit (`flags & 0x10`, `x & 7`) is not narrowed: it is as often an `int` of flags as a narrow value."
-use_when = "Off by default. Turn it on for ARM Cortex-M firmware or optimized x86-64 code where `uint8_t`/`uint16_t` parameters print as `unsigned int` and `int` parameters as `unsigned long`; the tell is a parameter used only as `a1 & 0xff`, `(char)a1`, or `(unsigned int)a1` forwarded to a callee that declares a narrow parameter. Callers of a narrowed callee may print a narrower argument expression (`(unsigned char)(v2 + 5)` for `v2 + 5`): the callee reads only those bytes."
+use_when = "On by default. The tell it fixes is a `uint8_t` or `uint16_t` parameter printed as `unsigned int` on ARM firmware, or an `int` printed as `unsigned long` on x86-64, whose every use reads only its low bytes (`a1 & 0xff`, two byte stores of `a1` and `a1 >> 8`, `(unsigned int)a0`). Set it off to get the register-wide parameter back, or when a parameter the source declares `int` (a byte written through `*p = c`, a 32-bit `len` passed as a `size_t`) should keep its source width; the C is the same value either way. Callers of a narrowed callee may print a narrower argument expression (`(unsigned char)(v2 + 5)` for `v2 + 5`): the callee reads only those bytes. Measured against `off` with decbench's published type_match: 96 ARM firmware slices 2,505 -> 2,631 perfect functions (mean .2287 -> .2366)."
 example = "option narrowargs on"
 live_field = "narrow_args"
 live_true = "on"

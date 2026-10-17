@@ -165,7 +165,7 @@ c3
 <stringmatch name="CALLTARGETTYPE #2: on loads the table entry through void (**)(void)" min="2" max="2">\(\*\*\(void \(\*\*\)\(void\)\)\(a0 \* 8UL \+ 0x200000\)\)\(\);</stringmatch>
 <stringmatch name="CALLTARGETTYPE #3: off declares the called temporaries void *" min="4" max="4">void \*v1; // tmp</stringmatch>
 <stringmatch name="CALLTARGETTYPE #4: on declares the local from its call" min="2" max="2">int \(\*v1\)\(unsigned int,unsigned long\); // tmp</stringmatch>
-<stringmatch name="CALLTARGETTYPE #5: on loads the local through a pointer to its type" min="2" max="2">v1 = \*\(int \(\*\*\)\(unsigned int,unsigned long\)\)\(\(a0 &amp; 0xffffffff\) \* 8 \+ 0x200100\);</stringmatch>
+<stringmatch name="CALLTARGETTYPE #5: on loads the local through a pointer to its type" min="2" max="2">v1 = \*\(int \(\*\*\)\(unsigned int,unsigned long\)\)\(a0 \* 8UL \+ 0x200100\);</stringmatch>
 <stringmatch name="CALLTARGETTYPE #6: on declares the field temporary from its call" min="2" max="2">int \(\*v1\)\(unsigned int\); // tmp</stringmatch>
 <stringmatch name="CALLTARGETTYPE #7: on casts the field to the call type where off cast it to void *" min="2" max="2">v1 = \(int \(\*\)\(unsigned int\)\)\*a0;</stringmatch>
 <stringmatch name="CALLTARGETTYPE #8: off casts the field to void *, as twice does in both ctypes passes" min="6" max="6">v1 = \(void \*\)\*a0;</stringmatch>

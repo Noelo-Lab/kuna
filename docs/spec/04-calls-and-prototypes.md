@@ -2720,6 +2720,65 @@ in a 64-bit register), a zero-extended return whose sign bit may be set is no
 [03](03-ssa-and-simplification.md)).
 
 
+### (kuna) `narrowargs` — a register parameter at the width its body reads
+
+An ARM AAPCS or x86-64 caller passes a `uint8_t`, a `uint16_t` or an `int` in a
+whole register, and a callee is free to compute with that register at full
+width: `and.w r2, r1, #7`, a `uint16_t` split into two `strb` stores through
+`lsrs r3, r1, #8`, an `int` read as `%edi` beside the whole `%rdi` forwarded to
+another call. Heritage then makes the input Varnode register-wide, and the
+recovered parameter is `unsigned int` or `unsigned long` however few of its
+bits the body can observe. `ActionDeadCode` already computes exactly that: the
+consume mask of every input Varnode is the set of bits any use reads.
+
+`narrowargs` (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_narrowargs.rs`)
+reads that mask. When it fits the low 1, 2 or 4 bytes of the register and
+reaches the top bit of that part, the input is replaced by the part, and an
+`INT_ZEXT` at the top of the entry block writes the register-wide value every
+old reader now reads (`narrow_inputs`). The readers see the same consumed bits
+as before, so no printed value changes; `ActionInputPrototype` then recovers the
+parameter at the narrow width, typed from the narrow input as any other. Only an
+input that is a whole integer argument register of the function's model
+qualifies (never a float register, a stack slot, a join or a piece another
+input already narrowed: an input `PIECE` joins into a wider value is left
+alone), and only when the prototype is not locked. Two sources of a narrow mask
+are not evidence about the value and stop the rewrite: a left shift, which
+drops the high bits of a value of any width (`priority << 24`), and a register
+shift amount, which ARM reads through its low byte (`lsl r6, r7, lr` is
+`r7 << (lr & 0xff)`). A mask that stops below the part's top bit (`flags &
+0x10`, a PLL field `pllm & 0x3f`, `x & 7`) is left alone too: over the decbench
+firmware those are as often `int` flags as narrow values.
+
+The rewrite runs once the simplification loop has settled, in `fullloop`'s
+`ActionDeadCode` pass (`ActionDeadCode::boxed_narrowing`); a rewrite makes
+`fullloop` repeat, so `mainloop` folds the new extension into the readers that
+only took the low bits back out (`a1 & 0xff` becomes `a1`). Rewriting inside
+`mainloop` instead perturbed idioms it was still recognizing: a `cdq`-based
+signed remainder of a narrowed `%rdi` printed as `CONCAT44(a0 >> 0x1f,a0 >> 4)
+% 0xc`.
+
+In the callee-first `decompile-all` run the narrow parameter a callee states
+through `protoorder` also says how much of an argument the callee reads. Where
+argument `i` of a call is passed in an integer register, and the callee's
+stated parameter `i` is the low part of that same register,
+`ActionDeadCode::markConsumedParameters` caps the argument's consume at those
+bytes, as upstream's `FuncCallSpecs::getInputBytesConsumed` channel does for
+the analysis of a sub-function (`stated_bytes_consumed`). A caller that only
+forwards its own parameter there then narrows it in turn, and the argument
+expression drops the bits its callee never reads: `v2 + 5` and `v2 - 8 & 0xff`
+passed to the same byte parameter both print as `(unsigned char)(v2 + 5)`,
+`(unsigned char)(v2 - 8)`. A stated parameter is narrow only because the
+callee's own body reads only those bytes, by heritage or by this rewrite, so the
+cap holds for every caller. A float parameter is never one.
+
+What the metric sees: on decbench's ARM firmware (96 slices) the option moves
+a `uint8_t` parameter from `unsigned int` to `undefined1` or `unsigned char`,
+and a `uint16_t` to `unsigned short`, and an x86-64 `int` parameter read as a
+32-bit value from `unsigned long` to `unsigned int`. A parameter whose type is
+`int` but whose body reads only its low byte (`(unsigned char)c` stored into a
+buffer) narrows as well; the C is still exact, but the declared type is not the
+source's.
+
 ### (kuna) `calleeprotostack` — the declared callee's stack contract
 
 A locked prototype says two things about the stack, and until this option
