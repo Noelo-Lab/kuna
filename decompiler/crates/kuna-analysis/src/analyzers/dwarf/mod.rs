@@ -122,6 +122,7 @@ mod kuna_cppproto;
 mod kuna_dwarfbounds;
 mod kuna_dwarfbyref;
 pub(crate) mod kuna_dwarfcomplex;
+mod kuna_dwarflinkage;
 
 mod kuna_typedepth;
 use kuna_typedepth::TypeWalk;
@@ -204,6 +205,8 @@ struct DieSnap {
     tag: gimli::DwTag,
     /// `DW_AT_name`, resolved through `.debug_str`/`.debug_line_str` (may be empty).
     name: String,
+    linkage_name: String,
+    external: Option<bool>,
     /// `DW_AT_low_pc` resolved to a VMA, if present (marks a *defined* function).
     low_pc: Option<u64>,
     /// `DW_AT_type` reference (the offset of the referenced type DIE in this unit).
@@ -282,6 +285,8 @@ impl DieSnap {
         DieSnap {
             tag,
             name: String::new(),
+            linkage_name: String::new(),
+            external: None,
             low_pc: None,
             type_ref: None,
             byte_size: None,
@@ -368,6 +373,16 @@ fn snapshot_unit(
             if let Ok(s) = dwarf.attr_string(unit, val) {
                 if let Ok(s) = std::str::from_utf8(s.slice()) {
                     snap.name = s.to_string();
+                }
+            }
+        }
+        if let Some(gimli::AttributeValue::Flag(value)) = entry.attr_value(gimli::DW_AT_external) {
+            snap.external = Some(value);
+        }
+        if let Some(val) = entry.attr_value(gimli::DW_AT_linkage_name) {
+            if let Ok(s) = dwarf.attr_string(unit, val) {
+                if let Ok(s) = std::str::from_utf8(s.slice()) {
+                    snap.linkage_name = s.to_string();
                 }
             }
         }
@@ -1107,6 +1122,8 @@ impl AnalysisPass for DwarfPass {
         let complex_max =
             kuna_dwarfcomplex::max_size(ctx.file.format(), ctx.file.architecture(), &ctx.arch.archid);
 
+        let linkage_imports = kuna_dwarflinkage::imports(ctx);
+        let linkage_definitions = kuna_dwarflinkage::definitions(ctx);
         let mut units = dwarf.units();
         while let Ok(Some(header)) = units.next() {
             let Ok(unit) = dwarf.unit(header) else { continue };
@@ -1137,6 +1154,7 @@ impl AnalysisPass for DwarfPass {
                             if let Some(pieces) =
                                 build_pieces(&snap.name, snap, &dies, types, word_size)
                             {
+                                kuna_dwarflinkage::append(snap, &dies, &pieces, &linkage_imports, &linkage_definitions, &mut out.prototypes_at);
                                 out.prototypes.push(pieces);
                             }
                             // subtask 3: named, typed stack LOCALS. Each direct
@@ -1173,6 +1191,7 @@ impl AnalysisPass for DwarfPass {
                         if let Some(pieces) =
                             kuna_cppproto::build_pieces(&res, &dies, types, word_size)
                         {
+                            kuna_dwarflinkage::append(snap, &dies, &pieces, &linkage_imports, &linkage_definitions, &mut out.cpp_dwarf.prototypes);
                             out.cpp_dwarf.prototypes.push((low_pc, pieces));
                         }
                         if res.chased {
