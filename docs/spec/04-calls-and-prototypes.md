@@ -1115,7 +1115,18 @@ that machinery.
   param <func>::<i> <storage> <decl>` and `map return <func>::<storage>
   <decl>`, reached from the CLI as `--assert 'param <func>::<i> …'`. A slot no
   directive named is `undefined` of pointer width, so slots may be declared in
-  any order. A CALLIND through a literal global slot has one additional early
+  any order. (kuna) Explicit return storage also keeps the return out of that
+  model-driven input assignment (`kuna_customreturn.rs`): the inputs are laid
+  out against a temporary `void` result before the stated output is installed.
+  A return the model cannot place in a register (a ten-byte x87 `float10` under
+  the x86 models, which the model returns through a hidden pointer) therefore
+  no longer adds a hidden return-pointer input that survives the override,
+  takes the first stated slot, and shifts the stack-pop inference. Inputs no
+  directive overrides keep the slots the model assigns with every stated input
+  in the list, so a stack input that follows one overridden to a register keeps
+  the stack offset it would have had. Pieces without explicit return storage
+  allocate an indirect return as before.
+  A CALLIND through a literal global slot has one additional early
   source: when input 0 is either the unwritten memory Varnode at that exact
   address or the result of exactly `LOAD(constant-space, constant-address)`,
   the slot is queried before generic recovery. An exact data symbol contributes

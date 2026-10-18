@@ -477,3 +477,6 @@ mod wide_right_shift;
 
 #[path = "float_subword_bits.rs"]
 mod float_subword_bits;
+
+#[path = "x87_custom_storage.rs"]
+mod x87_custom_storage;
