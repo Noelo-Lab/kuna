@@ -2294,6 +2294,20 @@ mod w10_printc_cast_render {
     }
 
     #[test]
+    fn narrowed_float_bit_literals_fit_the_rust_word() {
+        let mut fd = build_fd();
+        let input = fd.new_constant(8, 0x1_0000_0001);
+        let op = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_SUBPIECE);
+        let mut printer = PrintC::new();
+        printer.set_name("rust");
+        printer.set_output_stream();
+        printer.op_bit_transfer_ir(&fd, &bare_arch(), op, crate::kuna_bitcast::Transfer {
+            input, target: named("float", 4, type_metatype::TYPE_FLOAT), size: 4, to_float: true,
+        });
+        assert_eq!(printer.emit_mut().output_str(), "f32::from_bits(0x1u32)");
+    }
+
+    #[test]
     fn float_slices_preserve_bits_in_c_and_rust() {
         let mut cases = Vec::new();
         for source_meta in [
@@ -2410,6 +2424,59 @@ mod w10_printc_cast_render {
             assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_none());
         }
         execute_float_slice_expressions(&cases);
+    }
+
+    #[test]
+    fn implied_untyped_float_slices_skip_only_untyped_call_results() {
+        for producer in [OpCode::CPUI_LOAD, OpCode::CPUI_CALL] {
+            let mut context = ContextArch::new(build_manager());
+            let types = Rc::new(crate::dtype::TypeFactoryImpl::new());
+            types.set_max_basetype_size(8);
+            types.set_default_alignment_map();
+            types.set_size_of_int(4);
+            types.set_size_of_float(4);
+            types.set_size_of_long_long(8);
+            types.set_size_of_double(8);
+            types.set_core_type("uint4", 4, type_metatype::TYPE_UINT, false).unwrap();
+            types.set_core_type("uint8", 8, type_metatype::TYPE_UINT, false).unwrap();
+            types.cache_core_types().unwrap();
+            context.types = Some(types);
+            let ram = context.manage().get_space_by_name("ram").unwrap().clone();
+            let mut fd = Funcdata::new(
+                "f",
+                "f",
+                Rc::new(context),
+                Address::new(ram.clone(), 0x1000),
+                0x1000,
+                0x40,
+            )
+            .unwrap();
+            let def = mk_op(&mut fd, 1, 0x10, producer);
+            let pointer = fd.new_constant(8, 0x2000);
+            fd.op_set_input(def, pointer, 0).unwrap();
+            let source = fd.new_varnode(
+                8,
+                &Address::new(ram.clone(), 0x400),
+                Some(named("undefined8", 8, type_metatype::TYPE_UNKNOWN)),
+            );
+            fd.op_set_output(def, source).unwrap();
+            fd.vbank_mut().get_mut(source).unwrap().set_implied();
+            let op = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_SUBPIECE);
+            fd.op_set_input(op, source, 0).unwrap();
+            let zero = fd.new_constant(4, 0);
+            fd.op_set_input(op, zero, 1).unwrap();
+            let output = fd.new_varnode(
+                4,
+                &Address::new(ram, 0x500),
+                Some(named("float", 4, type_metatype::TYPE_FLOAT)),
+            );
+            fd.op_set_output(op, output).unwrap();
+            fd.set_high_level();
+            assert_eq!(
+                crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_some(),
+                producer == OpCode::CPUI_LOAD
+            );
+        }
     }
 
     fn execute_float_slice_expressions(cases: &[(type_metatype, u64, &str, String)]) {

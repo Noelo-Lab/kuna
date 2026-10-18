@@ -143,6 +143,9 @@ mod verify_w10_global_persist_adversarial;
 #[path = "verify_w10_implied_vars_adversarial.rs"]
 mod verify_w10_implied_vars_adversarial;
 
+#[path = "verify_w10_issue1121_unaliased.rs"]
+mod verify_w10_issue1121_unaliased;
+
 #[path = "verify_w10_inline_inject.rs"]
 mod verify_w10_inline_inject;
 
@@ -157,6 +160,9 @@ mod verify_w10_jts_chain;
 
 #[path = "verify_w10_jumptable_emulate.rs"]
 mod verify_w10_jumptable_emulate;
+
+#[path = "verify_w10_selector_domain.rs"]
+mod verify_w10_selector_domain;
 
 #[path = "verify_w10_lanedivide.rs"]
 mod verify_w10_lanedivide;

@@ -5911,7 +5911,8 @@ impl FuncProto {
         if model.is_some() {
             self.set_model(model);
         }
-        self.update_all_types(pieces, typefactory, manager)?;
+        let assignment = super::kuna_customreturn::input_assignment(pieces, typefactory)?;
+        self.update_all_types(&assignment, typefactory, manager)?;
         let custom_storage = pieces
             .input_storage
             .iter()

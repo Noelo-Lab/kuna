@@ -6673,7 +6673,7 @@ impl PrintC {
         let input = fd.vbank().get(transfer.input).unwrap();
         let bits = if transfer.size == 4 { "u32" } else { "u64" };
         let literal = |v: &crate::varnode::Varnode| {
-            Atom::syntax(format!("0x{:x}{bits}", v.get_offset()), TagType::Syntax, SyntaxHighlight::const_color)
+            Atom::syntax(format!("0x{:x}{bits}", if transfer.size == 4 { u64::from(v.get_offset() as u32) } else { v.get_offset() }), TagType::Syntax, SyntaxHighlight::const_color)
         };
         if rust && transfer.to_float {
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));

@@ -48,7 +48,9 @@ pub(crate) fn recognize(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option
                 | type_metatype::TYPE_UNKNOWN
                 | type_metatype::TYPE_FLOAT
         )
-        || from.get_metatype() == type_metatype::TYPE_UNKNOWN && source.is_implied()
+        || from.get_metatype() == type_metatype::TYPE_UNKNOWN
+            && source.is_implied()
+            && !crate::kuna_bitcast::reinterprets_to_float(fd, decl_high_type, input)
     {
         return None;
     }

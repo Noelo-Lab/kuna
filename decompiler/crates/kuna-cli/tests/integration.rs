@@ -331,6 +331,9 @@ mod stack_object_lifetimes;
 #[path = "stack_parameter_lifetimes.rs"]
 mod stack_parameter_lifetimes;
 
+#[path = "stack_home_aliases.rs"]
+mod stack_home_aliases;
+
 #[path = "stack_struct.rs"]
 mod stack_struct;
 
@@ -462,6 +465,7 @@ mod float_field_slices;
 
 #[path = "float_storage_truncation.rs"]
 mod float_storage_truncation;
+
 #[path = "dwarf_reference_arguments.rs"]
 mod dwarf_reference_arguments;
 
@@ -473,6 +477,17 @@ mod dwarf_array_bounds;
 
 #[path = "wide_right_shift.rs"]
 mod wide_right_shift;
+
+#[path = "float_subword_bits.rs"]
+mod float_subword_bits;
+
+#[path = "x87_custom_storage.rs"]
+mod x87_custom_storage;
+
+#[path = "dwarf_complex_values.rs"]
+mod dwarf_complex_values;
+#[path = "project_direct_globals.rs"]
+mod project_direct_globals;
 
 #[path = "x87_empty_return.rs"]
 mod x87_empty_return;

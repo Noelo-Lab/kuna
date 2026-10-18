@@ -121,6 +121,7 @@ pub use lines::DwarfLinesPass;
 mod kuna_cppproto;
 mod kuna_dwarfbounds;
 mod kuna_dwarfbyref;
+pub(crate) mod kuna_dwarfcomplex;
 
 mod kuna_typedepth;
 use kuna_typedepth::TypeWalk;
@@ -234,6 +235,8 @@ struct DieSnap {
     discr_value: Option<i64>,
     /// `DW_AT_encoding` (`DW_ATE_*`) for `DW_TAG_base_type`.
     encoding: Option<gimli::DwAte>,
+    /// Widest `DW_ATE_complex_float` given the pair layout (0 = none on this ABI).
+    complex_max_size: i32,
     /// `DW_AT_count`/`DW_AT_upper_bound` (array subrange length).
     array_count: Option<u64>,
     /// `DW_AT_const_value` of a `DW_TAG_enumerator` — the enum member's value.
@@ -290,6 +293,7 @@ impl DieSnap {
             discr_ref: None,
             discr_value: None,
             encoding: None,
+            complex_max_size: 0,
             array_count: None,
             const_value: None,
             declaration: false,
@@ -594,6 +598,9 @@ fn build_datatype_at(
                     char_datatype(types, size, &die.name, encoding_signed(die.encoding))
                 }
                 Some(gimli::DW_ATE_boolean) => types.get_base(size, type_metatype::TYPE_BOOL).ok(),
+                Some(gimli::DW_ATE_complex_float) if size <= die.complex_max_size => {
+                    kuna_dwarfcomplex::complex_type(types, size)
+                }
                 Some(gimli::DW_ATE_float) => types.get_base(size, type_metatype::TYPE_FLOAT).ok(),
                 enc if encoding_signed(enc) == Some(false) => {
                     types.get_base(size, type_metatype::TYPE_UINT).ok()
@@ -1097,11 +1104,18 @@ impl AnalysisPass for DwarfPass {
         // `None` => this target's CFA is not in kuna's table; skip fbreg locals
         // (additive — the names+types from subtasks 1+2 still apply).
         let cfa = call_frame_cfa(ctx.file.architecture());
+        let complex_max =
+            kuna_dwarfcomplex::max_size(ctx.file.format(), ctx.file.architecture(), &ctx.arch.archid);
 
         let mut units = dwarf.units();
         while let Ok(Some(header)) = units.next() {
             let Ok(unit) = dwarf.unit(header) else { continue };
-            let dies = snapshot_unit(&dwarf, &unit);
+            let mut dies = snapshot_unit(&dwarf, &unit);
+            if complex_max > 0 {
+                for die in dies.values_mut() {
+                    die.complex_max_size = complex_max;
+                }
+            }
 
             for snap in dies.values() {
                 match snap.tag {
