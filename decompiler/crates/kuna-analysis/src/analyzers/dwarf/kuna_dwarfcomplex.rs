@@ -2,22 +2,19 @@
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory, TypeField};
 use std::rc::Rc;
 
-pub(crate) fn supported_abi(
+/// Widest complex value, in bytes, this target ABI passes like its pair
+/// structure; 0 when no complex value uses the pair layout.
+pub(crate) fn max_size(
     format: object::BinaryFormat,
     architecture: object::Architecture,
     archid: &str,
-) -> bool {
+) -> i32 {
+    use object::{Architecture as A, BinaryFormat as B};
     match (format, architecture) {
-        (object::BinaryFormat::Elf, object::Architecture::X86_64) => {
-            archid == "x86:LE:64:default:gcc"
-        }
-        (object::BinaryFormat::Pe, object::Architecture::I386) => {
-            archid == "x86:LE:32:default:windows"
-        }
-        (object::BinaryFormat::Pe, object::Architecture::X86_64) => {
-            archid == "x86:LE:64:default:windows"
-        }
-        _ => false,
+        (B::Elf, A::X86_64) if archid == "x86:LE:64:default:gcc" => 16,
+        (B::Pe, A::I386) if archid == "x86:LE:32:default:windows" => 8,
+        (B::Pe, A::X86_64) if archid == "x86:LE:64:default:windows" => 16,
+        _ => 0,
     }
 }
 
@@ -85,17 +82,13 @@ mod tests {
     #[test]
     fn only_verified_target_abis_use_pair_layouts() {
         use object::{Architecture as A, BinaryFormat as B};
-        assert!(supported_abi(B::Elf, A::X86_64, "x86:LE:64:default:gcc"));
-        assert!(supported_abi(B::Pe, A::I386, "x86:LE:32:default:windows"));
-        assert!(supported_abi(B::Pe, A::X86_64, "x86:LE:64:default:windows"));
-        assert!(!supported_abi(B::MachO, A::X86_64, "x86:LE:64:default:gcc"));
-        assert!(!supported_abi(B::Pe, A::X86_64, "x86:LE:64:default:gcc"));
-        assert!(!supported_abi(B::Elf, A::I386, "x86:LE:32:default:gcc"));
-        assert!(!supported_abi(
-            B::Elf,
-            A::Aarch64,
-            "AARCH64:LE:64:v8A:default"
-        ));
+        assert_eq!(max_size(B::Elf, A::X86_64, "x86:LE:64:default:gcc"), 16);
+        assert_eq!(max_size(B::Pe, A::I386, "x86:LE:32:default:windows"), 8);
+        assert_eq!(max_size(B::Pe, A::X86_64, "x86:LE:64:default:windows"), 16);
+        assert_eq!(max_size(B::MachO, A::X86_64, "x86:LE:64:default:gcc"), 0);
+        assert_eq!(max_size(B::Pe, A::X86_64, "x86:LE:64:default:gcc"), 0);
+        assert_eq!(max_size(B::Elf, A::I386, "x86:LE:32:default:gcc"), 0);
+        assert_eq!(max_size(B::Elf, A::Aarch64, "AARCH64:LE:64:v8A:default"), 0);
     }
     #[test]
     fn repeated_components_reuse_complete_layouts() {

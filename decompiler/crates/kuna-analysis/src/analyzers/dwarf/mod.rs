@@ -235,6 +235,7 @@ struct DieSnap {
     discr_value: Option<i64>,
     /// `DW_AT_encoding` (`DW_ATE_*`) for `DW_TAG_base_type`.
     encoding: Option<gimli::DwAte>,
+    /// Widest `DW_ATE_complex_float` given the pair layout (0 = none on this ABI).
     complex_max_size: i32,
     /// `DW_AT_count`/`DW_AT_upper_bound` (array subrange length).
     array_count: Option<u64>,
@@ -1103,14 +1104,16 @@ impl AnalysisPass for DwarfPass {
         // `None` => this target's CFA is not in kuna's table; skip fbreg locals
         // (additive — the names+types from subtasks 1+2 still apply).
         let cfa = call_frame_cfa(ctx.file.architecture());
+        let complex_max =
+            kuna_dwarfcomplex::max_size(ctx.file.format(), ctx.file.architecture(), &ctx.arch.archid);
 
         let mut units = dwarf.units();
         while let Ok(Some(header)) = units.next() {
             let Ok(unit) = dwarf.unit(header) else { continue };
             let mut dies = snapshot_unit(&dwarf, &unit);
-            if kuna_dwarfcomplex::supported_abi(ctx.file.format(), ctx.file.architecture(), &ctx.arch.archid) {
+            if complex_max > 0 {
                 for die in dies.values_mut() {
-                    die.complex_max_size = if ctx.file.architecture() == object::Architecture::I386 { 8 } else { 16 };
+                    die.complex_max_size = complex_max;
                 }
             }
 
