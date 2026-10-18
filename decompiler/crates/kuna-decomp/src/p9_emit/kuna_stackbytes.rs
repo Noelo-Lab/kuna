@@ -123,12 +123,16 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         .map(|(index, byte)| preserved(index, *byte))
         .collect();
     let physical_merged_source = bytes.iter().any(|byte| {
-        let Byte::Value { source, .. } = byte else {
+        let Byte::Value {
+            source, read_op, ..
+        } = byte
+        else {
             return false;
         };
-        is_default_data_value(fd, *source)
-            && shares_backing_high(fd, *source, info.symbol)
+        shares_backing_high(fd, *source, info.symbol)
             && !same_backing(fd, *source, info.symbol)
+            && (safe_load_op(fd, *source, op).is_some()
+                || safe_global_source(fd, *source, op, *read_op).is_some())
             && fd.vbank().get(*source).is_some_and(|source| {
                 !is_pointer_type(fd.vn_type_read_facing(*source, op).get_metatype())
                     && !is_pointer_type(fd.vn_type_def_facing(*source).get_metatype())
