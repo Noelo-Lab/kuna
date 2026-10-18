@@ -122,12 +122,22 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         .enumerate()
         .map(|(index, byte)| preserved(index, *byte))
         .collect();
+    let physical_merged_source = bytes.iter().any(|byte| {
+        let Byte::Value { source, .. } = byte else {
+            return false;
+        };
+        is_default_data_value(fd, *source)
+            && shares_backing_high(fd, *source, info.symbol)
+            && !same_backing(fd, *source, info.symbol)
+            && fd.vbank().get(*source).is_some_and(|source| {
+                !is_pointer_type(fd.vn_type_read_facing(*source, op).get_metatype())
+                    && !is_pointer_type(fd.vn_type_def_facing(*source).get_metatype())
+            })
+    });
     let stackview_scalar_copy = operation.code() == OpCode::CPUI_COPY
         && stackview_container
-        && !matches!(
-            output_type,
-            type_metatype::TYPE_PTR | type_metatype::TYPE_PTRREL
-        );
+        && !pointer_copy
+        && (operation.not_printed() || value.is_implied() || physical_merged_source);
     if matches!(size, 1 | 2 | 4 | 8) && !keep.iter().any(|keep| *keep) {
         if !matches!(
             fd.vn_type_def_facing(output).get_metatype(),
