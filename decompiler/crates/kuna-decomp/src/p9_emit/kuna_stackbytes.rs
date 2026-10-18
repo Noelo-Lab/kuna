@@ -91,10 +91,12 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         if keep[index] {
             continue;
         }
+        // `keep` already removes each byte that is literally the same stack
+        // storage byte. A different byte in the same generated backing still
+        // has to be read and copied, even when both Varnodes share one HighVariable.
         if let Byte::Value { source, .. } = byte {
             let source_value = fd.vbank().get(source)?;
             if source_value.is_implied()
-                || same_backing(fd, source, info.symbol)
                 || !matches!(source_value.get_size(), 1 | 2 | 4 | 8)
                 || !matches!(
                     fd.vn_type_read_facing(source, op).get_metatype(),
@@ -134,11 +136,19 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
 }
 
 fn same_backing(fd: &Funcdata, value: VarnodeId, symbol: SymbolId) -> bool {
-    fd.vbank()
-        .get(value)
-        .and_then(|value| value.get_high())
-        .and_then(|high| fd.high_bank().get(high))
-        .is_some_and(|high| high.kuna_link_symbol() == Some(symbol))
+    let Some(value) = fd.vbank().get(value) else {
+        return false;
+    };
+    let Some(stack) = fd.get_arch().manage().get_stack_space() else {
+        return false;
+    };
+    // HighVariable identity alone is not storage identity: a global or register
+    // Varnode can be coalesced with the stackview backing after a merge.
+    value.get_space().get_index() == stack.get_index()
+        && value
+            .get_high()
+            .and_then(|high| fd.high_bank().get(high))
+            .is_some_and(|high| high.kuna_link_symbol() == Some(symbol))
 }
 
 fn expression(fd: &Funcdata, id: VarnodeId, top: bool, depth: u8) -> Option<Vec<Byte>> {

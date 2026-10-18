@@ -4779,7 +4779,7 @@ impl PrintC {
                 Some(o) => o,
                 None => continue,
             };
-            if o.not_printed() || crate::p9_emit::kuna_stackmarkers::nonprinting(fd, inst) {
+            if self.is_suppressed_statement(fd, inst) {
                 continue;
             }
             // The body always prints under NO_BRANCH: every branch op is skipped.
@@ -4859,6 +4859,19 @@ impl PrintC {
             && fd.get_arch().stack_views
             && (crate::kuna_stackbytes::assignment(fd, op).is_some()
                 || crate::kuna_stackassign::assignment(fd, op).is_some())
+    }
+
+    fn is_suppressed_statement(&self, fd: &Funcdata, op: OpId) -> bool {
+        let Some(operation) = fd.obank().get(op) else {
+            return true;
+        };
+        if operation.not_printed()
+            && !(self.out_lang == crate::kuna_lang::OutLang::C
+                && crate::kuna_stackbytes::assignment(fd, op).is_some())
+        {
+            return true;
+        }
+        crate::p9_emit::kuna_stackmarkers::nonprinting(fd, op)
     }
 
     /// (kuna) Is `blk` a `0`/`1` select diamond that the S8 `iteboolean` pass
@@ -5617,7 +5630,7 @@ impl PrintC {
                 Some(o) => o,
                 None => continue,
             };
-            if o.not_printed() || crate::p9_emit::kuna_stackmarkers::nonprinting(fd, inst) {
+            if self.is_suppressed_statement(fd, inst) {
                 continue;
             }
             // (kuna `voidtailreturn`) The function's own trailing bare `return;`.
