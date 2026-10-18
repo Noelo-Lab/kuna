@@ -3550,3 +3550,22 @@ noninteger types, enums, widths above eight bytes and concatenations of unrelate
 halves keep their existing rendering. The option defaults on for C output; off
 restores the upstream CONCAT helper, and other output languages keep their own
 rendering.
+
+Project C exports use the exact global-scope function symbol's display name
+for a successful definition and its header prototype when both spellings are
+plain C identifiers (`decompiler/crates/kuna-console/src/kuna_projectfunctionnames.rs`).
+This aligns definitions with calls when debug information names a function
+differently from its linker symbol. Analysis, selector aliases, and standalone
+output retain their existing names. The original display is restored after
+rendering. Namespaced and nonidentifier spellings are not guessed. A separate optional emitted C name travels through worker records and survives
+stream compaction. Final header validation checks successful prototype records,
+including streamed bodies whose text was released. Multiple entries claiming
+one C name, or a function conflicting with a data or typedef declaration, produce
+an address-only `#error` and an export completion error. Source selection names
+and alias metadata retain their existing meaning.
+
+Project C emission reserves global function names before rendering local symbols.
+A colliding parameter or local receives a unique local spelling; parameter storage,
+types, and lock flags are preserved, and the prototype and body use the same name.
+This prevents a source-level parameter name from shadowing a function's emitted
+linkage identifier. The change is local to the rendered function.

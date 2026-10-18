@@ -178,7 +178,13 @@ fn arm_thumb_readme_entry_point_is_the_even_inventory_address() {
 /// offset zero.
 #[test]
 fn relocatable_readme_has_no_entry_and_lists_laid_out_sections() {
-    let dir = project("entry_selectors_x86_64.o", "reloc_readme");
+    let dir = out_dir("reloc_readme");
+    let (_, stderr, ok) = run_kuna(&[
+        "decompile-project", &fixture("entry_selectors_x86_64.o"),
+        "-o", dir.to_str().unwrap(), "--sleighpath", &specs(),
+    ]);
+    assert!(!ok, "duplicate function identifiers must reject the C project");
+    assert!(stderr.contains("multiple owning entries"), "{stderr}");
     let (_c, _h, _asm, readme) = artifacts(&dir, "entry_selectors_x86_64.o");
     let readme_text = std::fs::read_to_string(&readme).unwrap();
     assert!(
@@ -306,27 +312,16 @@ fn header_syntax_checks_with_cc() {
     );
 }
 
-/// (kuna) `stat` and `sigaction` are each a POSIX struct tag AND a POSIX
-/// function, and C keeps typedefs and functions in one file-scope namespace. The
-/// export must not emit both spellings as declarations, or the header stops
-/// parsing at the clash and every declaration after it fails too.
-///
-/// `libctypes_stat_x86_64` imports `stat` and carries `struct stat` in its DWARF,
-/// so the clash is reachable with the named tables OFF (the DWARF import alone)
-/// and with them on (`stat *` from the prototype table as well). The `glibc` arm
-/// is here because it is the one that gives a minted shell real MEMBERS, so the
-/// header stops declaring it opaque and starts printing a struct body  -  which
-/// has to parse, and has to arrive after the aggregates it holds by value.
+/// A function and an invented typedef occupy the same C namespace even if
+/// the header comments out the function prototype. Preserve the diagnostic;
+/// a separate selection still checks the complete aggregate definitions.
 #[test]
-fn header_syntax_checks_when_a_type_shares_a_name_with_a_function() {
-    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
-        eprintln!("header_syntax_checks_when_a_type_shares_a_name_with_a_function: no `cc`");
-        return;
-    }
+fn function_typedef_collisions_are_reported_and_layout_headers_still_compile() {
+    let have_cc = process::optional_output(Command::new("cc").arg("--version")).is_some();
     for arm in ["off", "opaque", "glibc"] {
         let bin = fixture("libctypes_stat_x86_64");
         let dir = out_dir(&format!("typefnclash_{arm}"));
-        let (_stdout, stderr, ok) = run_kuna(&[
+        let (_, stderr, ok) = run_kuna(&[
             "decompile-project",
             &bin,
             "-o",
@@ -337,32 +332,57 @@ fn header_syntax_checks_when_a_type_shares_a_name_with_a_function() {
             "--sleighpath",
             &specs(),
         ]);
-        if !ok {
-            panic!("kuna decompile-project failed (libctypes {arm}): {stderr}");
-        }
-        let (_c, h, _asm, _r) = artifacts(&dir, "libctypes_stat_x86_64");
-        let text = std::fs::read_to_string(&h).unwrap();
+        assert!(!ok, "libctypes {arm}: conflicting C ownership was accepted");
         assert!(
-            text.contains("prototype omitted: int stat("),
-            "libctypes {arm}: the `stat` prototype should be suppressed, not declared:\n{text}"
+            stderr.contains("conflicts with a data or type declaration"),
+            "{stderr}"
         );
-        let stub = dir.join("hcheck.c");
+        let (code, header, _, _) = artifacts(&dir, "libctypes_stat_x86_64");
+        let text = std::fs::read_to_string(&header).unwrap();
+        assert!(text.contains("#error C function name at "), "{text}");
+        assert!(text.contains("prototype omitted: int stat("), "{text}");
+        assert!(std::fs::read_to_string(code).unwrap().contains("int stat("));
+
+        let selected = out_dir(&format!("typefnlayout_{arm}"));
+        let (_, stderr, ok) = run_kuna(&[
+            "decompile-project",
+            &bin,
+            "-o",
+            selected.to_str().unwrap(),
+            "--functions",
+            "mode_of",
+            "--option",
+            "libctypes",
+            arm,
+            "--sleighpath",
+            &specs(),
+        ]);
+        assert!(ok, "libctypes {arm}: {stderr}");
+        let (_, header, _, _) = artifacts(&selected, "libctypes_stat_x86_64");
+        let text = std::fs::read_to_string(&header).unwrap();
+        assert!(text.contains("typedef struct stat stat;"), "{text}");
+        assert!(text.contains("st_mode"), "{text}");
+        assert!(!text.contains("#error"), "{text}");
+        if !have_cc {
+            continue;
+        }
+        let stub = selected.join("hcheck.c");
         std::fs::write(
             &stub,
             format!(
-                "#define main kuna_recovered_main\n#include \"{}\"\nint stub_entry(void){{return 0;}}\n",
-                h.display()
+                "#include \"{}\"\nint stub_entry(void){{return 0;}}\n",
+                header.display()
             ),
         )
         .unwrap();
-        let out = Command::new("cc")
+        let output = Command::new("cc")
             .args(["-std=c99", "-fsyntax-only", stub.to_str().unwrap()])
             .output()
-            .expect("spawn cc");
+            .unwrap();
         assert!(
-            out.status.success(),
-            "libctypes {arm}: generated .h failed cc -fsyntax-only:\n{}",
-            String::from_utf8_lossy(&out.stderr)
+            output.status.success(),
+            "libctypes {arm}: {}",
+            String::from_utf8_lossy(&output.stderr)
         );
     }
 }

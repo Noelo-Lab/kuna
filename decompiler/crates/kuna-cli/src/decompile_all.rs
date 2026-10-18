@@ -2354,6 +2354,7 @@ mod provenance_json_tests {
             code: Some("int f(int x)\n{\n  return x;\n}".into()),
             error: None,
             proto: None,
+            emitted_c_name: None,
             variables: vec![VarInfo {
                 name: "x".into(),
                 type_name: "int".into(),

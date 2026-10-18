@@ -497,3 +497,6 @@ mod x87_empty_return;
 
 #[path = "windows_stack_argument_alignment.rs"]
 mod windows_stack_argument_alignment;
+
+#[path = "project_function_linkage.rs"]
+mod project_function_linkage;

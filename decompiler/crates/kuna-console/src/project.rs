@@ -80,6 +80,9 @@ pub struct FuncResult {
     /// header, and `decompile-graph`'s per-function row.  Always `None` on the
     /// `decompile-all` path, which does not serialize prototypes.
     pub proto: Option<String>,
+    /// Actual C identifier used by project definitions and prototypes. Selection
+    /// names and aliases retain their inventory meaning, including in streams.
+    pub emitted_c_name: Option<String>,
     pub variables: Vec<VarInfo>,
     /// (kuna `structdefs`) The composite/enum/typedef definitions this
     /// function's C names, in definition-before-use order. Empty unless the
@@ -557,6 +560,7 @@ pub fn decompile_pulled(
                 size: size as i64,
                 error: Some(error),
                 proto: None,
+                emitted_c_name: None,
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -593,6 +597,7 @@ pub fn decompile_pulled(
                 size: size as i64,
                 error: None,
                 proto: None,
+                emitted_c_name: None,
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -617,6 +622,7 @@ pub fn decompile_pulled(
                 code: None,
                 error: Some("entry address is not mapped in this input".into()),
                 proto: None,
+                emitted_c_name: None,
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -810,8 +816,19 @@ pub fn decompile_pulled(
                 }
                 // (kuna `elemptr`) Record what this function said about each global.
                 kuna_decomp::kuna_elemptr::record(prog.arch_mut(), &fd);
+                let original_display = fd.get_display_name().to_string();
+                if header_carries_types {
+                    if let Some(display) = crate::kuna_projectfunctionnames::display(prog.arch(), &fd) {
+                        fd.set_display_name(&display);
+                    }
+                }
+                let emitted_name = fd.get_display_name().to_string();
                 prog.arch_mut().print_mut().set_record_pointer_arguments(want_pointer_arguments);
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if header_carries_types {
+                        crate::kuna_projectfunctionnames::reserve(prog.arch(), &mut fd)
+                            .expect("project C symbol names must remain distinct");
+                    }
                     // Trim the surrounding newlines the same way `kuna decompile`
                     // does (`decompile.rs::trim_newlines`), so the per-function
                     // `code` is byte-identical to the single-shot path.
@@ -872,6 +889,7 @@ pub fn decompile_pulled(
                         .unwrap_or_default();
                     (code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)
                 }));
+                fd.set_display_name(&original_display);
                 match rendered {
                     Ok((code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => {
                     crate::assertions::verify_printed(prog, &fd, &code, &replayed);
@@ -883,6 +901,7 @@ pub fn decompile_pulled(
                         code: Some(code),
                         error: None,
                         proto,
+                        emitted_c_name: (header_carries_types && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C).then_some(emitted_name),
                         variables,
                         stack_objects,
                         types,
@@ -905,6 +924,7 @@ pub fn decompile_pulled(
                         code: None,
                         error: Some("panic while rendering C / extracting variables".into()),
                         proto: None,
+                        emitted_c_name: None,
                         variables: Vec::new(),
                         types: Vec::new(),
                         stack_objects: Vec::new(),
@@ -928,6 +948,7 @@ pub fn decompile_pulled(
                 code: None,
                 error: Some(e.explain().to_string()),
                 proto: None,
+                emitted_c_name: None,
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -1182,22 +1203,29 @@ fn matching_open(text: &str, open: char, close: char) -> Option<usize> {
     None
 }
 
+/// Project C ownership checks run on complete records, including streamed and
+/// parallel output. Messages contain only addresses, never untrusted symbol text.
+pub fn c_name_conflicts(types: &str, results: &[FuncResult]) -> Vec<String> {
+    let types = effective_project_types(types, results);
+    crate::kuna_projectfunctionnames::conflicts(results, &typedef_names(&types))
+}
+
+fn effective_project_types(types: &str, results: &[FuncResult]) -> String {
+    declare_called_fields(&prune_unreferenced_synth_types(types, results), results)
+}
+
 /// `<name>.h`: include guard + recompile prelude + user type definitions +
 /// the prototype section (successes in address order; failures as comments).
 ///
-/// A function whose name is also one of the header's typedef names has its
-/// prototype COMMENTED OUT rather than declared: `int stat(const char *, stat *)`
-/// next to `typedef struct stat stat;` is `error: 'stat' redeclared as a
-/// different kind of symbol`, and it takes the declarations after it down with
-/// it. The type is the more valuable of the two — every other signature that
-/// mentions it depends on it, while the suppressed prototype is one line, still
-/// printed verbatim in the comment.
+/// A function sharing a typedef name retains its prototype as a comment for
+/// diagnosis. The ownership check also emits a preprocessor error and rejects
+/// the project: omitting a prototype does not repair the colliding definition.
 ///
 /// The type block is filtered by [`prune_unreferenced_synth_types`] first, so a
 /// synthesized structure the document no longer names is not declared.
 pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[FuncResult]) -> String {
     let guard = sanitize_guard(file_name);
-    let types = &declare_called_fields(&prune_unreferenced_synth_types(types, results), results);
+    let types = &effective_project_types(types, results);
     let shadowed = typedef_names(types);
     let mut out = String::new();
     out.push_str(&format!("#ifndef {guard}\n#define {guard}\n\n"));
@@ -1205,6 +1233,9 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
     if !types.is_empty() {
         out.push_str("\n/* user-defined types */\n");
         out.push_str(types);
+    }
+    for conflict in crate::kuna_projectfunctionnames::conflicts(results, &shadowed) {
+        let _ = writeln!(out, "#error {conflict}");
     }
     let globals = global_declarations(results);
     if !globals.is_empty() {
@@ -1214,7 +1245,7 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
     out.push_str("\n/* function prototypes */\n");
     for r in results {
         match (&r.proto, &r.error) {
-            (Some(proto), None) if shadowed.contains(&r.name) => {
+            (Some(proto), None) if shadowed.contains(r.emitted_c_name.as_deref().unwrap_or(&r.name)) => {
                 out.push_str(&format!(
                     "/* `{}` is a type name above; prototype omitted: {} */\n",
                     r.name,
@@ -1706,6 +1737,28 @@ mod tests {
         assert!(!taken.contains("extern int dat_5004"), "{taken}");
     }
 
+    #[test]
+    fn complete_project_checks_actual_c_names_after_bodies_are_streamed() {
+        let mut first = streamed("void linked(void)", "int");
+        first.name = "source_one".into();
+        first.emitted_c_name = Some("linked".into());
+        first.byte_address = 0x1000;
+        let mut second = first.clone();
+        second.name = "source_two".into();
+        second.byte_address = 0x2000;
+        assert!(super::c_name_conflicts("", &[first.clone(), first.clone()]).is_empty());
+        let records = [first.clone(), second];
+        assert_eq!(super::c_name_conflicts("", &records).len(), 1);
+        let header = super::build_header("fresh.so", "", "", &records);
+        assert!(header.contains("#error C function name has multiple owning entries"), "{header}");
+        assert_eq!(super::c_name_conflicts("typedef int linked;", &[first.clone()]).len(), 1);
+        first.globals.push(super::GlobalInfo {
+            address: 0x5000, name: "linked".into(), declaration: "int linked".into(),
+            size: 4, unknown: false, direct: false, aggregate: false, elem: false,
+        });
+        assert_eq!(super::c_name_conflicts("", &[first]).len(), 1);
+    }
+
     /// A result carrying only what the streaming export keeps.
     fn streamed(proto: &str, param_type: &str) -> FuncResult {
         FuncResult {
@@ -1718,6 +1771,7 @@ mod tests {
             code: None,
             error: None,
             proto: Some(proto.into()),
+            emitted_c_name: None,
             variables: vec![super::VarInfo {
                 name: "a0".into(),
                 type_name: param_type.into(),

@@ -1603,6 +1603,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         code: None,
         error: Some(reason.to_string()),
         proto: None,
+        emitted_c_name: None,
         variables: Vec::new(),
         types: Vec::new(),
         stack_objects: Vec::new(),
@@ -2031,6 +2032,7 @@ mod tests {
             code: Some("void main(void)\n{\n  \"q\\\\\" /* \u{1}é */\n}".into()),
             error: None,
             proto: Some("void main(void);".into()),
+            emitted_c_name: Some("main_linkage".into()),
             variables: vec![
                 VarInfo {
                     name: "param_1".into(),
@@ -2129,6 +2131,7 @@ mod tests {
             && a.code == b.code
             && a.error == b.error
             && a.proto == b.proto
+            && a.emitted_c_name == b.emitted_c_name
             && a.aliases == b.aliases
             && a.object_location == b.object_location
             && a.callee_hints == b.callee_hints
@@ -2199,6 +2202,7 @@ mod tests {
             code: None,
             error: Some("budget exceeded".into()),
             proto: None,
+            emitted_c_name: None,
             variables: Vec::new(),
             types: Vec::new(),
             stack_objects: Vec::new(),
@@ -2240,7 +2244,7 @@ mod tests {
     }
 
     #[test]
-    fn result_encoding_matches_the_version_seven_wire_layout() {
+    fn result_encoding_matches_the_version_eight_wire_layout() {
         let dir = ScratchDir::create().unwrap();
         let path = dir.path().join("wire.bin").to_string_lossy().into_owned();
         let result = FuncResult {
@@ -2251,6 +2255,7 @@ mod tests {
             code: None,
             error: Some("e".into()),
             proto: None,
+            emitted_c_name: None,
             variables: Vec::new(),
             types: Vec::new(),
             stack_objects: Vec::new(),
@@ -2265,10 +2270,11 @@ mod tests {
             detail: None,
         };
         let expected = [
-            b"KUNAJOBRES07\x01\x48\0\0\0".as_slice(),
+            b"KUNAJOBRES08\x01\x49\0\0\0".as_slice(),
             b"\x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0",
             b"\xff\xff\xff\xff\xff\xff\xff\xff",
             b"\x01\0\0\0f\0\x01\x01\0\0\0e\0\0",
+            b"\0", // emitted C name
             b"\0\0\0\0", // aliases
             b"\0\0\0\0", // line mappings
             b"\0\0\0\0", // variables
@@ -2655,6 +2661,7 @@ mod tests {
             code: None,
             error: Some(e.to_string()),
             proto: None,
+            emitted_c_name: None,
             variables: Vec::new(),
             types: Vec::new(),
             stack_objects: Vec::new(),

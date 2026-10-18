@@ -946,7 +946,8 @@ fn export(
             counts.ok,
             counts.failed
         ),
-        error: BatchOutcome::new(counts.total, writer.bodies).all_failed_error(&args.binary),
+        error: kuna_console::project::c_name_conflicts(&types, &writer.records).first().cloned()
+            .or_else(|| BatchOutcome::new(counts.total, writer.bodies).all_failed_error(&args.binary)),
     })
 }
 
@@ -1254,6 +1255,7 @@ mod tests {
             code: Some(format!("void sub_{addr:x}(void)\n{{\n  return;\n}}\n")),
             error: None,
             proto: Some(format!("void sub_{addr:x}(void);")),
+            emitted_c_name: None,
             variables: Vec::new(),
             types: Vec::new(),
             stack_objects: Vec::new(),
