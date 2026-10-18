@@ -660,6 +660,11 @@ time, at 1024 about 1%, and 23 of 15,942 functions over 20 binaries print
 differently at the lower budget, 12 of them in that firmware. Chapter 06 adds the mirror image at this level: a value loaded through a
 pointer stays ahead of a store to a global
 (`kuna_indexaliasguard.rs (load_crosses_global_store)`, `kuna_loadorder.rs`).
+The crossing check rejects operations outside the loaded value's current cover
+before inspecting their HighVariable members for global storage. This uses the
+same cover boundary policy as the final crossing decision, preserving which
+stores qualify while avoiding repeated member scans for unrelated operations.
+
 
 At `global` heritage also gives a global the LOAD guard
 (`heritage.rs (Heritage::guard_global_loads)`). Upstream builds load guards only for indexed stack
