@@ -326,7 +326,7 @@ impl Origins<'_> {
 /// Keep content families separate without assigning them different addresses.
 pub fn recover(fd: &mut Funcdata) {
     fd.stack_objects.clear();
-    if !fd.get_arch().stack_views {
+    if !crate::kuna_stackviews::enabled(fd) {
         return;
     }
     let Some(space) = fd

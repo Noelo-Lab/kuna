@@ -4856,7 +4856,7 @@ impl PrintC {
 
     fn needs_storage_assignment(&self, fd: &Funcdata, op: OpId) -> bool {
         self.out_lang == crate::kuna_lang::OutLang::C
-            && fd.get_arch().stack_views
+            && crate::kuna_stackviews::enabled(fd)
             && (crate::kuna_stackbytes::assignment(fd, op).is_some()
                 || crate::kuna_stackassign::assignment(fd, op).is_some())
     }

@@ -59,7 +59,7 @@ pub(crate) fn backing_for_address(
     address: &Address,
     size: i32,
 ) -> Option<crate::varmap::LinkEntryInfo> {
-    if !fd.get_arch().stack_views || size <= 0 {
+    if !crate::kuna_stackviews::enabled(fd) || size <= 0 {
         return None;
     }
     let scope = fd.get_scope_local()?;
@@ -351,7 +351,7 @@ pub(crate) fn separates_parameter(
     first: HighVariableId,
     second: HighVariableId,
 ) -> bool {
-    if !fd.get_arch().stack_views || first == second {
+    if !crate::kuna_stackviews::enabled(fd) || first == second {
         return false;
     }
     [(first, second), (second, first)]

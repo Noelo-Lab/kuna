@@ -24,7 +24,7 @@ pub(crate) struct Access {
 }
 
 pub(crate) fn access(fd: &Funcdata, op: OpId) -> Option<Access> {
-    if !fd.get_arch().stack_views {
+    if !crate::kuna_stackviews::enabled(fd) {
         return None;
     }
     let operation = fd.obank().get(op)?;

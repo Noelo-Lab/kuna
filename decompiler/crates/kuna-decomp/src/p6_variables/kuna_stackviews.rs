@@ -28,6 +28,12 @@ pub(crate) struct StorageView {
     pub offset: i32,
 }
 
+/// A seeded frame view requires view-aware typing and emission even when the
+/// option is off for the rest of the function.
+pub(crate) fn enabled(fd: &Funcdata) -> bool {
+    fd.get_arch().stack_views || !fd.stack_write_views.is_empty()
+}
+
 pub struct OptionStackViews;
 
 impl OptionStackViews {
@@ -627,7 +633,7 @@ fn seed_writes(
 /// Finalize write views after type propagation and symbol naming. Earlier
 /// reconstruction rounds may have seen incomplete source types.
 pub fn prepare_casts(fd: &mut Funcdata) {
-    if !fd.get_arch().stack_views {
+    if !enabled(fd) {
         return;
     }
     let Some(factory) = fd.get_arch().types_rc() else {
@@ -673,7 +679,7 @@ pub fn access_type(
     op: OpId,
     slot: i32,
 ) -> Option<Rc<Datatype>> {
-    if !fd.get_arch().stack_views {
+    if !enabled(fd) {
         return None;
     }
     let v = fd.vbank().get(vn)?;

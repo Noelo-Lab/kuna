@@ -6,7 +6,7 @@ use kuna_base::address::Address;
 use kuna_num::opcodes::OpCode;
 
 pub(crate) fn moves_write(fd: &Funcdata, storage: HighVariableId, value: HighVariableId) -> bool {
-    if !fd.get_arch().stack_views || storage == value {
+    if !crate::kuna_stackviews::enabled(fd) || storage == value {
         return false;
     }
     let Some(stack) = fd.get_arch().manage().get_stack_space() else {
