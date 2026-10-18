@@ -270,14 +270,29 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &Funcdata) {
     }
 }
 
-/// The candidate entries `fd` holds as a value: a constant, wherever the
-/// analysis resolved it (a literal pool, a `movw`/`movt` pair, a PC-relative
-/// `ldr`/`add pc` or `adr`), equal to an entry or to the entry with the Thumb
-/// bit, anywhere but as the target of a direct call.
+/// The candidate entries `fd` reaches other than by a direct call it lists: a
+/// constant, wherever the analysis resolved it (a literal pool, a `movw`/`movt`
+/// pair, a PC-relative `ldr`/`add pc` or `adr`), equal to an entry or to the
+/// entry with the Thumb bit anywhere but as a direct call's target; the
+/// resolved target of an indirect call; and an entry whose code the body
+/// flows into (an indirect branch the analysis resolved there).
 fn taken_entries(expected: &BTreeMap<uintb, Vec<uintb>>, fd: &Funcdata) -> Vec<uintb> {
+    let me = fd.get_address().get_offset();
     let mut out = Vec::new();
+    for i in 0..fd.num_calls() {
+        let fc = fd.get_call_specs(i);
+        let indirect = fd.obank().get(fc.get_op()).is_some_and(|o| o.code() != OpCode::CPUI_CALL);
+        let e = fc.get_entry_address();
+        if indirect && !e.is_invalid() && expected.contains_key(&e.get_offset()) {
+            out.push(e.get_offset());
+        }
+    }
     for op in fd.obank().iter_alive() {
         let Some(o) = fd.obank().get(op) else { continue };
+        let at = o.get_addr().get_offset();
+        if at != me && expected.contains_key(&at) {
+            out.push(at);
+        }
         for k in 0..o.num_input() {
             let Some(c) = o.get_in(k).and_then(|x| fd.vbank().get(x)).filter(|c| c.is_constant()) else { continue };
             let v = c.get_offset();
@@ -321,7 +336,12 @@ pub fn decide(arch: &mut Architecture) -> Vec<uintb> {
     for (&entry, expected) in &ledger.expected {
         let (Some(own), Some(sites)) = (ledger.own.get(&entry), ledger.sites.get(&entry)) else { continue };
         let at: BTreeSet<uintb> = sites.iter().map(|s| s.at).collect();
-        if expected.is_empty() || ledger.taken.contains(&entry) || !expected.iter().all(|e| at.contains(e)) {
+        let listed: BTreeSet<uintb> = expected.iter().copied().collect();
+        if expected.is_empty()
+            || ledger.taken.contains(&entry)
+            || !listed.is_subset(&at)
+            || !at.is_subset(&listed)
+        {
             continue;
         }
         let mut stated = Vec::new();

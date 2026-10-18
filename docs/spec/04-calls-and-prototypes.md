@@ -2835,7 +2835,9 @@ A function is a candidate only when its callers can all be listed, which is
 checked from two sides, each erring toward leaving the function open. The image
 is scanned once (`arm_closure.rs (scan)` in the CLI): no 32-bit value at any byte
 offset of a loaded section is the entry or the entry with the Thumb bit (a vector
-table, a literal pool, a pointer in a packed record), no `movw`/`movt` pair could
+table, a literal pool, a pointer in a packed record) or the entry less the
+word's own address (a self-relative table), no dynamic relocation targets it,
+no `movw`/`movt` pair could
 build it (the halves are not matched), no PC-relative build lands on it (an
 `adr`, or a literal `ldr rX, [pc, #]` followed within 64 bytes by `add rX, pc`:
 the Thumb-2 and A32 PIC idiom of Linux and Android shared code), it is not
@@ -2845,11 +2847,20 @@ a call or tail jump the cross-reference walk attributes to a known function,
 the function itself included (`CallGraph::arm_closed_sites`). And no decompiled
 body holds the entry as a value (`taken_entries`): any constant the analysis
 resolved, whatever idiom built it, equal to the entry or the entry with the Thumb
-bit anywhere but as a direct call's target. When the first pass is over,
-`decide` requires a recorded CALL at every listed reference, including a
-function's calls to itself; a tail jump decompiled as a branch, a caller that
-failed or a call through a register leaves the list incomplete and nothing is
-stated. For each of the function's own register-wide
+bit anywhere but as a direct call's target, nor resolves an indirect call to it,
+nor flows into its code through an indirect branch. When the first pass is over,
+`decide` requires the recorded CALLs to be exactly the listed references,
+including a function's calls to itself; a tail jump decompiled as a branch, a
+caller that failed or a call through a register leaves the list incomplete and
+nothing is stated. An image whose dynamic relocations cannot be read (Android's
+packed `DT_ANDROID_REL`/`DT_ANDROID_RELA` tables, where an address may exist only
+as an encoded delta) closes no function at all.
+
+What remains unseen: a table of offsets relative to the table or to another
+function, read through an index the analysis cannot resolve, holds the address
+in no form a byte scan can recognize. C compilers do not emit such tables on
+32-bit ARM (hand-written assembly can); where kuna resolves the indirect call,
+the function is left open as above. For each of the function's own register-wide
 integer parameters, every call must pass a value of one narrow kind in that
 same register: all 0 or 1 with one of them computed (`bool`), or zero-fitting
 with one caller zero-extending (`unsigned char`/`unsigned short` at the widest

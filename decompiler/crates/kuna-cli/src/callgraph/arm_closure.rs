@@ -11,7 +11,28 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use object::{Object, ObjectSection, ObjectSymbol};
+use object::{Object, ObjectSection, ObjectSymbol, ObjectSymbolTable};
+
+/// `DT_ANDROID_REL`, `DT_ANDROID_RELA`: Android's packed relocation tables.
+const PACKED_RELOCATION_TAGS: [u32; 2] = [0x6000_000f, 0x6000_0011];
+
+/// Does a 32-bit dynamic section (its raw bytes) name a relocation table this
+/// loader does not decode? Then an address may exist only as an encoded delta.
+pub(crate) fn packs_relocations(dynamic: &[u8], little: bool) -> bool {
+    dynamic.chunks_exact(8).any(|e| {
+        let tag = if little { u32::from_le_bytes([e[0], e[1], e[2], e[3]]) } else { u32::from_be_bytes([e[0], e[1], e[2], e[3]]) };
+        PACKED_RELOCATION_TAGS.contains(&tag)
+    })
+}
+
+/// Can the image's dynamic relocations be read? `false` for a shared object
+/// with no `.dynamic` section to check, or one with Android packed relocations.
+pub(crate) fn relocations_readable(file: &object::File) -> bool {
+    match file.section_by_name(".dynamic") {
+        Some(dynamic) => dynamic.data().is_ok_and(|d| !packs_relocations(d, file.is_little_endian())),
+        None => file.kind() != object::ObjectKind::Dynamic,
+    }
+}
 
 /// The scan's answer for a set of function entries.
 pub(crate) struct ArmScan {
@@ -26,7 +47,8 @@ pub(crate) struct ArmScan {
 ///
 /// - a 32-bit word of a loaded section, at any byte offset (a packed record
 ///   leaves a pointer unaligned), equal to the entry or to it with the Thumb
-///   bit, and a dynamic symbol, export or the entry point;
+///   bit, or self-relative to it (its own address plus its value); a dynamic
+///   relocation's target, a dynamic symbol, an export or the entry point;
 /// - a `movw` and a `movt` (Thumb-2 or A32, anywhere in code) whose immediates
 ///   could build it, the halves not matched to each other;
 /// - a PC-relative build: an `adr` (Thumb, Thumb-2, A32), or a literal
@@ -60,8 +82,11 @@ pub(crate) fn scan(file: &object::File, entries: &[u64]) -> ArmScan {
         let Ok(data) = section.data() else { continue };
         let addr = section.address();
         for i in 0..data.len().saturating_sub(3) {
-            if let Some(&e) = wanted.get(&u64::from(word(&data[i..]))) {
-                out.open.insert(e);
+            let w = u64::from(word(&data[i..]));
+            for v in [w, (addr + i as u64).wrapping_add(w) & 0xffff_ffff] {
+                if let Some(&e) = wanted.get(&v) {
+                    out.open.insert(e);
+                }
             }
         }
         if section.kind() == object::SectionKind::Text {
@@ -193,9 +218,43 @@ pub(crate) fn scan(file: &object::File, entries: &[u64]) -> ArmScan {
             note(sym.address());
         }
     }
+    if let Some(relocs) = file.dynamic_relocations() {
+        for (_, r) in relocs {
+            let base = match r.target() {
+                object::RelocationTarget::Symbol(i) => {
+                    file.dynamic_symbol_table().and_then(|t| t.symbol_by_index(i).ok()).map(|s| s.address())
+                }
+                object::RelocationTarget::Absolute => Some(0),
+                _ => None,
+            };
+            if let Some(b) = base {
+                note(b.wrapping_add(r.addend() as u64) & 0xffff_ffff);
+            }
+        }
+    }
     for export in file.exports().unwrap_or_default() {
         note(export.address());
     }
     note(file.entry());
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::packs_relocations;
+
+    fn dynamic(tags: &[u32]) -> Vec<u8> {
+        tags.iter().flat_map(|t| t.to_le_bytes().into_iter().chain(0u32.to_le_bytes())).collect()
+    }
+
+    #[test]
+    fn android_packed_relocations_are_unreadable() {
+        assert!(packs_relocations(&dynamic(&[0x6000_0011, 0x6000_0012, 0x17, 0]), true));
+        assert!(packs_relocations(&dynamic(&[0x6000_000f, 0]), true));
+    }
+
+    #[test]
+    fn rel_rela_and_relr_tables_are_readable() {
+        assert!(!packs_relocations(&dynamic(&[0x11, 0x12, 0x13, 0x7, 0x8, 0x9, 0x24, 0x23, 0x25, 0]), true));
+    }
 }

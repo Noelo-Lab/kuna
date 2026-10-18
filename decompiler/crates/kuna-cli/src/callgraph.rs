@@ -309,8 +309,9 @@ impl CallGraph {
     /// nothing in its bytes builds or holds the address ([`arm_closure::scan`])
     /// and the walk materializes it nowhere, every reference comes from a known
     /// function (the function itself included), and every instruction that
-    /// decodes as a branch to it is one of those references. `None` for any
-    /// other image.
+    /// decodes as a branch to it is one of those references. Nothing is closed
+    /// in an image whose dynamic relocations cannot be read (Android packed
+    /// relocations). `None` for any other image.
     pub(crate) fn arm_closed_sites(&self, binary: &str, pref: SlicePref) -> Option<BTreeMap<u64, Vec<u64>>> {
         let bytes = image_bytes(binary, pref).ok()?;
         let file = kuna_analysis::loadimage_object::parse_object(&bytes).ok()?;
@@ -319,6 +320,9 @@ impl CallGraph {
             || file.kind() == object::ObjectKind::Relocatable
         {
             return None;
+        }
+        if !arm_closure::relocations_readable(&file) {
+            return Some(BTreeMap::new());
         }
         let seeds: Vec<u64> = self.entries.iter().map(|(entry, _)| *entry).collect();
         let image = arm_closure::scan(&file, &seeds);
