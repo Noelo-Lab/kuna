@@ -37,7 +37,7 @@ use crate::funcdata::Funcdata;
 const DEPTH: u32 = 8;
 
 /// A C integer type after promotion: `(unsigned, bytes)`.
-type CInt = (bool, int4);
+pub(crate) type CInt = (bool, int4);
 
 /// The unsigned type input `slot` of `op` must be cast to because the
 /// expression there is a signed `int` or `long` in C, or `None`.
@@ -62,11 +62,11 @@ pub(crate) fn cast(data: &mut Funcdata, strat: &CastStrategyC, op: OpId, slot: i
     if !matches!(ir.get_metatype(), type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN) {
         return None;
     }
-    if c_int(data, strat, vn, op, DEPTH)? != (false, size) {
+    if c_int(data, strat, vn, op)? != (false, size) {
         return None;
     }
     if let Some(other) = other {
-        if c_int(data, strat, other, op, DEPTH).is_some_and(|(unsigned, width)| unsigned && width >= size) {
+        if c_int(data, strat, other, op).is_some_and(|(unsigned, width)| unsigned && width >= size) {
             return None;
         }
     }
@@ -114,9 +114,13 @@ fn suffixable_literal(data: &Funcdata, vn: VarnodeId) -> Option<VarnodeId> {
     })
 }
 
-/// The promoted C type of `vn` as printed where `reader` reads it, or `None`
-/// when the text does not settle it.
-fn c_int(data: &mut Funcdata, strat: &CastStrategyC, vn: VarnodeId, reader: OpId, depth: u32) -> Option<CInt> {
+/// The promoted C type of `vn` as printed where `reader` reads it,
+/// `(unsigned, bytes)`, or `None` when the text does not settle it.
+pub(crate) fn c_int(data: &mut Funcdata, strat: &CastStrategyC, vn: VarnodeId, reader: OpId) -> Option<CInt> {
+    c_int_at(data, strat, vn, reader, DEPTH)
+}
+
+fn c_int_at(data: &mut Funcdata, strat: &CastStrategyC, vn: VarnodeId, reader: OpId, depth: u32) -> Option<CInt> {
     let v = data.vbank().get(vn)?;
     if v.is_annotation() || depth == 0 {
         return None;
@@ -133,7 +137,7 @@ fn c_int(data: &mut Funcdata, strat: &CastStrategyC, vn: VarnodeId, reader: OpId
     let ins: Vec<VarnodeId> = (0..d.num_input()).filter_map(|i| d.get_in(i)).collect();
     let info = crate::typeop::type_op_info(code);
     match code {
-        OpCode::CPUI_COPY => c_int(data, strat, *ins.first()?, def, depth - 1),
+        OpCode::CPUI_COPY => c_int_at(data, strat, *ins.first()?, def, depth - 1),
         OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => {
             let outtype = data.vn_type_def_facing(vn);
             let intype = data.vn_type_read_facing(*ins.first()?, def);
@@ -151,7 +155,7 @@ fn c_int(data: &mut Funcdata, strat: &CastStrategyC, vn: VarnodeId, reader: OpId
                 strat.is_extension_cast_implied(&ctx, d, Some(r))
             };
             if hidden {
-                c_int(data, strat, ins[0], def, depth - 1)
+                c_int_at(data, strat, ins[0], def, depth - 1)
             } else {
                 declared(&outtype)
             }
@@ -161,7 +165,7 @@ fn c_int(data: &mut Funcdata, strat: &CastStrategyC, vn: VarnodeId, reader: OpId
             let n = if info.inherits_sign_first_param_only() { 1 } else { ins.len() };
             let mut acc: Option<CInt> = None;
             for &i in &ins[..n.min(ins.len())] {
-                let (unsigned, width) = c_int(data, strat, i, def, depth - 1)?;
+                let (unsigned, width) = c_int_at(data, strat, i, def, depth - 1)?;
                 acc = Some(match acc {
                     None => (unsigned, width),
                     Some((au, aw)) if aw == width => (au || unsigned, width),
