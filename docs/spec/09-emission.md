@@ -118,9 +118,13 @@ first contributes its bit representation, without a numeric conversion. The
 byte offset is a significance offset in either byte order. Partial-structure
 intermediates use the stripped scalar type that their declarations expose.
 The printer checks
-the scalar widths, rejects out-of-range offsets and unresolved implied values,
-and evaluates the source once. Explicit floating conversion opcodes retain their
-numeric conversion, and structured member extraction retains priority.
+the scalar widths, rejects out-of-range offsets, and evaluates the source once.
+An implied source whose type is still undefined, such as an untyped load read
+only by the extraction, takes the same path; one that traces back to an untyped
+call result keeps its existing rendering, by the rule `kuna_bitcast.rs` applies
+to same-width casts, because the slice does not infer a callee's return
+prototype. Explicit floating conversion opcodes retain their numeric
+conversion, and structured member extraction retains priority.
 
 A same-width `CAST` between an integer and a 32- or 64-bit float is a bit
 reinterpretation, not a numeric conversion (`kuna_bitcast.rs`). For this
@@ -138,7 +142,8 @@ anonymous union compound literal,
 `x` once; a signed result names the signed word (`int`, `long long`) as the
 member instead of adding a cast. Rust
 emits `f32::from_bits`/`f64::from_bits`, converting the operand with `as
-u32`/`as u64` unless its declared type already is that word, or `to_bits()`. A
+u32`/`as u64` unless its declared type already is that word, or `to_bits()`;
+a literal operand is narrowed to the transfer's width first. A
 floating constant read as an integer prints its stored bits, preserving NaN
 payloads. An untyped call result does not establish an integer return contract
 and keeps its existing conversion, unless the callee declares what it returns

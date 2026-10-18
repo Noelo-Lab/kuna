@@ -462,6 +462,7 @@ mod float_field_slices;
 
 #[path = "float_storage_truncation.rs"]
 mod float_storage_truncation;
+
 #[path = "dwarf_reference_arguments.rs"]
 mod dwarf_reference_arguments;
 
@@ -473,3 +474,6 @@ mod dwarf_array_bounds;
 
 #[path = "wide_right_shift.rs"]
 mod wide_right_shift;
+
+#[path = "float_subword_bits.rs"]
+mod float_subword_bits;
