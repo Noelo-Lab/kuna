@@ -1784,6 +1784,16 @@ output sits at the constructed join address (falling back to the first piece
 if no join can be built); more pieces chain PIECEs over contiguous trials.
 The (kuna) `returnpair` gate intercepts this join — §4.4.
 
+After native return trials are finalized, an otherwise unknown ten-byte scalar
+result in the full x87 ST0 register receives an extended floating type when the
+active convention explicitly classifies that exact output storage as floating.
+The seed precedes normal type propagation, allowing a raw eighty-bit memory
+load's type to reach its stack argument too. Every live return must agree on an
+unknown, unlocked scalar value; explicit output declarations and typed values
+are preserved. Partial register results, multiple selected outputs and SIMD
+resources do not establish this x87 scalar protocol. Value width remains ten
+bytes; stack slots retain the architecture's aligned object size.
+
 A RETURN reached only along branch edges whose conditions literals already
 decide the other way is not scored
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (never_reached)`).
