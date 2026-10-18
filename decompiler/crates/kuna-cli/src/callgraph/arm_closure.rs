@@ -19,7 +19,8 @@ const PACKED_RELOCATION_TAGS: [u32; 2] = [0x6000_000f, 0x6000_0011];
 /// Does a 32-bit dynamic section (its raw bytes) name a relocation table this
 /// loader does not decode? Then an address may exist only as an encoded delta.
 pub(crate) fn packs_relocations(dynamic: &[u8], little: bool) -> bool {
-    dynamic.chunks_exact(8).any(|e| {
+    let (entries, _) = dynamic.as_chunks::<8>();
+    entries.iter().any(|e| {
         let tag = if little { u32::from_le_bytes([e[0], e[1], e[2], e[3]]) } else { u32::from_be_bytes([e[0], e[1], e[2], e[3]]) };
         PACKED_RELOCATION_TAGS.contains(&tag)
     })
