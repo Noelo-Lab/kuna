@@ -187,28 +187,33 @@ fn caller_extends(data: &Funcdata, vn: VarnodeId) -> (bool, bool) {
     }
 }
 
-/// What the value `vn`, passed in `addr:size`, says about the parameter.
-fn argument(data: &Funcdata, vn: VarnodeId, addr: Address, size: int4, zext_trimmed: bool) -> Option<Arg> {
+/// The size of a 32-bit ARM argument register.
+const REGISTER: int4 = 4;
+
+/// What the value `vn`, passed in the register at `addr`, says about the
+/// parameter. An argument the trimming cut below the register counts only
+/// where the bits it dropped were known zero; the register then holds its zero
+/// extension.
+fn argument(data: &Funcdata, vn: VarnodeId, addr: Address, zext_trimmed: bool) -> Option<Arg> {
     let v = data.vbank().get(vn)?;
-    let constant = v.is_constant();
-    if v.get_size() != size {
-        let w = v.get_size();
-        return (w < size && w <= 2 && zext_trimmed).then(|| Arg {
-            addr,
-            size,
-            unsigned: w,
-            signed: 0,
-            zext: false,
-            sext: false,
-            truth: v.get_nz_mask() <= 1,
-            constant,
-        });
+    let w = v.get_size();
+    if w > REGISTER || (w < REGISTER && !zext_trimmed) {
+        return None;
     }
-    let nz = v.get_nz_mask();
-    let unsigned = if nz & !0xff == 0 { 1 } else if nz & !0xffff == 0 { 2 } else { 0 };
-    let signed = signed_width(data, vn, 0, &mut BTreeSet::new()).unwrap_or(0);
+    let nz = v.get_nz_mask() & calc_mask(w);
+    let fits = |m: uintb| nz & !m == 0;
+    let mut unsigned = if fits(0xff) { 1 } else if fits(0xffff) { 2 } else { 0 };
+    let mut signed = if fits(0x7f) { 1 } else if fits(0x7fff) { 2 } else { 0 };
+    if w < REGISTER {
+        unsigned = if unsigned > 0 { unsigned.min(w) } else { w.min(2) };
+    } else {
+        let sext = signed_width(data, vn, 0, &mut BTreeSet::new()).unwrap_or(0);
+        if sext > 0 {
+            signed = if signed > 0 { signed.min(sext) } else { sext };
+        }
+    }
     let (zext, sext) = caller_extends(data, vn);
-    Some(Arg { addr, size, unsigned, signed, zext, sext, truth: nz <= 1, constant })
+    Some(Arg { addr, size: REGISTER, unsigned, signed, zext, sext, truth: nz <= 1, constant: v.is_constant() })
 }
 
 /// Record a finished decompile of the function at `entry`: what each direct
@@ -235,12 +240,12 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &Funcdata) {
         let n = o.num_input();
         let mut args = Vec::new();
         for s in 1..n {
-            let (Some(vn), Some((addr, size))) = (o.get_in(s), storage.get((s - 1) as usize).cloned()) else {
+            let (Some(vn), Some((addr, _))) = (o.get_in(s), storage.get((s - 1) as usize).cloned()) else {
                 args.push(None);
                 continue;
             };
             let w = fd.vbank().get(vn).map(|v| v.get_size()).unwrap_or(0);
-            args.push(argument(fd, vn, addr, size, fc.is_zext_trimmed_input(s, w, n)));
+            args.push(argument(fd, vn, addr, fc.is_zext_trimmed_input(s, w, n)));
         }
         calls.push((callee.get_offset(), Site { caller: me, at: o.get_addr().get_offset(), args }));
     }
