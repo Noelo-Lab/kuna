@@ -4400,6 +4400,15 @@ fn commit_analysis_output(
     };
     let out = out;
 
+    let mut data_names = crate::kuna_dataidentifiers::Names::new(
+        prog.symbols.iter().map(|s| s.name.clone())
+            .chain(prog.loader_data_objects.iter().map(|(_,name,_)| name.clone()))
+            .chain(prog.global_data_symbols().into_iter().map(|(name,_,_)| name))
+            .chain(out.symbols.iter().map(|s| s.name.clone()))
+            .chain(out.data_objects.iter().map(|d| d.name.clone()))
+            .chain(out.typed_data.iter().map(|d| d.name.clone()))
+    );
+
     // 0b. (kuna `libctypes glibc`) The load-time target decision, carried to the
     //     one consumer that runs with the object file out of reach
     //     (`seed_declared_libc_prototype`). Set unconditionally so a second
@@ -4429,10 +4438,11 @@ fn commit_analysis_output(
                 prog.register_overload(&s.name, addr);
             }
             SymKind::Data => {
+                let name = data_names.name(&s.name, s.addr);
                 let arch = prog.arch_mut();
                 let (scope, base) = arch
                     .symboltab
-                    .find_create_scope_from_symbol_name(&s.name, "::", None, num_spaces)?;
+                    .find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
                 // Untyped data object (a typed string symbol carries its char[N]
                 // type through a dedicated fact added with the string pass).
                 let ct = arch.types().get_type_code()?;
@@ -4489,9 +4499,10 @@ fn commit_analysis_output(
                 d.size.clamp(1, int4::MAX as u32) as int4,
                 kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN,
             )?;
+        let name = data_names.name(&d.name, d.addr);
         let arch = prog.arch_mut();
         let (scope, base) =
-            arch.symboltab.find_create_scope_from_symbol_name(&d.name, "::", None, num_spaces)?;
+            arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
         let (sid, _) =
             arch.symboltab.add_symbol_mapped(scope, &base, ct, &addr, &Address::new_invalid())?;
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
@@ -4861,9 +4872,10 @@ fn commit_analysis_output(
         if occupied {
             continue;
         }
+        let name = data_names.name(&fact.name, fact.addr);
         let arch = prog.arch_mut();
         let (scope, base) = arch.symboltab.find_create_scope_from_symbol_name(
-            &fact.name,
+            &name,
             "::",
             None,
             num_spaces,
@@ -4938,9 +4950,10 @@ fn commit_analysis_output(
                 (*size).clamp(1, int4::MAX as u64) as int4,
                 kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN,
             )?;
+        let name = data_names.name(name, *sym_addr);
         let arch = prog.arch_mut();
         let (scope, base) =
-            arch.symboltab.find_create_scope_from_symbol_name(name, "::", None, num_spaces)?;
+            arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
         let (sid, _) =
             arch.symboltab.add_symbol_mapped(scope, &base, ct, &addr, &Address::new_invalid())?;
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);

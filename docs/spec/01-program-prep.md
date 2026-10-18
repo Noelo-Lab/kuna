@@ -447,6 +447,17 @@ entry but no DIE in the program's own `.debug_info`, so nothing else could name
 it. Relocatable objects are excluded — `reloc_object` rebases only the function half
 of the symbol table, so a `.o` keeps its previous behavior.
 
+Imported data symbols whose basename is not a usable C identifier receive a
+unique address-based spelling before being mapped into the engine symbol table
+(`decompiler/crates/kuna-console/src/kuna_dataidentifiers.rs`). This covers compiler suffixes containing periods,
+punctuation, whitespace, leading digits, and C keywords. Unicode identifier
+characters preserve valid accented names. Namespace paths, storage
+addresses, extents, types, and valid names remain unchanged. The allocator
+reserves names from both installed symbols and pending loader/analysis facts,
+so a future valid symbol or function cannot capture a generated name. Repeated
+normalization of the same source name and address within one import batch
+returns the same spelling. The original loader records retain their names.
+
 Format dispatch is by magic (`engine.rs (is_object_binary)`): ELF, thin or fat
 Mach-O, PE (`MZ`, validated downstream by the typed PE parser), and bare COFF
 objects recognized by a whitelisted leading `IMAGE_FILE_MACHINE_*` u16 — anything
@@ -949,6 +960,8 @@ an explicit override and not a fallback the `PackHeader` search reaches on its o
 refusal path is unchanged and deliberately so: an image that genuinely is not packed
 still exits `1` naming that, because an `unpack` that exited `0` on everything would
 trade a right answer for a reachable one.
+
+
 
 ## 1.3 Loader markup
 
