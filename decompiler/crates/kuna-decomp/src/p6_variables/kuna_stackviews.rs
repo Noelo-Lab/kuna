@@ -338,12 +338,11 @@ fn backing_type(
 }
 
 /// Add exact-size backing objects only where several declared pointee views
-/// conflict or intersect. Indexed references require a bounded byte extent;
-/// explicit user-locked layouts and unresolved extents remain unchanged.
+/// conflict or intersect. Default mode only enables fixed, bounded extents with
+/// distinct complete struct/union contracts. Indexed references require a
+/// bounded byte extent; explicit user-locked layouts remain unchanged.
 pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
-    if !fd.get_arch().stack_views {
-        return;
-    }
+    let full_views = fd.get_arch().stack_views;
     let Some(factory) = fd.get_arch().types_rc() else {
         return;
     };
@@ -355,6 +354,7 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
         .zip(checker.get_add_base().iter().copied())
         .collect();
     let mut groups: BTreeMap<uintb, Vec<Rc<Datatype>>> = BTreeMap::new();
+    let mut default_views: BTreeMap<uintb, Vec<Rc<Datatype>>> = BTreeMap::new();
     let mut extents = Vec::new();
     let mut unresolved_index = false;
     for (offset, reference) in &refs {
@@ -371,6 +371,10 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
         let Some(base) = fd.vbank().get(reference.base) else {
             continue;
         };
+        let fixed_frame_start = crate::kuna_stackranges::frame_address(fd, reference.base)
+            .filter(|address| address.first == address.last && address.terms.is_empty())
+            .map(|address| space.wrap_offset(address.first as u64))
+            .filter(|start| *start == *offset);
         for call in base.descend_iter() {
             let Some(op) = fd.obank().get(call) else {
                 continue;
@@ -378,11 +382,38 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
             for slot in 0..op.num_input() {
                 if op.get_in(slot) == Some(reference.base) {
                     if let Some(view) = declared_view(fd, call, slot) {
-                        insert_type(groups.entry(*offset).or_default(), view);
+                        insert_type(groups.entry(*offset).or_default(), Rc::clone(&view));
+                        if !full_views
+                            && fixed_frame_start.is_some()
+                            && matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
+                            && matches!(
+                                view.get_metatype(),
+                                type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION
+                            )
+                            && (1..=256).contains(&view.get_size())
+                        {
+                            insert_type(default_views.entry(*offset).or_default(), view);
+                        }
                     }
                 }
             }
         }
+    }
+    let mut automatic_extents = BTreeSet::new();
+    for (&start, views) in &default_views {
+        for (index, first) in views.iter().enumerate() {
+            for second in views.iter().skip(index + 1) {
+                if first.get_size() == second.get_size()
+                    && !Rc::ptr_eq(first, second)
+                    && (1..=256).contains(&first.get_size())
+                {
+                    automatic_extents.insert((start, first.get_size()));
+                }
+            }
+        }
+    }
+    if !full_views && automatic_extents.is_empty() {
+        return;
     }
     for id in fd.vbank().loc_space_ids(space) {
         let Some(v) = fd.vbank().get(id) else {
@@ -461,6 +492,10 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
     }
     let mut recovered = Vec::new();
     for (start, size, mut views) in components {
+        let automatic = automatic_extents.contains(&(start, size));
+        if !full_views && !automatic {
+            continue;
+        }
         for assertion in crate::kuna_stackobjectasserts::specs(fd) {
             let at = assertion.address.get_offset();
             if !contains(start, size, at, assertion.size) {

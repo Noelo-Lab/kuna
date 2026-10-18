@@ -258,6 +258,43 @@ fn decompile_surface(
     }
 }
 
+fn decompile_default(function: &str) -> String {
+    decompile_default_with_stackviews(function, None)
+}
+
+fn decompile_default_with_stackviews(function: &str, stackviews: Option<&str>) -> String {
+    let fixture = common::fixture("lifetimes_stack_x86_64");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+    command
+        .args([
+            "decompile",
+            &fixture,
+            function,
+            "--mode",
+            "reliable",
+            "--assert-strict",
+            "--assert",
+        ])
+        .arg(format!("@{fixture}.kuna"))
+        .arg("--sleighpath")
+        .arg(common::repo_root().join("specs"));
+    if let Some(value) = stackviews {
+        command.args(["--option", "stackviews", value]);
+    }
+    let output = common::process::output_with_timeout(
+        &mut command,
+        Duration::from_secs(15),
+        Duration::from_millis(25),
+    )
+    .expect("bounded default stack-lifetime decompilation");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap()
+}
+
 const PRELUDE: &str = r#"
 #include <stdint.h>
 #include <stdbool.h>
@@ -373,6 +410,7 @@ fn execute_with_context(
                     function,
                     "check_snapshot"
                         | "check_publication"
+                        | "stack_reuse"
                         | "group_fields"
                         | "check_frame_events"
                         | "check_frame_cache"
@@ -886,9 +924,21 @@ fn a_renamed_indexed_backing_survives_assertion_replay() {
 
 #[test]
 fn reused_pair_and_handle_share_their_storage() {
-    let baseline = decompile("stack_reuse", false);
-    assert!(!baseline.contains("union stack_views_"), "{baseline}");
-    native_control("stack_reuse", 67);
+    let code = decompile_default("stack_reuse");
+    assert!(code.contains("union stack_views_"), "{code}");
+    assert!(code.contains("view_LifetimePair"), "{code}");
+    assert!(code.contains("view_LifetimeHandle"), "{code}");
+    native_code("stack_reuse", "", 67, code);
+
+    // The escaped-alias witness has no conflicting declared object views and
+    // is outside this bounded fix. Keep default mode identical to explicit-off
+    // mode so this change does not claim to repair its separate lost-write bug.
+    let escaped = decompile_default("escaped_alias");
+    assert!(!escaped.contains("union stack_views_"), "{escaped}");
+    assert_eq!(
+        escaped,
+        decompile_default_with_stackviews("escaped_alias", Some("off"))
+    );
 }
 
 #[test]
