@@ -1974,7 +1974,14 @@ web alone. So does a member whose value was stored to a frame slot wider than
 `w` before simplification removed the slot (`wide_frame_home`, read from the
 storage homes the copy propagation keeps): the `-O0` spill of `int v = c;` is an
 `int` that holds a sign-extended `char`, and the program's own home for it says
-so.
+so. A web with no MULTIEQUAL whose sign extensions all widen function inputs is
+left alone as well: its narrow value would be the input itself, which every
+reader then widens again (`(long)a0 * (long)a0` gains nothing by becoming
+`(long)a0 * a0`). And so is a web whose values reach a BRANCHIND within a few
+ops (`feeds_switch`): the switch's jump table was recovered for the selector at
+its own width, and its model is matched again on the final p-code, through the
+selector's definition (an ARM `tbb` indexed by a `short` would otherwise lose
+its table).
 
 The web is rebuilt by upstream's sign-extended `SubvariableFlow`
 (`subflow.rs (run_sext_uses)`; `sextrestrictions`), extended the way

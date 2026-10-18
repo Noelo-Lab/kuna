@@ -216,19 +216,22 @@ pub fn narrow_locals(data: &mut Funcdata) -> int4 {
 /// The width `w` every value of `web` is the sign extension of, when each
 /// enters it as a sign extension from at most `w` bytes (at least one from
 /// exactly `w`), a copy, a bitwise op of such values or a constant that is the
-/// sign extension of its low `w` bytes.
+/// sign extension of its low `w` bytes. A web with no phi that only widens
+/// function inputs is left alone: its narrow value would be the input itself,
+/// and every reader would widen it again.
 fn signed_width(data: &Funcdata, web: &[VarnodeId], size: int4) -> Option<int4> {
     let mut w = 0;
     let mut constants = Vec::new();
+    let mut phi = false;
+    let mut of_inputs = true;
     for &vn in web {
         let o = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d))?;
         let input = |k: int4| o.get_in(k).and_then(|x| data.vbank().get(x));
         match o.code() {
-            OpCode::CPUI_MULTIEQUAL
-            | OpCode::CPUI_INT_AND
-            | OpCode::CPUI_INT_OR
-            | OpCode::CPUI_INT_XOR
-            | OpCode::CPUI_INT_NEGATE => {}
+            OpCode::CPUI_MULTIEQUAL => phi = true,
+            OpCode::CPUI_INT_AND | OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_NEGATE => {
+                of_inputs = false;
+            }
             OpCode::CPUI_COPY => {
                 let c = input(0)?;
                 if c.is_constant() {
@@ -240,16 +243,48 @@ fn signed_width(data: &Funcdata, web: &[VarnodeId], size: int4) -> Option<int4> 
                 if x.is_addr_tied() {
                     return None;
                 }
+                of_inputs &= x.is_input();
                 w = w.max(x.get_size());
             }
             _ => return None,
         }
     }
-    if w == 0 || w >= size || wide_frame_home(data, web, w) {
+    if w == 0 || w >= size || (of_inputs && !phi) || wide_frame_home(data, web, w) || feeds_switch(data, web) {
         return None;
     }
     let fits = |c: uintb| kuna_base::address::sign_extend_sized(c & calc_mask(w), w, size) == c;
     constants.into_iter().all(fits).then_some(w)
+}
+
+/// Does a value of `web` reach a BRANCHIND within a few ops? A switch
+/// selector is left at the width its jump table was recovered for: the table's
+/// model is matched again on the final p-code, through the selector's
+/// definition.
+fn feeds_switch(data: &Funcdata, web: &[VarnodeId]) -> bool {
+    let mut seen: BTreeSet<VarnodeId> = web.iter().copied().collect();
+    let mut frontier: Vec<VarnodeId> = web.to_vec();
+    for _ in 0..8 {
+        let mut next = Vec::new();
+        for vn in frontier {
+            let Some(v) = data.vbank().get(vn) else { continue };
+            for op in v.descend_iter() {
+                let Some(o) = data.obank().get(op) else { continue };
+                if o.code() == OpCode::CPUI_BRANCHIND {
+                    return true;
+                }
+                if let Some(out) = o.get_out() {
+                    if seen.len() < 512 && seen.insert(out) {
+                        next.push(out);
+                    }
+                }
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        frontier = next;
+    }
+    false
 }
 
 /// Was a value of `web` stored to a frame slot wider than `w` bytes before
