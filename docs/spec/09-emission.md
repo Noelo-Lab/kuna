@@ -310,6 +310,15 @@ warnstyle banner` restores upstream Ghidra's full
 
 ## 9.1 Casts
 
+An equal-width `CAST` involving a complete struct or union transfers its object
+representation in C (`kuna_aggregatecast.rs`). Emission uses a union compound
+literal with the actual declared source and destination types, evaluating the
+source once. Both types and both varnodes must have the same positive size;
+field accesses use their field type. Numeric floating-point conversion opcodes,
+incomplete records, arrays, and unequal widths are excluded. Recursive layout
+checks exclude padding, bitfields, and unions with shorter members; aggregate-typed
+constant inputs are also excluded.
+
 **The pass.** `ActionSetCasts` (registry row P9/`cast-policy`, group `casts`)
 is scheduled near the very end of the pass tree — after `ActionNameVars` and
 before `ActionFinalStructure`
