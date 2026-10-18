@@ -193,7 +193,7 @@ int main(void) {
     assert_eq!(native_output, "result=0x332211 sink=0x332211\n");
 
     let image_bytes = std::fs::read(&image).unwrap();
-    let object = object::File::parse(&image_bytes).unwrap();
+    let object = object::File::parse(image_bytes.as_slice()).unwrap();
     let symbol_address = |name: &str| {
         object
             .symbols()
