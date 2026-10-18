@@ -660,6 +660,11 @@ time, at 1024 about 1%, and 23 of 15,942 functions over 20 binaries print
 differently at the lower budget, 12 of them in that firmware. Chapter 06 adds the mirror image at this level: a value loaded through a
 pointer stays ahead of a store to a global
 (`kuna_indexaliasguard.rs (load_crosses_global_store)`, `kuna_loadorder.rs`).
+The crossing check rejects operations outside the loaded value's current cover
+before inspecting their HighVariable members for global storage. This uses the
+same cover boundary policy as the final crossing decision, preserving which
+stores qualify while avoiding repeated member scans for unrelated operations.
+
 
 At `global` heritage also gives a global the LOAD guard
 (`heritage.rs (Heritage::guard_global_loads)`). Upstream builds load guards only for indexed stack
@@ -1578,6 +1583,21 @@ had not enumerated (`INT_SRIGHT` out of `RuleBitUndistribute`, or a
 `FLOAT_INT2FLOAT`/`FLOAT_LESS`/`FLOAT_ADD` phi collapsing through
 `RuleMultiCollapse`) unwound the entire decompilation — the caller saw one error
 record and no C at all for that function.
+
+**Commuting a right shift through zero extension.**
+`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_4.rs
+(RuleZextCommute)` rewrites `zext(V) >> n` into `zext(V >> n)` only when the
+count's constant value or nonzero-bit mask proves it is below the width the
+narrowed shift evaluates at. That width is `V`'s, except that when the output
+language promotes a sub-`int` operand to a 4-byte `int` (C: the
+`int_promotion` architecture flag), a 1- or 2-byte `V` shifts as 32 bits, so
+counts below 32 are safe for it. Otherwise it retains the wide shift. P-code
+defines a logical right shift at or beyond its operand width as zero, but
+narrowing such a shift can produce undefined C or an overflowing Rust shift.
+In particular, a zero-extended 16- or 32-bit value shifted by a count masked
+to 63 must keep the 64-bit operation, while a byte rotate's `x >> (n & 31)`
+still prints narrow in C. Rust, which shifts at the operand's own width, keeps
+the `V`-width bound. This is a correctness requirement, with no option.
 
 **Lowering a non-least-significant truncation.** A SUBPIECE carries a byte
 offset, and only the offset-0 form has a C spelling: it is a cast. Every other
