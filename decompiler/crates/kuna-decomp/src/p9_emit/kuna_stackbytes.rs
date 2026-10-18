@@ -75,7 +75,7 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
     if info.is_name_undefined {
         reject!("unnamed stack container");
     }
-    let Some(mut bytes) = expression(fd, output, true, 32) else {
+    let Some(mut bytes) = expression(fd, output, true, 32, op) else {
         reject!("unsupported source expression, output size {size}");
     };
     if stack.is_big_endian() {
@@ -103,8 +103,7 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         .enumerate()
         .map(|(index, byte)| preserved(index, *byte))
         .collect();
-    let internal_stackview_copy = operation.not_printed()
-        && operation.code() == OpCode::CPUI_COPY
+    let stackview_scalar_copy = operation.code() == OpCode::CPUI_COPY
         && info
             .sym_type
             .as_ref()
@@ -113,7 +112,7 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         if !matches!(
             fd.vn_type_def_facing(output).get_metatype(),
             type_metatype::TYPE_ARRAY | type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION
-        ) && !internal_stackview_copy
+        ) && !stackview_scalar_copy
         {
             reject!(
                 "no preserved bytes and scalar output type {:?}; op={:?}; internal={}; container={}",
@@ -136,9 +135,19 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
             let Some(source_value) = fd.vbank().get(source) else {
                 reject!("missing source varnode");
             };
-            if source_value.is_implied() && !safe_load_value(fd, source) {
+            let shares_stackview_high = source_value
+                .get_high()
+                .and_then(|high| fd.high_bank().get(high))
+                .is_some_and(|high| high.kuna_link_symbol() == Some(info.symbol));
+            let safe_load = safe_load_op(fd, source, op).is_some();
+            if (source_value.is_implied() || shares_stackview_high)
+                && !same_backing(fd, source, info.symbol)
+                && !safe_load
+            {
                 reject!(
-                    "source varnode is implied (size {}, readonly {}, volatile {}, def {:?})",
+                    "source cannot be safely re-read after stackview merge (implied {}, shared high {}, size {}, readonly {}, volatile {}, def {:?})",
+                    source_value.is_implied(),
+                    shares_stackview_high,
                     source_value.get_size(),
                     source_value.is_read_only(),
                     source_value.is_volatile(),
@@ -204,21 +213,81 @@ fn same_backing(fd: &Funcdata, value: VarnodeId, symbol: SymbolId) -> bool {
             .is_some_and(|high| high.kuna_link_symbol() == Some(symbol))
 }
 
-fn safe_load_value(fd: &Funcdata, value: VarnodeId) -> bool {
-    let Some(value) = fd.vbank().get(value) else {
-        return false;
-    };
-    value
-        .get_def()
-        .and_then(|def| fd.obank().get(def))
-        .is_some_and(|op| {
-            op.code() == OpCode::CPUI_LOAD
-                && !value.is_volatile()
-                && (value.get_size() == 1 || value.is_read_only())
-        })
+pub(crate) fn safe_load_op(fd: &Funcdata, value: VarnodeId, use_op: OpId) -> Option<OpId> {
+    let mut current = value;
+    for _ in 0..=32 {
+        let current_value = fd.vbank().get(current)?;
+        let def = current_value.get_def()?;
+        let operation = fd.obank().get(def)?;
+        match operation.code() {
+            OpCode::CPUI_LOAD => {
+                if current_value.is_volatile() {
+                    return None;
+                }
+                if current_value.is_read_only() || reemit_load_is_safe(fd, def, use_op) {
+                    return Some(def);
+                }
+                return None;
+            }
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
+                let input = operation.get_in(0)?;
+                if fd.vbank().get(input)?.get_size() != current_value.get_size() {
+                    return None;
+                }
+                current = input;
+            }
+            _ => return None,
+        }
+    }
+    None
 }
 
-fn expression(fd: &Funcdata, id: VarnodeId, top: bool, depth: u8) -> Option<Vec<Byte>> {
+fn reemit_load_is_safe(fd: &Funcdata, load: OpId, use_op: OpId) -> bool {
+    let (Some(load_op), Some(use_operation)) = (fd.obank().get(load), fd.obank().get(use_op))
+    else {
+        return false;
+    };
+    let (Some(block), Some(use_block)) = (load_op.get_parent(), use_operation.get_parent()) else {
+        return false;
+    };
+    if block != use_block {
+        return false;
+    }
+    let mut next = fd.bb_op_next(load);
+    let mut steps = 0;
+    while let Some(op) = next {
+        if op == use_op {
+            return true;
+        }
+        let Some(operation) = fd.obank().get(op) else {
+            return false;
+        };
+        if operation.is_call()
+            || matches!(
+                operation.code(),
+                OpCode::CPUI_STORE
+                    | OpCode::CPUI_INDIRECT
+                    | OpCode::CPUI_CALLOTHER
+            )
+        {
+            return false;
+        }
+        steps += 1;
+        if steps > 4096 {
+            return false;
+        }
+        next = fd.bb_op_next(op);
+    }
+    false
+}
+
+fn expression(
+    fd: &Funcdata,
+    id: VarnodeId,
+    top: bool,
+    depth: u8,
+    use_op: OpId,
+) -> Option<Vec<Byte>> {
     let depth = depth.checked_sub(1)?;
     let value = fd.vbank().get(id)?;
     let size = value.get_size();
@@ -242,23 +311,23 @@ fn expression(fd: &Funcdata, id: VarnodeId, top: bool, depth: u8) -> Option<Vec<
         match op.code() {
             OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
                 if fd.vbank().get(input)?.get_size() == size {
-                    return expression(fd, input, false, depth);
+                    return expression(fd, input, false, depth, use_op);
                 }
             }
             OpCode::CPUI_PIECE => {
-                let mut low = expression(fd, op.get_in(1)?, false, depth)?;
-                low.extend(expression(fd, input, false, depth)?);
+                let mut low = expression(fd, op.get_in(1)?, false, depth, use_op)?;
+                low.extend(expression(fd, input, false, depth, use_op)?);
                 return (low.len() == size as usize).then_some(low);
             }
             OpCode::CPUI_SUBPIECE => {
                 let offset: usize = literal(1)?.try_into().ok()?;
-                let bytes = expression(fd, input, false, depth)?;
+                let bytes = expression(fd, input, false, depth, use_op)?;
                 return bytes
                     .get(offset..offset.checked_add(size as usize)?)
                     .map(|bytes| bytes.to_vec());
             }
             OpCode::CPUI_INT_ZEXT => {
-                let mut bytes = expression(fd, input, false, depth)?;
+                let mut bytes = expression(fd, input, false, depth, use_op)?;
                 if bytes.len() > size as usize {
                     return None;
                 }
@@ -270,7 +339,7 @@ fn expression(fd: &Funcdata, id: VarnodeId, top: bool, depth: u8) -> Option<Vec<
                 if shift % 8 != 0 {
                     return None;
                 }
-                let bytes = expression(fd, input, false, depth)?;
+                let bytes = expression(fd, input, false, depth, use_op)?;
                 if bytes.len() != size as usize {
                     return None;
                 }
@@ -290,7 +359,7 @@ fn expression(fd: &Funcdata, id: VarnodeId, top: bool, depth: u8) -> Option<Vec<
                         .collect(),
                 );
             }
-            OpCode::CPUI_LOAD if safe_load_value(fd, id) => {
+            OpCode::CPUI_LOAD if safe_load_op(fd, id, use_op).is_some() => {
                 return Some(
                     (0..size)
                         .map(|byte| Byte::Value { source: id, byte })
