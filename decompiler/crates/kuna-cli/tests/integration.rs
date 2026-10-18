@@ -470,3 +470,6 @@ mod fortran_fatal_diagnostics;
 
 #[path = "dwarf_array_bounds.rs"]
 mod dwarf_array_bounds;
+
+#[path = "wide_right_shift.rs"]
+mod wide_right_shift;
