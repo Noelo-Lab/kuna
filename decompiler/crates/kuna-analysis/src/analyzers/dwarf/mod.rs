@@ -622,8 +622,8 @@ fn build_datatype_at(
         }
         gimli::DW_TAG_array_type => {
             let elem = build_datatype(die.type_ref, dies, types, word_size, walk, cpp)?;
-            // The length lives on a DW_TAG_subrange_type child (DW_AT_count or
-            // upper_bound+1); fall back to 1 for a flexible/unknown array.
+            // The length lives on a DW_TAG_subrange_type child (`kuna_dwarfbounds`);
+            // fall back to 1 for a flexible/unknown array.
             let count = die
                 .children
                 .iter()

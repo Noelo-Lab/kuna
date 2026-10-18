@@ -20,7 +20,7 @@ pub(super) fn array_count(
     let lower = match lower {
         Some(value) => integer(value)?,
         None => match language {
-            Some(gimli::DW_LANG_Fortran18) => 1,
+            Some(gimli::DW_LANG_Fortran18 | gimli::DW_LANG_Ada2005 | gimli::DW_LANG_Ada2012) => 1,
             Some(value) => value.default_lower_bound().unwrap_or(0) as i128,
             None => 0,
         },
@@ -37,7 +37,10 @@ mod tests {
     #[test]
     fn origins_signed_bounds_and_explicit_counts() {
         assert_eq!(array_count(None, None, Some(Udata(3)), Some(gimli::DW_LANG_Fortran90)), Some(3));
-        assert_eq!(array_count(None, None, Some(Udata(3)), Some(gimli::DW_LANG_Fortran18)), Some(3));
+        for language in [gimli::DW_LANG_Fortran18, gimli::DW_LANG_Ada95,
+                         gimli::DW_LANG_Ada2005, gimli::DW_LANG_Ada2012] {
+            assert_eq!(array_count(None, None, Some(Udata(3)), Some(language)), Some(3));
+        }
         for language in [gimli::DW_LANG_C, gimli::DW_LANG_C17,
                          gimli::DW_LANG_C_plus_plus_17, gimli::DW_LANG_C_plus_plus_20] {
             assert_eq!(array_count(None, None, Some(Udata(3)), Some(language)), Some(4));
