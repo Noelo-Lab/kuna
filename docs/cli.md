@@ -199,8 +199,8 @@ memory limit exceeded` instead of being killed. `--max-fn-seconds N` is the
 wall-clock half (default 120, the same as `--json`; `0` disables): `decomp_dbg`
 arms it as the drive's cooperative deadline (see *Per-function watchdog* under
 `decompile-all`), and a function still running at N seconds fails with
-`per-function decompile budget exceeded (N s) in <pass>` and exit 1 instead of
-spinning on.
+`per-function decompile budget exceeded (N s) in <pass>`, a note naming the
+flag, and exit 1 instead of spinning on.
 
 An option **name** is checked before anything is loaded, on every surface that takes
 `--option`, and an unrecognized one exits 2 rather than running as if it had not been

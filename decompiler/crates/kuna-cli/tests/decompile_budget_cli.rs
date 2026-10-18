@@ -92,7 +92,8 @@ fn decompile_stops_at_its_budget_and_names_the_pass() {
     assert_eq!(out.status.code(), Some(1), "{stderr}");
     assert!(
         stderr.contains("decompilation failed for big")
-            && stderr.contains("per-function decompile budget exceeded (1 s) in "),
+            && stderr.contains("per-function decompile budget exceeded (1 s) in ")
+            && stderr.contains("note: --max-fn-seconds N sets the budget"),
         "{stderr}"
     );
     assert!(start.elapsed() < Duration::from_secs(60), "took {:?}", start.elapsed());

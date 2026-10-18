@@ -818,6 +818,9 @@ pub fn run(args: &DecompileArgs) -> i32 {
             let status = match out.failure {
                 Some(msg) => {
                     eprintln!("error: {msg}");
+                    if msg.contains("per-function decompile budget exceeded") {
+                        eprintln!("note: --max-fn-seconds N sets the budget (0 disables it)");
+                    }
                     1
                 }
                 None if refused => 1,
