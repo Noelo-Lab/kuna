@@ -454,6 +454,40 @@ fn jumpvaluesrange_truncate_resets_extent() {
 }
 
 #[test]
+fn jumpvaluesrange_iterates_an_exact_noncontiguous_domain() {
+    let mut fd = build_fd();
+    let start = mk_input(&mut fd, 0x20);
+    let mut range = JumpValuesRange::new();
+    range.set_values(vec![9, 0, 2, 2]);
+    range.set_start_vn(start);
+    assert_eq!(range.get_size(), 3);
+    assert!(range.contains(0).unwrap());
+    assert!(range.contains(2).unwrap());
+    assert!(!range.contains(1).unwrap());
+
+    let mut more = range.initialize_for_reading();
+    let mut values = Vec::new();
+    while more {
+        values.push(range.get_value());
+        more = range.next().unwrap();
+    }
+    assert_eq!(values, vec![0, 2, 9]);
+
+    let mut clone = range.clone_box();
+    assert!(clone.initialize_for_reading());
+    assert_eq!(clone.get_value(), 0);
+    clone.truncate(2);
+    assert_eq!(clone.get_size(), 2);
+    assert!(clone.contains(2).unwrap());
+    assert!(!clone.contains(9).unwrap());
+
+    range.set_range(CircleRange::new(4, 7, 4, 1));
+    assert_eq!(range.get_size(), 3, "setting a range replaces the exact domain");
+    assert!(range.initialize_for_reading());
+    assert_eq!(range.get_value(), 4);
+}
+
+#[test]
 fn jumpvaluesrangedefault_size_is_base_plus_one() {
     let mut jv = JumpValuesRangeDefault::new();
     jv.set_range(CircleRange::new(0, 8, 4, 1));

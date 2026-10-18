@@ -52,6 +52,9 @@ pub struct EmulateFunction<'a> {
     varnode_map: BTreeMap<VarnodeId, uintb>,
     /// The set of collected LOAD records, if collecting (C++ `loadpoints`).
     loadpoints: Option<Vec<LoadTable>>,
+    /// When enabled, reject every load-image read unless each byte is global
+    /// read-only and non-volatile. Used by proofs that rely on immutable inputs.
+    readonly_image_required: bool,
     /// C++ `EmulatePcodeOp::currentOp`: the op the next `execute_current_op`
     /// will run.
     current_op: Option<OpId>,
@@ -68,6 +71,7 @@ impl<'a> EmulateFunction<'a> {
             fd,
             varnode_map: BTreeMap::new(),
             loadpoints: None,
+            readonly_image_required: false,
             current_op: None,
             last_op: None,
         }
@@ -77,6 +81,12 @@ impl<'a> EmulateFunction<'a> {
     /// fresh vector (the caller pulls them out with [`take_loadpoints`]).
     pub fn set_load_collect(&mut self, collect: bool) {
         self.loadpoints = if collect { Some(Vec::new()) } else { None };
+    }
+
+    /// Require all direct and implicit load-image reads to come from immutable
+    /// global memory. The default remains off for existing jump-table recovery.
+    pub fn set_readonly_image_required(&mut self, required: bool) {
+        self.readonly_image_required = required;
     }
 
     /// (kuna) Pre-seed a Varnode's value in the emulation memory state, exactly
@@ -233,6 +243,28 @@ impl<'a> EmulateFunction<'a> {
     /// C++ `EmulatePcodeOp::getLoadImageValue(AddrSpace*,uintb,int4)` — pull a
     /// value out of the program load image (the read-only switch table).
     fn get_load_image_value(&self, spc: &Rc<AddrSpace>, off: uintb, sz: int4) -> KunaResult<uintb> {
+        if self.readonly_image_required {
+            if sz <= 0 || off.checked_add(sz as u64 - 1).is_none() {
+                return Err(KunaError::lowlevel(
+                    "EmulateFunction: invalid read-only image range",
+                ));
+            }
+            let usepoint = Address::new_invalid();
+            for offset in 0..sz as u64 {
+                let addr = Address::new(Rc::clone(spc), off + offset);
+                let flags = self
+                    .fd
+                    .get_arch()
+                    .query_global_properties(&addr, 1, &usepoint);
+                if flags & crate::varnode::varnode_flags::readonly == 0
+                    || flags & crate::varnode::varnode_flags::volatil != 0
+                {
+                    return Err(KunaError::lowlevel(
+                        "EmulateFunction: load-image read is not immutable",
+                    ));
+                }
+            }
+        }
         let addr = Address::new(Rc::clone(spc), off);
         self.fd.get_arch().get_load_image_value(&addr, sz)
     }
