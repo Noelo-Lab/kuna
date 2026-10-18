@@ -3388,6 +3388,25 @@ upper half, as gcc merges adjacent field stores): two declarations would make
 one storage two objects, so a store through one would never reach the other.
 An address some function takes keeps its declaration either way.
 
+Named global references retain whole mapped declarations through
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_namedglobals.rs`. The C printer
+records the actual emitted name only when a mapped data object is referenced,
+including field and array accesses. Storage base, extent, and whole symbol type
+must agree with the mapping; split or uncertain mappings are not guessed. The
+per-function collection resets at each print and excludes substituted literals,
+stack objects, and function symbols. Project extraction includes these facts even
+when synthetic address naming is disabled. Whole symbol types describe the
+object declaration, rather than the scalar type of a partial access.
+The header exporter diagnoses one name at multiple addresses and multiple names
+sharing one address instead of silently combining or splitting their storage.
+Whole named objects also retain the independent-storage overlap guard; overlapping
+views require shared storage instead of separate declarations. With `globalref`
+on, a native `void *` constant into a complete mapped object is rendered relative
+to its base, including interior field addresses. This preserves relocation of
+the object when the generated C is linked. Split mappings, uncertain extents,
+non-byte-addressed spaces, shadowed names and names requiring scope or identifier
+rewriting keep the existing rendering.
+
 **An indexed table is an array (`elemptr`).** With `elemptr` on (05-types
 §5.2), a constant address that is the base of a `PTRADD` indexed by a computed
 value is an array's first element, and `plan` records it (`Plan::indexed`). The

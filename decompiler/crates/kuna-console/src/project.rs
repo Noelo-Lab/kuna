@@ -1278,6 +1278,10 @@ fn global_declarations(results: &[FuncResult]) -> String {
         if g.direct { e.1.push(g) } else { e.0.push(g) }
     }
     let quote = |d: &str| d.replace("/*", "/ *").replace("*/", "* /");
+    let mut name_addresses: BTreeMap<&str, BTreeSet<u64>> = BTreeMap::new();
+    for g in results.iter().flat_map(|r| r.globals.iter()) {
+        name_addresses.entry(&g.name).or_default().insert(g.address);
+    }
     let mut out = String::new();
     let mut reach: Option<(u64, &str)> = None;
     for (&address, (taken, direct)) in &by_addr {
@@ -1290,6 +1294,17 @@ fn global_declarations(results: &[FuncResult]) -> String {
         });
         if reach.map_or(true, |(r, _)| end > r) {
             reach = Some((end, name));
+        }
+        let names: BTreeSet<&str> = taken.iter().chain(direct.iter()).map(|g| g.name.as_str()).collect();
+        if names.iter().any(|name| name_addresses[name].len() > 1) {
+            let _ = writeln!(out, "/* Global name denotes multiple storage addresses; declaration omitted: {} */",
+                names.iter().map(|name| quote(name)).collect::<Vec<_>>().join(", "));
+            continue;
+        }
+        if names.len() > 1 {
+            let _ = writeln!(out, "/* Global aliases require shared storage; declarations omitted: {} */",
+                names.iter().map(|name| quote(name)).collect::<Vec<_>>().join(", "));
+            continue;
         }
         let mut decls: Vec<(&GlobalInfo, usize)> = Vec::new();
         for g in taken.iter().chain(direct.iter()) {
@@ -1654,6 +1669,39 @@ mod tests {
         contains_identifier, prune_unreferenced_synth_types, redo_replaces, AssemblyScratch,
         FuncResult,
     };
+
+    #[test]
+    fn named_globals_do_not_collapse_distinct_storage_or_split_aliases() {
+        let mut result = streamed("void sample(void)", "int");
+        let object = |name: &str, address| super::GlobalInfo {
+            address,
+            name: name.into(),
+            declaration: format!("unsigned int {name}"),
+            size: 4,
+            unknown: false,
+            direct: true,
+            aggregate: false,
+            elem: false,
+        };
+        result.globals = vec![object("counter", 0x5000), object("counter", 0x5000)];
+        assert_eq!(super::global_declarations(std::slice::from_ref(&result)), "extern unsigned int counter;\n");
+        result.globals.push(object("counter", 0x6000));
+        let declarations = super::global_declarations(std::slice::from_ref(&result));
+        assert!(declarations.contains("multiple storage addresses"), "{declarations}");
+        assert!(!declarations.contains("extern "), "{declarations}");
+        result.globals = vec![object("counter", 0x5000), object("alias", 0x5000)];
+        let declarations = super::global_declarations(&[result]);
+        assert!(declarations.contains("aliases require shared storage"), "{declarations}");
+        assert!(!declarations.contains("extern "), "{declarations}");
+        let mut whole = object("whole", 0x5000);
+        whole.size = 8;
+        whole.declaration = "unsigned long whole".into();
+        let mut result = streamed("void sample(void)", "int");
+        result.globals = vec![whole, object("interior", 0x5004)];
+        let declarations = super::global_declarations(&[result]);
+        assert!(declarations.contains("overlapped"), "{declarations}");
+        assert!(!declarations.contains("extern "), "{declarations}");
+    }
 
     #[test]
     fn scalar_global_declarations_keep_conflicting_direct_types_diagnostic() {

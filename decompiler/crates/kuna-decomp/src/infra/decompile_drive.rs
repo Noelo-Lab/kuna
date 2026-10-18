@@ -2002,7 +2002,8 @@ pub struct GlobalInfo {
     /// the declared type is the unknown byte.
     pub unknown: bool,
     /// True for storage the body reads or writes directly rather than takes the
-    /// address of; its declaration is the type it is accessed at.
+    /// address of; also true for whole mapped named objects, whose declarations
+    /// retain their complete type and require independent storage.
     pub direct: bool,
     /// True when the declared type is a record or union: a scalar read or write
     /// of the name does not compile against it. (An array decays to a pointer,
@@ -2016,8 +2017,10 @@ pub struct GlobalInfo {
 
 /// The globals the C `print_c` just rendered for `fd` names
 /// ([`crate::kuna_globalref`]): every address it takes, and every piece of
-/// unnamed program data it accesses directly. Read from the printer, so it must
-/// follow the `print_c` of the same function. Empty with the option off.
+/// unnamed program data it accesses directly, and whole mapped named objects.
+/// Read from the printer, so it must
+/// follow the `print_c` of the same function. Named symbols remain available
+/// when the address-naming option is off.
 pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
     let print = arch.print();
     let plan = print.globalref_plan();
@@ -2051,6 +2054,21 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
         if !out.contains(&g) {
             out.push(g);
         }
+    }
+    for (address, name, ty) in print.named_global_references().objects() {
+        use crate::dtype::type_metatype::{TYPE_STRUCT, TYPE_UNION};
+        let g = GlobalInfo {
+            address,
+            name: name.to_string(),
+            declaration: crate::printc::declaration_text(ty, name, rt),
+            size: i64::from(ty.get_size()),
+            unknown: false,
+            // Whole named objects must retain the independent-storage overlap guard.
+            direct: true,
+            aggregate: matches!(ty.get_metatype(), TYPE_STRUCT | TYPE_UNION),
+            elem: false,
+        };
+        if !out.contains(&g) { out.push(g); }
     }
     out
 }

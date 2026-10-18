@@ -1626,6 +1626,7 @@ pub struct PrintC {
     /// the decision reads and the globals its C names. See
     /// [`crate::kuna_globalref`].
     globalref: crate::kuna_globalref::Plan,
+    named_globals: crate::kuna_namedglobals::References,
 }
 
 impl Default for PrintC {
@@ -1668,6 +1669,7 @@ impl PrintC {
             cast_implied: crate::kuna_castimplied::ImpliedCasts::default(),
             stmt_op: None,
             globalref: crate::kuna_globalref::Plan::default(),
+            named_globals: crate::kuna_namedglobals::References::default(),
         }
     }
 
@@ -2608,6 +2610,7 @@ impl PrintC {
         // the live architecture (the gate + the `long`-is-8 data-model fact); every
         // type-name chokepoint below reads `self.rt_ctx`.
         self.rt_ctx = RealTypeCtx::from_arch(arch, self.out_lang);
+        self.named_globals = crate::kuna_namedglobals::References::default();
         self.globalref = crate::kuna_globalref::plan(
             fd,
             arch,
@@ -2743,6 +2746,7 @@ impl PrintC {
             return false;
         };
         if access.size == 1 {
+            self.named_globals.record(fd, arch, fd.vbank().get(vn).unwrap().get_addr(), &access.name);
             self.push_atom(&Atom::with_op_vn(
                 format!("{}[0]", access.name),
                 TagType::VarToken,
@@ -2769,6 +2773,7 @@ impl PrintC {
             };
             ty
         };
+        self.named_globals.record(fd, arch, fd.vbank().get(vn).unwrap().get_addr(), &access.name);
         self.push_cast_open(&cast, op);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         self.push_atom(&Atom::syntax(
@@ -2807,6 +2812,7 @@ impl PrintC {
         {
             return false;
         }
+        self.named_globals.record(fd, arch, fd.vbank().get(out).unwrap().get_addr(), &access.name);
         if access.size == 1 {
             self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
             self.push_atom(&Atom::with_op_vn(
@@ -9410,6 +9416,24 @@ impl PrintC {
                     ));
                     return;
                 }
+                if self.out_lang == crate::kuna_lang::OutLang::C
+                    && self.options.global_ref
+                    && ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
+                    && ct.get_word_size() == Some(1)
+                    && ct.get_size() == arch.types().get_size_of_pointer()
+                    && ct.get_ptr_to().is_some_and(|to| to.get_metatype() == crate::dtype::type_metatype::TYPE_VOID)
+                {
+                    if let Some(expression) = self.named_globals.void_address(fd, arch, off) {
+                        if !self.options.nocasts { self.push_cast_open(&ct, op); }
+                        self.push_atom(&Atom::with_op_vn(
+                            expression, TagType::VarToken,
+                            crate::printlanguage::SyntaxHighlight::var_color,
+                            op_key(op), vn_key(vn),
+                        ));
+                        if !self.options.nocasts { self.push_cast_close(&ct); }
+                        return;
+                    }
+                }
                 if let Some(addr) = self.globalref.decide(fd, arch, vn, op, off, &ct) {
                     self.push_global_ref_ir(arch, addr, op, vn);
                     return;
@@ -9474,6 +9498,9 @@ impl PrintC {
                     && self.push_bytearray_read(fd, arch, vn, op)
                 {
                     return;
+                }
+                if self.out_lang == crate::kuna_lang::OutLang::C {
+                    self.named_globals.record(fd, arch, v.get_addr(), &name);
                 }
                 // Symbol-mapped struct/union member access (C++ `PrintC::
                 // pushSymbolDetail` -> `pushPartialSymbol`, printlanguage.cc:256-258
@@ -9881,6 +9908,10 @@ impl PrintC {
 
     /// (kuna `globalref`) The plan of the last function printed: the globals it
     /// names by address and the unnamed data it reads directly.
+    pub fn named_global_references(&self) -> &crate::kuna_namedglobals::References {
+        &self.named_globals
+    }
+
     pub fn globalref_plan(&self) -> &crate::kuna_globalref::Plan {
         &self.globalref
     }
@@ -10213,6 +10244,12 @@ impl PrintC {
                             }
                         }
                     }
+                }
+            }
+
+            if self.out_lang == crate::kuna_lang::OutLang::C {
+                if let Some(address) = spacebase_unnamed_address(arch, fd, op, &ct, in1const, ptr_size) {
+                    self.named_globals.record(fd, arch, &address, &name);
                 }
             }
 
