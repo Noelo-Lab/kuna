@@ -792,6 +792,8 @@ pub fn decompile_pulled(
                 // (kuna `callrettype`) State what this function returns for its callers.
                 if opts.park_recovered_proto {
                     kuna_decomp::kuna_callrettype::record(prog.arch_mut(), &park_entry, &fd);
+                    // (kuna `narrowret`) And the narrow value it returns zero-extended.
+                    kuna_decomp::kuna_narrowret::record(prog.arch_mut(), &park_entry, &fd);
                     // (kuna `voidret`) And whether it returns nothing a caller reads.
                     kuna_decomp::kuna_voidret::record(prog.arch_mut(), &park_entry, &fd);
                     // (kuna `elemptr`) And which of its pointers are indexed buffers.

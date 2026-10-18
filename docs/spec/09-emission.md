@@ -110,6 +110,22 @@ remains in the IR for reaching definitions and alias effects; the printer neithe
 restores the preceding value nor copies bytes out of a constant's fictitious
 fields. Register effects and creation markers keep their existing handling.
 
+A `SUBPIECE` that extracts a four-byte float from an eight-byte scalar preserves
+the selected bits (`kuna_floatslice.rs`). C shifts an unsigned representation,
+narrows it to four bytes, and reinterprets it through an anonymous union; Rust
+uses the corresponding unsigned shift and `f32::from_bits`. A floating source
+first contributes its bit representation, without a numeric conversion. The
+byte offset is a significance offset in either byte order. Partial-structure
+intermediates use the stripped scalar type that their declarations expose.
+The printer checks
+the scalar widths, rejects out-of-range offsets, and evaluates the source once.
+An implied source whose type is still undefined, such as an untyped load read
+only by the extraction, takes the same path; one that traces back to an untyped
+call result keeps its existing rendering, by the rule `kuna_bitcast.rs` applies
+to same-width casts, because the slice does not infer a callee's return
+prototype. Explicit floating conversion opcodes retain their numeric
+conversion, and structured member extraction retains priority.
+
 A same-width `CAST` between an integer and a 32- or 64-bit float is a bit
 reinterpretation, not a numeric conversion (`kuna_bitcast.rs`). For this
 path, `ActionSetCasts` inserts a `CAST` wherever the merged types of a value
@@ -126,7 +142,8 @@ anonymous union compound literal,
 `x` once; a signed result names the signed word (`int`, `long long`) as the
 member instead of adding a cast. Rust
 emits `f32::from_bits`/`f64::from_bits`, converting the operand with `as
-u32`/`as u64` unless its declared type already is that word, or `to_bits()`. A
+u32`/`as u64` unless its declared type already is that word, or `to_bits()`;
+a literal operand is narrowed to the transfer's width first. A
 floating constant read as an integer prints its stored bits, preserving NaN
 payloads. An untyped call result does not establish an integer return contract
 and keeps its existing conversion, unless the callee declares what it returns
@@ -406,6 +423,50 @@ and the read prints `(unsigned long)(int)(a1 - 1U) >> 6`. The suffix stays: an
 unsigned reader of the same expression (`4 < a4 + 2U`) still needs it. This is
 a correctness fix with no option.
 
+**An unsigned read of an expression C evaluates as signed (kuna).** The
+mirror case: C promotes an operand narrower than `int` to `int`, so
+`(*a1 ^ 0x80) - 0x80` over an `unsigned short *a1` is an `int` in C, and so
+is `(int)a0 + 1`, while `arithmeticOutputStandard` types the 32-bit Varnode
+they compute `unsigned int` (it takes the most ordered operand type and
+knows no promotion). A reader that treats its input as unsigned --
+`INT_ZEXT`, `INT_RIGHT`'s value, `INT_LESS`/`INT_LESSEQUAL`,
+`INT_DIV`/`INT_REM` -- found nothing to cast, and the C read the value as
+signed: `(unsigned long)((*a1 ^ 0x80) - 0x80)` sign-extended where the
+32-bit operation zero-extends, and `>> 3` shifted in copies of the sign bit.
+When such a reader's input is an implied expression at least as wide as
+`int`, typed unsigned, whose C type is a signed `int` or `long`, the read
+makes it unsigned (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_unsignedread.rs
+(cast)`): a plain non-negative constant operand of the expression's top
+operation gets the `U` suffix when that operation's result bits do not depend
+on its sign (`+`, `-`, `*`, `&`, `|`, `^`, negation; never a division,
+remainder or shift, whose meaning the suffix would change),
+or `UL` at eight bytes, so `(int)a0 + 1` prints `(int)a0 + 1U`; otherwise
+`get_input_cast` asks for the unsigned integer of the input's size, and the
+read prints `(unsigned long)(unsigned int)((*a1 ^ 0x80) - 0x80)`. The C
+type is worked out bottom-up from what the text states: a literal from its
+suffix and magnitude, a variable, a cast or a load from its type, an
+extension the cast strategy hides from its input, and arithmetic by C's usual
+conversions over promoted operands; anything else leaves the read alone. Neither
+happens when the input's nonzero-bit mask clears the top bit (the
+value is never negative, so both readings agree), or when the other operand
+of a compare, divide or remainder is unsigned at least as wide (C then
+converts this one itself). Expressions narrower than `int` are left to the
+upstream integer-promotion checks (`checkIntPromotionForCompare`,
+`checkIntPromotionForExtension`). This is a correctness fix with no option.
+
+**A switch on an expression narrower than `int` (kuna).** A `BRANCHIND`
+selector of one or two bytes is computed at its own width, so a byte
+`a0 + 1` is 0x80 when `a0` is 0x7f, but C adds the promoted operands as
+`int`: `switch(a0 + '\x01')` switched on 128 and missed the `case -0x80:`
+the binary takes. The upstream promotion checks cast such an expression where
+an extension or a comparison reads it, and nothing reads it at a switch. The
+printer now casts an implied selector narrower than `int` to its own type,
+`switch((char)(a0 + '\x01'))`, unless `intPromotionType` says its promoted
+value already extends the way that type does
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_narrowselector.rs (cast)`). The
+case labels already follow the selector's type. Only output languages with C's
+integer promotion get the cast. This is a correctness fix with no option.
+
 **A narrow equality of mixed sign (kuna).** An `INT_EQUAL` or `INT_NOTEQUAL`
 of operands narrower than `int` compares their bytes, but C promotes each side
 to `int` by the sign of its own type before it compares. The upstream rule casts
@@ -516,6 +577,29 @@ cast is redundant, though never wrong. Only an output language whose
 `sink(a0 * 3)` with a `u16` `a0` already carries the truncation there. The rule
 has no option because it only restores a conversion the binary performed.
 Pinned by `tests/stages/kuna-truncarg.xml`.
+
+**An `int`-wide trimmed argument.** The same trim cuts an 8-byte register the
+binary zero-extended a 32-bit value into (`mov %edi,%edi`, any 32-bit write on
+x86-64, `uxtw` or a `w` register on AArch64) back to the 4-byte value. C then
+converts that `int`-wide argument to the callee's parameter by its own sign: a
+signed `int` whose top bit is set reaches a `long` parameter sign-extended, the
+opposite of what the binary passed, though promotion itself changes nothing at
+this width. `narrowed_arg_cast` therefore also takes a recorded input exactly
+`sizeof(int)` wide (`kuna_truncarg.rs (int_arg_cast)`), but only where the
+callee is known to read the register wider: `decompile-all`'s callee-first
+`protoorder` statement for the callee gives the parameter in the same storage
+more bytes than the argument (`kuna_truncarg.rs (callee_reads_wider)`). Without
+that statement the parameter may be exactly the argument's width, and C
+converts to it exactly. Under it, an argument whose C type is signed
+(`kuna_unsignedread.rs (c_int)`, else its read-facing type) and whose
+nonzero-bit mask leaves the top bit possibly set is cast to the unsigned
+integer of its width: `sinkl((unsigned int)v1)`. A declared prototype that
+locks the slot again gets no cast. The signedness walk counts the same reader
+as an unsigned demand (`kuna_truncarg.rs (zext_trimmed_arg)`), so a variable
+it would otherwise re-declare `int` for a signed comparison stays `unsigned
+int` there, and `sul(v2)` keeps zero-extending. A value the binary
+sign-extended (`movsxd`, `sxtw`) leaves no record and keeps `sinkl((long)v)`.
+Pinned by `tests/cli/zero-extended-int-argument-keeps-its-extension.json`.
 
 The default arm has one more fallback, for the target of an indirect call. A
 pointer to the prototype-less `code`, or to `void`, needs no cast under
@@ -1215,7 +1299,12 @@ because they can print as direct reads. Implied values are accepted only when
 their definitions recursively use the listed pure operations; an explicit
 written value can be reused by name after its defining statement has materialized
 it, including a call or load result. Other architectures, constant shifts, and
-non-repeatable ARM inputs keep their existing output. The 12-byte reproduction
+non-repeatable ARM inputs keep their existing output. Under `regnarrow` (chapter
+[03](03-ssa-and-simplification.md)) a count that is the implied zero extension of
+an unsigned narrow value prints as that value, since the guard already casts it
+and the shift reads it the same (`(unsigned int)v4 < 32u ? (unsigned int)1 << v4 :
+0u` where a narrowed counter printed `(unsigned int)(unsigned int)v4`;
+`unsigned_extension_source`). The 12-byte reproduction
 and emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml`; signed
 comparison and ASR consumers are in
 `tests/stages/kuna-arm-register-shift-signed.xml`.

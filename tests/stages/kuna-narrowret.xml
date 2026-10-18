@@ -1,0 +1,97 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    narrowret: a call reads the narrow value its callee returns (Thumb-2).
+
+    The image is decompiler/crates/kuna-analysis/tests/fixtures/narrowret.c
+    (clang for thumbv7em-none-eabi, cortex-m4, -O2), its calls
+    resolved at 0x10000.  `next_byte` returns `uxtb r0, r0` and `above` a
+    comparison, both zero-extended into r0 as AAPCS requires; `larger_byte`
+    and `count_above` keep two of their results in r0/r5 (r6) and compare them
+    at full width.  Under `decompile-all`, callees are decompiled first and
+    state the narrow value they return, and the callers then hold the results
+    as `unsigned char v1` and `bool v1` (`mix(v2 || v1,a0)`); with the option
+    off they are `unsigned int v1`.
+
+    THIS FIXTURE IS THE NEGATIVE CONTROL.  A callee states its return only
+    after its own decompile in a whole-binary `decompile-all`
+    (`kuna_narrowret::record`, called where `park_recovered_proto` is true,
+    which only decompiler/crates/kuna-cli/src/decompile_all.rs sets).  This
+    harness decompiles ONE function from a byte image, so nothing is stated:
+    each callee still narrows its own return exactly as before (#1, #2), each
+    call output stays the whole register (#3, #4, #5), and the sign-extended
+    `signed_byte` result stays signed (#6), byte for byte alike in both
+    passes.
+
+    The POSITIVE witnesses run the same objects through `decompile-all`:
+    tests/cli/narrowret-holds-a-narrow-call-result-narrow.json (on) and
+    tests/cli/narrowret-off-keeps-the-register-wide-call-result.json (off),
+    and decompiler/crates/kuna-cli/tests/narrow_ret.rs, which also compiles the
+    printed C of both arms and checks it computes what the binary computes.
+
+    Stage / sub-stage: P4 "output-prototype".  Pass 1 (default on) and pass 2
+    (off) must print the same.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+0130c0b2704700eb400080b270470022884288bf01221046704740b2704700eb80007047c0ebc00008447047b0b502af
+0446fff7e5ff0546200afff7e1ff854228bf2846a0f18001b1fa81f14909fff7e9ff0130b0bdb0b502af0446fff7d3ff
+0546200cfff7cfffb5f5004f98bf2846c108fff7d7ff0130b0bdf0b503af4df804bd0c460546fff7c2ff064620462946
+fff7bdff30432946fff7c4ff01305df804bbf0bdb0b502af0446fff7b6ff0546200afff7b2ff85424ff00001a8bf2846
+10f1030fb8bf0121fff7acff0130b0bdb0b502af0446fff7a2ff0546e008fff79eff85424ff0000128bf2846802888bf
+0121fff797ff0130b0bd80b56f46fff78eff0021812838bf0121884080bd
+</bytechunk>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x10000] [ram,0x1011f]</com>
+  <com>map function r0x10000 next_byte</com>
+  <com>map function r0x10006 scaled</com>
+  <com>map function r0x1000e above</com>
+  <com>map function r0x1001a signed_byte</com>
+  <com>map function r0x1001e whole</com>
+  <com>map function r0x10024 mix</com>
+  <com>map function r0x1002c larger_byte</com>
+  <com>map function r0x10056 halfword_pair</com>
+  <com>map function r0x1007a count_above</com>
+  <com>map function r0x100a4 keeps_sign</com>
+  <com>map function r0x100d0 keeps_width</com>
+  <com>map function r0x100fa returns_word</com>
+  <com>lo fu next_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu above</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu larger_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu count_above</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keeps_sign</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option narrowret off</com>
+  <com>lo fu next_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu above</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu larger_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu count_above</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keeps_sign</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="NARROWRET #1: a callee narrows its own byte return in both passes" min="2" max="2">uint1 next_byte\(char a0\)</stringmatch>
+<stringmatch name="NARROWRET #2: a callee returns its comparison as bool in both passes" min="2" max="2">bool above\(uint4 a0,uint4 a1\)</stringmatch>
+<stringmatch name="NARROWRET #3: with nothing stated the byte results stay register-wide" min="2" max="2">uint4 v1; // r0 \| r5</stringmatch>
+<stringmatch name="NARROWRET #4: with nothing stated the truth values stay register-wide" min="2" max="2">uint4 v1; // r0 \| r6</stringmatch>
+<stringmatch name="NARROWRET #5: and are combined bitwise" min="2" max="2">return mix\(v2 \| v1,a0\) \+ 1;</stringmatch>
+<stringmatch name="NARROWRET #6: a sign-extended result stays signed" min="2" max="2">[^u]int4 v1; // r0 \| r5</stringmatch>
+</decompilertest>

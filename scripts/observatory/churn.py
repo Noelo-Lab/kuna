@@ -70,7 +70,7 @@ def aggregate(commits: list, tracked: set, now: datetime) -> list:
     return sorted(files.values(), key=lambda entry: entry["path"])
 
 
-def generate(root: Path | None = None) -> dict:
+def generate(root: Path | None = None, out: Path | None = None) -> dict:
     root = root or common.repo_root()
     tracked_list = subprocess.run(
         ["git", "ls-files"], cwd=root, capture_output=True, text=True, check=True

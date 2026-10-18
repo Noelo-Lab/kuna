@@ -96,7 +96,7 @@ f64450012075ebe9aefcffff660f1f440000
 <stringmatch name="finalorder #3: the body opens with an indented statement" min="1" max="1">^ *$
 ^  [a-z].*;$</stringmatch>
 <stringmatch name="finalorder #4: the entry component prints first" min="1" max="1">^ *$
-^  v4 = dat_26558;$</stringmatch>
+^  v5 = dat_26558;$</stringmatch>
 <stringmatch name="finalorder #5: the mid-function label the buggy order hoisted is still emitted" min="1" max="1">^label_ee6c:$</stringmatch>
 <stringmatch name="finalorder #6: the entry falls through into the loop head label" min="1" max="1">^label_ec50:$</stringmatch>
 </decompilertest>

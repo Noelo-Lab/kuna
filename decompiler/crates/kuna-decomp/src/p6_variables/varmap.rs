@@ -1745,12 +1745,20 @@ impl ScopeLocal {
                         continue;
                     }
                 }
-                if cur.range_type == RangeType::Open {
+                let open = cur.range_type == RangeType::Open;
+                if open {
                     // C++ `cur.size = next->sstart - cur.sstart;` (intb diff
                     // truncated to int4); the gap is small and positive here.
                     cur.size = next.sstart.wrapping_sub(cur.sstart) as int4;
                 }
                 if self.adjust_fit(&mut cur) {
+                    if open {
+                        if let Some(size) =
+                            crate::p6_variables::kuna_arraysize::fit(&cur, cur_end, cur.size as intb, state)
+                        {
+                            cur.size = size;
+                        }
+                    }
                     self.create_entry(&cur, types)?;
                 }
                 cur = next;
@@ -2836,6 +2844,14 @@ pub struct MapState {
     /// (kuna `arrayextent`) The arrays `extend_unbounded` lengthened, settled
     /// once the hints are sorted.
     extended: Vec<crate::p6_variables::kuna_arrayextent::Extended>,
+    /// (kuna `arraysize`) Per signed offset an escaped address starts at, what
+    /// the calls receiving it and the accesses through it say about its size.
+    stated_sizes: std::collections::BTreeMap<intb, crate::p6_variables::kuna_arraysize::Evidence>,
+    /// (kuna `arraysize`) The sorted signed offsets of index bases whose reach is
+    /// not proven.
+    unproven_indexes: Vec<intb>,
+    /// (kuna `arraysize`) Where the accesses through each escaped address land.
+    reaches: Vec<crate::p6_variables::kuna_arraysize::Reach>,
 }
 
 impl MapState {
@@ -2863,6 +2879,9 @@ impl MapState {
             terminator_stores: std::collections::BTreeMap::new(),
             absorbing_bases: Vec::new(),
             extended: Vec::new(),
+            stated_sizes: std::collections::BTreeMap::new(),
+            unproven_indexes: Vec::new(),
+            reaches: Vec::new(),
         }
     }
 
@@ -3135,6 +3154,37 @@ impl MapState {
     /// (kuna `arrayextent`) Take the recorded lengthened arrays.
     pub(crate) fn take_extended(&mut self) -> Vec<crate::p6_variables::kuna_arrayextent::Extended> {
         std::mem::take(&mut self.extended)
+    }
+
+    /// (kuna `arraysize`) Record what calls say per escaped start, the sorted
+    /// offsets of index bases whose reach is not proven, and where the accesses
+    /// through each escaped address land.
+    pub(crate) fn set_stated_sizes(
+        &mut self,
+        sizes: std::collections::BTreeMap<intb, crate::p6_variables::kuna_arraysize::Evidence>,
+        unproven_indexes: Vec<intb>,
+        reaches: Vec<crate::p6_variables::kuna_arraysize::Reach>,
+    ) {
+        self.stated_sizes = sizes;
+        self.unproven_indexes = unproven_indexes;
+        self.reaches = reaches;
+    }
+
+    /// (kuna `arraysize`) Where the accesses through each escaped address land.
+    pub(crate) fn reaches(&self) -> &[crate::p6_variables::kuna_arraysize::Reach] {
+        &self.reaches
+    }
+
+    /// (kuna `arraysize`) What calls and accesses say about the address at `sstart`.
+    pub(crate) fn stated_sizes(&self, sstart: intb) -> Option<&crate::p6_variables::kuna_arraysize::Evidence> {
+        self.stated_sizes.get(&sstart)
+    }
+
+    /// (kuna `arraysize`) Does an index base whose reach is not proven start in
+    /// `[lo, hi)`?
+    pub(crate) fn unproven_index_in(&self, lo: intb, hi: intb) -> bool {
+        let i = self.unproven_indexes.partition_point(|&o| o < lo);
+        self.unproven_indexes.get(i).is_some_and(|&o| o < hi)
     }
 
     /// (kuna `nulterminator`) Record one constant COPY into `(start, size)`;

@@ -71,7 +71,7 @@ def assemble(doc: dict, reg: dict, code: dict, owners: dict, sched: dict, meta: 
     }
 
 
-def generate(root: Path | None = None) -> dict:
+def generate(root: Path | None = None, out: Path | None = None) -> dict:
     root = root or common.repo_root()
     reg = registry.load(root / "decompiler" / "crates" / "kuna-decomp" / "phases.toml")
     return assemble(
