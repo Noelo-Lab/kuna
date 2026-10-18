@@ -455,8 +455,9 @@ fn arm_open_entries(file: &object::File, entries: &[u64]) -> BTreeSet<u64> {
         let addr = section.address();
         let skip = ((4 - addr % 4) % 4) as usize;
         if let Some(aligned) = data.get(skip..) {
-            for w in aligned.chunks_exact(4) {
-                let v = if little { u32::from_le_bytes([w[0], w[1], w[2], w[3]]) } else { u32::from_be_bytes([w[0], w[1], w[2], w[3]]) };
+            let (words, _) = aligned.as_chunks::<4>();
+            for w in words {
+                let v = if little { u32::from_le_bytes(*w) } else { u32::from_be_bytes(*w) };
                 note(v as u64, &mut out);
             }
         }
@@ -469,7 +470,7 @@ fn arm_open_entries(file: &object::File, entries: &[u64]) -> BTreeSet<u64> {
                 let imm = ((h1 as u32 & 0xf) << 12) | (((h1 as u32 >> 10) & 1) << 11) | (((h2 as u32 >> 12) & 7) << 8) | (h2 as u32 & 0xff);
                 if h1 & 0xfbf0 == 0xf240 { movw.insert(imm) } else { movt.insert(imm) };
             }
-            if (addr as usize + i) % 4 == 0 {
+            if (addr as usize + i).is_multiple_of(4) {
                 let w = (h1 as u32) | ((h2 as u32) << 16);
                 let w = if little { w } else { ((h1 as u32) << 16) | h2 as u32 };
                 if matches!(w & 0x0ff0_0000, 0x0300_0000 | 0x0340_0000) {
