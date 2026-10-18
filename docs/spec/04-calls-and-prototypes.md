@@ -229,6 +229,31 @@ list carries a `pointermax` attribute, and the
 blocks — and registers the result as the default model
 (`Architecture::register_model`).
 
+Compiler-spec prototype p-code is registered before snippet compilation by
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callmechanisms.rs`. Default and
+named models resolve distinct entry/return payload identities from the shared
+call-mechanism namespace. Unknown boundary names are rejected rather than
+silently interpreted as a different boundary. Registration retains the compiler
+spec's declared operations; it does not identify helpers by runtime names.
+Compiled call mechanisms are snapshotted once per architecture and shared with
+function analysis. Emission first collects the whole payload, so missing compiled
+bodies, invalid storage, and unsupported control flow fail before installation.
+Straight-line installation retains operation order and memory effects. Each
+invocation reserves a fresh contiguous unique-space range, preserving overlaps
+and partial temporary references within the payload without sharing temporaries
+between calls.
+`ActionDefaultParams` installs return-boundary effects after each modeled call;
+`ActionConstbase` installs entry-boundary effects before the entry block's first
+operation. A per-function ledger prevents duplicate insertion and is discarded
+with lifted IR during reanalysis. A late prototype restriction that adds,
+removes, or changes return-boundary effects requests the existing full reflow
+path. Unsupported mechanisms stop analysis and propagate as function errors.
+Entry emission uses the same effective evaluation model selected by
+`ActionPrototypeTypes`, including ordinary functions with no prototype
+assertion. Locked models retain priority. Compiler-mechanism templates that
+reference instruction-specific placeholders such as `inst_next` are rejected;
+these boundaries do not supply an instruction-length context.
+
 The model's stack ranges come from the spec too, as upstream `ProtoModel::decode`
 takes them (`option protoranges`, default on, §6.2): the parameter range is every stack `<pentry>` of `<input>` plus any
 `<paramrange>`, and the local range is the `<localrange>` element

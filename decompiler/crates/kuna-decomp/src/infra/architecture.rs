@@ -2497,6 +2497,7 @@ pub struct Architecture {
         Rc<std::cell::RefCell<crate::stringmanage::StringManagerUnicode>>,
     /// P-code injection manager (C++ `pcodeinjectlib`).  SLEIGH-backed.
     pub pcodeinjectlib: PcodeInjectLibrarySleigh,
+    call_mechanisms: Rc<crate::kuna_callmechanisms::Mechanisms>,
     /// Comments for this architecture (C++ `commentdb`).  // STUB(comment.cc)
     pub commentdb: CommentDatabase,
 
@@ -3134,6 +3135,7 @@ impl Architecture {
                 crate::stringmanage::StringManagerUnicode::new(2048),
             )),
             pcodeinjectlib: PcodeInjectLibrarySleigh::new(inject_tempbase),
+            call_mechanisms: Rc::default(),
             commentdb: CommentDatabase::new(),
             // C++ ctor leaves types/print/defaultfp null; init() fills them.
             types: Rc::new(TypeFactoryImpl::new()),
@@ -3901,6 +3903,7 @@ impl Architecture {
     fn build_arch_handle_for_entry(&self, entry: Option<&Address>) -> ArchHandle {
         let manage = self.translate.manager_rc();
         let mut ctx = ArchContext::new_shared(manage);
+        ctx.call_mechanisms = Rc::clone(&self.call_mechanisms);
         ctx.min_laned_register_size = self.get_minimum_laned_register_size();
         // Carry the laned-register table so the per-function Funcdata reaches
         // `glb->getLanedRegister` (C++ `Architecture::lanerecords`); cheap clones
@@ -4981,6 +4984,9 @@ impl Architecture {
             Some(sleigh) => lib.parse_inject_all(sleigh.base()),
             None => Ok(()),
         };
+        if parse_res.is_ok() {
+            self.call_mechanisms = Rc::new(crate::kuna_callmechanisms::Mechanisms::from_library(&lib));
+        }
         self.pcodeinjectlib = lib;
         parse_res
     }
@@ -6070,6 +6076,8 @@ impl Architecture {
             model.set_constructor(decode_bool_attr(&v));
         }
         model.set_name(&name);
+        let (entry_inject, return_inject) = crate::kuna_callmechanisms::ids(&self.pcodeinjectlib, &name);
+        model.set_inject_ids(entry_inject, return_inject);
         let strategy = attr_str(proto, "strategy").unwrap_or_default();
         model.build_param_list(&strategy)?;
 
@@ -6832,6 +6840,12 @@ impl Architecture {
         // the whole inject library (callfixup + callotherfixup) is compiled
         // together by parseInject — the MIPS `setISAMode` fixup that makes the
         // dead ISA-mode-switch CALLOTHER injectable.
+        crate::kuna_callmechanisms::register(
+            self.cspec_xml.as_deref().map(std::str::from_utf8).transpose()
+                .map_err(|_| KunaError::lowlevel("Compiler specification is not UTF-8"))?,
+            self.translate.manager_rc().as_ref(),
+            &mut self.pcodeinjectlib,
+        )?;
         self.init_userops_and_fixups()?;
         // (kuna) Eagerly register the string-copy builtins (C++ lazy
         // `userops.registerBuiltin` is called from

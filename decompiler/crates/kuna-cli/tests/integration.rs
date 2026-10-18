@@ -494,3 +494,6 @@ mod x87_empty_return;
 
 #[path = "windows_stack_argument_alignment.rs"]
 mod windows_stack_argument_alignment;
+
+#[path = "prototype_call_mechanisms.rs"]
+mod prototype_call_mechanisms;

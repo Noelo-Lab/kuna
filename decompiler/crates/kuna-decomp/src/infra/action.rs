@@ -472,6 +472,7 @@ pub trait Action {
     /// state.
     fn perform(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         loop {
+            if data.kuna_call_mechanisms.failure.is_some() { return -1; }
             // --- the status switch with C++ fall-through preserved ---------
             let st = self.base().status;
             if st == statusflags::status_start {
