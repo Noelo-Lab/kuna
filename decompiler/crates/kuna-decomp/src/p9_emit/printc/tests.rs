@@ -2426,6 +2426,59 @@ mod w10_printc_cast_render {
         execute_float_slice_expressions(&cases);
     }
 
+    #[test]
+    fn implied_untyped_float_slices_skip_only_untyped_call_results() {
+        for producer in [OpCode::CPUI_LOAD, OpCode::CPUI_CALL] {
+            let mut context = ContextArch::new(build_manager());
+            let types = Rc::new(crate::dtype::TypeFactoryImpl::new());
+            types.set_max_basetype_size(8);
+            types.set_default_alignment_map();
+            types.set_size_of_int(4);
+            types.set_size_of_float(4);
+            types.set_size_of_long_long(8);
+            types.set_size_of_double(8);
+            types.set_core_type("uint4", 4, type_metatype::TYPE_UINT, false).unwrap();
+            types.set_core_type("uint8", 8, type_metatype::TYPE_UINT, false).unwrap();
+            types.cache_core_types().unwrap();
+            context.types = Some(types);
+            let ram = context.manage().get_space_by_name("ram").unwrap().clone();
+            let mut fd = Funcdata::new(
+                "f",
+                "f",
+                Rc::new(context),
+                Address::new(ram.clone(), 0x1000),
+                0x1000,
+                0x40,
+            )
+            .unwrap();
+            let def = mk_op(&mut fd, 1, 0x10, producer);
+            let pointer = fd.new_constant(8, 0x2000);
+            fd.op_set_input(def, pointer, 0).unwrap();
+            let source = fd.new_varnode(
+                8,
+                &Address::new(ram.clone(), 0x400),
+                Some(named("undefined8", 8, type_metatype::TYPE_UNKNOWN)),
+            );
+            fd.op_set_output(def, source).unwrap();
+            fd.vbank_mut().get_mut(source).unwrap().set_implied();
+            let op = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_SUBPIECE);
+            fd.op_set_input(op, source, 0).unwrap();
+            let zero = fd.new_constant(4, 0);
+            fd.op_set_input(op, zero, 1).unwrap();
+            let output = fd.new_varnode(
+                4,
+                &Address::new(ram, 0x500),
+                Some(named("float", 4, type_metatype::TYPE_FLOAT)),
+            );
+            fd.op_set_output(op, output).unwrap();
+            fd.set_high_level();
+            assert_eq!(
+                crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_some(),
+                producer == OpCode::CPUI_LOAD
+            );
+        }
+    }
+
     fn execute_float_slice_expressions(cases: &[(type_metatype, u64, &str, String)]) {
         use std::process::Command;
         let stem = std::env::temp_dir().join(format!(

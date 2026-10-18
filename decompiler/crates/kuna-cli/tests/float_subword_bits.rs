@@ -15,13 +15,14 @@ float low_component(uint64_t bits) { float p[2]; memcpy(p,&bits,8); return p[0];
 float high_component(uint64_t bits) { float p[2]; memcpy(p,&bits,8); return p[1]; }
 float signed_component(int64_t bits) { float p[2]; memcpy(p,&bits,8); return p[0]; }
 float numeric_component(uint64_t bits) { return (float)bits; }
+float loaded_pair(const unsigned char *buf) { uint64_t w; memcpy(&w,buf,8); float p[2]; memcpy(p,&w,8); return p[0] + p[1]; }
 "#).unwrap();
     let output = Command::new("gcc").args(["-O2", "-g", "-fPIC", "-shared"])
         .arg(&source).arg("-o").arg(&binary).output().unwrap();
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     let mut rust_code = String::new();
     let mut code = String::from("#include <stdint.h>\n#include <string.h>\n");
-    for name in ["low_component", "high_component", "signed_component", "numeric_component"] {
+    for name in ["low_component", "high_component", "signed_component", "numeric_component", "loaded_pair"] {
         let (body, err, status) = common::run_kuna(&["decompile", binary.to_str().unwrap(), name]);
         assert_eq!(status, 0, "{err}");
         let (rust, err, status) = common::run_kuna(&["decompile", binary.to_str().unwrap(), name, "--language", "rust"]);
@@ -31,8 +32,9 @@ float numeric_component(uint64_t bits) { return (float)bits; }
     }
     code.push_str(r#"
 extern float low_component(uint64_t), high_component(uint64_t), numeric_component(uint64_t);
-extern float signed_component(int64_t);
+extern float signed_component(int64_t), loaded_pair(const unsigned char *);
 static uint32_t word(float value) { uint32_t bits; memcpy(&bits,&value,4); return bits; }
+static int same(float a, float b) { return word(a) == word(b) || (a != a && b != b); }
 int main(void) {
     uint64_t inputs[] = {0, UINT64_C(0x8000000080000000), UINT64_C(0x400000003f800000),
         UINT64_C(0x7f800000ff800000), UINT64_C(0x7fc123457fc54321), UINT64_C(0x0000000100000001)};
@@ -42,6 +44,7 @@ int main(void) {
         if (word(rebuilt_high_component(bits)) != word(high_component(bits))) return 2;
         if (word(rebuilt_signed_component((int64_t)bits)) != word(signed_component((int64_t)bits))) return 4;
         if (rebuilt_numeric_component(bits) != numeric_component(bits)) return 3;
+        if (!same(rebuilt_loaded_pair((unsigned char *)&bits), loaded_pair((unsigned char *)&bits))) return 5;
     }
     return 0;
 }
@@ -67,6 +70,10 @@ fn main() { unsafe {
         assert_eq!(high_component(bits).to_bits(), (bits >> 32) as u32);
         assert_eq!(signed_component(bits as i64).to_bits(), bits as u32);
         assert_eq!(numeric_component(bits), bits as f32);
+        let mut word = bits;
+        let pair = loaded_pair((&mut word as *mut u64).cast());
+        let want = f32::from_bits(bits as u32) + f32::from_bits((bits >> 32) as u32);
+        assert!(pair.to_bits() == want.to_bits() || pair.is_nan() && want.is_nan());
     }
 } }
 "#);

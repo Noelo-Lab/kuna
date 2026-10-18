@@ -7219,10 +7219,6 @@ impl PrintC {
             self.push_cast_close(&target);
             return;
         }
-        if let Some(transfer) = crate::kuna_subfloat::transfer(fd, arch.decl_high_type, op) {
-            self.op_bit_transfer_ir(fd, arch, op, transfer);
-            return;
-        }
         // Non-special-print SUBPIECE (printc.cc:892-897): isSubpieceCast decides
         // between opTypeCast and opFunc.
         // The cast arm was previously gated out because it tripped a spurious
