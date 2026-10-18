@@ -555,8 +555,10 @@ fn is_pointer_type(meta: type_metatype) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::safe_global_source;
+    use super::{expression, safe_global_source, Byte};
     use crate::context::ArchContext;
+    use crate::database::SymbolId;
+    use crate::dtype::{type_metatype, Datatype};
     use crate::funcdata::Funcdata;
     use crate::varnode::varnode_flags;
     use kuna_base::address::Address;
@@ -663,5 +665,112 @@ mod tests {
             safe_global_source(&fd, global, use_op, Some(read)),
             Some(global)
         );
+    }
+
+    #[test]
+    fn a_call_between_a_mutable_read_and_use_blocks_reemission() {
+        let (mut fd, global, read, use_op) = global_read_fixture(false);
+        let ram = Rc::clone(
+            fd.get_arch()
+                .manage()
+                .get_space_by_name("ram")
+                .expect("default data space"),
+        );
+        let block = fd.obank().get(read).unwrap().get_parent().unwrap();
+        let call = fd.new_op(1, Address::new(Rc::clone(&ram), 0x1002));
+        fd.op_set_opcode(call, crate::typeop::type_op_for(OpCode::CPUI_CALL));
+        let target = fd.new_constant(8, 0x401000);
+        fd.op_set_input(call, target, 0).unwrap();
+        fd.op_insert(call, block, Some(use_op));
+
+        assert!(fd.obank().get(call).unwrap().is_call());
+        assert!(safe_global_source(&fd, global, use_op, Some(read)).is_none());
+    }
+
+    #[test]
+    fn subpiece_offset_and_zext_zero_bytes_survive_projection() {
+        let (mut fd, _, _, use_op) = global_read_fixture(false);
+        let ram = Rc::clone(
+            fd.get_arch()
+                .manage()
+                .get_space_by_name("ram")
+                .expect("default data space"),
+        );
+        let register = Rc::clone(
+            fd.get_arch()
+                .manage()
+                .get_space_by_name("register")
+                .expect("register space"),
+        );
+        let block = fd.obank().get(use_op).unwrap().get_parent().unwrap();
+        let global = fd.new_varnode(4, &Address::new(ram, 0x2100), None);
+
+        let copy = fd.new_op(1, Address::new(Rc::clone(&register), 0x60));
+        fd.op_set_opcode(copy, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+        fd.op_set_input(copy, global, 0).unwrap();
+        let copied = fd
+            .new_varnode_out(4, &Address::new(Rc::clone(&register), 0x60), copy)
+            .unwrap();
+        fd.op_insert(copy, block, Some(use_op));
+
+        let subpiece = fd.new_op(2, Address::new(Rc::clone(&register), 0x64));
+        fd.op_set_opcode(subpiece, crate::typeop::type_op_for(OpCode::CPUI_SUBPIECE));
+        fd.op_set_input(subpiece, copied, 0).unwrap();
+        let offset = fd.new_constant(4, 2);
+        fd.op_set_input(subpiece, offset, 1).unwrap();
+        let narrowed = fd
+            .new_varnode_out(2, &Address::new(Rc::clone(&register), 0x64), subpiece)
+            .unwrap();
+        fd.op_insert(subpiece, block, Some(use_op));
+
+        let zext = fd.new_op(1, Address::new(Rc::clone(&register), 0x68));
+        fd.op_set_opcode(zext, crate::typeop::type_op_for(OpCode::CPUI_INT_ZEXT));
+        fd.op_set_input(zext, narrowed, 0).unwrap();
+        fd.new_varnode_out(4, &Address::new(register, 0x68), zext)
+            .unwrap();
+        fd.op_insert(zext, block, Some(use_op));
+
+        let bytes = expression(
+            &fd,
+            fd.obank().get(zext).unwrap().get_out().unwrap(),
+            true,
+            32,
+            use_op,
+            SymbolId::default(),
+            None,
+        )
+        .expect("projectable source");
+        assert_eq!(bytes.len(), 4);
+        assert!(matches!(
+            bytes[0],
+            Byte::Value {
+                source,
+                byte: 2,
+                read_op: Some(op),
+            } if source == global && op == copy
+        ));
+        assert!(matches!(
+            bytes[1],
+            Byte::Value {
+                source,
+                byte: 3,
+                read_op: Some(op),
+            } if source == global && op == copy
+        ));
+        assert!(matches!(bytes[2], Byte::Constant(0)));
+        assert!(matches!(bytes[3], Byte::Constant(0)));
+    }
+
+    #[test]
+    fn pointer_constant_is_not_flattened_into_native_address_bytes() {
+        let (mut fd, _, _, use_op) = global_read_fixture(false);
+        let pointer = fd.new_constant(8, 0x402008);
+        let pointer_type = Rc::new(Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR));
+        fd.vbank_mut()
+            .get_mut(pointer)
+            .unwrap()
+            .copy_symbol_fields(pointer_type, 0);
+
+        assert!(expression(&fd, pointer, true, 16, use_op, SymbolId::default(), None,).is_none());
     }
 }
