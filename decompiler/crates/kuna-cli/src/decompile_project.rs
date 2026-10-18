@@ -315,7 +315,17 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
 
     let ok = results.iter().filter(|r| r.error.is_none()).count();
     let failed = results.len() - ok;
-    let error = BatchOutcome::of(&results).all_failed_error(&args.binary);
+    let outcomes = prog.assertion_outcomes();
+    let rejected = crate::decompile_all::report_rejected_assertions(&outcomes);
+    let refused = crate::decompile_all::any_refused_assertion(&outcomes);
+    let assertion_error = if refused {
+        Some("the pipeline refused an assertion; exported C was produced without it".to_owned())
+    } else if args.assert_strict && rejected {
+        Some("one or more assertions were rejected (--assert-strict)".to_owned())
+    } else {
+        None
+    };
+    let error = BatchOutcome::of(&results).all_failed_error(&args.binary).or(assertion_error);
     let files = sizes
         .iter()
         .map(|(n, s)| format!("{n} ({s} bytes)"))
