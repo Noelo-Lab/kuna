@@ -103,14 +103,24 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         .enumerate()
         .map(|(index, byte)| preserved(index, *byte))
         .collect();
+    let internal_stackview_copy = operation.not_printed()
+        && operation.code() == OpCode::CPUI_COPY
+        && info
+            .sym_type
+            .as_ref()
+            .is_some_and(|ty| ty.get_name().starts_with("stack_views_"));
     if matches!(size, 1 | 2 | 4 | 8) && !keep.iter().any(|keep| *keep) {
         if !matches!(
             fd.vn_type_def_facing(output).get_metatype(),
             type_metatype::TYPE_ARRAY | type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION
-        ) {
+        ) && !internal_stackview_copy
+        {
             reject!(
-                "no preserved bytes and scalar output type {:?}",
-                fd.vn_type_def_facing(output).get_metatype()
+                "no preserved bytes and scalar output type {:?}; op={:?}; internal={}; container={}",
+                fd.vn_type_def_facing(output).get_metatype(),
+                operation.code(),
+                operation.not_printed(),
+                info.sym_type.as_ref().map_or("<none>", |ty| ty.get_name())
             );
         }
     }
@@ -128,8 +138,14 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
             };
             if source_value.is_implied() && !safe_load_value(fd, source) {
                 reject!(
-                    "source varnode is implied (size {})",
-                    source_value.get_size()
+                    "source varnode is implied (size {}, readonly {}, volatile {}, def {:?})",
+                    source_value.get_size(),
+                    source_value.is_read_only(),
+                    source_value.is_volatile(),
+                    source_value
+                        .get_def()
+                        .and_then(|def| fd.obank().get(def))
+                        .map(|op| op.code())
                 );
             }
             if !matches!(source_value.get_size(), 1 | 2 | 4 | 8) {
