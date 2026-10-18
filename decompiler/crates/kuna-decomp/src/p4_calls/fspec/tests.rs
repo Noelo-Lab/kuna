@@ -2383,3 +2383,216 @@ fn stack_argument_slots_can_ignore_object_alignment() {
         assert_eq!(slot, next);
     }
 }
+
+fn padded_assignment_type(payload: i32, alignment: i32, metatype: type_metatype) -> Rc<Datatype> {
+    if metatype == type_metatype::TYPE_STRUCT {
+        return Rc::new(Datatype::new_with_align(
+            Datatype::calc_align_size(payload, alignment),
+            alignment,
+            metatype,
+        ));
+    }
+    let factory = crate::dtype::TypeFactoryImpl::new();
+    factory.set_max_basetype_size(16);
+    factory
+        .decode_alignment_map(&[(1, 1), (2, 2), (4, 4), (10, alignment)])
+        .unwrap();
+    let datatype = factory.get_base(payload, metatype).unwrap();
+    assert_eq!(datatype.get_size(), payload);
+    assert_eq!(
+        datatype.get_align_size(),
+        Datatype::calc_align_size(payload, alignment)
+    );
+    datatype
+}
+
+#[test]
+fn floating_register_assignment_uses_payload_and_preserves_stack_padding() {
+    let mut manager = fcs_manager();
+    let register = Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "register",
+        false,
+        8,
+        1,
+        5,
+        0,
+        1,
+        1,
+    ));
+    manager.insert_space(Rc::clone(&register)).unwrap();
+    let stack = Rc::clone(manager.get_space_by_name("stack").unwrap());
+    for alignment in [4, 16] {
+        let datatype = padded_assignment_type(10, alignment, type_metatype::TYPE_FLOAT);
+        let mut output = ParamListStandard::new(ParamListKind::StandardOut);
+        output.push_entry(
+            ParamEntry::seed(
+                0,
+                type_class::TYPECLASS_FLOAT,
+                Rc::clone(&register),
+                0x100,
+                10,
+                4,
+                0,
+                0,
+                false,
+                false,
+                &[],
+                &manager,
+            )
+            .unwrap(),
+        );
+        let mut status = [0];
+        let mut assigned = ParameterPieces::default();
+        assert_eq!(
+            output
+                .assign_address_fallback(
+                    type_class::TYPECLASS_FLOAT,
+                    &datatype,
+                    true,
+                    &mut status,
+                    &mut assigned,
+                    &manager,
+                )
+                .unwrap(),
+            AssignActionResponse::success
+        );
+        assert_eq!(assigned.addr.get_offset(), 0x100);
+        assert_eq!(status, [-1]);
+        assert_eq!(assigned.type_.as_ref().unwrap().get_size(), 10);
+        assert_eq!(
+            assigned.type_.as_ref().unwrap().get_align_size(),
+            datatype.get_align_size()
+        );
+
+        let mut input = ParamListStandard::new(ParamListKind::Standard);
+        input.push_entry(
+            ParamEntry::seed(
+                0,
+                type_class::TYPECLASS_FLOAT,
+                Rc::clone(&stack),
+                0,
+                128,
+                1,
+                4,
+                0,
+                true,
+                false,
+                &[],
+                &manager,
+            )
+            .unwrap(),
+        );
+        let mut status = [0];
+        for expected in [0, datatype.get_align_size() as u64] {
+            let mut assigned = ParameterPieces::default();
+            assert_eq!(
+                input
+                    .assign_address_fallback(
+                        type_class::TYPECLASS_FLOAT,
+                        &datatype,
+                        true,
+                        &mut status,
+                        &mut assigned,
+                        &manager,
+                    )
+                    .unwrap(),
+                AssignActionResponse::success
+            );
+            assert_eq!(assigned.addr.get_offset(), expected);
+        }
+    }
+}
+
+#[test]
+fn floating_register_assignment_keeps_non_payload_resources_unchanged() {
+    let mut manager = fcs_manager();
+    let register = Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "register",
+        false,
+        8,
+        1,
+        5,
+        0,
+        1,
+        1,
+    ));
+    manager.insert_space(Rc::clone(&register)).unwrap();
+    let stack = Rc::clone(manager.get_space_by_name("stack").unwrap());
+    for (space, class, metatype, payload, alignment, entry_alignment) in [
+        (
+            Rc::clone(&register),
+            type_class::TYPECLASS_GENERAL,
+            type_metatype::TYPE_FLOAT,
+            10,
+            4,
+            0,
+        ),
+        (
+            Rc::clone(&register),
+            type_class::TYPECLASS_FLOAT,
+            type_metatype::TYPE_STRUCT,
+            10,
+            4,
+            0,
+        ),
+        (
+            stack,
+            type_class::TYPECLASS_FLOAT,
+            type_metatype::TYPE_FLOAT,
+            10,
+            4,
+            0,
+        ),
+        (
+            Rc::clone(&register),
+            type_class::TYPECLASS_FLOAT,
+            type_metatype::TYPE_FLOAT,
+            10,
+            4,
+            2,
+        ),
+        (
+            register,
+            type_class::TYPECLASS_FLOAT,
+            type_metatype::TYPE_FLOAT,
+            16,
+            16,
+            0,
+        ),
+    ] {
+        let mut list = ParamListStandard::new(ParamListKind::StandardOut);
+        list.push_entry(
+            ParamEntry::seed(
+                0,
+                class,
+                space,
+                0x100,
+                10,
+                1,
+                entry_alignment,
+                0,
+                false,
+                false,
+                &[],
+                &manager,
+            )
+            .unwrap(),
+        );
+        let datatype = padded_assignment_type(payload, alignment, metatype);
+        let mut status = [0];
+        assert_eq!(
+            list.assign_address_fallback(
+                class,
+                &datatype,
+                true,
+                &mut status,
+                &mut ParameterPieces::default(),
+                &manager,
+            )
+            .unwrap(),
+            AssignActionResponse::fail
+        );
+    }
+}

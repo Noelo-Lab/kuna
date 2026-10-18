@@ -443,6 +443,13 @@ no-spill rule still splits a composite between x7 and the stack there.
 These rules model the C ABI only: a Rust-ABI two-scalar pair, which rustc may
 split between x7 and the stack, is not modelled, as on x86-64.
 
+Scalar floating parameters assigned to an exclusive floating resource in the
+register space occupy their payload size. Object alignment padding does not
+consume register storage: an x87 value has ten meaningful bytes even when its
+stack object occupies twelve or sixteen bytes. Stack resources, general
+register resources and aggregate types retain their aligned object size.
+The declared datatype and its alignment remain unchanged.
+
 ### Recovery: trials → parameters
 
 The recovery direction runs on `ParamTrial`/`ParamActive`

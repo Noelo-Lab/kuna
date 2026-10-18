@@ -2682,7 +2682,7 @@ impl ParamListStandard {
             }
             param.addr = cur_entry.get_addr_by_slot(
                 &mut status[grp as usize],
-                tp.get_align_size(),
+                crate::kuna_floatregister::storage_size(cur_entry, tp, manager),
                 tp.get_alignment(),
                 manager,
             )?;
