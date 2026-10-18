@@ -3550,3 +3550,13 @@ noninteger types, enums, widths above eight bytes and concatenations of unrelate
 halves keep their existing rendering. The option defaults on for C output; off
 restores the upstream CONCAT helper, and other output languages keep their own
 rendering.
+
+Project C results retain declarations of named direct-call targets whose input
+and output prototypes are both locked. The declarations use the ordinary C
+declarator builder, including nested pointer types and variadic parameters.
+Call-only type dependencies join the referenced type roots. Headers deduplicate
+these declarations after type definitions and keep typedef collisions diagnostic.
+Unknown or partially inferred targets do not acquire invented signatures.
+The declarations survive worker serialization and streamed body removal, and
+remain roots when pruning synthesized types. Capture is implemented in
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`.

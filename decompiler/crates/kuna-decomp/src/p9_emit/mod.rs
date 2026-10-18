@@ -70,3 +70,5 @@ pub(crate) mod kuna_stackmarkers;
 pub(crate) mod kuna_stackversions;
 
 pub(crate) mod kuna_indirectargs;
+
+pub mod kuna_callprototypes;

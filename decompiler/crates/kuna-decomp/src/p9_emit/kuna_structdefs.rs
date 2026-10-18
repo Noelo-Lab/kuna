@@ -121,6 +121,18 @@ pub fn referenced_types(fd: &Funcdata) -> Vec<Rc<Datatype>> {
             }
         }
     }
+    for index in 0..fd.num_calls() {
+        let proto = fd.get_call_specs(index).proto();
+        if !proto.has_store() || !proto.is_input_locked() || !proto.is_output_locked() {
+            continue;
+        }
+        if let Some(ty) = proto.get_output_type() { visit(ty, &mut seen, &mut order); }
+        for index in 0..proto.num_params() {
+            if let Some(ty) = proto.get_param(index).and_then(|p| p.get_type()) {
+                visit(ty, &mut seen, &mut order);
+            }
+        }
+    }
     for id in fd.vbank().iter_loc() {
         let Some(vn) = fd.vbank().get(id) else { continue };
         visit(vn.get_type(), &mut seen, &mut order);

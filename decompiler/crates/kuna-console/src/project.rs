@@ -80,6 +80,8 @@ pub struct FuncResult {
     /// header, and `decompile-graph`'s per-function row.  Always `None` on the
     /// `decompile-all` path, which does not serialize prototypes.
     pub proto: Option<String>,
+    /// Complete declarations for named callees, retained when bodies stream out.
+    pub call_declarations: Vec<String>,
     pub variables: Vec<VarInfo>,
     /// (kuna `structdefs`) The composite/enum/typedef definitions this
     /// function's C names, in definition-before-use order. Empty unless the
@@ -450,6 +452,7 @@ pub fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
     let mut hit = |hay: &str| names.iter().any(|n| contains_identifier(hay, n));
     r.code.as_deref().is_some_and(&mut hit)
         || r.proto.as_deref().is_some_and(&mut hit)
+        || r.call_declarations.iter().any(|declaration| hit(declaration))
         || r.variables.iter().any(|v| hit(&v.type_name))
         || r.types.iter().any(|t| hit(&t.name))
         || r.globals.iter().any(|g| hit(&g.declaration))
@@ -557,6 +560,7 @@ pub fn decompile_pulled(
                 size: size as i64,
                 error: Some(error),
                 proto: None,
+                call_declarations: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -593,6 +597,7 @@ pub fn decompile_pulled(
                 size: size as i64,
                 error: None,
                 proto: None,
+                call_declarations: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -617,6 +622,7 @@ pub fn decompile_pulled(
                 code: None,
                 error: Some("entry address is not mapped in this input".into()),
                 proto: None,
+                call_declarations: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -826,6 +832,9 @@ pub fn decompile_pulled(
                     let pointerargs = prog.arch_mut().print_mut().take_pointer_arguments(&untrimmed);
                     let code = untrimmed.trim_matches('\n').to_string();
                     let globals = kuna_decomp::decompile_drive::extract_global_objects(prog.arch());
+                    let call_declarations = if want_proto && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C {
+                        kuna_decomp::kuna_callprototypes::declarations(prog.arch(), &fd)
+                    } else { Vec::new() };
                     let field_calls = kuna_decomp::kuna_calltargettype::field_declarations(prog.arch(), &fd);
                     let mut variables =
                         if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
@@ -870,10 +879,10 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
-                    (code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)
+                    (code, variables, types, (globals, field_calls, call_declarations), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)
                 }));
                 match rendered {
-                    Ok((code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => {
+                    Ok((code, variables, types, (globals, field_calls, call_declarations), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => {
                     crate::assertions::verify_printed(prog, &fd, &code, &replayed);
                     sink(FuncResult {
                         name,
@@ -883,6 +892,7 @@ pub fn decompile_pulled(
                         code: Some(code),
                         error: None,
                         proto,
+                        call_declarations,
                         variables,
                         stack_objects,
                         types,
@@ -905,6 +915,7 @@ pub fn decompile_pulled(
                         code: None,
                         error: Some("panic while rendering C / extracting variables".into()),
                         proto: None,
+                        call_declarations: Vec::new(),
                         variables: Vec::new(),
                         types: Vec::new(),
                         stack_objects: Vec::new(),
@@ -928,6 +939,7 @@ pub fn decompile_pulled(
                 code: None,
                 error: Some(e.explain().to_string()),
                 proto: None,
+                call_declarations: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -1210,6 +1222,20 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
     if !globals.is_empty() {
         out.push_str("\n/* globals the code names by address */\n");
         out.push_str(&globals);
+    }
+    let own: BTreeSet<_> = results.iter().filter(|r| r.error.is_none())
+        .filter_map(|r| r.proto.as_deref()).map(str::trim).collect();
+    let calls: BTreeSet<_> = results.iter().flat_map(|r| &r.call_declarations).collect();
+    if !calls.is_empty() { out.push_str("\n/* declared call targets */\n"); }
+    for declaration in calls {
+        if own.contains(declaration.trim()) { continue; }
+        let name = declarator_name(declaration.trim().trim_end_matches(';'));
+        if shadowed.contains(&name) {
+            let _ = writeln!(out, "/* Call target declaration conflicts with a type: {} */",
+                declaration.replace("/*", "/ *").replace("*/", "* /"));
+        } else {
+            let _ = writeln!(out, "extern {declaration}");
+        }
     }
     out.push_str("\n/* function prototypes */\n");
     for r in results {
@@ -1706,6 +1732,20 @@ mod tests {
         assert!(!taken.contains("extern int dat_5004"), "{taken}");
     }
 
+    #[test]
+    fn streamed_call_declarations_keep_types_and_avoid_repeating_definitions() {
+        let mut result = streamed("int local(int a0);", "int");
+        result.call_declarations = vec![
+            "int local(int a0);".into(),
+            "int external_value(struct_42 *value);".into(),
+            "int external_value(struct_42 *value);".into(),
+        ];
+        assert!(super::names_any_type(&result, &["struct_42".into()]));
+        let header = super::build_header("fresh", "", "", &[result]);
+        assert_eq!(header.matches("extern int external_value").count(), 1);
+        assert!(!header.contains("extern int local"));
+    }
+
     /// A result carrying only what the streaming export keeps.
     fn streamed(proto: &str, param_type: &str) -> FuncResult {
         FuncResult {
@@ -1718,6 +1758,7 @@ mod tests {
             code: None,
             error: None,
             proto: Some(proto.into()),
+            call_declarations: Vec::new(),
             variables: vec![super::VarInfo {
                 name: "a0".into(),
                 type_name: param_type.into(),
