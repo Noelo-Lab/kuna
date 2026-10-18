@@ -2273,7 +2273,17 @@ moves.
   stays a `char *`. Both used to read
   as `char`, so a clang `int fwd(char *b, const char *f, unsigned char c)
   { return sprintf(b, f, c); }` printed `sprintf(b,f,c)` with `char c`, which
-  compiles to a sign extension (202 prints as -54);
+  compiles to a sign extension (202 prints as -54). An array's length is read
+  from its first `DW_TAG_subrange_type` child
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfbounds.rs`): an
+  explicit `DW_AT_count` wins, otherwise `upper - lower + 1` over signed bounds,
+  where an omitted lower bound takes the compilation unit's `DW_AT_language`
+  default (one for Fortran and Ada, zero for C, C++ and an unknown language).
+  A bound given as a reference or an expression is not a constant, and a count
+  that does not fit 64 bits is rejected rather than wrapped; both fall back to a
+  one-element array, while a count past `int4` leaves the array untyped. The
+  zero origin used to be assumed everywhere, so gfortran's `real :: a(3)` read
+  as `float a[4]` and `a(-8:-4)` as `float a[1]`;
   (3) stack locals — direct `DW_OP_fbreg` children become typelock|namelock stack
   symbols at `call_frame_cfa + fbreg`, re-seeded per decompile (§1.1); nested
   lexical-block locals and composite locations are a documented loss. (ida) The

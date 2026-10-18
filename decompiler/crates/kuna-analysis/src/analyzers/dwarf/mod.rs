@@ -119,6 +119,7 @@ mod lines;
 pub use lines::DwarfLinesPass;
 
 mod kuna_cppproto;
+mod kuna_dwarfbounds;
 mod kuna_dwarfbyref;
 
 mod kuna_typedepth;
@@ -317,7 +318,6 @@ fn snapshot_unit(
     // Parent stack of (offset, depth) to attach children to their parent.
     let mut stack: Vec<(usize, isize)> = Vec::new();
     let mut language = None;
-
     let mut cursor = unit.entries();
     while let Ok(Some(entry)) = cursor.next_dfs() {
         let off = entry.offset().0;
@@ -343,7 +343,6 @@ fn snapshot_unit(
                 p.children.push(off);
             }
         }
-
         let mut snap = DieSnap::new(entry.tag(), depth);
         snap.parent = parent_off;
         // (kuna `cppproto`) The one-hop definition->declaration link. gcc/clang put
@@ -412,15 +411,12 @@ fn snapshot_unit(
         if let Some(gimli::AttributeValue::Encoding(e)) = entry.attr_value(gimli::DW_AT_encoding) {
             snap.encoding = Some(e);
         }
-        // Array length: prefer DW_AT_count; else DW_AT_upper_bound + 1. The
-        // subrange child of a DW_TAG_array_type carries it.
-        if let Some(c) = entry.attr_value(gimli::DW_AT_count).and_then(|v| v.udata_value()) {
-            snap.array_count = Some(c);
-        } else if let Some(ub) =
-            entry.attr_value(gimli::DW_AT_upper_bound).and_then(|v| v.udata_value())
-        {
-            snap.array_count = Some(ub + 1);
-        }
+        snap.array_count = kuna_dwarfbounds::array_count(
+            entry.attr_value(gimli::DW_AT_count),
+            entry.attr_value(gimli::DW_AT_lower_bound),
+            entry.attr_value(gimli::DW_AT_upper_bound),
+            language,
+        );
         // Enumerator member value. gcc/clang emit it as `sdata` for a signed
         // underlying type and `data<N>`/`udata` otherwise, so try signed first and
         // fall back to unsigned (`udata_value` covers the `data<N>` forms gimli
@@ -631,8 +627,8 @@ fn build_datatype_at(
         }
         gimli::DW_TAG_array_type => {
             let elem = build_datatype(die.type_ref, dies, types, word_size, walk, cpp)?;
-            // The length lives on a DW_TAG_subrange_type child (DW_AT_count or
-            // upper_bound+1); fall back to 1 for a flexible/unknown array.
+            // The length lives on a DW_TAG_subrange_type child (`kuna_dwarfbounds`);
+            // fall back to 1 for a flexible/unknown array.
             let count = die
                 .children
                 .iter()
@@ -640,7 +636,8 @@ fn build_datatype_at(
                 .find(|c| c.tag == gimli::DW_TAG_subrange_type)
                 .and_then(|c| c.array_count)
                 .or(die.array_count)
-                .unwrap_or(1) as i32;
+                .unwrap_or(1);
+            let count = i32::try_from(count).ok()?;
             types.get_type_array(count.max(1), elem).ok()
         }
         // A `DW_TAG_class_type` is a structure with a default access specifier —

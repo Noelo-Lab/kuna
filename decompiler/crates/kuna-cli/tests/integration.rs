@@ -469,5 +469,11 @@ mod dwarf_reference_arguments;
 #[path = "fortran_fatal_diagnostics.rs"]
 mod fortran_fatal_diagnostics;
 
+#[path = "dwarf_array_bounds.rs"]
+mod dwarf_array_bounds;
+
+#[path = "wide_right_shift.rs"]
+mod wide_right_shift;
+
 #[path = "float_subword_bits.rs"]
 mod float_subword_bits;
