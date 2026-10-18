@@ -84,14 +84,19 @@ pub(crate) fn moves_write(fd: &Funcdata, storage: HighVariableId, value: HighVar
             // becomes an internal COPY and can disappear from C even though the
             // callee receives the object by pointer. Keep the source separate so
             // the stack write remains an assignment before the call.
-            if later_call_guard(
-                fd,
-                id,
-                output.get_addr(),
-                output.get_size(),
-                info.symbol,
-                stack,
-            ) {
+            let copy_source = high.get_instance(i);
+            let source_is_pointer = fd.vn_type_read_facing(copy_source, id).get_metatype()
+                == crate::dtype::type_metatype::TYPE_PTR;
+            if !source_is_pointer
+                && later_call_guard(
+                    fd,
+                    id,
+                    output.get_addr(),
+                    output.get_size(),
+                    info.symbol,
+                    stack,
+                )
+            {
                 return true;
             }
             if has_addr_tied_value {
