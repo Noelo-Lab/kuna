@@ -95,6 +95,9 @@ pub struct Ledger {
     pub stated: BTreeMap<uintb, Rc<Vec<NarrowParam>>>,
     /// The functions whose calls are recorded, so a redo replaces its own.
     pub recorded: BTreeSet<uintb>,
+    /// Candidate entries some decompiled body holds as a value rather than
+    /// calls: their callers cannot all be listed.
+    pub taken: BTreeSet<uintb>,
 }
 
 /// The register-wide integer parameters of a function's first decompile, or
@@ -251,7 +254,9 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &Funcdata) {
         }
         calls.push((callee.get_offset(), Site { caller: me, at: o.get_addr().get_offset(), args }));
     }
+    let taken = taken_entries(&arch.kuna_callerargs.expected, fd);
     let ledger = &mut arch.kuna_callerargs;
+    ledger.taken.extend(taken);
     if !ledger.recorded.insert(me) {
         for sites in ledger.sites.values_mut() {
             sites.retain(|s| s.caller != me);
@@ -263,6 +268,27 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &Funcdata) {
     if let Some(own) = own {
         ledger.own.insert(me, own);
     }
+}
+
+/// The candidate entries `fd` holds as a value: a constant, wherever the
+/// analysis resolved it (a literal pool, a `movw`/`movt` pair, a PC-relative
+/// `ldr`/`add pc` or `adr`), equal to an entry or to the entry with the Thumb
+/// bit, anywhere but as the target of a direct call.
+fn taken_entries(expected: &BTreeMap<uintb, Vec<uintb>>, fd: &Funcdata) -> Vec<uintb> {
+    let mut out = Vec::new();
+    for op in fd.obank().iter_alive() {
+        let Some(o) = fd.obank().get(op) else { continue };
+        for k in 0..o.num_input() {
+            let Some(c) = o.get_in(k).and_then(|x| fd.vbank().get(x)).filter(|c| c.is_constant()) else { continue };
+            let v = c.get_offset();
+            for e in [v, v & !1] {
+                if expected.contains_key(&e) {
+                    out.push(e);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The narrow kind every argument in `args` agrees on, or `None`.
@@ -295,7 +321,7 @@ pub fn decide(arch: &mut Architecture) -> Vec<uintb> {
     for (&entry, expected) in &ledger.expected {
         let (Some(own), Some(sites)) = (ledger.own.get(&entry), ledger.sites.get(&entry)) else { continue };
         let at: BTreeSet<uintb> = sites.iter().map(|s| s.at).collect();
-        if expected.is_empty() || !expected.iter().all(|e| at.contains(e)) {
+        if expected.is_empty() || ledger.taken.contains(&entry) || !expected.iter().all(|e| at.contains(e)) {
             continue;
         }
         let mut stated = Vec::new();

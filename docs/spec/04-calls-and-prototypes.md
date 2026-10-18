@@ -2831,17 +2831,25 @@ input. A compiler emits that last kind for a narrow parameter and not for an
 `int`, so it is what a statement needs; a constant or a byte load alone is as
 often passed to an `int`.
 
-A function is a candidate only when the call graph lists every caller
-(`CallGraph::arm_closed_sites` in the CLI): no word of any loaded section holds
-its entry or its entry with the Thumb bit (a vector table, a pointer table, a
-literal pool), no `movw`/`movt` pair anywhere in code could build it (the halves
-are not matched, so a coincidence leaves the function open), it is not exported
-or the entry point, the cross-reference walk materializes its address nowhere,
-and every reference to it is a call or tail jump from a known function. When
-the first pass is over, `decide` requires a recorded CALL at every one of those
-references, including a function's calls to itself; a tail jump decompiled as a
-branch, a caller that failed or a call through a register leaves the list
-incomplete and nothing is stated. For each of the function's own register-wide
+A function is a candidate only when its callers can all be listed, which is
+checked from two sides, each erring toward leaving the function open. The image
+is scanned once (`arm_closure.rs (scan)` in the CLI): no 32-bit value at any byte
+offset of a loaded section is the entry or the entry with the Thumb bit (a vector
+table, a literal pool, a pointer in a packed record), no `movw`/`movt` pair could
+build it (the halves are not matched), no PC-relative build lands on it (an
+`adr`, or a literal `ldr rX, [pc, #]` followed within 64 bytes by `add rX, pc`:
+the Thumb-2 and A32 PIC idiom of Linux and Android shared code), it is not
+exported or the entry point, and every instruction that decodes as a direct
+branch or call to it (decoded at every offset an instruction could start at) is
+a call or tail jump the cross-reference walk attributes to a known function,
+the function itself included (`CallGraph::arm_closed_sites`). And no decompiled
+body holds the entry as a value (`taken_entries`): any constant the analysis
+resolved, whatever idiom built it, equal to the entry or the entry with the Thumb
+bit anywhere but as a direct call's target. When the first pass is over,
+`decide` requires a recorded CALL at every listed reference, including a
+function's calls to itself; a tail jump decompiled as a branch, a caller that
+failed or a call through a register leaves the list incomplete and nothing is
+stated. For each of the function's own register-wide
 integer parameters, every call must pass a value of one narrow kind in that
 same register: all 0 or 1 with one of them computed (`bool`), or zero-fitting
 with one caller zero-extending (`unsigned char`/`unsigned short` at the widest
