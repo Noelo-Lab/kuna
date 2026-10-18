@@ -7286,3 +7286,22 @@ require every reachable predecessor, including loop entry paths, to agree.
 Return recovery withdraws an unlocked ST0 trial only when every remaining
 ordinary return has that proof. Explicit and caller-forced results take priority.
 Restarting analysis clears and rebuilds the evidence.
+Qualified console `map param` and `map return` declarations resolve their function
+selector through the same entry resolver as `map prototype`. The resolved entry
+receives the storage pieces immediately; its entry address also keys pending
+rebuilds and callee replay, keeping same-name functions independent. An explicit unmapped address is rejected rather than
+accepted as an inert function name. Partial input-only and output-only declarations
+retain their existing inference behavior. This binding is implemented in
+`decompiler/crates/kuna-console/src/kuna_qualifiedstorage.rs`.
+
+For an exact indirect function slot, explicitly parked prototype pieces take
+priority over its cached code-type prototype. Partial input or output storage
+declarations must be read from that slot even when its original type already
+contains a placeholder signature. Undeclared slots continue to use their types.
+
+When an indirect target resolves to a function symbol, its parked pieces are
+used to construct the callee prototype before conversion to a direct call. This
+prevents a placeholder code type from replacing explicit register declarations.
+Output-only pieces retain unlocked inputs; injection and non-return attributes
+remain attached to the resolved symbol. The construction lives in
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.

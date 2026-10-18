@@ -2540,6 +2540,15 @@ impl ArchContext {
                 continue;
             }
             let entry_addr = Address::new(std::rc::Rc::clone(space), e.first);
+            if let Some(mut proto) = crate::kuna_qualifiedcall::prototype(self, &entry_addr) {
+                if e.func_inject_id >= 0 {
+                    proto.set_inject_id(e.func_inject_id);
+                }
+                if e.func_no_return {
+                    proto.set_no_return(true);
+                }
+                return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(proto)));
+            }
             // Prefer a recovered code prototype when the type carries one (a
             // declared callee, e.g. `parse line extern void f(...)`); otherwise
             // hand back the default void proto the C++ funcsym's `getFuncProto`
