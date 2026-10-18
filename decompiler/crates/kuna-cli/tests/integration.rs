@@ -464,3 +464,6 @@ mod float_field_slices;
 mod float_storage_truncation;
 #[path = "dwarf_reference_arguments.rs"]
 mod dwarf_reference_arguments;
+
+#[path = "fortran_fatal_diagnostics.rs"]
+mod fortran_fatal_diagnostics;
