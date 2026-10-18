@@ -561,6 +561,29 @@ cast is redundant, though never wrong. Only an output language whose
 has no option because it only restores a conversion the binary performed.
 Pinned by `tests/stages/kuna-truncarg.xml`.
 
+**An `int`-wide trimmed argument.** The same trim cuts an 8-byte register the
+binary zero-extended a 32-bit value into (`mov %edi,%edi`, any 32-bit write on
+x86-64, `uxtw` or a `w` register on AArch64) back to the 4-byte value. C then
+converts that `int`-wide argument to the callee's parameter by its own sign: a
+signed `int` whose top bit is set reaches a `long` parameter sign-extended, the
+opposite of what the binary passed, though promotion itself changes nothing at
+this width. `narrowed_arg_cast` therefore also takes a recorded input exactly
+`sizeof(int)` wide (`kuna_truncarg.rs (int_arg_cast)`), but only where the
+callee is known to read the register wider: `decompile-all`'s callee-first
+`protoorder` statement for the callee gives the parameter in the same storage
+more bytes than the argument (`kuna_truncarg.rs (callee_reads_wider)`). Without
+that statement the parameter may be exactly the argument's width, and C
+converts to it exactly. Under it, an argument whose C type is signed
+(`kuna_unsignedread.rs (c_int)`, else its read-facing type) and whose
+nonzero-bit mask leaves the top bit possibly set is cast to the unsigned
+integer of its width: `sinkl((unsigned int)v1)`. A declared prototype that
+locks the slot again gets no cast. The signedness walk counts the same reader
+as an unsigned demand (`kuna_truncarg.rs (zext_trimmed_arg)`), so a variable
+it would otherwise re-declare `int` for a signed comparison stays `unsigned
+int` there, and `sul(v2)` keeps zero-extending. A value the binary
+sign-extended (`movsxd`, `sxtw`) leaves no record and keeps `sinkl((long)v)`.
+Pinned by `tests/cli/zero-extended-int-argument-keeps-its-extension.json`.
+
 The default arm has one more fallback, for the target of an indirect call. A
 pointer to the prototype-less `code`, or to `void`, needs no cast under
 `cast_standard`, which never casts to or from either, but C cannot call it.

@@ -61,12 +61,15 @@ pub(crate) fn narrowed_arg_cast(
     let invn = o.get_in(slot)?;
     let vn = data.vbank().get(invn)?;
     let size = vn.get_size();
-    if size >= strat.promote_size() || vn.is_annotation() {
+    if size > strat.promote_size() || vn.is_annotation() {
         return None;
     }
     let fc = data.get_call_specs(data.get_call_specs_index(op)?);
     if !fc.is_zext_trimmed_input(slot, size, ninputs) {
         return None;
+    }
+    if size == strat.promote_size() {
+        return int_arg_cast(data, strat, op, slot, invn, size);
     }
     let is_const = vn.is_constant();
     if declared_param(data, op, slot) {
@@ -101,6 +104,70 @@ pub(crate) fn narrowed_arg_cast(
         return None;
     }
     Some(ct)
+}
+
+/// The cast an `int`-wide argument trimmed from a zero-extended register needs
+/// when the callee reads the register wider: C converts the argument to that
+/// parameter by its own sign, so a signed `int` whose top bit can be set would
+/// be sign-extended where the binary zero-extended it. It is cast to the
+/// unsigned integer of its size, unless a declared prototype fixes the
+/// parameter or its value cannot be negative.
+fn int_arg_cast(
+    data: &mut Funcdata,
+    strat: &CastStrategyC,
+    op: OpId,
+    slot: int4,
+    invn: VarnodeId,
+    size: int4,
+) -> Option<Rc<Datatype>> {
+    if declared_param(data, op, slot) || !callee_reads_wider(data, op, slot, size) {
+        return None;
+    }
+    let v = data.vbank().get(invn)?;
+    if !kuna_base::address::signbit_negative(v.get_nz_mask(), size) {
+        return None;
+    }
+    let signed = match crate::kuna_unsignedread::c_int(data, strat, invn, op) {
+        Some((unsigned, width)) => !unsigned && width == size,
+        None => data.vn_high_type_read_facing(invn, op).get_metatype() == type_metatype::TYPE_INT,
+    };
+    if !signed {
+        return None;
+    }
+    data.get_arch().types_rc()?.get_base(size, type_metatype::TYPE_UINT).ok()
+}
+
+/// Does the callee's own recovery (stated by `protoorder`) read argument `slot`
+/// of the call `op` wider than `size`, in the storage the caller passes it in?
+/// Without that statement the parameter may be no wider than the argument,
+/// which C then converts to exactly, so nothing is assumed.
+fn callee_reads_wider(data: &Funcdata, op: OpId, slot: int4, size: int4) -> bool {
+    let Some(i) = data.get_call_specs_index(op) else { return false };
+    let fc = data.get_call_specs(i);
+    let Some(stated) = data.kuna_protoorder_types(fc.get_entry_address()) else { return false };
+    let index = (slot - 1) as usize;
+    let (Some((addr, _)), Some((paddr, psize, _))) = (fc.final_input_storage().get(index), stated.inputs.get(index))
+    else {
+        return false;
+    };
+    *psize > size
+        && paddr.get_space().map(|s| s.get_index()) == addr.get_space().map(|s| s.get_index())
+        && paddr.get_offset() == addr.get_offset()
+}
+
+/// Was input `slot` of the call `op` trimmed from a register the binary
+/// zero-extended it into, for a callee that reads that register wider?
+pub(crate) fn zext_trimmed_arg(data: &Funcdata, op: OpId, slot: int4) -> bool {
+    let Some(o) = data.obank().get(op) else { return false };
+    if !matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) || slot < 1 {
+        return false;
+    }
+    let Some(size) = o.get_in(slot).and_then(|v| data.vbank().get(v)).map(|v| v.get_size()) else {
+        return false;
+    };
+    let ninputs = o.num_input();
+    data.get_call_specs_index(op).is_some_and(|i| data.get_call_specs(i).is_zext_trimmed_input(slot, size, ninputs))
+        && callee_reads_wider(data, op, slot, size)
 }
 
 /// Did narrowing the call input `vn` to the logical value under `mask` drop only
