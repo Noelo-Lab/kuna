@@ -1286,6 +1286,12 @@ two incoming parameters, a replacement inside that Pair, and a read inside an
 incoming 64-bit word. CLI tests compile unchanged C with GCC and Clang at O0/O2
 after logical name/type assertions in both orders. Rebuild from its `.S` header.
 
+`stackhome_alias_x86_64` covers #1121: a Windows x64 `reuse` stores call keys in
+RCX's home slot and in its fifth argument's slot, so the overlapping stack entries
+`stackviews` creates are listed out of address order. Its `_start` checks the native
+logs `[12, 10, 11]` and `[12]`; `kuna-cli/tests/stack_home_aliases.rs` runs the C
+printed with `stackviews on` under GCC and Clang at O0/O2. Rebuild from its `.S` header.
+
 `storecopyeffects.c` and `storecopyeffects_{clang_O0_aarch64,clang_O2_aarch64,gcc_O0_x86_64,gcc_O2_x86_64}.o` reproduce direct stores whose pointers resolve after memory SSA guards were created. Build with `clang --target=aarch64-linux-gnu -O0|-O2 -fno-strict-aliasing -c storecopyeffects.c` and `gcc -O0|-O2 -fno-strict-aliasing -fno-pie -c storecopyeffects.c` (clang 14.0.0, gcc 11.4.0). `kuna-cli/tests/store_copy_effects.rs` recompiles the printed functions with a callback recording and changing `gi`, checking stores between calls, aliasing and distinct pointers, loads before a later store, branches, and a dead-store control. Define `STORECOPY_DRIVER` to run the original source; add `STORECOPY_HARNESS` to replace its functions with the printed C.
 
 ### Spilled pointers to local arrays

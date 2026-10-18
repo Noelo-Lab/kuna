@@ -331,6 +331,9 @@ mod stack_object_lifetimes;
 #[path = "stack_parameter_lifetimes.rs"]
 mod stack_parameter_lifetimes;
 
+#[path = "stack_home_aliases.rs"]
+mod stack_home_aliases;
+
 #[path = "stack_struct.rs"]
 mod stack_struct;
 
@@ -480,6 +483,14 @@ mod float_subword_bits;
 
 #[path = "x87_custom_storage.rs"]
 mod x87_custom_storage;
+
+#[path = "dwarf_complex_values.rs"]
+mod dwarf_complex_values;
+#[path = "project_direct_globals.rs"]
+mod project_direct_globals;
+
+#[path = "x87_empty_return.rs"]
+mod x87_empty_return;
 
 #[path = "windows_stack_argument_alignment.rs"]
 mod windows_stack_argument_alignment;

@@ -157,6 +157,7 @@ pub struct DirectiveSymbol {
 }
 
 pub struct Funcdata {
+    pub(crate) kuna_x87_empty_returns: Vec<Address>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -706,6 +707,7 @@ impl Funcdata {
 
         Ok(Funcdata {
             kuna_fpu_trunc_views: Vec::new(),
+            kuna_x87_empty_returns: Vec::new(),
             flags: 0,
             clean_up_index: 0,
             high_level_index: 0,
@@ -4016,6 +4018,7 @@ impl Funcdata {
         self.kuna_regnarrow_values.clear();
         self.kuna_regnarrow_failed.clear();
         self.kuna_fpu_trunc_views.clear();
+        self.kuna_x87_empty_returns.clear();
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
             | funcdata_flags::blocks_generated

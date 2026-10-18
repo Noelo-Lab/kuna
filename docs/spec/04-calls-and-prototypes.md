@@ -7274,3 +7274,15 @@ return what they tail-call or call, and nine PLT stubs return the import's resul
 (`v1 = (*dat_17e58)(); return v1;` for `lseek`). Each prints the signature
 `decompile-all` prints. Only a function whose callers read it pays for a second
 drive.
+
+An explicitly freed x87 ST0 is not an inferred return value. Before SSA, a
+must-empty analysis records ordinary returns reached with ST0 empty on every
+path. FFREE must name the raw ST0 register; equal values in ST1 do not qualify.
+Any later ST0 write, tag-word write, call, or other opaque user-op withdraws
+the proof. Partial accesses to the x87 register bank also withdraw it: they
+include MMX instructions whose tag effects the SLEIGH lift may leave implicit.
+A function with no FFREE bypasses the graph analysis. Joins
+require every reachable predecessor, including loop entry paths, to agree.
+Return recovery withdraws an unlocked ST0 trial only when every remaining
+ordinary return has that proof. Explicit and caller-forced results take priority.
+Restarting analysis clears and rebuilds the evidence.

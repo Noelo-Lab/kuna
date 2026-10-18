@@ -3973,6 +3973,7 @@ impl Architecture {
                 .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
                 .collect()
         };
+        ctx.x87_empty_storage = crate::p4_calls::kuna_x87emptyreturn::storage(self);
         ctx.retsysreg_userops = ids(crate::kuna_retsysreg::STATE_USEROP_NAMES);
         ctx.retsysreg_cop_userops = ids(crate::kuna_retsysreg::COP_USEROP_NAMES);
         // (kuna) carry the terminal-no-return trial gate so `only_op_use` reaches

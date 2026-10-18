@@ -619,6 +619,7 @@ mod tests;
 /// queries can use the remote scope. [`ArchHandle`] shares this context between
 /// the function and its analysis passes.
 pub struct ArchContext {
+    pub x87_empty_storage: Option<crate::p4_calls::kuna_x87emptyreturn::Storage>,
     /// Shared spaces retain the pointer identities and indices used by lifted
     /// Varnodes. [`Self::new_shared`] accepts the engine's manager; [`Self::new`]
     /// wraps an owned manager for fixtures.
@@ -1721,6 +1722,7 @@ impl ArchContext {
         ArchContext {
             manage,
             min_laned_register_size: 4,
+            x87_empty_storage: None,
             lanerecords: Vec::new(),
             opbehaviors: Vec::new(),
             floatformats: Vec::new(),
