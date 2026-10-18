@@ -2232,6 +2232,20 @@ moves.
   and read back at *two* points: by a caller's `ActionDefaultParams` for the call
   site, and by the drive as the function's own locked prototype (04 §4.2 —
   `int main(int argc, char **argv)`, not `undefined16 main(uint4, void*)`);
+  a formal parameter of a Fortran compilation unit whose location is exactly
+  `DW_OP_fbreg` followed by `DW_OP_deref`
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfbyref.rs`)
+  receives a pointer to its described value type. GNU Fortran passes every
+  non-`VALUE` dummy argument by reference but describes it by its value type
+  plus a frame slot that holds the address; taking that value type as the ABI
+  argument instead selected floating registers for a `real` dummy and
+  disconnected the incoming address, so `output = sample + bias` printed as
+  three unrelated pointer locals. Plain frame slots, including Fortran `VALUE`
+  arguments, keep their value types. Other source languages are not inferred
+  from this pattern (a C++ class passed by invisible reference carries the same
+  location form), nor are composite expressions or the optimized forms
+  (`DW_OP_breg<n> 0`, location lists), which still import the value type. Both
+  the name-bound and the address-bound prototype import paths apply the rule;
   a `DW_TAG_enumeration_type` becomes a real enum type — name, declared width,
   signedness, and the `DW_TAG_enumerator` value→name map (05 §5.1), which is what
   turns `quotearg_style(4, …)` into
@@ -2259,7 +2273,17 @@ moves.
   stays a `char *`. Both used to read
   as `char`, so a clang `int fwd(char *b, const char *f, unsigned char c)
   { return sprintf(b, f, c); }` printed `sprintf(b,f,c)` with `char c`, which
-  compiles to a sign extension (202 prints as -54);
+  compiles to a sign extension (202 prints as -54). An array's length is read
+  from its first `DW_TAG_subrange_type` child
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfbounds.rs`): an
+  explicit `DW_AT_count` wins, otherwise `upper - lower + 1` over signed bounds,
+  where an omitted lower bound takes the compilation unit's `DW_AT_language`
+  default (one for Fortran and Ada, zero for C, C++ and an unknown language).
+  A bound given as a reference or an expression is not a constant, and a count
+  that does not fit 64 bits is rejected rather than wrapped; both fall back to a
+  one-element array, while a count past `int4` leaves the array untyped. The
+  zero origin used to be assumed everywhere, so gfortran's `real :: a(3)` read
+  as `float a[4]` and `a(-8:-4)` as `float a[1]`;
   (3) stack locals — direct `DW_OP_fbreg` children become typelock|namelock stack
   symbols at `call_frame_cfa + fbreg`, re-seeded per decompile (§1.1); nested
   lexical-block locals and composite locations are a documented loss. (ida) The
@@ -6282,13 +6306,19 @@ its own `# (kuna divergence, DIV-nn)` comment: (DIV-21) the genuinely-unconditio
 libc additions upstream omits — the BSD `err`/`errx`/`verr`/`verrx`/`errc`/`verrc`
 family, `quick_exit`, `__assert_perror_fail`, `__chk_fail`, `__libc_fatal`;
 `warn`/`warnx` return and stay out — and (DIV-78) the libstdc++ `std::__throw_*`
-family, below), widened by a Rust wildcard list (`core::panicking::panic*`,
+family, below — plus a GNU Fortran block: the four libgfortran fatal diagnostics
+`_gfortran_runtime_error`, `_gfortran_runtime_error_at`, `_gfortran_os_error` and
+`_gfortran_os_error_at`, which libgfortran declares no-return; the warning
+`_gfortran_runtime_warning_at` and the recoverable I/O error
+`_gfortran_generate_error` return and stay out, and the block lists exact names, not
+a `_gfortran_` prefix), widened by a Rust wildcard list (`core::panicking::panic*`,
 `handle_alloc_error`, `rust_begin_unwind`) or a Go exact list (`runtime.gopanic`,
 `runtime.throw`, `runtime.goexit`, …) when source-language detection fires (§1.4),
-or replaced by the PE/Mach-O list (`__fastfail`, `_invoke_watson`, plus the shared
-C names) off-ELF. The scan mirrors the exact symbol streams the loader installs and
-emits the *install* address — for a UND import, the PLT-stub address, since the
-`.dynsym` entry is address 0 and demangling means a raw-name lookup would miss.
+or replaced by the PE/Mach-O list (`__fastfail`, `_invoke_watson`, the same GNU
+Fortran block, plus the shared C names) off-ELF. The scan mirrors the exact symbol
+streams the loader installs and emits the *install* address — for a UND import, the
+PLT-stub address, since the `.dynsym` entry is address 0 and demangling means a
+raw-name lookup would miss.
 Name-based: free, exact, and useless on stripped custom wrappers.
 
 **Discovered, ≥3 evidence** (`noreturn_disc`,

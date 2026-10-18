@@ -128,7 +128,7 @@ const IMAGES: &[(&str, &[(&str, &str)])] = &[
     (
         "castnarrow_clang_O2_x86_64",
         &[
-            ("v5 = (unsigned int)a0;", "v5 = a0;"),
+            ("v4 = (unsigned int)a0;", "v4 = a0;"),
             ("v1 = (int)v3;", "v1 = v3;"),
             ("v1 = (int)a0;", "v1 = a0;"),
             ("v1 = (short)a0;", "v1 = a0;"),

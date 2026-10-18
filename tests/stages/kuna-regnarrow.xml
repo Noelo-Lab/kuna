@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    regnarrow: a register local declared at the width all of its values fit.
+
+    A uint8_t loop counter lives in a whole register; the compiler truncates
+    it after every increment:
+        count_bytes: movs r3,#0; movs r2,#0
+                 1:  ldrb r1,[r0,r3]; add r2,r1; adds r3,#1; uxtb r3,r3
+                     cmp r3,#10; bne 1b; mov r0,r2; bx lr
+    Every value of the counter's web (the 0, and each `uxtb`) fits its low
+    byte, and one of them can set bit 7, so the counter is an `unsigned char`
+    and `v1 = v1 + 1 & 0xff` becomes `v1 += 1`.  Without the option it is
+    `unsigned int`.
+    Two controls keep the register's width either way:
+        count_words: the same loop with no `uxtb`; the counter's values do not
+                     fit a byte.
+        halve:       lsrs r1,r0,#24; movs r2,#0
+                 1:  adds r2,r2,r1; lsrs r1,r1,#1; bne 1b
+                     adds r0,r0,r2; bx lr
+                     every value of the counter (r1) fits a byte, but only by
+                     arithmetic (two right shifts), which is as often an `int`
+                     as a narrow value: no zero extension, mask or constant.
+
+    Stage: P3 simplification quiescence (fullloop's ActionDeadCode rebuilds the
+    web at the narrow width through SubvariableFlow).  P0 assertion: option
+    regnarrow on|off.  Pass 1 (default on) proves the fix (#1); pass 2 (off)
+    restores the register-wide counter (#2, #3); the controls are the same in
+    both passes (#4, #5).
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+00230022c15c0a440133dbb20a2bf9d11046704700bf00bf00bf00bf00bf00bf
+0023002250f823100a4401330a2bf9d11046704700bf00bf00bf00bf00bf00bf
+010e002252184908fcd180187047
+</bytechunk>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x10000] [ram,0x1004f]</com>
+  <com>map function r0x10000 count_bytes</com>
+  <com>map function r0x10020 count_words</com>
+  <com>map function r0x10040 halve</com>
+  <com>lo fu count_bytes</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu count_words</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu halve</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option regnarrow off</com>
+  <com>lo fu count_bytes</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu count_words</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu halve</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="REGNARROW #1: default declares the uint8_t counter unsigned char" min="1" max="1">uint1 v2; // r3</stringmatch>
+<stringmatch name="REGNARROW #2: off keeps the register-wide counter" min="1" max="1">uint4 v2; // r3</stringmatch>
+<stringmatch name="REGNARROW #3: off re-truncates every increment" min="1" max="1">v2 = v2 \+ 1 &amp; 0xff;</stringmatch>
+<stringmatch name="REGNARROW #4: a counter whose values do not fit a byte keeps its width" min="2" max="2">^  int4 v2; // r3$</stringmatch>
+<stringmatch name="REGNARROW #5: a value small only by arithmetic keeps its width" min="2" max="2">^  uint4 v1; // r1$</stringmatch>
+</decompilertest>

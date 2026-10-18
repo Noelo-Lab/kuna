@@ -79,6 +79,11 @@ tr.opt.hide { display: none; }
 "use strict";
 renderTopbar("atlas");
 const atlas = dataOf("atlas");
+const coverageData = dataOf("coverage");
+const coverageByFolder = {};
+if (coverageData) {
+  for (const row of coverageData.phases) coverageByFolder[row.folder] = row.lines.percent;
+}
 const main = document.getElementById("main");
 if (!atlas) {
   main.innerHTML = "<h1>Architecture atlas</h1>" + missingNotice("atlas");
@@ -163,7 +168,7 @@ function renderPhaseCard(phase, isShared) {
   let body = `
     <div class="phase-head">
       <h2 id="card-${esc(id)}">${phaseChip(id, id)} ${esc(name)}</h2>
-      <span class="sizes">${fmt(phase.loc)} loc · ${fmt(phase.files)} files</span>${spec}
+      <span class="sizes">${fmt(phase.loc)} loc · ${fmt(phase.files)} files</span>${coverageNote(id)}${spec}
     </div>
     ${phase.artifact ? `<p class="artifact"><b>Owns:</b> ${esc(phase.artifact)}</p>` : ""}
     ${phase.readsAs ? `<p class="artifact"><b>Reads as:</b> ${esc(phase.readsAs)} <span class="mono hint">(${esc(phase.folder)}/)</span></p>` : ""}`;
@@ -205,6 +210,13 @@ function renderPhaseCard(phase, isShared) {
       phase.surfaces.map((surface) => `<span class="chip">${esc(surface.surface)}</span>`).join(" ") + "</p></details>";
   }
   main.insertAdjacentHTML("beforeend", `<section class="card">${body}</section>`);
+}
+
+function coverageNote(id) {
+  const percent = coverageByFolder[id];
+  if (percent === undefined) return "";
+  return `<span class="sizes" title="line coverage (make coverage)">· <a href="./coverage.html"
+    style="color:inherit">${percent.toFixed(1)}% covered</a></span>`;
 }
 
 function wireOptionFilter() {

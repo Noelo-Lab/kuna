@@ -1875,6 +1875,84 @@ into the global stops printing, which drops the global's store. With nothing bet
 two, the split still happens at the COPY, as upstream does. This is a strict fix
 with no option (`tests/stages/kuna-aliasoverlap.xml` #5 to #8).
 
+### (kuna) `regnarrow` — a register local at the width its values fit
+
+A `uint8_t` loop counter on ARM lives in a whole register and the compiler
+truncates it after every increment (`adds r5, #1; uxtb r5, r5`); a byte read with
+`ldrb` stays zero-extended in its register; an x86-64 `unsigned` counter written
+through `%eax` is the zero extension of a 32-bit sum in `%rax`, which an index
+reads whole. The SSA web that becomes the variable is register-wide, and the
+local prints as `unsigned int` or `unsigned long`, with `v = v + 1 & 0xff` in the
+body. The trigger rules above never narrow it: the web is read at full width (an
+index, a compare, a call argument), and upstream refuses a flow whose container
+is consumed beyond the logical value.
+
+`regnarrow` (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_regnarrow.rs`)
+looks at every web of register Varnodes that MULTIEQUALs join, and at a single
+register definition read at least twice (`narrow_locals`). The nonzero-bit
+masks (`ActionNonzeroMask`) of all its members must fit a low 1, 2 or 4 bytes
+narrower than the register, and must reach that part's top bit; and every value
+that enters the web from outside it must be an explicit narrowing: a zero
+extension from at most that width (not of a memory-tied value, which the narrow
+web would merge into), a mask by a constant that keeps only those bytes, a
+constant, or a copy. A web that is small only by arithmetic (`x >> 24`,
+`x / 60`, a counter incremented a few times on straight-line paths) is as often
+an `int` as a narrow value and is left alone, and so is a single masked value
+with no MULTIEQUAL (`masked_copy`): its narrow value would only be the low part
+of the wider one, which every full-width reader widens back into a mask of its
+own. No member may be an input or tied to memory.
+
+The web is then rebuilt by `SubvariableFlow` in a zero-extended mode
+(`subflow.rs (run_zext_uses)`): every container the flow reaches whose bits
+above the logical value are known zero may be read at full width, and such a
+reader takes the `INT_ZEXT` of the narrow value in that input slot
+(`ZextUsePatch`), which is exactly the value it read before. A copy into
+another register (or into a stack slot not tied to memory, so a `-O0` local
+spilled to the frame narrows with its register), and an arithmetic or bitwise
+reader whose result is consumed only in the low bytes (`v + 1` feeding the
+`& 0xff`, a mask whose result is not widened again), are narrowed with the web,
+and so is a call argument the callee consumes only in those bytes
+(`try_call_pull`) when the call's parameter is no wider than the narrow value
+(`narrow_param`). Below `int` such an argument reads the zero extension, which
+the argument trimming may drop again and `kuna_truncarg` restores as a cast; a
+web of `int` width read at a wider parameter is not narrowed at all, because
+C would convert the trimmed `int` argument to the parameter by its declared sign
+where the binary zero-extended it. A wider extension, a shift, a compare, a load or store
+address and every other reader take the extension. A value the flow reaches backward whose definition it cannot narrow
+(a load, a call, a right shift) or whose other readers need its full width is
+read through a SUBPIECE after its definition and keeps its width (a leaf). The
+flow aborts at a function input, at an `INDIRECT`, at a `RETURN` or the copy heritage puts
+in front of one (return recovery splits a returned phi into one return per path,
+which a returned extension would stop) and at a user-op's register operand (a
+syscall number).
+The trace must close: every placeholder op has all its inputs, so the rewrite
+is never applied half way, and the zero-pull refusal above does not apply,
+since the members themselves change width.
+
+The pass runs in `fullloop`'s `ActionDeadCode` after `narrowargs`, once `mainloop`
+has settled, so the nonzero and consume masks it reads are current; a rewrite
+makes `fullloop` repeat, and `mainloop` folds the narrow arithmetic
+(`v2 = v1 + 1 & 0xff` becomes `v2 = v1 + 1`). A function is rewritten at most
+twice (`Funcdata::kuna_regnarrow_runs`). The p-code computes the same values
+as before. The printed C does not automatically: C promotes a narrow operand to
+`int` before it computes, so a narrowed `v + 1` is 256 in C where the byte
+register holds 0, and a promoted sum is a signed `int`. The emission rules for
+promoted operands make up the difference where a read depends on it: the
+upstream integer-promotion casts at an extension, a comparison, a division or a
+right shift, and the kuna unsigned-read and narrow-switch-selector rules of
+chapter 9 (`kuna_unsignedread`, `kuna_narrowselector`). The narrow values the
+pass creates are recorded (`Funcdata::kuna_regnarrow_values`), and type
+inference gives one that nothing else types the unsigned integer of its width
+(`unsigned_vote`): the value is the zero-extended low part of a register. The
+local is therefore usually declared `unsigned char`, `unsigned short` or
+`unsigned int`, but a value loaded through a `char *` keeps `char`, and its
+zero-extending reads then print `(unsigned char)` casts. On decbench's
+type_match the declared width is what moves: a
+`uint8_t` counter or a byte read from a `uint8_t` field matches `char`, and an
+x86-64 `int` matches `int`; a local the source declares `int` or an enum but
+only ever loads from a byte field narrows too, and the binary cannot tell the
+two apart (`tests/stages/kuna-regnarrow.xml`, `kuna-regnarrow-x86.xml`).
+
 ## 3.4 Conditional execution
 
 `decompiler/crates/kuna-decomp/src/p3_dataflow/condexe.rs

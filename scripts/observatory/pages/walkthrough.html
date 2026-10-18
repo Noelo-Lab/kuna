@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kuna Walkthrough</title>
+<style>
+@@BASE_CSS@@
+.stagenav { display: flex; gap: 6px; flex-wrap: wrap; position: sticky; top: 42px;
+  background: var(--page); padding: 8px 0; z-index: 5; border-bottom: 1px solid var(--grid); }
+.stagenav a { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
+  border: 1px solid var(--border); border-radius: 999px; text-decoration: none;
+  color: var(--ink-2); font-size: 12.5px; }
+.stagenav a:hover { border-color: var(--accent); color: var(--ink); }
+.stagenav .num { font-family: var(--mono); color: var(--muted); }
+.stagenav .mode { margin-left: auto; }
+.stage h2 { scroll-margin-top: 96px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.stage h2 .num { color: var(--muted); font-family: var(--mono); font-size: 14px; }
+.stage .meta-line { color: var(--ink-2); font-size: 13px; margin: 2px 0 8px; }
+.stage .meta-line code { color: var(--muted); }
+pre.dump { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; overflow: auto; max-height: 420px; font-size: 12.5px; line-height: 1.45;
+  font-family: var(--mono); }
+.compare { display: none; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+.compare.on { display: grid; }
+.compare pre.dump { max-height: 72vh; }
+.compare select { margin-bottom: 8px; }
+body.comparing .stage { display: none; }
+@media (max-width: 900px) { .compare.on { grid-template-columns: 1fr; } }
+</style>
+<script>
+@@BASE_JS@@
+</script>
+</head>
+<body>
+@@DATA@@
+<main class="wrap" id="main"></main>
+<script>
+"use strict";
+renderTopbar("walkthrough");
+const walkthrough = dataOf("walkthrough");
+const main = document.getElementById("main");
+
+function build() {
+  const meta = walkthrough.meta;
+  main.insertAdjacentHTML("beforeend", `
+    <h1>Bytes → C</h1>
+    <p class="lede">One real function — <code>${esc(meta.function)}</code> from
+    <code>${esc(meta.binary)}</code> — at every stage of the pipeline. Each pane names the
+    phase(s) that own what you are looking at (the <a href="./atlas.html">atlas</a> has the
+    full model). Raw dumps: <code>observatory/walkthrough/</code>.</p>
+    <div class="stagenav" id="nav"></div>
+    <div class="compare" id="compare">
+      <div><select id="cmp-l"></select><pre class="dump" id="pane-l"></pre></div>
+      <div><select id="cmp-r"></select><pre class="dump" id="pane-r"></pre></div>
+    </div>
+    <div id="stages"></div>`);
+  const nav = document.getElementById("nav");
+  const stagesHost = document.getElementById("stages");
+  walkthrough.stages.forEach((stage, index) => {
+    nav.insertAdjacentHTML("beforeend",
+      `<a href="#st-${stage.id}"><span class="num">${index + 1}</span>${esc(stage.title)}</a>`);
+    stagesHost.insertAdjacentHTML("beforeend", `
+      <section class="stage" id="st-${stage.id}">
+        <h2><span class="num">${index + 1}/6</span> ${esc(stage.title)} ${phaseChips(stage.phases)}</h2>
+        <p class="meta-line">${esc(stage.role)} · <code>${esc(stage.producedBy)}</code></p>
+        <pre class="dump">${esc(stage.text)}</pre>
+      </section>`);
+  });
+  nav.insertAdjacentHTML("beforeend",
+    `<a href="#" class="mode" id="cmp-toggle">compare side-by-side</a>`);
+  const toggle = document.getElementById("cmp-toggle");
+  const compare = document.getElementById("compare");
+  for (const side of ["l", "r"]) {
+    const select = document.getElementById("cmp-" + side);
+    walkthrough.stages.forEach((stage, index) => {
+      select.insertAdjacentHTML("beforeend", `<option value="${index}">${esc(stage.title)}</option>`);
+    });
+    select.addEventListener("change", renderCompare);
+  }
+  document.getElementById("cmp-l").value = "2";
+  document.getElementById("cmp-r").value = "3";
+  toggle.addEventListener("click", (event) => {
+    event.preventDefault();
+    const on = !compare.classList.contains("on");
+    compare.classList.toggle("on", on);
+    document.body.classList.toggle("comparing", on);
+    toggle.textContent = on ? "back to the tour" : "compare side-by-side";
+    if (on) renderCompare();
+  });
+}
+
+function phaseChips(phases) {
+  return phases.map((phase) => phaseChip(phase, phase)).join("");
+}
+
+function renderCompare() {
+  for (const side of ["l", "r"]) {
+    const index = Number(document.getElementById("cmp-" + side).value);
+    document.getElementById("pane-" + side).textContent = walkthrough.stages[index].text;
+  }
+}
+
+if (!walkthrough) {
+  main.innerHTML = "<h1>Bytes → C</h1>" + missingNotice("walkthrough");
+} else {
+  build();
+}
+</script>
+</body>
+</html>
