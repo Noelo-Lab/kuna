@@ -386,6 +386,17 @@ the hidden-return pointer bumped it. Failure mode: an unassignable *input*
 raises a hard error; an unassignable *output* is only survivable where the
 caller opted into `ignore_output_error`, which degrades the return to `void`.
 
+Explicit input storage participates in assignment before default slots are chosen
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_inputstorage.rs (assign)`).
+An overridden argument consumes its stated physical storage, including register
+aliases and the components of joined storage, instead of consuming its former
+model-assigned slot. Remaining arguments and synthetic return pointers use the
+normal model rules while avoiding all explicitly reserved ranges. Logical
+argument indices remain unchanged for positional and variadic rules. Explicit
+arguments retain their declared order, types and flags; conflicting explicit
+placements remain the caller's asserted contract. An impossible automatic
+placement raises a parameter-assignment error.
+
 The rules themselves live in
 `decompiler/crates/kuna-decomp/src/p4_calls/modelrules.rs (ModelRule,
 AssignAction, DatatypeFilter, QualifierFilter)`. A `ModelRule` is a data-type

@@ -2362,10 +2362,18 @@ fn explicit_return_storage_removes_only_the_model_hidden_return_input() {
         addr: Address::new(reg.clone(), 0x80), type_: Some(int4_type()),
         flags: parameter_pieces_flags::TYPELOCK,
     }));
+    let explicit_output = pieces.output_storage.take();
+    prototype.set_pieces(&pieces, Some(model.clone()), &types, &manager).unwrap();
+    assert_eq!(prototype.num_params(), 3);
+    assert_eq!(prototype.get_param(0).unwrap().get_name(), "rethidden");
+    assert_eq!(prototype.get_param(0).unwrap().get_address().get_offset(), 0x10);
+    assert_eq!(prototype.get_param(1).unwrap().get_address().get_offset(), 0x80);
+    assert_eq!(prototype.get_param(2).unwrap().get_address().get_offset(), 0x20);
+    pieces.output_storage = explicit_output;
     prototype.set_pieces(&pieces, Some(model), &types, &manager).unwrap();
     assert_eq!(prototype.num_params(), 2);
     assert_eq!(prototype.get_param(0).unwrap().get_address().get_offset(), 0x80);
-    assert_eq!(prototype.get_param(1).unwrap().get_address().get_offset(), 0x20);
+    assert_eq!(prototype.get_param(1).unwrap().get_address().get_offset(), 0x10);
     assert_eq!(prototype.get_param(1).unwrap().get_name(), "second");
     assert_eq!(prototype.get_output().get_address().get_offset(), 0x100);
 }
@@ -2382,4 +2390,96 @@ fn stack_argument_slots_can_ignore_object_alignment() {
         assert_eq!(address.get_offset(), expected);
         assert_eq!(slot, next);
     }
+}
+
+#[test]
+fn partial_input_storage_reserves_aliases_before_allocating_defaults() {
+    let manager = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let mut inputs = ParamListStandard::new(ParamListKind::Standard);
+    for (group, offset) in [(0, 0x10), (1, 0x20), (2, 0x30)] {
+        inputs.push_entry(excl_entry(group, &reg, offset, 8, inputs.get_entry(), &manager));
+    }
+    inputs.finish_decode();
+    for slot in 0..3 {
+        let proto = PrototypePieces {
+            intypes: vec![int4_type(), int4_type(), int4_type()],
+            input_storage: vec![(slot, ParameterPieces {
+                addr: Address::new(reg.clone(), 0x12), type_: Some(int4_type()),
+                flags: parameter_pieces_flags::CUSTOM_STORAGE,
+            })],
+            ..Default::default()
+        };
+        let mut result = Vec::new();
+        inputs.assign_map(&proto, &PanicTypeFactory, &mut result, &manager).unwrap();
+        let mut expected = vec![0x20, 0x30];
+        expected.insert(slot as usize, 0x12);
+        assert_eq!(result.iter().map(|p| p.addr.get_offset()).collect::<Vec<_>>(), expected);
+    }
+}
+
+#[test]
+fn partial_input_storage_skips_reserved_stack_ranges() {
+    let manager = AddrSpaceManager::new();
+    let stack = stack_space();
+    let mut inputs = ParamListStandard::new(ParamListKind::Standard);
+    inputs.push_entry(ParamEntry::seed(0, type_class::TYPECLASS_GENERAL, stack.clone(),
+        4, 0x100000, 1, 4, 0, true, false, &[], &manager).unwrap());
+    inputs.finish_decode();
+    for (offset, expected) in [(4, vec![4, 8, 12]), (8, vec![4, 8, 12]),
+                               (0x80000, vec![4, 0x80000, 8])] {
+        let proto = PrototypePieces {
+            intypes: vec![int4_type(), int4_type(), int4_type()],
+            input_storage: vec![(1, ParameterPieces {
+                addr: Address::new(stack.clone(), offset), type_: Some(int4_type()),
+                flags: parameter_pieces_flags::CUSTOM_STORAGE,
+            })],
+            ..Default::default()
+        };
+        let mut result = Vec::new();
+        inputs.assign_map(&proto, &PanicTypeFactory, &mut result, &manager).unwrap();
+        let actual = result.iter().map(|p| p.addr.get_offset()).collect::<Vec<_>>();
+        let expected = if offset == 4 { vec![8, 4, 12] } else { expected };
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
+fn partial_input_storage_handles_large_stack_reservations_without_consuming_a_default_slot() {
+    let manager = AddrSpaceManager::new();
+    let stack = stack_space();
+    let mut inputs = ParamListStandard::new(ParamListKind::Standard);
+    inputs.push_entry(ParamEntry::seed(0, type_class::TYPECLASS_GENERAL, stack.clone(),
+        4, 0x100000, 1, 4, 0, true, false, &[], &manager).unwrap());
+    inputs.finish_decode();
+    let large = Rc::new(Datatype::new(0x80000, type_metatype::TYPE_UNKNOWN));
+    let proto = PrototypePieces {
+        intypes: vec![large.clone(), int4_type()],
+        input_storage: vec![(0, ParameterPieces {
+            addr: Address::new(stack, 4), type_: Some(large),
+            flags: parameter_pieces_flags::CUSTOM_STORAGE,
+        })],
+        ..Default::default()
+    };
+    let mut result = Vec::new();
+    inputs.assign_map(&proto, &PanicTypeFactory, &mut result, &manager).unwrap();
+    assert_eq!(result[1].addr.get_offset(), 0x80004);
+}
+
+#[test]
+fn partial_input_storage_can_override_every_input_of_an_empty_model() {
+    let manager = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let inputs = ParamListStandard::new(ParamListKind::Standard);
+    let proto = PrototypePieces {
+        intypes: vec![int4_type(), int4_type()],
+        input_storage: (0..2).map(|slot| (slot, ParameterPieces {
+            addr: Address::new(reg.clone(), 0x80 + slot as u64 * 8),
+            type_: Some(int4_type()), flags: parameter_pieces_flags::CUSTOM_STORAGE,
+        })).collect(),
+        ..Default::default()
+    };
+    let mut result = Vec::new();
+    inputs.assign_map(&proto, &PanicTypeFactory, &mut result, &manager).unwrap();
+    assert_eq!(result.iter().map(|p|p.addr.get_offset()).collect::<Vec<_>>(), vec![0x80, 0x88]);
 }
