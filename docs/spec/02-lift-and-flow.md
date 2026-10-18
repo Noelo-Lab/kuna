@@ -2533,3 +2533,12 @@ produce no value at all. The fix is in the RISC-V SLEIGH sources, so
 Exercised by `tests/stages/gh831-riscv-fpmove.xml` (RV64: a call result moved
 by `fmv.x.d` and `fmv.x.w`, and all four conversions) and
 `tests/stages/gh831-riscv32-fpmove.xml` (the RV32 forms).
+
+The x87 `FIST` and `FISTP` lifts preserve integer conversion as width-specific
+`x87_float_to_int16`, `x87_float_to_int32`, or `x87_float_to_int64` user operations.
+Each receives the full 80-bit operand and control word, retaining rounding-mode
+dependence and masked-invalid conversion behavior symbolically. A generic
+round-then-cast would incorrectly impose half-away rounding and discard the
+control word. `FISTP` retains its stack pop; `FIST` does not pop. `FISTTP` remains
+the separate truncating conversion. These operations do not add modeling of
+x87 status updates or unmasked exceptions that suppress writes and pops.

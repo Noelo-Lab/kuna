@@ -5553,42 +5553,46 @@ define pcodeop ffree;
     C3 = 0; 
 }          
 
+define pcodeop x87_float_to_int16;
+define pcodeop x87_float_to_int32;
+define pcodeop x87_float_to_int64;
+
 :FIST m16       is vexMode=0 & byte=0xDF; (mod != 0b11 & reg_opcode=2) ... & m16            
 { 
     FPUInstructionPointer = inst_start;
-    tmp:10 = round(ST0);
-    m16 = trunc(tmp); 
+    tmp:2 = x87_float_to_int16(ST0, FPUControlWord);
+    m16 = tmp;
 }                    
 
 :FIST m32       is vexMode=0 & byte=0xDB; (mod != 0b11 & reg_opcode=2) ... & m32            
 { 
     FPUInstructionPointer = inst_start;
-    tmp:10 = round(ST0); 
-    m32 = trunc(tmp); 
+    tmp:4 = x87_float_to_int32(ST0, FPUControlWord);
+    m32 = tmp;
 }            
 
 :FISTP m16      is vexMode=0 & byte=0xDF; reg_opcode=3 ... & m16            
 { 
     FPUInstructionPointer = inst_start;
-    tmp:10 = round(ST0); 
-    fpop(); 
-    m16 = trunc(tmp); 
+    tmp:2 = x87_float_to_int16(ST0, FPUControlWord);
+    fpop();
+    m16 = tmp;
 }                
 
 :FISTP m32      is vexMode=0 & byte=0xDB; reg_opcode=3 ... & m32
 { 
     FPUInstructionPointer = inst_start;
-    tmp:10 = round(ST0);
+    tmp:4 = x87_float_to_int32(ST0, FPUControlWord);
     fpop();
-    m32 = trunc(tmp); 
+    m32 = tmp;
 }                
 
 :FISTP m64      is vexMode=0 & byte=0xDF; reg_opcode=7 ... & m64  
 {
     FPUInstructionPointer = inst_start;
-    tmp:10 = round(ST0); 
-    fpop(); 
-    m64 = trunc(tmp); 
+    tmp:8 = x87_float_to_int64(ST0, FPUControlWord);
+    fpop();
+    m64 = tmp;
 }                
 
 :FISTTP m16     is vexMode=0 & byte=0xDF; reg_opcode=1 ... & m16 
