@@ -596,6 +596,10 @@ fn option_values_live_value_present_for_110() {
                             // the same reason `pebnames` is here. Its live value
                             // is `Architecture::ptr_from_use`.
                             | "ptrfromuse"
+                            // (kuna) `narrowargs` takes `off|on|callers`; its
+                            // live value is the pair `Architecture::narrow_args`
+                            // and `Architecture::narrow_args_callers`.
+                            | "narrowargs"
                             // (kuna) `structsynth` takes a MODE (`off|param|nest`),
                             // for the same reason.  Its live value is
                             // `Architecture::struct_synth`.
@@ -839,7 +843,8 @@ fn option_values_live_value_present_for_110() {
     // 144 -> 145: +1 for `callerptr` (live_field = caller_ptr).
     // 145 -> 146: +1 for `regnarrow` (live_field = narrow_locals).
     // 146 -> 147: +1 for `narrowret` (live_field = narrow_ret).
-    assert_eq!(with_live, 147);
+    // 147 -> 146: `narrowargs` takes `off|on|callers` and has no live_field.
+    assert_eq!(with_live, 146);
 }
 
 #[test]

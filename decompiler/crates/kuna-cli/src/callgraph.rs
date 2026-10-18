@@ -303,6 +303,41 @@ impl CallGraph {
             .unwrap_or_else(|| seeds.iter().copied().collect())
     }
 
+    /// (kuna `narrowargs callers`) Every call and tail jump to each function
+    /// of a 32-bit ARM image whose callers the image lets us list, by entry: no
+    /// reference materializes its address ([`arm_open_entries`] and the walk's
+    /// own address references), and every reference comes from a known
+    /// function, the function itself included. `None` for any other image.
+    pub(crate) fn arm_closed_sites(&self, binary: &str, pref: SlicePref) -> Option<BTreeMap<u64, Vec<u64>>> {
+        let bytes = image_bytes(binary, pref).ok()?;
+        let file = kuna_analysis::loadimage_object::parse_object(&bytes).ok()?;
+        if file.architecture() != object::Architecture::Arm
+            || file.is_64()
+            || file.kind() == object::ObjectKind::Relocatable
+        {
+            return None;
+        }
+        let seeds: Vec<u64> = self.entries.iter().map(|(entry, _)| *entry).collect();
+        let open = arm_open_entries(&file, &seeds);
+        let mut out = BTreeMap::new();
+        'entry: for &entry in &seeds {
+            if open.contains(&entry) {
+                continue;
+            }
+            let mut sites = Vec::new();
+            for r in self.index.refs_to(entry) {
+                if !matches!(r.kind, XrefKind::Call | XrefKind::Jump) || self.owner_of(r.from).is_none() {
+                    continue 'entry;
+                }
+                sites.push(r.from);
+            }
+            if !sites.is_empty() {
+                out.insert(entry, sites);
+            }
+        }
+        Some(out)
+    }
+
     /// Does anything CALL `vma`?  Data and branch references do not count: the
     /// question a triaging agent asks is which functions no call site reaches.
     pub(crate) fn has_caller(&self, vma: u64) -> bool {
@@ -386,6 +421,82 @@ fn open_function_entries(file: &object::File, bytes: &[u8], entries: &[u64]) -> 
     }
     scan.note(file.entry());
     scan.out
+}
+
+/// (kuna `narrowargs callers`) The entries among `entries` whose address a
+/// 32-bit ARM image can take: a word of a loaded section (a literal pool, a
+/// vector table, a pointer table) equal to the entry or to the entry with the
+/// Thumb bit set, a dynamic symbol, an export or the entry point, or a `movw`
+/// and a `movt` (Thumb-2 or A32, anywhere in code) whose immediates could build
+/// it. The pairs are not matched to each other, so a constant that only
+/// happens to share both halves leaves the function open.
+fn arm_open_entries(file: &object::File, entries: &[u64]) -> BTreeSet<u64> {
+    #[expect(clippy::disallowed_types, reason = "Membership only; the BTreeSet orders the results.")]
+    let mut wanted: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
+    for &e in entries {
+        wanted.insert(e, e);
+        wanted.insert(e | 1, e);
+    }
+    let mut out = BTreeSet::new();
+    let note = |v: u64, out: &mut BTreeSet<u64>| {
+        if let Some(&e) = wanted.get(&v) {
+            out.insert(e);
+        }
+    };
+    let little = file.is_little_endian();
+    let half = |b: &[u8]| if little { u16::from_le_bytes([b[0], b[1]]) } else { u16::from_be_bytes([b[0], b[1]]) };
+    #[expect(clippy::disallowed_types, reason = "Membership only.")]
+    let (mut movw, mut movt) = (std::collections::HashSet::new(), std::collections::HashSet::new());
+    for section in file.sections() {
+        if !image_loads(&section) {
+            continue;
+        }
+        let Ok(data) = section.data() else { continue };
+        let addr = section.address();
+        let skip = ((4 - addr % 4) % 4) as usize;
+        if let Some(aligned) = data.get(skip..) {
+            for w in aligned.chunks_exact(4) {
+                let v = if little { u32::from_le_bytes([w[0], w[1], w[2], w[3]]) } else { u32::from_be_bytes([w[0], w[1], w[2], w[3]]) };
+                note(v as u64, &mut out);
+            }
+        }
+        if section.kind() != object::SectionKind::Text {
+            continue;
+        }
+        for i in (0..data.len().saturating_sub(3)).step_by(2) {
+            let (h1, h2) = (half(&data[i..]), half(&data[i + 2..]));
+            if matches!(h1 & 0xfbf0, 0xf240 | 0xf2c0) && h2 & 0x8000 == 0 {
+                let imm = ((h1 as u32 & 0xf) << 12) | (((h1 as u32 >> 10) & 1) << 11) | (((h2 as u32 >> 12) & 7) << 8) | (h2 as u32 & 0xff);
+                if h1 & 0xfbf0 == 0xf240 { movw.insert(imm) } else { movt.insert(imm) };
+            }
+            if (addr as usize + i) % 4 == 0 {
+                let w = (h1 as u32) | ((h2 as u32) << 16);
+                let w = if little { w } else { ((h1 as u32) << 16) | h2 as u32 };
+                if matches!(w & 0x0ff0_0000, 0x0300_0000 | 0x0340_0000) {
+                    let imm = ((w >> 4) & 0xf000) | (w & 0xfff);
+                    if w & 0x0ff0_0000 == 0x0300_0000 { movw.insert(imm) } else { movt.insert(imm) };
+                }
+            }
+        }
+    }
+    for &e in entries {
+        for v in [e, e | 1] {
+            if movw.contains(&((v & 0xffff) as u32)) && movt.contains(&((v >> 16) as u32)) {
+                out.insert(e);
+            }
+        }
+    }
+    use object::ObjectSymbol;
+    for sym in file.dynamic_symbols() {
+        if sym.is_definition() {
+            note(sym.address(), &mut out);
+        }
+    }
+    for export in file.exports().unwrap_or_default() {
+        note(export.address(), &mut out);
+    }
+    note(file.entry(), &mut out);
+    out
 }
 
 /// (kuna `calleevote`) Does the image put this section's bytes in memory? On

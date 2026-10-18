@@ -930,6 +930,10 @@ pub struct Architecture {
     /// low part at that width (option `narrowargs`).  See
     /// [`crate::p4_calls::kuna_narrowargs`].
     pub narrow_args: bool,
+    /// (kuna) Also declare a 32-bit ARM register parameter narrow when every
+    /// caller passes a narrow value (option `narrowargs callers`).  See
+    /// [`crate::p4_calls::kuna_callerargs`].
+    pub narrow_args_callers: bool,
     /// (kuna) Declare a register-local web whose values all fit a narrower low
     /// part at that width (option `regnarrow`).  See
     /// [`crate::p3_dataflow::kuna_regnarrow`].
@@ -1572,6 +1576,9 @@ pub struct Architecture {
     /// (kuna `calleevote`) The whole-binary run's record of call arguments and
     /// what the callers stated.
     pub kuna_calleevote: crate::kuna_calleevote::Ledger,
+    /// (kuna `narrowargs callers`) The whole-binary run's record of what each
+    /// call passes in its argument registers, and the parameters it narrows.
+    pub kuna_callerargs: crate::kuna_callerargs::Ledger,
     /// (kuna `callrettype`) The recovered return value each callee stated for
     /// the callers decompiled after it.  Copied per function by
     /// [`crate::kuna_callrettype::seed`].
@@ -2907,6 +2914,7 @@ impl Architecture {
             indirect_anchor: true,
             input_param_gap: true,
             narrow_args: true,
+            narrow_args_callers: true,
             narrow_locals: true,
             narrow_ret: true,
             stack_arg_gap: true,
@@ -3011,6 +3019,7 @@ impl Architecture {
             kuna_vfp_variadic: RefCell::new(None),
             kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),
+            kuna_callerargs: crate::kuna_callerargs::Ledger::default(),
             kuna_callret_types: std::collections::HashMap::new(),
             kuna_narrowret: std::collections::HashMap::new(),
             kuna_callret_refused: std::collections::HashSet::new(),
@@ -3275,6 +3284,7 @@ impl Architecture {
         self.indirect_anchor = true; // (kuna) DIV-PENDING default-on: an op inserted after a call's guard INDIRECT anchors to the CALL as upstream opInsertAfter does, instead of landing inside the guard run where it hides the return-value trial (0/675 ablation)
         self.stack_arg_gap = true; // (kuna) DIV-140 default-on: at a call site an argument register the caller never wrote ends the argument list when the next slot is on the stack, so a body-less import stops acquiring the caller's own untouched parameter plus a stack leftover as arguments (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
+        self.narrow_args_callers = true; // (kuna) option narrowargs default `callers`: also narrow a 32-bit ARM parameter every caller of a closed function passes narrow, one of them extending it itself
         self.narrow_args = true; // (kuna) option narrowargs default-on: a register parameter whose uses read only its low 1, 2 or 4 bytes is declared that wide, and a callee's stated narrow parameter caps how much of the argument its callers consume (0/675 datatests)
         self.narrow_locals = true; // (kuna) option regnarrow default-on: a register-local web whose values the nonzero-bit analysis proves fit a low 1, 2 or 4 bytes, entered only through zero extensions, masks, constants and copies, is rebuilt at that width
         self.narrow_ret = true; // (kuna) option narrowret default-on: a call to a callee that returns a narrow value zero-extended reads that value

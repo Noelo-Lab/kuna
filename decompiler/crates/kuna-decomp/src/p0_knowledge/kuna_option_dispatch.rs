@@ -382,8 +382,13 @@ kuna_options! { self, p1;
         Ok(format!("ARM floating argument recovery turned {p1}"))
     },
     "narrowargs" => {
-        self.narrow_args = on_or_off(p1)?;
-        Ok(format!("Narrow register parameter recovery turned {p1}"))
+        let (body, callers) = match p1 {
+            "callers" => (true, true),
+            _ => (on_or_off(p1)?, false),
+        };
+        self.narrow_args = body;
+        self.narrow_args_callers = callers;
+        Ok(format!("Narrow register parameter recovery set to {p1}"))
     },
     "regnarrow" => {
         self.narrow_locals = on_or_off(p1)?;
