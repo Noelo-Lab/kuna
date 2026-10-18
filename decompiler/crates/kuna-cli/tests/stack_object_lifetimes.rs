@@ -929,9 +929,18 @@ fn reused_pair_and_handle_share_their_storage() {
     assert!(code.contains("view_LifetimePair"), "{code}");
     assert!(code.contains("view_LifetimeHandle"), "{code}");
     // Pin the writes themselves: executing C with either initial value omitted
-    // reads an uninitialized Pair and can otherwise pass by accident.
-    assert!(code.contains("= 5;"), "{code}");
-    assert!(code.contains("= 7;"), "{code}");
+    // reads an uninitialized Pair and can otherwise pass by accident. The
+    // shared backing is initialized through byte-copy compound literals.
+    let has_initialized_store = |value: u8| {
+        code.split("__builtin_memcpy").skip(1).any(|call| {
+            call.split_once(';').is_some_and(|(call, _)| {
+                let compact: String = call.chars().filter(|char| !char.is_whitespace()).collect();
+                compact.contains(&format!("{value},0,0,0"))
+            })
+        })
+    };
+    assert!(has_initialized_store(5), "{code}");
+    assert!(has_initialized_store(7), "{code}");
     native_code("stack_reuse", "", 67, code);
 
     // The escaped-alias witness has no conflicting declared object views and

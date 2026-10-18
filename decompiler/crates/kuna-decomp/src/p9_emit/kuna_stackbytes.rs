@@ -73,6 +73,9 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
             .sym_type
             .as_ref()
             .is_some_and(|ty| ty.get_name().starts_with("stack_views_"))
+        && operation
+            .get_in(0)
+            .is_some_and(|source| !contains_pointer_constant(fd, source, op, 32))
         && bytes.len() == size as usize
         && bytes.iter().all(|byte| matches!(byte, Byte::Constant(_)));
     if stack.is_big_endian() {
@@ -171,6 +174,36 @@ fn same_backing(fd: &Funcdata, value: VarnodeId, symbol: SymbolId) -> bool {
             .get_high()
             .and_then(|high| fd.high_bank().get(high))
             .is_some_and(|high| high.kuna_link_symbol() == Some(symbol))
+}
+
+fn contains_pointer_constant(fd: &Funcdata, id: VarnodeId, use_op: OpId, depth: u8) -> bool {
+    let Some(value) = fd.vbank().get(id) else {
+        return true;
+    };
+    if value.is_constant() {
+        let pointer_type = |metatype| {
+            matches!(
+                metatype,
+                type_metatype::TYPE_PTR | type_metatype::TYPE_PTRREL | type_metatype::TYPE_CODE
+            )
+        };
+        return pointer_type(value.get_type().get_metatype())
+            || pointer_type(fd.vn_type_read_facing(id, use_op).get_metatype());
+    }
+    let Some(depth) = depth.checked_sub(1) else {
+        return true;
+    };
+    let Some(definition) = value.get_def() else {
+        return false;
+    };
+    let Some(operation) = fd.obank().get(definition) else {
+        return true;
+    };
+    (0..operation.num_input()).any(|slot| {
+        operation
+            .get_in(slot)
+            .is_some_and(|input| contains_pointer_constant(fd, input, definition, depth))
+    })
 }
 
 fn expression(fd: &Funcdata, id: VarnodeId, top: bool, depth: u8) -> Option<Vec<Byte>> {

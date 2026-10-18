@@ -403,7 +403,8 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
     for (&start, views) in &default_views {
         for (index, first) in views.iter().enumerate() {
             for second in views.iter().skip(index + 1) {
-                if first.get_size() == second.get_size()
+                if state.covers(start, first.get_size())
+                    && first.get_size() == second.get_size()
                     && !Rc::ptr_eq(first, second)
                     && (1..=256).contains(&first.get_size())
                 {
