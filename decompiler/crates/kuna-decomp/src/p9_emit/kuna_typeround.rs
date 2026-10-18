@@ -704,7 +704,12 @@ fn evidence_walk(fd: &Funcdata, high: HighVariableId, castsign: bool, cs: &mut C
                 {
                     cs.wide = true;
                 }
-                match classify_reader(opc, slot) {
+                let class = if crate::kuna_truncarg::zext_trimmed_arg(fd, op, slot) {
+                    ReaderClass::Demands(Evidence::Unsigned)
+                } else {
+                    classify_reader(opc, slot)
+                };
+                match class {
                     ReaderClass::Demands(ev) => verdict = verdict.join(ev),
                     ReaderClass::DemandsCarrying(ev) => {
                         verdict = verdict.join(ev);
