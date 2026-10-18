@@ -308,6 +308,11 @@ warnstyle banner` restores upstream Ghidra's full
 `/* WARNING: ... */` lines, exercised by
 `tests/stages/kuna-cnorm-warnstyle.xml`.
 
+Input casts preserve the selected field of the declared storage symbol, even
+when its high variable has a scalar preferred type. A cast inserted before an
+integer operation inherits that operation’s union read resolution, so the
+operand remains `storage.integer` rather than the whole `storage` union.
+
 ## 9.1 Casts
 
 **The pass.** `ActionSetCasts` (registry row P9/`cast-policy`, group `casts`)
