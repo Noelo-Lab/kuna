@@ -88,8 +88,7 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         && (is_pointer_type(output_type)
             || is_pointer_type(fd.vn_type_def_facing(output).get_metatype())
             || operation.get_in(0).is_some_and(|source| {
-                source_type.is_some_and(is_pointer_type)
-                    || is_pointer_type(fd.vn_type_def_facing(source).get_metatype())
+                source_type.is_some_and(is_pointer_type) || def_facing_pointer(fd, source)
             }));
     if pointer_copy {
         reject!("pointer-valued stackview COPY stays typed");
@@ -135,7 +134,7 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
                 || safe_global_source(fd, *source, op, *read_op).is_some())
             && fd.vbank().get(*source).is_some()
             && !is_pointer_type(fd.vn_type_read_facing(*source, op).get_metatype())
-            && !is_pointer_type(fd.vn_type_def_facing(*source).get_metatype())
+            && !def_facing_pointer(fd, *source)
     });
     let stackview_scalar_copy = operation.code() == OpCode::CPUI_COPY
         && stackview_container
@@ -206,8 +205,15 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
             ) {
                 reject!("source read type {read_type:?} rejected");
             }
-            if is_pointer_type(fd.vn_type_def_facing(source).get_metatype()) {
+            if def_facing_pointer(fd, source) {
                 reject!("pointer source cannot be flattened into raw bytes");
+            }
+            if !safe_load
+                && !safe_global
+                && !same_backing(fd, source, info.symbol)
+                && !named(fd, source)
+            {
+                reject!("source has no declared name");
             }
         }
         let index = index as i32;
@@ -383,8 +389,7 @@ fn expression(
     }
     if value.is_constant() {
         let read_type = fd.vn_type_read_facing(id, use_op).get_metatype();
-        let def_type = fd.vn_type_def_facing(id).get_metatype();
-        if is_pointer_type(read_type) || is_pointer_type(def_type) {
+        if is_pointer_type(read_type) || def_facing_pointer(fd, id) {
             return None;
         }
         return Some(
@@ -561,6 +566,26 @@ fn expression(
     )
 }
 
+/// A byte source printed by name must be a declared variable, not bare storage.
+fn named(fd: &Funcdata, value: VarnodeId) -> bool {
+    fd.vbank()
+        .get(value)
+        .and_then(|vn| vn.get_high())
+        .and_then(|high| fd.high_bank().get(high))
+        .is_some_and(|high| high.kuna_name().is_some() || high.kuna_link_symbol().is_some())
+}
+
+/// Only a written Varnode has a def-facing type; an input or constant has its own.
+fn def_facing_pointer(fd: &Funcdata, value: VarnodeId) -> bool {
+    fd.vbank().get(value).is_some_and(|vn| {
+        is_pointer_type(if vn.is_written() {
+            fd.vn_type_def_facing(value).get_metatype()
+        } else {
+            vn.get_type().get_metatype()
+        })
+    })
+}
+
 fn is_pointer_type(meta: type_metatype) -> bool {
     matches!(
         meta,
@@ -570,7 +595,7 @@ fn is_pointer_type(meta: type_metatype) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{expression, safe_global_source, Byte};
+    use super::{def_facing_pointer, expression, named, safe_global_source, Byte};
     use crate::context::ArchContext;
     use crate::database::SymbolId;
     use crate::dtype::{type_metatype, Datatype};
@@ -788,5 +813,44 @@ mod tests {
             .copy_symbol_fields(pointer_type, 0);
 
         assert!(expression(&fd, pointer, true, 16, use_op, SymbolId::default(), None,).is_none());
+    }
+
+    fn needing_resolution(size: i32, meta: type_metatype) -> Rc<Datatype> {
+        let mut datatype = Datatype::new_with_align(size, -1, meta);
+        datatype.flags |= crate::dtype::flags::needs_resolution;
+        Rc::new(datatype)
+    }
+
+    #[test]
+    fn unwritten_values_needing_resolution_classify_without_a_definition() {
+        let (mut fd, global, _, use_op) = global_read_fixture(false);
+        fd.vbank_mut()
+            .get_mut(global)
+            .unwrap()
+            .copy_symbol_fields(needing_resolution(1, type_metatype::TYPE_UNION), 0);
+        assert!(!def_facing_pointer(&fd, global));
+
+        let pointer = fd.new_constant(8, 0x402008);
+        fd.vbank_mut()
+            .get_mut(pointer)
+            .unwrap()
+            .copy_symbol_fields(needing_resolution(8, type_metatype::TYPE_PTR), 0);
+        assert!(def_facing_pointer(&fd, pointer));
+        assert!(expression(&fd, pointer, true, 16, use_op, SymbolId::default(), None).is_none());
+    }
+
+    #[test]
+    fn a_byte_source_must_be_a_declared_variable() {
+        let (mut fd, _, read, _) = global_read_fixture(false);
+        let register = fd.obank().get(read).unwrap().get_out().unwrap();
+        assert!(!named(&fd, register));
+        let high = fd.high_bank_mut().new_high(register);
+        fd.vbank_mut().get_mut(register).unwrap().set_high(high, 0);
+        assert!(!named(&fd, register));
+        fd.high_bank_mut()
+            .get_mut(high)
+            .unwrap()
+            .set_kuna_name("v1");
+        assert!(named(&fd, register));
     }
 }

@@ -3407,7 +3407,10 @@ merged stackview name. Mutable LOADs and implicit global reads can be moved to a
 store only within the same block and across no write, call, STORE, INDIRECT or
 CALLOTHER effect; readonly non-volatile sources do not need that timing proof.
 Volatile reads and pointer values or pointer-origin constants stay on typed
-emission paths. A complete scalar range uses one typed compound-literal
+emission paths. Any other source printed by name must be a declared variable
+(a named local or a linked symbol), never bare register storage. The pointer
+test reads a def-facing type only for a written Varnode; an input or constant
+is classified by its own type. A complete scalar range uses one typed compound-literal
 evaluation for `__builtin_memcpy`; partial ranges use byte literals only when
 their source reads are safe to reproduce at the store.
 
