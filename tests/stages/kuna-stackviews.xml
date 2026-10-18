@@ -71,10 +71,10 @@
 <com>lo fu publish_frame_word</com><com>decompile</com><com>print C</com>
 <com>quit</com>
 </script>
-<stringmatch name="stackviews off assigns a pointer to the Pair object" min="1" max="1">^  v2\[0\] = &amp;datum;$</stringmatch>
-<stringmatch name="stackviews on sends the Pair view to its helper" min="2" max="2">read_pair\(&amp;v2.view_LifetimePair\)</stringmatch>
-<stringmatch name="stackviews on writes the pointer member" min="2" max="2">^  v2.value_[0-9]+ = &amp;datum;$</stringmatch>
-<stringmatch name="stackviews on sends the Handle view to its helper" min="2" max="2">read_handle\(&amp;v2.view_LifetimeHandle\)</stringmatch>
+<stringmatch name="stackviews off seeds the Pair backing before its first read" min="1" max="1">__builtin_memcpy\(\(uint1 \*\)&amp;v[0-9]+,&amp;\(uint1\[8\]\)\{ 5,0,0,0,7,0,0,0 \},8\)</stringmatch>
+<stringmatch name="stackviews off and on send the Pair view to its helper" min="3" max="3">read_pair\(&amp;v2.view_LifetimePair\)</stringmatch>
+<stringmatch name="stackviews off and on write the pointer member" min="3" max="3">^  v2.value_[0-9]+ = &amp;datum;$</stringmatch>
+<stringmatch name="stackviews off and on send the Handle view to its helper" min="3" max="3">read_handle\(&amp;v2.view_LifetimeHandle\)</stringmatch>
 <stringmatch name="stackviews off assigns a pointer to the locked struct" min="1" max="1">^  protected_pair = &amp;datum;$</stringmatch>
 <stringmatch name="stackviews on copies pointer bytes into the locked struct" min="1" max="1">__builtin_memcpy\(\(uint1 \*\)&amp;protected_pair,&amp;\(void \*\)\{ &amp;datum \},8\)</stringmatch>
 <stringmatch name="stackviews keeps the declared backing layout" min="2" max="2">^  LifetimePair protected_pair;</stringmatch>
