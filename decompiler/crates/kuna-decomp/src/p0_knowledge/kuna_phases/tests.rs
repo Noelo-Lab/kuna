@@ -838,6 +838,7 @@ fn option_values_live_value_present_for_110() {
     // 143 -> 144: +1 for `narrowargs` (live_field = narrow_args).
     // 144 -> 145: +1 for `callerptr` (live_field = caller_ptr).
     // 145 -> 146: +1 for `regnarrow` (live_field = narrow_locals).
+    // 146 -> 147: +1 for `narrowret` (live_field = narrow_ret).
     assert_eq!(with_live, 146);
 }
 

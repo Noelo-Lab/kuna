@@ -2548,6 +2548,10 @@ impl SubvariableFlow {
                 PatchType::ParameterPatch => {
                     let in1 = self.patchlist[piter].in1;
                     let slot = self.patchlist[piter].slot;
+                    if let Some(before) = data.obank().get(pullop).and_then(|o| o.get_in(slot)) {
+                        let mask = self.rv(in1).mask;
+                        crate::kuna_narrowret::note_trim(data, pullop, before, mask);
+                    }
                     let v = self.get_replace_varnode(data, in1)?;
                     data.op_set_input(pullop, v, slot)?;
                     let zext = self.zext_pulls.contains(&(pullop, slot));

@@ -29,6 +29,9 @@ mod arm_float_returns;
 #[path = "narrow_args.rs"]
 mod narrow_args;
 
+#[path = "narrow_ret.rs"]
+mod narrow_ret;
+
 #[path = "arm_frame_retain.rs"]
 mod arm_frame_retain;
 #[path = "arm_frame_pool.rs"]

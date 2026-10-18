@@ -331,6 +331,7 @@ fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<R
         let size = data.obank().get(op)?.get_out().and_then(|v| data.vbank().get(v)).map(|v| v.get_size())?;
         return crate::p4_calls::kuna_passthrough::tail_return_type(data, op, size)
             .or_else(|| crate::p4_calls::kuna_callrettype::stated_return_type(data, op, fc))
+            .or_else(|| crate::p4_calls::kuna_narrowret::stated_type(data, op, fc, size))
             .or_else(|| crate::kuna_floatreg::jump_result_type(data, op, size));
     }
     let ct = proto.get_output_type()?;

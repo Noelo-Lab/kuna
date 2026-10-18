@@ -389,6 +389,10 @@ kuna_options! { self, p1;
         self.narrow_locals = on_or_off(p1)?;
         Ok(format!("Narrow register local recovery turned {p1}"))
     },
+    "narrowret" => {
+        self.narrow_ret = on_or_off(p1)?;
+        Ok(format!("Narrow call result recovery turned {p1}"))
+    },
     "narrowext" => {
         let (mode, msg) = crate::kuna_narrowext::OptionNarrowExt.apply(p1)?;
         self.narrow_ext = mode;

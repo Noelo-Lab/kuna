@@ -588,7 +588,10 @@ pub(crate) fn producing_call(data: &Funcdata, ret: OpId) -> Option<OpId> {
 /// function's own code. `None` unless the function's own output is recovered
 /// (not locked), every live RETURN is reached from a direct call with nothing
 /// between ([`touched_after`]), every one of those callees states a non-`void`
-/// return in the same storage, and that storage is a register or a register
+/// return in the same storage (under `narrowret`, on a little-endian image, at
+/// the same register, the widest taken when it is at least four bytes and every
+/// narrower one is a value its callee states it zero-extends), and that storage is
+/// a register or a register
 /// pair ([`register_pieces`]) the function's model returns in and no op of the
 /// function touches.
 ///
@@ -620,6 +623,9 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     let mut producers: Vec<OpId> = Vec::new();
     let mut paths: Vec<(OpId, OpId)> = Vec::new();
     let mut own: Vec<OpId> = Vec::new();
+    let mut widths: Vec<(int4, bool)> = Vec::new();
+    let narrow_tails = data.get_arch().narrow_ret
+        && !data.get_arch().manage().get_default_code_space().is_some_and(|c| c.is_big_endian());
     let beside_own = data.get_arch().mixed_tail_ret;
     for &r in &rets {
         let Some(call) = producing_call(data, r) else {
@@ -635,8 +641,15 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
             return None;
         }
         let (addr, size, _) = data.kuna_protoorder_types(fc.get_entry_address())?.output.clone()?;
+        let zero_extended = narrow_tails
+            && fc.get_entry_address().get_space().is_some_and(|sp| {
+                data.kuna_narrowret((sp.get_index(), fc.get_entry_address().get_offset()))
+                    .is_some_and(|n| n.addr == addr && n.size == size)
+            });
+        widths.push((size, zero_extended));
         match &storage {
-            Some((a, s)) if *a != addr || *s != size => return None,
+            Some((a, s)) if *a != addr || (*s != size && !narrow_tails) => return None,
+            Some((_, s)) => storage = Some((addr, size.max(*s))),
             _ => storage = Some((addr, size)),
         }
         if !producers.contains(&call) {
@@ -645,6 +658,9 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
         paths.push((call, r));
     }
     let (addr, size) = storage?;
+    if widths.iter().any(|&(w, zext)| w < size && !(zext && size >= 4)) {
+        return None;
+    }
     let pieces = register_pieces(data, &addr, size)?;
     let proto = data.get_func_proto();
     let mixed = !own.is_empty();

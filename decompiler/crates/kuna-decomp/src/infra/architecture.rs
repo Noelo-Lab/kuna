@@ -934,6 +934,10 @@ pub struct Architecture {
     /// part at that width (option `regnarrow`).  See
     /// [`crate::p3_dataflow::kuna_regnarrow`].
     pub narrow_locals: bool,
+    /// (kuna) Make a call to a callee that returns a narrow value zero-extended
+    /// read that value (option `narrowret`).  See
+    /// [`crate::p4_calls::kuna_narrowret`].
+    pub narrow_ret: bool,
     /// (kuna) At a CALL SITE, let an UNREFERENCED argument register whose next
     /// slot is on the stack end the argument list, instead of being filled in on
     /// the way to a stack trial (option `stackarggap`).  See
@@ -1572,6 +1576,10 @@ pub struct Architecture {
     /// the callers decompiled after it.  Copied per function by
     /// [`crate::kuna_callrettype::seed`].
     pub kuna_callret_types: crate::kuna_callrettype::StatedReturns,
+    /// (kuna `narrowret`) The narrow value each callee returns zero-extended,
+    /// for the callers decompiled after it.  Copied per function by
+    /// [`crate::kuna_narrowret::seed`].
+    pub kuna_narrowret: crate::kuna_narrowret::NarrowReturns,
     /// (kuna `callrettype`) The (caller, callee) pairs whose statement the
     /// caller's finished variables contradicted ([`crate::kuna_callrettype::refuse`]).
     pub kuna_callret_refused: std::collections::HashSet<crate::kuna_callrettype::Refusal>,
@@ -2900,6 +2908,7 @@ impl Architecture {
             input_param_gap: true,
             narrow_args: true,
             narrow_locals: true,
+            narrow_ret: true,
             stack_arg_gap: true,
             vararg_stack_args: true,
             vararg_forward: true,
@@ -3003,6 +3012,7 @@ impl Architecture {
             kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),
             kuna_callret_types: std::collections::HashMap::new(),
+            kuna_narrowret: std::collections::HashMap::new(),
             kuna_callret_refused: std::collections::HashSet::new(),
             kuna_voidret: Default::default(),
             kuna_elemptr: crate::kuna_elemptr::Ledger::default(),
@@ -3267,6 +3277,7 @@ impl Architecture {
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
         self.narrow_args = true; // (kuna) option narrowargs default-on: a register parameter whose uses read only its low 1, 2 or 4 bytes is declared that wide, and a callee's stated narrow parameter caps how much of the argument its callers consume (0/675 datatests)
         self.narrow_locals = true; // (kuna) option regnarrow default-on: a register-local web whose values the nonzero-bit analysis proves fit a low 1, 2 or 4 bytes, entered only through zero extensions, masks, constants and copies, is rebuilt at that width
+        self.narrow_ret = true; // (kuna) option narrowret default-on: a call to a callee that returns a narrow value zero-extended reads that value
         self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
         self.vararg_forward = true; // (kuna) default-on: a declared parameter forwarded unchanged in its own register to a variadic call's variable part is an argument (0/675 ablation)
         self.vararg_shared_float = false; // (kuna) default-off: the register-choice reading holds only for -O0 code (post-RA scheduling defeats it at -O1+)
@@ -4085,6 +4096,7 @@ impl Architecture {
         ctx.input_param_gap = self.input_param_gap; // inputparamgap
         ctx.narrow_args = self.narrow_args; // narrowargs
         ctx.narrow_locals = self.narrow_locals; // regnarrow
+        ctx.narrow_ret = self.narrow_ret; // narrowret
         ctx.stack_arg_gap = self.stack_arg_gap; // stackarggap
         ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
         ctx.vararg_forward = self.vararg_forward; // varargforward

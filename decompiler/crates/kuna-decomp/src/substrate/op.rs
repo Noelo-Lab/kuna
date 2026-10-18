@@ -217,6 +217,11 @@ pub mod pcodeop_addlflags {
     pub const kuna_stack_read: uint4 = 0x100000;
     /// A floating storage-view COPY retaining a separate numerical integer result.
     pub const kuna_fpu_view_copy: uint4 = 0x200000;
+    /// (kuna) Every trim of this RETURN's value, from the whole return register
+    /// on, dropped only known-zero bits; on an INT_ZEXT, the extension that
+    /// writes a narrowed call result back into its register.  Set and read by
+    /// [`crate::p4_calls::kuna_narrowret`].
+    pub const kuna_narrowret: uint4 = 0x400000;
 }
 
 // ---------------------------------------------------------------------------

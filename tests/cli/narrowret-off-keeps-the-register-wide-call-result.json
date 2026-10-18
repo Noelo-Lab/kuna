@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-6b1f4f7739dc",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "narrowret",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/narrowret_thumb_O2.o",
+    "binary_sha256": "b8883c3cd09411e52fde1c923b78a462cb26b36e37ea75bcccc20aab952d4bd5",
+    "binary_size": 1964,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/narrowret_thumb_O2.o",
+    "selector": "count_above",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "unsigned char next_byte\\(char a0\\)",
+      "unsigned int v1; // r0 \\| r6",
+      "return mix\\(v2 \\| v1,a0\\) \\+ 1;"
+    ],
+    "stdout_absent": [
+      "unsigned char v1; // r0 \\| r5",
+      "bool v1;"
+    ]
+  },
+  "notes": "OFF: the callees' own listings still declare unsigned char next_byte and bool above, but each call output is the whole r0, so larger_byte and count_above hold the results as unsigned int and combine the truth values bitwise."
+}
