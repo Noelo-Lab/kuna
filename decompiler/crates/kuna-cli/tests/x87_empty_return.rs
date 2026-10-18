@@ -3,23 +3,23 @@ use crate::common;
 use common::process;
 use std::process::Command;
 
-#[test]
-fn freed_x87_results_are_not_inferred_after_merges_or_loops() {
-    let cc = "i686-w64-mingw32-gcc";
-    if process::optional_output(Command::new(cc).arg("--version")).is_none() {
-        return;
-    }
-    let source = common::scratch_file("x87-empty-return", "s");
-    let binary = source.with_extension("dll");
-    std::fs::write(
-        &source,
-        r#".text
+const COFF: &str = r#".text
 .macro function name
 .globl _\name
 .def _\name; .scl 2; .type 32; .endef
 _\name:
 .endm
-function free_top
+"#;
+
+const ELF: &str = r#".text
+.macro function name
+.globl _\name
+.type _\name,@function
+_\name:
+.endm
+"#;
+
+const FUNCTIONS: &str = r#"function free_top
  mov 4(%esp),%ecx
  flds (%ecx)
  fmul %st(0),%st(0)
@@ -86,6 +86,29 @@ function refill_in_loop
  dec %ecx
  jnz 1b
 2: ret
+function fstp_to_valid
+ mov 4(%esp),%ecx
+ flds (%ecx)
+ fldz
+ fstp %st(0)
+ ret
+function fincstp_after_free
+ mov 4(%esp),%ecx
+ flds (%ecx)
+ flds 4(%ecx)
+ ffree %st(0)
+ fincstp
+ ret
+function free_each_return
+ mov 4(%esp),%ecx
+ flds (%ecx)
+ cmpl $0,8(%esp)
+ je 1f
+ ffree %st(0)
+ ret
+1: fmul %st(0),%st(0)
+ ffree %st(0)
+ ret
 function call_after_free
  mov 4(%esp),%ecx
  flds (%ecx)
@@ -118,34 +141,67 @@ function mmx_after_free
  ffree %st(0)
  pxor %mm1,%mm1
  ret
-"#,
-    )
-    .unwrap();
-    let built = Command::new(cc)
-        .args([
-            "-shared",
-            "-nostdlib",
-            "-Wl,--entry,0",
-            "-Wl,--export-all-symbols",
-        ])
-        .arg(&source)
-        .arg("-o")
-        .arg(&binary)
-        .output()
-        .unwrap();
-    assert!(
-        built.status.success(),
-        "{}",
-        String::from_utf8_lossy(&built.stderr)
-    );
+"#;
+
+#[test]
+fn freed_x87_results_are_not_inferred_after_merges_or_loops() {
+    let toolchains = [
+        (
+            "i686-w64-mingw32-gcc",
+            COFF,
+            "dll",
+            &[
+                "-shared",
+                "-nostdlib",
+                "-Wl,--entry,0",
+                "-Wl,--export-all-symbols",
+            ][..],
+        ),
+        (
+            "gcc",
+            ELF,
+            "elf",
+            &["-m32", "-nostdlib", "-no-pie", "-Wl,-e,_constant_result"][..],
+        ),
+    ];
+    let mut checked = 0;
+    for (cc, header, extension, args) in toolchains {
+        if process::optional_output(Command::new(cc).arg("--version")).is_none() {
+            continue;
+        }
+        let source = common::scratch_file("x87-empty-return", "s");
+        let binary = source.with_extension(extension);
+        std::fs::write(&source, format!("{header}{FUNCTIONS}")).unwrap();
+        process::required_output(
+            Command::new(cc)
+                .args(args)
+                .arg(&source)
+                .arg("-o")
+                .arg(&binary),
+        );
+        check(&binary);
+        for path in [source, binary] {
+            std::fs::remove_file(path).unwrap();
+        }
+        checked += 1;
+    }
+    if checked == 0 {
+        eprintln!("no i686 assembler toolchain available; skipping");
+    }
+}
+
+fn check(binary: &std::path::Path) {
     for (name, empty) in [
         ("_free_top", true),
         ("_all_paths_free", true),
         ("_free_before_loop", true),
+        ("_free_each_return", true),
         ("_valid_top", false),
         ("_free_other_equal", false),
         ("_refill_top", false),
         ("_pop_to_valid", false),
+        ("_fstp_to_valid", false),
+        ("_fincstp_after_free", false),
         ("_mixed_path", false),
         ("_refill_in_loop", false),
         ("_mmx_after_free", false),
@@ -181,7 +237,4 @@ function mmx_after_free
     ]);
     assert_eq!(status, 0, "{err}");
     assert!(code.starts_with("long double _free_top("), "{code}");
-    for path in [source, binary] {
-        std::fs::remove_file(path).unwrap();
-    }
 }
