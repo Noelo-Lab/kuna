@@ -1197,7 +1197,8 @@ fn watchdog_stops_region_structuring_and_the_batch_continues() {
     let doc: serde_json::Value = serde_json::from_str(&stdout).expect(&stderr);
     let functions = doc["functions"].as_array().unwrap();
     let stress = functions.iter().find(|f| f["name"] == "stress").unwrap();
-    assert_eq!(stress["error"], "per-function decompile budget exceeded (1 s)", "{stdout}");
+    let error = stress["error"].as_str().unwrap_or_default();
+    assert!(error.starts_with("per-function decompile budget exceeded (1 s) in "), "{stdout}");
     assert!(stress["code"].is_null(), "{stdout}");
     let after = functions.iter().find(|f| f["name"] == "after").unwrap();
     assert!(after["error"].is_null(), "{stdout}");
