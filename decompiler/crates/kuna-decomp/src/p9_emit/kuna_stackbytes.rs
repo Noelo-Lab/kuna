@@ -27,32 +27,57 @@ pub(crate) struct Assignment {
 }
 
 pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
+    let trace = std::env::var_os("KUNA_DEBUG_STACK_BYTES").is_some();
+    macro_rules! reject {
+        ($($arg:tt)*) => {{
+            if trace {
+                eprintln!("[stackbytes] {}", format!($($arg)*));
+            }
+            return None;
+        }};
+    }
     if !fd.get_arch().stack_views {
-        return None;
+        reject!("stackviews off");
     }
-    let operation = fd.obank().get(op)?;
+    let Some(operation) = fd.obank().get(op) else {
+        reject!("stale op");
+    };
     if operation.is_marker() {
-        return None;
+        reject!("marker");
     }
-    let output = operation.get_out()?;
-    let value = fd.vbank().get(output)?;
-    let stack = fd.get_arch().manage().get_stack_space()?;
+    let Some(output) = operation.get_out() else {
+        reject!("no output");
+    };
+    let Some(value) = fd.vbank().get(output) else {
+        reject!("missing output varnode");
+    };
+    let Some(stack) = fd.get_arch().manage().get_stack_space() else {
+        reject!("no stack space");
+    };
     if value.get_space().get_index() != stack.get_index() {
-        return None;
+        reject!("output is not stack space");
     }
     let size = value.get_size();
     if !(1..=8).contains(&size) {
-        return None;
+        reject!("output size {size}");
     }
-    let info = fd.get_scope_local()?.query_container_for_link_width(
-        value.get_addr(),
-        size,
-        &Address::new_invalid(),
-    )?;
+    let Some(scope) = fd.get_scope_local() else {
+        reject!("no local scope");
+    };
+    let Some(info) =
+        scope.query_container_for_link_width(value.get_addr(), size, &Address::new_invalid())
+    else {
+        reject!(
+            "no stack container for offset {} size {size}",
+            value.get_offset()
+        );
+    };
     if info.is_name_undefined {
-        return None;
+        reject!("unnamed stack container");
     }
-    let mut bytes = expression(fd, output, true, 32)?;
+    let Some(mut bytes) = expression(fd, output, true, 32) else {
+        reject!("unsupported source expression, output size {size}");
+    };
     if stack.is_big_endian() {
         bytes.reverse();
     }
@@ -83,7 +108,10 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
             fd.vn_type_def_facing(output).get_metatype(),
             type_metatype::TYPE_ARRAY | type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION
         ) {
-            return None;
+            reject!(
+                "no preserved bytes and scalar output type {:?}",
+                fd.vn_type_def_facing(output).get_metatype()
+            );
         }
     }
     let mut ranges: Vec<Range> = Vec::new();
@@ -95,19 +123,28 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         // storage byte. A different byte in the same generated backing still
         // has to be read and copied, even when both Varnodes share one HighVariable.
         if let Byte::Value { source, .. } = byte {
-            let source_value = fd.vbank().get(source)?;
-            if source_value.is_implied()
-                || !matches!(source_value.get_size(), 1 | 2 | 4 | 8)
-                || !matches!(
-                    fd.vn_type_read_facing(source, op).get_metatype(),
-                    type_metatype::TYPE_BOOL
-                        | type_metatype::TYPE_INT
-                        | type_metatype::TYPE_UINT
-                        | type_metatype::TYPE_UNKNOWN
-                        | type_metatype::TYPE_PTR
-                )
-            {
-                return None;
+            let Some(source_value) = fd.vbank().get(source) else {
+                reject!("missing source varnode");
+            };
+            if source_value.is_implied() && !safe_load_value(fd, source) {
+                reject!(
+                    "source varnode is implied (size {})",
+                    source_value.get_size()
+                );
+            }
+            if !matches!(source_value.get_size(), 1 | 2 | 4 | 8) {
+                reject!("source size {} unsupported", source_value.get_size());
+            }
+            let read_type = fd.vn_type_read_facing(source, op).get_metatype();
+            if !matches!(
+                read_type,
+                type_metatype::TYPE_BOOL
+                    | type_metatype::TYPE_INT
+                    | type_metatype::TYPE_UINT
+                    | type_metatype::TYPE_UNKNOWN
+                    | type_metatype::TYPE_PTR
+            ) {
+                reject!("source read type {read_type:?} rejected");
             }
         }
         let index = index as i32;
@@ -124,7 +161,7 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         }
     }
     if ranges.is_empty() {
-        return None;
+        reject!("no output ranges after preserved bytes");
     }
     Some(Assignment {
         output,
@@ -149,6 +186,20 @@ fn same_backing(fd: &Funcdata, value: VarnodeId, symbol: SymbolId) -> bool {
             .get_high()
             .and_then(|high| fd.high_bank().get(high))
             .is_some_and(|high| high.kuna_link_symbol() == Some(symbol))
+}
+
+fn safe_load_value(fd: &Funcdata, value: VarnodeId) -> bool {
+    let Some(value) = fd.vbank().get(value) else {
+        return false;
+    };
+    value
+        .get_def()
+        .and_then(|def| fd.obank().get(def))
+        .is_some_and(|op| {
+            op.code() == OpCode::CPUI_LOAD
+                && !value.is_volatile()
+                && (value.get_size() == 1 || value.is_read_only())
+        })
 }
 
 fn expression(fd: &Funcdata, id: VarnodeId, top: bool, depth: u8) -> Option<Vec<Byte>> {
@@ -220,6 +271,13 @@ fn expression(fd: &Funcdata, id: VarnodeId, top: bool, depth: u8) -> Option<Vec<
                                 .and_then(|index| bytes.get(index).copied())
                                 .unwrap_or(Byte::Constant(0))
                         })
+                        .collect(),
+                );
+            }
+            OpCode::CPUI_LOAD if safe_load_value(fd, id) => {
+                return Some(
+                    (0..size)
+                        .map(|byte| Byte::Value { source: id, byte })
                         .collect(),
                 );
             }
