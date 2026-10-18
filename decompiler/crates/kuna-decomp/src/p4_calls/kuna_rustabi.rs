@@ -400,6 +400,8 @@ pub struct CalleeReturnWrites {
     /// Did the walk read through a `setISAMode` user op?  See
     /// [`Self::proves_untouched_for`].
     through_mode_switch: bool,
+    reads_nonreturn_memory: bool,
+    writes_stack_outside_return: bool,
 }
 
 impl CalleeReturnWrites {
@@ -450,6 +452,14 @@ impl CalleeReturnWrites {
         &self.store_spaces
     }
 
+    pub fn reads_nonreturn_memory(&self) -> bool {
+        self.reads_nonreturn_memory
+    }
+
+    pub fn stack_pointer_preserved_until_return(&self) -> bool {
+        !self.writes_stack_outside_return
+    }
+
     /// Did the walk complete? (Diagnostics and tests.)
     pub fn is_complete(&self) -> bool {
         self.complete
@@ -489,7 +499,15 @@ impl CalleeReturnWrites {
             call_facts: Vec::new(),
             return_targets: Vec::new(),
             through_mode_switch: false,
+            reads_nonreturn_memory: false,
+            writes_stack_outside_return: false,
         }
+    }
+
+    #[cfg(test)]
+    pub fn reading_memory(mut self) -> Self {
+        self.reads_nonreturn_memory = true;
+        self
     }
 
     /// This summary, as a walk that read through a `setISAMode` would leave it.
@@ -524,6 +542,8 @@ impl CalleeReturnWrites {
             call_facts: Vec::new(),
             return_targets: Vec::new(),
             through_mode_switch: false,
+            reads_nonreturn_memory: false,
+            writes_stack_outside_return: false,
         }
     }
 }
@@ -573,6 +593,8 @@ struct ProbeEmit {
     writes: Vec<(int4, u64, int4)>,
     return_targets: Vec<(int4, u64, int4)>,
     store_spaces: Vec<int4>,
+    loads: Vec<(kuna_num::pcoderaw::VarnodeData, kuna_num::pcoderaw::VarnodeData)>,
+    return_inputs: Vec<kuna_num::pcoderaw::VarnodeData>,
     targets: Vec<Address>,
     ends_flow: bool,
     calls: Vec<Address>,
@@ -592,6 +614,26 @@ struct ProbeEmit {
 }
 
 impl ProbeEmit {
+    fn same_storage(a: &kuna_num::pcoderaw::VarnodeData, b: &kuna_num::pcoderaw::VarnodeData) -> bool {
+        a.offset == b.offset && a.size == b.size
+            && a.space.as_ref().zip(b.space.as_ref()).is_some_and(|(a,b)| a.get_index() == b.get_index())
+    }
+
+    fn return_only_memory_reads(&self, stack: &[kuna_num::pcoderaw::VarnodeData]) -> bool {
+        self.loads.len() == 1 && self.loads.first().is_some_and(|(out,ptr)| {
+            self.return_inputs.iter().any(|target| Self::same_storage(out,target))
+                && stack.iter().any(|sp| Self::same_storage(ptr,sp) && out.size == sp.size)
+        })
+    }
+
+    fn changes_stack_outside_return(&self, stack: &[kuna_num::pcoderaw::VarnodeData]) -> bool {
+        self.return_inputs.is_empty() && self.writes.iter().any(|&(idx,off,size)| {
+            stack.iter().any(|sp| sp.space.as_ref().is_some_and(|s| s.get_index() == idx)
+                && off < sp.offset.saturating_add(u64::from(sp.size))
+                && sp.offset < off.saturating_add(size as u64))
+        })
+    }
+
     fn resolve_calls(&mut self, no_return: &impl Fn(&Address) -> bool) -> Vec<(Address, bool)> {
         let mut facts = Vec::new();
         for target in self.calls.drain(..) {
@@ -719,6 +761,7 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
             OpCode::CPUI_BRANCHIND => self.unresolved = true,
             OpCode::CPUI_RETURN => {
                 self.ends_flow = true;
+                if let Some(v) = vars.first() { self.return_inputs.push(v.clone()); }
                 if let Some(v) = vars.first() {
                     if let Some(sp) = v.space.as_ref().filter(|sp| sp.get_type() == spacetype::IPTR_PROCESSOR) {
                         let target = (sp.get_index(), v.offset, v.size as int4);
@@ -730,6 +773,11 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
             }
             // The `<spaceid>` operand's offset IS the space-manager index
             // (`Varnode::getSpaceFromConst`).
+            OpCode::CPUI_LOAD => {
+                if let (Some(out), Some(ptr)) = (outvar, vars.get(1)) {
+                    self.loads.push((out.clone(), ptr.clone()));
+                } else { self.unresolved = true; }
+            }
             OpCode::CPUI_STORE => {
                 if let Some(v) = vars.first() {
                     self.store_spaces.push(v.offset as int4);
@@ -787,6 +835,8 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
         call_facts: Vec::new(),
         return_targets: Vec::new(),
         through_mode_switch: false,
+        reads_nonreturn_memory: false,
+        writes_stack_outside_return: false,
     };
     let Some(entry_space) = entry.get_space() else {
         res.complete = false;
@@ -796,6 +846,10 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
         res.complete = false;
         return res;
     }
+    let return_stack: Vec<_> = ["ESP", "RSP"].iter()
+        .filter_map(|name| tr.probe_register(name))
+        .map(|storage| kuna_sleigh::translate::varnode_data_from_storage(&storage))
+        .collect();
     let mut seen: std::collections::HashSet<(int4, u64)> = std::collections::HashSet::new();
     let mut todo: Vec<Address> = vec![entry.clone()];
     let mut budget = MAX_PROBE_INSTRUCTIONS;
@@ -824,6 +878,8 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
                 break;
             }
         };
+        res.reads_nonreturn_memory |= !emit.loads.is_empty() && !emit.return_only_memory_reads(&return_stack);
+        res.writes_stack_outside_return |= emit.changes_stack_outside_return(&return_stack);
         res.call_facts.extend(emit.resolve_calls(&no_return));
         res.instructions += 1;
         res.writes.append(&mut emit.writes);
