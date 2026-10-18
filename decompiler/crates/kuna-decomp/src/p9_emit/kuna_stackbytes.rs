@@ -10,7 +10,11 @@ use kuna_num::opcodes::OpCode;
 #[derive(Clone, Copy)]
 pub(crate) enum Byte {
     Constant(u8),
-    Value { source: VarnodeId, byte: i32 },
+    Value {
+        source: VarnodeId,
+        byte: i32,
+        read_op: Option<OpId>,
+    },
 }
 
 pub(crate) struct Range {
@@ -20,6 +24,7 @@ pub(crate) struct Range {
 
 pub(crate) struct Assignment {
     pub output: VarnodeId,
+    pub backing_symbol: SymbolId,
     pub name: String,
     pub offset: i32,
     pub pointer_size: i32,
@@ -75,14 +80,14 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
     if info.is_name_undefined {
         reject!("unnamed stack container");
     }
-    let Some(mut bytes) = expression(fd, output, true, 32, op) else {
+    let Some(mut bytes) = expression(fd, output, true, 32, op, info.symbol, None) else {
         reject!("unsupported source expression, output size {size}");
     };
     if stack.is_big_endian() {
         bytes.reverse();
     }
     let preserved = |index: usize, byte: Byte| {
-        let Byte::Value { source, byte } = byte else {
+        let Byte::Value { source, byte, .. } = byte else {
             return false;
         };
         let Some(source_value) = fd.vbank().get(source) else {
@@ -103,7 +108,12 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         .enumerate()
         .map(|(index, byte)| preserved(index, *byte))
         .collect();
+    let output_type = fd.vn_type_read_facing(output, op).get_metatype();
     let stackview_scalar_copy = operation.code() == OpCode::CPUI_COPY
+        && !matches!(
+            output_type,
+            type_metatype::TYPE_PTR | type_metatype::TYPE_PTRREL
+        )
         && info
             .sym_type
             .as_ref()
@@ -131,18 +141,20 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         // `keep` already removes each byte that is literally the same stack
         // storage byte. A different byte in the same generated backing still
         // has to be read and copied, even when both Varnodes share one HighVariable.
-        if let Byte::Value { source, .. } = byte {
+        if let Byte::Value {
+            source, read_op, ..
+        } = byte
+        {
             let Some(source_value) = fd.vbank().get(source) else {
                 reject!("missing source varnode");
             };
-            let shares_stackview_high = source_value
-                .get_high()
-                .and_then(|high| fd.high_bank().get(high))
-                .is_some_and(|high| high.kuna_link_symbol() == Some(info.symbol));
+            let shares_stackview_high = shares_backing_high(fd, source, info.symbol);
             let safe_load = safe_load_op(fd, source, op).is_some();
+            let safe_global = safe_global_source(fd, source, op, info.symbol, read_op).is_some();
             if (source_value.is_implied() || shares_stackview_high)
                 && !same_backing(fd, source, info.symbol)
                 && !safe_load
+                && !safe_global
             {
                 reject!(
                     "source cannot be safely re-read after stackview merge (implied {}, shared high {}, size {}, readonly {}, volatile {}, def {:?})",
@@ -190,6 +202,7 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
     }
     Some(Assignment {
         output,
+        backing_symbol: info.symbol,
         name: info.display_name,
         offset: info.sym_off,
         pointer_size: stack.get_addr_size() as i32,
@@ -213,6 +226,48 @@ fn same_backing(fd: &Funcdata, value: VarnodeId, symbol: SymbolId) -> bool {
             .is_some_and(|high| high.kuna_link_symbol() == Some(symbol))
 }
 
+fn shares_backing_high(fd: &Funcdata, value: VarnodeId, symbol: SymbolId) -> bool {
+    fd.vbank()
+        .get(value)
+        .and_then(|value| value.get_high())
+        .and_then(|high| fd.high_bank().get(high))
+        .is_some_and(|high| high.kuna_link_symbol() == Some(symbol))
+}
+
+fn is_default_data_value(fd: &Funcdata, value: VarnodeId) -> bool {
+    let Some(value) = fd.vbank().get(value) else {
+        return false;
+    };
+    fd.get_arch()
+        .manage()
+        .get_default_data_space()
+        .is_some_and(|space| value.get_space().get_index() == space.get_index())
+}
+
+pub(crate) fn safe_global_source(
+    fd: &Funcdata,
+    value: VarnodeId,
+    use_op: OpId,
+    symbol: SymbolId,
+    read_op: Option<OpId>,
+) -> Option<VarnodeId> {
+    let global = fd.vbank().get(value)?;
+    if !is_default_data_value(fd, value)
+        || !shares_backing_high(fd, value, symbol)
+        || global.is_volatile()
+    {
+        return None;
+    }
+    // An implicit RAM Varnode is read where the COPY consuming it executes.
+    // The projection records that COPY so replacing the merged high name with
+    // the physical global cannot move a mutable read across a write or call.
+    let read_op = read_op.unwrap_or(use_op);
+    if read_op != use_op && !global.is_read_only() && !reemit_read_is_safe(fd, read_op, use_op) {
+        return None;
+    }
+    Some(value)
+}
+
 pub(crate) fn safe_load_op(fd: &Funcdata, value: VarnodeId, use_op: OpId) -> Option<OpId> {
     let mut current = value;
     for _ in 0..=32 {
@@ -224,7 +279,7 @@ pub(crate) fn safe_load_op(fd: &Funcdata, value: VarnodeId, use_op: OpId) -> Opt
                 if current_value.is_volatile() {
                     return None;
                 }
-                if current_value.is_read_only() || reemit_load_is_safe(fd, def, use_op) {
+                if current_value.is_read_only() || reemit_read_is_safe(fd, def, use_op) {
                     return Some(def);
                 }
                 return None;
@@ -236,24 +291,49 @@ pub(crate) fn safe_load_op(fd: &Funcdata, value: VarnodeId, use_op: OpId) -> Opt
                 }
                 current = input;
             }
+            OpCode::CPUI_SUBPIECE => {
+                let input = operation.get_in(0)?;
+                let input_value = fd.vbank().get(input)?;
+                let offset = operation
+                    .get_in(1)
+                    .and_then(|offset| fd.vbank().get(offset))?;
+                if !offset.is_constant()
+                    || offset
+                        .get_offset()
+                        .checked_add(current_value.get_size() as u64)?
+                        > input_value.get_size() as u64
+                {
+                    return None;
+                }
+                current = input;
+            }
+            OpCode::CPUI_INT_ZEXT => {
+                let input = operation.get_in(0)?;
+                if fd.vbank().get(input)?.get_size() > current_value.get_size() {
+                    return None;
+                }
+                current = input;
+            }
             _ => return None,
         }
     }
     None
 }
 
-fn reemit_load_is_safe(fd: &Funcdata, load: OpId, use_op: OpId) -> bool {
-    let (Some(load_op), Some(use_operation)) = (fd.obank().get(load), fd.obank().get(use_op))
+fn reemit_read_is_safe(fd: &Funcdata, read_op: OpId, use_op: OpId) -> bool {
+    let (Some(read_operation), Some(use_operation)) =
+        (fd.obank().get(read_op), fd.obank().get(use_op))
     else {
         return false;
     };
-    let (Some(block), Some(use_block)) = (load_op.get_parent(), use_operation.get_parent()) else {
+    let (Some(block), Some(use_block)) = (read_operation.get_parent(), use_operation.get_parent())
+    else {
         return false;
     };
     if block != use_block {
         return false;
     }
-    let mut next = fd.bb_op_next(load);
+    let mut next = fd.bb_op_next(read_op);
     let mut steps = 0;
     while let Some(op) = next {
         if op == use_op {
@@ -262,12 +342,15 @@ fn reemit_load_is_safe(fd: &Funcdata, load: OpId, use_op: OpId) -> bool {
         let Some(operation) = fd.obank().get(op) else {
             return false;
         };
+        let writes_physical_storage = operation
+            .get_out()
+            .and_then(|out| fd.vbank().get(out))
+            .is_some_and(|out| out.is_persist() || out.is_stack_store());
         if operation.is_call()
+            || writes_physical_storage
             || matches!(
                 operation.code(),
-                OpCode::CPUI_STORE
-                    | OpCode::CPUI_INDIRECT
-                    | OpCode::CPUI_CALLOTHER
+                OpCode::CPUI_STORE | OpCode::CPUI_INDIRECT | OpCode::CPUI_CALLOTHER
             )
         {
             return false;
@@ -287,6 +370,8 @@ fn expression(
     top: bool,
     depth: u8,
     use_op: OpId,
+    backing_symbol: SymbolId,
+    read_op: Option<OpId>,
 ) -> Option<Vec<Byte>> {
     let depth = depth.checked_sub(1)?;
     let value = fd.vbank().get(id)?;
@@ -301,8 +386,24 @@ fn expression(
                 .collect(),
         );
     }
-    if top || value.is_implied() {
-        let op = fd.obank().get(value.get_def()?)?;
+    let merged_source =
+        shares_backing_high(fd, id, backing_symbol) && !same_backing(fd, id, backing_symbol);
+    if top || value.is_implied() || merged_source {
+        let Some(def) = value.get_def() else {
+            if merged_source && is_default_data_value(fd, id) {
+                return Some(
+                    (0..size)
+                        .map(|byte| Byte::Value {
+                            source: id,
+                            byte,
+                            read_op: read_op.or(Some(use_op)),
+                        })
+                        .collect(),
+                );
+            }
+            return None;
+        };
+        let op = fd.obank().get(def)?;
         let input = op.get_in(0)?;
         let literal = |slot| {
             let value = fd.vbank().get(op.get_in(slot)?)?;
@@ -311,23 +412,66 @@ fn expression(
         match op.code() {
             OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
                 if fd.vbank().get(input)?.get_size() == size {
-                    return expression(fd, input, false, depth, use_op);
+                    let next_read = if is_default_data_value(fd, input) {
+                        Some(def)
+                    } else {
+                        read_op
+                    };
+                    return expression(fd, input, false, depth, use_op, backing_symbol, next_read);
                 }
             }
             OpCode::CPUI_PIECE => {
-                let mut low = expression(fd, op.get_in(1)?, false, depth, use_op)?;
-                low.extend(expression(fd, input, false, depth, use_op)?);
+                let low_input = op.get_in(1)?;
+                let low_read = if is_default_data_value(fd, low_input) {
+                    Some(def)
+                } else {
+                    read_op
+                };
+                let high_read = if is_default_data_value(fd, input) {
+                    Some(def)
+                } else {
+                    read_op
+                };
+                let mut low = expression(
+                    fd,
+                    low_input,
+                    false,
+                    depth,
+                    use_op,
+                    backing_symbol,
+                    low_read,
+                )?;
+                low.extend(expression(
+                    fd,
+                    input,
+                    false,
+                    depth,
+                    use_op,
+                    backing_symbol,
+                    high_read,
+                )?);
                 return (low.len() == size as usize).then_some(low);
             }
             OpCode::CPUI_SUBPIECE => {
                 let offset: usize = literal(1)?.try_into().ok()?;
-                let bytes = expression(fd, input, false, depth, use_op)?;
+                let next_read = if is_default_data_value(fd, input) {
+                    Some(def)
+                } else {
+                    read_op
+                };
+                let bytes = expression(fd, input, false, depth, use_op, backing_symbol, next_read)?;
                 return bytes
                     .get(offset..offset.checked_add(size as usize)?)
                     .map(|bytes| bytes.to_vec());
             }
             OpCode::CPUI_INT_ZEXT => {
-                let mut bytes = expression(fd, input, false, depth, use_op)?;
+                let next_read = if is_default_data_value(fd, input) {
+                    Some(def)
+                } else {
+                    read_op
+                };
+                let mut bytes =
+                    expression(fd, input, false, depth, use_op, backing_symbol, next_read)?;
                 if bytes.len() > size as usize {
                     return None;
                 }
@@ -339,7 +483,12 @@ fn expression(
                 if shift % 8 != 0 {
                     return None;
                 }
-                let bytes = expression(fd, input, false, depth, use_op)?;
+                let next_read = if is_default_data_value(fd, input) {
+                    Some(def)
+                } else {
+                    read_op
+                };
+                let bytes = expression(fd, input, false, depth, use_op, backing_symbol, next_read)?;
                 if bytes.len() != size as usize {
                     return None;
                 }
@@ -362,7 +511,11 @@ fn expression(
             OpCode::CPUI_LOAD if safe_load_op(fd, id, use_op).is_some() => {
                 return Some(
                     (0..size)
-                        .map(|byte| Byte::Value { source: id, byte })
+                        .map(|byte| Byte::Value {
+                            source: id,
+                            byte,
+                            read_op: None,
+                        })
                         .collect(),
                 );
             }
@@ -372,7 +525,115 @@ fn expression(
     }
     Some(
         (0..size)
-            .map(|byte| Byte::Value { source: id, byte })
+            .map(|byte| Byte::Value {
+                source: id,
+                byte,
+                read_op: if is_default_data_value(fd, id) {
+                    read_op.or(Some(use_op))
+                } else {
+                    read_op
+                },
+            })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reemit_read_is_safe;
+    use crate::context::ArchContext;
+    use crate::funcdata::Funcdata;
+    use crate::varnode::varnode_flags;
+    use kuna_base::address::Address;
+    use kuna_base::space::{
+        addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, IopSpace,
+        SpacebaseSpace, UniqueSpace,
+    };
+    use kuna_num::opcodes::OpCode;
+    use std::rc::Rc;
+
+    fn frame_write_fixture(
+        with_write: bool,
+    ) -> (Funcdata, crate::context::OpId, crate::context::OpId) {
+        let mut spaces = AddrSpaceManager::new();
+        spaces.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        spaces
+            .insert_space(Rc::new(UniqueSpace::new(1, 0, false)))
+            .unwrap();
+        spaces.insert_space(Rc::new(IopSpace::new(2))).unwrap();
+        let register = Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "register",
+            false,
+            8,
+            1,
+            3,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        ));
+        spaces.insert_space(Rc::clone(&register)).unwrap();
+        let ram = Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            4,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        ));
+        spaces.insert_space(Rc::clone(&ram)).unwrap();
+        let stack = Rc::new(SpacebaseSpace::new(
+            "stack", 5, 8, &register, 1, true, false,
+        ));
+        spaces.insert_space(stack).unwrap();
+
+        let arch = Rc::new(ArchContext::new(spaces));
+        let mut fd = Funcdata::new(
+            "build",
+            "build",
+            arch,
+            Address::new(Rc::clone(&ram), 0x1000),
+            0x1000,
+            0x40,
+        )
+        .unwrap();
+        let root = fd.bblocks_ref().root.expect("function block root");
+        let block = fd.bblocks_mut().new_block_basic(root);
+        let make_copy = |fd: &mut Funcdata, addr| {
+            let op = fd.new_op(1, Address::new(Rc::clone(&ram), addr));
+            fd.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+            op
+        };
+        let read = make_copy(&mut fd, 0x1001);
+        fd.op_insert(read, block, None);
+        if with_write {
+            let write = make_copy(&mut fd, 0x1002);
+            let out = fd
+                .new_varnode_out(1, &Address::new(Rc::clone(&ram), 0x3000), write)
+                .unwrap();
+            fd.vbank_mut()
+                .get_mut(out)
+                .unwrap()
+                .set_flags_pub(varnode_flags::persist);
+            fd.op_insert(write, block, None);
+        }
+        let use_op = make_copy(&mut fd, 0x1003);
+        fd.op_insert(use_op, block, None);
+        (fd, read, use_op)
+    }
+
+    #[test]
+    fn a_persist_copy_write_blocks_reemitting_an_earlier_mutable_read() {
+        let (fd, read, use_op) = frame_write_fixture(true);
+        assert!(!reemit_read_is_safe(&fd, read, use_op));
+    }
+
+    #[test]
+    fn a_mutable_read_can_be_reemitted_when_no_effect_intervenes() {
+        let (fd, read, use_op) = frame_write_fixture(false);
+        assert!(reemit_read_is_safe(&fd, read, use_op));
+    }
 }

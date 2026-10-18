@@ -8031,6 +8031,8 @@ impl PrintC {
         source: VarnodeId,
         op: OpId,
         mods: uint4,
+        backing_symbol: crate::database::SymbolId,
+        read_op: Option<OpId>,
     ) {
         if let Some(load) = crate::kuna_stackbytes::safe_load_op(fd, source, op) {
             // Address-tied LOAD outputs can share the destination stackview
@@ -8040,6 +8042,18 @@ impl PrintC {
             self.context.set_mods(mods);
             self.op_push_ir(fd, arch, load, Some(op));
             self.context.set_mods(saved_mods);
+        } else if let Some(global) = crate::kuna_stackbytes::safe_global_source(
+            fd,
+            source,
+            op,
+            backing_symbol,
+            read_op,
+        )
+        {
+            // A RAM Varnode can have been coalesced into the stackview's
+            // HighVariable. Resolve the physical address instead of naming that
+            // merged high as the stack destination.
+            self.push_annotation_ir(fd, arch, global, op);
         } else {
             self.push_vn_ir_m(fd, arch, source, op, mods);
         }
@@ -8058,6 +8072,7 @@ impl PrintC {
         let factory = arch.types();
         let byte_type = factory.get_base(1, type_metatype::TYPE_UINT).unwrap();
         let mods = self.context.mods() & !(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
+        let backing_symbol = assignment.backing_symbol;
         let stack_big_endian = fd
             .get_arch()
             .manage()
@@ -8071,7 +8086,11 @@ impl PrintC {
             let datatype = factory.get_type_array(size, std::rc::Rc::clone(&byte_type)).unwrap();
             let scalar_source = if matches!(size, 1 | 2 | 4 | 8) {
                 range.bytes.first().and_then(|first| match first {
-                    crate::kuna_stackbytes::Byte::Value { source, .. } => {
+                    crate::kuna_stackbytes::Byte::Value {
+                        source,
+                        read_op,
+                        ..
+                    } => {
                         let full_width = fd
                             .vbank()
                             .get(*source)
@@ -8088,17 +8107,20 @@ impl PrintC {
                                     crate::kuna_stackbytes::Byte::Value {
                                         source: candidate,
                                         byte,
-                                    } if *candidate == *source && *byte == expected
+                                        read_op: candidate_read_op,
+                                    } if *candidate == *source
+                                        && *byte == expected
+                                        && *candidate_read_op == *read_op
                                 )
                             });
-                        complete_range.then_some(*source)
+                        complete_range.then_some((*source, *read_op))
                     }
                     crate::kuna_stackbytes::Byte::Constant(_) => None,
                 })
             } else {
                 None
             };
-            let (front, back) = if let Some(source) = scalar_source {
+            let (front, back) = if let Some((source, _)) = scalar_source {
                 let source_size = fd.vbank().get(source).unwrap().get_size();
                 let datatype = factory.get_base(source_size, type_metatype::TYPE_UINT).unwrap();
                 declarator_parts(&datatype, self.rt_ctx)
@@ -8125,8 +8147,16 @@ impl PrintC {
             self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
             self.push_op(&COMPOUND, Some(op_key(op)));
             self.push_atom(&Atom::syntax(format!("({front}{back}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
-            if let Some(source) = scalar_source {
-                self.push_stackbyte_source_ir(fd, arch, source, op, mods);
+            if let Some((source, read_op)) = scalar_source {
+                self.push_stackbyte_source_ir(
+                    fd,
+                    arch,
+                    source,
+                    op,
+                    mods,
+                    backing_symbol,
+                    read_op,
+                );
             } else {
                 for _ in 1..range.bytes.len() {
                     self.push_op(&tokens::COMMA, Some(op_key(op)));
@@ -8136,7 +8166,11 @@ impl PrintC {
                         crate::kuna_stackbytes::Byte::Constant(value) => {
                             self.push_constant_ir(u64::from(value), 1, op);
                         }
-                        crate::kuna_stackbytes::Byte::Value { source, byte } => {
+                        crate::kuna_stackbytes::Byte::Value {
+                            source,
+                            byte,
+                            read_op,
+                        } => {
                             self.push_cast_open(&byte_type, op);
                             let source_size = fd.vbank().get(source).unwrap().get_size();
                             if byte > 0 {
@@ -8148,7 +8182,15 @@ impl PrintC {
                                     .unwrap();
                                 self.push_cast_open(&unsigned, op);
                             }
-                            self.push_stackbyte_source_ir(fd, arch, source, op, mods);
+                            self.push_stackbyte_source_ir(
+                                fd,
+                                arch,
+                                source,
+                                op,
+                                mods,
+                                backing_symbol,
+                                read_op,
+                            );
                             if byte > 0 {
                                 self.push_constant_ir((byte * 8) as u64, 4, op);
                             }
