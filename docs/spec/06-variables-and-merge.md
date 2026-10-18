@@ -810,6 +810,20 @@ rename took prints its number. After `name fd src` the second descriptor is
 still `fd_2` and no local becomes `fd`; after `name v5 n`, read's result prints
 `v3` and `name v3 got` reaches it.
 
+**A register piece no register name covers is a local.** The `vN` allocator
+routes a high with no covering Symbol to `dat_<addr>` when its storage is global
+data, and kuna's proxy for global data was "an `IPTR_PROCESSOR` address with no
+register name". The register space is `IPTR_PROCESSOR` too, so a high living
+only in an unnamed register piece printed as an undeclared global and the C did
+not compile: a function returning the 64-bit `rax` after a call that wrote only
+`eax` printed `return CONCAT44(dat_4,v1);`, and the upper half of `rcx` a
+64-bit product leaves there printed `dat_c`. `coreaction_cleanup.rs
+(name_local_highs_angr)` now excludes the register space from that test, so
+such a high is a `vN` local declared with its storage (`// register 0x4`). The
+local is read but never assigned, as the binary reads the register's
+undefined upper half. Only register pieces change; real globals keep
+`dat_<addr>` (`tests/stages/kuna-regpiece.xml`).
+
 **A default name skips one a caller locked.** The `vN` allocator (and the
 `<prefix>Var<N>` arm under Ghidra names) used to hand out `v<base++>` without
 looking at the scope, so after `name v3 v1` the untouched local that came first
@@ -1642,6 +1656,114 @@ field, so on by default the pass over-extends a correctly-sized `char name[N]`
 to `[N+1]` in ordinary gcc/clang/MSVC output. It is therefore an opt-in tool:
 flip it on for a string-heavy target whose stack buffers are known to be
 NUL-terminated strings. Off, the layout is upstream's split.
+
+**An escaped buffer's length (kuna `arraysize`, default `on`).** An open range
+that `attempt_join` does not extend ends where the next hint starts, and
+`adjust_fit` trims it to the mapped range. For a buffer whose address escapes to
+a call that gap is the buffer plus the alignment padding after it: a compiler
+aligns a buffer of 16 bytes or more to 16, so `char buf[8192]` directly below
+the stack-protector guard slot (which the stack-guard strip leaves unmapped, so
+no array covers it) prints as `char buf[8200]`, `char buf[1001]` as
+`char buf[1016]`, and `char buf[21]` between two other buffers as `char
+buf[32]`. The source size is anywhere in the last 16 bytes of the gap, and the
+frame alone cannot say where. The call that receives the buffer often can.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_arraysize.rs (gather)`
+runs in `restructure_varnode` after the open hints are gathered. For every call
+it reads the argument a library buffer function takes the buffer in and the
+byte count it states for it (`kuna_arraysize.rs (LENGTH_CALLS)`), and what that
+count says (`kuna_arraysize.rs (Says)`): a length the callee may fill up to
+(`fgets`, `snprintf`, `read`, `readlink`, `strftime`, `getcwd`, `strncpy`,
+`getnameinfo`, the product of `fread`'s size and count), a length the callee
+writes exactly (`memset`, a `memcpy` or `memmove` destination) or only reads (a
+`memcpy` source, `memcmp`, `write`, `fwrite`), or the destination object size a
+`_FORTIFY_SOURCE` call (`__snprintf_chk`, `__memcpy_chk`, `__read_chk`, ...)
+passes. A count is read only when the argument is a constant (or the
+`PTRSUB(#0, #c)` pointer constant the type pass makes of an integer that happens
+to be a mapped address), and it is filed under the escaped base (an
+alias-checker base with no index) the buffer argument may hold, through copies,
+casts, indirect effects and loop phis (`kuna_arraysize.rs (start_of)`): a
+program that passes a call that many bytes at the base on any path needs them
+there. A phi input that is no frame address (a callee-saved register's incoming
+value) does not stop the walk, but an argument that may hold two different bases
+files nothing, and neither does a walk past 64 Varnodes. When the call is one
+whose result is the number of bytes it stored (`read`, `readlink`, `recv`,
+`fread` with a size of 1, ...) and the function writes exactly one byte through
+the buffer's address plus that result (`n = readlink(p, buf, 4096); buf[n] =
+0;`: an indexed alias-checker base at the same start whose index is the call's
+output on every path through copies, extensions, truncations and phis,
+`kuna_arraysize.rs (carries)`, and whose only uses are one-byte loads and
+stores, `kuna_arraysize.rs (byte_access_only)`), the count is one more, since
+that index reaches the length itself; a result capped on some path
+(`if (n == 64) n = 63;`) is not the output on every path. At `calls` every
+constant argument of a call outside that table is filed the same way under the
+base another of its arguments holds.
+
+`gather` also follows every escaped base (`kuna_arraysize.rs (trace)`) through
+copies, casts, indirect effects, phis and constant pointer arithmetic to the
+loads, stores and library calls it reaches, and records where they land
+(`kuna_arraysize.rs (Reach)`): the bytes a constant-offset access or a library
+call with a constant length touches, and whether some access may land anywhere
+above or below the base. A pointer that reaches a phi again at another offset
+(a loop that advances or walks back through the buffer), a non-constant amount
+added or subtracted (other than a one-byte terminator at a byte-count result),
+and a library call that takes the address with a length that is neither a
+constant nor a byte-count result of a call on the same buffer, all count as
+unbounded. Indexed alias-checker bases whose index is not such a terminator are
+recorded by offset.
+
+In `ScopeLocal::restructure`, once `adjust_fit` has fixed the gap of an open
+range, `kuna_arraysize.rs (fit)` takes the largest count filed under its start
+that may decide its size: a fill length, an object size or a `calls` constant;
+an exact-write or read-only length only says the buffer is at least that long.
+The range keeps its gap when any count, of any kind, comes within one byte of
+the gap (a call that states the whole gap proves it; `memset(buf, 0, 16);
+fgets(buf, sizeof buf, f)` into `char buf[24]` keeps 24), when the deciding
+count is under 16 bytes, not a whole number of elements, more than 15 bytes
+short of the gap, or shorter than another count, a hint the range absorbed or
+the elements its index bound reaches, when an unproven index base starts
+between 16 bytes below the start (a negative constant folded into the base,
+`buf[n - 1]`) and the gap's end, when an unbounded access may land in the range
+from a base at most 16 bytes below it or a backward walk from a base at most 16
+bytes past the gap's end, or when a constant-offset access touches a byte
+between the count and the gap's end. A fill length one byte short of a multiple
+of 16 that fits the gap and is not already a terminated count
+(`readlink(p, buf, sizeof buf - 1)` into `char buf[4096]`) counts as that
+multiple; an object size is exact and never moves. The bump applies to every
+fill length, also to a function that writes its own terminator within the
+length (`fgets`, `snprintf`, `gethostname`), because `sizeof buf - 1` is common
+there too (`fgets(line, sizeof line - 1, fp)` into `char line[5120]`,
+`gethostname(name, 255)` into `char name[256]`); a full-size fill into a buffer
+one short of a multiple of 16 (`char line[255]; fgets(line, sizeof line, f)`)
+is therefore declared one byte longer. Limiting the bump to raw-byte writers
+(`read`, `readlink`, `recv`, `fread`) breaks those two real buffers and fixes
+none on the measured sets. Otherwise the range ends at the count and the bytes
+past it keep no symbol, like any alignment padding.
+
+What this guarantees is that every access the function makes through the
+buffer's own address at an offset the IR can bound (a constant offset, a
+library call with a constant or byte-count length, a terminator at a
+byte-count result) lies inside the declared array; an index or pointer walk the
+IR cannot bound keeps the whole gap. What the IR does not follow is not bounded
+by the frame, as for any array: what a call outside the length tables does with
+the address, including library writers that take no length the table reads
+(`strcat`, `strcpy`, `sprintf`, `sscanf` with a `%63s` field), `strlen` and the
+binary's own functions or a function pointer; an address stored to memory and
+loaded back; and a pointer into the buffer that a callee sets (`strtol`'s end
+pointer). So `fgets(buf, 0x38, f); strcat(buf, "!!!!!");` declares 56 bytes. The count is still a guess about the source in three known
+ways: a function that passes a shorter length than its buffer (`fgets(buf, 20,
+f)` into `char buf[24]`) gets the shorter array, since the frame cannot tell it
+from `char buf[20]`; at `_FORTIFY_SOURCE=2` the `str*`, `printf`, `fgets`,
+`getcwd` and `readlink` families pass `__builtin_object_size` mode 1, the size
+of the closest enclosing member, so a stack structure whose first member is a
+`char` array filled by them (`struct { char login[32]; unsigned uid, gid; } u;
+fill(&u); snprintf(u.login, ..)`) is declared as that member, and a plain
+library length into such a member does the same; and a terminator written after
+the result was capped by a comparison (`if (n >= sizeof buf) return -1; buf[n]
+= 0;`) still adds the byte. An exact-write length never decides, so `int a[9];
+memset(a, 0, 34)` keeps its gap, but a fill length into a buffer the range
+types as `char` is taken as is (`long a[6]; read(fd, a, 44)` is `char[44]`).
+`off` keeps upstream's gap.
 **A pointer walk's buffer and its end bound (kuna `endptrbound`, default on).**
 A loop that walks a stack buffer with a pointer stops on the address one past
 the buffer's last element, and nothing in the hint sources above says that

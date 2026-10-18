@@ -61,6 +61,7 @@ pub mod kuna_condexeretuse; // (kuna) a use of a returned value on the branch a 
 pub mod kuna_armfloatargs; // (kuna) an ARM hard-float function takes its scalar VFP inputs at their full widths
 pub mod kuna_armfloatreturn; // (kuna) an ARM hard-float function returns and takes whole VFP values
 pub mod kuna_narrowext; // (kuna) a narrow integer argument or return value is extended as the ABI states
+pub mod kuna_narrowret; // (kuna) a call reads the narrow value its callee returns zero-extended
 pub mod kuna_narrowargs; // (kuna) a parameter whose body reads only its low bytes is declared that narrow
 pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only under the image's float convention
 pub mod kuna_varargretreg; // (kuna) a variadic call's argument in the register its value returns in

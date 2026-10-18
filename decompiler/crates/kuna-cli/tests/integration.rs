@@ -29,6 +29,9 @@ mod arm_float_returns;
 #[path = "narrow_args.rs"]
 mod narrow_args;
 
+#[path = "narrow_ret.rs"]
+mod narrow_ret;
+
 #[path = "arm_frame_retain.rs"]
 mod arm_frame_retain;
 #[path = "arm_frame_pool.rs"]
@@ -454,9 +457,22 @@ mod multireg_call_inputs;
 
 #[path = "narrow_register_inputs.rs"]
 mod narrow_register_inputs;
+#[path = "float_field_slices.rs"]
+mod float_field_slices;
 
 #[path = "float_storage_truncation.rs"]
 mod float_storage_truncation;
+#[path = "dwarf_reference_arguments.rs"]
+mod dwarf_reference_arguments;
+
+#[path = "fortran_fatal_diagnostics.rs"]
+mod fortran_fatal_diagnostics;
+
+#[path = "dwarf_array_bounds.rs"]
+mod dwarf_array_bounds;
+
+#[path = "wide_right_shift.rs"]
+mod wide_right_shift;
 
 #[path = "x87_empty_return.rs"]
 mod x87_empty_return;

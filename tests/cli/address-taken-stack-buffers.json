@@ -30,10 +30,10 @@
     },
     "stdout_is_json": true,
     "stdout_matches": [
-      "\"stack_offset\"\\s*:\\s*-88\\s*,\\s*\"size\"\\s*:\\s*32\\s*,\\s*\"line_numbers\"\\s*:\\s*\\[\\s*\\d+\\s*,\\s*\\d+",
+      "\"stack_offset\"\\s*:\\s*-88\\s*,\\s*\"size\"\\s*:\\s*30\\s*,\\s*\"line_numbers\"\\s*:\\s*\\[\\s*\\d+\\s*,\\s*\\d+",
       "\"stack_offset\"\\s*:\\s*-56\\s*,\\s*\"size\"\\s*:\\s*40\\s*,\\s*\"line_numbers\"\\s*:\\s*\\[\\s*\\d+\\s*,\\s*\\d+",
       "\"name\"\\s*:\\s*\"local_70\"[\\s\\S]*?\"line_numbers\"\\s*:\\s*\\[\\s*\\]"
     ]
   },
-  "notes": "The two recovered arrays are used only through their addresses or element fragments. Their positive line evidence must survive same-name HighVariable disambiguation; the unused local_70 control must remain empty. This is the in-repo copy of acceptance a-afdbfc2ff960 for RE need address-taken-stack-buffers."
+  "notes": "The two recovered arrays are used only through their addresses or element fragments. Their positive line evidence must survive same-name HighVariable disambiguation; the unused local_70 control must remain empty. Derived from acceptance a-afdbfc2ff960 (RE need address-taken-stack-buffers); the key buffer is 30 bytes, the object size its __strcpy_chk call states."
 }

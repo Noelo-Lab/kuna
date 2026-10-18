@@ -165,7 +165,7 @@ fn a_number_shaped_rename_is_kept() {
 fn a_directive_reaches_the_same_local_in_every_mode() {
     for mode in ["auto", "aggressive", "reliable"] {
         let code = decompile(&["--mode", mode], &["name v4 block"]);
-        assert!(code.contains("  char block [520]; // stack - 0x228\n"), "{mode}:\n{code}");
+        assert!(code.contains("  char block [512]; // stack - 0x228\n"), "{mode}:\n{code}");
         let code = decompile(&["--mode", mode], &["name fd src"]);
         assert!(code.contains("  src = open(a0,0);\n"), "{mode}:\n{code}");
         let code = decompile(&["--mode", mode], &["name v1 src"]);

@@ -1778,6 +1778,7 @@ impl Action for ActionDeadCode {
         let res = deadcode_apply(data);
         if self.narrow_inputs {
             self.base.count += crate::kuna_narrowargs::narrow_inputs(data);
+            self.base.count += crate::kuna_regnarrow::narrow_locals(data);
         }
         res
     }

@@ -1404,6 +1404,7 @@ impl Action for ActionActiveReturn {
         use crate::funcdata_callsite::{build_output_from_trials, check_output_trial_use};
         let manager_rc = data.get_arch().manage.clone();
         let mut qlst = data.take_call_specs();
+        let callees = crate::kuna_narrowret::callee_keys(&qlst);
         for fc in qlst.iter_mut() {
             if !fc.is_output_active() {
                 continue;
@@ -1424,6 +1425,7 @@ impl Action for ActionActiveReturn {
             let trialvn = check_output_trial_use(fc, data);
             let _ = fc.derive_output_map_self(&manager_rc);
             build_output_from_trials(fc, data, &trialvn);
+            crate::kuna_narrowret::narrow_call_output(data, fc, &callees);
             fc.clear_active_output();
             self.base.count += 1;
         }

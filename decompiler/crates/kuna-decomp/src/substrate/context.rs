@@ -1094,6 +1094,12 @@ pub struct ArchContext {
     /// (kuna) narrow a register parameter to the low part its uses consume
     /// (`narrowargs`). Read by [`crate::kuna_narrowargs`].
     pub narrow_args: bool,
+    /// (kuna) narrow a register-local web whose values fit a low part
+    /// (`regnarrow`). Read by [`crate::kuna_regnarrow`].
+    pub narrow_locals: bool,
+    /// (kuna) a call reads the narrow value its callee returns zero-extended
+    /// (`narrowret`). Read by [`crate::kuna_narrowret`].
+    pub narrow_ret: bool,
     /// (kuna) at a CALL SITE, let an unreferenced argument register whose next
     /// slot is on the stack end the argument list (`stackarggap`).  Read by
     /// `ActionActiveParam`, which stamps it onto the
@@ -1203,6 +1209,10 @@ pub struct ArchContext {
     /// indexed stack base reaches past upstream's four elements. Levels in
     /// [`crate::p6_variables::kuna_arrayextent`]; read by `gather_open`.
     pub array_extent: int4,
+    /// (kuna) `option arraysize off|on|calls`: end an escaped stack buffer at
+    /// the byte count its calls state. Levels in
+    /// [`crate::p6_variables::kuna_arraysize`]; read by `restructure`.
+    pub array_size: int4,
     /// Keep physical frame writes live when conservative stack aliasing is requested.
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
@@ -1882,6 +1892,8 @@ impl ArchContext {
             indirect_anchor: true,      // indirectanchor (default-on)
             input_param_gap: true,
             narrow_args: true,
+            narrow_locals: true,
+            narrow_ret: true,
             stack_arg_gap: true,         // stackarggap (DIV-140 default-on)
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             vararg_forward: true,        // varargforward (default-on)
@@ -1901,6 +1913,7 @@ impl ArchContext {
             call_array_extent: false,
             stack_struct: false,
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
+            array_size: 0,               // arraysize (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)
             libc_names: false, // libcnames (opt-in)

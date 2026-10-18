@@ -1,0 +1,82 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    narrowret: a call reads the narrow value its callee returns (x86-64).
+
+    The image is decompiler/crates/kuna-analysis/tests/fixtures/narrowret.c
+    (gcc -O2), its calls resolved at 0x1000.  `whole` returns `lea eax,
+    [rdi+rdi*4]`: a 32-bit write, which clears the upper half of rax, and the
+    caller `returns_word` reads rax whole after the call.  The listing
+    declares `whole` an `int`, and the write proves a zero extension but no
+    sign, so even under `decompile-all` it states nothing and `returns_word`
+    keeps rax whole (#1, #2).  gcc's `next_byte` returns `lea eax, [rdi+1]`
+    without extending the byte: nothing proves its upper bits zero, so it
+    states nothing either and `larger_byte` reads `al` (#3).
+
+    THIS FIXTURE IS THE NEGATIVE CONTROL, as kuna-narrowret.xml is for the
+    Thumb build: this harness decompiles ONE function, so no callee states
+    anything and both passes print the same.  The positive witnesses are
+    tests/cli/narrowret-holds-a-narrow-call-result-narrow.json and its off
+    arm over the Thumb object, and decompiler/crates/kuna-cli/tests/narrow_ret.rs
+    over both objects.
+
+    Stage / sub-stage: P4 "output-prototype".  Pass 1 (default on) and pass 2
+    (off) must print the same.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+f30f1efa8d4701c30f1f840000000000f30f1efa8d047fc30f1f840000000000f30f1efa39f70f97c0c3660f1f440000
+f30f1efa89f8c3660f1f840000000000f30f1efa8d04bfc30f1f840000000000f30f1efa8d04fd0000000029f801f0c3
+f30f1efa5589fd534883ec08e88fffffff89efc1ef0889c3e883ffffff38c30f42d831f680fb800fb6fb400f94c6e8bd
+ffffff4883c40883c0015b5dc30f1f00f30f1efa5589fd534883ec08e85fffffff89ef89c3c1ef10e853ffffff6681fb
+00800f47d889de0fb7fb66c1ee030fb7f6e87affffff4883c40883c0015b5dc3f30f1efa41544189f45589fd53e82eff
+ffff89ee4489e789c3e822ffffff84db89ee0f44d80fb6fbe843ffffff5b5d83c001415cc366662e0f1f840000000000
+f30f1efa5589fd534883ec08e8fffeffff89efc1ef0889c3e8f3feffff38c30f4cd831f680fbfd0fbefb400f9cc6e8fd
+feffff4883c40883c0015b5dc30f1f00f30f1efa5589fd534883ec08e8cffeffff89efc1ef0389c3e8c3feffff39c30f
+43c331f63d8000000089c7400f97c6e8bcfeffff4883c40883c0015b5dc36690f30f1efa4883ec08e893feffff3d8100
+00008d14000f42c24883c408c3
+</bytechunk>
+</binaryimage>
+<script>
+  <com>map function r0x1000 next_byte</com>
+  <com>map function r0x1010 scaled</com>
+  <com>map function r0x1020 above</com>
+  <com>map function r0x1030 signed_byte</com>
+  <com>map function r0x1040 whole</com>
+  <com>map function r0x1050 mix</com>
+  <com>map function r0x1060 larger_byte</com>
+  <com>map function r0x10a0 halfword_pair</com>
+  <com>map function r0x10e0 count_above</com>
+  <com>map function r0x1120 keeps_sign</com>
+  <com>map function r0x1160 keeps_width</com>
+  <com>map function r0x11a0 returns_word</com>
+  <com>lo fu next_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu whole</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu larger_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu returns_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option narrowret off</com>
+  <com>lo fu next_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu whole</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu larger_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu returns_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="NARROWRET-X86 #1: a callee whose word write clears rax returns int in both passes" min="2" max="2">int4 whole\(int4 a0\)</stringmatch>
+<stringmatch name="NARROWRET-X86 #2: with nothing stated the caller keeps rax whole" min="2" max="2">uint8 v1; // rax</stringmatch>
+<stringmatch name="NARROWRET-X86 #3: a byte the callee never extends is read as al" min="2" max="2">uint1 v1; // al \| bl</stringmatch>
+</decompilertest>

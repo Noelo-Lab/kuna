@@ -1,0 +1,238 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A stack buffer whose address escapes to a call is declared as long as the
+    gap to the next frame object.  gcc and clang align a buffer of 16 bytes or
+    more to 16, so the gap includes the padding below the next object, here the
+    stack-protector guard slot at stack - 0x10: `char buf[64]` prints as
+    `char [72]`.  Stage: P6 stack-frame layout (ScopeLocal::restructure), option
+    arraysize off|on|calls.  Each function is decompiled with the option off,
+    then on (float_text also at calls); the assertion counts span all passes.
+
+    gcc 11 -O0 -fstack-protector-strong -fno-builtin -fno-pic, linked at
+    0x401000; fgets, read, readlink, __snprintf_chk, memset, fmt_num, fill and use are stubs:
+
+        int line_len(FILE *f)    { char buf[64];   if (!fgets(buf, sizeof buf, f)) return -1; return use(buf); }
+        int link_len(char *p)    { char buf[4096]; ssize_t n = readlink(p, buf, sizeof buf - 1);
+                                   if (n < 0) return -1; return use(buf) + (int)n; }
+        int link_plus1(char *p)  { char buf[4097]; ssize_t n = readlink(p, buf, 4096);
+                                   if (n < 0) return -1; buf[n] = 0; return use(buf); }
+        int fortified(int v)     { char buf[256];  __snprintf_chk(buf, 200, 1, sizeof buf, "%d", v); return use(buf); }
+        int float_text(long v)   { char buf[31];   fmt_num(buf, sizeof buf, v); return use(buf); }
+        int short_read(FILE *f)  { char buf[64];   if (!fgets(buf, 16, f)) return -1; return use(buf); }
+        int term_room(FILE *f)   { char buf[24];   if (!fgets(buf, sizeof buf - 1, f)) return -1; return use(buf); }
+        int veto(FILE *f)        { char buf[24];   memset(buf, 0, 16); if (!fgets(buf, sizeof buf, f)) return -1;
+                                   return use(buf); }
+        int scan_back(FILE *f)   { char buf[64];   if (!fgets(buf, 60, f)) return 0; int i = 63;
+                                   while (i >= 0 && buf[i] != '\n') i -= 1; return i; }
+        int sum_n(int fd, int n) { unsigned char buf[96]; if (read(fd, buf, 90) < 0) return -1; int s = 0;
+                                   for (int i = 0; i < n && i < 96; i++) s += buf[i]; return s; }
+
+    scan_back and sum_n are compiled at -O2 (`__attribute__((optimize("O2")))`).
+
+    Off (#2, #3, #5) is the bug: [72], [4104], [264].  On (#1, #4, #16, #6)
+    ends each buffer at the count its library call states: fgets' 0x40;
+    readlink's 0xfff, one short of a multiple of 16, keeps the terminator
+    byte; readlink's 0x1000 plus the byte buf[n] = 0 can reach, since n is
+    readlink's result; __snprintf_chk's destination object size 0x100, not
+    its 200 length.
+    Controls that keep the gap with the option on: float_text's 0x1f goes to
+    the binary's own function, which only `calls` reads (#7, #8); short_read's
+    0x10 is further short of the gap than alignment padding can be (#2);
+    term_room's 0x17 is one byte short of the gap (#9).  veto's fgets states
+    the whole 24-byte gap, so the shorter memset count does not decide (#9,
+    #18, #21).  scan_back subscripts the buffer from 63 down and sum_n reads it
+    up to index 95, so the fgets count 60 and the read count 90 do not bound
+    what the C reads and both keep the gap (#2, #19, #20, #22); declared at the
+    count, the printed subscripts would run past the array.  Every call keeps its arguments in every pass
+    (#10-#15, #17, #18, #21).
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+554889e5ebfe662e0f1f840000000000554889e548897df88975f4488955e848
+8b45f85dc366662e0f1f840000000000554889e5897dfc488975f0488955e8b8
+000000005dc3662e0f1f840000000000554889e548897df8488975f0488955e8
+b8000000005dc3660f1f840000000000554889e54883ec684889bd48ffffff48
+89b540ffffff89953cffffff48898d30ffffff4c898528ffffff4c898d78ffff
+ff84c074200f2945800f294d900f2955a00f295db00f2965c00f296dd00f2975
+e00f297df0b800000000c9c30f1f4000554889e548897df88975f4488955e8b8
+000000005dc3662e0f1f840000000000554889e548897df8488b45f80fb6000f
+bec05dc366662e0f1f84000000000090554889e548897df88975f4488955e848
+8b45f85dc366662e0f1f840000000000554889e548897df8905dc30f1f440000
+554889e54883ec6048897da864488b042528000000488945f831c0488b55a848
+8d45b0be400000004889c7e8a0feffff4885c07507b8ffffffffeb0c488d45b0
+4889c7e868ffffff488b55f864482b1425280000007405e864feffffc9c36690
+554889e54881ec301000004889bdd8efffff64488b042528000000488945f831
+c0488d8df0efffff488b85d8efffffbaff0f00004889ce4889c7e871feffff48
+8985e8efffff4883bde8efffff007907b8ffffffffeb1a488d85f0efffff4889
+c7e8eafeffff89c2488b85e8efffff01d0488b55f864482b1425280000007405
+e8dbfdffffc9c3660f1f840000000000554889e54881ec301000004889bdd8ef
+ffff64488b042528000000488945f831c0488d8df0efffff488b85d8efffffba
+001000004889ce4889c7e8e1fdffff488985e8efffff4883bde8efffff007907
+b8ffffffffeb23488d95f0efffff488b85e8efffff4801d0c60000488d85f0ef
+ffff4889c7e846feffff488b55f864482b1425280000007405e842fdffffc9c3
+554889e54881ec2001000089bdecfeffff64488b042528000000488945f831c0
+8b95ecfeffff488d85f0feffff4189d141b800204000b900010000ba01000000
+bec80000004889c7b800000000e85efdffff488d85f0feffff4889c7e8cffdff
+ff488b55f864482b1425280000007405e8cbfcffffc9c3660f1f840000000000
+554889e54883ec4048897dc864488b042528000000488945f831c0488b55c848
+8d45d0be1f0000004889c7e860fdffff488d45d04889c7e874fdffff488b55f8
+64482b1425280000007405e870fcffffc9c366662e0f1f8400000000000f1f00
+554889e54883ec6048897da864488b042528000000488945f831c0488b55a848
+8d45b0be100000004889c7e840fcffff4885c07507b8ffffffffeb0c488d45b0
+4889c7e808fdffff488b55f864482b1425280000007405e804fcffffc9c36690
+554889e54883ec3048897dd864488b042528000000488945f831c0488b55d848
+8d45e0be170000004889c7e8e0fbffff4885c07507b8ffffffffeb0c488d45e0
+4889c7e8a8fcffff488b55f864482b1425280000007405e8a4fbffffc9c36690
+554889e54883ec3048897dd864488b042528000000488945f831c0488d45e0ba
+10000000be000000004889c7e87ffcffff488b55d8488d45e0be180000004889
+c7e86afbffff4885c07507b8ffffffffeb0c488d45e04889c7e832fcffff488b
+55f864482b1425280000007405e82efbffffc9c366662e0f1f84000000000090
+4883ec584889fabe3c00000064488b042528000000488944244831c04889e7e8
+0cfbffff4885c07437b83f000000eb064883e8017232803c040a4189c075f148
+8b44244864482b04252800000075214489c04883c458c3660f1f840000000000
+4531c0ebda0f1f0041b8ffffffffebcfe8abfaffff66662e0f1f840000000000
+53ba5a00000089f34883ec7064488b042528000000488944246831c04889e6e8
+acfaffff4885c0784c85db7e43b8010000004531c00f1f000fb65404ff4101d0
+89c24883c00139d37e0583fa5f7ee9488b44246864482b042528000000751e48
+83c4704489c05bc30f1f8400000000004531c0ebda41b8ffffffffebd2e81efa
+ffff
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+256400
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="__stack_chk_fail"/>
+<symbol space="ram" offset="0x401010" name="fgets"/>
+<symbol space="ram" offset="0x401030" name="read"/>
+<symbol space="ram" offset="0x401050" name="readlink"/>
+<symbol space="ram" offset="0x401070" name="__snprintf_chk"/>
+<symbol space="ram" offset="0x4010d0" name="fmt_num"/>
+<symbol space="ram" offset="0x4010f0" name="use"/>
+<symbol space="ram" offset="0x401110" name="memset"/>
+<symbol space="ram" offset="0x401130" name="fill"/>
+<symbol space="ram" offset="0x401140" name="line_len"/>
+<symbol space="ram" offset="0x4011a0" name="link_len"/>
+<symbol space="ram" offset="0x401230" name="link_plus1"/>
+<symbol space="ram" offset="0x4012c0" name="fortified"/>
+<symbol space="ram" offset="0x401340" name="float_text"/>
+<symbol space="ram" offset="0x4013a0" name="short_read"/>
+<symbol space="ram" offset="0x401400" name="term_room"/>
+<symbol space="ram" offset="0x401460" name="veto"/>
+<symbol space="ram" offset="0x4014e0" name="scan_back"/>
+<symbol space="ram" offset="0x401560" name="sum_n"/>
+</binaryimage>
+<script>
+  <com>parse line extern char *fgets(char *s,int4 n,void *f);</com>
+  <com>parse line extern int8 readlink(char *p,char *b,uint8 n);</com>
+  <com>parse line extern int4 __snprintf_chk(char *s,uint8 n,int4 flag,uint8 slen,char *fmt,...);</com>
+  <com>parse line extern int4 fmt_num(char *buf,int4 len,int8 v);</com>
+  <com>parse line extern int4 use(char *s);</com>
+  <com>parse line extern void *memset(void *p,int4 c,uint8 n);</com>
+  <com>parse line extern void fill(void *p);</com>
+  <com>parse line extern int4 veto(void *f);</com>
+  <com>parse line extern int4 scan_back(void *f);</com>
+  <com>parse line extern int4 sum_n(int4 fd,int4 n);</com>
+  <com>parse line extern int8 read(int4 fd,void *b,uint8 n);</com>
+  <com>parse line extern int4 line_len(void *f);</com>
+  <com>parse line extern int4 link_len(char *p);</com>
+  <com>parse line extern int4 link_plus1(char *p);</com>
+  <com>parse line extern int4 fortified(int4 v);</com>
+  <com>parse line extern int4 float_text(int8 v);</com>
+  <com>parse line extern int4 short_read(void *f);</com>
+  <com>parse line extern int4 term_room(void *f);</com>
+  <com>option arraysize off</com>
+  <com>lo fu line_len</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize off</com>
+  <com>lo fu link_len</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize off</com>
+  <com>lo fu link_plus1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize off</com>
+  <com>lo fu fortified</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize off</com>
+  <com>lo fu float_text</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize calls</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize off</com>
+  <com>lo fu short_read</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize off</com>
+  <com>lo fu term_room</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize off</com>
+  <com>lo fu veto</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize off</com>
+  <com>lo fu scan_back</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize off</com>
+  <com>lo fu sum_n</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraysize on</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="ARRAYSIZE #1: line_len on ends the buffer at fgets' 0x40" min="1" max="1">char v[0-9]+ \[64\]; // stack - 0x58$</stringmatch>
+<stringmatch name="ARRAYSIZE #2: line_len off, and short_read and scan_back in both passes keep the gap up to the guard slot" min="5" max="5">char v[0-9]+ \[72\]; // stack - 0x58$</stringmatch>
+<stringmatch name="ARRAYSIZE #3: link_len and link_plus1 off declare the gap" min="2" max="2">char v[0-9]+ \[4104\]; // stack - 0x1018$</stringmatch>
+<stringmatch name="ARRAYSIZE #4: link_len on keeps the terminator byte readlink's sizeof - 1 leaves" min="1" max="1">char v[0-9]+ \[4096\]; // stack - 0x1018$</stringmatch>
+<stringmatch name="ARRAYSIZE #5: fortified off declares the gap" min="1" max="1">char v[0-9]+ \[264\]; // stack - 0x118$</stringmatch>
+<stringmatch name="ARRAYSIZE #6: fortified on takes the 0x100 object size, not the 200 length" min="1" max="1">char v[0-9]+ \[256\]; // stack - 0x118$</stringmatch>
+<stringmatch name="ARRAYSIZE #7: float_text off and on keep the gap: 0x1f goes to the binary's own function" min="2" max="2">char v[0-9]+ \[40\]; // stack - 0x38$</stringmatch>
+<stringmatch name="ARRAYSIZE #8: float_text at calls takes the constant beside the buffer" min="1" max="1">char v[0-9]+ \[31\]; // stack - 0x38$</stringmatch>
+<stringmatch name="ARRAYSIZE #9: term_room and veto keep the 24-byte gap in both passes" min="4" max="4">char v[0-9]+ \[24\]; // stack - 0x28$</stringmatch>
+<stringmatch name="ARRAYSIZE #10: line_len's fgets in both passes" min="2" max="2">fgets\(v[0-9]+,0x40,f\)</stringmatch>
+<stringmatch name="ARRAYSIZE #11: link_len's readlink in both passes" min="2" max="2">readlink\(p,v[0-9]+,0xfff\);</stringmatch>
+<stringmatch name="ARRAYSIZE #12: fortified's __snprintf_chk in both passes" min="2" max="2">__snprintf_chk\(v[0-9]+,200,1,0x100,</stringmatch>
+<stringmatch name="ARRAYSIZE #13: float_text's call in all three passes" min="3" max="3">fmt_num\(v[0-9]+,0x1f,v\);</stringmatch>
+<stringmatch name="ARRAYSIZE #14: short_read's fgets in both passes" min="2" max="2">fgets\(v[0-9]+,0x10,f\)</stringmatch>
+<stringmatch name="ARRAYSIZE #15: term_room's fgets in both passes" min="2" max="2">fgets\(v[0-9]+,0x17,f\)</stringmatch>
+<stringmatch name="ARRAYSIZE #16: link_plus1 on covers the terminator readlink's result indexes" min="1" max="1">char v[0-9]+ \[4097\]; // stack - 0x1018$</stringmatch>
+<stringmatch name="ARRAYSIZE #17: link_plus1's readlink and terminator store in both passes" min="2" max="2">v[0-9]+\[v[0-9]+\] = '\\0';</stringmatch>
+<stringmatch name="ARRAYSIZE #18: veto's shorter memset in both passes" min="2" max="2">memset\(v[0-9]+,0,0x10\);</stringmatch>
+<stringmatch name="ARRAYSIZE #21: veto's full-length fgets in both passes" min="2" max="2">fgets\(v[0-9]+,0x18,f\)</stringmatch>
+<stringmatch name="ARRAYSIZE #19: scan_back's subscript from 0x3f in both passes" min="2" max="2">if \(v[0-9]+\[v[0-9]+\] == '\\n'\)</stringmatch>
+<stringmatch name="ARRAYSIZE #20: sum_n keeps the gap up to the guard slot in both passes" min="2" max="2">uint1 v[0-9]+ \[104\]; // stack - 0x78$</stringmatch>
+<stringmatch name="ARRAYSIZE #22: sum_n's loop over the buffer in both passes" min="2" max="2">\(uint4\)v[0-9]+\[v[0-9]+ \+ -1\];</stringmatch>
+</decompilertest>
