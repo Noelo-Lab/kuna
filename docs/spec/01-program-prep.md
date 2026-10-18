@@ -6282,13 +6282,19 @@ its own `# (kuna divergence, DIV-nn)` comment: (DIV-21) the genuinely-unconditio
 libc additions upstream omits — the BSD `err`/`errx`/`verr`/`verrx`/`errc`/`verrc`
 family, `quick_exit`, `__assert_perror_fail`, `__chk_fail`, `__libc_fatal`;
 `warn`/`warnx` return and stay out — and (DIV-78) the libstdc++ `std::__throw_*`
-family, below), widened by a Rust wildcard list (`core::panicking::panic*`,
+family, below — plus a GNU Fortran block: the four libgfortran fatal diagnostics
+`_gfortran_runtime_error`, `_gfortran_runtime_error_at`, `_gfortran_os_error` and
+`_gfortran_os_error_at`, which libgfortran declares no-return; the warning
+`_gfortran_runtime_warning_at` and the recoverable I/O error
+`_gfortran_generate_error` return and stay out, and the block lists exact names, not
+a `_gfortran_` prefix), widened by a Rust wildcard list (`core::panicking::panic*`,
 `handle_alloc_error`, `rust_begin_unwind`) or a Go exact list (`runtime.gopanic`,
 `runtime.throw`, `runtime.goexit`, …) when source-language detection fires (§1.4),
-or replaced by the PE/Mach-O list (`__fastfail`, `_invoke_watson`, plus the shared
-C names) off-ELF. The scan mirrors the exact symbol streams the loader installs and
-emits the *install* address — for a UND import, the PLT-stub address, since the
-`.dynsym` entry is address 0 and demangling means a raw-name lookup would miss.
+or replaced by the PE/Mach-O list (`__fastfail`, `_invoke_watson`, the same GNU
+Fortran block, plus the shared C names) off-ELF. The scan mirrors the exact symbol
+streams the loader installs and emits the *install* address — for a UND import, the
+PLT-stub address, since the `.dynsym` entry is address 0 and demangling means a
+raw-name lookup would miss.
 Name-based: free, exact, and useless on stripped custom wrappers.
 
 **Discovered, ≥3 evidence** (`noreturn_disc`,
@@ -6502,9 +6508,3 @@ Xref result formatting reuses the query's canonical inventory for names
 and fallback ownership. ARM address normalization and discovered-entry naming
 retain their existing precedence; formatting does not rebuild the inventory
 for each endpoint of every result row.
-
-GNU Fortran fatal runtime diagnostics (`_gfortran_runtime_error`,
-`_gfortran_runtime_error_at`, `_gfortran_os_error`, and `_gfortran_os_error_at`)
-terminate control flow on supported ELF, PE/COFF, and Mach-O inputs. Their exact
-names are included in the known no-return lists. Warnings and recoverable I/O
-errors are excluded; matching a runtime prefix alone does not imply termination.
