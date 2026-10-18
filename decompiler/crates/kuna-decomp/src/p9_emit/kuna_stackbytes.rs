@@ -204,9 +204,11 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
                     | type_metatype::TYPE_INT
                     | type_metatype::TYPE_UINT
                     | type_metatype::TYPE_UNKNOWN
-                    | type_metatype::TYPE_PTR
             ) {
                 reject!("source read type {read_type:?} rejected");
+            }
+            if is_pointer_type(fd.vn_type_def_facing(source).get_metatype()) {
+                reject!("pointer source cannot be flattened into raw bytes");
             }
         }
         let index = index as i32;
