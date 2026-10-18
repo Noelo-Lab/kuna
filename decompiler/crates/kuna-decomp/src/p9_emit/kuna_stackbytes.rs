@@ -133,10 +133,9 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
             && !same_backing(fd, *source, info.symbol)
             && (safe_load_op(fd, *source, op).is_some()
                 || safe_global_source(fd, *source, op, *read_op).is_some())
-            && fd.vbank().get(*source).is_some_and(|source| {
-                !is_pointer_type(fd.vn_type_read_facing(*source, op).get_metatype())
-                    && !is_pointer_type(fd.vn_type_def_facing(*source).get_metatype())
-            })
+            && fd.vbank().get(*source).is_some()
+            && !is_pointer_type(fd.vn_type_read_facing(*source, op).get_metatype())
+            && !is_pointer_type(fd.vn_type_def_facing(*source).get_metatype())
     });
     let stackview_scalar_copy = operation.code() == OpCode::CPUI_COPY
         && stackview_container
@@ -623,6 +622,7 @@ mod tests {
             1,
         ));
         spaces.insert_space(Rc::clone(&ram)).unwrap();
+        spaces.set_default_code_space(ram.get_index()).unwrap();
         spaces.set_default_data_space(ram.get_index()).unwrap();
         let stack = Rc::new(SpacebaseSpace::new(
             "stack", 5, 8, &register, 1, true, false,
