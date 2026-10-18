@@ -318,6 +318,10 @@ field accesses use their field type. Numeric floating-point conversion opcodes,
 incomplete records, arrays, and unequal widths are excluded. Recursive layout
 checks exclude padding, bitfields, and unions with shorter members; aggregate-typed
 constant inputs are also excluded.
+The operation's input-facing or definition-facing type must itself be an
+aggregate; a scalar access backed by an aggregate stack declaration does not
+establish a whole-object transfer. The destination is the CAST's definition-facing
+type, matching the C cast token rather than the surrounding storage declaration.
 
 **The pass.** `ActionSetCasts` (registry row P9/`cast-policy`, group `casts`)
 is scheduled near the very end of the pass tree — after `ActionNameVars` and
