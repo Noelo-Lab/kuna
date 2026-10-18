@@ -2097,7 +2097,7 @@ mod tests {
         // and kuna-fpu-trunc-views / separate logical integers from floating storage
         // and kuna-arm-frame-inventory / validated A32 frames join the default inventory
         // and kuna-arraysize / an escaped stack buffer ends at its call's stated count
-        assert_eq!(count, 567, "corpus file count drifted");
+        assert_eq!(count, 568, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

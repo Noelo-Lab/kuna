@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3087,
-    3087
+    3089,
+    3089
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1433,6 +1433,8 @@
     "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",
     "data:REALTYPES #4: no xunknown placeholder remains",
     "data:REALTYPES #5: no undefined placeholder remains",
+    "data:REGPIECE #1: the upper half of rax is a declared local",
+    "data:REGPIECE #2: no global-looking register piece",
     "data:RETCALLHALF #1: the caller hands back the callee's whole result",
     "data:RETCALLHALF #2: every caller that changes only the high word returns eight bytes",
     "data:RETCALLHALF #3: a sign-extended call result is a long long",

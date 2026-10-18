@@ -810,6 +810,20 @@ rename took prints its number. After `name fd src` the second descriptor is
 still `fd_2` and no local becomes `fd`; after `name v5 n`, read's result prints
 `v3` and `name v3 got` reaches it.
 
+**A register piece no register name covers is a local.** The `vN` allocator
+routes a high with no covering Symbol to `dat_<addr>` when its storage is global
+data, and kuna's proxy for global data was "an `IPTR_PROCESSOR` address with no
+register name". The register space is `IPTR_PROCESSOR` too, so a high living
+only in an unnamed register piece printed as an undeclared global and the C did
+not compile: a function returning the 64-bit `rax` after a call that wrote only
+`eax` printed `return CONCAT44(dat_4,v1);`, and the upper half of `rcx` a
+64-bit product leaves there printed `dat_c`. `coreaction_cleanup.rs
+(name_local_highs_angr)` now excludes the register space from that test, so
+such a high is a `vN` local declared with its storage (`// register 0x4`). The
+local is read but never assigned, as the binary reads the register's
+undefined upper half. Only register pieces change; real globals keep
+`dat_<addr>` (`tests/stages/kuna-regpiece.xml`).
+
 **A default name skips one a caller locked.** The `vN` allocator (and the
 `<prefix>Var<N>` arm under Ghidra names) used to hand out `v<base++>` without
 looking at the scope, so after `name v3 v1` the untouched local that came first
