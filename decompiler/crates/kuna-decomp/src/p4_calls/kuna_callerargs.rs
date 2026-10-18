@@ -93,6 +93,8 @@ pub struct Ledger {
     pub expected: BTreeMap<uintb, Vec<uintb>>,
     /// Function entry -> the parameters its callers' values narrow.
     pub stated: BTreeMap<uintb, Rc<Vec<NarrowParam>>>,
+    /// The functions whose calls are recorded, so a redo replaces its own.
+    pub recorded: BTreeSet<uintb>,
 }
 
 /// The register-wide integer parameters of a function's first decompile, or
@@ -250,8 +252,10 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &Funcdata) {
         calls.push((callee.get_offset(), Site { caller: me, at: o.get_addr().get_offset(), args }));
     }
     let ledger = &mut arch.kuna_callerargs;
-    for sites in ledger.sites.values_mut() {
-        sites.retain(|s| s.caller != me);
+    if !ledger.recorded.insert(me) {
+        for sites in ledger.sites.values_mut() {
+            sites.retain(|s| s.caller != me);
+        }
     }
     for (callee, site) in calls {
         ledger.sites.entry(callee).or_default().push(site);
