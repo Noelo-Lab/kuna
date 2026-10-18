@@ -4,6 +4,9 @@ use kuna_base::address::Address;
 
 pub fn prototype(arch: &ArchContext, entry: &Address) -> Option<FuncProto> {
     let pieces = arch.callee_proto_pieces(entry)?;
+    if pieces.input_storage.is_empty() && pieces.output_storage.is_none() {
+        return None;
+    }
     let model = arch
         .callee_proto_model(entry)
         .or_else(|| crate::kuna_typedcallabi::undeclared_model(arch, &pieces))

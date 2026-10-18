@@ -7305,3 +7305,7 @@ prevents a placeholder code type from replacing explicit register declarations.
 Output-only pieces retain unlocked inputs; injection and non-return attributes
 remain attached to the resolved symbol. The construction lives in
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.
+
+The indirect-call reconstruction applies only to pieces with explicit input or
+output storage. Ordinary library and loader prototypes retain their existing
+code-type lookup, locks, and inference behavior.
