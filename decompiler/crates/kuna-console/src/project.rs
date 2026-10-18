@@ -1238,8 +1238,8 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 }
 
 /// (kuna `globalref`) One `extern` line per global the functions name by address,
-/// in address order, and (kuna `elemptr`) per global a function reads directly
-/// and `elemptr` typed an element pointer: a subscript `dat_5068[i]` reads the
+/// in address order, including direct scalar reads and writes and (kuna
+/// `elemptr`) direct element pointers: a subscript `dat_5068[i]` reads the
 /// element its declaration names.
 ///
 /// Each function declares the object at the type IT uses it at, so two
@@ -1275,9 +1275,6 @@ fn global_declarations(results: &[FuncResult]) -> String {
     let quote = |d: &str| d.replace("/*", "/ *").replace("*/", "* /");
     let mut out = String::new();
     for (taken, direct) in by_addr.values() {
-        if taken.is_empty() && !direct.iter().any(|g| g.elem) {
-            continue;
-        }
         let name = taken.iter().chain(direct.iter()).next().map_or("", |g| g.name.as_str());
         let mut decls: Vec<(&GlobalInfo, usize)> = Vec::new();
         for g in taken.iter().chain(direct.iter()) {
@@ -1638,6 +1635,29 @@ mod tests {
         contains_identifier, prune_unreferenced_synth_types, redo_replaces, AssemblyScratch,
         FuncResult,
     };
+
+    #[test]
+    fn scalar_global_declarations_keep_conflicting_direct_types_diagnostic() {
+        let mut result = streamed("void sample(void)", "int");
+        let direct = |ty: &str| super::GlobalInfo {
+            address: 0x5000,
+            name: "dat_5000".into(),
+            declaration: format!("{ty} dat_5000"),
+            size: 4,
+            unknown: false,
+            direct: true,
+            aggregate: false,
+            elem: false,
+        };
+        result.globals = vec![direct("unsigned int")];
+        assert_eq!(super::global_declarations(std::slice::from_ref(&result)), "extern unsigned int dat_5000;\n");
+        result.globals.push(direct("float"));
+        let declarations = super::global_declarations(&[result]);
+        assert!(!declarations.contains("extern "), "{declarations}");
+        assert!(declarations.contains("read at two types"), "{declarations}");
+        assert!(declarations.contains("unsigned int dat_5000"), "{declarations}");
+        assert!(declarations.contains("float dat_5000"), "{declarations}");
+    }
 
     /// A result carrying only what the streaming export keeps.
     fn streamed(proto: &str, param_type: &str) -> FuncResult {

@@ -3439,3 +3439,10 @@ noninteger types, enums, widths above eight bytes and concatenations of unrelate
 halves keep their existing rendering. The option defaults on for C output; off
 restores the upstream CONCAT helper, and other output languages keep their own
 rendering.
+
+Project headers declare globals that emitted functions access directly even
+when no function takes their address or indexes them. The existing type-agreement
+rules select the declaration: direct reads and writes must agree, and conflicting
+uses remain diagnosed rather than silently assigned a different type. Requiring
+an address-taking use omitted ordinary scalar declarations and prevented an
+otherwise complete exported function from compiling.
