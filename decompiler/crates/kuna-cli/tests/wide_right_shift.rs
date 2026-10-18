@@ -22,6 +22,9 @@ __attribute__((noinline)) uint64_t wide_shift32(const uint32_t *p, unsigned k) {
 __attribute__((noinline)) uint64_t bounded_shift16(const uint16_t *p, unsigned k) {
     return (uint64_t)*p >> (k & 15);
 }
+__attribute__((noinline)) uint64_t promoted_shift8(const uint8_t *p, unsigned k) {
+    return (uint64_t)*p >> (k & 31);
+}
 "#,
     )
     .unwrap();
@@ -53,6 +56,7 @@ __attribute__((noinline)) uint64_t bounded_shift16(const uint16_t *p, unsigned k
                     "-Dwide_shift16=reference_wide_shift16",
                     "-Dwide_shift32=reference_wide_shift32",
                     "-Dbounded_shift16=reference_bounded_shift16",
+                    "-Dpromoted_shift8=reference_promoted_shift8",
                 ])
                 .arg(&source)
                 .arg("-o")
@@ -69,7 +73,7 @@ __attribute__((noinline)) uint64_t bounded_shift16(const uint16_t *p, unsigned k
                 .arg(&binary)
                 .args([
                     "--functions",
-                    "wide_shift8,wide_shift16,wide_shift32,bounded_shift16",
+                    "wide_shift8,wide_shift16,wide_shift32,bounded_shift16,promoted_shift8",
                     "--json",
                     "--jobs",
                     "1",
@@ -83,7 +87,7 @@ __attribute__((noinline)) uint64_t bounded_shift16(const uint16_t *p, unsigned k
             );
             let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
             let functions = document["functions"].as_array().unwrap();
-            assert_eq!(functions.len(), 4, "{document}");
+            assert_eq!(functions.len(), 5, "{document}");
             let mut bodies = String::new();
             for function in functions {
                 assert!(function["error"].is_null(), "{function}");
@@ -102,6 +106,7 @@ uint64_t reference_wide_shift8(const uint8_t *, unsigned);
 uint64_t reference_wide_shift16(const uint16_t *, unsigned);
 uint64_t reference_wide_shift32(const uint32_t *, unsigned);
 uint64_t reference_bounded_shift16(const uint16_t *, unsigned);
+uint64_t reference_promoted_shift8(const uint8_t *, unsigned);
 {bodies}
 int main(void) {{
     uint32_t values[] = {{0, 1, 127, 128, 255, 256, 32767, 32768, 65535,
@@ -112,7 +117,8 @@ int main(void) {{
             if ((uint64_t)wide_shift8(&a, k) != reference_wide_shift8(&a, k) ||
                 (uint64_t)wide_shift16(&b, k) != reference_wide_shift16(&b, k) ||
                 (uint64_t)wide_shift32(&c, k) != reference_wide_shift32(&c, k) ||
-                (uint64_t)bounded_shift16(&b, k) != reference_bounded_shift16(&b, k)) {{
+                (uint64_t)bounded_shift16(&b, k) != reference_bounded_shift16(&b, k) ||
+                (uint64_t)promoted_shift8(&a, k) != reference_promoted_shift8(&a, k)) {{
                 fprintf(stderr, "value=%u shift=%u\n", values[i], k);
                 return 1;
             }}
