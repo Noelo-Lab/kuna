@@ -3123,6 +3123,16 @@ check is insufficient. Known frame ranges use byte overlap; unresolved pointers
 may observe locally aliased storage, while literal global addresses cannot name
 this frame. Marker versions are not writes. The check is enabled by stackviews.
 
+With default options, `kuna_stackviews.rs` recovers one bounded local-frame
+case: at a fixed, covered frame start, at least two distinct complete struct or
+union pointee contracts from calls must describe the same 1-to-256-byte extent.
+The pass seeds one union backing for those views, so each call keeps its declared
+layout while both addresses remain shared. This default path excludes incoming
+parameter ranges; indexed references do not qualify on their own, and unresolved
+index bounds suppress recovery. Ranges that overlap a locked user layout are
+also left unchanged. Broader declared aggregate-view recovery remains under
+`stackviews on`.
+
 `stackviews on` collects distinct complete, declared pointee types before
 spatial stack hints are reconciled. Direct calls, typed indirect calls and
 call-site prototype overrides contribute the same locked parameter types;
