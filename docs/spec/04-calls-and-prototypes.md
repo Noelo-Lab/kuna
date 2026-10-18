@@ -6479,7 +6479,11 @@ AAPCS has a `bool` callee extend its result as an `int` one does): on x86-64 a
 `bool` function leaves the bits above `al` as they were (`setg %al; ret`), so a
 whole register proven to hold a zero-extended comparison is an `int` predicate
 (`xor %eax,%eax; cmp ..; setg %al`), which its callers hold in an `int`, and
-AArch64's `cset w0` serves both alike. The proof shows
+AArch64's `cset w0` serves both alike. In practice `bool` results are stated
+only on 32-bit ARM and Thumb. On i386 the option states nothing at all: a
+narrow return there is recovered narrow from the start (`mov 0x4(%esp),%al;
+add $1,%al; ret` leaves the rest of `eax` as it was), and a 32-bit value
+fills the whole return register. The proof shows
 a zero extension and nothing about a sign, so the statement is made only when
 the function's listing declares what it returns an unsigned integer of that
 width, or a `bool` for a truth value: a callee declared `char` or `short` (an

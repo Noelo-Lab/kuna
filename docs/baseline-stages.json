@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3101,
-    3101
+    3110,
+    3110
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -954,7 +954,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 317 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 318 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -1283,6 +1283,15 @@
     "data:NARROWEXT #7: off, an int parameter is zero-extended",
     "data:NARROWEXT #8: abi, an int parameter is sign-extended",
     "data:NARROWEXT #9: off, an unsigned int parameter is zero-extended",
+    "data:NARROWRET #1: a callee narrows its own byte return in both passes",
+    "data:NARROWRET #2: a callee returns its comparison as bool in both passes",
+    "data:NARROWRET #3: with nothing stated the byte results stay register-wide",
+    "data:NARROWRET #4: with nothing stated the truth values stay register-wide",
+    "data:NARROWRET #5: and are combined bitwise",
+    "data:NARROWRET #6: a sign-extended result stays signed",
+    "data:NARROWRET-X86 #1: a callee whose word write clears rax returns int in both passes",
+    "data:NARROWRET-X86 #2: with nothing stated the caller keeps rax whole",
+    "data:NARROWRET-X86 #3: a byte the callee never extends is read as al",
     "data:NATIVE SWITCH LABELS #1: all scalar native tables use the selector",
     "data:NATIVE SWITCH LABELS #2: every signed first arm is negative",
     "data:NATIVE SWITCH LABELS #3: every signed middle arm is negative",
