@@ -113,6 +113,9 @@ mod crypto_cli;
 #[path = "ctypes_per_arch.rs"]
 mod ctypes_per_arch;
 
+#[path = "decompile_budget_cli.rs"]
+mod decompile_budget_cli;
+
 #[path = "decompile_cli.rs"]
 mod decompile_cli;
 
