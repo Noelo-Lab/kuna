@@ -6013,7 +6013,8 @@ impl PrintC {
                 };
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
                     let cast = lowered_switch_label_form(fd, arch, op, self.lang().caps.signed_text_byte)
-                        .and_then(|(_, cast)| cast);
+                        .and_then(|(_, cast)| cast)
+                        .or_else(|| self.narrow_selector_cast(fd, arch, op, vn));
                     if let Some(ct) = &cast {
                         self.push_cast_open(ct, op);
                     }
@@ -6672,7 +6673,7 @@ impl PrintC {
         let input = fd.vbank().get(transfer.input).unwrap();
         let bits = if transfer.size == 4 { "u32" } else { "u64" };
         let literal = |v: &crate::varnode::Varnode| {
-            Atom::syntax(format!("0x{:x}{bits}", v.get_offset()), TagType::Syntax, SyntaxHighlight::const_color)
+            Atom::syntax(format!("0x{:x}{bits}", if transfer.size == 4 { u64::from(v.get_offset() as u32) } else { v.get_offset() }), TagType::Syntax, SyntaxHighlight::const_color)
         };
         if rust && transfer.to_float {
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
@@ -7206,6 +7207,10 @@ impl PrintC {
                 }
             }
         }
+        if let Some(slice) = crate::p9_emit::kuna_floatslice::recognize(fd, arch.decl_high_type, op) {
+            self.op_float_slice_ir(fd, arch, op, slice);
+            return;
+        }
         if let Some((transfer, target)) =
             crate::kuna_bitcast::truncated_float_storage(fd, arch.decl_high_type, op)
         {
@@ -7231,6 +7236,59 @@ impl PrintC {
             }
             None => self.op_func_ir(fd, arch, op),
         }
+    }
+
+    fn op_float_slice_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        slice: crate::p9_emit::kuna_floatslice::Slice,
+    ) {
+        use crate::printlanguage::SyntaxHighlight;
+        static C_BITS: OpToken =
+            op_token("", " }).to", 2, 66, false, TokenType::Postsurround, 0, 0);
+        let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
+        if rust {
+            self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+            self.push_atom(&Atom::syntax(
+                "f32::from_bits",
+                TagType::FuncToken,
+                SyntaxHighlight::funcname_color,
+            ));
+        } else {
+            self.push_op(&C_BITS, Some(op_key(op)));
+            self.push_atom(&Atom::syntax(
+                "((union { unsigned int from; float to; }){ .from = ",
+                TagType::TypeToken,
+                SyntaxHighlight::type_color,
+            ));
+        }
+        self.push_cast_open(&slice.target_word, op);
+        if slice.shift != 0 {
+            self.push_op(&tokens::SHIFT_RIGHT, Some(op_key(op)));
+        }
+        if slice.source_float {
+            self.op_bit_transfer_ir(
+                fd,
+                arch,
+                op,
+                crate::kuna_bitcast::Transfer {
+                    input: slice.input,
+                    target: slice.source_word,
+                    size: 8,
+                    to_float: false,
+                },
+            );
+        } else {
+            self.push_cast_open(&slice.source_word, op);
+            self.push_vn_ir(fd, arch, slice.input, op);
+            self.push_cast_close(&slice.source_word);
+        }
+        if slice.shift != 0 {
+            self.push_constant_ir(slice.shift, 4, op);
+        }
+        self.push_cast_close(&slice.target_word);
     }
 
     /// (kuna `boolbyte`) `(bool)(unsigned char)x`: a truncation into a `bool`
@@ -7344,6 +7402,25 @@ impl PrintC {
         let op_ref = ctx.op_ref(op);
         let read_ref = read_op.map(|r| ctx.op_ref(r));
         strat.is_extension_cast_implied(&ctx, op_ref, read_ref)
+    }
+
+    /// (kuna) The type the selector `vn` of the switch `op` prints cast to when
+    /// C's promotion would carry bits the narrow p-code drops.  See
+    /// [`crate::kuna_narrowselector`].
+    fn narrow_selector_cast(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        vn: VarnodeId,
+    ) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+        if !self.lang().caps.integer_promotion {
+            return None;
+        }
+        let strat = cast_strategy_for(arch)?;
+        let ctx = PrintCastContext::new(fd);
+        let vr = ctx.vn_ref(vn);
+        crate::kuna_narrowselector::cast(fd, arch, &strat, &ctx, vr, op)
     }
 
     /// (kuna `castimplied`) Does C's own conversion already perform the cast `op`

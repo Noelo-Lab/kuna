@@ -1,0 +1,200 @@
+//! Independently authored Fortran references and VALUE arguments round-trip through C.
+use crate::common;
+use common::process;
+use std::process::Command;
+
+const SOURCE: &str = r#"
+subroutine offset_sample(sample, bias, output)
+  implicit none
+  real :: sample, bias, output
+  output = sample + bias
+end subroutine
+
+subroutine mixed_sample(sample, bias, output)
+  implicit none
+  real, value :: sample
+  real :: bias, output
+  output = sample - bias
+end subroutine
+
+subroutine integer_sample(sample, output)
+  implicit none
+  integer :: sample, output
+  output = sample
+end subroutine
+"#;
+
+#[test]
+fn dwarf_dereferenced_parameters_keep_their_address_abi() {
+    if process::optional_output(Command::new("gfortran").arg("--version")).is_none() {
+        eprintln!("gfortran is not installed");
+        return;
+    }
+    let source = common::scratch_file("dwarf-reference", "f90");
+    let object = source.with_extension("so");
+    std::fs::write(&source, SOURCE).unwrap();
+    let compiled = Command::new("gfortran")
+        .args(["-O0", "-g", "-shared", "-fPIC"])
+        .arg(&source)
+        .arg("-o")
+        .arg(&object)
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let mut code = String::new();
+    for name in ["offset_sample", "mixed_sample", "integer_sample"] {
+        let (body, err, status) = common::run_kuna(&["decompile", object.to_str().unwrap(), name]);
+        assert_eq!(status, 0, "{err}");
+        assert!(body.lines().next().unwrap().contains('*'), "{body}");
+        code.push_str(&body);
+    }
+    let driver = r#"
+extern void offset_sample_(float *, float *, float *);
+extern void mixed_sample_(float, float *, float *);
+extern void integer_sample_(int *, int *);
+int main(void) {
+    float values[] = {-17.5f, -0.0f, 0.25f, 1024.0f};
+    for (unsigned i = 0; i < 4; ++i) {
+        float input = values[i], bias = values[3-i], expected, actual;
+        offset_sample_(&input, &bias, &expected);
+        offset_sample(&input, &bias, &actual);
+        if (actual != expected) return 1;
+        mixed_sample_(input, &bias, &expected);
+        mixed_sample(input, &bias, &actual);
+        if (actual != expected) return 2;
+    }
+    int input = -123456, expected, actual;
+    integer_sample_(&input, &expected);
+    integer_sample(&input, &actual);
+    return actual != expected;
+}
+"#;
+    let c = source.with_extension("c");
+    let exe = source.with_extension("exe");
+    std::fs::write(&c, format!("{code}\n{driver}")).unwrap();
+    let mut ran = false;
+    for compiler in ["gcc", "clang"] {
+        if process::optional_output(Command::new(compiler).arg("--version")).is_none() {
+            continue;
+        }
+        ran = true;
+        for level in ["-O0", "-O2"] {
+            let result = Command::new(compiler)
+                .args(["-std=c11", "-Werror=incompatible-pointer-types", level])
+                .arg(&c)
+                .arg(&object)
+                .arg("-o")
+                .arg(&exe)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{compiler} {level}: {}\n{code}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(
+                Command::new(&exe).status().unwrap().success(),
+                "{compiler} {level}\n{code}"
+            );
+        }
+    }
+    assert!(ran, "the round-trip requires GCC or Clang");
+    for path in [source, object, c, exe] {
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
+fn c_values_pointers_and_cpp_references_keep_their_existing_signatures() {
+    for (compiler, extension, source, functions) in [
+        ("gcc", "c", "float scalar(float value) { return value; }\nfloat pointee(float *value) { return *value; }",
+         &[("scalar", "float scalar(float value)"), ("pointee", "float pointee(float *value)")][..]),
+        ("g++", "cpp", "extern \"C\" float reference(float &value) { return value; }",
+         &[("reference", "float reference(float *value)")][..]),
+    ] {
+        if process::optional_output(Command::new(compiler).arg("--version")).is_none() { continue; }
+        let path = common::scratch_file("dwarf-reference-control", extension);
+        let object = path.with_extension("so");
+        std::fs::write(&path, source).unwrap();
+        for level in ["-O0", "-O2"] {
+            let output = Command::new(compiler).args(["-g", "-shared", "-fPIC", level])
+                .arg(&path).arg("-o").arg(&object).output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            for &(function, signature) in functions {
+                let (body, err, status) = common::run_kuna(&["decompile", object.to_str().unwrap(), function]);
+                assert_eq!(status, 0, "{err}");
+                assert!(body.starts_with(signature), "{compiler} {level}: {body}");
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(object).unwrap();
+    }
+}
+
+#[test]
+fn pe_reference_arguments_keep_their_stack_slots() {
+    let compiler = "i686-w64-mingw32-gfortran";
+    if process::optional_output(Command::new(compiler).arg("--version")).is_none() {
+        return;
+    }
+    let source = common::scratch_file("dwarf-reference-pe", "f90");
+    let binary = source.with_extension("dll");
+    std::fs::write(&source, "subroutine many_refs(a,b,c,d,e,f,g,h,i,j,k,l)\nreal :: a,b,c,d,e,f,g,h,i,j,k,l\na=b+c+d+e+f+g+h+i+j+k+l\nl=a\nend\n").unwrap();
+    let output = Command::new(compiler)
+        .args(["-g", "-O0", "-shared"])
+        .arg(&source)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let (body, err, status) =
+        common::run_kuna(&["decompile", binary.to_str().unwrap(), "many_refs"]);
+    assert_eq!(status, 0, "{err}");
+    let signature = body.lines().next().unwrap();
+    assert_eq!(signature.matches("float *").count(), 12, "{body}");
+    assert!(body.contains("*l = *a;"), "{body}");
+    std::fs::remove_file(source).unwrap();
+    std::fs::remove_file(binary).unwrap();
+}
+
+#[test]
+fn large_reference_array_does_not_abort_parameter_allocation() {
+    if process::optional_output(Command::new("gfortran").arg("--version")).is_none() {
+        return;
+    }
+    let source = common::scratch_file("large-reference", "f90");
+    let binary = source.with_extension("so");
+    std::fs::write(
+        &source,
+        "subroutine first_sample(a,out)\nreal a(512),out\nout=a(1)\nend\n",
+    )
+    .unwrap();
+    let output = Command::new("gfortran")
+        .args(["-O0", "-g", "-shared", "-fPIC"])
+        .arg(&source)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let (body, err, status) =
+        common::run_kuna(&["decompile", binary.to_str().unwrap(), "first_sample"]);
+    assert_eq!(status, 0, "{err}");
+    assert!(body.contains("(*a)"), "{body}");
+    assert!(body.contains("*out = (*a)[0];"), "{body}");
+    std::fs::remove_file(source).unwrap();
+    std::fs::remove_file(binary).unwrap();
+}

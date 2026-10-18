@@ -158,6 +158,9 @@ mod verify_w10_jts_chain;
 #[path = "verify_w10_jumptable_emulate.rs"]
 mod verify_w10_jumptable_emulate;
 
+#[path = "verify_w10_selector_domain.rs"]
+mod verify_w10_selector_domain;
+
 #[path = "verify_w10_lanedivide.rs"]
 mod verify_w10_lanedivide;
 

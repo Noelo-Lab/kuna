@@ -31,7 +31,7 @@
     },
     "stdout_matches": [
       "(v\\d+) = cmp_inner\\(a0,a1\\);(?:(?!\\n\\}\\n)[\\s\\S])*\\n  return \\1;\\n\\}",
-      "\\\"%ld\\\\n\\\",zcmp\\("
+      "\\\"%ld\\\\n\\\",(?:\\(unsigned long\\))?zcmp\\("
     ],
     "stdout_absent": [
       "CONCAT44\\(dat_",
@@ -39,6 +39,6 @@
       "\\bint cmp_inner\\(void \\*a0"
     ]
   },
-  "notes": "Each function fits its int qsort slot alone; a direct caller reads the whole rax. main hands zcmp's result to printf(%ld) and got CONCAT44(dat_4,zcmp(..)). cmp_outer returns cmp_inner's rax. cmp_inner's own recovery is int (its source type); the slot's parked int cmp_inner(void *a0,...) stays refused.",
-  "probe_id": "p-ee82c7354d7c"
+  "notes": "Each function fits its int qsort slot alone; a direct caller reads the whole rax. main hands zcmp's result to printf(%ld) (narrowret widens it: (unsigned long)zcmp(..)). cmp_outer returns cmp_inner's rax. cmp_inner's own recovery is int (its source type); the slot's parked int cmp_inner(void *a0,...) stays refused.",
+  "probe_id": "p-75d25804299e"
 }

@@ -32,7 +32,7 @@ function phaseChip(phase, label) {
 function renderTopbar(active) {
   const status = dataOf("status") || { datasets: {} };
   const links = Object.entries(status.datasets).map(([name, entry]) => {
-    const label = (entry.title || name).split(" ")[0].replace(/^./, (ch) => ch.toUpperCase());
+    const label = entry.nav || name.replace(/^./, (ch) => ch.toUpperCase());
     const here = active === name ? " here" : "";
     const off = entry.available ? "" : " off";
     const title = entry.available ? "" : ` title="not generated yet — run: ${esc(entry.regen || "make observatory")}"`;

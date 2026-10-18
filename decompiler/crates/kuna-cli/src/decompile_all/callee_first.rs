@@ -172,6 +172,7 @@ impl VoidReads {
         for &(index, park) in plan {
             let Some(k) = vote_key(&targets[index]).filter(|k| keys.contains(k)) else { continue };
             let stated = kuna_decomp::kuna_callrettype::statement(prog.arch(), k);
+            let narrow = kuna_decomp::kuna_narrowret::statement(prog.arch(), k);
             let returns = kuna_decomp::kuna_voidret::returns(prog.arch(), k);
             let storage = kuna_decomp::kuna_voidret::return_storage(prog.arch(), k);
             let again = decompile_planned(prog, &targets[index], park, base);
@@ -179,6 +180,7 @@ impl VoidReads {
                 slots[index] = Some(again);
             } else {
                 kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), k, stated.clone());
+                kuna_decomp::kuna_narrowret::restore(prog.arch_mut(), k, narrow.clone());
                 kuna_decomp::kuna_voidret::restore(prog.arch_mut(), k, returns, storage.clone());
             }
             self.decompiled(k);
@@ -188,6 +190,10 @@ impl VoidReads {
                 || !kuna_decomp::kuna_callrettype::same_statement(
                     stated.as_deref(),
                     kuna_decomp::kuna_callrettype::statement(prog.arch(), k).as_deref(),
+                )
+                || !kuna_decomp::kuna_narrowret::same_statement(
+                    narrow.as_deref(),
+                    kuna_decomp::kuna_narrowret::statement(prog.arch(), k).as_deref(),
                 )
             {
                 self.changed.insert(k, self.stamp);
@@ -214,7 +220,15 @@ fn converge_element_globals_callee_first(
             if !redo.contains(&targets[index].addr.get_offset()) {
                 continue;
             }
+            let key = vote_key(&targets[index]);
+            let stated = key.and_then(|k| kuna_decomp::kuna_callrettype::statement(prog.arch(), k));
+            let narrow = key.and_then(|k| kuna_decomp::kuna_narrowret::statement(prog.arch(), k));
             let again = decompile_planned(prog, &targets[index], park, base);
+            if let Some(k) = key.filter(|&k| narrow_changed(prog, k, narrow.as_deref())) {
+                kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), k, stated);
+                kuna_decomp::kuna_narrowret::restore(prog.arch_mut(), k, narrow);
+                continue;
+            }
             match slots[index].as_ref() {
                 Some(first) if !kuna_console::project::redo_replaces(first, &again) => {}
                 _ => slots[index] = Some(again),
@@ -483,15 +497,21 @@ fn callee_vote_rounds(
                 continue;
             };
             let stated = kuna_decomp::kuna_callrettype::statement(prog.arch(), key);
+            let narrow = kuna_decomp::kuna_narrowret::statement(prog.arch(), key);
             let again = decompile_planned(prog, &targets[index], park, base);
             redone += 1;
             match slots[index].as_ref() {
                 Some(first) if !same_arity(first, &again) => {
                     prog.arch_mut().kuna_calleevote.forget(key);
                     kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), key, stated);
+                    kuna_decomp::kuna_narrowret::restore(prog.arch_mut(), key, narrow);
                 }
-                Some(first) if !kuna_console::project::redo_replaces(first, &again) => {
+                Some(first)
+                    if !kuna_console::project::redo_replaces(first, &again)
+                        || narrow_changed(prog, key, narrow.as_deref()) =>
+                {
                     kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), key, stated);
+                    kuna_decomp::kuna_narrowret::restore(prog.arch_mut(), key, narrow);
                 }
                 _ => {
                     prog.arch_mut().kuna_calleevote.keep(key);
@@ -610,16 +630,30 @@ fn converge_callee_first(
         }
         let key = vote_key(&targets[index]);
         let stated = key.and_then(|k| kuna_decomp::kuna_callrettype::statement(prog.arch(), k));
+        let narrow = key.and_then(|k| kuna_decomp::kuna_narrowret::statement(prog.arch(), k));
         let again = decompile_planned(prog, &targets[index], park, base);
-        if slots[index]
-            .as_ref()
-            .is_none_or(|first| kuna_console::project::redo_replaces(first, &again))
+        let kept = key.is_none_or(|k| !narrow_changed(prog, k, narrow.as_deref()));
+        if kept
+            && slots[index]
+                .as_ref()
+                .is_none_or(|first| kuna_console::project::redo_replaces(first, &again))
         {
             slots[index] = Some(again);
         } else if let Some(k) = key {
             kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), k, stated);
+            kuna_decomp::kuna_narrowret::restore(prog.arch_mut(), k, narrow);
         }
     }
+}
+
+/// (kuna `narrowret`) Did the decompile just made of the function keyed `k`
+/// change the narrow value it states from `before`?  Outside the voidret
+/// settling no reader is decompiled again, and a reader that narrowed its call
+/// to the old statement reads a value the new one does not promise, so such a
+/// redo is not kept. A callback parked at its slot's prototype is the
+/// exception: the slot declares its return.
+fn narrow_changed(prog: &ConsoleProgram, k: (i32, u64), before: Option<&kuna_decomp::kuna_narrowret::NarrowReturn>) -> bool {
+    !kuna_decomp::kuna_narrowret::same_statement(before, kuna_decomp::kuna_narrowret::statement(prog.arch(), k).as_deref())
 }
 
 /// Decompile one planned target with its prototype-parking decision.

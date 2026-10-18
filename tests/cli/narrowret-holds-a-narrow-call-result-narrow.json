@@ -1,0 +1,47 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-80447d103843",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "narrowret",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/narrowret_thumb_O2.o",
+    "binary_sha256": "b8883c3cd09411e52fde1c923b78a462cb26b36e37ea75bcccc20aab952d4bd5",
+    "binary_size": 1964,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/narrowret_thumb_O2.o",
+    "selector": "count_above",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "unsigned char next_byte\\(char a0\\)",
+      "bool above\\(unsigned int a0,unsigned int a1\\)",
+      "unsigned char v1; // r0 \\| r5",
+      "bool v1; // r0 \\| r6",
+      "return mix\\(v2 \\|\\| v1,a0\\) \\+ 1;",
+      "\\n  int v1; // r0 \\| r5",
+      "int keeps_width\\(unsigned int a0\\)\\n\\{\\n  unsigned int v1; // r0 \\| r5"
+    ],
+    "stdout_absent": [
+      "unsigned int v1; // r0 \\| r6"
+    ]
+  },
+  "notes": "ON: next_byte (uxtb) and above (a comparison) are decompiled first and state the narrow value they return zero-extended, so larger_byte holds the results as unsigned char and count_above as bool (v2 || v1). Controls keep their width: keeps_sign's sign-extended byte stays int, keeps_width's 32-bit result unsigned int."
+}

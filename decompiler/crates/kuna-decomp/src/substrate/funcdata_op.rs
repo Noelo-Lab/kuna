@@ -901,7 +901,7 @@ impl Funcdata {
             & (pcodeop_flags::startmark | pcodeop_flags::startbasic);
         self.obank_mut().get_mut(newop).expect("clone_op").set_flag(fl);
         let exact = self.obank().get(op).expect("clone_op").get_addlflags()
-            & crate::op::pcodeop_addlflags::kuna_exactfloat;
+            & (crate::op::pcodeop_addlflags::kuna_exactfloat | crate::op::pcodeop_addlflags::kuna_narrowret);
         self.obank_mut().get_mut(newop).expect("clone_op").set_additional_flag(exact);
         if crate::kuna_syscallregs::is_error_flag(self, op) {
             self.obank_mut().get_mut(newop).expect("clone_op").clear_flag(pcodeop_flags::call);

@@ -1502,6 +1502,16 @@ the case targets.
    switch). One special case: if the meld is a single read-only Varnode, the
    "switch" is a jump through a read-only pointer; its value is read from the
    load image and the table has one entry.
+   If that normalized variable is itself the output of a byte-sized LOAD, a
+   bounded common input farther down the meld may prove a smaller, exact output
+   domain. Kuna emulates every input value through the path, with one
+   `max_jumptable_size` total value budget across candidates, and accepts that
+   domain only when every direct or implicit load-image read is wholly covered,
+   byte by byte, by global read-only and non-volatile properties. It then
+   carries the resulting finite set through target recovery. An unbounded input,
+   failed emulation, or any writable or unclassified read leaves the original
+   selector range intact, so an image snapshot cannot stand in for mutable
+   program state.
    **Stranded rows.** The smallest range can belong to a variable in front of
    a map: in `switch (map[mode])` one guard bounds `mode` and a second bounds
    `map[mode] - 8` to the table, and `mode`'s range is the smaller. A value of

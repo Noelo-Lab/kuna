@@ -50,9 +50,13 @@ fn build_fd() -> Funcdata {
 }
 
 fn build_fd_with_cancel_byte_arithmetic(gate: bool) -> Funcdata {
+    build_fd_with(|ctx| ctx.cancel_byte_arithmetic = gate)
+}
+
+fn build_fd_with(configure: impl FnOnce(&mut ArchContext)) -> Funcdata {
     let manage = build_manager();
     let mut ctx = ArchContext::new(manage);
-    ctx.cancel_byte_arithmetic = gate;
+    configure(&mut ctx);
     let glb = Rc::new(ctx);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
@@ -1187,6 +1191,53 @@ fn zextcommute_pushes_shift_inside() {
     assert_eq!(fd.obank().get(newshift).unwrap().code(), OpCode::CPUI_INT_RIGHT);
     assert_eq!(fd.obank().get(newshift).unwrap().get_in(0), Some(v));
     assert_eq!(fd.obank().get(newshift).unwrap().get_in(1), Some(c));
+}
+
+#[test]
+fn zextcommute_preserves_wide_shifts_unless_the_count_fits() {
+    for bytes in [1, 2, 4] {
+        for promotion in [false, true] {
+            for constant in [false, true] {
+                let bits = bytes as u64 * 8;
+                let limit = if promotion { bits.max(32) } else { bits };
+                for bound in [0, bits - 1, bits, bits * 2 - 1, 31, 32, 63, u32::MAX as u64] {
+                    let mut fd = build_fd_with(|ctx| ctx.int_promotion = promotion);
+                    let bl = mk_block(&mut fd);
+                    let value = mk_vn(&mut fd, bytes, 0x10);
+                    let (_, extended) = mk_def(&mut fd, bl, OpCode::CPUI_INT_ZEXT, 8, 0x20, &[value]);
+                    let amount = if constant {
+                        fd.new_constant(4, bound)
+                    } else {
+                        let vn = mk_vn(&mut fd, 4, 0x18);
+                        fd.vbank_mut().get_mut(vn).unwrap().set_nz_mask(bound);
+                        vn
+                    };
+                    let (shift, _) = mk_def(&mut fd, bl, OpCode::CPUI_INT_RIGHT, 8, 0x30, &[extended, amount]);
+                    let applied = RuleZextCommute::new().apply_op(shift, &mut fd);
+                    assert_eq!(
+                        applied,
+                        (bound < limit) as int4,
+                        "{bytes} bytes, bound {bound}, constant {constant}, promotion {promotion}"
+                    );
+                    let op = fd.obank().get(shift).unwrap();
+                    if bound >= limit {
+                        assert_eq!(op.code(), OpCode::CPUI_INT_RIGHT);
+                        assert_eq!(op.get_in(0), Some(extended));
+                        assert_eq!(op.get_in(1), Some(amount));
+                    } else {
+                        assert_eq!(op.code(), OpCode::CPUI_INT_ZEXT);
+                        let narrow = op.get_in(0).unwrap();
+                        assert_eq!(fd.vbank().get(narrow).unwrap().get_size(), bytes);
+                        let inner = fd.vbank().get(narrow).unwrap().get_def().unwrap();
+                        let inner = fd.obank().get(inner).unwrap();
+                        assert_eq!(inner.code(), OpCode::CPUI_INT_RIGHT);
+                        assert_eq!(inner.get_in(0), Some(value));
+                        assert_eq!(inner.get_in(1), Some(amount));
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

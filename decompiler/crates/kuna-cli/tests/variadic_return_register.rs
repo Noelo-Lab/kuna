@@ -344,15 +344,15 @@ fn an_x86_64_double_in_xmm0_round_trips_through_the_printed_c() {
     let stem = "variadic-xmm0";
     let printed = decompile(stem, &x86_64());
     for (name, call) in [
-        ("w1", "vr(k,(double)k,(unsigned long)(k + 1))"),
+        ("w1", "vr(k,(double)k,(unsigned long)(k + 1U))"),
         ("w2", "vr(k,v1 + v1)"),
         ("w3", "vr(k,v1,v2,(unsigned long)(unsigned int)k)"),
-        ("w0", "vr(k,(unsigned long)(k + 1))"),
-        ("w0x", "vr(k,(unsigned long)(k + 1))"),
+        ("w0", "vr(k,(unsigned long)(k + 1U))"),
+        ("w0x", "vr(k,(unsigned long)(k + 1U))"),
         ("w4", "vr(k,v1)"),
         ("w5", "vr(k,v1)"),
         ("w6", "vr(k,v1) + v1"),
-        ("w7", "vr(k,(unsigned long)(k + 1)) + v1"),
+        ("w7", "vr(k,(unsigned long)(k + 1U)) + v1"),
     ] {
         assert!(
             function(&printed, name).contains(call),
@@ -435,10 +435,10 @@ int main(void) {{
 fn aarch64_and_powerpc_pass_the_double_in_their_return_register() {
     let printed = decompile("variadic-d0", &aarch64());
     for (name, call) in [
-        ("w1", "vr(k,(double)k,(unsigned long)(k + 1))"),
+        ("w1", "vr(k,(double)k,(unsigned long)(k + 1U))"),
         ("w2", "vr(k,v1 + v1)"),
         ("w3", "vr(k,v1,v2,(unsigned long)(unsigned int)k)"),
-        ("w8", "vr(k,0.5,(unsigned long)(k + 1))"),
+        ("w8", "vr(k,0.5,(unsigned long)(k + 1U))"),
     ] {
         assert!(
             function(&printed, name).contains(call),

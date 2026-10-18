@@ -8,11 +8,14 @@ cheaply. docs/observatory.md is the user-facing reference."""
 import argparse
 from pathlib import Path
 
-from scripts.observatory import atlas, churn, common, render
+import os
+
+from scripts.observatory import atlas, churn, common, render, walkthrough
 
 GENERATORS = {
     "atlas": atlas.generate,
     "churn": churn.generate,
+    "walkthrough": walkthrough.generate,
 }
 
 
@@ -23,6 +26,8 @@ def main(argv=None) -> int:
     parser.add_argument("--render-only", action="store_true", help="rebuild pages from existing JSON")
     parser.add_argument("--kuna", type=Path, help="built kuna binary (used by the walkthrough)")
     args = parser.parse_args(argv)
+    if args.kuna:
+        os.environ["KUNA_BIN"] = str(args.kuna)
 
     names = [] if args.render_only else list(GENERATORS)
     if args.only is not None:
@@ -32,7 +37,7 @@ def main(argv=None) -> int:
             parser.error(f"unknown generator(s): {', '.join(unknown)} (have: {', '.join(GENERATORS)})")
 
     for name in names:
-        data = GENERATORS[name](root=common.repo_root())
+        data = GENERATORS[name](root=common.repo_root(), out=args.out)
         target = args.out / "data" / f"{name}.json"
         common.write_json(target, data)
         print(f"observatory: {name} -> {target}")
