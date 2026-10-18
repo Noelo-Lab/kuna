@@ -8031,7 +8031,6 @@ impl PrintC {
         source: VarnodeId,
         op: OpId,
         mods: uint4,
-        backing_symbol: crate::database::SymbolId,
         read_op: Option<OpId>,
     ) {
         if let Some(load) = crate::kuna_stackbytes::safe_load_op(fd, source, op) {
@@ -8046,13 +8045,11 @@ impl PrintC {
             fd,
             source,
             op,
-            backing_symbol,
             read_op,
         )
         {
-            // A RAM Varnode can have been coalesced into the stackview's
-            // HighVariable. Resolve the physical address instead of naming that
-            // merged high as the stack destination.
+            // Render the physical data-space address, preserving storage identity
+            // even if the RAM Varnode was coalesced with the stackview HighVariable.
             self.push_annotation_ir(fd, arch, global, op);
         } else {
             self.push_vn_ir_m(fd, arch, source, op, mods);
@@ -8072,7 +8069,6 @@ impl PrintC {
         let factory = arch.types();
         let byte_type = factory.get_base(1, type_metatype::TYPE_UINT).unwrap();
         let mods = self.context.mods() & !(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
-        let backing_symbol = assignment.backing_symbol;
         let stack_big_endian = fd
             .get_arch()
             .manage()
@@ -8154,7 +8150,6 @@ impl PrintC {
                     source,
                     op,
                     mods,
-                    backing_symbol,
                     read_op,
                 );
             } else {
@@ -8188,7 +8183,6 @@ impl PrintC {
                                 source,
                                 op,
                                 mods,
-                                backing_symbol,
                                 read_op,
                             );
                             if byte > 0 {

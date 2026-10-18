@@ -24,7 +24,6 @@ pub(crate) struct Range {
 
 pub(crate) struct Assignment {
     pub output: VarnodeId,
-    pub backing_symbol: SymbolId,
     pub name: String,
     pub offset: i32,
     pub pointer_size: i32,
@@ -32,12 +31,8 @@ pub(crate) struct Assignment {
 }
 
 pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
-    let trace = std::env::var_os("KUNA_DEBUG_STACK_BYTES").is_some();
     macro_rules! reject {
         ($($arg:tt)*) => {{
-            if trace {
-                eprintln!("[stackbytes] {}", format!($($arg)*));
-            }
             return None;
         }};
     }
@@ -90,15 +85,12 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         .map(|source| fd.vn_type_read_facing(source, op).get_metatype());
     let pointer_copy = operation.code() == OpCode::CPUI_COPY
         && stackview_container
-        && (matches!(
-            output_type,
-            type_metatype::TYPE_PTR | type_metatype::TYPE_PTRREL | type_metatype::TYPE_CODE
-        ) || source_type.is_some_and(|ty| {
-            matches!(
-                ty,
-                type_metatype::TYPE_PTR | type_metatype::TYPE_PTRREL | type_metatype::TYPE_CODE
-            )
-        }));
+        && (is_pointer_type(output_type)
+            || is_pointer_type(fd.vn_type_def_facing(output).get_metatype())
+            || operation.get_in(0).is_some_and(|source| {
+                source_type.is_some_and(is_pointer_type)
+                    || is_pointer_type(fd.vn_type_def_facing(source).get_metatype())
+            }));
     if pointer_copy {
         reject!("pointer-valued stackview COPY stays typed");
     }
@@ -168,8 +160,9 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
             };
             let shares_stackview_high = shares_backing_high(fd, source, info.symbol);
             let safe_load = safe_load_op(fd, source, op).is_some();
-            let safe_global = safe_global_source(fd, source, op, info.symbol, read_op).is_some();
-            if (source_value.is_implied() || shares_stackview_high)
+            let physical_global = is_default_data_value(fd, source);
+            let safe_global = safe_global_source(fd, source, op, read_op).is_some();
+            if (source_value.is_implied() || shares_stackview_high || physical_global)
                 && !same_backing(fd, source, info.symbol)
                 && !safe_load
                 && !safe_global
@@ -220,7 +213,6 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
     }
     Some(Assignment {
         output,
-        backing_symbol: info.symbol,
         name: info.display_name,
         offset: info.sym_off,
         pointer_size: stack.get_addr_size() as i32,
@@ -266,14 +258,10 @@ pub(crate) fn safe_global_source(
     fd: &Funcdata,
     value: VarnodeId,
     use_op: OpId,
-    symbol: SymbolId,
     read_op: Option<OpId>,
 ) -> Option<VarnodeId> {
     let global = fd.vbank().get(value)?;
-    if !is_default_data_value(fd, value)
-        || !shares_backing_high(fd, value, symbol)
-        || global.is_volatile()
-    {
+    if !is_default_data_value(fd, value) || global.is_volatile() {
         return None;
     }
     // An implicit RAM Varnode is read where the COPY consuming it executes.
@@ -309,29 +297,10 @@ pub(crate) fn safe_load_op(fd: &Funcdata, value: VarnodeId, use_op: OpId) -> Opt
                 }
                 current = input;
             }
-            OpCode::CPUI_SUBPIECE => {
-                let input = operation.get_in(0)?;
-                let input_value = fd.vbank().get(input)?;
-                let offset = operation
-                    .get_in(1)
-                    .and_then(|offset| fd.vbank().get(offset))?;
-                if !offset.is_constant()
-                    || offset
-                        .get_offset()
-                        .checked_add(current_value.get_size() as u64)?
-                        > input_value.get_size() as u64
-                {
-                    return None;
-                }
-                current = input;
-            }
-            OpCode::CPUI_INT_ZEXT => {
-                let input = operation.get_in(0)?;
-                if fd.vbank().get(input)?.get_size() > current_value.get_size() {
-                    return None;
-                }
-                current = input;
-            }
+            // These change the byte projection. `expression` can expand them
+            // into byte leaves when it owns the wrapper; never unwrap them here
+            // and emit the whole LOAD for the wrapper Varnode.
+            OpCode::CPUI_SUBPIECE | OpCode::CPUI_INT_ZEXT => return None,
             _ => return None,
         }
     }
@@ -398,6 +367,11 @@ fn expression(
         return None;
     }
     if value.is_constant() {
+        let read_type = fd.vn_type_read_facing(id, use_op).get_metatype();
+        let def_type = fd.vn_type_def_facing(id).get_metatype();
+        if is_pointer_type(read_type) || is_pointer_type(def_type) {
+            return None;
+        }
         return Some(
             (0..size)
                 .map(|byte| Byte::Constant((value.get_offset() >> (byte * 8)) as u8))
@@ -406,7 +380,23 @@ fn expression(
     }
     let merged_source =
         shares_backing_high(fd, id, backing_symbol) && !same_backing(fd, id, backing_symbol);
-    if top || value.is_implied() || merged_source {
+    let has_projectable_def = value
+        .get_def()
+        .and_then(|def| fd.obank().get(def))
+        .is_some_and(|op| {
+            matches!(
+                op.code(),
+                OpCode::CPUI_COPY
+                    | OpCode::CPUI_CAST
+                    | OpCode::CPUI_PIECE
+                    | OpCode::CPUI_SUBPIECE
+                    | OpCode::CPUI_INT_ZEXT
+                    | OpCode::CPUI_INT_LEFT
+                    | OpCode::CPUI_INT_RIGHT
+                    | OpCode::CPUI_LOAD
+            )
+        });
+    if top || value.is_implied() || merged_source || has_projectable_def {
         let Some(def) = value.get_def() else {
             if merged_source && is_default_data_value(fd, id) {
                 return Some(
@@ -556,9 +546,16 @@ fn expression(
     )
 }
 
+fn is_pointer_type(meta: type_metatype) -> bool {
+    matches!(
+        meta,
+        type_metatype::TYPE_PTR | type_metatype::TYPE_PTRREL | type_metatype::TYPE_CODE
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::reemit_read_is_safe;
+    use super::safe_global_source;
     use crate::context::ArchContext;
     use crate::funcdata::Funcdata;
     use crate::varnode::varnode_flags;
@@ -570,9 +567,14 @@ mod tests {
     use kuna_num::opcodes::OpCode;
     use std::rc::Rc;
 
-    fn frame_write_fixture(
+    fn global_read_fixture(
         with_write: bool,
-    ) -> (Funcdata, crate::context::OpId, crate::context::OpId) {
+    ) -> (
+        Funcdata,
+        crate::context::VarnodeId,
+        crate::context::OpId,
+        crate::context::OpId,
+    ) {
         let mut spaces = AddrSpaceManager::new();
         spaces.insert_space(Rc::new(ConstantSpace::new())).unwrap();
         spaces
@@ -603,6 +605,7 @@ mod tests {
             1,
         ));
         spaces.insert_space(Rc::clone(&ram)).unwrap();
+        spaces.set_default_data_space(ram.get_index()).unwrap();
         let stack = Rc::new(SpacebaseSpace::new(
             "stack", 5, 8, &register, 1, true, false,
         ));
@@ -625,7 +628,11 @@ mod tests {
             fd.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
             op
         };
+        let global = fd.new_varnode(1, &Address::new(Rc::clone(&ram), 0x2000), None);
         let read = make_copy(&mut fd, 0x1001);
+        fd.op_set_input(read, global, 0).unwrap();
+        fd.new_varnode_out(1, &Address::new(Rc::clone(&register), 0x40), read)
+            .unwrap();
         fd.op_insert(read, block, None);
         if with_write {
             let write = make_copy(&mut fd, 0x1002);
@@ -640,18 +647,21 @@ mod tests {
         }
         let use_op = make_copy(&mut fd, 0x1003);
         fd.op_insert(use_op, block, None);
-        (fd, read, use_op)
+        (fd, global, read, use_op)
     }
 
     #[test]
-    fn a_persist_copy_write_blocks_reemitting_an_earlier_mutable_read() {
-        let (fd, read, use_op) = frame_write_fixture(true);
-        assert!(!reemit_read_is_safe(&fd, read, use_op));
+    fn an_intervening_physical_write_blocks_a_mutable_global_read() {
+        let (fd, global, read, use_op) = global_read_fixture(true);
+        assert!(safe_global_source(&fd, global, use_op, Some(read)).is_none());
     }
 
     #[test]
     fn a_mutable_read_can_be_reemitted_when_no_effect_intervenes() {
-        let (fd, read, use_op) = frame_write_fixture(false);
-        assert!(reemit_read_is_safe(&fd, read, use_op));
+        let (fd, global, read, use_op) = global_read_fixture(false);
+        assert_eq!(
+            safe_global_source(&fd, global, use_op, Some(read)),
+            Some(global)
+        );
     }
 }
