@@ -17,6 +17,9 @@ impl References {
     /// Retain the whole mapped declaration, never the type of a partial read.
     /// Split mappings and uncertain geometry do not prove a standalone object.
     pub fn record(&mut self, fd: &Funcdata, arch: &Architecture, address: &Address, name: &str) {
+        if !plain_identifier(name) {
+            return;
+        }
         let Some(data) = arch.manage().get_default_data_space() else {
             return;
         };
