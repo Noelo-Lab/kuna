@@ -52,15 +52,33 @@ pub fn helper_model(arch: &crate::context::ArchContext, name: &str) -> Option<Rc
     arch.arm_base_model.clone().filter(|_| arch.arm_float_return && base_pcs_helper(name))
 }
 
-/// Does one instruction at `addr` access eight or more registers with `code`
-/// (`vstmia r0,{d0-d15}`, `vldmia`, `vpush`)?  That is a register-bank save or
-/// restore, not a use of the values as parameters or results.
+/// Does one instruction at `addr` save or restore the VFP register bank with
+/// `code`: eight or more registers, one of them outside the argument registers
+/// (`vstmia r0,{d0-d15}`, `vldmia r0,{d0-d15}`)? clang stores eight float or
+/// double arguments with one `vstmia r0,{s0-s7}` or `{d0-d7}`, which reads
+/// parameters and is not a save.
 fn bank_access(data: &Funcdata, addr: &Address, code: OpCode) -> bool {
-    data.obank()
-        .iter_at(addr)
-        .filter(|(_, id)| data.obank().get(*id).is_some_and(|o| o.code() == code))
-        .count()
-        >= 8
+    let entries = data.get_func_proto().model().input().get_entry();
+    let argument = |v: &crate::varnode::Varnode| {
+        entries.iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(v.get_addr(), v.get_size()) >= 0
+        })
+    };
+    let mut count = 0;
+    let mut beyond = false;
+    for (_, id) in data.obank().iter_at(addr) {
+        let Some(op) = data.obank().get(id).filter(|o| o.code() == code) else { continue };
+        count += 1;
+        let reg = if code == OpCode::CPUI_STORE { op.get_in(2) } else { op.get_out() };
+        if let Some(v) = reg.and_then(|r| data.vbank().get(r)) {
+            let register = v
+                .get_addr()
+                .get_space()
+                .is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR);
+            beyond |= register && !argument(v);
+        }
+    }
+    count >= 8 && beyond
 }
 
 /// A VFP input register whose only reads are stores of a register-bank save:
@@ -381,10 +399,12 @@ fn call_leftover(data: &Funcdata, vn: VarnodeId, budget: &mut usize) -> bool {
     }
 }
 
-/// Retire a VFP return trial that only hands back what a call left in the
-/// register when an integer return trial holds a value the function computes
-/// to return: `half(x); return k + 1;` leaves `half`'s double in d0 beside
-/// `k + 1` in r0, and the wider d0 would otherwise win the fill-in.
+/// Retire a VFP return trial when an integer return trial holds a value the
+/// function computes to return at every exit and the VFP register, on some
+/// exit, is only what a call left there or what the function received:
+/// `half(x); return k + 1;` leaves `half`'s double in d0 beside `k + 1` in r0,
+/// and mpg123's `getpar` loads a double into d0 on one path while every exit
+/// returns an error code; the wider d0 would otherwise win the fill-in.
 fn drop_call_leftovers(data: &Funcdata, active: &mut ParamActive, returns: &[crate::context::OpId]) {
     let entries = data.get_func_proto().model().output().get_entry();
     let vfp = |addr: &Address, size: i32| {
@@ -409,12 +429,88 @@ fn drop_call_leftovers(data: &Funcdata, active: &mut ParamActive, returns: &[cra
     if !computed {
         return;
     }
+    let some = |slot: i32, test: &dyn Fn(VarnodeId) -> bool| {
+        returns.iter().any(|&id| data.obank().get(id).and_then(|o| o.get_in(slot)).is_some_and(test))
+    };
     for i in 0..active.get_num_trials() {
         let t = active.get_trial(i);
         if t.is_active()
             && vfp(t.get_address(), t.get_size())
-            && every(t.get_slot(), &|vn| left_by_call(data, vn))
+            && some(t.get_slot(), &|vn| call_leftover(data, vn, &mut 64))
         {
+            active.get_trial_mut(i).mark_inactive();
+        }
+    }
+}
+
+/// Walk the copies, casts and merges that reach `vn` and sort the values the
+/// function wrote there: those under the low half of a wider vector register
+/// into `vectors`, the rest into `scalars`. A call's leftover, the incoming
+/// register and an indirect effect are neutral.
+fn exit_writes(
+    data: &Funcdata,
+    vn: VarnodeId,
+    vector: bool,
+    seen: &mut Vec<VarnodeId>,
+    scalars: &mut Vec<VarnodeId>,
+    vectors: &mut Vec<VarnodeId>,
+) -> bool {
+    if seen.contains(&vn) {
+        return true;
+    }
+    if seen.len() >= 64 {
+        return false;
+    }
+    seen.push(vn);
+    let Some(value) = data.vbank().get(vn) else { return false };
+    let Some(op) = value.get_def().and_then(|id| data.obank().get(id)) else { return true };
+    let low_half = op.code() == OpCode::CPUI_SUBPIECE
+        && op.get_in(0).and_then(|w| data.vbank().get(w)).is_some_and(|w| w.get_size() > 8)
+        && op.get_in(1).and_then(|c| data.vbank().get(c)).is_some_and(|c| c.is_constant() && c.get_offset() == 0);
+    match op.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
+            op.get_in(0).is_some_and(|v| exit_writes(data, v, vector, seen, scalars, vectors))
+        }
+        _ if low_half => op.get_in(0).is_some_and(|v| exit_writes(data, v, true, seen, scalars, vectors)),
+        OpCode::CPUI_MULTIEQUAL => {
+            (0..op.num_input()).all(|i| op.get_in(i).is_some_and(|v| exit_writes(data, v, vector, seen, scalars, vectors)))
+        }
+        OpCode::CPUI_INDIRECT => true,
+        _ if left_by_call(data, vn) => true,
+        _ => {
+            if vector {
+                vectors.push(vn);
+            } else {
+                scalars.push(vn);
+            }
+            true
+        }
+    }
+}
+
+/// Retire a `d` return trial whose value, at every exit where the function
+/// wrote one, is the low half of a wider vector register: AArch32 NEON has no
+/// double lanes, so that is a vector temporary, not a double result. soxr's
+/// NEON `pffft_real_preprocess` leaves the low half of a vector it stored in d0.
+fn drop_vector_halves(data: &Funcdata, active: &mut ParamActive, returns: &[crate::context::OpId]) {
+    let entries = data.get_func_proto().model().output().get_entry();
+    for i in 0..active.get_num_trials() {
+        let t = active.get_trial(i);
+        if !t.is_active()
+            || t.get_size() != 8
+            || !entries.iter().any(|e| e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(t.get_address(), 8) >= 0)
+        {
+            continue;
+        }
+        let slot = t.get_slot();
+        let (mut seen, mut scalars, mut vectors) = (Vec::new(), Vec::new(), Vec::new());
+        let walked = returns.iter().all(|&id| {
+            data.obank()
+                .get(id)
+                .and_then(|o| o.get_in(slot))
+                .is_some_and(|vn| exit_writes(data, vn, false, &mut seen, &mut scalars, &mut vectors))
+        });
+        if walked && scalars.is_empty() && !vectors.is_empty() {
             active.get_trial_mut(i).mark_inactive();
         }
     }
@@ -462,6 +558,7 @@ pub fn narrow_returns(data: &mut Funcdata, active: &mut ParamActive) {
     }
     drop_call_leftovers(data, active, &returns);
     drop_bank_restores(data, active, &returns);
+    drop_vector_halves(data, active, &returns);
     let single = data
         .get_func_proto()
         .model()
@@ -579,8 +676,8 @@ pub fn type_returns(data: &mut Funcdata, active: &ParamActive) {
     }
 }
 
-/// Does a value reaching `vn` through copies and merges arrive unchanged from an
-/// input outside the VFP registers? `vmov s0,r0` hands back the bits of an
+/// Does a value reaching `vn` through copies and merges arrive unchanged from a
+/// parameter outside the VFP registers? `vmov s0,r0` hands back the bits of an
 /// integer parameter, which is its callers' to type: a float lock would spread
 /// to the parameter, and each caller's integer would then be converted by value.
 fn core_input_leaf(data: &Funcdata, vn: VarnodeId, budget: &mut usize) -> bool {
@@ -591,9 +688,10 @@ fn core_input_leaf(data: &Funcdata, vn: VarnodeId, budget: &mut usize) -> bool {
     let Some(value) = data.vbank().get(vn) else { return false };
     if value.is_input() {
         let entries = data.get_func_proto().model().input().get_entry();
-        return !entries.iter().any(|e| {
-            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(value.get_addr(), value.get_size()) >= 0
-        });
+        return data.get_func_proto().possible_input_param(value.get_addr(), value.get_size())
+            && !entries.iter().any(|e| {
+                e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(value.get_addr(), value.get_size()) >= 0
+            });
     }
     let Some(op) = value.get_def().and_then(|id| data.obank().get(id)) else {
         return false;
@@ -611,7 +709,9 @@ fn core_input_leaf(data: &Funcdata, vn: VarnodeId, budget: &mut usize) -> bool {
 /// each such constant reaching a RETURN through copies and merges keeps the
 /// unsigned integer of its width, so the float return reinterprets its bits; a
 /// function whose constant arrives any other way gives up the lock, and its
-/// return is typed as `floatret` types it.
+/// return is typed as `floatret` types it. So does a function whose returned
+/// value turns out, once its stack slots are heritaged, to be a core-register
+/// input carried through a stack round trip (-O0's `str r0; ldr r3; vmov s15,r3`).
 pub fn unlock_unspelled(data: &mut Funcdata) {
     if !data.get_arch().arm_float_return {
         return;
@@ -634,11 +734,15 @@ pub fn unlock_unspelled(data: &mut Funcdata) {
     else {
         return;
     };
-    if returned.iter().all(|&vn| crate::kuna_floatreg::spells_exactly(data, vn)) {
+    let forwards_core = returned.iter().any(|&vn| core_input_leaf(data, vn, &mut 32));
+    if !forwards_core && returned.iter().all(|&vn| crate::kuna_floatreg::spells_exactly(data, vn)) {
         return;
     }
     let mut constants = Vec::new();
-    if returned.iter().all(|&vn| unspelled_constants(data, vn, &mut constants, &mut 64)) && !constants.is_empty() {
+    if !forwards_core
+        && returned.iter().all(|&vn| unspelled_constants(data, vn, &mut constants, &mut 64))
+        && !constants.is_empty()
+    {
         let bits = data
             .get_arch()
             .types()

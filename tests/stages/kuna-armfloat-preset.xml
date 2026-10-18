@@ -29,7 +29,12 @@
     hands back an integer parameter in s0, which keeps its integer type
     rather than taking the float as a parameter its callers would convert by
     value. save_vfp stores the whole VFP bank (vstmia r0,{d0-d15}), which is
-    no read of eight double parameters. Passes 5 and 6 load
+    no read of eight double parameters. from_bits_o0 is from_bits built
+    without optimization, which spills its integer to the stack and reloads
+    it into s0. set8f stores its eight float arguments with one vstmia
+    r0,{s0-s7}, which is no bank save: they stay parameters. getpar is an int
+    getter that loads a double field into d0 on one path and leaves d0 alone
+    on the others; it keeps its int return. Passes 5 and 6 load
     armfloat_preset_m4f.o, a base-standard function a Cortex-M4F computes in
     through the AEABI helpers, with declared prototypes that put its double
     in d0: the call to __aeabi_dcmplt keeps its integer result in both
@@ -69,6 +74,15 @@
   <com>lo fu save_vfp</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu from_bits_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu set8f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu getpar</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloat_preset_hard.o</com>
   <com>read symbols</com>
@@ -95,6 +109,15 @@
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu save_vfp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu from_bits_o0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu set8f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu getpar</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
@@ -169,4 +192,7 @@
 <stringmatch name="armfloat preset #14: an integer handed back in s0 keeps its integer parameter in both passes" min="2" max="2">unsigned int from_bits\(unsigned int a0\)</stringmatch>
 <stringmatch name="armfloat preset #15: a register-bank save takes only its pointer in both passes" min="2" max="2">void save_vfp\((double|unsigned long long) \*a0\)</stringmatch>
 <stringmatch name="armfloat preset #16: an AEABI helper call keeps its integer result beside a declared double in both passes" min="2" max="2">if \(__aeabi_dcmplt\(\)\)</stringmatch>
+<stringmatch name="armfloat preset #17: an integer reloaded into s0 from an unoptimized spill keeps its integer parameter in both passes" min="2" max="2">unsigned int from_bits_o0\(unsigned int a0\)</stringmatch>
+<stringmatch name="armfloat preset #18: eight float arguments stored with one vstmia stay parameters in both passes" min="2" max="2">void set8f\(float a0,float a1,float a2,float a3,float a4,float a5,float a6,float a7,float \*a8\)</stringmatch>
+<stringmatch name="armfloat preset #19: an int getter that loads a double into d0 on one path keeps its int return in both passes" min="2" max="2">unsigned int getpar\(void \*a0,int a1,</stringmatch>
 </decompilertest>

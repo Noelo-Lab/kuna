@@ -1893,6 +1893,7 @@ impl Action for ActionInputPrototype {
                 if data.get_func_proto().possible_input_param(&addr, size)
                     && !crate::kuna_armfloatreturn::split_double_input(data, vn)
                     && !crate::kuna_armfloatreturn::bank_saved_input(data, vn)
+                    && !crate::kuna_armfloatargs::stray_vector_input(data, vn)
                 {
                     let slot = active.get_num_trials();
                     active.register_trial(&addr, size);

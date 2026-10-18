@@ -17,11 +17,25 @@ floating parameters; a floating aggregate or vector is seen only as the scalar
 words or doubles its reads show.
 
 A d-register input that the function reads only as its two words, each of
-which a floating operation consumes or a callee states as a float, becomes the
-two s-register inputs: heritage joined two single-precision parameters because
-another access covers the whole register. Words read only as integers, such as
-a double handed to a base-AAPCS helper in core registers, are left as
-`armfloatreturn` alone leaves them.
+which a floating operation consumes, a callee states as a float, or the code
+moves as a single-precision value (copied into another s-register, or stored or
+spilled to the stack from one), becomes the two s-register inputs: heritage
+joined two single-precision parameters because another access covers the whole
+register. libvorbis's `setup_tone_curves` copies `s1` into `s22` and spills
+`s0`, so it takes three floats rather than a double and a float. A word that
+moves as a single is also typed `float`. Words read only as integers, such as a
+double handed to a base-AAPCS helper in core registers, are left as
+`armfloatreturn` alone leaves them (`kuna_armfloatargs.rs (single_moves)`).
+
+An 8-byte VFP input that no reader takes as a double is not a parameter
+(`kuna_armfloatargs.rs (stray_vector_input)`): followed through copies, merges
+and bitwise lane edits, its value reaches only its own low word and vector user
+operations, never a floating operation on the whole register, a store, a call
+or a return. NEON lane loads (`vmov.16 d0[0],r12` inside a loop) and predicated
+loads (`it ls; vldr.ls s0,[r2]` beside a call that writes `d0` on the other
+path) leave such a read of the incoming register on paths the code never runs:
+libwebp's NEON transforms and `GetEntropyUnrefined_C` otherwise take an
+`unsigned long long` first parameter.
 
 The AAPCS-VFP back-fill slot is not a parameter. When a single-precision
 parameter fills the low half of a d-register and every later VFP parameter is a
@@ -7027,10 +7041,25 @@ Return trials are scored as usual, and the wider `d0` entry then wins the
 fill-in over a 4-byte `r0`. A value a call left in `d0` is therefore retired
 first: when an integer return trial holds, at every RETURN, a value the
 function computes and only returns (not a call's output), a VFP return trial
-whose value at every RETURN is only what a call left in the register is marked
-inactive. `half(x); return k + 1;` returns `k + 1` in `r0`, not `half`'s
-double; a function that returns `half`'s result and merely uses `r0` as scratch
-keeps the double. The machine code cannot tell every case apart: a `void`
+whose value at some RETURN is only what a call left in the register, or the
+register as the function received it, is marked inactive
+(`kuna_armfloatreturn.rs (drop_call_leftovers)`). `half(x); return k + 1;`
+returns `k + 1` in `r0`, not `half`'s double, and libmpg123's `mpg123_getpar`,
+which loads a double into `d0` on the one path that converts it and returns a
+status in `r0` on every path, keeps its `int` return. A function that returns
+`half`'s result and merely uses `r0` as scratch keeps the double.
+
+A `d0` trial is also retired when every value the function wrote there and
+hands to an exit is the low half of a wider vector register
+(`kuna_armfloatreturn.rs (drop_vector_halves)`); what a call left, the incoming
+register and an indirect effect are neutral. AArch32 NEON has no double lanes,
+so such a value is a vector temporary: libsoxr's NEON `pffft_real_preprocess`
+leaves the low half of a vector it stored in `d0` and stays `void`. A scalar
+double the code computes and leaves in `d0` is not told apart from a result:
+libvorbis's `mdct_init` computes the argument of its next `sincos` call at the
+bottom of a loop and leaves it there on exit, which looks like a loop that
+returns its last value until the call's prototype says `sincos` takes it, so it
+prints `double`. The machine code cannot tell every case apart: a `void`
 function that calls `half` last and leaves `d0` alone, or an `int` stored as
 well as returned, looks like one returning `half`'s double. After the output trials are scored, a single used trial in
 `s0` or `d0` gives the returned value a float or double type before constant
@@ -7049,11 +7078,16 @@ to; }){ .from = 0x7fc00123 }).to; }`. A function whose constant arrives any
 other way gives up the lock, and its return is typed as `floatret` types it.
 
 The lock is not placed where a returned value arrives unchanged, through
-copies and merges, from an input outside the VFP registers
+copies and merges, from a parameter outside the VFP registers
 (`kuna_armfloatreturn.rs (core_input_leaf)`): `float from_bits(unsigned u)` is
 `vmov s0,r0; bx lr`, and a float lock would spread to the parameter, so each
 caller's integer would be converted by value. Such a function keeps the
-integer return `floatret` gives it, as with the option off. A caller that holds
+integer return `floatret` gives it, as with the option off. An unoptimized
+build spills the integer to the stack and reloads it into `s0`; that round trip
+is visible only once the stack is in SSA form, so at the start of each
+type-inference pass a float-locked return that forwards an input outside the
+VFP registers gives up the lock (`kuna_armfloatreturn.rs (unlock_unspelled)`),
+and `from_bits` at `-O0` keeps its integer parameter too. A caller that holds
 a callee's convention float as integer bits reinterprets it, so with the option
 on that read does not withdraw the callee's float return
 (`kuna_armfloatreturn.rs (convention_float_storage)`, read by `voidret`).
@@ -7094,9 +7128,13 @@ named is decompiled under the unwidened default model, and so is every call
 to one (`kuna_armfloatreturn.rs (base_pcs_helper, helper_model)`), so a
 helper's integer result in `r0` is not displaced by a double the caller keeps
 live in `d0`. A register-bank save or restore, one instruction storing or
-loading eight or more VFP registers (the unwinder's `vstmia r0,{d0-d15}`), is
-neither a read of parameters nor a result
-(`kuna_armfloatreturn.rs (bank_saved_input, drop_bank_restores)`). The walk cannot tell a
+loading eight or more VFP registers of which at least one is not an argument
+register (the unwinder's `vstmia r0,{d0-d15}`), is neither a read of parameters
+nor a result
+(`kuna_armfloatreturn.rs (bank_access, bank_saved_input, drop_bank_restores)`).
+clang stores eight or more consecutive float or double
+arguments with the same instruction (`vstmia r0,{s0-s7}`, `{d0-d7}`,
+`{s0-s15}`); covering only argument registers, it stores parameters. The walk cannot tell a
 float result from code that deliberately edits the low word of a double; that
 code needs an explicit `double` output contract, which skips the walk.
 
