@@ -4745,10 +4745,11 @@ impl PrintC {
     /// `option braceelide` is on and the body is a plain single-statement
     /// `BlockCopy` leaf: no label line (an unstructured-goto target keeps its
     /// braces), exactly ONE op that `emit_basic_block_ops` would print under
-    /// NO_BRANCH (not-printed ops, branches, and implied-output ops are
-    /// skipped, exactly mirroring its filter), and no comment positioned in the
-    /// block (a comment renders as its own line).  Copy-leaf-only also rules
-    /// out a nested `if` body, so eliding can never capture a dangling else.
+    /// NO_BRANCH (suppressed ops, branches, and implied-output ops are skipped
+    /// unless the validated constant stack-copy emitter handles them, exactly
+    /// mirroring its filter), and no comment positioned in the block (a comment
+    /// renders as its own line). Copy-leaf-only also rules out a nested `if`
+    /// body, so eliding can never capture a dangling else.
     pub(crate) fn if_body_elides(&mut self, fd: &Funcdata, body: BlockId) -> bool {
         use crate::block::BlockType;
         // (kuna outlang) braceelide (DIV-38) drops the braces from a
@@ -4779,7 +4780,7 @@ impl PrintC {
                 Some(o) => o,
                 None => continue,
             };
-            if o.not_printed() || crate::p9_emit::kuna_stackmarkers::nonprinting(fd, inst) {
+            if self.is_suppressed_statement(fd, inst) {
                 continue;
             }
             // The body always prints under NO_BRANCH: every branch op is skipped.
@@ -4787,7 +4788,9 @@ impl PrintC {
                 continue;
             }
             if let Some(out) = o.get_out() {
-                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false) {
+                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false)
+                    && !self.reemits_hidden_constant_copy(fd, inst)
+                {
                     continue;
                 }
             }
@@ -4859,6 +4862,34 @@ impl PrintC {
             && crate::kuna_stackviews::enabled(fd)
             && (crate::kuna_stackbytes::assignment(fd, op).is_some()
                 || crate::kuna_stackassign::assignment(fd, op).is_some())
+    }
+
+    fn reemits_hidden_constant_copy(&self, fd: &Funcdata, op: OpId) -> bool {
+        if self.out_lang != crate::kuna_lang::OutLang::C
+            || !crate::kuna_stackviews::enabled(fd)
+            || !fd.obank().get(op).is_some_and(|operation| {
+                operation.code() == OpCode::CPUI_COPY
+                    && (operation.not_printed()
+                        || operation
+                            .get_out()
+                            .and_then(|out| fd.vbank().get(out))
+                            .is_some_and(|value| value.is_implied()))
+            })
+        {
+            return false;
+        }
+        crate::kuna_stackbytes::assignment(fd, op)
+            .is_some_and(|assignment| assignment.reemit_hidden_constant_copy)
+    }
+
+    fn is_suppressed_statement(&self, fd: &Funcdata, op: OpId) -> bool {
+        let Some(operation) = fd.obank().get(op) else {
+            return true;
+        };
+        if operation.not_printed() && !self.reemits_hidden_constant_copy(fd, op) {
+            return true;
+        }
+        crate::p9_emit::kuna_stackmarkers::nonprinting(fd, op)
     }
 
     /// (kuna) Is `blk` a `0`/`1` select diamond that the S8 `iteboolean` pass
@@ -5617,7 +5648,7 @@ impl PrintC {
                 Some(o) => o,
                 None => continue,
             };
-            if o.not_printed() || crate::p9_emit::kuna_stackmarkers::nonprinting(fd, inst) {
+            if self.is_suppressed_statement(fd, inst) {
                 continue;
             }
             // (kuna `voidtailreturn`) The function's own trailing bare `return;`.
@@ -5639,7 +5670,9 @@ impl PrintC {
             }
             // Skip ops whose output is an implied varnode (inlined elsewhere).
             if let Some(out) = o.get_out() {
-                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false) {
+                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false)
+                    && !self.reemits_hidden_constant_copy(fd, inst)
+                {
                     continue;
                 }
             }

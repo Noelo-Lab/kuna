@@ -24,6 +24,7 @@ pub(crate) struct Assignment {
     pub offset: i32,
     pub pointer_size: i32,
     pub ranges: Vec<Range>,
+    pub reemit_hidden_constant_copy: bool,
 }
 
 pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
@@ -53,6 +54,27 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         return None;
     }
     let mut bytes = expression(fd, output, true, 32)?;
+    let scalar_type = fd.vn_type_def_facing(output).get_metatype();
+    // View merging can hide a literal integer write to its generated backing.
+    // Keep this exception to complete constant-only copies; loads, pointers and
+    // other expressions must still use the ordinary statement path.
+    let hidden_constant_copy = (operation.not_printed()
+        || fd
+            .vbank()
+            .get(output)
+            .is_some_and(|value| value.is_implied()))
+        && operation.code() == OpCode::CPUI_COPY
+        && matches!(size, 1 | 2 | 4 | 8)
+        && matches!(
+            scalar_type,
+            type_metatype::TYPE_BOOL | type_metatype::TYPE_INT | type_metatype::TYPE_UINT
+        )
+        && info
+            .sym_type
+            .as_ref()
+            .is_some_and(|ty| ty.get_name().starts_with("stack_views_"))
+        && bytes.len() == size as usize
+        && bytes.iter().all(|byte| matches!(byte, Byte::Constant(_)));
     if stack.is_big_endian() {
         bytes.reverse();
     }
@@ -82,7 +104,8 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         if !matches!(
             fd.vn_type_def_facing(output).get_metatype(),
             type_metatype::TYPE_ARRAY | type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION
-        ) {
+        ) && !hidden_constant_copy
+        {
             return None;
         }
     }
@@ -130,15 +153,24 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         offset: info.sym_off,
         pointer_size: stack.get_addr_size() as i32,
         ranges,
+        reemit_hidden_constant_copy: hidden_constant_copy,
     })
 }
 
 fn same_backing(fd: &Funcdata, value: VarnodeId, symbol: SymbolId) -> bool {
-    fd.vbank()
-        .get(value)
-        .and_then(|value| value.get_high())
-        .and_then(|high| fd.high_bank().get(high))
-        .is_some_and(|high| high.kuna_link_symbol() == Some(symbol))
+    let Some(value) = fd.vbank().get(value) else {
+        return false;
+    };
+    let Some(stack) = fd.get_arch().manage().get_stack_space() else {
+        return false;
+    };
+    // HighVariable identity alone is not storage identity: another space can
+    // share a HighVariable with the generated frame backing after a merge.
+    value.get_space().get_index() == stack.get_index()
+        && value
+            .get_high()
+            .and_then(|high| fd.high_bank().get(high))
+            .is_some_and(|high| high.kuna_link_symbol() == Some(symbol))
 }
 
 fn expression(fd: &Funcdata, id: VarnodeId, top: bool, depth: u8) -> Option<Vec<Byte>> {
