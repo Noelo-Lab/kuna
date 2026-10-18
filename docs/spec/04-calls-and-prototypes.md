@@ -407,7 +407,23 @@ stack, upstream rounds its slot up to the data type's alignment. The kuna
 takes the next free stack slot (`modelrules.rs (AssignAction::assign_address)`).
 `SparcV9_32.cspec` sets it: SPARC32 passes arguments as consecutive words, while
 its data organization aligns eight-byte objects to eight for structure layout.
-Every other cspec keeps the upstream rounding.
+
+The fallback walk rounds the same way: an aligned stack `<pentry>` wastes slots
+until the argument's offset from the entry's base is a multiple of its data type's
+alignment (`fspec.rs (ParamEntry::get_addr_by_slot_justify)`). The kuna
+`<pentry stackalign="false">` attribute skips that rounding too, so each slot
+keeps only the entry's own `align`
+(`p4_calls/kuna_stackparamalign.rs (effective_alignment)`). `x86win.cspec` sets
+it on the stack entry of `__stdcall`, `__cdecl`, `__fastcall` and `__thiscall`:
+Windows i386 passes every stack argument in four-byte slots, while its data
+organization aligns `double`, `long long` and a structure holding one to eight.
+A `double` or `struct { double re, im; }` after an `int` or the hidden return
+pointer therefore sits at entry ESP+8, where the callee reads it, not at ESP+12.
+The data type's own alignment, and so its field offsets, are unchanged. An
+absent attribute or `true` keeps the rounding; `false` on a register entry or a
+single-slot entry, or any other value, fails the `<pentry>` decode
+(`kuna_stackparamalign.rs (decode)`), which drops the model like any other
+malformed `<pentry>`. Every other cspec keeps the upstream rounding.
 
 The bundled AArch64 cspecs (`AARCH64.cspec`, `AARCH64_apple.cspec` and
 `AARCH64_win.cspec`) never split an argument wider than one general register
@@ -7258,12 +7274,3 @@ return what they tail-call or call, and nine PLT stubs return the import's resul
 (`v1 = (*dat_17e58)(); return v1;` for `lseek`). Each prints the signature
 `decompile-all` prints. Only a function whose callers read it pays for a second
 drive.
-
-A stack resource may specify `stackalign="false"` on its `pentry` when
-argument slots use the resource alignment rather than the datatype's object
-alignment. Windows i386 stack arguments use four-byte slots even for types
-whose in-memory alignment is eight bytes. This keeps a double or pair structure
-immediately after a preceding integer or hidden return pointer, without changing
-the type's field offsets or object alignment. Entries without this attribute
-retain their existing alignment behavior, as does explicit `true`; disabling
-type alignment is rejected for non-stack and non-resource entries (`p4_calls/kuna_stackparamalign.rs`).

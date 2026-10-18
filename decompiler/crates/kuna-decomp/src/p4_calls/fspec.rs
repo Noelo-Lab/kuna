@@ -173,6 +173,7 @@ pub mod param_entry_flags {
     pub const OVERLAPPING: uint4 = 0x400;
     /// Entry is first in its storage class.
     pub const FIRST_STORAGE: uint4 = 0x800;
+    /// (kuna) Slots keep the entry's alignment, not the data type's (`stackalign="false"`).
     pub const IGNORE_TYPE_ALIGN: uint4 = 0x1000;
 }
 
