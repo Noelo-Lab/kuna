@@ -497,3 +497,6 @@ mod x87_empty_return;
 
 #[path = "windows_stack_argument_alignment.rs"]
 mod windows_stack_argument_alignment;
+
+#[path = "global_array_bit_transfers.rs"]
+mod global_array_bit_transfers;

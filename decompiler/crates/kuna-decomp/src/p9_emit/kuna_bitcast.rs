@@ -263,6 +263,24 @@ fn declared_member_type(
     decl_high_type: bool,
     id: VarnodeId,
 ) -> Option<Rc<Datatype>> {
+    let value = fd.vbank().get(id)?;
+    if value.is_persist() && !value.is_implied() {
+        let usepoint = kuna_base::address::Address::new_invalid();
+        if let Some((_, offset, Some(ty))) = fd.get_arch().name_for_global_varnode(
+            value.get_addr(), value.get_size(), &usepoint,
+        ) {
+            if ty.get_metatype() == type_metatype::TYPE_ARRAY {
+                let types = fd.get_arch().types()?;
+                return crate::kuna_stackviews::scalar_piece(
+                    types, ty, offset.max(0), value.get_size(),
+                ).or_else(|| {
+                    matches!(value.get_size(), 4 | 8)
+                        .then(|| types.get_base(value.get_size(), type_metatype::TYPE_UNKNOWN).ok())
+                        .flatten()
+                });
+            }
+        }
+    }
     let declared = crate::printc::declared_variable_type(fd, decl_high_type, id)?;
     if !fd.get_arch().stack_views {
         return Some(declared);
@@ -291,4 +309,24 @@ fn declared_member_type(
         value.get_size(),
     )
     .or(Some(declared))
+}
+
+/// A floating precision conversion remains floating when a byte array covers it.
+pub(crate) fn array_float_conversion(fd: &Funcdata, op: OpId) -> Option<Rc<Datatype>> {
+    let operation = fd.obank().get(op)?;
+    if operation.code() != OpCode::CPUI_FLOAT_FLOAT2FLOAT {
+        return None;
+    }
+    let output = operation.get_out()?;
+    let value = fd.vbank().get(output)?;
+    if !value.is_persist() || !matches!(value.get_size(), 4 | 8) {
+        return None;
+    }
+    let (_, _, Some(ty)) = fd.get_arch().name_for_global_varnode(
+        value.get_addr(), value.get_size(), &kuna_base::address::Address::new_invalid(),
+    )? else { return None };
+    if ty.get_metatype() != type_metatype::TYPE_ARRAY {
+        return None;
+    }
+    fd.get_arch().types()?.get_base(value.get_size(), type_metatype::TYPE_FLOAT).ok()
 }

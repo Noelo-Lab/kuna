@@ -3550,3 +3550,11 @@ noninteger types, enums, widths above eight bytes and concatenations of unrelate
 halves keep their existing rendering. The option defaults on for C output; off
 restores the upstream CONCAT helper, and other output languages keep their own
 rendering.
+
+For scalar CAST storage transfers through an asserted global array, the printed
+member access determines the scalar representation. An exact scalar array piece
+retains its type; a four- or eight-byte access crossing byte elements uses the
+width-matched unknown scalar printed by partial access. Floating transfers to
+and from that storage reinterpret bits rather than numerically converting the
+value or attempting an array cast. This lookup uses the exact global container
+and offset and does not change FLOAT conversion operations.
