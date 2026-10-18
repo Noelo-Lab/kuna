@@ -382,6 +382,12 @@ pub struct Funcdata {
     kuna_infertypes_settled: bool,
     /// Scheduled constant-pointer pass count for the opt-in array-base guard.
     pub(crate) kuna_global_array_anchor_passes: Option<u8>,
+    /// (kuna `regnarrow`) How many `fullloop` passes narrowed register-local webs.
+    pub(crate) kuna_regnarrow_runs: u8,
+    /// (kuna `regnarrow`) The narrow values those passes created.
+    pub(crate) kuna_regnarrow_values: std::collections::BTreeSet<VarnodeId>,
+    /// (kuna `regnarrow`) Seeds whose web the flow could not rebuild.
+    pub(crate) kuna_regnarrow_failed: std::collections::BTreeSet<VarnodeId>,
     /// (kuna `calltargettype`) The function-pointer type each indirect call
     /// states, for a call whose target is cast at the call: the cast names it.
     kuna_call_target_types: std::collections::HashMap<OpId, std::rc::Rc<crate::dtype::Datatype>>,
@@ -500,6 +506,12 @@ pub struct Funcdata {
     /// (kuna `callrettype`) The recovered return value of each callee this
     /// function calls, copied off the `Architecture` like `kuna_protoorder_types`.
     kuna_callret_types: crate::kuna_callrettype::StatedReturns,
+    /// (kuna `narrowret`) The narrow value each callee this function calls
+    /// returns zero-extended, copied off the `Architecture`.
+    kuna_narrowret: crate::kuna_narrowret::NarrowReturns,
+    /// (kuna `narrowret`) What this function computed with, and read, of each
+    /// call output `narrowret` narrowed, before it narrowed it.
+    kuna_narrowret_reads: std::collections::HashMap<crate::context::OpId, crate::kuna_narrowret::ReadBefore>,
     /// (kuna `floatreg`) The statements this caller refused: what its callees
     /// still declare their results to be.
     kuna_callret_withdrawn: crate::kuna_callrettype::StatedReturns,
@@ -700,6 +712,9 @@ impl Funcdata {
             cast_phase_index: 0,
             min_laned_size,
             kuna_global_array_anchor_passes: None,
+            kuna_regnarrow_runs: 0,
+            kuna_regnarrow_values: std::collections::BTreeSet::new(),
+            kuna_regnarrow_failed: std::collections::BTreeSet::new(),
             laned_map: std::collections::BTreeMap::new(),
             size: sz,
             glb,
@@ -772,6 +787,8 @@ impl Funcdata {
             kuna_callee_forward: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_callret_types: std::collections::HashMap::new(),
+            kuna_narrowret: std::collections::HashMap::new(),
+            kuna_narrowret_reads: std::collections::HashMap::new(),
             kuna_callret_withdrawn: std::collections::HashMap::new(),
             kuna_callret_data: std::rc::Rc::new(Vec::new()),
             kuna_forced_return: Vec::new(),
@@ -1189,6 +1206,32 @@ impl Funcdata {
         stated: std::rc::Rc<crate::kuna_callrettype::StatedReturn>,
     ) {
         self.kuna_callret_types.insert(key, stated);
+    }
+
+    /// (kuna `narrowret`) Record the narrow value the callee filed under `key` returns.
+    pub fn kuna_set_narrowret(
+        &mut self,
+        key: (int4, kuna_base::types::uintb),
+        stated: std::rc::Rc<crate::kuna_narrowret::NarrowReturn>,
+    ) {
+        self.kuna_narrowret.insert(key, stated);
+    }
+
+    /// (kuna `narrowret`) The narrow value the callee filed under `key` returns.
+    pub fn kuna_narrowret(&self, key: (int4, kuna_base::types::uintb)) -> Option<&crate::kuna_narrowret::NarrowReturn> {
+        self.kuna_narrowret.get(&key).map(|r| r.as_ref())
+    }
+
+    /// (kuna `narrowret`) Note what this function read of the output of the
+    /// CALL `op` before `narrowret` narrowed it.
+    pub fn kuna_note_narrowret_read(&mut self, op: crate::context::OpId, before: crate::kuna_narrowret::ReadBefore) {
+        self.kuna_narrowret_reads.insert(op, before);
+    }
+
+    /// (kuna `narrowret`) What this function read of the output of the CALL
+    /// `op` before `narrowret` narrowed it, if it did.
+    pub fn kuna_narrowret_read(&self, op: crate::context::OpId) -> Option<&crate::kuna_narrowret::ReadBefore> {
+        self.kuna_narrowret_reads.get(&op)
     }
 
     /// (kuna `floatreg`) Record a statement this caller refused.
@@ -3969,6 +4012,9 @@ impl Funcdata {
     /// (`clearBlocks`, `obank.clear`, `vbank.clear`) and the flag/index reset are
     /// faithful.
     pub fn clear(&mut self) {
+        self.kuna_regnarrow_runs = 0;
+        self.kuna_regnarrow_values.clear();
+        self.kuna_regnarrow_failed.clear();
         self.kuna_fpu_trunc_views.clear();
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
@@ -4044,6 +4090,7 @@ impl Funcdata {
         self.kuna_float_pair_halves.clear();
         self.kuna_forced_claims.clear();
         self.kuna_zext_word = None;
+        self.kuna_narrowret_reads.clear();
         self.kuna_pairs_first_low = false;
     }
 

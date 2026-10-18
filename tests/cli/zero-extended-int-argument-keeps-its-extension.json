@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/zextarg_x86_64",
+    "binary_sha256": "d8c1aebc1a8a4ea4f1090af3d51e3e11b8d5362c010a8174a078d48ffc0dba3e",
+    "binary_size": 16168,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/zextarg_x86_64",
+    "selector": "zext_arg",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "v[0-9]+ = sinkl\\(\\(unsigned int\\)v[0-9]+\\);",
+      "v[0-9]+ = sinkl\\(\\(long\\)v[0-9]+\\);"
+    ],
+    "stdout_absent": [
+      "= sinkl\\(v[0-9]+\\);"
+    ]
+  },
+  "notes": "zext_arg passes a 32-bit int (an arithmetic shift reads it signed) to sinkl(long) after `mov edi,edi`, so the binary zero-extends it; the trimmed argument used to print as the int itself and C sign-extended it into the long parameter. sext_arg's movsxd keeps its signed widening.",
+  "probe_id": "p-196f10b8a8f0"
+}

@@ -3009,9 +3009,12 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         // space** (`IPTR_PROCESSOR`) address with **no register name**.  Registers
         // live in the same processor space but carry a register name, so they are
         // excluded and still get `vN`; uniques (`IPTR_INTERNAL`) and stack
-        // (`IPTR_SPACEBASE`) locals are not global data and get `vN`.
-        let is_global_data =
-            spc.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR && !is_register;
+        // (`IPTR_SPACEBASE`) locals are not global data and get `vN`. So does a
+        // piece of a register no register name covers (the upper half of `RAX`
+        // above a 32-bit call result): it is a local, never global data.
+        let is_global_data = spc.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR
+            && !is_register
+            && spc.get_name() != "register";
         if v_persist || is_global_data {
             // C++ `Funcdata::linkSymbol` (`funcdata_varnode.cc:1190`) queries
             // `localmap->queryProperties`, whose `Scope::stackContainer` walks the

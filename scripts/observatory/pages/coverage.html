@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kuna Coverage</title>
+<style>
+@@BASE_CSS@@
+.hero { display: flex; gap: 30px; flex-wrap: wrap; margin: 16px 0; }
+.hero div strong { display: block; font-size: 26px; font-variant-numeric: tabular-nums; }
+.hero div span { color: var(--muted); font-size: 12.5px; }
+.covtbl td .bar { min-width: 140px; }
+.covtbl td.pct { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.lowrow td { color: var(--ink-2); }
+.warnband { border-left: 3px solid var(--warn); padding: 6px 12px; background: var(--surface);
+  color: var(--ink-2); font-size: 13px; margin: 10px 0; }
+#file-q { min-width: 260px; }
+</style>
+<script>
+@@BASE_JS@@
+</script>
+</head>
+<body>
+@@DATA@@
+<main class="wrap" id="main"></main>
+<script>
+"use strict";
+renderTopbar("coverage");
+const coverage = dataOf("coverage");
+const main = document.getElementById("main");
+
+function pctBar(stats) {
+  const percent = stats.lines.percent;
+  return `<div class="bar"><i style="width:${percent}%"></i></div>`;
+}
+
+function section(title, rows, nameKey) {
+  return `<h2>${esc(title)}</h2><section class="card"><table class="grid covtbl">
+    <thead><tr><th>${esc(nameKey)}</th><th>lines</th><th class="num">covered / total</th><th class="num">%</th></tr></thead>
+    <tbody>${rows.map((row) => `
+      <tr><td class="mono">${esc(row.name || row.folder)}</td>
+        <td>${pctBar(row)}</td>
+        <td class="num">${fmt(row.lines.covered)} / ${fmt(row.lines.count)}</td>
+        <td class="pct">${row.lines.percent.toFixed(1)}</td></tr>`).join("")}
+    </tbody></table></section>`;
+}
+
+function build() {
+  const totals = coverage.totals;
+  main.insertAdjacentHTML("beforeend", `
+    <h1>Test coverage</h1>
+    <p class="lede">Merged line coverage from the cargo workspace suite, the datatest and
+    stages corpora, and the tests/cli probes, all through instrumented binaries.
+    Line-level detail: <a href="./coverage/html/index.html">the llvm-cov HTML report</a>.</p>
+    ${coverage.meta.runsFailed ? `<div class="warnband">Some suite runs failed during this
+      measurement; the numbers cover what ran.</div>` : ""}
+    <div class="hero">
+      <div><strong>${totals.lines.percent.toFixed(1)}%</strong><span>lines covered</span></div>
+      <div><strong>${totals.functions.percent.toFixed(1)}%</strong><span>functions covered</span></div>
+      <div><strong>${fmt(totals.lines.covered)}</strong><span>of ${fmt(totals.lines.count)} lines</span></div>
+    </div>`);
+  const phases = [...coverage.phases].sort((a, b) => a.folder.localeCompare(b.folder));
+  const crates = [...coverage.crates].sort((a, b) => b.lines.count - a.lines.count);
+  main.insertAdjacentHTML("beforeend", section("kuna-decomp by phase folder", phases, "folder"));
+  main.insertAdjacentHTML("beforeend", section("By crate", crates, "crate"));
+  main.insertAdjacentHTML("beforeend", `
+    <h2>Least-covered files</h2>
+    <div class="toolbar" style="position:static">
+      <input type="search" id="file-q" placeholder="filter files…">
+      <span class="hint" id="file-count"></span>
+    </div>
+    <section class="card"><table class="grid covtbl" id="files"></table></section>`);
+  const query = document.getElementById("file-q");
+  query.addEventListener("input", () => renderFiles(query.value.trim().toLowerCase()));
+  renderFiles("");
+}
+
+function renderFiles(needle) {
+  const rows = coverage.files
+    .filter((file) => file.lines.count > 0 && (!needle || file.path.toLowerCase().includes(needle)))
+    .map((file) => ({ ...file, pct: (100 * file.lines.covered) / file.lines.count }))
+    .sort((a, b) => a.pct - b.pct);
+  const shown = rows.slice(0, 200);
+  document.getElementById("file-count").textContent =
+    `${shown.length} of ${rows.length} files (lowest coverage first)`;
+  document.getElementById("files").innerHTML =
+    `<thead><tr><th>file</th><th class="num">covered / total</th><th class="num">%</th></tr></thead><tbody>` +
+    shown.map((file) => `<tr class="${file.pct < 50 ? "lowrow" : ""}">
+      <td class="mono">${esc(file.path)}</td>
+      <td class="num">${fmt(file.lines.covered)} / ${fmt(file.lines.count)}</td>
+      <td class="pct">${file.pct.toFixed(1)}</td></tr>`).join("") + "</tbody>";
+}
+
+if (!coverage) {
+  main.innerHTML = "<h1>Test coverage</h1>" + missingNotice("coverage");
+} else {
+  build();
+}
+</script>
+</body>
+</html>

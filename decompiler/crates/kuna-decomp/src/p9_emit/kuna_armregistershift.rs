@@ -41,7 +41,7 @@ pub(crate) fn plan_arm_register_lsl(
     if o.code() != OpCode::CPUI_INT_LEFT || o.num_input() != 2 {
         return None;
     }
-    let (lhs, count) = (o.get_in(0)?, o.get_in(1)?);
+    let (lhs, count) = (o.get_in(0)?, unsigned_extension_source(fd, o.get_in(1)?));
     let (lhs_v, count_v, out_v) = (
         fd.vbank().get(lhs)?,
         fd.vbank().get(count)?,
@@ -60,10 +60,7 @@ pub(crate) fn plan_arm_register_lsl(
         .types()
         .get_base(lhs_v.get_size(), type_metatype::TYPE_UINT)
         .ok()?;
-    let count_type = arch
-        .types()
-        .get_base(count_v.get_size(), type_metatype::TYPE_UINT)
-        .ok()?;
+    let count_type = arch.types().get_base(4, type_metatype::TYPE_UINT).ok()?;
     let signed_result_type = match out_v.get_type().get_metatype() {
         type_metatype::TYPE_INT | type_metatype::TYPE_ENUM_INT => Some(
             arch.types()
@@ -80,6 +77,24 @@ pub(crate) fn plan_arm_register_lsl(
         count_type,
         signed_result_type,
     })
+}
+
+/// (kuna `regnarrow`) The unsigned value an implied zero extension `vn`
+/// widens, which the guard casts and the shift reads as they are; `vn` itself
+/// otherwise. Printing the extension would cast the count a second time.
+fn unsigned_extension_source(fd: &Funcdata, vn: VarnodeId) -> VarnodeId {
+    let Some(v) = fd.vbank().get(vn) else { return vn };
+    if !fd.get_arch().narrow_locals || v.is_explicit() || v.get_size() != 4 {
+        return vn;
+    }
+    let Some(def) = v.get_def().and_then(|d| fd.obank().get(d)) else { return vn };
+    if def.code() != OpCode::CPUI_INT_ZEXT {
+        return vn;
+    }
+    match def.get_in(0).and_then(|x| fd.vbank().get(x).map(|v| (x, v))) {
+        Some((x, xv)) if xv.get_type().get_metatype() == type_metatype::TYPE_UINT => x,
+        _ => vn,
+    }
 }
 
 /// Whether printing `vn` twice emits the same side-effect-free C value.

@@ -308,7 +308,9 @@ pub(crate) fn get_input_cast(
     op: OpId,
     slot: int4,
 ) -> Option<Rc<Datatype>> {
-    get_input_cast_op(data, strat, op, slot).or_else(|| crate::kuna_signedread::cast(data, op, slot))
+    get_input_cast_op(data, strat, op, slot)
+        .or_else(|| crate::kuna_signedread::cast(data, op, slot))
+        .or_else(|| crate::kuna_unsignedread::cast(data, strat, op, slot))
 }
 
 /// The per-op-code body of [`get_input_cast`].
