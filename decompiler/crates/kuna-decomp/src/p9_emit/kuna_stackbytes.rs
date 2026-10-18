@@ -80,6 +80,28 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
     if info.is_name_undefined {
         reject!("unnamed stack container");
     }
+    let stackview_container = info
+        .sym_type
+        .as_ref()
+        .is_some_and(|ty| ty.get_name().starts_with("stack_views_"));
+    let output_type = fd.vn_type_read_facing(output, op).get_metatype();
+    let source_type = operation
+        .get_in(0)
+        .map(|source| fd.vn_type_read_facing(source, op).get_metatype());
+    let pointer_copy = operation.code() == OpCode::CPUI_COPY
+        && stackview_container
+        && (matches!(
+            output_type,
+            type_metatype::TYPE_PTR | type_metatype::TYPE_PTRREL | type_metatype::TYPE_CODE
+        ) || source_type.is_some_and(|ty| {
+            matches!(
+                ty,
+                type_metatype::TYPE_PTR | type_metatype::TYPE_PTRREL | type_metatype::TYPE_CODE
+            )
+        }));
+    if pointer_copy {
+        reject!("pointer-valued stackview COPY stays typed");
+    }
     let Some(mut bytes) = expression(fd, output, true, 32, op, info.symbol, None) else {
         reject!("unsupported source expression, output size {size}");
     };
@@ -108,16 +130,12 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         .enumerate()
         .map(|(index, byte)| preserved(index, *byte))
         .collect();
-    let output_type = fd.vn_type_read_facing(output, op).get_metatype();
     let stackview_scalar_copy = operation.code() == OpCode::CPUI_COPY
+        && stackview_container
         && !matches!(
             output_type,
             type_metatype::TYPE_PTR | type_metatype::TYPE_PTRREL
-        )
-        && info
-            .sym_type
-            .as_ref()
-            .is_some_and(|ty| ty.get_name().starts_with("stack_views_"));
+        );
     if matches!(size, 1 | 2 | 4 | 8) && !keep.iter().any(|keep| *keep) {
         if !matches!(
             fd.vn_type_def_facing(output).get_metatype(),
