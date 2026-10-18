@@ -276,6 +276,7 @@ fn decompile_default_with_stackviews(function: &str, stackviews: Option<&str>) -
             "--assert",
         ])
         .arg(format!("@{fixture}.kuna"))
+        .args(["--option", "structdefs", "on"])
         .arg("--sleighpath")
         .arg(common::repo_root().join("specs"));
     if let Some(value) = stackviews {
