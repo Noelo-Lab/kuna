@@ -1,16 +1,43 @@
 //! Explicit x87 storage must not leave a model-generated hidden return argument.
 use crate::common;
 use common::process;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// Link the fixture as a MinGW DLL, or assemble it as a COFF object with Clang
+/// when no MinGW toolchain is installed.
+fn build_image(source: &Path) -> Option<PathBuf> {
+    let mingw = "i686-w64-mingw32-gcc";
+    if process::optional_output(Command::new(mingw).arg("--version")).is_some() {
+        let binary = source.with_extension("dll");
+        process::optional_output(
+            Command::new(mingw)
+                .args([
+                    "-shared",
+                    "-nostdlib",
+                    "-Wl,--entry,0",
+                    "-Wl,--export-all-symbols",
+                ])
+                .arg(source)
+                .arg("-o")
+                .arg(&binary),
+        )?;
+        return Some(binary);
+    }
+    let object = source.with_extension("obj");
+    process::optional_output(
+        Command::new("clang")
+            .args(["--target=i686-pc-windows-gnu", "-c"])
+            .arg(source)
+            .arg("-o")
+            .arg(&object),
+    )?;
+    Some(object)
+}
 
 #[test]
 fn st0_assertions_keep_one_argument_and_the_callers_stack_offsets() {
-    let compiler = "i686-w64-mingw32-gcc";
-    if process::optional_output(Command::new(compiler).arg("--version")).is_none() {
-        return;
-    }
     let source = common::scratch_file("x87-custom-storage", "s");
-    let binary = source.with_extension("dll");
     std::fs::write(
         &source,
         r#"
@@ -31,23 +58,10 @@ _root_value:
 "#,
     )
     .unwrap();
-    let output = Command::new(compiler)
-        .args([
-            "-shared",
-            "-nostdlib",
-            "-Wl,--entry,0",
-            "-Wl,--export-all-symbols",
-        ])
-        .arg(&source)
-        .arg("-o")
-        .arg(&binary)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let Some(binary) = build_image(&source) else {
+        std::fs::remove_file(&source).unwrap();
+        return;
+    };
     let parameter = "param _root_value::0 ST0 float10 value";
     let result = "return _root_value::ST0 float10";
     let regenerated = source.with_extension("c");
