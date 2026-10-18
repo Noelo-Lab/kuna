@@ -2178,8 +2178,12 @@ first-pass aliases are unreliable because the pointer forms haven't
 simplified yet), the sorted alias list drives
 `decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
 (Database::mark_unaliased)`: every stack Symbol *not* crossed by an alias
-(walked in lock-step with the mapped ranges; an alias more than `0xffff`
-bytes back is ignored, and aliases don't propagate through unmapped gaps)
+(walked in lock-step with the mapped ranges; symbols are visited by increasing
+end offset because overlapping entries can appear in a different record-list
+order; an alias inside a symbol's mapped range keeps that symbol aliased even
+when an overlapping type-locked entry stopped propagation, and an alias more
+than `0xffff` bytes back is ignored while aliases do not propagate through
+unmapped gaps)
 gets the `nolocalalias` flag. That flag is what lets `RuleIndirectCollapse`
 delete the per-call INDIRECT effects heritage placed on the local — without
 it every call kills every local's value. This is exactly where **`option
