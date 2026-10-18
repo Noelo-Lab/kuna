@@ -928,6 +928,10 @@ fn reused_pair_and_handle_share_their_storage() {
     assert!(code.contains("union stack_views_"), "{code}");
     assert!(code.contains("view_LifetimePair"), "{code}");
     assert!(code.contains("view_LifetimeHandle"), "{code}");
+    // Pin the writes themselves: executing C with either initial value omitted
+    // reads an uninitialized Pair and can otherwise pass by accident.
+    assert!(code.contains("= 5;"), "{code}");
+    assert!(code.contains("= 7;"), "{code}");
     native_code("stack_reuse", "", 67, code);
 
     // The escaped-alias witness has no conflicting declared object views and
