@@ -1240,8 +1240,8 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 }
 
 /// (kuna `globalref`) One `extern` line per global the functions name by address,
-/// in address order, and (kuna `elemptr`) per global a function reads directly
-/// and `elemptr` typed an element pointer: a subscript `dat_5068[i]` reads the
+/// in address order, including direct scalar reads and writes and (kuna
+/// `elemptr`) direct element pointers: a subscript `dat_5068[i]` reads the
 /// element its declaration names.
 ///
 /// Each function declares the object at the type IT uses it at, so two
@@ -1263,6 +1263,9 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 ///   from happening; a `--jobs` worker cannot see the other functions);
 /// * otherwise the one type the direct accesses agree on;
 /// * otherwise, with direct accesses at two types, nothing, and a comment says so;
+/// * a name only read and written directly whose bytes another global's
+///   overlap gets nothing, and a comment: two declarations would make one
+///   storage two objects, so a store through one would never reach the other;
 /// * with no direct access, a type over the unknown byte a `void *` use stands
 ///   for, then the larger object, then the declaration more functions make,
 ///   then the earlier function.
@@ -1276,11 +1279,18 @@ fn global_declarations(results: &[FuncResult]) -> String {
     }
     let quote = |d: &str| d.replace("/*", "/ *").replace("*/", "* /");
     let mut out = String::new();
-    for (taken, direct) in by_addr.values() {
-        if taken.is_empty() && !direct.iter().any(|g| g.elem) {
-            continue;
-        }
+    let mut reach: Option<(u64, &str)> = None;
+    for (&address, (taken, direct)) in &by_addr {
         let name = taken.iter().chain(direct.iter()).next().map_or("", |g| g.name.as_str());
+        let end = taken.iter().chain(direct.iter()).map(|g| address.saturating_add(g.size.max(1) as u64)).max();
+        let end = end.unwrap_or(address).max(address.saturating_add(1));
+        let overlap = reach.filter(|&(r, _)| r > address).map(|(_, n)| n).or_else(|| {
+            let (t, d) = by_addr.range(address.saturating_add(1)..end).next()?.1;
+            t.iter().chain(d.iter()).next().map(|g| g.name.as_str())
+        });
+        if reach.map_or(true, |(r, _)| end > r) {
+            reach = Some((end, name));
+        }
         let mut decls: Vec<(&GlobalInfo, usize)> = Vec::new();
         for g in taken.iter().chain(direct.iter()) {
             match decls.iter_mut().find(|(d, _)| d.declaration == g.declaration) {
@@ -1319,6 +1329,10 @@ fn global_declarations(results: &[FuncResult]) -> String {
                 continue;
             }
         };
+        if let Some(other) = overlap.filter(|_| taken.is_empty() && !direct.iter().any(|g| g.elem)) {
+            let _ = writeln!(out, "/* {name} is overlapped by {other}, so it is not declared: {} */", quote(&chosen));
+            continue;
+        }
         let others: Vec<String> =
             decls.iter().filter(|(g, _)| g.declaration != chosen).map(|(g, _)| quote(&g.declaration)).collect();
         if others.is_empty() {
@@ -1640,6 +1654,57 @@ mod tests {
         contains_identifier, prune_unreferenced_synth_types, redo_replaces, AssemblyScratch,
         FuncResult,
     };
+
+    #[test]
+    fn scalar_global_declarations_keep_conflicting_direct_types_diagnostic() {
+        let mut result = streamed("void sample(void)", "int");
+        let direct = |ty: &str| super::GlobalInfo {
+            address: 0x5000,
+            name: "dat_5000".into(),
+            declaration: format!("{ty} dat_5000"),
+            size: 4,
+            unknown: false,
+            direct: true,
+            aggregate: false,
+            elem: false,
+        };
+        result.globals = vec![direct("unsigned int")];
+        assert_eq!(super::global_declarations(std::slice::from_ref(&result)), "extern unsigned int dat_5000;\n");
+        result.globals.push(direct("float"));
+        let declarations = super::global_declarations(&[result]);
+        assert!(!declarations.contains("extern "), "{declarations}");
+        assert!(declarations.contains("read at two types"), "{declarations}");
+        assert!(declarations.contains("unsigned int dat_5000"), "{declarations}");
+        assert!(declarations.contains("float dat_5000"), "{declarations}");
+    }
+
+    #[test]
+    fn overlapping_direct_globals_are_not_split_into_two_objects() {
+        let global = |address: u64, ty: &str, size: i64, direct: bool| super::GlobalInfo {
+            address,
+            name: format!("dat_{address:x}"),
+            declaration: format!("{ty} dat_{address:x}"),
+            size,
+            unknown: false,
+            direct,
+            aggregate: false,
+            elem: false,
+        };
+        let mut result = streamed("void sample(void)", "int");
+        result.globals = vec![global(0x5000, "unsigned int", 4, true), global(0x5004, "unsigned int", 4, true)];
+        let adjacent = super::global_declarations(std::slice::from_ref(&result));
+        assert_eq!(adjacent, "extern unsigned int dat_5000;\nextern unsigned int dat_5004;\n");
+        result.globals = vec![global(0x5000, "unsigned long", 8, true), global(0x5004, "unsigned int", 4, true)];
+        let split = super::global_declarations(std::slice::from_ref(&result));
+        assert!(!split.contains("extern "), "{split}");
+        assert!(split.contains("dat_5000 is overlapped by dat_5004"), "{split}");
+        assert!(split.contains("dat_5004 is overlapped by dat_5000"), "{split}");
+        result.globals = vec![global(0x5000, "long", 8, false), global(0x5004, "int", 4, true)];
+        let taken = super::global_declarations(&[result]);
+        assert!(taken.starts_with("extern long dat_5000;\n"), "{taken}");
+        assert!(taken.contains("dat_5004 is overlapped by dat_5000"), "{taken}");
+        assert!(!taken.contains("extern int dat_5004"), "{taken}");
+    }
 
     /// A result carrying only what the streaming export keeps.
     fn streamed(proto: &str, param_type: &str) -> FuncResult {

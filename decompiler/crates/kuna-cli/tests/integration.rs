@@ -484,3 +484,5 @@ mod x87_custom_storage;
 
 #[path = "dwarf_complex_values.rs"]
 mod dwarf_complex_values;
+#[path = "project_direct_globals.rs"]
+mod project_direct_globals;
