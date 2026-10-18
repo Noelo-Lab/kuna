@@ -711,6 +711,31 @@ pub fn build_and_follow_flow_with_override(
     build_and_follow_flow_with_override_and_protos(arch, name, entry, size, flow_overrides, &[])
 }
 
+/// (kuna decompile-all watchdog) [`build_and_follow_flow_with_override`] for a
+/// follow made outside a drive (the console's `load function` / `load addr`),
+/// under the budget a drive of `arch` would arm: a follow still running when it
+/// runs out fails with the budget error instead of leaving a truncated IR for
+/// the drive to adopt. With no budget it is the plain follow.
+pub fn build_and_follow_flow_within_budget(
+    arch: &mut Architecture,
+    name: &str,
+    entry: Address,
+    size: int4,
+    flow_overrides: &[(Address, kuna_base::types::uint4)],
+) -> KunaResult<Funcdata> {
+    let Some(budget) = fn_budget(arch) else {
+        return build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides);
+    };
+    let outer = arch.kuna_fn_deadline.replace(std::time::Instant::now() + budget);
+    let result = {
+        let _deadline_scope = DeadlineScope::enter(arch.kuna_fn_deadline);
+        let fd = build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides);
+        budget_error(arch).map_or(fd, Err)
+    };
+    arch.kuna_fn_deadline = outer;
+    result
+}
+
 /// Like [`build_and_follow_flow_with_override`], but also re-seeds the
 /// `override prototype <addr> <decl>` facts onto the fresh `Funcdata`'s
 /// `localoverride` (the proto-override store) before flow follows, so

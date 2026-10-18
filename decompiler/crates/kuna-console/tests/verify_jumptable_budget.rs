@@ -9,7 +9,9 @@ use crate::common;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use kuna_console::engine::bootstrap_from_object_with_isa;
+use kuna_console::engine::{bootstrap_from_object_with_isa, ConsoleProgram};
+use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
+use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_console::project::decompile_targets;
 
 fn specs() -> Vec<String> {
@@ -59,13 +61,18 @@ fn double_dispatch_elf() -> Vec<u8> {
     image
 }
 
-fn decompile(budget: Option<Duration>) -> (Option<String>, Option<String>) {
+fn program(budget: Option<Duration>) -> (ConsoleProgram, PathBuf) {
     let path = common::scratch_file("jumptable-budget", "elf");
     std::fs::write(&path, double_dispatch_elf()).unwrap();
     let mut program = bootstrap_from_object_with_isa(path.to_str().unwrap(), "", &specs(), None)
         .expect("bootstrap fixture with built processor specs");
     program.commit_pending_analysis().unwrap();
     program.arch_mut().kuna_fn_budget = budget;
+    (program, path)
+}
+
+fn decompile(budget: Option<Duration>) -> (Option<String>, Option<String>) {
+    let (mut program, path) = program(budget);
     let entry = program.find_entry_at(0x401000).expect("entry point");
     let mut result = decompile_targets(&mut program, vec![entry], true, false, false);
     std::fs::remove_file(path).unwrap();
@@ -91,5 +98,34 @@ fn expired_budget_names_the_jump_table_being_recovered() {
     assert_eq!(
         error.as_deref(),
         Some("per-function decompile budget exceeded (0 s) in jump-table recovery at 0x401026"),
+    );
+}
+
+/// The console's transcript for `cmds` over the fixture.
+fn console(budget: Option<Duration>, cmds: &[&str]) -> String {
+    let mut status = ConsoleCommands::into_status(cmds.iter().map(|c| c.to_string()).collect());
+    register_decomp_commands(&mut status);
+    let (program, path) = program(budget);
+    let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+    data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap().conf = Some(program);
+    for _ in cmds {
+        execute(&mut status);
+    }
+    std::fs::remove_file(path).unwrap();
+    status.optr
+}
+
+/// `load addr` follows flow before any drive (`kuna decompile`'s script), so
+/// it is held to the same budget and fails rather than spin in table recovery.
+#[test]
+fn console_load_follows_flow_under_the_budget() {
+    let unbudgeted = console(None, &["load addr 0x401000", "decompile", "print C"]);
+    assert_eq!(unbudgeted.matches("switch(").count(), 2, "{unbudgeted}");
+    let expired = console(Some(Duration::ZERO), &["load addr 0x401000"]);
+    assert!(
+        expired.contains(
+            "Execution error: per-function decompile budget exceeded (0 s) in jump-table recovery at 0x401026"
+        ),
+        "{expired}"
     );
 }

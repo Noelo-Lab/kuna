@@ -198,7 +198,8 @@ under `decompile-all`, including its cgroup default) and reports `per-function
 memory limit exceeded` instead of being killed. `--max-fn-seconds N` is the
 wall-clock half (default 120, the same as `--json`; `0` disables): `decomp_dbg`
 arms it as the drive's cooperative deadline (see *Per-function watchdog* under
-`decompile-all`), and a function still running at N seconds fails with
+`decompile-all`), and separately for the flow follow of its `load function`
+step, and a function still running at N seconds in either fails with
 `per-function decompile budget exceeded (N s) in <pass>`, a note naming the
 flag, and exit 1 instead of spinning on.
 

@@ -321,6 +321,9 @@ fn check_errors(
     // missing bytes remain selection failures.
     if !(allow_external && is_undefined_external_entry(out)) {
         if let Some(reason) = selection_failure(out) {
+            if reason.contains("per-function decompile budget exceeded") {
+                return Some(format!("decompilation failed for {target} in {binary}: {reason}"));
+            }
             return Some(reason);
         }
     }
@@ -818,9 +821,7 @@ pub fn run(args: &DecompileArgs) -> i32 {
             let status = match out.failure {
                 Some(msg) => {
                     eprintln!("error: {msg}");
-                    if msg.contains("per-function decompile budget exceeded") {
-                        eprintln!("note: --max-fn-seconds N sets the budget (0 disables it)");
-                    }
+                    note_budget_flag(&msg);
                     1
                 }
                 None if refused => 1,
@@ -834,8 +835,16 @@ pub fn run(args: &DecompileArgs) -> i32 {
         }
         Err(e) => {
             eprintln!("error: {e}");
+            note_budget_flag(&e);
             1
         }
+    }
+}
+
+/// Points a budget-stopped run at the flag that sets the budget.
+fn note_budget_flag(msg: &str) {
+    if msg.contains("per-function decompile budget exceeded") {
+        eprintln!("note: --max-fn-seconds N sets the budget (0 disables it)");
     }
 }
 

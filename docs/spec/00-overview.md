@@ -1551,9 +1551,12 @@ drive's on exit. A memory-limit trip keeps its unsuffixed message. `kuna
 decompile` passes the same budget to `decomp_dbg` (`--max-fn-seconds N`,
 default 120 like its `--json` face, `0` none), which sets it process-wide
 (`decompile_drive.rs (set_default_fn_budget_secs)`) for every drive whose
-architecture carries none; the console's adoption of a pre-followed flow still
-keys on the architecture's own budget, so that flow, followed by `load
-function` before the drive, stays unbudgeted. `--max-fn-memory MiB` arms the
+architecture carries none. The flow `load function` / `load addr` follow before
+any drive, which the next `decompile` adopts, is held to the same budget
+(`decompile_drive.rs (build_and_follow_flow_within_budget)`): a follow still
+running when it runs out fails the load with the budget error, so a truncated
+IR is never adopted, and the drive that adopts a completed one arms its own.
+`--max-fn-memory MiB` arms the
 same probes with a memory limit
 (`decompiler/crates/kuna-decomp/src/infra/kuna_fnmemory.rs`): the driver sets
 it process-wide, each drive reads the resident set it starts from (first
