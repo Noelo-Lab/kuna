@@ -460,3 +460,5 @@ mod narrow_register_inputs;
 
 #[path = "float_storage_truncation.rs"]
 mod float_storage_truncation;
+#[path = "dwarf_reference_arguments.rs"]
+mod dwarf_reference_arguments;

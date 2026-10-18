@@ -2232,6 +2232,20 @@ moves.
   and read back at *two* points: by a caller's `ActionDefaultParams` for the call
   site, and by the drive as the function's own locked prototype (04 §4.2 —
   `int main(int argc, char **argv)`, not `undefined16 main(uint4, void*)`);
+  a formal parameter of a Fortran compilation unit whose location is exactly
+  `DW_OP_fbreg` followed by `DW_OP_deref`
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfbyref.rs`)
+  receives a pointer to its described value type. GNU Fortran passes every
+  non-`VALUE` dummy argument by reference but describes it by its value type
+  plus a frame slot that holds the address; taking that value type as the ABI
+  argument instead selected floating registers for a `real` dummy and
+  disconnected the incoming address, so `output = sample + bias` printed as
+  three unrelated pointer locals. Plain frame slots, including Fortran `VALUE`
+  arguments, keep their value types. Other source languages are not inferred
+  from this pattern (a C++ class passed by invisible reference carries the same
+  location form), nor are composite expressions or the optimized forms
+  (`DW_OP_breg<n> 0`, location lists), which still import the value type. Both
+  the name-bound and the address-bound prototype import paths apply the rule;
   a `DW_TAG_enumeration_type` becomes a real enum type — name, declared width,
   signedness, and the `DW_TAG_enumerator` value→name map (05 §5.1), which is what
   turns `quotearg_style(4, …)` into
