@@ -841,7 +841,10 @@ pub fn decompile_pulled(
                     // (kuna `structdefs`) The layout side of the same function:
                     // the definitions the preamble just printed above the body,
                     // as records. Empty unless the option is on.
-                    let types = extract_type_definitions(prog.arch(), &fd);
+                    let mut types = extract_type_definitions(prog.arch(), &fd);
+                    if want_proto {
+                        types.extend(kuna_decomp::kuna_callprototypes::type_definitions(prog.arch(), &fd));
+                    }
                     let mut stack_objects = if no_vars { Vec::new() } else {
                         kuna_decomp::kuna_stackobjectinfo::extract(prog.arch(), &fd)
                     };

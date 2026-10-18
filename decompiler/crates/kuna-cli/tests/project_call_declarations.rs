@@ -202,3 +202,89 @@ _sample:
         }
     }
 }
+
+#[test]
+#[cfg(target_os = "linux")]
+fn format_specializations_do_not_become_global_function_declarations() {
+    if process::optional_output(Command::new("clang").arg("--version")).is_none() {
+        return;
+    }
+    let source = common::scratch_file("project-format-declarations", "c");
+    let binary = source.with_extension("so");
+    std::fs::write(&source, "#include <stdio.h>\nint sample(int value) { printf(\"%d\",value); printf(\"%d%d\",value,value+1); return value; }\n").unwrap();
+    let built = Command::new("clang")
+        .args(["-g", "-O0", "-shared", "-fPIC"])
+        .arg(&source)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .unwrap();
+    assert!(
+        built.status.success(),
+        "{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let directory = source.with_extension("project");
+    let (out, err, status) = common::run_kuna(&[
+        "decompile-project",
+        binary.to_str().unwrap(),
+        "--functions",
+        "sample",
+        "-o",
+        directory.to_str().unwrap(),
+    ]);
+    assert_eq!(status, 0, "{out}\n{err}");
+    let stem = binary.file_name().unwrap().to_str().unwrap();
+    let driver = source.with_extension("driver.c");
+    std::fs::write(
+        &driver,
+        format!(
+            r#"
+#include "{stem}.h"
+#include <stdarg.h>
+static int calls,total;
+int capture_printf(char *format,...) {{
+    va_list args; va_start(args,format); total+=va_arg(args,int);
+    if(format[2]=='%') total+=va_arg(args,int);
+    va_end(args); ++calls; return 0;
+}}
+int main(void) {{
+    for(int value=-10;value<=10;value++) {{
+        calls=total=0;
+        if(sample(value)!=value || calls!=2 || total!=value*3+1) return 1;
+    }}
+    return 0;
+}}
+"#
+        ),
+    )
+    .unwrap();
+    for compiler in ["gcc", "clang"] {
+        if process::optional_output(Command::new(compiler).arg("--version")).is_none() {
+            continue;
+        }
+        for optimization in ["-O0", "-O2"] {
+            let executable = source.with_extension("native");
+            let built = Command::new(compiler)
+                .args([optimization, "-std=c11", "-Dprintf=capture_printf"])
+                .arg("-I")
+                .arg(&directory)
+                .arg(directory.join(format!("{stem}.c")))
+                .arg(&driver)
+                .arg("-o")
+                .arg(&executable)
+                .output()
+                .unwrap();
+            assert!(
+                built.status.success(),
+                "{}",
+                String::from_utf8_lossy(&built.stderr)
+            );
+            let result = Command::new(&executable).output().unwrap();
+            assert!(
+                result.status.success(),
+                "{compiler} {optimization}: {result:?}"
+            );
+        }
+    }
+}

@@ -121,6 +121,24 @@ pub fn referenced_types(fd: &Funcdata) -> Vec<Rc<Datatype>> {
             }
         }
     }
+    for id in fd.vbank().iter_loc() {
+        let Some(vn) = fd.vbank().get(id) else { continue };
+        visit(vn.get_type(), &mut seen, &mut order);
+        if let Some(sym) = vn
+            .get_high()
+            .and_then(|h| fd.high_bank().get(h))
+            .and_then(|h| h.kuna_symbol_type())
+        {
+            visit(sym, &mut seen, &mut order);
+        }
+    }
+    order
+}
+
+/// Type roots needed only by project call-target declarations.
+pub fn referenced_call_types(fd: &Funcdata) -> Vec<Rc<Datatype>> {
+    let mut order = Vec::new();
+    let mut seen = HashSet::new();
     for index in 0..fd.num_calls() {
         let proto = fd.get_call_specs(index).proto();
         if !proto.has_store() || !proto.is_input_locked() || !proto.is_output_locked() {
@@ -131,17 +149,6 @@ pub fn referenced_types(fd: &Funcdata) -> Vec<Rc<Datatype>> {
             if let Some(ty) = proto.get_param(index).and_then(|p| p.get_type()) {
                 visit(ty, &mut seen, &mut order);
             }
-        }
-    }
-    for id in fd.vbank().iter_loc() {
-        let Some(vn) = fd.vbank().get(id) else { continue };
-        visit(vn.get_type(), &mut seen, &mut order);
-        if let Some(sym) = vn
-            .get_high()
-            .and_then(|h| fd.high_bank().get(h))
-            .and_then(|h| h.kuna_symbol_type())
-        {
-            visit(sym, &mut seen, &mut order);
         }
     }
     order

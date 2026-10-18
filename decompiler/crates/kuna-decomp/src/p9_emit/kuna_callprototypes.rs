@@ -30,6 +30,17 @@ pub fn declarations(arch: &Architecture, fd: &Funcdata) -> Vec<String> {
         }
         let mut snapshot = crate::fspec::FuncProto::new();
         snapshot.copy(proto);
+        let parked = fd.get_arch().callee_proto_pieces(call.get_entry_address());
+        if let Some(pieces) = parked.filter(|pieces| pieces.first_var_arg_slot >= 0) {
+            if snapshot
+                .set_pieces(&pieces, None, arch.types(), arch.manage())
+                .is_err()
+            {
+                continue;
+            }
+        } else if call.format_arity().is_some() {
+            continue;
+        }
         let mut code = Datatype::new(1, type_metatype::TYPE_CODE);
         code.kind = DatatypeKind::Code {
             proto: Some(Rc::new(snapshot)),
@@ -40,4 +51,26 @@ pub fn declarations(arch: &Architecture, fd: &Funcdata) -> Vec<String> {
         ));
     }
     declarations.into_iter().collect()
+}
+
+/// Project-only dependencies; ordinary per-function type inventories stay local.
+pub fn type_definitions(
+    arch: &Architecture,
+    fd: &Funcdata,
+) -> Vec<crate::decompile_drive::TypeInfo> {
+    if !arch.print().options.struct_defs()
+        || arch.print().out_lang() != crate::kuna_lang::OutLang::C
+    {
+        return Vec::new();
+    }
+    let rt = crate::printc::RealTypeCtx::from_arch(arch, arch.print().out_lang());
+    let types = crate::kuna_structdefs::referenced_call_types(fd);
+    crate::kuna_structdefs::dedup_by_name(&types)
+        .iter()
+        .map(|ty| crate::decompile_drive::TypeInfo {
+            name: ty.get_name().to_string(),
+            definition: crate::kuna_structdefs::definition_text(ty, rt),
+            size: ty.get_size() as i64,
+        })
+        .collect()
 }

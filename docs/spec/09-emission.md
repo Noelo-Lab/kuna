@@ -3560,3 +3560,8 @@ Unknown or partially inferred targets do not acquire invented signatures.
 The declarations survive worker serialization and streamed body removal, and
 remain roots when pruning synthesized types. Capture is implemented in
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`.
+
+Format-specific call arities are not declarations of the callee. When a call
+has format-derived arguments, project declarations restore its parked formal
+variadic signature. Call-only type roots are gathered only for project headers;
+ordinary per-function type inventories retain their original scope.
