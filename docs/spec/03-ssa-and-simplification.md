@@ -1953,6 +1953,60 @@ x86-64 `int` matches `int`; a local the source declares `int` or an enum but
 only ever loads from a byte field narrows too, and the binary cannot tell the
 two apart (`tests/stages/kuna-regnarrow.xml`, `kuna-regnarrow-x86.xml`).
 
+### (kuna) `regsigned` — a register local at the width its values are sign extended from
+
+The signed counterpart of `regnarrow`. A `signed char` read with `ldrsb` or
+`movsx`, a `short` counter the compiler re-extends with `sxth` after every
+update, and an x86-64 `int` widened with `movsxd` all live sign-extended in a
+whole register. Their nonzero-bit masks fill the register whenever the value can
+be negative, so the masks `regnarrow` reads cannot fit them, and the local
+prints as `int` or `long` with an `(int)` cast on every load.
+
+With the option on (`narrow_signed`, default on, read only while `regnarrow` is
+on) the same pass (`kuna_regnarrow.rs (signed_width)`) also takes the webs the
+masks cannot fit, seeding at a sign extension or a MULTIEQUAL. Every member must
+be defined by a sign extension from at most 1, 2 or 4 bytes narrower than the
+register (one of them from exactly that width `w`, which must not be of a value
+tied to memory), a MULTIEQUAL, a copy, or a NEGATE, XOR, AND or OR; a constant
+copied in must be the sign extension of its low `w` bytes. Any other definition
+(arithmetic, a load at the register's width, a call, a function input) leaves the
+web alone. So does a member whose value was stored to a frame slot wider than
+`w` before simplification removed the slot (`wide_frame_home`, read from the
+storage homes the copy propagation keeps): the `-O0` spill of `int v = c;` is an
+`int` that holds a sign-extended `char`, and the program's own home for it says
+so.
+
+The web is rebuilt by upstream's sign-extended `SubvariableFlow`
+(`subflow.rs (run_sext_uses)`; `sextrestrictions`), extended the way
+`regnarrow` extends the zero-extended one (`subflow.rs (sext_route)`). Going
+forward, a copy, a phi, a wider sign extension, a NEGATE, XOR, AND or OR, an
+arithmetic right shift by a constant, a truncation to at most `w` bytes and a
+call argument whose parameter is no wider than `w` carry the narrow value
+(each keeps a sign-extended value sign-extended). Every other reader that needs
+the register's width (arithmetic, a compare, an index, a store, a wider call
+argument, a copy into memory) reads the `INT_SEXT` of the narrow value in that
+input slot (`ZextUsePatch` with a sign extension), which is exactly the value it
+read before. Going backward the upstream rules stand: only a copy, a phi, a
+bitwise op, a sign extension from `w` bytes, a zero extension from fewer bytes
+or a constant right shift may define a member, a constant must be the sign
+extension of its low part, and a function input of the register's width is
+refused, so a value the flow cannot prove sign-extended aborts the whole
+rewrite. The flow aborts at an `INDIRECT`, a `RETURN` (or the copy in front of
+one), a user-op operand and a switch, as `regnarrow`'s does. The p-code
+computes the same values. In the C, the integer promotions make a narrowed
+`short` or `signed char` operand an `int` again, which is what the sign
+extension computed.
+
+The narrow values are recorded (`Funcdata::kuna_regsigned_values`), and type
+inference gives one the signed integer of its width when nothing else types it,
+or when the only vote is the `uint` a bitwise op gives its output
+(`unsigned_vote`): the program sign-extends the value, so it is signed. A
+`short` local therefore prints `short` (`int2`) and a byte `char`. On decbench's
+type_match the declared width is what moves: on ARM firmware `int16_t` and
+`int8_t` locals that were `int` now match, while a source `int` that only ever
+holds a sign-extended byte in a register is declared `char`, which the binary
+cannot tell apart (`tests/stages/kuna-regsigned.xml`).
+
 ## 3.4 Conditional execution
 
 `decompiler/crates/kuna-decomp/src/p3_dataflow/condexe.rs

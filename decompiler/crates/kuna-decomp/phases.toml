@@ -3686,6 +3686,28 @@ tier = "transform"
 symptoms = "a uint8_t loop counter prints as unsigned int v with v = v + 1 & 0xff|a byte loaded with ldrb is declared unsigned int and used as an index|an int local prints as unsigned long on x86-64 though every value is a zero-extended 32-bit result"
 
 [[settable]]
+option = "regsigned"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "ty17-narrow-signed-register-locals"
+summary = "Declare a register local whose every value is a sign extension at the narrow width those values are extended from. A `signed char` or `short` read with `ldrsb`/`ldrsh` or `movsx`, or an x86-64 `int` widened with `movsxd`, lives sign-extended in a whole register, so the web that becomes the variable keeps the register's width and prints as `int` or `long`. With `regnarrow` on, its pass also looks at the webs whose values the nonzero-bit masks cannot fit (their sign bits are set): when every value entering the web is a sign extension from at most 1, 2 or 4 bytes (one of them from exactly that width), a copy, a bitwise op of such values or a constant that is the sign extension of its low bytes, the web is rebuilt at that width with upstream's sign-extended `SubvariableFlow`, extended the way `regnarrow` extends the zero-extended one: a copy, a phi, a wider sign extension, a bitwise op, a constant arithmetic right shift, a truncation and a call argument whose parameter is no wider carry the narrow value, and every other reader that needs the register's width (arithmetic, a compare, an index, a call argument, a store) reads the sign extension of the narrow value, which is exactly the value it read before. A narrowed value nothing else types (or only a bitwise op's `uint`) is declared signed. A web that reaches a function input, a RETURN, an INDIRECT, a user-op operand or a switch is left alone, and so is one with a value whose definition is anything else (arithmetic, a load at the register's width, a call) or that was stored to a frame slot wider than the narrow width (the `-O0` spill of `int v = c;`)."
+use_when = "On by default. The tell it fixes is a `signed char`/`short` local printed `int` on ARM firmware (`v = (int)*(char *)p`, a counter compared as `(int)(char)v`), or an x86-64 `int` printed `long` whose every value is a `movsxd`. Set it off to get the register-wide declarations back; the p-code computes the same values either way."
+example = "option regsigned on"
+live_field = "narrow_signed"
+live_true = "on"
+live_false = "off"
+source_decompiler = "kuna"
+inspiration = "decbench type_match census of sign-extended register-resident locals (ARM `int8_t`/`int16_t` locals typed `int`, x86-64 `int` locals typed `long`); upstream `SubvariableFlow`'s sign-extended mode (subflow.cc traceForwardSext/traceBackwardSext) is the narrowing engine, extended with sign-extended full-width reads"
+change_kind = "type-inference"
+tier = "transform"
+symptoms = "a signed char loaded with ldrsb is declared int|a short counter prints as int with (int)(short) casts at every use|an int local prints as long on x86-64 though every value is a movsxd"
+
+[[settable]]
 option = "stackarggap"
 values = "on|off"
 default = "on"

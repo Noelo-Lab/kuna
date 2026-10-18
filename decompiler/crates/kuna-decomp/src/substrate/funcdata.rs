@@ -386,6 +386,8 @@ pub struct Funcdata {
     pub(crate) kuna_regnarrow_runs: u8,
     /// (kuna `regnarrow`) The narrow values those passes created.
     pub(crate) kuna_regnarrow_values: std::collections::BTreeSet<VarnodeId>,
+    /// (kuna `regsigned`) The sign-extended narrow values those passes created.
+    pub(crate) kuna_regsigned_values: std::collections::BTreeSet<VarnodeId>,
     /// (kuna `regnarrow`) Seeds whose web the flow could not rebuild.
     pub(crate) kuna_regnarrow_failed: std::collections::BTreeSet<VarnodeId>,
     /// (kuna `calltargettype`) The function-pointer type each indirect call
@@ -708,6 +710,7 @@ impl Funcdata {
             kuna_global_array_anchor_passes: None,
             kuna_regnarrow_runs: 0,
             kuna_regnarrow_values: std::collections::BTreeSet::new(),
+            kuna_regsigned_values: std::collections::BTreeSet::new(),
             kuna_regnarrow_failed: std::collections::BTreeSet::new(),
             laned_map: std::collections::BTreeMap::new(),
             size: sz,
@@ -3981,6 +3984,7 @@ impl Funcdata {
         self.kuna_regnarrow_runs = 0;
         self.kuna_regnarrow_values.clear();
         self.kuna_regnarrow_failed.clear();
+        self.kuna_regsigned_values.clear();
         self.kuna_fpu_trunc_views.clear();
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on

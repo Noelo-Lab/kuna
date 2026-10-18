@@ -934,6 +934,10 @@ pub struct Architecture {
     /// part at that width (option `regnarrow`).  See
     /// [`crate::p3_dataflow::kuna_regnarrow`].
     pub narrow_locals: bool,
+    /// (kuna) Also narrow a register-local web whose values are all sign
+    /// extensions of a narrower part (option `regsigned`).  See
+    /// [`crate::p3_dataflow::kuna_regnarrow`].
+    pub narrow_signed: bool,
     /// (kuna) At a CALL SITE, let an UNREFERENCED argument register whose next
     /// slot is on the stack end the argument list, instead of being filled in on
     /// the way to a stack trial (option `stackarggap`).  See
@@ -2900,6 +2904,7 @@ impl Architecture {
             input_param_gap: true,
             narrow_args: true,
             narrow_locals: true,
+            narrow_signed: true,
             stack_arg_gap: true,
             vararg_stack_args: true,
             vararg_forward: true,
@@ -3266,6 +3271,7 @@ impl Architecture {
         self.stack_arg_gap = true; // (kuna) DIV-140 default-on: at a call site an argument register the caller never wrote ends the argument list when the next slot is on the stack, so a body-less import stops acquiring the caller's own untouched parameter plus a stack leftover as arguments (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
         self.narrow_args = true; // (kuna) option narrowargs default-on: a register parameter whose uses read only its low 1, 2 or 4 bytes is declared that wide, and a callee's stated narrow parameter caps how much of the argument its callers consume (0/675 datatests)
+        self.narrow_signed = true; // (kuna) option regsigned default-on: a register-local web whose values are all sign extensions of a low 1, 2 or 4 bytes is rebuilt at that width
         self.narrow_locals = true; // (kuna) option regnarrow default-on: a register-local web whose values the nonzero-bit analysis proves fit a low 1, 2 or 4 bytes, entered only through zero extensions, masks, constants and copies, is rebuilt at that width
         self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
         self.vararg_forward = true; // (kuna) default-on: a declared parameter forwarded unchanged in its own register to a variadic call's variable part is an argument (0/675 ablation)
@@ -4085,6 +4091,7 @@ impl Architecture {
         ctx.input_param_gap = self.input_param_gap; // inputparamgap
         ctx.narrow_args = self.narrow_args; // narrowargs
         ctx.narrow_locals = self.narrow_locals; // regnarrow
+        ctx.narrow_signed = self.narrow_signed; // regsigned
         ctx.stack_arg_gap = self.stack_arg_gap; // stackarggap
         ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
         ctx.vararg_forward = self.vararg_forward; // varargforward

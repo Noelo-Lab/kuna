@@ -151,11 +151,13 @@ pub fn narrow_locals(data: &mut Funcdata) -> int4 {
     if !data.get_arch().narrow_locals || data.bblocks_get_size() == 0 || data.kuna_regnarrow_runs >= MAX_RUNS {
         return 0;
     }
+    let signed = data.get_arch().narrow_signed;
     let seeds: Vec<VarnodeId> = data
         .vbank()
         .iter_loc()
         .filter(|&vn| {
-            fits_low_half(data, vn)
+            (fits_low_half(data, vn)
+                || (signed && matches!(def_code(data, vn), Some(OpCode::CPUI_INT_SEXT | OpCode::CPUI_MULTIEQUAL))))
                 && plain_container(data, vn)
                 && (def_code(data, vn) == Some(OpCode::CPUI_MULTIEQUAL)
                     || data.vbank().get(vn).is_some_and(|v| v.descend_iter().nth(1).is_some()))
@@ -176,7 +178,14 @@ pub fn narrow_locals(data: &mut Funcdata) -> int4 {
             continue;
         }
         let nz = web.iter().filter_map(|&vn| data.vbank().get(vn)).fold(0, |m, v| m | v.get_nz_mask());
-        let Some(w) = narrow_width(nz, size) else { continue };
+        let Some(w) = narrow_width(nz, size) else {
+            if signed {
+                if let Some(w) = signed_width(data, &web, size) {
+                    count += narrow_signed_web(data, seed, w, &mut seen);
+                }
+            }
+            continue;
+        };
         if !narrowing_defs(data, &web, w) || masked_copy(data, &web) {
             continue;
         }
@@ -204,17 +213,94 @@ pub fn narrow_locals(data: &mut Funcdata) -> int4 {
     count
 }
 
+/// The width `w` every value of `web` is the sign extension of, when each
+/// enters it as a sign extension from at most `w` bytes (at least one from
+/// exactly `w`), a copy, a bitwise op of such values or a constant that is the
+/// sign extension of its low `w` bytes.
+fn signed_width(data: &Funcdata, web: &[VarnodeId], size: int4) -> Option<int4> {
+    let mut w = 0;
+    let mut constants = Vec::new();
+    for &vn in web {
+        let o = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d))?;
+        let input = |k: int4| o.get_in(k).and_then(|x| data.vbank().get(x));
+        match o.code() {
+            OpCode::CPUI_MULTIEQUAL
+            | OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_NEGATE => {}
+            OpCode::CPUI_COPY => {
+                let c = input(0)?;
+                if c.is_constant() {
+                    constants.push(c.get_offset());
+                }
+            }
+            OpCode::CPUI_INT_SEXT => {
+                let x = input(0)?;
+                if x.is_addr_tied() {
+                    return None;
+                }
+                w = w.max(x.get_size());
+            }
+            _ => return None,
+        }
+    }
+    if w == 0 || w >= size || wide_frame_home(data, web, w) {
+        return None;
+    }
+    let fits = |c: uintb| kuna_base::address::sign_extend_sized(c & calc_mask(w), w, size) == c;
+    constants.into_iter().all(fits).then_some(w)
+}
+
+/// Was a value of `web` stored to a frame slot wider than `w` bytes before
+/// simplification removed the slot? The program's own home for it is wide: the
+/// `-O0` spill of `int v = c;`.
+fn wide_frame_home(data: &Funcdata, web: &[VarnodeId], w: int4) -> bool {
+    let Some(stack) = data.get_arch().manage().get_stack_space() else { return false };
+    web.iter().any(|&vn| {
+        data.kuna_storage_sources(vn)
+            .iter()
+            .any(|s| s.size > w && s.address.get_space().is_some_and(|sp| sp.get_index() == stack.get_index()))
+    })
+}
+
+/// Rebuild the sign-extended web of `seed` at `w` bytes; 1 when it was.
+fn narrow_signed_web(data: &mut Funcdata, seed: VarnodeId, w: int4, seen: &mut BTreeSet<VarnodeId>) -> int4 {
+    match crate::subflow::run_sext_uses(data, seed, calc_mask(w)) {
+        Some((flow, narrow)) => {
+            seen.extend(flow);
+            data.kuna_regsigned_values.extend(narrow);
+            if trace() {
+                eprintln!("[regsigned] 0x{:x} -> {w}", data.get_address().get_offset());
+            }
+            1
+        }
+        None => {
+            if trace() {
+                eprintln!("[regsigned-fail] 0x{:x} -> {w}", data.get_address().get_offset());
+            }
+            data.kuna_regnarrow_failed.insert(seed);
+            0
+        }
+    }
+}
+
 /// Is the decision trace on (`KUNA_REGNARROW_TRACE=1`)?
 fn trace() -> bool {
     std::env::var("KUNA_REGNARROW_TRACE").is_ok_and(|v| v != "0" && !v.is_empty())
 }
 
 /// The type a value this pass narrowed takes when inference found nothing
-/// more specific than its size: the value is the zero-extended low part of a
-/// register, so unsigned.
+/// more specific than its size: the zero-extended low part of a register is
+/// unsigned. The sign-extended low part is signed, also over the `uint` a
+/// bitwise op votes for its output (the program sign-extends it).
 pub fn unsigned_vote(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> Option<std::rc::Rc<Datatype>> {
-    if ct.get_metatype() != type_metatype::TYPE_UNKNOWN || !data.kuna_regnarrow_values.contains(&vn) {
-        return None;
-    }
-    data.get_arch().types()?.get_base(ct.get_size(), type_metatype::TYPE_UINT).ok()
+    let meta = match ct.get_metatype() {
+        type_metatype::TYPE_UNKNOWN if data.kuna_regnarrow_values.contains(&vn) => type_metatype::TYPE_UINT,
+        type_metatype::TYPE_UNKNOWN | type_metatype::TYPE_UINT if data.kuna_regsigned_values.contains(&vn) => {
+            type_metatype::TYPE_INT
+        }
+        _ => return None,
+    };
+    data.get_arch().types()?.get_base(ct.get_size(), meta).ok()
 }

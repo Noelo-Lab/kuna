@@ -191,6 +191,9 @@ Three tiers:
 | a uint8_t loop counter prints as unsigned int v with v = v + 1 & 0xff | [`regnarrow`](#regnarrow) |
 | a byte loaded with ldrb is declared unsigned int and used as an index | [`regnarrow`](#regnarrow) |
 | an int local prints as unsigned long on x86-64 though every value is a zero-extended 32-bit result | [`regnarrow`](#regnarrow) |
+| a signed char loaded with ldrsb is declared int | [`regsigned`](#regsigned) |
+| a short counter prints as int with (int)(short) casts at every use | [`regsigned`](#regsigned) |
+| an int local prints as long on x86-64 though every value is a movsxd | [`regsigned`](#regsigned) |
 | a FILE * or char * the caller holds becomes long at the callee's parameter | [`protoorder`](#protoorder) |
 | a function that only hands a string on to a recursive function (quotearg_buffer_restyled, a tree walk, a pair of functions calling each other) keeps an integer parameter | [`protoorder`](#protoorder) |
 | an argument is typed at one call site of a callee and not at another | [`protoorder`](#protoorder) |
@@ -1661,6 +1664,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. The tell it fixes is a byte or halfword local printed `unsigned int` on ARM firmware (`v = v + 1 & 0xff`, `v = (unsigned int)*p` used as an index), or an `unsigned` counter printed `unsigned long` on x86-64 whose every value is a zero-extended 32-bit result. Set it off to get the register-wide declarations back, or when a local the source declares `int` or as an enum is only ever loaded from a byte field (an enum kept in a `uint8_t`, a `numRows` read from a `uint16_t`): the binary cannot tell the two apart. The p-code computes the same values either way. Measured with decbench's published type_match: 96 ARM firmware slices 3,232 -> 3,279 perfect functions (mean .3068 -> .3105; 492 functions better, 106 worse), the 96-binary nightly optimized sample 2,315 -> 2,337, the 444-slice x86-64 set 1,903 -> 1,905; the functions that lose a perfect score declare an enum or `int` the body only loads from a byte field.
 - **Where / provenance:** P3/simplification-quiescence · kuna · type-inference · ty17-narrow-register-locals
 - **Example:** `option regnarrow on`
+
+### `regsigned` -- on | off, default `on`
+
+- **Symptoms:** a signed char loaded with ldrsb is declared int; a short counter prints as int with (int)(short) casts at every use; an int local prints as long on x86-64 though every value is a movsxd.
+- **What it does:** Declare a register local whose every value is a sign extension at the narrow width those values are extended from. A `signed char` or `short` read with `ldrsb`/`ldrsh` or `movsx`, or an x86-64 `int` widened with `movsxd`, lives sign-extended in a whole register, so the web that becomes the variable keeps the register's width and prints as `int` or `long`. With `regnarrow` on, its pass also looks at the webs whose values the nonzero-bit masks cannot fit (their sign bits are set): when every value entering the web is a sign extension from at most 1, 2 or 4 bytes (one of them from exactly that width), a copy, a bitwise op of such values or a constant that is the sign extension of its low bytes, the web is rebuilt at that width with upstream's sign-extended `SubvariableFlow`, extended the way `regnarrow` extends the zero-extended one: a copy, a phi, a wider sign extension, a bitwise op, a constant arithmetic right shift, a truncation and a call argument whose parameter is no wider carry the narrow value, and every other reader that needs the register's width (arithmetic, a compare, an index, a call argument, a store) reads the sign extension of the narrow value, which is exactly the value it read before. A narrowed value nothing else types (or only a bitwise op's `uint`) is declared signed. A web that reaches a function input, a RETURN, an INDIRECT, a user-op operand or a switch is left alone, and so is one with a value whose definition is anything else (arithmetic, a load at the register's width, a call) or that was stored to a frame slot wider than the narrow width (the `-O0` spill of `int v = c;`).
+- **When to flip:** On by default. The tell it fixes is a `signed char`/`short` local printed `int` on ARM firmware (`v = (int)*(char *)p`, a counter compared as `(int)(char)v`), or an x86-64 `int` printed `long` whose every value is a `movsxd`. Set it off to get the register-wide declarations back; the p-code computes the same values either way.
+- **Where / provenance:** P3/simplification-quiescence · kuna · type-inference · ty17-narrow-signed-register-locals
+- **Example:** `option regsigned on`
 
 ### `protoorder` -- off | types | cycles | lock, default `cycles`
 
