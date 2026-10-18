@@ -87,6 +87,7 @@ pub(crate) fn moves_write(fd: &Funcdata, storage: HighVariableId, value: HighVar
             // Byte and word stores carry scalar frame views. Wider address-tied
             // values, especially pointers, retain their existing merge policy.
             if output.get_size() <= 2
+                && output.get_size() < stack.get_addr_size() as i32
                 && later_call_guard(
                     fd,
                     id,
