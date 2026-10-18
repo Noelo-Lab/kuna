@@ -7207,6 +7207,10 @@ impl PrintC {
                 }
             }
         }
+        if let Some(slice) = crate::p9_emit::kuna_floatslice::recognize(fd, arch.decl_high_type, op) {
+            self.op_float_slice_ir(fd, arch, op, slice);
+            return;
+        }
         if let Some((transfer, target)) =
             crate::kuna_bitcast::truncated_float_storage(fd, arch.decl_high_type, op)
         {
@@ -7232,6 +7236,59 @@ impl PrintC {
             }
             None => self.op_func_ir(fd, arch, op),
         }
+    }
+
+    fn op_float_slice_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        slice: crate::p9_emit::kuna_floatslice::Slice,
+    ) {
+        use crate::printlanguage::SyntaxHighlight;
+        static C_BITS: OpToken =
+            op_token("", " }).to", 2, 66, false, TokenType::Postsurround, 0, 0);
+        let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
+        if rust {
+            self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+            self.push_atom(&Atom::syntax(
+                "f32::from_bits",
+                TagType::FuncToken,
+                SyntaxHighlight::funcname_color,
+            ));
+        } else {
+            self.push_op(&C_BITS, Some(op_key(op)));
+            self.push_atom(&Atom::syntax(
+                "((union { unsigned int from; float to; }){ .from = ",
+                TagType::TypeToken,
+                SyntaxHighlight::type_color,
+            ));
+        }
+        self.push_cast_open(&slice.target_word, op);
+        if slice.shift != 0 {
+            self.push_op(&tokens::SHIFT_RIGHT, Some(op_key(op)));
+        }
+        if slice.source_float {
+            self.op_bit_transfer_ir(
+                fd,
+                arch,
+                op,
+                crate::kuna_bitcast::Transfer {
+                    input: slice.input,
+                    target: slice.source_word,
+                    size: 8,
+                    to_float: false,
+                },
+            );
+        } else {
+            self.push_cast_open(&slice.source_word, op);
+            self.push_vn_ir(fd, arch, slice.input, op);
+            self.push_cast_close(&slice.source_word);
+        }
+        if slice.shift != 0 {
+            self.push_constant_ir(slice.shift, 4, op);
+        }
+        self.push_cast_close(&slice.target_word);
     }
 
     /// (kuna `boolbyte`) `(bool)(unsigned char)x`: a truncation into a `bool`

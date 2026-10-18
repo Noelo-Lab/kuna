@@ -2294,6 +2294,226 @@ mod w10_printc_cast_render {
     }
 
     #[test]
+    fn float_slices_preserve_bits_in_c_and_rust() {
+        let mut cases = Vec::new();
+        for source_meta in [
+            type_metatype::TYPE_UINT,
+            type_metatype::TYPE_INT,
+            type_metatype::TYPE_UNKNOWN,
+            type_metatype::TYPE_FLOAT,
+        ] {
+            let mut context = ContextArch::new(build_manager());
+            let types = Rc::new(crate::dtype::TypeFactoryImpl::new());
+            types.set_max_basetype_size(8);
+            types.set_default_alignment_map();
+            types.set_size_of_int(4);
+            types.set_size_of_float(4);
+            types.set_size_of_long_long(8);
+            types.set_size_of_double(8);
+            types.set_core_type("uint4", 4, type_metatype::TYPE_UINT, false).unwrap();
+            types.set_core_type("uint8", 8, type_metatype::TYPE_UINT, false).unwrap();
+            types.cache_core_types().unwrap();
+            context.types = Some(types);
+            let ram = context.manage().get_space_by_name("ram").unwrap().clone();
+            let mut fd = Funcdata::new(
+                "f",
+                "f",
+                Rc::new(context),
+                Address::new(ram.clone(), 0x1000),
+                0x1000,
+                0x40,
+            )
+            .unwrap();
+            let source = fd.new_varnode(
+                8,
+                &Address::new(ram.clone(), 0x400),
+                Some(named("word", 8, source_meta)),
+            );
+            let op = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_SUBPIECE);
+            fd.op_set_input(op, source, 0).unwrap();
+            let output = fd.new_varnode(
+                4,
+                &Address::new(ram, 0x500),
+                Some(named("float", 4, type_metatype::TYPE_FLOAT)),
+            );
+            fd.op_set_output(op, output).unwrap();
+            fd.set_high_level();
+            let high = fd.vbank().get(source).unwrap().get_high().unwrap();
+            fd.high_bank_mut()
+                .get_mut(high)
+                .unwrap()
+                .set_kuna_name("workspace");
+            for offset in 0..=4 {
+                let shift = fd.new_constant(4, offset);
+                fd.op_set_input(op, shift, 1).unwrap();
+                assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_some());
+                for language in ["c", "rust"] {
+                    for nocasts in [false, true] {
+                        let mut printer = PrintC::new();
+                        printer.set_name(language);
+                        printer.rt_ctx.lang = printer.out_lang;
+                        printer.rt_ctx.enabled = true;
+                        printer.rt_ctx.long_is_8 = true;
+                        printer.rt_ctx.ctypes = true;
+                        printer.set_no_cast_printing(nocasts);
+                        printer.set_output_stream();
+                        printer.op_push_ir(&fd, &bare_arch(), op, None);
+                        let text = printer.emit_mut().output_str();
+                        assert_eq!(text.matches("workspace").count(), 1, "{text}");
+                        assert!(!text.contains("SUB84"), "{text}");
+                        if language == "c" {
+                            assert!(
+                                text.starts_with("((union { unsigned int from; float to; })"),
+                                "{text}"
+                            );
+                        } else {
+                            assert!(text.starts_with("f32::from_bits("), "{text}");
+                        }
+                        if offset != 0 {
+                            assert!(text.contains(">>"), "{text}");
+                        }
+                        if source_meta == type_metatype::TYPE_FLOAT {
+                            assert!(
+                                text.contains(if language == "c" {
+                                    "double from"
+                                } else {
+                                    "to_bits()"
+                                }),
+                                "{text}"
+                            );
+                        }
+                        if !nocasts {
+                            cases.push((source_meta, offset, language, text.to_owned()));
+                        }
+                    }
+                }
+            }
+            for offset in [5, u64::MAX] {
+                let shift = fd.new_constant(8, offset);
+                fd.op_set_input(op, shift, 1).unwrap();
+                assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_none());
+            }
+            let zero = fd.new_constant(4, 0);
+            fd.op_set_input(op, zero, 1).unwrap();
+            fd.vbank_mut().get_mut(output).unwrap().update_type(named(
+                "word",
+                4,
+                type_metatype::TYPE_UINT,
+            ));
+            assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_none());
+            fd.vbank_mut().get_mut(output).unwrap().update_type(named(
+                "float",
+                4,
+                type_metatype::TYPE_FLOAT,
+            ));
+            fd.op_set_opcode_code(op, OpCode::CPUI_FLOAT_FLOAT2FLOAT);
+            assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_none());
+        }
+        execute_float_slice_expressions(&cases);
+    }
+
+    fn execute_float_slice_expressions(cases: &[(type_metatype, u64, &str, String)]) {
+        use std::process::Command;
+        let stem = std::env::temp_dir().join(format!(
+            "kuna-float-slices-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        for language in ["c", "rust"] {
+            let mut functions = String::new();
+            let mut checks = String::new();
+            for (index, (meta, offset, _, expression)) in
+                cases.iter().filter(|c| c.2 == language).enumerate()
+            {
+                if language == "c" {
+                    let ty = match meta {
+                        type_metatype::TYPE_FLOAT => "double",
+                        type_metatype::TYPE_INT => "long long",
+                        _ => "unsigned long long",
+                    };
+                    functions.push_str(&format!("static uint32_t extract{index}(uint64_t raw) {{ {ty} workspace; memcpy(&workspace,&raw,8); float value={expression}; uint32_t bits; memcpy(&bits,&value,4); return bits; }}\n"));
+                    checks.push_str(&format!(
+                        "if(extract{index}(raw)!=(uint32_t)(raw>>{})) return 1;\n",
+                        offset * 8
+                    ));
+                } else {
+                    let input = match meta {
+                        type_metatype::TYPE_FLOAT => "f64::from_bits(raw)",
+                        type_metatype::TYPE_INT => "raw as i64",
+                        _ => "raw",
+                    };
+                    functions.push_str(&format!("fn extract{index}(raw:u64)->u32 {{ let workspace={input}; ({expression}).to_bits() }}\n"));
+                    checks.push_str(&format!(
+                        "assert_eq!(extract{index}(raw),(raw>>{}) as u32);\n",
+                        offset * 8
+                    ));
+                }
+            }
+            let source = if language == "c" {
+                format!("#include <stdint.h>\n#include <string.h>\ntypedef unsigned int uint; typedef unsigned long ulong; typedef unsigned long long ulonglong;\n{functions}\nint main(void) {{ uint64_t samples[]={{0,~0ULL,0x8000000000000000ULL,0x3f80000040000000ULL,0x7ff8123456789abcULL,0x0123456789abcdefULL}}; for(unsigned i=0;i<6;++i) {{ uint64_t raw=samples[i]; {checks} }} return 0; }}")
+            } else {
+                format!("{functions}\nfn main() {{ for raw in [0u64,u64::MAX,0x8000000000000000,0x3f80000040000000,0x7ff8123456789abc,0x0123456789abcdef] {{ {checks} }} }}")
+            };
+            let file = stem.with_extension(if language == "c" { "c" } else { "rs" });
+            std::fs::write(&file, source).unwrap();
+            let compilers: &[&str] = if language == "c" {
+                &["gcc", "clang"]
+            } else {
+                &["rustc"]
+            };
+            for compiler in compilers {
+                if Command::new(compiler).arg("--version").output().is_err() {
+                    continue;
+                }
+                for optimized in [false, true] {
+                    let executable = stem.with_extension("exe");
+                    let mut command = Command::new(compiler);
+                    if language == "c" {
+                        command.args([
+                            "-std=c11",
+                            "-Wall",
+                            "-Wextra",
+                            "-Werror",
+                            if optimized { "-O2" } else { "-O0" },
+                        ]);
+                    } else {
+                        command.args([
+                            "--crate-name",
+                            "float_slices",
+                            "-C",
+                            if optimized {
+                                "opt-level=2"
+                            } else {
+                                "opt-level=0"
+                            },
+                        ]);
+                    }
+                    let built = command
+                        .arg(&file)
+                        .arg("-o")
+                        .arg(&executable)
+                        .output()
+                        .unwrap();
+                    assert!(
+                        built.status.success(),
+                        "{compiler}: {}",
+                        String::from_utf8_lossy(&built.stderr)
+                    );
+                    assert!(
+                        Command::new(&executable).status().unwrap().success(),
+                        "{compiler} optimized={optimized}"
+                    );
+                    std::fs::remove_file(executable).unwrap();
+                }
+            }
+            std::fs::remove_file(file).unwrap();
+        }
+    }
+
+    #[test]
     fn integer_facing_truncations_read_the_declared_float_bits() {
         for size in [4, 8] {
             let manage = build_manager();

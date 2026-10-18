@@ -457,6 +457,8 @@ mod multireg_call_inputs;
 
 #[path = "narrow_register_inputs.rs"]
 mod narrow_register_inputs;
+#[path = "float_field_slices.rs"]
+mod float_field_slices;
 
 #[path = "float_storage_truncation.rs"]
 mod float_storage_truncation;
