@@ -192,7 +192,8 @@ int main(void) {
     let native_output = String::from_utf8(native.stdout).unwrap();
     assert_eq!(native_output, "result=0x332211 sink=0x332211\n");
 
-    let object = object::File::parse(std::fs::read(&image).unwrap().as_slice()).unwrap();
+    let image_bytes = std::fs::read(&image).unwrap();
+    let object = object::File::parse(&image_bytes).unwrap();
     let symbol_address = |name: &str| {
         object
             .symbols()
@@ -329,10 +330,10 @@ int main(void) {
                             optimization,
                             "-no-pie",
                             "-fno-stack-protector",
-                            "-fno-strict-aliasing",
-                            "-Wno-error=int-conversion",
-                            "-Wno-error=incompatible-pointer-types",
-                            "-Wno-error=implicit-int",
+                            "-fstrict-aliasing",
+                            "-Werror=int-conversion",
+                            "-Werror=incompatible-pointer-types",
+                            "-Werror=implicit-function-declaration",
                         ])
                         .arg(&source)
                         .arg("-o")
