@@ -257,6 +257,7 @@ struct DieSnap {
     /// for any other location form (`DW_OP_addr`, register, multi-op).
     fbreg_location: Option<i64>,
     indirect_parameter: bool,
+    register_indirect_parameter: bool,
     /// Depth in the DIE tree (root unit DIE = 0).
     depth: isize,
     /// Offsets of this DIE's direct children, in order.
@@ -302,6 +303,7 @@ impl DieSnap {
             addr_location: None,
             fbreg_location: None,
             indirect_parameter: false,
+            register_indirect_parameter: false,
             depth,
             children: Vec::new(),
             origin_ref: None,
@@ -314,9 +316,18 @@ impl DieSnap {
 /// Snapshot every DIE in `unit` into an offset-keyed map (plus the ordered
 /// top-level offsets). Mirrors building Ghidra's `DebugInfoEntry` tree before
 /// `DWARFFunctionImporter.importFunctions()` walks it.
+#[cfg(test)]
 fn snapshot_unit(
     dwarf: &gimli::Dwarf<Reader<'_>>,
     unit: &gimli::Unit<Reader<'_>>,
+) -> BTreeMap<usize, DieSnap> {
+    snapshot_unit_for_abi(dwarf, unit, &[])
+}
+
+fn snapshot_unit_for_abi(
+    dwarf: &gimli::Dwarf<Reader<'_>>,
+    unit: &gimli::Unit<Reader<'_>>,
+    argument_registers: &[u16],
 ) -> BTreeMap<usize, DieSnap> {
     let mut map: BTreeMap<usize, DieSnap> = BTreeMap::new();
     // Parent stack of (offset, depth) to attach children to their parent.
@@ -439,9 +450,21 @@ fn snapshot_unit(
             snap.has_location = true;
             snap.addr_location = simple_addr_location(&loc);
             snap.fbreg_location = simple_fbreg_location(&loc);
-            snap.indirect_parameter = snap.tag == gimli::DW_TAG_formal_parameter
-                && kuna_dwarfbyref::is_fortran(language)
-                && kuna_dwarfbyref::indirect_location(&loc);
+            if snap.tag == gimli::DW_TAG_formal_parameter && kuna_dwarfbyref::is_fortran(language) {
+                let entry = parent_off
+                    .and_then(|parent| map.get(&parent))
+                    .and_then(|parent| parent.low_pc);
+                if let Some(expression) = kuna_dwarfbyref::location_at_entry(dwarf, unit, &loc, entry) {
+                    snap.indirect_parameter = kuna_dwarfbyref::indirect_location(
+                        &gimli::AttributeValue::Exprloc(expression.clone()),
+                    );
+                    snap.register_indirect_parameter = kuna_dwarfbyref::memory_argument_register(
+                        &expression,
+                        unit.encoding(),
+                        argument_registers,
+                    );
+                }
+            }
         }
 
         map.insert(off, snap);
@@ -1110,7 +1133,11 @@ impl AnalysisPass for DwarfPass {
         let mut units = dwarf.units();
         while let Ok(Some(header)) = units.next() {
             let Ok(unit) = dwarf.unit(header) else { continue };
-            let mut dies = snapshot_unit(&dwarf, &unit);
+            let mut dies = snapshot_unit_for_abi(
+                &dwarf,
+                &unit,
+                kuna_dwarfbyref::argument_registers(ctx.file.format(), ctx.file.architecture()),
+            );
             if complex_max > 0 {
                 for die in dies.values_mut() {
                     die.complex_max_size = complex_max;

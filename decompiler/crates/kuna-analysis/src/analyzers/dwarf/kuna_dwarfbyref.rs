@@ -1,4 +1,4 @@
-//! GNU Fortran describes a reference argument through a dereferenced frame slot.
+//! GNU Fortran reference arguments retain their entry-time address storage.
 
 use std::rc::Rc;
 
@@ -36,13 +36,77 @@ pub(super) fn indirect_location(loc: &gimli::AttributeValue<Reader<'_>>) -> bool
     bytes.get(1 + consumed..) == Some(&[gimli::DW_OP_deref.0][..])
 }
 
+pub(super) fn argument_registers(
+    format: object::BinaryFormat,
+    architecture: object::Architecture,
+) -> &'static [u16] {
+    use object::{Architecture::*, BinaryFormat::*};
+    match (format, architecture) {
+        (Pe | Coff, X86_64) => &[2, 1, 8, 9],
+        (Elf | MachO, X86_64) => &[5, 4, 1, 2, 8, 9],
+        (Elf, Arm) => &[0, 1, 2, 3],
+        (Elf, Aarch64) => &[0, 1, 2, 3, 4, 5, 6, 7],
+        (Elf, Riscv32 | Riscv64) => &[10, 11, 12, 13, 14, 15, 16, 17],
+        _ => &[],
+    }
+}
+
+pub(super) fn location_at_entry<'a>(
+    dwarf: &gimli::Dwarf<Reader<'a>>,
+    unit: &gimli::Unit<Reader<'a>>,
+    location: &gimli::AttributeValue<Reader<'a>>,
+    entry: Option<u64>,
+) -> Option<gimli::Expression<Reader<'a>>> {
+    match location {
+        gimli::AttributeValue::Exprloc(expression) => return Some(expression.clone()),
+        gimli::AttributeValue::Block(bytes) => return Some(gimli::Expression(bytes.clone())),
+        _ => {}
+    }
+    let entry = entry?;
+    let mut locations = dwarf.attr_locations(unit, location.clone()).ok()??;
+    let mut found = None;
+    for _ in 0..4096 {
+        let Some(location) = locations.next().ok()? else {
+            return found;
+        };
+        if location.range.begin <= entry && entry < location.range.end {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(location.data);
+        }
+    }
+    None
+}
+
+pub(super) fn memory_argument_register(
+    expression: &gimli::Expression<Reader<'_>>,
+    encoding: gimli::Encoding,
+    argument_registers: &[u16],
+) -> bool {
+    let mut operations = expression.operations(encoding);
+    matches!(operations.next(), Ok(Some(gimli::Operation::RegisterOffset { register, offset: 0, base_type }))
+        if base_type.0 == 0 && argument_registers.contains(&register.0))
+        && matches!(operations.next(), Ok(None))
+}
+
 pub(super) fn parameter_type(
     parameter: &DieSnap,
     value: Rc<Datatype>,
     types: &dyn TypeFactory,
     word_size: uint4,
 ) -> Option<Rc<Datatype>> {
-    if parameter.indirect_parameter {
+    let scalar_register_reference = parameter.register_indirect_parameter
+        && matches!(
+            value.get_metatype(),
+            kuna_decomp::dtype::type_metatype::TYPE_INT
+                | kuna_decomp::dtype::type_metatype::TYPE_UINT
+                | kuna_decomp::dtype::type_metatype::TYPE_BOOL
+                | kuna_decomp::dtype::type_metatype::TYPE_FLOAT
+                | kuna_decomp::dtype::type_metatype::TYPE_PTR
+        )
+        && matches!(value.get_size(), 1 | 2 | 4 | 8);
+    if parameter.indirect_parameter || scalar_register_reference {
         types
             .get_type_pointer(types.get_size_of_pointer(), value, word_size)
             .ok()
@@ -73,6 +137,120 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn register_memory_requires_an_incoming_argument_address() {
+        let encoding = gimli::Encoding {
+            format: gimli::Format::Dwarf32,
+            version: 5,
+            address_size: 8,
+        };
+        for (bytes, expected) in [
+            (&[0x75, 0x00][..], true),
+            (&[0x92, 0x05, 0x00][..], true),
+            (&[0x55][..], false),
+            (&[0x75, 0x01][..], false),
+            (&[0x75, 0x00, 0x9f][..], false),
+            (&[0x75, 0x00, 0x06][..], false),
+            (&[0x77, 0x00][..], false),
+            (&[0x76, 0x00][..], false),
+            (&[0x75][..], false),
+        ] {
+            let expression =
+                gimli::Expression(gimli::EndianSlice::new(bytes, gimli::RunTimeEndian::Little));
+            assert_eq!(
+                memory_argument_register(&expression, encoding, &[5]),
+                expected
+            );
+            assert!(!memory_argument_register(&expression, encoding, &[]));
+        }
+    }
+
+    #[test]
+    fn location_lists_require_one_complete_entry_covering_the_entry_pc() {
+        fn selected(
+            ranges: &[(u64, u64, &[u8])],
+            pc: Option<u64>,
+            terminate: bool,
+        ) -> Option<Vec<u8>> {
+            let mut locations = Vec::new();
+            for &(begin, end, bytes) in ranges {
+                locations.extend_from_slice(&begin.to_le_bytes());
+                locations.extend_from_slice(&end.to_le_bytes());
+                locations.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
+                locations.extend_from_slice(bytes);
+            }
+            if terminate {
+                locations.extend_from_slice(&[0; 16]);
+            } else {
+                locations.push(1);
+            }
+            let sections = gimli::DwarfSections::load(|id| -> Result<Vec<u8>, gimli::Error> {
+                Ok(match id {
+                    gimli::SectionId::DebugInfo => vec![8, 0, 0, 0, 4, 0, 0, 0, 0, 0, 8, 1],
+                    gimli::SectionId::DebugAbbrev => vec![1, 0x11, 0, 0, 0, 0],
+                    gimli::SectionId::DebugLoc => locations.clone(),
+                    _ => Vec::new(),
+                })
+            })
+            .unwrap();
+            let dwarf = sections
+                .borrow(|bytes| gimli::EndianSlice::new(bytes, gimli::RunTimeEndian::Little));
+            let header = dwarf.units().next().unwrap().unwrap();
+            let unit = dwarf.unit(header).unwrap();
+            let attribute = gimli::AttributeValue::LocationListsRef(gimli::LocationListsOffset(0));
+            location_at_entry(&dwarf, &unit, &attribute, pc)
+                .map(|expression| expression.0.slice().to_vec())
+        }
+        let ranges = &[(0x110, 0x120, &[0x55][..]), (0x100, 0x110, &[0x75, 0][..])];
+        assert_eq!(selected(ranges, Some(0x100), true), Some(vec![0x75, 0]));
+        assert_eq!(selected(ranges, Some(0x110), true), Some(vec![0x55]));
+        assert_eq!(selected(ranges, Some(0x120), true), None);
+        assert_eq!(selected(ranges, None, true), None);
+        assert_eq!(selected(ranges, Some(0x100), false), None);
+        assert_eq!(
+            selected(
+                &[(0x100, 0x120, &[0x75, 0]), (0x100, 0x110, &[0x55])],
+                Some(0x100),
+                true
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn register_addresses_do_not_turn_aggregate_or_wide_value_arguments_into_pointers() {
+        use kuna_decomp::dtype::{type_metatype::*, TypeFactoryImpl};
+        let types = TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        types.set_max_basetype_size(16);
+        types.setup_sizes(Some(8), 8, 4);
+        types.cache_core_types().unwrap();
+        let mut parameter = DieSnap::new(gimli::DW_TAG_formal_parameter, 2);
+        parameter.register_indirect_parameter = true;
+        for (size, metatype, indirect) in [
+            (1, TYPE_INT, true),
+            (2, TYPE_UINT, true),
+            (4, TYPE_FLOAT, true),
+            (8, TYPE_FLOAT, true),
+            (10, TYPE_FLOAT, false),
+            (16, TYPE_FLOAT, false),
+            (8, TYPE_UNKNOWN, false),
+        ] {
+            let value = types.get_base(size, metatype).unwrap();
+            let result = parameter_type(&parameter, value.clone(), &types, 1).unwrap();
+            if indirect {
+                assert_eq!(result.get_metatype(), TYPE_PTR);
+                assert_eq!(result.get_size(), 8);
+                assert_eq!(result.get_ptr_to().unwrap().get_size(), size);
+            } else {
+                assert!(Rc::ptr_eq(&result, &value));
+            }
+        }
+        let record = types.get_type_struct("value_record").unwrap();
+        let result = parameter_type(&parameter, record.clone(), &types, 1).unwrap();
+        assert!(Rc::ptr_eq(&result, &record));
     }
 
     #[test]
