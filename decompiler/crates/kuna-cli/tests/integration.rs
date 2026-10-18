@@ -497,3 +497,6 @@ mod x87_empty_return;
 
 #[path = "windows_stack_argument_alignment.rs"]
 mod windows_stack_argument_alignment;
+
+#[path = "x87_free_operands.rs"]
+mod x87_free_operands;
