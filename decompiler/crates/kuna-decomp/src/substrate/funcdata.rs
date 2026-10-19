@@ -402,6 +402,7 @@ pub struct Funcdata {
     /// ([`Self::set_kuna_pipeline_failure`]) so the printer says the pipeline
     /// failed, and why, instead of blaming structuring (`PrintC::emit_function_document`).
     kuna_pipeline_failure: Option<String>,
+    pub(crate) kuna_call_mechanisms: crate::kuna_callmechanisms::State,
     /// (kuna) The flow overrides `FlowInfo::process` asked for and
     /// [`Self::override_flow`] refused, as `(instruction, flow type, reason)`.
     ///
@@ -771,6 +772,7 @@ impl Funcdata {
             kuna_call_target_types: std::collections::HashMap::new(),
             kuna_field_calls: Vec::new(),
             kuna_pipeline_failure: None,
+            kuna_call_mechanisms: Default::default(),
             kuna_rejected_flow: Vec::new(),
             kuna_directive_symbols: Vec::new(),
             kuna_prior_names: Default::default(),
@@ -4030,6 +4032,8 @@ impl Funcdata {
         self.kuna_regnarrow_runs = 0;
         self.kuna_regnarrow_values.clear();
         self.kuna_regnarrow_failed.clear();
+
+        self.kuna_call_mechanisms = Default::default();
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).

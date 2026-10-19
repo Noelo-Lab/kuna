@@ -763,6 +763,7 @@ kuna_options! { self, p1;
     "slotptr" => on_off!(slot_ptr, "frame-slot pointer typing"),
     "reglocals" => on_off!(reg_locals, "register-local reporting"),
     "slotreport" => on_off!(slot_report, "frame-slot local reporting"),
+    "callmechanisms" => on_off!(call_mechanism_effects, "compiler prototype call mechanisms"),
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
     "castsign" => on_off!(cast_sign, "signed declarations for signed-only locals"),

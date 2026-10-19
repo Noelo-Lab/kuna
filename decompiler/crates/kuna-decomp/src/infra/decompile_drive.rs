@@ -969,6 +969,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             (r, ctx.reflow_requested)
         };
         let (r, reflow_requested) = res;
+        if let Some(error) = fd.kuna_call_mechanisms.failure.as_ref() {
+            return Err(KunaError::lowlevel(error.clone()));
+        }
         // (kuna decompile-all watchdog) A budgeted drive that ran past its
         // deadline unwound cooperatively (the action/heritage loops stop
         // scheduling work); surface it as the per-function error the batch
@@ -1339,7 +1342,10 @@ pub fn decompile_func_full_with_objects(
         // Apply the resolved prototype to the fresh funcp (the input-param
         // recovery SEED): after this the inputs/output are type-locked, so
         // ActionPrototypeTypes forces the typed Varnodes.
-        if let Some(pieces) = pending_proto.or(recovered_proto.as_ref()) {
+        let combined_proto = crate::p4_calls::kuna_inputstorage::merge_mapped(
+            pending_proto.or(recovered_proto.as_ref()), mapped_params,
+        );
+        if let Some(pieces) = combined_proto.as_deref() {
             // (ghidra-mode, Phase 4) A host-declared model rides with the
             // pieces so parameter storage is assigned under the SAME
             // convention the database committed (see
@@ -1509,6 +1515,9 @@ pub fn run_named_pipeline_variant(
             .ok_or_else(|| KunaError::lowlevel(format!("no current {variant} action")))?;
         root.reset(&mut fd);
         let r = root.perform(&mut fd, &mut ctx);
+        if let Some(error) = fd.kuna_call_mechanisms.failure.as_ref() {
+            return Err(KunaError::lowlevel(error.clone()));
+        }
         if r < 0 {
             return Err(KunaError::lowlevel(format!(
                 "{variant} pipeline hit a breakpoint"
@@ -2031,7 +2040,8 @@ pub struct GlobalInfo {
     /// the declared type is the unknown byte.
     pub unknown: bool,
     /// True for storage the body reads or writes directly rather than takes the
-    /// address of; its declaration is the type it is accessed at.
+    /// address of; also true for whole mapped named objects, whose declarations
+    /// retain their complete type and require independent storage.
     pub direct: bool,
     /// True when the declared type is a record or union: a scalar read or write
     /// of the name does not compile against it. (An array decays to a pointer,
@@ -2041,12 +2051,18 @@ pub struct GlobalInfo {
     /// (`char *dat_5068`): declared although no function takes its address,
     /// since a subscript of it reads the element its declaration names.
     pub elem: bool,
+    /// True when the declared type is an integer. With `unknown`, a named
+    /// object the function only addresses, reads part of, or reads and writes
+    /// in ways any integer of its width serves, declared at its symbol's type.
+    pub integer: bool,
 }
 
 /// The globals the C `print_c` just rendered for `fd` names
 /// ([`crate::kuna_globalref`]): every address it takes, and every piece of
-/// unnamed program data it accesses directly. Read from the printer, so it must
-/// follow the `print_c` of the same function. Empty with the option off.
+/// unnamed program data it accesses directly, and whole mapped named objects.
+/// Read from the printer, so it must
+/// follow the `print_c` of the same function. Named symbols remain available
+/// when the address-naming option is off.
 pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
     let print = arch.print();
     let plan = print.globalref_plan();
@@ -2071,6 +2087,7 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
             direct,
             aggregate: matches!(ty.get_metatype(), TYPE_STRUCT | TYPE_UNION),
             elem,
+            integer: !array && crate::kuna_namedglobals::is_integer(ty),
         }
     };
     let mut out: Vec<GlobalInfo> =
@@ -2079,6 +2096,25 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
         let g = info(address, ty, false, true, false, elem);
         if !out.contains(&g) {
             out.push(g);
+        }
+    }
+    for (address, name, ty, accessed) in print.named_global_references().objects() {
+        use crate::dtype::type_metatype::{TYPE_STRUCT, TYPE_UNION};
+        let unknown = accessed.is_empty() && crate::kuna_namedglobals::is_integer(ty);
+        for decl_type in if accessed.is_empty() { vec![ty] } else { accessed } {
+            let g = GlobalInfo {
+                address,
+                name: name.to_string(),
+                declaration: crate::printc::declaration_text(decl_type, name, rt),
+                size: i64::from(ty.get_size()),
+                unknown,
+                // Whole named objects must retain the independent-storage overlap guard.
+                direct: true,
+                aggregate: matches!(decl_type.get_metatype(), TYPE_STRUCT | TYPE_UNION),
+                elem: false,
+                integer: crate::kuna_namedglobals::is_integer(decl_type),
+            };
+            if !out.contains(&g) { out.push(g); }
         }
     }
     out
