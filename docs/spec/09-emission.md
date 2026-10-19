@@ -129,7 +129,10 @@ conversion, and structured member extraction retains priority.
 Finite 32-bit floating constants in C carry an `f` suffix when the target
 uses 32-bit `float`. Unsuffixed literals have type `double`: printing `0.1`
 for a float constant changes both comparisons at `0.1f` and arithmetic
-precision. Double constants retain their ordinary unsuffixed spelling. This
+precision. A value `double` holds exactly is suffixed too, since the literal's
+type still decides the type of the arithmetic around it: `(int)(x + 11.0)`
+adds in `double` and truncates `x = 0.99999994f` to 11, where the binary's
+float add rounds to 12. Double constants retain their ordinary unsuffixed spelling. This
 does not change the pseudo-C `NAN`, `INFINITY`, or unknown-format tokens,
 or the literal spelling of other output languages.
 
@@ -512,12 +515,12 @@ hex (`((union { float from; unsigned int to; }){ .from = a0 }).to !=
 where, under the default (non-flushing) floating-point environment, it decides
 exactly what the bit test does (`float_compare_is_exact`; with DAZ/FTZ set a
 denormal's `ABS` compares equal to `0.0`): against a constant that is a normal number or an
-infinity whose printed literal, read by C as a `double`, is its value
+infinity whose shortest digits, read back as a `double`, are its value
 (`kuna_floatbits.rs (compares_as_a_float)`, chapter 05), so the bits of `1.0f`
-still print `a0 == 1.0`; and against `+0.0` when the other side is a
+still print `a0 == 1.0f`; and against `+0.0` when the other side is a
 `FLOAT_ABS`, which is never `-0.0` and as a NaN equals neither, so
-`ABS(a0) == 0.0` stays. A literal whose shortest spelling is another double
-(`a0 == -7.4544637e-06`, `!= 1.4013e-45`) prints its bits instead.
+`ABS(a0) == 0.0f` stays. A constant whose shortest digits spell another double
+(`-7.4544637e-06`, `1.4013e-45`) prints its bits instead.
 `FLOAT_EQUAL`/`FLOAT_NOTEQUAL` are other opcodes and still print `a == b`.
 
 **Narrowed call arguments (kuna).** Dead-code analysis counts only the
