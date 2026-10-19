@@ -1345,6 +1345,65 @@ ground-truth variables that were missed are now matched correctly by address
 overlap. 53 previously correct matches are lost to a new row; 205 functions
 reach a perfect score, none leave it, 2,207 improve and 10 get worse.
 
+**Typing a frame slot as the local the C declares in it (`option
+slotreport`).** A `framelayout` filler row (the third section) is a slot an
+earlier restructure pass recovered and the final one no longer binds to a
+stack Symbol, so it is spelled by width: `local_c undefined4`. At -O0 the value
+in such a slot is usually a printed local that merged a register with its
+spill, declared `char *v1; // r0 | stack - 0xc`. Under `option slotreport`
+(default ON) the filler row keeps its frame name, offset and size and takes the
+type the C declares there, from
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_slotreport.rs
+(covering_type)`. The candidates are the printer's declarations for the
+function (the same `DeclaredLocal` list and naming check `reglocals` uses)
+whose declared type is as wide as the slot and one of whose storage homes
+starts at the slot's offset with that width. The homes are exactly those the
+declaration's storage comment lists (`kuna_varsources.rs (high_homes)`, through
+`high_stack_homes`, which keeps each stack home's width), over the declared
+high and every high declared through it, so a row never takes a type for
+storage the C does not show the local in; `DeclaredSlots` indexes them once per
+function. One candidate types the slot. Several type it only when they all
+spell the same type, which is one source value the recovery split into
+several declarations (`int v1; // eax | stack - 0x38` beside `int v2; // eax |
+edx | ram 0x404040 | stack - 0x34 | stack - 0x38`); when they spell different types the slot
+keeps `undefinedN`. A declaration that lists the slot at another width is not a
+candidate: it neither types the slot nor stops a same-width one from typing
+it, since refusing the slot whenever such a declaration also lists it was
+measured and lost more matches than it saved. The type is spelled by
+`kuna_bytehonest.rs (exported_type_name)`, so an uncommitted byte the printer
+renders `char` is still `undefined1`, and a slot whose candidate is a one-byte
+integer or `bool` keeps `undefined1` too (`byte_scalar`): the type system's
+byte types are its default for any byte it computes with, and the program may
+hold the same byte as `_Bool`, `char` or `uint8_t`, which is the reason
+`bytehonest` reports a byte by width. A slot typed this way is not re-spelled
+by `slotptr`: the declared type takes precedence over the pointer type
+`slotptr` reads off the stores into the slot. The rows stay the frame's:
+`reglocals` still reports the declaration as its own `register` row when it
+did before, and no row is added or removed, so a consumer matching the frame by
+offset and the declarations by name sees the same rows as before with one type
+filled in. Folding the slot into the declaration's row instead (one row under
+the printed name, with the slot's offset) was measured as the alternative and
+lost the register row's own matches. The second section follows the same rule
+for a frame Symbol whose own type the recovery left uncommitted
+(`kuna_slotreport.rs (declared_type)`): when the C declares it under its own
+name at a type of its width other than a one-byte integer or `bool`, at the
+Symbol's offset, the row reports that type, whatever it is. That includes
+`undefinedN` when the C prints the Symbol so: a row that spelled the Symbol's
+own uncommitted type as `unsigned int` reads `undefined4`, as its declaration
+does. The option changes no p-code and no emitted C. The rows it types reach
+the `variables` array of `--json` (`decompile-all` and `decompile`) and the
+browser decompiler, and the `; stack:` header lines of `decompile-project`'s
+`.asm`; the `.c` and `.h` files are unchanged. The index is built for every
+function `decompile-all` decompiles, text mode included, unless `--no-vars`
+skips the variables. It costs a few tenths of a percent at most: against
+main, -0.08% CPU with `--json` and +0.33% in text mode, where an identical
+build of main measured +0.10% and -0.03%. Over the four decbench sets of the type campaign (ARM
+firmware, opt96, opt96b and the 444 x86-64 slices) it turns a net 468
+stack-local matches from wrong to right, most of them a `float` or a pointer
+that `undefinedN` cannot match by width; 10 functions reach a perfect score and
+2 leave it, 327 improve and 13 get worse, each of the worse a slot the C
+declares a pointer where the source has an integer.
+
 **Which offsets are frame (`option protoranges`, default on).** The local
 scope's window is the prototype's local range plus its parameter range, and
 `MapState` then clears the parameter range back out, so only the local range

@@ -1180,6 +1180,11 @@ Three tiers:
 | the variables array lists only parameters and stack slots at -O2 | [`reglocals`](#reglocals) |
 | an optimized function's vN locals are missing from decompile-all --json | [`reglocals`](#reglocals) |
 | type_match misses every register-resident local | [`reglocals`](#reglocals) |
+| the variables array reports local_N undefinedN at the offset the C declares vN in | [`slotreport`](#slotreport) |
+| a local whose declaration comment lists a stack home has an undefined frame row | [`slotreport`](#slotreport) |
+| the decompile-project .asm stack header types a slot undefinedN that the C declares | [`slotreport`](#slotreport) |
+| type_match pairs a stack local with an undefined row | [`slotreport`](#slotreport) |
+| a -O0 local merged with its spill is reported by width only | [`slotreport`](#slotreport) |
 | int4/uint1/uint4/float8/float10 appear in the emitted C instead of C type names | [`ctypes`](#ctypes) |
 | the same function mixes `unsigned int` with `int4` | [`ctypes`](#ctypes) |
 | `code *` appears as a function-pointer type | [`ctypes`](#ctypes) |
@@ -3649,6 +3654,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default. A consumer reads `variables[]` as the full list of what the function declares -- the `decompile-all --json` surface decbench's type_match scores by instruction-address overlap, and the analogue of the register variables IDA, Binary Ninja and Ghidra list. Flip OFF to get the pre-feature surface of parameters and stack-frame rows only. The emitted C never changes either way.
 - **Where / provenance:** P6/naming-policy · kuna · presentation-default · kuna-reglocals
 - **Example:** `option reglocals off`
+
+### `slotreport` -- on | off, default `on`
+
+- **Symptoms:** the variables array reports local_N undefinedN at the offset the C declares vN in; a local whose declaration comment lists a stack home has an undefined frame row; the decompile-project .asm stack header types a slot undefinedN that the C declares; type_match pairs a stack local with an undefined row; a -O0 local merged with its spill is reported by width only.
+- **What it does:** Type a stack-frame slot the C declares a local in as that local on the `variables` rows (`decompile-all --json`, `decompile --json`, the browser decompiler) and in the `; stack:` header lines of `decompile-project`'s `.asm`. `framelayout` reports the frame slots an earlier restructure pass recovered and the final one folded away, typed `undefinedN` because no stack Symbol is bound to them; at `-O0` the value in such a slot is often a printed local that merged a register with its spill, so the C declared `char *v1; // r0 | stack - 0xc` while the rows reported `local_c undefined4` at the same offset. When on, the frame row keeps its name, offset and size and takes the type spelled by the printed declarations of the slot's width whose storage homes -- the homes their declaration comments list -- include the slot, when they all spell the same type: one declaration, or several the recovery split one value into. A declaration that lists the slot at another width is not consulted; same-width declarations that spell different types, or a one-byte integer or `bool` declaration (`bytehonest`), leave `undefinedN`. The declared type takes precedence over the one `slotptr` reads off the stores into the slot. No row is added or removed (`reglocals` reports the declaration's own `register` row as before). A frame Symbol whose own type is uncommitted is reported at the type the C declares it at under its own name, at the Symbol's offset and width, even when the C spells that `undefinedN`. No p-code and no emitted C change. The index is built for every function `decompile-all` decompiles, text mode included, unless `--no-vars`.
+- **When to flip:** On by default. A consumer reads `variables[]` or the `.asm` `; stack:` lines as what the C declares, and decbench's type_match pairs a ground-truth stack local with the row at its frame offset. Flip OFF to get the `framelayout` filler rows typed by width again (`local_N undefinedN`) and to skip the per-function index. The emitted C never changes either way.
+- **Where / provenance:** P6/naming-policy · kuna · presentation-default · ty17-slotreport
+- **Example:** `option slotreport off`
 
 ### `ctypes` -- on | off, default `off`
 

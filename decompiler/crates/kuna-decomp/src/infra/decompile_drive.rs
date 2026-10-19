@@ -2503,6 +2503,7 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
         arg_pos += 1;
     }
 
+    let declared_slots = crate::kuna_slotreport::DeclaredSlots::of(arch, fd);
     // 2) Stack locals, off the ScopeLocal (NO_CATEGORY symbols only).
     if let Some(sl) = fd.get_scope_local() {
         let space = sl.get_space_id();
@@ -2519,11 +2520,16 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
                 .iter()
                 .find(|a| a.shown && a.number == name)
                 .map_or(name, |a| a.alias.clone());
-            let type_name = crate::kuna_bytehonest::exported_type_name(arch, &ct);
+            let offset = signed_space_offset(space, addr.get_offset());
+            let type_name = declared_slots
+                .as_ref()
+                .filter(|_| crate::kuna_slotreport::uncommitted(&ct))
+                .and_then(|slots| slots.declared_type(&name, offset, ct.get_size() as i64))
+                .unwrap_or_else(|| crate::kuna_bytehonest::exported_type_name(arch, &ct));
             out.push(VarInfo {
                 name,
                 type_name,
-                stack_offset: Some(signed_space_offset(space, addr.get_offset())),
+                stack_offset: Some(offset),
                 size: ct.get_size() as i64,
                 is_param: false,
                 arg_index: None,
@@ -2567,6 +2573,7 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
         let covered: std::collections::BTreeSet<i64> =
             out.iter().filter_map(|v| v.stack_offset).collect();
         let first_slot = out.len();
+        let mut declared = Vec::new();
         for (off, slot) in fd.frame_slots() {
             if covered.contains(&off) {
                 continue;
@@ -2583,9 +2590,16 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
             } else {
                 slot.name
             };
+            let type_name = match declared_slots.as_ref().and_then(|slots| slots.covering_type(off, slot.size as i64)) {
+                Some(declared_type) => {
+                    declared.push(out.len());
+                    declared_type
+                }
+                None => frame_slot_type_name(arch, &slot.dtype),
+            };
             out.push(VarInfo {
                 name,
-                type_name: frame_slot_type_name(arch, &slot.dtype),
+                type_name,
                 stack_offset: Some(off),
                 size: slot.size as i64,
                 is_param: false,
@@ -2595,7 +2609,7 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
             });
         }
         if arch.slot_ptr {
-            type_filler_slots_from_stores(arch, fd, &mut out, first_slot);
+            type_filler_slots_from_stores(arch, fd, &mut out, first_slot, &declared);
         }
     }
 
@@ -2616,6 +2630,7 @@ fn type_filler_slots_from_stores(
     fd: &Funcdata,
     out: &mut [VarInfo],
     first_slot: usize,
+    declared: &[usize],
 ) {
     let ranges: Vec<(i64, i64)> = out
         .iter()
@@ -2623,7 +2638,7 @@ fn type_filler_slots_from_stores(
         .collect();
     for i in first_slot..out.len() {
         let (lo, hi) = ranges[i];
-        if hi <= lo {
+        if hi <= lo || declared.contains(&i) {
             continue;
         }
         let overlaps = ranges
