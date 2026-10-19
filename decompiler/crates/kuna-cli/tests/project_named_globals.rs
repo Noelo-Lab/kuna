@@ -324,9 +324,11 @@ fn named_scalars_are_declared_at_the_type_the_bodies_read_them() {
 int count;
 long total = -5;
 double scale = 1.5;
+long loaded;
 int step(int x) { count += x; if (count < 0) return -1; return count / 3; }
 long shift(long x) { total = total * x - 7; return total >> 2; }
 double grow(double k) { scale = scale * k - k; return scale; }
+long load(long *p, long b) { loaded = *p; if (loaded < b) return loaded / 3; return loaded >> 1; }
 "#,
     )
     .unwrap();
@@ -342,7 +344,7 @@ double grow(double k) { scale = scale * k - k; return scale; }
         "decompile-project",
         binary.to_str().unwrap(),
         "--functions",
-        "step,shift,grow",
+        "step,shift,grow,load",
         "-o",
         project.to_str().unwrap(),
     ]);
@@ -352,9 +354,9 @@ double grow(double k) { scale = scale * k - k; return scale; }
     let definitions: Vec<_> = header
         .lines()
         .filter_map(|line| line.strip_prefix("extern "))
-        .filter(|decl| ["count;", "total;", "scale;"].iter().any(|n| decl.ends_with(&format!(" {n}"))))
+        .filter(|decl| ["count;", "total;", "scale;", "loaded;"].iter().any(|n| decl.ends_with(&format!(" {n}"))))
         .collect();
-    for expected in ["int count;", "long total;", "double scale;"] {
+    for expected in ["int count;", "long total;", "double scale;", "long loaded;"] {
         assert!(definitions.contains(&expected), "{expected}\n{header}");
     }
     let driver = source.with_extension("driver.c");
@@ -376,11 +378,16 @@ int main(int argc, char **argv) {{
     int (*original_step)(int) = (int (*)(int))dlsym(image, "step");
     long (*original_shift)(long) = (long (*)(long))dlsym(image, "shift");
     double (*original_grow)(double) = (double (*)(double))dlsym(image, "grow");
+    long (*original_load)(long *, long) = (long (*)(long *, long))dlsym(image, "load");
+    long (*regenerated_load)(long *, long) = (long (*)(long *, long))load;
     for (int i = 0; i < 200; ++i) {{
         int amount = (i * 37) % 21 - 10;
         if (step(amount) != original_step(amount)) return 1;
         if (shift(amount % 3) != original_shift(amount % 3)) return 2;
         if (grow(0.5 + (i % 3)) != original_grow(0.5 + (i % 3))) return 3;
+        long seed = amount * 1000003L;
+        if (regenerated_load(&seed, amount % 5) != original_load(&seed, amount % 5)) return 4;
+        if (memcmp(&loaded, dlsym(image, "loaded"), sizeof loaded)) return 5;
     }}
     return 0;
 }}

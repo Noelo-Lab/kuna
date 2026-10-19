@@ -3410,7 +3410,11 @@ dereferenced `&name` loads or stores. A read whose uses keep its bits under any
 integer of its width (a copy, a return, a call argument, a store, a
 truncation, a same-width cast, an equality at `int` width or wider or with
 zero, wrapping arithmetic whose result is assigned, or an assignment of the
-loaded value) accepts the symbol's type. One that an ordering, a division, a
+value a dereferenced `&name` loads to a variable of its own) accepts the
+symbol's type. The global's own varnode, or a register merged into its
+variable, is judged by its uses however it was defined: after `g = *p`, the
+reads of `g` print as `g`, so a load defining it says nothing about them.
+A read that an ordering, a division, a
 remainder, a right shift or an extension reads, directly or through
 arithmetic printed inline, needs the signed or unsigned integer of its width,
 and a float operation needs the float. A pointer or float varnode names its

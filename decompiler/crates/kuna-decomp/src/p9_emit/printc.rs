@@ -10382,7 +10382,7 @@ impl PrintC {
                 if let Some(address) = spacebase_unnamed_address(arch, fd, op, &ct, in1const, ptr_size) {
                     match ptrsub_value_access(fd, op, valueon && !arrayvalue) {
                         Some((value, write)) => {
-                            self.named_globals.record_access(fd, arch, &address, value, write, &name)
+                            self.named_globals.record_access(fd, arch, &address, value, write, !write, &name)
                         }
                         None => self.named_globals.record(fd, arch, &address, &name),
                     }

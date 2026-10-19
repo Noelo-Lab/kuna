@@ -28,7 +28,11 @@ impl References {
     /// being the varnode read or written there, compiles against the type the
     /// printer gave that varnode, and a declaration at the symbol's own type
     /// (`undefined4` is `unsigned int`) would silently change what a signed
-    /// compare, a shift, a division or a float computes.
+    /// compare, a shift, a division or a float computes. `loaded` marks the
+    /// output of a `LOAD` through `&name`, which, when explicit, is assigned to
+    /// a variable of its own; the global's storage or a register merged into
+    /// it is read as the name wherever it is used, however it was defined.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_access(
         &mut self,
         fd: &Funcdata,
@@ -36,6 +40,7 @@ impl References {
         address: &Address,
         value: VarnodeId,
         write: bool,
+        loaded: bool,
         name: &str,
     ) {
         self.record(fd, arch, address, name);
@@ -50,7 +55,8 @@ impl References {
             return;
         }
         let size = vn.get_size();
-        let assigned = vn.is_explicit()
+        let assigned = loaded
+            && vn.is_explicit()
             && vn.get_def().and_then(|d| fd.obank().get(d)).is_some_and(|d| d.code() == OpCode::CPUI_LOAD);
         let entry = self.accesses.entry(key).or_default();
         let read = if write || !is_integer(ty) || !is_integer(vn.get_type()) {
@@ -98,7 +104,7 @@ impl References {
             })
         };
         if let Some(address) = storage {
-            self.record_access(fd, arch, &address, value, write, name);
+            self.record_access(fd, arch, &address, value, write, false, name);
         }
     }
 
