@@ -1,6 +1,6 @@
 //! Same-width float/pointer storage transfers must preserve the representation.
 #![cfg(all(target_os = "linux", target_pointer_width = "64"))]
-mod common;
+use crate::common;
 use std::process::Command;
 
 fn checked(command: &mut Command) {
