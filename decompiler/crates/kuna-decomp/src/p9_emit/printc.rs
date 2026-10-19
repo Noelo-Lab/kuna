@@ -6689,6 +6689,8 @@ impl PrintC {
         static RUST_BITS: OpToken = op_token("(", ").to_bits()", 2, 66, false, TokenType::Postsurround, 0, 0);
         let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
         let signed = transfer.target.get_metatype() == type_metatype::TYPE_INT;
+        let pointer = transfer.target.get_metatype() == type_metatype::TYPE_PTR;
+        if pointer { self.push_cast_open(&transfer.target, op); }
         let input = fd.vbank().get(transfer.input).unwrap();
         let bits = if transfer.size == 4 { "u32" } else { "u64" };
         let literal = |v: &crate::varnode::Varnode| {
@@ -6734,8 +6736,14 @@ impl PrintC {
             self.push_op(&C_BITS, Some(op_key(op)));
             self.push_atom(&Atom::syntax(format!("((union {{ {from} from; {to} to; }}){{ .from = "),
                 TagType::TypeToken, SyntaxHighlight::type_color));
+            let source_word = transfer.source_pointer.then(|| {
+                arch.types().get_base(transfer.size, type_metatype::TYPE_UINT).unwrap()
+            });
+            if let Some(word) = &source_word { self.push_cast_open(word, op); }
             self.push_vn_ir_body(fd, arch, transfer.input, op);
+            if let Some(word) = &source_word { self.push_cast_close(word); }
         }
+        if pointer { self.push_cast_close(&transfer.target); }
     }
 
     /// Does C's arithmetic conversion already perform this float widening?
@@ -7297,6 +7305,7 @@ impl PrintC {
                     target: slice.source_word,
                     size: 8,
                     to_float: false,
+                    source_pointer: false,
                 },
             );
         } else {
