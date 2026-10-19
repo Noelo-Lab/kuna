@@ -509,3 +509,6 @@ mod prototype_call_mechanisms;
 mod qualified_storage_addresses;
 #[path = "qualified_import_storage.rs"]
 mod qualified_import_storage;
+
+#[path = "readonly_leaf_stack.rs"]
+mod readonly_leaf_stack;
