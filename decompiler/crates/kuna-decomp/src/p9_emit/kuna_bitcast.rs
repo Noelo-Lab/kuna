@@ -14,17 +14,24 @@ pub(crate) struct Transfer {
     pub source_pointer: bool,
 }
 
-/// A same-width storage `CAST` between a float and integer or native pointer,
+/// A same-width storage `CAST` or aggregate-field reload `COPY` between a
+/// float and integer or native pointer,
 /// judged by the types the printed C declares: a named variable or field, else the value's own type.
 pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Transfer> {
     let operation = fd.obank().get(op)?;
-    if operation.code() != OpCode::CPUI_CAST {
+    if !matches!(operation.code(), OpCode::CPUI_CAST | OpCode::CPUI_COPY) {
         return None;
     }
     let input = operation.get_in(0)?;
     let out = operation.get_out()?;
     let src = fd.vbank().get(input)?;
     let dst = fd.vbank().get(out)?;
+    // A field reload can be a COPY with no explicit CAST. Its C member and
+    // destination still need to transfer bits rather than convert values.
+    if operation.code() == OpCode::CPUI_COPY && !matches!(src.get_type().get_metatype(),
+        type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION) {
+        return None;
+    }
     let size = src.get_size();
     if !matches!(size, 4 | 8) || dst.get_size() != size {
         return None;
@@ -32,9 +39,15 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
     let slot = operation.get_slot(input);
     let from_ty = crate::kuna_stackviews::access_type(fd, input, op, slot)
         .or_else(|| declared_member_type(fd, decl_high_type, input))
+        // An unresolved aggregate fragment is not the scalar field's C type.
+        .filter(|ty| !matches!(ty.get_metatype(),
+            type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION))
         .unwrap_or_else(|| fd.vn_type_read_facing(input, op));
     let to_ty = crate::kuna_stackviews::access_type(fd, out, op, -1)
         .or_else(|| declared_member_type(fd, decl_high_type, out))
+        // An unresolved aggregate fragment is not the scalar field's C type.
+        .filter(|ty| !matches!(ty.get_metatype(),
+            type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION))
         .unwrap_or_else(|| fd.vn_type_def_facing(out));
     let from = from_ty.get_metatype();
     let to = to_ty.get_metatype();
