@@ -171,3 +171,140 @@ int main(int argc, char **argv) {{
     std::fs::remove_dir_all(literal_project).unwrap();
 }
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn typed_interior_pointers_relocate_with_the_named_object() {
+    if process::optional_output(Command::new("gcc").arg("--version")).is_none() {
+        return;
+    }
+    let source = common::scratch_file("typed-global-pointer", "c");
+    let binary = source.with_extension("so");
+    let project = source.with_extension("project");
+    std::fs::write(
+        &source,
+        r#"
+unsigned char bytes[64];
+int consume(int *p) { int value; __builtin_memcpy(&value,p,sizeof value); return value+11; }
+int sample(void) { return consume((int *)(bytes+16)); }
+int last(void) { return consume((int *)(bytes+60)); }
+"#,
+    )
+    .unwrap();
+    let built = Command::new("gcc")
+        .args(["-O0", "-g", "-shared", "-fPIC", "-Wl,-Bsymbolic-functions"])
+        .arg(&source)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .unwrap();
+    assert!(
+        built.status.success(),
+        "{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let (_, error, status) = common::run_kuna(&[
+        "decompile-project",
+        binary.to_str().unwrap(),
+        "--functions",
+        "sample,last",
+        "--assert",
+        "prototype sample int sample(void)",
+        "--assert",
+        "prototype last int last(void)",
+        "--assert",
+        "prototype consume int consume(int *input)",
+        "--assert-strict",
+        "-o",
+        project.to_str().unwrap(),
+    ]);
+    assert_eq!(status, 0, "{error}");
+    let name = binary.file_name().unwrap().to_str().unwrap();
+    let generated = project.join(format!("{name}.c"));
+    let header = std::fs::read_to_string(generated.with_extension("h")).unwrap();
+    assert!(
+        header.lines().any(|line| line.starts_with("extern ")
+            && line.contains("bytes")
+            && line.contains("64")),
+        "{header}"
+    );
+    let global = header.lines().find_map(|line| {
+        line.strip_prefix("extern ").filter(|decl| decl.contains("bytes") && decl.contains("64"))
+    }).unwrap();
+    let driver = source.with_extension("driver.c");
+    let executable = source.with_extension("exe");
+    std::fs::write(
+        &driver,
+        format!(
+            r#"
+#include <dlfcn.h>
+#include <stdint.h>
+#include <string.h>
+int consume(int *input) {{ int value; memcpy(&value,input,4); return value+11; }}
+#define sample regenerated_sample
+#define last regenerated_last
+#include "{}"
+#undef sample
+#undef last
+{global}
+int main(int argc,char **argv) {{
+    if(argc!=2)return 90;
+    void *image=dlopen(argv[1],RTLD_NOW|RTLD_LOCAL);
+    if(!image)return 91;
+    int (*original)(void)=dlsym(image,"sample");
+    int (*original_last)(void)=dlsym(image,"last");
+    unsigned char *reference=dlsym(image,"bytes");
+    if(!original||!original_last||!reference||(void *)reference==(void *)bytes)return 92;
+    uint32_t state=0x32645178;
+    for(unsigned i=0;i<512;++i){{
+        state=state*1664525u+1013904223u;
+        int value=(int)(state%1000000u)-500000;
+        memcpy(reference+16,&value,4);memcpy(bytes+16,&value,4);
+        memcpy(reference+60,&value,4);memcpy(bytes+60,&value,4);
+        if(regenerated_sample()!=original()||regenerated_last()!=original_last())return 1;
+        int distinct=value+37;memcpy(bytes+16,&distinct,4);
+        if(regenerated_sample()!=distinct+11||original()!=value+11)return 2;
+    }}
+    return 0;
+}}
+"#,
+            generated.display()
+        ),
+    )
+    .unwrap();
+    let mut ran = false;
+    for compiler in ["gcc", "clang"] {
+        if process::optional_output(Command::new(compiler).arg("--version")).is_none() {
+            continue;
+        }
+        ran = true;
+        for level in ["-O0", "-O2"] {
+            let built = Command::new(compiler)
+                .args(["-std=gnu11", "-Wall", "-Werror", level])
+                .arg(&driver)
+                .arg("-ldl")
+                .arg("-o")
+                .arg(&executable)
+                .output()
+                .unwrap();
+            assert!(
+                built.status.success(),
+                "{compiler} {level}: {}",
+                String::from_utf8_lossy(&built.stderr)
+            );
+            assert!(
+                Command::new(&executable)
+                    .arg(&binary)
+                    .status()
+                    .unwrap()
+                    .success(),
+                "{compiler} {level}: global pointers did not relocate"
+            );
+        }
+    }
+    assert!(ran);
+    for file in [source, binary, driver, executable] {
+        std::fs::remove_file(file).unwrap();
+    }
+    std::fs::remove_dir_all(project).unwrap();
+}

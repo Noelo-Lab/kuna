@@ -58,7 +58,7 @@ impl References {
     }
 
     /// A pointer into a complete named object stays relative to that object.
-    pub fn void_address(
+    pub fn object_address(
         &mut self,
         fd: &Funcdata,
         arch: &Architecture,

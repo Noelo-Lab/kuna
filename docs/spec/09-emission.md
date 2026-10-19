@@ -3401,8 +3401,10 @@ The header exporter diagnoses one name at multiple addresses and multiple names
 sharing one address instead of silently combining or splitting their storage.
 Whole named objects also retain the independent-storage overlap guard; overlapping
 views require shared storage instead of separate declarations. With `globalref`
-on, a native `void *` constant into a complete mapped object is rendered relative
-to its base, including interior field addresses. This preserves relocation of
+on, a native object-pointer constant into a complete mapped object is rendered
+relative to its base, including interior field addresses. An explicit cast retains
+the requested pointee type, even when a byte array owns the storage. Function
+pointers keep their separate rendering. This preserves relocation of
 the object when the generated C is linked. Split mappings, uncertain extents,
 non-byte-addressed spaces, shadowed names and names requiring scope or identifier
 rewriting keep the existing rendering.

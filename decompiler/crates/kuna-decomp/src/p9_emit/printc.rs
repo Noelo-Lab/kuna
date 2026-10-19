@@ -9421,9 +9421,9 @@ impl PrintC {
                     && ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
                     && ct.get_word_size() == Some(1)
                     && ct.get_size() == arch.types().get_size_of_pointer()
-                    && ct.get_ptr_to().is_some_and(|to| to.get_metatype() == crate::dtype::type_metatype::TYPE_VOID)
+                    && ct.get_ptr_to().is_some_and(|to| to.get_metatype() != crate::dtype::type_metatype::TYPE_CODE)
                 {
-                    if let Some(expression) = self.named_globals.void_address(fd, arch, off) {
+                    if let Some(expression) = self.named_globals.object_address(fd, arch, off) {
                         if !self.options.nocasts { self.push_cast_open(&ct, op); }
                         self.push_atom(&Atom::with_op_vn(
                             expression, TagType::VarToken,
