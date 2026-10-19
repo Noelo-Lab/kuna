@@ -5077,6 +5077,12 @@ including the forwards `passthrough` added to the function's finished argument
 lists -- so the hand-off is followed through any number of wrappers at the cost
 of one lookup per forwarded register.
 
+Only a general-purpose argument register is answered this way; a
+floating-point one keeps the arity-claim rule above. A callee that only moves
+its `float` in `xmm0` (`xorps` with a sign mask) is recovered with an integer
+parameter, and a forward of that register made gcc -O2's `jmp negf` wrapper a
+`void` function taking an `unsigned int` instead of returning `negf()`'s bits.
+
 The read test is asked of the best evidence the caller holds. A **complete**
 entry walk decides, because it follows constant branches (betaflight's
 `microsISR` reads `r0` only past a `movs r1,#1; cbnz r1` that always branches,
@@ -5098,12 +5104,12 @@ The record is taken only while `passthrough` is on, so `--option passthrough
 off` leaves every list as before; a single-function `kuna decompile` states no
 callee and sees only the self-call (over grep -O2, two of 449 functions change,
 both recursive). Over fourteen binaries (x86-64 gcc -O2 and -O0, clang,
-Cortex-M firmware, an ARM library) this adds 222 call arguments; of the 167
-whose callee has a DWARF prototype, 156 match it in count and the other 11 are
+Cortex-M firmware, an ARM library) this adds 218 call arguments; of the 163
+whose callee has a DWARF prototype, 152 match it in count and the other 11 are
 register-level arguments DWARF does not count (a hidden struct-return pointer,
 a 64-bit integer in two registers, libgcc's assembly soft-float compares with
 no DWARF parameters). Call sites passing fewer arguments than the callee's
-DWARF prototype fall from 251 to 130, and no function loses an argument or
+DWARF prototype fall from 245 to 128, and no function loses an argument or
 gains an uninitialised local. A hole is still declined (`no_hole_before`), and
 two functions calling each other state nothing for the one decompiled first.
 

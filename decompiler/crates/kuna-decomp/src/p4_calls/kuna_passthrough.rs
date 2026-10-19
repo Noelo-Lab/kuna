@@ -217,7 +217,7 @@ pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: i
     }
     let entry = fc.get_entry_address();
     if entry == data.get_address() {
-        if !self_takes(data, addr, size) {
+        if !general_purpose(data.get_func_proto(), addr, size) || !self_takes(data, addr, size) {
             return None;
         }
         let seen = data.kuna_entry_reads().and_then(|r| r.width(addr)).unwrap_or(size).min(size);
@@ -240,6 +240,14 @@ pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: i
         return None;
     }
     let size = size.min(stated_size);
+    if !general_purpose(fc.proto(), addr, size) {
+        let facts = data.kuna_callee_entry_through(entry).or_else(|| data.kuna_callee_entry_dead(entry))?;
+        if !stated.arity_sound || !facts.proves_input(addr, size) {
+            return None;
+        }
+        let width = facts.live_input_width(addr, size).unwrap_or(size);
+        return data.get_func_proto().possible_input_param(addr, width).then_some(width);
+    }
     let takes = |a: &Address, s: int4, strict: bool| crate::kuna_entryreads::callee_takes(data, entry, a, s, strict);
     let read = if stated.arity_sound {
         takes(addr, size, false)
@@ -259,6 +267,17 @@ pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: i
         None => seen,
     };
     data.get_func_proto().possible_input_param(addr, width).then_some(width)
+}
+
+/// Is `[addr, addr+size)` in a general-purpose input register of `proto`'s
+/// model? The body's own reads answer only for those: a callee that only moves
+/// its `float` in `xmm0` is recovered with an integer parameter, and a forward
+/// of that register gives its wrapper a parameter of the wrong kind.
+fn general_purpose(proto: &crate::fspec::FuncProto, addr: &Address, size: int4) -> bool {
+    proto.has_model()
+        && proto.model().input().get_entry().iter().any(|e| {
+            e.get_type() == crate::dtype::type_class::TYPECLASS_GENERAL && e.justified_contain(addr, size) >= 0
+        })
 }
 
 /// Does the function's own body take `[addr, addr+size)`: its complete entry
