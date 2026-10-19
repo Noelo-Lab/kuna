@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-d42a2ccaa4de",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64",
+    "binary_sha256": "9a2c3a6082b1745368ef778c20969f560ea6f956cb9b2d3798729e306f16bb89",
+    "binary_size": 17432,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64",
+    "selector": "clamp_delta",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\"name\": \"clamp_delta\",(?:(?!\"variables\":)[\\s\\S])*\"variables\": \\[(?:(?!\"code\":)[\\s\\S])*?\"name\": \"local_10\",\\s*\"type\": \"long\",\\s*\"kind\": \"stack\",\\s*\"arg_index\": null,\\s*\"stack_offset\": -16,"
+    ],
+    "stdout_absent": [
+      "\"name\": \"clamp_delta\",(?:(?!\"variables\":)[\\s\\S])*\"variables\": \\[(?:(?!\"code\":)[\\s\\S])*?\"name\": \"local_10\",\\s*\"type\": \"undefined8\",\\s*\"kind\": \"stack\",\\s*\"arg_index\": null,\\s*\"stack_offset\": -16,"
+    ]
+  },
+  "notes": "ON: gcc -O0 clamp_delta keeps its long in rax and spills it to stack - 0x10; the C declares long v1; // rax | stack - 0x10. The frame row local_10 at -16 is reported at the type the C declares there, long, instead of undefined8."
+}

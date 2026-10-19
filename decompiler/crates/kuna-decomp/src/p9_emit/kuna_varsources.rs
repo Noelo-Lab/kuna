@@ -161,15 +161,32 @@ pub fn high_homes(
     arch: &Architecture,
     high: HighVariableId,
 ) -> Option<(BTreeMap<String, (Rc<AddrSpace>, u64)>, Option<(Rc<AddrSpace>, u64)>)> {
+    let mut homes = BTreeMap::new();
+    let fallback = visit_homes(fd, high, &mut |address, size| {
+        if let Some((text, space, offset)) = storage_comment(fd, arch, address, size) {
+            homes.entry(text).or_insert((space, offset));
+        }
+    })?;
+    remove_join_pieces(&mut homes);
+    Some((homes, fallback))
+}
+
+/// Each storage `(address, size)` [`high_homes`] draws a home from, in its
+/// order: the Symbol's storage, then every instance (an address-tied stack
+/// piece at its Symbol's start), the sources simplification removed, and the
+/// inputs of the copies and merges defining an instance.  Returns the storage
+/// of the first instance, the fallback for a high with no home.
+fn visit_homes(
+    fd: &Funcdata,
+    high: HighVariableId,
+    visit: &mut dyn FnMut(&Address, int4),
+) -> Option<Option<(Rc<AddrSpace>, u64)>> {
     let own = high;
     let high = fd.high_bank().get(high)?;
-    let mut homes = BTreeMap::new();
     let mut fallback = None;
     if let Some((scope, symbol)) = fd.get_scope_local().zip(high.kuna_ref_symbol()) {
         for (address, size) in scope.symbol_storage(symbol) {
-            if let Some((text, space, offset)) = storage_comment(fd, arch, &address, size) {
-                homes.entry(text).or_insert((space, offset));
-            }
+            visit(&address, size);
         }
     }
     let mut pending: Vec<_> = (0..high.num_instances())
@@ -202,18 +219,10 @@ pub fn high_homes(
             address = &address - symbol_offset as i64;
         }
         if !fd.kuna_is_call_transport(id) {
-            if let Some((text, space, offset)) =
-                storage_comment(fd, arch, &address, varnode.get_size())
-            {
-                homes.entry(text).or_insert((space, offset));
-            }
+            visit(&address, varnode.get_size());
         }
         for source in fd.kuna_storage_sources(id) {
-            if let Some((text, space, offset)) =
-                storage_comment(fd, arch, &source.address, source.size)
-            {
-                homes.entry(text).or_insert((space, offset));
-            }
+            visit(&source.address, source.size);
         }
         if let Some(op) = varnode.get_def().and_then(|op| fd.obank().get(op)) {
             if matches!(op.code(), OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL) {
@@ -229,6 +238,20 @@ pub fn high_homes(
             }
         }
     }
-    remove_join_pieces(&mut homes);
-    Some((homes, fallback))
+    Some(fallback)
+}
+
+/// The stack homes of `high` among those [`high_homes`] lists: each signed
+/// frame offset with the size of the storage it was drawn from.
+pub fn high_stack_homes(fd: &Funcdata, high: HighVariableId) -> Vec<(i64, int4)> {
+    let Some(stack) = fd.get_arch().manage().get_stack_space() else { return Vec::new() };
+    let mut out = Vec::new();
+    visit_homes(fd, high, &mut |address, size| {
+        let Some(space) = address.get_space().filter(|s| s.get_index() == stack.get_index()) else { return };
+        let signed = kuna_base::address::sign_extend(address.get_offset() as i64, space.get_addr_size() as int4 * 8 - 1);
+        if !out.contains(&(signed, size)) {
+            out.push((signed, size));
+        }
+    });
+    out
 }

@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "narrowargs",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callerargs_packed_thumb",
+    "binary_sha256": "898af0e52bbddc84b0ff9adcd635840fe6a3624db7e26412decd6ec1cf2788ee",
+    "binary_size": 1164,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callerargs_packed_thumb",
+    "selector": "cbb",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int cbb\\(int a0,int a1\\)"
+    ],
+    "stdout_absent": [
+      "cbb\\(bool a0"
+    ]
+  },
+  "notes": "cbb is called with truth values and also through a packed table entry with x + 5; the pointer sits at an unaligned address, so its callers cannot all be listed and the parameter stays int.",
+  "probe_id": "p-ebef0c298050"
+}
