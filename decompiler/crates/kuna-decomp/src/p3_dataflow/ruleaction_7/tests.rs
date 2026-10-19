@@ -789,3 +789,43 @@ fn specs_lists_all_fifteen_in_definition_order() {
     assert_eq!(specs[13].group, "floatprecision"); // RuleFloatCast
     assert_eq!(specs[14].group, "floatprecision"); // RuleIgnoreNan
 }
+
+#[test]
+fn floatcast_preserves_narrowing_before_integer_truncation() {
+    for (source_size, intermediate_size) in [(8, 4), (10, 4), (10, 8)] {
+        let mut fd = build_fd();
+        let source = make_input(&mut fd, 0x100, source_size);
+        let (inner, rounded) = make_op(
+            &mut fd,
+            0x200,
+            OpCode::CPUI_FLOAT_FLOAT2FLOAT,
+            1,
+            intermediate_size,
+        );
+        wire(&mut fd, source, inner, 0);
+        let (trunc, _) = make_op(&mut fd, 0x210, OpCode::CPUI_FLOAT_TRUNC, 1, 4);
+        wire(&mut fd, rounded, trunc, 0);
+        assert_eq!(RuleFloatCast::new().apply_op(trunc, &mut fd), 0);
+        assert_eq!(in_vn(&fd, trunc, 0), rounded);
+    }
+}
+
+#[test]
+fn floatcast_removes_exact_widening_before_integer_truncation() {
+    for (source_size, intermediate_size) in [(4, 4), (4, 8), (4, 10), (8, 10)] {
+        let mut fd = build_fd();
+        let source = make_input(&mut fd, 0x100, source_size);
+        let (inner, widened) = make_op(
+            &mut fd,
+            0x200,
+            OpCode::CPUI_FLOAT_FLOAT2FLOAT,
+            1,
+            intermediate_size,
+        );
+        wire(&mut fd, source, inner, 0);
+        let (trunc, _) = make_op(&mut fd, 0x210, OpCode::CPUI_FLOAT_TRUNC, 1, 4);
+        wire(&mut fd, widened, trunc, 0);
+        assert_eq!(RuleFloatCast::new().apply_op(trunc, &mut fd), 1);
+        assert_eq!(in_vn(&fd, trunc, 0), source);
+    }
+}
