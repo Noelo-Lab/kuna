@@ -882,6 +882,10 @@ pub struct Architecture {
     /// states the VFP calling convention (option `armfloatargs`).
     /// See [`crate::p4_calls::kuna_armfloatargs`].
     pub arm_float_args: bool,
+    /// (kuna) The default models `armfloatreturn` has widened, with the model
+    /// each was built from and whether it skips back-fill holes, so every
+    /// function reuses one instead of rebuilding it.
+    pub arm_widened_models: std::cell::RefCell<Vec<(Rc<crate::fspec::ProtoModel>, bool, Rc<crate::fspec::ProtoModel>)>>,
     /// (kuna) Extend a narrow integer argument or return value as the ABI states
     /// (option `narrowext`).  See [`crate::p4_calls::kuna_narrowext`].
     pub narrow_ext: crate::kuna_narrowext::NarrowExtMode,
@@ -2905,6 +2909,7 @@ impl Architecture {
             msvc_builders: Rc::new(Default::default()),
             arg_clobber: true, // (kuna) option argclobber; reset_defaults sets the shipped default
             arm_float_args: false, // (kuna) option armfloatargs
+            arm_widened_models: std::cell::RefCell::new(Vec::new()),
             arm_float_return: false, // (kuna) option armfloatreturn
             narrow_ext: crate::kuna_narrowext::NarrowExtMode::Off, // (kuna) option narrowext; reset_defaults sets the shipped default
             pass_through: true, // (kuna) option passthrough; reset_defaults sets the shipped default
@@ -3972,7 +3977,14 @@ impl Architecture {
         ctx.narrow_ext = crate::kuna_narrowext::rules(self);
         ctx.defaultfp = self.defaultfp.as_ref().map(|model| {
             if ctx.arm_float_return {
-                crate::kuna_armfloatreturn::model(model, ctx.manage(), ctx.arm_float_args)
+                let backfill = ctx.arm_float_args;
+                let mut built = self.arm_widened_models.borrow_mut();
+                if let Some((_, _, widened)) = built.iter().find(|(from, b, _)| Rc::ptr_eq(from, model) && *b == backfill) {
+                    return widened.clone();
+                }
+                let widened = crate::kuna_armfloatreturn::model(model, ctx.manage(), backfill);
+                built.push((model.clone(), backfill, widened.clone()));
+                widened
             } else {
                 model.clone()
             }
