@@ -274,6 +274,9 @@ fn declared_member_type(
                 return crate::kuna_stackviews::scalar_piece(
                     types, ty, offset.max(0), value.get_size(),
                 ).or_else(|| {
+                    crate::kuna_partialaccess::readable(value.get_type(), value.get_size())
+                        .then(|| Rc::clone(value.get_type()))
+                }).or_else(|| {
                     matches!(value.get_size(), 4 | 8)
                         .then(|| types.get_base(value.get_size(), type_metatype::TYPE_UNKNOWN).ok())
                         .flatten()

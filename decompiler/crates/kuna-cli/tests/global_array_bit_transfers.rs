@@ -18,8 +18,10 @@ fn floating_transfers_through_named_byte_arrays_recompile_and_keep_bits() {
 .p2align 3
 _state: .space 24
 _whole: .space 4
+.p2align 3
+_dstate: .space 16
 .text
-.globl _sample4, _sample8, _whole4
+.globl _sample4, _sample8, _whole4, _high4
 .def _sample4; .scl 2; .type 32; .endef
 _sample4:
  mov 4(%esp),%eax
@@ -47,6 +49,17 @@ _whole4:
  fstps _whole
  flds _whole
  ret
+.def _high4; .scl 2; .type 32; .endef
+_high4:
+ mov 4(%esp),%eax
+ flds (%eax)
+ fld1
+ faddp
+ fstps _dstate+4
+ mov 8(%esp),%edx
+ mov _dstate+4,%ecx
+ mov %ecx,(%edx)
+ ret
 "#,
     )
     .unwrap();
@@ -73,6 +86,7 @@ _whole4:
     let address = object.section_by_name(".data").unwrap().address();
     let declaration = format!("data 0x{address:x} unsigned char state[24]");
     let whole_declaration = format!("data 0x{:x} unsigned char whole[4]", address + 24);
+    let double_declaration = format!("data 0x{:x} double dstate[2]", address + 32);
     let directory = asm.with_extension("project");
     let (out, err, status) = common::run_kuna(&[
         "decompile-project",
@@ -80,11 +94,15 @@ _whole4:
         "-o",
         directory.to_str().unwrap(),
         "--functions",
-        "_sample4,_sample8,_whole4",
+        "_sample4,_sample8,_whole4,_high4",
         "--assert",
         &declaration,
         "--assert",
         &whole_declaration,
+        "--assert",
+        &double_declaration,
+        "--assert",
+        "prototype _high4 void __cdecl _high4(float *value, unsigned int *out)",
         "--assert",
         "prototype _whole4 float __cdecl _whole4(float *value)",
         "--assert",
@@ -99,7 +117,7 @@ _whole4:
     let declarations = asm.with_extension("objects.h");
     std::fs::write(
         &declarations,
-        "extern unsigned char state[24];\nextern unsigned char whole[4];\n",
+        "extern unsigned char state[24];\nextern unsigned char whole[4];\nextern double dstate[2];\n",
     )
     .unwrap();
     let driver = asm.with_extension("driver.c");
@@ -111,6 +129,7 @@ _whole4:
 #include <string.h>
 unsigned char state[24];
 unsigned char whole[4];
+double dstate[2];
 int main(void) {{
     const double values[] = {{0, -0.0, 0.25, -1.75, 123.125, -567.5, 0x1p-30, 0x1p30}};
     for(unsigned i=0;i<sizeof(values)/sizeof(values[0]);i++) {{
@@ -119,6 +138,9 @@ int main(void) {{
         float expected4=(float)(1.0L+(long double)input4), actual4=_sample4(&input4);
         float actual_whole=_whole4(&input4);
         if(memcmp(&actual_whole,&expected4,4) || memcmp(whole,&expected4,4)) return 3;
+        unsigned high_bits;
+        _high4(&input4,&high_bits);
+        if(memcmp(&high_bits,&expected4,4) || memcmp((unsigned char *)dstate+4,&expected4,4)) return 4;
         double expected8=(double)(1.0L+(long double)input8), actual8=_sample8(&input8);
         if(memcmp(&actual4,&expected4,4) || memcmp(&state[4],&expected4,4)) return 1;
         if(memcmp(&actual8,&expected8,8) || memcmp(&state[16],&expected8,8)) return 2;
