@@ -288,3 +288,44 @@ int main(void) {{
         }
     }
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn selected_callees_and_array_returns_keep_the_header_valid() {
+    if process::optional_output(Command::new("clang").arg("--version")).is_none() {
+        return;
+    }
+    let source = common::scratch_file("project-call-wide", "c");
+    let binary = source.with_extension("so");
+    std::fs::write(&source, "typedef unsigned __int128 wide;\nstruct prime { unsigned p; wide inverse; };\n__attribute__((noinline)) static wide invert(wide a) { wide x = a; for (int i = 0; i < 7; i++) x = 2 * x - x * x * a; return x; }\nvoid record(struct prime *info, unsigned p) { info->p = p; info->inverse = invert(p); }\n").unwrap();
+    let built = Command::new("clang")
+        .args(["-g", "-O0", "-fPIC", "-shared"])
+        .arg(&source)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .unwrap();
+    assert!(built.status.success(), "{}", String::from_utf8_lossy(&built.stderr));
+    let stem = binary.file_name().unwrap().to_str().unwrap();
+    for selection in ["record", "record,invert"] {
+        let directory = source.with_extension(format!("project-{}", selection.len()));
+        let (out, err, status) = common::run_kuna(&[
+            "decompile-project",
+            binary.to_str().unwrap(),
+            "--functions",
+            selection,
+            "-o",
+            directory.to_str().unwrap(),
+        ]);
+        assert_eq!(status, 0, "{out}\n{err}");
+        let header_path = directory.join(format!("{stem}.h"));
+        let header = std::fs::read_to_string(&header_path).unwrap();
+        assert!(header.matches("invert(").count() <= 1, "{header}");
+        let checked = Command::new("clang")
+            .args(["-std=c11", "-fsyntax-only", "-x", "c"])
+            .arg(&header_path)
+            .output()
+            .unwrap();
+        assert!(checked.status.success(), "{header}\n{}", String::from_utf8_lossy(&checked.stderr));
+    }
+}

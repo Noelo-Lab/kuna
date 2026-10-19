@@ -41,6 +41,11 @@ pub fn declarations(arch: &Architecture, fd: &Funcdata) -> Vec<String> {
         } else if call.format_arity().is_some() {
             continue;
         }
+        if snapshot.get_output_type().is_some_and(|t| {
+            matches!(t.get_metatype(), type_metatype::TYPE_ARRAY | type_metatype::TYPE_CODE)
+        }) {
+            continue;
+        }
         let mut code = Datatype::new(1, type_metatype::TYPE_CODE);
         code.kind = DatatypeKind::Code {
             proto: Some(Rc::new(snapshot)),

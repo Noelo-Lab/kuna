@@ -1234,17 +1234,26 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
         out.push_str(&globals);
     }
     let own: BTreeSet<_> = results.iter().filter(|r| r.error.is_none())
-        .filter_map(|r| r.proto.as_deref()).map(str::trim).collect();
-    let calls: BTreeSet<_> = results.iter().flat_map(|r| &r.call_declarations).collect();
-    if !calls.is_empty() { out.push_str("\n/* declared call targets */\n"); }
-    for declaration in calls {
-        if own.contains(declaration.trim()) { continue; }
+        .filter_map(|r| r.proto.as_deref())
+        .map(|proto| declarator_name(proto.trim().trim_end_matches(';')))
+        .collect();
+    let mut calls: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
+    for declaration in results.iter().flat_map(|r| &r.call_declarations) {
         let name = declarator_name(declaration.trim().trim_end_matches(';'));
+        if !own.contains(&name) {
+            calls.entry(name).or_default().insert(declaration.trim());
+        }
+    }
+    if !calls.is_empty() { out.push_str("\n/* declared call targets */\n"); }
+    for (name, declarations) in calls {
+        let text = declarations.iter().copied().collect::<Vec<_>>().join(" ");
+        let quoted = text.replace("/*", "/ *").replace("*/", "* /");
         if shadowed.contains(&name) {
-            let _ = writeln!(out, "/* Call target declaration conflicts with a type: {} */",
-                declaration.replace("/*", "/ *").replace("*/", "* /"));
+            let _ = writeln!(out, "/* Call target declaration conflicts with a type: {quoted} */");
+        } else if declarations.len() > 1 {
+            let _ = writeln!(out, "/* Call target declarations disagree: {quoted} */");
         } else {
-            let _ = writeln!(out, "extern {declaration}");
+            let _ = writeln!(out, "extern {text}");
         }
     }
     out.push_str("\n/* function prototypes */\n");
@@ -1830,14 +1839,17 @@ mod tests {
     fn streamed_call_declarations_keep_types_and_avoid_repeating_definitions() {
         let mut result = streamed("int local(int a0);", "int");
         result.call_declarations = vec![
-            "int local(int a0);".into(),
+            "int local(int);".into(),
             "int external_value(struct_42 *value);".into(),
             "int external_value(struct_42 *value);".into(),
+            "int split(int);".into(),
+            "long split(long);".into(),
         ];
         assert!(super::names_any_type(&result, &["struct_42".into()]));
         let header = super::build_header("fresh", "", "", &[result]);
         assert_eq!(header.matches("extern int external_value").count(), 1);
         assert!(!header.contains("extern int local"));
+        assert!(!header.contains("extern int split") && !header.contains("extern long split"), "{header}");
     }
 
     /// A result carrying only what the streaming export keeps.
