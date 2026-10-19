@@ -277,12 +277,12 @@ pub struct Funcdata {
     /// Container of Varnode objects for \b this function (C++ `vbank`)
     vbank: VarnodeBank,
     /// Machine homes retained when equivalent values replace their Varnodes.
-    kuna_storage_sources: std::collections::HashMap<VarnodeId, Vec<crate::kuna_varsources::StorageSource>>,
+    kuna_storage_sources: crate::kuna_fasthash::FxHashMap<VarnodeId, Vec<crate::kuna_varsources::StorageSource>>,
     pub(crate) kuna_guarded_reads: crate::p3_dataflow::kuna_stackreadscope::ReadScopes,
-    kuna_call_transport: std::collections::HashSet<VarnodeId>,
-    kuna_call_transport_projections: std::collections::HashMap<VarnodeId, int4>,
-    kuna_denied_storage_writes: std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
-    kuna_meaningful_storage_writes: std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+    kuna_call_transport: crate::kuna_fasthash::FxHashSet<VarnodeId>,
+    kuna_call_transport_projections: crate::kuna_fasthash::FxHashMap<VarnodeId, int4>,
+    kuna_denied_storage_writes: crate::kuna_fasthash::FxHashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+    kuna_meaningful_storage_writes: crate::kuna_fasthash::FxHashMap<(int4, u64, int4), Vec<(u64, int4)>>,
     /// Container of PcodeOp objects for \b this function (C++ `obank`)
     obank: PcodeOpBank,
     /// Unstructured basic blocks (C++ `bblocks`)
@@ -748,12 +748,12 @@ impl Funcdata {
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
             jumpvec: Vec::new(),
             vbank,
-            kuna_storage_sources: std::collections::HashMap::new(),
+            kuna_storage_sources: Default::default(),
             kuna_guarded_reads: Default::default(),
-            kuna_call_transport: std::collections::HashSet::new(),
-            kuna_call_transport_projections: std::collections::HashMap::new(),
-            kuna_denied_storage_writes: std::collections::HashMap::new(),
-            kuna_meaningful_storage_writes: std::collections::HashMap::new(),
+            kuna_call_transport: Default::default(),
+            kuna_call_transport_projections: Default::default(),
+            kuna_denied_storage_writes: Default::default(),
+            kuna_meaningful_storage_writes: Default::default(),
             obank: PcodeOpBank::new(),
             bblocks,
             sblocks,
@@ -3343,7 +3343,7 @@ impl Funcdata {
     }
 
     fn kuna_storage_write_matches(
-        denied: &std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+        denied: &crate::kuna_fasthash::FxHashMap<(int4, u64, int4), Vec<(u64, int4)>>,
         source: &crate::kuna_varsources::StorageSource,
     ) -> bool {
         let Some(pc) = source.write_address.as_ref() else {
