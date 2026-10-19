@@ -472,6 +472,8 @@ pub struct PrintCOptions {
     /// function's C names ABOVE the function (`option structdefs`).  See
     /// [`crate::kuna_structdefs`].
     pub struct_defs: bool,
+    /// A project header carries the definitions omitted from each body.
+    pub header_carries_types: bool,
     /// (kuna) A pointer-typed constant that addresses program data prints as
     /// `&dat_<addr>` rather than `(T *)0x<addr>` (`option globalref`).  See
     /// [`crate::kuna_globalref`].
@@ -521,6 +523,7 @@ impl PrintCOptions {
             bytearray_c: false,
             partial_access: false,
             empty_str_const: true,   // (kuna) no upstream equivalent
+            header_carries_types: false,
             struct_defs: false,      // (kuna) no upstream equivalent; opt-in
             global_ref: true,        // (kuna) no upstream equivalent
             brace_func: BraceStyle::NextLine,   // (kuna) DIV-34; upstream Emit::skip_line
@@ -1626,6 +1629,7 @@ pub struct PrintC {
     /// the decision reads and the globals its C names. See
     /// [`crate::kuna_globalref`].
     globalref: crate::kuna_globalref::Plan,
+    named_globals: crate::kuna_namedglobals::References,
 }
 
 impl Default for PrintC {
@@ -1668,6 +1672,7 @@ impl PrintC {
             cast_implied: crate::kuna_castimplied::ImpliedCasts::default(),
             stmt_op: None,
             globalref: crate::kuna_globalref::Plan::default(),
+            named_globals: crate::kuna_namedglobals::References::default(),
         }
     }
 
@@ -2608,6 +2613,7 @@ impl PrintC {
         // the live architecture (the gate + the `long`-is-8 data-model fact); every
         // type-name chokepoint below reads `self.rt_ctx`.
         self.rt_ctx = RealTypeCtx::from_arch(arch, self.out_lang);
+        self.named_globals = crate::kuna_namedglobals::References::default();
         self.globalref = crate::kuna_globalref::plan(
             fd,
             arch,
@@ -2743,6 +2749,7 @@ impl PrintC {
             return false;
         };
         if access.size == 1 {
+            self.named_globals.record(fd, arch, fd.vbank().get(vn).unwrap().get_addr(), &access.name);
             self.push_atom(&Atom::with_op_vn(
                 format!("{}[0]", access.name),
                 TagType::VarToken,
@@ -2769,6 +2776,7 @@ impl PrintC {
             };
             ty
         };
+        self.named_globals.record(fd, arch, fd.vbank().get(vn).unwrap().get_addr(), &access.name);
         self.push_cast_open(&cast, op);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         self.push_atom(&Atom::syntax(
@@ -2807,6 +2815,7 @@ impl PrintC {
         {
             return false;
         }
+        self.named_globals.record(fd, arch, fd.vbank().get(out).unwrap().get_addr(), &access.name);
         if access.size == 1 {
             self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
             self.push_atom(&Atom::with_op_vn(
@@ -6901,7 +6910,8 @@ impl PrintC {
             fd.obank()
                 .get(op)
                 .and_then(|o| o.get_out())
-                .map(|out| fd.vn_type_def_facing(out))
+                .map(|out| crate::kuna_bitcast::array_float_conversion(fd, op)
+                    .unwrap_or_else(|| fd.vn_type_def_facing(out)))
         };
         if let Some(ct) = &cast_ty {
             self.push_cast_open(ct, op);
@@ -9532,6 +9542,29 @@ impl PrintC {
                     ));
                     return;
                 }
+                if self.out_lang == crate::kuna_lang::OutLang::C
+                    && self.options.global_ref
+                    && ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
+                    && ct.get_word_size() == Some(1)
+                    && ct.get_size() == arch.types().get_size_of_pointer()
+                    && ct.get_ptr_to().is_some_and(|to| {
+                        to.get_metatype() != crate::dtype::type_metatype::TYPE_CODE
+                            && (self.options.struct_defs
+                                || self.options.header_carries_types
+                                || to.get_metatype() == crate::dtype::type_metatype::TYPE_VOID)
+                    })
+                {
+                    if let Some(expression) = self.named_globals.object_address(fd, arch, off) {
+                        if !self.options.nocasts { self.push_cast_open(&ct, op); }
+                        self.push_atom(&Atom::with_op_vn(
+                            expression, TagType::VarToken,
+                            crate::printlanguage::SyntaxHighlight::var_color,
+                            op_key(op), vn_key(vn),
+                        ));
+                        if !self.options.nocasts { self.push_cast_close(&ct); }
+                        return;
+                    }
+                }
                 if let Some(addr) = self.globalref.decide(fd, arch, vn, op, off, &ct) {
                     self.push_global_ref_ir(arch, addr, op, vn);
                     return;
@@ -9596,6 +9629,10 @@ impl PrintC {
                     && self.push_bytearray_read(fd, arch, vn, op)
                 {
                     return;
+                }
+                if self.out_lang == crate::kuna_lang::OutLang::C {
+                    let write = fd.obank().get(op).and_then(|o| o.get_out()) == Some(vn);
+                    self.named_globals.record_named(fd, arch, vn, write, &name);
                 }
                 // Symbol-mapped struct/union member access (C++ `PrintC::
                 // pushSymbolDetail` -> `pushPartialSymbol`, printlanguage.cc:256-258
@@ -10003,6 +10040,10 @@ impl PrintC {
 
     /// (kuna `globalref`) The plan of the last function printed: the globals it
     /// names by address and the unnamed data it reads directly.
+    pub fn named_global_references(&self) -> &crate::kuna_namedglobals::References {
+        &self.named_globals
+    }
+
     pub fn globalref_plan(&self) -> &crate::kuna_globalref::Plan {
         &self.globalref
     }
@@ -10334,6 +10375,17 @@ impl PrintC {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            if self.out_lang == crate::kuna_lang::OutLang::C {
+                if let Some(address) = spacebase_unnamed_address(arch, fd, op, &ct, in1const, ptr_size) {
+                    match ptrsub_value_access(fd, op, valueon && !arrayvalue) {
+                        Some((value, write)) => {
+                            self.named_globals.record_access(fd, arch, &address, value, write, !write, &name)
+                        }
+                        None => self.named_globals.record(fd, arch, &address, &name),
                     }
                 }
             }
@@ -11800,6 +11852,20 @@ fn kuna_global_data_name(style: crate::database::KunaNameStyle, off: u64) -> Str
         return format!("DAT_{off:08x}");
     }
     format!("dat_{off:x}")
+}
+
+/// The varnode a dereferenced `PTRSUB` reads (the `LOAD` output) or writes
+/// (the `STORE` input), and whether it is written.
+fn ptrsub_value_access(fd: &Funcdata, op: OpId, value: bool) -> Option<(VarnodeId, bool)> {
+    let out = fd.obank().get(op)?.get_out().filter(|_| value)?;
+    fd.vbank().get(out)?.descend_iter().find_map(|user| {
+        let u = fd.obank().get(user)?;
+        match u.code() {
+            OpCode::CPUI_LOAD if u.get_in(1) == Some(out) => Some((u.get_out()?, false)),
+            OpCode::CPUI_STORE if u.get_in(1) == Some(out) => Some((u.get_in(2)?, true)),
+            _ => None,
+        }
+    })
 }
 
 /// C++ `TypeSpacebase::getAddress` (type.cc:3542): the storage a

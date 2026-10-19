@@ -147,10 +147,11 @@ function mmx_after_free
 fn freed_x87_results_are_not_inferred_after_merges_or_loops() {
     let toolchains = [
         (
-            "i686-w64-mingw32-gcc",
+            "clang",
             COFF,
             "dll",
             &[
+                "--target=i686-w64-windows-gnu",
                 "-shared",
                 "-nostdlib",
                 "-Wl,--entry,0",

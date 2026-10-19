@@ -1717,7 +1717,11 @@ impl Heritage {
             // `killedbycall`.
             let mut effecttype = fc.proto().has_effect(&trans_addr, size);
             if effecttype == effect_type::UNKNOWN_EFFECT
-                && crate::kuna_calleememory::preserves(fd, fc, addr, size)
+                && ((super::kuna_leafmemory::preserves(fd, fc, addr, size)
+                        && !self.protostack_is_aliased(fd, &spc, addr.get_offset(), 1)
+                        && !self.protostack_is_aliased(fd, &spc,
+                            spc.wrap_offset(addr.get_offset().wrapping_add(size.saturating_sub(1) as uintb)), 1))
+                    || crate::kuna_calleememory::preserves(fd, fc, addr, size))
             {
                 effecttype = effect_type::UNAFFECTED;
             }

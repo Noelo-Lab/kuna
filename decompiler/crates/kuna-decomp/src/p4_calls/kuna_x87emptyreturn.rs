@@ -6,10 +6,10 @@ use std::collections::{HashMap, VecDeque};
 
 #[derive(Clone)]
 pub struct Storage {
-    free: u64,
+    pub(super) free: u64,
     top: VarnodeData,
-    tags: VarnodeData,
-    bank: Vec<VarnodeData>,
+    pub(super) tags: VarnodeData,
+    pub(super) bank: Vec<VarnodeData>,
 }
 
 pub fn storage(arch: &crate::architecture::Architecture) -> Option<Storage> {
