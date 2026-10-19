@@ -200,7 +200,7 @@ impl RangeHint {
         }
 
         let b_align = b.type_.get_align_size();
-        if component_aligns(&a.type_, mod_, b_align)? {
+        if component_aligns(&a.type_, mod_, b_align, false)? {
             return Ok(true);
         }
 
@@ -532,16 +532,18 @@ impl RangeHint {
 /// A union has several possible component paths; `get_sub_type` cannot choose
 /// one without an operation-specific field resolution. Layout reconciliation
 /// only needs a member whose component boundaries fit the smaller hint.
-fn component_aligns(ct: &Rc<Datatype>, offset: int8, align_size: int4) -> KunaResult<bool> {
+/// Outside union alternatives, preserve the existing align-size comparison
+/// used for partial scalar and structure hints.
+fn component_aligns(ct: &Rc<Datatype>, offset: int8, align_size: int4, union_path: bool) -> KunaResult<bool> {
     if ct.get_align_size() <= align_size {
-        return Ok(ct.get_align_size() == align_size && offset == 0);
+        return Ok(ct.get_align_size() == align_size && (!union_path || offset == 0));
     }
     if ct.get_metatype() == type_metatype::TYPE_UNION {
         for i in 0..ct.num_depend() {
             if let Some(member) = ct.get_depend(i) {
                 if offset >= 0
                     && offset.wadd(align_size as int8) <= member.get_size() as int8
-                    && component_aligns(&member, offset, align_size)?
+                    && component_aligns(&member, offset, align_size, true)?
                 {
                     return Ok(true);
                 }
@@ -551,7 +553,7 @@ fn component_aligns(ct: &Rc<Datatype>, offset: int8, align_size: int4) -> KunaRe
     }
     let (next, offset) = ct.get_sub_type(offset)?;
     match next {
-        Some(next) => component_aligns(&next, offset, align_size),
+        Some(next) => component_aligns(&next, offset, align_size, union_path),
         None => Ok(false),
     }
 }
