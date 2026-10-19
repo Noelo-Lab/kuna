@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn byte_strings_of_different_lengths_differ() {
-        assert_ne!(hash(&b"ab"[..]), hash(&b"ab\0"[..]));
+        assert_ne!(hash(&b"ab".to_vec()), hash(&b"ab\0".to_vec()));
     }
 
     #[test]
