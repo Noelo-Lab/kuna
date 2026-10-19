@@ -93,8 +93,10 @@ fn backing(factory: &dyn TypeFactory, function: u64, group: &[Local]) -> KunaRes
         kuna_base::error::KunaError::lowlevel("Debug stack overlap exceeds supported object size")
     })?;
     let stem = format!("dwarf_stack_{function:x}_{:x}", start as u64);
+    let raw_name = "storage_bytes";
+    let mut members = BTreeSet::from([raw_name.to_owned()]);
     let mut fields = Vec::new();
-    for (index, (_, ty, off)) in group.iter().enumerate() {
+    for (index, (name, ty, off)) in group.iter().enumerate() {
         let offset = i32::try_from(i128::from(*off) - i128::from(start)).map_err(|_| {
             kuna_base::error::KunaError::lowlevel(
                 "Debug stack view offset exceeds supported object size",
@@ -115,11 +117,16 @@ fn backing(factory: &dyn TypeFactory, function: u64, group: &[Local]) -> KunaRes
                 false,
             )?
         };
-        let member = format!("view_{index}");
+        let label = if name.is_empty() { "view" } else { name.as_str() };
+        let mut member = label.to_owned();
+        let mut variant = 0;
+        while !members.insert(member.clone()) {
+            variant += 1;
+            member = format!("{label}_{variant}");
+        }
         fields.push(TypeField::new(index as i32, 0, member, view));
     }
     let bytes = factory.get_type_array(size, factory.get_base(1, type_metatype::TYPE_UINT)?)?;
-    let raw_name = "storage_bytes";
     fields.push(TypeField::new(fields.len() as i32, 0, raw_name, bytes));
     let alignment = gcd(
         fields
@@ -133,8 +140,10 @@ fn backing(factory: &dyn TypeFactory, function: u64, group: &[Local]) -> KunaRes
     Ok((format!("shared_{:x}", start as u64), ty, start))
 }
 
-/// Conflicting optional debug locks are omitted if their common extent cannot
-/// be represented; the machine's storage recovery remains authoritative.
+/// Views of one type at one offset stay a single local; distinct views become
+/// union members named after their locals. Conflicting optional debug locks are
+/// omitted if their common extent cannot be represented; the machine's storage
+/// recovery remains authoritative.
 pub(crate) fn coalesce(
     factory: &dyn TypeFactory,
     function: u64,
@@ -192,9 +201,18 @@ pub(crate) fn coalesce(
             end = end.max(i128::from(locals[next].2) + i128::from(locals[next].1.get_size()));
             next += 1;
         }
-        if next == first + 1 {
-            result.push(locals[first].clone());
-        } else if let Ok(mut shared) = backing(factory, function, &locals[first..next]) {
+        let mut group: Vec<Local> = Vec::new();
+        for local in &locals[first..next] {
+            if !group
+                .iter()
+                .any(|(_, ty, off)| *off == local.2 && Rc::ptr_eq(ty, &local.1))
+            {
+                group.push(local.clone());
+            }
+        }
+        if group.len() == 1 {
+            result.extend(group);
+        } else if let Ok(mut shared) = backing(factory, function, &group) {
             let stem = shared.0.clone();
             let mut variant = 0;
             while !names.insert(shared.0.clone()) {
@@ -282,6 +300,34 @@ mod tests {
     }
 
     #[test]
+    fn reused_slots_of_one_type_stay_one_local_and_views_keep_debug_names() {
+        let f = factory();
+        let word = f.get_base(4, type_metatype::TYPE_UINT).unwrap();
+        let real = f.get_base(4, type_metatype::TYPE_FLOAT).unwrap();
+        let mapped = coalesce(
+            &f,
+            0x1000,
+            vec![
+                ("rsa_n".into(), Rc::clone(&word), -32),
+                ("dsa_p".into(), Rc::clone(&word), -32),
+                ("kx".into(), Rc::clone(&word), -16),
+                ("storage_bytes".into(), real, -16),
+                ("err".into(), word, -16),
+            ],
+            u64::MAX,
+        );
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(mapped[0].0, "dsa_p");
+        assert_eq!(mapped[0].1.get_metatype(), type_metatype::TYPE_UINT);
+        let union = &mapped[1].1;
+        assert_eq!(union.get_metatype(), type_metatype::TYPE_UNION);
+        let members: Vec<_> = (0..union.num_depend() as i32)
+            .map(|index| union.get_field(index).unwrap().name.clone())
+            .collect();
+        assert_eq!(members, ["err", "storage_bytes_1", "storage_bytes"]);
+    }
+
+    #[test]
     fn transitive_interior_overlap_keeps_adjacent_objects_separate() {
         let f = factory();
         let word = f.get_base(4, type_metatype::TYPE_UINT).unwrap();
@@ -308,10 +354,11 @@ mod tests {
             .get_type_struct("dwarf_stack_1000_ffffffffffffffe0_0")
             .unwrap();
         let word = f.get_base(4, type_metatype::TYPE_UINT).unwrap();
+        let real = f.get_base(4, type_metatype::TYPE_FLOAT).unwrap();
         let mapped = coalesce(
             &f,
             0x1000,
-            vec![("a".into(), Rc::clone(&word), -32), ("b".into(), word, -32)],
+            vec![("a".into(), word, -32), ("b".into(), real, -32)],
             u64::MAX,
         );
         assert_eq!(held.get_size(), 0);
@@ -325,12 +372,13 @@ mod tests {
     fn generated_local_names_do_not_shadow_neighboring_debug_locals() {
         let f = factory();
         let word = f.get_base(4, type_metatype::TYPE_UINT).unwrap();
+        let real = f.get_base(4, type_metatype::TYPE_FLOAT).unwrap();
         let mapped = coalesce(
             &f,
             0x1000,
             vec![
                 ("a".into(), Rc::clone(&word), -32),
-                ("b".into(), Rc::clone(&word), -32),
+                ("b".into(), real, -32),
                 ("shared_ffffffffffffffe0".into(), word, -16),
             ],
             u64::MAX,
@@ -343,12 +391,13 @@ mod tests {
     fn stack_width_normalizes_aliases_and_declines_wrapping_components() {
         let f = factory();
         let word = f.get_base(4, type_metatype::TYPE_UINT).unwrap();
+        let real = f.get_base(4, type_metatype::TYPE_FLOAT).unwrap();
         let mapped = coalesce(
             &f,
             0x1000,
             vec![
                 ("a".into(), Rc::clone(&word), -32),
-                ("b".into(), Rc::clone(&word), 0xffffffe0),
+                ("b".into(), real, 0xffffffe0),
                 ("wrap".into(), Rc::clone(&word), -2),
                 ("zero".into(), Rc::clone(&word), 0),
                 ("chain".into(), word, 2),

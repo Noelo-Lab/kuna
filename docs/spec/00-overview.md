@@ -18,9 +18,13 @@ they are hosted, ordered, configured, and restarted.
 
 Overlapping DWARF stack locals are views of shared bytes. Before seeding local
 symbols, `kuna_dwarfstack` groups connected overlapping intervals into one union
-with an exact byte extent. Interior views use padded structures at the recorded
-offsets; generated layout attributes preserve nonnatural alignment. Adjacent
-objects remain separate. Synthetic types are reused only when their complete
+with an exact byte extent. Locals of one type at one offset (a compiler reusing
+a frame slot for identically typed variables) are a single view, so such a group
+stays one ordinary local under the first debug name. Each remaining view is a
+union member named after its debug local, with a numeric suffix when names
+repeat or collide with the raw `storage_bytes` member. Interior views use padded
+structures at the recorded offsets; generated layout attributes preserve
+nonnatural alignment. Adjacent objects remain separate. Synthetic types are reused only when their complete
 layouts match, and explicit console mappings take precedence over intersecting
 debug recommendations. Debug locals have no lifetime ranges here, so overlapping
 names never justify independent C objects. If a conflicting extent cannot be
