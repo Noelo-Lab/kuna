@@ -2013,6 +2013,10 @@ pub struct GlobalInfo {
     /// (`char *dat_5068`): declared although no function takes its address,
     /// since a subscript of it reads the element its declaration names.
     pub elem: bool,
+    /// True when the declared type is an integer. With `unknown`, a named
+    /// object the function only addresses, reads part of, or reads and writes
+    /// in ways any integer of its width serves, declared at its symbol's type.
+    pub integer: bool,
 }
 
 /// The globals the C `print_c` just rendered for `fd` names
@@ -2045,6 +2049,7 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
             direct,
             aggregate: matches!(ty.get_metatype(), TYPE_STRUCT | TYPE_UNION),
             elem,
+            integer: !array && crate::kuna_namedglobals::is_integer(ty),
         }
     };
     let mut out: Vec<GlobalInfo> =
@@ -2055,20 +2060,24 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
             out.push(g);
         }
     }
-    for (address, name, ty) in print.named_global_references().objects() {
+    for (address, name, ty, accessed) in print.named_global_references().objects() {
         use crate::dtype::type_metatype::{TYPE_STRUCT, TYPE_UNION};
-        let g = GlobalInfo {
-            address,
-            name: name.to_string(),
-            declaration: crate::printc::declaration_text(ty, name, rt),
-            size: i64::from(ty.get_size()),
-            unknown: false,
-            // Whole named objects must retain the independent-storage overlap guard.
-            direct: true,
-            aggregate: matches!(ty.get_metatype(), TYPE_STRUCT | TYPE_UNION),
-            elem: false,
-        };
-        if !out.contains(&g) { out.push(g); }
+        let unknown = accessed.is_empty() && crate::kuna_namedglobals::is_integer(ty);
+        for decl_type in if accessed.is_empty() { vec![ty] } else { accessed } {
+            let g = GlobalInfo {
+                address,
+                name: name.to_string(),
+                declaration: crate::printc::declaration_text(decl_type, name, rt),
+                size: i64::from(ty.get_size()),
+                unknown,
+                // Whole named objects must retain the independent-storage overlap guard.
+                direct: true,
+                aggregate: matches!(decl_type.get_metatype(), TYPE_STRUCT | TYPE_UNION),
+                elem: false,
+                integer: crate::kuna_namedglobals::is_integer(decl_type),
+            };
+            if !out.contains(&g) { out.push(g); }
+        }
     }
     out
 }

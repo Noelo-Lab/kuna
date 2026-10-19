@@ -1264,7 +1264,9 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 ///   a body reads `dat_4020[i]` at the declared element, so either one would
 ///   change what the other computes (the batch's agreement pass keeps this
 ///   from happening; a `--jobs` worker cannot see the other functions);
-/// * otherwise the one type the direct accesses agree on;
+/// * otherwise the one type the direct accesses agree on, where a named
+///   object a function uses only in ways any integer of its width serves
+///   takes the integer type the other functions' accesses agree on;
 /// * otherwise, with direct accesses at two types, nothing, and a comment says so;
 /// * a name only read and written directly whose bytes another global's
 ///   overlap gets nothing, and a comment: two declarations would make one
@@ -1288,6 +1290,9 @@ fn global_declarations(results: &[FuncResult]) -> String {
     let mut out = String::new();
     let mut reach: Option<(u64, &str)> = None;
     for (&address, (taken, direct)) in &by_addr {
+        let integers = direct.iter().any(|g| !g.unknown) && direct.iter().all(|g| g.unknown || g.integer);
+        let direct: Vec<&GlobalInfo> =
+            direct.iter().copied().filter(|g| !(integers && g.unknown && g.integer)).collect();
         let name = taken.iter().chain(direct.iter()).next().map_or("", |g| g.name.as_str());
         let end = taken.iter().chain(direct.iter()).map(|g| address.saturating_add(g.size.max(1) as u64)).max();
         let end = end.unwrap_or(address).max(address.saturating_add(1));
@@ -1685,6 +1690,7 @@ mod tests {
             direct: true,
             aggregate: false,
             elem: false,
+            integer: true,
         };
         result.globals = vec![object("counter", 0x5000), object("counter", 0x5000)];
         assert_eq!(super::global_declarations(std::slice::from_ref(&result)), "extern unsigned int counter;\n");
@@ -1707,6 +1713,34 @@ mod tests {
     }
 
     #[test]
+    fn named_globals_take_the_integer_type_other_functions_read_them_at() {
+        let named = |declaration: &str, unknown: bool, integer: bool| super::GlobalInfo {
+            address: 0x5000,
+            name: "count".into(),
+            declaration: declaration.into(),
+            size: 8,
+            unknown,
+            direct: true,
+            aggregate: false,
+            elem: false,
+            integer,
+        };
+        let mut agnostic = streamed("void bump(void)", "int");
+        agnostic.globals = vec![named("unsigned long count", true, true)];
+        let mut signed = streamed("int test(void)", "int");
+        signed.globals = vec![named("long count", false, true)];
+        let declarations = super::global_declarations(&[agnostic.clone(), signed]);
+        assert_eq!(declarations, "extern long count;\n");
+        let mut pointer = streamed("char *name(void)", "int");
+        pointer.globals = vec![named("char *count", false, false)];
+        let declarations = super::global_declarations(&[agnostic.clone(), pointer]);
+        assert!(declarations.contains("read at two types"), "{declarations}");
+        assert!(!declarations.contains("extern "), "{declarations}");
+        let declarations = super::global_declarations(std::slice::from_ref(&agnostic));
+        assert_eq!(declarations, "extern unsigned long count;\n");
+    }
+
+    #[test]
     fn scalar_global_declarations_keep_conflicting_direct_types_diagnostic() {
         let mut result = streamed("void sample(void)", "int");
         let direct = |ty: &str| super::GlobalInfo {
@@ -1718,6 +1752,7 @@ mod tests {
             direct: true,
             aggregate: false,
             elem: false,
+            integer: ty != "float",
         };
         result.globals = vec![direct("unsigned int")];
         assert_eq!(super::global_declarations(std::slice::from_ref(&result)), "extern unsigned int dat_5000;\n");
@@ -1740,6 +1775,7 @@ mod tests {
             direct,
             aggregate: false,
             elem: false,
+            integer: true,
         };
         let mut result = streamed("void sample(void)", "int");
         result.globals = vec![global(0x5000, "unsigned int", 4, true), global(0x5004, "unsigned int", 4, true)];

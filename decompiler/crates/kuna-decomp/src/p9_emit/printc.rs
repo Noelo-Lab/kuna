@@ -9508,7 +9508,8 @@ impl PrintC {
                     return;
                 }
                 if self.out_lang == crate::kuna_lang::OutLang::C {
-                    self.named_globals.record(fd, arch, v.get_addr(), &name);
+                    let write = fd.obank().get(op).and_then(|o| o.get_out()) == Some(vn);
+                    self.named_globals.record_named(fd, arch, vn, write, &name);
                 }
                 // Symbol-mapped struct/union member access (C++ `PrintC::
                 // pushSymbolDetail` -> `pushPartialSymbol`, printlanguage.cc:256-258
@@ -10257,7 +10258,12 @@ impl PrintC {
 
             if self.out_lang == crate::kuna_lang::OutLang::C {
                 if let Some(address) = spacebase_unnamed_address(arch, fd, op, &ct, in1const, ptr_size) {
-                    self.named_globals.record(fd, arch, &address, &name);
+                    match ptrsub_value_access(fd, op, valueon && !arrayvalue) {
+                        Some((value, write)) => {
+                            self.named_globals.record_access(fd, arch, &address, value, write, &name)
+                        }
+                        None => self.named_globals.record(fd, arch, &address, &name),
+                    }
                 }
             }
 
@@ -11723,6 +11729,20 @@ fn kuna_global_data_name(style: crate::database::KunaNameStyle, off: u64) -> Str
         return format!("DAT_{off:08x}");
     }
     format!("dat_{off:x}")
+}
+
+/// The varnode a dereferenced `PTRSUB` reads (the `LOAD` output) or writes
+/// (the `STORE` input), and whether it is written.
+fn ptrsub_value_access(fd: &Funcdata, op: OpId, value: bool) -> Option<(VarnodeId, bool)> {
+    let out = fd.obank().get(op)?.get_out().filter(|_| value)?;
+    fd.vbank().get(out)?.descend_iter().find_map(|user| {
+        let u = fd.obank().get(user)?;
+        match u.code() {
+            OpCode::CPUI_LOAD if u.get_in(1) == Some(out) => Some((u.get_out()?, false)),
+            OpCode::CPUI_STORE if u.get_in(1) == Some(out) => Some((u.get_in(2)?, true)),
+            _ => None,
+        }
+    })
 }
 
 /// C++ `TypeSpacebase::getAddress` (type.cc:3542): the storage a

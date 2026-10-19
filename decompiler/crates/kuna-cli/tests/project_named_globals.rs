@@ -308,3 +308,110 @@ int main(int argc,char **argv) {{
     }
     std::fs::remove_dir_all(project).unwrap();
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn named_scalars_are_declared_at_the_type_the_bodies_read_them() {
+    if process::optional_output(Command::new("gcc").arg("--version")).is_none() {
+        return;
+    }
+    let source = common::scratch_file("named-scalar-types", "c");
+    let binary = source.with_extension("so");
+    let project = source.with_extension("project");
+    std::fs::write(
+        &source,
+        r#"
+int count;
+long total = -5;
+double scale = 1.5;
+int step(int x) { count += x; if (count < 0) return -1; return count / 3; }
+long shift(long x) { total = total * x - 7; return total >> 2; }
+double grow(double k) { scale = scale * k - k; return scale; }
+"#,
+    )
+    .unwrap();
+    let built = Command::new("gcc")
+        .args(["-O0", "-shared", "-fPIC", "-fno-strict-aliasing"])
+        .arg(&source)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .unwrap();
+    assert!(built.status.success(), "{}", String::from_utf8_lossy(&built.stderr));
+    let (out, err, status) = common::run_kuna(&[
+        "decompile-project",
+        binary.to_str().unwrap(),
+        "--functions",
+        "step,shift,grow",
+        "-o",
+        project.to_str().unwrap(),
+    ]);
+    assert_eq!(status, 0, "{out}\n{err}");
+    let name = binary.file_name().unwrap().to_str().unwrap();
+    let header = std::fs::read_to_string(project.join(format!("{name}.h"))).unwrap();
+    let definitions: Vec<_> = header
+        .lines()
+        .filter_map(|line| line.strip_prefix("extern "))
+        .filter(|decl| ["count;", "total;", "scale;"].iter().any(|n| decl.ends_with(&format!(" {n}"))))
+        .collect();
+    for expected in ["int count;", "long total;", "double scale;"] {
+        assert!(definitions.contains(&expected), "{expected}\n{header}");
+    }
+    let driver = source.with_extension("driver.c");
+    let executable = source.with_extension("exe");
+    std::fs::write(
+        &driver,
+        format!(
+            r#"
+#include "{name}.h"
+#include <dlfcn.h>
+#include <string.h>
+{}
+int main(int argc, char **argv) {{
+    void *image = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
+    if (!image) return 90;
+    memcpy(&count, dlsym(image, "count"), sizeof count);
+    memcpy(&total, dlsym(image, "total"), sizeof total);
+    memcpy(&scale, dlsym(image, "scale"), sizeof scale);
+    int (*original_step)(int) = (int (*)(int))dlsym(image, "step");
+    long (*original_shift)(long) = (long (*)(long))dlsym(image, "shift");
+    double (*original_grow)(double) = (double (*)(double))dlsym(image, "grow");
+    for (int i = 0; i < 200; ++i) {{
+        int amount = (i * 37) % 21 - 10;
+        if (step(amount) != original_step(amount)) return 1;
+        if (shift(amount % 3) != original_shift(amount % 3)) return 2;
+        if (grow(0.5 + (i % 3)) != original_grow(0.5 + (i % 3))) return 3;
+    }}
+    return 0;
+}}
+"#,
+            definitions.join("\n")
+        ),
+    )
+    .unwrap();
+    for cc in ["gcc", "clang"] {
+        if process::optional_output(Command::new(cc).arg("--version")).is_none() {
+            continue;
+        }
+        for opt in ["-O0", "-O2"] {
+            let built = Command::new(cc)
+                .args(["-std=c11", "-Wall", "-Werror", "-fno-strict-aliasing", opt])
+                .arg("-I")
+                .arg(&project)
+                .arg(project.join(format!("{name}.c")))
+                .arg(&driver)
+                .arg("-ldl")
+                .arg("-o")
+                .arg(&executable)
+                .output()
+                .unwrap();
+            assert!(built.status.success(), "{cc} {opt}: {}\n{header}", String::from_utf8_lossy(&built.stderr));
+            let ran = Command::new(&executable).arg(&binary).status().unwrap();
+            assert!(ran.success(), "{cc} {opt}: {ran}\n{header}");
+        }
+    }
+    for path in [source, binary, driver, executable] {
+        std::fs::remove_file(path).unwrap();
+    }
+    std::fs::remove_dir_all(project).unwrap();
+}
