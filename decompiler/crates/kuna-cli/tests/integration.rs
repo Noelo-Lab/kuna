@@ -515,3 +515,6 @@ mod readonly_leaf_stack;
 
 #[path = "global_array_bit_transfers.rs"]
 mod global_array_bit_transfers;
+
+#[path = "project_assertion_status.rs"]
+mod project_assertion_status;
