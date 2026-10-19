@@ -21,6 +21,12 @@ compiler on the corrected sources, which reproduces the previous hashes on the
 unmodified sources; the `fqtox` correction was regenerated with `slacomp`,
 which reproduces those C++ digests.
 
+The x86 entries include the width-specific x87 integer-conversion operations
+and the control-word writes of `FXRSTOR` and `XRSTOR`/`XRSTORS`.
+They were regenerated with the recorded C++ compiler after checking that it
+reproduces both unmodified x86 hashes; kuna’s compiler produces the same changed
+element streams.
+
 `xml_ops.xml` is the same pinned C++ compiler's `-y` output for
 `snips/xml_ops.slaspec`. The CLI test compares XML output byte-for-byte in both
 single-file and recursive modes, including the `BUILD` and `INT_ADD` opcode

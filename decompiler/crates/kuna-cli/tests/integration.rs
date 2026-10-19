@@ -521,6 +521,9 @@ mod global_array_bit_transfers;
 #[path = "project_assertion_status.rs"]
 mod project_assertion_status;
 
+#[path = "x87_integer_conversions_native.rs"]
+mod x87_integer_conversions_native;
+
 #[path = "float_pointer_storage.rs"]
 mod float_pointer_storage;
 

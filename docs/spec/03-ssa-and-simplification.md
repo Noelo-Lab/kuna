@@ -2372,6 +2372,32 @@ also resolves the spacebase-placeholder tail that a bare COPY would drop; a
 free pointer is declined. Settable `constspaceload`,
 shipped default **on** (DIV-158).
 
+**x87truncate** —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_x87truncate.rs
+(RuleX87Truncate)`, oppool1, fires on CALLOTHER. *Pattern:* one of the x87
+`x87_float_to_int16/32/64` user operations that `FIST`/`FISTP` lift to (§2,
+x87 integer conversions), whose control-word operand provably has both
+rounding-control bits (10 and 11) set. Compilers emit exactly this shape for a C
+float-to-integer conversion on x87: save the control word, OR in `0xc00`, load
+it, convert, restore. The proof is a bounded walk over the operand's definitions
+that keeps the bits known to be 1 through constants, `COPY`, `INT_ZEXT`,
+`INT_OR`, `INT_AND`, `PIECE`, `SUBPIECE` and `MULTIEQUAL` (every input must
+agree); any other definition, an input, or an exhausted visit budget proves
+nothing. The walk trusts the lift to define the control word at every
+instruction that replaces it (§2, x87 integer conversions); a call between the
+load and the conversion leaves an `INDIRECT`, which proves nothing. *Rewrite:*
+the operation becomes `FLOAT_TRUNC` of its extended-precision
+operand at the same output width, the same conversion `FISTTP` lifts to, so the
+control-word computation dies and the function prints `(int)x`. A conversion
+whose output dead-code removal has already cleared is deleted instead, since
+its only remaining effect would be the unmodeled status flags. Precision
+control, exception masks and infinity control do not change the result of an
+in-range conversion. *Bounds:* a control word with unknown, nearest, downward or
+upward rounding keeps the opaque operation; out-of-range and NaN operands, which
+x87 converts to the integer indefinite value when invalid is masked, take
+`FLOAT_TRUNC`'s unspecified result, as for `FISTTP`. Not settable: the rewrite
+is the conversion the instruction performs under that control word.
+
 **flagcompare** (GH-1276 / GH-8777) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_flagcompare.rs`, two rules
 under one gate, for architectures that model condition flags as explicit bits.
