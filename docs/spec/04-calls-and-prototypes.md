@@ -7388,6 +7388,15 @@ Return recovery withdraws an unlocked ST0 trial only when every remaining
 ordinary return has that proof. Explicit and caller-forced results take priority.
 Restarting analysis clears and rebuilds the evidence.
 
+Before SSA, an uninjected x87 FFREE user-operation identifies its full ST0–ST7
+operand as a register annotation. It changes the register's tag without consuming
+the floating payload, so that operand must not create a numeric input, an
+uninitialized ten-byte local, or a payload phi. The operation and register identity
+remain explicit. Empty-return evidence is captured before this rewrite. Injected
+operations and operands outside the complete ten-byte stack-register bank retain
+their original inputs. Implementation:
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_x87free.rs`.
+
 ### Qualified register declarations bind to an entry (`kuna_qualifiedstorage.rs`, `kuna_qualifiedcall.rs`)
 
 The console's qualified `map param <func>::<i>` and `map return <func>::<storage>`
