@@ -2959,7 +2959,10 @@ remain comments/prototype tombstones and count in the final README. A mixed expo
 at least one body exits `0`; a non-empty selection that produces zero bodies exits `1`
 with the completed-file summary on stdout and a run-level diagnostic on stderr. The
 verdict is taken only after the `.c`, `.h`, `.asm`, README and, under `--stream`,
-`index.jsonl` have been finalized.
+`index.jsonl` have been finalized. `--assert` directives follow the same rules as on
+`decompile-all`: every rejection is printed on stderr, `--assert-strict` makes one exit
+`1`, and a directive the pipeline refused exits `1` on its own, again only after the
+artifacts are written.
 
 Writes a project folder — default `<binary-filename>.kuna/` next to the binary,
 `-o/--output DIR` overrides — of four artifacts designed so a human or LLM can study the

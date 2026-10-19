@@ -40,7 +40,9 @@
 //! produced. A non-empty selection that produced zero bodies exits nonzero only
 //! after every artifact is complete (and a streamed export has removed its
 //! `.streaming` marker), with the summary on stdout and a run-level diagnostic
-//! on stderr. Load errors, an empty target set, and I/O errors also exit nonzero.
+//! on stderr. A rejected `--assert` under `--assert-strict`, or one the pipeline
+//! refused, exits nonzero the same way. Load errors, an empty target set, and I/O
+//! errors also exit nonzero.
 //!
 //! The decompile loop and the four artifact builders live in the shared
 //! decompile-project core (`kuna_console::project` — also reused by the
@@ -182,8 +184,9 @@ fn usage() {
          completes. The .c is then in decompile order. Not available with --assert.\n\
          Individual function failures are recorded in the artifacts. A mixed run\n\
          exits 0; a selected set that produced no body exits 1 only after all\n\
-         artifacts are complete. Load errors / an empty target set / I/O errors\n\
-         also exit nonzero."
+         artifacts are complete. A rejected --assert exits 1 the same way under\n\
+         --assert-strict, and a directive the pipeline refused always does.\n\
+         Load errors / an empty target set / I/O errors also exit nonzero."
     );
 }
 
