@@ -969,6 +969,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             (r, ctx.reflow_requested)
         };
         let (r, reflow_requested) = res;
+        if let Some(error) = fd.kuna_call_mechanisms.failure.as_ref() {
+            return Err(KunaError::lowlevel(error.clone()));
+        }
         // (kuna decompile-all watchdog) A budgeted drive that ran past its
         // deadline unwound cooperatively (the action/heritage loops stop
         // scheduling work); surface it as the per-function error the batch
@@ -1512,6 +1515,9 @@ pub fn run_named_pipeline_variant(
             .ok_or_else(|| KunaError::lowlevel(format!("no current {variant} action")))?;
         root.reset(&mut fd);
         let r = root.perform(&mut fd, &mut ctx);
+        if let Some(error) = fd.kuna_call_mechanisms.failure.as_ref() {
+            return Err(KunaError::lowlevel(error.clone()));
+        }
         if r < 0 {
             return Err(KunaError::lowlevel(format!(
                 "{variant} pipeline hit a breakpoint"

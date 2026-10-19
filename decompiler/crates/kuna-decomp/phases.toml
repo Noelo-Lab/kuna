@@ -3407,6 +3407,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "callmechanisms"
+values = "on|off"
+default = "off"
+destructive = true
+phase = "P4"
+subphase = "abi-trust"
+strength = "HARD"
+rewind = "P3"
+issue = "kuna-call-mechanisms"
+summary = "Apply the p-code a compiler spec attaches to a prototype model's call boundaries: `<prototype><pcode inject=\"uponentry\">` before the first operation of a function evaluated with that model, and `<pcode inject=\"uponreturn\">` right after every modeled call whose callee uses it, both installed before SSA so the effects reach dataflow (upstream `ActionConstbase` / `FuncCallSpecs::insertPcode`). A model that declares the x87 register-stack rotation a callee performs, or a store a callee always makes, then reads the values below the call from their real positions. Only payloads with a locally compiled body are applied: a `dynamic` payload with no body (the JVM and Dalvik `uponentry` models), and every payload in ghidra mode, stay unresolved. A late prototype restriction that changes a call's return effect requests a full reflow."
+use_when = "Off by default: the stock `ppc_64_le.cspec` default model stores `r2Save` to `0x28(r1)` after every call, which is the TOC save slot only under ELFv1; under the ELFv2 ABI every little-endian PPC64 binary uses, `0x28(r1)` is ordinary frame storage, so a local the function keeps there is replaced by the TOC pointer after each call. Turn ON per program for a custom compiler spec whose models declare boundary effects, or for ELFv1 big-endian PPC64 code whose calls restore `r2` from `0x28(r1)`. Inert on any spec that declares no prototype p-code (every stock x86, ARM, AArch64, MIPS and RISC-V spec)."
+example = "option callmechanisms on"
+source_decompiler = "ghidra-upstream"
+inspiration = "upstream ActionConstbase getInjectUponEntry + ActionDefaultParams FuncCallSpecs::insertPcode (coreaction.cc, fspec.cc) via Funcdata::doLiveInject"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "values below an x87 call are read from the wrong register-stack positions after consecutive calls|a store the compiler spec says a callee always makes is missing after the call|a custom compiler spec's uponentry or uponreturn p-code has no effect on the output"
+live_field = "call_mechanism_effects"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "callsitestackargs"
 values = "on|off"
 default = "on"
