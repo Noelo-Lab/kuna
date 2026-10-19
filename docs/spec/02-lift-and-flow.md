@@ -2533,3 +2533,15 @@ produce no value at all. The fix is in the RISC-V SLEIGH sources, so
 Exercised by `tests/stages/gh831-riscv-fpmove.xml` (RV64: a call result moved
 by `fmv.x.d` and `fmv.x.w`, and all four conversions) and
 `tests/stages/gh831-riscv32-fpmove.xml` (the RV32 forms).
+
+The x86 `BOUND` lift loads adjacent signed lower and upper limits at the
+operand width and passes the index and both limits to the side-effecting,
+outputless `x86_bound_check16` or `x86_bound_check32` user-op. Its contract is to
+continue normally exactly when `lower <= index <= upper`, with all comparisons
+signed at the named width, and otherwise raise the vector-5 bounds-range
+exception (#BR) associated with the faulting instruction. Normal completion
+preserves registers and flags. The user-op introduces no ordinary-call
+arguments, clobbers, or stack adjustment, and avoids adding control-flow
+diamonds around every check. The abstraction does not specify OS handler
+dispatch or resumable exception state. Both operand widths preserve the checks
+instead of lifting to an empty operation list.

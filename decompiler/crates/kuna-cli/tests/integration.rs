@@ -497,3 +497,5 @@ mod x87_empty_return;
 
 #[path = "windows_stack_argument_alignment.rs"]
 mod windows_stack_argument_alignment;
+#[path = "x86_bound_checks.rs"]
+mod x86_bound_checks;

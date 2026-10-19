@@ -776,6 +776,8 @@ define pcodeop mwait;
 define pcodeop mwaitx;
 define pcodeop monitor;
 define pcodeop monitorx;
+define pcodeop x86_bound_check16;
+define pcodeop x86_bound_check32;
 define pcodeop swi;        # for INT instruction
 
 define pcodeop LOCK;       # for LOCK prefix
@@ -2630,8 +2632,18 @@ with : lockprefx=0 {
 :ARPL rm16,Reg16    is $(LONGMODE_OFF) & vexMode=0 & bit64=0 & byte=0x63; rm16 & Reg16 ...                { local rpldest=rm16&3; local rplsrc=Reg16&3; local rpldiff=rplsrc-rpldest;
                                           ZF = rpldiff s> 0; rm16 = rm16 + (zext(ZF) * rpldiff); }
 
-:BOUND Reg16,m16    is $(LONGMODE_OFF) & vexMode=0 & bit64=0 & opsize=0 & byte=0x62; m16 & Reg16 ...      { }
-:BOUND Reg32,m32    is $(LONGMODE_OFF) & vexMode=0 & bit64=0 & opsize=1 & byte=0x62; m32 & Reg32 ...      { }
+:BOUND Reg16,Mem    is $(LONGMODE_OFF) & vexMode=0 & bit64=0 & opsize=0 & byte=0x62; Mem & Reg16 ...      {
+  local bounds:$(SIZE) = Mem;
+  local lower:2 = *:2 bounds;
+  local upper:2 = *:2 (bounds + 2);
+  x86_bound_check16(Reg16, lower, upper);
+}
+:BOUND Reg32,Mem    is $(LONGMODE_OFF) & vexMode=0 & bit64=0 & opsize=1 & byte=0x62; Mem & Reg32 ...      {
+  local bounds:$(SIZE) = Mem;
+  local lower:4 = *:4 bounds;
+  local upper:4 = *:4 (bounds + 4);
+  x86_bound_check32(Reg32, lower, upper);
+}
 
 #:BSF Reg16,rm16     is vexMode=0 & opsize=0 & byte=0xf; byte=0xbc; rm16 & Reg16 ... { ZF = rm16 == 0;
 #                                                  choose = 0xffff * (zext((0xff & rm16) == 0));
