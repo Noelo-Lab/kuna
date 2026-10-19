@@ -493,6 +493,34 @@ fn simple_fbreg_location(loc: &gimli::AttributeValue<Reader<'_>>) -> Option<i64>
     kuna_dwarflocation::frame_offset(bytes)
 }
 
+/// Decode a little-endian SLEB128 (DWARF signed LEB128) from `buf`, returning the
+/// value and the number of bytes consumed. `None` if `buf` is truncated. A tiny
+/// self-contained reader (gimli exposes SLEB128 only on its streaming cursor, not
+/// on a raw `&[u8]`), faithful to the DWARF spec's sign-extension rule.
+fn read_sleb128(buf: &[u8]) -> Option<(i64, usize)> {
+    let mut result: i64 = 0;
+    let mut shift: u32 = 0;
+    let mut i = 0;
+    loop {
+        let byte = *buf.get(i)?;
+        i += 1;
+        result |= ((byte & 0x7f) as i64) << shift;
+        shift += 7;
+        if byte & 0x80 == 0 {
+            // Sign-extend if the sign bit of the final group is set and we have
+            // not filled all 64 bits.
+            if shift < 64 && (byte & 0x40) != 0 {
+                result |= -1i64 << shift;
+            }
+            return Some((result, i));
+        }
+        if shift >= 64 {
+            // Malformed (overlong); refuse rather than overflow.
+            return None;
+        }
+    }
+}
+
 /// Build the kuna [`Datatype`] for the type DIE at `off`, recursing through the
 /// DWARF type chain (faithful reduction of `DWARFDataTypeImporter.getDataType`'s
 /// tag switch). `None` for a missing/unbuildable type; the caller skips that one
@@ -1512,6 +1540,24 @@ mod tests {
             }
         }
         assert!(found_charptr, "elaborate_debug_symbol's first param should be char *");
+    }
+
+    #[test]
+    fn sleb128_decodes_signed_values() {
+        // DWARF SLEB128 (the DW_OP_fbreg operand encoding). cet_pie's locals use
+        // 0x58 = -40, 0x60 = -32, 0x68 = -24 (single-byte negatives).
+        assert_eq!(read_sleb128(&[0x58]), Some((-40, 1)));
+        assert_eq!(read_sleb128(&[0x60]), Some((-32, 1)));
+        assert_eq!(read_sleb128(&[0x68]), Some((-24, 1)));
+        // Positive and zero.
+        assert_eq!(read_sleb128(&[0x00]), Some((0, 1)));
+        assert_eq!(read_sleb128(&[0x02]), Some((2, 1)));
+        // Multi-byte: -129 = 0xFF 0x7E, 127 = 0xFF 0x00.
+        assert_eq!(read_sleb128(&[0xFF, 0x7E]), Some((-129, 2)));
+        assert_eq!(read_sleb128(&[0xFF, 0x00]), Some((127, 2)));
+        // Truncated -> None (never panics).
+        assert_eq!(read_sleb128(&[0x80]), None);
+        assert_eq!(read_sleb128(&[]), None);
     }
 
     /// Snapshot-parse cet_pie and confirm `elaborate_debug_symbol`'s three
