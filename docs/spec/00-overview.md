@@ -2804,9 +2804,11 @@ address offset here would swap the masks of a register pair and allow live
 pointer, loop-bound or floating point values to be replaced with zero. This
 applies to integer and FPU lanes.
 
-Lookup-only hash maps keyed by the engine's own ids hash with
+Lookup-only hash maps keyed by engine ids and image addresses (values the
+decompiler makes or reads from the binary, so they need speed rather than
+collision resistance) hash with
 `decompiler/crates/kuna-decomp/src/infra/kuna_fasthash.rs (FxHasher)`,
-rustc's multiply-rotate hash, instead of the standard library's SipHash. They
+rustc's xor-multiply hash, instead of the standard library's SipHash. They
 are the per-function storage-source, call-transport and storage-write maps of
 `Funcdata` (three lookups for every deleted varnode), the region graph's
 depth-first visit sets, and the visited sets and memos of the callee vote,
@@ -2814,7 +2816,7 @@ element-pointer, float-register, caller-pointer, partial-global-load,
 index-alias and storage-home walks. None of them is iterated in an order that
 reaches the output (with SipHash that order already differed between runs), so
 the fixed hash changes no result. SipHash cost about 5% of a decompile's
-instructions on these maps; the multiply-rotate hash costs a small fraction of
+instructions on these maps; the xor-multiply hash costs a small fraction of
 that.
 
 Partition lookup in `decompiler/crates/kuna-base/src/partmap.rs

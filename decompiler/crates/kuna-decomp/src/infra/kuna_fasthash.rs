@@ -3,9 +3,10 @@
 //! The standard `RandomState` hashes every key with SipHash-1-3, which costs a
 //! few dozen instructions per lookup: on the per-varnode and per-op maps of a
 //! function (deleting a varnode alone does three lookups) that is several
-//! percent of a decompile.  [`FxHasher`] is the multiply-rotate hash rustc uses
-//! for its own tables.  It is not resistant to collision attacks, which these
-//! maps of the engine's own ids do not need.
+//! percent of a decompile.  [`FxHasher`] is the xor-multiply hash rustc uses
+//! for its own tables.  It is not resistant to collision attacks.  These maps
+//! are keyed by engine ids and image addresses, values the decompiler makes or
+//! reads from the binary, so they need speed, not collision resistance.
 //!
 //! Only lookup-only maps may use it: their iteration order is fixed instead of
 //! random per process, and nothing the decompiler prints may depend on either.
@@ -14,7 +15,8 @@ use std::hash::{BuildHasherDefault, Hasher};
 
 const SEED: u64 = 0xf135_7aea_2e62_a9c5;
 
-/// rustc's `FxHasher`: each word is folded in by a rotate, xor and multiply.
+/// rustc's `FxHasher`: each word is folded in by an xor and a multiply, and
+/// the result is rotated once when it is read.
 #[derive(Default, Clone, Copy)]
 pub struct FxHasher {
     hash: u64,
