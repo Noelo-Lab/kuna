@@ -386,6 +386,17 @@ the hidden-return pointer bumped it. Failure mode: an unassignable *input*
 raises a hard error; an unassignable *output* is only survivable where the
 caller opted into `ignore_output_error`, which degrades the return to `void`.
 
+Explicit input storage participates in assignment before default slots are chosen
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_inputstorage.rs (assign)`).
+An overridden argument consumes its stated physical storage, including register
+aliases and the components of joined storage, instead of consuming its former
+model-assigned slot. Remaining arguments and synthetic return pointers use the
+normal model rules while avoiding all explicitly reserved ranges. Logical
+argument indices remain unchanged for positional and variadic rules. Explicit
+arguments retain their declared order, types and flags; conflicting explicit
+placements remain the caller's asserted contract. An impossible automatic
+placement raises a parameter-assignment error.
+
 The rules themselves live in
 `decompiler/crates/kuna-decomp/src/p4_calls/modelrules.rs (ModelRule,
 AssignAction, DatatypeFilter, QualifierFilter)`. A `ModelRule` is a data-type
@@ -442,6 +453,13 @@ stack whose first 64 bytes are x0–x7, so a `<varargs/>` join ahead of the
 no-spill rule still splits a composite between x7 and the stack there.
 These rules model the C ABI only: a Rust-ABI two-scalar pair, which rustc may
 split between x7 and the stack, is not modelled, as on x86-64.
+
+Scalar floating parameters assigned to an exclusive floating resource in the
+register space occupy their payload size. Object alignment padding does not
+consume register storage: an x87 value has ten meaningful bytes even when its
+stack object occupies twelve or sixteen bytes. Stack resources, general
+register resources and aggregate types retain their aligned object size.
+The declared datatype and its alignment remain unchanged.
 
 ### Recovery: trials → parameters
 
@@ -1080,7 +1098,14 @@ prototype the operator declared for this run (`parse line extern …` /
 `map prototype <func> …`, 00 §0.2), then the
 prototype parked on the function's own global `FunctionSymbol` — which is where
 the DWARF pass's recovered `DW_TAG_subprogram` signature lands (01 §1.4) and
-where the library-prototype table lands for a named libc function.
+where the library-prototype table lands for a named libc function. The
+function's own `map param <i>` locks are folded into that prototype's explicit
+input storage before it is locked
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_inputstorage.rs
+(merge_mapped)`), so its remaining arguments are laid out around them exactly as
+for a callee declared with `map param <func>::<i>`. The locks are then set on
+the locked prototype by slot index once more, which is what still carries a
+host's committed parameter storage verbatim in Ghidra mode.
 
 The parked prototype used to be read only by a *caller*: `ActionDefaultParams`
 copies a callee's pieces into the call site, so a DWARF-described callee typed
@@ -1125,11 +1150,13 @@ that machinery.
   just the output on top. (kuna) The parked pieces describe *types*, and
   storage is otherwise re-derived from the model, so the two spellings that
   state storage explicitly carry it alongside: `output_storage` for the return
-  and `input_storage` for individual parameter slots. Both are re-applied by
-  `FuncProto::set_pieces` after the model-driven assignment, which is what lets
-  a caller declare a non-default convention for a callee — the console `map
-  param <func>::<i> <storage> <decl>` and `map return <func>::<storage>
-  <decl>`, reached from the CLI as `--assert 'param <func>::<i> …'`. A slot no
+  and `input_storage` for individual parameter slots. `FuncProto::set_pieces`
+  re-applies the output storage after the model-driven assignment, while the
+  input storage takes part in that assignment (explicit input storage, §4.1),
+  which is what lets a caller declare a non-default convention for a callee —
+  the console `map param <func>::<i> <storage> <decl>` and `map return
+  <func>::<storage> <decl>`, reached from the CLI as
+  `--assert 'param <func>::<i> …'`. A slot no
   directive named is `undefined` of pointer width, so slots may be declared in
   any order. (kuna) Explicit return storage also keeps the return out of that
   model-driven input assignment (`kuna_customreturn.rs`): the inputs are laid
@@ -2807,6 +2834,80 @@ and a `uint16_t` to `unsigned short`, and an x86-64 `int` parameter read as a
 `int` but whose body reads only its low byte (`(unsigned char)c` stored into a
 buffer) narrows as well; the C is still exact, but the declared type is not the
 source's.
+
+### (kuna) `narrowargs callers` — a 32-bit ARM parameter its callers extend
+
+The AAPCS has the caller extend a `uint8_t`, `int16_t` or `_Bool` argument to
+the whole register (`uxtb r1, r4; bl f`), and the callee relies on it: its body
+reads the register at full width, every bit is consumed, and the body rule
+above never fires. On ARM firmware these are the parameters decbench's
+type_match finds typed `unsigned int` or `int` most often. The evidence is at
+the call sites, so `narrowargs callers` (the option's default) gathers it in a
+whole-binary `decompile-all` of a 32-bit ARM image
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callerargs.rs`).
+
+After every decompile of the callee-first pass, `record` notes what each direct
+CALL passes in each argument register: whether the value fits a byte or a
+halfword unsigned (its nonzero-bit mask, or an argument the trimming cut from a
+zero-extended register), whether it is the sign extension of one (a sign
+extension, a zero extension of a byte, a constant that is one, or a copy or
+merge of such values), whether it is 0 or 1, and whether the caller extended it
+itself: a mask by exactly `0xff` or `0xffff` (the lifted `uxtb`/`uxth`) or an
+extension of a value it computed, not of a load, a call's result or its own
+input. A compiler emits that last kind for a narrow parameter and not for an
+`int`, so it is what a statement needs; a constant or a byte load alone is as
+often passed to an `int`.
+
+A function is a candidate only when its callers can all be listed, which is
+checked from two sides, each erring toward leaving the function open. The image
+is scanned once (`arm_closure.rs (scan)` in the CLI): no 32-bit value at any byte
+offset of a loaded section is the entry or the entry with the Thumb bit (a vector
+table, a literal pool, a pointer in a packed record) or the entry less the
+word's own address (a self-relative table), no dynamic relocation targets it,
+no `movw`/`movt` pair could
+build it (the halves are not matched), no PC-relative build lands on it (an
+`adr`, or a literal `ldr rX, [pc, #]` followed within 64 bytes by `add rX, pc`:
+the Thumb-2 and A32 PIC idiom of Linux and Android shared code), it is not
+exported or the entry point, and every instruction that decodes as a direct
+branch or call to it (decoded at every offset an instruction could start at) is
+a call or tail jump the cross-reference walk attributes to a known function,
+the function itself included (`CallGraph::arm_closed_sites`). And no decompiled
+body holds the entry as a value (`taken_entries`): any constant the analysis
+resolved, whatever idiom built it, equal to the entry or the entry with the Thumb
+bit anywhere but as a direct call's target, nor resolves an indirect call to it,
+nor flows into its code through an indirect branch. When the first pass is over,
+`decide` requires the recorded CALLs to be exactly the listed references,
+including a function's calls to itself; a tail jump decompiled as a branch, a
+caller that failed or a call through a register leaves the list incomplete and
+nothing is stated. An image whose dynamic relocations cannot be read (Android's
+packed `DT_ANDROID_REL`/`DT_ANDROID_RELA` tables, where an address may exist only
+as an encoded delta) closes no function at all.
+
+What remains unseen: a table of offsets relative to the table or to another
+function, read through an index the analysis cannot resolve, holds the address
+in no form a byte scan can recognize. C compilers do not emit such tables on
+32-bit ARM (hand-written assembly can); where kuna resolves the indirect call,
+the function is left open as above. For each of the function's own register-wide
+integer parameters, every call must pass a value of one narrow kind in that
+same register: all 0 or 1 with one of them computed (`bool`), or zero-fitting
+with one caller zero-extending (`unsigned char`/`unsigned short` at the widest
+width any call needs), or sign-fitting with one caller sign-extending (`char`/
+`short`). A caller that zero-extends and another that sign-extends, or one that
+passes a value wider than the width, states nothing.
+
+The function is then decompiled again (`caller_args_round`, plan order) with
+the statement seeded (`seed`), and `narrowargs`' rewrite replaces the stated
+input by its low part extended by `INT_ZEXT` or `INT_SEXT` at the entry
+(`narrow_stated`); type inference gives the narrow input the stated type
+(`input_vote`). Every call passes a value that fits, so every value the body
+computes is unchanged; every caller's C passes an argument the narrow parameter
+holds without loss. The redo pass may reprint 5% of the lines the first pass
+printed (a function of at most 32 lines is always redone), and a redo that
+fails or moves the arity keeps the first body and drops the statement. The
+callers are not decompiled again. Under `on` the body rule alone runs; any other
+architecture, a relocatable object, and the single-function `kuna decompile`
+are unaffected. Tests: `tests/cli/arm-parameter-every-caller-extends-is-narrow.json`
+and its `narrowargs on` twin, on the fixture `callerargs_thumb`.
 
 ### (kuna) `calleeprotostack` — the declared callee's stack contract
 
