@@ -767,6 +767,56 @@ fn cj_cutdown_keeps_multiequal_when_extra_pred_remains() {
     );
 }
 
+#[test]
+fn conditional_join_preserves_phis_after_an_arithmetic_op() {
+    for same in [false, true] {
+        for extra in [0, 1] {
+            for reverse in [false, true] {
+                let mut fd = cj_fd();
+                let (_, block1, block2, exit, _, _, _, phi) =
+                    cj_build_split(&mut fd, same, extra);
+                let original: Vec<_> = (0..fd.obank().get(phi).unwrap().num_input())
+                    .map(|slot| fd.obank().get(phi).unwrap().get_in(slot).unwrap())
+                    .collect();
+                let add = cj_op(&mut fd, 2, 0x1300, OpCode::CPUI_INT_ADD);
+                let base = fd.new_constant(4, 0x100);
+                let offset = fd.new_constant(4, 4);
+                fd.op_set_input(add, base, 0).unwrap();
+                fd.op_set_input(add, offset, 1).unwrap();
+                let output = fd.new_unique_out(4, add).unwrap();
+                fd.op_insert_before(add, phi);
+                let (first, second) = if reverse { (block2, block1) } else { (block1, block2) };
+                let mut join = ConditionalJoin::new();
+                assert!(join.match_blocks(first, second, &fd));
+                join.execute(&mut fd).unwrap();
+
+                let surviving = fd.obank().get(phi).unwrap();
+                assert_eq!(surviving.num_input(), fd.bblocks_ref().block(exit).size_in());
+                if extra != 0 {
+                    assert_eq!(surviving.get_in(1), Some(original[2]));
+                }
+                let merged = surviving.get_in(0).unwrap();
+                if same {
+                    assert_eq!(merged, original[0]);
+                } else {
+                    let def = fd.vbank().get(merged).unwrap().get_def().unwrap();
+                    let new_phi = fd.obank().get(def).unwrap();
+                    assert_eq!(new_phi.code(), OpCode::CPUI_MULTIEQUAL);
+                    let expected = if reverse { [original[1], original[0]] } else { [original[0], original[1]] };
+                    assert_eq!([new_phi.get_in(0).unwrap(), new_phi.get_in(1).unwrap()], expected);
+                }
+                assert_eq!(surviving.code(), if extra == 0 { OpCode::CPUI_COPY } else { OpCode::CPUI_MULTIEQUAL });
+                let kept = fd.obank().get(add).unwrap();
+                assert_eq!(kept.code(), OpCode::CPUI_INT_ADD);
+                assert_eq!(kept.get_out(), Some(output));
+                assert_eq!([kept.get_in(0), kept.get_in(1)], [Some(base), Some(offset)]);
+                assert_eq!(kept.get_parent(), Some(exit));
+                fd.calc_nz_mask();
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // is_complex resolution (the FlowBlock::isComplex virtual dispatch: only
 // BlockBasic/BlockCopy/BlockCondition override; base block.hh:254 is `true`)

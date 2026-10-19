@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3114,
-    3114
+    3119,
+    3119
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2590,6 +2590,11 @@
     "data:nested PPC operand: full rotation and mask",
     "data:no fabricated zero multiplication",
     "data:no shifted field store",
+    "data:nodejoin #1: shared exit emits a complete body",
+    "data:nodejoin #2: the loop survives the shared-exit repair",
+    "data:nodejoin #3: the final memory read remains in the body",
+    "data:nodejoin #4: the returned high and low words survive",
+    "data:nodejoin #5: the pipeline does not abort",
     "data:nonzero overwrite survives",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",

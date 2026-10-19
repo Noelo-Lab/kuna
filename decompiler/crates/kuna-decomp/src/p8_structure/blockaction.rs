@@ -3397,6 +3397,7 @@ impl ConditionalJoin {
 
     /// \brief Look for additional Varnode pairs in an exit block that need to be
     /// merged (C++ `ConditionalJoin::checkExitBlock`, `blockaction.cc:1954`).
+    /// Inspect every phi: stack analysis can rewrite an earlier phi into an add.
     fn check_exit_block(&mut self, exit: BlockId, in1: int4, in2: int4, data: &Funcdata) {
         let mut iter = first_op_of(data, exit);
         while let Some(op) = iter {
@@ -3409,8 +3410,6 @@ impl ConditionalJoin {
                 if vn1 != vn2 {
                     self.merge_need_get_or_insert(MergePair { side1: vn1, side2: vn2 }, data);
                 }
-            } else if code != OpCode::CPUI_COPY {
-                break;
             }
             iter = next;
         }
@@ -3464,6 +3463,7 @@ impl ConditionalJoin {
 
     /// Substitute the new joined Varnode in the given exit block
     /// (C++ `ConditionalJoin::cutDownMultiequals`, `blockaction.cc:1981`).
+    /// As in discovery, update phis after ordinary operations as well.
     fn cut_down_multiequals(&mut self, exit: BlockId, in1: int4, in2: int4, data: &mut Funcdata) {
         let (lo, hi) = if in1 > in2 { (in2, in1) } else { (in1, in2) };
         let mut iter = first_op_of(data, exit);
@@ -3489,8 +3489,6 @@ impl ConditionalJoin {
                     data.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
                     data.op_insert_begin(op, exit);
                 }
-            } else if code != OpCode::CPUI_COPY {
-                break;
             }
             iter = next;
         }
