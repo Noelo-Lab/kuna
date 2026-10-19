@@ -308,11 +308,6 @@ warnstyle banner` restores upstream Ghidra's full
 `/* WARNING: ... */` lines, exercised by
 `tests/stages/kuna-cnorm-warnstyle.xml`.
 
-Input casts preserve the selected field of the declared storage symbol, even
-when its high variable has a scalar preferred type. A cast inserted before an
-integer operation inherits that operation’s union read resolution, so the
-operand remains `storage.integer` rather than the whole `storage` union.
-
 ## 9.1 Casts
 
 **The pass.** `ActionSetCasts` (registry row P9/`cast-policy`, group `casts`)
@@ -405,7 +400,12 @@ and a pointer-to-struct being read as pointer-to-its-first-field inserts a
 `PTRSUB(ptr, #0)` — rendered as `&ptr->field` / `ptr->field` — instead of a
 cast (`coreaction_casts.rs (test_struct_offset0)`). Only when all of that
 fails is a real `CPUI_CAST` op inserted before the reader, with an implied
-unique output carrying the required type.
+unique output carrying the required type. The new CAST inherits the union
+field the reader had selected at that slot, both for a high whose own type
+needs resolution and for the high's declared storage symbol when that symbol
+is a union but the high's preferred type is scalar. The operand then prints as
+`storage.integer` rather than a cast of the whole `storage` union, which C
+rejects. Only an existing selection is copied; no field is chosen anew.
 
 **A signed read of an unsigned-printing expression (kuna).** The `U` suffix
 `mark_explicit_unsigned` gives a constant makes its whole C expression

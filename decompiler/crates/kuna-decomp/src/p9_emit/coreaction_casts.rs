@@ -2415,6 +2415,5 @@ mod verify_w10_merge_casts_r2 {
         printer.emit_block(&fd, &arch, copy);
         let code = printer.emit_mut().output_str();
         assert!(code.contains("storage.integer"), "{code}");
-
     }
 }
