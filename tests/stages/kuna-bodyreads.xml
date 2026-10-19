@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A function that calls itself with its own incoming register untouched keeps
+    that argument at the call.
+
+        unsigned mix(unsigned char *p, unsigned n, unsigned key) {
+          p[n & 3] ^= (unsigned char)(key + 25);
+          if (n == 0) return p[0] & 1;
+          return !mix(p, (n - 1) & 7, key);
+        }
+
+    gcc -O2 leaves `key` in edx for the recursive call, and no op of the call's
+    setup names edx, so the call gets no argument for it (heritage registers a
+    trial only for a range some op reads or writes, and upstream's
+    AncestorRealistic refuses the function's own input at a call slot). With the
+    option off kuna prints `mix(a0,a1 - 1 & 7)`, and `key` is only the `char` the
+    store reads.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring"
+    (`p4_calls/kuna_passthrough.rs` `stated_width` / `stated_registers`, with
+    `p4_calls/kuna_entryreads.rs` taking the body's reads at the first heritage).
+    No callee was decompiled first, so nothing is stated: the only evidence is
+    the function's own body, which reads edx (`lea 0x19(%rdx),%ecx`), so the
+    recursive call takes it and the parameter is the four bytes that read's
+    result needs, not the byte the store keeps.
+
+    P0 assertion: `option passthrough on|off` (on by default). Pass 1 is the bug
+    (off), pass 2 the fix (on). The decompile-all witnesses (a callee that reads
+    its parameter only by handing it to fcntl, through a forwarder and through a
+    value the caller also compares) are
+    decompiler/crates/kuna-analysis/tests/fixtures/passthrough_bodyreads_x86_64
+    under tests/cli/passthrough-keeps-an-argument-the-callee-body-takes.json.
+-->
+<bytechunk space="ram" offset="0x4011b0">
+89f08d4a1983e003300c0785f675110fb60783e001c3662e0f1f840000000000
+83ee014883ec0883e607e8d1ffffff85c00f94c04883c4080fb6c0c3
+</bytechunk>
+<symbol space="ram" offset="0x4011b0" name="mix"/>
+</binaryimage>
+<script>
+  <com>option passthrough off</com>
+  <com>lo fu mix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option passthrough on</com>
+  <com>lo fu mix</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="BODYREADS #1: off, the recursive call drops key" min="1" max="1">return mix\(a0,a1 - 1 &amp; 7\) == 0;</stringmatch>
+<stringmatch name="BODYREADS #2: on, the recursive call passes key" min="1" max="1">return mix\(a0,a1 - 1 &amp; 7,a2\) == 0;</stringmatch>
+<stringmatch name="BODYREADS #3: on, key is the int its read needs" min="1" max="1">mix\(uint1 \*a0,uint4 a1,unsigned int a2\)</stringmatch>
+<stringmatch name="BODYREADS #4: off, key is only the byte the store keeps" min="1" max="1">mix\(uint1 \*a0,uint4 a1,char a2\)</stringmatch>
+</decompilertest>
