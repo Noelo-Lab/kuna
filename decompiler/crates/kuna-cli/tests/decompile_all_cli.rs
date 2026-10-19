@@ -1197,7 +1197,8 @@ fn watchdog_stops_region_structuring_and_the_batch_continues() {
     let doc: serde_json::Value = serde_json::from_str(&stdout).expect(&stderr);
     let functions = doc["functions"].as_array().unwrap();
     let stress = functions.iter().find(|f| f["name"] == "stress").unwrap();
-    assert_eq!(stress["error"], "per-function decompile budget exceeded (1 s)", "{stdout}");
+    let error = stress["error"].as_str().unwrap_or_default();
+    assert!(error.starts_with("per-function decompile budget exceeded (1 s) in "), "{stdout}");
     assert!(stress["code"].is_null(), "{stdout}");
     let after = functions.iter().find(|f| f["name"] == "after").unwrap();
     assert!(after["error"].is_null(), "{stdout}");
@@ -3337,7 +3338,7 @@ fn a_float_bit_helper_round_trips() {
             "float fb_copysignf(float a0,float a1)",
             "bool fb_isnanf(float a0)",
             "v1 = fb_fabsf(a0 - a1);",
-            "v3 = fb_copysignf(3.0,a0);",
+            "v3 = fb_copysignf(3.0f,a0);",
             "*a1 = ((union { float from; int to; }){ .from = fb_fabsf(a0) }).to + 1;",
             "int fb_bump(int a0)",
             "void fb_store(unsigned int a0,unsigned int *a1)",

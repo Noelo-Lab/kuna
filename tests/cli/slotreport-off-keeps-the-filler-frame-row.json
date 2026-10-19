@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-b7636577854a",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json",
+    "--option",
+    "slotreport",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64",
+    "binary_sha256": "9a2c3a6082b1745368ef778c20969f560ea6f956cb9b2d3798729e306f16bb89",
+    "binary_size": 17432,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64",
+    "selector": "clamp_delta",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\"name\": \"clamp_delta\",(?:(?!\"variables\":)[\\s\\S])*\"variables\": \\[(?:(?!\"code\":)[\\s\\S])*?\"name\": \"local_10\",\\s*\"type\": \"undefined8\",\\s*\"kind\": \"stack\",\\s*\"arg_index\": null,\\s*\"stack_offset\": -16,"
+    ],
+    "stdout_absent": [
+      "\"name\": \"clamp_delta\",(?:(?!\"variables\":)[\\s\\S])*\"variables\": \\[(?:(?!\"code\":)[\\s\\S])*?\"name\": \"local_10\",\\s*\"type\": \"long\",\\s*\"kind\": \"stack\",\\s*\"arg_index\": null,\\s*\"stack_offset\": -16,"
+    ]
+  },
+  "notes": "OFF: the frame slot at -16 is the framelayout filler local_10, reported by width as undefined8."
+}

@@ -2260,8 +2260,18 @@ moves.
   three unrelated pointer locals. Plain frame slots, including Fortran `VALUE`
   arguments, keep their value types. Other source languages are not inferred
   from this pattern (a C++ class passed by invisible reference carries the same
-  location form), nor are composite expressions or the optimized forms
-  (`DW_OP_breg<n> 0`, location lists), which still import the value type. Both
+  location form), nor are composite expressions. Optimized arguments also receive pointer
+  types when their location is exactly `DW_OP_breg<n> 0` in an incoming integer
+  argument register for the image ABI. Location lists must contain one unambiguous
+  expression covering the subprogram entry. Register values, stack/frame-pointer
+  locations, nonzero offsets and stack-value expressions retain their value types.
+  The register rule skips only values the ABI itself may pass by value through a
+  hidden address in that register: none on x86-64 System V or 32-bit Arm, sizes
+  other than 1, 2, 4 and 8 bytes on Win64, and values wider than two argument
+  registers on AArch64 and RISC-V. Every other value type, including derived
+  types, arrays, complex and extended floating types, becomes a pointer; leaving
+  one of them a value would hand its register to the next reference argument
+  and misname every argument after it. Both
   the name-bound and the address-bound prototype import paths apply the rule;
   a `DW_TAG_enumeration_type` becomes a real enum type — name, declared width,
   signedness, and the `DW_TAG_enumerator` value→name map (05 §5.1), which is what
@@ -2317,8 +2327,12 @@ moves.
   zero origin used to be assumed everywhere, so gfortran's `real :: a(3)` read
   as `float a[4]` and `a(-8:-4)` as `float a[1]`;
   (3) stack locals — direct `DW_OP_fbreg` children become typelock|namelock stack
-  symbols at `call_frame_cfa + fbreg`, re-seeded per decompile (§1.1); nested
-  lexical-block locals and composite locations are a documented loss. (ida) The
+  symbols at `call_frame_cfa + fbreg`, re-seeded per decompile (§1.1). A frame
+  location may include `DW_OP_plus_uconst` displacements, as emitted for interior
+  equivalence views. Each unsigned LEB128 operand is decoded and added without
+  signed overflow; truncated operands and dereference, piece, register, or value
+  expressions remain outside this fixed-local path. Nested lexical-block locals
+  and composite locations are a documented loss. (ida) The
   data-global fix (DIV-24): a global used to be mapped with a size-1 type, so any
   multi-byte access queried `queryContainer(addr, 4)` past it and rendered
   `dat_<addr>`; the pass now resolves `DW_AT_type` to a byte size

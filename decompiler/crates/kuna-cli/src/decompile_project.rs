@@ -40,7 +40,9 @@
 //! produced. A non-empty selection that produced zero bodies exits nonzero only
 //! after every artifact is complete (and a streamed export has removed its
 //! `.streaming` marker), with the summary on stdout and a run-level diagnostic
-//! on stderr. Load errors, an empty target set, and I/O errors also exit nonzero.
+//! on stderr. A rejected `--assert` under `--assert-strict`, or one the pipeline
+//! refused, exits nonzero the same way. Load errors, an empty target set, and I/O
+//! errors also exit nonzero.
 //!
 //! The decompile loop and the four artifact builders live in the shared
 //! decompile-project core (`kuna_console::project` — also reused by the
@@ -182,8 +184,9 @@ fn usage() {
          completes. The .c is then in decompile order. Not available with --assert.\n\
          Individual function failures are recorded in the artifacts. A mixed run\n\
          exits 0; a selected set that produced no body exits 1 only after all\n\
-         artifacts are complete. Load errors / an empty target set / I/O errors\n\
-         also exit nonzero."
+         artifacts are complete. A rejected --assert exits 1 the same way under\n\
+         --assert-strict, and a directive the pipeline refused always does.\n\
+         Load errors / an empty target set / I/O errors also exit nonzero."
     );
 }
 
@@ -315,7 +318,17 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
 
     let ok = results.iter().filter(|r| r.error.is_none()).count();
     let failed = results.len() - ok;
-    let error = BatchOutcome::of(&results).all_failed_error(&args.binary);
+    let outcomes = prog.assertion_outcomes();
+    let rejected = crate::decompile_all::report_rejected_assertions(&outcomes);
+    let refused = crate::decompile_all::any_refused_assertion(&outcomes);
+    let assertion_error = if refused {
+        Some("the pipeline refused an assertion; exported C was produced without it".to_owned())
+    } else if args.assert_strict && rejected {
+        Some("one or more assertions were rejected (--assert-strict)".to_owned())
+    } else {
+        None
+    };
+    let error = BatchOutcome::of(&results).all_failed_error(&args.binary).or(assertion_error);
     let files = sizes
         .iter()
         .map(|(n, s)| format!("{n} ({s} bytes)"))

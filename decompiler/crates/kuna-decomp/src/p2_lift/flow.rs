@@ -3567,13 +3567,21 @@ truncating the fall-through here"
         // `None` and rebuilt per table when `option jtsharepartial` is off.
         let mut shared_partial: Option<Funcdata> = None;
         for op in table_ops {
-            let mode = self.data.recover_jump_table_flow(
-                op,
-                record,
-                &visited_snapshot,
-                run_pipeline,
-                &mut shared_partial,
-            );
+            let at = self.data.obank().get(op).map_or(0, |o| o.get_addr().get_offset());
+            let _scope = crate::decompile_drive::JumpTableScope::enter(at);
+            let mode = if crate::decompile_drive::deadline_passed_in("jump-table recovery") {
+                Ok(None)
+            } else {
+                let mode = self.data.recover_jump_table_flow(
+                    op,
+                    record,
+                    &visited_snapshot,
+                    run_pipeline,
+                    &mut shared_partial,
+                );
+                crate::decompile_drive::deadline_passed_in("jump-table recovery");
+                mode
+            };
             match mode {
                 Ok(Some(jt_idx)) => {
                     let tail = (!for_inline).then(|| self.tail_call_table_dest(op, jt_idx));

@@ -310,11 +310,29 @@ return instruction writes and then transfers through, which `ARM.cspec` lists as
 (`kuna_calleepreserves.rs (body_departs_from_convention)`). That is the
 signature of the hand-rolled helper the rule exists for — the get-PC thunk's
 `EBX` is callee-saved, so the convention is already not a description of it —
-and it is a positive finding rather than an absence. Only a processor-space
-range is ever answered, because a callee's memory writes are `STORE`s through an
+and it is a positive finding rather than an absence. This register-preservation
+arm answers only processor-space ranges, because a callee's memory writes are `STORE`s through an
 address the walk cannot follow; only *killed by call* is downgraded, never
 promoted; and a prototype carrying its own effect-record override has had a
 deliberate statement made about it and is left alone.
+
+The call guard also reuses the same cached body summary to preserve caller stack
+unaliased slots across a direct helper that performs no memory writes
+(`p3_dataflow/kuna_leafmemory.rs (preserves)`). This arm requires a complete walk
+of at least two instructions, no STORE into any space, direct writes confined to
+the register space, and a write beyond the stack pointer and return target.
+Non-return memory reads disqualify the helper; only a direct ESP/RSP return-
+address fetch into the returned program counter is exempted. Any stack-pointer
+write outside a return instruction invalidates that return-fetch exemption. Both endpoints
+of the caller range must pass the alias checker, independently of stack-view
+options. Exposed objects and read-only observers retain call guards. It
+requires a known call stack offset and a pointer-width return address at stack
+offset zero; only caller ranges wholly above that return slot qualify. Explicit
+effect overrides, unresolved calls, memory-writing helpers and return-only
+stubs retain their existing effects. The rule follows `calleepreserves`, adds no
+callee scan, and preserves the call instruction's own return-address store.
+A saved frame pointer therefore survives a register-only helper, allowing later
+frame-relative reads to remain associated with earlier conditional stores.
 
 **A well-behaved helper is invisible to that test.** Requiring a write the
 model marks `<unaffected>` is a positive finding, but only for a callee that
@@ -2353,6 +2371,32 @@ stale earlier compare; a constant pointer is left to `RuleLoadVarnode`, which
 also resolves the spacebase-placeholder tail that a bare COPY would drop; a
 free pointer is declined. Settable `constspaceload`,
 shipped default **on** (DIV-158).
+
+**x87truncate** —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_x87truncate.rs
+(RuleX87Truncate)`, oppool1, fires on CALLOTHER. *Pattern:* one of the x87
+`x87_float_to_int16/32/64` user operations that `FIST`/`FISTP` lift to (§2,
+x87 integer conversions), whose control-word operand provably has both
+rounding-control bits (10 and 11) set. Compilers emit exactly this shape for a C
+float-to-integer conversion on x87: save the control word, OR in `0xc00`, load
+it, convert, restore. The proof is a bounded walk over the operand's definitions
+that keeps the bits known to be 1 through constants, `COPY`, `INT_ZEXT`,
+`INT_OR`, `INT_AND`, `PIECE`, `SUBPIECE` and `MULTIEQUAL` (every input must
+agree); any other definition, an input, or an exhausted visit budget proves
+nothing. The walk trusts the lift to define the control word at every
+instruction that replaces it (§2, x87 integer conversions); a call between the
+load and the conversion leaves an `INDIRECT`, which proves nothing. *Rewrite:*
+the operation becomes `FLOAT_TRUNC` of its extended-precision
+operand at the same output width, the same conversion `FISTTP` lifts to, so the
+control-word computation dies and the function prints `(int)x`. A conversion
+whose output dead-code removal has already cleared is deleted instead, since
+its only remaining effect would be the unmodeled status flags. Precision
+control, exception masks and infinity control do not change the result of an
+in-range conversion. *Bounds:* a control word with unknown, nearest, downward or
+upward rounding keeps the opaque operation; out-of-range and NaN operands, which
+x87 converts to the integer indefinite value when invalid is masked, take
+`FLOAT_TRUNC`'s unspecified result, as for `FISTTP`. Not settable: the rewrite
+is the conversion the instruction performs under that control word.
 
 **flagcompare** (GH-1276 / GH-8777) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_flagcompare.rs`, two rules
