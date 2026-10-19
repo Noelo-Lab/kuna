@@ -2544,7 +2544,7 @@ impl ArchContext {
                 if e.func_inject_id >= 0 {
                     proto.set_inject_id(e.func_inject_id);
                 }
-                if e.func_no_return {
+                if e.func_no_return && self.peimportcall {
                     proto.set_no_return(true);
                 }
                 return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(proto)));

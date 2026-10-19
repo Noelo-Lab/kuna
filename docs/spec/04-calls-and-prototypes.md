@@ -7380,26 +7380,33 @@ require every reachable predecessor, including loop entry paths, to agree.
 Return recovery withdraws an unlocked ST0 trial only when every remaining
 ordinary return has that proof. Explicit and caller-forced results take priority.
 Restarting analysis clears and rebuilds the evidence.
-Qualified console `map param` and `map return` declarations resolve their function
-selector through the same entry resolver as `map prototype`. The resolved entry
-receives the storage pieces immediately; its entry address also keys pending
-rebuilds and callee replay, keeping same-name functions independent. An explicit unmapped address is rejected rather than
-accepted as an inert function name. Partial input-only and output-only declarations
-retain their existing inference behavior. This binding is implemented in
-`decompiler/crates/kuna-console/src/kuna_qualifiedstorage.rs`.
 
-For an exact indirect function slot, explicitly parked prototype pieces take
-priority over its cached code-type prototype. Partial input or output storage
-declarations must be read from that slot even when its original type already
-contains a placeholder signature. Undeclared slots continue to use their types.
+### Qualified register declarations bind to an entry (`kuna_qualifiedstorage.rs`, `kuna_qualifiedcall.rs`)
 
-When an indirect target resolves to a function symbol, its parked pieces are
-used to construct the callee prototype before conversion to a direct call. This
-prevents a placeholder code type from replacing explicit register declarations.
-Output-only pieces retain unlocked inputs; injection and non-return attributes
-remain attached to the resolved symbol. The construction lives in
+The console's qualified `map param <func>::<i>` and `map return <func>::<storage>`
+(what `--assert 'param f::0 ECX ...'` lowers to on the text surface), and its
+`parse line extern`, resolve `<func>` through the same entry resolver as
+`map prototype`: a name or an entry address. The resolved entry receives the
+storage pieces at once, and its entry address keys the pending store that the
+console replays on every IR rebuild and onto each callee symbol, so two
+same-named functions keep independent declarations and a name and an address
+naming one entry merge. An explicit `0x` address no function starts at is
+rejected instead of being parked as a function name nothing has. An
+input-only or output-only declaration keeps its partial-prototype inference;
+only a declaration that also states the return type retypes the symbol. The
+binding lives in `decompiler/crates/kuna-console/src/kuna_qualifiedstorage.rs`.
+
+A call that reaches such a callee indirectly, through an import slot or a
+constant pointer, becomes direct only once `ActionDeindirect` resolves it
+through `ArchContext::query_function`, which would otherwise hand back the
+symbol's cached code-type prototype: a placeholder signature with no explicit
+storage. When the parked pieces carry explicit input or output storage (a
+qualified declaration above, or a Ghidra host's custom-storage prototype),
+`query_function` builds the callee prototype from those pieces instead, under
+the declared model (or the undeclared default), as `ActionDefaultParams` already
+does for a direct call. Output-only pieces leave the inputs unlocked. The
+symbol's call-fixup injection is kept, and its no-return flag is carried under
+`peimportcall`, as on the other two paths. Pieces with no explicit storage
+(library, loader and DWARF prototypes) keep the code-type lookup unchanged. The
+construction lives in
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.
-
-The indirect-call reconstruction applies only to pieces with explicit input or
-output storage. Ordinary library and loader prototypes retain their existing
-code-type lookup, locks, and inference behavior.
