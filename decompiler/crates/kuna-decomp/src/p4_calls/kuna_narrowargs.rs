@@ -150,6 +150,7 @@ pub fn narrow_inputs(data: &mut Funcdata) -> int4 {
     if !data.get_arch().narrow_args || data.get_func_proto().is_input_locked() || data.bblocks_get_size() == 0 {
         return 0;
     }
+    let stated = crate::kuna_callerargs::narrow_stated(data);
     let inputs: Vec<VarnodeId> = data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();
     let mut count = 0;
     for vn in inputs {
@@ -165,7 +166,7 @@ pub fn narrow_inputs(data: &mut Funcdata) -> int4 {
             continue;
         }
         let Some(part) = low_part(data, &addr, size, w) else { continue };
-        if replace(data, vn, &addr, size, &part, w).is_ok() {
+        if replace(data, vn, &addr, size, &part, w, OpCode::CPUI_INT_ZEXT).is_ok() {
             if trace() {
                 eprintln!(
                     "[narrowargs] 0x{:x} input {}:{:x}:{size} consume 0x{consume:x} -> {w}",
@@ -177,7 +178,16 @@ pub fn narrow_inputs(data: &mut Funcdata) -> int4 {
             count += 1;
         }
     }
-    count
+    count + stated
+}
+
+/// Replace the register input `vn` by its low `w` bytes, extended back to the
+/// register by `ext` at the entry, when the model passes an integer argument
+/// there; whether it was.
+pub(crate) fn narrow_input_to(data: &mut Funcdata, vn: VarnodeId, w: int4, ext: OpCode) -> bool {
+    let Some((addr, size)) = data.vbank().get(vn).map(|v| (v.get_addr().clone(), v.get_size())) else { return false };
+    let Some(part) = low_part(data, &addr, size, w) else { return false };
+    replace(data, vn, &addr, size, &part, w, ext).is_ok()
 }
 
 /// Does an input other than `vn` overlap `addr:size`?
@@ -195,7 +205,7 @@ fn overlaps_another_input(data: &Funcdata, vn: VarnodeId, addr: &Address, size: 
     })
 }
 
-/// Replace input `vn` by its low `w` bytes at `part`, zero-extended at the
+/// Replace input `vn` by its low `w` bytes at `part`, extended by `ext` at the
 /// entry. Nothing changes when another input overlaps the register, the one
 /// case in which the narrow input could not be made; past that check a failure
 /// puts the register-wide input back.
@@ -206,6 +216,7 @@ fn replace(
     size: int4,
     part: &Address,
     w: int4,
+    ext: OpCode,
 ) -> kuna_base::error::KunaResult<()> {
     if overlaps_another_input(data, vn, addr, size) {
         return Err(kuna_base::error::KunaError::lowlevel("narrowargs: overlapping input varnodes".to_string()));
@@ -214,7 +225,7 @@ fn replace(
     let start = data.bblocks_block_start(topbl);
     let op = data.new_op(1, start);
     let out = data.new_varnode_out(size, addr, op)?;
-    data.op_set_opcode_code(op, OpCode::CPUI_INT_ZEXT);
+    data.op_set_opcode_code(op, ext);
     data.total_replace(vn, out)?;
     data.delete_varnode(vn)?;
     let narrow = data.new_varnode(w, part, None);
