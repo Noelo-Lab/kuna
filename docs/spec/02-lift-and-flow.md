@@ -2541,4 +2541,6 @@ dependence and masked-invalid conversion behavior symbolically. A generic
 round-then-cast would incorrectly impose half-away rounding and discard the
 control word. `FISTP` retains its stack pop; `FIST` does not pop. `FISTTP` remains
 the separate truncating conversion. These operations do not add modeling of
-x87 status updates or unmasked exceptions that suppress writes and pops.
+x87 status updates or unmasked exceptions that suppress writes and pops. When
+the control word provably selects round-toward-zero, as in compiled C
+conversions, `x87truncate` (§3.5) turns the operation back into `FLOAT_TRUNC`.

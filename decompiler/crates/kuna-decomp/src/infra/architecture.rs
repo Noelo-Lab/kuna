@@ -4057,6 +4057,12 @@ impl Architecture {
             .iter()
             .filter_map(|nm| self.userops.get_op_by_name(nm).map(|u| u.get_index() as kuna_base::types::uint4))
             .collect();
+        ctx.x87_float_to_int_userops = crate::kuna_x87truncate::USEROP_NAMES
+            .iter()
+            .filter_map(|nm| self.userops.get_op_by_name(nm))
+            .filter(|u| u.get_inject_id().is_none())
+            .map(|u| u.get_index() as kuna_base::types::uint4)
+            .collect();
         ctx.fold_flag_compare = self.fold_flag_compare; // GH-1276/8777 flagcompare
         ctx.add_carry_chain = self.add_carry_chain; // GH-8913 addcarrychain
         ctx.ov_less_simplify = self.ov_less_simplify; // GH-7190 ovlesssimplify
