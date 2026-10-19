@@ -326,7 +326,7 @@ impl Origins<'_> {
 /// Keep content families separate without assigning them different addresses.
 pub fn recover(fd: &mut Funcdata) {
     fd.stack_objects.clear();
-    if !fd.get_arch().stack_views {
+    if !crate::kuna_stackviews::enabled(fd) {
         return;
     }
     let Some(space) = fd
@@ -358,6 +358,13 @@ pub fn recover(fd: &mut Funcdata) {
                 continue;
             };
             if address.first != address.last || !address.terms.is_empty() {
+                continue;
+            }
+            if !fd.get_arch().stack_views && crate::kuna_stackparamviews::backing_for_address(
+                fd,
+                &Address::new(Rc::clone(&space), space.wrap_offset(address.first as u64)),
+                ty.get_size(),
+            ).is_none() {
                 continue;
             }
             total += ty.get_size() as usize;

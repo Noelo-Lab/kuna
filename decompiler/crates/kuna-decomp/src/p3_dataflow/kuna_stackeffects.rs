@@ -6,7 +6,7 @@ use kuna_base::address::Address;
 use kuna_base::space::spacetype;
 
 pub fn enabled_for(fd: &Funcdata, addr: &Address) -> bool {
-    fd.get_arch().stack_views
+    (fd.get_arch().stack_views || crate::kuna_stackparamviews::preserves_range(fd, addr, 1))
         && addr
             .get_space()
             .is_some_and(|s| s.get_type() == spacetype::IPTR_SPACEBASE)

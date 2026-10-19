@@ -335,6 +335,7 @@ impl Rule for RuleStoreVarnode {
         let size = size_of(data, in_vn(data, op, 2));
         let offoff = kuna_base::space::AddrSpace::address_to_byte(offoff, baseoff.get_word_size());
         let addr = Address::new(Rc::clone(&baseoff), offoff);
+        crate::kuna_stackparamviews::record_store(data, &addr, size);
         let outvn = data.new_varnode_out_unlaned(size, &addr, op).expect("newVarnodeOut");
         data.vbank_mut().get_mut(outvn).expect("RuleStoreVarnode: stale out").set_stack_store();
         data.op_remove_input(op, 1);

@@ -3289,7 +3289,8 @@ integer member; address-valued writes select a pointer member. They must not be 
 aggregate just because a later call views those same bytes as a struct.
 
 With `stackviews` disabled, type-facing queries skip view lookup and the extra
-varnode, operation and input-slot queries it needs.
+varnode, operation and input-slot queries it needs, unless the function
+recovered the narrow-parameter backing described below.
 
 The backing object preserves physical address identity: passing the address as
 two types never creates two independent addresses. An earlier escaped pointer
@@ -3310,6 +3311,23 @@ not grouped as a field of the later local. Full-width symbol lookups let ordinar
 and logical naming assertions select that local without falling back to the
 smaller parameter entry. Escaped addresses, partial or unknown pointee uses,
 incoming bytes and multiple surviving value identities decline this shortcut.
+
+With `stackviews off`, a declared boolean or integer stack parameter that has a
+wider physical write of two or four bytes also receives shared backing at that
+slot. The formal parameter retains its incoming type and initializes the matching backing member;
+later writes and escaped addresses use the same wider object. This is storage
+reconstruction, not the closed scalar shortcut: unknown pointer aliases do not
+disable it. Other frame components remain outside optional view recovery.
+
+The physical store extent is recorded when a native STORE becomes a stack COPY,
+before early removal can discard a register-carried value. Only writes intersecting
+that recorded parameter extent receive the existing alias-preservation policy;
+unrelated frame stores retain their ordinary policy. A store crossing another
+incoming parameter is excluded. A larger native store overlapping the candidate
+four-byte extent excludes the slot from default recovery, including mixed narrow
+and vector writes. The optional full-view policy retains its existing coverage.
+The evidence resets with function analysis and still observes proved non-aliasing
+and overwrite checks.
 
 Aggregate, floating-point and pointer views in the parameter area instead use
 the same union backing as ordinary frame objects. Scalar views also need this

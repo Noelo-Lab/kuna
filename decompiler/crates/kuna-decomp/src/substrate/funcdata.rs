@@ -351,6 +351,7 @@ pub struct Funcdata {
         crate::unionresolve::ResolvedUnion,
     >,
     pub(crate) stack_write_views: std::collections::BTreeMap<OpId, crate::kuna_stackviews::StorageView>,
+    pub(crate) stack_parameter_store_extents: std::collections::BTreeMap<u64, i32>,
     pub(crate) stack_objects: Vec<crate::kuna_stackobjects::StackObject>,
     pub(crate) stack_object_assertions: Vec<crate::kuna_stackobjectasserts::ObjectAssertion>,
     pub(crate) stack_object_bound_uses: std::collections::BTreeSet<(crate::kuna_stackobjects::SourcePoint, i32)>,
@@ -764,6 +765,7 @@ impl Funcdata {
             localoverride: crate::overrides::Override::new(),
             union_map: std::collections::BTreeMap::new(),
             stack_write_views: std::collections::BTreeMap::new(),
+            stack_parameter_store_extents: std::collections::BTreeMap::new(),
             stack_objects: Vec::new(),
             stack_object_assertions: Vec::new(),
             stack_object_bound_uses: std::collections::BTreeSet::new(),
@@ -4072,6 +4074,7 @@ impl Funcdata {
         // unionMap.clear() (funcdata.cc:90): drop the union-field resolution cache.
         self.union_map.clear();
         self.stack_write_views.clear();
+        self.stack_parameter_store_extents.clear();
         self.stack_objects.clear();
         self.stack_object_bound_uses.clear();
         self.stack_alias_holds = None;

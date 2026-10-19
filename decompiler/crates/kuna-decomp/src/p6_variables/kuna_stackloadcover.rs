@@ -5,7 +5,7 @@ use crate::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
 
 pub(crate) fn crosses_write(fd: &Funcdata, id: VarnodeId) -> bool {
-    if !fd.get_arch().stack_views {
+    if !crate::kuna_stackviews::enabled(fd) {
         return false;
     }
     let Some(value) = fd.vbank().get(id) else {

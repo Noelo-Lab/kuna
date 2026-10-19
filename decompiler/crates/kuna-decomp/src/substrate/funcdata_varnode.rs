@@ -94,7 +94,7 @@ impl Funcdata {
         // `ProtoStoreSymbol::setInput` when a parameter's storage is not owned by
         // any scope (e.g. a register).
         let restricted_usepoint = &self.get_address().clone() + -1;
-        let stack_views = self.get_arch().stack_views;
+        let stack_views = crate::kuna_stackviews::enabled(self);
         for (i, name, ty, addr) in specs {
             let rup = restricted_usepoint.clone();
             if let Some(lm) = self.get_scope_local_mut() {

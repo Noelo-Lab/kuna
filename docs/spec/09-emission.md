@@ -3543,7 +3543,10 @@ pointer uses `__builtin_memcpy` and a typed C compound literal. Casting a word
 pointer over an integer local does not establish C aliasing: both GCC and clang
 can otherwise optimize a later integer read to its old initializer. The copy
 preserves the bytes and evaluates the pointer and value once. This fallback is
-C-only and bounded to scalar accesses of 2, 4 or 8 bytes.
+C-only and bounded to scalar accesses of 2, 4 or 8 bytes. With `stackviews` off,
+a function that recovered narrow-parameter backing copies only accesses that
+resolve inside that backing; other reinterpreted pointers keep their ordinary
+dereference.
 
 Bounded indexed accesses into a recovered backing object also copy their bytes,
 including one-byte loads and stores. The byte pointer starts at the whole backing
