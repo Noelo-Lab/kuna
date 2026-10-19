@@ -318,7 +318,7 @@ fn degrade_datatype(
 /// chasing each child's own `DW_AT_abstract_origin` for the name and type an
 /// out-of-line concrete instance leaves on its abstract counterpart.
 ///
-/// The same direct-children / single-`DW_OP_fbreg` scope as the name-only
+/// The same direct-children / fixed-frame-relative scope as the name-only
 /// collector; a child that cannot be fully grounded is skipped, never a failure.
 pub(super) fn collect_fbreg_locals(
     func_addr: u64,

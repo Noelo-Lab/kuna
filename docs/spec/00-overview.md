@@ -16,6 +16,19 @@ hand-off, the front-ends, the IR containers, the knowledge plane, the two
 pipeline non-linear. The algorithms themselves live in chapters 01–09; this is how
 they are hosted, ordered, configured, and restarted.
 
+Overlapping DWARF stack locals are views of shared bytes. Before seeding local
+symbols, `kuna_dwarfstack` groups connected overlapping intervals into one union
+with an exact byte extent. Interior views use padded structures at the recorded
+offsets; generated layout attributes preserve nonnatural alignment. Adjacent
+objects remain separate. Synthetic types are reused only when their complete
+layouts match, and explicit console mappings take precedence over intersecting
+debug recommendations. Debug locals have no lifetime ranges here, so overlapping
+names never justify independent C objects. If a conflicting extent cannot be
+represented, its optional locks are omitted while the original debug facts remain
+available and ordinary machine storage recovery proceeds. Use `stackviews on`
+when overlapping views escape through calls so frame stores and subsequent reads
+retain their shared storage identity.
+
 C declarations supplied through the console or strict CLI assertions retain a
 `volatile` qualifier on the type layer where it was written. `const` and
 `restrict` are accepted and dropped, so they leave emitted C unchanged; the type
