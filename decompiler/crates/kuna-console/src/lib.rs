@@ -39,6 +39,7 @@ pub mod consolemain;
 #[cfg(test)]
 mod kuna_buildstamp_fingerprint;
 pub mod assertions;
+mod kuna_qualifiedstorage;
 pub mod assertsyntax;
 pub mod grammar;
 pub mod rulecompile;

@@ -497,6 +497,29 @@ mod x87_empty_return;
 
 #[path = "windows_stack_argument_alignment.rs"]
 mod windows_stack_argument_alignment;
+#[path = "project_named_globals.rs"]
+mod project_named_globals;
+#[path = "x87_register_payload.rs"]
+mod x87_register_payload;
+
+#[path = "x87_free_operands.rs"]
+mod x87_free_operands;
+
+#[path = "prototype_call_mechanisms.rs"]
+mod prototype_call_mechanisms;
+#[path = "qualified_storage_addresses.rs"]
+mod qualified_storage_addresses;
+#[path = "qualified_import_storage.rs"]
+mod qualified_import_storage;
+
+#[path = "readonly_leaf_stack.rs"]
+mod readonly_leaf_stack;
+
+#[path = "global_array_bit_transfers.rs"]
+mod global_array_bit_transfers;
+
+#[path = "project_assertion_status.rs"]
+mod project_assertion_status;
 
 #[path = "project_function_linkage.rs"]
 mod project_function_linkage;

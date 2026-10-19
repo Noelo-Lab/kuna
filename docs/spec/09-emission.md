@@ -400,7 +400,12 @@ and a pointer-to-struct being read as pointer-to-its-first-field inserts a
 `PTRSUB(ptr, #0)` — rendered as `&ptr->field` / `ptr->field` — instead of a
 cast (`coreaction_casts.rs (test_struct_offset0)`). Only when all of that
 fails is a real `CPUI_CAST` op inserted before the reader, with an implied
-unique output carrying the required type.
+unique output carrying the required type. The new CAST inherits the union
+field the reader had selected at that slot, both for a high whose own type
+needs resolution and for the high's declared storage symbol when that symbol
+is a union but the high's preferred type is scalar. The operand then prints as
+`storage.integer` rather than a cast of the whole `storage` union, which C
+rejects. Only an existing selection is copied; no field is chosen anew.
 
 **A signed read of an unsigned-printing expression (kuna).** The `U` suffix
 `mark_explicit_unsigned` gives a constant makes its whole C expression
@@ -2962,6 +2967,13 @@ drives these same renders and changes no byte any of them produces, but the
 project folder it assembles from them has a layout of its own — the single
 documented exception, described at the end of this section.
 
+After writing the artifacts, a serial project export reports every rejected
+assertion on stderr. Ordinary rejections leave the export successful unless
+`--assert-strict` requests a nonzero exit. A directive accepted and later refused
+by the pipeline always makes the export fail. These checks include declarations
+for callees outside the selected bodies and unresolved local directives; accepted
+directives keep their final applied outcomes.
+
 **Type definitions — the `docTypeDefinitions` port.** `printc.rs
 (PrintC::doc_type_definitions)` is the previously-unported C++
 `PrintC::docTypeDefinitions` surface — the console `print C types` command
@@ -3388,6 +3400,60 @@ upper half, as gcc merges adjacent field stores): two declarations would make
 one storage two objects, so a store through one would never reach the other.
 An address some function takes keeps its declaration either way.
 
+Named global references retain whole mapped declarations through
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_namedglobals.rs`. The C printer
+records the actual emitted name only when a mapped data object is referenced,
+including field and array accesses. Storage base, extent, and whole symbol type
+must agree with the mapping; split or uncertain mappings are not guessed. The
+per-function collection resets at each print and excludes substituted literals,
+stack objects, and function symbols. Project extraction includes these facts even
+when synthetic address naming is disabled. Whole symbol types describe the
+object declaration, rather than the scalar type of a partial access.
+
+A scalar named object is not simply declared at its symbol's type, because the
+body reads it at the type the printer gave each varnode, and an image symbol
+is usually an undefined type the prelude spells unsigned (`undefined4` is
+`unsigned int`): declared so, `if (count <= -1)` becomes an unsigned compare
+that is always true, `total >> 2` a logical shift, and `scale * k` integer
+arithmetic converted to a double, all without a diagnostic. The printer
+therefore records each whole-width read and write, whether it prints the
+global's own varnode, a register copy merged into its variable, or the value a
+dereferenced `&name` loads or stores. A read whose uses keep its bits under any
+integer of its width (a copy, a return, a call argument, a store, a
+truncation, a same-width cast, an equality at `int` width or wider or with
+zero, wrapping arithmetic whose result is assigned, or an assignment of the
+value a dereferenced `&name` loads to a variable of its own) accepts the
+symbol's type. The global's own varnode, or a register merged into its
+variable, is judged by its uses however it was defined: after `g = *p`, the
+reads of `g` print as `g`, so a load defining it says nothing about them.
+A read that an ordering, a division, a
+remainder, a right shift or an extension reads, directly or through
+arithmetic printed inline, needs the signed or unsigned integer of its width,
+and a float operation needs the float. A pointer or float varnode names its
+own type, and a use outside these makes the read a conflict. A store of an
+integer or pointer keeps its bits under any integer declaration, so stored
+types count only where a float is involved or nothing reads the object. A
+function whose reads all accept any integer declares the symbol's type as a
+placeholder that yields to the integer type the other functions agree on;
+disagreeing types, or a placeholder against a pointer or float, are reported
+as read at two types and left undeclared, the existing rule for `dat_<addr>`.
+
+The header exporter diagnoses one name at multiple addresses and multiple names
+sharing one address instead of silently combining or splitting their storage.
+Whole named objects also retain the independent-storage overlap guard; overlapping
+views require shared storage instead of separate declarations. With `globalref`
+on, a native `void *` constant into a complete mapped object is rendered relative
+to its base, including interior field addresses. Requesting type definitions
+(`structdefs on` or the shared header of a C project export) extends this to
+typed object pointers. An explicit cast retains
+the requested pointee type, even when a byte array owns the storage. Function
+pointers keep their separate rendering. Loader metadata remains numeric: only
+addresses in the loader’s program-data ranges can name relocated objects. This
+preserves relocation of
+the object when the generated C is linked. Split mappings, uncertain extents,
+non-byte-addressed spaces, shadowed names and names requiring scope or identifier
+rewriting keep the existing rendering.
+
 **An indexed table is an array (`elemptr`).** With `elemptr` on (05-types
 §5.2), a constant address that is the base of a `PTRADD` indexed by a computed
 value is an array's first element, and `plan` records it (`Plan::indexed`). The
@@ -3550,6 +3616,20 @@ noninteger types, enums, widths above eight bytes and concatenations of unrelate
 halves keep their existing rendering. The option defaults on for C output; off
 restores the upstream CONCAT helper, and other output languages keep their own
 rendering.
+
+For scalar CAST storage transfers through a global array symbol, such as an
+asserted byte array, the printed member access determines the scalar
+representation. An exact scalar array piece retains its type. Any other piece
+takes the type partial access prints it with (`kuna_partialaccess.rs`): the
+value's own scalar type of that width, such as a float stored in half of a
+`double` element, else the width-matched unknown scalar for a four- or
+eight-byte access crossing byte elements or covering the whole array. Floating
+transfers to and from that storage reinterpret bits rather than numerically
+converting the value or attempting an array cast. This lookup uses the exact
+global container and offset. A `FLOAT_FLOAT2FLOAT` that writes such storage
+directly keeps its numeric precision conversion, cast to the float of its output
+width rather than to the unknown type of the storage, because partial access
+prints that destination as a float.
 
 Project C exports use the exact global-scope function symbol's display name
 for a successful definition and its header prototype when both spellings are

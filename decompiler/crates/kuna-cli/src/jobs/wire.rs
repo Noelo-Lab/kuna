@@ -333,7 +333,13 @@ impl ResultWriter {
             put_str(&mut body, &g.name);
             put_str(&mut body, &g.declaration);
             body.extend_from_slice(&g.size.to_le_bytes());
-            body.push(u8::from(g.unknown) | u8::from(g.direct) << 1 | u8::from(g.aggregate) << 2 | u8::from(g.elem) << 3);
+            body.push(
+                u8::from(g.unknown)
+                    | u8::from(g.direct) << 1
+                    | u8::from(g.aggregate) << 2
+                    | u8::from(g.elem) << 3
+                    | u8::from(g.integer) << 4,
+            );
         }
         // (kuna `calltargettype`) The calls through synthesized fields, for the
         // project header the parent writes.
@@ -501,6 +507,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
             direct: bits & 2 != 0,
             aggregate: bits & 4 != 0,
             elem: bits & 8 != 0,
+            integer: bits & 16 != 0,
         });
     }
     let nf = r.u32()? as usize;

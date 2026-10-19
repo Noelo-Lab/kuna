@@ -2096,6 +2096,7 @@ mod tests {
                 direct: true,
                 aggregate: true,
                 elem: true,
+                integer: true,
             }],
             field_calls: vec![
                 kuna_decomp::kuna_calltargettype::FieldDecl {

@@ -788,8 +788,8 @@ pub(crate) fn lock_prototype_on_symbol(
 /// reaches a CALLER through (`ActionDefaultParams` rebuilds each call site's
 /// prototype from the pieces on the callee's `FunctionSymbol`), and it describes
 /// types only — so the explicit storage rides in `input_storage` /
-/// `output_storage`, which `FuncProto::set_pieces` re-applies after the
-/// model-driven assignment.  Parking it also covers the case where the named
+/// `output_storage`, which the model-driven assignment in
+/// `FuncProto::set_pieces` honors.  Parking it also covers the case where the named
 /// function IS the one under decompile: `function_seed` seeds `pending_proto`
 /// from the same store.
 fn apply_cross_function(

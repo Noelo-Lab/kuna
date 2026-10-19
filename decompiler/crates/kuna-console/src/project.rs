@@ -525,6 +525,8 @@ pub fn decompile_pulled(
     // every other batch keeps the preamble, because its document has nothing
     // else that carries a definition. Restored on the way out so one program
     // can drive both surfaces.
+    let previous_header = prog.arch().print().options.header_carries_types;
+    prog.arch_mut().print_mut().options.header_carries_types = header_carries_types;
     let preamble = prog.arch().print().options.struct_defs();
     if header_carries_types && preamble {
         prog.arch_mut().print_mut().options.set_struct_defs(false);
@@ -770,6 +772,10 @@ pub fn decompile_pulled(
                 // would otherwise abort the WHOLE binary and discard every function
                 // already decompiled. Containing it here honors the per-function
                 // isolation contract (one bad function → one `error` record).
+                // (kuna `narrowargs callers`) Record what this function passes at each call.
+                if prog.arch().kuna_callerargs.recording {
+                    kuna_decomp::kuna_callerargs::record(prog.arch_mut(), &park_entry, &fd);
+                }
                 // (kuna `protoorder`) State what this function's recovery found for its callers.
                 if opts.park_recovered_proto {
                     let mode = prog.arch().protoorder;
@@ -964,6 +970,7 @@ pub fn decompile_pulled(
             }),
         }
     }
+    prog.arch_mut().print_mut().options.header_carries_types = previous_header;
     if header_carries_types && preamble {
         prog.arch_mut().print_mut().options.set_struct_defs(true);
     }
@@ -1293,7 +1300,9 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 ///   a body reads `dat_4020[i]` at the declared element, so either one would
 ///   change what the other computes (the batch's agreement pass keeps this
 ///   from happening; a `--jobs` worker cannot see the other functions);
-/// * otherwise the one type the direct accesses agree on;
+/// * otherwise the one type the direct accesses agree on, where a named
+///   object a function uses only in ways any integer of its width serves
+///   takes the integer type the other functions' accesses agree on;
 /// * otherwise, with direct accesses at two types, nothing, and a comment says so;
 /// * a name only read and written directly whose bytes another global's
 ///   overlap gets nothing, and a comment: two declarations would make one
@@ -1310,9 +1319,16 @@ fn global_declarations(results: &[FuncResult]) -> String {
         if g.direct { e.1.push(g) } else { e.0.push(g) }
     }
     let quote = |d: &str| d.replace("/*", "/ *").replace("*/", "* /");
+    let mut name_addresses: BTreeMap<&str, BTreeSet<u64>> = BTreeMap::new();
+    for g in results.iter().flat_map(|r| r.globals.iter()) {
+        name_addresses.entry(&g.name).or_default().insert(g.address);
+    }
     let mut out = String::new();
     let mut reach: Option<(u64, &str)> = None;
     for (&address, (taken, direct)) in &by_addr {
+        let integers = direct.iter().any(|g| !g.unknown) && direct.iter().all(|g| g.unknown || g.integer);
+        let direct: Vec<&GlobalInfo> =
+            direct.iter().copied().filter(|g| !(integers && g.unknown && g.integer)).collect();
         let name = taken.iter().chain(direct.iter()).next().map_or("", |g| g.name.as_str());
         let end = taken.iter().chain(direct.iter()).map(|g| address.saturating_add(g.size.max(1) as u64)).max();
         let end = end.unwrap_or(address).max(address.saturating_add(1));
@@ -1322,6 +1338,17 @@ fn global_declarations(results: &[FuncResult]) -> String {
         });
         if reach.map_or(true, |(r, _)| end > r) {
             reach = Some((end, name));
+        }
+        let names: BTreeSet<&str> = taken.iter().chain(direct.iter()).map(|g| g.name.as_str()).collect();
+        if names.iter().any(|name| name_addresses[name].len() > 1) {
+            let _ = writeln!(out, "/* Global name denotes multiple storage addresses; declaration omitted: {} */",
+                names.iter().map(|name| quote(name)).collect::<Vec<_>>().join(", "));
+            continue;
+        }
+        if names.len() > 1 {
+            let _ = writeln!(out, "/* Global aliases require shared storage; declarations omitted: {} */",
+                names.iter().map(|name| quote(name)).collect::<Vec<_>>().join(", "));
+            continue;
         }
         let mut decls: Vec<(&GlobalInfo, usize)> = Vec::new();
         for g in taken.iter().chain(direct.iter()) {
@@ -1688,6 +1715,68 @@ mod tests {
     };
 
     #[test]
+    fn named_globals_do_not_collapse_distinct_storage_or_split_aliases() {
+        let mut result = streamed("void sample(void)", "int");
+        let object = |name: &str, address| super::GlobalInfo {
+            address,
+            name: name.into(),
+            declaration: format!("unsigned int {name}"),
+            size: 4,
+            unknown: false,
+            direct: true,
+            aggregate: false,
+            elem: false,
+            integer: true,
+        };
+        result.globals = vec![object("counter", 0x5000), object("counter", 0x5000)];
+        assert_eq!(super::global_declarations(std::slice::from_ref(&result)), "extern unsigned int counter;\n");
+        result.globals.push(object("counter", 0x6000));
+        let declarations = super::global_declarations(std::slice::from_ref(&result));
+        assert!(declarations.contains("multiple storage addresses"), "{declarations}");
+        assert!(!declarations.contains("extern "), "{declarations}");
+        result.globals = vec![object("counter", 0x5000), object("alias", 0x5000)];
+        let declarations = super::global_declarations(&[result]);
+        assert!(declarations.contains("aliases require shared storage"), "{declarations}");
+        assert!(!declarations.contains("extern "), "{declarations}");
+        let mut whole = object("whole", 0x5000);
+        whole.size = 8;
+        whole.declaration = "unsigned long whole".into();
+        let mut result = streamed("void sample(void)", "int");
+        result.globals = vec![whole, object("interior", 0x5004)];
+        let declarations = super::global_declarations(&[result]);
+        assert!(declarations.contains("overlapped"), "{declarations}");
+        assert!(!declarations.contains("extern "), "{declarations}");
+    }
+
+    #[test]
+    fn named_globals_take_the_integer_type_other_functions_read_them_at() {
+        let named = |declaration: &str, unknown: bool, integer: bool| super::GlobalInfo {
+            address: 0x5000,
+            name: "count".into(),
+            declaration: declaration.into(),
+            size: 8,
+            unknown,
+            direct: true,
+            aggregate: false,
+            elem: false,
+            integer,
+        };
+        let mut agnostic = streamed("void bump(void)", "int");
+        agnostic.globals = vec![named("unsigned long count", true, true)];
+        let mut signed = streamed("int test(void)", "int");
+        signed.globals = vec![named("long count", false, true)];
+        let declarations = super::global_declarations(&[agnostic.clone(), signed]);
+        assert_eq!(declarations, "extern long count;\n");
+        let mut pointer = streamed("char *name(void)", "int");
+        pointer.globals = vec![named("char *count", false, false)];
+        let declarations = super::global_declarations(&[agnostic.clone(), pointer]);
+        assert!(declarations.contains("read at two types"), "{declarations}");
+        assert!(!declarations.contains("extern "), "{declarations}");
+        let declarations = super::global_declarations(std::slice::from_ref(&agnostic));
+        assert_eq!(declarations, "extern unsigned long count;\n");
+    }
+
+    #[test]
     fn scalar_global_declarations_keep_conflicting_direct_types_diagnostic() {
         let mut result = streamed("void sample(void)", "int");
         let direct = |ty: &str| super::GlobalInfo {
@@ -1699,6 +1788,7 @@ mod tests {
             direct: true,
             aggregate: false,
             elem: false,
+            integer: ty != "float",
         };
         result.globals = vec![direct("unsigned int")];
         assert_eq!(super::global_declarations(std::slice::from_ref(&result)), "extern unsigned int dat_5000;\n");
@@ -1721,6 +1811,7 @@ mod tests {
             direct,
             aggregate: false,
             elem: false,
+            integer: true,
         };
         let mut result = streamed("void sample(void)", "int");
         result.globals = vec![global(0x5000, "unsigned int", 4, true), global(0x5004, "unsigned int", 4, true)];
@@ -1759,7 +1850,7 @@ mod tests {
         assert_eq!(conflicts("typedef int linked;", &[first.clone()]), 1);
         first.globals.push(super::GlobalInfo {
             address: 0x5000, name: "linked".into(), declaration: "int linked".into(),
-            size: 4, unknown: false, direct: false, aggregate: false, elem: false,
+            size: 4, unknown: false, direct: false, aggregate: false, elem: false, integer: false,
         });
         assert_eq!(conflicts("", &[first]), 1);
     }
