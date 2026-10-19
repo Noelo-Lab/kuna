@@ -137,12 +137,16 @@ pub fn capture(data: &mut Funcdata) {
                         follow = true;
                         false
                     }
-                    OpCode::CPUI_PIECE if reassembled(data, o).is_some() => {
-                        let (start, whole) = reassembled(data, o).unwrap_or((addr.clone(), size));
-                        follow = start == addr;
-                        cap = cap.max(whole);
-                        false
-                    }
+                    OpCode::CPUI_PIECE => match reassembled(data, o) {
+                        Some((start, whole)) => {
+                            if start == addr {
+                                follow = true;
+                                cap = cap.max(whole);
+                            }
+                            false
+                        }
+                        None => true,
+                    },
                     _ => true,
                 };
                 if real {
