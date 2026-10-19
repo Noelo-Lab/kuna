@@ -2508,6 +2508,9 @@ pub struct Architecture {
     /// P-code injection manager (C++ `pcodeinjectlib`).  SLEIGH-backed.
     pub pcodeinjectlib: PcodeInjectLibrarySleigh,
     call_mechanisms: Rc<crate::kuna_callmechanisms::Mechanisms>,
+    /// (kuna) Apply compiler-spec prototype entry/return p-code (option
+    /// `callmechanisms`).  See [`crate::kuna_callmechanisms`].
+    pub call_mechanism_effects: bool,
     /// Comments for this architecture (C++ `commentdb`).  // STUB(comment.cc)
     pub commentdb: CommentDatabase,
 
@@ -3149,6 +3152,7 @@ impl Architecture {
             )),
             pcodeinjectlib: PcodeInjectLibrarySleigh::new(inject_tempbase),
             call_mechanisms: Rc::default(),
+            call_mechanism_effects: false,
             commentdb: CommentDatabase::new(),
             // C++ ctor leaves types/print/defaultfp null; init() fills them.
             types: Rc::new(TypeFactoryImpl::new()),
@@ -3273,6 +3277,7 @@ impl Architecture {
         self.cast_object = true; // (kuna) option castobject default-on: a stack local whose address only fills declared int * parameters, whose readers agree, is declared int; evidence in docs/features/castobject/default-on-evaluation.md
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
+        self.call_mechanism_effects = false; // (kuna) option callmechanisms default-off: ppc_64_le.cspec's uponreturn stores r2Save at the ELFv1 TOC slot 0x28(r1), an ordinary frame slot under ELFv2
         self.callee_proto_stack = true; // (kuna) default-on (0/675 ablation): a locked callee prototype states how much it pops and how much of the caller's stack it can reach
         self.callee_pop = true; // (kuna) default-on (0/675 ablation): an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
         self.callee_pop_slot = true; // (kuna) default-on (0/675 ablation): the calleepop guess follows a slot pushed in front of one call and popped by a later one
@@ -3919,6 +3924,7 @@ impl Architecture {
         let manage = self.translate.manager_rc();
         let mut ctx = ArchContext::new_shared(manage);
         ctx.call_mechanisms = Rc::clone(&self.call_mechanisms);
+        ctx.call_mechanism_effects = self.call_mechanism_effects; // callmechanisms
         ctx.min_laned_register_size = self.get_minimum_laned_register_size();
         // Carry the laned-register table so the per-function Funcdata reaches
         // `glb->getLanedRegister` (C++ `Architecture::lanerecords`); cheap clones

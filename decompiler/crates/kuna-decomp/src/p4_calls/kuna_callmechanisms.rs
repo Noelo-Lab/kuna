@@ -1,4 +1,4 @@
-//! Compiler-declared p-code attached to prototype entry and return boundaries.
+//! (kuna) `callmechanisms` — compiler-declared p-code attached to prototype entry and return boundaries.
 use std::rc::Rc;
 
 use kuna_base::error::{KunaError, KunaResult};
@@ -117,6 +117,9 @@ pub fn evaluation_model(data: &crate::funcdata::Funcdata) -> Option<Rc<crate::fs
 
 /// Apply the callee model's declared return-boundary effects once per lifted call.
 pub fn apply_return(data: &mut crate::funcdata::Funcdata, index: i32) -> KunaResult<()> {
+    if !data.get_arch().call_mechanism_effects {
+        return Ok(());
+    }
     let call = data.get_call_specs(index);
     if !call.proto().has_model() || call.proto().is_no_return() {
         return Ok(());
@@ -157,7 +160,7 @@ pub fn apply_return(data: &mut crate::funcdata::Funcdata, index: i32) -> KunaRes
 
 /// Apply the current model's entry-boundary effects before the first operation.
 pub fn apply_entry(data: &mut crate::funcdata::Funcdata) -> KunaResult<()> {
-    if data.bblocks_get_size() == 0 {
+    if !data.get_arch().call_mechanism_effects || data.bblocks_get_size() == 0 {
         return Ok(());
     }
     let Some(model) = evaluation_model(data) else {
@@ -500,6 +503,7 @@ mod tests {
         let mut context = crate::context::ArchContext::new(manager);
         context.evalfp_current = Some(Rc::new(model));
         context.call_mechanisms = Rc::new(mechanisms);
+        context.call_mechanism_effects = true;
         let address = Address::new(ram.clone(), 0x1000);
         let mut data = crate::funcdata::Funcdata::new(
             "sample",

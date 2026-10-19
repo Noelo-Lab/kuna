@@ -78,6 +78,19 @@ fn run(
     targets: &[&str],
     fault: Option<InjectFault>,
 ) -> Run {
+    run_with_options(binary, lang_dir, pspec_name, cspec_name, targets, fault, &[])
+}
+
+/// [`run`], with kuna options applied to the session right after registerProgram.
+fn run_with_options(
+    binary: &Path,
+    lang_dir: &str,
+    pspec_name: &str,
+    cspec_name: &str,
+    targets: &[&str],
+    fault: Option<InjectFault>,
+    options: &[(&str, &str)],
+) -> Run {
     let mut oracle = SimOracle::bootstrap(binary);
     oracle.inject_fault = fault;
     let tspec = generate_tspec(&oracle.manager, oracle.big_endian, oracle.unique_base);
@@ -127,6 +140,13 @@ fn run(
             if i == n - 1 { 1 } else { 0 },
             "command #{i} status"
         );
+        if i == 0 {
+            for (name, value) in options {
+                process
+                    .set_kuna_option_for_test(0, name, value)
+                    .unwrap_or_else(|e| panic!("option {name} {value}: {e:?}"));
+            }
+        }
     }
     let _ = process.into_inner();
     let state = match Rc::try_unwrap(shared) {
@@ -325,18 +345,20 @@ fn an_empty_inject_response_fails_only_that_function() {
 }
 
 /// `ppc_64_le.cspec`'s default model declares an `uponreturn` payload, which in
-/// ghidra mode has no locally compiled body: every call must still decompile.
+/// ghidra mode has no locally compiled body: with `callmechanisms` on, every
+/// call must still decompile.
 #[test]
 fn ppc64_return_mechanism_without_a_local_body_keeps_calls_decompiling() {
     let binary = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/plt_ppc64le");
     let targets = ["main"];
-    let r = run(
+    let r = run_with_options(
         &binary,
         "specs/Ghidra/Processors/PowerPC/data/languages",
         "ppc_64.pspec",
         "ppc_64_le.cspec",
         &targets,
         None,
+        &[("callmechanisms", "on")],
     );
     assert_all_decompiled(&r, &targets, "PowerPC:LE:64 plt_ppc64le");
     assert!(

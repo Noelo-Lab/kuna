@@ -1,4 +1,4 @@
-//! Compiler-declared x87 return effects preserve live values below two calls.
+//! `callmechanisms`: compiler-declared prototype boundary effects.
 use crate::common;
 use common::process;
 use std::process::Command;
@@ -108,6 +108,9 @@ pair:
             "--option",
             "nanignore",
             "none",
+            "--option",
+            "callmechanisms",
+            "on",
             "--assert",
             "prototype sample void sample(double *values,double *output)",
             "--assert",
@@ -275,6 +278,9 @@ int main(int argc, char **argv) {
             "--sleighpath",
             specs.to_str().unwrap(),
             "--json",
+            "--option",
+            "callmechanisms",
+            "on",
             "--assert",
             "prototype sample unsigned sample(unsigned *values)",
             "--assert",
@@ -339,7 +345,13 @@ fn dynamic_entry_mechanisms_without_a_body_do_not_fail_the_function() {
         std::fs::write(&image, bytes).unwrap();
         let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
             .env("KUNA_SPECS", common::repo_root().join("specs"))
-            .args(["decompile", image.to_str().unwrap(), "0x1000", "--raw-image"])
+            .args([
+                "decompile",
+                image.to_str().unwrap(),
+                "0x1000",
+                "--raw-image",
+            ])
+            .args(["--option", "callmechanisms", "on"])
             .args(["--target", target, "--base", "0x1000"])
             .output()
             .unwrap();
@@ -351,4 +363,43 @@ fn dynamic_entry_mechanisms_without_a_body_do_not_fail_the_function() {
             String::from_utf8_lossy(&output.stderr)
         );
     }
+}
+
+/// The stock ELFv1 `r2Save` store to `0x28(r1)` lands on a live ELFv2 local.
+#[test]
+fn default_off_keeps_a_local_in_the_elfv1_toc_slot_of_an_elfv2_frame() {
+    let binary = common::fixture("callmech_tocslot_ppc64le.o");
+    let returned = |value: &str| {
+        let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .env("KUNA_SPECS", common::repo_root().join("specs"))
+            .args([
+                "decompile",
+                &binary,
+                "two_calls",
+                "--option",
+                "callmechanisms",
+                value,
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let code = String::from_utf8(output.stdout).unwrap();
+        let product = code
+            .lines()
+            .find_map(|line| line.trim().strip_suffix(" = a0 * 9;"))
+            .unwrap_or_else(|| panic!("{code}"))
+            .to_owned();
+        let kept = code
+            .lines()
+            .any(|line| line.trim().starts_with("return ") && line.contains(product.as_str()));
+        (kept, code)
+    };
+    let (kept, code) = returned("off");
+    assert!(kept && !code.contains("r2save"), "{code}");
+    let (kept, code) = returned("on");
+    assert!(!kept && code.contains("r2save"), "{code}");
 }

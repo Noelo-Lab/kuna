@@ -7409,7 +7409,9 @@ impl FuncCallSpecs {
         newinput: &mut Vec<Option<VarnodeId>>,
         newoutput: &mut Vec<VarnodeId>,
     ) -> KunaResult<bool> {
-        if crate::kuna_callmechanisms::requires_reflow(&self.proto, restricted_proto) {
+        if data.get_arch().call_mechanism_effects
+            && crate::kuna_callmechanisms::requires_reflow(&self.proto, restricted_proto)
+        {
             return Ok(false);
         }
         if !self.proto.has_model() {

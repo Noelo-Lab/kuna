@@ -246,6 +246,15 @@ Straight-line installation retains operation order and memory effects. Each
 invocation reserves a fresh contiguous unique-space range, preserving overlaps
 and partial temporary references within the payload without sharing temporaries
 between calls.
+Installing them is option `callmechanisms` (`on|off`, default **off**); with it
+off, models still carry their payload identities but no effect is installed and
+late restrictions behave as before. It is off by default because a stock spec
+states one wrongly for most binaries that use it: `ppc_64_le.cspec`'s default
+model stores `r2Save` to `0x28(r1)` after every call, which is the TOC save
+slot only under ELFv1. Every little-endian PPC64 binary uses ELFv2, where the
+TOC is saved at `0x18(r1)` and `0x28(r1)` is ordinary frame storage, so the
+store replaced a local the function keeps there with the TOC pointer after each
+call. With it on,
 `ActionDefaultParams` installs return-boundary effects after each modeled call;
 `ActionConstbase` installs entry-boundary effects before the entry block's first
 operation. A per-function ledger prevents duplicate insertion and is discarded
