@@ -1023,6 +1023,10 @@ pub struct ArchContext {
     /// AEABI helpers that use the base standard in every image.  Read by
     /// [`crate::p4_calls::kuna_armfloatreturn::helper_model`].
     pub arm_base_model: Option<Rc<crate::fspec::ProtoModel>>,
+    /// (kuna) The core-register (soft-float) model a declared AEABI helper
+    /// prototype is laid out under while `armfloatreturn` applies.  Read by
+    /// [`crate::p4_calls::kuna_armfloatreturn::declared_helper_model`].
+    pub arm_helper_model: Option<Rc<crate::fspec::ProtoModel>>,
     /// What the image says about floating-point arguments (`Some(false)`: they
     /// travel in integer registers).  Read by [`crate::p4_calls::kuna_typedcallabi`].
     pub float_arg_registers: Option<bool>,
@@ -1879,6 +1883,7 @@ impl ArchContext {
             arm_float_args: false, // (kuna) option armfloatargs (default off)
             arm_float_return: false, // (kuna) option armfloatreturn (default off)
             arm_base_model: None,
+            arm_helper_model: None,
             float_arg_registers: None,
             soft_float_model: None,
             soft_float_declarations: None,

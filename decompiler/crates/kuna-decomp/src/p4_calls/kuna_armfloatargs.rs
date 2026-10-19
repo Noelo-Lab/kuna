@@ -816,33 +816,24 @@ fn s_register(data: &Funcdata, v: &crate::varnode::Varnode) -> bool {
     name.len() > 1 && name.starts_with('s') && name[1..].bytes().all(|b| b.is_ascii_digit())
 }
 
-/// The VFP input words that move as single-precision values: copied into
-/// another s-register, or stored or spilled to the stack from one as a word.
-fn single_moves(data: &Funcdata) -> Vec<(Address, i32)> {
-    let single = |vn: VarnodeId| data.vbank().get(vn).filter(|v| v.get_size() == 4 && s_register(data, v));
+/// The VFP input word the op `op` moves as a single-precision value: copied
+/// into another s-register, or stored or spilled to the stack from one.
+fn single_move(data: &Funcdata, op: &crate::op::PcodeOp) -> Option<(Address, i32)> {
     let stack = |vn: VarnodeId| {
         data.vbank().get(vn).is_some_and(|v| {
             v.get_size() == 4
                 && v.get_addr().get_space().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE)
         })
     };
-    let mut out = Vec::new();
-    for op in data.obank().iter_alive().filter_map(|id| data.obank().get(id)) {
-        let (moved, register_copy) = match op.code() {
-            OpCode::CPUI_STORE => (op.get_in(2), false),
-            OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT if op.get_out().is_some_and(stack) => (op.get_in(0), false),
-            OpCode::CPUI_COPY | OpCode::CPUI_SUBPIECE | OpCode::CPUI_CAST => (op.get_out(), true),
-            _ => continue,
-        };
-        let Some(vn) = moved else { continue };
-        let Some(value) = single(vn) else { continue };
-        if let Some(word) = input_storage(data, vn, &mut 32).filter(|w| w.1 == 4) {
-            if !register_copy || word.0 != *value.get_addr() {
-                out.push(word);
-            }
-        }
-    }
-    out
+    let (moved, register_copy) = match op.code() {
+        OpCode::CPUI_STORE => (op.get_in(2)?, false),
+        OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT if op.get_out().is_some_and(stack) => (op.get_in(0)?, false),
+        OpCode::CPUI_COPY | OpCode::CPUI_SUBPIECE | OpCode::CPUI_CAST => (op.get_out()?, true),
+        _ => return None,
+    };
+    let value = data.vbank().get(moved).filter(|v| v.get_size() == 4)?;
+    let word = input_storage(data, moved, &mut 32).filter(|w| w.1 == 4)?;
+    ((!register_copy || word.0 != *value.get_addr()) && s_register(data, value)).then_some(word)
 }
 
 /// A d-register input read only as two words that floating operations consume,
@@ -1016,6 +1007,8 @@ pub fn is_forwarded_input(data: &Funcdata, vn: VarnodeId, addr: &Address, size: 
         && input_storage(data, vn, &mut 32).is_some_and(|(a, s)| a == *addr && s == size)
 }
 
+/// The VFP inputs floating operations, stated callee contracts or
+/// single-precision moves ([`single_move`]) take as floats.
 fn typed_inputs(data: &Funcdata) -> Vec<(Address, i32)> {
     let mut out = Vec::new();
     for op in data
@@ -1023,6 +1016,9 @@ fn typed_inputs(data: &Funcdata) -> Vec<(Address, i32)> {
         .iter_alive()
         .filter_map(|id| data.obank().get(id))
     {
+        if let Some(word) = single_move(data, op) {
+            out.push(word);
+        }
         let floating = matches!(
             op.code(),
             OpCode::CPUI_FLOAT_EQUAL
@@ -1108,8 +1104,7 @@ pub fn prepare_inputs(data: &mut Funcdata) {
     {
         return;
     }
-    let mut candidates = typed_inputs(data);
-    candidates.extend(single_moves(data));
+    let candidates = typed_inputs(data);
     split_word_inputs(data, &candidates);
     for (addr, size) in candidates {
         if !matches!(size, 4 | 8)

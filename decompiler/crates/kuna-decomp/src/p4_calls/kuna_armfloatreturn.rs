@@ -52,6 +52,14 @@ pub fn helper_model(arch: &crate::context::ArchContext, name: &str) -> Option<Rc
     arch.arm_base_model.clone().filter(|_| arch.arm_float_return && base_pcs_helper(name))
 }
 
+/// The model a declared prototype of `name` is laid out under where the option
+/// applies to the image: the core-register model for a [`base_pcs_helper`],
+/// whose debug information states its types but not that it keeps the base
+/// standard (`long long __fixdfdi(double a)` takes `a` in r0:r1).
+pub fn declared_helper_model(arch: &crate::context::ArchContext, name: &str) -> Option<Rc<ProtoModel>> {
+    arch.arm_helper_model.clone().filter(|_| base_pcs_helper(name))
+}
+
 /// Does one instruction at `addr` save or restore the VFP register bank with
 /// `code`: eight or more registers, one of them outside the argument registers
 /// (`vstmia r0,{d0-d15}`, `vldmia r0,{d0-d15}`)? clang stores eight float or
@@ -401,7 +409,8 @@ fn call_leftover(data: &Funcdata, vn: VarnodeId, budget: &mut usize) -> bool {
 
 /// Retire a VFP return trial when an integer return trial holds a value the
 /// function computes to return at every exit and the VFP register, on some
-/// exit, is only what a call left there or what the function received:
+/// exit, is only what a call left there or what the function received, or
+/// holds at every exit a temporary the body also uses:
 /// `half(x); return k + 1;` leaves `half`'s double in d0 beside `k + 1` in r0,
 /// and mpg123's `getpar` loads a double into d0 on one path while every exit
 /// returns an error code; the wider d0 would otherwise win the fill-in.
@@ -436,11 +445,37 @@ fn drop_call_leftovers(data: &Funcdata, active: &mut ParamActive, returns: &[cra
         let t = active.get_trial(i);
         if t.is_active()
             && vfp(t.get_address(), t.get_size())
-            && some(t.get_slot(), &|vn| call_leftover(data, vn, &mut 64))
+            && (some(t.get_slot(), &|vn| call_leftover(data, vn, &mut 64)) || temporaries(data, returns, t.get_slot()))
         {
             active.get_trial_mut(i).mark_inactive();
         }
     }
+}
+
+/// Is every value the function wrote to `slot` and hands to an exit also used
+/// by the body for something other than the return, so that the register only
+/// holds a temporary there? `(unsigned)(0.0 - x)` widens `x` into d0 to
+/// subtract it and returns the converted difference in r0.
+fn temporaries(data: &Funcdata, returns: &[crate::context::OpId], slot: i32) -> bool {
+    let (mut seen, mut scalars, mut vectors) = (Vec::new(), Vec::new(), Vec::new());
+    let walked = returns.iter().all(|&id| {
+        data.obank()
+            .get(id)
+            .and_then(|o| o.get_in(slot))
+            .is_some_and(|vn| exit_writes(data, vn, false, &mut seen, &mut scalars, &mut vectors))
+    });
+    walked
+        && !(scalars.is_empty() && vectors.is_empty())
+        && scalars.iter().chain(&vectors).all(|&leaf| {
+            data.vbank().get(leaf).is_some_and(|v| {
+                v.descend_iter().any(|id| {
+                    data.obank().get(id).is_some_and(|o| {
+                        !matches!(o.code(), OpCode::CPUI_RETURN | OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT)
+                            && !o.get_out().is_some_and(|out| seen.contains(&out))
+                    })
+                })
+            })
+        })
 }
 
 /// Walk the copies, casts and merges that reach `vn` and sort the values the

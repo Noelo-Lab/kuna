@@ -612,7 +612,7 @@ fn family_refuses(data: &Funcdata, vn: VarnodeId, reading: Reading, ct: &Datatyp
         {
             return true;
         }
-        if float_global {
+        if float_global && !globals.iter().any(|(at, size)| at == node.get_addr() && *size == node.get_size()) {
             globals.push((node.get_addr().clone(), node.get_size()));
         }
         if float_vote && node.is_input() && !a_float_can_arrive_in(data, node) {

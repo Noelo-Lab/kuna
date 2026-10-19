@@ -3957,6 +3957,9 @@ impl Architecture {
             .defaultfp
             .clone()
             .filter(|_| crate::kuna_armfloatreturn::applies(self));
+        ctx.arm_helper_model = crate::kuna_armfloatreturn::applies(self)
+            .then(|| crate::kuna_typedcallabi::soft_model(self, Some(false)))
+            .flatten();
         ctx.float_arg_registers = crate::kuna_typedcallabi::image_evidence(self);
         ctx.soft_float_model = crate::kuna_typedcallabi::soft_model(self, ctx.float_arg_registers);
         ctx.soft_float_declarations = ctx

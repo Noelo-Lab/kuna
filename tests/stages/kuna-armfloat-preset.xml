@@ -38,7 +38,14 @@
     armfloat_preset_m4f.o, a base-standard function a Cortex-M4F computes in
     through the AEABI helpers, with declared prototypes that put its double
     in d0: the call to __aeabi_dcmplt keeps its integer result in both
-    passes instead of becoming the double left live in d0.
+    passes instead of becoming the double left live in d0. Passes 7 and 8
+    load armfloat_preset_m7.o (arm-none-eabi-gcc 10.3 -O2 for a Cortex-M7
+    with double-precision VFP) with the options off and under the preset.
+    neg_trunc widens its float into d0 to subtract it and returns the
+    converted difference in r0, so it keeps its int return. to_ticks hands a
+    double it computed in d7 to __aeabi_d2lz in r0:r1; the helper, declared
+    `long long __aeabi_d2lz(double v)` as libgcc's debug information declares
+    it, keeps the base standard, so to_ticks takes no double from d0.
 -->
 <bytechunk space="ram" offset="0x1000">1eff2fe1</bytechunk>
 <symbol space="ram" offset="0x1000" name="harness_stub"/>
@@ -174,6 +181,30 @@
   <com>lo fu fixit</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloat_preset_m7.o</com>
+  <com>read symbols</com>
+  <com>mode aggressive</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
+  <com>parse line extern long long __aeabi_d2lz(double v);</com>
+  <com>lo fu neg_trunc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu to_ticks</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloat_preset_m7.o</com>
+  <com>read symbols</com>
+  <com>mode aggressive</com>
+  <com>parse line extern long long __aeabi_d2lz(double v);</com>
+  <com>lo fu neg_trunc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu to_ticks</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="armfloat preset #1: off cuts scale's double return to its low word and loses its parameter" min="1" max="1">unsigned int scale\(void\)</stringmatch>
@@ -195,4 +226,7 @@
 <stringmatch name="armfloat preset #17: an integer reloaded into s0 from an unoptimized spill keeps its integer parameter in both passes" min="2" max="2">unsigned int from_bits_o0\(unsigned int a0\)</stringmatch>
 <stringmatch name="armfloat preset #18: eight float arguments stored with one vstmia stay parameters in both passes" min="2" max="2">void set8f\(float a0,float a1,float a2,float a3,float a4,float a5,float a6,float a7,float \*a8\)</stringmatch>
 <stringmatch name="armfloat preset #19: an int getter that loads a double into d0 on one path keeps its int return in both passes" min="2" max="2">unsigned int getpar\(void \*a0,int a1,</stringmatch>
+<stringmatch name="armfloat preset #20: an int computed from a double temporary in d0 keeps its int return in both passes" min="2" max="2">int neg_trunc\(float a0\)</stringmatch>
+<stringmatch name="armfloat preset #21: a declared AEABI helper keeps the base standard, so its caller keeps its parameters in both passes" min="2" max="2">unsigned long long to_ticks\(float a0,unsigned int a1,</stringmatch>
+<stringmatch name="armfloat preset #22: no pass gives the caller of a declared AEABI helper a double parameter" min="0" max="0">to_ticks\(double</stringmatch>
 </decompilertest>

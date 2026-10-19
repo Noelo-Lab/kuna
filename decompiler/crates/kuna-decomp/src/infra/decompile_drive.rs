@@ -1358,6 +1358,7 @@ pub fn decompile_func_full_with_objects(
             let declared_model = staged_proto_model
                 .clone()
                 .or_else(|| fd.get_arch().callee_proto_model(&entry_addr))
+                .or_else(|| crate::kuna_armfloatreturn::declared_helper_model(fd.get_arch(), &pieces.name))
                 .or_else(|| crate::kuna_typedcallabi::undeclared_model(fd.get_arch(), pieces));
             fd.apply_locked_prototype_with_model(pieces, declared_model)?;
         } else if let Some(rt) = elfmain {

@@ -524,6 +524,11 @@ impl Action for ActionDefaultParams {
                             // present (Phase 3); a declaration that names none
                             // follows the image's float convention.
                             let seed_model = callee_model
+                                .or_else(|| {
+                                    crate::kuna_armfloatreturn::declared_helper_model(&arch, &pieces.name).or_else(|| {
+                                        crate::kuna_armfloatreturn::declared_helper_model(&arch, data.get_call_specs(i).get_name())
+                                    })
+                                })
                                 .or_else(|| crate::kuna_typedcallabi::undeclared_model(&arch, &pieces))
                                 .or_else(|| crate::kuna_armfloatreturn::helper_model(&arch, &pieces.name))
                                 .unwrap_or(dfp);

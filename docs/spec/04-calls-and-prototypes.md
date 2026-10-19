@@ -25,7 +25,7 @@ register. libvorbis's `setup_tone_curves` copies `s1` into `s22` and spills
 `s0`, so it takes three floats rather than a double and a float. A word that
 moves as a single is also typed `float`. Words read only as integers, such as a
 double handed to a base-AAPCS helper in core registers, are left as
-`armfloatreturn` alone leaves them (`kuna_armfloatargs.rs (single_moves)`).
+`armfloatreturn` alone leaves them (`kuna_armfloatargs.rs (single_move)`).
 
 An 8-byte VFP input that no reader takes as a double is not a parameter
 (`kuna_armfloatargs.rs (stray_vector_input)`): followed through copies, merges
@@ -7046,8 +7046,13 @@ register as the function received it, is marked inactive
 (`kuna_armfloatreturn.rs (drop_call_leftovers)`). `half(x); return k + 1;`
 returns `k + 1` in `r0`, not `half`'s double, and libmpg123's `mpg123_getpar`,
 which loads a double into `d0` on the one path that converts it and returns a
-status in `r0` on every path, keeps its `int` return. A function that returns
-`half`'s result and merely uses `r0` as scratch keeps the double.
+status in `r0` on every path, keeps its `int` return. The VFP trial is also
+retired when every value the function wrote to it and hands to an exit is a
+temporary the body uses for something other than the return
+(`kuna_armfloatreturn.rs (temporaries)`): gcc compiles `(unsigned)(0.0 - x)`
+by widening `x` into `d0`, subtracting it and returning the converted
+difference in `r0`. A function that returns `half`'s result and merely uses
+`r0` as scratch keeps the double.
 
 A `d0` trial is also retired when every value the function wrote there and
 hands to an exit is the low half of a wider vector register
@@ -7127,7 +7132,13 @@ where a hard-float libgcc computes in VFP registers inside them. A function so
 named is decompiled under the unwidened default model, and so is every call
 to one (`kuna_armfloatreturn.rs (base_pcs_helper, helper_model)`), so a
 helper's integer result in `r0` is not displaced by a double the caller keeps
-live in `d0`. A register-bank save or restore, one instruction storing or
+live in `d0`. A declared prototype of one, from a parsed declaration or from
+debug information (libgcc's `long long __fixdfdi(double a)`, at the address of
+`__aeabi_d2lz`), states its types but not its convention, so its parameters and
+result are laid out under the core-register model
+(`kuna_armfloatreturn.rs (declared_helper_model)`): a Cortex-M7 caller that
+passes a double it computed in `d7` in `r0:r1` does not take its own `d0` as a
+phantom `double` parameter. A register-bank save or restore, one instruction storing or
 loading eight or more VFP registers of which at least one is not an argument
 register (the unwinder's `vstmia r0,{d0-d15}`), is neither a read of parameters
 nor a result
