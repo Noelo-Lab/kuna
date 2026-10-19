@@ -867,6 +867,7 @@ pub struct Heritage {
     /// "can a pointer reach this stack slot?" with, gathered at most once per
     /// pass.  See [`crate::p4_calls::kuna_calleeprotostack`].
     protostack_alias: Option<Option<crate::varmap::AliasChecker>>,
+    global_call_ranges: super::kuna_globalcallranges::Calls,
     /// (kuna `stackstoreguard`) Whether this pass's frame has a stack access
     /// whose pointer does not resolve, decided at most once per pass.
     store_frame_unresolved: Option<bool>,
@@ -920,6 +921,7 @@ impl Heritage {
             deadline: None,
             load_copy_ops: Vec::new(),
             protostack_alias: None,
+            global_call_ranges: Default::default(),
             store_frame_unresolved: None,
             store_frame_guarded: false,
             global_store_guards: 0,
@@ -1084,6 +1086,7 @@ impl Heritage {
     pub fn clear(&mut self) {
         self.disjoint.clear();
         self.globaldisjoint.clear();
+        self.global_call_ranges.clear();
         self.domchild.clear();
         self.augment.clear();
         self.flags.clear();
@@ -1721,7 +1724,9 @@ impl Heritage {
                         && !self.protostack_is_aliased(fd, &spc, addr.get_offset(), 1)
                         && !self.protostack_is_aliased(fd, &spc,
                             spc.wrap_offset(addr.get_offset().wrapping_add(size.saturating_sub(1) as uintb)), 1))
-                    || crate::kuna_calleememory::preserves(fd, fc, addr, size))
+                    || crate::kuna_calleememory::preserves(fd, fc, addr, size)
+                    || ((fl & varnode_flags::persist) != 0
+                        && self.global_call_ranges.preserves(fd, fc, addr, size)))
             {
                 effecttype = effect_type::UNAFFECTED;
             }
@@ -5437,6 +5442,7 @@ impl Heritage {
         // (kuna `calleeprotostack`) The alias gather is only valid for the
         // data-flow as it stands, so it is dropped at every pass boundary.
         self.protostack_alias = None;
+        self.global_call_ranges.clear();
         self.spill_stores.clear();
         self.spill_store_guards.clear();
         self.indexed_store_guards.clear();

@@ -1077,6 +1077,7 @@ pub struct ArchContext {
     /// Read by `Heritage::guard_calls` through
     /// [`crate::p4_calls::kuna_calleepreserves::callee_preserves_range`].
     pub callee_preserves: bool,
+    pub global_call_ranges: bool,
     /// (kuna) let the callee's decoded body answer for the call's RETURN
     /// register too (`calleeretpreserves`).  Read by `Heritage::guard_calls`
     /// through
@@ -1897,6 +1898,7 @@ impl ArchContext {
             zero_fill_return: true,
             zero_call_regs: true,
             callee_preserves: true,
+            global_call_ranges: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)
             indirect_anchor: true,      // indirectanchor (default-on)

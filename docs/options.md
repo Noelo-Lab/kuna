@@ -1274,6 +1274,9 @@ Three tiers:
 | a call-written volatile stack local is read on the failure path | [`guardedreadtrim`](#guardedreadtrim) |
 | an overwritten register argument renders as a stale half of a previous wide value | [`multiregargs`](#multiregargs) |
 | a live entry argument disappears after a wide register read | [`multiregargs`](#multiregargs) |
+| large global initializer exhausts memory during heritage | [`globalcallranges`](#globalcallranges) |
+| tiny constructors cause a quadratic number of global call guards | [`globalcallranges`](#globalcallranges) |
+| a function with many global assignments uses gigabytes before emitting C | [`globalcallranges`](#globalcallranges) |
 
 ## Toggleable transforms
 
@@ -3854,6 +3857,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Disable when comparing legacy argument recovery; enable when a wide register temporary hides a subsequently overwritten argument slot.
 - **Where / provenance:** P3/ssa-construction · kuna · correctness-fix · GH-1070
 - **Example:** `option multiregargs off`
+
+### `globalcallranges` -- on | off, default `on`
+
+- **Symptoms:** large global initializer exhausts memory during heritage; tiny constructors cause a quadratic number of global call guards; a function with many global assignments uses gigabytes before emitting C.
+- **What it does:** Avoid a call guard for a persistent global when a complete bounded callee-body summary proves that all of the callee's memory reads and writes target disjoint constant address intervals. Reuse the frame-memory body walker and its cache, but exclude absolute memory references, direct memory input or output varnodes in any processor space, nonreturn frame accesses, opaque operations and incomplete bodies from this proof. Resolve every memory-effect root through an exact full-width register parameter and a definite constant caller argument; unknown arguments, overlaps, explicit effect overrides and wrapping arithmetic retain the guard. Seed this proof for functions with at least 16 calls and 64 direct memory writes, where the global-range by call-site cross product is material. The option removes redundant IR allocations rather than stopping a function: the CrashLogger initializer's tiny constructors each touch one 16-byte object, not every global.
+- **When to flip:** On by default. Keep it on for initializers that write many globals and call small constructors at distinct constant destinations. Flip off to compare the original all-globals-at-every-call guard placement. Unknown callee bodies and unresolved or overlapping actual pointers retain their existing guards.
+- **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
+- **Example:** `option globalcallranges off`
 
 ## Programmatic use
 

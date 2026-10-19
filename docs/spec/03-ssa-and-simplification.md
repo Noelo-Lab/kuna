@@ -234,6 +234,32 @@ call has on the (callee-translated) range (`decompiler/crates/kuna-decomp/src/p4
   delayed CALL output and SUBPIECEs/PIECEs it into the range
   (`heritage.rs (Heritage::try_output_stack_guard)`).
 
+Under `option globalcallranges` (default on), a persistent RAM range needs no
+call guard when the callee's complete memory-effect summary proves every read
+and write disjoint from it. The bounded `kuna_calleememory` walker and its cache
+are shared with frame analysis, but the global proof excludes absolute memory
+accesses, direct memory input or output varnodes in any processor space,
+nonreturn frame accesses and any opaque or incomplete path. Exact self-XOR zeroing and constant zero extension preserve
+known scalar values in constructor summaries. Every memory-effect root must
+match a full-width register parameter or a backed active-input trial, whose
+recorded CALL slot resolves to a definite constant address. Partial storage,
+unreferenced trials, unknown actuals, explicit effect overrides, overlapping
+reads or writes, and wrapping intervals retain the guard. A summary that reads
+the return address also requires a solved caller stack offset and the matching
+architectural return slot, excluding visible stack pivots. Types and presumed
+noalias properties provide no evidence.
+
+`kuna_globalcallranges.rs (Calls)` resolves each call once per heritage pass and
+keeps its intervals in a generation-aware op side table; pass changes and
+analysis reset discard them. Only functions with at least 16 calls and 64 direct
+RAM writes seed the additional summaries. Existing frame-effect consumers still
+require their own frame options even when global summaries are present. This
+avoids the global-range by call-site IR cross product in large initializers:
+small constructors affect their explicit destination objects, while unrelated
+global stores keep their original statements and ordering. Turning the option
+off restores the previous guards without changing the function's time or memory
+budgets.
+
 **A range the call returns in.** Upstream skips a call whose output varnode
 covers the heritaged range exactly: the call defines the range itself, so no
 INDIRECT is needed. The skip also drops the input trial, which loses an

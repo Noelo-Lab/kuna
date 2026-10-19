@@ -2099,7 +2099,7 @@ mod tests {
         // and kuna-arraysize / an escaped stack buffer ends at its call's stated count
         // and kuna-narrowret, -x86 / a single-function decompile states no narrow call result
         // and kuna-bodyreads / a self-call keeps the register its own body reads
-        assert_eq!(count, 575, "corpus file count drifted");
+        assert_eq!(count, 576, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

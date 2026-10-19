@@ -7965,3 +7965,26 @@ symptoms = "numerical integer conversion is stored in a float local|short call a
 live_field = "fpu_trunc_views"
 live_true = "on"
 live_false = "off"
+
+
+[[settable]]
+option = "globalcallranges"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "call-guard"
+strength = "HARD"
+rewind = "P3"
+issue = "gh-1034"
+summary = "Avoid a call guard for a persistent global when a complete bounded callee-body summary proves that all of the callee's memory reads and writes target disjoint constant address intervals. Reuse the frame-memory body walker and its cache, but exclude absolute memory references, direct memory input or output varnodes in any processor space, nonreturn frame accesses, opaque operations and incomplete bodies from this proof. Resolve every memory-effect root through an exact full-width register parameter and a definite constant caller argument; unknown arguments, overlaps, explicit effect overrides and wrapping arithmetic retain the guard. Seed this proof for functions with at least 16 calls and 64 direct memory writes, where the global-range by call-site cross product is material. The option removes redundant IR allocations rather than stopping a function: the CrashLogger initializer's tiny constructors each touch one 16-byte object, not every global."
+use_when = "On by default. Keep it on for initializers that write many globals and call small constructors at distinct constant destinations. Flip off to compare the original all-globals-at-every-call guard placement. Unknown callee bodies and unresolved or overlapping actual pointers retain their existing guards."
+example = "option globalcallranges off"
+source_decompiler = "kuna"
+inspiration = "GH-1034 CrashLogger 1.25.0 initializer 0x180005650: 22,266 direct RAM write addresses and 2,325 calls to two 16-byte constructors."
+change_kind = "performance"
+tier = "core"
+symptoms = "large global initializer exhausts memory during heritage|tiny constructors cause a quadratic number of global call guards|a function with many global assignments uses gigabytes before emitting C"
+live_field = "global_call_ranges"
+live_true = "on"
+live_false = "off"
