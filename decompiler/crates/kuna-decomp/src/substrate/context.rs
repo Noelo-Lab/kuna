@@ -620,6 +620,10 @@ mod tests;
 /// the function and its analysis passes.
 pub struct ArchContext {
     pub x87_empty_storage: Option<crate::p4_calls::kuna_x87emptyreturn::Storage>,
+
+    pub call_mechanisms: Rc<crate::kuna_callmechanisms::Mechanisms>,
+    /// (kuna) `callmechanisms` — apply compiler-spec prototype entry/return p-code.
+    pub call_mechanism_effects: bool,
     /// Shared spaces retain the pointer identities and indices used by lifted
     /// Varnodes. [`Self::new_shared`] accepts the engine's manager; [`Self::new`]
     /// wraps an owned manager for fixtures.
@@ -1720,6 +1724,8 @@ impl ArchContext {
         // C++ default: getMinimumLanedRegisterSize() returns the configured
         // minimum; the upstream default when unset is 4.
         ArchContext {
+            call_mechanisms: Rc::default(),
+            call_mechanism_effects: false,
             manage,
             min_laned_register_size: 4,
             x87_empty_storage: None,

@@ -229,6 +229,44 @@ list carries a `pointermax` attribute, and the
 blocks — and registers the result as the default model
 (`Architecture::register_model`).
 
+Compiler-spec prototype p-code is registered before snippet compilation by
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callmechanisms.rs`. Default and
+named models resolve distinct entry/return payload identities from the shared
+call-mechanism namespace. A model resolves only payloads that have a locally
+compiled body: a `dynamic` payload with no `<body>` (the JVM and Dalvik
+`uponentry` models) and every payload in ghidra mode, where there is no local
+`.sla` to compile against, stay unresolved, so those models apply no boundary
+effects. Unknown boundary names are rejected rather than
+silently interpreted as a different boundary. Registration retains the compiler
+spec's declared operations; it does not identify helpers by runtime names.
+Compiled call mechanisms are snapshotted once per architecture and shared with
+function analysis. Emission first collects the whole payload, so missing compiled
+bodies, invalid storage, and unsupported control flow fail before installation.
+Straight-line installation retains operation order and memory effects. Each
+invocation reserves a fresh contiguous unique-space range, preserving overlaps
+and partial temporary references within the payload without sharing temporaries
+between calls.
+Installing them is option `callmechanisms` (`on|off`, default **off**); with it
+off, models still carry their payload identities but no effect is installed and
+late restrictions behave as before. It is off by default because a stock spec
+states one wrongly for most binaries that use it: `ppc_64_le.cspec`'s default
+model stores `r2Save` to `0x28(r1)` after every call, which is the TOC save
+slot only under ELFv1. Every little-endian PPC64 binary uses ELFv2, where the
+TOC is saved at `0x18(r1)` and `0x28(r1)` is ordinary frame storage, so the
+store replaced a local the function keeps there with the TOC pointer after each
+call. With it on,
+`ActionDefaultParams` installs return-boundary effects after each modeled call;
+`ActionConstbase` installs entry-boundary effects before the entry block's first
+operation. A per-function ledger prevents duplicate insertion and is discarded
+with lifted IR during reanalysis. A late prototype restriction that adds,
+removes, or changes return-boundary effects requests the existing full reflow
+path. Unsupported mechanisms stop analysis and propagate as function errors.
+Entry emission uses the same effective evaluation model selected by
+`ActionPrototypeTypes`, including ordinary functions with no prototype
+assertion. Locked models retain priority. Compiler-mechanism templates that
+reference instruction-specific placeholders such as `inst_next` are rejected;
+these boundaries do not supply an instruction-length context.
+
 The model's stack ranges come from the spec too, as upstream `ProtoModel::decode`
 takes them (`option protoranges`, default on, §6.2): the parameter range is every stack `<pentry>` of `<input>` plus any
 `<paramrange>`, and the local range is the `<localrange>` element

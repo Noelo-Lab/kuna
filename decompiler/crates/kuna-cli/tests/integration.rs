@@ -502,3 +502,6 @@ mod x87_register_payload;
 
 #[path = "x87_free_operands.rs"]
 mod x87_free_operands;
+
+#[path = "prototype_call_mechanisms.rs"]
+mod prototype_call_mechanisms;
