@@ -3557,12 +3557,16 @@ plain C identifiers (`decompiler/crates/kuna-console/src/kuna_projectfunctionnam
 This aligns definitions with calls when debug information names a function
 differently from its linker symbol. Analysis, selector aliases, and standalone
 output retain their existing names. The original display is restored after
-rendering. Namespaced and nonidentifier spellings are not guessed. A separate optional emitted C name travels through worker records and survives
-stream compaction. Final header validation checks successful prototype records,
-including streamed bodies whose text was released. Multiple entries claiming
-one C name, or a function conflicting with a data or typedef declaration, produce
-an address-only `#error` and an export completion error. Source selection names
-and alias metadata retain their existing meaning.
+rendering. Namespaced and nonidentifier spellings are not guessed. A separate
+optional emitted C name travels through worker records and survives stream
+compaction, so the header checks every successful prototype record, including
+streamed bodies whose text was released. Multiple entries claiming one C name
+(duplicate static functions from separate translation units, or a PLT stub
+beside the definition it reaches), or a function conflicting with a data or
+typedef declaration, are listed in address-only header comments. They are not
+fatal: the export still writes every artifact and keeps its exit status, and a
+typedef collision keeps the commented-out prototype so the header itself still
+parses. Source selection names and alias metadata retain their existing meaning.
 
 Project C emission reserves global function names before rendering local symbols.
 A colliding parameter or local receives a unique local spelling; parameter storage,

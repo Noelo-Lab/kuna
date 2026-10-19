@@ -315,8 +315,7 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
 
     let ok = results.iter().filter(|r| r.error.is_none()).count();
     let failed = results.len() - ok;
-    let error = kuna_console::project::c_name_conflicts(&types, &results).first().cloned()
-        .or_else(|| BatchOutcome::of(&results).all_failed_error(&args.binary));
+    let error = BatchOutcome::of(&results).all_failed_error(&args.binary);
     let files = sizes
         .iter()
         .map(|(n, s)| format!("{n} ({s} bytes)"))

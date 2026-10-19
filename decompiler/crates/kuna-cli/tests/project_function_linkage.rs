@@ -146,7 +146,7 @@ int main(int argc, char **argv) {{
 
 #[test]
 #[cfg(target_os = "linux")]
-fn conflicting_emitted_function_names_fail_export_in_each_execution_mode() {
+fn conflicting_emitted_function_names_are_reported_in_each_execution_mode() {
     if process::optional_output(Command::new("gcc").arg("--version")).is_none() {
         return;
     }
@@ -191,14 +191,15 @@ fn conflicting_emitted_function_names_fail_export_in_each_execution_mode() {
             args.push("--stream");
         }
         let (out, err, status) = common::run_kuna(&args);
-        assert_ne!(status, 0, "{out}\n{err}");
+        assert_eq!(status, 0, "{out}\n{err}");
         let header = std::fs::read_to_string(project.join(format!(
             "{}.h",
             binary.file_name().unwrap().to_str().unwrap()
         )))
         .unwrap();
         assert!(
-            header.contains("#error C function name has multiple owning entries"),
+            header.contains("/* C function name has multiple owning entries, including 0x")
+                && !header.contains("#error"),
             "{out}\n{err}\n{header}"
         );
         std::fs::remove_dir_all(project).unwrap();

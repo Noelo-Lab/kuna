@@ -1203,29 +1203,26 @@ fn matching_open(text: &str, open: char, close: char) -> Option<usize> {
     None
 }
 
-/// Project C ownership checks run on complete records, including streamed and
-/// parallel output. Messages contain only addresses, never untrusted symbol text.
-pub fn c_name_conflicts(types: &str, results: &[FuncResult]) -> Vec<String> {
-    let types = effective_project_types(types, results);
-    crate::kuna_projectfunctionnames::conflicts(results, &typedef_names(&types))
-}
-
-fn effective_project_types(types: &str, results: &[FuncResult]) -> String {
-    declare_called_fields(&prune_unreferenced_synth_types(types, results), results)
-}
-
 /// `<name>.h`: include guard + recompile prelude + user type definitions +
 /// the prototype section (successes in address order; failures as comments).
 ///
-/// A function sharing a typedef name retains its prototype as a comment for
-/// diagnosis. The ownership check also emits a preprocessor error and rejects
-/// the project: omitting a prototype does not repair the colliding definition.
+/// A function whose name is also one of the header's typedef names has its
+/// prototype COMMENTED OUT rather than declared: `int stat(const char *, stat *)`
+/// next to `typedef struct stat stat;` is `error: 'stat' redeclared as a
+/// different kind of symbol`, and it takes the declarations after it down with
+/// it. The type is the more valuable of the two — every other signature that
+/// mentions it depends on it, while the suppressed prototype is one line, still
+/// printed verbatim in the comment.
+///
+/// A C function name claimed by several entries, or also by a data or type
+/// declaration, is listed in an address-only comment (complete records, so
+/// streamed and parallel exports report the same); the export still completes.
 ///
 /// The type block is filtered by [`prune_unreferenced_synth_types`] first, so a
 /// synthesized structure the document no longer names is not declared.
 pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[FuncResult]) -> String {
     let guard = sanitize_guard(file_name);
-    let types = &effective_project_types(types, results);
+    let types = &declare_called_fields(&prune_unreferenced_synth_types(types, results), results);
     let shadowed = typedef_names(types);
     let mut out = String::new();
     out.push_str(&format!("#ifndef {guard}\n#define {guard}\n\n"));
@@ -1234,8 +1231,12 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
         out.push_str("\n/* user-defined types */\n");
         out.push_str(types);
     }
-    for conflict in crate::kuna_projectfunctionnames::conflicts(results, &shadowed) {
-        let _ = writeln!(out, "#error {conflict}");
+    let conflicts = crate::kuna_projectfunctionnames::conflicts(results, &shadowed);
+    if !conflicts.is_empty() {
+        out.push_str("\n/* C name conflicts: the generated C does not compile until these are renamed */\n");
+        for conflict in conflicts {
+            let _ = writeln!(out, "/* {conflict} */");
+        }
     }
     let globals = global_declarations(results);
     if !globals.is_empty() {
@@ -1739,6 +1740,9 @@ mod tests {
 
     #[test]
     fn complete_project_checks_actual_c_names_after_bodies_are_streamed() {
+        let conflicts = |types: &str, records: &[FuncResult]| {
+            crate::kuna_projectfunctionnames::conflicts(records, &super::typedef_names(types)).len()
+        };
         let mut first = streamed("void linked(void)", "int");
         first.name = "source_one".into();
         first.emitted_c_name = Some("linked".into());
@@ -1746,17 +1750,18 @@ mod tests {
         let mut second = first.clone();
         second.name = "source_two".into();
         second.byte_address = 0x2000;
-        assert!(super::c_name_conflicts("", &[first.clone(), first.clone()]).is_empty());
+        assert_eq!(conflicts("", &[first.clone(), first.clone()]), 0);
         let records = [first.clone(), second];
-        assert_eq!(super::c_name_conflicts("", &records).len(), 1);
+        assert_eq!(conflicts("", &records), 1);
         let header = super::build_header("fresh.so", "", "", &records);
-        assert!(header.contains("#error C function name has multiple owning entries"), "{header}");
-        assert_eq!(super::c_name_conflicts("typedef int linked;", &[first.clone()]).len(), 1);
+        assert!(header.contains("/* C function name has multiple owning entries, including 0x1000 */"), "{header}");
+        assert!(!header.contains("#error"), "{header}");
+        assert_eq!(conflicts("typedef int linked;", &[first.clone()]), 1);
         first.globals.push(super::GlobalInfo {
             address: 0x5000, name: "linked".into(), declaration: "int linked".into(),
             size: 4, unknown: false, direct: false, aggregate: false, elem: false,
         });
-        assert_eq!(super::c_name_conflicts("", &[first]).len(), 1);
+        assert_eq!(conflicts("", &[first]), 1);
     }
 
     /// A result carrying only what the streaming export keeps.

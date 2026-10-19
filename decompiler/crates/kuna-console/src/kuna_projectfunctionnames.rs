@@ -145,7 +145,7 @@ mod tests {
     }
 }
 
-/// Reject conflicting ownership without guessing aliases or changing storage.
+/// Address-only reports of conflicting C ownership; aliases and storage are not guessed.
 pub(crate) fn conflicts(
     results: &[crate::project::FuncResult],
     typedefs: &std::collections::BTreeSet<String>,

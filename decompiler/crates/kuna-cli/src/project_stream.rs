@@ -946,8 +946,7 @@ fn export(
             counts.ok,
             counts.failed
         ),
-        error: kuna_console::project::c_name_conflicts(&types, &writer.records).first().cloned()
-            .or_else(|| BatchOutcome::new(counts.total, writer.bodies).all_failed_error(&args.binary)),
+        error: BatchOutcome::new(counts.total, writer.bodies).all_failed_error(&args.binary),
     })
 }
 
