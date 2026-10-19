@@ -240,7 +240,8 @@ pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: i
         return None;
     }
     let size = size.min(stated_size);
-    if !general_purpose(fc.proto(), addr, size) {
+    let float = stated_type.get_metatype() == crate::dtype::type_metatype::TYPE_FLOAT;
+    if !general_purpose(fc.proto(), addr, size) && !float {
         let facts = data.kuna_callee_entry_through(entry).or_else(|| data.kuna_callee_entry_dead(entry))?;
         if !stated.arity_sound || !facts.proves_input(addr, size) {
             return None;
@@ -270,9 +271,10 @@ pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: i
 }
 
 /// Is `[addr, addr+size)` in a general-purpose input register of `proto`'s
-/// model? The body's own reads answer only for those: a callee that only moves
-/// its `float` in `xmm0` is recovered with an integer parameter, and a forward
-/// of that register gives its wrapper a parameter of the wrong kind.
+/// model? The body's own reads answer only for those, and for a register the
+/// callee's statement types as a float: a callee that only moves its `float` in
+/// `xmm0` is recovered with an integer parameter, and a forward of that
+/// register gives its wrapper a parameter of the wrong kind.
 fn general_purpose(proto: &crate::fspec::FuncProto, addr: &Address, size: int4) -> bool {
     proto.has_model()
         && proto.model().input().get_entry().iter().any(|e| {
