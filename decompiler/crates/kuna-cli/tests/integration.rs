@@ -541,3 +541,6 @@ mod parameter_spill_reuse;
 
 #[path = "declared_callee_pop.rs"]
 mod declared_callee_pop;
+
+#[path = "aggregate_interior_address.rs"]
+mod aggregate_interior_address;
