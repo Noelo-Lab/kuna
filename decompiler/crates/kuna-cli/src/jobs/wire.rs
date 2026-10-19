@@ -14,7 +14,7 @@ use kuna_decomp::kuna_structsynth::shard::FunctionRecord;
 use super::TargetSpec;
 
 const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC3";
-pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES07";
+pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES09";
 
 /// Result-stream frame kind.  One kind today; the envelope is what lets a
 /// truncated tail be dropped rather than guessed.
@@ -363,6 +363,8 @@ impl ResultWriter {
             None => body.push(0),
         }
         put_pointerargs(&mut body, r.pointerargs.as_ref());
+        put_u32(&mut body, r.call_declarations.len() as u32);
+        for declaration in &r.call_declarations { put_str(&mut body, declaration); }
         self.frame(FRAME_RESULT, &body)
     }
 
@@ -531,6 +533,9 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         _ => return None,
     };
     let pointerargs = read_pointerargs(&mut r)?;
+    let count = r.u32()? as usize;
+    let mut call_declarations = r.sized(count);
+    for _ in 0..count { call_declarations.push(r.string()?); }
     if r.pos != body.len() { return None; }
     Some(FuncResult {
         name,
@@ -540,6 +545,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         code,
         error,
         proto,
+        call_declarations,
         variables,
         stack_objects,
         types,
