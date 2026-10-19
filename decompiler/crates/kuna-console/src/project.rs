@@ -522,6 +522,8 @@ pub fn decompile_pulled(
     // every other batch keeps the preamble, because its document has nothing
     // else that carries a definition. Restored on the way out so one program
     // can drive both surfaces.
+    let previous_header = prog.arch().print().options.header_carries_types;
+    prog.arch_mut().print_mut().options.header_carries_types = header_carries_types;
     let preamble = prog.arch().print().options.struct_defs();
     if header_carries_types && preamble {
         prog.arch_mut().print_mut().options.set_struct_defs(false);
@@ -943,6 +945,7 @@ pub fn decompile_pulled(
             }),
         }
     }
+    prog.arch_mut().print_mut().options.header_carries_types = previous_header;
     if header_carries_types && preamble {
         prog.arch_mut().print_mut().options.set_struct_defs(true);
     }

@@ -3401,8 +3401,10 @@ The header exporter diagnoses one name at multiple addresses and multiple names
 sharing one address instead of silently combining or splitting their storage.
 Whole named objects also retain the independent-storage overlap guard; overlapping
 views require shared storage instead of separate declarations. With `globalref`
-on, a native object-pointer constant into a complete mapped object is rendered
-relative to its base, including interior field addresses. An explicit cast retains
+on, a native `void *` constant into a complete mapped object is rendered relative
+to its base, including interior field addresses. Requesting type definitions
+(`structdefs on` or the shared header of a C project export) extends this to
+typed object pointers. An explicit cast retains
 the requested pointee type, even when a byte array owns the storage. Function
 pointers keep their separate rendering. Loader metadata remains numeric: only
 addresses in the loader’s program-data ranges can name relocated objects. This

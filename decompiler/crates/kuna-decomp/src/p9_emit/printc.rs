@@ -472,6 +472,8 @@ pub struct PrintCOptions {
     /// function's C names ABOVE the function (`option structdefs`).  See
     /// [`crate::kuna_structdefs`].
     pub struct_defs: bool,
+    /// A project header carries the definitions omitted from each body.
+    pub header_carries_types: bool,
     /// (kuna) A pointer-typed constant that addresses program data prints as
     /// `&dat_<addr>` rather than `(T *)0x<addr>` (`option globalref`).  See
     /// [`crate::kuna_globalref`].
@@ -521,6 +523,7 @@ impl PrintCOptions {
             bytearray_c: false,
             partial_access: false,
             empty_str_const: true,   // (kuna) no upstream equivalent
+            header_carries_types: false,
             struct_defs: false,      // (kuna) no upstream equivalent; opt-in
             global_ref: true,        // (kuna) no upstream equivalent
             brace_func: BraceStyle::NextLine,   // (kuna) DIV-34; upstream Emit::skip_line
@@ -9421,7 +9424,12 @@ impl PrintC {
                     && ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
                     && ct.get_word_size() == Some(1)
                     && ct.get_size() == arch.types().get_size_of_pointer()
-                    && ct.get_ptr_to().is_some_and(|to| to.get_metatype() != crate::dtype::type_metatype::TYPE_CODE)
+                    && ct.get_ptr_to().is_some_and(|to| {
+                        to.get_metatype() != crate::dtype::type_metatype::TYPE_CODE
+                            && (self.options.struct_defs
+                                || self.options.header_carries_types
+                                || to.get_metatype() == crate::dtype::type_metatype::TYPE_VOID)
+                    })
                 {
                     if let Some(expression) = self.named_globals.object_address(fd, arch, off) {
                         if !self.options.nocasts { self.push_cast_open(&ct, op); }
