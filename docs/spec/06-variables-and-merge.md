@@ -1438,7 +1438,11 @@ is left whole when two of its pieces would overlap. The rows are cut in order,
 and the offsets every row starts at, and every piece already cut, are taken: no
 piece or gap starts at a taken offset, and a gap ends at the first taken
 offset inside it, so two overlapping width-only rows never both report a piece
-at one offset and a gap never runs over another row. Only rows still
+at one offset and a gap never runs over a row that starts inside it (it can
+still run over one that starts before it, such as a `struct stat` Symbol
+spanning the filler row). When a gap stops at a taken offset, the bytes past
+the row that starts there are no longer reported: dexter -O2 `_entryPoint`
+reports 172 bytes of its frame instead of 196. Only rows still
 width-only are split: a row `slotreport` or `slotptr` typed keeps its type.
 The pieces are ordinary frame rows, so the use evidence of the storage they
 now name (`CodeProvenance::apply_to_variables`) attaches to them as it does to

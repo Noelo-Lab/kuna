@@ -34,7 +34,7 @@ use crate::kuna_slotreport::DeclaredSlots;
 /// start at, and those of every piece already cut, are taken: no piece or gap
 /// starts at one, and a gap ends at the first one inside it, so two
 /// overlapping rows never both report a piece at one offset and a gap never
-/// runs over a row.
+/// runs over a row that starts inside it.
 pub fn split_rows(slots: &DeclaredSlots, out: &mut Vec<VarInfo>, candidates: &[usize]) {
     let mut starts: HashMap<i64, usize> = HashMap::new();
     for off in out.iter().filter_map(|v| v.stack_offset) {
