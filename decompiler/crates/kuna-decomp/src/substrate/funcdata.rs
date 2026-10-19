@@ -402,6 +402,7 @@ pub struct Funcdata {
     /// ([`Self::set_kuna_pipeline_failure`]) so the printer says the pipeline
     /// failed, and why, instead of blaming structuring (`PrintC::emit_function_document`).
     kuna_pipeline_failure: Option<String>,
+    pub(crate) kuna_call_mechanisms: crate::kuna_callmechanisms::State,
     /// (kuna) The flow overrides `FlowInfo::process` asked for and
     /// [`Self::override_flow`] refused, as `(instruction, flow type, reason)`.
     ///
@@ -592,6 +593,8 @@ pub struct Funcdata {
     /// (kuna `calleevote`) The types every caller of this function passes for its
     /// inputs, copied off the `Architecture` after the flow build.
     kuna_calleevote_inputs: Option<std::rc::Rc<crate::kuna_calleevote::CallerTypes>>,
+    /// (kuna `narrowargs callers`) The parameters every caller passes narrow.
+    kuna_callerargs: Option<std::rc::Rc<Vec<crate::kuna_callerargs::NarrowParam>>>,
     /// (kuna `elfmain`) The C runtime's `main` declaration this function's inputs
     /// take, when it is an executable's own `main`. See [`crate::kuna_elfmaindecl`].
     kuna_elfmain: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>,
@@ -769,6 +772,7 @@ impl Funcdata {
             kuna_call_target_types: std::collections::HashMap::new(),
             kuna_field_calls: Vec::new(),
             kuna_pipeline_failure: None,
+            kuna_call_mechanisms: Default::default(),
             kuna_rejected_flow: Vec::new(),
             kuna_directive_symbols: Vec::new(),
             kuna_prior_names: Default::default(),
@@ -816,6 +820,7 @@ impl Funcdata {
             kuna_moved_back_returns: Vec::new(),
             kuna_pairs_first_low: false,
             kuna_calleevote_inputs: None,
+            kuna_callerargs: None,
             kuna_elfmain: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
@@ -1477,6 +1482,16 @@ impl Funcdata {
     /// (kuna `calleevote`) What this function's callers pass for its inputs.
     pub fn kuna_calleevote_inputs(&self) -> Option<&crate::kuna_calleevote::CallerTypes> {
         self.kuna_calleevote_inputs.as_deref()
+    }
+
+    /// (kuna `narrowargs callers`) Record the parameters every caller passes narrow.
+    pub fn kuna_set_callerargs(&mut self, stated: Option<std::rc::Rc<Vec<crate::kuna_callerargs::NarrowParam>>>) {
+        self.kuna_callerargs = stated;
+    }
+
+    /// (kuna `narrowargs callers`) The parameters every caller passes narrow.
+    pub fn kuna_callerargs(&self) -> Option<&std::rc::Rc<Vec<crate::kuna_callerargs::NarrowParam>>> {
+        self.kuna_callerargs.as_ref()
     }
 
     /// (kuna `elfmain`) Give this function's inputs the C runtime's `main`
@@ -4017,6 +4032,8 @@ impl Funcdata {
         self.kuna_regnarrow_runs = 0;
         self.kuna_regnarrow_values.clear();
         self.kuna_regnarrow_failed.clear();
+
+        self.kuna_call_mechanisms = Default::default();
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
