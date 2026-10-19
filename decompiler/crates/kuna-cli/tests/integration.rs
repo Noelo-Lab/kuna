@@ -113,6 +113,9 @@ mod crypto_cli;
 #[path = "ctypes_per_arch.rs"]
 mod ctypes_per_arch;
 
+#[path = "decompile_budget_cli.rs"]
+mod decompile_budget_cli;
+
 #[path = "decompile_cli.rs"]
 mod decompile_cli;
 
@@ -496,3 +499,5 @@ mod x87_empty_return;
 mod windows_stack_argument_alignment;
 #[path = "project_named_globals.rs"]
 mod project_named_globals;
+#[path = "x87_register_payload.rs"]
+mod x87_register_payload;
