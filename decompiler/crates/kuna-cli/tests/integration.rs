@@ -538,3 +538,6 @@ mod project_call_declarations;
 
 #[path = "parameter_spill_reuse.rs"]
 mod parameter_spill_reuse;
+
+#[path = "declared_callee_pop.rs"]
+mod declared_callee_pop;
