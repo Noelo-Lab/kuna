@@ -28,6 +28,10 @@ fn declared_preserved_input_does_not_hide_a_reused_stack_local() {
     std::fs::create_dir_all(&root).unwrap();
     for (name, contents) in [
         (
+            "callbacks.h",
+            include_str!("fixtures/parameter_spill/callbacks.h"),
+        ),
+        (
             "sample.s",
             include_str!("fixtures/parameter_spill/sample.s"),
         ),
@@ -106,7 +110,7 @@ fn declared_preserved_input_does_not_hide_a_reused_stack_local() {
             ]);
             if regenerated {
                 command
-                    .arg("-DREGENERATED")
+                    .args(["-DREGENERATED", "-include", "callbacks.h"])
                     .arg(project.join("sample.so.c"));
             } else {
                 command.arg("sample.s");
