@@ -1528,10 +1528,35 @@ address the written-slot guard guards, every 256 new values a pointer walk of
 `stackstoreguard` visits, and again after the final layout checks: the drive
 publishes its deadline to
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (deadline_passed)`,
-so a walk inside one pass gives up rather than run past it. On expiry the
+so a walk inside one pass gives up rather than run past it. Flow-time
+jump-table recovery probes it too, before and after each table's attempt and
+after its basic and default-path models (`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs
+(FlowInfo::recover_jump_tables)`, `decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs
+(JumpTable::recover_model)`); a table reached past the deadline is not attempted
+and its indirect jump is truncated as an unrecovered one. On expiry the
 containers stop scheduling work and unwind; the driver converts that into the
 function's `error` record (a pass panic after the deadline passed reports the
-same budget error) and the batch continues. `--max-fn-memory MiB` arms the
+same budget error) and the batch continues. The record names where the budget
+ran out: the first probe to see the expiry records its site
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (note_budget_site)`)
+and later ones leave it, so the site is the innermost polled loop that was
+running when the deadline passed — an action (a rule pool adds the rule that
+applied most since the function's reset, `decompiler/crates/kuna-decomp/src/infra/action.rs
+(ActionPool::budget_site)`), heritage, region structuring, a store-reachability
+walk or a jump-table step. While a flow-time table is being recovered
+(`decompile_drive.rs (JumpTableScope)`) a site from inside that recovery — an
+action of the reduced `jumptable` pipeline, say — is suffixed with the indirect
+jump's address. Each drive starts with no site and restores the enclosing
+drive's on exit. A memory-limit trip keeps its unsuffixed message. `kuna
+decompile` passes the same budget to `decomp_dbg` (`--max-fn-seconds N`,
+default 120 like its `--json` face, `0` none), which sets it process-wide
+(`decompile_drive.rs (set_default_fn_budget_secs)`) for every drive whose
+architecture carries none. The flow `load function` / `load addr` follow before
+any drive, which the next `decompile` adopts, is held to the same budget
+(`decompile_drive.rs (build_and_follow_flow_within_budget)`): a follow still
+running when it runs out fails the load with the budget error, so a truncated
+IR is never adopted, and the drive that adopts a completed one arms its own.
+`--max-fn-memory MiB` arms the
 same probes with a memory limit
 (`decompiler/crates/kuna-decomp/src/infra/kuna_fnmemory.rs`): the driver sets
 it process-wide, each drive reads the resident set it starts from (first
@@ -1572,7 +1597,7 @@ is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, and on Windows the
 larger of the working set and the private commit; a platform that reports no
 resident set (macOS) refuses a non-zero limit. A function whose drive
 completes before expiry is byte-identical with or without a budget, and the
-console/parity paths never set one. It is not a hard wall around discovery,
+console/parity paths set one only through `decomp_dbg --max-fn-seconds`. It is not a hard wall around discovery,
 unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
 construction, total project time, or memory.
 

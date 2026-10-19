@@ -190,6 +190,9 @@ mod verify_indirect_callers;
 #[path = "verify_itaniumrtti.rs"]
 mod verify_itaniumrtti;
 
+#[path = "verify_jumptable_budget.rs"]
+mod verify_jumptable_budget;
+
 #[path = "verify_libc_proto_addresses.rs"]
 mod verify_libc_proto_addresses;
 

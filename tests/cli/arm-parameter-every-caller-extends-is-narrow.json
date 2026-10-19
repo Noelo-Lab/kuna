@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callerargs_thumb",
+    "binary_sha256": "4bfbbf7f826e991f457b7f0bc5a711d1ef3e49b24994f90b4c5e69bd34b77bc0",
+    "binary_size": 1340,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callerargs_thumb",
+    "selector": "scale",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int scale\\(unsigned char a0,",
+      "int level\\(short a0\\)",
+      "int pick\\(bool a0,",
+      "int wide\\(int a0\\)",
+      "int taken\\(unsigned int a0\\)"
+    ],
+    "stdout_absent": [
+      "scale\\(unsigned int a0",
+      "level\\(int a0\\)"
+    ]
+  },
+  "notes": "Every call to scale passes a value the caller zero-extended (uxtb), every call to level a value it sign-extended (sxth), and every call to pick a truth value, so the parameters are unsigned char, short and bool. wide gets a byte from one caller and a whole register from the other, and taken's address is stored in hook, so both keep the register width.",
+  "probe_id": "p-6b5d383fcc04"
+}

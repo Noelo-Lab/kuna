@@ -195,7 +195,13 @@ auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
 `--max-fn-memory MiB` stops the decompile once `decomp_dbg` holds more than MiB
 resident and the function has added 64 MiB (see *Per-function memory limit*
 under `decompile-all`, including its cgroup default) and reports `per-function
-memory limit exceeded` instead of being killed.
+memory limit exceeded` instead of being killed. `--max-fn-seconds N` is the
+wall-clock half (default 120, the same as `--json`; `0` disables): `decomp_dbg`
+arms it as the drive's cooperative deadline (see *Per-function watchdog* under
+`decompile-all`), and separately for the flow follow of its `load function`
+step, and a function still running at N seconds in either fails with
+`per-function decompile budget exceeded (N s) in <pass>`, a note naming the
+flag, and exit 1 instead of spinning on.
 
 An option **name** is checked before anything is loaded, on every surface that takes
 `--option`, and an unrecognized one exits 2 rather than running as if it had not been
@@ -1759,15 +1765,24 @@ Behaviors specific to `decompile-all`:
   preset defaults to 10 seconds per function. On native, selected-function runs
   and the other presets retain 120 seconds; an explicit value always wins. WASM
   arms only the fast whole-binary 10-second policy and leaves its other commands
-  unbudgeted. A function whose decompile drive exceeds the budget is cut off
-  cooperatively (deadline probes at the action/rule-pool/heritage loop
-  boundaries, including each range heritage guards, and each region-structuring
-  round) and recorded as that function's `error`
-  (`"per-function decompile budget exceeded (N s)"`), the batch continuing. This is not a hard process timer: it does not bound
+  unbudgeted. `kuna decompile` takes the same flag (default 120). A function
+  whose decompile drive exceeds the budget is cut off cooperatively (deadline
+  probes at the action/rule-pool/heritage loop boundaries, including each range
+  heritage guards, each region-structuring round, and before, between and after
+  the models of each flow-time jump-table recovery) and recorded as that
+  function's `error`
+  (`"per-function decompile budget exceeded (N s) in <pass>"`), the batch
+  continuing. `<pass>` is the first probe that saw the deadline pass, the
+  innermost loop that was running: an action (a rule pool adds its busiest rule
+  this function), `heritage`, `region structuring`, or a jump-table step, and
+  anything inside a flow-time table recovery adds `during jump-table recovery at
+  <indirect-jump address>`, e.g. `in action oppool1 (busiest rule earlyremoval)`
+  or `in jump-table recovery at 0x1820e009b`. This is not a hard process timer: it does not bound
   discovery, unprobed decoder work, C/variable rendering, artifact
   construction, total export time, or memory. Driver policy, not a stage-model
   settable — zero output change for a function whose drive completes before
-  expiry; the console / `decomp_dbg` parity path never arms it.
+  expiry; the console / `decomp_dbg` parity path arms it only when given
+  `decomp_dbg --max-fn-seconds N`, which `kuna decompile` passes.
 
 - **Per-function memory limit** — `--max-fn-memory MiB` (`0` disables) on
   `decompile-all`, `decompile-project`, `decompile-graph` and `kuna decompile`.

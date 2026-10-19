@@ -66,6 +66,12 @@ pub fn main(args: Vec<String>) -> ExitCode {
                 }
                 None => {}
             }
+        } else if flag == "--max-fn-seconds" {
+            // (kuna) `kuna decompile`'s per-function wall-clock budget; 0 disables.
+            i += 1;
+            if let Some(secs) = args.get(i).and_then(|v| v.trim().parse::<u64>().ok()) {
+                kuna_decomp::decompile_drive::set_default_fn_budget_secs(secs);
+            }
         }
         // Unknown flags are skipped (the C++ loop advances on any leading '-').
         i += 1;

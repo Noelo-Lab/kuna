@@ -711,6 +711,31 @@ pub fn build_and_follow_flow_with_override(
     build_and_follow_flow_with_override_and_protos(arch, name, entry, size, flow_overrides, &[])
 }
 
+/// (kuna decompile-all watchdog) [`build_and_follow_flow_with_override`] for a
+/// follow made outside a drive (the console's `load function` / `load addr`),
+/// under the budget a drive of `arch` would arm: a follow still running when it
+/// runs out fails with the budget error instead of leaving a truncated IR for
+/// the drive to adopt. With no budget it is the plain follow.
+pub fn build_and_follow_flow_within_budget(
+    arch: &mut Architecture,
+    name: &str,
+    entry: Address,
+    size: int4,
+    flow_overrides: &[(Address, kuna_base::types::uint4)],
+) -> KunaResult<Funcdata> {
+    let Some(budget) = fn_budget(arch) else {
+        return build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides);
+    };
+    let outer = arch.kuna_fn_deadline.replace(std::time::Instant::now() + budget);
+    let result = {
+        let _deadline_scope = DeadlineScope::enter(arch.kuna_fn_deadline);
+        let fd = build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides);
+        budget_error(arch).map_or(fd, Err)
+    };
+    arch.kuna_fn_deadline = outer;
+    result
+}
+
 /// Like [`build_and_follow_flow_with_override`], but also re-seeds the
 /// `override prototype <addr> <decl>` facts onto the fresh `Funcdata`'s
 /// `localoverride` (the proto-override store) before flow follows, so
@@ -996,6 +1021,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         crate::p4_calls::kuna_narrowret::seed(arch, fd);
         crate::p4_calls::kuna_voidret::seed(arch, fd);
         crate::p4_calls::kuna_calleevote::seed(arch, fd);
+        crate::p4_calls::kuna_callerargs::seed(arch, fd);
         crate::kuna_elemptr::seed(arch, fd);
         // (kuna `calleepreserves`) And for the call-guard seam's view of the
         // callee's writes; shares rustabi's cache, so this is a map lookup.
@@ -1208,8 +1234,9 @@ pub fn decompile_func_full_with_objects(
 ) -> KunaResult<Funcdata> {
     // (kuna decompile-all watchdog) Arm the per-function deadline from the
     // driver-set budget (`kuna decompile-all --max-fn-seconds N` sets
-    // `kuna_fn_budget`; every other path leaves it `None`, so this is a `None`
-    // assignment and the pipeline below is structurally unchanged).  The budget
+    // `kuna_fn_budget`, `decomp_dbg --max-fn-seconds N` the process default;
+    // every other path leaves both unset, so this is a `None` assignment and the
+    // pipeline below is structurally unchanged).  The budget
     // covers the whole drive — flow-follow (incl. the jumptable sub-pipeline)
     // and the action pipeline — and is consulted cooperatively at the action /
     // rule-pool / heritage loop boundaries.
@@ -1218,7 +1245,7 @@ pub fn decompile_func_full_with_objects(
     // its deadline is a year out, so the same probes run and ask about memory.
     let memory = crate::kuna_fnmemory::Armed::enter();
     let now = std::time::Instant::now();
-    arch.kuna_fn_deadline = match arch.kuna_fn_budget {
+    arch.kuna_fn_deadline = match fn_budget(arch) {
         Some(budget) => Some(now + budget),
         None if memory.is_armed() => Some(now + MEMORY_ONLY_HORIZON),
         None => None,
@@ -1384,6 +1411,8 @@ pub fn decompile_func_full_with_objects(
         crate::p4_calls::kuna_voidret::seed(arch, &mut fd);
         // (kuna `calleevote`) What every caller of this function passes.
         crate::p4_calls::kuna_calleevote::seed(arch, &mut fd);
+        // (kuna `narrowargs callers`) The parameters every caller passes narrow.
+        crate::p4_calls::kuna_callerargs::seed(arch, &mut fd);
         // (kuna `elemptr`) The globals another function of the batch disagrees about.
         crate::kuna_elemptr::seed(arch, &mut fd);
         // (kuna `calleepreserves`) The call-guard seam's view of the same
@@ -2474,6 +2503,7 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
         arg_pos += 1;
     }
 
+    let declared_slots = crate::kuna_slotreport::DeclaredSlots::of(arch, fd);
     // 2) Stack locals, off the ScopeLocal (NO_CATEGORY symbols only).
     if let Some(sl) = fd.get_scope_local() {
         let space = sl.get_space_id();
@@ -2490,11 +2520,16 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
                 .iter()
                 .find(|a| a.shown && a.number == name)
                 .map_or(name, |a| a.alias.clone());
-            let type_name = crate::kuna_bytehonest::exported_type_name(arch, &ct);
+            let offset = signed_space_offset(space, addr.get_offset());
+            let type_name = declared_slots
+                .as_ref()
+                .filter(|_| crate::kuna_slotreport::uncommitted(&ct))
+                .and_then(|slots| slots.declared_type(&name, offset, ct.get_size() as i64))
+                .unwrap_or_else(|| crate::kuna_bytehonest::exported_type_name(arch, &ct));
             out.push(VarInfo {
                 name,
                 type_name,
-                stack_offset: Some(signed_space_offset(space, addr.get_offset())),
+                stack_offset: Some(offset),
                 size: ct.get_size() as i64,
                 is_param: false,
                 arg_index: None,
@@ -2538,6 +2573,7 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
         let covered: std::collections::BTreeSet<i64> =
             out.iter().filter_map(|v| v.stack_offset).collect();
         let first_slot = out.len();
+        let mut declared = Vec::new();
         for (off, slot) in fd.frame_slots() {
             if covered.contains(&off) {
                 continue;
@@ -2554,9 +2590,16 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
             } else {
                 slot.name
             };
+            let type_name = match declared_slots.as_ref().and_then(|slots| slots.covering_type(off, slot.size as i64)) {
+                Some(declared_type) => {
+                    declared.push(out.len());
+                    declared_type
+                }
+                None => frame_slot_type_name(arch, &slot.dtype),
+            };
             out.push(VarInfo {
                 name,
-                type_name: frame_slot_type_name(arch, &slot.dtype),
+                type_name,
                 stack_offset: Some(off),
                 size: slot.size as i64,
                 is_param: false,
@@ -2566,7 +2609,7 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
             });
         }
         if arch.slot_ptr {
-            type_filler_slots_from_stores(arch, fd, &mut out, first_slot);
+            type_filler_slots_from_stores(arch, fd, &mut out, first_slot, &declared);
         }
     }
 
@@ -2587,6 +2630,7 @@ fn type_filler_slots_from_stores(
     fd: &Funcdata,
     out: &mut [VarInfo],
     first_slot: usize,
+    declared: &[usize],
 ) {
     let ranges: Vec<(i64, i64)> = out
         .iter()
@@ -2594,7 +2638,7 @@ fn type_filler_slots_from_stores(
         .collect();
     for i in first_slot..out.len() {
         let (lo, hi) = ranges[i];
-        if hi <= lo {
+        if hi <= lo || declared.contains(&i) {
             continue;
         }
         let overlaps = ranges
@@ -2646,6 +2690,28 @@ mod tests;
 
 thread_local! {
     static FN_DEADLINE: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+    static FN_BUDGET_SITE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    static FN_TABLE_AT: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// The wall-clock budget, in seconds, of a drive whose architecture sets none
+/// (`decomp_dbg --max-fn-seconds N`, which `kuna decompile` passes); 0 arms none.
+static DEFAULT_FN_BUDGET_SECS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// (kuna decompile-all watchdog) Give every drive of this process whose
+/// architecture sets no budget a `secs`-second one (0 removes it).
+pub fn set_default_fn_budget_secs(secs: u64) {
+    DEFAULT_FN_BUDGET_SECS.store(secs, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The per-function budget a drive of `arch` arms.
+fn fn_budget(arch: &Architecture) -> Option<std::time::Duration> {
+    arch.kuna_fn_budget.or_else(|| {
+        match DEFAULT_FN_BUDGET_SECS.load(std::sync::atomic::Ordering::Relaxed) {
+            0 => None,
+            secs => Some(std::time::Duration::from_secs(secs)),
+        }
+    })
 }
 
 /// (kuna decompile-all watchdog) Has the running drive's per-function budget
@@ -2653,6 +2719,48 @@ thread_local! {
 /// boundary interrupts, to give up early.
 pub(crate) fn deadline_passed() -> bool {
     FN_DEADLINE.with(|d| d.get().is_some_and(budget_spent))
+}
+
+/// [`deadline_passed`], naming `site` (see [`note_budget_site`]) when it has.
+pub(crate) fn deadline_passed_in(site: &str) -> bool {
+    let passed = deadline_passed();
+    if passed {
+        note_budget_site(|| site.to_string());
+    }
+    passed
+}
+
+/// (kuna decompile-all watchdog) Name `site` as where the running drive's
+/// budget ran out, unless a probe already named one: the first probe to see
+/// the expiry is the innermost polled loop, which the per-function error names.
+pub(crate) fn note_budget_site(site: impl FnOnce() -> String) {
+    FN_BUDGET_SITE.with(|s| {
+        let mut s = s.borrow_mut();
+        if s.is_none() {
+            let mut text = site();
+            if let Some(at) = FN_TABLE_AT.with(std::cell::Cell::get) {
+                let during = if text.starts_with("jump-table") { "" } else { " during jump-table recovery" };
+                text.push_str(&format!("{during} at {at:#x}"));
+            }
+            *s = Some(text);
+        }
+    });
+}
+
+/// (kuna decompile-all watchdog) Marks the drive as recovering the jump table
+/// of the indirect jump at an address until dropped, for [`note_budget_site`].
+pub(crate) struct JumpTableScope(Option<u64>);
+
+impl JumpTableScope {
+    pub(crate) fn enter(at: u64) -> Self {
+        JumpTableScope(FN_TABLE_AT.with(|t| t.replace(Some(at))))
+    }
+}
+
+impl Drop for JumpTableScope {
+    fn drop(&mut self) {
+        FN_TABLE_AT.with(|t| t.set(self.0));
+    }
 }
 
 /// (kuna decompile-all watchdog) The one test every cooperative probe makes:
@@ -2678,22 +2786,28 @@ fn budget_error(arch: &Architecture) -> Option<KunaError> {
     if std::time::Instant::now() < deadline {
         return None;
     }
-    let secs = arch.kuna_fn_budget.map(|b| b.as_secs()).unwrap_or(0);
-    Some(KunaError::lowlevel(format!("per-function decompile budget exceeded ({secs} s)")))
+    let secs = fn_budget(arch).map(|b| b.as_secs()).unwrap_or(0);
+    let site = FN_BUDGET_SITE.with(|s| s.borrow().clone());
+    let at = site.map(|s| format!(" in {s}")).unwrap_or_default();
+    Some(KunaError::lowlevel(format!("per-function decompile budget exceeded ({secs} s){at}")))
 }
 
-/// Publishes a drive's deadline to [`deadline_passed`] and restores the one
-/// before it when the drive ends.
-struct DeadlineScope(Option<std::time::Instant>);
+/// Publishes a drive's deadline to [`deadline_passed`], with no budget site
+/// named yet, and restores the ones before it when the drive ends.
+struct DeadlineScope(Option<std::time::Instant>, Option<String>);
 
 impl DeadlineScope {
     fn enter(deadline: Option<std::time::Instant>) -> Self {
-        DeadlineScope(FN_DEADLINE.with(|d| d.replace(deadline)))
+        DeadlineScope(
+            FN_DEADLINE.with(|d| d.replace(deadline)),
+            FN_BUDGET_SITE.with(|s| s.borrow_mut().take()),
+        )
     }
 }
 
 impl Drop for DeadlineScope {
     fn drop(&mut self) {
         FN_DEADLINE.with(|d| d.set(self.0));
+        FN_BUDGET_SITE.with(|s| *s.borrow_mut() = self.1.take());
     }
 }

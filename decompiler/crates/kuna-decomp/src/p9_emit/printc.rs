@@ -4779,7 +4779,7 @@ impl PrintC {
                 Some(o) => o,
                 None => continue,
             };
-            if o.not_printed() || crate::p9_emit::kuna_stackmarkers::nonprinting(fd, inst) {
+            if self.is_suppressed_statement(fd, inst) {
                 continue;
             }
             // The body always prints under NO_BRANCH: every branch op is skipped.
@@ -4787,7 +4787,10 @@ impl PrintC {
                 continue;
             }
             if let Some(out) = o.get_out() {
-                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false) {
+                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false)
+                    && !(self.out_lang == crate::kuna_lang::OutLang::C
+                        && crate::kuna_stackbytes::assignment(fd, inst).is_some())
+                {
                     continue;
                 }
             }
@@ -4859,6 +4862,19 @@ impl PrintC {
             && fd.get_arch().stack_views
             && (crate::kuna_stackbytes::assignment(fd, op).is_some()
                 || crate::kuna_stackassign::assignment(fd, op).is_some())
+    }
+
+    fn is_suppressed_statement(&self, fd: &Funcdata, op: OpId) -> bool {
+        let Some(operation) = fd.obank().get(op) else {
+            return true;
+        };
+        if operation.not_printed()
+            && !(self.out_lang == crate::kuna_lang::OutLang::C
+                && crate::kuna_stackbytes::assignment(fd, op).is_some())
+        {
+            return true;
+        }
+        crate::p9_emit::kuna_stackmarkers::nonprinting(fd, op)
     }
 
     /// (kuna) Is `blk` a `0`/`1` select diamond that the S8 `iteboolean` pass
@@ -5617,7 +5633,7 @@ impl PrintC {
                 Some(o) => o,
                 None => continue,
             };
-            if o.not_printed() || crate::p9_emit::kuna_stackmarkers::nonprinting(fd, inst) {
+            if self.is_suppressed_statement(fd, inst) {
                 continue;
             }
             // (kuna `voidtailreturn`) The function's own trailing bare `return;`.
@@ -5639,7 +5655,10 @@ impl PrintC {
             }
             // Skip ops whose output is an implied varnode (inlined elsewhere).
             if let Some(out) = o.get_out() {
-                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false) {
+                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false)
+                    && !(self.out_lang == crate::kuna_lang::OutLang::C
+                        && crate::kuna_stackbytes::assignment(fd, inst).is_some())
+                {
                     continue;
                 }
             }
@@ -8082,6 +8101,38 @@ impl PrintC {
         self.push_constant_ir(access.size as u64, 4, op);
     }
 
+    fn push_stackbyte_source_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        source: VarnodeId,
+        op: OpId,
+        mods: uint4,
+        read_op: Option<OpId>,
+    ) {
+        if let Some(load) = crate::kuna_stackbytes::safe_load_op(fd, source, op) {
+            // Address-tied LOAD outputs can share the destination stackview
+            // HighVariable. Expand the proved-safe read itself, bypassing that
+            // merged high's field name.
+            let saved_mods = self.context.mods();
+            self.context.set_mods(mods);
+            self.op_push_ir(fd, arch, load, Some(op));
+            self.context.set_mods(saved_mods);
+        } else if let Some(global) = crate::kuna_stackbytes::safe_global_source(
+            fd,
+            source,
+            op,
+            read_op,
+        )
+        {
+            // Render the physical data-space address, preserving storage identity
+            // even if the RAM Varnode was coalesced with the stackview HighVariable.
+            self.push_annotation_ir(fd, arch, global, op);
+        } else {
+            self.push_vn_ir_m(fd, arch, source, op, mods);
+        }
+    }
+
     fn emit_byte_assignment_ir(
         &mut self,
         fd: &Funcdata,
@@ -8095,13 +8146,60 @@ impl PrintC {
         let factory = arch.types();
         let byte_type = factory.get_base(1, type_metatype::TYPE_UINT).unwrap();
         let mods = self.context.mods() & !(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
+        let stack_big_endian = fd
+            .get_arch()
+            .manage()
+            .get_stack_space()
+            .is_some_and(|stack| stack.is_big_endian());
         for _ in 1..assignment.ranges.len() {
             self.push_op(&tokens::COMMA, Some(op_key(op)));
         }
         for range in assignment.ranges {
             let size = range.bytes.len() as i32;
             let datatype = factory.get_type_array(size, std::rc::Rc::clone(&byte_type)).unwrap();
-            let (front, back) = declarator_parts(&datatype, self.rt_ctx);
+            let scalar_source = if matches!(size, 1 | 2 | 4 | 8) {
+                range.bytes.first().and_then(|first| match first {
+                    crate::kuna_stackbytes::Byte::Value {
+                        source,
+                        read_op,
+                        ..
+                    } => {
+                        let full_width = fd
+                            .vbank()
+                            .get(*source)
+                            .is_some_and(|value| value.get_size() == size);
+                        let complete_range = full_width
+                            && range.bytes.iter().enumerate().all(|(index, byte)| {
+                                let expected = if stack_big_endian {
+                                    size - 1 - index as i32
+                                } else {
+                                    index as i32
+                                };
+                                matches!(
+                                    byte,
+                                    crate::kuna_stackbytes::Byte::Value {
+                                        source: candidate,
+                                        byte,
+                                        read_op: candidate_read_op,
+                                    } if *candidate == *source
+                                        && *byte == expected
+                                        && *candidate_read_op == *read_op
+                                )
+                            });
+                        complete_range.then_some((*source, *read_op))
+                    }
+                    crate::kuna_stackbytes::Byte::Constant(_) => None,
+                })
+            } else {
+                None
+            };
+            let (front, back) = if let Some((source, _)) = scalar_source {
+                let source_size = fd.vbank().get(source).unwrap().get_size();
+                let datatype = factory.get_base(source_size, type_metatype::TYPE_UINT).unwrap();
+                declarator_parts(&datatype, self.rt_ctx)
+            } else {
+                declarator_parts(&datatype, self.rt_ctx)
+            };
             let access = crate::kuna_stackmem::Access {
                 pointer: assignment.output,
                 value: None,
@@ -8122,27 +8220,51 @@ impl PrintC {
             self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
             self.push_op(&COMPOUND, Some(op_key(op)));
             self.push_atom(&Atom::syntax(format!("({front}{back}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
-            for _ in 1..range.bytes.len() {
-                self.push_op(&tokens::COMMA, Some(op_key(op)));
-            }
-            for byte in range.bytes {
-                match byte {
-                    crate::kuna_stackbytes::Byte::Constant(value) => {
-                        self.push_constant_ir(u64::from(value), 1, op);
-                    }
-                    crate::kuna_stackbytes::Byte::Value { source, byte } => {
-                        self.push_cast_open(&byte_type, op);
-                        let size = fd.vbank().get(source).unwrap().get_size();
-                        if byte > 0 {
-                            self.push_op(&tokens::SHIFT_RIGHT, Some(op_key(op)));
+            if let Some((source, read_op)) = scalar_source {
+                self.push_stackbyte_source_ir(
+                    fd,
+                    arch,
+                    source,
+                    op,
+                    mods,
+                    read_op,
+                );
+            } else {
+                for _ in 1..range.bytes.len() {
+                    self.push_op(&tokens::COMMA, Some(op_key(op)));
+                }
+                for byte in range.bytes {
+                    match byte {
+                        crate::kuna_stackbytes::Byte::Constant(value) => {
+                            self.push_constant_ir(u64::from(value), 1, op);
                         }
-                        if size > 1 {
-                            let unsigned = factory.get_base(size, type_metatype::TYPE_UINT).unwrap();
-                            self.push_cast_open(&unsigned, op);
-                        }
-                        self.push_vn_ir_m(fd, arch, source, op, mods);
-                        if byte > 0 {
-                            self.push_constant_ir((byte * 8) as u64, 4, op);
+                        crate::kuna_stackbytes::Byte::Value {
+                            source,
+                            byte,
+                            read_op,
+                        } => {
+                            self.push_cast_open(&byte_type, op);
+                            let source_size = fd.vbank().get(source).unwrap().get_size();
+                            if byte > 0 {
+                                self.push_op(&tokens::SHIFT_RIGHT, Some(op_key(op)));
+                            }
+                            if source_size > 1 {
+                                let unsigned = factory
+                                    .get_base(source_size, type_metatype::TYPE_UINT)
+                                    .unwrap();
+                                self.push_cast_open(&unsigned, op);
+                            }
+                            self.push_stackbyte_source_ir(
+                                fd,
+                                arch,
+                                source,
+                                op,
+                                mods,
+                                read_op,
+                            );
+                            if byte > 0 {
+                                self.push_constant_ir((byte * 8) as u64, 4, op);
+                            }
                         }
                     }
                 }
