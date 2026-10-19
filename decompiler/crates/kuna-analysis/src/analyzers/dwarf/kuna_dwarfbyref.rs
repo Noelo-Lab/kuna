@@ -36,19 +36,48 @@ pub(super) fn indirect_location(loc: &gimli::AttributeValue<Reader<'_>>) -> bool
     bytes.get(1 + consumed..) == Some(&[gimli::DW_OP_deref.0][..])
 }
 
-pub(super) fn argument_registers(
+/// By-value argument sizes an ABI passes through a hidden address in an argument register.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum HiddenValues {
+    #[default]
+    Never,
+    Above(i32),
+    UnlessRegisterSized,
+}
+
+impl HiddenValues {
+    fn may_hide(self, size: i32) -> bool {
+        match self {
+            HiddenValues::Never => false,
+            HiddenValues::Above(limit) => size > limit,
+            HiddenValues::UnlessRegisterSized => !matches!(size, 1 | 2 | 4 | 8),
+        }
+    }
+}
+
+/// Incoming integer argument registers (DWARF numbers) of an image's ABI.
+#[derive(Clone, Copy, Default)]
+pub(super) struct ArgumentAbi {
+    pub(super) registers: &'static [u16],
+    pub(super) hidden: HiddenValues,
+}
+
+pub(super) fn argument_abi(
     format: object::BinaryFormat,
     architecture: object::Architecture,
-) -> &'static [u16] {
+) -> ArgumentAbi {
     use object::{Architecture::*, BinaryFormat::*};
-    match (format, architecture) {
-        (Pe | Coff, X86_64) => &[2, 1, 8, 9],
-        (Elf | MachO, X86_64) => &[5, 4, 1, 2, 8, 9],
-        (Elf, Arm) => &[0, 1, 2, 3],
-        (Elf, Aarch64) => &[0, 1, 2, 3, 4, 5, 6, 7],
-        (Elf, Riscv32 | Riscv64) => &[10, 11, 12, 13, 14, 15, 16, 17],
-        _ => &[],
-    }
+    const RISCV: &[u16] = &[10, 11, 12, 13, 14, 15, 16, 17];
+    let (registers, hidden): (&'static [u16], _) = match (format, architecture) {
+        (Pe | Coff, X86_64) => (&[2, 1, 8, 9], HiddenValues::UnlessRegisterSized),
+        (Elf | MachO, X86_64) => (&[5, 4, 1, 2, 8, 9], HiddenValues::Never),
+        (Elf, Arm) => (&[0, 1, 2, 3], HiddenValues::Never),
+        (Elf, Aarch64) => (&[0, 1, 2, 3, 4, 5, 6, 7], HiddenValues::Above(16)),
+        (Elf, Riscv32) => (RISCV, HiddenValues::Above(8)),
+        (Elf, Riscv64) => (RISCV, HiddenValues::Above(16)),
+        _ => (&[], HiddenValues::Never),
+    };
+    ArgumentAbi { registers, hidden }
 }
 
 pub(super) fn location_at_entry<'a>(
@@ -96,17 +125,13 @@ pub(super) fn parameter_type(
     types: &dyn TypeFactory,
     word_size: uint4,
 ) -> Option<Rc<Datatype>> {
-    let scalar_register_reference = parameter.register_indirect_parameter
-        && matches!(
-            value.get_metatype(),
-            kuna_decomp::dtype::type_metatype::TYPE_INT
-                | kuna_decomp::dtype::type_metatype::TYPE_UINT
-                | kuna_decomp::dtype::type_metatype::TYPE_BOOL
-                | kuna_decomp::dtype::type_metatype::TYPE_FLOAT
-                | kuna_decomp::dtype::type_metatype::TYPE_PTR
-        )
-        && matches!(value.get_size(), 1 | 2 | 4 | 8);
-    if parameter.indirect_parameter || scalar_register_reference {
+    use kuna_decomp::dtype::type_metatype::{TYPE_CODE, TYPE_VOID};
+    let register_reference = parameter.register_indirect_parameter.is_some_and(|hidden| {
+        value.get_size() > 0
+            && !matches!(value.get_metatype(), TYPE_VOID | TYPE_CODE)
+            && !hidden.may_hide(value.get_size())
+    });
+    if parameter.indirect_parameter || register_reference {
         types
             .get_type_pointer(types.get_size_of_pointer(), value, word_size)
             .ok()
@@ -220,37 +245,59 @@ mod tests {
     }
 
     #[test]
-    fn register_addresses_do_not_turn_aggregate_or_wide_value_arguments_into_pointers() {
+    fn register_addresses_become_pointers_unless_the_abi_may_pass_the_value_hidden() {
         use kuna_decomp::dtype::{type_metatype::*, TypeFactoryImpl};
+        use object::{Architecture::*, BinaryFormat::*};
         let types = TypeFactoryImpl::new();
         types.set_default_alignment_map();
         types.set_max_basetype_size(16);
         types.setup_sizes(Some(8), 8, 4);
         types.cache_core_types().unwrap();
-        let mut parameter = DieSnap::new(gimli::DW_TAG_formal_parameter, 2);
-        parameter.register_indirect_parameter = true;
-        for (size, metatype, indirect) in [
-            (1, TYPE_INT, true),
-            (2, TYPE_UINT, true),
-            (4, TYPE_FLOAT, true),
-            (8, TYPE_FLOAT, true),
-            (10, TYPE_FLOAT, false),
-            (16, TYPE_FLOAT, false),
-            (8, TYPE_UNKNOWN, false),
+        let float = types.get_base(4, TYPE_FLOAT).unwrap();
+        let values = [
+            types.get_base(1, TYPE_INT).unwrap(),
+            types.get_base(2, TYPE_UINT).unwrap(),
+            float.clone(),
+            types.get_base(8, TYPE_FLOAT).unwrap(),
+            types.get_type_array(2, float.clone()).unwrap(),
+            types.get_base(10, TYPE_FLOAT).unwrap(),
+            types.get_type_array(3, float.clone()).unwrap(),
+            types.get_base(16, TYPE_FLOAT).unwrap(),
+            types.get_type_array(5, float.clone()).unwrap(),
+            types.get_type_array(512, float).unwrap(),
+            types.get_type_struct("value_record").unwrap(),
+        ];
+        for (format, architecture, pointers) in [
+            (Elf, X86_64, 10),
+            (MachO, X86_64, 10),
+            (Elf, Arm, 10),
+            (Pe, X86_64, 5),
+            (Elf, Aarch64, 8),
+            (Elf, Riscv64, 8),
+            (Elf, Riscv32, 5),
         ] {
-            let value = types.get_base(size, metatype).unwrap();
-            let result = parameter_type(&parameter, value.clone(), &types, 1).unwrap();
-            if indirect {
-                assert_eq!(result.get_metatype(), TYPE_PTR);
-                assert_eq!(result.get_size(), 8);
-                assert_eq!(result.get_ptr_to().unwrap().get_size(), size);
-            } else {
-                assert!(Rc::ptr_eq(&result, &value));
+            let mut parameter = DieSnap::new(gimli::DW_TAG_formal_parameter, 2);
+            parameter.register_indirect_parameter = Some(argument_abi(format, architecture).hidden);
+            for (index, value) in values.iter().enumerate() {
+                let result = parameter_type(&parameter, value.clone(), &types, 1).unwrap();
+                if index < pointers {
+                    assert_eq!(
+                        result.get_metatype(),
+                        TYPE_PTR,
+                        "{format:?} {architecture:?}"
+                    );
+                    assert_eq!(result.get_size(), 8);
+                    assert!(Rc::ptr_eq(&result.get_ptr_to().unwrap(), value));
+                } else {
+                    assert!(Rc::ptr_eq(&result, value), "{format:?} {architecture:?}");
+                }
             }
         }
-        let record = types.get_type_struct("value_record").unwrap();
-        let result = parameter_type(&parameter, record.clone(), &types, 1).unwrap();
-        assert!(Rc::ptr_eq(&result, &record));
+        let parameter = DieSnap::new(gimli::DW_TAG_formal_parameter, 2);
+        for value in &values {
+            let result = parameter_type(&parameter, value.clone(), &types, 1).unwrap();
+            assert!(Rc::ptr_eq(&result, value));
+        }
     }
 
     #[test]

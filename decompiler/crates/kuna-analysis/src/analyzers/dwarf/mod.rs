@@ -257,7 +257,7 @@ struct DieSnap {
     /// for any other location form (`DW_OP_addr`, register, multi-op).
     fbreg_location: Option<i64>,
     indirect_parameter: bool,
-    register_indirect_parameter: bool,
+    register_indirect_parameter: Option<kuna_dwarfbyref::HiddenValues>,
     /// Depth in the DIE tree (root unit DIE = 0).
     depth: isize,
     /// Offsets of this DIE's direct children, in order.
@@ -303,7 +303,7 @@ impl DieSnap {
             addr_location: None,
             fbreg_location: None,
             indirect_parameter: false,
-            register_indirect_parameter: false,
+            register_indirect_parameter: None,
             depth,
             children: Vec::new(),
             origin_ref: None,
@@ -321,13 +321,13 @@ fn snapshot_unit(
     dwarf: &gimli::Dwarf<Reader<'_>>,
     unit: &gimli::Unit<Reader<'_>>,
 ) -> BTreeMap<usize, DieSnap> {
-    snapshot_unit_for_abi(dwarf, unit, &[])
+    snapshot_unit_for_abi(dwarf, unit, kuna_dwarfbyref::ArgumentAbi::default())
 }
 
 fn snapshot_unit_for_abi(
     dwarf: &gimli::Dwarf<Reader<'_>>,
     unit: &gimli::Unit<Reader<'_>>,
-    argument_registers: &[u16],
+    abi: kuna_dwarfbyref::ArgumentAbi,
 ) -> BTreeMap<usize, DieSnap> {
     let mut map: BTreeMap<usize, DieSnap> = BTreeMap::new();
     // Parent stack of (offset, depth) to attach children to their parent.
@@ -461,8 +461,9 @@ fn snapshot_unit_for_abi(
                     snap.register_indirect_parameter = kuna_dwarfbyref::memory_argument_register(
                         &expression,
                         unit.encoding(),
-                        argument_registers,
-                    );
+                        abi.registers,
+                    )
+                    .then_some(abi.hidden);
                 }
             }
         }
@@ -1136,7 +1137,7 @@ impl AnalysisPass for DwarfPass {
             let mut dies = snapshot_unit_for_abi(
                 &dwarf,
                 &unit,
-                kuna_dwarfbyref::argument_registers(ctx.file.format(), ctx.file.architecture()),
+                kuna_dwarfbyref::argument_abi(ctx.file.format(), ctx.file.architecture()),
             );
             if complex_max > 0 {
                 for die in dies.values_mut() {

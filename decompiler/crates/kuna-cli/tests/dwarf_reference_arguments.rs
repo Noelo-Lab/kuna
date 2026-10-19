@@ -132,7 +132,7 @@ fn reference_parameters_round_trip(optimizations: &[&str]) {
     }
     let source = common::scratch_file("dwarf-reference", "f90");
     let object = source.with_extension("so");
-    std::fs::write(&source, format!("{SOURCE}\nsubroutine integer_value(sample, bias, output)\ninteger, value :: sample, bias\ninteger :: output\noutput = sample + bias\nend\n")).unwrap();
+    std::fs::write(&source, format!("{SOURCE}\nsubroutine integer_value(sample, bias, output)\ninteger, value :: sample, bias\ninteger :: output\noutput = sample + bias\nend\nsubroutine array_sample(samples, bias, output)\nreal :: samples(4), bias, output\noutput = samples(2) + bias\nend\n")).unwrap();
     for optimization in optimizations {
         let compiled = Command::new("gfortran")
             .args([*optimization, "-g", "-shared", "-fPIC"])
@@ -152,6 +152,7 @@ fn reference_parameters_round_trip(optimizations: &[&str]) {
             "mixed_sample",
             "integer_sample",
             "integer_value",
+            "array_sample",
         ] {
             let (body, err, status) =
                 common::run_kuna(&["decompile", object.to_str().unwrap(), name]);
@@ -165,6 +166,7 @@ extern void offset_sample_(float *, float *, float *);
 extern void mixed_sample_(float, float *, float *);
 extern void integer_sample_(int *, int *);
 extern void integer_value_(int, int, int *);
+extern void array_sample_(float *, float *, float *);
 int main(void) {
     float values[] = {-17.5f, -0.0f, 0.25f, 1024.0f};
     for (unsigned i = 0; i < 4; ++i) {
@@ -176,6 +178,10 @@ int main(void) {
         mixed_sample_(input, &bias, &expected);
         mixed_sample(input, &bias, &actual);
         if (memcmp(&actual, &expected, sizeof(actual))) return 2;
+        float samples[4] = {values[j], input, bias, values[i]};
+        array_sample_(samples, &bias, &expected);
+        array_sample(&samples, &bias, &actual);
+        if (memcmp(&actual, &expected, sizeof(actual))) return 5;
       }
     }
     int input = -123456, expected, actual;
