@@ -3647,3 +3647,24 @@ global container and offset. A `FLOAT_FLOAT2FLOAT` that writes such storage
 directly keeps its numeric precision conversion, cast to the float of its output
 width rather than to the unknown type of the storage, because partial access
 prints that destination as a float.
+
+Project C results retain declarations of named direct-call targets whose input
+and output prototypes are both locked. The declarations use the ordinary C
+declarator builder, including nested pointer types and variadic parameters.
+Call-only type dependencies join the referenced type roots. Headers deduplicate
+these declarations after type definitions and keep typedef collisions diagnostic.
+A target that is itself one of the exported functions keeps only its own
+prototype, so a whole-binary export declares each function once. Two differing
+declarations of one target become a comment rather than conflicting externs.
+A target whose return type is an array or function type is not declared,
+because C cannot spell it (a 16-byte integer the type system holds as
+`char[16]`). Unknown or partially inferred targets do not acquire invented
+signatures.
+The declarations survive worker serialization and streamed body removal, and
+remain roots when pruning synthesized types. Capture is implemented in
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`.
+
+Format-specific call arities are not declarations of the callee. When a call
+has format-derived arguments, project declarations restore its parked formal
+variadic signature. Call-only type roots are gathered only for project headers;
+ordinary per-function type inventories retain their original scope.

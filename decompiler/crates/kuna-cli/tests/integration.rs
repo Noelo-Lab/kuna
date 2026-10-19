@@ -530,5 +530,8 @@ mod dwarf_overlapping_locals;
 #[path = "float_literal_width.rs"]
 mod float_literal_width;
 
+#[path = "project_call_declarations.rs"]
+mod project_call_declarations;
+
 #[path = "parameter_spill_reuse.rs"]
 mod parameter_spill_reuse;
