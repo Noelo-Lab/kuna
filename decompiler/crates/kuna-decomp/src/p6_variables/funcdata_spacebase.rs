@@ -459,6 +459,33 @@ impl Funcdata {
             .collect();
 
         for (sz, addr) in saved {
+            // A declared input is a program value, even in callee-saved storage.
+            // Its copied stack slot may escape or be reused for another value.
+            let overlaps_input = |input: &Address, size: int4| {
+                input.overlap(0, &addr, sz) >= 0 || addr.overlap(0, input, size) >= 0
+            };
+            let formal_input = self.get_func_proto().has_store()
+                && (0..self.get_func_proto().num_params()).any(|index| {
+                    let Some(parameter) = self.get_func_proto().get_param(index) else {
+                        return false;
+                    };
+                    let input = parameter.get_address();
+                    if input.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_JOIN) {
+                        let Ok(join) = self.get_arch().manage().find_join(input.get_offset()) else {
+                            return false;
+                        };
+                        return (0..join.num_pieces()).any(|piece| {
+                            let piece = join.get_piece(piece);
+                            piece.space.as_ref().is_some_and(|space| {
+                                overlaps_input(&Address::new(Rc::clone(space), piece.offset), piece.size as int4)
+                            })
+                        });
+                    }
+                    overlaps_input(&input, parameter.get_size())
+                });
+            if formal_input {
+                continue;
+            }
             let vn = match self.find_varnode_input(sz, &addr) {
                 Some(v) => v,
                 None => continue,
