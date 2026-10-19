@@ -328,3 +328,27 @@ int main(int argc, char **argv) {
     }
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn dynamic_entry_mechanisms_without_a_body_do_not_fail_the_function() {
+    for (target, bytes, expected) in [
+        ("JVM:BE:32:default", &[0x04u8, 0xac][..], "return 1;"),
+        ("Dalvik:LE:32:DEX_Base", &[0x0e, 0x00][..], "return;"),
+    ] {
+        let image = common::scratch_file("dynamic-entry-mechanism", "bin");
+        std::fs::write(&image, bytes).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .env("KUNA_SPECS", common::repo_root().join("specs"))
+            .args(["decompile", image.to_str().unwrap(), "0x1000", "--raw-image"])
+            .args(["--target", target, "--base", "0x1000"])
+            .output()
+            .unwrap();
+        let _ = std::fs::remove_file(&image);
+        let code = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && code.contains(expected),
+            "{target}\n{code}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}

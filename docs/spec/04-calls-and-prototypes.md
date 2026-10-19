@@ -232,7 +232,11 @@ blocks — and registers the result as the default model
 Compiler-spec prototype p-code is registered before snippet compilation by
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_callmechanisms.rs`. Default and
 named models resolve distinct entry/return payload identities from the shared
-call-mechanism namespace. Unknown boundary names are rejected rather than
+call-mechanism namespace. A model resolves only payloads that have a locally
+compiled body: a `dynamic` payload with no `<body>` (the JVM and Dalvik
+`uponentry` models) and every payload in ghidra mode, where there is no local
+`.sla` to compile against, stay unresolved, so those models apply no boundary
+effects. Unknown boundary names are rejected rather than
 silently interpreted as a different boundary. Registration retains the compiler
 spec's declared operations; it does not identify helpers by runtime names.
 Compiled call mechanisms are snapshotted once per architecture and shared with

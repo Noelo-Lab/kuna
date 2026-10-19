@@ -323,3 +323,25 @@ fn an_empty_inject_response_fails_only_that_function() {
         r.results[1]
     );
 }
+
+/// `ppc_64_le.cspec`'s default model declares an `uponreturn` payload, which in
+/// ghidra mode has no locally compiled body: every call must still decompile.
+#[test]
+fn ppc64_return_mechanism_without_a_local_body_keeps_calls_decompiling() {
+    let binary = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/plt_ppc64le");
+    let targets = ["main"];
+    let r = run(
+        &binary,
+        "specs/Ghidra/Processors/PowerPC/data/languages",
+        "ppc_64.pspec",
+        "ppc_64_le.cspec",
+        &targets,
+        None,
+    );
+    assert_all_decompiled(&r, &targets, "PowerPC:LE:64 plt_ppc64le");
+    assert!(
+        r.results[0].1.contains("puts("),
+        "PPC64 main did not recover the puts call:\n{}",
+        r.results[0].1
+    );
+}

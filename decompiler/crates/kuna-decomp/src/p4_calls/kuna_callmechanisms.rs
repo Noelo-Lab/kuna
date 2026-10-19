@@ -66,6 +66,19 @@ pub fn ids(library: &PcodeInjectLibrarySleigh, name: &str) -> (i32, i32) {
     (lookup("uponentry"), lookup("uponreturn"))
 }
 
+/// A payload with no locally compiled body (dynamic, or host-owned in ghidra mode) stays unresolved.
+pub fn compiled_ids(library: &PcodeInjectLibrarySleigh, name: &str) -> (i32, i32) {
+    let compiled = |id: i32| {
+        if id >= 0 && library.get_tpl(id).is_some() {
+            id
+        } else {
+            -1
+        }
+    };
+    let (entry, upon_return) = ids(library, name);
+    (compiled(entry), compiled(upon_return))
+}
+
 #[derive(Debug, Default)]
 pub struct State {
     applied: std::collections::HashMap<crate::context::OpId, i32>,
@@ -773,6 +786,8 @@ mod tests {
         assert_eq!(ids(&library, "first"), (1, 0));
         assert_eq!(ids(&library, "second"), (-1, 2));
         assert_eq!(ids(&library, "missing"), (-1, -1));
+        assert_eq!(compiled_ids(&library, "first"), (-1, -1));
+        assert_eq!(compiled_ids(&library, "second"), (-1, -1));
         assert!(register(Some(r#"<compiler_spec><prototype name="bad"><pcode inject="other"><body>R0=R1;</body></pcode></prototype></compiler_spec>"#), &manager, &mut library).is_err());
     }
 }

@@ -6076,7 +6076,7 @@ impl Architecture {
             model.set_constructor(decode_bool_attr(&v));
         }
         model.set_name(&name);
-        let (entry_inject, return_inject) = crate::kuna_callmechanisms::ids(&self.pcodeinjectlib, &name);
+        let (entry_inject, return_inject) = crate::kuna_callmechanisms::compiled_ids(&self.pcodeinjectlib, &name);
         model.set_inject_ids(entry_inject, return_inject);
         let strategy = attr_str(proto, "strategy").unwrap_or_default();
         model.build_param_list(&strategy)?;
