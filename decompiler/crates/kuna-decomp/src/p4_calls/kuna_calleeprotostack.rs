@@ -114,6 +114,51 @@ pub fn declared_caller_frame_floor(on: bool, fp: &FuncProto) -> Option<int4> {
     Some(ep)
 }
 
+/// Whether a register captures the stack base more than once. Nested frame
+/// setup can save and restore a frame pointer through memory, breaking the
+/// additive alias walk. Inspect storage rather than SSA links: call guards are
+/// installed before this heritage pass has linked all register reads.
+pub(crate) fn rebound_frame_base(fd: &crate::funcdata::Funcdata) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let Some(stack) = fd.get_arch().manage().get_stack_space() else {
+        return false;
+    };
+    let Ok(base) = stack.get_spacebase(0) else {
+        return false;
+    };
+    let Some(space) = base.space.as_ref() else {
+        return false;
+    };
+    let mut captures = std::collections::BTreeSet::new();
+    for id in fd.obank().iter_alive() {
+        let Some(op) = fd.obank().get(id) else {
+            continue;
+        };
+        if op.code() != OpCode::CPUI_COPY {
+            continue;
+        }
+        let Some(input) = op.get_in(0).and_then(|id| fd.vbank().get(id)) else {
+            continue;
+        };
+        let Some(output) = op.get_out().and_then(|id| fd.vbank().get(id)) else {
+            continue;
+        };
+        if input.get_space().get_index() != space.get_index()
+            || input.get_offset() != base.offset
+            || input.get_size() != base.size as i32
+            || output.get_space().get_index() != space.get_index()
+            || output.get_size() != input.get_size()
+            || output.get_offset() == input.get_offset()
+        {
+            continue;
+        }
+        if !captures.insert((output.get_offset(), output.get_size())) {
+            return true;
+        }
+    }
+    false
+}
+
 /// A declared pointer input must be proved disjoint before suppressing a stack
 /// write guard. The global additive walk can lose a frame pointer saved to and
 /// restored from memory while a nested frame is active.
