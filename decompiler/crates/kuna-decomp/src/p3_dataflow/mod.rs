@@ -4,6 +4,7 @@
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
 pub mod heritage;
+mod kuna_leafmemory;
 pub mod subflow;
 mod kuna_constantbytes;
 pub mod condexe;

@@ -511,5 +511,14 @@ mod qualified_storage_addresses;
 #[path = "qualified_import_storage.rs"]
 mod qualified_import_storage;
 
+#[path = "readonly_leaf_stack.rs"]
+mod readonly_leaf_stack;
+
+#[path = "global_array_bit_transfers.rs"]
+mod global_array_bit_transfers;
+
+#[path = "project_assertion_status.rs"]
+mod project_assertion_status;
+
 #[path = "x87_integer_conversions_native.rs"]
 mod x87_integer_conversions_native;

@@ -400,7 +400,12 @@ and a pointer-to-struct being read as pointer-to-its-first-field inserts a
 `PTRSUB(ptr, #0)` — rendered as `&ptr->field` / `ptr->field` — instead of a
 cast (`coreaction_casts.rs (test_struct_offset0)`). Only when all of that
 fails is a real `CPUI_CAST` op inserted before the reader, with an implied
-unique output carrying the required type.
+unique output carrying the required type. The new CAST inherits the union
+field the reader had selected at that slot, both for a high whose own type
+needs resolution and for the high's declared storage symbol when that symbol
+is a union but the high's preferred type is scalar. The operand then prints as
+`storage.integer` rather than a cast of the whole `storage` union, which C
+rejects. Only an existing selection is copied; no field is chosen anew.
 
 **A signed read of an unsigned-printing expression (kuna).** The `U` suffix
 `mark_explicit_unsigned` gives a constant makes its whole C expression
@@ -2962,6 +2967,13 @@ drives these same renders and changes no byte any of them produces, but the
 project folder it assembles from them has a layout of its own — the single
 documented exception, described at the end of this section.
 
+After writing the artifacts, a serial project export reports every rejected
+assertion on stderr. Ordinary rejections leave the export successful unless
+`--assert-strict` requests a nonzero exit. A directive accepted and later refused
+by the pipeline always makes the export fail. These checks include declarations
+for callees outside the selected bodies and unresolved local directives; accepted
+directives keep their final applied outcomes.
+
 **Type definitions — the `docTypeDefinitions` port.** `printc.rs
 (PrintC::doc_type_definitions)` is the previously-unported C++
 `PrintC::docTypeDefinitions` surface — the console `print C types` command
@@ -3550,3 +3562,17 @@ noninteger types, enums, widths above eight bytes and concatenations of unrelate
 halves keep their existing rendering. The option defaults on for C output; off
 restores the upstream CONCAT helper, and other output languages keep their own
 rendering.
+
+For scalar CAST storage transfers through a global array symbol, such as an
+asserted byte array, the printed member access determines the scalar
+representation. An exact scalar array piece retains its type. Any other piece
+takes the type partial access prints it with (`kuna_partialaccess.rs`): the
+value's own scalar type of that width, such as a float stored in half of a
+`double` element, else the width-matched unknown scalar for a four- or
+eight-byte access crossing byte elements or covering the whole array. Floating
+transfers to and from that storage reinterpret bits rather than numerically
+converting the value or attempting an array cast. This lookup uses the exact
+global container and offset. A `FLOAT_FLOAT2FLOAT` that writes such storage
+directly keeps its numeric precision conversion, cast to the float of its output
+width rather than to the unknown type of the storage, because partial access
+prints that destination as a float.

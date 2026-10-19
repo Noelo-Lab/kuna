@@ -6901,7 +6901,8 @@ impl PrintC {
             fd.obank()
                 .get(op)
                 .and_then(|o| o.get_out())
-                .map(|out| fd.vn_type_def_facing(out))
+                .map(|out| crate::kuna_bitcast::array_float_conversion(fd, op)
+                    .unwrap_or_else(|| fd.vn_type_def_facing(out)))
         };
         if let Some(ct) = &cast_ty {
             self.push_cast_open(ct, op);
