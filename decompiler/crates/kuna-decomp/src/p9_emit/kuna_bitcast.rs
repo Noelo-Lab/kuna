@@ -35,6 +35,14 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
         .unwrap_or_else(|| fd.vn_type_read_facing(input, op));
     let to_ty = crate::kuna_stackviews::access_type(fd, out, op, -1)
         .or_else(|| declared_member_type(fd, decl_high_type, out))
+        .filter(|ty| {
+            // A byte-array-backed global can have an unresolved aggregate high
+            // type while this CAST prints a scalar floating storage view.
+            // Use that view rather than suppressing its bit reinterpretation.
+            dst.get_type_def_facing().get_metatype() != type_metatype::TYPE_FLOAT
+                || !matches!(ty.get_metatype(), type_metatype::TYPE_UNKNOWN
+                    | type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)
+        })
         .unwrap_or_else(|| fd.vn_type_def_facing(out));
     let from = from_ty.get_metatype();
     let to = to_ty.get_metatype();
