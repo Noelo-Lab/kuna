@@ -80,3 +80,6 @@ pub(crate) mod kuna_stackparamalign;
 pub mod kuna_x87emptyreturn;
 pub(crate) mod kuna_inputstorage;
 pub mod kuna_floatregister;
+pub mod kuna_x87free;
+
+pub mod kuna_callmechanisms;

@@ -183,6 +183,9 @@ Three tiers:
 | a switch inlined into a larger function renders as an if/else or goto ladder into a shared join while the same switch in its own function re-rolls | [`loweredswitchheads`](#loweredswitchheads) |
 | every arm of a compare ladder assigns one variable and jumps to the same label | [`loweredswitchheads`](#loweredswitchheads) |
 | option loweredswitch off and on give byte-identical output on a binary-search compare tree preceded by another test of the same variable | [`loweredswitchheads`](#loweredswitchheads) |
+| values below an x87 call are read from the wrong register-stack positions after consecutive calls | [`callmechanisms`](#callmechanisms) |
+| a store the compiler spec says a callee always makes is missing after the call | [`callmechanisms`](#callmechanisms) |
+| a custom compiler spec's uponentry or uponreturn p-code has no effect on the output | [`callmechanisms`](#callmechanisms) |
 | a 32-bit PowerPC -O0 variadic call drops a trailing double that an earlier argument is computed from | [`varargsharedfloat`](#varargsharedfloat) |
 | `sumi(2, x * 2, x)` prints as `sumi(2,x + x)` on PowerPC | [`varargsharedfloat`](#varargsharedfloat) |
 | a uint8_t parameter prints as unsigned int and is only ever used as a1 & 0xff or (char)a1 | [`narrowargs`](#narrowargs) |
@@ -1647,6 +1650,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-184). Turn off to try only the first compare on the switch variable as the cascade head, so a switch inlined after another test of its selector renders as an if/else or goto ladder.
 - **Where / provenance:** P2/switch-model · kuna · structure-recovery · GH-468
 - **Example:** `option loweredswitchheads off`
+
+### `callmechanisms` -- on | off, default `off` (destructive opt-in)
+
+- **Symptoms:** values below an x87 call are read from the wrong register-stack positions after consecutive calls; a store the compiler spec says a callee always makes is missing after the call; a custom compiler spec's uponentry or uponreturn p-code has no effect on the output.
+- **What it does:** Apply the p-code a compiler spec attaches to a prototype model's call boundaries: `<prototype><pcode inject="uponentry">` before the first operation of a function evaluated with that model, and `<pcode inject="uponreturn">` right after every modeled call whose callee uses it, both installed before SSA so the effects reach dataflow (upstream `ActionConstbase` / `FuncCallSpecs::insertPcode`). A model that declares the x87 register-stack rotation a callee performs, or a store a callee always makes, then reads the values below the call from their real positions. Only payloads with a locally compiled body are applied: a `dynamic` payload with no body (the JVM and Dalvik `uponentry` models), and every payload in ghidra mode, stay unresolved. A late prototype restriction that changes a call's return effect requests a full reflow.
+- **When to flip:** Off by default: the stock `ppc_64_le.cspec` default model stores `r2Save` to `0x28(r1)` after every call, which is the TOC save slot only under ELFv1; under the ELFv2 ABI every little-endian PPC64 binary uses, `0x28(r1)` is ordinary frame storage, so a local the function keeps there is replaced by the TOC pointer after each call. Turn ON per program for a custom compiler spec whose models declare boundary effects, or for ELFv1 big-endian PPC64 code whose calls restore `r2` from `0x28(r1)`. Inert on any spec that declares no prototype p-code (every stock x86, ARM, AArch64, MIPS and RISC-V spec).
+- **Where / provenance:** P4/abi-trust · ghidra-upstream · opt-in-tool · kuna-call-mechanisms
+- **Example:** `option callmechanisms on`
 
 ### `varargsharedfloat` -- on | off, default `off`
 
