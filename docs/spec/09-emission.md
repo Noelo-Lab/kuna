@@ -3404,7 +3404,9 @@ views require shared storage instead of separate declarations. With `globalref`
 on, a native object-pointer constant into a complete mapped object is rendered
 relative to its base, including interior field addresses. An explicit cast retains
 the requested pointee type, even when a byte array owns the storage. Function
-pointers keep their separate rendering. This preserves relocation of
+pointers keep their separate rendering. Loader metadata remains numeric: only
+addresses in the loader’s program-data ranges can name relocated objects. This
+preserves relocation of
 the object when the generated C is linked. Split mappings, uncertain extents,
 non-byte-addressed spaces, shadowed names and names requiring scope or identifier
 rewriting keep the existing rendering.

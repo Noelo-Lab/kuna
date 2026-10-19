@@ -65,7 +65,10 @@ impl References {
         offset: u64,
     ) -> Option<String> {
         let data = arch.manage().get_default_data_space()?;
-        if data.get_word_size() != 1 || offset == 0 {
+        if data.get_word_size() != 1
+            || offset == 0
+            || !crate::kuna_globalref::in_ranges(&arch.globalref_ranges, offset)
+        {
             return None;
         }
         let address = Address::new(data.clone(), offset);
