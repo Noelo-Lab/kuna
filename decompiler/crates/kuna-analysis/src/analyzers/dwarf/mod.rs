@@ -644,14 +644,18 @@ fn build_datatype_at(
         }
         gimli::DW_TAG_array_type => {
             let elem = build_datatype(die.type_ref, dies, types, word_size, walk, cpp)?;
-            // The length lives on a DW_TAG_subrange_type child (`kuna_dwarfbounds`);
+            // Every subrange contributes to the flattened storage extent.
+            // Taking only the first dimension underallocates multidimensional locals.
             // fall back to 1 for a flexible/unknown array.
             let count = die
                 .children
                 .iter()
                 .filter_map(|c| dies.get(c))
-                .find(|c| c.tag == gimli::DW_TAG_subrange_type)
-                .and_then(|c| c.array_count)
+                .filter(|c| c.tag == gimli::DW_TAG_subrange_type)
+                .map(|c| c.array_count.unwrap_or(1))
+                .try_fold(None, |product: Option<u64>, count| {
+                    product.unwrap_or(1).checked_mul(count).map(Some)
+                })?
                 .or(die.array_count)
                 .unwrap_or(1);
             let count = i32::try_from(count).ok()?;
@@ -1638,5 +1642,33 @@ mod tests {
         assert_eq!(by_name.get("binary"), Some(&(-40, -32)), "binary fbreg/offset");
         assert_eq!(by_name.get("file"), Some(&(-32, -24)), "file fbreg/offset");
         assert_eq!(by_name.get("elf_header"), Some(&(-24, -16)), "elf_header fbreg/offset");
+    }
+
+    #[test]
+    fn array_storage_includes_every_dimension_and_checks_overflow() {
+        for (dimensions, expected_bytes) in [
+            (vec![3, 7], Some(84)),
+            (vec![2, 3, 4], Some(96)),
+            (vec![u64::MAX, 2], None),
+        ] {
+            let types = factory();
+            let mut dies = BTreeMap::new();
+            let mut base = DieSnap::new(gimli::DW_TAG_base_type, 1);
+            base.byte_size = Some(4);
+            base.encoding = Some(gimli::DW_ATE_float);
+            dies.insert(1, base);
+            let mut array = DieSnap::new(gimli::DW_TAG_array_type, 1);
+            array.type_ref = Some(1);
+            for (index, count) in dimensions.into_iter().enumerate() {
+                let key = 3 + index;
+                let mut range = DieSnap::new(gimli::DW_TAG_subrange_type, 2);
+                range.array_count = Some(count);
+                dies.insert(key, range);
+                array.children.push(key);
+            }
+            dies.insert(2, array);
+            let built = build_datatype(Some(2), &dies, &types, 1, &mut TypeWalk::new(), false);
+            assert_eq!(built.map(|ty| ty.get_size()), expected_bytes);
+        }
     }
 }
