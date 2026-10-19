@@ -3497,6 +3497,20 @@ address is a separate value. Full-width integer bits assigned to an aggregate
 view use the same byte path. Unsupported expressions retain ordinary emission;
 the provenance walk is bounded to eight-byte values and 32 levels.
 
+The byte walk carries source storage identity, projected offset, and original
+read operation separately from a merged HighVariable. A projected global read
+therefore renders from its physical data-space address instead of using the
+merged stackview name. Mutable LOADs and implicit global reads can be moved to a
+store only within the same block and across no write, call, STORE, INDIRECT or
+CALLOTHER effect; readonly non-volatile sources do not need that timing proof.
+Volatile reads and pointer values or pointer-origin constants stay on typed
+emission paths. Any other source printed by name must be a declared variable
+(a named local or a linked symbol), never bare register storage. The pointer
+test reads a def-facing type only for a written Varnode; an input or constant
+is classified by its own type. A complete scalar range uses one typed compound-literal
+evaluation for `__builtin_memcpy`; partial ranges use byte literals only when
+their source reads are safe to reproduce at the store.
+
 Explicit zero-offset PTRSUB field selections keep their union write-edge
 resolution through cast fixup. Their output token is the selected member's
 pointer type, rather than an unresolved parent or generic byte pointer. Logical

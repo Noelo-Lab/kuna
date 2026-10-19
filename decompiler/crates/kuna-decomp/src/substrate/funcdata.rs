@@ -593,6 +593,8 @@ pub struct Funcdata {
     /// (kuna `calleevote`) The types every caller of this function passes for its
     /// inputs, copied off the `Architecture` after the flow build.
     kuna_calleevote_inputs: Option<std::rc::Rc<crate::kuna_calleevote::CallerTypes>>,
+    /// (kuna `narrowargs callers`) The parameters every caller passes narrow.
+    kuna_callerargs: Option<std::rc::Rc<Vec<crate::kuna_callerargs::NarrowParam>>>,
     /// (kuna `elfmain`) The C runtime's `main` declaration this function's inputs
     /// take, when it is an executable's own `main`. See [`crate::kuna_elfmaindecl`].
     kuna_elfmain: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>,
@@ -818,6 +820,7 @@ impl Funcdata {
             kuna_moved_back_returns: Vec::new(),
             kuna_pairs_first_low: false,
             kuna_calleevote_inputs: None,
+            kuna_callerargs: None,
             kuna_elfmain: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
@@ -1479,6 +1482,16 @@ impl Funcdata {
     /// (kuna `calleevote`) What this function's callers pass for its inputs.
     pub fn kuna_calleevote_inputs(&self) -> Option<&crate::kuna_calleevote::CallerTypes> {
         self.kuna_calleevote_inputs.as_deref()
+    }
+
+    /// (kuna `narrowargs callers`) Record the parameters every caller passes narrow.
+    pub fn kuna_set_callerargs(&mut self, stated: Option<std::rc::Rc<Vec<crate::kuna_callerargs::NarrowParam>>>) {
+        self.kuna_callerargs = stated;
+    }
+
+    /// (kuna `narrowargs callers`) The parameters every caller passes narrow.
+    pub fn kuna_callerargs(&self) -> Option<&std::rc::Rc<Vec<crate::kuna_callerargs::NarrowParam>>> {
+        self.kuna_callerargs.as_ref()
     }
 
     /// (kuna `elfmain`) Give this function's inputs the C runtime's `main`

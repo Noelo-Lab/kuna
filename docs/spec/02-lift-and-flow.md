@@ -1437,6 +1437,14 @@ shape is still reachable. Sharing is worth about 16% of the wall time of a
 two-table function, and on the interleaved shape `unrolledguard` was written for
 it recovers the same tables without any tolerance rule, because the shared
 partial's edge collection runs once while every sibling table is still empty.
+(kuna) Under a per-function budget (`00-overview.md`, *The watchdog*) the loop is bounded in
+time as well: `flow.rs (FlowInfo::recover_jump_tables)` asks the drive's
+deadline before each table and after its attempt, and `jumptable.rs
+(JumpTable::recover_model)` after the basic and the default-path model. A
+table reached once the deadline has passed is not attempted — its BRANCHIND is
+truncated like any unrecovered one, so the loop drains instead of staging more
+sub-decompilations — and the budget error names the step and the indirect
+jump's address. Without a budget each probe is one thread-local read.
 Two pre-checks bound the attempt:
 `funcdata_block.rs (Funcdata::early_jump_table_fail)` backtracks up to 8 ops
 through value-preserving arithmetic looking for a computation the recovery can

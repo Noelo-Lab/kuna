@@ -80,7 +80,8 @@ use crate::interface::{
 };
 use kuna_base::types::{int4, uintb, uintm};
 use kuna_decomp::decompile_drive::{
-    build_and_follow_flow_with_override, print_c, print_c_types,
+    build_and_follow_flow_with_override, build_and_follow_flow_within_budget, print_c,
+    print_c_types,
 };
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::options::OptionDatabase;
@@ -1367,7 +1368,7 @@ decomp_command!(
         // without one the extent is the natural (unbounded) one.
         let declared = prog.declared_extent(entry.get_offset());
         let entry_stamp = entry.clone();
-        let fd = build_and_follow_flow_with_override(
+        let fd = build_and_follow_flow_within_budget(
             prog.arch_mut(),
             &resolved_name,
             entry,
@@ -1475,7 +1476,7 @@ decomp_command!(
         let entry_stamp = offset.clone();
         let name_stamp = name.clone();
         let fd =
-            build_and_follow_flow_with_override(prog.arch_mut(), &name, offset, declared, &flow_overrides)
+            build_and_follow_flow_within_budget(prog.arch_mut(), &name, offset, declared, &flow_overrides)
                 .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         // (kuna) Same follow stamp as `load function` (see `PristineFlow`).
         dcp.pristine_flow = Some(PristineFlow {

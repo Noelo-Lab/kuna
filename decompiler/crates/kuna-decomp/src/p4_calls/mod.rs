@@ -63,6 +63,7 @@ pub mod kuna_armfloatreturn; // (kuna) an ARM hard-float function returns and ta
 pub mod kuna_narrowext; // (kuna) a narrow integer argument or return value is extended as the ABI states
 pub mod kuna_narrowret; // (kuna) a call reads the narrow value its callee returns zero-extended
 pub mod kuna_narrowargs; // (kuna) a parameter whose body reads only its low bytes is declared that narrow
+pub mod kuna_callerargs; // (kuna) a 32-bit ARM parameter every caller passes narrow is declared that narrow
 pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only under the image's float convention
 pub mod kuna_varargretreg; // (kuna) a variadic call's argument in the register its value returns in
 pub mod kuna_vfpvariadic; // (kuna) a declared ARM hard-float variadic function returns under the base standard
