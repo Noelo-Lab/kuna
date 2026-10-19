@@ -1765,7 +1765,11 @@ classified:
   register the callee hands untouched to a declared parameter (`fcntl`'s `fd`)
   or to a callee that takes it. A function calling itself reads its own record:
   bash `dispose_cond_node` loads `cond->left` into `rdi`, tests it and recurses
-  with it, and printed `dispose_cond_node()`.
+  with it, and printed `dispose_cond_node()`. A list only that record extends
+  takes no earlier call's leftover result (`is_leftover_call_result`) in any of
+  its slots: gcc -O2 keeps a value in `rdx` across a call its IPA-RA knows
+  leaves `rdx` alone, the register then reads as that call's clobber, and the
+  argument would print as an uninitialised local.
 
   A register the callee only pushes above a call's stack arguments -- an
   alignment pad -- is no read either (`pushpadread`, default-on,
@@ -5092,16 +5096,16 @@ read and the record's.
 
 The record is taken only while `passthrough` is on, so `--option passthrough
 off` leaves every list as before; a single-function `kuna decompile` states no
-callee and sees only the self-call. Over fifteen binaries (x86-64 gcc -O2 and
--O0, Cortex-M, ARM and AArch64 libraries) this adds 214 call arguments; of the
-170 whose callee has a DWARF prototype, 159 match it in count and the other 11
-are register-level arguments DWARF does not count (a hidden struct-return
-pointer, a 64-bit integer in two registers, libgcc's assembly soft-float
-compares with no DWARF parameters). Call sites passing fewer arguments than the
-callee's DWARF prototype fall from 255 to 125, and no function loses an
-argument or gains an uninitialised local. A hole is still declined
-(`no_hole_before`), and two functions calling each other state nothing for the
-one decompiled first.
+callee and sees only the self-call (over grep -O2, two of 449 functions change,
+both recursive). Over fourteen binaries (x86-64 gcc -O2 and -O0, clang,
+Cortex-M firmware, an ARM library) this adds 222 call arguments; of the 167
+whose callee has a DWARF prototype, 156 match it in count and the other 11 are
+register-level arguments DWARF does not count (a hidden struct-return pointer,
+a 64-bit integer in two registers, libgcc's assembly soft-float compares with
+no DWARF parameters). Call sites passing fewer arguments than the callee's
+DWARF prototype fall from 251 to 130, and no function loses an argument or
+gains an uninitialised local. A hole is still declined (`no_hole_before`), and
+two functions calling each other state nothing for the one decompiled first.
 
 **The rule only adds.** Every other rule decides a call's argument list first,
 exactly as with the option off, and `passthrough` extends the result. That order
