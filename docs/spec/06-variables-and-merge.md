@@ -1134,7 +1134,14 @@ affine by `ActionStackPtrFlow` (§6.5). Everything below consumes the
 in `mainloop`). Stack storage that belongs to someone else is marked
 *not-mapped* before layout ever runs: the stack homes of locked parameters of
 every sub-call (they are the callee's), and saved-register COPYs of unaffected
-registers (calling-convention bookkeeping, not a variable). The same
+registers (calling-convention bookkeeping, not a variable). The exclusion
+covers the slot for the whole function, so it is skipped when the unaffected
+register overlaps one of the function's own declared parameters, directly or
+as a piece of joined storage: that COPY is a parameter spill, and the slot may
+have its address taken or later hold another value, and an excluded slot loses
+both its declaration and its stores. The cost is that a function which
+also pushes such a register to save it, and whose frame escapes, can keep the
+push slot as a dead local assignment of the parameter. The same
 mechanism (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 (ScopeLocal::mark_not_mapped)`) later excludes an unaliased return-value
 staging slot (`funcdata_spacebase.rs (Funcdata::check_unaliased_return)`).

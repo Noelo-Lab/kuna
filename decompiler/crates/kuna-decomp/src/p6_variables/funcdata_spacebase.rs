@@ -366,7 +366,9 @@ impl Funcdata {
     ///    Varnode that is `isUnaffected`, every `CPUI_COPY` descendant whose output
     ///    lands in this scope's stack space (`isUnaffectedStorage`) is the slot the
     ///    saved value is stashed in — unmap it so it is not promoted to a spurious
-    ///    `undefined8 v//rsp` local.
+    ///    `undefined8 v//rsp` local.  (kuna) Skipped when the register overlaps a
+    ///    declared parameter of this function (directly or as a join piece): that
+    ///    copy is a parameter spill whose slot may escape or be reused.
     ///
     /// Transcribes the two C++ loops (no name/register/offset
     /// special-casing; the spacebase/join classification and the unaffected/COPY
@@ -459,8 +461,6 @@ impl Funcdata {
             .collect();
 
         for (sz, addr) in saved {
-            // A declared input is a program value, even in callee-saved storage.
-            // Its copied stack slot may escape or be reused for another value.
             let overlaps_input = |input: &Address, size: int4| {
                 input.overlap(0, &addr, sz) >= 0 || addr.overlap(0, input, size) >= 0
             };
