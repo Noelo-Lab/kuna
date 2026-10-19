@@ -2544,3 +2544,9 @@ the separate truncating conversion. These operations do not add modeling of
 x87 status updates or unmasked exceptions that suppress writes and pops. When
 the control word provably selects round-toward-zero, as in compiled C
 conversions, `x87truncate` (§3.5) turns the operation back into `FLOAT_TRUNC`.
+That proof reads the control word's dataflow, so every instruction that
+replaces the control word defines it: `FLDCW`, `FLDENV`, `FRSTOR`,
+`FINIT`/`FNINIT`, and the reinitialization after `FSAVE`/`FNSAVE`. `FXRSTOR`
+loads it from the first word of its area. `XRSTOR` and `XRSTORS` load it the
+same way when `EAX` bit 0 and the area's `XSTATE_BV` bit 0 are set, reset it
+to `0x037f` when only `EAX` bit 0 is set, and leave it unchanged otherwise.

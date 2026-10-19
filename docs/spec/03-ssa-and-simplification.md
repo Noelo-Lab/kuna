@@ -2383,7 +2383,10 @@ it, convert, restore. The proof is a bounded walk over the operand's definitions
 that keeps the bits known to be 1 through constants, `COPY`, `INT_ZEXT`,
 `INT_OR`, `INT_AND`, `PIECE`, `SUBPIECE` and `MULTIEQUAL` (every input must
 agree); any other definition, an input, or an exhausted visit budget proves
-nothing. *Rewrite:* the operation becomes `FLOAT_TRUNC` of its extended-precision
+nothing. The walk trusts the lift to define the control word at every
+instruction that replaces it (§2, x87 integer conversions); a call between the
+load and the conversion leaves an `INDIRECT`, which proves nothing. *Rewrite:*
+the operation becomes `FLOAT_TRUNC` of its extended-precision
 operand at the same output width, the same conversion `FISTTP` lifts to, so the
 control-word computation dies and the function prints `(int)x`. A conversion
 whose output dead-code removal has already cleared is deleted instead, since

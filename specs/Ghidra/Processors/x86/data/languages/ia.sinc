@@ -5052,14 +5052,23 @@ define pcodeop xrstor64;
 define pcodeop xrstors;
 define pcodeop xrstors64;
 
-:XRSTOR Mem    is vexMode=0 & byte=0x0F; byte=0xAE; ( mod != 0b11 & reg_opcode=5 ) ... & Mem { tmp:4 = 512; xrstor(Mem, tmp); }
+# x87 control word after XRSTOR/XRSTORS: loaded when RFBM[0] and XSTATE_BV[0] are set,
+# initialized when only RFBM[0] is set, unchanged otherwise.
+macro xrstor_control(area) {
+  local loaded:2 = *:2 area;
+  local restore:2 = -zext((EAX & 1) != 0);
+  local present:2 = -zext((*:1 (area + 512) & 1) != 0);
+  FPUControlWord = (restore & ((present & loaded) | (~present & 0x037f))) | (~restore & FPUControlWord);
+}
+
+:XRSTOR Mem    is vexMode=0 & byte=0x0F; byte=0xAE; ( mod != 0b11 & reg_opcode=5 ) ... & Mem { tmp:4 = 512; xrstor(Mem, tmp); xrstor_control(Mem); }
 @ifdef IA64
-:XRSTOR64 Mem    is $(LONGMODE_ON) & vexMode=0 & $(REX_W) & byte=0x0F; byte=0xAE; ( mod != 0b11 & reg_opcode=5 ) ... & Mem { tmp:4 = 512; xrstor64(Mem, tmp); }
+:XRSTOR64 Mem    is $(LONGMODE_ON) & vexMode=0 & $(REX_W) & byte=0x0F; byte=0xAE; ( mod != 0b11 & reg_opcode=5 ) ... & Mem { tmp:4 = 512; xrstor64(Mem, tmp); xrstor_control(Mem); }
 @endif
 
-:XRSTORS Mem    is vexMode=0 & byte=0x0F; byte=0xC7; ( mod != 0b11 & reg_opcode=3 ) ... & Mem { tmp:4 = 512; xrstors(Mem, tmp); }
+:XRSTORS Mem    is vexMode=0 & byte=0x0F; byte=0xC7; ( mod != 0b11 & reg_opcode=3 ) ... & Mem { tmp:4 = 512; xrstors(Mem, tmp); xrstor_control(Mem); }
 @ifdef IA64
-:XRSTORS64 Mem    is $(LONGMODE_ON) & vexMode=0 & $(REX_W) & byte=0x0F; byte=0xC7; ( mod != 0b11 & reg_opcode=3 ) ... & Mem { tmp:4 = 512; xrstors64(Mem, tmp); }
+:XRSTORS64 Mem    is $(LONGMODE_ON) & vexMode=0 & $(REX_W) & byte=0x0F; byte=0xC7; ( mod != 0b11 & reg_opcode=3 ) ... & Mem { tmp:4 = 512; xrstors64(Mem, tmp); xrstor_control(Mem); }
 @endif
 
 :XSAVE  Mem    is vexMode=0 & byte=0x0F; byte=0xAE; ( mod != 0b11 & reg_opcode=4 ) ... & Mem { tmp:4 = 512; xsave(Mem, tmp); }
@@ -6196,6 +6205,7 @@ define pcodeop _fxrstor64;
 :FXRSTOR Mem   is $(LONGMODE_OFF) & vexMode=0 & byte=0x0F; byte=0xAE; ( mod != 0b11 & reg_opcode=1 ) ... & Mem
 {
   _fxrstor(Mem);
+  FPUControlWord = *:2 (Mem);
 }
 
 @ifdef IA64
@@ -6213,11 +6223,13 @@ define pcodeop _fxrstor64;
 :FXRSTOR Mem   is $(LONGMODE_ON) & vexMode=0 & byte=0x0F; byte=0xAE; ( mod != 0b11 & reg_opcode=1 ) ... & Mem
 {
   _fxrstor(Mem);
+  FPUControlWord = *:2 (Mem);
 }
 
 :FXRSTOR64 Mem   is $(LONGMODE_ON) & vexMode=0 & $(REX_W) & byte=0x0F; byte=0xAE; ( mod != 0b11 & reg_opcode=1 ) ... & Mem
 {
   _fxrstor64(Mem);
+  FPUControlWord = *:2 (Mem);
 }
 @endif
 

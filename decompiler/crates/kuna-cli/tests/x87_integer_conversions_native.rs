@@ -92,6 +92,8 @@ fn truncating_control_words_become_c_conversions() {
         "int sample_cast32(float10 *value)",
         "long long sample_cast64(float10 *value,unsigned short extra)",
         "int sample_floor32(float10 *value)",
+        "int sample_restored32(float10 *value,void *area)",
+        "int sample_xrestored32(float10 *value,void *area)",
     ] {
         let name = declaration.split('(').next().unwrap().split_whitespace().last().unwrap();
         decompile.arg("--assert").arg(format!("prototype {name} {declaration}"));
@@ -107,7 +109,9 @@ fn truncating_control_words_become_c_conversions() {
         let text = body(name);
         assert!(text.contains(cast) && !text.contains("x87_float_to_int") && !text.contains("FLOAT_ROUND"), "{text}");
     }
-    assert!(body("sample_floor32").contains("x87_float_to_int32("), "{code}");
+    for name in ["sample_floor32", "sample_restored32", "sample_xrestored32"] {
+        assert!(body(name).contains("x87_float_to_int32("), "{code}");
+    }
 
     let mut compilers = 0;
     for compiler in ["gcc", "clang"] {
@@ -124,7 +128,8 @@ fn truncating_control_words_become_c_conversions() {
                 .arg(exported.join("sample.so.c")).arg(&driver)
                 .args(["-ldl", "-lm", "-o"]).arg(&executable));
             let result = process::required_output(Command::new(&executable).arg(&binary));
-            assert!(String::from_utf8_lossy(&result.stdout).contains("436 native comparisons passed"), "{result:?}");
+            let stdout = String::from_utf8_lossy(&result.stdout);
+            assert!(stdout.contains("436 native comparisons passed") && stdout.contains("672 restored control words compared"), "{result:?}");
         }
     }
     assert!(compilers > 0);

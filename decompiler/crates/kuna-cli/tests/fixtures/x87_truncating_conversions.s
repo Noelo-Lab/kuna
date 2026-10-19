@@ -73,4 +73,44 @@ sample_floor32:
  ret
 .size sample_floor32,.-sample_floor32
 
+.text
+.globl sample_restored32
+.type sample_restored32,@function
+sample_restored32:
+ sub $24,%rsp
+ fnstcw 0(%rsp)
+ movzwl 0(%rsp),%eax
+ orl $3072,%eax
+ movw %ax,2(%rsp)
+ fldcw 2(%rsp)
+ fxrstor (%rsi)
+ fldt (%rdi)
+ fistpl 8(%rsp)
+ fldcw 0(%rsp)
+ movl 8(%rsp),%eax
+ add $24,%rsp
+ ret
+.size sample_restored32,.-sample_restored32
+
+.text
+.globl sample_xrestored32
+.type sample_xrestored32,@function
+sample_xrestored32:
+ sub $24,%rsp
+ fnstcw 0(%rsp)
+ movzwl 0(%rsp),%eax
+ orl $3072,%eax
+ movw %ax,2(%rsp)
+ fldcw 2(%rsp)
+ movl $1,%eax
+ xorl %edx,%edx
+ xrstor (%rsi)
+ fldt (%rdi)
+ fistpl 8(%rsp)
+ fldcw 0(%rsp)
+ movl 8(%rsp),%eax
+ add $24,%rsp
+ ret
+.size sample_xrestored32,.-sample_xrestored32
+
 .section .note.GNU-stack,"",@progbits
