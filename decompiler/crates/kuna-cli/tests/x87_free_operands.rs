@@ -1,4 +1,5 @@
 //! Freeing a stack-register tag must not invent a floating payload read.
+#![cfg(all(target_os = "linux", any(target_arch = "x86", target_arch = "x86_64")))]
 use crate::common;
 use common::process;
 use std::process::Command;
