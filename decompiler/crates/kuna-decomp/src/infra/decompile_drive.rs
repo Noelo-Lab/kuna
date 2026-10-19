@@ -1342,7 +1342,10 @@ pub fn decompile_func_full_with_objects(
         // Apply the resolved prototype to the fresh funcp (the input-param
         // recovery SEED): after this the inputs/output are type-locked, so
         // ActionPrototypeTypes forces the typed Varnodes.
-        if let Some(pieces) = pending_proto.or(recovered_proto.as_ref()) {
+        let combined_proto = crate::p4_calls::kuna_inputstorage::merge_mapped(
+            pending_proto.or(recovered_proto.as_ref()), mapped_params,
+        );
+        if let Some(pieces) = combined_proto.as_deref() {
             // (ghidra-mode, Phase 4) A host-declared model rides with the
             // pieces so parameter storage is assigned under the SAME
             // convention the database committed (see

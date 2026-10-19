@@ -424,6 +424,17 @@ the hidden-return pointer bumped it. Failure mode: an unassignable *input*
 raises a hard error; an unassignable *output* is only survivable where the
 caller opted into `ignore_output_error`, which degrades the return to `void`.
 
+Explicit input storage participates in assignment before default slots are chosen
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_inputstorage.rs (assign)`).
+An overridden argument consumes its stated physical storage, including register
+aliases and the components of joined storage, instead of consuming its former
+model-assigned slot. Remaining arguments and synthetic return pointers use the
+normal model rules while avoiding all explicitly reserved ranges. Logical
+argument indices remain unchanged for positional and variadic rules. Explicit
+arguments retain their declared order, types and flags; conflicting explicit
+placements remain the caller's asserted contract. An impossible automatic
+placement raises a parameter-assignment error.
+
 The rules themselves live in
 `decompiler/crates/kuna-decomp/src/p4_calls/modelrules.rs (ModelRule,
 AssignAction, DatatypeFilter, QualifierFilter)`. A `ModelRule` is a data-type
@@ -480,6 +491,13 @@ stack whose first 64 bytes are x0–x7, so a `<varargs/>` join ahead of the
 no-spill rule still splits a composite between x7 and the stack there.
 These rules model the C ABI only: a Rust-ABI two-scalar pair, which rustc may
 split between x7 and the stack, is not modelled, as on x86-64.
+
+Scalar floating parameters assigned to an exclusive floating resource in the
+register space occupy their payload size. Object alignment padding does not
+consume register storage: an x87 value has ten meaningful bytes even when its
+stack object occupies twelve or sixteen bytes. Stack resources, general
+register resources and aggregate types retain their aligned object size.
+The declared datatype and its alignment remain unchanged.
 
 ### Recovery: trials → parameters
 
@@ -1118,7 +1136,14 @@ prototype the operator declared for this run (`parse line extern …` /
 `map prototype <func> …`, 00 §0.2), then the
 prototype parked on the function's own global `FunctionSymbol` — which is where
 the DWARF pass's recovered `DW_TAG_subprogram` signature lands (01 §1.4) and
-where the library-prototype table lands for a named libc function.
+where the library-prototype table lands for a named libc function. The
+function's own `map param <i>` locks are folded into that prototype's explicit
+input storage before it is locked
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_inputstorage.rs
+(merge_mapped)`), so its remaining arguments are laid out around them exactly as
+for a callee declared with `map param <func>::<i>`. The locks are then set on
+the locked prototype by slot index once more, which is what still carries a
+host's committed parameter storage verbatim in Ghidra mode.
 
 The parked prototype used to be read only by a *caller*: `ActionDefaultParams`
 copies a callee's pieces into the call site, so a DWARF-described callee typed
@@ -1163,11 +1188,13 @@ that machinery.
   just the output on top. (kuna) The parked pieces describe *types*, and
   storage is otherwise re-derived from the model, so the two spellings that
   state storage explicitly carry it alongside: `output_storage` for the return
-  and `input_storage` for individual parameter slots. Both are re-applied by
-  `FuncProto::set_pieces` after the model-driven assignment, which is what lets
-  a caller declare a non-default convention for a callee — the console `map
-  param <func>::<i> <storage> <decl>` and `map return <func>::<storage>
-  <decl>`, reached from the CLI as `--assert 'param <func>::<i> …'`. A slot no
+  and `input_storage` for individual parameter slots. `FuncProto::set_pieces`
+  re-applies the output storage after the model-driven assignment, while the
+  input storage takes part in that assignment (explicit input storage, §4.1),
+  which is what lets a caller declare a non-default convention for a callee —
+  the console `map param <func>::<i> <storage> <decl>` and `map return
+  <func>::<storage> <decl>`, reached from the CLI as
+  `--assert 'param <func>::<i> …'`. A slot no
   directive named is `undefined` of pointer width, so slots may be declared in
   any order. (kuna) Explicit return storage also keeps the return out of that
   model-driven input assignment (`kuna_customreturn.rs`): the inputs are laid
