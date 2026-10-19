@@ -614,6 +614,8 @@ fn resolve_region(prog: &ConsoleProgram, args: &DisArgs) -> Result<Region, Strin
     } else if let Some(a) = prog.lookup_symbol(spec) {
         let addr = a.get_offset();
         (addr, name_at(prog, addr).or_else(|| Some(spec.to_string())), false)
+    } else if let Some(addr) = prog.lookup_data_alias(spec) {
+        (addr, Some(spec.to_string()), false)
     } else if let Some((n, addr, _)) =
         prog.global_data_symbols().into_iter().find(|(n, _, _)| n == spec)
     {

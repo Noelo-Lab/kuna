@@ -558,6 +558,7 @@ pub struct ConsoleProgram {
     /// objects — `optind`, `stdin`, `stdout`, `optarg` — live). Empty on the XML
     /// datatest path and for a relocatable object.
     loader_data_objects: Vec<(u64, String, u64)>,
+    data_name_aliases: HashMap<String, u64>,
     /// (kuna) **Caller-declared function extents**, entry VMA → byte size — what
     /// the console `function bounds <start> <end>` and the CLI
     /// `kuna --define-function <start>-<end>` assert, and the only place kuna
@@ -1945,6 +1946,11 @@ impl ConsoleProgram {
             .into_iter()
             .map(|(name, address, size)| (name, address.get_offset(), size))
             .collect()
+    }
+
+    /// Resolve an imported data object's original spelling after identifier folding.
+    pub fn lookup_data_alias(&self, name: &str) -> Option<u64> {
+        self.data_name_aliases.get(name).copied()
     }
 
     /// Global data symbols with their address-space identity retained.
@@ -3668,6 +3674,7 @@ fn empty_program(
         analysis_image: None,
         arm_frames: None,
         loader_data_objects: Vec::new(),
+        data_name_aliases: HashMap::new(),
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
         declared_names: BTreeMap::new(),
@@ -4400,13 +4407,25 @@ fn commit_analysis_output(
     };
     let out = out;
 
+    // Keep lookup identities even when richer debug information wins the map.
+    let data_symbols_enabled = prog.arch().analysis_datasyms;
+    prog.data_name_aliases.extend(
+        prog.loader_data_objects.iter().filter(|_| data_symbols_enabled)
+            .map(|(address, name, _)| (name.clone(), *address))
+            .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
+            .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
+            .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| (d.name.clone(), d.addr)))
+    );
+
     let mut data_names = crate::kuna_dataidentifiers::Names::new(
         prog.symbols.iter().map(|s| s.name.clone())
-            .chain(prog.loader_data_objects.iter().map(|(_,name,_)| name.clone()))
+            .chain(prog.loader_data_objects.iter().filter(|_| data_symbols_enabled).map(|(_,name,_)| name.clone()))
             .chain(prog.global_data_symbols().into_iter().map(|(name,_,_)| name))
             .chain(out.symbols.iter().map(|s| s.name.clone()))
             .chain(out.data_objects.iter().map(|d| d.name.clone()))
-            .chain(out.typed_data.iter().map(|d| d.name.clone()))
+            .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| d.name.clone())),
+        kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode()
+            == kuna_decomp::kuna_symbolnamechars::NameChars::Ident,
     );
 
     // 0b. (kuna `libctypes glibc`) The load-time target decision, carried to the

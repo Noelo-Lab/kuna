@@ -58,6 +58,9 @@ end function sample
             "--option",
             "globalref",
             "off",
+            "--option",
+            "symbolnamechars",
+            "ident",
         ]);
         assert_eq!(status, 0, "{err}");
         assert!(
@@ -66,15 +69,91 @@ end function sample
         );
         let names: BTreeSet<_> = body
             .split(|c: char| !(c.is_alphanumeric() || c == '_'))
-            .filter(|name| name.starts_with("kuna_global_"))
+            .filter(|name| {
+                if compiler == "gcc" {
+                    name.starts_with("counter_3_1_")
+                } else {
+                    name.starts_with("is_recursive_")
+                }
+            })
             .collect();
         assert_eq!(names.len(), 1, "{body}");
         let normalized = names.first().unwrap();
+        if compiler == "gcc" {
+            assert_eq!(*normalized, "counter_3_1_1");
+            let (default_body, error, status) = common::run_kuna(&[
+                "decompile",
+                binary.to_str().unwrap(),
+                "sample",
+                "--option",
+                "globalref",
+                "off",
+            ]);
+            assert_eq!(status, 0, "{error}");
+            assert!(default_body.contains("counter.3.1"), "{default_body}");
+            let debug_binary = input.with_extension("debug.so");
+            let built = Command::new("gcc")
+                .args(["-O2", "-g", "-shared", "-fPIC"])
+                .arg(&input)
+                .arg("-o")
+                .arg(&debug_binary)
+                .output()
+                .unwrap();
+            assert!(
+                built.status.success(),
+                "{}",
+                String::from_utf8_lossy(&built.stderr)
+            );
+            for lookup_binary in [&binary, &debug_binary] {
+                for mode in ["safe", "ident"] {
+                    for spelling in ["counter.3.1", "counter_3_1"] {
+                        let (_, error, status) = common::run_kuna(&[
+                            "xrefs",
+                            lookup_binary.to_str().unwrap(),
+                            "--to",
+                            spelling,
+                            "--option",
+                            "symbolnamechars",
+                            mode,
+                            "--json",
+                        ]);
+                        assert_eq!(status, 0, "{mode} {spelling}: {error}");
+                    }
+                    let mut addresses = Vec::new();
+                    for (spelling, expected) in
+                        [("counter.3.1", "05000000"), ("counter_3_1", "0b000000")]
+                    {
+                        let (text, error, status) = common::run_kuna(&[
+                            "read",
+                            lookup_binary.to_str().unwrap(),
+                            spelling,
+                            "--bytes",
+                            "4",
+                            "--option",
+                            "symbolnamechars",
+                            mode,
+                            "--json",
+                        ]);
+                        assert_eq!(status, 0, "{mode} {spelling}: {error}");
+                        let document: serde_json::Value = serde_json::from_str(&text).unwrap();
+                        assert_eq!(
+                            document["hex"].as_str().unwrap().replace(' ', ""),
+                            expected,
+                            "{text}"
+                        );
+                        addresses.push(document["start"].clone());
+                    }
+                    assert_ne!(addresses[0], addresses[1]);
+                }
+            }
+            std::fs::remove_file(debug_binary).unwrap();
+        }
+
         let declarations = if compiler == "gcc" {
             assert!(body.contains("counter_3_1"), "{body}");
             format!("unsigned {normalized}=5;\nunsigned counter_3_1=11;")
         } else {
-            format!("int {normalized}=0;\nvoid _gfortran_runtime_error_at(const char *where, ...) {{ (void)where; abort(); }}")
+            format!("int {normalized}=0;\nvoid gfortran_runtime_error_at(const char *where, ...) {{ (void)where; abort(); }}")
         };
         let regenerated = input.with_extension("regenerated.c");
         let executable = input.with_extension("exe");
