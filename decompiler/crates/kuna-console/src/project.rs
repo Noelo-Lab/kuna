@@ -1874,6 +1874,7 @@ mod tests {
                 arg_index: Some(0),
                 line_numbers: vec![],
                 addresses: vec![],
+                split_piece: false,
             }],
             types: vec![],
             stack_objects: Vec::new(),
@@ -1900,6 +1901,7 @@ mod tests {
             arg_index: None,
             line_numbers: vec![],
             addresses: vec![],
+            split_piece: false,
         };
         let mut r = streamed("long sub_1000(long);", "long");
         r.variables.extend([row("local_18", Some(-0x18)), row("v1", None)]);

@@ -58,6 +58,7 @@ pub mod kuna_bytehonest;
 pub mod kuna_slotptr;
 pub mod kuna_reglocals;
 pub mod kuna_slotreport; // (kuna) a frame slot a printed local lives in is reported as that local
+pub mod kuna_slotsplit; // (kuna) a frame row a narrower printed declaration lives inside is split at it
 pub mod kuna_hideshadow;
 pub mod kuna_pointeevalue;
 pub mod kuna_loadorder;

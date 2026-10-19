@@ -279,7 +279,7 @@ impl ResultWriter {
         for v in &r.variables {
             put_str(&mut body, &v.name);
             put_str(&mut body, &v.type_name);
-            body.push(u8::from(v.is_param));
+            body.push(u8::from(v.is_param) | (u8::from(v.split_piece) << 1));
             match v.arg_index {
                 Some(i) => {
                     body.push(1);
@@ -428,7 +428,8 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
     for _ in 0..nv {
         let vname = r.string()?;
         let type_name = r.string()?;
-        let is_param = r.u8()? != 0;
+        let flags = r.u8()?;
+        let (is_param, split_piece) = (flags & 1 != 0, flags & 2 != 0);
         let arg_index = match r.u8()? {
             0 => None,
             1 => Some(r.u64()? as usize),
@@ -455,6 +456,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
             arg_index,
             line_numbers,
             addresses,
+            split_piece,
         });
     }
     let nt = r.u32()? as usize;

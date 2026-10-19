@@ -2364,6 +2364,7 @@ mod provenance_json_tests {
                 arg_index: Some(0),
                 line_numbers: vec![3],
                 addresses: vec![0x401004],
+                split_piece: false,
             }],
             types: vec![TypeInfo {
                 name: "mystruct".into(),

@@ -1189,6 +1189,10 @@ Three tiers:
 | the decompile-project .asm stack header types a slot undefinedN that the C declares | [`slotreport`](#slotreport) |
 | type_match pairs a stack local with an undefined row | [`slotreport`](#slotreport) |
 | a -O0 local merged with its spill is reported by width only | [`slotreport`](#slotreport) |
+| the variables array reports one undefined16 row over a pointer the C declares at its start | [`slotsplit`](#slotsplit) |
+| a local declared at stack - 0x40 has no row of its own inside a wider frame row | [`slotsplit`](#slotsplit) |
+| the decompile-project .asm stack header lists one wide undefined slot over several declared locals | [`slotsplit`](#slotsplit) |
+| type_match pairs a stack local with a wider undefined row | [`slotsplit`](#slotsplit) |
 | int4/uint1/uint4/float8/float10 appear in the emitted C instead of C type names | [`ctypes`](#ctypes) |
 | the same function mixes `unsigned int` with `int4` | [`ctypes`](#ctypes) |
 | `code *` appears as a function-pointer type | [`ctypes`](#ctypes) |
@@ -3674,6 +3678,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default. A consumer reads `variables[]` or the `.asm` `; stack:` lines as what the C declares, and decbench's type_match pairs a ground-truth stack local with the row at its frame offset. Flip OFF to get the `framelayout` filler rows typed by width again (`local_N undefinedN`) and to skip the per-function index. The emitted C never changes either way.
 - **Where / provenance:** P6/naming-policy · kuna · presentation-default · ty17-slotreport
 - **Example:** `option slotreport off`
+
+### `slotsplit` -- on | off, default `on`
+
+- **Symptoms:** the variables array reports one undefined16 row over a pointer the C declares at its start; a local declared at stack - 0x40 has no row of its own inside a wider frame row; the decompile-project .asm stack header lists one wide undefined slot over several declared locals; type_match pairs a stack local with a wider undefined row.
+- **What it does:** Split a width-only stack-frame row at the narrower locals the C declares inside it, on the `variables` rows (`decompile-all --json`, `decompile --json`, the browser decompiler) and in the `; stack:` header lines of `decompile-project`'s `.asm`. `framelayout` reports a frame slot at the width an early pass saw it, so a span the early layout merged reaches the rows as one `undefined16` or `undefined5` even when the C declares `char *v3; // stack - 0x40` at its start. When on, such a row is cut at the stack homes of the printed declarations lying wholly inside it (the homes their declaration comments list, at the declared width): each declared piece takes the type its declarations spell (`undefined1` for a one-byte integer or `bool`, `undefinedN` when they disagree) and each gap stays `undefinedK` at its own offset and width. A row of a scalar's width (1, 2, 4 or 8 bytes) splits only at a pointer or floating-point declaration, since a narrower integer there is usually a value the type system narrowed. A row is left whole where two pieces would overlap, no piece is reported at an offset another row starts at, and rows `slotreport` or `slotptr` typed are not split. No p-code and no emitted C change.
+- **When to flip:** On by default. A consumer reads `variables[]` or the `.asm` `; stack:` lines as the frame the C declares, and decbench's type_match pairs a ground-truth stack local with the row starting at its frame offset. Flip OFF to get the `framelayout` rows at their early-pass widths again. The emitted C never changes either way.
+- **Where / provenance:** P6/naming-policy · kuna · presentation-default · ty17-slotsplit
+- **Example:** `option slotsplit off`
 
 ### `ctypes` -- on | off, default `off`
 

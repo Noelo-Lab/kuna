@@ -1411,6 +1411,43 @@ that `undefinedN` cannot match by width; 10 functions reach a perfect score and
 2 leave it, 327 improve and 13 get worse, each of the worse a slot the C
 declares a pointer where the source has an integer.
 
+**Splitting a frame row at the locals the C declares inside it (`option
+slotsplit`).** `framelayout` reports a slot at the width an early pass saw,
+and a span that layout merged (several spills side by side, or a buffer and
+what follows it) reaches the rows as one `undefinedN`: `local_18 undefined12`
+although the C declares `double v1; // stack - 0x18 | ...` at its start. Under
+`option slotsplit` (default ON) such a row is cut at the homes of the printed
+declarations lying wholly inside it, from
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_slotsplit.rs
+(split_rows)`. The homes are the `DeclaredSlots` index `slotreport` builds
+(`kuna_slotreport.rs (homes_within)`): a declaration's stack homes at its
+declared width, over its high and the highs declared through it. Each declared
+piece takes the type its declarations spell (`kuna_slotreport.rs
+(piece_type)`): their common type, `undefined1` for one-byte integers or
+`bool` (the `bytehonest` reasoning), `undefinedN` when they disagree. Each gap
+between pieces stays `undefinedK` at its own offset and width; the piece at
+the row's start keeps the row's name, the others take the frame's name for
+their offset. A row of a scalar's width (1, 2, 4 or 8 bytes) may be one value
+the type system narrowed, an `int` spilled whole and printed as `unsigned
+short`, so it splits only at a pointer or floating-point declaration; a row of
+any other width is never one scalar's slot and splits at every declaration
+inside. Splitting the scalar-width rows at their narrower integers too was
+measured: it turned 159 more matches right and 119 that were right wrong, the
+width-only row having matched a source `int` or `long` the C narrowed. A row is left whole when two of its pieces would
+overlap, no piece or gap is reported at an offset another row already starts
+at, and only rows still width-only are split: a row `slotreport` or `slotptr`
+typed keeps its type. The pieces are ordinary frame rows, so the use evidence
+of the storage they now name (`CodeProvenance::apply_to_variables`) attaches to
+them as it does to any stack row. The option changes no p-code and no emitted
+C; the rows reach the same surfaces as `slotreport`'s (`--json`, the browser
+decompiler, the `; stack:` lines of `decompile-project`'s `.asm`). Over the
+four decbench sets of the type campaign it turns a net 737 stack-local matches
+from wrong to right; 125 functions reach a perfect score and none leave it,
+711 improve and 4 get worse, the 4 being source variables the matcher pairs
+with a different row once the frame has more of them. It costs no measurable
+time: against main, -0.53% CPU with `--json` and +0.36% in text mode, where an
+identical build of main measured +0.09% and +0.36%.
+
 **Which offsets are frame (`option protoranges`, default on).** The local
 scope's window is the prototype's local range plus its parameter range, and
 `MapState` then clears the parameter range back out, so only the local range

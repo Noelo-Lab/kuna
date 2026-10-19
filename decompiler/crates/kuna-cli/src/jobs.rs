@@ -2043,6 +2043,7 @@ mod tests {
                     arg_index: Some(0),
                     line_numbers: vec![3, 4],
                     addresses: vec![0x401004, 0x401008],
+                    split_piece: false,
                 },
                 VarInfo {
                     name: "local_18".into(),
@@ -2053,6 +2054,7 @@ mod tests {
                     arg_index: None,
                     line_numbers: Vec::new(),
                     addresses: Vec::new(),
+                    split_piece: false,
                 },
                 // (kuna `reglocals`) A local outside the frame: its `kind` is
                 // carried by `is_param` and `stack_offset` alone.
@@ -2065,6 +2067,7 @@ mod tests {
                     arg_index: None,
                     line_numbers: vec![5],
                     addresses: vec![0x40100c],
+                    split_piece: false,
                 },
             ],
             // (kuna `structdefs`) One recovered type definition, so the frame
@@ -2157,6 +2160,7 @@ mod tests {
                     && x.arg_index == y.arg_index
                     && x.line_numbers == y.line_numbers
                     && x.addresses == y.addresses
+                    && x.split_piece == y.split_piece
             })
     }
 
