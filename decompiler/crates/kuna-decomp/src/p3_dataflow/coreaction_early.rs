@@ -389,6 +389,9 @@ impl Action for ActionHeritage {
         // (kuna decompile-all watchdog) thread the per-function deadline into
         // the heritage per-space loop; `None` everywhere but a budgeted drive.
         data.op_heritage_with_deadline(ctx.deadline);
+        if data.get_arch().pass_through {
+            crate::kuna_entryreads::capture(data);
+        }
         // (kuna) Repair any synthetic lowered-switch BRANCHIND whose input
         // heritage normalized away (see `kuna_repair_lowered_switch_inputs`).
         // A no-op unless a lowered-switch was installed this function, so it

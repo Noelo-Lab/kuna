@@ -1754,6 +1754,19 @@ classified:
   no evidence and changes nothing. `off` leaves every list as the other rules
   settle it.
 
+  Where the walk cannot finish -- a callee too large or too branchy for its
+  bound -- the summary proves nothing, and under `decompile-all` the rule reads
+  the callee's own body instead: the registers its first heritage saw it read,
+  recorded with its `protoorder` statement while `passthrough` is on (*What a
+  body takes*, under `passthrough` below). The same tests decline the read as
+  above, the last argument register included, and a register the statement does
+  not list as a parameter is not taken from that record. Beside a complete
+  summary the statement also adds what the walk cannot see past a call: a
+  register the callee hands untouched to a declared parameter (`fcntl`'s `fd`)
+  or to a callee that takes it. A function calling itself reads its own record:
+  bash `dispose_cond_node` loads `cond->left` into `rdi`, tests it and recurses
+  with it, and printed `dispose_cond_node()`.
+
   A register the callee only pushes above a call's stack arguments -- an
   alignment pad -- is no read either (`pushpadread`, default-on,
   `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs (at_call)`).
@@ -4938,7 +4951,8 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
 
 - the callee's recovered prototype (`RecoveredTypes`, stated by `protoorder` for a
   callee decompiled first) has a parameter starting at `R`;
-- that list is one `lock` would accept as an **arity claim**
+- that list is one `lock` would accept as an **arity claim**, or every register
+  it names is one the callee's body takes (*What a body takes*, below)
   (`RecoveredTypes::arity_sound`, computed only while the option is on): every
   parameter is in a register, the callee's body does not read the register its
   next parameter would arrive in (a variadic's register-save prologue does,
@@ -4948,7 +4962,8 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
   found them. The next-slot read is asked without the register-zeroing idiom:
   `xor %esi,%esi` writes a constant;
 - the callee's body reads `R` before writing it on some path, for a value that
-  reaches something (`calleedeadarg`'s `proves_input`), so the parameter is not an
+  reaches something (`calleedeadarg`'s `proves_input`), or hands it on to
+  something that does (*What a body takes*, below), so the parameter is not an
   artifact of the callee's own recovery. A callee that forwards by a call rather
   than a jump (`sub $8,%rsp; call narrow; add $8,%rsp; ret`, or a tail call the
   spec models as a call) reads nothing before that CALL, where the walk ends, so
@@ -5031,6 +5046,62 @@ The argument is as wide as the callee's body reads it — the narrowest of the
 trial, the stated parameter and the widest body read starting at `R` — so a
 parameter recovered as `rdi` but read as `edi` is passed, and becomes the
 caller's parameter, as an `int`, through a truncating `SUBPIECE`.
+
+**What a body takes.** The entry walk ends at the first CALL and gives up on a
+body too large for its bound, so on its own it answered "not read" for most of
+what a forwarder hands on: grep -O2 `bmexec` printed `bmexec_trans()` for
+`bmexec_trans(a0,a1,a2)`, and bash `xtrace_set` printed `sh_validfd()`, whose
+only read of `fd` is the `fcntl` call the walk stops at -- about 2,900 functions
+over the decbench corpus drop a forwarded argument their callee's DWARF
+prototype takes. `decompiler/crates/kuna-decomp/src/p4_calls/kuna_entryreads.rs`
+records, once per decompile right after the first heritage, which incoming
+registers the body takes, from their input Varnodes' readers. A register is
+*read* when some op computes with it for a result that reaches something,
+followed through copies, phis and low `SUBPIECE`s; as wide as the low bytes that
+result needs (`lea 0x19(%rdx),%ecx` feeding a byte store reads four bytes, the
+32-bit result, not `rdx`); and not as a call's argument, across a call's side
+effect (an `INDIRECT`), as a stored value (a register-save prologue, an
+alignment push), as the preserved high part of a partial write (`PIECE`), or in
+an op whose result does not depend on it (`xor %esi,%esi`, `sbb %ecx,%ecx`'s
+compares, `and $0`, `or $-1`, matched through the separate pieces heritage gives
+two reads of one register). A register handed untouched to a named parameter
+of a declared prototype (an import's library signature) is taken there; one
+handed untouched to a direct call is taken if that callee takes it. With each
+callee's types `protoorder` states what the body reads and the part it reads
+only by handing it on -- to a declared parameter, or to a callee that takes it,
+including the forwards `passthrough` added to the function's finished argument
+lists -- so the hand-off is followed through any number of wrappers at the cost
+of one lookup per forwarded register.
+
+The read test is asked of the best evidence the caller holds. A **complete**
+entry walk decides, because it follows constant branches (betaflight's
+`microsISR` reads `r0` only past a `movs r1,#1; cbnz r1` that always branches,
+and its callers would otherwise all gain the argument), with the statement's
+hand-offs added for what it cannot see past a call. An arity-sound list asks the
+walk's `proves_input` as before; any other list must have every register it names
+taken by the body, read on its low byte other than by a store or an alignment
+push -- a list with a register the body never takes in the middle
+(`microsISR`'s recovered `r1`) or at the end is not evidence. Where the walk is
+incomplete, the first-heritage record answers. A function **calling itself**
+asks its own record and its own entry walk; there is no statement yet, and the
+registers its call can take are the model's argument registers up to the
+first its body does not take. grep -O2 `treenext` recurses with its second
+parameter untouched in `rsi` and printed `treenext(*v4)` beside
+`treenext(v4[1],a1)`. The argument is as wide as the narrower of the walk's
+read and the record's.
+
+The record is taken only while `passthrough` is on, so `--option passthrough
+off` leaves every list as before; a single-function `kuna decompile` states no
+callee and sees only the self-call. Over fifteen binaries (x86-64 gcc -O2 and
+-O0, Cortex-M, ARM and AArch64 libraries) this adds 214 call arguments; of the
+170 whose callee has a DWARF prototype, 159 match it in count and the other 11
+are register-level arguments DWARF does not count (a hidden struct-return
+pointer, a 64-bit integer in two registers, libgcc's assembly soft-float
+compares with no DWARF parameters). Call sites passing fewer arguments than the
+callee's DWARF prototype fall from 255 to 125, and no function loses an
+argument or gains an uninitialised local. A hole is still declined
+(`no_hole_before`), and two functions calling each other state nothing for the
+one decompiled first.
 
 **The rule only adds.** Every other rule decides a call's argument list first,
 exactly as with the option off, and `passthrough` extends the result. That order

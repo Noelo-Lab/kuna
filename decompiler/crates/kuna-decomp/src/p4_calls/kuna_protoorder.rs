@@ -168,6 +168,13 @@ pub struct RecoveredTypes {
     /// [`crate::p4_calls::kuna_passthrough`] never claims it.  Recorded only when
     /// `option passthrough` is on; empty otherwise.
     pub vararg_tail: Vec<Address>,
+    /// The incoming registers the body reads, itself or through a callee it
+    /// forwards them to ([`crate::kuna_entryreads`]). Recorded only when
+    /// `option passthrough` is on; empty otherwise.
+    pub reads: Vec<(Address, int4)>,
+    /// The part of [`Self::reads`] the body reads only by handing the register
+    /// on, to a declared parameter or a callee that reads it.
+    pub passes: Vec<(Address, int4)>,
 }
 
 impl RecoveredTypes {
@@ -1694,7 +1701,16 @@ pub fn park_recovered(
         } else {
             Vec::new()
         };
-        let stated = Stated { arity_sound, output, result, vararg_tail };
+        let (reads, passes) = match data.kuna_entry_reads() {
+            Some(r) if arch.pass_through => {
+                let finals = crate::kuna_entryreads::final_forwards(data);
+                crate::kuna_entryreads::reads_through(r, &finals, |c, a, s| {
+                    crate::kuna_entryreads::callee_takes(data, c, a, s, true)
+                })
+            }
+            _ => (Vec::new(), Vec::new()),
+        };
+        let stated = Stated { arity_sound, output, result, vararg_tail, reads, passes };
         return state_recovered_types(arch, entry, pieces, storage, stated);
     }
     let mut trimmed = 0usize;
@@ -1789,6 +1805,8 @@ struct Stated {
     output: Option<(Address, int4, Rc<Datatype>)>,
     result: Option<(Address, int4)>,
     vararg_tail: Vec<Address>,
+    reads: Vec<(Address, int4)>,
+    passes: Vec<(Address, int4)>,
 }
 
 /// The storage of `proto`'s recovered return value, or `None` for `void`.
@@ -1855,7 +1873,7 @@ fn state_recovered_types(
     storage: Vec<(Address, int4)>,
     stated: Stated,
 ) -> Result<Recovered, Decline> {
-    let Stated { arity_sound, output, result, vararg_tail } = stated;
+    let Stated { arity_sound, output, result, vararg_tail, reads, passes } = stated;
     let inputs: Vec<(Address, int4, Rc<Datatype>)> = storage
         .iter()
         .zip(pieces.intypes.iter())
@@ -1869,7 +1887,7 @@ fn state_recovered_types(
         return Err(Decline::InvalidStorage);
     };
     arch.kuna_protoorder_types
-        .insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output, result, vararg_tail }));
+        .insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output, result, vararg_tail, reads, passes }));
     Ok(Recovered { pieces, trimmed: 0 })
 }
 
