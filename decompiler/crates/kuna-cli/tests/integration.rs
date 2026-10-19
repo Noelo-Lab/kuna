@@ -526,3 +526,6 @@ mod float_pointer_storage;
 
 #[path = "dwarf_overlapping_locals.rs"]
 mod dwarf_overlapping_locals;
+
+#[path = "float_literal_width.rs"]
+mod float_literal_width;

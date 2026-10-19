@@ -4574,7 +4574,7 @@ is refused outright wherever the caller holds evidence the fold cannot weigh
   elsewhere, and the printer bridges a float to an integer there with a value
   conversion; a float register is itself the float declaration, so `s0` on
   hard-float ARM or `xmm0` on x86-64 keeps the vote (the fixture
-  `protoorder_floatreg_armhf.o` prints `1000.0`, not its bits `0x447a0000`).
+  `protoorder_floatreg_armhf.o` prints `1000.0f`, not its bits `0x447a0000`).
   The case is an ABI that
   passes a float in a general register (MIPS
   o32, ARM soft-float, RISC-V ilp32): the caller hands a word's bits to a

@@ -185,7 +185,7 @@ ff90c9c3554889e548897df88975f489
 <stringmatch name="Union #3" min="1" max="1">v1 = ptr-\>a;</stringmatch>
 <stringmatch name="Union #4" min="1" max="1">v1 = ptr-\>arr\[index\];</stringmatch>
 <stringmatch name="Union #5" min="1" max="1">displayint\(glob\.intfield / 3\);</stringmatch>
-<stringmatch name="Union #6" min="1" max="1">displayint\(\(int4\)\(glob\.floatfield \+ 11\.0\)\);</stringmatch>
+<stringmatch name="Union #6" min="1" max="1">displayint\(\(int4\)\(glob\.floatfield \+ 11\.0f?\)\);</stringmatch>
 <stringmatch name="Union #7" min="1" max="1">glob\.uintfield = glob\.uintfield \>\> 3;</stringmatch>
 <stringmatch name="Union #8" min="1" max="1">displaychar\(\(char\)glob1\.a\);</stringmatch>
 <stringmatch name="Union #9" min="1" max="1">displayint\(glob1\.a\);</stringmatch>
@@ -199,7 +199,7 @@ ff90c9c3554889e548897df88975f489
 <stringmatch name="Union #17" min="1" max="1">arr\[3\]\.ffield = arr\[4\]\.ffield \+ arr\[3\]\.ffield;</stringmatch>
 <stringmatch name="Union #18" min="1" max="1">displayint\(arr\[i\]\.ifield \+ 7\);</stringmatch>
 <stringmatch name="Union #19" min="1" max="1">displayint\(\(int4\)\(arr\[i\]\.ffield \+ 3\.2\)\);</stringmatch>
-<stringmatch name="Union #20" min="1" max="1">ptr-\>value\)\.myfloat = fval \+ 5\.5;</stringmatch>
+<stringmatch name="Union #20" min="1" max="1">ptr-\>value\)\.myfloat = fval \+ 5\.5f?;</stringmatch>
 <stringmatch name="Union #21" min="1" max="1">ptr-\>value\)\.myint = ival \+ 3;</stringmatch>
 <stringmatch name="Union #22" min="1" max="1">val = \(int4\)\(\(ptr-\>value\)\.myfloat \* 1\.5\);</stringmatch>
 <stringmatch name="Union #23" min="1" max="1">val = \(ptr-\>value\)\.myint \+ 0x1b;</stringmatch>
@@ -212,5 +212,5 @@ ff90c9c3554889e548897df88975f489
 <stringmatch name="Union #30" min="1" max="1">displayint\(\*\(s-\>value\)\.ptr \+ 10\);</stringmatch>
 <stringmatch name="Union #31" min="1" max="1">displayint\(\(s-\>value\)\.a\);</stringmatch>
 <stringmatch name="Union #32" min="1" max="1">ptr-\>myint = val \+ 10;</stringmatch>
-<stringmatch name="Union #33" min="1" max="1">ptr-\>myfloat = \(float4\)val \+ 20\.0;</stringmatch>
+<stringmatch name="Union #33" min="1" max="1">ptr-\>myfloat = \(float4\)val \+ 20\.0f?;</stringmatch>
 </decompilertest>

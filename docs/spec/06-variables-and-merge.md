@@ -489,7 +489,7 @@ that write:
 `dat_e10 = a0[3]; dat_e1c = a0[0xf]; dat_e10 = dat_e10 * 0.017453292;` where
 the binary loads `a0[3]` into a register and stores `dat_e10` once, after
 `dat_e1c`; kept apart it prints `v1 = a0[3]; dat_e1c = a0[0xf];
-dat_e10 = v1 * 0.017453292;`.
+dat_e10 = v1 * 0.017453292f;`.
 
 A computed value stored to a guarded global keeps a separate HighVariable
 when joining them would move its write ahead of an observation or onto another
