@@ -10866,7 +10866,9 @@ impl PrintC {
     /// through `glb->translate->getFloatFormat(sz)`
     /// ([`FloatFormat::get_host_float`]/`extract_sign`/`print_decimal`) and emits
     /// the `INFINITY`/`NAN`/decimal token via [`format_float_token`].  When there
-    /// is no `FloatFormat` for the size, the token is `FLOAT_UNKNOWN`.
+    /// is no `FloatFormat` for the size, the token is `FLOAT_UNKNOWN`.  (kuna) A
+    /// finite 4-byte constant in C output takes an `f` suffix where `float` is
+    /// 4 bytes, since an unsuffixed literal is a `double`.
     fn push_float_ir(&mut self, arch: &Architecture, val: uintb, sz: int4, op: OpId) {
         use kuna_num::float::floatclass;
         let force_scinote = self.context.is_set(modifiers::FORCE_SCINOTE);
@@ -10887,7 +10889,6 @@ impl PrintC {
                     _ => {
                         let decimal = format.print_decimal(floatval, force_scinote);
                         let mut token = format_float_token(FloatClass::Normal, sign, &decimal, force_scinote);
-                        // Unsuffixed C literals are double, even when the IR constant is float.
                         if self.out_lang == crate::kuna_lang::OutLang::C
                             && sz == 4 && arch.types().get_size_of_float() == 4
                         {
