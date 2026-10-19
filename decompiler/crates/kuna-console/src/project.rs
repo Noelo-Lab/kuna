@@ -764,6 +764,10 @@ pub fn decompile_pulled(
                 // would otherwise abort the WHOLE binary and discard every function
                 // already decompiled. Containing it here honors the per-function
                 // isolation contract (one bad function → one `error` record).
+                // (kuna `narrowargs callers`) Record what this function passes at each call.
+                if prog.arch().kuna_callerargs.recording {
+                    kuna_decomp::kuna_callerargs::record(prog.arch_mut(), &park_entry, &fd);
+                }
                 // (kuna `protoorder`) State what this function's recovery found for its callers.
                 if opts.park_recovered_proto {
                     let mode = prog.arch().protoorder;
