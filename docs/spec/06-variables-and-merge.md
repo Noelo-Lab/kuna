@@ -1433,20 +1433,37 @@ short`, so it splits only at a pointer or floating-point declaration; a row of
 any other width is never one scalar's slot and splits at every declaration
 inside. Splitting the scalar-width rows at their narrower integers too was
 measured: it turned 159 more matches right and 119 that were right wrong, the
-width-only row having matched a source `int` or `long` the C narrowed. A row is left whole when two of its pieces would
-overlap, no piece or gap is reported at an offset another row already starts
-at, and only rows still width-only are split: a row `slotreport` or `slotptr`
-typed keeps its type. The pieces are ordinary frame rows, so the use evidence
-of the storage they now name (`CodeProvenance::apply_to_variables`) attaches to
-them as it does to any stack row. The option changes no p-code and no emitted
-C; the rows reach the same surfaces as `slotreport`'s (`--json`, the browser
-decompiler, the `; stack:` lines of `decompile-project`'s `.asm`). Over the
-four decbench sets of the type campaign it turns a net 737 stack-local matches
-from wrong to right; 125 functions reach a perfect score and none leave it,
-711 improve and 4 get worse, the 4 being source variables the matcher pairs
-with a different row once the frame has more of them. It costs no measurable
-time: against main, -0.53% CPU with `--json` and +0.36% in text mode, where an
-identical build of main measured +0.09% and +0.36%.
+width-only row having matched a source `int` or `long` the C narrowed. A row
+is left whole when two of its pieces would overlap. The rows are cut in order,
+and the offsets every row starts at, and every piece already cut, are taken: no
+piece or gap starts at a taken offset, and a gap ends at the first taken
+offset inside it, so two overlapping width-only rows never both report a piece
+at one offset and a gap never runs over another row. Only rows still
+width-only are split: a row `slotreport` or `slotptr` typed keeps its type.
+The pieces are ordinary frame rows, so the use evidence of the storage they
+now name (`CodeProvenance::apply_to_variables`) attaches to them as it does to
+any stack row. Every piece after a row's first is marked `split_piece`. The
+callee-vote redo check keeps a redo only when its frame rows match the first
+decompile's by count
+(`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs (same_arity)`),
+and it counts rows without the mark, so the split, which follows the declared
+types a redo may change, never decides which C is kept. The option changes no
+p-code and no emitted C; the rows reach the same surfaces as `slotreport`'s
+(`--json`, the browser decompiler, the `; stack:` lines of
+`decompile-project`'s `.asm`). Over the four decbench sets of the type
+campaign it turns a net 738 stack-local matches from wrong to right: 503 to a
+typed piece and 240 to a width-only gap the metric credits by width, against
+5 it turns wrong. 125 functions reach a perfect score and none leave it, 711
+improve and 4 get worse. In two of those (`sshsk_load_resident` in ssh and
+ssh-add) the matcher pairs a source `long` with an `int *` piece that comes
+from a printed declaration's stack home, a claim already wrong without the
+split; in u-boot `ubi_resize_volume` it pairs a 4-byte `int` with an 8-byte
+width-only gap; in u-boot `fdt_setprop` it pairs a register local, matched
+right before, with an `unsigned int *` piece by address overlap. The fifth
+wrong match (u-boot `erase_worker`, again an `int` paired with an 8-byte gap)
+is in a function that improves overall. Against main, it costs +0.86% CPU and +0.47%
+wall time with `--json` and -0.28% wall time in text mode, where a separately
+built copy of main measured +1.01%, -0.93% and -1.21%.
 
 **Which offsets are frame (`option protoranges`, default on).** The local
 scope's window is the prototype's local range plus its parameter range, and
