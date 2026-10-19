@@ -541,3 +541,6 @@ mod parameter_spill_reuse;
 
 #[path = "declared_callee_pop.rs"]
 mod declared_callee_pop;
+
+#[path = "declared_pointer_frame_alias.rs"]
+mod declared_pointer_frame_alias;

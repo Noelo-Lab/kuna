@@ -114,6 +114,39 @@ pub fn declared_caller_frame_floor(on: bool, fp: &FuncProto) -> Option<int4> {
     Some(ep)
 }
 
+/// A declared pointer input must be proved disjoint before suppressing a stack
+/// write guard. The global additive walk can lose a frame pointer saved to and
+/// restored from memory while a nested frame is active.
+pub(crate) fn pointer_input_may_alias(
+    fd: &crate::funcdata::Funcdata,
+    call: &crate::fspec::FuncCallSpecs,
+    offset: uintb,
+    size: int4,
+) -> bool {
+    for slot in 0..call.proto().num_params() {
+        let Some(parameter) = call.proto().get_param(slot) else {
+            return true;
+        };
+        if !parameter
+            .get_type()
+            .is_some_and(|ty| ty.get_metatype() == crate::dtype::type_metatype::TYPE_PTR)
+        {
+            continue;
+        }
+        let Some(input) = fd
+            .obank()
+            .get(call.get_op())
+            .and_then(|op| op.get_in(slot + 1))
+        else {
+            return true;
+        };
+        if crate::kuna_stackranges::may_alias(fd, input, offset, size) {
+            return true;
+        }
+    }
+    false
+}
+
 /// True when `[offset, offset+size)` — a CALLEE-relative stack range — lies
 /// wholly above the callee's own frame and parameter area.
 ///

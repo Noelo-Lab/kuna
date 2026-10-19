@@ -1745,6 +1745,9 @@ impl Heritage {
                         spc.get_addr_size() as int4,
                         floor,
                     ) && !self.protostack_is_aliased(fd, &spc, addr.get_offset(), size)
+                        && !crate::kuna_calleeprotostack::pointer_input_may_alias(
+                            fd, fc, addr.get_offset(), size,
+                        )
                     {
                         effecttype = effect_type::UNAFFECTED;
                     }
