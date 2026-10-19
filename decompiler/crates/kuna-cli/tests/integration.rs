@@ -523,3 +523,6 @@ mod project_assertion_status;
 
 #[path = "float_pointer_storage.rs"]
 mod float_pointer_storage;
+
+#[path = "dwarf_overlapping_locals.rs"]
+mod dwarf_overlapping_locals;

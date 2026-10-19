@@ -2385,6 +2385,8 @@ impl ConsoleProgram {
     /// console `map addr s<off>` directive — e.g. copytrim.xml's
     /// `map addr s0xffffffffffffffe4`). Empty when the function has no parked locals
     /// or the architecture has no stack space.
+    /// Intersecting locals share one backing symbol; they never become
+    /// independent C objects merely because debug information names both views.
     pub fn dwarf_locals_for(
         &self,
         func_addr: u64,
@@ -2394,17 +2396,27 @@ impl ConsoleProgram {
             return Vec::new();
         };
         let flags = varnode_flags::typelock | varnode_flags::namelock;
-        self.dwarf_locals
+        let locals = self
+            .dwarf_locals
             .iter()
             .filter(|(addr, _, _, _)| *addr == func_addr)
-            .map(|(_, name, ty, off)| {
+            .map(|(_, name, ty, off)| (name.clone(), Rc::clone(ty), *off))
+            .collect();
+        crate::kuna_dwarfstack::coalesce(
+            self.arch().types(),
+            func_addr,
+            locals,
+            stack.wrap_offset(u64::MAX),
+        )
+            .into_iter()
+            .map(|(name, ty, off)| {
                 // Wrap the signed stack offset to the stack space's unsigned address
                 // (negative locals live at the high end of the unsigned range, the
                 // `map addr s0xffff...` convention).
-                let waddr = stack.wrap_offset(*off as u64);
+                let waddr = stack.wrap_offset(off as u64);
                 (
-                    name.clone(),
-                    Rc::clone(ty),
+                    name,
+                    ty,
                     Address::new(Rc::clone(stack), waddr),
                     flags,
                 )
