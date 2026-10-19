@@ -1607,6 +1607,13 @@ impl Funcdata {
                 self.inherit_union_field(&h, newop, 0, op, slot);
             }
         }
+        if let Some(backing) = self.vbank().get(vnin)
+            .and_then(|v| v.get_high())
+            .and_then(|h| self.high_bank().get(h))
+            .and_then(|h| h.kuna_symbol_type()).cloned()
+        {
+            self.inherit_union_field(&backing, newop, 0, op, slot);
+        }
         1
     }
 
@@ -2348,5 +2355,65 @@ mod verify_w10_merge_casts_r2 {
             opt_ptr_eq(&got, &faithful),
             "INT_EQUAL getInputCast must stay the max-read-facing + (false,false) body"
         );
+    }
+
+    #[test]
+    fn scalar_high_cast_keeps_its_symbol_union_member() {
+        let (mut fd, strat, ram) = build();
+        let types = fd.get_arch().types_rc().unwrap();
+        let signed = types.get_base(4, type_metatype::TYPE_INT).unwrap();
+        let pointer = types.get_type_pointer(4, Rc::clone(&signed), 1).unwrap();
+        let mut backing = Datatype::new_with_align(4, 4, type_metatype::TYPE_UNION);
+        backing.name = "word_storage".to_owned();
+        backing.display_name = backing.name.clone();
+        backing.id = Datatype::hash_name(&backing.name);
+        backing.flags |= crate::dtype::flags::needs_resolution;
+        backing.kind = crate::dtype::DatatypeKind::Union { field: vec![
+            crate::dtype::TypeField::new(0, 0, "pointer", Rc::clone(&pointer)),
+            crate::dtype::TypeField::new(1, 0, "integer", signed),
+        ] };
+        let backing = Rc::new(backing);
+        let source = fd.new_varnode(4, &Address::new(Rc::clone(&ram), 0x400), Some(pointer));
+        let source = fd.set_input_varnode(source).unwrap();
+        let op = fd.new_op(2, Address::new(Rc::clone(&ram), 0x2000));
+        fd.op_set_opcode_code(op, OpCode::CPUI_INT_RIGHT);
+        fd.op_set_input(op, source, 0).unwrap();
+        let shift = fd.new_constant(4, 8);
+        fd.op_set_input(op, shift, 1).unwrap();
+        fd.new_unique_out(4, op).unwrap();
+        let root = fd.bblocks_ref().root.unwrap();
+        let block = fd.bblocks_mut().new_block_basic(root);
+        fd.op_insert_end(op, block);
+        fd.set_high_level();
+        let high = fd.vbank().get(source).unwrap().get_high().unwrap();
+        let named = fd.high_bank_mut().get_mut(high).unwrap();
+        named.set_kuna_name("storage");
+        named.set_symbol_type(Rc::clone(&backing));
+        named.set_symbol_offset(0);
+        let resolution = ResolvedUnion::new_field(Rc::clone(&backing), 1, types.as_ref()).unwrap();
+        fd.set_union_field(&backing, op, 0, resolution);
+        assert_eq!(fd.high_get_type(source).unwrap().get_metatype(), type_metatype::TYPE_PTR);
+        assert_eq!(fd.cast_input(op, 0, &strat), 1);
+        let value = fd.obank().get(op).unwrap().get_in(0).unwrap();
+        let cast = fd.vbank().get(value).unwrap().get_def().unwrap();
+        assert_eq!(fd.obank().get(cast).unwrap().code(), OpCode::CPUI_CAST);
+        assert_eq!(fd.obank().get(cast).unwrap().get_in(0), Some(source));
+        assert_eq!(fd.get_union_resolution(&backing, cast, 0).map(|r| r.get_field_num()), Some(1));
+        fd.get_func_proto_mut().attach_internal_store(types.get_type_void().unwrap());
+        fd.seed_sblocks_copy();
+        let root = fd.sblocks_ref().root.unwrap();
+        let copy = fd.sblocks_ref().block(root).get_list()[0];
+        let arch = crate::architecture::Architecture::new(
+            "test",
+            kuna_sleigh::sleigh::Sleigh::new(
+                Box::new(kuna_sleigh::loadimage::RawLoadImage::new("unused")),
+                Box::new(kuna_sleigh::globalcontext::ContextInternal::new()),
+            ),
+        );
+        let mut printer = crate::printc::PrintC::new();
+        printer.set_output_stream();
+        printer.emit_block(&fd, &arch, copy);
+        let code = printer.emit_mut().output_str();
+        assert!(code.contains("storage.integer"), "{code}");
     }
 }
