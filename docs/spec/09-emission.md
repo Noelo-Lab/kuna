@@ -3400,6 +3400,60 @@ upper half, as gcc merges adjacent field stores): two declarations would make
 one storage two objects, so a store through one would never reach the other.
 An address some function takes keeps its declaration either way.
 
+Named global references retain whole mapped declarations through
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_namedglobals.rs`. The C printer
+records the actual emitted name only when a mapped data object is referenced,
+including field and array accesses. Storage base, extent, and whole symbol type
+must agree with the mapping; split or uncertain mappings are not guessed. The
+per-function collection resets at each print and excludes substituted literals,
+stack objects, and function symbols. Project extraction includes these facts even
+when synthetic address naming is disabled. Whole symbol types describe the
+object declaration, rather than the scalar type of a partial access.
+
+A scalar named object is not simply declared at its symbol's type, because the
+body reads it at the type the printer gave each varnode, and an image symbol
+is usually an undefined type the prelude spells unsigned (`undefined4` is
+`unsigned int`): declared so, `if (count <= -1)` becomes an unsigned compare
+that is always true, `total >> 2` a logical shift, and `scale * k` integer
+arithmetic converted to a double, all without a diagnostic. The printer
+therefore records each whole-width read and write, whether it prints the
+global's own varnode, a register copy merged into its variable, or the value a
+dereferenced `&name` loads or stores. A read whose uses keep its bits under any
+integer of its width (a copy, a return, a call argument, a store, a
+truncation, a same-width cast, an equality at `int` width or wider or with
+zero, wrapping arithmetic whose result is assigned, or an assignment of the
+value a dereferenced `&name` loads to a variable of its own) accepts the
+symbol's type. The global's own varnode, or a register merged into its
+variable, is judged by its uses however it was defined: after `g = *p`, the
+reads of `g` print as `g`, so a load defining it says nothing about them.
+A read that an ordering, a division, a
+remainder, a right shift or an extension reads, directly or through
+arithmetic printed inline, needs the signed or unsigned integer of its width,
+and a float operation needs the float. A pointer or float varnode names its
+own type, and a use outside these makes the read a conflict. A store of an
+integer or pointer keeps its bits under any integer declaration, so stored
+types count only where a float is involved or nothing reads the object. A
+function whose reads all accept any integer declares the symbol's type as a
+placeholder that yields to the integer type the other functions agree on;
+disagreeing types, or a placeholder against a pointer or float, are reported
+as read at two types and left undeclared, the existing rule for `dat_<addr>`.
+
+The header exporter diagnoses one name at multiple addresses and multiple names
+sharing one address instead of silently combining or splitting their storage.
+Whole named objects also retain the independent-storage overlap guard; overlapping
+views require shared storage instead of separate declarations. With `globalref`
+on, a native `void *` constant into a complete mapped object is rendered relative
+to its base, including interior field addresses. Requesting type definitions
+(`structdefs on` or the shared header of a C project export) extends this to
+typed object pointers. An explicit cast retains
+the requested pointee type, even when a byte array owns the storage. Function
+pointers keep their separate rendering. Loader metadata remains numeric: only
+addresses in the loader’s program-data ranges can name relocated objects. This
+preserves relocation of
+the object when the generated C is linked. Split mappings, uncertain extents,
+non-byte-addressed spaces, shadowed names and names requiring scope or identifier
+rewriting keep the existing rendering.
+
 **An indexed table is an array (`elemptr`).** With `elemptr` on (05-types
 §5.2), a constant address that is the base of a `PTRADD` indexed by a computed
 value is an array's first element, and `plan` records it (`Plan::indexed`). The
