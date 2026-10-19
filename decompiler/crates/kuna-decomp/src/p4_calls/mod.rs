@@ -78,3 +78,5 @@ pub mod kuna_bejoin; // (kuna) a big-endian pair joins its halves in the ABI's o
 pub(crate) mod kuna_customreturn;
 pub(crate) mod kuna_stackparamalign;
 pub mod kuna_x87emptyreturn;
+pub(crate) mod kuna_inputstorage;
+pub mod kuna_floatregister;
