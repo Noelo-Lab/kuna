@@ -289,7 +289,7 @@ fn narrowing_returns_the_final_float_without_stale_double_bytes() {
             assert!(code.contains("float narrow(double a0)"), "{code}");
             assert!(code.contains("return (float)(a0 + a0);"), "{code}");
             assert!(code.contains("float narrow_paths(double a0)"), "{code}");
-            assert!(code.contains("return (float)a0 + 1.0;"), "{code}");
+            assert!(code.contains("return (float)a0 + 1.0f;"), "{code}");
             assert!(code.contains("double widen(float a0)"), "{code}");
             assert!(code.contains("return (double)(a0 + a0);"), "{code}");
             assert!(code.contains("double keep_double(double a0)"), "{code}");
@@ -398,7 +398,7 @@ fn mixed_paths_preserve_float_constants_loads_and_copied_inputs() {
             assert!(code.contains(&format!("float {name}(")), "{option}: {code}");
         }
         assert!(!code.contains("CONCAT44"), "{option}: {code}");
-        assert!(code.contains("return 1.0;"), "{option}: {code}");
+        assert!(code.contains("return 1.0f;"), "{option}: {code}");
         if option == "on" {
             for signature in [
                 "float mixed_constant(double a0)",
@@ -609,7 +609,7 @@ fn a_later_call_keeps_the_argument_computed_in_the_same_register() {
         ]);
         assert_eq!(rc, 0, "{err}");
         assert!(code.contains("float twocallsf(float a0)"), "{option}: {code}");
-        assert!(code.contains("return scalef(a0 * 3.0) + 1.0;"), "{option}: {code}");
+        assert!(code.contains("return scalef(a0 * 3.0f) + 1.0f;"), "{option}: {code}");
         if option == "on" {
             assert!(code.contains("double twocalls(double a0)"), "{code}");
             assert!(code.contains("  scale(a0);\n"), "{code}");
