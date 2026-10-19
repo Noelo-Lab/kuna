@@ -126,6 +126,13 @@ to same-width casts, because the slice does not infer a callee's return
 prototype. Explicit floating conversion opcodes retain their numeric
 conversion, and structured member extraction retains priority.
 
+Finite 32-bit floating constants in C carry an `f` suffix when the target
+uses 32-bit `float`. Unsuffixed literals have type `double`: printing `0.1`
+for a float constant changes both comparisons at `0.1f` and arithmetic
+precision. Double constants retain their ordinary unsuffixed spelling. This
+does not change the pseudo-C `NAN`, `INFINITY`, or unknown-format tokens,
+or the literal spelling of other output languages.
+
 A same-width `CAST` between an integer and a 32- or 64-bit float is a bit
 reinterpretation, not a numeric conversion (`kuna_bitcast.rs`). For this
 path, `ActionSetCasts` inserts a `CAST` wherever the merged types of a value

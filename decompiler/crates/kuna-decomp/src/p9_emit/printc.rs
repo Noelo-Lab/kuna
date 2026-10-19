@@ -10834,7 +10834,14 @@ impl PrintC {
                     // path (C++ `push_float` else-branch).
                     _ => {
                         let decimal = format.print_decimal(floatval, force_scinote);
-                        format_float_token(FloatClass::Normal, sign, &decimal, force_scinote)
+                        let mut token = format_float_token(FloatClass::Normal, sign, &decimal, force_scinote);
+                        // Unsuffixed C literals are double, even when the IR constant is float.
+                        if self.out_lang == crate::kuna_lang::OutLang::C
+                            && sz == 4 && arch.types().get_size_of_float() == 4
+                        {
+                            token.push('f');
+                        }
+                        token
                     }
                 }
             }
