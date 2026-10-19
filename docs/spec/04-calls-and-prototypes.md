@@ -7434,3 +7434,33 @@ remain explicit. Empty-return evidence is captured before this rewrite. Injected
 operations and operands outside the complete ten-byte stack-register bank retain
 their original inputs. Implementation:
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_x87free.rs`.
+
+### Qualified register declarations bind to an entry (`kuna_qualifiedstorage.rs`, `kuna_qualifiedcall.rs`)
+
+The console's qualified `map param <func>::<i>` and `map return <func>::<storage>`
+(what `--assert 'param f::0 ECX ...'` lowers to on the text surface), and its
+`parse line extern`, resolve `<func>` through the same entry resolver as
+`map prototype`: a name or an entry address. The resolved entry receives the
+storage pieces at once, and its entry address keys the pending store that the
+console replays on every IR rebuild and onto each callee symbol, so two
+same-named functions keep independent declarations and a name and an address
+naming one entry merge. An explicit `0x` address no function starts at is
+rejected instead of being parked as a function name nothing has. An
+input-only or output-only declaration keeps its partial-prototype inference;
+only a declaration that also states the return type retypes the symbol. The
+binding lives in `decompiler/crates/kuna-console/src/kuna_qualifiedstorage.rs`.
+
+A call that reaches such a callee indirectly, through an import slot or a
+constant pointer, becomes direct only once `ActionDeindirect` resolves it
+through `ArchContext::query_function`, which would otherwise hand back the
+symbol's cached code-type prototype: a placeholder signature with no explicit
+storage. When the parked pieces carry explicit input or output storage (a
+qualified declaration above, or a Ghidra host's custom-storage prototype),
+`query_function` builds the callee prototype from those pieces instead, under
+the declared model (or the undeclared default), as `ActionDefaultParams` already
+does for a direct call. Output-only pieces leave the inputs unlocked. The
+symbol's call-fixup injection is kept, and its no-return flag is carried under
+`peimportcall`, as on the other two paths. Pieces with no explicit storage
+(library, loader and DWARF prototypes) keep the code-type lookup unchanged. The
+construction lives in
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.

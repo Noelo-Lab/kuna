@@ -505,6 +505,10 @@ mod x87_free_operands;
 
 #[path = "prototype_call_mechanisms.rs"]
 mod prototype_call_mechanisms;
+#[path = "qualified_storage_addresses.rs"]
+mod qualified_storage_addresses;
+#[path = "qualified_import_storage.rs"]
+mod qualified_import_storage;
 
 #[path = "project_assertion_status.rs"]
 mod project_assertion_status;

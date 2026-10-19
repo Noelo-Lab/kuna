@@ -30,6 +30,7 @@ fn decompile(name: &str, setup: &[&str]) -> String {
     let count = commands.len();
     let mut status = ConsoleCommands::into_status(commands);
     register_decomp_commands(&mut status);
+    kuna_console::kuna_console::register_kuna_commands(&mut status);
     let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
     data.as_any_mut()
         .downcast_mut::<IfaceDecompData>()
@@ -256,4 +257,40 @@ fn independent_computation_after_argument_setup_keeps_its_register_home() {
         2,
         "both values must be passed to calls:\n{output}"
     );
+}
+
+#[test]
+fn later_extern_declaration_replaces_an_addressed_prototype() {
+    let output = decompile(
+        "parameter_source",
+        &[
+            "map prototype parameter_source int4 parameter_source(int4 *stale);",
+            "map param parameter_source::0 [register,0x38,8] int4 *old_storage",
+            "parse line extern int4 parameter_source(int4 *current);",
+        ],
+    );
+    assert!(
+        output.contains("parameter_source(int4 *current)"),
+        "{output}"
+    );
+    assert!(!output.contains("old_storage"), "{output}");
+    assert!(!output.contains("*stale"), "{output}");
+}
+
+#[test]
+fn storage_after_an_extern_declaration_updates_its_resolved_entry() {
+    let output = decompile(
+        "parameter_source",
+        &[
+            "map prototype parameter_source int4 parameter_source(int4 *stale);",
+            "parse line extern int4 parameter_source(int4 *intermediate);",
+            "map param parameter_source::0 [register,0x38,8] int4 *current",
+        ],
+    );
+    assert!(
+        output.contains("parameter_source(int4 *current)"),
+        "{output}"
+    );
+    assert!(!output.contains("*stale"), "{output}");
+    assert!(!output.contains("*intermediate"), "{output}");
 }
