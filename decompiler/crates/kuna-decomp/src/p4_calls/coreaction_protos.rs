@@ -581,6 +581,12 @@ impl Action for ActionDefaultParams {
                     }
                 }
             }
+            // Complete declarations copied from full prototypes need the same
+            // stack-pop contract as declarations rebuilt from prototype pieces.
+            crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
+                arch.callee_proto_stack,
+                data.get_call_specs_mut(i).proto_mut(),
+            );
             // fc->insertPcode(data): inject any uponreturn p-code.  STUB(W4
             // pcodeinjectlib): the default models on the datatest path declare no
             // uponreturn injection, so this is a no-op here.

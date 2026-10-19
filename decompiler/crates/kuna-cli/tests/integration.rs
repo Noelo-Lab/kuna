@@ -497,3 +497,6 @@ mod x87_empty_return;
 
 #[path = "windows_stack_argument_alignment.rs"]
 mod windows_stack_argument_alignment;
+
+#[path = "declared_callee_pop.rs"]
+mod declared_callee_pop;
