@@ -614,6 +614,15 @@ impl Funcdata {
         if !self.op_move_respecting_cover(final_op, last_op) {
             return None;
         }
+        // A hidden backedge COPY can follow other printed statements. The
+        // expression feeding it is what the for header will print, so it must
+        // also be movable past those statements, without crossing its COPY.
+        if res_op != final_op {
+            let before_copy = self.op_previous_op(final_op)?;
+            if !self.op_move_respecting_cover(res_op, before_copy) {
+                return None;
+            }
+        }
         Some(res_op)
     }
 
