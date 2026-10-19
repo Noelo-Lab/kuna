@@ -521,5 +521,11 @@ mod global_array_bit_transfers;
 #[path = "project_assertion_status.rs"]
 mod project_assertion_status;
 
+#[path = "float_pointer_storage.rs"]
+mod float_pointer_storage;
+
+#[path = "dwarf_overlapping_locals.rs"]
+mod dwarf_overlapping_locals;
+
 #[path = "project_call_declarations.rs"]
 mod project_call_declarations;

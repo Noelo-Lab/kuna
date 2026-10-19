@@ -171,7 +171,14 @@ sub_80043b8(unsigned int a0)`, a conversion of the bits, and now reinterpret
 them. These operations stay visible under cosmetic
 cast suppression. `FLOAT_INT2FLOAT`, `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` keep
 their numeric conversion behavior. The representation uses the target's
-ordinary 32-/64-bit integer and IEEE float storage widths.
+ordinary 32-/64-bit integer and IEEE float storage widths. A same-width storage
+`CAST` between a float and a native byte-addressed pointer also preserves bits.
+C first reinterprets a float as the unsigned word before casting that word to
+the requested pointer type; the reverse direction casts the pointer to the
+unsigned word before reinterpreting it as a float. These pointer casts remain
+visible with cosmetic cast suppression. Rust uses the corresponding unsigned
+word casts with `from_bits` or `to_bits`. Other pointer widths and addressable
+unit sizes do not enter this path.
 
 A low-end integer `SUBPIECE` of a named 32- or 64-bit float similarly reads
 storage bits before narrowing (`kuna_bitcast.rs (truncated_float_storage)`).
