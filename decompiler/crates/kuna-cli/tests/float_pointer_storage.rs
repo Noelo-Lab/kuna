@@ -156,3 +156,42 @@ int main(int argc,char **argv) {
     }
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn pointer_bits_in_a_byte_array_keep_both_scalar_views() {
+    if !Command::new("clang").arg("--version").output().is_ok_and(|o| o.status.success()) {
+        return;
+    }
+    let root = common::scratch_file("global-pointer-bit-views", "dir");
+    std::fs::create_dir_all(&root).unwrap();
+    let image = root.join("sample.so");
+    let source = root.join("sample.s");
+    let driver = root.join("driver.c");
+    let declarations = root.join("declarations.h");
+    std::fs::write(&source, include_str!("fixtures/global_pointer_bit_views.s")).unwrap();
+    std::fs::write(&driver, include_str!("fixtures/global_pointer_bit_views_driver.c")).unwrap();
+    std::fs::write(&declarations, "extern unsigned char storage[32];\n").unwrap();
+    checked(Command::new("clang").args(["-shared", "-fPIC", "-nostdlib", "-Wl,-Bsymbolic"])
+        .arg(&source).arg("-o").arg(&image));
+    let project = root.join("project");
+    checked(Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .arg("decompile-project").arg(&image)
+        .arg("--sleighpath").arg(common::repo_root().join("specs"))
+        .args(["--option", "stackviews", "on", "--assert-strict",
+            "--assert", "prototype sample void sample(void **value,double *bits,double *numeric)",
+            "--assert", "data 0x3000 unsigned char storage[32]"])
+        .arg("-o").arg(&project));
+    for compiler in ["gcc", "clang"] {
+        if !Command::new(compiler).arg("--version").output().is_ok_and(|o| o.status.success()) { continue; }
+        for optimization in ["-O0", "-O2"] {
+            let executable = root.join(format!("{compiler}{optimization}"));
+            checked(Command::new(compiler)
+                .args(["-std=gnu11", optimization, "-fno-fast-math", "-ffp-contract=off"])
+                .arg("-include").arg(&declarations)
+                .arg(project.join("sample.so.c")).arg(&driver)
+                .args(["-ldl", "-o"]).arg(&executable));
+            checked(Command::new(&executable).arg(&image));
+        }
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}

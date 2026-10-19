@@ -32,6 +32,14 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
     let slot = operation.get_slot(input);
     let from_ty = crate::kuna_stackviews::access_type(fd, input, op, slot)
         .or_else(|| declared_member_type(fd, decl_high_type, input))
+        .filter(|ty| {
+            // A merged byte-array backing does not declare the scalar type of
+            // a pointer or floating read through that storage.
+            !matches!(src.get_type_read_facing(op).get_metatype(),
+                type_metatype::TYPE_PTR | type_metatype::TYPE_FLOAT)
+                || !matches!(ty.get_metatype(), type_metatype::TYPE_UNKNOWN
+                    | type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)
+        })
         .unwrap_or_else(|| fd.vn_type_read_facing(input, op));
     let to_ty = crate::kuna_stackviews::access_type(fd, out, op, -1)
         .or_else(|| declared_member_type(fd, decl_high_type, out))
