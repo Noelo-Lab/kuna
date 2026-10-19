@@ -541,3 +541,6 @@ mod parameter_spill_reuse;
 
 #[path = "declared_callee_pop.rs"]
 mod declared_callee_pop;
+
+#[path = "floating_stack_bytes.rs"]
+mod floating_stack_bytes;

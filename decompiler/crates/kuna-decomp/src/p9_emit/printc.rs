@@ -8129,10 +8129,27 @@ impl PrintC {
         mods: uint4,
         read_op: Option<OpId>,
     ) {
+        use crate::printlanguage::SyntaxHighlight;
         if let Some(load) = crate::kuna_stackbytes::safe_load_op(fd, source, op) {
             // Address-tied LOAD outputs can share the destination stackview
             // HighVariable. Expand the proved-safe read itself, bypassing that
             // merged high's field name.
+            let float = fd.obank().get(load).and_then(|load| load.get_in(1))
+                .and_then(|pointer| fd.vn_type_read_facing(pointer, load).get_ptr_to())
+                .filter(|ty| ty.get_metatype() == crate::dtype::type_metatype::TYPE_FLOAT
+                    && matches!(ty.get_size(), 4 | 8)
+                    && fd.vbank().get(source).is_some_and(|value| value.get_size() == ty.get_size()));
+            if let Some(float) = float {
+                // Byte projections consume the representation of the replayed LOAD.
+                static BITS: OpToken = op_token("", " }).to", 2, 66, false, TokenType::Postsurround, 0, 0);
+                let (front, back) = declarator_parts(&float, self.rt_ctx);
+                let word = arch.types().get_base(float.get_size(), crate::dtype::type_metatype::TYPE_UINT).unwrap();
+                let (word_front, word_back) = declarator_parts(&word, self.rt_ctx);
+                self.push_op(&BITS, Some(op_key(op)));
+                self.push_atom(&Atom::syntax(
+                    format!("((union {{ {front}{back} from; {word_front}{word_back} to; }}){{ .from = "),
+                    TagType::TypeToken, SyntaxHighlight::type_color));
+            }
             let saved_mods = self.context.mods();
             self.context.set_mods(mods);
             self.op_push_ir(fd, arch, load, Some(op));
