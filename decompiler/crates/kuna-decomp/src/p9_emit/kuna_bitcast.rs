@@ -11,10 +11,11 @@ pub(crate) struct Transfer {
     pub target: Rc<Datatype>,
     pub size: i32,
     pub to_float: bool,
+    pub source_pointer: bool,
 }
 
-/// A same-width `CAST` between an integer and a float, judged by the types the
-/// printed C declares: a named variable or field, else the value's own type.
+/// A same-width storage `CAST` between a float and integer or native pointer,
+/// judged by the types the printed C declares: a named variable or field, else the value's own type.
 pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Transfer> {
     let operation = fd.obank().get(op)?;
     if operation.code() != OpCode::CPUI_CAST {
@@ -46,8 +47,16 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
             type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
         )
     };
-    let to_float = to == type_metatype::TYPE_FLOAT && integer(from);
-    if !to_float && !(from == type_metatype::TYPE_FLOAT && integer(to)) {
+    let pointer = |ty: &Datatype| {
+        ty.get_metatype() == type_metatype::TYPE_PTR
+            && ty.get_word_size() == Some(1)
+            && fd.get_arch().types().is_some_and(|types| {
+                ty.get_size() == types.get_size_of_pointer()
+            })
+    };
+    let source_pointer = pointer(&from_ty);
+    let to_float = to == type_metatype::TYPE_FLOAT && (integer(from) || source_pointer);
+    if !to_float && !(from == type_metatype::TYPE_FLOAT && (integer(to) || pointer(&to_ty))) {
         return None;
     }
     Some(Transfer {
@@ -55,6 +64,7 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
         target: to_ty,
         size,
         to_float,
+        source_pointer,
     })
 }
 
@@ -110,6 +120,7 @@ pub(crate) fn truncated_float_storage(
         target,
         size,
         to_float: false,
+        source_pointer: false,
     }, result_type))
 }
 
@@ -191,6 +202,7 @@ pub(crate) fn stack_float_input(
             .ok()?,
         size: value.get_size(),
         to_float: true,
+        source_pointer: false,
     })
 }
 

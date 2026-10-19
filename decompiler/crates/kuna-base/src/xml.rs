@@ -2098,7 +2098,8 @@ mod tests {
         // and kuna-arm-frame-inventory / validated A32 frames join the default inventory
         // and kuna-arraysize / an escaped stack buffer ends at its call's stated count
         // and kuna-narrowret, -x86 / a single-function decompile states no narrow call result
-        assert_eq!(count, 573, "corpus file count drifted");
+        // and kuna-bodyreads / a self-call keeps the register its own body reads
+        assert_eq!(count, 574, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -126,6 +126,16 @@ to same-width casts, because the slice does not infer a callee's return
 prototype. Explicit floating conversion opcodes retain their numeric
 conversion, and structured member extraction retains priority.
 
+Finite 32-bit floating constants in C carry an `f` suffix when the target
+uses 32-bit `float`. Unsuffixed literals have type `double`: printing `0.1`
+for a float constant changes both comparisons at `0.1f` and arithmetic
+precision. A value `double` holds exactly is suffixed too, since the literal's
+type still decides the type of the arithmetic around it: `(int)(x + 11.0)`
+adds in `double` and truncates `x = 0.99999994f` to 11, where the binary's
+float add rounds to 12. Double constants retain their ordinary unsuffixed spelling. This
+does not change the pseudo-C `NAN`, `INFINITY`, or unknown-format tokens,
+or the literal spelling of other output languages.
+
 A same-width `CAST` between an integer and a 32- or 64-bit float is a bit
 reinterpretation, not a numeric conversion (`kuna_bitcast.rs`). For this
 path, `ActionSetCasts` inserts a `CAST` wherever the merged types of a value
@@ -171,7 +181,14 @@ sub_80043b8(unsigned int a0)`, a conversion of the bits, and now reinterpret
 them. These operations stay visible under cosmetic
 cast suppression. `FLOAT_INT2FLOAT`, `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` keep
 their numeric conversion behavior. The representation uses the target's
-ordinary 32-/64-bit integer and IEEE float storage widths.
+ordinary 32-/64-bit integer and IEEE float storage widths. A same-width storage
+`CAST` between a float and a native byte-addressed pointer also preserves bits.
+C first reinterprets a float as the unsigned word before casting that word to
+the requested pointer type; the reverse direction casts the pointer to the
+unsigned word before reinterpreting it as a float. These pointer casts remain
+visible with cosmetic cast suppression. Rust uses the corresponding unsigned
+word casts with `from_bits` or `to_bits`. Other pointer widths and addressable
+unit sizes do not enter this path.
 
 A low-end integer `SUBPIECE` of a named 32- or 64-bit float similarly reads
 storage bits before narrowing (`kuna_bitcast.rs (truncated_float_storage)`).
@@ -510,12 +527,12 @@ hex (`((union { float from; unsigned int to; }){ .from = a0 }).to !=
 where, under the default (non-flushing) floating-point environment, it decides
 exactly what the bit test does (`float_compare_is_exact`; with DAZ/FTZ set a
 denormal's `ABS` compares equal to `0.0`): against a constant that is a normal number or an
-infinity whose printed literal, read by C as a `double`, is its value
+infinity whose shortest digits, read back as a `double`, are its value
 (`kuna_floatbits.rs (compares_as_a_float)`, chapter 05), so the bits of `1.0f`
-still print `a0 == 1.0`; and against `+0.0` when the other side is a
+still print `a0 == 1.0f`; and against `+0.0` when the other side is a
 `FLOAT_ABS`, which is never `-0.0` and as a NaN equals neither, so
-`ABS(a0) == 0.0` stays. A literal whose shortest spelling is another double
-(`a0 == -7.4544637e-06`, `!= 1.4013e-45`) prints its bits instead.
+`ABS(a0) == 0.0f` stays. A constant whose shortest digits spell another double
+(`-7.4544637e-06`, `1.4013e-45`) prints its bits instead.
 `FLOAT_EQUAL`/`FLOAT_NOTEQUAL` are other opcodes and still print `a == b`.
 
 **Narrowed call arguments (kuna).** Dead-code analysis counts only the
@@ -3630,3 +3647,24 @@ global container and offset. A `FLOAT_FLOAT2FLOAT` that writes such storage
 directly keeps its numeric precision conversion, cast to the float of its output
 width rather than to the unknown type of the storage, because partial access
 prints that destination as a float.
+
+Project C results retain declarations of named direct-call targets whose input
+and output prototypes are both locked. The declarations use the ordinary C
+declarator builder, including nested pointer types and variadic parameters.
+Call-only type dependencies join the referenced type roots. Headers deduplicate
+these declarations after type definitions and keep typedef collisions diagnostic.
+A target that is itself one of the exported functions keeps only its own
+prototype, so a whole-binary export declares each function once. Two differing
+declarations of one target become a comment rather than conflicting externs.
+A target whose return type is an array or function type is not declared,
+because C cannot spell it (a 16-byte integer the type system holds as
+`char[16]`). Unknown or partially inferred targets do not acquire invented
+signatures.
+The declarations survive worker serialization and streamed body removal, and
+remain roots when pruning synthesized types. Capture is implemented in
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`.
+
+Format-specific call arities are not declarations of the callee. When a call
+has format-derived arguments, project declarations restore its parked formal
+variadic signature. Call-only type roots are gathered only for project headers;
+ordinary per-function type inventories retain their original scope.

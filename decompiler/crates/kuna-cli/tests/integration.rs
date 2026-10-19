@@ -523,3 +523,15 @@ mod project_assertion_status;
 
 #[path = "x87_integer_conversions_native.rs"]
 mod x87_integer_conversions_native;
+
+#[path = "float_pointer_storage.rs"]
+mod float_pointer_storage;
+
+#[path = "dwarf_overlapping_locals.rs"]
+mod dwarf_overlapping_locals;
+
+#[path = "float_literal_width.rs"]
+mod float_literal_width;
+
+#[path = "project_call_declarations.rs"]
+mod project_call_declarations;
