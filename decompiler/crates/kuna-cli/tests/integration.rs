@@ -512,3 +512,6 @@ mod qualified_import_storage;
 
 #[path = "readonly_leaf_stack.rs"]
 mod readonly_leaf_stack;
+
+#[path = "global_array_bit_transfers.rs"]
+mod global_array_bit_transfers;

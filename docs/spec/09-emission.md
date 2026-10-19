@@ -3550,3 +3550,17 @@ noninteger types, enums, widths above eight bytes and concatenations of unrelate
 halves keep their existing rendering. The option defaults on for C output; off
 restores the upstream CONCAT helper, and other output languages keep their own
 rendering.
+
+For scalar CAST storage transfers through a global array symbol, such as an
+asserted byte array, the printed member access determines the scalar
+representation. An exact scalar array piece retains its type. Any other piece
+takes the type partial access prints it with (`kuna_partialaccess.rs`): the
+value's own scalar type of that width, such as a float stored in half of a
+`double` element, else the width-matched unknown scalar for a four- or
+eight-byte access crossing byte elements or covering the whole array. Floating
+transfers to and from that storage reinterpret bits rather than numerically
+converting the value or attempting an array cast. This lookup uses the exact
+global container and offset. A `FLOAT_FLOAT2FLOAT` that writes such storage
+directly keeps its numeric precision conversion, cast to the float of its output
+width rather than to the unknown type of the storage, because partial access
+prints that destination as a float.
