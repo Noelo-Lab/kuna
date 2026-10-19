@@ -180,7 +180,7 @@ impl Action for ActionPrototypeTypes {
         // init).  The locked-input/output and truncated-space branches stay stubbed
         // (no locked proto / no truncated stack space on the recovery path).
 
-        let evalfp = data.get_arch().eval_fp_current().cloned();
+        let evalfp = crate::kuna_callmechanisms::evaluation_model(data);
         if let Some(evalfp) = evalfp {
             if !data.get_func_proto().is_model_locked()
                 && !data.get_func_proto().has_matching_model(&evalfp)
@@ -581,15 +581,14 @@ impl Action for ActionDefaultParams {
                     }
                 }
             }
-            // Complete declarations copied from full prototypes need the same
-            // stack-pop contract as declarations rebuilt from prototype pieces.
             crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
                 arch.callee_proto_stack,
                 data.get_call_specs_mut(i).proto_mut(),
             );
-            // fc->insertPcode(data): inject any uponreturn p-code.  STUB(W4
-            // pcodeinjectlib): the default models on the datatest path declare no
-            // uponreturn injection, so this is a no-op here.
+            if let Err(error) = crate::kuna_callmechanisms::apply_return(data, i) {
+                data.kuna_call_mechanisms.failure = Some(error.to_string());
+                return 0;
+            }
         }
         // (kuna) `msvcbyval`: size an MSVC `__cdecl` import's by-value class at
         // each call, now that every call's pop is known.  See

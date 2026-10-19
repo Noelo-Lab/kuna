@@ -383,12 +383,12 @@ fn build_call_with_pair(fd: &mut Funcdata, hi_read: bool) -> (OpId, VarnodeId, V
 
 /// A summary that proves the callee wrote nothing at all.
 fn proves_nothing_written() -> CalleeReturnWrites {
-    CalleeReturnWrites { writes: Vec::new(), store_spaces: Vec::new(), complete: true, instructions: 2, call_facts: Vec::new(), return_targets: Vec::new(), through_mode_switch: false }
+    CalleeReturnWrites { writes: Vec::new(), store_spaces: Vec::new(), complete: true, instructions: 2, call_facts: Vec::new(), return_targets: Vec::new(), through_mode_switch: false, reads_nonreturn_memory: false, writes_stack_outside_return: false }
 }
 
 /// A summary the probe could not complete: it proves nothing.
 fn proves_nothing() -> CalleeReturnWrites {
-    CalleeReturnWrites { writes: Vec::new(), store_spaces: Vec::new(), complete: false, instructions: 2, call_facts: Vec::new(), return_targets: Vec::new(), through_mode_switch: false }
+    CalleeReturnWrites { writes: Vec::new(), store_spaces: Vec::new(), complete: false, instructions: 2, call_facts: Vec::new(), return_targets: Vec::new(), through_mode_switch: false, reads_nonreturn_memory: false, writes_stack_outside_return: false }
 }
 
 fn callee_entry(fd: &Funcdata) -> Address {
@@ -499,7 +499,7 @@ fn a_callee_that_writes_the_payload_still_pairs() {
     let (call, lo, hi) = build_call_with_pair(&mut fd, true);
     let entry = callee_entry(&fd);
     let ram_index = space(&fd, "ram").get_index();
-    let written = CalleeReturnWrites { writes: vec![(ram_index, 0x40, 8)], store_spaces: Vec::new(), complete: true, instructions: 2, call_facts: Vec::new(), return_targets: Vec::new(), through_mode_switch: false };
+    let written = CalleeReturnWrites { writes: vec![(ram_index, 0x40, 8)], store_spaces: Vec::new(), complete: true, instructions: 2, call_facts: Vec::new(), return_targets: Vec::new(), through_mode_switch: false, reads_nonreturn_memory: false, writes_stack_outside_return: false };
     assert!(!written.proves_untouched(&Address::new(space(&fd, "ram"), 0x40), 8));
     fd.kuna_set_callee_ret_writes(&entry, Rc::new(written));
     assert_eq!(
@@ -514,7 +514,7 @@ fn a_callee_that_writes_the_payload_still_pairs() {
 fn a_partial_write_of_the_payload_register_counts() {
     let mut fd = build_call_fd(RustAbiMode::Always);
     let ram = space(&fd, "ram");
-    let w = CalleeReturnWrites { writes: vec![(ram.get_index(), 0x40, 4)], store_spaces: Vec::new(), complete: true, instructions: 2, call_facts: Vec::new(), return_targets: Vec::new(), through_mode_switch: false };
+    let w = CalleeReturnWrites { writes: vec![(ram.get_index(), 0x40, 4)], store_spaces: Vec::new(), complete: true, instructions: 2, call_facts: Vec::new(), return_targets: Vec::new(), through_mode_switch: false, reads_nonreturn_memory: false, writes_stack_outside_return: false };
     assert!(
         !w.proves_untouched(&Address::new(Rc::clone(&ram), 0x40), 8),
         "`lea 0x7(%rdi),%edx` writes four bytes of an eight-byte half",
@@ -630,6 +630,8 @@ fn a_store_into_the_space_defeats_the_proof() {
         instructions: 2,
         return_targets: Vec::new(),
         through_mode_switch: false,
+        reads_nonreturn_memory: false,
+        writes_stack_outside_return: false,
     };
     assert!(!w.proves_untouched(&Address::new(Rc::clone(&ram), 0x40), 8));
     let _ = &mut fd;
@@ -737,4 +739,32 @@ fn a_mode_switched_walk_does_not_answer_for_argument_registers() {
     assert!(!switched.proves_untouched_for(None, &scratch, 8));
     assert!(passes_arguments_in(Some(&model), &Address::new(Rc::clone(&ram), 0x24), 4));
     assert!(!passes_arguments_in(Some(&model), &scratch, 8));
+}
+
+#[test]
+fn memory_probe_distinguishes_return_fetches_observers_and_stack_pivots() {
+    use kuna_sleigh::translate::PcodeEmit;
+    use kuna_num::pcoderaw::VarnodeData;
+    let fd = build_fd(RustAbiMode::Always);
+    let ram = space(&fd, "ram");
+    let constant = space(&fd, "const");
+    let reg = |offset| VarnodeData { space: Some(Rc::clone(&ram)), offset, size: 4 };
+    let value = |offset| VarnodeData { space: Some(Rc::clone(&constant)), offset, size: 4 };
+    let sp = reg(0x100);
+    let pc = reg(0x104);
+    let ax = reg(0x108);
+    let at = Address::new(Rc::clone(&ram),0x1000);
+    let mut ret = ProbeEmit::default();
+    ret.dump(&at,OpCode::CPUI_LOAD,Some(&pc),&[value(ram.get_index() as u64),sp.clone()]);
+    ret.dump(&at,OpCode::CPUI_INT_ADD,Some(&sp),&[sp.clone(),value(4)]);
+    ret.dump(&at,OpCode::CPUI_RETURN,None,std::slice::from_ref(&pc));
+    assert!(ret.return_only_memory_reads(std::slice::from_ref(&sp)));
+    assert!(!ret.changes_stack_outside_return(std::slice::from_ref(&sp)));
+    let mut observer = ProbeEmit::default();
+    observer.dump(&at,OpCode::CPUI_LOAD,Some(&ax),&[value(ram.get_index() as u64),sp.clone()]);
+    observer.dump(&at,OpCode::CPUI_RETURN,None,std::slice::from_ref(&pc));
+    assert!(!observer.return_only_memory_reads(std::slice::from_ref(&sp)));
+    let mut pivot = ProbeEmit::default();
+    pivot.dump(&at,OpCode::CPUI_INT_ADD,Some(&sp),&[sp.clone(),value(8)]);
+    assert!(pivot.changes_stack_outside_return(std::slice::from_ref(&sp)));
 }

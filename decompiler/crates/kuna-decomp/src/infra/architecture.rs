@@ -2507,6 +2507,10 @@ pub struct Architecture {
         Rc<std::cell::RefCell<crate::stringmanage::StringManagerUnicode>>,
     /// P-code injection manager (C++ `pcodeinjectlib`).  SLEIGH-backed.
     pub pcodeinjectlib: PcodeInjectLibrarySleigh,
+    call_mechanisms: Rc<crate::kuna_callmechanisms::Mechanisms>,
+    /// (kuna) Apply compiler-spec prototype entry/return p-code (option
+    /// `callmechanisms`).  See [`crate::kuna_callmechanisms`].
+    pub call_mechanism_effects: bool,
     /// Comments for this architecture (C++ `commentdb`).  // STUB(comment.cc)
     pub commentdb: CommentDatabase,
 
@@ -3147,6 +3151,8 @@ impl Architecture {
                 crate::stringmanage::StringManagerUnicode::new(2048),
             )),
             pcodeinjectlib: PcodeInjectLibrarySleigh::new(inject_tempbase),
+            call_mechanisms: Rc::default(),
+            call_mechanism_effects: false,
             commentdb: CommentDatabase::new(),
             // C++ ctor leaves types/print/defaultfp null; init() fills them.
             types: Rc::new(TypeFactoryImpl::new()),
@@ -3271,6 +3277,7 @@ impl Architecture {
         self.cast_object = true; // (kuna) option castobject default-on: a stack local whose address only fills declared int * parameters, whose readers agree, is declared int; evidence in docs/features/castobject/default-on-evaluation.md
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
+        self.call_mechanism_effects = false; // (kuna) option callmechanisms default-off: ppc_64_le.cspec's uponreturn stores r2Save at the ELFv1 TOC slot 0x28(r1), an ordinary frame slot under ELFv2
         self.callee_proto_stack = true; // (kuna) default-on (0/675 ablation): a locked callee prototype states how much it pops and how much of the caller's stack it can reach
         self.callee_pop = true; // (kuna) default-on (0/675 ablation): an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
         self.callee_pop_slot = true; // (kuna) default-on (0/675 ablation): the calleepop guess follows a slot pushed in front of one call and popped by a later one
@@ -3916,6 +3923,8 @@ impl Architecture {
     fn build_arch_handle_for_entry(&self, entry: Option<&Address>) -> ArchHandle {
         let manage = self.translate.manager_rc();
         let mut ctx = ArchContext::new_shared(manage);
+        ctx.call_mechanisms = Rc::clone(&self.call_mechanisms);
+        ctx.call_mechanism_effects = self.call_mechanism_effects; // callmechanisms
         ctx.min_laned_register_size = self.get_minimum_laned_register_size();
         // Carry the laned-register table so the per-function Funcdata reaches
         // `glb->getLanedRegister` (C++ `Architecture::lanerecords`); cheap clones
@@ -4996,6 +5005,9 @@ impl Architecture {
             Some(sleigh) => lib.parse_inject_all(sleigh.base()),
             None => Ok(()),
         };
+        if parse_res.is_ok() {
+            self.call_mechanisms = Rc::new(crate::kuna_callmechanisms::Mechanisms::from_library(&lib));
+        }
         self.pcodeinjectlib = lib;
         parse_res
     }
@@ -6085,6 +6097,8 @@ impl Architecture {
             model.set_constructor(decode_bool_attr(&v));
         }
         model.set_name(&name);
+        let (entry_inject, return_inject) = crate::kuna_callmechanisms::compiled_ids(&self.pcodeinjectlib, &name);
+        model.set_inject_ids(entry_inject, return_inject);
         let strategy = attr_str(proto, "strategy").unwrap_or_default();
         model.build_param_list(&strategy)?;
 
@@ -6847,6 +6861,12 @@ impl Architecture {
         // the whole inject library (callfixup + callotherfixup) is compiled
         // together by parseInject — the MIPS `setISAMode` fixup that makes the
         // dead ISA-mode-switch CALLOTHER injectable.
+        crate::kuna_callmechanisms::register(
+            self.cspec_xml.as_deref().map(std::str::from_utf8).transpose()
+                .map_err(|_| KunaError::lowlevel("Compiler specification is not UTF-8"))?,
+            self.translate.manager_rc().as_ref(),
+            &mut self.pcodeinjectlib,
+        )?;
         self.init_userops_and_fixups()?;
         // (kuna) Eagerly register the string-copy builtins (C++ lazy
         // `userops.registerBuiltin` is called from
