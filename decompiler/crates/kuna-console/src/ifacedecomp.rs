@@ -292,9 +292,22 @@ impl IfaceDecompData {
     }
 
     /// C++ `IfaceDecompData::clearArchitecture()`.
+    ///
+    /// Upstream keeps prototypes, overrides and storage locks on the
+    /// Architecture's symbols, so deleting `conf` drops them; the console
+    /// stashes they live in here are keyed by name or address and would
+    /// otherwise land on whatever the next image has at that name or address.
     pub fn clear_architecture(&mut self) {
         self.conf = None;
         self.fd = None;
+        self.pending_prototypes.clear();
+        self.pending_prototype_entries.clear();
+        self.pending_flow_overrides.clear();
+        self.pending_proto_overrides.clear();
+        self.pending_param_maps.clear();
+        self.pristine_flow = None;
+        self.pending_local_checks.clear();
+        self.printed_checks = None;
     }
 }
 
