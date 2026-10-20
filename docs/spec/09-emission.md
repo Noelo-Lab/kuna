@@ -3636,7 +3636,13 @@ is retained. Stores copy bytes from a scalar compound literal at the original
 displacement instead of assigning a pointer to a struct or imposing the declared
 field's numeric type on a later incarnation. COPY and same-width CAST retain the
 source representation; computed stores use the opcode's result type, including
-floating arithmetic and numeric conversions. Integer bit patterns are printed as
+floating arithmetic and numeric conversions. A scalar write into a declared
+byte-array member takes this byte-copy path even when the call's record layout
+agrees with the local layout: the member has no scalar C assignment type, and
+copying a float must retain its representation instead of casting it to an array.
+Implied same-width CASTs to the byte-array view are peeled before selecting the
+scalar representation; numeric conversion opcodes remain part of the expression.
+Integer bit patterns are printed as
 unsigned constants, while named pointer constants retain their address provenance.
 Equal-width signed, unsigned and unknown integer views remain compatible and
 keep ordinary scalar assignments; the fallback targets incompatible layouts or
