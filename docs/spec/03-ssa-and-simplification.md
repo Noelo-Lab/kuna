@@ -1861,6 +1861,16 @@ Conversion-only round trips and arithmetic already performed in binary32
 retain their existing simplifications and grouping. This is a correctness
 constraint on both forward and backward traces, including divided SIMD lanes.
 
+Both engines also keep every narrowing rounding. `RuleFloatCast` combines two
+successive `FLOAT_FLOAT2FLOAT` conversions only when the first is exact (an
+identity or a widening); two narrowings round twice, and the direct
+narrowing can differ: `(float)(double)0x1.000001000000001p0L` is `0x1p+0`,
+while `(float)0x1.000001000000001p0L` is `0x1.000002p+0`. A `SubfloatFlow`
+backward trace that reaches a narrowing conversion declines to lower its
+result below the narrowed width, since the lowered conversion would bypass
+that rounding. Widening-then-narrowing round trips still collapse. This is a
+value-correctness repair with no option.
+
 Integer-to-float conversions also retain their rounding width (`option
 intfloatround`, default on;
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_intfloatround.rs`). `RuleFloatCast`
@@ -1884,6 +1894,13 @@ exception or rounding-mode contract. It is an option because declining also
 moves correct output: an x87 comparison of an int64 conversion stays in long
 double where the narrowed form happened to be exact. `off` is upstream's
 unconditional fold.
+
+`RuleFloatCast` removes a floating conversion ahead of `FLOAT_TRUNC` only
+when that conversion is exact: an identity or a widening. A narrowing keeps
+its rounding, because rounding to the narrower format can carry a value
+across an integer boundary before truncation: `(int)(float)0.99999999` is 1,
+while `(int)0.99999999` is 0. Upstream folds every such pair. This is a
+value-correctness repair with no option.
 
 `subflow.rs (SplitDatatype)` (triggers `RuleSplitCopy`/`RuleSplitLoad`/
 `RuleSplitStore`, cleanup pool) splits a whole-struct COPY/LOAD/STORE into
