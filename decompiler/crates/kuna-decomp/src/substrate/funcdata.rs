@@ -2197,6 +2197,12 @@ impl Funcdata {
         self.heritage.get_pass()
     }
 
+    /// (kuna `calleeprotostack`) Whether heritage saw the stack base captured
+    /// a second time by the same register.
+    pub(crate) fn rebound_frame_base_seen(&self) -> bool {
+        self.heritage.rebound_frame_base_seen()
+    }
+
     /// Get the list of guarded LOADs (C++ `Funcdata::getLoadGuards`,
     /// `funcdata.hh:276` — `heritage.getLoadGuards()`).
     pub fn get_load_guards(&self) -> &[crate::heritage::LoadGuard] {

@@ -194,8 +194,10 @@ pub(crate) fn pointer_input_may_alias(
 
 /// Positive frame-alias evidence from a declared pointer, checked after pointer
 /// normalization. A cached `nolocalalias` mark cannot refute this concrete range.
-/// An unresolved frame-derived expression must keep its guard until the frame
-/// merge resolves; a concrete disjoint range can still collapse later.
+/// In a function that rebinds its frame base, an unresolved frame-derived
+/// expression must keep its guard until the frame merge resolves; a concrete
+/// disjoint range can still collapse later. Elsewhere an unresolved pointer
+/// (a cursor into a local buffer) defers to the alias mark.
 pub(crate) fn declared_pointer_reaches(
     fd: &crate::funcdata::Funcdata,
     call: &crate::fspec::FuncCallSpecs,
@@ -211,7 +213,7 @@ pub(crate) fn declared_pointer_reaches(
         let Some(pointee) = ty.get_ptr_to() else { continue; };
         let Some(input) = fd.obank().get(call.get_op()).and_then(|op| op.get_in(slot + 1)) else { continue; };
         let Some(pointer) = crate::kuna_stackranges::frame_address(fd, input) else {
-            if depends_on_frame(fd, input) { return true; }
+            if fd.rebound_frame_base_seen() && depends_on_frame(fd, input) { return true; }
             continue;
         };
         let Some((first, width)) = pointer.extent(pointee.get_size().max(1)) else { continue; };

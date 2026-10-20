@@ -1609,6 +1609,10 @@ impl Heritage {
         }
     }
 
+    pub(crate) fn rebound_frame_base_seen(&self) -> bool {
+        self.protostack_frame_reload == Some(true)
+    }
+
     fn protostack_restored_frame_alias(&mut self, fd: &crate::funcdata::Funcdata) -> bool {
         *self.protostack_frame_reload.get_or_insert_with(|| {
             crate::kuna_calleeprotostack::rebound_frame_base(fd)
