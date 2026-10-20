@@ -5,6 +5,7 @@
 
 pub mod heritage;
 mod kuna_leafmemory;
+pub(crate) mod kuna_globalcallranges;
 pub mod subflow;
 mod kuna_constantbytes;
 pub mod condexe;

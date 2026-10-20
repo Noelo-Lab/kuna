@@ -1760,6 +1760,7 @@ impl Action for ActionReturnRecovery {
             }
             crate::p4_calls::kuna_voidret::void_unless_returned(data);
             crate::kuna_armfloatreturn::type_returns(data, &active);
+            crate::kuna_x87return::type_returns(data, &active);
             data.clear_active_output();
             self.base.count += 1;
         } else {

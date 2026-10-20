@@ -1,0 +1,63 @@
+{
+ "binary": "globals.elf",
+ "address": 16576,
+ "address_hex": "0x40c0",
+ "start": 16544,
+ "start_hex": "0x40a0",
+ "size": 96,
+ "span": 96,
+ "bytes": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+ "pointer_size": 8,
+ "target": {
+  "archid": "x86:LE:64:default:gcc",
+  "processor": "x86",
+  "endian": "little",
+  "bits": 64
+ },
+ "section": {
+  "name": ".bss",
+  "address": 16544,
+  "address_hex": "0x40a0",
+  "size": 96,
+  "file_offset": null,
+  "file_size": null,
+  "executable": false,
+  "writable": true
+ },
+ "items": [
+  {
+   "name": "completed.0",
+   "address": 16544,
+   "address_hex": "0x40a0",
+   "size": 1,
+   "type": "char",
+   "declaration": "char completed.0",
+   "layout": {
+    "kind": "unknown",
+    "size": 1,
+    "type": "char"
+   }
+  },
+  {
+   "name": "scratch",
+   "address": 16576,
+   "address_hex": "0x40c0",
+   "size": 64,
+   "type": "char[64]",
+   "declaration": "char scratch[64]",
+   "layout": {
+    "kind": "array",
+    "size": 64,
+    "type": "char[64]",
+    "elem": {
+     "kind": "unknown",
+     "size": 1,
+     "type": "char"
+    },
+    "count": 64
+   }
+  }
+ ],
+ "targets": [],
+ "assertions": []
+}

@@ -583,7 +583,9 @@ fn collect_data_sym<'a>(
     }
     // (kuna `symbolnamechars`, GH-340) A data symbol's name reaches emitted C
     // exactly as a function symbol's does, so it is sanitized at the same mint.
-    let name = sanitize_symbol_name_bytes(&name, mode).into_owned();
+    // Defer identifier folding until all data names can be reserved together.
+    let data_mode = if mode == NameChars::Ident { NameChars::Safe } else { mode };
+    let name = sanitize_symbol_name_bytes(&name, data_mode).into_owned();
     let addr = sym.address();
     if seen.insert(addr) {
         out.push(DataSym { addr, name, size });

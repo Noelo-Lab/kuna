@@ -17,6 +17,9 @@ pub(crate) struct Transfer {
 /// A same-width storage `CAST` or aggregate-field reload `COPY` between a
 /// float and integer or native pointer,
 /// judged by the types the printed C declares: a named variable or field, else the value's own type.
+/// An unknown or partial aggregate type from a merged byte-array backing does not
+/// declare the scalar type of a pointer or float read through that storage, so
+/// the value's read-facing type stands in for it.
 pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Transfer> {
     let operation = fd.obank().get(op)?;
     if !matches!(operation.code(), OpCode::CPUI_CAST | OpCode::CPUI_COPY) {
@@ -42,6 +45,12 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
         // An unresolved aggregate fragment is not the scalar field's C type.
         .filter(|ty| !matches!(ty.get_metatype(),
             type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION))
+        .filter(|ty| {
+            !matches!(src.get_type_read_facing(op).get_metatype(),
+                type_metatype::TYPE_PTR | type_metatype::TYPE_FLOAT)
+                || !matches!(ty.get_metatype(), type_metatype::TYPE_UNKNOWN
+                    | type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)
+        })
         .unwrap_or_else(|| fd.vn_type_read_facing(input, op));
     let to_ty = crate::kuna_stackviews::access_type(fd, out, op, -1)
         .or_else(|| declared_member_type(fd, decl_high_type, out))
@@ -283,7 +292,7 @@ fn read_storage(fd: &Funcdata, op: OpId) -> Option<&crate::varnode::Varnode> {
     fd.vbank().get(cast.get_out()?)
 }
 
-fn declared_member_type(
+pub(crate) fn declared_member_type(
     fd: &Funcdata,
     decl_high_type: bool,
     id: VarnodeId,

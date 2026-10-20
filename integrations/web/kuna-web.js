@@ -301,6 +301,14 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, engine = nul
     async strings(binaryBytes, options = {}) {
       return command(binaryBytes, 'strings', undefined, options);
     },
+    /** The labelled, typed items around `address` (or in `[address, address+length)`), with their bytes. */
+    async data(binaryBytes, address, length, options = {}) {
+      return command(binaryBytes, 'data', [address, length], options);
+    },
+    /** The instructions that use the data in `[address, address+length)`. */
+    async uses(binaryBytes, address, length, options = {}) {
+      return command(binaryBytes, 'uses', [address, length], options);
+    },
     /**
      * Export the whole binary as a recompile-oriented project (every function,
      * one run). `displayName` names the artifacts. Returns `{binary, name,

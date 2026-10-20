@@ -42,6 +42,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -207,6 +208,74 @@ def _footer_findings(path, rel, text, check):
     return out
 
 
+def _catalog_count_key(baseline, phases, catalog, xml):
+    """Validate the count-bearing catalog assertion against its tree's evidence.
+
+    The bare option tally is not checked by counters.catalog_buckets, which skips
+    option patterns, so both its bounds and its name must be checked here.
+    """
+    if any(text is None for text in (phases, catalog, xml)):
+        return None
+    try:
+        data, rows = json.loads(baseline), json.loads(catalog)
+        tree = ET.fromstring(xml)
+        if (not isinstance(data, dict) or not isinstance(rows, list) or not rows
+                or tree.tag != "decompilertest"):
+            return None
+        if any(not isinstance(row, dict) or not isinstance(row.get("option"), str)
+               or not row["option"] or row["option"].strip() != row["option"]
+               for row in rows):
+            return None
+        options = {row["option"] for row in rows}
+        count = len(rows)
+        if len(options) != count or count != sum(
+                line.startswith("[[settable]]") for line in phases.splitlines()):
+            return None
+        commands = [" ".join((node.text or "").split())
+                    for node in tree.findall("./script/com")]
+        queries = [line.split() for line in commands if line.startswith("phase catalog")]
+        singles = [parts[2] for parts in queries if len(parts) == 3]
+        if (any(parts[:2] != ["phase", "catalog"] or len(parts) not in (2, 3)
+                for parts in queries)
+                or queries.count(["phase", "catalog"]) != 1 or len(queries) != 7
+                or len(singles) != 6 or any(option not in options for option in singles)):
+            return None
+        name = "KUNA-CATALOG #15: {} registry rows plus six individual queries".format(count)
+        assertions = [node for node in tree.findall("stringmatch")
+                      if node.get("name", "").startswith("KUNA-CATALOG #15:")]
+        if len(assertions) != 1:
+            return None
+        assertion = assertions[0]
+        if (assertion.get("name") != name or len(assertion) or assertion.text != '"option": '
+                or int(assertion.get("min", "")) != count + 6
+                or int(assertion.get("max", "")) != count + 6):
+            return None
+        key = "data:" + name
+        passing = data.get("passing")
+        if (not isinstance(passing, list) or any(not isinstance(item, str) for item in passing)
+                or [item for item in passing
+                if isinstance(item, str) and item.startswith("data:KUNA-CATALOG #15:")] != [key]):
+            return None
+        return key, count, singles
+    except (ValueError, ET.ParseError):
+        return None
+
+
+def _catalog_count_rename(base_text, head_text, base_ref, repo):
+    """Permit only one derived catalog-count key replacement, without changing files."""
+    evidence = (counters.REL_PHASES_TOML, counters.REL_CATALOG_FIXTURE,
+                counters.REL_CATALOG_XML)
+    base = _catalog_count_key(base_text, *(show(base_ref, rel, repo) for rel in evidence))
+    try:
+        head = _catalog_count_key(head_text, *((repo / rel).read_text(encoding="utf-8")
+                                              for rel in evidence))
+    except (OSError, UnicodeError):
+        return None
+    if base is None or head is None or base[1] >= head[1] or base[2] != head[2]:
+        return None
+    return base[0], head[0]
+
+
 def assert_keepboth(path, base_ref="origin/main", repo=None):
     """Shape C. Diff ``path`` against ``base_ref``: nothing REMOVED, nothing ADDED TWICE.
 
@@ -214,7 +283,8 @@ def assert_keepboth(path, base_ref="origin/main", repo=None):
     table -- a duplicated table row survives every gate in this repo. Line multisets are
     compared rather than a textual diff, so a row re-inserted at a different offset is
     still caught. For a `[passing, total]`-footered baseline the footer is additionally
-    asserted against its own key count.
+    asserted against its own key count. Only the catalog's count-bearing assertion key
+    may be renamed, after both trees' registry, capture and XML evidence agree.
     """
     root = _root(repo)
     p = Path(path)
@@ -239,6 +309,15 @@ def assert_keepboth(path, base_ref="origin/main", repo=None):
     head_c = collections.Counter(_norm(l) for l in head_text.splitlines() if _significant(l))
 
     removed = [(l, n - head_c.get(l, 0)) for l, n in base_c.items() if head_c.get(l, 0) < n]
+    if rel == REL_BASELINE_STAGES and removed:
+        rename = _catalog_count_rename(base_text, head_text, base_ref, root)
+        if rename is not None:
+            old, new = (json.dumps(key) for key in rename)
+            if base_c[old] == head_c[new] == 1 and head_c[old] == base_c[new] == 0:
+                removed = [(line, missing) for line, missing in removed if line != old]
+                out.append(Finding("C", "assert-keepboth", INFO, "catalog-count-renamed", rel, 0,
+                                   "catalog assertion key follows the derived registry count",
+                                   "{} -> {}".format(*rename)))
     for line, missing in sorted(removed)[:20]:
         out.append(Finding("C", "assert-keepboth", REJECT, "line-removed", rel, 0,
                            "{} line(s) present on {} are gone".format(missing, base_ref),

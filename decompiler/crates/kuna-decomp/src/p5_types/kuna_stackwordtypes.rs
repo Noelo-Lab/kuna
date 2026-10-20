@@ -17,7 +17,7 @@ pub(crate) fn backing_store(
     input: VarnodeId,
     ty: &Rc<Datatype>,
 ) -> bool {
-    if !fd.get_arch().stack_views
+    if !crate::kuna_stackviews::enabled(fd)
         || inslot != 2
         || outslot != 1
         || fd

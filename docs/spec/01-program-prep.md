@@ -447,6 +447,18 @@ entry but no DIE in the program's own `.debug_info`, so nothing else could name
 it. Relocatable objects are excluded — `reloc_object` rebases only the function half
 of the symbol table, so a `.o` keeps its previous behavior.
 
+With `symbolnamechars ident`, imported data basenames become collision-safe C
+identifiers before being mapped into the engine symbol table
+(`decompiler/crates/kuna-console/src/kuna_dataidentifiers.rs`). Readable stems
+survive (`tempfile.3` becomes `tempfile_3`); a numeric suffix is added only for
+an actual collision, and an address-based name is used only when no stem
+remains. C keywords and leading digits receive identifier-safe adjustments.
+Valid accented names remain intact. The default `safe` mode keeps ordinary
+binary spellings unchanged. Data-name folding is deferred until installed and
+pending names can be reserved together, so `counter.3.1` cannot capture an
+existing `counter_3_1`. Original data spellings remain lookup aliases for
+`kuna xrefs --to` and `kuna read`, without adding duplicate mapped objects.
+
 Format dispatch is by magic (`engine.rs (is_object_binary)`): ELF, thin or fat
 Mach-O, PE (`MZ`, validated downstream by the typed PE parser), and bare COFF
 objects recognized by a whitelisted leading `IMAGE_FILE_MACHINE_*` u16 — anything
@@ -2234,7 +2246,24 @@ moves.
   signatures win,
   and read back at *two* points: by a caller's `ActionDefaultParams` for the call
   site, and by the drive as the function's own locked prototype (04 §4.2 —
-  `int main(int argc, char **argv)`, not `undefined16 main(uint4, void*)`);
+  `int main(int argc, char **argv)`, not `undefined16 main(uint4, void*)`).
+  An externally visible defined DWARF function's exact `DW_AT_linkage_name` also binds its prototype
+  to matching ELF PLT entry addresses
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarflinkage.rs`). The linker spelling is taken from the
+  definition or its one-hop `DW_AT_specification` declaration. When no explicit
+  linker spelling is present, a source name is accepted only if a defined, global
+  ELF function symbol has that exact name and the definition's exact entry address.
+  This covers ordinary C declarations without guessing a mangling scheme or
+  following abstract-origin clones. Address binding avoids
+  ambiguity between an exported implementation and its same-named PLT stub.
+  C++ declaration-derived aliases remain in the `cppproto` fact stream, and
+  explicit prototype assertions retain their later precedence. Declaration-only
+  DIEs and other binary formats do not acquire these aliases. `DW_AT_external`
+  must be true on the definition or its specification; a local definition cannot
+  retype an unrelated import with the same linker name. A name the file defines as
+  an `STT_GNU_IFUNC` symbol is never bound: the DWARF definition behind it is the
+  resolver (`void *(void)`), not the implementation its PLT entry dispatches to.
+  Separately,
   a formal parameter of a Fortran compilation unit whose location is exactly
   `DW_OP_fbreg` followed by `DW_OP_deref`
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfbyref.rs`)

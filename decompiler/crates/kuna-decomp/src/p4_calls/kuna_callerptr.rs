@@ -21,7 +21,8 @@
 //! value, a load or store the pointee does not cover, a family member that is
 //! declared, global or frame memory).
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
+use crate::kuna_fasthash::FxHashSet;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -109,7 +110,7 @@ pub(crate) fn refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
 /// offset and then treat it as a number: mask, shift, divide or multiply it?
 fn masks_a_derived_address(data: &Funcdata, family: &[VarnodeId]) -> bool {
     let constant = |v: Option<VarnodeId>| v.and_then(|v| data.vbank().get(v)).is_some_and(|c| c.is_constant());
-    let mut seen: HashSet<VarnodeId> = family.iter().copied().collect();
+    let mut seen: FxHashSet<VarnodeId> = family.iter().copied().collect();
     let mut work: VecDeque<(VarnodeId, usize)> = family.iter().map(|&v| (v, 0)).collect();
     while let Some((v, hops)) = work.pop_front() {
         let Some(node) = data.vbank().get(v) else { continue };
@@ -187,7 +188,7 @@ pub fn provably_a_pointer(data: &Funcdata, vn: VarnodeId) -> bool {
 /// direction: the one value, without the values a MULTIEQUAL merges with it.
 fn same_value(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
     let mut out = vec![vn];
-    let mut seen: HashSet<VarnodeId> = HashSet::from([vn]);
+    let mut seen: FxHashSet<VarnodeId> = FxHashSet::from_iter([vn]);
     let mut at = 0;
     while at < out.len() && out.len() < 64 {
         let v = out[at];
@@ -247,7 +248,7 @@ fn frame_address(data: &Funcdata, v: VarnodeId) -> bool {
 /// the base. Nor does a MULTIEQUAL: its output holds other values on other
 /// paths, and the dereference may be the one those paths make.
 fn dereferenced(data: &Funcdata, family: &[VarnodeId]) -> bool {
-    let mut seen: HashSet<VarnodeId> = family.iter().copied().collect();
+    let mut seen: FxHashSet<VarnodeId> = family.iter().copied().collect();
     let mut work: VecDeque<(VarnodeId, usize)> = family.iter().map(|&v| (v, 0)).collect();
     while let Some((v, hops)) = work.pop_front() {
         let Some(node) = data.vbank().get(v) else { continue };

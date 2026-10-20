@@ -36,7 +36,7 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
             return None;
         }};
     }
-    if !fd.get_arch().stack_views {
+    if !crate::kuna_stackviews::enabled(fd) {
         reject!("stackviews off");
     }
     let Some(operation) = fd.obank().get(op) else {

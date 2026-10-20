@@ -1,0 +1,173 @@
+{
+ "binary": "globals.elf",
+ "address": 16448,
+ "address_hex": "0x4040",
+ "start": 16384,
+ "start_hex": "0x4000",
+ "size": 136,
+ "span": 136,
+ "bytes": "000000000000000008400000000000000000000000000000000000000000000068656c6c6f2c2064617461000000000000000000000000000000000000000000020000000300000005000000070000000b0000000d000000110000001300000003000000040000000820000000000000182000000000000089110000000000004c40000000000000",
+ "pointer_size": 8,
+ "target": {
+  "archid": "x86:LE:64:default:gcc",
+  "processor": "x86",
+  "endian": "little",
+  "bits": 64
+ },
+ "section": {
+  "name": ".data",
+  "address": 16384,
+  "address_hex": "0x4000",
+  "size": 136,
+  "file_offset": 12288,
+  "file_size": 136,
+  "executable": false,
+  "writable": true
+ },
+ "items": [
+  {
+   "name": "greeting",
+   "address": 16416,
+   "address_hex": "0x4020",
+   "size": 12,
+   "type": "char[12]",
+   "declaration": "char greeting[12]",
+   "layout": {
+    "kind": "array",
+    "size": 12,
+    "type": "char[12]",
+    "elem": {
+     "kind": "unknown",
+     "size": 1,
+     "type": "char"
+    },
+    "count": 12
+   }
+  },
+  {
+   "name": "primes",
+   "address": 16448,
+   "address_hex": "0x4040",
+   "size": 32,
+   "type": "char[32]",
+   "declaration": "char primes[32]",
+   "layout": {
+    "kind": "array",
+    "size": 32,
+    "type": "char[32]",
+    "elem": {
+     "kind": "unknown",
+     "size": 1,
+     "type": "char"
+    },
+    "count": 32
+   }
+  },
+  {
+   "name": "origin",
+   "address": 16480,
+   "address_hex": "0x4060",
+   "size": 16,
+   "type": "char[16]",
+   "declaration": "char origin[16]",
+   "layout": {
+    "kind": "array",
+    "size": 16,
+    "type": "char[16]",
+    "elem": {
+     "kind": "unknown",
+     "size": 1,
+     "type": "char"
+    },
+    "count": 16
+   }
+  },
+  {
+   "name": "banner",
+   "address": 16496,
+   "address_hex": "0x4070",
+   "size": 8,
+   "type": "unsigned long",
+   "declaration": "unsigned long banner",
+   "layout": {
+    "kind": "unknown",
+    "size": 8,
+    "type": "unsigned long"
+   }
+  },
+  {
+   "name": "op",
+   "address": 16504,
+   "address_hex": "0x4078",
+   "size": 8,
+   "type": "unsigned long",
+   "declaration": "unsigned long op",
+   "layout": {
+    "kind": "unknown",
+    "size": 8,
+    "type": "unsigned long"
+   }
+  },
+  {
+   "name": "favorite",
+   "address": 16512,
+   "address_hex": "0x4080",
+   "size": 8,
+   "type": "unsigned long",
+   "declaration": "unsigned long favorite",
+   "layout": {
+    "kind": "unknown",
+    "size": 8,
+    "type": "unsigned long"
+   }
+  }
+ ],
+ "targets": [
+  {
+   "at": 16392,
+   "at_hex": "0x4008",
+   "to": 16392,
+   "to_hex": "0x4008",
+   "name": null,
+   "offset": 0,
+   "text": null
+  },
+  {
+   "at": 16488,
+   "at_hex": "0x4068",
+   "to": 8200,
+   "to_hex": "0x2008",
+   "name": "s_2008",
+   "offset": 0,
+   "text": "origin"
+  },
+  {
+   "at": 16496,
+   "at_hex": "0x4070",
+   "to": 8216,
+   "to_hex": "0x2018",
+   "name": "s_2018",
+   "offset": 0,
+   "text": "kuna data tab"
+  },
+  {
+   "at": 16504,
+   "at_hex": "0x4078",
+   "to": 4489,
+   "to_hex": "0x1189",
+   "name": "twice",
+   "offset": 0,
+   "text": null
+  },
+  {
+   "at": 16512,
+   "at_hex": "0x4080",
+   "to": 16460,
+   "to_hex": "0x404c",
+   "name": "primes",
+   "offset": 12,
+   "text": null
+  }
+ ],
+ "assertions": []
+}
