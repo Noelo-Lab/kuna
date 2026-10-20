@@ -2632,13 +2632,13 @@ with : lockprefx=0 {
 :ARPL rm16,Reg16    is $(LONGMODE_OFF) & vexMode=0 & bit64=0 & byte=0x63; rm16 & Reg16 ...                { local rpldest=rm16&3; local rplsrc=Reg16&3; local rpldiff=rplsrc-rpldest;
                                           ZF = rpldiff s> 0; rm16 = rm16 + (zext(ZF) * rpldiff); }
 
-:BOUND Reg16,Mem    is $(LONGMODE_OFF) & vexMode=0 & bit64=0 & opsize=0 & byte=0x62; Mem & Reg16 ...      {
+:BOUND Reg16,"word ptr" Mem    is $(LONGMODE_OFF) & vexMode=0 & bit64=0 & opsize=0 & byte=0x62; Mem & Reg16 ...      {
   local bounds:$(SIZE) = Mem;
   local lower:2 = *:2 bounds;
   local upper:2 = *:2 (bounds + 2);
   x86_bound_check16(Reg16, lower, upper);
 }
-:BOUND Reg32,Mem    is $(LONGMODE_OFF) & vexMode=0 & bit64=0 & opsize=1 & byte=0x62; Mem & Reg32 ...      {
+:BOUND Reg32,"dword ptr" Mem    is $(LONGMODE_OFF) & vexMode=0 & bit64=0 & opsize=1 & byte=0x62; Mem & Reg32 ...      {
   local bounds:$(SIZE) = Mem;
   local lower:4 = *:4 bounds;
   local upper:4 = *:4 (bounds + 4);
