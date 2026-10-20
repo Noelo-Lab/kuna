@@ -7,22 +7,31 @@ use std::process::Command;
 
 #[test]
 fn pe32_locked_float_survives_unknown_storage_member() {
-    check_target("i686-w64-windows-gnu", true);
+    check_target("i686-w64-windows-gnu", true, false);
 }
 #[test]
 fn pe64_locked_float_survives_unknown_storage_member() {
-    check_target("x86_64-w64-windows-gnu", true);
+    check_target("x86_64-w64-windows-gnu", true, false);
 }
 #[test]
 fn pe32_locked_float_control() {
-    check_target("i686-w64-windows-gnu", false);
+    check_target("i686-w64-windows-gnu", false, false);
 }
 #[test]
 fn pe64_locked_float_control() {
-    check_target("x86_64-w64-windows-gnu", false);
+    check_target("x86_64-w64-windows-gnu", false, false);
 }
 
-fn check_target(target: &str, weaker: bool) {
+#[test]
+fn pe32_detached_binding_keeps_locked_float() {
+    check_target("i686-w64-windows-gnu", true, true);
+}
+#[test]
+fn pe64_detached_binding_keeps_locked_float() {
+    check_target("x86_64-w64-windows-gnu", true, true);
+}
+
+fn check_target(target: &str, weaker: bool, detached: bool) {
     use kuna_console::ifacedecomp::{
         execute, register_console_commands, register_decomp_commands, IfaceDecompData,
         DECOMPILE_MODULE,
@@ -138,6 +147,7 @@ __declspec(dllexport) unsigned int choose_word(unsigned int first,unsigned int s
             .unwrap()
             .get_base(4, type_metatype::TYPE_UNKNOWN)
             .unwrap();
+        let storage = if detached { vec![storage[0]] } else { storage };
         for id in storage {
             assert!(fd.vbank_mut().get_mut(id).unwrap().update_type_locked(
                 unknown.clone(),
@@ -145,6 +155,95 @@ __declspec(dllexport) unsigned int choose_word(unsigned int first,unsigned int s
                 true
             ));
         }
+    }
+    if detached {
+        use kuna_base::address::Address;
+        use kuna_decomp::context::VarnodeId;
+        use kuna_decomp::cover::Cover;
+        use kuna_decomp::variable::{CompareNameView, HighContext, VarnodeView, VarnodeViewLoc};
+        use std::collections::HashMap;
+        struct Locations(HashMap<VarnodeId, Address>);
+        impl HighContext for Locations {
+            fn vn_loc_view(&self, vn: VarnodeId) -> VarnodeViewLoc {
+                VarnodeViewLoc {
+                    addr: self.0[&vn].clone(),
+                }
+            }
+            fn vn_view(&self, _: VarnodeId) -> VarnodeView {
+                unreachable!("location-only insertion")
+            }
+            fn vn_cover(&self, _: VarnodeId) -> Option<Cover> {
+                unreachable!("location-only insertion")
+            }
+            fn vn_has_cover(&self, _: VarnodeId) -> bool {
+                unreachable!("location-only insertion")
+            }
+            fn vn_name_view(&self, _: VarnodeId) -> CompareNameView {
+                unreachable!("location-only insertion")
+            }
+        }
+        let old = fd.high_bank().get(high).unwrap();
+        let ty = old.kuna_symbol_type().unwrap().clone();
+        let members: Vec<_> = (0..old.num_instances())
+            .map(|i| old.get_instance(i))
+            .collect();
+        let mut temporaries = Vec::new();
+        let members: Vec<_> = members
+            .into_iter()
+            .map(|old| {
+                let op = fd
+                    .vbank()
+                    .get(old)
+                    .unwrap()
+                    .get_def()
+                    .expect("local definition");
+                fd.op_unset_output(op);
+                let value = fd.new_unique_out(4, op).unwrap();
+                temporaries.push(fd.vbank().get(value).unwrap().get_high().unwrap());
+                fd.total_replace(old, value).unwrap();
+                fd.vbank_mut().get_mut(value).unwrap().set_explicit();
+                value
+            })
+            .collect();
+        assert!(members.len() >= 2, "merged local");
+        fd.vbank_mut()
+            .get_mut(members[1])
+            .unwrap()
+            .update_type_locked(ty.clone(), true, true);
+        let locations = Locations(
+            members
+                .iter()
+                .map(|id| (*id, fd.vbank().get(*id).unwrap().get_addr().clone()))
+                .collect(),
+        );
+        // Model coalescing that retains the declaration's type and a locked
+        // member, but carries no concrete Symbol link into the resulting high.
+        let mut bank = std::mem::take(fd.high_bank_mut());
+        bank.erase(high);
+        for temporary in temporaries {
+            bank.erase(temporary);
+        }
+        let replacement = bank.new_high(members[0]);
+        let mut updates = vec![(members[0], replacement, 0)];
+        for id in members.iter().skip(1) {
+            bank.insert_member(replacement, *id, 0, &locations, &mut |vn, h, g| {
+                updates.push((vn, h, g))
+            });
+        }
+        let h = bank.get_mut(replacement).unwrap();
+        h.set_kuna_name("v1");
+        h.set_symbol_type(ty);
+        h.set_symbol_offset(-1);
+        *fd.high_bank_mut() = bank;
+        for (vn, h, g) in updates {
+            fd.vbank_mut().get_mut(vn).unwrap().set_high(h, g);
+        }
+        assert!(fd
+            .high_bank()
+            .get(replacement)
+            .unwrap()
+            .kuna_link_symbol()
+            .is_none());
     }
     let arch = data.conf.as_mut().unwrap().arch_mut();
     arch.realtypes = true;
