@@ -2330,15 +2330,20 @@ moves.
   layout of that name is reused across units; a same-named type with any
   other layout (a user's) is left untouched and the next free numbered name
   is taken. Other targets, and `long double` complex everywhere, keep their
-  previous mapping. An array's length is read
-  from its first `DW_TAG_subrange_type` child
-  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfbounds.rs`): an
-  explicit `DW_AT_count` wins, otherwise `upper - lower + 1` over signed bounds,
+  previous mapping. An array's length is the product of the lengths of all its
+  `DW_TAG_subrange_type` children, so a multidimensional `int a[3][4]` (or
+  gfortran's `grid(-2:0,5:11)`) becomes one flat array of every element (12, 21)
+  rather than of its first dimension only, which under-sized the storage of
+  multidimensional locals, globals and members. Each subrange's length
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfbounds.rs`) is
+  an explicit `DW_AT_count` if present, otherwise `upper - lower + 1` over signed bounds,
   where an omitted lower bound takes the compilation unit's `DW_AT_language`
   default (one for Fortran and Ada, zero for C, C++ and an unknown language).
   A bound given as a reference or an expression is not a constant, and a count
-  that does not fit 64 bits is rejected rather than wrapped; both fall back to a
-  one-element array, while a count past `int4` leaves the array untyped. The
+  that does not fit 64 bits is rejected rather than wrapped; such a dimension
+  contributes nothing to the product (a flexible `int rows[][4]` is one row), an
+  array with no known dimension is one element, and a product that overflows 64
+  bits or exceeds `int4` leaves the array untyped. The
   zero origin used to be assumed everywhere, so gfortran's `real :: a(3)` read
   as `float a[4]` and `a(-8:-4)` as `float a[1]`;
   (3) stack locals — direct `DW_OP_fbreg` children become typelock|namelock stack
