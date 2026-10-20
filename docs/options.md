@@ -751,6 +751,10 @@ Three tiers:
 | kuna functions reports a tbb or tbh function far smaller than its symbol | [`thumbswitch`](#thumbswitch) |
 | a function called only from a switch case is missing from a stripped firmware image | [`thumbswitch`](#thumbswitch) |
 | aif adds entries inside cortex-m switch statements | [`thumbswitch`](#thumbswitch) |
+| aif lists return-terminated i386 switch cases as functions | [`x86listingswitch`](#x86listingswitch) |
+| a direct callee reached only through an i386 switch case is missing from discovery | [`x86listingswitch`](#x86listingswitch) |
+| the discovery Listing stops at an absolute-pointer jump table | [`x86listingswitch`](#x86listingswitch) |
+| independent reference queries see case bodies absent from the initial instruction partition | [`x86listingswitch`](#x86listingswitch) |
 | kuna xrefs reports 0 references to a function called only from a switch case | [`switchreach`](#switchreach) |
 | a function called from a switch case body has no caller in decompile-graph | [`switchreach`](#switchreach) |
 | calleevote refuses a function because its recorded calls differ from the call graph | [`switchreach`](#switchreach) |
@@ -1238,6 +1242,8 @@ Three tiers:
 | a 16-byte struct return (JSValue, div_t, a fat pointer, a two-word value) is lost at the call site | [`callretpair`](#callretpair) |
 | a tag-and-payload pair is tested right after a call and the tag variable is never assigned | [`callretpair`](#callretpair) |
 | a caller that reads only the high word of a 64-bit callee result prints a bare `full(a0);` and an unassigned `// r1`, `// edx` or `// v1` local | [`callretpair`](#callretpair) |
+| an untyped MIPS32 big-endian producer loses its low return word despite a declared 64-bit consumer | [`callwide`](#callwide) |
+| producer and caller disagree about a complete big-endian eight-byte integer return | [`callwide`](#callwide) |
 | a long long return on a big-endian 32-bit target prints CONCAT44 with the low word first | [`bejoin`](#bejoin) |
 | a 64-bit product, sum or shift returned on PowerPC, MIPS, SPARC or ARM big-endian comes back with its halves swapped | [`bejoin`](#bejoin) |
 | an AVR function returning a 16-bit int prints a read of R25R24 nothing assigns | [`bejoin`](#bejoin) |
@@ -2843,6 +2849,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · GH-299
 - **Example:** `--option thumbswitch off`
 
+### `x86listingswitch` -- on | off, default `off`
+
+- **Symptoms:** aif lists return-terminated i386 switch cases as functions; a direct callee reached only through an i386 switch case is missing from discovery; the discovery Listing stops at an absolute-pointer jump table; independent reference queries see case bodies absent from the initial instruction partition.
+- **What it does:** Read a locally proved absolute-pointer switch table in the discovery Listing on linked i386 ELF and PE images. The unsigned range check must constrain the same whole-width index used by the jump, with no bypass, clobber, invalid slot, unproved address wrap, or established function conflict. Read exactly the proved count up to jumptablemax, then walk the cases as instruction successors and recover their direct callees. Independent functions and undefined gaps between case blocks are not claimed as a case span. Reconciliation runs after serial or parallel decoding over isolated shared snapshots for at most sixteen rounds; a late invalidated proof, extra round, or candidate memory-budget refusal retains the ordinary Listing. Resuming an expanded Listing rebuilds ordinary coverage from the new seed set before proving switches again.
+- **When to flip:** Enable to decode return-terminated i386 switch cases before AIF can mistake them for functions, especially with listing on and fast_funcdisc off. Default off: newly reached ordinary tail jumps can hide independent function starts from the gap walk (seven real starts lost in the measured Wine corpus). Already-established entries are preserved; fast_funcdisc can independently name table cases, so those conflicts are refused rather than withdrawn. Missing or ambiguous proof leaves the switch unresolved. This option changes only the discovery Listing; the independent xrefs table policy is unchanged.
+- **Where / provenance:** P1/code-data-partition · kuna · new-analysis · GH-299
+- **Example:** `--option listing on --option fast_funcdisc off --option aif on --option x86listingswitch on`
+
 ### `switchreach` -- on | off, default `on`
 
 - **Symptoms:** kuna xrefs reports 0 references to a function called only from a switch case; a function called from a switch case body has no caller in decompile-graph; calleevote refuses a function because its recorded calls differ from the call graph; protoorder decompiles a caller before the callees its switch cases call; every call inside a switch is missing from a gcc -O0 binary; a recursive interpreter function loses its pointer parameter types in a whole-binary run.
@@ -3783,6 +3797,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P4/output-prototype · ghidra · correctness-fix · repipe-bytecode-reader-return-discarded
 - **Example:** `option callretpair off`
 
+### `callwide` -- on | off, default `off`
+
+- **Symptoms:** an untyped MIPS32 big-endian producer loses its low return word despite a declared 64-bit consumer; producer and caller disagree about a complete big-endian eight-byte integer return.
+- **What it does:** Retain an eight-byte integer return in the ABI order only when a complete bounded sealed non-PIC MIPS32-BE executable proof finds a declared eight-byte consumer, both producer-written words at every return, and representable uses at every direct caller. A frozen whole-image verdict governs the producer, all callers and project declarations before rendering. ARM and other architectures, missing declaration provenance, returnable or indirect control, unsupported storage, incomplete bytes and exhausted bounds refuse promotion. Newly needed DWARF subregister returns also require the current narrowext policy to define their full return register (compiler for this MIPS ABI); the option never changes that policy. Requires bejoin evidence; off and the other bejoin modes preserve their existing behavior. Default off while validation is pending.
+- **When to flip:** Enable for a big-endian register-pair producer whose untyped return loses a low word despite a caller forwarding both words unchanged to one declared eight-byte integer parameter. Check whole-image admission and emitted C/header agreement; this option does not infer width from ambiguous producer instructions or open caller sets.
+- **Where / provenance:** P4/output-prototype · kuna · new-caller-evidence · callwide
+- **Example:** `option callwide on`
+
 ### `bejoin` -- off | evidence | on, default `evidence`
 
 - **Symptoms:** a long long return on a big-endian 32-bit target prints CONCAT44 with the low word first; a 64-bit product, sum or shift returned on PowerPC, MIPS, SPARC or ARM big-endian comes back with its halves swapped; an AVR function returning a 16-bit int prints a read of R25R24 nothing assigns.
@@ -3811,7 +3833,7 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 
 - **Symptoms:** a double return becomes SUB84 or zero; an ARM hard-float function loses its d0 parameter; a caller reads an undefined floating result.
 - **What it does:** Recover complete scalar VFP return values and the double-width argument storage they use when an ARM ELF container states the VFP procedure-call standard.
-- **When to flip:** Turn on when ARM hard-float code truncates a double return to its low word or loses a double input. Requires consistent ELF ABI evidence; soft-float, missing metadata, and explicit prototypes keep their existing contracts. A double argument at a call needs the callee's declared or protoorder-recovered prototype, so it appears in a callee-first decompile-all, not in a single-function decompile.
+- **When to flip:** On in the aggressive preset, which auto selects for binaries under 500 KiB; off in the catalog, so the reliable and fast presets and the datatest corpus keep the truncated return. Turn on when ARM hard-float code truncates a double return to its low word or loses a double input. Requires consistent ELF ABI evidence; soft-float, softfp, missing metadata, and explicit prototypes keep their existing contracts, so on any other image the option changes nothing. A double argument at a call needs the callee's declared or protoorder-recovered prototype, so it appears in a callee-first decompile-all, not in a single-function decompile. A returned constant no float literal spells (a NaN payload) is returned bit-exact through a union; AEABI and libgcc soft-float helpers keep the base standard; a VFP register-bank save or restore is no parameter and no result.
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · arm-hard-float-return
 - **Example:** `option armfloatreturn on`
 
@@ -3835,7 +3857,7 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 
 - **Symptoms:** missing floating argument; double input split into two words; caller and callee disagree on mixed argument contract.
 - **What it does:** Recover scalar ARM hard-float inputs with their full floating widths and consistent caller/callee storage, on top of armfloatreturn. Uses positive VFP ABI evidence, preserves declared prototypes, keeps input widths independent of overlapping return storage, leaves the AAPCS-VFP back-fill slot out of recovered parameter lists, and gives a call the VFP inputs its callee's arity-sound contract states, a stated double held as two words passed whole; an unused trailing float an -O0 callee only spills is still passed though the callee's list omits it. Unknown cross-bank source order uses the model order; floating aggregates and vectors are recovered only as the scalar words or doubles their reads show, never as the source grouping.
-- **When to flip:** Turn on together with armfloatreturn (alone it changes nothing) when scalar ARM VFP inputs disappear, split into word parameters, or disagree with their callers. Unknown calls need a proven callee contract. Declared prototypes outrank recovery. Variadic format calls use base AAPCS storage. A double a callee reads only as integer words, as on single-precision FPUs, keeps what armfloatreturn recovers.
+- **When to flip:** On in the aggressive preset with armfloatreturn, which auto selects for binaries under 500 KiB; off in the catalog. Turn on together with armfloatreturn (alone it changes nothing) when scalar ARM VFP inputs disappear, split into word parameters, or disagree with their callers. Unknown calls need a proven callee contract. Declared prototypes outrank recovery. Variadic format calls use base AAPCS storage. A double a callee reads only as integer words, as on single-precision FPUs, keeps what armfloatreturn recovers.
 - **Where / provenance:** P4/input-prototype · kuna · correctness-fix · arm-mixed-vfp-arguments
 - **Example:** `option armfloatargs on`
 

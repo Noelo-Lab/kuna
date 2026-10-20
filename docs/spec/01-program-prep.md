@@ -1720,14 +1720,23 @@ moves.
   (`nanf`, `sqrtf`, `fabsf`) stays out, and its import stub is recovered from what
   its callers read instead (chapter 04). These rows are seeded only on x86 and AArch64
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_typedcallabi.rs (returns_doubles_whole)`),
-  whose return recovery reads a `double` whole (`xmm0`, `ST0`, `d0`). ARM gets
-  none of them. Its default model lists only `s0`..`s7` among the outputs, so on
+  whose return recovery reads a `double` whole (`xmm0`, `ST0`, `d0`), and on a
+  hard-float ARM image once `armfloatreturn` applies (chapter 04). Otherwise ARM
+  gets none of them. Its default model lists only `s0`..`s7` among the outputs, so on
   a hard-float image a function returning what it computed from `strtod` was
   recovered as `unsigned int`, the low half of `d0`, where it had been `void`.
   A soft-float or `-mfloat-abi=softfp` image hands a `double` around in
   `r0:r1`, and its callers hold that as a 64-bit integer: the rows made such a
   function `double`, which those callers then converted by value, where it had
-  returned the right `unsigned long long`. An operator-declared name
+  returned the right `unsigned long long`. Because `armfloatreturn` is set after
+  the load, an ARM image holds these rows back
+  (`decompiler/crates/kuna-analysis/src/pass.rs (arm_float_prototypes)`) with a
+  second, ARM-only table of the C99 `<math.h>` functions and glibc's `sincos`
+  (`kuna_libcsigs.rs (LIBM_VFP)`: `double log(double)`, `float sinf(float)`,
+  `long lrint(double)`, `double ldexp(double,int)`, ...; each row checked against
+  `gcc -aux-info` over glibc's `<math.h>`, `double *` slots as `void *` as in
+  `modf`), and the first decompile parks them only when the option applies to
+  the image. An operator-declared name
   (`seed_declared_libc_prototype`) is refused on ARM the same way. The signatures
   themselves are reduced from the platform's own C declarations (`gcc -aux-info`
   over the standard headers, GCC's builtin types for the FORTIFY `_chk` entry
@@ -6245,6 +6254,96 @@ case bodies, and what they call, on every Listing build, so discovery alone
 takes longer where tables are read (`kuna functions` about 8% on betaflight and
 that libc), while a whole-binary run gets faster because no case body is
 decompiled as a function of its own. It is ARM-only and needs a walk, so it is inert without `--option listing on`.
+
+(kuna, GH-299) **Bounded i386 switch coverage** (`x86listingswitch`, default-off;
+`decompiler/crates/kuna-analysis/src/listing/kuna_x86listingswitch.rs`) extends
+the discovery Listing for linked little-endian i386 ELF and PE images. It
+recognizes a computed jump whose own p-code loads a four-byte destination from
+`table + index * 4`. An unsigned guard on that exact whole 32-bit index must
+constrain the dispatch along one local predecessor chain, with at most sixteen
+instructions and 256 p-code operations. The proof tracks machine-width values,
+flag arithmetic, and supported normalization; it refuses unrelated comparisons,
+signed bounds, unknown upper bits, partial-register clobbers, unproved address
+wrap, calls, and alternate incoming edges that bypass the guard. Incoming edges
+come from decoded instruction flow and previously admitted table edges, so
+dropping captured references in a partition-only Listing does not weaken the
+proof. The nearest preceding function entry supplies no ownership evidence.
+
+The reader takes exactly the proved number of aligned words, capped by the
+live `jumptablemax`; fewer than two entries is not a switch. Every byte read
+must belong to allocated, read-only, file-backed data, and every destination
+must be in the dispatch's executable section. No destination may lie inside
+an instruction that starts in the fifteen bytes below it, even where another
+instruction also starts at it: two words of one table a byte apart decode
+both, and the overlapping decode can reach code nothing else does, so the
+re-check against the completed candidate refuses it. An invalid in-bound word refuses
+the whole table. No missing proof falls back to an unbounded pointer scan. A
+callback word immediately after a four-case table therefore stays outside its
+successors. `PoolImage::contains_bytes` enforces the complete read contract;
+the existing object loader already clips PE data to its virtual/raw section
+bounds. This does not change the separate xrefs walk's pointer-scan policy.
+
+After the ordinary serial or parallel walk finishes, shared reconciliation
+keeps that ordinary model as the fallback and builds an isolated candidate.
+Proved targets are instruction roots, not function entries; ordinary calls from
+newly reached code retain the existing function-claim rules. Reconciliation
+collects dispatches in address order, extends their decoded successors, and
+repeats for at most sixteen rounds. Before publication it proves every admitted
+dispatch again against the completed candidate, including newly exposed direct
+and computed incoming edges and new function claims. An invalidated proof, a
+newly conflicting entry, a required seventeenth round, or exhausted memory
+budget discards the whole candidate, including earlier independent expansions.
+No provisional instructions, references, or callees escape into the fallback.
+Resume rebuilds ordinary coverage before applying this feature, including when
+the option is disabled after an earlier expansion, so extended coverage cannot
+be mistaken for ordinary fallback provenance.
+
+The budget is at most 1 GiB and one quarter of available host memory, or
+128 MiB when availability is unknown. It accounts for the ordinary model,
+added instructions, pending targets/references, and retained dispatch edges;
+incoming-edge collection and table rows also consume a checked aggregate
+record allowance before allocation. Resident growth is checked when available,
+but its absence does not remove the record allowance. Refusal preserves the
+ordinary model rather than retaining an incomplete expansion.
+
+Coverage records exact decoded instruction members. Cases may surround an
+independent function and an undefined gap: neither the intervening bytes nor
+an entry inside the first/last case span becomes owned by the dispatcher.
+Existing seeds and direct-call claims remain authoritative; an established
+case-entry conflict refuses the proof. Separate entry heuristics, including
+`fast_funcdisc` and tail-call entry recovery, retain their own policies. The
+feature remains opt-in because additional ordinary successor coverage can
+change which otherwise unreferenced functions the gap walk discovers. The
+measured corpus loses seven real tail-callee entries. Newly discovered entries
+can also make existing `funcboundflow` truncate emitted branches: crypt32's
+`0x6e8ee740` loses `memcpy` paths when `0x6e8eea21` becomes an entry, and
+`0x6e904a20` loses part of case five. Local table admission is not proof of
+improved whole-function C. Kernelbase's `GetComputerNameExW` also changes a
+520-byte array into a scalar used as a large output buffer. The preserved
+`abace009d9` audit reviewed 726 changed comparisons and 1,482 code or
+semantic-metadata hunks. A fresh `e265bf23` capture strictly verifies
+726 comparisons and 1,480 hunks, preserving every semantic API field,
+399 removed addresses and all seven true-start losses. Exact prior content
+permits annotation reuse; eighteen changed contexts and their 27 hunks were
+manually read again. The same seventeen addresses still fail in both arms,
+with no success-to-error transition or error repair. Fresh raw results
+retain eleven `new-error` labels from changed stopping diagnostics and six
+identical errors; natural queries omit
+the budget flag and all actual failures report 120 seconds, while forced
+supplements set it explicitly. Forced interior requests are not newly valid
+entries. Completed review is not a claim of correct whole-image C.
+
+On latest tested base `dd4f9fde`, all 141 entry inventories and 744 arm models
+remain exact, as do complete-record panels on 20 controls and 13 known unsafe
+anchors. Native serial/parallel/stream fixture exports pass. The full 21-image
+C capture remains explicitly labeled with its `e265bf23` predecessor; these
+bounded current-base checks do not imply a new full-corpus C capture.
+Contention-logged current-base timing records enabled Wine discovery at
++7.17% wall and +7.17% child CPU. All samples/ranges are retained;
+`quiet=false` does not certify a tight global overhead bound. The feature stays
+off in every mode and adds no new function-boundary or tail-call policy. It is a
+partial improvement for GH-299; its original private PE and crackme
+acceptance cannot be established without those artifacts.
 
 (kuna) The walk's decode set is global, so it cannot say how long one function
 is: code two entries share is decoded under whichever entry reached it first. A

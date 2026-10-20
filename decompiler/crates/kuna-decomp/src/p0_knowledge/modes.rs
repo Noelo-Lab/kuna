@@ -221,6 +221,16 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // membership is what makes it the default rendering for the web page and for
     // every binary `auto` decompiles under 500 KiB.
     ("libcnames", "on"),
+    // (kuna) ARM hard-float scalar VFP contracts: a double returned whole in d0
+    // and float/double parameters in their s/d registers on both sides of a
+    // call. Shipped default OFF in the catalog; inert unless the ELF container
+    // states the VFP procedure-call standard, so soft-float, softfp and raw
+    // images print byte-identically. `armfloatargs` needs `armfloatreturn`.
+    // Measured over a 42-binary gcc/clang ABI corpus (hard, softfp and soft
+    // float; -O0/-O2/-Os) and 84 hard-float decbench firmware slices; see the
+    // options' catalog rows.
+    ("armfloatreturn", "on"),
+    ("armfloatargs", "on"),
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),
@@ -563,17 +573,23 @@ mod tests {
         /// `callmechanisms` installs every compiler-spec prototype boundary
         /// payload, and the stock `ppc_64_le.cspec` one stores `r2Save` to the
         /// ELFv1 TOC slot `0x28(r1)`, which is a live local in an ELFv2 frame.
+        /// `x86listingswitch` reaches valid cases but ordinary tail jumps from
+        /// them can hide independent function entries from the AIF gap walk;
+        /// the i386 corpus lost seven true starts, so it remains explicit.
         ///
         /// `regsigned` declares a sign-extended register local at its narrow
         /// width. On decbench type_match it gained a few perfect functions on
         /// ARM firmware and none on x86-64, and a narrowed value that a wider
         /// reader takes back gains a cast (`(long)(int)v` on AArch64).
+        ///
+        /// `callwide` requires complete caller evidence and remains an explicit
+        /// opt-in until its default validation is complete.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "callmechanisms", "regsigned"];
+              "armconstshift", "callmechanisms", "regsigned", "x86listingswitch", "callwide"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open
@@ -589,9 +605,6 @@ mod tests {
         /// asked for was run over the 110 stripped non-x86-64 decbench twins and all
         /// four passed it, so they are in `AGGRESSIVE_OVERRIDES` above.
         const UNEVALUATED: &[&str] = &[
-            // Scalar VFP inference needs a broader ABI and aggregate corpus before preset promotion.
-            "armfloatreturn",
-            "armfloatargs",
             // Stack-address liveness can be incidental; synthetic regressions and
             // a local speed measurement do not justify a broad preset flip.
             "stackaddrargtrial",

@@ -379,6 +379,9 @@ mod verify_srcmap;
 #[path = "verify_switchtable.rs"]
 mod verify_switchtable;
 
+#[path = "verify_x86listingswitch.rs"]
+mod verify_x86listingswitch;
+
 #[path = "verify_symbolstream.rs"]
 mod verify_symbolstream;
 

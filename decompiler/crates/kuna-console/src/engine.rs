@@ -456,6 +456,7 @@ pub struct InsnFlow {
 /// keep them on the program so the console can resolve an option name to its
 /// element id and dispatch it against the real architecture.
 pub struct ConsoleProgram {
+    pub(crate) callwide: crate::kuna_callwide::State,
     /// The engine assembly (owns the `Architecture` god object).  Both the XML
     /// `<binaryimage>` frontend and the real-ELF frontend slice their leaf
     /// architecture back to this `SleighArchitecture` once the loader is opened
@@ -650,6 +651,16 @@ fn code_end_in_target_units(value: u64, word_size: u64) -> u64 {
 }
 
 impl ConsoleProgram {
+    pub fn callwide_changed(&mut self) {
+        self.callwide.changed();
+        self.arch_mut().kuna_callwide.clear();
+    }
+
+    pub fn callwide_unavailable(&mut self, reason: &'static str) {
+        self.callwide.unavailable(reason);
+        self.arch_mut().kuna_callwide.clear();
+    }
+
     /// Borrow the `Architecture` god object (C++ `dcp->conf`, viewed as the base).
     pub fn arch(&self) -> &Architecture {
         self.arch
@@ -2043,6 +2054,7 @@ impl ConsoleProgram {
         &mut self,
         entries: &[(String, Address)],
     ) -> KunaResult<usize> {
+        self.callwide_changed();
         let taken: std::collections::HashSet<String> =
             self.symbols.iter().map(|s| s.name.clone()).collect();
         let mut seeded = 0usize;
@@ -2085,6 +2097,7 @@ impl ConsoleProgram {
     /// the table is skipped (the C++ `addFunction` no-ops on an existing match via
     /// `queryFunction`).
     pub fn read_loader_symbols(&mut self) -> KunaResult<()> {
+        self.callwide_changed();
         let type_code = self.arch().types().get_type_code()?;
         let min_size = self.arch().min_funcsymbol_size;
         let num_spaces = self.arch().manage().num_spaces();
@@ -2130,6 +2143,7 @@ impl ConsoleProgram {
     }
 
     fn register_symbol_record(&mut self, name: &str, addr: Address, sole: bool) {
+        self.callwide_changed();
         // (kuna `symbolnamebound`) Same bound as the loader stream above, so an
         // analysis-discovered or hand-mapped name agrees with the scope path the
         // symbol table nests it under.
@@ -2157,6 +2171,7 @@ impl ConsoleProgram {
     /// Record a caller-declared byte extent for the function entered at `vma`
     /// (`declared_extents`); `size <= 0` clears it back to unbounded.
     pub fn declare_extent(&mut self, vma: u64, size: int4) {
+        self.callwide_changed();
         if size > 0 {
             self.declared_extents.insert(vma, size);
         } else {
@@ -2197,6 +2212,13 @@ impl ConsoleProgram {
     /// directive so the report keeps the caller's own order however the
     /// directives are later dispatched.
     pub fn set_assertions(&mut self, directives: Vec<crate::assertions::Directive>) {
+        if directives.iter().any(|directive| matches!(directive.body,
+            crate::assertions::Body::Flow { .. }
+            | crate::assertions::Body::Param { func: None, .. }
+            | crate::assertions::Body::Return { func: None, .. }))
+        {
+            self.callwide_unavailable("selected function flow or storage assertions lack a full image proof");
+        }
         self.assertion_outcomes = vec![None; directives.len()];
         self.assertions = directives;
     }
@@ -2433,6 +2455,7 @@ impl ConsoleProgram {
     /// Add a successfully applied byte overlay to the deferred walk, clipped
     /// to executable mappings. Unwritten virtual tails remain outside its ranges.
     pub(crate) fn note_materialized_bytes(&mut self, addr: &Address, size: usize) {
+        self.callwide_unavailable("effective byte overlays require a new complete image proof");
         if self.pending_entry_thumb.is_none()
             || !self.analysis_code_space.as_ref().zip(addr.get_space())
                 .is_some_and(|(code, space)| Rc::ptr_eq(code, space))
@@ -3669,6 +3692,7 @@ fn empty_program(
     description: String,
 ) -> ConsoleProgram {
     ConsoleProgram {
+        callwide: Default::default(),
         arch,
         registry,
         symbols: SymbolStream::default(),
@@ -4314,6 +4338,10 @@ pub fn bootstrap_from_object_with_isa(
     // by the CLI after `load file`, so it is built at the deferred commit
     // (`read symbols`) when the flag is known — not at load. `bytes` is moved
     // here (it is unused below this point).
+    prog.callwide = crate::kuna_callwide::State::object(&bytes);
+    if explicit_isa {
+        prog.callwide_unavailable("explicit decode mode requires a new complete image proof");
+    }
     prog.analysis_image = Some((path.to_string(), bytes));
     prog.loader_data_objects = loader_data_objects;
     prog.import_slots = import_slots;
@@ -5031,6 +5059,12 @@ fn commit_analysis_output(
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
+    let held: Vec<_> = out
+        .arm_float_prototypes
+        .into_iter()
+        .map(|(at, pieces)| (at.map(|a| Address::new(Rc::clone(code_space), a)), pieces))
+        .collect();
+    prog.arch_mut().arm_float_library_prototypes.extend(held);
 
     // 5d. A C runtime import is `__cdecl` even where the image's default
     //     convention leaves the cleanup to each callee (`x86win.cspec`'s

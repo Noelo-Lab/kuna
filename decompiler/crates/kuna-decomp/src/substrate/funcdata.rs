@@ -466,6 +466,7 @@ pub struct Funcdata {
     /// about without one. Seeded by the driver
     /// ([`crate::kuna_bejoin::seed_wide_returns`]).
     kuna_wide: Option<crate::kuna_bejoin::WideView>,
+    kuna_callwide: Option<Rc<crate::p4_calls::kuna_callwide::Ledger>>,
     /// (kuna `calleedeadarg`) Per direct-call-target evidence about the registers
     /// the callee is *proven* never to read before writing, keyed by
     /// `(space index, entry offset)`.  Seeded by the driver after the flow build
@@ -795,6 +796,7 @@ impl Funcdata {
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
             kuna_wide: None,
+            kuna_callwide: None,
             kuna_callee_entry_dead: std::collections::HashMap::new(),
             kuna_hiddenret_vetoed: std::collections::HashSet::new(),
             kuna_own_entry_dead: None,
@@ -1084,6 +1086,14 @@ impl Funcdata {
     /// when the driver took them.
     pub fn kuna_wide(&self) -> Option<&crate::kuna_bejoin::WideView> {
         self.kuna_wide.as_ref()
+    }
+
+    pub(crate) fn kuna_set_callwide(&mut self, proof: Option<Rc<crate::p4_calls::kuna_callwide::Ledger>>) {
+        self.kuna_callwide = proof;
+    }
+
+    pub(crate) fn kuna_callwide(&self) -> Option<&crate::p4_calls::kuna_callwide::Ledger> {
+        self.kuna_callwide.as_deref()
     }
 
     /// (kuna `libcnames`) The library names the naming pass gave numbered locals.

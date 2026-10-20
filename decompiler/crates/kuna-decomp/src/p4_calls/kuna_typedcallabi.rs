@@ -121,9 +121,10 @@ pub fn without_fpu(arch: &Architecture) -> bool {
 /// model lists only `s0`..`s7` among its outputs, so a hard-float function
 /// returning a `double` it computed from a declared `double` is recovered as the
 /// `unsigned int` low half of `d0`; a soft-float or `softfp` image passes it in
-/// `r0:r1`, and its callers hold that as a 64-bit integer.
+/// `r0:r1`, and its callers hold that as a 64-bit integer. A hard-float ARM
+/// image under `armfloatreturn` returns it whole in `d0`.
 pub fn returns_doubles_whole(arch: &Architecture) -> bool {
-    x86_or_aarch64(arch)
+    x86_or_aarch64(arch) || crate::kuna_armfloatreturn::applies(arch)
 }
 
 /// Does `pieces` declare a `float` or `double` parameter or return value?

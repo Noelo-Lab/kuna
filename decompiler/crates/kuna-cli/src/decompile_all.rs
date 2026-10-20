@@ -672,7 +672,10 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
     let inventory = dir.join(jobs::INVENTORY_FILE);
     if !args.jobs_full_load && inventory.is_file() {
         seed_worker_inventory(&mut prog, &inventory.to_string_lossy())?;
+    } else if !args.jobs_full_load {
+        prog.callwide_unavailable("worker did not receive a complete function inventory");
     }
+    kuna_console::kuna_callwide::prepare(&mut prog);
     faults.after_load(dir);
     arm_fn_budgets(&mut prog, args);
     // (kuna `structsynth`) A recording worker reports every ledger lookup and
@@ -859,7 +862,11 @@ fn seed_worker_inventory(prog: &mut ConsoleProgram, path: &str) -> Result<(), St
         .map(std::rc::Rc::clone)
         .ok_or("no default code space")?;
     let manage = prog.arch().manage();
-    let entries: Vec<(String, Address)> = jobs::read_spec(path)?
+    let inventory = jobs::read_spec(path)?;
+    let callwide_inventory = prog.arch().call_wide.then(|| inventory.iter().map(|entry| kuna_console::kuna_callwide::InventoryEntry {
+        address: entry.addr, size: entry.size, name: entry.name.clone(), aliases: entry.aliases.clone(),
+    }).collect());
+    let entries: Vec<(String, Address)> = inventory
         .into_iter()
         .map(|t| {
             let space = manage
@@ -870,8 +877,11 @@ fn seed_worker_inventory(prog: &mut ConsoleProgram, path: &str) -> Result<(), St
         })
         .collect();
     prog.seed_function_inventory(&entries)
-        .map(|_| ())
-        .map_err(|e| format!("seeding the worker function inventory failed: {}", e.explain()))
+        .map_err(|e| format!("seeding the worker function inventory failed: {}", e.explain()))?;
+    if let Some(inventory) = callwide_inventory {
+        kuna_console::kuna_callwide::replay_inventory(prog, inventory);
+    }
+    Ok(())
 }
 
 /// The parent side of `--jobs N`: flatten the resolved targets (an `Address`
@@ -1692,6 +1702,9 @@ pub(crate) fn load_program(
         kuna_console::assertions::apply_program_scoped(&mut prog);
     }
     crate::kuna_allocrelease::after_analysis();
+    if args.jobs_worker.is_none() {
+        kuna_console::kuna_callwide::prepare(&mut prog);
+    }
     Ok(prog)
 }
 
@@ -2356,6 +2369,7 @@ mod provenance_json_tests {
             proto: None,
             emitted_c_name: None,
             call_declarations: Vec::new(),
+            callwide_prototypes: Vec::new(),
             variables: vec![VarInfo {
                 name: "x".into(),
                 type_name: "int".into(),

@@ -1,6 +1,7 @@
 # 04 — Calls & prototypes
 
-`armfloatargs on` (default off) recovers scalar ARM32 VFP inputs only when
+`armfloatargs on` (off in the catalog, on in the `aggressive` preset with
+`armfloatreturn`) recovers scalar ARM32 VFP inputs only when
 the container states the hard-float ABI and `armfloatreturn` is on. Alone it
 changes nothing: the inputs it recovers rely on that option's widened
 d-register model and on its rule that keeps an unused VFP parameter in its
@@ -16,11 +17,25 @@ floating parameters; a floating aggregate or vector is seen only as the scalar
 words or doubles its reads show.
 
 A d-register input that the function reads only as its two words, each of
-which a floating operation consumes or a callee states as a float, becomes the
-two s-register inputs: heritage joined two single-precision parameters because
-another access covers the whole register. Words read only as integers, such as
-a double handed to a base-AAPCS helper in core registers, are left as
-`armfloatreturn` alone leaves them.
+which a floating operation consumes, a callee states as a float, or the code
+moves as a single-precision value (copied into another s-register, or stored or
+spilled to the stack from one), becomes the two s-register inputs: heritage
+joined two single-precision parameters because another access covers the whole
+register. libvorbis's `setup_tone_curves` copies `s1` into `s22` and spills
+`s0`, so it takes three floats rather than a double and a float. A word that
+moves as a single is also typed `float`. Words read only as integers, such as a
+double handed to a base-AAPCS helper in core registers, are left as
+`armfloatreturn` alone leaves them (`kuna_armfloatargs.rs (single_move)`).
+
+An 8-byte VFP input that no reader takes as a double is not a parameter
+(`kuna_armfloatargs.rs (stray_vector_input)`): followed through copies, merges
+and bitwise lane edits, its value reaches only its own low word and vector user
+operations, never a floating operation on the whole register, a store, a call
+or a return. NEON lane loads (`vmov.16 d0[0],r12` inside a loop) and predicated
+loads (`it ls; vldr.ls s0,[r2]` beside a call that writes `d0` on the other
+path) leave such a read of the incoming register on paths the code never runs:
+libwebp's NEON transforms and `GetEntropyUnrefined_C` otherwise take an
+`unsigned long long` first parameter.
 
 The AAPCS-VFP back-fill slot is not a parameter. When a single-precision
 parameter fills the low half of a d-register and every later VFP parameter is a
@@ -1822,6 +1837,148 @@ oversized Varnode with a SUBPIECE, translating stack trials into the caller's
 frame and marking those ranges not-mapped, and materializing recovered but
 unreferenced parameters as fresh Varnodes. For a locked varargs prototype the
 fixed arguments sort to the front first (`ParamActive::sort_fixed_position`).
+
+### Caller-proved big-endian pair returns
+
+The `callwide` option (`off|on`, default **off**) adds positive caller evidence
+to `bejoin evidence`. It is inert with `bejoin off` or `bejoin on`, and no mode
+preset enables it. A producer's own declared output takes precedence. The
+feature addresses a narrower ambiguity than instruction-shape recovery: the
+same big-endian machine instructions can compute a 64-bit result or only its
+high word. A declared eight-byte consumer parameter can distinguish those
+uses, provided the producer actually defines both words and every caller is
+accounted for. A consumer's type alone is insufficient.
+
+`kuna_callwide::publish_mips`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callwide.rs`) freezes one
+address/model ledger before rendering. Declaration ingestion records the
+origin of explicit assertions, parsed declarations and enabled DWARF; an
+inferred prototype lock is not positive evidence. The preflight uses the full
+image inventory, before selecting functions or worker chunks. Missing complete
+container facts, unresolved declarations or unsupported storage keep the
+ordinary result. Project bodies and headers use the same frozen facts.
+
+Declarations are staged until a producer is accepted. Only contracts used by
+accepted producers, their direct callers and typed sinks are then bound; failed
+candidate dependencies are discarded. A zero verdict parks nothing. Binding
+may revoke the first proof, so preflight performs at most one bounded replay
+and requires the identical producer/declaration sets and model before rendering.
+A new DWARF declaration narrower than the return register additionally requires
+the current `narrowext` rule to define its full four-byte return storage. On this
+MIPS ABI that requires the user's `narrowext compiler` policy. With `abi` or
+`off`, such candidates decline without publishing those DWARF contracts; the
+feature does not silently enable compiler-specific extension assumptions.
+New subregister input contracts likewise require the current extension rule to
+define their complete model word. Used integer contracts have only canonical
+one-, two-, four- or eight-byte widths, and a boolean occupies one byte.
+
+Prototype assignment for the proof uses a private JOIN table with the same
+physical spaces and models. Existing model JOIN addresses are resolved against
+their original table by address-space identity; newly assigned JOIN addresses
+use the private table. Neither virtual JOIN identities nor proof-local storage
+escape into the ledger. A rejected candidate cannot reorder later recovery by
+allocating entries in the drive's JOIN pool.
+
+Initial admission is restricted to fixed-address, non-PIC, legacy-delay-slot
+MIPS32 big-endian executables. ARM and other architectures decline unchanged:
+the existing ARM CLI caller scan does not establish this feature's complete
+executed transfer set or canonical return-token provenance, and remains
+unchanged. The bounded MIPS whole-image
+proof (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callwide/mips.rs
+(closed_image)`) covers every executable byte, including unowned gaps and
+delay words. Unowned words must be NOPs. Its sole external ELF entry is exactly
+one owned 16-byte `JAL known_coordinator; NOP; J self; NOP` stub: the self-jump
+at root+8 uses the machine's actual pseudo-direct PC rule, and all root bytes
+belong to one immutable region. No other transfer enters the root, and it
+never returns outside the image. The root is not a promotion candidate.
+Initializer/finalizer entrypoints, imports, exports, dynamic loading and other
+external communication refuse admission. Ordinary functions reject unknown,
+indirect, opaque, recursive and tail transfers. Each direct-call DAG function restores its entry
+return-address token, frame pointer, stack pointer and ABI-unaffected integer
+registers; stores are aligned words
+in one private frame, and loads require same-function initialized private cells.
+The effective return address after a JAL delay word must
+still be that call's link, and stack restoration is checked after the complete
+return bundle. Merely decoding `jr ra` as RETURN is not a return-token proof.
+This establishes the executed caller set. It does not claim that integer
+arithmetic cannot produce a code address: numeric values cannot become
+indirect transfers, external publications, external call arguments or an
+external root return. Returnable/open MIPS images decline. The native replay
+harness retains the same unused root and all matched function bytes, but its
+separate runtime entry is outside this proof.
+
+Only `kuna_callwide::publish_mips` can authorize the fixed-language JR-ra
+mode operation; it recomputes the entire sealed proof from immutable bytes and
+the complete observed call set. The raw walk matches native `03e00008`, the
+eight-byte bundle, named `setISAMode` index, exact `ISAModeSwitch`/ra/pc storage,
+and its mask/switch/PC dependency sequence. Every proved internal return link
+is aligned, so this mode is zero. It omits only that CALLOTHER, retaining all
+delay instructions and the final RETURN. ARM, unsealed images, other modes,
+extra opaque operations and malformed raw sequences have no such authority.
+
+Loader replacement, mutable translator access and the mutable Architecture
+context accessor revoke existing Funcdata views immediately. A separate read-only
+context adapter keeps ordinary per-drive and lazy-analysis reads from revoking
+a shared batch verdict. Direct writes through raw translator/loader interior
+handles are a trusted embedding responsibility: clear the proof or reload the
+image before reusing facts. Unsupported frontends receive no initial facts;
+this feature does not observe arbitrary external raw-handle mutations.
+
+The raw-pcode walk in
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callwide/proof.rs` requires both
+full return words to be producer-written at every return. Carry dependencies
+between those words are allowed; an entry leftover or partial word is not.
+At least one direct caller must forward both unchanged words, in ABI order,
+to one explicitly declared eight-byte integer formal with the exact model and
+storage. All other sites must satisfy that same forwarding contract, use only
+the supported first-register high piece, or prove the result ignored. An
+unknown boundary, unsupported low-word use or conflicting caller vetoes the
+whole producer. Sites are never sampled.
+
+Hard limits are 64 KiB and 16,384 aligned words for MIPS closure, 256 sites per
+producer, 32 instructions and 1,024 p-code operations per forwarding walk, and
+512 instructions and 20,000 operations per producer. An aggregate operation
+budget bounds all candidates. Exhaustion publishes no partial traversal prefix.
+Unique temporary facts expire at a complete machine-instruction bundle, so a
+delay word participates in its branch's bundle without leaking facts into the
+next instruction.
+
+Return recovery retains only the still-present exact pair at every live RETURN,
+after ordinary trial scoring and before deriving the output map. The same
+verdict controls existing big-endian pair ordering and high-piece extraction at
+calls. A restart copies frozen facts; it does not discover a positive after an
+artifact has rendered. Replacing or clearing the architecture ledger revokes
+already copied drive views. Byte, declaration, model, inventory and control-flow
+changes cannot reuse an older positive. Ordinary inference does not become new
+declaration evidence.
+
+Project export also carries the proved return into a named callee declaration
+when the ordinary complete locked-prototype path has none. It copies the live
+post-drive operands and finalized storage, even when the recovered call-prototype
+store is empty. Arguments must be exact four-byte integer model words, with no
+recovery, regrouping or input locking. Present results must match the proved pair
+and integer representation. A canonical eight-byte unknown uses the existing C
+speller's unsigned representation; an ignored result takes only its width and
+physical pair from the live proof. These checks construct a local prototype
+without parameter assignment or allocation in the drive's JOIN table.
+
+Private ABI descriptors survive worker transport and streaming. The selected
+producer's own prototype is authoritative: four-byte signed and unsigned input
+words have compatible ABI bits, while result signedness, entry and arity must
+agree. Without that selected definition, differing external declarations fail.
+A stream may defer a conflicting record only when the exact producer entry is
+in its complete preknown selection. It retains subsequent records in order,
+within fixed bounds, until the actual definition resolves the conflict; a
+missing or incompatible definition leaves an explicit failed export. Selection
+never creates proof facts. Unsupported live contracts, conflicting definitions
+or type-name collisions fail before publishing a body with an implicit wide
+call. Ordinary locked-prototype conflict handling is unchanged, and declaration
+capture retains its original position after temporary C rendering.
+
+This option covers one closed caller-evidence family. Missing proof preserves
+ordinary output; open/PIC/indirect consumers and ambiguous body-only inference
+remain outside it. Default-on requires unchanged upstream parity, sound
+cross-function C/header replay and the measured speed budget.
 
 ### `ActionActiveReturn` / `ActionReturnRecovery` — return values
 
@@ -7029,15 +7186,38 @@ The ARM default model (`ARM.cspec`) lists the VFP registers only as the 4-byte
 `vmov.f64 d0,#1.5; bx lr` prints `unsigned int fixed(void) { return 0; }`, and a
 `double` parameter read from `d0` is never a parameter at all.
 
-`armfloatreturn` (off by default; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_armfloatreturn.rs`)
+`armfloatreturn` (off in the catalog; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_armfloatreturn.rs`)
 changes this only for an ARM ELF whose container states the VFP procedure-call
-standard. The loader decides that once per image
+standard. Both options are members of the `aggressive` preset, which `auto`
+selects below 500 KiB, so they are the default output for such a binary; the
+`reliable` and `fast` presets and the datatest corpus keep them off. Over 177
+probe binaries (six C sources built by gcc and clang for ARM and Thumb Linux
+and Cortex-M4F/M7, hard-float, softfp and soft-float, at -O0, -O2 and -Os), the
+soft-float and softfp images print byte-identically with the options on, and
+no function whose return and parameter types matched the source stops
+matching it. The loader decides that once per image
 (`decompiler/crates/kuna-analysis/src/loader/kuna_armfloatabi.rs`): a linked
 EABI5 executable or shared object must carry the hard-float ABI flag in its
 header, and any `.ARM.attributes` it has must agree; a relocatable object must
 say `Tag_ABI_VFP_args=1` in `.ARM.attributes`. Soft-float, `softfp`,
 conflicting, malformed, section- or symbol-scoped attributes, a raw image and
 the Ghidra front-end all state nothing, and the option then changes nothing.
+
+On such an image the library prototypes that declare a `float` or `double`
+are parked before the first decompile
+(`kuna_armfloatreturn.rs (park_float_library_prototypes)`): the libc rows that
+x86 and AArch64 take at load, and the `<math.h>` table chapter 01 describes, on
+the names the image imports. They are parked before the first function's
+`Funcdata` is built, since each `Funcdata` takes its snapshot of the parked
+callee prototypes when it is created: parked any later, the first function
+decompiled (the only one, for `kuna decompile`) reads none of them. A function
+that already carries a prototype from another source keeps it. Without them a PLT stub such as `log` or `strtod` was
+recovered `void`, its first reader decompiled reading `d0` after the call, and
+the return-recovery redo then decompiled the stub and every reader again
+(`voidret`): on libmpg123 that is its largest function a second time, +18% of
+the run. With them the readers see `double log(double)` the first time, which
+also types the arguments (`sincos` keeps libvorbis `mdct_init` from returning the
+`double` it leaves in `d0` for the next call).
 
 On such an image each function's copy of the default model gains an 8-byte
 float entry for every `d0`-`d7` register over its two s-register entries, on
@@ -7068,14 +7248,73 @@ Return trials are scored as usual, and the wider `d0` entry then wins the
 fill-in over a 4-byte `r0`. A value a call left in `d0` is therefore retired
 first: when an integer return trial holds, at every RETURN, a value the
 function computes and only returns (not a call's output), a VFP return trial
-whose value at every RETURN is only what a call left in the register is marked
-inactive. `half(x); return k + 1;` returns `k + 1` in `r0`, not `half`'s
-double; a function that returns `half`'s result and merely uses `r0` as scratch
-keeps the double. The machine code cannot tell every case apart: a `void`
+whose value at some RETURN is only what a call left in the register, or the
+register as the function received it, is marked inactive
+(`kuna_armfloatreturn.rs (drop_call_leftovers)`). `half(x); return k + 1;`
+returns `k + 1` in `r0`, not `half`'s double, and libmpg123's `mpg123_getpar`,
+which loads a double into `d0` on the one path that converts it and returns a
+status in `r0` on every path, keeps its `int` return. The VFP trial is also
+retired when every value the function wrote to it and hands to an exit is a
+temporary the body uses for something other than the return
+(`kuna_armfloatreturn.rs (temporaries)`): gcc compiles `(unsigned)(0.0 - x)`
+by widening `x` into `d0`, subtracting it and returning the converted
+difference in `r0`. A function that returns `half`'s result and merely uses
+`r0` as scratch keeps the double.
+
+A `d0` trial is also retired when every value the function wrote there and
+hands to an exit is the low half of a wider vector register
+(`kuna_armfloatreturn.rs (drop_vector_halves)`); what a call left, the incoming
+register and an indirect effect are neutral. AArch32 NEON has no double lanes,
+so such a value is a vector temporary: libsoxr's NEON `pffft_real_preprocess`
+leaves the low half of a vector it stored in `d0` and stays `void`. A scalar
+double the code computes and leaves in `d0` is not told apart from a result:
+libvorbis's `mdct_init` computes the argument of its next `sincos` call at the
+bottom of a loop and leaves it there on exit, which looks like a loop that
+returns its last value until the call's prototype says `sincos` takes it, so it
+prints `double`. The machine code cannot tell every case apart: a `void`
 function that calls `half` last and leaves `d0` alone, or an `int` stored as
 well as returned, looks like one returning `half`'s double. After the output trials are scored, a single used trial in
 `s0` or `d0` gives the returned value a float or double type before constant
-folding can drop its storage.
+folding can drop its storage. That lock states the convention's type, not a
+declaration, so `floatbits` (chapter 05) still follows the bit operations that
+build such a value (`kuna_armfloatreturn.rs (float_locked_return)`): a
+`copysignf` written on the bits of its two inputs keeps two float parameters
+instead of two `unsigned int` ones. A returned constant no float literal spells,
+a NaN with a payload or a signalling NaN, would print as `NAN`, which compiles
+to other bits. Once the literal-pool load it comes from has folded, at the
+start of each type-inference pass, each such constant that reaches a RETURN
+through copies and merges keeps the unsigned integer of its width
+(`kuna_armfloatreturn.rs (unlock_unspelled)`), so the float return reinterprets
+its exact bits: `float qp(void) { return ((union { unsigned int from; float
+to; }){ .from = 0x7fc00123 }).to; }`. A function whose constant arrives any
+other way gives up the lock, and its return is typed as `floatret` types it.
+
+The lock is not placed where a returned value arrives unchanged, through
+copies and merges, from a parameter outside the VFP registers
+(`kuna_armfloatreturn.rs (core_input_leaf)`): `float from_bits(unsigned u)` is
+`vmov s0,r0; bx lr`, and a float lock would spread to the parameter, so each
+caller's integer would be converted by value. Such a function keeps the
+integer return `floatret` gives it, as with the option off. An unoptimized
+build spills the integer to the stack and reloads it into `s0`; that round trip
+is visible only once the stack is in SSA form, so at the start of each
+type-inference pass a float-locked return that forwards an input outside the
+VFP registers gives up the lock (`kuna_armfloatreturn.rs (unlock_unspelled)`),
+and `from_bits` at `-O0` keeps its integer parameter too. A caller that holds
+a callee's convention float as integer bits reinterprets it, so with the option
+on that read does not withdraw the callee's float return
+(`kuna_armfloatreturn.rs (convention_float_storage)`, read by `voidret`).
+
+A tail call that forwards its float parameters untouched, such as `atan2f`'s
+`b.w __ieee754_atan2f`, gets them from `passthrough`'s argument claims on `s0`
+and `s1`. When the callee states no return a tail call can take (it hands a
+parameter back on some path), the wrapper's return comes from `voidret`'s
+forced return in the register its callers read, and a passthrough claim on
+that register would refuse it. With the option on, a VFP return register that
+passthrough claims only as a forwarded argument still takes the forced return
+(`kuna_armfloatreturn.rs (forwarded_vfp_return)`): the call that takes the
+argument leaves its own result there, so `atan2f` returns
+`__ieee754_atan2f`'s float instead of printing `void` beside callers that
+read its result.
 
 A float result is written to `s0`, the low half of `d0`, so a function that
 converts a double to float leaves `d0` holding the new low word and the old high
@@ -7083,8 +7322,37 @@ word. Before the return width is fixed, a bounded walk checks every normal
 return: if each one returns such a piece -- a fresh 4-byte write joined to the
 high word of an earlier `d0` value, through copies and joins, where a
 predicated join may also carry that earlier value itself -- the trial shrinks
-to `s0`. Whole doubles, mixed-width exits, reassembled halves of one double,
-and incomplete or cyclic proofs keep the 8-byte trial. The walk cannot tell a
+to `s0`. An exit that hands back what a call left in `d0`, or `d0` as the
+function received it, is neutral: it fits a float result as well as a double,
+so it neither proves nor refutes the narrowing, and the trial shrinks when every
+other exit is such a piece and at least one exit is one. glibc's `expf`
+converts its double result on one exit and tail-calls `__math_oflowf` on
+another, and `logf` hands back its untouched argument on one; all stay
+`float`. Whole doubles, mixed-width exits, reassembled halves of one double,
+and incomplete or cyclic proofs keep the 8-byte trial.
+
+Two kinds of code use the VFP registers without float parameters or results,
+and the widened model leaves both alone. The AEABI run-time helpers and the
+libgcc soft-float routines behind them (`__aeabi_*`, `__adddf3`, `__fixdfdi`,
+`__floatundidf`, `__ltdf2`, ...) use the base standard in every image, even
+where a hard-float libgcc computes in VFP registers inside them. A function so
+named is decompiled under the unwidened default model, and so is every call
+to one (`kuna_armfloatreturn.rs (base_pcs_helper, helper_model)`), so a
+helper's integer result in `r0` is not displaced by a double the caller keeps
+live in `d0`. A declared prototype of one, from a parsed declaration or from
+debug information (libgcc's `long long __fixdfdi(double a)`, at the address of
+`__aeabi_d2lz`), states its types but not its convention, so its parameters and
+result are laid out under the core-register model
+(`kuna_armfloatreturn.rs (declared_helper_model)`): a Cortex-M7 caller that
+passes a double it computed in `d7` in `r0:r1` does not take its own `d0` as a
+phantom `double` parameter. A register-bank save or restore, one instruction storing or
+loading eight or more VFP registers of which at least one is not an argument
+register (the unwinder's `vstmia r0,{d0-d15}`), is neither a read of parameters
+nor a result
+(`kuna_armfloatreturn.rs (bank_access, bank_saved_input, drop_bank_restores)`).
+clang stores eight or more consecutive float or double
+arguments with the same instruction (`vstmia r0,{s0-s7}`, `{d0-d7}`,
+`{s0-s15}`); covering only argument registers, it stores parameters. The walk cannot tell a
 float result from code that deliberately edits the low word of a double; that
 code needs an explicit `double` output contract, which skips the walk.
 
@@ -7298,6 +7566,15 @@ pointer to something wider than a byte, a float result held as something
 else, or a float held from a callee whose float return was withdrawn. Its other stale text is an assignment between a pointer and an integer of
 the same width, which the listing leaves unconverted: redoing every such reader
 cost bash -O2 30 seconds, one `execute_command_internal` alone ten.
+
+Where `armfloatreturn` applies, the widened model gives many more callees a
+float return, so a reader over `AUDIT_MAX_OPS` is not redone for a float result
+it held as something else, and a function over it keeps a float return its
+readers refuse rather than being withdrawn and decompiled again. On the armhf
+libraries measured, that was NEON code leaving a vector in `d0` (libpixman's
+composite routines, each decompiled twice, +7.7% of the run) and a large reader
+of a mis-decoded function (libtwolame, +7.5%); neither redo changed a printed
+signature.
 
 A float return a reader keeps as another type is withdrawn
 (`kuna_voidret.rs (withdrawals)`). No C declaration serves a reader that holds

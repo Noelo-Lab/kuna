@@ -807,9 +807,39 @@ fn read_words(data: &mut Funcdata, vn: VarnodeId, words: [VarnodeId; 2], shift: 
     }
 }
 
-/// A d-register input read only as two words that floating operations consume
-/// holds two s-register inputs. Words read only as integers stay one input: they
-/// may be a double handed to an integer helper.
+/// Is `v` a single-precision register?
+fn s_register(data: &Funcdata, v: &crate::varnode::Varnode) -> bool {
+    let (Some(space), Some(lookup)) = (v.get_addr().get_space(), data.get_arch().manage().register_lookup()) else {
+        return false;
+    };
+    let name = lookup.get_register_name(space, v.get_offset(), v.get_size());
+    name.len() > 1 && name.starts_with('s') && name[1..].bytes().all(|b| b.is_ascii_digit())
+}
+
+/// The VFP input word the op `op` moves as a single-precision value: copied
+/// into another s-register, or stored or spilled to the stack from one.
+fn single_move(data: &Funcdata, op: &crate::op::PcodeOp) -> Option<(Address, i32)> {
+    let stack = |vn: VarnodeId| {
+        data.vbank().get(vn).is_some_and(|v| {
+            v.get_size() == 4
+                && v.get_addr().get_space().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE)
+        })
+    };
+    let (moved, register_copy) = match op.code() {
+        OpCode::CPUI_STORE => (op.get_in(2)?, false),
+        OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT if op.get_out().is_some_and(stack) => (op.get_in(0)?, false),
+        OpCode::CPUI_COPY | OpCode::CPUI_SUBPIECE | OpCode::CPUI_CAST => (op.get_out()?, true),
+        _ => return None,
+    };
+    let value = data.vbank().get(moved).filter(|v| v.get_size() == 4)?;
+    let word = input_storage(data, moved, &mut 32).filter(|w| w.1 == 4)?;
+    ((!register_copy || word.0 != *value.get_addr()) && s_register(data, value)).then_some(word)
+}
+
+/// A d-register input read only as two words that floating operations consume,
+/// or that move as single-precision values, holds two s-register inputs. Words
+/// read only as integers stay one input: they may be a double handed to an
+/// integer helper.
 fn split_word_inputs(data: &mut Funcdata, typed: &[(Address, i32)]) {
     let floating = |addr: &Address| typed.iter().any(|(a, s)| *s == 4 && a == addr);
     let inputs: Vec<VarnodeId> = data
@@ -906,6 +936,60 @@ pub(crate) fn incoming_storage(data: &Funcdata, vn: VarnodeId) -> Option<(Addres
     input_storage(data, vn, &mut 32)
 }
 
+/// An eight-byte VFP input that no reader takes as a double: followed through
+/// copies, merges and lane edits, it reaches only its own low word or vector
+/// operations. A lane load or a predicated load leaves such a read of the
+/// incoming register on a path the code never runs (libwebp's NEON transforms,
+/// `GetEntropyUnrefined_C`).
+pub fn stray_vector_input(data: &Funcdata, vn: VarnodeId) -> bool {
+    if !data.get_arch().arm_float_args {
+        return false;
+    }
+    let Some(value) = data.vbank().get(vn).filter(|v| v.get_size() == 8) else { return false };
+    let vfp = data.get_func_proto().model().input().get_entry().iter().any(|e| {
+        e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(value.get_addr(), 8) == 0
+    });
+    if !vfp || value.has_no_descend() {
+        return false;
+    }
+    let mut todo = vec![vn];
+    let mut seen = vec![vn];
+    while let Some(cur) = todo.pop() {
+        let Some(node) = data.vbank().get(cur) else { return false };
+        for id in node.descend_iter() {
+            let Some(op) = data.obank().get(id) else { return false };
+            let out = op.get_out().and_then(|o| data.vbank().get(o).map(|v| (o, v.get_size())));
+            let follow = match op.code() {
+                OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => true,
+                OpCode::CPUI_INT_AND | OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR => out.is_some_and(|(_, size)| size == 8),
+                OpCode::CPUI_CALLOTHER => false,
+                OpCode::CPUI_SUBPIECE => {
+                    let low = op
+                        .get_in(1)
+                        .and_then(|c| data.vbank().get(c))
+                        .is_some_and(|c| c.is_constant() && c.get_offset() == 0);
+                    if !low || out.is_none_or(|(_, size)| size > 4) {
+                        return false;
+                    }
+                    false
+                }
+                _ => return false,
+            };
+            if follow {
+                let Some((o, _)) = out else { return false };
+                if !seen.contains(&o) {
+                    if seen.len() >= 64 {
+                        return false;
+                    }
+                    seen.push(o);
+                    todo.push(o);
+                }
+            }
+        }
+    }
+    true
+}
+
 /// Heritage can split an incoming d-register around an overlapping s-register result.
 pub fn is_forwarded_input(data: &Funcdata, vn: VarnodeId, addr: &Address, size: i32) -> bool {
     data.get_arch().arm_float_args
@@ -923,6 +1007,8 @@ pub fn is_forwarded_input(data: &Funcdata, vn: VarnodeId, addr: &Address, size: 
         && input_storage(data, vn, &mut 32).is_some_and(|(a, s)| a == *addr && s == size)
 }
 
+/// The VFP inputs floating operations, stated callee contracts or
+/// single-precision moves ([`single_move`]) take as floats.
 fn typed_inputs(data: &Funcdata) -> Vec<(Address, i32)> {
     let mut out = Vec::new();
     for op in data
@@ -930,6 +1016,9 @@ fn typed_inputs(data: &Funcdata) -> Vec<(Address, i32)> {
         .iter_alive()
         .filter_map(|id| data.obank().get(id))
     {
+        if let Some(word) = single_move(data, op) {
+            out.push(word);
+        }
         let floating = matches!(
             op.code(),
             OpCode::CPUI_FLOAT_EQUAL
@@ -1006,7 +1095,8 @@ fn typed_inputs(data: &Funcdata) -> Vec<(Address, i32)> {
     out
 }
 
-/// Rejoin word-sized input pieces only when a floating reader consumes their whole value.
+/// Rejoin word-sized input pieces only when a floating reader consumes their
+/// whole value; type the inputs floating readers or single-precision moves take.
 pub fn prepare_inputs(data: &mut Funcdata) {
     if !data.get_arch().arm_float_args
         || data.get_func_proto().is_input_locked()

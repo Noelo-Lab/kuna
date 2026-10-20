@@ -2936,7 +2936,10 @@ truncating the fall-through here"
             // datatest renders the cloned body, not a modeled call).  So we
             // restrict the pre-seat to NON-inline calls, exactly mirroring which
             // calls the C++ ActionDefaultParams copy arm actually reaches.
-            if !is_inline_call && !fc.proto().has_model() {
+            // (kuna `armfloatreturn`) A declared AEABI helper is laid out under
+            // the core-register model by ActionDefaultParams instead.
+            let helper = crate::kuna_armfloatreturn::declared_helper_model(self.data.get_arch(), fc.get_name()).is_some();
+            if !is_inline_call && !fc.proto().has_model() && !helper {
                 let callee_proto = if entry.is_invalid() {
                     None
                 } else {

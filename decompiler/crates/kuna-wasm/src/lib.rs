@@ -449,7 +449,7 @@ fn project(binary: &str, prog: &mut ConsoleProgram, display: &str) -> Result<Str
     let prelude = print_c_recompile_prelude(prog.arch());
     let types = print_c_types(prog.arch_mut());
 
-    let header = build_header(display, &prelude, &types, &results);
+    let header = build_header(display, &prelude, &types, &results)?;
     let c_file = build_c(display, &results);
     let dat_addrs = collect_dat_addrs(&results);
     let asm = build_asm(prog, &results, &dat_addrs, display);

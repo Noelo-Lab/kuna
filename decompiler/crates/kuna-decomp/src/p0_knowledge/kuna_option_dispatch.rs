@@ -225,8 +225,15 @@ kuna_options! { self, p1;
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
     "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
     "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
+    "callwide" => {
+        let enabled = on_or_off(p1)?;
+        self.kuna_callwide.clear();
+        self.call_wide = enabled;
+        Ok(format!("Caller-proved register-pair returns turned {}", if enabled { "on" } else { "off" }))
+    },
     "bejoin" => {
         let (mode, msg) = crate::kuna_bejoin::BeJoinMode::parse(p1)?;
+        self.kuna_callwide.clear();
         self.be_join = mode;
         Ok(msg)
     },
@@ -406,6 +413,9 @@ kuna_options! { self, p1;
     },
     "narrowext" => {
         let (mode, msg) = crate::kuna_narrowext::OptionNarrowExt.apply(p1)?;
+        if self.narrow_ext != mode {
+            self.kuna_callwide.clear();
+        }
         self.narrow_ext = mode;
         Ok(msg)
     },
@@ -879,6 +889,9 @@ kuna_options! { self, p1;
     },
     "thumbswitch" => {
         on_off!(analysis_thumbswitch, "Thumb tbb/tbh switch-table read in the Listing walk (GH-299)")
+    },
+    "x86listingswitch" => {
+        on_off!(analysis_x86listingswitch, "Bounded i386 switch successors in the discovery Listing")
     },
     "switchreach" => {
         on_off!(analysis_switchreach, "Register-chain jump-table reach in the reference walk")

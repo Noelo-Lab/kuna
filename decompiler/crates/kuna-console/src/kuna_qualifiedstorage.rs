@@ -34,6 +34,7 @@ pub(crate) fn update(
             .cloned();
         crate::assertions::lock_prototype_on_symbol(program, &target, &pieces, model.as_ref());
     }
+    program.callwide_unavailable("partial storage declarations are not complete declaration provenance");
     remember(pending, addressed, &target, pieces);
     Ok(())
 }
