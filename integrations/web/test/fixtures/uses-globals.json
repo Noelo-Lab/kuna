@@ -1,0 +1,105 @@
+{
+ "binary": "globals.elf",
+ "address": 16384,
+ "address_hex": "0x4000",
+ "size": 136,
+ "uses": [
+  {
+   "to": 16392,
+   "to_hex": "0x4008",
+   "name": "__do_global_dtors_aux",
+   "address": 4416,
+   "address_hex": "0x1140",
+   "at": 4443,
+   "at_hex": "0x115b",
+   "kind": "read",
+   "instruction": "MOV RDI,qword ptr [0x4008]",
+   "via": null
+  },
+  {
+   "to": 16416,
+   "to_hex": "0x4020",
+   "name": "main",
+   "address": 4507,
+   "address_hex": "0x119b",
+   "at": 4578,
+   "at_hex": "0x11e2",
+   "kind": "data",
+   "instruction": "LEA RAX,[0x4020]",
+   "via": null
+  },
+  {
+   "to": 16448,
+   "to_hex": "0x4040",
+   "name": "main",
+   "address": 4507,
+   "address_hex": "0x119b",
+   "at": 4555,
+   "at_hex": "0x11cb",
+   "kind": "data",
+   "instruction": "LEA RAX,[0x4040]",
+   "via": null
+  },
+  {
+   "to": 16480,
+   "to_hex": "0x4060",
+   "name": "main",
+   "address": 4507,
+   "address_hex": "0x119b",
+   "at": 4610,
+   "at_hex": "0x1202",
+   "kind": "read",
+   "instruction": "MOV EAX,dword ptr [0x4060]",
+   "via": null
+  },
+  {
+   "to": 16488,
+   "to_hex": "0x4068",
+   "name": "main",
+   "address": 4507,
+   "address_hex": "0x119b",
+   "at": 4671,
+   "at_hex": "0x123f",
+   "kind": "read",
+   "instruction": "MOV RDX,qword ptr [0x4068]",
+   "via": null
+  },
+  {
+   "to": 16496,
+   "to_hex": "0x4070",
+   "name": "main",
+   "address": 4507,
+   "address_hex": "0x119b",
+   "at": 4656,
+   "at_hex": "0x1230",
+   "kind": "read",
+   "instruction": "MOV RAX,qword ptr [0x4070]",
+   "via": null
+  },
+  {
+   "to": 16504,
+   "to_hex": "0x4078",
+   "name": "main",
+   "address": 4507,
+   "address_hex": "0x119b",
+   "at": 4603,
+   "at_hex": "0x11fb",
+   "kind": "read",
+   "instruction": "MOV RDX,qword ptr [0x4078]",
+   "via": null
+  },
+  {
+   "to": 16512,
+   "to_hex": "0x4080",
+   "name": "main",
+   "address": 4507,
+   "address_hex": "0x119b",
+   "at": 4622,
+   "at_hex": "0x120e",
+   "kind": "read",
+   "instruction": "MOV RAX,qword ptr [0x4080]",
+   "via": null
+  }
+ ],
+ "assertions": []
+}

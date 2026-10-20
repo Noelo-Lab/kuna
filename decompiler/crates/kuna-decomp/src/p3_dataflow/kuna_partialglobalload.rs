@@ -5,7 +5,7 @@ use crate::funcdata::Funcdata;
 use kuna_base::address::{calc_mask, Address};
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
-use std::collections::{HashMap, HashSet};
+use crate::kuna_fasthash::{FxHashMap, FxHashSet};
 
 #[derive(Debug)]
 pub(crate) struct Guard {
@@ -18,8 +18,8 @@ pub(crate) struct Guard {
 /// Resolve pointer bounds after renaming, before dead-code removal. A pointer
 /// proven outside the global does not require its partial stores to survive.
 pub(crate) fn apply(fd: &mut Funcdata, guards: Vec<Guard>) {
-    let mut bounds = HashMap::new();
-    let mut inputs = HashMap::new();
+    let mut bounds = FxHashMap::default();
+    let mut inputs = FxHashMap::default();
     for guard in guards {
         let lo = u128::from(guard.addr.get_offset());
         let hi = lo + guard.size as u128;
@@ -76,10 +76,10 @@ pub(crate) fn apply(fd: &mut Funcdata, guards: Vec<Guard>) {
 
 /// This correction covers pointer reads derived from function data inputs.
 /// Spacebases, memory-fetched values and calls need separate alias provenance.
-fn from_input(fd: &Funcdata, root: VarnodeId, memo: &mut HashMap<VarnodeId, bool>) -> bool {
+fn from_input(fd: &Funcdata, root: VarnodeId, memo: &mut FxHashMap<VarnodeId, bool>) -> bool {
     let mut work = vec![root];
-    let mut seen = HashSet::new();
-    let mut frames = HashMap::new();
+    let mut seen = FxHashSet::default();
+    let mut frames = FxHashMap::default();
     while let Some(vn) = work.pop() {
         if let Some(&input) = memo.get(&vn) {
             if input {
@@ -134,7 +134,7 @@ fn from_input(fd: &Funcdata, root: VarnodeId, memo: &mut HashMap<VarnodeId, bool
 fn frame_address(
     fd: &Funcdata,
     vn: VarnodeId,
-    memo: &mut HashMap<VarnodeId, (bool, bool)>,
+    memo: &mut FxHashMap<VarnodeId, (bool, bool)>,
     depth: usize,
 ) -> (bool, bool) {
     if let Some(&frame) = memo.get(&vn) {
@@ -211,7 +211,7 @@ fn may_overlap(
 fn unsigned_bounds(
     fd: &Funcdata,
     vn: VarnodeId,
-    memo: &mut HashMap<VarnodeId, (u64, u64)>,
+    memo: &mut FxHashMap<VarnodeId, (u64, u64)>,
     depth: usize,
 ) -> (u64, u64) {
     if let Some(&range) = memo.get(&vn) {

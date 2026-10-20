@@ -1,5 +1,5 @@
 // decompile-worker.mjs — the study view's RPC surface through the real module
-// Worker: `inspect`, `read`, `xrefs`, `strings` and per-call `--assert` directives.
+// Worker: `inspect`, `read`, `xrefs`, `strings`, `data`, `uses` and per-call `--assert` directives.
 //
 // Skips (exit 0, with a message) while the built wasm predates those commands,
 // so it is green before the engine side lands and meaningful after it.
@@ -170,6 +170,19 @@ try {
   assert.match(item.function.code, /^typedef struct struct_0 struct_0;\n\nstruct struct_0 \{\n/, 'struct_0 is defined above make_item');
   assert.match(item.function.code, /\};\n\nstruct_0 \* make_item\(/);
   checks.push('type definitions above the function');
+
+  // data and uses: the Data tab's window around a global, typed by a directive, and who uses it.
+  await client.load(new Uint8Array(await readFile(fixture('globals.elf'))), { fileName: 'globals.elf' });
+  const window = await client.data('0x4040', null, { assertions: ['data 0x4040 int primes[8]'] });
+  const primes = window.items.find((i) => i.name === 'primes');
+  assert.equal(window.section.name, '.data');
+  assert.deepEqual([primes.declaration, primes.layout.kind, primes.layout.count], ['int primes[8]', 'array', 8]);
+  assert.equal(window.targets.find((t) => t.at_hex === '0x4078')?.name, 'twice');
+  const exact = await client.data('0x2010', 8);
+  assert.deepEqual([exact.start_hex, exact.bytes], ['0x2010', 'e803000000000000']);
+  const uses = await client.uses('0x4040', 32);
+  assert.deepEqual(uses.uses.map((u) => [u.to_hex, u.name, u.kind]), [['0x4040', 'main', 'data']]);
+  checks.push('data and uses');
 
   // The page names a refused directive from this error: exit code, and the directive quoted.
   await assert.rejects(

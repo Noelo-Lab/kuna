@@ -192,7 +192,7 @@ fn visit_homes(
     let mut pending: Vec<_> = (0..high.num_instances())
         .map(|i| high.get_instance(i))
         .collect();
-    let mut visited = std::collections::HashSet::new();
+    let mut visited = crate::kuna_fasthash::FxHashSet::default();
     while let Some(id) = pending.pop() {
         if !visited.insert(id) {
             continue;

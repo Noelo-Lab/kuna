@@ -290,6 +290,7 @@ dependencies = [
  "object",
  "regex",
  "syn 2.0.117",
+ "unicode-ident",
 ]
 
 [[package]]

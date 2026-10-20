@@ -270,7 +270,7 @@ fn read_storage(fd: &Funcdata, op: OpId) -> Option<&crate::varnode::Varnode> {
     fd.vbank().get(cast.get_out()?)
 }
 
-fn declared_member_type(
+pub(crate) fn declared_member_type(
     fd: &Funcdata,
     decl_high_type: bool,
     id: VarnodeId,

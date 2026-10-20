@@ -87,7 +87,7 @@ try {
   assert.equal((await text('.d2-fntitle')).trim(), 'main', 'the header shows only the function name');
   assert.equal(await count('#vmeta'), 0);
   assert.deepEqual(await page.evaluate(`[...document.querySelectorAll('#tabs [role=tab]')].map((t) => t.textContent)`),
-    ['Code', 'Assembly', 'Side by side', 'Bytes', 'Stack'], 'the views, in order');
+    ['Code', 'Assembly', 'Side by side', 'Bytes', 'Stack', 'Data'], 'the views, in order');
   assert.equal(await count('#fnlist .fn.sel[data-addr="0x1198"]'), 1);
   assert.ok(await count('#ccode .t[data-kind=variable]') > 0, 'variables are tokens');
   await page.hover('#c-L5 .ct');
@@ -461,7 +461,7 @@ try {
   await page.call(() => { const i = document.getElementById('strfilter'); i.value = 'ld-linux'; i.dispatchEvent(new Event('input')); return true; });
   await page.waitFor(`document.querySelectorAll('#strlist .str').length === 1`, { what: 'an unused string', timeout: 10000 });
   await page.click('#strlist .str .sx');
-  await page.waitFor(`document.getElementById('tab-bytes').getAttribute('aria-selected') === 'true'`, { what: 'its bytes', timeout: 30000 });
+  await page.waitFor(`document.getElementById('tab-data').getAttribute('aria-selected') === 'true' && /ld-linux/.test(document.querySelector('#datalist .dv-row.sel .dv-v')?.textContent || '')`, { what: 'it in the Data tab', timeout: 30000 });
   await page.click('#side-fns');
   assert.equal(await page.call(() => document.getElementById('fnpanel').hidden), false, 'back to the functions');
   await setSelect('mode', 'fast');
@@ -476,7 +476,7 @@ try {
   assert.match(await text('#strnone'), /^Stopped\. Find the strings$/, 'Cancel while the strings wait their turn says so');
   await page.click('#strnone [data-act=strings-load]');
   await page.waitFor(`document.querySelectorAll('#strlist .str').length > 0`, { what: 'the strings again', timeout: 60000 });
-  await noExceptions('Strings: search "flag", go to each use, show an unused string\'s bytes');
+  await noExceptions('Strings: search "flag", go to each use, show an unused string in the Data tab');
 
   await setSelect('mode', 'auto');
   await page.waitFor(`[...document.querySelectorAll('#fnlist .fn')].some((row) => row.textContent === 'main')`, { what: 'crackme in Auto', timeout: 60000 });
