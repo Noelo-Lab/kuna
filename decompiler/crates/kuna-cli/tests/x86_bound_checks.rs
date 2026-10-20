@@ -126,7 +126,9 @@ int main(void) {
         ran,
         "GCC or Clang is required for the regenerated-code check"
     );
-    if process::optional_output(Command::new("wine").arg("--version")).is_some() {
+    if process::optional_output(Command::new("wine").arg("--version")).is_some()
+        && windows_sysroot_available(assembler)
+    {
         let original = source.with_extension("original.c");
         let original_exe = source.with_extension("original.exe");
         let prelude = r#"
@@ -205,4 +207,18 @@ static LONG CALLBACK exception_handler(EXCEPTION_POINTERS *e) {
     for path in [source, binary, regenerated, executable] {
         std::fs::remove_file(path).unwrap();
     }
+}
+
+/// The native Windows replay needs a MinGW sysroot behind the i686 Windows target, not just wine.
+fn windows_sysroot_available(compiler: &str) -> bool {
+    let probe = common::scratch_file("bound-checks-sysroot", "c");
+    std::fs::write(&probe, "#include <limits.h>\n#include <windows.h>\nint main(void) { return 0; }\n").unwrap();
+    let status = Command::new(compiler)
+        .args(["--target=i686-w64-windows-gnu", "-fsyntax-only"])
+        .arg(&probe)
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
+    std::fs::remove_file(probe).unwrap();
+    status
 }
