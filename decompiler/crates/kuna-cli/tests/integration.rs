@@ -590,3 +590,6 @@ mod float_integer_truncation;
 
 #[path = "intermediate_float_rounding.rs"]
 mod intermediate_float_rounding;
+
+#[path = "named_member_bits.rs"]
+mod named_member_bits;
