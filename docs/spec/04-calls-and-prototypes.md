@@ -3033,6 +3033,29 @@ home slot its caller allocated and passes the slot by reference (every Qt
 before the call was dead. The gather is deferred and cached for the length of one heritage pass, so a function
 that never reaches the locked branch never pays for it.
 
+The alias walk is additive from the stack base. A function that saves its frame
+pointer, rebinds it to the stack pointer around a call, and restores it from
+memory gives every later `&local` a base that the walk cannot follow, and the
+floor rule would drop the guard that models a declared callee's write through
+that pointer. Heritage therefore records, at the head of every pass and before
+SSA simplification can fold the nested setup away, whether the same register
+captures the stack base more than once. The evidence is read off raw storage,
+because register reads are not yet linked when the guards are planted, and it
+is kept for the rest of the function. When it is present, the floor rule also
+asks each declared pointer argument of the call to prove it is disjoint from the
+range, and it keeps the guard when one cannot. Ordinary argument staging never
+captures the stack base twice and keeps the plain rule.
+
+`RuleIndirectCollapse` trusts a cached `nolocalalias` mark on an INDIRECT's
+output. For a call with a locked input list and a store effect, it first checks
+every declared pointer argument that normalizes to a concrete frame range. If
+the pointee's range overlaps the INDIRECT's storage, the mark is stale and the
+INDIRECT stays. This keeps `q[0] = 0` across `fgets(q, …)` when the alias mark
+missed the buffer. In a function with the rebound-frame evidence above, a
+pointer that is still an unresolved frame-derived expression keeps the INDIRECT
+too, until the merge resolves. Elsewhere such a pointer is usually a cursor into
+a local buffer, and it defers to the mark.
+
 ### (kuna) `msvcbyval` — an MSVC by-value class sized at the call
 
 An MSVC name states every parameter's type but not the size of a class passed by
