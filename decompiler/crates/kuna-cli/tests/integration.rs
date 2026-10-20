@@ -550,3 +550,6 @@ mod declared_callee_pop;
 
 #[path = "project_function_linkage.rs"]
 mod project_function_linkage;
+
+#[path = "aggregate_storage_cast.rs"]
+mod aggregate_storage_cast;
