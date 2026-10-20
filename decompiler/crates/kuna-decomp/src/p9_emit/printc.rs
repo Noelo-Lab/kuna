@@ -5964,6 +5964,12 @@ impl PrintC {
         read_op: Option<OpId>,
         opc: OpCode,
     ) {
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            if let Some(transfer) = crate::kuna_aggregatecast::storage_transfer(fd, arch.decl_high_type, op) {
+                self.op_aggregate_transfer_ir(fd, arch, op, transfer);
+                return;
+            }
+        }
         if let Some(transfer) = crate::kuna_bitcast::storage_transfer(fd, arch.decl_high_type, op) {
             self.op_bit_transfer_ir(fd, arch, op, transfer);
             return;
@@ -6686,6 +6692,20 @@ impl PrintC {
         if let Some(ct) = &cast_ty {
             self.push_cast_close(ct);
         }
+    }
+
+    fn op_aggregate_transfer_ir(
+        &mut self, fd: &Funcdata, arch: &Architecture, op: OpId,
+        transfer: crate::kuna_aggregatecast::Transfer,
+    ) {
+        use crate::printlanguage::SyntaxHighlight;
+        static BITS: OpToken = op_token("", " }).to", 2, 66, false, TokenType::Postsurround, 0, 0);
+        let from = type_name_for_decl(&transfer.source, self.rt_ctx).0;
+        let to = type_name_for_decl(&transfer.target, self.rt_ctx).0;
+        self.push_op(&BITS, Some(op_key(op)));
+        self.push_atom(&Atom::syntax(format!("((union {{ {from} from; {to} to; }}){{ .from = "),
+            TagType::TypeToken, SyntaxHighlight::type_color));
+        self.push_vn_ir_body(fd, arch, transfer.input, op);
     }
 
     fn op_bit_transfer_ir(

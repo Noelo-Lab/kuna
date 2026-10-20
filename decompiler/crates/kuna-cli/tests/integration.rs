@@ -500,6 +500,11 @@ mod x87_empty_return;
 
 #[path = "windows_stack_argument_alignment.rs"]
 mod windows_stack_argument_alignment;
+
+#[path = "imported_data_identifiers.rs"]
+mod imported_data_identifiers;
+#[path = "dwarf_linkage_calls.rs"]
+mod dwarf_linkage_calls;
 #[path = "project_named_globals.rs"]
 mod project_named_globals;
 #[path = "x87_register_payload.rs"]
@@ -544,5 +549,12 @@ mod parameter_spill_reuse;
 
 #[path = "declared_callee_pop.rs"]
 mod declared_callee_pop;
+
+#[path = "project_function_linkage.rs"]
+mod project_function_linkage;
+
+#[path = "aggregate_storage_cast.rs"]
+mod aggregate_storage_cast;
+
 #[path = "x87_native_returns.rs"]
 mod x87_native_returns;

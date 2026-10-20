@@ -2581,6 +2581,42 @@ mod w10_printc_cast_render {
     }
 
     #[test]
+    fn aggregate_storage_cast_rejects_value_conversions_and_mismatched_widths() {
+        use crate::dtype::{DatatypeKind, TypeField};
+        let mut record = Datatype::new(8, type_metatype::TYPE_STRUCT);
+        record.name = "words".into();
+        record.display_name = "words".into();
+        let word = named("unsigned int", 4, type_metatype::TYPE_UINT);
+        record.kind = DatatypeKind::Struct {
+            field: vec![TypeField::new(0, 0, "low", word.clone()), TypeField::new(1, 4, "high", word)],
+            bitfield: vec![],
+        };
+        let record = Rc::new(record);
+        for (opcode, width, allowed) in [
+            (OpCode::CPUI_CAST, 8, true),
+            (OpCode::CPUI_CAST, 4, false),
+            (OpCode::CPUI_FLOAT_INT2FLOAT, 8, false),
+            (OpCode::CPUI_COPY, 8, false),
+        ] {
+            let mut fd = build_fd();
+            let op = mk_op(&mut fd, 1, 0x20, opcode);
+            let input = fd.new_varnode(width, &Address::new(ram(&fd), 0x400), Some(named("unsigned long", width, type_metatype::TYPE_UINT)));
+            let output = fd.new_varnode(8, &Address::new(ram(&fd), 0x408), Some(record.clone()));
+            fd.op_set_input(op, input, 0).unwrap();
+            fd.op_set_output(op, output).unwrap();
+            assert_eq!(crate::kuna_aggregatecast::storage_transfer(&fd, false, op).is_some(), allowed);
+        }
+        let mut fd = build_fd();
+        let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_CAST);
+        let input = fd.new_constant(8, 0);
+        fd.vbank_mut().get_mut(input).unwrap().update_type(record);
+        let output = fd.new_varnode(8, &Address::new(ram(&fd), 0x408), Some(named("unsigned long", 8, type_metatype::TYPE_UINT)));
+        fd.op_set_input(op, input, 0).unwrap();
+        fd.op_set_output(op, output).unwrap();
+        assert!(crate::kuna_aggregatecast::storage_transfer(&fd, false, op).is_none());
+    }
+
+    #[test]
     fn integer_facing_truncations_read_the_declared_float_bits() {
         for size in [4, 8] {
             let manage = build_manager();

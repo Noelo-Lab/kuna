@@ -341,6 +341,9 @@ fn target_address(prog: &ConsoleProgram, spec: &str) -> Result<Resolution, Strin
     {
         return Ok(Resolution::Settled(TargetSpec { addr, name: Some(name), fallback: None }));
     }
+    if let Some(addr) = prog.lookup_data_alias(spec) {
+        return Ok(Resolution::Settled(TargetSpec { addr, name: Some(spec.to_string()), fallback: None }));
+    }
     if let Ok(addr) = u64::from_str_radix(spec, 16) {
         return Ok(Resolution::Settled(TargetSpec { addr, name: None, fallback: None }));
     }
