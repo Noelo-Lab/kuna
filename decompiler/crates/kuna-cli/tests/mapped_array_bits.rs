@@ -184,13 +184,13 @@ fn check_target(target: &str) {
     arch.put_print(printer);
     let generated = root.join("generated.c");
     let prefix = r#"
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
 typedef struct Packet {unsigned int tag;unsigned char payload[4];} Packet;
-float read_packet(Packet *p) {float value;if(p->tag!=7)return 0;memcpy(&value,p->payload,4);return value;}
+float read_packet(Packet *p) {float value;if(p->tag!=7)return 0;__builtin_memcpy(&value,p->payload,4);return value;}
 "#;
     let driver = r#"
+#include <stdint.h>
+#include <string.h>
+float wrap_float(float value);
 int main(void) {
     uint32_t state=0x3fa00000;
     const uint32_t special[]={0,0x80000000,0x3fa00000,0xbf400000};
@@ -202,11 +202,13 @@ int main(void) {
     }return 0;
 }
 "#;
-    std::fs::write(&generated, format!("{prefix}\n{body}\n{driver}")).unwrap();
+    std::fs::write(&generated, format!("{prefix}\n{body}\n")).unwrap();
+    let driver_file = root.join("driver.c");
+    std::fs::write(&driver_file, driver).unwrap();
     process::required_output(
         Command::new("clang")
             .arg(format!("--target={target}"))
-            .args(["-std=gnu11", "-Werror", "-c"])
+            .args(["-std=gnu11", "-Werror", "-ffreestanding", "-nostdinc", "-c"])
             .arg(&generated)
             .arg("-o")
             .arg(root.join("generated.o")),
@@ -217,6 +219,7 @@ int main(void) {
             Command::new("clang")
                 .args(["-std=gnu11", optimization])
                 .arg(&generated)
+                .arg(&driver_file)
                 .arg("-o")
                 .arg(&exe),
         );

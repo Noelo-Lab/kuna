@@ -3641,8 +3641,8 @@ byte-array member takes this byte-copy path even when the call's record layout
 agrees with the local layout: the member has no scalar C assignment type, and
 copying a float must retain its representation instead of casting it to an array.
 An explicit register or unique definition bound to a local frame Symbol follows
-that Symbol's unique stack mapping and member displacement for the byte-copy
-store. Ambiguous storage mappings and bindings outside the local scope do not
+that Symbol's unique stack mapping and member displacement for byte-array
+member stores. Scalar members retain their existing bit-transfer rendering. Ambiguous storage mappings and bindings outside the local scope do not
 qualify. Implied same-width CASTs to the byte-array view are peeled before selecting the
 scalar representation; numeric conversion opcodes remain part of the expression.
 Integer bit patterns are printed as

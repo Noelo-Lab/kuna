@@ -83,6 +83,11 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
             let storage = piece.get_partial_base().unwrap_or(piece);
             super::kuna_bytearrayc::byte_array(&storage)
         });
+    // Scalar members already have their own bit-transfer rendering. The new
+    // symbolic-frame route is needed only for byte-array storage.
+    if linked_symbol.is_some() && !byte_member {
+        return None;
+    }
     if !scope.database().symbol(info.symbol).is_type_locked()
         || info.is_name_undefined
         || root.get_name().starts_with("stack_views_")
