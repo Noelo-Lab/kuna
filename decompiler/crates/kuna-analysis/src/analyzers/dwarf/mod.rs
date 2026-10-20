@@ -1133,7 +1133,7 @@ impl AnalysisPass for DwarfPass {
             kuna_dwarfcomplex::max_size(ctx.file.format(), ctx.file.architecture(), &ctx.arch.archid);
 
         let linkage_imports = kuna_dwarflinkage::imports(ctx);
-        let linkage_definitions = kuna_dwarflinkage::definitions(ctx);
+        let linkage_definitions = kuna_dwarflinkage::definitions(ctx, &linkage_imports);
         let mut units = dwarf.units();
         while let Ok(Some(header)) = units.next() {
             let Ok(unit) = dwarf.unit(header) else { continue };

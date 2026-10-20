@@ -6,6 +6,9 @@ use super::DieSnap;
 use crate::pass::AnalysisCtx;
 use kuna_decomp::fspec::PrototypePieces;
 
+/// PLT entry addresses by imported name, minus names the file defines as
+/// `STT_GNU_IFUNC`: such a definition's DWARF describes the resolver, not the
+/// function its PLT entry dispatches to.
 pub(super) fn imports(ctx: &AnalysisCtx<'_>) -> BTreeMap<String, Vec<u64>> {
     let mut result = BTreeMap::<String, Vec<u64>>::new();
     if ctx.file.format() != object::BinaryFormat::Elf {
@@ -19,11 +22,27 @@ pub(super) fn imports(ctx: &AnalysisCtx<'_>) -> BTreeMap<String, Vec<u64>> {
             result.entry(name).or_default().push(import.addr);
         }
     }
+    if result.is_empty() {
+        return result;
+    }
+    for symbol in ctx.file.symbols().chain(ctx.file.dynamic_symbols()) {
+        let object::SymbolFlags::Elf { st_info, .. } = symbol.flags() else {
+            continue;
+        };
+        if !symbol.is_undefined() && st_info & 0xf == object::elf::STT_GNU_IFUNC {
+            if let Ok(name) = symbol.name() {
+                result.remove(name);
+            }
+        }
+    }
     result
 }
 
-pub(super) fn definitions(ctx: &AnalysisCtx<'_>) -> BTreeSet<(u64, String)> {
-    if ctx.file.format() != object::BinaryFormat::Elf {
+pub(super) fn definitions(
+    ctx: &AnalysisCtx<'_>,
+    imports: &BTreeMap<String, Vec<u64>>,
+) -> BTreeSet<(u64, String)> {
+    if imports.is_empty() {
         return BTreeSet::new();
     }
     ctx.file
@@ -34,7 +53,12 @@ pub(super) fn definitions(ctx: &AnalysisCtx<'_>) -> BTreeSet<(u64, String)> {
                 && symbol.is_global()
                 && symbol.kind() == object::SymbolKind::Text
         })
-        .filter_map(|symbol| Some((symbol.address(), symbol.name().ok()?.to_owned())))
+        .filter_map(|symbol| {
+            let name = symbol.name().ok()?;
+            imports
+                .contains_key(name)
+                .then(|| (symbol.address(), name.to_owned()))
+        })
         .collect()
 }
 
@@ -67,8 +91,7 @@ pub(super) fn append(
         return;
     }
     let Some(name) = linkage(sub, dies).or_else(|| {
-        definitions
-            .contains(&(sub.low_pc?, sub.name.clone()))
+        (imports.contains_key(&sub.name) && definitions.contains(&(sub.low_pc?, sub.name.clone())))
             .then_some(sub.name.as_str())
     }) else {
         return;

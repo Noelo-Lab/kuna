@@ -2234,9 +2234,10 @@ moves.
   signatures win,
   and read back at *two* points: by a caller's `ActionDefaultParams` for the call
   site, and by the drive as the function's own locked prototype (04 §4.2 —
-  `int main(int argc, char **argv)`, not `undefined16 main(uint4, void*)`);
+  `int main(int argc, char **argv)`, not `undefined16 main(uint4, void*)`).
   An externally visible defined DWARF function's exact `DW_AT_linkage_name` also binds its prototype
-  to matching ELF PLT entry addresses. The linker spelling is taken from the
+  to matching ELF PLT entry addresses
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarflinkage.rs`). The linker spelling is taken from the
   definition or its one-hop `DW_AT_specification` declaration. When no explicit
   linker spelling is present, a source name is accepted only if a defined, global
   ELF function symbol has that exact name and the definition's exact entry address.
@@ -2247,7 +2248,10 @@ moves.
   explicit prototype assertions retain their later precedence. Declaration-only
   DIEs and other binary formats do not acquire these aliases. `DW_AT_external`
   must be true on the definition or its specification; a local definition cannot
-  retype an unrelated import with the same linker name.
+  retype an unrelated import with the same linker name. A name the file defines as
+  an `STT_GNU_IFUNC` symbol is never bound: the DWARF definition behind it is the
+  resolver (`void *(void)`), not the implementation its PLT entry dispatches to.
+  Separately,
   a formal parameter of a Fortran compilation unit whose location is exactly
   `DW_OP_fbreg` followed by `DW_OP_deref`
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfbyref.rs`)

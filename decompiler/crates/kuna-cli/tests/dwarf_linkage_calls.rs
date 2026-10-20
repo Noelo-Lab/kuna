@@ -176,6 +176,45 @@ int main(void) {
 }
 
 #[test]
+fn indirect_function_resolver_does_not_retype_its_plt_entry() {
+    if !cfg!(target_arch = "x86_64")
+        || process::optional_output(Command::new("gcc").arg("--version")).is_none()
+    {
+        return;
+    }
+    let source = common::scratch_file("linkage-ifunc", "c");
+    let library = source.with_extension("so");
+    std::fs::write(
+        &source,
+        "static int impl(int a, int b, int c) { return a + b * c; }\n\
+         void *resolve(void) __asm__(\"dispatch\");\n\
+         void *resolve(void) { return (void *)impl; }\n\
+         __asm__(\".type dispatch, %gnu_indirect_function\");\n\
+         extern int dispatch_call(int, int, int) __asm__(\"dispatch\");\n\
+         int caller(int x, int y) { return dispatch_call(x, y, 7) + 1; }\n",
+    )
+    .unwrap();
+    let built = Command::new("gcc")
+        .args(["-O0", "-g", "-shared", "-fPIC"])
+        .arg(&source)
+        .arg("-o")
+        .arg(&library)
+        .output()
+        .unwrap();
+    assert!(
+        built.status.success(),
+        "{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let (code, err, status) = common::run_kuna(&["decompile", library.to_str().unwrap(), "caller"]);
+    assert_eq!(status, 0, "{err}");
+    assert!(code.contains("dispatch(x,y,7)"), "{code}");
+    for path in [source, library] {
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
 fn local_linker_name_collision_does_not_retype_external_call() {
     if process::optional_output(Command::new("clang").arg("--version")).is_none() {
         return;
