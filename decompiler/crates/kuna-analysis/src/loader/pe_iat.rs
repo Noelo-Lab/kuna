@@ -206,9 +206,16 @@ fn collect<Pe: ImageNtHeaders>(
     // call to an exported function of this image resolves.  `relative_address_base`
     // is already folded into `Export::address` by `object`.
     if let Ok(exports) = neutral.exports() {
+        let code_ranges: Vec<_> = neutral.sections().filter_map(|section| {
+            let flags = super::format::pe::coff_section_bits(section.kind(), section.flags());
+            (flags & kuna_sleigh::loadimage::section_flags::CODE != 0)
+                .then_some((section.address(), section.size()))
+        }).collect();
         for e in exports {
             let name = e.name();
-            if !name.is_empty() {
+            if !name.is_empty() && code_ranges.iter().any(|&(start, size)| {
+                e.address() >= start && e.address() - start < size
+            }) {
                 out.push(ImportSym {
                     addr: e.address(),
                     name: name.to_vec(),
