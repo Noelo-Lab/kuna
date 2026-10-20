@@ -853,7 +853,9 @@ nobody uses. Every one of them is a history entry, so Back returns to where the 
 was, the view included. The tab asks the engine for `data` (the section around the address,
 with the program-wide directives, so renames, retypes and patches show) and lists it as
 rows of address, name, type and value: the section's name and what it holds ("data the
-program can change", "data that never changes", "data that starts as zeros") head it, the
+program can change", "data that never changes", "data that starts as zeros") head it,
+the name being a menu of the program's data sections (`.rodata`, `.data`, `.bss`, …;
+never code) that goes straight to the one picked, the
 item holding the address is selected and scrolled to, and buttons read the data before
 and after it, or the section before and after. Values are decoded by type
 (`data-view.js`): integers in decimal and hex, text as a C string (a terminal colour code
@@ -863,7 +865,7 @@ structs as a summary that opens to their elements and fields. A global the symbo
 names only by its size is its bytes (16 to a line), unless they read as text or as a
 pointer to something named, so its type column says "32 bytes" until the student gives it
 one. Bytes no item claims read as text, a pointer, a run of zeros or hex; bytes a section's
-file data does not reach say "0 when the program starts". In a stripped program the
+file data does not reach (`.bss`) say "uninitialized". In a stripped program the
 decompiler's own declarations (`int dat_4040[]`, `int (*dat_4078)(unsigned int)`) type
 what the code names. The bar above the rows says what is selected and where, and who uses
 it: the engine's `uses` for the window, asked for once while the tab is on screen, grouped
@@ -872,7 +874,8 @@ by function ("Used by main ×2"); a function's name opens it at the using instru
 code's rename of a global does, *Show bytes* opens the Bytes view's hex dump there. `↑↓`
 move through the rows, `→`/`←` open and fold, `Enter` follows a pointer. A program opened
 afresh starts in the code, not the Data tab. Before any data is shown the tab says to
-double-click a global and lists the data the open function uses.
+double-click a global, lists the data the open function uses, and lists the data sections
+with what each holds and its size, each a link to the start of that section.
 
 **Working together.** Several people can work on one program at once, with no server:
 each person's page renames, retypes, notes and patches, and everyone sees the others'
@@ -1201,7 +1204,7 @@ skips it as too costly):
    `data` directives, `.bss`) and its stripped twin (`data-globals*.json`,
    `inspect-globals-stripped.json`, `uses-globals.json`): integers, text, pointers to
    functions, items, elements and strings, arrays and structs and what they open to, bytes
-   that start as zeros, unlabelled bytes, who uses an item, escaping.
+   that start as zeros, unlabelled bytes, who uses an item, the section menu, escaping.
    **`test/decompile-base64.mjs`** (build-free) pins which pasted texts
    decode, to which bytes, and the name a pasted program gets. **`test/decompile-worker.mjs`** drives `inspect`, `read`,
    `xrefs`, `strings` and `--assert` through the real Worker (`strings` on
@@ -1327,7 +1330,8 @@ skips it as too costly):
    no rename dialog, a local still renames and `n` on a global still names it, "Used by"
    and a pointer to a function open the function with Back and Forward returning, a pointer
    to data moves within the tab, *Change type* decodes an int table and a struct and
-   *Rename* reaches the code, a `.bss` buffer starts as zeros, a data operand in the
+   *Rename* reaches the code, a `.bss` buffer starts as zeros, the section menu goes to
+   `.rodata` and Back returns, a data operand in the
    assembly goes to it, the light theme and 1024, 820 and 600 px, and the stripped twin
    (`--shots DIR` saves screenshots).
    None of these five runs in CI. Run them locally before a change to the page lands

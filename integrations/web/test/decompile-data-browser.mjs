@@ -5,7 +5,8 @@
 // function opens it and "Used by" opens the function at the using
 // instruction, with Back returning each time; renaming and retyping stay one
 // click away and the retype decodes the values (an int table, a struct); a
-// .bss buffer starts as zeros; a data address in the assembly goes there
+// .bss buffer starts as zeros; the section menu goes to .rodata and the
+// empty tab lists the sections; a data address in the assembly goes there
 // too; the stripped twin shows the decompiler's own globals; and the tab
 // keeps its layout in the light theme and at narrow widths. Any uncaught page
 // exception fails the run.
@@ -44,6 +45,11 @@ const ready = () => page.waitFor(`document.getElementById('pick').getAttribute('
 const idle = (what) => page.waitFor(`document.getElementById('cancelbtn').disabled`, { what, timeout: 60000 });
 const text = (sel) => page.call((s) => document.querySelector(s)?.textContent ?? '', sel);
 const view = () => page.evaluate(`document.querySelector('#tabs [aria-selected=true]').dataset.tab`);
+const secHead = () => page.call(() => {
+  const s = document.querySelector('#datalist .dv-sec');
+  const pick = s?.querySelector('select.dv-pick');
+  return `${pick ? pick.selectedOptions[0]?.textContent : s?.querySelector('b')?.textContent} ${s?.querySelector('span')?.textContent}`;
+});
 const rowValue = (hex) => text(`#datalist .dv-row[data-key="${hex}"] .dv-v`);
 const shot = async (name) => {
   if (shots) writeFileSync(join(shots, `data-${name}.png`), Buffer.from(await page.screenshot(), 'base64'));
@@ -96,9 +102,14 @@ try {
   assert.equal(await view(), 'data');
   assert.match(await text('#datalist .dv-empty'), /^Double-click a global variable in the code to see its data here/, 'the Data tab says how to fill it');
   assert.ok(await page.evaluate(`[...document.querySelectorAll('#datalist .dv-empty a')].some((a) => a.textContent === 'primes')`), 'and lists the data this function uses');
+  const listed = await page.evaluate(`[...document.querySelectorAll('#datalist .dv-slist li')].map((li) => li.textContent)`);
+  for (const want of [/^\.rodata data that never changes · \d/, /^\.data data the program can change · 136 bytes$/, /^\.bss data that starts as zeros · \d+ bytes$/]) {
+    assert.ok(listed.some((t) => want.test(t)), `the sections are listed: ${want} in ${JSON.stringify(listed)}`);
+  }
+  assert.ok(!listed.some((t) => t.startsWith('.text')), 'code is not');
   await page.key('1');
   assert.equal(await view(), 'c');
-  await noExceptions('the Data tab before any data: what to do, and the data main uses');
+  await noExceptions('the Data tab before any data: what to do, the data main uses, and the sections to look through');
 
   assert.ok(await dblclickToken('primes'));
   await dataShown('0x4040', 'Data tab at primes');
@@ -106,7 +117,7 @@ try {
   assert.equal(await page.evaluate(`document.getElementById('pane-data').hidden`), false);
   assert.ok(await inView('#datalist .dv-row.sel'), 'the selected row is in view');
   assert.match(await text('#databar .dv-what'), /^primes 32 bytes at 4040 in \.data/);
-  assert.match(await text('#datalist .dv-sec'), /^\.data data the program can change/);
+  assert.match(await secHead(), /^\.data data the program can change/);
   assert.equal(await rowValue('0x4020'), '"hello, data"', 'text reads as text');
   assert.equal(await rowValue('0x4070'), '→ "kuna data tab"', 'a pointer to a string shows the string');
   assert.equal(await rowValue('0x4078'), '→ twice', 'a pointer to a function names it');
@@ -194,10 +205,24 @@ try {
 
   assert.ok(await dblclickToken('scratch'));
   await dataShown('0x40c0', 'scratch in .bss');
-  assert.match(await text('#datalist .dv-sec'), /^\.bss data that starts as zeros/);
+  assert.match(await secHead(), /^\.bss data that starts as zeros/);
   assert.equal(await rowValue('0x40c0'), 'uninitialized', 'nothing in the file backs it');
   assert.equal(await text('#datalist [data-act=dv-more]'), 'Previous section: .data', 'the section before is one click away');
   await noExceptions('a .bss buffer starts as zeros');
+
+  await page.call(() => {
+    const pick = document.querySelector('#datalist select.dv-pick');
+    pick.value = [...pick.options].find((o) => o.textContent === '.rodata').value;
+    pick.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  });
+  await page.waitFor(`document.querySelector('#datalist select.dv-pick')?.selectedOptions[0]?.textContent === '.rodata' && !document.querySelector('#datalist.dv-busy')`, { what: 'the section menu goes to .rodata', timeout: 60000 });
+  assert.match(await secHead(), /^\.rodata data that never changes/);
+  assert.ok(await page.evaluate(`[...document.querySelectorAll('#datalist .dv-row .dv-v')].some((v) => v.textContent === '"kuna data tab"')`), 'its strings read as text');
+  await shot('rodata');
+  await page.key('ArrowLeft', { modifiers: 1 });
+  await dataShown('0x40c0', 'Back returns to scratch');
+  await noExceptions('the section menu goes to .rodata, its strings read as text, and Back returns');
 
   await page.key('2');
   await page.waitFor(`document.querySelector('#asmcode a.xt.xd[data-goto="0x4078"]')`, { what: 'a data operand is a link', timeout: 30000 });

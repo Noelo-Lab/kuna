@@ -133,6 +133,31 @@ export function sectionWords(section) {
   return section.writable ? 'data the program can change' : 'data that never changes';
 }
 
+const secAddr = (s) => BigInt(s.address_hex ?? s.address);
+
+/** The sections the Data tab can show (none of them code, none empty), in address order. */
+export function dataSections(sections) {
+  return (sections || []).filter((s) => !s.executable && s.size > 0)
+    .sort((a, b) => (secAddr(a) < secAddr(b) ? -1 : secAddr(a) > secAddr(b) ? 1 : 0));
+}
+
+/** A byte count in words: `12 bytes`, `4.5 KB`, `2.1 MB`. */
+export function sizeWords(n) {
+  if (n < 1024) return `${n} byte${n === 1 ? '' : 's'}`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB`;
+  return `${(n / 1048576).toFixed(1)} MB`;
+}
+
+/** A menu of `sections` with `current` chosen, for going straight to one. */
+export function sectionPicker(sections, current) {
+  const at = current ? secAddr(current) : null;
+  const opts = sections.map((s) => {
+    const here = at !== null && secAddr(s) === at;
+    return `<option value="${escapeHtml(hx(secAddr(s)))}"${here ? ' selected' : ''}>${escapeHtml(s.name || bare(hx(secAddr(s))))}</option>`;
+  }).join('');
+  return `<select class="dv-pick" data-act="dv-section" aria-label="Section" title="Go to another section">${opts}</select>`;
+}
+
 function hexBytes(bytes, off, n) {
   const parts = [];
   for (let k = Math.max(0, -off); k < n && off + k < bytes.length; k++) parts.push(bytes[off + k].toString(16).padStart(2, '0'));
@@ -563,14 +588,16 @@ export function rowHtml(row, { depth = 0, selected = false, open = false, key = 
 }
 
 /**
- * The whole window as HTML: the section heading, then every row, the open
- * ones followed by their children. `open` and `selected` are row keys
+ * The whole window as HTML: the section heading (a menu of `sections` when
+ * there are several), then every row, the open ones followed by their children. `open` and `selected` are row keys
  * (`<hex>` for a top-level row, `<parent key>/<index>` below it).
  */
-export function renderData(model, { selected = null, open = new Set() } = {}) {
+export function renderData(model, { selected = null, open = new Set(), sections = [] } = {}) {
   const s = model.section;
   const range = s ? ` · ${bare(s.address_hex)}–${bare(hx(BigInt(s.address_hex) + BigInt(s.size)))}` : '';
-  let html = `<div class="dv-sec"><b>${escapeHtml(s?.name || 'Memory')}</b> <span>${escapeHtml(sectionWords(s) + range)}</span></div>`;
+  const listed = s && sections.length > 1 && sections.some((x) => secAddr(x) === secAddr(s));
+  const title = listed ? sectionPicker(sections, s) : `<b>${escapeHtml(s?.name || 'Memory')}</b>`;
+  let html = `<div class="dv-sec">${title} <span>${escapeHtml(sectionWords(s) + range)}</span></div>`;
   let nameCh = 6;
   let typeCh = 4;
   const measure = (rows, depth) => {

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   readUint, readInt, cString, quote, intText, declType, layoutOfDecl, sectionWords, dataModel, childRows,
-  gapRows, placeOf, rowOf, usesOf, useWords, renderData, pointerValue,
+  gapRows, placeOf, rowOf, usesOf, useWords, renderData, pointerValue, dataSections, sizeWords, sectionPicker,
 } from '../decompile/data-view.js';
 
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url)));
@@ -168,5 +168,28 @@ const evil = dataModel({ ...fixture('data-globals.json'), items: [{ name: '<img 
 const evilHtml = renderData(evil);
 assert.ok(!evilHtml.includes('<img') && !evilHtml.includes('<b>&') && evilHtml.includes('&lt;img src=x&gt;'), 'engine strings are escaped');
 checks.push('html');
+
+// ── going to a section ─────────────────────────────────────────────────────
+const secs = [
+  { name: '.bss', address_hex: '0x4090', size: 0x30, file_offset: null, executable: false, writable: true },
+  { name: '.text', address_hex: '0x1060', size: 0x200, file_offset: 0x1060, executable: true, writable: false },
+  { name: '.rodata', address_hex: '0x2000', size: 0x40, file_offset: 0x2000, executable: false, writable: false },
+  { name: '.data', address_hex: '0x4000', size: 0x88, file_offset: 0x3000, executable: false, writable: true },
+  { name: '.tbss', address_hex: '0x3df0', size: 0, file_offset: null, executable: false, writable: true },
+];
+assert.deepEqual(dataSections(secs).map((s) => s.name), ['.rodata', '.data', '.bss'], 'data sections in address order, no code, none empty');
+assert.deepEqual(dataSections(undefined), []);
+assert.deepEqual([12, 1, 4608, 3 * 1048576 + 200000].map(sizeWords), ['12 bytes', '1 byte', '4.5 KB', '3.2 MB']);
+assert.equal(sectionWords(secs[0]), 'data that starts as zeros');
+assert.equal(sectionWords(secs[2]), 'data that never changes');
+const pick = sectionPicker(dataSections(secs), { address_hex: '0x4090' });
+assert.match(pick, /^<select class="dv-pick" data-act="dv-section"/);
+assert.match(pick, /<option value="0x4090" selected>\.bss<\/option>/, 'the section on screen is chosen');
+assert.ok(!pick.includes('.text'), 'code is not listed');
+const withMenu = renderData(typed, { sections: dataSections([...secs, typed.section]) });
+assert.match(withMenu, /<div class="dv-sec"><select class="dv-pick"[^]*<option value="0x4000" selected>\.data<\/option>/, 'the heading is a menu of the sections');
+assert.match(renderData(typed, { sections: [typed.section] }), /<div class="dv-sec"><b>\.data<\/b>/, 'one section needs no menu');
+assert.ok(sectionPicker([{ name: '<x>', address_hex: '0x10', size: 1 }], null).includes('&lt;x&gt;'), 'section names are escaped');
+checks.push('sections');
 
 console.log(`DECOMPILE DATA OK — ${checks.join(' · ')}`);

@@ -331,6 +331,9 @@ a.xt:hover{color:var(--accent);text-decoration:underline;}
 .dv-list.dv-busy{opacity:.7;}
 .dv-sec{padding:2px 20px 8px;font:400 13px/1.6 var(--font-ui);color:var(--text-muted);}
 .dv-sec b{font-family:var(--font-code);font-weight:600;color:var(--text);}
+.dv-pick{margin-right:4px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);
+  color:var(--text);font:600 13px/1.4 var(--font-code);cursor:pointer;}
+.dv-pick:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 .dv-row{display:grid;grid-template-columns:7ch var(--nw,14ch) var(--tw,12ch) minmax(0,1fr);column-gap:2ch;align-items:center;
   min-height:var(--row);padding:0 20px 0 17px;border-left:3px solid transparent;white-space:pre;cursor:default;}
 .dv-row > span{min-width:0;overflow:hidden;text-overflow:ellipsis;line-height:var(--row);}

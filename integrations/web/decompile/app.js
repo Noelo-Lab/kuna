@@ -44,7 +44,7 @@ import { frameModel, renderFrame, slotIndex } from './stack-frame.js';
 import { commentStart } from './tags.js';
 import { renderXrefs, renderLocalCalls, localCallees, renderRefsDialog, useKind } from './xrefs-view.js';
 import { renderStringList, stringRefsModel } from './strings-view.js';
-import { dataModel, renderData as dataRowsHtml, usesOf, useWords, sectionWords, declType, placeOf, rowOf } from './data-view.js';
+import { dataModel, renderData as dataRowsHtml, usesOf, useWords, sectionWords, declType, placeOf, rowOf, dataSections, sizeWords } from './data-view.js';
 import { helpHtml } from './help.js';
 import { decodeBase64, pastedName } from './base64.js';
 
@@ -3427,6 +3427,12 @@ function dataEmptyHtml() {
     html += `<p>Data ${escapeHtml(displayName(state.current.fn))} uses:</p><ul class="dv-glist">` +
       globals.slice(0, 40).map((g) => `<li><a href="#" class="dv-link" data-act="dv-go" data-to="${escapeHtml(g.address_hex)}">${escapeHtml(g.name)}</a> <span class="d2muted">${escapeHtml(bare(g.address_hex))}</span></li>`).join('') + '</ul>';
   }
+  const secs = dataSections(sections());
+  if (secs.length) {
+    html += '<p>Or look through a section of the program:</p><ul class="dv-glist dv-slist">' +
+      secs.map((s) => `<li><a href="#" class="dv-link" data-act="dv-go" data-to="${escapeHtml(s.address_hex)}">${escapeHtml(s.name || bare(s.address_hex))}</a> ` +
+        `<span class="d2muted">${escapeHtml(`${sectionWords(s)} · ${sizeWords(s.size)}`)}</span></li>`).join('') + '</ul>';
+  }
   return html + '</div>';
 }
 
@@ -3435,8 +3441,7 @@ const sectionEnd = (sec) => (sec ? BigInt(sec.address_hex ?? sec.address) + BigI
 /** The data sections just before and after `sec` in the program (none of them code), or nulls. */
 function neighbourSections(sec) {
   if (!sec) return [null, null];
-  const data = sections().filter((s) => !s.executable && s.size > 0)
-    .sort((a, b) => (BigInt(a.address_hex) < BigInt(b.address_hex) ? -1 : 1));
+  const data = dataSections(sections());
   const at = data.findIndex((s) => s.address_hex === (sec.address_hex ?? hexOf(sec.address)));
   return at < 0 ? [null, null] : [data[at - 1] || null, data[at + 1] || null];
 }
@@ -3460,7 +3465,7 @@ function renderDataPane({ reveal = false } = {}) {
   const after = sec && model.end < sectionEnd(sec)
     ? more(hexOf(model.end), `Show the data after ${bare(hexOf(model.end - 1n))}`)
     : next ? more(next.address_hex, `Next section: ${next.name || bare(next.address_hex)}`) : '';
-  els.dataList.innerHTML = before + dataRowsHtml(model, { selected: d.sel, open: d.open }) + after;
+  els.dataList.innerHTML = before + dataRowsHtml(model, { selected: d.sel, open: d.open, sections: dataSections(sections()) }) + after;
   els.dataList.classList.toggle('dv-busy', !!d.loading);
   renderDataBar();
   const sel = d.sel ? els.dataList.querySelector(`.dv-row[data-key="${CSS.escape(d.sel)}"]`) : null;
@@ -3593,6 +3598,10 @@ els.dataList.addEventListener('click', (e) => {
   d.sel = key;
   renderDataPane();
   els.dataList.focus({ preventScroll: true });
+});
+
+els.dataList.addEventListener('change', (e) => {
+  if (e.target.matches?.('.dv-pick')) showData(e.target.value);
 });
 
 els.dataList.addEventListener('dblclick', (e) => {
