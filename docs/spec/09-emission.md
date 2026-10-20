@@ -1189,6 +1189,14 @@ prints byte-for-byte what the build without it prints.
 model a PTRADD/PTRSUB was built on; the driver demotes them back to raw
 arithmetic (`cast_fixup_ptradd` undoes the scaling; `cast_fixup_ptrsub`
 becomes COPY or INT_ADD) rather than print a field access into the wrong type.
+The fit test for a PTRSUB off a spacebase
+(`decompiler/crates/kuna-decomp/src/p6_variables/funcdata_spacebase.rs
+(Funcdata::is_ptrsub_matching_scope)`, shared with `RulePtrsubUndo`) looks the
+offset up in the scope the spacebase selects, as upstream `TypeSpacebase::getSubType`
+does: the global symbol table for a global reference, the function's frame map
+for the stack. A reference into a mapped global therefore keeps its symbol and
+field (`mapped_samples[i & 3].imag`, `&g_recs[0x30]`) instead of falling back
+to the absolute address, which recompiled C would read from the wrong place.
 The upstream LOAD/STORE pointer diagnostics (`checkPointerIssues`) are
 warnings-only in C++, and in kuna the hook `coreaction_casts.rs
 (Funcdata::cast_check_pointer_issues)` is a faithful no-op — a missing
