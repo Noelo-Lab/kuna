@@ -1,0 +1,32 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- GH-1034, P3 call-guard, option globalcallranges off/on.
+     initialize writes 64 distinct globals and invokes a two-word constructor
+     after each write. The constructor only touches its explicit destination.
+     Off builds 4096 unnecessary global INDIRECTs; on builds none of those.
+     Both passes must retain the same 64 stores and calls. The ELF fixture's
+     source and native checksum oracle are beside it; rebuild with:
+     cc -O2 -fno-pie -no-pie -fno-inline globalcallranges_x86_64.c -o globalcallranges_x86_64
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/globalcallranges_x86_64</com>
+  <com>read symbols</com>
+  <com>option globalcallranges off</com>
+  <com>load function initialize</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print raw</com>
+  <com>option globalcallranges on</com>
+  <com>load function initialize</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print raw</com>
+</script>
+<stringmatch name="globalcallranges preserves both function bodies" min="2" max="2">void initialize\(void\)</stringmatch>
+<stringmatch name="globalcallranges preserves the first global store" min="2" max="2">g0 = 1;</stringmatch>
+<stringmatch name="globalcallranges preserves the last global store" min="2" max="2">g63 = 0x40;</stringmatch>
+<stringmatch name="globalcallranges preserves all constructor calls" min="128" max="128">^  construct\(</stringmatch>
+<stringmatch name="globalcallranges removes the quadratic guard cross product only in the second pass" min="4096" max="4096"> \[\] </stringmatch>
+</decompilertest>

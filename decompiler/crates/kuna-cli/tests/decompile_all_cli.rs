@@ -2987,9 +2987,10 @@ fn a_reader_of_a_redone_wrapper_round_trips() {
 /// shape of crazyflie's `logf`. Before, `qnanf_` was `unsigned int` returning
 /// `0x7fc00000` and `logish` returned `(float)qnanf_()`, a value conversion of
 /// the NaN's bits that evaluates to 2143289344.0. `qp`, `sn` and `nn` return NaNs
-/// `NAN` cannot spell (a payload, a signalling NaN, a negative payload) and keep
-/// their bits, and `third` returns a `double` in `d0` whose low half is not a
-/// float. `put` and `put2` store `core`'s float through an untyped pointer,
+/// `NAN` cannot spell (a payload, a signalling NaN, a negative payload); the
+/// hard-float contract of the default preset (`armfloatreturn`) returns them as
+/// floats reinterpreted from their exact bits, and `third` returns its `double`
+/// in `d0` whole. `put` and `put2` store `core`'s float through an untyped pointer,
 /// which printed `((unsigned int *)a1)[2] = core(a0)`, a conversion by value.
 /// The printed functions, compiled on the host, must compute what the source
 /// computes.
@@ -3003,15 +3004,16 @@ fn a_nan_returned_in_s0_round_trips() {
         "float qnanf_(void)",
         "return NAN;",
         "v1 = qnanf_();",
-        "unsigned int qp(void)",
-        "return 0x7fc00123;",
-        "return 0x7fa00000;",
-        "return 0xffc00005;",
-        "unsigned int third(void)",
+        "float qp(void)",
+        ".from = 0x7fc00123 }).to;",
+        ".from = 0x7fa00000 }).to;",
+        ".from = 0xffc00005 }).to;",
+        "double third(void)",
+        "return 0.3333333333333333;",
     ] {
         assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
     }
-    for bad in ["0x7fc00000", "(float)qnanf_", "float third", "float qp", "float sn", "float nn", "(unsigned int *)"] {
+    for bad in ["0x7fc00000", "(float)qnanf_", "float third", "(unsigned int *)"] {
         assert!(!stdout.contains(bad), "`{bad}` printed:\n{stdout}");
     }
     assert!(stdout.contains("*(float *)(a1 + a2 * 4) = core(a0);"), "put stores core's float:\n{stdout}");
@@ -3320,7 +3322,8 @@ fn a_return_stated_in_another_register_is_not_reinterpreted() {
 /// integer, which now reinterprets the float at the call. The printed
 /// functions, compiled with gcc and clang and called with the source's floats,
 /// compute the fixture's bits; `fb_bump`, `fb_store` and `fb_mix` compute with,
-/// store or or an integer into the bits and keep their integer types.
+/// store or or an integer into the bits and keep their integer types, except
+/// that hard-float ARM's `fb_mix` returns the convention's float in `s0`.
 #[test]
 fn a_float_bit_helper_round_trips() {
     let sp = specs();
@@ -3342,7 +3345,11 @@ fn a_float_bit_helper_round_trips() {
             "*a1 = ((union { float from; int to; }){ .from = fb_fabsf(a0) }).to + 1;",
             "int fb_bump(int a0)",
             "void fb_store(unsigned int a0,unsigned int *a1)",
-            "unsigned int fb_mix(unsigned int a0,unsigned int a1)",
+            if tag == "armhf" {
+                "float fb_mix(unsigned int a0,unsigned int a1)"
+            } else {
+                "unsigned int fb_mix(unsigned int a0,unsigned int a1)"
+            },
         ] {
             assert!(stdout.contains(want), "{tag}: missing `{want}`:\n{stdout}");
         }
@@ -3407,16 +3414,26 @@ fn a_float_bit_helper_round_trips() {
 /// without reading its result, and was printed before the withdrawal as
 /// `fbabs(((union { unsigned int from; float to; }){ .from = a0 }).to)`, a
 /// float handed to the final `unsigned int fbabs(unsigned int a0)`, which C
-/// converts by value. Every caller of the helper is now decompiled again.
+/// converts by value. Every caller of the helper is now decompiled again. The
+/// withdrawal is checked with `armfloatreturn` off: the hard-float contract of
+/// the default preset returns `s0` as the convention's float, so `fbabs` keeps
+/// its float on both sides and `abs_bits` reinterprets the result.
 #[test]
 fn a_withdrawn_float_bit_helper_is_called_with_its_final_prototype() {
     let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatbitswithdraw_armhf.o").to_str().unwrap().to_string();
     let sp = specs();
-    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture, "--sleighpath", &sp]);
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture, "--option", "armfloatreturn", "off", "--sleighpath", &sp]);
     assert!(ok, "kuna decompile-all failed: {stderr}");
     assert!(stdout.contains("unsigned int fbabs(unsigned int a0)"), "fbabs is no longer withdrawn; re-pick the case:\n{stdout}");
     assert!(stdout.contains("  fbabs(a0); // tail-call"), "from_bits does not call fbabs with its integer:\n{stdout}");
     assert!(!stdout.contains("float to; }){ .from = a0 }).to)"), "a float is handed to fbabs's integer parameter:\n{stdout}");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    assert!(stdout.contains("float fbabs(float a0)"), "the preset withdrew fbabs's float:\n{stdout}");
+    assert!(
+        stdout.contains("return ((union { float from; unsigned int to; }){ .from = fbabs("),
+        "abs_bits does not reinterpret fbabs's float:\n{stdout}"
+    );
 }
 
 /// `floatret_put_{cm4,a64}.o` (Cortex-M4F and AArch64, clang -O2): `putf2` moves
@@ -3763,13 +3780,16 @@ fn soft_float_imports_keep_their_core_register_values() {
 /// image printed `double sub_10224(..)` beside `rd`'s `unsigned long long v1 =
 /// sub_10224()`, which converts 2.25 to 2, where the rows' absence returns the
 /// right `CONCAT44(v2,v1)`; the hard image printed `unsigned int sub_101f0(..)`
-/// returning `SUB84(v1,0)`, the low half of `d0`. ARM gets none of the rows.
+/// returning `SUB84(v1,0)`, the low half of `d0`. ARM gets none of the rows
+/// with `armfloatreturn` off. Under the default preset's hard-float contract
+/// the hard image takes `strtod`'s row, and `parse` and `clampd` return their
+/// doubles whole in `d0`.
 #[test]
 fn arm_images_get_no_double_libc_rows() {
     let sp = specs();
     for name in ["floatret_armrows_soft", "floatret_armrows_hard"] {
         let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--option", "armfloatreturn", "off", "--sleighpath", &sp]);
         assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
         for bad in ["double", "SUB84("] {
             assert!(!stdout.contains(bad), "{name}: `{bad}` from a libc row ARM does not return whole:\n{stdout}");
@@ -3780,7 +3800,34 @@ fn arm_images_get_no_double_libc_rows() {
                 "{name}: `clampd` no longer returns its r0:r1 bits:\n{stdout}"
             );
         }
+        let (preset, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
+        if name.ends_with("soft") {
+            assert_eq!(preset, stdout, "{name}: the hard-float contract changed a soft-float image");
+        } else {
+            for want in ["double strtod(char *a0,char **a1)", "double sub_101e0(char *a0)", "double sub_101f0(char *a0)", "v1 = strtod(a0,NULL);"] {
+                assert!(preset.contains(want), "{name}: missing `{want}`:\n{preset}");
+            }
+            assert!(!preset.contains("SUB84("), "{name}: a double return is cut to its low word:\n{preset}");
+        }
     }
+}
+
+/// `kuna decompile armfloat_libm_hard mant` builds one function: the held-back
+/// `frexp` and `sin` rows must be parked before that first `Funcdata` takes its
+/// callee-prototype snapshot, or `mant` reads `frexp()` with no arguments.
+#[test]
+fn arm_library_float_rows_reach_a_single_decompile() {
+    let sp = specs();
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/armfloat_libm_hard").to_str().unwrap().to_string();
+    for (func, want) in [("mant", "double mant(double a0,int *a1)"), ("mant", "v1 = frexp(a0,a1);"), ("wave", "v1 = sin(a0);")] {
+        let (stdout, stderr, ok) = run_kuna(&["decompile", &bin, func, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile {func} failed: {stderr}");
+        assert!(stdout.contains(want), "{func}: missing `{want}`:\n{stdout}");
+    }
+    let (off, stderr, ok) = run_kuna(&["decompile", &bin, "mant", "--option", "armfloatreturn", "off", "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile mant failed: {stderr}");
+    assert!(!off.contains("frexp(a0,a1)"), "armfloatreturn off still parked frexp:\n{off}");
 }
 
 /// `dsum`, `norm` and `use` read their argument as `double *`, `struct P *` and

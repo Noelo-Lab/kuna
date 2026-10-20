@@ -10,16 +10,169 @@ use crate::kuna_stackobjects::{ByteSource, SourcePoint, StackObject};
 use kuna_base::address::Address;
 use kuna_num::opcodes::OpCode;
 
+fn wider_scalar_parameter(fd: &Funcdata, address: &Address, size: i32) -> Option<i32> {
+    if size <= 0 || !fd.get_func_proto().has_store() {
+        return None;
+    }
+    let stack = fd.get_arch().manage().get_stack_space()?;
+    if stack.get_word_size() != 1
+        || address
+            .get_space()
+            .is_none_or(|space| space.get_index() != stack.get_index())
+    {
+        return None;
+    }
+    (0..fd.get_func_proto().num_params()).find(|&index| {
+        let Some(parameter) = fd.get_func_proto().get_param(index) else {
+            return false;
+        };
+        let Some(datatype) = parameter.get_type() else {
+            return false;
+        };
+        let incoming = parameter.get_address();
+        parameter.is_type_locked()
+            && incoming.get_offset() == address.get_offset()
+            && incoming
+                .get_space()
+                .is_some_and(|space| space.get_index() == stack.get_index())
+            && matches!(
+                datatype.get_metatype(),
+                type_metatype::TYPE_BOOL | type_metatype::TYPE_INT | type_metatype::TYPE_UINT
+            )
+            && matches!(datatype.get_size(), 1 | 2 | 4)
+            && datatype.get_size() < size
+    })
+}
+
+fn eligible_extent(fd: &Funcdata, start: u64, size: i32) -> bool {
+    if !matches!(size, 2 | 4) {
+        return false;
+    }
+    let Some(stack) = fd.get_arch().manage().get_stack_space() else {
+        return false;
+    };
+    let address = Address::new(Rc::clone(stack), start);
+    let Some(index) = wider_scalar_parameter(fd, &address, size) else {
+        return false;
+    };
+    (0..fd.get_func_proto().num_params()).all(|other| {
+        if other == index {
+            return true;
+        }
+        let Some(other) = fd.get_func_proto().get_param(other) else {
+            return true;
+        };
+        let Some(datatype) = other.get_type() else {
+            return true;
+        };
+        let other = other.get_address();
+        other
+            .get_space()
+            .is_none_or(|space| space.get_index() != stack.get_index())
+            || (datatype.get_size() > 0
+                && stack.wrap_offset(start.wrapping_sub(other.get_offset()))
+                    >= datatype.get_size() as u64
+                && stack.wrap_offset(other.get_offset().wrapping_sub(start)) >= size as u64)
+    })
+}
+
+/// Retain physical-store evidence before heritage can narrow or combine it.
+pub(crate) fn record_store(fd: &mut Funcdata, address: &Address, size: i32) {
+    if fd.get_arch().stack_views || size <= 0 || !fd.get_func_proto().has_store() {
+        return;
+    }
+    let Some(stack) = fd.get_arch().manage().get_stack_space() else {
+        return;
+    };
+    if stack.get_word_size() != 1
+        || address
+            .get_space()
+            .is_none_or(|space| space.get_index() != stack.get_index())
+    {
+        return;
+    }
+    let mut starts = Vec::new();
+    if wider_scalar_parameter(fd, address, size).is_some() {
+        starts.push(address.get_offset());
+    }
+    if size > 4 {
+        for index in 0..fd.get_func_proto().num_params() {
+            let Some(parameter) = fd.get_func_proto().get_param(index) else {
+                continue;
+            };
+            let Some(datatype) = parameter.get_type() else {
+                continue;
+            };
+            let incoming = parameter.get_address();
+            if !parameter.is_type_locked()
+                || incoming
+                    .get_space()
+                    .is_none_or(|space| space.get_index() != stack.get_index())
+                || !matches!(
+                    datatype.get_metatype(),
+                    type_metatype::TYPE_BOOL | type_metatype::TYPE_INT | type_metatype::TYPE_UINT
+                )
+                || !matches!(datatype.get_size(), 1 | 2 | 4)
+            {
+                continue;
+            }
+            let start = incoming.get_offset();
+            if stack.wrap_offset(address.get_offset().wrapping_sub(start)) < 4
+                || stack.wrap_offset(start.wrapping_sub(address.get_offset())) < size as u64
+            {
+                starts.push(start);
+            }
+        }
+    }
+    for start in starts {
+        fd.stack_parameter_store_extents
+            .entry(start)
+            .and_modify(|width| *width = (*width).max(size))
+            .or_insert(size);
+    }
+}
+
+pub(crate) fn preserves_range(fd: &Funcdata, address: &Address, size: i32) -> bool {
+    if size <= 0 || fd.stack_parameter_store_extents.is_empty() {
+        return false;
+    }
+    let Some(stack) = fd.get_arch().manage().get_stack_space() else {
+        return false;
+    };
+    if address
+        .get_space()
+        .is_none_or(|space| space.get_index() != stack.get_index())
+    {
+        return false;
+    }
+    fd.stack_parameter_store_extents
+        .iter()
+        .any(|(&start, &width)| {
+            if !eligible_extent(fd, start, width) {
+                return false;
+            }
+            stack.wrap_offset(address.get_offset().wrapping_sub(start)) < width as u64
+                || stack.wrap_offset(start.wrapping_sub(address.get_offset())) < size as u64
+        })
+}
+
+/// A formal scalar describes the incoming value, not every later write to its slot.
+pub(crate) fn wider_scalar_parameters(fd: &Funcdata) -> Vec<(u64, i32)> {
+    fd.stack_parameter_store_extents
+        .iter()
+        .filter_map(|(&start, &width)| eligible_extent(fd, start, width).then_some((start, width)))
+        .collect()
+}
+
 pub(crate) fn can_map_backing(fd: &Funcdata, start: u64, size: i32) -> bool {
     let Some(scope) = fd.get_scope_local() else {
         return false;
     };
     let address = Address::new(Rc::clone(scope.get_space_id()), start);
-    let invalid = Address::new_invalid();
     scope.in_scope(&address, size)
         && !parameter_types(fd, start, size).is_empty()
         && scope
-            .query_container_for_link_matching(&address, size, &invalid, |symbol| {
+            .database().find_overlap_matching(scope.scope_id(), &address, size, |symbol| {
                 symbol.get_category() != crate::database::symbol_category::FUNCTION_PARAMETER
             })
             .is_none()
@@ -59,7 +212,7 @@ pub(crate) fn backing_for_address(
     address: &Address,
     size: i32,
 ) -> Option<crate::varmap::LinkEntryInfo> {
-    if !fd.get_arch().stack_views || size <= 0 {
+    if !crate::kuna_stackviews::enabled(fd) || size <= 0 {
         return None;
     }
     let scope = fd.get_scope_local()?;
@@ -351,7 +504,7 @@ pub(crate) fn separates_parameter(
     first: HighVariableId,
     second: HighVariableId,
 ) -> bool {
-    if !fd.get_arch().stack_views || first == second {
+    if !crate::kuna_stackviews::enabled(fd) || first == second {
         return false;
     }
     [(first, second), (second, first)]
@@ -507,12 +660,31 @@ fn storage(fd: &Funcdata, object: &StackObject) -> Option<VarnodeId> {
     Some(id)
 }
 
+/// Bind recovered stack objects to shared parameter backing. Without
+/// `stackviews`, an address may escape without a call carrying a declared
+/// pointee type, so every mapped backing is initialized independently of the
+/// call-specific objects.
 pub(crate) fn prepare_casts(fd: &mut Funcdata) {
     let Some(factory) = fd.get_arch().types_rc() else {
         return;
     };
     let objects = fd.stack_objects.clone();
     let mut initialized = BTreeSet::new();
+    if !fd.get_arch().stack_views {
+        let mut backings = BTreeMap::new();
+        if let Some(space) = fd.get_arch().manage().get_stack_space() {
+            for id in fd.vbank().loc_space_ids(space) {
+                let Some(value) = fd.vbank().get(id) else { continue };
+                if let Some(info) = backing_for_address(fd, value.get_addr(), value.get_size()) {
+                    backings.entry(info.entry_addr.get_offset()).or_insert(info);
+                }
+            }
+        }
+        for (start, backing) in backings {
+            initialized.insert(start);
+            initialize_parameters(fd, &backing, factory.as_ref());
+        }
+    }
     for object in objects {
         if let Some(backing) = shared_backing(fd, &object) {
             if initialized.insert(backing.entry_addr.get_offset()) {

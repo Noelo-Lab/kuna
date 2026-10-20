@@ -147,6 +147,9 @@ pub(super) fn build_script_for_input(
     for form in forms(crate::assertdecl::Slot::Program) {
         lines.push(form.line);
     }
+    if options.iter().any(|(name, value)| name == "callwide" && value == "on") {
+        lines.push("callwide prepare".into());
+    }
     lines.push(format!("load {verb} {selection}"));
     // FUNCTION-scoped directives need a loaded function and are consumed at flow
     // time, so they precede the first `decompile`.

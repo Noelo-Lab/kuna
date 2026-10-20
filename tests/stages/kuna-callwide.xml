@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default">
+<!--
+    Kuna GH-904: P4 calls and prototypes, option callwide (default off).
+    The script loads the committed sealed MIPS32-BE ELF, including its root,
+    all six callers and consumer-only DWARF. No producer prototype is supplied.
+    Both passes explicitly use narrowext compiler, which establishes the
+    compiler extension of the same producer's narrow caller returns.
+
+    Assert #1 is the off-pass bug: produce_sum returns only its four-byte
+    high word. Asserts #2-#3 prove the on-pass producer has an eight-byte
+    return in high:low order, including carry from the low addition.
+    Asserts #4-#7 prove the full-width sink caller and high-byte caller retain
+    their declared contracts rather than acquiring a raw pair boundary.
+    The CLI companion executes the original bytes and untouched emitted C
+    with their actual header over eight vectors and both composition helpers.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/callwide/mips32_be_dwarf.elf</com>
+  <com>option ctypes on</com>
+  <com>option dwarf on</com>
+  <com>option bejoin evidence</com>
+  <com>option narrowext compiler</com>
+  <com>option callwide off</com>
+  <com>read symbols</com>
+  <com>load function produce_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/callwide/mips32_be_dwarf.elf</com>
+  <com>option ctypes on</com>
+  <com>option dwarf on</com>
+  <com>option bejoin evidence</com>
+  <com>option narrowext compiler</com>
+  <com>option callwide on</com>
+  <com>read symbols</com>
+  <com>callwide prepare</com>
+  <com>load function produce_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller_high8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="callwide #1: off keeps only the four-byte high return" min="1" max="1">^int produce_sum\(</stringmatch>
+<stringmatch name="callwide #2: on promotes the original producer to eight bytes" min="1" max="1">^unsigned long long produce_sum\(</stringmatch>
+<stringmatch name="callwide #3: on joins carry-adjusted high word then low sum" min="1" max="1">return CONCAT44\(a2 \+ a0 \+ \(unsigned int\)\(a3 \+ a1 &lt; a3\),a3 \+ a1\);</stringmatch>
+<stringmatch name="callwide #4: the full-width caller keeps two eight-byte arguments" min="1" max="1">^unsigned long long caller64\(unsigned long long a0,unsigned long long a1\)</stringmatch>
+<stringmatch name="callwide #5: the sink receives the unchanged full-width result" min="1" max="1">return consume64\(value\);</stringmatch>
+<stringmatch name="callwide #6: high-byte caller keeps its narrow result and wide inputs" min="1" max="1">^unsigned char caller_high8\(unsigned long long a0,unsigned long long a1\)</stringmatch>
+<stringmatch name="callwide #7: high-byte caller reads the high word of the promoted result" min="1" max="1">return \(unsigned long long\)produce_sum\(.*\) &gt;&gt; 0x20;</stringmatch>
+</decompilertest>

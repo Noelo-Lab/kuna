@@ -346,6 +346,10 @@ fn header_syntax_checks_when_a_type_shares_a_name_with_a_function() {
             text.contains("prototype omitted: int stat("),
             "libctypes {arm}: the `stat` prototype should be suppressed, not declared:\n{text}"
         );
+        assert!(
+            text.contains("conflicts with a data or type declaration */") && !text.contains("#error"),
+            "libctypes {arm}: the collision is reported in a comment, not a hard error:\n{text}"
+        );
         let stub = dir.join("hcheck.c");
         std::fs::write(
             &stub,

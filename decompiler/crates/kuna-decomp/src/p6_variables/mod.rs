@@ -11,6 +11,7 @@ pub mod variable;
 pub mod merge;
 pub mod kuna_stackalias;
 pub mod kuna_stackviews;
+pub(crate) mod kuna_localstackviews;
 pub mod kuna_stackobjects;
 pub(crate) mod kuna_stackuses;
 pub(crate) mod kuna_savedregisterspills;

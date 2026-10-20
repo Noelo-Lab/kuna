@@ -2473,7 +2473,7 @@ fn pair_halves(data: &Funcdata, whole: VarnodeId) -> Option<(Address, i32, Addre
 #[path = "kuna_bejoin/evidence.rs"]
 mod evidence;
 
-pub(crate) use evidence::{build_high_read, missed_proven as wide_callee_missed, seed as seed_wide_returns, WideCache, WideView};
+pub(crate) use evidence::{build_high_read, missed_proven as wide_callee_missed, seed as seed_wide_returns, wide_pair, WideCache, WidePair, WideView};
 
 #[cfg(test)]
 #[path = "kuna_bejoin/tests.rs"]

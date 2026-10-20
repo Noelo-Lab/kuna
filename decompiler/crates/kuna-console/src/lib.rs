@@ -33,6 +33,7 @@ pub mod codedata;
 pub mod kuna_retcallchain;
 pub mod kuna_console;
 pub mod kuna_hightarget;
+pub mod kuna_callwide;
 mod kuna_paramasserts;
 mod kuna_dwarfstack;
 pub mod kuna_buildstamp;
@@ -45,3 +46,7 @@ pub mod assertsyntax;
 pub mod grammar;
 pub mod rulecompile;
 pub mod unify;
+
+mod kuna_projectfunctionnames;
+
+mod kuna_dataidentifiers;

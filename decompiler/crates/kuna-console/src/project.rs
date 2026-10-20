@@ -80,8 +80,13 @@ pub struct FuncResult {
     /// header, and `decompile-graph`'s per-function row.  Always `None` on the
     /// `decompile-all` path, which does not serialize prototypes.
     pub proto: Option<String>,
+    /// Actual C identifier used by project definitions and prototypes. Selection
+    /// names and aliases retain their inventory meaning, including in streams.
+    pub emitted_c_name: Option<String>,
     /// Complete declarations for named callees, retained when bodies stream out.
     pub call_declarations: Vec<String>,
+    /// Private project/worker contracts for live callwide proofs.
+    pub callwide_prototypes: Vec<kuna_decomp::kuna_callwide::ExportPrototype>,
     pub variables: Vec<VarInfo>,
     /// (kuna `structdefs`) The composite/enum/typedef definitions this
     /// function's C names, in definition-before-use order. Empty unless the
@@ -505,6 +510,7 @@ pub fn decompile_pulled(
     next: &mut dyn FnMut() -> Option<FunctionEntry>,
     sink: &mut dyn FnMut(FuncResult),
 ) {
+    crate::kuna_callwide::prepare(prog);
     let DecompileOptions {
         no_vars,
         want_proto,
@@ -562,7 +568,9 @@ pub fn decompile_pulled(
                 size: size as i64,
                 error: Some(error),
                 proto: None,
+                emitted_c_name: None,
                 call_declarations: Vec::new(),
+                callwide_prototypes: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -599,7 +607,9 @@ pub fn decompile_pulled(
                 size: size as i64,
                 error: None,
                 proto: None,
+                emitted_c_name: None,
                 call_declarations: Vec::new(),
+                callwide_prototypes: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -624,7 +634,9 @@ pub fn decompile_pulled(
                 code: None,
                 error: Some("entry address is not mapped in this input".into()),
                 proto: None,
+                emitted_c_name: None,
                 call_declarations: Vec::new(),
+                callwide_prototypes: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -822,8 +834,19 @@ pub fn decompile_pulled(
                 }
                 // (kuna `elemptr`) Record what this function said about each global.
                 kuna_decomp::kuna_elemptr::record(prog.arch_mut(), &fd);
+                let original_display = fd.get_display_name().to_string();
+                if header_carries_types {
+                    if let Some(display) = crate::kuna_projectfunctionnames::display(prog.arch(), &fd) {
+                        fd.set_display_name(&display);
+                    }
+                }
+                let emitted_name = fd.get_display_name().to_string();
                 prog.arch_mut().print_mut().set_record_pointer_arguments(want_pointer_arguments);
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if header_carries_types {
+                        crate::kuna_projectfunctionnames::reserve(prog.arch(), &mut fd)
+                            .expect("project C symbol names must remain distinct");
+                    }
                     // Trim the surrounding newlines the same way `kuna decompile`
                     // does (`decompile.rs::trim_newlines`), so the per-function
                     // `code` is byte-identical to the single-shot path.
@@ -838,9 +861,11 @@ pub fn decompile_pulled(
                     let pointerargs = prog.arch_mut().print_mut().take_pointer_arguments(&untrimmed);
                     let code = untrimmed.trim_matches('\n').to_string();
                     let globals = kuna_decomp::decompile_drive::extract_global_objects(prog.arch());
-                    let call_declarations = if want_proto && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C {
-                        kuna_decomp::kuna_callprototypes::declarations(prog.arch(), &fd)
-                    } else { Vec::new() };
+                    let calls = if want_proto && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C {
+                        kuna_decomp::kuna_callprototypes::declarations(prog.arch(), &fd)?
+                    } else { Default::default() };
+                    let call_declarations = calls.declarations;
+                    let callwide_prototypes = calls.callwide_prototypes;
                     let field_calls = kuna_decomp::kuna_calltargettype::field_declarations(prog.arch(), &fd);
                     let mut variables =
                         if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
@@ -888,10 +913,11 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
-                    (code, variables, types, (globals, field_calls, call_declarations), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)
-                }));
+                    Ok::<_, String>((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects))
+                })).unwrap_or_else(|_| Err("panic while rendering C / extracting variables".into()));
+                fd.set_display_name(&original_display);
                 match rendered {
-                    Ok((code, variables, types, (globals, field_calls, call_declarations), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => {
+                    Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => {
                     crate::assertions::verify_printed(prog, &fd, &code, &replayed);
                     sink(FuncResult {
                         name,
@@ -901,7 +927,9 @@ pub fn decompile_pulled(
                         code: Some(code),
                         error: None,
                         proto,
+                        emitted_c_name: (header_carries_types && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C).then_some(emitted_name),
                         call_declarations,
+                        callwide_prototypes,
                         variables,
                         stack_objects,
                         types,
@@ -916,15 +944,17 @@ pub fn decompile_pulled(
                         detail,
                     })
                     }
-                    Err(_) => sink(FuncResult {
+                    Err(error) => sink(FuncResult {
                         name,
                         address,
                         byte_address,
                         size: size as i64,
                         code: None,
-                        error: Some("panic while rendering C / extracting variables".into()),
+                        error: Some(error),
                         proto: None,
+                        emitted_c_name: None,
                         call_declarations: Vec::new(),
+                        callwide_prototypes: Vec::new(),
                         variables: Vec::new(),
                         types: Vec::new(),
                         stack_objects: Vec::new(),
@@ -948,7 +978,9 @@ pub fn decompile_pulled(
                 code: None,
                 error: Some(e.explain().to_string()),
                 proto: None,
+                emitted_c_name: None,
                 call_declarations: Vec::new(),
+                callwide_prototypes: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -1204,6 +1236,121 @@ fn matching_open(text: &str, open: char, close: char) -> Option<usize> {
     None
 }
 
+/// A proven wide call requires one compatible declaration or selected definition.
+/// External declaration text differences conservatively refuse the export.
+pub fn validate_callwide_header<'a>(
+    prelude: &str,
+    types: &str,
+    results: impl IntoIterator<Item = &'a FuncResult>,
+) -> Result<(), String> {
+    deferred_callwide_header(prelude, types, results, &BTreeSet::new()).map(|_| ())
+}
+
+/// Defer only a compatible raw-word conflict awaiting its selected producer.
+pub fn deferred_callwide_header<'a>(
+    prelude: &str,
+    types: &str,
+    results: impl IntoIterator<Item = &'a FuncResult>,
+    selected_entries: &BTreeSet<u64>,
+) -> Result<BTreeSet<u64>, String> {
+    let results: Vec<_> = results.into_iter().collect();
+    if !results.iter().any(|r| r.error.is_none() && !r.callwide_prototypes.is_empty()) {
+        return Ok(BTreeSet::new());
+    }
+    let completed: BTreeSet<_> = results.iter().map(|r| r.byte_address).collect();
+    let results: Vec<_> = results.into_iter().filter(|r| r.error.is_none()).collect();
+    let same = |a: &kuna_decomp::kuna_callwide::ExportPrototype,
+                b: &kuna_decomp::kuna_callwide::ExportPrototype| {
+        a.name == b.name && a.entry == b.entry && a.signed == b.signed && a.inputs == b.inputs
+    };
+    let same_words = |a: &kuna_decomp::kuna_callwide::ExportPrototype,
+                      b: &kuna_decomp::kuna_callwide::ExportPrototype| {
+        a.name == b.name && a.entry == b.entry && a.signed == b.signed && a.inputs.len() == b.inputs.len()
+    };
+    let mut selected: BTreeMap<String, Vec<&FuncResult>> = BTreeMap::new();
+    for result in &results {
+        if let Some(proto) = result.proto.as_deref() {
+            selected.entry(declarator_name(proto.trim().trim_end_matches(';'))).or_default().push(result);
+        }
+    }
+    let agrees = |a: &kuna_decomp::kuna_callwide::ExportPrototype,
+                  b: &kuna_decomp::kuna_callwide::ExportPrototype| {
+        same(a, b) || (same_words(a, b) && selected.get(&a.name).is_some_and(|own| {
+            own.len() == 1 && own[0].callwide_prototypes.iter().any(|definition| {
+                definition.definition && same_words(a, definition)
+            })
+        }))
+    };
+    let mut contracts = BTreeMap::new();
+    let mut required = BTreeSet::new();
+    let mut pending = BTreeSet::new();
+    let can_wait = |contract: &kuna_decomp::kuna_callwide::ExportPrototype| {
+        selected_entries.contains(&contract.entry) && !completed.contains(&contract.entry)
+            && !selected.contains_key(&contract.name)
+    };
+    for result in &results {
+        for contract in &result.callwide_prototypes {
+            if let Some(previous) = contracts.insert(contract.name.as_str(), contract) {
+                if !agrees(previous, contract) {
+                    if same_words(previous, contract) && can_wait(contract) {
+                        pending.insert(contract.entry);
+                    } else {
+                        return Err(format!("callwide export: incompatible contracts for {}", contract.name));
+                    }
+                }
+            }
+            if contract.definition {
+                if contract.entry != result.byte_address || !result.proto.as_deref().is_some_and(|proto| {
+                    declarator_name(proto.trim().trim_end_matches(';')) == contract.name
+                }) {
+                    return Err(format!("callwide export: missing selected definition for {}", contract.name));
+                }
+            } else {
+                required.insert(contract.name.as_str());
+                if !result.call_declarations.iter().any(|decl| {
+                    declarator_name(decl.trim().trim_end_matches(';')) == contract.name
+                }) {
+                    return Err(format!("callwide export: missing call declaration for {}", contract.name));
+                }
+            }
+        }
+    }
+    let shadowed: BTreeSet<_> = typedef_names(prelude).into_iter().chain(typedef_names(types)).collect();
+    let globals: BTreeSet<_> = results.iter().flat_map(|r| &r.globals).map(|g| g.name.as_str()).collect();
+    for name in contracts.keys() {
+        if shadowed.contains(*name) {
+            return Err(format!("callwide export: {} conflicts with a type name", name));
+        }
+        if globals.contains(*name) {
+            return Err(format!("callwide export: {} conflicts with a data name", name));
+        }
+        if selected.get(*name).is_some_and(|own| own.len() != 1) {
+            return Err(format!("callwide export: multiple selected definitions for {name}"));
+        }
+    }
+    for name in required {
+        if let Some(own) = selected.get(name) {
+            if own.len() != 1 || !own[0].callwide_prototypes.iter().any(|definition| {
+                definition.definition && same_words(contracts[name], definition)
+            }) {
+                return Err(format!("callwide export: selected definition disagrees for {name}"));
+            }
+            continue;
+        }
+        let declarations: BTreeSet<_> = results.iter().flat_map(|r| &r.call_declarations)
+            .filter(|decl| declarator_name(decl.trim().trim_end_matches(';')) == name)
+            .map(|decl| decl.trim()).collect();
+        if declarations.len() != 1 {
+            if declarations.len() > 1 && can_wait(contracts[name]) {
+                pending.insert(contracts[name].entry);
+            } else {
+                return Err(format!("callwide export: external declarations disagree for {name}"));
+            }
+        }
+    }
+    Ok(pending)
+}
+
 /// `<name>.h`: include guard + recompile prelude + user type definitions +
 /// the prototype section (successes in address order; failures as comments).
 ///
@@ -1215,11 +1362,16 @@ fn matching_open(text: &str, open: char, close: char) -> Option<usize> {
 /// mentions it depends on it, while the suppressed prototype is one line, still
 /// printed verbatim in the comment.
 ///
+/// A C function name claimed by several entries, or also by a data or type
+/// declaration, is listed in an address-only comment (complete records, so
+/// streamed and parallel exports report the same); the export still completes.
+///
 /// The type block is filtered by [`prune_unreferenced_synth_types`] first, so a
 /// synthesized structure the document no longer names is not declared.
-pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[FuncResult]) -> String {
+pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[FuncResult]) -> Result<String, String> {
     let guard = sanitize_guard(file_name);
     let types = &declare_called_fields(&prune_unreferenced_synth_types(types, results), results);
+    validate_callwide_header(prelude, types, results.iter())?;
     let shadowed = typedef_names(types);
     let mut out = String::new();
     out.push_str(&format!("#ifndef {guard}\n#define {guard}\n\n"));
@@ -1227,6 +1379,13 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
     if !types.is_empty() {
         out.push_str("\n/* user-defined types */\n");
         out.push_str(types);
+    }
+    let conflicts = crate::kuna_projectfunctionnames::conflicts(results, &shadowed);
+    if !conflicts.is_empty() {
+        out.push_str("\n/* C name conflicts: the generated C does not compile until these are renamed */\n");
+        for conflict in conflicts {
+            let _ = writeln!(out, "/* {conflict} */");
+        }
     }
     let globals = global_declarations(results);
     if !globals.is_empty() {
@@ -1259,7 +1418,7 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
     out.push_str("\n/* function prototypes */\n");
     for r in results {
         match (&r.proto, &r.error) {
-            (Some(proto), None) if shadowed.contains(&r.name) => {
+            (Some(proto), None) if shadowed.contains(r.emitted_c_name.as_deref().unwrap_or(&r.name)) => {
                 out.push_str(&format!(
                     "/* `{}` is a type name above; prototype omitted: {} */\n",
                     r.name,
@@ -1281,7 +1440,7 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
         }
     }
     out.push_str(&format!("\n#endif /* {guard} */\n"));
-    out
+    Ok(out)
 }
 
 /// (kuna `globalref`) One `extern` line per global the functions name by address,
@@ -1836,6 +1995,32 @@ mod tests {
     }
 
     #[test]
+    fn complete_project_checks_actual_c_names_after_bodies_are_streamed() {
+        let conflicts = |types: &str, records: &[FuncResult]| {
+            crate::kuna_projectfunctionnames::conflicts(records, &super::typedef_names(types)).len()
+        };
+        let mut first = streamed("void linked(void)", "int");
+        first.name = "source_one".into();
+        first.emitted_c_name = Some("linked".into());
+        first.byte_address = 0x1000;
+        let mut second = first.clone();
+        second.name = "source_two".into();
+        second.byte_address = 0x2000;
+        assert_eq!(conflicts("", &[first.clone(), first.clone()]), 0);
+        let records = [first.clone(), second];
+        assert_eq!(conflicts("", &records), 1);
+        let header = super::build_header("fresh.so", "", "", &records).unwrap();
+        assert!(header.contains("/* C function name has multiple owning entries, including 0x1000 */"), "{header}");
+        assert!(!header.contains("#error"), "{header}");
+        assert_eq!(conflicts("typedef int linked;", &[first.clone()]), 1);
+        first.globals.push(super::GlobalInfo {
+            address: 0x5000, name: "linked".into(), declaration: "int linked".into(),
+            size: 4, unknown: false, direct: false, aggregate: false, elem: false, integer: false,
+        });
+        assert_eq!(conflicts("", &[first]), 1);
+    }
+
+    #[test]
     fn streamed_call_declarations_keep_types_and_avoid_repeating_definitions() {
         let mut result = streamed("int local(int a0);", "int");
         result.call_declarations = vec![
@@ -1846,10 +2031,94 @@ mod tests {
             "long split(long);".into(),
         ];
         assert!(super::names_any_type(&result, &["struct_42".into()]));
-        let header = super::build_header("fresh", "", "", &[result]);
+        let header = super::build_header("fresh", "", "", &[result]).unwrap();
         assert_eq!(header.matches("extern int external_value").count(), 1);
         assert!(!header.contains("extern int local"));
         assert!(!header.contains("extern int split") && !header.contains("extern long split"), "{header}");
+    }
+
+    fn wide_call() -> FuncResult {
+        let mut result = streamed("unsigned long long caller(void);", "unsigned long long");
+        result.call_declarations = vec!["unsigned long long producer(int,int,int,int);".into()];
+        result.callwide_prototypes = vec![kuna_decomp::kuna_callwide::ExportPrototype {
+            name: "producer".into(), entry: 0x2000, signed: false,
+            inputs: vec![true; 4], definition: false,
+        }];
+        result
+    }
+
+    #[test]
+    fn wide_call_header_conflicts_refuse_instead_of_omitting_the_declaration() {
+        let result = wide_call();
+        let header = super::build_header("fresh", "", "", std::slice::from_ref(&result)).unwrap();
+        assert!(header.contains("extern unsigned long long producer(int,int,int,int);"));
+        let mut missing = result.clone();
+        missing.call_declarations.clear();
+        assert!(super::build_header("fresh", "", "", &[missing]).is_err());
+        let mut conflicting = result.clone();
+        conflicting.call_declarations.push("long long producer(int,int,int,int);".into());
+        assert!(super::build_header("fresh", "", "", &[conflicting]).is_err());
+        for types in ["typedef int producer;", ""] {
+            let prelude = if types.is_empty() { "typedef int producer;" } else { "" };
+            assert!(super::build_header("fresh", prelude, types, std::slice::from_ref(&result)).is_err());
+        }
+        let mut data_collision = result.clone();
+        data_collision.globals.push(super::GlobalInfo {
+            address: 0x5000, name: "producer".into(), declaration: "int producer".into(),
+            size: 4, unknown: false, direct: false, aggregate: false, elem: false, integer: false,
+        });
+        assert!(super::build_header("fresh", "", "", &[data_collision]).is_err());
+        for change in 0..3 {
+            let mut another = result.clone();
+            match change {
+                0 => another.callwide_prototypes[0].signed = true,
+                1 => another.callwide_prototypes[0].inputs.pop().map(|_| ()).unwrap(),
+                _ => another.callwide_prototypes[0].entry += 4,
+            }
+            assert!(super::build_header("fresh", "", "", &[result.clone(), another]).is_err());
+        }
+        let mut buffered = result.clone();
+        buffered.code = Some("unsigned long long caller(void) { return producer(1,2,3,4); }".into());
+        assert_eq!(super::build_header("fresh", "", "", &[buffered]).unwrap(), header);
+    }
+
+    #[test]
+    fn selected_wide_definition_requires_the_exact_typed_contract() {
+        let caller = wide_call();
+        let mut definition = streamed("unsigned long long producer(int a,int b,int c,int d);", "int");
+        definition.address = 0x2000;
+        definition.byte_address = 0x2000;
+        definition.callwide_prototypes = caller.callwide_prototypes.clone();
+        definition.callwide_prototypes[0].definition = true;
+        let header = super::build_header("fresh", "", "", &[caller.clone(), definition.clone()]).unwrap();
+        assert!(!header.contains("extern unsigned long long producer"));
+        assert!(header.contains("producer(int a,int b,int c,int d)"));
+        let mut duplicate = definition.clone();
+        duplicate.byte_address = 0x3000;
+        duplicate.callwide_prototypes.clear();
+        assert!(super::build_header("fresh", "", "", &[definition.clone(), duplicate]).is_err());
+        let mut missing = definition.clone();
+        missing.callwide_prototypes.clear();
+        assert!(super::build_header("fresh", "", "", &[caller.clone(), missing]).is_err());
+        let mut unsigned_input = definition.clone();
+        unsigned_input.proto = Some("unsigned long long producer(int a,int b,int c,unsigned int d);".into());
+        unsigned_input.callwide_prototypes[0].inputs[3] = false;
+        let mut unsigned_caller = caller.clone();
+        unsigned_caller.call_declarations = vec!["unsigned long long producer(unsigned int,int,int,int);".into()];
+        unsigned_caller.callwide_prototypes[0].inputs[0] = false;
+        assert!(super::build_header("fresh", "", "", &[caller.clone(), unsigned_caller.clone()]).is_err());
+        let header = super::build_header("fresh", "", "", &[caller.clone(), unsigned_caller, unsigned_input]).unwrap();
+        assert!(header.contains("producer(int a,int b,int c,unsigned int d)"));
+        assert!(!header.contains("extern unsigned long long producer"));
+        for change in 0..3 {
+            let mut wrong = definition.clone();
+            match change {
+                0 => wrong.callwide_prototypes[0].signed = true,
+                1 => wrong.callwide_prototypes[0].inputs.push(true),
+                _ => wrong.callwide_prototypes[0].entry += 4,
+            }
+            assert!(super::build_header("fresh", "", "", &[caller.clone(), wrong]).is_err());
+        }
     }
 
     /// A result carrying only what the streaming export keeps.
@@ -1864,7 +2133,9 @@ mod tests {
             code: None,
             error: None,
             proto: Some(proto.into()),
+            emitted_c_name: None,
             call_declarations: Vec::new(),
+            callwide_prototypes: Vec::new(),
             variables: vec![super::VarInfo {
                 name: "a0".into(),
                 type_name: param_type.into(),

@@ -892,6 +892,57 @@ impl SubvariableFlow {
         data.get_call_specs(idx).proto().get_param(slot - 1).is_some_and(|p| p.get_size() <= self.flowsize)
     }
 
+    /// (kuna `regsigned`) How the sign-extended flow of `vn` crosses `op`, one
+    /// of its readers: [`Self::zext_route`] for a web whose container holds the
+    /// sign extension of the logical value. A copy, a phi, a wider sign
+    /// extension, a bitwise op, a constant arithmetic right shift and a proper
+    /// truncation keep a sign-extended value and carry the flow on (the upstream
+    /// sign-extended trace); a call argument does when its parameter is no
+    /// wider; every other reader takes the sign extension of the narrow value.
+    fn sext_route(&self, data: &Funcdata, op: OpId, vn: VarnodeId) -> ZextRoute {
+        let Some(o) = data.obank().get(op) else { return ZextRoute::Abort };
+        let plain_out = o.get_out().and_then(|x| data.vbank().get(x)).is_none_or(|x| {
+            !x.is_addr_tied() && !x.is_persist() && !x.is_addr_force()
+        });
+        if !plain_out {
+            return match o.code() {
+                OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL => ZextRoute::Abort,
+                _ => ZextRoute::Extend,
+            };
+        }
+        let constant = |k: int4| o.get_in(k).and_then(|c| data.vbank().get(c)).filter(|c| c.is_constant());
+        match o.code() {
+            OpCode::CPUI_INDIRECT | OpCode::CPUI_RETURN | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCHIND => {
+                ZextRoute::Abort
+            }
+            OpCode::CPUI_COPY if Self::returned(data, o.get_out()) => ZextRoute::Abort,
+            OpCode::CPUI_COPY
+            | OpCode::CPUI_MULTIEQUAL
+            | OpCode::CPUI_INT_SEXT
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_AND => ZextRoute::Trace,
+            OpCode::CPUI_INT_SRIGHT if constant(1).is_some() && o.get_in(0) == Some(vn) => ZextRoute::Trace,
+            OpCode::CPUI_SUBPIECE => {
+                let out = o.get_out().and_then(|x| data.vbank().get(x)).map(|x| x.get_size());
+                if constant(1).is_some_and(|c| c.get_offset() == 0) && out.is_some_and(|n| n <= self.flowsize) {
+                    ZextRoute::Trace
+                } else {
+                    ZextRoute::Extend
+                }
+            }
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                if self.narrow_param(data, op, vn) {
+                    ZextRoute::Trace
+                } else {
+                    ZextRoute::Extend
+                }
+            }
+            _ => ZextRoute::Extend,
+        }
+    }
+
     /// (kuna `regnarrow`) Does a RETURN read `vn`, the copy heritage places
     /// in front of a returned value?
     fn returned(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
@@ -1714,6 +1765,24 @@ impl SubvariableFlow {
             let mut slot = data.obank().get(op).expect("stale op").get_slot(rvn_vn);
             let code = data.obank().get(op).expect("stale op").code();
             let mask = self.rv(rvn).mask;
+            if self.zext_uses {
+                match self.sext_route(data, op, rvn_vn) {
+                    ZextRoute::Trace => {}
+                    ZextRoute::Abort => return Ok(false),
+                    ZextRoute::Extend => {
+                        let Some(k) = self.unpatched_slot(data, op, rvn_vn) else { return Ok(false) };
+                        self.patchlist.push(PatchRecord {
+                            typ: PatchType::ZextUsePatch,
+                            patch_op: op,
+                            in1: rvn,
+                            in2: None,
+                            slot: k,
+                        });
+                        hcount += 1;
+                        continue;
+                    }
+                }
+            }
             match code {
                 OpCode::CPUI_COPY
                 | OpCode::CPUI_MULTIEQUAL
@@ -1885,7 +1954,7 @@ impl SubvariableFlow {
                 Ok(true)
             }
             OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
-                if self.try_call_return_push(data, op, rvn)? {
+                if !self.zext_uses && self.try_call_return_push(data, op, rvn)? {
                     return Ok(true);
                 }
                 Ok(false) // break
@@ -2626,7 +2695,8 @@ impl SubvariableFlow {
                     };
                     let size = data.vbank().get(wide).expect("do_replacement: stale wide vn").get_size();
                     let zext_op = data.new_op(1, pull_addr);
-                    data.op_set_opcode_code(zext_op, OpCode::CPUI_INT_ZEXT);
+                    let ext = if self.sextrestrictions { OpCode::CPUI_INT_SEXT } else { OpCode::CPUI_INT_ZEXT };
+                    data.op_set_opcode_code(zext_op, ext);
                     let zout = data.new_unique_out(size, zext_op)?;
                     data.op_set_input(zext_op, narrow, 0)?;
                     data.op_insert_before(zext_op, pullop);
@@ -3107,7 +3177,18 @@ fn run_subflow(
 /// extension of the logical value when the container's other bits are known
 /// zero. The original Varnodes the flow rebuilt, when the function changed.
 pub fn run_zext_uses(data: &mut Funcdata, root: VarnodeId, mask: uintb) -> Option<(Vec<VarnodeId>, Vec<VarnodeId>)> {
-    let mut subflow = SubvariableFlow::new_with(data, root, mask, false, false, false, true).ok()?;
+    run_ext_uses(data, root, mask, false)
+}
+
+/// (kuna `regsigned`) [`run_zext_uses`] for a web whose containers hold the
+/// sign extension of the logical value: a reader that needs the container's
+/// width reads the `INT_SEXT` of the narrow value.
+pub fn run_sext_uses(data: &mut Funcdata, root: VarnodeId, mask: uintb) -> Option<(Vec<VarnodeId>, Vec<VarnodeId>)> {
+    run_ext_uses(data, root, mask, true)
+}
+
+fn run_ext_uses(data: &mut Funcdata, root: VarnodeId, mask: uintb, sext: bool) -> Option<(Vec<VarnodeId>, Vec<VarnodeId>)> {
+    let mut subflow = SubvariableFlow::new_with(data, root, mask, false, sext, false, true).ok()?;
     if !matches!(subflow.do_trace(data), Ok(true)) {
         return None;
     }

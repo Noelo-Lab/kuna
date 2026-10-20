@@ -407,6 +407,12 @@ pub struct AnalysisOutput {
     /// emits them here instead. The libc and Win32 signature passes all use this
     /// stream for concrete resolver entries. See [`crate::protos`].
     pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    /// Library prototypes declaring a `float` or `double` that an ARM image
+    /// holds back, by name (`None`) or by entry address: whether the image
+    /// returns a `double` whole depends on `armfloatreturn`, which is set after
+    /// load. The commit stashes them on the architecture
+    /// (`Architecture::arm_float_library_prototypes`).
+    pub arm_float_prototypes: Vec<(Option<u64>, kuna_decomp::fspec::PrototypePieces)>,
     /// The C runtime declaration `elfmain` has for an executable's own
     /// symbol-named `main`, keyed by entry address (an ARM Thumb symbol's mode
     /// bit cleared). The commit keeps it OFF the symbol; the drive applies it
@@ -539,14 +545,23 @@ impl AnalysisOutput {
             fix(&mut p.name);
             p.innames.iter_mut().for_each(fix);
         };
-        self.symbols.iter_mut().for_each(|s| fix(&mut s.name));
-        self.data_objects.iter_mut().for_each(|d| fix(&mut d.name));
-        self.typed_data.iter_mut().for_each(|d| fix(&mut d.name));
+        // Data identifiers are allocated together at commit, before folding can
+        // collapse distinct spellings such as counter.3 and counter_3.
+        let data_mode = if mode == NameChars::Ident { NameChars::Safe } else { mode };
+        let fix_data = |s: &mut String| {
+            if let std::borrow::Cow::Owned(v) = sanitize_symbol_name(s, data_mode) { *s = v; }
+        };
+        self.symbols.iter_mut().for_each(|s| {
+            if s.kind == SymKind::Data { fix_data(&mut s.name); } else { fix(&mut s.name); }
+        });
+        self.data_objects.iter_mut().for_each(|d| fix_data(&mut d.name));
+        self.typed_data.iter_mut().for_each(|d| fix_data(&mut d.name));
         self.entry_names.iter_mut().for_each(|(_, n)| fix(n));
         self.locals.iter_mut().for_each(|l| fix(&mut l.name));
         self.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
         self.prototypes.iter_mut().for_each(fix_proto);
         self.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
+        self.arm_float_prototypes.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.main_decl_at.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_dwarf.symbols.iter_mut().for_each(|s| fix(&mut s.name));
         self.cpp_dwarf.locals.iter_mut().for_each(|l| fix(&mut l.name));
@@ -645,6 +660,7 @@ impl AnalysisOutput {
         self.wide_strings32.extend(other.wide_strings32);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
+        self.arm_float_prototypes.extend(other.arm_float_prototypes);
         self.main_decl_at.extend(other.main_decl_at);
         self.c_runtime_imports.extend(other.c_runtime_imports);
         self.context_paints.extend(other.context_paints);

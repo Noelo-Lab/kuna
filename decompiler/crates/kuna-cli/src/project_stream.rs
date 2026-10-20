@@ -40,7 +40,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use kuna_console::engine::{ConsoleProgram, EntrySelector, FunctionEntry};
 use kuna_console::project::{
     build_header, collect_dat_addrs, decompile_pulled, render_c, render_readme,
-    render_readme_streaming, AsmPhase, BatchOutcome, DecompileOptions, FuncResult, ReadmeCounts,
+    render_readme_streaming, deferred_callwide_header, validate_callwide_header, AsmPhase, BatchOutcome, DecompileOptions, FuncResult, ReadmeCounts,
     ReadmeFacts, ReadmeLayout, StreamPhase, StreamProgress,
 };
 use kuna_console::project_stream::{
@@ -86,6 +86,8 @@ const SERIAL_BATCH_GROWTH: usize = 8;
 /// Targets below which the `--jobs auto` hint is noise: a handful of functions
 /// is not a run anyone would parallelise.
 const SERIAL_HINT_MIN: usize = 32;
+const CALLWIDE_PENDING_RECORDS: usize = 16_384;
+const CALLWIDE_PENDING_CODE_BYTES: usize = 64 * 1024 * 1024;
 
 /// What a producer reports when all it saw was its channel close — the writer's
 /// own error is what the run reports whenever it has one.
@@ -586,6 +588,10 @@ struct ProjectWriter {
     /// One per finished target, with the code dropped — what the `.h`, the
     /// `.asm` variables section and the final README are built from.
     records: Vec<FuncResult>,
+    callwide: bool,
+    selected_entries: BTreeSet<u64>,
+    pending: Vec<FuncResult>,
+    pending_code_bytes: usize,
     bodies: usize,
     errors: Vec<String>,
     dat: BTreeSet<u64>,
@@ -601,7 +607,7 @@ impl ProjectWriter {
     /// Truncate and create the streamed artifacts.  Called only once the load,
     /// the language check and the target set have all succeeded — before that a
     /// previous export's artifacts are still the best answer in the folder.
-    fn create(layout: &Layout, prelude: String) -> Result<Self, String> {
+    fn create(layout: &Layout, prelude: String, selected_entries: BTreeSet<u64>) -> Result<Self, String> {
         let dir = layout.out_dir.clone();
         let file_name = layout.file_name.clone();
         let mut c = create(&dir.join(format!("{file_name}.c")))?;
@@ -619,6 +625,10 @@ impl ProjectWriter {
             c_bytes,
             seq: 0,
             records: Vec::new(),
+            callwide: false,
+            selected_entries,
+            pending: Vec::new(),
+            pending_code_bytes: 0,
             bodies: 0,
             errors: Vec::new(),
             dat: BTreeSet::new(),
@@ -635,7 +645,42 @@ impl ProjectWriter {
 
     /// Append one finished function: its `.c` block, then its `index.jsonl`
     /// line, then the compact record the tail artifacts are built from.
-    fn append(&mut self, mut r: FuncResult, run: &StreamRun) -> Result<(), String> {
+    fn append(&mut self, r: FuncResult, run: &StreamRun) -> Result<(), String> {
+        if self.callwide || !r.callwide_prototypes.is_empty() {
+            let unresolved = deferred_callwide_header(
+                &self.prelude, "", self.records.iter().chain(&self.pending).chain(std::iter::once(&r)),
+                &self.selected_entries,
+            )?;
+            if !unresolved.is_empty() {
+                let bytes = r.code.as_ref().map_or(0, String::len);
+                let total = self.pending_code_bytes.checked_add(bytes)
+                    .ok_or_else(|| "callwide export: pending stream exceeds its byte bound".to_string())?;
+                if self.pending.len() >= self.selected_entries.len().min(CALLWIDE_PENDING_RECORDS) || total > CALLWIDE_PENDING_CODE_BYTES {
+                    return Err("callwide export: pending stream exceeds its record or byte bound".into());
+                }
+                self.pending_code_bytes = total;
+                self.pending.push(r);
+                self.callwide = true;
+                return Ok(());
+            }
+        }
+        self.callwide |= !r.callwide_prototypes.is_empty();
+        self.pending_code_bytes = 0;
+        for held in std::mem::take(&mut self.pending) {
+            self.publish(held, run)?;
+        }
+        self.publish(r, run)
+    }
+
+    fn finish_pending(&self) -> Result<(), String> {
+        if self.pending.is_empty() {
+            return Ok(());
+        }
+        validate_callwide_header(&self.prelude, "", self.records.iter().chain(&self.pending))?;
+        Err("callwide export: selected producer did not resolve pending stream contracts".into())
+    }
+
+    fn publish(&mut self, mut r: FuncResult, run: &StreamRun) -> Result<(), String> {
         let block = render_c(std::slice::from_ref(&r));
         self.c
             .write_all(block.as_bytes())
@@ -704,7 +749,7 @@ impl ProjectWriter {
     fn write_header(&self, types: Option<&str>) -> Result<(), String> {
         let types =
             types.unwrap_or("/* pending until the export completes */\n");
-        let text = build_header(&self.file_name, &self.prelude, types, &self.records);
+        let text = build_header(&self.file_name, &self.prelude, types, &self.records)?;
         write_atomic(&self.dir.join(format!("{}.h", self.file_name)), text.as_bytes())
     }
 }
@@ -826,7 +871,10 @@ fn export(
     let mut asm = BufWriter::new(create(&layout.out_dir.join(format!("{}.asm", layout.file_name)))?);
     asm.write_all(sweep.header_lines().as_bytes())
         .map_err(|e| format!("cannot write {}.asm: {e}", layout.file_name))?;
-    let writer = ProjectWriter::create(layout, prelude.clone())?;
+    let selected_entries = if prog.arch().call_wide && specs.len() <= CALLWIDE_PENDING_RECORDS {
+        specs.iter().map(|spec| spec.addr).collect()
+    } else { BTreeSet::new() };
+    let writer = ProjectWriter::create(layout, prelude.clone(), selected_entries)?;
     {
         let mut shared = run.lock();
         shared.facts = ReadmeFacts::snapshot(
@@ -1047,6 +1095,7 @@ fn writer_loop(
         }
         writer.tick(run).map_err(|e| writer_died(run, e))?;
     }
+    writer.finish_pending().map_err(|e| writer_died(run, e))?;
     run.publish_progress(false);
     Ok(writer)
 }
@@ -1254,7 +1303,9 @@ mod tests {
             code: Some(format!("void sub_{addr:x}(void)\n{{\n  return;\n}}\n")),
             error: None,
             proto: Some(format!("void sub_{addr:x}(void);")),
+            emitted_c_name: None,
             call_declarations: Vec::new(),
+            callwide_prototypes: Vec::new(),
             variables: Vec::new(),
             types: Vec::new(),
             stack_objects: Vec::new(),
@@ -1267,6 +1318,209 @@ mod tests {
             synth: None,
             pointerargs: None,
             detail: None,
+        }
+    }
+
+    #[test]
+    fn conflicting_wide_contract_refuses_before_publishing_a_streamed_chunk() {
+        let dir = std::env::temp_dir().join(format!("kuna_stream_callwide_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let layout = Layout {
+            binary_path: dir.join("image"), path_label: "image".into(),
+            file_name: "image".into(), out_dir: dir.clone(),
+        };
+        let run = StreamRun::new(dir.clone(), ReadmeFacts::default(), 1);
+        let mut writer = ProjectWriter::create(&layout, String::new(), BTreeSet::new()).unwrap();
+        let mut first = result(0x1000, Vec::new());
+        first.call_declarations = vec!["unsigned long long producer(int);".into()];
+        first.callwide_prototypes = vec![kuna_decomp::kuna_callwide::ExportPrototype {
+            name: "producer".into(), entry: 0x2000, signed: false,
+            inputs: vec![true], definition: false,
+        }];
+        writer.append(first.clone(), &run).unwrap();
+        let c = std::fs::read(dir.join("image.c")).unwrap();
+        let index = std::fs::read(dir.join(INDEX_FILE)).unwrap();
+        let mut conflicting = first;
+        conflicting.callwide_prototypes[0].signed = true;
+        let error = writer.append(conflicting, &run).unwrap_err();
+        assert!(error.contains("incompatible contracts"), "{error}");
+        assert_eq!(std::fs::read(dir.join("image.c")).unwrap(), c);
+        assert_eq!(std::fs::read(dir.join(INDEX_FILE)).unwrap(), index);
+        assert_eq!(writer.records.len(), 1);
+        run.fail(&error);
+        run.publish_status().unwrap();
+        let status = std::fs::read_to_string(dir.join(STATUS_FILE)).unwrap();
+        assert!(status.contains("\"phase\":\"failed\""), "{status}");
+        drop(writer);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn wide_records() -> [FuncResult; 3] {
+        let mut caller = result(0x1000, Vec::new());
+        caller.code = Some("void sub_1000(void) { producer(1); }".into());
+        caller.call_declarations = vec!["unsigned long long producer(int);".into()];
+        caller.callwide_prototypes = vec![kuna_decomp::kuna_callwide::ExportPrototype {
+            name: "producer".into(), entry: 0x2000, signed: false,
+            inputs: vec![true], definition: false,
+        }];
+        let mut other = result(0x1040, Vec::new());
+        other.code = Some("void sub_1040(void) { producer((unsigned int)1); }".into());
+        other.call_declarations = vec!["unsigned long long producer(unsigned int);".into()];
+        other.callwide_prototypes = caller.callwide_prototypes.clone();
+        other.callwide_prototypes[0].inputs[0] = false;
+        let mut producer = result(0x2000, Vec::new());
+        producer.name = "producer".into();
+        producer.code = Some("unsigned long long producer(int value) { return value; }".into());
+        producer.proto = Some("unsigned long long producer(int value);".into());
+        producer.callwide_prototypes = caller.callwide_prototypes.clone();
+        producer.callwide_prototypes[0].definition = true;
+        [caller, other, producer]
+    }
+
+    #[test]
+    fn selected_producer_resolves_held_word_conflicts_without_reordering() {
+        for order in [[0, 1, 2], [2, 0, 1]] {
+            let dir = std::env::temp_dir().join(format!("kuna_stream_callwide_order_{}_{order:?}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let layout = Layout {
+                binary_path: dir.join("image"), path_label: "image".into(),
+                file_name: "image".into(), out_dir: dir.clone(),
+            };
+            let run = StreamRun::new(dir.clone(), ReadmeFacts::default(), 1);
+            let records = wide_records();
+            let selected = records.iter().map(|r| r.byte_address).collect();
+            let mut writer = ProjectWriter::create(&layout, String::new(), selected).unwrap();
+            for index in order {
+                let before = std::fs::read(dir.join(INDEX_FILE)).unwrap();
+                writer.append(records[index].clone(), &run).unwrap();
+                if order == [0, 1, 2] && index == 1 {
+                    assert_eq!(writer.pending.len(), 1);
+                    assert_eq!(std::fs::read(dir.join(INDEX_FILE)).unwrap(), before);
+                }
+            }
+            writer.finish_pending().unwrap();
+            assert!(writer.pending.is_empty());
+            assert_eq!(writer.records.iter().map(|r| r.byte_address).collect::<Vec<_>>(),
+                order.map(|index| records[index].byte_address));
+            let index = std::fs::read_to_string(dir.join(INDEX_FILE)).unwrap();
+            assert_eq!(index.lines().count(), 3);
+            for (sequence, line) in index.lines().enumerate() {
+                assert!(line.contains(&format!("\"addr\":\"0x{:x}\"", records[order[sequence]].address)), "{line}");
+            }
+            writer.write_header(Some("")).unwrap();
+            let header = std::fs::read_to_string(dir.join("image.h")).unwrap();
+            assert!(header.contains("unsigned long long producer(int value);"));
+            assert!(!header.contains("extern unsigned long long producer"));
+            drop(writer);
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn missing_or_incompatible_selected_producer_never_publishes_held_records() {
+        for change in 0..5 {
+            let dir = std::env::temp_dir().join(format!("kuna_stream_callwide_missing_{}_{change}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let layout = Layout {
+                binary_path: dir.join("image"), path_label: "image".into(),
+                file_name: "image".into(), out_dir: dir.clone(),
+            };
+            let run = StreamRun::new(dir.clone(), ReadmeFacts::default(), 1);
+            let [caller, other, mut producer] = wide_records();
+            let selected = [caller.byte_address, other.byte_address, producer.byte_address].into_iter().collect();
+            let mut writer = ProjectWriter::create(&layout, String::new(), selected).unwrap();
+            writer.append(caller, &run).unwrap();
+            let c = std::fs::read(dir.join("image.c")).unwrap();
+            let index = std::fs::read(dir.join(INDEX_FILE)).unwrap();
+            writer.append(other, &run).unwrap();
+            let error = if change == 0 {
+                writer.finish_pending().unwrap_err()
+            } else {
+                match change {
+                    1 => producer.callwide_prototypes[0].signed = true,
+                    2 => producer.callwide_prototypes[0].inputs.push(true),
+                    3 => producer.callwide_prototypes.clear(),
+                    _ => producer.error = Some("producer failed".into()),
+                }
+                writer.append(producer, &run).unwrap_err()
+            };
+            assert_eq!(std::fs::read(dir.join("image.c")).unwrap(), c);
+            assert_eq!(std::fs::read(dir.join(INDEX_FILE)).unwrap(), index);
+            assert_eq!(writer.records.len(), 1);
+            writer_died(&run, error);
+            let status = std::fs::read_to_string(dir.join(STATUS_FILE)).unwrap();
+            assert!(status.contains("\"phase\":\"failed\""), "{status}");
+            drop(writer);
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn actual_callers_wait_for_their_selected_producer_without_changing_c() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let image = root.join("tests/fixtures/callwide/mips32_be_declared.elf");
+        let mut argv = vec![image.to_string_lossy().into_owned(), "--sleighpath".into(),
+            root.join("../../..").join("specs").to_string_lossy().into_owned()];
+        for (name, value) in [("bejoin", "evidence"), ("dwarf", "off"), ("narrowext", "abi"), ("callwide", "on")] {
+            argv.extend(["--option".into(), name.into(), value.into()]);
+        }
+        for declaration in [
+            "prototype consume64 unsigned long long consume64(unsigned long long value)",
+            "prototype consume_two32 unsigned int consume_two32(unsigned int high,unsigned int low)",
+            "prototype consume_slot unsigned long long consume_slot(unsigned int tag,unsigned long long value)",
+            "prototype caller64 unsigned long long caller64(unsigned long long left,unsigned long long right)",
+            "prototype caller_high32 unsigned int caller_high32(unsigned long long left,unsigned long long right)",
+            "prototype caller_high16 unsigned short caller_high16(unsigned long long left,unsigned long long right)",
+            "prototype caller_high8 unsigned char caller_high8(unsigned long long left,unsigned long long right)",
+            "prototype caller_bool bool caller_bool(unsigned long long left,unsigned long long right)",
+            "prototype caller_ignored unsigned int caller_ignored(unsigned long long left,unsigned long long right)",
+        ] {
+            argv.extend(["--assert".into(), declaration.into()]);
+        }
+        argv.push("--assert-strict".into());
+        let args = crate::decompile_all::parse_args(&argv, "decompile-project").unwrap();
+        let mut prog = load_program(&args, DriverDefaults::Decompile).unwrap();
+        let targets: Vec<_> = ["caller64", "caller_ignored", "produce_sum"].into_iter()
+            .map(|name| prog.find_entry_by_name(name).unwrap()).collect();
+        let selected = targets.iter().map(|target| target.addr.get_offset()).collect();
+        let records = kuna_console::project::decompile_export_targets(&mut prog, targets);
+        assert_eq!(records.len(), 3);
+        assert!(records.iter().all(|r| r.error.is_none() && r.code.is_some()));
+        let first = records[0].callwide_prototypes.iter().find(|p| p.name == "produce_sum").unwrap();
+        let second = records[1].callwide_prototypes.iter().find(|p| p.name == "produce_sum").unwrap();
+        assert_eq!(first.entry, second.entry);
+        assert_eq!(first.signed, second.signed);
+        assert_eq!(first.inputs.len(), second.inputs.len());
+        assert_ne!(first.inputs, second.inputs);
+        let keep = std::env::var_os("KUNA_CALLWIDE_REPLAY_DIR");
+        let dir = keep.as_ref().map_or_else(|| std::env::temp_dir()
+            .join(format!("kuna_stream_actual_callwide_{}", std::process::id())), PathBuf::from);
+        std::fs::create_dir_all(&dir).unwrap();
+        let layout = Layout {
+            binary_path: image, path_label: "callwide actual records".into(),
+            file_name: "mips32_be_declared.elf".into(), out_dir: dir.clone(),
+        };
+        let prelude = print_c_recompile_prelude(prog.arch());
+        let run = StreamRun::new(dir.clone(), ReadmeFacts::default(), 1);
+        let mut writer = ProjectWriter::create(&layout, prelude, selected).unwrap();
+        let expected = render_c(&records);
+        for (index, record) in records.into_iter().enumerate() {
+            let before = std::fs::read(dir.join(INDEX_FILE)).unwrap();
+            writer.append(record, &run).unwrap();
+            if index == 1 {
+                assert_eq!(writer.pending.len(), 1);
+                assert_eq!(std::fs::read(dir.join(INDEX_FILE)).unwrap(), before);
+            }
+        }
+        writer.finish_pending().unwrap();
+        writer.write_header(Some(&print_c_types(prog.arch_mut()))).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("mips32_be_declared.elf.c")).unwrap(),
+            format!("#include \"mips32_be_declared.elf.h\"\n\n{expected}"));
+        assert_eq!(writer.records.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+            ["caller64", "caller_ignored", "produce_sum"]);
+        drop(writer);
+        if keep.is_none() {
+            std::fs::remove_dir_all(dir).unwrap();
         }
     }
 

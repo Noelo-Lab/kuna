@@ -171,6 +171,35 @@ fn reconcile_typelocked_mismatch_fails() {
     assert!(!a.reconcile(&b).unwrap());
 }
 
+#[test]
+fn reconcile_locked_union_array_interior() {
+    let f = factory();
+    let real = f.get_base(4, type_metatype::TYPE_FLOAT).unwrap();
+    let elements = f.get_type_array(2, real.clone()).unwrap();
+    let shell = f.get_type_union("FloatPairStorage").unwrap();
+    let storage = f
+        .set_fields_union_raw(
+            &shell,
+            vec![
+                crate::dtype::TypeField::new(
+                    0, 0, "bits", f.get_base(8, type_metatype::TYPE_UINT).unwrap(),
+                ),
+                crate::dtype::TypeField::new(1, 0, "elements", elements),
+            ],
+            8,
+            8,
+        )
+        .unwrap();
+    let mut whole = hint(0x10, 8, storage, RangeType::Fixed);
+    whole.flags = TYPELOCK;
+    for (offset, compatible) in [(0, true), (4, true), (1, false), (2, false)] {
+        let mut member = hint(0x10 + offset, 4, real.clone(), RangeType::Fixed);
+        member.flags = TYPELOCK;
+        assert_eq!(whole.reconcile(&member).unwrap(), compatible, "offset {offset}");
+        assert_eq!(whole.clone().merge(&member, &stack_space(), &f).is_ok(), compatible);
+    }
+}
+
 // --- preferred ------------------------------------------------------------
 
 #[test]

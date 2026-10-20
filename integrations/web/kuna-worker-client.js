@@ -254,6 +254,14 @@ export class KunaWorkerClient {
     return this.#call('strings', { assertions });
   }
 
+  async data(address, length = null, { assertions = [] } = {}) {
+    return this.#call('data', { address, length, assertions });
+  }
+
+  async uses(address, length, { assertions = [] } = {}) {
+    return this.#call('uses', { address, length, assertions });
+  }
+
   async project(displayName, { assertions = [] } = {}) {
     const result = await this.#call('project', { displayName, assertions });
     return { ...result, bytes: new Uint8Array(result.bytes) };

@@ -14,7 +14,7 @@ use kuna_decomp::kuna_structsynth::shard::FunctionRecord;
 use super::TargetSpec;
 
 const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC3";
-pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES09";
+pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES11";
 
 /// Result-stream frame kind.  One kind today; the envelope is what lets a
 /// truncated tail be dropped rather than guessed.
@@ -265,6 +265,7 @@ impl ResultWriter {
         put_opt_str(&mut body, r.code.as_deref());
         put_opt_str(&mut body, r.error.as_deref());
         put_opt_str(&mut body, r.proto.as_deref());
+        put_opt_str(&mut body, r.emitted_c_name.as_deref());
         put_object_location(&mut body, r.object_location.as_ref());
         put_u32(&mut body, r.aliases.len() as u32);
         for a in &r.aliases {
@@ -365,6 +366,15 @@ impl ResultWriter {
         put_pointerargs(&mut body, r.pointerargs.as_ref());
         put_u32(&mut body, r.call_declarations.len() as u32);
         for declaration in &r.call_declarations { put_str(&mut body, declaration); }
+        put_u32(&mut body, r.callwide_prototypes.len() as u32);
+        for contract in &r.callwide_prototypes {
+            put_str(&mut body, &contract.name);
+            put_u64(&mut body, contract.entry);
+            body.push(u8::from(contract.signed));
+            put_u32(&mut body, contract.inputs.len() as u32);
+            for signed in &contract.inputs { body.push(u8::from(*signed)); }
+            body.push(u8::from(contract.definition));
+        }
         self.frame(FRAME_RESULT, &body)
     }
 
@@ -409,6 +419,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
     let code = r.opt_string()?;
     let error = r.opt_string()?;
     let proto = r.opt_string()?;
+    let emitted_c_name = r.opt_string()?;
     let object_location = r.object_location()?;
     let na = r.u32()? as usize;
     let mut aliases = r.sized(na);
@@ -538,6 +549,24 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
     let count = r.u32()? as usize;
     let mut call_declarations = r.sized(count);
     for _ in 0..count { call_declarations.push(r.string()?); }
+    let count = r.u32()? as usize;
+    if count > 16_384 { return None; }
+    let mut callwide_prototypes = r.sized(count);
+    for _ in 0..count {
+        let name = r.string()?;
+        let entry = r.u64()?;
+        let signed = match r.u8()? { 0 => false, 1 => true, _ => return None };
+        let inputs = r.u32()? as usize;
+        if inputs > 32 { return None; }
+        let mut words = r.sized(inputs);
+        for _ in 0..inputs {
+            words.push(match r.u8()? { 0 => false, 1 => true, _ => return None });
+        }
+        let definition = match r.u8()? { 0 => false, 1 => true, _ => return None };
+        callwide_prototypes.push(kuna_decomp::kuna_callwide::ExportPrototype {
+            name, entry, signed, inputs: words, definition,
+        });
+    }
     if r.pos != body.len() { return None; }
     Some(FuncResult {
         name,
@@ -547,7 +576,9 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         code,
         error,
         proto,
+        emitted_c_name,
         call_declarations,
+        callwide_prototypes,
         variables,
         stack_objects,
         types,

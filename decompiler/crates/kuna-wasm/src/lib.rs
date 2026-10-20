@@ -28,6 +28,7 @@
 //! filesystem, so this front-end runs in the browser with **zero** engine
 //! changes. See `docs/web-integration.md`.
 
+mod data;
 mod inspect;
 mod json;
 
@@ -90,6 +91,11 @@ enum Cmd {
     Xrefs(Selector),
     /// Every string literal with the instructions that use it.
     Strings,
+    /// The labelled, typed items around an address (or in `[addr, addr+len)`),
+    /// with their bytes (discovery off).
+    Data { addr: u64, len: Option<u64> },
+    /// The instructions that use the data in `[addr, addr+len)`.
+    Uses { addr: u64, len: u64 },
 }
 
 /// One front-end invocation: the argv of `kuna_wasm` as data.
@@ -223,9 +229,28 @@ fn parse_command(cmd: &str, args: &[String], binary: &str) -> Result<Cmd, String
                 })?;
             Cmd::Read { addr, len }
         }
+        "data" | "uses" => {
+            let (addr, len) = match args {
+                [addr] if cmd == "data" => (addr, None),
+                [addr, len] => (addr, Some(len)),
+                _ => return Err(format!("`{cmd}` needs <0xADDR>{}", if cmd == "data" { " [LEN]" } else { " <LEN>" })),
+            };
+            let addr = parse_addr(addr)
+                .ok_or_else(|| format!("`{cmd}`: {addr:?} is not a 0x-prefixed address"))?;
+            let len = match len {
+                None => None,
+                Some(len) => Some(parse_len(len).filter(|&n| n > 0 && n <= data::DATA_MAX).ok_or_else(|| {
+                    format!("`{cmd}`: length {len:?} must be 1..={} bytes", data::DATA_MAX)
+                })?),
+            };
+            match len {
+                Some(len) if cmd == "uses" => Cmd::Uses { addr, len },
+                _ => Cmd::Data { addr, len },
+            }
+        }
         other => {
             return Err(format!(
-                "unknown command: {other:?} (want `list`, `decompile`, `project`, `inspect`, `read`, `xrefs` or `strings`)"
+                "unknown command: {other:?} (want `list`, `decompile`, `project`, `inspect`, `read`, `xrefs`, `strings`, `data` or `uses`)"
             ))
         }
     })
@@ -258,7 +283,7 @@ pub fn run_request(req: &Request) -> Result<String, String> {
     };
     let (mode, overrides) = resolve_mode(req.mode, binary_size)?;
     let language = resolve_language(binary, req.language, &command)?;
-    let discovery = !matches!(command, Cmd::Read { .. });
+    let discovery = !matches!(command, Cmd::Read { .. } | Cmd::Data { .. });
     let mut prog = load_program(
         binary,
         req.spec_root,
@@ -290,6 +315,16 @@ pub fn run_request(req: &Request) -> Result<String, String> {
         Cmd::Project(display) => project(binary, &mut prog, &display),
         Cmd::Read { addr, len } => {
             Ok(inspect::read_json(binary, &prog, addr, len, &prog.assertion_outcomes()))
+        }
+        Cmd::Data { addr, len } => Ok(data::data_json(binary, &prog, addr, len, &prog.assertion_outcomes())),
+        Cmd::Uses { addr, len } => {
+            let bytes = kuna_analysis::loader::elf_shdr::read_image(binary)
+                .map_err(|e| format!("could not read {binary}: {e}"))?;
+            let raw = kuna_analysis::loadimage_object::parse_object(&*bytes)
+                .map_err(|e| format!("could not parse {binary}: {e}"))?;
+            let view = kuna_analysis::loader::kuna_relocrebase::rebased_view(&raw, &bytes);
+            let (file, _) = kuna_analysis::loader::kuna_relocrebase::select(raw, &bytes, &view);
+            Ok(data::uses_json(binary, &prog, &file, addr, len, &prog.assertion_outcomes()))
         }
         Cmd::Xrefs(_) => {
             let target = resolve_targets(&prog, &command)?
@@ -369,6 +404,7 @@ fn command_wants_fast_funcdisc(command: &Cmd) -> bool {
             | Cmd::Inspect(Selector::Addr(_))
             | Cmd::Xrefs(Selector::Addr(_))
             | Cmd::Read { .. }
+            | Cmd::Data { .. }
     )
 }
 
@@ -413,7 +449,7 @@ fn project(binary: &str, prog: &mut ConsoleProgram, display: &str) -> Result<Str
     let prelude = print_c_recompile_prelude(prog.arch());
     let types = print_c_types(prog.arch_mut());
 
-    let header = build_header(display, &prelude, &types, &results);
+    let header = build_header(display, &prelude, &types, &results)?;
     let c_file = build_c(display, &results);
     let dat_addrs = collect_dat_addrs(&results);
     let asm = build_asm(prog, &results, &dat_addrs, display);
@@ -619,7 +655,7 @@ fn resolve_targets(
         Cmd::DecompileAddr(vma) | Cmd::Inspect(Selector::Addr(vma)) | Cmd::Xrefs(Selector::Addr(vma)) => {
             one(&EntrySelector::Numeric(*vma))
         }
-        Cmd::List | Cmd::Project(_) | Cmd::Read { .. } | Cmd::Strings => {
+        Cmd::List | Cmd::Project(_) | Cmd::Read { .. } | Cmd::Strings | Cmd::Data { .. } | Cmd::Uses { .. } => {
             Err("this command selects no decompile targets".to_string())
         }
     }
@@ -842,6 +878,13 @@ mod tests {
         assert!(matches!(parse("project", &[]), Ok(Cmd::Project(name)) if name == "bin"));
         assert!(matches!(parse("strings", &[]), Ok(Cmd::Strings)));
         assert!(parse("strings", &["flag"]).unwrap_err().contains("at most 0"));
+        assert!(matches!(parse("data", &["0x4040"]), Ok(Cmd::Data { addr: 0x4040, len: None })));
+        assert!(matches!(parse("data", &["0x4040", "64"]), Ok(Cmd::Data { addr: 0x4040, len: Some(64) })));
+        assert!(parse("data", &["4040"]).is_err());
+        assert!(parse("data", &["0x4040", "0"]).is_err());
+        assert!(parse("data", &[]).is_err());
+        assert!(matches!(parse("uses", &["0x4040", "0x20"]), Ok(Cmd::Uses { addr: 0x4040, len: 32 })));
+        assert!(parse("uses", &["0x4040"]).is_err());
         assert!(parse("frobnicate", &[]).is_err());
     }
 

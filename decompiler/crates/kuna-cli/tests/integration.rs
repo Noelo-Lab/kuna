@@ -69,11 +69,17 @@ mod baseline_cli;
 #[path = "broken_pipe.rs"]
 mod broken_pipe;
 
+#[path = "forloop_visible_read.rs"]
+mod forloop_visible_read;
+
 #[path = "buildstamp_cli.rs"]
 mod buildstamp_cli;
 
 #[path = "call_array_extent.rs"]
 mod call_array_extent;
+
+#[path = "call_wide.rs"]
+mod call_wide;
 
 #[path = "call_result_high_word_reads.rs"]
 mod call_result_high_word_reads;
@@ -202,6 +208,9 @@ mod limits_cli;
 
 #[path = "local_name_batch.rs"]
 mod local_name_batch;
+
+#[path = "local_stack_views.rs"]
+mod local_stack_views;
 
 #[path = "library_names.rs"]
 mod library_names;
@@ -497,6 +506,11 @@ mod x87_empty_return;
 
 #[path = "windows_stack_argument_alignment.rs"]
 mod windows_stack_argument_alignment;
+
+#[path = "imported_data_identifiers.rs"]
+mod imported_data_identifiers;
+#[path = "dwarf_linkage_calls.rs"]
+mod dwarf_linkage_calls;
 #[path = "project_named_globals.rs"]
 mod project_named_globals;
 #[path = "x87_register_payload.rs"]
@@ -527,6 +541,9 @@ mod x87_integer_conversions_native;
 #[path = "float_pointer_storage.rs"]
 mod float_pointer_storage;
 
+#[path = "stack_union_components.rs"]
+mod stack_union_components;
+
 #[path = "dwarf_overlapping_locals.rs"]
 mod dwarf_overlapping_locals;
 
@@ -541,6 +558,29 @@ mod parameter_spill_reuse;
 
 #[path = "declared_callee_pop.rs"]
 mod declared_callee_pop;
+
+#[path = "declared_data_range.rs"]
+mod declared_data_range;
+
+#[path = "declared_pointer_frame_alias.rs"]
+mod declared_pointer_frame_alias;
+#[path = "project_function_linkage.rs"]
+mod project_function_linkage;
+
+#[path = "aggregate_storage_cast.rs"]
+mod aggregate_storage_cast;
+
+#[path = "x87_native_returns.rs"]
+mod x87_native_returns;
+
+#[path = "x86_bound_checks.rs"]
+mod x86_bound_checks;
+
+#[path = "floating_stack_bytes.rs"]
+mod floating_stack_bytes;
+
+#[path = "aggregate_interior_address.rs"]
+mod aggregate_interior_address;
 
 #[path = "intermediate_float_rounding.rs"]
 mod intermediate_float_rounding;

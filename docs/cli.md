@@ -504,6 +504,10 @@ decimal unless it carries a `0x`, and `<addr> <size>` is accepted wherever
 `<addr>+<size>` is. A C type may be anything the console's `parse line` accepts,
 including a `typedef` you asserted earlier in the same run.
 
+A `data` declaration replaces inferred strings that overlap its byte range,
+including one that runs past either end. Interior named data and previous
+explicit declarations retain their mappings.
+
 **`name`/`type` reach the register locals, not just the stack ones.** A local
 kuna prints with a storage comment — `unsigned long v6; // rax` — has no symbol
 behind it; naming one used to answer `No symbol named: v6` no matter how it was

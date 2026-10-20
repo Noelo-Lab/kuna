@@ -275,6 +275,14 @@ Three silent-merge shapes this repo has actually produced are guarded mechanical
 | **silent identical-edit** | both branches made the same `85 → 86` edit, git merged cleanly, the answer was 87 | re-derive every counter from a fresh capture on the rebased tree |
 | **silent keep-both** | a stale `data_footer: 375` against 381 real keys; a duplicated row in a README | diff every keep-both against `origin/main`: nothing removed, nothing added twice |
 
+The one permitted stage-baseline key replacement is `KUNA-CATALOG #15`'s
+registry-count label when options are added. Both labels must match their
+tree's registry and captured catalog counts; the corresponding live XML
+assertion must count those rows plus the same six valid individual queries.
+Its pattern and exact bounds are checked explicitly. Other removed keys,
+duplicate keys and stale footers still reject the merge, and the live catalog
+must still pass the separate counter rederivation guard.
+
 **Never re-pin `docs/baseline.json`** — `mergecheck` hard-rejects it.
 
 ### "Restart the testers when the builders have fixed what they asked for"
