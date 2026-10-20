@@ -558,3 +558,6 @@ mod project_function_linkage;
 
 #[path = "aggregate_storage_cast.rs"]
 mod aggregate_storage_cast;
+
+#[path = "x87_native_returns.rs"]
+mod x87_native_returns;
