@@ -30,6 +30,7 @@ pub mod kuna_paramrefdecl;
 pub mod kuna_addressdecl;
 pub mod kuna_callerstack;
 pub mod kuna_bitcast;
+pub(crate) mod kuna_floatslice;
 pub(crate) mod kuna_memberbase;
 pub mod kuna_stackmem;
 pub mod kuna_stackassign;
@@ -54,6 +55,7 @@ pub mod kuna_castternary; // (kuna) a conditional arm keeps no cast the conditio
 pub mod kuna_castwiden; // (kuna) a 64-bit widening C performs by itself keeps no cast
 pub mod kuna_castarith; // (kuna) pointer arithmetic stays in pointer terms
 pub mod kuna_structdefs;
+pub mod kuna_namedglobals;
 pub mod kuna_globalref; // (kuna) a constant address used as a pointer prints as its global
 pub mod kuna_namespaces; // (kuna) which namespaces print in front of a name
 pub mod kuna_lang; // (kuna) the output-language plane: profile + capabilities
@@ -69,3 +71,5 @@ pub(crate) mod kuna_stackmarkers;
 pub(crate) mod kuna_stackversions;
 
 pub(crate) mod kuna_indirectargs;
+
+pub mod kuna_callprototypes;

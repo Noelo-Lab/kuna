@@ -10,6 +10,7 @@ pub mod kuna_decodekit;
 pub mod remote_provider;
 pub mod decompile_drive;
 pub mod kuna_fnmemory;
+pub mod kuna_fasthash;
 pub mod kuna_hostmem;
 pub mod capability;
 pub mod libdecomp;

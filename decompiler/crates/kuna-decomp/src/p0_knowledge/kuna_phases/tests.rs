@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_318() {
-    assert_eq!(kuna_num_settables(), 318);
-    assert_eq!(SETTABLE_TABLE.len(), 318);
+fn settable_count_is_324() {
+    assert_eq!(kuna_num_settables(), 324);
+    assert_eq!(SETTABLE_TABLE.len(), 324);
 }
 
 #[test]
-fn tier_counts_are_115_core_123_transform_80_analysis() {
+fn tier_counts_are_118_core_126_transform_80_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_115_core_123_transform_80_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (115, 123, 80));
+    assert_eq!((core, transform, analysis), (118, 126, 80));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_110() {
+fn option_values_live_value_present_for_151() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -596,6 +596,10 @@ fn option_values_live_value_present_for_110() {
                             // the same reason `pebnames` is here. Its live value
                             // is `Architecture::ptr_from_use`.
                             | "ptrfromuse"
+                            // (kuna) `narrowargs` takes `off|on|callers`; its
+                            // live value is the pair `Architecture::narrow_args`
+                            // and `Architecture::narrow_args_callers`.
+                            | "narrowargs"
                             // (kuna) `structsynth` takes a MODE (`off|param|nest`),
                             // for the same reason.  Its live value is
                             // `Architecture::struct_synth`.
@@ -838,8 +842,13 @@ fn option_values_live_value_present_for_110() {
     // 143 -> 144: +1 for `narrowargs` (live_field = narrow_args).
     // 144 -> 145: +1 for `callerptr` (live_field = caller_ptr).
     // 145 -> 146: +1 for `regnarrow` (live_field = narrow_locals).
-    // 146 -> 147: +1 for `regsigned` (live_field = narrow_signed).
-    assert_eq!(with_live, 147);
+    // 146 -> 147: +1 for `narrowret` (live_field = narrow_ret).
+    // 147 -> 146: `narrowargs` takes `off|on|callers` and has no live_field.
+    // 146 -> 147: +1 for `slotreport` (live_field = slot_report).
+    // 147 -> 148: +1 for `callmechanisms` (live_field = call_mechanism_effects).
+    // 148 -> 149: +1 for `slotsplit` (live_field = slot_split).
+    // 151 -> 152: +1 for `regsigned` (live_field = narrow_signed).
+    assert_eq!(with_live, 152);
 }
 
 #[test]
@@ -1037,7 +1046,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `bytearrayc`; its P9 row sits mid-table.
     // +2 for `wideslice` and `devectorize`.
     // +1 for `addrtakenentry`; its P1 row sits mid-table beside `thunkentry`.
-    assert_eq!(json.matches("},\n").count(), 317);
+    assert_eq!(json.matches("},\n").count(), 323);
 }
 
 #[test]

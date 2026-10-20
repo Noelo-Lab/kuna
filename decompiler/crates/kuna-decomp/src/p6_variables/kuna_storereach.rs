@@ -97,7 +97,7 @@ impl<T: Clone> Walk<T> {
         }
         let n = self.steps.get().wrapping_add(1);
         self.steps.set(n);
-        if self.expired.get() || (n % 256 == 0 && crate::infra::decompile_drive::deadline_passed()) {
+        if self.expired.get() || (n % 256 == 0 && crate::infra::decompile_drive::deadline_passed_in("store reachability")) {
             self.expired.set(true);
             return gave_up;
         }

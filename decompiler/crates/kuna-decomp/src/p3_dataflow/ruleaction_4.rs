@@ -335,6 +335,8 @@ impl Rule for RuleStoreVarnode {
         let size = size_of(data, in_vn(data, op, 2));
         let offoff = kuna_base::space::AddrSpace::address_to_byte(offoff, baseoff.get_word_size());
         let addr = Address::new(Rc::clone(&baseoff), offoff);
+        crate::kuna_stackparamviews::record_store(data, &addr, size);
+        crate::kuna_localstackviews::record_store(data, op, &addr, size);
         let outvn = data.new_varnode_out_unlaned(size, &addr, op).expect("newVarnodeOut");
         data.vbank_mut().get_mut(outvn).expect("RuleStoreVarnode: stale out").set_stack_store();
         data.op_remove_input(op, 1);
@@ -933,12 +935,21 @@ impl Rule for RuleConcatZext {
 // =============================================================================
 
 /// \brief Commute INT_ZEXT with INT_RIGHT: `zext(V) >> W => zext(V >> W)`
-/// (C++ `RuleZextCommute`).
+/// (C++ `RuleZextCommute`). Counts must fit the width the narrowed shift evaluates at.
 pub struct RuleZextCommute;
 
 impl RuleZextCommute {
     pub fn new() -> RuleZextCommute {
         RuleZextCommute
+    }
+
+    /// The smallest count a narrowed `V >> n` cannot print with: `V`'s bit width, or 32
+    /// when the output language promotes a sub-`int` `V` to a 4-byte `int` first.
+    fn count_limit(data: &Funcdata, size: int4) -> uintb {
+        let arch = data.get_arch();
+        let int_size = arch.types().map(|t| t.get_size_of_int()).filter(|&s| s > 0).unwrap_or(4);
+        let width = if arch.int_promotion && int_size == 4 { size.max(4) } else { size };
+        width as uintb * 8
     }
 }
 
@@ -975,6 +986,11 @@ impl Rule for RuleZextCommute {
         }
         let savn = in_vn(data, op, 1);
         if !is_constant(data, savn) && is_free(data, savn) {
+            return 0;
+        }
+        let amount = data.vbank().get(savn).expect("RuleZextCommute: shift amount");
+        let maximum = if amount.is_constant() { amount.get_offset() } else { amount.get_nz_mask() };
+        if maximum >= Self::count_limit(data, size_of(data, zextin)) {
             return 0;
         }
 

@@ -1,0 +1,2 @@
+prototype reuse int reuse(void *context,int b,int c,int d,bool flag)
+prototype observe int observe(void *context,const int *key)

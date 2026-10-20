@@ -301,6 +301,8 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
         let Some(outvn) = data.obank().get(fc.get_op()).filter(|o| !o.is_dead()).and_then(|o| o.get_out()) else {
             continue;
         };
+        let before = data.kuna_narrowret_read(fc.get_op()).cloned();
+        let outvn = crate::kuna_narrowret::widened_read(data, outvn);
         let result = holder(data, outvn);
         if hands_on(data, result) {
             handed.insert(callee);
@@ -316,10 +318,14 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
             arch.kuna_voidret.held.insert((own, callee), h);
         }
         arch.kuna_voidret.readers.entry(callee).or_default().insert(own);
-        if let Some(used) = used_storage(data, result) {
+        let (used, read) = match before {
+            Some(b) => (b.used, b.read),
+            None => (used_storage(data, result), data.vbank().get(result).and_then(read_storage)),
+        };
+        if let Some(used) = used {
             file_use(arch, callee, used);
         }
-        let Some(storage) = data.vbank().get(result).and_then(read_storage) else { continue };
+        let Some(storage) = read else { continue };
         file_claim(arch, own, callee, storage);
     }
     for (callee, storage) in data.kuna_forced_claims().to_vec() {
@@ -843,7 +849,7 @@ fn widens(storage: &(Address, int4), word: &(Address, int4, bool)) -> bool {
 /// function was not narrowed to, but computes only with `eax`. A shift on the
 /// way moves the upper bits where the RETURN or the argument takes them:
 /// `return (long)z6(x) >> 1` hands on bit 32 of the result.
-fn used_storage(data: &Funcdata, out: crate::context::VarnodeId) -> Option<(Address, int4)> {
+pub(crate) fn used_storage(data: &Funcdata, out: crate::context::VarnodeId) -> Option<(Address, int4)> {
     let node = data.vbank().get(out)?;
     let addr = node.get_addr();
     let size = node.get_size();
@@ -946,7 +952,7 @@ fn operated_bits(data: &Funcdata, out: crate::context::VarnodeId, size: int4) ->
 /// The storage a caller reads of the call result `out`: the bytes its uses
 /// consume (a `movss` of an `xmm0` result reads four), at the least
 /// significant end of the register.
-fn read_storage(out: &crate::varnode::Varnode) -> Option<(Address, int4)> {
+pub(crate) fn read_storage(out: &crate::varnode::Varnode) -> Option<(Address, int4)> {
     let addr = out.get_addr();
     let size = out.get_size();
     match addr.get_space()?.get_type() {
@@ -1080,7 +1086,10 @@ pub fn stale_readers(
         let float = arch.kuna_voidret.returns.get(callee) == Some(&Returns::Float);
         let withdrawn = arch.kuna_voidret.withdrawn.contains(callee);
         let widened = arch.kuna_voidret.wide.contains_key(callee);
-        let states = float || withdrawn || arch.kuna_callret_types.contains_key(callee);
+        let states = float
+            || withdrawn
+            || arch.kuna_callret_types.contains_key(callee)
+            || arch.kuna_narrowret.contains_key(callee);
         let scaled = arch.kuna_callret_types.get(callee).is_some_and(|s| {
             s.ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
                 && s.ct.get_ptr_to().is_some_and(|p| {

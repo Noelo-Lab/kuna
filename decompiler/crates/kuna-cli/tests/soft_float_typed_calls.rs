@@ -353,7 +353,7 @@ fn soft_float_arm_passes_declared_floats_in_core_registers() {
         "read a VFP register the caller never set: {t1}"
     );
     let t2 = function(&text, "t2");
-    assert!(t2.contains("(*o->g)(1.5,k * 3)"), "{t2}");
+    assert!(t2.contains("(*o->g)(1.5f,k * 3)"), "{t2}");
     assert!(
         !t2.contains("// s0"),
         "read a VFP register the caller never set: {t2}"
@@ -364,7 +364,7 @@ fn soft_float_arm_passes_declared_floats_in_core_registers() {
 fn hard_float_arm_passes_declared_floats_in_vfp_registers() {
     let text = decompile(&arm_hard(), &["t1", "t2"]);
     assert!(function(&text, "t1").contains(")(2.5,k + 1)"), "{text}");
-    assert!(function(&text, "t2").contains(")(1.5,k * 3)"), "{text}");
+    assert!(function(&text, "t2").contains(")(1.5f,k * 3)"), "{text}");
 }
 
 #[test]
@@ -797,7 +797,7 @@ fn softfp_arm_keeps_the_declared_layout_where_a_static_function_may_use_vfp() {
         &["prototype sq float sq(float x)".to_string()],
     );
     let sq = function(&text, "sq");
-    assert!(sq.contains("return x * x + 1.0;"), "{sq}");
+    assert!(sq.contains("return x * x + 1.0f;"), "{sq}");
 }
 
 /// `double pick(_Bool b, double a, double c) { return b ? a : c; }`, clang -O2

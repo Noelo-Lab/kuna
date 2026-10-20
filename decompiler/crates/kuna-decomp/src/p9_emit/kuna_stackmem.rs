@@ -23,8 +23,10 @@ pub(crate) struct Access {
     pub address: Option<ByteAddress>,
 }
 
+/// Without `stackviews`, only accesses inside a recovered parameter backing
+/// are copied; other memory keeps its ordinary dereference.
 pub(crate) fn access(fd: &Funcdata, op: OpId) -> Option<Access> {
-    if !fd.get_arch().stack_views {
+    if !crate::kuna_stackviews::enabled(fd) {
         return None;
     }
     let operation = fd.obank().get(op)?;
@@ -46,6 +48,9 @@ pub(crate) fn access(fd: &Funcdata, op: OpId) -> Option<Access> {
         _ => return None,
     };
     let address = byte_address(fd, pointer, size);
+    if !fd.get_arch().stack_views && address.is_none() {
+        return None;
+    }
     let indexed = address
         .as_ref()
         .is_some_and(|address| !address.terms.is_empty());

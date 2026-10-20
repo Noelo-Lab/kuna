@@ -1040,6 +1040,11 @@ impl JumpValuesSetters for JumpValuesRangeDefault {
 pub struct JumpValuesRange {
     /// Acceptable range of values for the normalized switch variable.
     range: CircleRange,
+    /// Exact values reached through an immutable map when its byte-sized
+    /// output range is wider than the values the map can actually produce.
+    explicit_values: Option<Vec<uintb>>,
+    /// Current index while iterating `explicit_values`.
+    explicit_index: usize,
     /// Varnode representing the normalized switch variable
     /// (C++ `JumpValuesRange::normqvn`).
     normqvn: Option<VarnodeId>,
@@ -1058,6 +1063,17 @@ impl JumpValuesRange {
     /// Set the range of values explicitly (C++ `setRange`).
     pub fn set_range(&mut self, rng: CircleRange) {
         self.range = rng;
+        self.explicit_values = None;
+        self.explicit_index = 0;
+    }
+
+    /// Set a finite, possibly non-contiguous value domain proved by emulating
+    /// a bounded index through read-only loads.
+    fn set_values(&mut self, mut values: Vec<uintb>) {
+        values.sort_unstable();
+        values.dedup();
+        self.explicit_values = Some(values);
+        self.explicit_index = 0;
     }
 
     /// Set the normalized switch Varnode explicitly (C++ `setStartVn`).
@@ -1073,6 +1089,11 @@ impl JumpValuesRange {
 
 impl JumpValues for JumpValuesRange {
     fn truncate(&mut self, nm: int4) {
+        if let Some(values) = &mut self.explicit_values {
+            values.truncate(nm.max(0) as usize);
+            self.explicit_index = self.explicit_index.min(values.len().saturating_sub(1));
+            return;
+        }
         // jumptable.cc:261
         let mut range_size: int4 = 8 * 8 - count_leading_zeros(self.range.get_mask());
         range_size >>= 3;
@@ -1084,14 +1105,24 @@ impl JumpValues for JumpValuesRange {
     }
 
     fn get_size(&self) -> uintb {
+        if let Some(values) = &self.explicit_values {
+            return values.len() as uintb;
+        }
         self.range.get_size()
     }
 
     fn contains(&self, val: uintb) -> KunaResult<bool> {
+        if let Some(values) = &self.explicit_values {
+            return Ok(values.binary_search(&val).is_ok());
+        }
         Ok(self.range.contains_val(val))
     }
 
     fn initialize_for_reading(&mut self) -> bool {
+        if let Some(values) = &self.explicit_values {
+            self.explicit_index = 0;
+            return !values.is_empty();
+        }
         if self.range.get_size() == 0 {
             return false;
         }
@@ -1100,6 +1131,13 @@ impl JumpValues for JumpValuesRange {
     }
 
     fn next(&mut self) -> KunaResult<bool> {
+        if let Some(values) = &self.explicit_values {
+            if self.explicit_index + 1 >= values.len() {
+                return Ok(false);
+            }
+            self.explicit_index += 1;
+            return Ok(true);
+        }
         let mut cv = self.curval;
         let r = self.range.get_next(&mut cv);
         self.curval = cv;
@@ -1107,6 +1145,9 @@ impl JumpValues for JumpValuesRange {
     }
 
     fn get_value(&self) -> uintb {
+        if let Some(values) = &self.explicit_values {
+            return values[self.explicit_index];
+        }
         self.curval
     }
 
@@ -1125,6 +1166,8 @@ impl JumpValues for JumpValuesRange {
     fn clone_box(&self) -> Box<dyn JumpValues> {
         Box::new(JumpValuesRange {
             range: self.range.clone(),
+            explicit_values: self.explicit_values.clone(),
+            explicit_index: 0,
             normqvn: self.normqvn,
             startop: self.startop,
             curval: 0,
@@ -1263,6 +1306,8 @@ impl JumpValues for JumpValuesRangeDefault {
         Box::new(JumpValuesRangeDefault {
             base: JumpValuesRange {
                 range: self.base.range.clone(),
+                explicit_values: None,
+                explicit_index: 0,
                 normqvn: self.base.normqvn,
                 startop: self.base.startop,
                 curval: 0,
@@ -2389,6 +2434,100 @@ impl JumpBasicModel {
         Ok(())
     }
 
+    /// Replace a loaded selector's full byte range with the values a bounded
+    /// upstream index actually produces, but only when every direct or implicit
+    /// load-image read is in global read-only, non-volatile memory. Without this
+    /// proof, the current memory image may not describe future map values.
+    fn narrow_readonly_selector_domain(&mut self, fd: &Funcdata, maxtablesize: uint4) {
+        // Model 2 adds a separate default value outside its base range. It does
+        // not use this model-1 recovery path, but keep the provenance constraint
+        // explicit here so a future call site cannot discard that extra value.
+        if self.is_model2 {
+            return;
+        }
+        let selector_pos = self.varnode_index;
+        let selector_vn = self.path_meld.get_varnode(selector_pos);
+        let Some(selector) = fd.vbank().get(selector_vn) else {
+            return;
+        };
+        if selector.get_size() != 1
+            || !selector.is_written()
+            || fd.vbank().get(selector_vn).and_then(|v| v.get_def())
+                .and_then(|op| fd.obank().get(op))
+                .is_none_or(|op| op.code() != OpCode::CPUI_LOAD)
+        {
+            return;
+        }
+        let selector_size = self.jrange().get_size();
+        if selector_size <= 1 {
+            return;
+        }
+
+        let mut remaining_budget = maxtablesize as uintb;
+        for pos in selector_pos + 1..self.path_meld.num_common_varnode() {
+            let start_vn = self.path_meld.get_varnode(pos);
+            let mut range = CircleRange::new_empty();
+            self.calc_range(fd, start_vn, &mut range);
+            let input_count = range.get_size();
+            if range.is_empty() || input_count > remaining_budget {
+                continue;
+            }
+            let Some(start_op) = self.path_meld.get_earliest_op(pos) else {
+                continue;
+            };
+
+            let mut values = BTreeSet::new();
+            let mut inputs = JumpValuesRange::new();
+            inputs.set_range(range);
+            inputs.set_start_vn(start_vn);
+            inputs.set_start_op(start_op);
+            let mut more = inputs.initialize_for_reading();
+            let mut proven = more;
+            while more {
+                remaining_budget -= 1;
+                let mut emul = EmulateFunction::new(fd);
+                for &(seed_vn, seed_val) in self.loop_carried_seeds.iter() {
+                    emul.seed_varnode_value(seed_vn, seed_val);
+                }
+                emul.set_load_collect(true);
+                emul.set_readonly_image_required(true);
+                if emul
+                    .emulate_path(inputs.get_value(), &self.path_meld, start_op, start_vn)
+                    .is_err()
+                {
+                    proven = false;
+                    break;
+                }
+                let Some(value) = emul.emulated_value(selector_vn) else {
+                    proven = false;
+                    break;
+                };
+                let Some(loads) = emul.take_loadpoints() else {
+                    proven = false;
+                    break;
+                };
+                if loads.is_empty() {
+                    proven = false;
+                    break;
+                }
+                values.insert(value & calc_mask(selector.get_size()));
+                more = inputs.next().unwrap_or(false);
+            }
+
+            if proven && (values.len() as uintb) < selector_size {
+                let Some(start_op) = self.path_meld.get_earliest_op(selector_pos) else {
+                    return;
+                };
+                let mut exact = JumpValuesRange::new();
+                exact.set_values(values.into_iter().collect());
+                exact.set_start_vn(selector_vn);
+                exact.set_start_op(start_op);
+                self.jrange = Some(Box::new(exact));
+                return;
+            }
+        }
+    }
+
     /// Mark/unmark the model PcodeOps (C++ `JumpBasic::markModel`,
     /// `jumptable.cc:1272`).
     fn mark_model(&self, fd: &mut Funcdata, val: bool) {
@@ -2844,6 +2983,7 @@ impl JumpBasicModel {
             .and_then(|o| o.get_parent())
             .ok_or_else(|| KunaError::lowlevel("recoverModel: switch op has no parent block"))?;
         self.find_normalized(fd, parent, -1, matchsize, maxtablesize, indop)?;
+        self.narrow_readonly_selector_domain(fd, maxtablesize);
         self.skip_stranding_variable(fd, indop, matchsize, maxtablesize);
         let unbounded = self.jrange().get_size() > maxtablesize as uintb;
         self.rows_rejected = !unbounded
@@ -5822,6 +5962,10 @@ impl JumpTable {
         jbasic.label_rows = rows;
         jbasic.is_partial = self.partial_table;
         let basic_ok = jbasic.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?;
+        if crate::decompile_drive::deadline_passed_in("jump-table basic model") {
+            self.jmodel = None;
+            return Ok(());
+        }
         // Stash the basic model's path-meld for model 2's piggyback.
         let basic_path = jbasic.get_path_meld().clone();
         if basic_ok {
@@ -5837,6 +5981,10 @@ impl JumpTable {
         jbasic2.is_partial = self.partial_table;
         jbasic2.initialize_start(&basic_path);
         let m2_ok = jbasic2.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?;
+        if crate::decompile_drive::deadline_passed_in("jump-table default-path model") {
+            self.jmodel = None;
+            return Ok(());
+        }
         if m2_ok {
             self.jmodel = Some(Box::new(jbasic2));
             return Ok(());
@@ -5890,6 +6038,7 @@ impl JumpTable {
             self.addresstable = addresstable;
             self.loadpoints = loadpoints;
             r?;
+            crate::decompile_drive::deadline_passed_in("jump-table address emulation");
             let reached = self.loadpoints.clone();
             let bounded = self.flow_bounded_values(fd);
             self.sanity_check(fd, Some(&loadcounts))?;
@@ -5911,6 +6060,7 @@ impl JumpTable {
             );
             self.addresstable = addresstable;
             r?;
+            crate::decompile_drive::deadline_passed_in("jump-table address emulation");
             let bounded = self.flow_bounded_values(fd);
             self.sanity_check(fd, None)?;
             let cut = self.cut_rows_dispatched(fd, bounded, loadcounts.len());

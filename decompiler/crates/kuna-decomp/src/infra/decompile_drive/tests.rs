@@ -230,3 +230,44 @@ fn markup_lines_follow_the_trimmed_text() {
     let lines: Vec<usize> = single.associations.iter().map(|a| a.line_number).collect();
     assert_eq!(lines, vec![1, 3]);
 }
+
+fn budget_site() -> Option<String> {
+    super::FN_BUDGET_SITE.with(|s| s.borrow().clone())
+}
+
+#[test]
+fn budget_site_is_the_first_probe_to_see_the_expiry() {
+    let _drive = super::DeadlineScope::enter(Some(std::time::Instant::now()));
+    assert_eq!(budget_site(), None);
+    {
+        let _table = super::JumpTableScope::enter(0x401026);
+        assert!(super::deadline_passed_in("jump-table basic model"));
+        super::note_budget_site(|| "action jumptable".to_string());
+    }
+    super::note_budget_site(|| "heritage".to_string());
+    assert_eq!(budget_site().as_deref(), Some("jump-table basic model at 0x401026"));
+}
+
+#[test]
+fn budget_site_inside_table_recovery_names_the_table() {
+    let _drive = super::DeadlineScope::enter(Some(std::time::Instant::now()));
+    let _table = super::JumpTableScope::enter(0x1820e009b);
+    super::note_budget_site(|| "action oppool1".to_string());
+    assert_eq!(
+        budget_site().as_deref(),
+        Some("action oppool1 during jump-table recovery at 0x1820e009b")
+    );
+}
+
+#[test]
+fn each_drive_starts_with_no_budget_site_and_restores_the_outer_one() {
+    let _outer = super::DeadlineScope::enter(Some(std::time::Instant::now()));
+    super::note_budget_site(|| "heritage".to_string());
+    {
+        let _inner = super::DeadlineScope::enter(None);
+        assert_eq!(budget_site(), None);
+        assert!(!super::deadline_passed_in("region structuring"));
+        assert_eq!(budget_site(), None);
+    }
+    assert_eq!(budget_site().as_deref(), Some("heritage"));
+}

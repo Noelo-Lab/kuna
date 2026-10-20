@@ -2741,6 +2741,32 @@ impl Database {
         Some(EntryRef::Mapped { space_index, idx })
     }
 
+    /// Find an overlapping mapping satisfying a symbol predicate, including
+    /// entries beginning inside the requested interval.
+    pub(crate) fn find_overlap_matching(
+        &self,
+        scope: ScopeId,
+        addr: &Address,
+        size: int4,
+        mut predicate: impl FnMut(&Symbol) -> bool,
+    ) -> Option<EntryRef> {
+        if size <= 0 {
+            return None;
+        }
+        let space_index = addr.get_space()?.get_index() as usize;
+        let rangemap = self.scopes[scope].maptable.get(space_index)?.as_ref()?;
+        for (idx, record) in rangemap.records() {
+            let entry = &record.entry;
+            if predicate(&self.symbols[entry.symbol])
+                && (addr.overlap(0, entry.get_addr(), entry.get_size()) >= 0
+                    || entry.get_addr().overlap(0, addr, size) >= 0)
+            {
+                return Some(EntryRef::Mapped { space_index, idx });
+            }
+        }
+        None
+    }
+
     /// C++ `ScopeInternal::findFunction` (`database.cc:2349-2368`): the
     /// FunctionSymbol starting exactly at `addr` (forward walk).
     pub fn find_function(&self, scope: ScopeId, addr: &Address) -> Option<SymbolId> {
@@ -4150,10 +4176,9 @@ impl Database {
     /// is the sorted list of alias starting offsets from the `MapState`;
     /// `alias_block_level` is the architecture's structure/array alias-block level.
     ///
-    /// Transcribes the C++ list-walk: the EntryMap entries are
-    /// iterated in address order (the rangemap `records()` order matches the C++
-    /// `begin_list()`/`end_list()`), and the function range tree is walked in
-    /// lock-step to turn aliasing off past unmapped regions.
+    /// Transcribes the C++ alias/range walk. The function range tree is walked
+    /// in lock-step to turn aliasing off past unmapped regions; entries are
+    /// ordered by their end offset before the monotone cursors are advanced.
     pub fn mark_unaliased(
         &mut self,
         scope: ScopeId,
@@ -4162,9 +4187,8 @@ impl Database {
         alias_block_level: int4,
     ) {
         self.kuna_gen += 1;
-        use crate::dtype::type_metatype;
         // EntryMap *rangemap = maptable[space->getIndex()]; if 0 return;
-        let entries: Vec<(SymbolId, uintb)> = {
+        let mut entries: Vec<(SymbolId, uintb, uintb)> = {
             let rangemap = match self.scopes[scope]
                 .maptable
                 .get(space_index)
@@ -4186,7 +4210,7 @@ impl Database {
                         .get_offset()
                         .wrapping_add(e.get_size() as uintb)
                         .wrapping_sub(1);
-                    (e.symbol, curoff)
+                    (e.symbol, e.get_addr().get_offset(), curoff)
                 })
                 .collect()
         };
@@ -4197,6 +4221,10 @@ impl Database {
             .iter()
             .map(|r| (r.get_space().get_index(), r.get_first(), r.get_last()))
             .collect();
+        // EntryMap can list a shorter overlapping entry after a longer one.
+        // The stable sort keeps ties intact because type-locked entries block
+        // propagation after their endpoint.
+        entries.sort_by_key(|(_, _, curoff)| *curoff);
         let space_idx_i32 = space_index as i32;
 
         let mut aliason = false;
@@ -4204,7 +4232,7 @@ impl Database {
         let mut i = 0usize; // alias cursor
         let mut rcur = 0usize; // range cursor
 
-        for (sym, curoff) in entries {
+        for (sym, first, curoff) in entries {
             while i < alias.len() && alias[i] <= curoff {
                 aliason = true;
                 curalias = alias[i];
@@ -4230,7 +4258,27 @@ impl Database {
             if aliason && (curoff.wrapping_sub(curalias) > 0xffff) {
                 aliason = false;
             }
-            if !aliason {
+            let mut symbol_aliased = aliason;
+            let mut symbol_alias = curalias;
+            // An alias inside this symbol's mapped storage reaches it directly,
+            // even if an overlapping type-locked symbol ended first and stopped
+            // propagation. Keep this override local so it cannot carry aliases
+            // beyond the type-locked boundary.
+            if let Some((_, rfirst, _)) = ranges.get(rcur).filter(|(rspace, rfirst, rlast)| {
+                *rspace == space_idx_i32 && *rfirst <= curoff && curoff <= *rlast
+            }) {
+                let alias_start = alias.partition_point(|a| *a < first.max(*rfirst));
+                let alias_end = alias.partition_point(|a| *a <= curoff);
+                if alias_start < alias_end {
+                    symbol_aliased = true;
+                    symbol_alias = alias[alias_end - 1];
+                }
+            }
+            // Distance between symbol and last alias > 0xffff -> ignore alias.
+            if symbol_aliased && (curoff.wrapping_sub(symbol_alias) > 0xffff) {
+                symbol_aliased = false;
+            }
+            if !symbol_aliased {
                 self.set_attribute(sym, varnode_flags::nolocalalias);
             }
             // Locked-data-type structure/array aliasing-block (alias_block_level).

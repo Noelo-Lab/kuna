@@ -229,6 +229,44 @@ list carries a `pointermax` attribute, and the
 blocks — and registers the result as the default model
 (`Architecture::register_model`).
 
+Compiler-spec prototype p-code is registered before snippet compilation by
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callmechanisms.rs`. Default and
+named models resolve distinct entry/return payload identities from the shared
+call-mechanism namespace. A model resolves only payloads that have a locally
+compiled body: a `dynamic` payload with no `<body>` (the JVM and Dalvik
+`uponentry` models) and every payload in ghidra mode, where there is no local
+`.sla` to compile against, stay unresolved, so those models apply no boundary
+effects. Unknown boundary names are rejected rather than
+silently interpreted as a different boundary. Registration retains the compiler
+spec's declared operations; it does not identify helpers by runtime names.
+Compiled call mechanisms are snapshotted once per architecture and shared with
+function analysis. Emission first collects the whole payload, so missing compiled
+bodies, invalid storage, and unsupported control flow fail before installation.
+Straight-line installation retains operation order and memory effects. Each
+invocation reserves a fresh contiguous unique-space range, preserving overlaps
+and partial temporary references within the payload without sharing temporaries
+between calls.
+Installing them is option `callmechanisms` (`on|off`, default **off**); with it
+off, models still carry their payload identities but no effect is installed and
+late restrictions behave as before. It is off by default because a stock spec
+states one wrongly for most binaries that use it: `ppc_64_le.cspec`'s default
+model stores `r2Save` to `0x28(r1)` after every call, which is the TOC save
+slot only under ELFv1. Every little-endian PPC64 binary uses ELFv2, where the
+TOC is saved at `0x18(r1)` and `0x28(r1)` is ordinary frame storage, so the
+store replaced a local the function keeps there with the TOC pointer after each
+call. With it on,
+`ActionDefaultParams` installs return-boundary effects after each modeled call;
+`ActionConstbase` installs entry-boundary effects before the entry block's first
+operation. A per-function ledger prevents duplicate insertion and is discarded
+with lifted IR during reanalysis. A late prototype restriction that adds,
+removes, or changes return-boundary effects requests the existing full reflow
+path. Unsupported mechanisms stop analysis and propagate as function errors.
+Entry emission uses the same effective evaluation model selected by
+`ActionPrototypeTypes`, including ordinary functions with no prototype
+assertion. Locked models retain priority. Compiler-mechanism templates that
+reference instruction-specific placeholders such as `inst_next` are rejected;
+these boundaries do not supply an instruction-length context.
+
 The model's stack ranges come from the spec too, as upstream `ProtoModel::decode`
 takes them (`option protoranges`, default on, §6.2): the parameter range is every stack `<pentry>` of `<input>` plus any
 `<paramrange>`, and the local range is the `<localrange>` element
@@ -386,6 +424,17 @@ the hidden-return pointer bumped it. Failure mode: an unassignable *input*
 raises a hard error; an unassignable *output* is only survivable where the
 caller opted into `ignore_output_error`, which degrades the return to `void`.
 
+Explicit input storage participates in assignment before default slots are chosen
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_inputstorage.rs (assign)`).
+An overridden argument consumes its stated physical storage, including register
+aliases and the components of joined storage, instead of consuming its former
+model-assigned slot. Remaining arguments and synthetic return pointers use the
+normal model rules while avoiding all explicitly reserved ranges. Logical
+argument indices remain unchanged for positional and variadic rules. Explicit
+arguments retain their declared order, types and flags; conflicting explicit
+placements remain the caller's asserted contract. An impossible automatic
+placement raises a parameter-assignment error.
+
 The rules themselves live in
 `decompiler/crates/kuna-decomp/src/p4_calls/modelrules.rs (ModelRule,
 AssignAction, DatatypeFilter, QualifierFilter)`. A `ModelRule` is a data-type
@@ -407,7 +456,23 @@ stack, upstream rounds its slot up to the data type's alignment. The kuna
 takes the next free stack slot (`modelrules.rs (AssignAction::assign_address)`).
 `SparcV9_32.cspec` sets it: SPARC32 passes arguments as consecutive words, while
 its data organization aligns eight-byte objects to eight for structure layout.
-Every other cspec keeps the upstream rounding.
+
+The fallback walk rounds the same way: an aligned stack `<pentry>` wastes slots
+until the argument's offset from the entry's base is a multiple of its data type's
+alignment (`fspec.rs (ParamEntry::get_addr_by_slot_justify)`). The kuna
+`<pentry stackalign="false">` attribute skips that rounding too, so each slot
+keeps only the entry's own `align`
+(`p4_calls/kuna_stackparamalign.rs (effective_alignment)`). `x86win.cspec` sets
+it on the stack entry of `__stdcall`, `__cdecl`, `__fastcall` and `__thiscall`:
+Windows i386 passes every stack argument in four-byte slots, while its data
+organization aligns `double`, `long long` and a structure holding one to eight.
+A `double` or `struct { double re, im; }` after an `int` or the hidden return
+pointer therefore sits at entry ESP+8, where the callee reads it, not at ESP+12.
+The data type's own alignment, and so its field offsets, are unchanged. An
+absent attribute or `true` keeps the rounding; `false` on a register entry or a
+single-slot entry, or any other value, fails the `<pentry>` decode
+(`kuna_stackparamalign.rs (decode)`), which drops the model like any other
+malformed `<pentry>`. Every other cspec keeps the upstream rounding.
 
 The bundled AArch64 cspecs (`AARCH64.cspec`, `AARCH64_apple.cspec` and
 `AARCH64_win.cspec`) never split an argument wider than one general register
@@ -426,6 +491,13 @@ stack whose first 64 bytes are x0–x7, so a `<varargs/>` join ahead of the
 no-spill rule still splits a composite between x7 and the stack there.
 These rules model the C ABI only: a Rust-ABI two-scalar pair, which rustc may
 split between x7 and the stack, is not modelled, as on x86-64.
+
+Scalar floating parameters assigned to an exclusive floating resource in the
+register space occupy their payload size. Object alignment padding does not
+consume register storage: an x87 value has ten meaningful bytes even when its
+stack object occupies twelve or sixteen bytes. Stack resources, general
+register resources and aggregate types retain their aligned object size.
+The declared datatype and its alignment remain unchanged.
 
 ### Recovery: trials → parameters
 
@@ -1064,7 +1136,14 @@ prototype the operator declared for this run (`parse line extern …` /
 `map prototype <func> …`, 00 §0.2), then the
 prototype parked on the function's own global `FunctionSymbol` — which is where
 the DWARF pass's recovered `DW_TAG_subprogram` signature lands (01 §1.4) and
-where the library-prototype table lands for a named libc function.
+where the library-prototype table lands for a named libc function. The
+function's own `map param <i>` locks are folded into that prototype's explicit
+input storage before it is locked
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_inputstorage.rs
+(merge_mapped)`), so its remaining arguments are laid out around them exactly as
+for a callee declared with `map param <func>::<i>`. The locks are then set on
+the locked prototype by slot index once more, which is what still carries a
+host's committed parameter storage verbatim in Ghidra mode.
 
 The parked prototype used to be read only by a *caller*: `ActionDefaultParams`
 copies a callee's pieces into the call site, so a DWARF-described callee typed
@@ -1109,13 +1188,26 @@ that machinery.
   just the output on top. (kuna) The parked pieces describe *types*, and
   storage is otherwise re-derived from the model, so the two spellings that
   state storage explicitly carry it alongside: `output_storage` for the return
-  and `input_storage` for individual parameter slots. Both are re-applied by
-  `FuncProto::set_pieces` after the model-driven assignment, which is what lets
-  a caller declare a non-default convention for a callee — the console `map
-  param <func>::<i> <storage> <decl>` and `map return <func>::<storage>
-  <decl>`, reached from the CLI as `--assert 'param <func>::<i> …'`. A slot no
+  and `input_storage` for individual parameter slots. `FuncProto::set_pieces`
+  re-applies the output storage after the model-driven assignment, while the
+  input storage takes part in that assignment (explicit input storage, §4.1),
+  which is what lets a caller declare a non-default convention for a callee —
+  the console `map param <func>::<i> <storage> <decl>` and `map return
+  <func>::<storage> <decl>`, reached from the CLI as
+  `--assert 'param <func>::<i> …'`. A slot no
   directive named is `undefined` of pointer width, so slots may be declared in
-  any order. A CALLIND through a literal global slot has one additional early
+  any order. (kuna) Explicit return storage also keeps the return out of that
+  model-driven input assignment (`kuna_customreturn.rs`): the inputs are laid
+  out against a temporary `void` result before the stated output is installed.
+  A return the model cannot place in a register (a ten-byte x87 `float10` under
+  the x86 models, which the model returns through a hidden pointer) therefore
+  no longer adds a hidden return-pointer input that survives the override,
+  takes the first stated slot, and shifts the stack-pop inference. Inputs no
+  directive overrides keep the slots the model assigns with every stated input
+  in the list, so a stack input that follows one overridden to a register keeps
+  the stack offset it would have had. Pieces without explicit return storage
+  allocate an indirect return as before.
+  A CALLIND through a literal global slot has one additional early
   source: when input 0 is either the unwritten memory Varnode at that exact
   address or the result of exactly `LOAD(constant-space, constant-address)`,
   the slot is queried before generic recovery. An exact data symbol contributes
@@ -1661,6 +1753,23 @@ classified:
   extern in a relocatable object, a PLT import with no library prototype) gives
   no evidence and changes nothing. `off` leaves every list as the other rules
   settle it.
+
+  Where the walk cannot finish -- a callee too large or too branchy for its
+  bound -- the summary proves nothing, and under `decompile-all` the rule reads
+  the callee's own body instead: the registers its first heritage saw it read,
+  recorded with its `protoorder` statement while `passthrough` is on (*What a
+  body takes*, under `passthrough` below). The same tests decline the read as
+  above, the last argument register included, and a register the statement does
+  not list as a parameter is not taken from that record. Beside a complete
+  summary the statement also adds what the walk cannot see past a call: a
+  register the callee hands untouched to a declared parameter (`fcntl`'s `fd`)
+  or to a callee that takes it. A function calling itself reads its own record:
+  bash `dispose_cond_node` loads `cond->left` into `rdi`, tests it and recurses
+  with it, and printed `dispose_cond_node()`. A list only that record extends
+  takes no earlier call's leftover result (`is_leftover_call_result`) in any of
+  its slots: gcc -O2 keeps a value in `rdx` across a call its IPA-RA knows
+  leaves `rdx` alone, the register then reads as that call's clobber, and the
+  argument would print as an uninitialised local.
 
   A register the callee only pushes above a call's stack arguments -- an
   alignment pad -- is no read either (`pushpadread`, default-on,
@@ -2781,6 +2890,80 @@ and a `uint16_t` to `unsigned short`, and an x86-64 `int` parameter read as a
 buffer) narrows as well; the C is still exact, but the declared type is not the
 source's.
 
+### (kuna) `narrowargs callers` — a 32-bit ARM parameter its callers extend
+
+The AAPCS has the caller extend a `uint8_t`, `int16_t` or `_Bool` argument to
+the whole register (`uxtb r1, r4; bl f`), and the callee relies on it: its body
+reads the register at full width, every bit is consumed, and the body rule
+above never fires. On ARM firmware these are the parameters decbench's
+type_match finds typed `unsigned int` or `int` most often. The evidence is at
+the call sites, so `narrowargs callers` (the option's default) gathers it in a
+whole-binary `decompile-all` of a 32-bit ARM image
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callerargs.rs`).
+
+After every decompile of the callee-first pass, `record` notes what each direct
+CALL passes in each argument register: whether the value fits a byte or a
+halfword unsigned (its nonzero-bit mask, or an argument the trimming cut from a
+zero-extended register), whether it is the sign extension of one (a sign
+extension, a zero extension of a byte, a constant that is one, or a copy or
+merge of such values), whether it is 0 or 1, and whether the caller extended it
+itself: a mask by exactly `0xff` or `0xffff` (the lifted `uxtb`/`uxth`) or an
+extension of a value it computed, not of a load, a call's result or its own
+input. A compiler emits that last kind for a narrow parameter and not for an
+`int`, so it is what a statement needs; a constant or a byte load alone is as
+often passed to an `int`.
+
+A function is a candidate only when its callers can all be listed, which is
+checked from two sides, each erring toward leaving the function open. The image
+is scanned once (`arm_closure.rs (scan)` in the CLI): no 32-bit value at any byte
+offset of a loaded section is the entry or the entry with the Thumb bit (a vector
+table, a literal pool, a pointer in a packed record) or the entry less the
+word's own address (a self-relative table), no dynamic relocation targets it,
+no `movw`/`movt` pair could
+build it (the halves are not matched), no PC-relative build lands on it (an
+`adr`, or a literal `ldr rX, [pc, #]` followed within 64 bytes by `add rX, pc`:
+the Thumb-2 and A32 PIC idiom of Linux and Android shared code), it is not
+exported or the entry point, and every instruction that decodes as a direct
+branch or call to it (decoded at every offset an instruction could start at) is
+a call or tail jump the cross-reference walk attributes to a known function,
+the function itself included (`CallGraph::arm_closed_sites`). And no decompiled
+body holds the entry as a value (`taken_entries`): any constant the analysis
+resolved, whatever idiom built it, equal to the entry or the entry with the Thumb
+bit anywhere but as a direct call's target, nor resolves an indirect call to it,
+nor flows into its code through an indirect branch. When the first pass is over,
+`decide` requires the recorded CALLs to be exactly the listed references,
+including a function's calls to itself; a tail jump decompiled as a branch, a
+caller that failed or a call through a register leaves the list incomplete and
+nothing is stated. An image whose dynamic relocations cannot be read (Android's
+packed `DT_ANDROID_REL`/`DT_ANDROID_RELA` tables, where an address may exist only
+as an encoded delta) closes no function at all.
+
+What remains unseen: a table of offsets relative to the table or to another
+function, read through an index the analysis cannot resolve, holds the address
+in no form a byte scan can recognize. C compilers do not emit such tables on
+32-bit ARM (hand-written assembly can); where kuna resolves the indirect call,
+the function is left open as above. For each of the function's own register-wide
+integer parameters, every call must pass a value of one narrow kind in that
+same register: all 0 or 1 with one of them computed (`bool`), or zero-fitting
+with one caller zero-extending (`unsigned char`/`unsigned short` at the widest
+width any call needs), or sign-fitting with one caller sign-extending (`char`/
+`short`). A caller that zero-extends and another that sign-extends, or one that
+passes a value wider than the width, states nothing.
+
+The function is then decompiled again (`caller_args_round`, plan order) with
+the statement seeded (`seed`), and `narrowargs`' rewrite replaces the stated
+input by its low part extended by `INT_ZEXT` or `INT_SEXT` at the entry
+(`narrow_stated`); type inference gives the narrow input the stated type
+(`input_vote`). Every call passes a value that fits, so every value the body
+computes is unchanged; every caller's C passes an argument the narrow parameter
+holds without loss. The redo pass may reprint 5% of the lines the first pass
+printed (a function of at most 32 lines is always redone), and a redo that
+fails or moves the arity keeps the first body and drops the statement. The
+callers are not decompiled again. Under `on` the body rule alone runs; any other
+architecture, a relocatable object, and the single-function `kuna decompile`
+are unaffected. Tests: `tests/cli/arm-parameter-every-caller-extends-is-narrow.json`
+and its `narrowargs on` twin, on the fixture `callerargs_thumb`.
+
 ### (kuna) `calleeprotostack` — the declared callee's stack contract
 
 A locked prototype says two things about the stack, and until this option
@@ -2801,6 +2984,20 @@ latches a stack pointer too high into every later reference. The option asks
 the model states no extrapop of its own; a model that states one already has the
 exact value and is left alone, so `__cdecl`, x86-64 and every RISC spec are
 inert.
+
+A call to a function whose symbol carries a whole declaration (a `prototype`
+directive, `parse line extern`, a demangled or host-declared signature) never
+reaches the arm that rebuilds a prototype from parked pieces: the flow has
+already copied the declaration into the call. `ActionDefaultParams` resolves
+such a copied prototype too, but only when the declaration named its convention
+(`ArchContext::callee_proto_model` answers for the callee). A declaration that
+names none is laid out under the default model, which on x86 Windows is
+`__stdcall`, yet the convention MSVC gives an undecorated helper is `__cdecl`;
+reading that arity as bytes the callee pops would move every later stack
+reference in the caller, so the solver keeps such a call. A call to
+`void __stdcall fill(pair *p)` takes the callee's `ret 4` from the declaration;
+a call to `void observe(float,float)` keeps the cleanup the solver reads off the
+caller.
 
 The same park is read a second time, at de-indirection. `ActionDefaultParams`
 runs once at the head of the function, when a `call dword ptr [IAT slot]` is
@@ -4391,7 +4588,7 @@ is refused outright wherever the caller holds evidence the fold cannot weigh
   elsewhere, and the printer bridges a float to an integer there with a value
   conversion; a float register is itself the float declaration, so `s0` on
   hard-float ARM or `xmm0` on x86-64 keeps the vote (the fixture
-  `protoorder_floatreg_armhf.o` prints `1000.0`, not its bits `0x447a0000`).
+  `protoorder_floatreg_armhf.o` prints `1000.0f`, not its bits `0x447a0000`).
   The case is an ABI that
   passes a float in a general register (MIPS
   o32, ARM soft-float, RISC-V ilp32): the caller hands a word's bits to a
@@ -4772,7 +4969,8 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
 
 - the callee's recovered prototype (`RecoveredTypes`, stated by `protoorder` for a
   callee decompiled first) has a parameter starting at `R`;
-- that list is one `lock` would accept as an **arity claim**
+- that list is one `lock` would accept as an **arity claim**, or every register
+  it names is one the callee's body takes (*What a body takes*, below)
   (`RecoveredTypes::arity_sound`, computed only while the option is on): every
   parameter is in a register, the callee's body does not read the register its
   next parameter would arrive in (a variadic's register-save prologue does,
@@ -4782,7 +4980,8 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
   found them. The next-slot read is asked without the register-zeroing idiom:
   `xor %esi,%esi` writes a constant;
 - the callee's body reads `R` before writing it on some path, for a value that
-  reaches something (`calleedeadarg`'s `proves_input`), so the parameter is not an
+  reaches something (`calleedeadarg`'s `proves_input`), or hands it on to
+  something that does (*What a body takes*, below), so the parameter is not an
   artifact of the callee's own recovery. A callee that forwards by a call rather
   than a jump (`sub $8,%rsp; call narrow; add $8,%rsp; ret`, or a tail call the
   spec models as a call) reads nothing before that CALL, where the walk ends, so
@@ -4866,6 +5065,71 @@ trial, the stated parameter and the widest body read starting at `R` — so a
 parameter recovered as `rdi` but read as `edi` is passed, and becomes the
 caller's parameter, as an `int`, through a truncating `SUBPIECE`.
 
+**What a body takes.** The entry walk ends at the first CALL and gives up on a
+body too large for its bound, so on its own it answered "not read" for most of
+what a forwarder hands on: grep -O2 `bmexec` printed `bmexec_trans()` for
+`bmexec_trans(a0,a1,a2)`, and bash `xtrace_set` printed `sh_validfd()`, whose
+only read of `fd` is the `fcntl` call the walk stops at -- about 2,900 functions
+over the decbench corpus drop a forwarded argument their callee's DWARF
+prototype takes. `decompiler/crates/kuna-decomp/src/p4_calls/kuna_entryreads.rs`
+records, once per decompile right after the first heritage, which incoming
+registers the body takes, from their input Varnodes' readers. A register is
+*read* when some op computes with it for a result that reaches something,
+followed through copies, phis and low `SUBPIECE`s; as wide as the low bytes that
+result needs (`lea 0x19(%rdx),%ecx` feeding a byte store reads four bytes, the
+32-bit result, not `rdx`); and not as a call's argument, across a call's side
+effect (an `INDIRECT`), as a stored value (a register-save prologue, an
+alignment push), as the preserved high part of a partial write (`PIECE`), or in
+an op whose result does not depend on it (`xor %esi,%esi`, `sbb %ecx,%ecx`'s
+compares, `and $0`, `or $-1`, matched through the separate pieces heritage gives
+two reads of one register). A register handed untouched to a named parameter
+of a declared prototype (an import's library signature) is taken there; one
+handed untouched to a direct call is taken if that callee takes it. With each
+callee's types `protoorder` states what the body reads and the part it reads
+only by handing it on -- to a declared parameter, or to a callee that takes it,
+including the forwards `passthrough` added to the function's finished argument
+lists -- so the hand-off is followed through any number of wrappers at the cost
+of one lookup per forwarded register.
+
+Only a general-purpose argument register, or one the callee's statement types
+as a float, is answered this way; any other floating-point register keeps the
+arity-claim rule above. A callee that only moves its `float` in `xmm0`
+(`xorps` with a sign mask) is recovered with an integer parameter, and a
+forward of that register made gcc -O2's `jmp negf` wrapper a `void` function
+taking an `unsigned int` instead of returning `negf()`'s bits; Cortex-M
+`invSqrt` and `biquadFilterUpdate` hand on an `s0` their callee types as
+`float`.
+
+The read test is asked of the best evidence the caller holds. A **complete**
+entry walk decides, because it follows constant branches (betaflight's
+`microsISR` reads `r0` only past a `movs r1,#1; cbnz r1` that always branches,
+and its callers would otherwise all gain the argument), with the statement's
+hand-offs added for what it cannot see past a call. An arity-sound list asks the
+walk's `proves_input` as before; any other list must have every register it names
+taken by the body, read on its low byte other than by a store or an alignment
+push -- a list with a register the body never takes in the middle
+(`microsISR`'s recovered `r1`) or at the end is not evidence. Where the walk is
+incomplete, the first-heritage record answers. A function **calling itself**
+asks its own record and its own entry walk; there is no statement yet, and the
+registers its call can take are the model's argument registers up to the
+first its body does not take. grep -O2 `treenext` recurses with its second
+parameter untouched in `rsi` and printed `treenext(*v4)` beside
+`treenext(v4[1],a1)`. The argument is as wide as the narrower of the walk's
+read and the record's.
+
+The record is taken only while `passthrough` is on, so `--option passthrough
+off` leaves every list as before; a single-function `kuna decompile` states no
+callee and sees only the self-call (over grep -O2, two of 449 functions change,
+both recursive). Over fourteen binaries (x86-64 gcc -O2 and -O0, clang,
+Cortex-M firmware, an ARM library) this adds 222 call arguments; of the 167
+whose callee has a DWARF prototype, 156 match it in count and the other 11 are
+register-level arguments DWARF does not count (a hidden struct-return pointer,
+a 64-bit integer in two registers, libgcc's assembly soft-float compares with
+no DWARF parameters). Call sites passing fewer arguments than the callee's
+DWARF prototype fall from 251 to 130, and no function loses an argument or
+gains an uninitialised local. A hole is still declined (`no_hole_before`), and
+two functions calling each other state nothing for the one decompiled first.
+
 **The rule only adds.** Every other rule decides a call's argument list first,
 exactly as with the option off, and `passthrough` extends the result. That order
 is the design, not a detail: the list upstream scoring settles on is often
@@ -4939,6 +5203,17 @@ output takes the callee's recovered return type in `call_output_type_local`.
 This is the claim a declared callee already gets whenever the caller names the
 return register; its cost is a void wrapper that tail-calls a value-returning
 function, which is handed that value.
+
+Under `narrowret` the callees' statements may differ in width at the same
+register on a little-endian image: a callee whose own calls now read a narrow
+result can be recovered returning `eax` where its sibling still returns `rax`
+(lz4's `LZ4_compressHC2_continue`, one path to each). The claim then takes the
+widest of them, as both were before, instead of refusing and leaving the
+wrapper `void`, but only when that is at least four bytes and every narrower
+callee states, under `narrowret`, that it zero-extends its value: a wrapper
+that tail-calls a `uint8_t` callee on one path and a sign-extending `int16_t`
+one on the other is not declared to return either half-word, which its callers
+would then extend as the binary does not.
 
 A callee with **no parameters** states its return the same way: `protoorder`
 records the return value of a function whose list is empty, where it used to
@@ -6417,6 +6692,140 @@ and `--option protoorder off`. A single-function decompile therefore still
 prints the conversion that the whole-binary listing leaves out, the same
 property `protoorder`'s argument types have.
 
+### (kuna) `narrowret` — a call reads the narrow value its callee returns
+
+A function that returns a `uint8_t`, a `uint16_t` or a `bool` hands it back in a
+whole register. AAPCS requires the callee to extend it to 32 bits, an x86-64
+callee's own `movzbl` or 32-bit write extends it in practice, and a caller that
+relies on the extension reads the register at full width: `bl getb; adds r0,
+#3`. The CALL's recovered output is then the whole register, and every local
+that holds the result is declared `unsigned int` beside a callee the same
+listing declares `unsigned char getb(...)`. `callrettype` cannot help: it states
+a type only for an output already in exactly the callee's storage and width.
+
+**The proof, in the callee.** A callee whose returned value has known-zero
+upper bits already returns it narrow: `SubvariableFlow`'s RETURN pull
+(`try_return_pull`) trims the RETURN's input to the logical value of a flow
+seeded by a zero extension, a mask or a truncation, and the dead-code pass
+counts only the possibly-nonzero bits of a RETURN as consumed, so the trim is
+taken where nothing above the value is live. Each trim of a RETURN records on
+the op (`pcodeop_addlflags::kuna_narrowret`, `kuna_narrowret::note_trim`)
+whether it dropped only bits the nonzero-bit mask proves zero
+(`kuna_truncarg::drops_only_zero_bits`); the record starts only at a trim of the
+whole return register (the widest general output entry of the model), so a
+return the trial recovered narrow from the start (`sete %al; ret`, whose `%rax`
+above the byte is whatever was there) proves nothing, and a later trim that
+drops a nonzero bit clears it. A RETURN op cloned by a return split keeps the
+record (`Funcdata::clone_op`).
+
+**The statement.** After each function's final decompile in the callee-first
+order (beside `callrettype`'s record), `kuna_narrowret::record` states the
+function's narrow return when the prototype is neither declared nor
+output-locked, the recovered output is a register of 1 to 4 bytes narrower than
+the return register, and every live RETURN hands back a value of that width in
+that storage (or a constant) that either carries the record or is the result
+of a direct call to a callee that states the same storage and width, read
+straight off the CALL, through copies of that storage onto itself, or as the
+call's output-trial creation that `passthrough` reads at a tail call
+(`tail_statement`): the register then holds what the callee left in it, the
+callee's zero extension. A function with no such pass-through return must
+compute every value it returns (`every_return_computes_with`, global reads
+counted). A value is a truth value when it is one byte that every RETURN
+computes as a comparison or a constant 0 or 1 through copies, merges and zero
+extensions (`boolbyte`'s def walk, `def_is_truth_valued`), not all of them
+constants; any other value must be able to set the top bit of its width (the
+union of the returned values' nonzero masks reaches it), since a value that
+never does is as often an `int` or enum of small numbers (diff's
+`analyze_hunk` returns a `changes` enum of 0 to 3 built from two flags) as a
+narrow one; a pass-through return inherits its callee's answer. A truth value is
+stated only where the return register is four bytes wide (32-bit ARM, where
+AAPCS has a `bool` callee extend its result as an `int` one does): on x86-64 a
+`bool` function leaves the bits above `al` as they were (`setg %al; ret`), so a
+whole register proven to hold a zero-extended comparison is an `int` predicate
+(`xor %eax,%eax; cmp ..; setg %al`), which its callers hold in an `int`, and
+AArch64's `cset w0` serves both alike. In practice `bool` results are stated
+only on 32-bit ARM and Thumb. On i386 the option states nothing at all: a
+narrow return there is recovered narrow from the start (`mov 0x4(%esp),%al;
+add $1,%al; ret` leaves the rest of `eax` as it was), and a 32-bit value
+fills the whole return register. The proof shows
+a zero extension and nothing about a sign, so the statement is made only when
+the function's listing declares what it returns an unsigned integer of that
+width, or a `bool` for a truth value: a callee declared `char` or `short` (an
+AArch64 `-O0` wrapper that returns another's `ldrb`) states nothing, since its
+callers would print the call at a signed type and C would sign-extend what the
+binary zero-extends. The statement is the storage, the width and that type. A
+function decompiled again records again; a redo the run discards puts the
+earlier statement back (`kuna_narrowret::restore`), as for `callrettype`. A
+callee whose statement a `voidret` redo changes counts as changed for its
+readers decompiled before it (`stale_readers`), as a changed `callrettype`
+statement does. A redo outside that settling (`calleevote`, the element round,
+the final convergence) decompiles no reader again, so one that would change the
+function's statement is not kept; a callback parked at its slot's prototype is
+kept, since the slot then declares its return.
+
+**The call.** `seed` copies the statements for every callee onto the caller's
+`Funcdata`. When `ActionActiveReturn` has built a direct CALL's output from its
+trials, `narrow_call_output` looks the callee up. The output must be a register
+Varnode wider than the stated width whose low part (the low-addressed bytes on
+a little-endian space, the high-addressed ones on a big-endian one) is the
+stated storage, and the variable it starts must take no other value
+(`sole_value`): following copies, merges, indirect effects and other narrowed
+calls' extensions both ways from the output, every value is the result of a
+call to a callee with the same statement or a constant that fits the width (0
+or 1 for a truth value), and if the variable reaches a RETURN, every value the
+function returns is one of those. A result merged with an `add` beside a
+comparison, returned on one path while another returns `2`, or returned by a
+wrapper whose other path returns a sign-extended value, keeps the whole
+register: a narrow or `bool` type on that variable would print the other values
+converted (`return (bool)add(..)`, `return (bool)2`). When it passes, the CALL
+is made to write the narrow Varnode and a new `INT_ZEXT` after it writes the old
+output. Every reader reads the same bits it read before, now defined as the
+extension the callee performed, which is what the locked-output path
+(`commitNewOutputs`, `narrowext`) builds for a declared narrow return; the new
+narrow Varnode is a write heritage ignores (`set_write_mask`), read only by the
+extension, which carries the op flag so that a question about how much of the
+register the caller reads (`callbacktype`'s refusal of a callee whose direct
+caller reads a wider return, `widened_read`) still sees the whole register.
+Before it narrows the output, the call notes what the caller computes with and
+reads of the whole register (`kuna_narrowret::ReadBefore`), and `voidret` files
+those for the call in place of what it reads of the narrowed one: once the
+extension is proven, the rules fold the caller's own extension of the register
+(AArch64's `mov w8, w0` before a 64-bit `sub`) into it, and the result would
+look read whole, while a caller that does compute with the whole register
+(`call z32m; add $1, %rax`) still widens a callee that zero-extends a word to
+the whole register, and its statement goes with it. From there the existing
+passes decide the caller's types: `RuleSubvarZext` narrows a result that is
+only compared, masked or stored as a byte, and a local holding the result
+beside other narrow values takes the narrow width when the rest of its web
+allows it. For a one-byte statement the stated type is the def-side vote of
+`TypeOpCall::getOutputLocal` for the unlocked output (`stated_type`), under the
+same no-other-value condition, and so the type the call expression has where
+`ActionSetCasts` converts it: the listing declares the callee `unsigned char`,
+so a byte compared with `0x80` prints `h25(..) == 0x80`, where typed by the
+comparison alone it was a `char` and printed `h25(..) == '\x80'`, which C,
+reading the declared `unsigned char`, never finds equal. A wider statement is
+`callrettype`'s to type, which states an integer wider than a byte at exactly
+the narrowed output's storage and width. A stated truth value also marks the
+CALL a calculated boolean, as a callee declared `bool` does, so the result's
+nonzero mask is 1, and `boolbyte` counts such a call as a truth-valued
+definition of the byte that holds it (`states_truth`) beside every other value
+the byte takes.
+
+Nothing is stated for an indirect call, a declared prototype (its callers hold
+a locked output already), a sign-extended return (`ldrsb`; the trim of a
+sign-extended value drops nonzero bits), a signed or untyped return, or a
+return any trim narrowed through bits not proven zero. A call to a function the
+run has not decompiled yet (a recursive component's members) is left as it is.
+Everything is inert without a callee-first pass: `kuna decompile`, `--addr`,
+`--functions`, `--jobs N` and `--option protoorder off` narrow a function's own
+return exactly as with the option off and leave its calls register-wide.
+
+The cost is the `int` or enum local that holds a narrow callee's result: the
+binary evidence is the same instruction either way (`int i = getMotorCount();`
+beside a `uint8_t` return), and such a local now declares the narrow type. A
+caller that computes with the result at register width prints the widening
+(`(unsigned int)v1 * 3`), where it printed none before.
+
 ### (kuna) `zerofillreturn` — the zero fill above a returned vector lane
 
 AAPCS64 returns a `float` in `s0` and a `double` in `d0`, the low bytes of the
@@ -7102,3 +7511,54 @@ return what they tail-call or call, and nine PLT stubs return the import's resul
 (`v1 = (*dat_17e58)(); return v1;` for `lseek`). Each prints the signature
 `decompile-all` prints. Only a function whose callers read it pays for a second
 drive.
+
+An explicitly freed x87 ST0 is not an inferred return value. Before SSA, a
+must-empty analysis records ordinary returns reached with ST0 empty on every
+path. FFREE must name the raw ST0 register; equal values in ST1 do not qualify.
+Any later ST0 write, tag-word write, call, or other opaque user-op withdraws
+the proof. Partial accesses to the x87 register bank also withdraw it: they
+include MMX instructions whose tag effects the SLEIGH lift may leave implicit.
+A function with no FFREE bypasses the graph analysis. Joins
+require every reachable predecessor, including loop entry paths, to agree.
+Return recovery withdraws an unlocked ST0 trial only when every remaining
+ordinary return has that proof. Explicit and caller-forced results take priority.
+Restarting analysis clears and rebuilds the evidence.
+
+Before SSA, an uninjected x87 FFREE user-operation identifies its full ST0–ST7
+operand as a register annotation. It changes the register's tag without consuming
+the floating payload, so that operand must not create a numeric input, an
+uninitialized ten-byte local, or a payload phi. The operation and register identity
+remain explicit. Empty-return evidence is captured before this rewrite. Injected
+operations and operands outside the complete ten-byte stack-register bank retain
+their original inputs. Implementation:
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_x87free.rs`.
+
+### Qualified register declarations bind to an entry (`kuna_qualifiedstorage.rs`, `kuna_qualifiedcall.rs`)
+
+The console's qualified `map param <func>::<i>` and `map return <func>::<storage>`
+(what `--assert 'param f::0 ECX ...'` lowers to on the text surface), and its
+`parse line extern`, resolve `<func>` through the same entry resolver as
+`map prototype`: a name or an entry address. The resolved entry receives the
+storage pieces at once, and its entry address keys the pending store that the
+console replays on every IR rebuild and onto each callee symbol, so two
+same-named functions keep independent declarations and a name and an address
+naming one entry merge. An explicit `0x` address no function starts at is
+rejected instead of being parked as a function name nothing has. An
+input-only or output-only declaration keeps its partial-prototype inference;
+only a declaration that also states the return type retypes the symbol. The
+binding lives in `decompiler/crates/kuna-console/src/kuna_qualifiedstorage.rs`.
+
+A call that reaches such a callee indirectly, through an import slot or a
+constant pointer, becomes direct only once `ActionDeindirect` resolves it
+through `ArchContext::query_function`, which would otherwise hand back the
+symbol's cached code-type prototype: a placeholder signature with no explicit
+storage. When the parked pieces carry explicit input or output storage (a
+qualified declaration above, or a Ghidra host's custom-storage prototype),
+`query_function` builds the callee prototype from those pieces instead, under
+the declared model (or the undeclared default), as `ActionDefaultParams` already
+does for a direct call. Output-only pieces leave the inputs unlocked. The
+symbol's call-fixup injection is kept, and its no-return flag is carried under
+`peimportcall`, as on the other two paths. Pieces with no explicit storage
+(library, loader and DWARF prototypes) keep the code-type lookup unchanged. The
+construction lives in
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.

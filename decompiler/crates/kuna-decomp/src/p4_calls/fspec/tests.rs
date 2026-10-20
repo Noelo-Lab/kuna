@@ -2328,3 +2328,371 @@ fn w10_float_typeclass_pointermax_rule_appends_after_existing_rules() {
     // pointermax ConvertToPointer never fired and never shrank it to ptr size).
     assert_eq!(res[0].type_.as_ref().unwrap().get_size(), 10);
 }
+
+#[test]
+fn explicit_return_storage_removes_only_the_model_hidden_return_input() {
+    use crate::dtype::TypeFactoryImpl;
+    let (manager, reg) = manager_with_default_data_space();
+    let types = TypeFactoryImpl::new();
+    types.setup_sizes(Some(4), 8, 8);
+    let mut model = ProtoModel::new(&manager);
+    let mut inputs = ParamListStandard::new(ParamListKind::Standard);
+    for (group, offset) in [(0, 0x10), (1, 0x20), (2, 0x30)] {
+        inputs.push_entry(excl_entry(group, &reg, offset, 8, inputs.get_entry(), &manager));
+    }
+    inputs.finish_decode();
+    model.input = Some(inputs);
+    model.output = Some(single_small_out_model(&reg, &manager));
+    let model = Rc::new(model);
+    let float = float10_type();
+    let mut pieces = PrototypePieces {
+        name: "custom_result".into(), outtype: Some(float.clone()),
+        intypes: vec![int4_type(), int4_type()], innames: vec!["first".into(), "second".into()],
+        first_var_arg_slot: -1, ..Default::default()
+    };
+    let mut prototype = FuncProto::new();
+    prototype.attach_internal_store(types.get_type_void().unwrap());
+    prototype.set_pieces(&pieces, Some(model.clone()), &types, &manager).unwrap();
+    assert_eq!(prototype.num_params(), 3);
+    pieces.output_storage = Some(ParameterPieces {
+        addr: Address::new(reg.clone(), 0x100), type_: Some(float),
+        flags: parameter_pieces_flags::TYPELOCK,
+    });
+    pieces.input_storage.push((0, ParameterPieces {
+        addr: Address::new(reg.clone(), 0x80), type_: Some(int4_type()),
+        flags: parameter_pieces_flags::TYPELOCK,
+    }));
+    let explicit_output = pieces.output_storage.take();
+    prototype.set_pieces(&pieces, Some(model.clone()), &types, &manager).unwrap();
+    assert_eq!(prototype.num_params(), 3);
+    assert_eq!(prototype.get_param(0).unwrap().get_name(), "rethidden");
+    assert_eq!(prototype.get_param(0).unwrap().get_address().get_offset(), 0x10);
+    assert_eq!(prototype.get_param(1).unwrap().get_address().get_offset(), 0x80);
+    assert_eq!(prototype.get_param(2).unwrap().get_address().get_offset(), 0x20);
+    pieces.output_storage = explicit_output;
+    prototype.set_pieces(&pieces, Some(model), &types, &manager).unwrap();
+    assert_eq!(prototype.num_params(), 2);
+    assert_eq!(prototype.get_param(0).unwrap().get_address().get_offset(), 0x80);
+    assert_eq!(prototype.get_param(1).unwrap().get_address().get_offset(), 0x10);
+    assert_eq!(prototype.get_param(1).unwrap().get_name(), "second");
+    assert_eq!(prototype.get_output().get_address().get_offset(), 0x100);
+}
+
+#[test]
+fn stack_argument_slots_can_ignore_object_alignment() {
+    let manager = AddrSpaceManager::new();
+    let stack = stack_space();
+    for (flags, expected, next) in [(0, 12, 6), (param_entry_flags::IGNORE_TYPE_ALIGN, 8, 5)] {
+        let entry = ParamEntry::seed(0, type_class::TYPECLASS_GENERAL, stack.clone(), 4, 500,
+            1, 4, flags, true, false, &[], &manager).unwrap();
+        let mut slot = 1;
+        let address = entry.get_addr_by_slot(&mut slot, 16, 8, &manager).unwrap();
+        assert_eq!(address.get_offset(), expected);
+        assert_eq!(slot, next);
+    }
+}
+
+#[test]
+fn partial_input_storage_reserves_aliases_before_allocating_defaults() {
+    let manager = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let mut inputs = ParamListStandard::new(ParamListKind::Standard);
+    for (group, offset) in [(0, 0x10), (1, 0x20), (2, 0x30)] {
+        inputs.push_entry(excl_entry(group, &reg, offset, 8, inputs.get_entry(), &manager));
+    }
+    inputs.finish_decode();
+    for slot in 0..3 {
+        let proto = PrototypePieces {
+            intypes: vec![int4_type(), int4_type(), int4_type()],
+            input_storage: vec![(slot, ParameterPieces {
+                addr: Address::new(reg.clone(), 0x12), type_: Some(int4_type()),
+                flags: parameter_pieces_flags::CUSTOM_STORAGE,
+            })],
+            ..Default::default()
+        };
+        let mut result = Vec::new();
+        inputs.assign_map(&proto, &PanicTypeFactory, &mut result, &manager).unwrap();
+        let mut expected = vec![0x20, 0x30];
+        expected.insert(slot as usize, 0x12);
+        assert_eq!(result.iter().map(|p| p.addr.get_offset()).collect::<Vec<_>>(), expected);
+    }
+}
+
+#[test]
+fn partial_input_storage_skips_reserved_stack_ranges() {
+    let manager = AddrSpaceManager::new();
+    let stack = stack_space();
+    let mut inputs = ParamListStandard::new(ParamListKind::Standard);
+    inputs.push_entry(ParamEntry::seed(0, type_class::TYPECLASS_GENERAL, stack.clone(),
+        4, 0x100000, 1, 4, 0, true, false, &[], &manager).unwrap());
+    inputs.finish_decode();
+    for (offset, expected) in [(4, vec![4, 8, 12]), (8, vec![4, 8, 12]),
+                               (0x80000, vec![4, 0x80000, 8])] {
+        let proto = PrototypePieces {
+            intypes: vec![int4_type(), int4_type(), int4_type()],
+            input_storage: vec![(1, ParameterPieces {
+                addr: Address::new(stack.clone(), offset), type_: Some(int4_type()),
+                flags: parameter_pieces_flags::CUSTOM_STORAGE,
+            })],
+            ..Default::default()
+        };
+        let mut result = Vec::new();
+        inputs.assign_map(&proto, &PanicTypeFactory, &mut result, &manager).unwrap();
+        let actual = result.iter().map(|p| p.addr.get_offset()).collect::<Vec<_>>();
+        let expected = if offset == 4 { vec![8, 4, 12] } else { expected };
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
+fn partial_input_storage_handles_large_stack_reservations_without_consuming_a_default_slot() {
+    let manager = AddrSpaceManager::new();
+    let stack = stack_space();
+    let mut inputs = ParamListStandard::new(ParamListKind::Standard);
+    inputs.push_entry(ParamEntry::seed(0, type_class::TYPECLASS_GENERAL, stack.clone(),
+        4, 0x100000, 1, 4, 0, true, false, &[], &manager).unwrap());
+    inputs.finish_decode();
+    let large = Rc::new(Datatype::new(0x80000, type_metatype::TYPE_UNKNOWN));
+    let proto = PrototypePieces {
+        intypes: vec![large.clone(), int4_type()],
+        input_storage: vec![(0, ParameterPieces {
+            addr: Address::new(stack, 4), type_: Some(large),
+            flags: parameter_pieces_flags::CUSTOM_STORAGE,
+        })],
+        ..Default::default()
+    };
+    let mut result = Vec::new();
+    inputs.assign_map(&proto, &PanicTypeFactory, &mut result, &manager).unwrap();
+    assert_eq!(result[1].addr.get_offset(), 0x80004);
+}
+
+#[test]
+fn partial_input_storage_can_override_every_input_of_an_empty_model() {
+    let manager = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let inputs = ParamListStandard::new(ParamListKind::Standard);
+    let proto = PrototypePieces {
+        intypes: vec![int4_type(), int4_type()],
+        input_storage: (0..2).map(|slot| (slot, ParameterPieces {
+            addr: Address::new(reg.clone(), 0x80 + slot as u64 * 8),
+            type_: Some(int4_type()), flags: parameter_pieces_flags::CUSTOM_STORAGE,
+        })).collect(),
+        ..Default::default()
+    };
+    let mut result = Vec::new();
+    inputs.assign_map(&proto, &PanicTypeFactory, &mut result, &manager).unwrap();
+    assert_eq!(result.iter().map(|p|p.addr.get_offset()).collect::<Vec<_>>(), vec![0x80, 0x88]);
+}
+
+fn padded_assignment_type(payload: i32, alignment: i32, metatype: type_metatype) -> Rc<Datatype> {
+    if metatype == type_metatype::TYPE_STRUCT {
+        return Rc::new(Datatype::new_with_align(
+            Datatype::calc_align_size(payload, alignment),
+            alignment,
+            metatype,
+        ));
+    }
+    let factory = crate::dtype::TypeFactoryImpl::new();
+    factory.set_max_basetype_size(16);
+    factory
+        .decode_alignment_map(&[(1, 1), (2, 2), (4, 4), (10, alignment)])
+        .unwrap();
+    let datatype = factory.get_base(payload, metatype).unwrap();
+    assert_eq!(datatype.get_size(), payload);
+    assert_eq!(
+        datatype.get_align_size(),
+        Datatype::calc_align_size(payload, alignment)
+    );
+    datatype
+}
+
+#[test]
+fn floating_register_assignment_uses_payload_and_preserves_stack_padding() {
+    let mut manager = fcs_manager();
+    let register = Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "register",
+        false,
+        8,
+        1,
+        5,
+        0,
+        1,
+        1,
+    ));
+    manager.insert_space(Rc::clone(&register)).unwrap();
+    let stack = Rc::clone(manager.get_space_by_name("stack").unwrap());
+    for alignment in [4, 16] {
+        let datatype = padded_assignment_type(10, alignment, type_metatype::TYPE_FLOAT);
+        let mut output = ParamListStandard::new(ParamListKind::StandardOut);
+        output.push_entry(
+            ParamEntry::seed(
+                0,
+                type_class::TYPECLASS_FLOAT,
+                Rc::clone(&register),
+                0x100,
+                10,
+                4,
+                0,
+                0,
+                false,
+                false,
+                &[],
+                &manager,
+            )
+            .unwrap(),
+        );
+        let mut status = [0];
+        let mut assigned = ParameterPieces::default();
+        assert_eq!(
+            output
+                .assign_address_fallback(
+                    type_class::TYPECLASS_FLOAT,
+                    &datatype,
+                    true,
+                    &mut status,
+                    &mut assigned,
+                    &manager,
+                )
+                .unwrap(),
+            AssignActionResponse::success
+        );
+        assert_eq!(assigned.addr.get_offset(), 0x100);
+        assert_eq!(status, [-1]);
+        assert_eq!(assigned.type_.as_ref().unwrap().get_size(), 10);
+        assert_eq!(
+            assigned.type_.as_ref().unwrap().get_align_size(),
+            datatype.get_align_size()
+        );
+
+        let mut input = ParamListStandard::new(ParamListKind::Standard);
+        input.push_entry(
+            ParamEntry::seed(
+                0,
+                type_class::TYPECLASS_FLOAT,
+                Rc::clone(&stack),
+                0,
+                128,
+                1,
+                4,
+                0,
+                true,
+                false,
+                &[],
+                &manager,
+            )
+            .unwrap(),
+        );
+        let mut status = [0];
+        for expected in [0, datatype.get_align_size() as u64] {
+            let mut assigned = ParameterPieces::default();
+            assert_eq!(
+                input
+                    .assign_address_fallback(
+                        type_class::TYPECLASS_FLOAT,
+                        &datatype,
+                        true,
+                        &mut status,
+                        &mut assigned,
+                        &manager,
+                    )
+                    .unwrap(),
+                AssignActionResponse::success
+            );
+            assert_eq!(assigned.addr.get_offset(), expected);
+        }
+    }
+}
+
+#[test]
+fn floating_register_assignment_keeps_non_payload_resources_unchanged() {
+    let mut manager = fcs_manager();
+    let register = Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "register",
+        false,
+        8,
+        1,
+        5,
+        0,
+        1,
+        1,
+    ));
+    manager.insert_space(Rc::clone(&register)).unwrap();
+    let stack = Rc::clone(manager.get_space_by_name("stack").unwrap());
+    for (space, class, metatype, payload, alignment, entry_alignment) in [
+        (
+            Rc::clone(&register),
+            type_class::TYPECLASS_GENERAL,
+            type_metatype::TYPE_FLOAT,
+            10,
+            4,
+            0,
+        ),
+        (
+            Rc::clone(&register),
+            type_class::TYPECLASS_FLOAT,
+            type_metatype::TYPE_STRUCT,
+            10,
+            4,
+            0,
+        ),
+        (
+            stack,
+            type_class::TYPECLASS_FLOAT,
+            type_metatype::TYPE_FLOAT,
+            10,
+            4,
+            0,
+        ),
+        (
+            Rc::clone(&register),
+            type_class::TYPECLASS_FLOAT,
+            type_metatype::TYPE_FLOAT,
+            10,
+            4,
+            2,
+        ),
+        (
+            register,
+            type_class::TYPECLASS_FLOAT,
+            type_metatype::TYPE_FLOAT,
+            16,
+            16,
+            0,
+        ),
+    ] {
+        let mut list = ParamListStandard::new(ParamListKind::StandardOut);
+        list.push_entry(
+            ParamEntry::seed(
+                0,
+                class,
+                space,
+                0x100,
+                10,
+                1,
+                entry_alignment,
+                0,
+                false,
+                false,
+                &[],
+                &manager,
+            )
+            .unwrap(),
+        );
+        let datatype = padded_assignment_type(payload, alignment, metatype);
+        let mut status = [0];
+        assert_eq!(
+            list.assign_address_fallback(
+                class,
+                &datatype,
+                true,
+                &mut status,
+                &mut ParameterPieces::default(),
+                &manager,
+            )
+            .unwrap(),
+            AssignActionResponse::fail
+        );
+    }
+}

@@ -331,6 +331,7 @@ fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<R
         let size = data.obank().get(op)?.get_out().and_then(|v| data.vbank().get(v)).map(|v| v.get_size())?;
         return crate::p4_calls::kuna_passthrough::tail_return_type(data, op, size)
             .or_else(|| crate::p4_calls::kuna_callrettype::stated_return_type(data, op, fc))
+            .or_else(|| crate::p4_calls::kuna_narrowret::stated_type(data, op, fc, size))
             .or_else(|| crate::kuna_floatreg::jump_result_type(data, op, size));
     }
     let ct = proto.get_output_type()?;
@@ -449,6 +450,8 @@ fn build_localtypes(data: &mut Funcdata) {
         let ct = if from_seed { ct } else { crate::kuna_elfmaindecl::input_type(data, vn).unwrap_or(ct) };
         // (kuna `regnarrow`) A narrowed register value nothing else types is unsigned.
         let ct = if from_seed { ct } else { crate::kuna_regnarrow::unsigned_vote(data, vn, &ct).unwrap_or(ct) };
+        // (kuna `narrowargs callers`) A parameter its callers narrow takes their extension's type.
+        let ct = if from_seed { ct } else { crate::kuna_callerargs::input_vote(data, vn, &ct).unwrap_or(ct) };
         // (kuna `ptrfromuse`) A function input whose only memory role is to be a
         // LOAD/STORE base has no pointer candidate in the fold above, because
         // `TypeOpIntAdd` votes `int<N>` for it and refuses to carry the pointer

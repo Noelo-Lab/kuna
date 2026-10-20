@@ -180,7 +180,7 @@ impl Action for ActionPrototypeTypes {
         // init).  The locked-input/output and truncated-space branches stay stubbed
         // (no locked proto / no truncated stack space on the recovery path).
 
-        let evalfp = data.get_arch().eval_fp_current().cloned();
+        let evalfp = crate::kuna_callmechanisms::evaluation_model(data);
         if let Some(evalfp) = evalfp {
             if !data.get_func_proto().is_model_locked()
                 && !data.get_func_proto().has_matching_model(&evalfp)
@@ -580,10 +580,16 @@ impl Action for ActionDefaultParams {
                         }
                     }
                 }
+            } else if arch.callee_proto_model(data.get_call_specs(i).get_entry_address()).is_some() {
+                crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
+                    arch.callee_proto_stack,
+                    data.get_call_specs_mut(i).proto_mut(),
+                );
             }
-            // fc->insertPcode(data): inject any uponreturn p-code.  STUB(W4
-            // pcodeinjectlib): the default models on the datatest path declare no
-            // uponreturn injection, so this is a no-op here.
+            if let Err(error) = crate::kuna_callmechanisms::apply_return(data, i) {
+                data.kuna_call_mechanisms.failure = Some(error.to_string());
+                return 0;
+            }
         }
         // (kuna) `msvcbyval`: size an MSVC `__cdecl` import's by-value class at
         // each call, now that every call's pop is known.  See
@@ -1404,6 +1410,7 @@ impl Action for ActionActiveReturn {
         use crate::funcdata_callsite::{build_output_from_trials, check_output_trial_use};
         let manager_rc = data.get_arch().manage.clone();
         let mut qlst = data.take_call_specs();
+        let callees = crate::kuna_narrowret::callee_keys(&qlst);
         for fc in qlst.iter_mut() {
             if !fc.is_output_active() {
                 continue;
@@ -1424,6 +1431,7 @@ impl Action for ActionActiveReturn {
             let trialvn = check_output_trial_use(fc, data);
             let _ = fc.derive_output_map_self(&manager_rc);
             build_output_from_trials(fc, data, &trialvn);
+            crate::kuna_narrowret::narrow_call_output(data, fc, &callees);
             fc.clear_active_output();
             self.base.count += 1;
         }
@@ -1731,6 +1739,7 @@ impl Action for ActionReturnRecovery {
             crate::p4_calls::kuna_zerofillreturn::drop_zero_fill(data, &mut active, &return_ops);
             crate::kuna_armfloatreturn::narrow_returns(data, &mut active);
             crate::kuna_retsysreg::drop_set_aside(data, &mut active, &return_ops);
+            crate::p4_calls::kuna_x87emptyreturn::drop_empty(data, &mut active, &return_ops);
             let own_input = crate::kuna_retcallhalf::accept(data, &mut active, &return_ops);
             let manager_rc = data.get_arch().manage.clone();
             let _ = data.get_func_proto().derive_output_map(&mut active, &manager_rc);

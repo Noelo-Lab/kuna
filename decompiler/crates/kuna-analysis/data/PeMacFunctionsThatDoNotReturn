@@ -21,3 +21,9 @@ invoke_watson
 invalid_parameter_noinfo_noreturn
 terminate
 abort_handler4
+
+# GNU Fortran fatal runtime diagnostics
+_gfortran_runtime_error
+_gfortran_runtime_error_at
+_gfortran_os_error
+_gfortran_os_error_at

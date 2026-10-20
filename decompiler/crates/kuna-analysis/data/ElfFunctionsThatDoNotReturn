@@ -102,3 +102,9 @@ throw_invalid_argument
 throw_out_of_range_fmt
 throw_bad_function_call
 throw_bad_array_new_length
+
+# GNU Fortran fatal runtime diagnostics
+_gfortran_runtime_error
+_gfortran_runtime_error_at
+_gfortran_os_error
+_gfortran_os_error_at

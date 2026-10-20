@@ -173,6 +173,8 @@ pub mod param_entry_flags {
     pub const OVERLAPPING: uint4 = 0x400;
     /// Entry is first in its storage class.
     pub const FIRST_STORAGE: uint4 = 0x800;
+    /// (kuna) Slots keep the entry's alignment, not the data type's (`stackalign="false"`).
+    pub const IGNORE_TYPE_ALIGN: uint4 = 0x1000;
 }
 
 /// Characterization of how a memory range relates to a [`ParamEntry`] (C++
@@ -664,6 +666,7 @@ impl ParamEntry {
                 return Ok(res);
             }
         } else {
+            let type_align = super::kuna_stackparamalign::effective_alignment(self.flags, type_align, self.alignment);
             if type_align > self.alignment {
                 let tmp = (*slotnum * self.alignment) % type_align;
                 if tmp != 0 {
@@ -2679,7 +2682,7 @@ impl ParamListStandard {
             }
             param.addr = cur_entry.get_addr_by_slot(
                 &mut status[grp as usize],
-                tp.get_align_size(),
+                crate::kuna_floatregister::storage_size(cur_entry, tp, manager),
                 tp.get_alignment(),
                 manager,
             )?;
@@ -2756,6 +2759,9 @@ impl ParamListStandard {
         manager: &AddrSpaceManager,
     ) -> KunaResult<()> {
         let mut status = vec![0i32; self.numgroup as usize];
+        if !proto.input_storage.is_empty() {
+            return super::kuna_inputstorage::assign(self, proto, typefactory, res, manager, &mut status);
+        }
         if res.len() == 2 {
             // Hidden parameters defined by the output list.
             let is_hidden = (res[1].flags & parameter_pieces_flags::HIDDENRETPARM) != 0;
@@ -3828,9 +3834,9 @@ pub struct PrototypePieces {
     /// input-side twin of [`Self::output_storage`] and it exists for the same
     /// reason: these pieces describe *types*, and storage is re-derived from the
     /// model, so a caller that states "this callee takes its first argument in
-    /// ECX" has nowhere else to put that fact.  `set_pieces` re-applies each
-    /// `(slot, storage)` after the model-driven `update_all_types`.  Empty is the
-    /// normal (model-derived) case.
+    /// ECX" has nowhere else to put that fact. Input assignment reserves each
+    /// stated range before assigning the remaining model-derived arguments.
+    /// Empty is the normal (entirely model-derived) case.
     pub input_storage: Vec<(int4, ParameterPieces)>,
     /// (kuna `libcnames`) The library's own names for this prototype's
     /// parameters and result, when the prototype came from a built-in library
@@ -5911,7 +5917,8 @@ impl FuncProto {
         if model.is_some() {
             self.set_model(model);
         }
-        self.update_all_types(pieces, typefactory, manager)?;
+        let assignment = super::kuna_customreturn::input_assignment(pieces, typefactory)?;
+        self.update_all_types(&assignment, typefactory, manager)?;
         let custom_storage = pieces
             .input_storage
             .iter()
@@ -5928,31 +5935,10 @@ impl FuncProto {
         if let Some(custom_out) = pieces.output_storage.as_ref() {
             self.store_mut().set_output(custom_out);
         }
-        // (kuna) The same override on the input side, for the slots a caller
-        // named explicitly (`map param <func>::<i> <storage> <decl>`).  Only a
-        // slot the model actually assigned is replaced, so a stale index cannot
-        // punch a hole into the parameter list.
         if custom_storage {
-            self.store_mut().clear_all_inputs();
             self.flags |= func_proto_flags::CUSTOM_STORAGE;
         } else {
             self.flags &= !func_proto_flags::CUSTOM_STORAGE;
-        }
-        let assigned = if custom_storage {
-            int4::MAX
-        } else {
-            self.store().get_num_inputs()
-        };
-        for (slot, custom_in) in pieces.input_storage.iter() {
-            if *slot < 0 || *slot >= assigned {
-                continue;
-            }
-            let name = pieces
-                .innames
-                .get(*slot as usize)
-                .map(String::as_str)
-                .unwrap_or("");
-            self.store_mut().set_input(*slot, name, custom_in);
         }
         self.set_input_lock(true);
         self.set_output_lock(true);
@@ -7405,6 +7391,11 @@ impl FuncCallSpecs {
         newinput: &mut Vec<Option<VarnodeId>>,
         newoutput: &mut Vec<VarnodeId>,
     ) -> KunaResult<bool> {
+        if data.get_arch().call_mechanism_effects
+            && crate::kuna_callmechanisms::requires_reflow(&self.proto, restricted_proto)
+        {
+            return Ok(false);
+        }
         if !self.proto.has_model() {
             self.proto.copy(restricted_proto);
             return Ok(true);

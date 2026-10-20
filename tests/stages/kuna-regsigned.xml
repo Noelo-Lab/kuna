@@ -16,9 +16,9 @@
         1:  ldrsh r3,[r0],#2; subs r1,#1; orr.w r3,r3,r3,asr #31
             add.w r12,r3,r3,lsl #1; add.w r2,r2,r3,asr #1; add r2,r12; bne 1b
     Every value of the web (the `ldrsh`, and the `orr` of it with its own sign)
-    is the sign extension of its low two bytes, so `v` is an `int2` and the
-    `(int4)` casts on the load go away (#1, #2).  Without the option it is
-    `int4` (#3, #4).
+    is the sign extension of its low two bytes, so with the option on `v` is
+    an `int2` and the `(int4)` casts on the load go away (#1, #2).  By default
+    (option off) it is `int4` (#3, #4).
     Two controls keep the register's width either way:
         keep:   int v = p[n & 7]; if (v < 0) v = n;  one value of the web is
                 the input `n`, which is no sign extension (#5).
@@ -28,9 +28,9 @@
 
     Stage: P3 simplification quiescence (fullloop's ActionDeadCode rebuilds the
     web at the narrow width through SubvariableFlow's sign-extended mode).  P0
-    assertion: option regsigned on|off.  Pass 1 (default on) proves the fix;
-    pass 2 (off) restores the register-wide local; the controls are the same in
-    both passes.
+    assertion: option regsigned on|off.  Pass 1 (default, off) keeps the
+    register-wide local; pass 2 (`option regsigned on`) proves the feature; the
+    controls are the same in both passes.
 -->
 <bytechunk space="ram" offset="0x10000" readonly="true">
 002201290bdb00bf30f9023b013943ea
@@ -56,7 +56,7 @@ e37303eb430c02eb63026244f4d11046
   <com>lo fu widen</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option regsigned off</com>
+  <com>option regsigned on</com>
   <com>lo fu total</com>
   <com>decompile</com>
   <com>print C</com>
@@ -70,8 +70,8 @@ e37303eb430c02eb63026244f4d11046
 </script>
 <stringmatch name="regsigned #1: with the option on the short is declared at its own width" min="1" max="1">int2 v3; // r3</stringmatch>
 <stringmatch name="regsigned #2: with the option on the load needs no cast" min="1" max="1">v3 = \*a0 \| \*a0 &gt;&gt; 0x1f;</stringmatch>
-<stringmatch name="regsigned #3: with the option off the short keeps the register width" min="1" max="1">int4 v3; // r3</stringmatch>
-<stringmatch name="regsigned #4: with the option off each load carries a widening cast" min="1" max="1">v3 = \(int4\)\*a0 \| \(int4\)\*a0 &gt;&gt; 0x1f;</stringmatch>
+<stringmatch name="regsigned #3: by default (option off) the short keeps the register width" min="1" max="1">int4 v3; // r3</stringmatch>
+<stringmatch name="regsigned #4: by default (option off) each load carries a widening cast" min="1" max="1">v3 = \(int4\)\*a0 \| \(int4\)\*a0 &gt;&gt; 0x1f;</stringmatch>
 <stringmatch name="regsigned #5: a web with an input that is no sign extension keeps the register width in both passes" min="2" max="2">int4 v1; // r0 \| r1</stringmatch>
 <stringmatch name="regsigned #6: a value stored to a 4-byte frame slot keeps the register width in both passes" min="2" max="2">int4 v1; // r0 \| stack - 0xc</stringmatch>
 </decompilertest>

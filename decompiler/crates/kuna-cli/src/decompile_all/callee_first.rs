@@ -78,6 +78,18 @@ pub(crate) fn decompile_callee_first(
         *ledger = kuna_decomp::kuna_callbacktype::Ledger::default();
         ledger.recording = true;
     }
+    let callers = match &graph {
+        Ok(graph) if prog.arch().narrow_args_callers => graph.arm_closed_sites(&args.binary, args.slice_pref()),
+        _ => None,
+    };
+    {
+        let ledger = &mut prog.arch_mut().kuna_callerargs;
+        *ledger = Default::default();
+        if let Some(expected) = callers {
+            ledger.expected = expected;
+            ledger.recording = true;
+        }
+    }
     let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
     kuna_decomp::kuna_elemptr::start(prog.arch_mut(), true);
     prog.arch_mut().kuna_voidret = Default::default();
@@ -91,6 +103,9 @@ pub(crate) fn decompile_callee_first(
     }
     if let Some(expected) = expected {
         callee_vote_rounds(prog, &targets, &plan, &base, &mut slots, &expected);
+    }
+    if prog.arch().kuna_callerargs.recording {
+        caller_args_round(prog, &targets, &plan, &base, &mut slots);
     }
     converge_callee_first(prog, &targets, &plan, &base, &mut slots);
     prog.arch_mut().kuna_callbacktype.recording = false;
@@ -172,6 +187,7 @@ impl VoidReads {
         for &(index, park) in plan {
             let Some(k) = vote_key(&targets[index]).filter(|k| keys.contains(k)) else { continue };
             let stated = kuna_decomp::kuna_callrettype::statement(prog.arch(), k);
+            let narrow = kuna_decomp::kuna_narrowret::statement(prog.arch(), k);
             let returns = kuna_decomp::kuna_voidret::returns(prog.arch(), k);
             let storage = kuna_decomp::kuna_voidret::return_storage(prog.arch(), k);
             let again = decompile_planned(prog, &targets[index], park, base);
@@ -179,6 +195,7 @@ impl VoidReads {
                 slots[index] = Some(again);
             } else {
                 kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), k, stated.clone());
+                kuna_decomp::kuna_narrowret::restore(prog.arch_mut(), k, narrow.clone());
                 kuna_decomp::kuna_voidret::restore(prog.arch_mut(), k, returns, storage.clone());
             }
             self.decompiled(k);
@@ -188,6 +205,10 @@ impl VoidReads {
                 || !kuna_decomp::kuna_callrettype::same_statement(
                     stated.as_deref(),
                     kuna_decomp::kuna_callrettype::statement(prog.arch(), k).as_deref(),
+                )
+                || !kuna_decomp::kuna_narrowret::same_statement(
+                    narrow.as_deref(),
+                    kuna_decomp::kuna_narrowret::statement(prog.arch(), k).as_deref(),
                 )
             {
                 self.changed.insert(k, self.stamp);
@@ -214,13 +235,72 @@ fn converge_element_globals_callee_first(
             if !redo.contains(&targets[index].addr.get_offset()) {
                 continue;
             }
+            let key = vote_key(&targets[index]);
+            let stated = key.and_then(|k| kuna_decomp::kuna_callrettype::statement(prog.arch(), k));
+            let narrow = key.and_then(|k| kuna_decomp::kuna_narrowret::statement(prog.arch(), k));
             let again = decompile_planned(prog, &targets[index], park, base);
+            if let Some(k) = key.filter(|&k| narrow_changed(prog, k, narrow.as_deref())) {
+                kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), k, stated);
+                kuna_decomp::kuna_narrowret::restore(prog.arch_mut(), k, narrow);
+                continue;
+            }
             match slots[index].as_ref() {
                 Some(first) if !kuna_console::project::redo_replaces(first, &again) => {}
                 _ => slots[index] = Some(again),
             }
         }
     }
+}
+
+/// (kuna `narrowargs callers`) What the redo of the functions whose callers
+/// narrow a parameter may reprint, as a share of what the first pass printed;
+/// a function of at most [`CALLEE_VOTE_MAX_LINES`] lines is always redone.
+const CALLER_ARGS_BUDGET_PCT: usize = 5;
+
+/// (kuna `narrowargs callers`) Decide which parameters every caller passes
+/// narrow and decompile those functions again, in plan order, within
+/// [`CALLER_ARGS_BUDGET_PCT`]. A function the budget cannot reach, or whose redo
+/// fails or moves its arity, keeps its first body and loses the statement.
+fn caller_args_round(
+    prog: &mut ConsoleProgram,
+    targets: &[FunctionEntry],
+    plan: &[(usize, bool)],
+    base: &kuna_console::project::DecompileOptions,
+    slots: &mut [Option<FuncResult>],
+) {
+    let printed: usize = slots
+        .iter()
+        .map(|s| s.as_ref().and_then(|r| r.code.as_deref()).map_or(0, |c| c.lines().count()))
+        .sum();
+    let mut budget = printed * CALLER_ARGS_BUDGET_PCT / 100;
+    let mut spent = 0usize;
+    #[expect(clippy::disallowed_types, reason = "Membership only; the ordered plan determines redo order.")]
+    let changed: std::collections::HashSet<u64> =
+        kuna_decomp::kuna_callerargs::decide(prog.arch_mut()).into_iter().collect();
+    let queue: Vec<(usize, (i32, u64))> = plan
+        .iter()
+        .filter_map(|&(index, _)| {
+            let key = vote_key(&targets[index]).filter(|k| changed.contains(&k.1))?;
+            Some((redo_charge(slots[index].as_ref().and_then(|r| r.code.as_deref())), key))
+        })
+        .collect();
+    let (admitted, declined) = admit_within_budget(queue, &mut budget, &mut spent);
+    for (_, key) in declined {
+        prog.arch_mut().kuna_callerargs.stated.remove(&key.1);
+    }
+    for &(index, park) in plan {
+        let Some(key) = vote_key(&targets[index]).filter(|k| admitted.contains(k)) else { continue };
+        let stated = kuna_decomp::kuna_callrettype::statement(prog.arch(), key);
+        let again = decompile_planned(prog, &targets[index], park, base);
+        match slots[index].as_ref() {
+            Some(first) if !same_arity(first, &again) || !kuna_console::project::redo_replaces(first, &again) => {
+                prog.arch_mut().kuna_callerargs.stated.remove(&key.1);
+                kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), key, stated);
+            }
+            _ => slots[index] = Some(again),
+        }
+    }
+    prog.arch_mut().kuna_callerargs.recording = false;
 }
 
 /// (kuna `calleevote`) How many times the callers' statements are decided and
@@ -483,15 +563,21 @@ fn callee_vote_rounds(
                 continue;
             };
             let stated = kuna_decomp::kuna_callrettype::statement(prog.arch(), key);
+            let narrow = kuna_decomp::kuna_narrowret::statement(prog.arch(), key);
             let again = decompile_planned(prog, &targets[index], park, base);
             redone += 1;
             match slots[index].as_ref() {
                 Some(first) if !same_arity(first, &again) => {
                     prog.arch_mut().kuna_calleevote.forget(key);
                     kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), key, stated);
+                    kuna_decomp::kuna_narrowret::restore(prog.arch_mut(), key, narrow);
                 }
-                Some(first) if !kuna_console::project::redo_replaces(first, &again) => {
+                Some(first)
+                    if !kuna_console::project::redo_replaces(first, &again)
+                        || narrow_changed(prog, key, narrow.as_deref()) =>
+                {
                     kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), key, stated);
+                    kuna_decomp::kuna_narrowret::restore(prog.arch_mut(), key, narrow);
                 }
                 _ => {
                     prog.arch_mut().kuna_calleevote.keep(key);
@@ -547,10 +633,12 @@ fn admit_within_budget(
 
 /// (kuna `calleevote`) Does a redo keep the first decompile's parameters and
 /// frame variables (`register` rows aside), by count? A caller's vote moves
-/// types only, so a redo that moves either is not the vote's doing: decompiling a function a second time in one
-/// session can recover a stack parameter the first decompile did not (bash
-/// -O2 `sub_7ea70` gains an unused `unsigned int a6`), and such a redo keeps
-/// the first body.
+/// types only, so a redo that moves either is not the vote's doing: decompiling
+/// a function a second time in one session can recover a stack parameter the
+/// first decompile did not (bash -O2 `sub_7ea70` gains an unused `unsigned int
+/// a6`), and such a redo keeps the first body.  The pieces `slotsplit` cut
+/// from one frame row count as that row, so the split, which follows the
+/// declared types, never decides a redo.
 fn same_arity(first: &FuncResult, again: &FuncResult) -> bool {
     let params = |r: &FuncResult| r.variables.iter().filter(|v| v.is_param).count();
     let declared = |r: &FuncResult| {
@@ -569,7 +657,7 @@ fn same_arity(first: &FuncResult, again: &FuncResult) -> bool {
             inner.matches(',').count() + 1
         }
     };
-    let frame = |r: &FuncResult| r.variables.iter().filter(|v| v.kind() != "register").count();
+    let frame = |r: &FuncResult| r.variables.iter().filter(|v| v.kind() != "register" && !v.split_piece).count();
     frame(first) == frame(again)
         && params(first) == params(again)
         && declared(first) == declared(again)
@@ -610,16 +698,30 @@ fn converge_callee_first(
         }
         let key = vote_key(&targets[index]);
         let stated = key.and_then(|k| kuna_decomp::kuna_callrettype::statement(prog.arch(), k));
+        let narrow = key.and_then(|k| kuna_decomp::kuna_narrowret::statement(prog.arch(), k));
         let again = decompile_planned(prog, &targets[index], park, base);
-        if slots[index]
-            .as_ref()
-            .is_none_or(|first| kuna_console::project::redo_replaces(first, &again))
+        let kept = key.is_none_or(|k| !narrow_changed(prog, k, narrow.as_deref()));
+        if kept
+            && slots[index]
+                .as_ref()
+                .is_none_or(|first| kuna_console::project::redo_replaces(first, &again))
         {
             slots[index] = Some(again);
         } else if let Some(k) = key {
             kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), k, stated);
+            kuna_decomp::kuna_narrowret::restore(prog.arch_mut(), k, narrow);
         }
     }
+}
+
+/// (kuna `narrowret`) Did the decompile just made of the function keyed `k`
+/// change the narrow value it states from `before`?  Outside the voidret
+/// settling no reader is decompiled again, and a reader that narrowed its call
+/// to the old statement reads a value the new one does not promise, so such a
+/// redo is not kept. A callback parked at its slot's prototype is the
+/// exception: the slot declares its return.
+fn narrow_changed(prog: &ConsoleProgram, k: (i32, u64), before: Option<&kuna_decomp::kuna_narrowret::NarrowReturn>) -> bool {
+    !kuna_decomp::kuna_narrowret::same_statement(before, kuna_decomp::kuna_narrowret::statement(prog.arch(), k).as_deref())
 }
 
 /// Decompile one planned target with its prototype-parking decision.

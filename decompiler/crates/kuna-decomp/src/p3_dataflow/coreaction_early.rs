@@ -117,10 +117,12 @@ impl Action for ActionStart {
         }
         Some(Box::new(ActionStart { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++: data.startProcessing(); return 0;
         // STUB(W3-op/W4): Funcdata::startProcessing (the per-function p-code
         // gather / processing-start bookkeeping) is not in the merged tree.
+        crate::p4_calls::kuna_x87emptyreturn::capture(data);
+        crate::p4_calls::kuna_x87free::annotate(data);
         0
     }
 }
@@ -278,12 +280,10 @@ impl Action for ActionConstbase {
         let bb = data.bblocks_get_block(0);
         let bb_start = data.bblocks_block_start(bb);
 
-        // STUB(W4): getFuncProto().getInjectUponEntry + doLiveInject are the
-        // upon-entry pcode-inject surface (FuncProto is an empty Default
-        // placeholder in substrate/context.rs).  None of the tracked-register datatests drive
-        // it, so it stays deferred; the tracked-set COPY injection below is the
-        // half `set track <reg> <val> [start end]` (ifacedecomp.cc `IfcSettrackedrange`)
-        // depends on.
+        if let Err(error) = crate::kuna_callmechanisms::apply_entry(data) {
+            data.kuna_call_mechanisms.failure = Some(error.to_string());
+            return 0;
+        }
 
         // C++ takes a copy; the per-function `glb` skeleton holds a snapshot of the
         // engine track base (taken at `build_arch_handle`), so clone the queried set
@@ -389,6 +389,9 @@ impl Action for ActionHeritage {
         // (kuna decompile-all watchdog) thread the per-function deadline into
         // the heritage per-space loop; `None` everywhere but a budgeted drive.
         data.op_heritage_with_deadline(ctx.deadline);
+        if data.get_arch().pass_through {
+            crate::kuna_entryreads::capture(data);
+        }
         // (kuna) Repair any synthetic lowered-switch BRANCHIND whose input
         // heritage normalized away (see `kuna_repair_lowered_switch_inputs`).
         // A no-op unless a lowered-switch was installed this function, so it

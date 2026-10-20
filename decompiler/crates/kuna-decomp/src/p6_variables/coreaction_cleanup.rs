@@ -2801,7 +2801,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                     }
                 }
                 let info = lm.query_container_for_link(&v_addr, &usepoint)?;
-                if data.get_arch().stack_views
+                if crate::kuna_stackviews::enabled(data)
                     && info.category == crate::database::symbol_category::FUNCTION_PARAMETER
                     && info.entry_size < v_size
                 {
@@ -2870,7 +2870,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 v_addrtied && !v_input && !v_persist && !v_constant
                     && size_mismatch && v_size < info.entry_size
                     && !entry_is_composite;
-            let wider_parameter_local = data.get_arch().stack_views
+            let wider_parameter_local = crate::kuna_stackviews::enabled(data)
                 && info.category == crate::database::symbol_category::FUNCTION_PARAMETER
                 && v_addrtied && !v_input && !v_persist && !v_constant
                 && v_size > info.entry_size;
