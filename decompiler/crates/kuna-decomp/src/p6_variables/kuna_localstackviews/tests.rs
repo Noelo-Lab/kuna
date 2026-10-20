@@ -11,6 +11,10 @@ fn frame_data() -> (Funcdata, Rc<AddrSpace>) {
 }
 
 fn frame_data_with_views(full_views: bool) -> (Funcdata, Rc<AddrSpace>) {
+    frame_data_with_options(full_views, true)
+}
+
+fn frame_data_with_options(full_views: bool, local_views: bool) -> (Funcdata, Rc<AddrSpace>) {
     let mut manage = AddrSpaceManager::new();
     manage.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     manage
@@ -47,7 +51,7 @@ fn frame_data_with_views(full_views: bool) -> (Funcdata, Rc<AddrSpace>) {
     manage.set_default_code_space(ram.get_index()).unwrap();
     manage.set_default_data_space(ram.get_index()).unwrap();
     let mut context = ArchContext::new(manage);
-    context.local_stack_views = true;
+    context.local_stack_views = local_views;
     context.stack_views = full_views;
     let mut fd = Funcdata::new(
         "early_views",
@@ -553,4 +557,82 @@ fn unrepresented_frame_publication_refuses_the_whole_candidate() {
         accesses_fit_early(&fd, (-32i64) as u64, 8, false),
         Err(Refusal::Unavailable)
     );
+}
+
+#[test]
+fn native_marker_copy_requires_exact_live_original_write_inside_admitted_storage() {
+    for mode in [
+        "valid",
+        "unadmitted",
+        "partial",
+        "clone",
+        "origin",
+        "space",
+        "address",
+        "width",
+        "dead",
+        "flag",
+        "off",
+        "full",
+    ] {
+        let (mut fd, stack) = frame_data_with_options(mode == "full", mode != "off");
+        let at = Address::new(stack.clone(), (-32i64) as u64);
+        let op = store(&mut fd, 0x1000);
+        let point = SourcePoint::op(&fd, op).unwrap();
+        fd.local_stack_views
+            .native
+            .insert(op, NativeWrite::Store(point, 4));
+        fd.local_stack_views.writes.insert(op, (at.get_offset(), 4));
+        if mode != "unadmitted" {
+            let (start, width) = if mode == "partial" {
+                (at.get_offset() + 2, 2)
+            } else {
+                (at.get_offset(), 4)
+            };
+            fd.local_stack_views
+                .footprints
+                .insert((start, width), Vec::new());
+        }
+        let copy = if mode == "clone" {
+            store(&mut fd, 0x1000)
+        } else {
+            op
+        };
+        let space = fd.new_constant(8, stack.get_index() as u64);
+        let destination = fd.new_constant(8, at.get_offset());
+        fd.op_set_input(copy, space, 0).unwrap();
+        fd.op_set_input(copy, destination, 1).unwrap();
+        fd.op_remove_input(copy, 1);
+        fd.op_remove_input(copy, 0);
+        fd.op_set_opcode_code(copy, OpCode::CPUI_COPY);
+        let output_address = match mode {
+            "space" => Address::new(
+                fd.get_arch()
+                    .manage()
+                    .get_default_data_space()
+                    .unwrap()
+                    .clone(),
+                at.get_offset(),
+            ),
+            "address" => Address::new(stack.clone(), at.get_offset() + 4),
+            _ => at.clone(),
+        };
+        let output = fd
+            .new_varnode_out(if mode == "width" { 8 } else { 4 }, &output_address, copy)
+            .unwrap();
+        if mode != "flag" {
+            fd.vbank_mut().get_mut(output).unwrap().set_stack_store();
+        }
+        if mode == "origin" {
+            let other = store(&mut fd, 0x1004);
+            fd.local_stack_views.native.insert(
+                op,
+                NativeWrite::Store(SourcePoint::op(&fd, other).unwrap(), 4),
+            );
+        }
+        if mode == "dead" {
+            fd.obank_mut().mark_dead(copy);
+        }
+        assert_eq!(native_store(&fd, output), mode == "valid", "{mode}");
+    }
 }

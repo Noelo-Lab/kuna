@@ -1856,7 +1856,8 @@ impl Rule for RulePropagateCopy {
             {
                 continue;
             }
-            if is_marker && crate::kuna_localstackviews::publication(data, vn)
+            if is_marker && (crate::kuna_localstackviews::publication(data, vn)
+                || crate::kuna_localstackviews::native_store(data, vn))
             {
                 continue;
             }

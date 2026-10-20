@@ -229,6 +229,33 @@ extra assignments before and after the loop.
 bytes observed at one physical object. The proposal includes these strict C
 controls; it does not claim the failed experiment passes them.
 
+## Compiler portability and packed numeric sources
+
+The Ubuntu 26.04 CI run lowered the constant Pair initializer to a read-only
+eight-byte pool load. Function-only native replay had supplied `datum` but no
+definition for that compiler-generated global. The replay now reads the actual
+bounded ELF read-only bytes into a `uint8` definition without changing the emitted
+body. Plain GCC/Clang inputs remain, with an additional GCC SLP input arm.
+
+That arm exposed a separate real failure in the previously validated build:
+`local_register(3,4)` returned 55 instead of 62. Native STORE25 at `0x4011d7`
+survived as a held COPY, whose source PIECE125 at `0x4011ca` packs `b,a`.
+LOCAL heritage created a forced first-call INDIRECT147 that FULL did not need.
+COPY propagation bypassed the original memory COPY, and its backing union type
+then reached the external register PIECE through the marker. Required merging
+and cleanup hid both the initializer and its native COPY as self-copies.
+
+Keeping that exact COPY-to-marker edge preserves the INDIRECT, retains the
+numeric packed value and emits `view_uint8 = CONCAT44(b,a)`, matching FULL.
+The controlled edge ablation passes all four strict GCC/Clang O0/O2 cells for
+62 and 60; the corrected engine also passes the added SLP arm. The guard requires
+the original generational STORE identity, source point, exact recorded output
+address/width, live COPY output and stack-store flag, and whole-write containment
+inside one admitted local footprint. It changes only marker propagation. It adds
+no numeric type inference, PIECE rule, printer bypass or callee-summary policy.
+The earlier passing gates and corpus remain historical evidence and do not
+supersede this newly discovered wrong output.
+
 ## Scope decision
 
 The final read-boundary control exposed a separate physical-extent omission:
@@ -257,5 +284,9 @@ ordinary issue sweep does not invoke the RE-friction lane's captain approval.
 The user approved [proposal.md](proposal.md). Implementation now follows its
 bounded native-write and typed-publication contract. Mandatory strict native
 controls, 0/675 default ablation and CPU-pinned whole-image speed checks pass.
-The complete workspace, stage, tooling and spec gates pass. Final whole-corpus
-evidence is recorded in record.json after comparison completes.
+The complete workspace passes 9,178 tests with 38 ignored and zero failures;
+stage, tooling and spec gates also pass. Final whole-corpus evidence records
+zero C changes across 1,071 ordinary images and 60 reviewed hunks across 50
+typed images, with no new failure identities. The corrected GCC-SLP initializer
+and native marker guard are included in these results; earlier passing evidence
+does not supersede the rejected initializer failure.

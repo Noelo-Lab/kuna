@@ -451,6 +451,43 @@ pub(crate) fn preserves_range(fd: &Funcdata, address: &Address, size: i32) -> bo
             .any(|&(at, width)| overlaps(at, width, address.get_offset(), size))
 }
 
+/// Preserve the original physical write across memory-SSA marker inputs.
+pub(crate) fn native_store(fd: &Funcdata, value: VarnodeId) -> bool {
+    if !active(fd) {
+        return false;
+    }
+    let Some(v) = fd.vbank().get(value).filter(|v| v.is_stack_store()) else {
+        return false;
+    };
+    let Some(id) = v.get_def() else { return false };
+    if fd.obank().get(id).is_none_or(|op| {
+        op.is_dead()
+            || op.is_return_copy()
+            || op.code() != OpCode::CPUI_COPY
+            || op.get_out() != Some(value)
+    }) {
+        return false;
+    }
+    let Some(NativeWrite::Store(point, width)) = fd.local_stack_views.native.get(&id) else {
+        return false;
+    };
+    if Some(*point) != SourcePoint::op(fd, id)
+        || *width != v.get_size()
+        || fd.local_stack_views.writes.get(&id) != Some(&(v.get_offset(), *width))
+    {
+        return false;
+    }
+    let Some(stack) = fd.get_arch().manage().get_stack_space() else {
+        return false;
+    };
+    v.get_space().get_index() == stack.get_index()
+        && fd
+            .local_stack_views
+            .footprints
+            .keys()
+            .any(|&(at, size)| contains(at, size, v.get_offset(), *width))
+}
+
 /// Keep only the captured native publication with its exact declared receiver and frame input.
 pub(crate) fn publication(fd: &Funcdata, value: VarnodeId) -> bool {
     if !active(fd) {

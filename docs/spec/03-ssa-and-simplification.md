@@ -2661,6 +2661,13 @@ keep their existing policy, including the separate narrow-formal eligibility.
 Recorded persistent publications also refuse COPY propagation into memory-SSA
 markers while their original receiver and fixed input contracts remain valid;
 this retains the actual write rather than replaying it after a call or loop.
+The same marker boundary retains a lowered COPY of an original native STORE
+only when its generational identity, source point, recorded stack address and
+width, stack-store flag and live output still match, and one admitted local
+footprint contains the whole write. This prevents a memory marker from carrying
+the backing's aggregate type into an external packed numeric source and later
+hiding the initializer as a self-copy. Ordinary value reads, explicit full views
+and disabled local policy retain their existing propagation behavior.
 
 With `stackviews on`, unresolved STOREs in the containing memory space guard
 escaped frame ranges with an INDIRECT memory version. A reloaded pointer need

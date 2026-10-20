@@ -3,7 +3,8 @@
 
 use crate::common;
 
-use object::{Object, ObjectSymbol};
+use object::{Object, ObjectSection, ObjectSymbol, SectionKind};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -139,7 +140,53 @@ typedef uint32_t undefined4; typedef uint64_t undefined8;
 #define CONCAT44(hi,lo) ((uint8)(((uint8)(uint4)(hi) << 32) | (uint4)(lo)))
 "#;
 
-fn execute_emitted(compilers: &[&str], function: &str, cases: &[(&str, i32)], code: &str) {
+fn readonly_pool_words(image: &Path, code: &str) -> String {
+    let globals = code
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .filter_map(|word| {
+            let address = u64::from_str_radix(word.strip_prefix("dat_")?, 16).ok()?;
+            Some((word, address))
+        })
+        .collect::<BTreeSet<_>>();
+    if globals.is_empty() {
+        return String::new();
+    }
+    let bytes = std::fs::read(image).unwrap();
+    let object = object::File::parse(bytes.as_slice()).unwrap();
+    assert!(
+        object.is_little_endian(),
+        "x86 fixture must be little-endian"
+    );
+    let mut definitions = String::new();
+    for (name, address) in globals {
+        let end = address.checked_add(8).expect("constant-pool extent");
+        let section = object
+            .sections()
+            .find(|section| {
+                section.kind() == SectionKind::ReadOnlyData
+                    && section.address() <= address
+                    && section
+                        .address()
+                        .checked_add(section.size())
+                        .is_some_and(|section_end| end <= section_end)
+            })
+            .unwrap_or_else(|| panic!("no readonly eight-byte constant holds {name}"));
+        let data = section.data_range(address, 8).unwrap().unwrap();
+        let bits = u64::from_le_bytes(data.try_into().unwrap());
+        definitions.push_str(&format!(
+            "static const uint8 {name} = UINT64_C(0x{bits:016x});\n"
+        ));
+    }
+    definitions
+}
+
+fn execute_emitted(
+    compilers: &[&str],
+    image: &Path,
+    function: &str,
+    cases: &[(&str, i32)],
+    code: &str,
+) {
     let header = fixture("local_stack_views.h");
     let mut context = format!(
         "{PRELUDE}\n#define LOCAL_STACK_VIEWS_FORWARD_TYPES 1\n#include {:?}\n",
@@ -153,6 +200,7 @@ fn execute_emitted(compilers: &[&str], function: &str, cases: &[(&str, i32)], co
             context.push_str(&format!("struct {name} {{ {fields} }};\n"));
         }
     }
+    context.push_str(&readonly_pool_words(image, code));
     let checks = cases
         .iter()
         .map(|(arguments, expected)| {
@@ -220,10 +268,21 @@ fn optimized_pair_handle_lifetimes_preserve_constant_register_partial_and_branch
         eprintln!("no C compiler available; skipping local-view native execution");
         return;
     }
-    for input_compiler in &compilers {
+    let mut inputs: Vec<_> = compilers
+        .iter()
+        .map(|compiler| (*compiler, false))
+        .collect();
+    if compilers.contains(&"gcc") {
+        inputs.push(("gcc", true));
+    }
+    for (input_compiler, slp) in inputs {
         let image = common::scratch_file("local-stack-views-input", "elf");
+        let mut build = Command::new(input_compiler);
+        if slp {
+            build.arg("-ftree-slp-vectorize");
+        }
         common::process::required_output(
-            Command::new(input_compiler)
+            build
                 .args([
                     "-O2",
                     "-no-pie",
@@ -245,7 +304,7 @@ fn optimized_pair_handle_lifetimes_preserve_constant_register_partial_and_branch
         ] {
             let enabled = decompile(&image, function, true, &contracts);
             assert!(enabled.contains("union stack_views_"), "{enabled}");
-            execute_emitted(&compilers, function, cases, &enabled);
+            execute_emitted(&compilers, &image, function, cases, &enabled);
             let disabled = decompile(&image, function, false, &contracts);
             assert!(!disabled.contains("union stack_views_"), "{disabled}");
             assert!(disabled.contains("read_pair("), "{disabled}");
@@ -278,7 +337,7 @@ fn permanent_stack_lifetimes_keep_escaped_pointers_and_simultaneous_views() {
         if matches!(function, "escaped_alias" | "escaped_object_reuse") {
             assert_eq!(escaped_publications(&enabled), 1, "{enabled}");
         }
-        execute_emitted(&compilers, function, &[("", expected)], &enabled);
+        execute_emitted(&compilers, &image, function, &[("", expected)], &enabled);
         let disabled = decompile(&image, function, false, &contracts);
         assert!(!disabled.contains("union stack_views_"), "{disabled}");
     }
@@ -328,14 +387,14 @@ fn escaped_scalar_writes_reach_every_observer_and_readback() {
     ] {
         let enabled = decompile(&image, function, true, &contracts);
         assert_eq!(escaped_publications(&enabled), publications, "{enabled}");
-        execute_emitted(&compilers, function, cases, &enabled);
+        execute_emitted(&compilers, &image, function, cases, &enabled);
         let disabled = decompile(&image, function, false, &contracts);
         assert!(!disabled.contains("union stack_views_"), "{disabled}");
         if function == "escaped_loop" {
             let full = decompile_with_views(&image, function, true, &contracts, true);
             let prior = decompile_with_views(&image, function, false, &contracts, true);
             assert_eq!(full, prior);
-            execute_emitted(&compilers, function, cases, &full);
+            execute_emitted(&compilers, &image, function, cases, &full);
         }
     }
 }
@@ -460,7 +519,13 @@ fn escaped_ranges_preserve_valid_accesses_and_decline_crossing_reads_and_stores(
                 "{enabled}\nint local_range_check(void) {{ {} return 0; }}\n",
                 checks(function)
             );
-            execute_emitted(&compilers, "local_range_check", &[("", 0)], &wrapper);
+            execute_emitted(
+                &compilers,
+                &image,
+                "local_range_check",
+                &[("", 0)],
+                &wrapper,
+            );
         }
         let disabled = decompile(&image, function, false, &contracts);
         assert!(!disabled.contains("union stack_views_"), "{disabled}");

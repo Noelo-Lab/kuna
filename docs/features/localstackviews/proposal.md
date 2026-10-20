@@ -212,6 +212,14 @@ exact prior C, including its existing invalid aggregate cast; no successful
 emitted-C claim is made for that decline. A contained four-byte read remains a
 strict native positive control.
 
+A compiler-portability rerun exposed a second retained-write failure: a
+register-packed Pair source was retyped as the backing union through a memory
+marker and then hidden as a self-copy, returning 55 instead of 62. The original
+STORE was still live. Preserving its exact COPY-to-marker edge now retains the
+numeric `CONCAT44(b,a)` initializer; strict GCC/Clang O0/O2 checks cover the added
+GCC SLP input. Read-only compiler constants are supplied from actual bounded ELF
+bytes in the replay translation unit; emitted bodies remain untouched.
+
 The mandatory originals pass strict GCC/Clang O0/O2 execution: 67, runtime
 67/162, escaped alias 7, saved pointer 122 and simultaneous aliases 56. Independent
 review also preserves all 192 narrow-formal regression cells. Of 168 experimental
@@ -227,20 +235,21 @@ ARM-BE32 and MIPS-BE32 preserve the original scalar receiver type.
 
 Actual default-OFF and default-ON both pass 675/675 without changing
 `docs/baseline.json`. Twelve paired CPU-pinned whole-image rounds measure
-default time changes of -0.51% on 154 healthy functions and -0.52% on 23 typed functions;
-their wall-time 95% upper bounds are -0.11% and -0.12%, below 5%. The official
-31-repeat firing measurement is +0.28%; these small deltas do not establish a
-general speedup. Record.json retains
+default time changes of +0.32% on 154 healthy functions and +0.19% on 23 typed functions;
+their wall-time 95% upper bounds are +0.48% and +0.49%, below 5%. The official
+31-repeat firing measurement is +0.10%; these measurements stay within the
+speed budget. Record.json retains
 the CPU measurements and the earlier inconclusive unpinned run. All four
-repository gates pass: 675 datatests, 3,135 stage assertions, 9,177 workspace
+repository gates pass: 675 datatests, 3,135 stage assertions, 9,178 workspace
 tests and spec validation. Tooling, lint, catalog and merge guards also pass.
 The final 1,071-image comparison covers 192,504 functions per arm without C,
 metadata or discovery changes. An additional 50 typed images cover 724
-functions per arm: all 59 changed hunks across 47 functions were reviewed. Nine
+functions per arm: all 60 changed hunks across 48 functions were reviewed. Nine
 prior experimental changes return to exact baseline C under the read refusal;
 five lose an intended repair. Existing watchdog and fixture-load failures stay
 unsupported, with no new failure identities. The cp/mv outputs match the full
-validated baseline JSON without errors.
+validated baseline JSON without errors. The additional hunk only removes a
+storage annotation; its statements are unchanged and strict native replay passes.
 
 The approved acceptance checklist remains:
 
