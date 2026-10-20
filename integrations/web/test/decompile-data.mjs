@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   readUint, readInt, cString, quote, intText, declType, layoutOfDecl, sectionWords, dataModel, childRows,
-  gapRows, placeOf, rowOf, usesOf, useWords, renderData, pointerValue, dataSections, sizeWords, sectionPicker,
+  gapRows, placeOf, rowOf, usesOf, useWords, renderData, pointerValue, valueOf, dataSections, sizeWords, sectionPicker,
 } from '../decompile/data-view.js';
 
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url)));
@@ -34,11 +34,18 @@ assert.equal(quote('\x1b[3mA\x07'), '"\\x1b[3mA\\x07"', 'control characters read
 assert.equal(intText(1000n, 4), '1000 · 0x3e8');
 assert.equal(intText(7n, 4), '7', 'a digit needs no hex');
 assert.equal(intText(-1n, 4), '-1 · 0xffffffff');
+const chars = { start: 0n, fileEnd: null, little: true, bytes: Uint8Array.from([0x5c, 0x27, 0x41, 0x0a]) };
+assert.deepEqual([0n, 1n, 2n, 3n].map((a) => valueOf(chars, a, { kind: 'char', size: 1 }).value),
+  ["'\\\\' · 92", "'\\'' · 39", "'A' · 65", '10'], 'a char reads as a C character literal');
 checks.push('bytes, text, integers');
 
 // ── declarations the page knows ────────────────────────────────────────────
 assert.equal(declType('int (*dat_4078)(unsigned int)', 'dat_4078'), 'int (*)(unsigned int)');
 assert.equal(declType('char *dat_4070', 'dat_4070'), 'char *');
+assert.equal(declType('long a.b', 'a.b'), 'long', 'a name with regex characters is taken literally');
+assert.equal(declType('char *odd(name', 'odd(name'), 'char *');
+assert.equal(declType('int $x', '$x'), 'int');
+assert.equal(declType('int ab', 'b'), 'int ab', 'only the whole name');
 assert.deepEqual(layoutOfDecl('int dat_4040[]', 'dat_4040'), { kind: 'array', size: 4, type: 'int[]', elem: { kind: 'int', size: 4, type: 'int', signed: true }, count: null, open: true });
 assert.equal(layoutOfDecl('char *dat_4070', 'dat_4070').to.kind, 'char');
 assert.equal(layoutOfDecl('int (*dat_4078)(unsigned int)', 'dat_4078').to.kind, 'code');

@@ -80,7 +80,7 @@ export function intText(value, size) {
 export function declType(declaration, name) {
   const d = (declaration || '').trim().replace(/;$/, '');
   if (!name) return d;
-  const re = new RegExp(`\\b${name.replace(/[$]/g, '\\$&')}\\b`);
+  const re = new RegExp(`(?<![\\w$])${name.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}(?![\\w$])`);
   return normalizeType(d.replace(re, '').replace(/\(\s*\*\s*\)/, '(*)').trim());
 }
 
@@ -291,7 +291,7 @@ export function valueOf(m, addr, layout, size = layout.size) {
   }
   if (k === 'char') {
     const b = m.bytes[off];
-    return { value: printable(b) && b >= 0x20 ? `'${String.fromCharCode(b).replace(/'/g, "\\'")}' · ${b}` : `${b}`, cls: 'dv-num', count: 0 };
+    return { value: printable(b) && b >= 0x20 ? `'${String.fromCharCode(b).replace(/['\\]/g, '\\$&')}' · ${b}` : `${b}`, cls: 'dv-num', count: 0 };
   }
   if (k === 'float') {
     if (off + layout.size > m.bytes.length) return { value: '', count: 0 };
