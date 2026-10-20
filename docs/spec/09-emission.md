@@ -190,6 +190,27 @@ visible with cosmetic cast suppression. Rust uses the corresponding unsigned
 word casts with `from_bits` or `to_bits`. Other pointer widths and addressable
 unit sizes do not enter this path.
 
+A `COPY` into or out of a scalar member of a declared aggregate can join a
+float and an integer without any `CAST`: the merged varnode keeps the type of
+the value it carries while the C prints the member's declared type, or the
+varnode's own type is an unresolved partial struct or union. Such a `COPY` takes
+the same bit transfer (`kuna_bitcast.rs (storage_transfer)`) when either side's
+own type is a partial aggregate, or when that side belongs to a variable whose
+symbol is a struct or union and the scalar member its declaration gives it is a
+float where the varnode is not, or the reverse. A scalar global whose recovered
+type is unknown does not qualify, so a float stored to it keeps its value
+spelling. Each side's kind is the type the C prints it with: a side whose bytes
+no member names, printed by partial access as `*(T *)&storage[k]`, has that
+`T` (`printc.rs (PrintC::partial_piece_type)`), so a word moved between two
+such pieces stays a plain copy rather than reading the unsigned word into a
+float. A partial struct or union is never taken as a side's C type; the value's
+own type stands in for it. A float an x87 `fstps` writes into a union record
+therefore stores `((union { float from; int to; }){ .from = .. }).to` into
+`record.first.tag`, a float `memcpy`'d into an `int` member stores its bits
+rather than `r.tag = x;`, and a member holding a float's bits that is copied out
+reads them back rather than converting the integer. A `COPY` whose two sides
+print the same kind is unchanged.
+
 A low-end integer `SUBPIECE` of a named 32- or 64-bit float similarly reads
 storage bits before narrowing (`kuna_bitcast.rs (truncated_float_storage)`).
 The selected storage view or declared scalar member type governs this decision,

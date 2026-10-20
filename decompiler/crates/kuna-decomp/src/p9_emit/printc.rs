@@ -5970,7 +5970,8 @@ impl PrintC {
                 return;
             }
         }
-        if let Some(transfer) = crate::kuna_bitcast::storage_transfer(fd, arch.decl_high_type, op) {
+        let printed = |vn, slot| self.partial_piece_type(fd, arch, vn, op, slot);
+        if let Some(transfer) = crate::kuna_bitcast::storage_transfer(fd, arch.decl_high_type, op, printed) {
             self.op_bit_transfer_ir(fd, arch, op, transfer);
             return;
         }
@@ -9088,6 +9089,35 @@ impl PrintC {
             return None;
         }
         Some((name, self.partial_walk(fd, arch, st, symoff as int8, asize, vn, op, slot, allow_cast)))
+    }
+
+    /// (kuna `partialaccess`) The type `vn` prints with when its Symbol's bytes
+    /// are read through a typed pointer because no member names them.
+    fn partial_piece_type(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        vn: VarnodeId,
+        op: OpId,
+        slot: int4,
+    ) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+        if !self.options.partial_access || self.out_lang != crate::kuna_lang::OutLang::C {
+            return None;
+        }
+        let (_, walk) = self.piece_walk(fd, arch, vn, op, slot, slot >= 0)?;
+        let Some(PartialEntry::Unnamed(off, size)) = walk.stack.last() else {
+            return None;
+        };
+        if *size <= 0 {
+            return None;
+        }
+        match crate::kuna_partialaccess::Piece::plan(fd, arch, vn, op, *off, *size, false, walk.unnamed_in.as_deref())? {
+            crate::kuna_partialaccess::Piece::Pointer {
+                pointee: crate::kuna_partialaccess::Pointee::Typed(pointer),
+                ..
+            } => pointer.get_ptr_to(),
+            _ => None,
+        }
     }
 
     /// (kuna `partialaccess`) A plain store or copy of a width C has no scalar

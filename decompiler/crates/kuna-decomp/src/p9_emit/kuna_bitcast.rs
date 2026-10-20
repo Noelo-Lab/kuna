@@ -14,13 +14,18 @@ pub(crate) struct Transfer {
     pub source_pointer: bool,
 }
 
-/// A same-width storage `CAST` or aggregate-field reload `COPY` between a
-/// float and integer or native pointer,
-/// judged by the types the printed C declares: a named variable or field, else the value's own type.
-/// An unknown or partial aggregate type from a merged byte-array backing does not
-/// declare the scalar type of a pointer or float read through that storage, so
-/// the value's read-facing type stands in for it.
-pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Transfer> {
+/// A same-width storage `CAST`, or a `COPY` into or out of an aggregate member, between a
+/// float and integer or native pointer, judged by the types the printed C declares: a named
+/// variable or field, else the value's own type. A partial struct or union is never a member's
+/// C type, and an unknown one does not declare the scalar type of a pointer or float read
+/// through a merged byte-array backing; the value's own type stands in for either. `printed`
+/// gives the type a `COPY` side prints with when no member names its bytes.
+pub(crate) fn storage_transfer(
+    fd: &Funcdata,
+    decl_high_type: bool,
+    op: OpId,
+    printed: impl Fn(VarnodeId, i32) -> Option<Rc<Datatype>>,
+) -> Option<Transfer> {
     let operation = fd.obank().get(op)?;
     if !matches!(operation.code(), OpCode::CPUI_CAST | OpCode::CPUI_COPY) {
         return None;
@@ -29,10 +34,24 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
     let out = operation.get_out()?;
     let src = fd.vbank().get(input)?;
     let dst = fd.vbank().get(out)?;
-    // A field reload can be a COPY with no explicit CAST. Its C member and
-    // destination still need to transfer bits rather than convert values.
-    if operation.code() == OpCode::CPUI_COPY && !matches!(src.get_type().get_metatype(),
-        type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION) {
+    let partial = |ty: &Datatype| {
+        matches!(ty.get_metatype(), type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)
+    };
+    let float = |ty: &Datatype| ty.get_metatype() == type_metatype::TYPE_FLOAT;
+    let member = |id: VarnodeId, own: &Datatype| {
+        let aggregate = fd
+            .vbank()
+            .get(id)
+            .and_then(|v| fd.high_bank().get(v.get_high()?))
+            .and_then(|h| h.kuna_symbol_type().map(|ty| ty.get_metatype()))
+            .is_some_and(|meta| matches!(meta, type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION));
+        partial(own)
+            || (aggregate
+                && declared_member_type(fd, decl_high_type, id)
+                    .is_some_and(|ty| !partial(&ty) && float(&ty) != float(own)))
+    };
+    let copy = operation.code() == OpCode::CPUI_COPY;
+    if copy && !member(input, src.get_type()) && !member(out, dst.get_type()) {
         return None;
     }
     let size = src.get_size();
@@ -40,11 +59,10 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
         return None;
     }
     let slot = operation.get_slot(input);
-    let from_ty = crate::kuna_stackviews::access_type(fd, input, op, slot)
+    let from_ty = copy.then(|| printed(input, slot)).flatten()
+        .or_else(|| crate::kuna_stackviews::access_type(fd, input, op, slot))
         .or_else(|| declared_member_type(fd, decl_high_type, input))
-        // An unresolved aggregate fragment is not the scalar field's C type.
-        .filter(|ty| !matches!(ty.get_metatype(),
-            type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION))
+        .filter(|ty| !partial(ty))
         .filter(|ty| {
             !matches!(src.get_type_read_facing(op).get_metatype(),
                 type_metatype::TYPE_PTR | type_metatype::TYPE_FLOAT)
@@ -52,11 +70,10 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
                     | type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)
         })
         .unwrap_or_else(|| fd.vn_type_read_facing(input, op));
-    let to_ty = crate::kuna_stackviews::access_type(fd, out, op, -1)
+    let to_ty = copy.then(|| printed(out, -1)).flatten()
+        .or_else(|| crate::kuna_stackviews::access_type(fd, out, op, -1))
         .or_else(|| declared_member_type(fd, decl_high_type, out))
-        // An unresolved aggregate fragment is not the scalar field's C type.
-        .filter(|ty| !matches!(ty.get_metatype(),
-            type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION))
+        .filter(|ty| !partial(ty))
         .unwrap_or_else(|| fd.vn_type_def_facing(out));
     let from = from_ty.get_metatype();
     let to = to_ty.get_metatype();
