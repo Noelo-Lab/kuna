@@ -100,6 +100,12 @@ cycles do not make a snapshot live. Unused temporaries cannot determine the type
 of a live register value with which they were previously coalesced. In particular,
 initializing four bytes must not read and rewrite an uninitialized eight-byte word.
 
+When a changed-byte assignment replays a safe LOAD through a floating pointer,
+it reinterprets the loaded float or double as an equal-width unsigned word before
+constructing the byte-copy source or extracting subranges. Initializing an integer
+compound literal directly from that LOAD would numerically convert its value.
+The storage reinterpretation evaluates the LOAD once and preserves its bit pattern.
+
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_stackmarkers.rs` distinguishes a
 non-creating INDIRECT version over physical frame bytes from a C assignment.
 With `stackviews`, cast insertion, statement emission and body counting
@@ -190,6 +196,20 @@ visible with cosmetic cast suppression. Rust uses the corresponding unsigned
 word casts with `from_bits` or `to_bits`. Other pointer widths and addressable
 unit sizes do not enter this path.
 
+The x87 integer conversions (`x87_float_to_int16/32/64`, chapter 02) produce
+signed integer bits of their own width (`coreaction_infertypes.rs
+(output_type_local)`), even when the memory they store to is later read as a
+float. Without that type an unknown output adopted the float reader's type and
+the store printed as an implicit numeric conversion: `*(float *)&storage[4] =
+x87_float_to_int32(..)` wrote the float `1.0f` where `FISTP` writes the word
+`1`. When such a result lands in a same-width float output, `cast_output`
+routes it through an integer temporary (`coreaction_casts.rs
+(Funcdata::cast_narrowed_call)`) so the move prints as the union
+reinterpretation above. A byte-array global's merged high type can be an
+unresolved aggregate while the store prints a scalar float view; for a
+float-typed `CAST` output, `storage_transfer` then judges by the output's own
+type instead of that aggregate, keeping the reinterpretation.
+
 A `COPY` into or out of a scalar member of a declared aggregate can join a
 float and an integer without any `CAST`: the merged varnode keeps the type of
 the value it carries while the C prints the member's declared type, or the
@@ -203,8 +223,9 @@ spelling. Each side's kind is the type the C prints it with: a side whose bytes
 no member names, printed by partial access as `*(T *)&storage[k]`, has that
 `T` (`printc.rs (PrintC::partial_piece_type)`), so a word moved between two
 such pieces stays a plain copy rather than reading the unsigned word into a
-float. A partial struct or union is never taken as a side's C type; the value's
-own type stands in for it. A float an x87 `fstps` writes into a union record
+float; that printed type decides the side before the unresolved-aggregate rules
+above and below. A partial struct or union is never taken as a side's C type;
+the value's own type stands in for it. A float an x87 `fstps` writes into a union record
 therefore stores `((union { float from; int to; }){ .from = .. }).to` into
 `record.first.tag`, a float `memcpy`'d into an `int` member stores its bits
 rather than `r.tag = x;`, and a member holding a float's bits that is copied out
@@ -1226,6 +1247,14 @@ prints byte-for-byte what the build without it prints.
 model a PTRADD/PTRSUB was built on; the driver demotes them back to raw
 arithmetic (`cast_fixup_ptradd` undoes the scaling; `cast_fixup_ptrsub`
 becomes COPY or INT_ADD) rather than print a field access into the wrong type.
+The fit test for a PTRSUB off a spacebase
+(`decompiler/crates/kuna-decomp/src/p6_variables/funcdata_spacebase.rs
+(Funcdata::is_ptrsub_matching_scope)`, shared with `RulePtrsubUndo`) looks the
+offset up in the scope the spacebase selects, as upstream `TypeSpacebase::getSubType`
+does: the global symbol table for a global reference, the function's frame map
+for the stack. A reference into a mapped global therefore keeps its symbol and
+field (`mapped_samples[i & 3].imag`, `&g_recs[0x30]`) instead of falling back
+to the absolute address, which recompiled C would read from the wrong place.
 The upstream LOAD/STORE pointer diagnostics (`checkPointerIssues`) are
 warnings-only in C++, and in kuna the hook `coreaction_casts.rs
 (Funcdata::cast_check_pointer_issues)` is a faithful no-op — a missing

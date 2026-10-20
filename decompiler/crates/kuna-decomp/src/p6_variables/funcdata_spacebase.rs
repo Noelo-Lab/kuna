@@ -134,12 +134,12 @@ impl Funcdata {
     }
 
     /// C++ `TypePointer::isPtrsubMatching` (`type.cc:1260-1312`), with the
-    /// `TYPE_SPACEBASE` arm resolved through this function's local symbol scope.
+    /// `TYPE_SPACEBASE` arm resolved through its selected global or local scope.
     ///
     /// A pure `Datatype::is_ptrsub_matching` cannot reach the symbol table that
     /// `TypeSpacebase::getSubType` needs (the C++ `TypeSpacebase` carries `glb`);
     /// for a pointer-to-spacebase we therefore resolve the sub-type here through
-    /// [`ScopeLocal::spacebase_get_sub_type`] and otherwise delegate to the pure
+    /// [`Self::spacebase_get_sub_type`] and otherwise delegate to the pure
     /// method.  Callers are `ActionSetCasts::castFixupPtrsub`
     /// (`coreaction.cc:2837`) and `RulePtrsubUndo::applyOp` (`ruleaction.cc:7169`),
     /// which must NOT undo a valid stack-frame `PTRSUB(sp, off)`.
@@ -156,17 +156,14 @@ impl Funcdata {
             if let Some(ptrto) = ptrtype.get_ptr_to() {
                 if ptrto.get_metatype() == type_metatype::TYPE_SPACEBASE {
                     let word_size = ptrtype.get_word_size().unwrap_or(1);
-                    let (lm, types) =
-                        match (self.get_scope_local(), self.get_arch().types_rc()) {
-                            (Some(lm), Some(t)) => (lm, t),
-                            _ => return false,
-                        };
                     let new_off =
                         kuna_base::space::AddrSpace::address_to_byte_int(off, word_size);
+                    // Select the symbol scope from the spacebase itself. Global
+                    // references must not be checked against the local stack map.
                     let (sub_type, new_off2) =
-                        match lm.spacebase_get_sub_type(new_off, types.as_ref()) {
-                            Ok(r) => r,
-                            Err(_) => return false,
+                        match self.spacebase_get_sub_type(&ptrto, new_off) {
+                            Some(r) => r,
+                            None => return false,
                         };
                     // subType is always Some here (TypeSpacebase::getSubType never
                     // returns null), so only newoff must be zero.

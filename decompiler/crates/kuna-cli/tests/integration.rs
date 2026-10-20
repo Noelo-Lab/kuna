@@ -69,6 +69,9 @@ mod baseline_cli;
 #[path = "broken_pipe.rs"]
 mod broken_pipe;
 
+#[path = "forloop_visible_read.rs"]
+mod forloop_visible_read;
+
 #[path = "buildstamp_cli.rs"]
 mod buildstamp_cli;
 
@@ -553,6 +556,11 @@ mod parameter_spill_reuse;
 #[path = "declared_callee_pop.rs"]
 mod declared_callee_pop;
 
+#[path = "declared_data_range.rs"]
+mod declared_data_range;
+
+#[path = "declared_pointer_frame_alias.rs"]
+mod declared_pointer_frame_alias;
 #[path = "project_function_linkage.rs"]
 mod project_function_linkage;
 
@@ -564,6 +572,12 @@ mod x87_native_returns;
 
 #[path = "x86_bound_checks.rs"]
 mod x86_bound_checks;
+
+#[path = "floating_stack_bytes.rs"]
+mod floating_stack_bytes;
+
+#[path = "aggregate_interior_address.rs"]
+mod aggregate_interior_address;
 
 #[path = "aggregate_scalar_bitcasts.rs"]
 mod aggregate_scalar_bitcasts;
