@@ -1254,6 +1254,7 @@ mod tests {
             code: Some(format!("void sub_{addr:x}(void)\n{{\n  return;\n}}\n")),
             error: None,
             proto: Some(format!("void sub_{addr:x}(void);")),
+            emitted_c_name: None,
             call_declarations: Vec::new(),
             variables: Vec::new(),
             types: Vec::new(),

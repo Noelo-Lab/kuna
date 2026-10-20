@@ -573,12 +573,17 @@ mod tests {
         /// `callmechanisms` installs every compiler-spec prototype boundary
         /// payload, and the stock `ppc_64_le.cspec` one stores `r2Save` to the
         /// ELFv1 TOC slot `0x28(r1)`, which is a live local in an ELFv2 frame.
+        ///
+        /// `regsigned` declares a sign-extended register local at its narrow
+        /// width. On decbench type_match it gained a few perfect functions on
+        /// ARM firmware and none on x86-64, and a narrowed value that a wider
+        /// reader takes back gains a cast (`(long)(int)v` on AArch64).
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "callmechanisms"];
+              "armconstshift", "callmechanisms", "regsigned"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

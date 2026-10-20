@@ -1,0 +1,77 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    regsigned: a register local declared at the width its values are sign
+    extended from.
+
+    clang -Os (thumbv7em) of
+        int total(const short *p, int n) {
+          int s = 0;
+          for (int i = 0; i < n; i++) {     (no unrolling)
+            short v = p[i]; if (v < 0) v = -1; s += v * 3 + (v >> 1);
+          }
+          return s;
+        }
+    keeps `v` sign-extended in a whole register:
+        1:  ldrsh r3,[r0],#2; subs r1,#1; orr.w r3,r3,r3,asr #31
+            add.w r12,r3,r3,lsl #1; add.w r2,r2,r3,asr #1; add r2,r12; bne 1b
+    Every value of the web (the `ldrsh`, and the `orr` of it with its own sign)
+    is the sign extension of its low two bytes, so with the option on `v` is
+    an `int2` and the `(int4)` casts on the load go away (#1, #2).  By default
+    (option off) it is `int4` (#3, #4).
+    Two controls keep the register's width either way:
+        keep:   int v = p[n & 7]; if (v < 0) v = n;  one value of the web is
+                the input `n`, which is no sign extension (#5).
+        widen:  int v = k ? p[0] : 0;  at -O0 (optnone): the value is stored
+                to its 4-byte frame slot (`str r0,[sp]`) before it is read back,
+                so the program's own home for it is an `int` (#6).
+
+    Stage: P3 simplification quiescence (fullloop's ActionDeadCode rebuilds the
+    web at the narrow width through SubvariableFlow's sign-extended mode).  P0
+    assertion: option regsigned on|off.  Pass 1 (default, off) keeps the
+    register-wide local; pass 2 (`option regsigned on`) proves the feature; the
+    controls are the same in both passes.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+002201290bdb00bf30f9023b013943ea
+e37303eb430c02eb63026244f4d11046
+704701f0070330f91300002848bf0846
+00eb40014310002011605360704783b0
+02900191019820b1ffe7029890f90000
+01e00020ffe70090009800eb801003b0
+7047
+</bytechunk>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x10000] [ram,0x10061]</com>
+  <com>map function r0x10000 total</com>
+  <com>map function r0x10022 keep</com>
+  <com>map function r0x1003e widen</com>
+  <com>lo fu total</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu widen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option regsigned on</com>
+  <com>lo fu total</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu widen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="regsigned #1: with the option on the short is declared at its own width" min="1" max="1">int2 v3; // r3</stringmatch>
+<stringmatch name="regsigned #2: with the option on the load needs no cast" min="1" max="1">v3 = \*a0 \| \*a0 &gt;&gt; 0x1f;</stringmatch>
+<stringmatch name="regsigned #3: by default (option off) the short keeps the register width" min="1" max="1">int4 v3; // r3</stringmatch>
+<stringmatch name="regsigned #4: by default (option off) each load carries a widening cast" min="1" max="1">v3 = \(int4\)\*a0 \| \(int4\)\*a0 &gt;&gt; 0x1f;</stringmatch>
+<stringmatch name="regsigned #5: a web with an input that is no sign extension keeps the register width in both passes" min="2" max="2">int4 v1; // r0 \| r1</stringmatch>
+<stringmatch name="regsigned #6: a value stored to a 4-byte frame slot keeps the register width in both passes" min="2" max="2">int4 v1; // r0 \| stack - 0xc</stringmatch>
+</decompilertest>
