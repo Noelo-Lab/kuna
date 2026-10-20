@@ -57,7 +57,15 @@ pub fn type_returns(data: &mut Funcdata, active: &ParamActive) {
         let Some(value) = op.get_in(1).and_then(|vn| data.vbank().get(vn)) else {
             return;
         };
+        let from_call = value
+            .get_def()
+            .and_then(|id| data.obank().get(id))
+            .is_some_and(|def| {
+                def.is_indirect_creation()
+                    || matches!(def.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
+            });
         if value.get_size() != 10
+            || from_call
             || value.is_type_lock()
             || value.get_type().get_metatype() != type_metatype::TYPE_UNKNOWN
         {
@@ -231,6 +239,27 @@ mod tests {
         assert_eq!(
             data.vbank().get(value).unwrap().get_type().get_metatype(),
             type_metatype::TYPE_FLOAT
+        );
+    }
+
+    #[test]
+    fn a_result_left_by_a_call_keeps_its_callee_type() {
+        let (mut data, active, value) = sample(
+            0x100,
+            type_class::TYPECLASS_FLOAT,
+            type_metatype::TYPE_UNKNOWN,
+            false,
+        );
+        let call = data.new_op(1, data.get_address().clone());
+        data.op_set_opcode_code(call, OpCode::CPUI_CALLIND);
+        let target = data.new_constant(4, 0x2000);
+        data.op_set_input(call, target, 0).unwrap();
+        data.op_set_output(call, value).unwrap();
+        data.obank_mut().mark_alive(call);
+        type_returns(&mut data, &active);
+        assert_eq!(
+            data.vbank().get(value).unwrap().get_type().get_metatype(),
+            type_metatype::TYPE_UNKNOWN
         );
     }
 

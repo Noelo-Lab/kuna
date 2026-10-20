@@ -1872,7 +1872,9 @@ active convention explicitly classifies that exact output storage as floating.
 The seed precedes normal type propagation, allowing a raw eighty-bit memory
 load's type to reach its stack argument too. Every live return must agree on an
 unknown, unlocked scalar value; explicit output declarations and typed values
-are preserved. Partial register results, multiple selected outputs and SIMD
+are preserved. A value a call left in ST0 (the call's output or the INDIRECT
+it creates) keeps the type its callee's prototype gives it, so a forwarding
+stub does not cast its own result. Partial register results, multiple selected outputs and SIMD
 resources do not establish this x87 scalar protocol. Value width remains ten
 bytes; stack slots retain the architecture's aligned object size.
 
