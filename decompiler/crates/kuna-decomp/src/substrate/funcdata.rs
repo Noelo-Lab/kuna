@@ -3980,6 +3980,23 @@ impl Funcdata {
             self.obank.get_mut(op).expect("bb_set_order").set_order(count);
             cur = self.obank.get(op).expect("bb_set_order").basic_neighbours().1;
         }
+        // Covers cache numeric operation positions. Renumbering changes those
+        // positions even though the def/use graph remains unchanged.
+        let mut affected = std::collections::HashSet::new();
+        for op in self.bb_ops(bl) {
+            let operation = self.obank.get(op).expect("bb_set_order");
+            if let Some(output) = operation.get_out() {
+                affected.insert(output);
+            }
+            for slot in 0..operation.num_input() {
+                if let Some(input) = operation.get_in(slot) {
+                    affected.insert(input);
+                }
+            }
+        }
+        for vn in affected {
+            crate::p6_variables::merge::MergeContext::vn_set_cover_dirty(self, vn);
+        }
     }
 
     /// Iterate the ops of basic block `bl` in list order (head..tail).
@@ -6073,6 +6090,58 @@ mod tests {
         let orders: Vec<_> = fd.bb_ops(block).into_iter()
             .map(|id| fd.obank.get(id).unwrap().get_seq_num().get_order()).collect();
         assert!(orders.windows(2).all(|pair| pair[0] < pair[1]), "{orders:?}");
+    }
+
+    #[test]
+    fn bb_renumber_refreshes_cached_variable_covers() {
+        use crate::p6_variables::merge::MergeContext;
+        let mut fd = build_fd();
+        let root = fd.bblocks_root();
+        let block = fd.bblocks.new_block_basic(root);
+        let ram = ram_space(&fd);
+        let ops = [
+            fd.new_op(1, Address::new(Rc::clone(&ram), 0x1000)),
+            fd.new_op(1, Address::new(ram, 0x1004)),
+        ];
+        for op in ops {
+            fd.op_set_opcode(op, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
+            fd.bb_insert_op(op, block, None);
+        }
+        let value = fd.new_unique_out(4, ops[0]).unwrap();
+        fd.new_unique_out(4, ops[1]).unwrap();
+        let constant = fd.new_constant(4, 7);
+        fd.op_set_input(ops[0], constant, 0).unwrap();
+        fd.op_set_input(ops[1], value, 0).unwrap();
+        fd.set_high_level();
+        let high = fd.vbank.get(value).unwrap().get_high().unwrap();
+        MergeContext::bank_update_cover(&mut fd, high);
+        let original = fd.vbank.get(value).unwrap().cover().unwrap().clone();
+        assert!(!fd.vbank.get(value).unwrap().is_cover_dirty_flag());
+        assert!(!fd.high_bank.get(high).unwrap().is_cover_dirty());
+
+        // Repeated insertions exhaust a real gap and trigger block renumbering.
+        let previous_order = fd.obank.get(ops[0]).unwrap().get_seq_num().get_order();
+        let mut right = ops[1];
+        for _ in 0..64 {
+            let inserted = fd.new_op(1, Address::new(ram_space(&fd), 0x1010));
+            fd.op_set_opcode(inserted, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
+            fd.op_set_input(inserted, constant, 0).unwrap();
+            fd.new_unique_out(4, inserted).unwrap();
+            fd.bb_insert_op(inserted, block, Some(right));
+            right = inserted;
+            if fd.obank.get(ops[0]).unwrap().get_seq_num().get_order() != previous_order {
+                break;
+            }
+        }
+        assert_ne!(fd.obank.get(ops[0]).unwrap().get_seq_num().get_order(), previous_order);
+        assert!(fd.vbank.get(value).unwrap().is_cover_dirty_flag());
+        assert!(fd.high_bank.get(high).unwrap().is_cover_dirty());
+        MergeContext::bank_update_cover(&mut fd, high);
+        let rebuilt = fd.vbank.get(value).unwrap().cover().unwrap();
+        assert_ne!(format!("{original:?}"), format!("{rebuilt:?}"));
+        let cover = rebuilt.get_cover_block(fd.block_index_pub(block));
+        assert_eq!(cover.get_start().unwrap().get_uindex(), fd.op_cover_point_pub(ops[0]).get_uindex());
+        assert_eq!(cover.get_stop().unwrap().get_uindex(), fd.op_cover_point_pub(ops[1]).get_uindex());
     }
 
     #[test]
