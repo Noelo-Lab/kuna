@@ -229,7 +229,11 @@ the value's own type stands in for it, except for a side that is a variable of
 its own, not part of a struct or union symbol, whose declared type is that
 partial aggregate: the declaration prints it as `undefinedN`, so the side is an
 integer whatever union field its value resolves to, and a union word carried
-through such a variable keeps its bits on the way in and out. A float an x87 `fstps` writes into a union record
+through such a variable keeps its bits on the way in and out. A side that
+prints as a whole scalar global (the global symbol covering it starts at its
+address with its size and is not an aggregate or array) takes that global's declared
+type ahead of the merged value's type, so a union `int` word copied into an
+`int` global stays `g = k;`. A float an x87 `fstps` writes into a union record
 therefore stores `((union { float from; int to; }){ .from = .. }).to` into
 `record.first.tag`, a float `memcpy`'d into an `int` member stores its bits
 rather than `r.tag = x;`, and a member holding a float's bits that is copied out
