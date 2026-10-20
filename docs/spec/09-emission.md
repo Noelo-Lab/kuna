@@ -100,6 +100,12 @@ cycles do not make a snapshot live. Unused temporaries cannot determine the type
 of a live register value with which they were previously coalesced. In particular,
 initializing four bytes must not read and rewrite an uninitialized eight-byte word.
 
+When a changed-byte assignment replays a safe LOAD through a floating pointer,
+it reinterprets the loaded float or double as an equal-width unsigned word before
+constructing the byte-copy source or extracting subranges. Initializing an integer
+compound literal directly from that LOAD would numerically convert its value.
+The storage reinterpretation evaluates the LOAD once and preserves its bit pattern.
+
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_stackmarkers.rs` distinguishes a
 non-creating INDIRECT version over physical frame bytes from a C assignment.
 With `stackviews`, cast insertion, statement emission and body counting

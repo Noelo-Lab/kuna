@@ -572,3 +572,6 @@ mod x87_native_returns;
 
 #[path = "x86_bound_checks.rs"]
 mod x86_bound_checks;
+
+#[path = "floating_stack_bytes.rs"]
+mod floating_stack_bytes;
