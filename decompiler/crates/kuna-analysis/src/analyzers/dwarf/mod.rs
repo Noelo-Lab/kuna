@@ -644,15 +644,13 @@ fn build_datatype_at(
         }
         gimli::DW_TAG_array_type => {
             let elem = build_datatype(die.type_ref, dies, types, word_size, walk, cpp)?;
-            // Every subrange contributes to the flattened storage extent.
-            // Taking only the first dimension underallocates multidimensional locals.
-            // fall back to 1 for a flexible/unknown array.
+            // Flattened extent: the product of every known subrange length (`kuna_dwarfbounds`).
             let count = die
                 .children
                 .iter()
                 .filter_map(|c| dies.get(c))
                 .filter(|c| c.tag == gimli::DW_TAG_subrange_type)
-                .map(|c| c.array_count.unwrap_or(1))
+                .filter_map(|c| c.array_count)
                 .try_fold(None, |product: Option<u64>, count| {
                     product.unwrap_or(1).checked_mul(count).map(Some)
                 })?
