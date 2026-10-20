@@ -5869,6 +5869,12 @@ impl PrintC {
                 return;
             }
         }
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            if let Some(assignment) = self.local_array_assignment(fd, arch, op) {
+                self.emit_storage_assignment_ir(fd, arch, op, assignment);
+                return;
+            }
+        }
         if self.emit_wide_copy(fd, arch, op) {
             return;
         }
@@ -7184,6 +7190,37 @@ impl PrintC {
     /// (printc.cc:882-888).  A non-special SUBPIECE falls to the cast/functional
     /// dispatch (the existing `is_subpiece_cast` → `opTypeCast` / `opFunc`).
     fn op_subpiece_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            let operation = fd.obank().get(op).unwrap();
+            let input = operation.get_in(0).unwrap();
+            let output = operation.get_out().and_then(|vn| fd.vbank().get(vn));
+            let offset = operation.get_in(1).and_then(|vn| fd.vbank().get(vn));
+            if output.is_some_and(|value| value.get_size() == 1)
+                && offset.is_some_and(|value| value.is_constant())
+            {
+                if let Some(name) = self.local_byte_array_name(fd, arch, input) {
+                    let byte = subpiece_byte_offset_for_composite(fd, op);
+                    let size = fd.vbank().get(input).unwrap().get_size() as i64;
+                    if byte >= 0 && byte < size {
+                        let output = operation.get_out().unwrap();
+                        let datatype = read_op
+                            .map(|read| fd.vn_type_read_facing(output, read))
+                            .unwrap_or_else(|| fd.vn_type_def_facing(output));
+                        self.push_cast_open(&datatype, op);
+                        self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                        self.push_atom(&Atom::with_op_vn(
+                            name,
+                            TagType::VarToken,
+                            crate::printlanguage::SyntaxHighlight::var_color,
+                            op_key(op),
+                            vn_key(input),
+                        ));
+                        self.push_constant_ir(byte as u64, 4, op);
+                        return;
+                    }
+                }
+            }
+        }
         use crate::dtype::type_metatype;
         if fd.obank().get(op).map(|o| o.does_special_printing()).unwrap_or(false) {
             let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
@@ -8328,6 +8365,68 @@ impl PrintC {
             }
             self.push_constant_ir(size as u64, 4, op);
         }
+    }
+
+    /// The rendered declaration decides whether a whole local is a byte array.
+    /// Recovered register values can have that declaration without a frame Symbol.
+    fn local_byte_array_name(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        vn: VarnodeId,
+    ) -> Option<String> {
+        let value = fd.vbank().get(vn)?;
+        if value.is_implied() || value.is_persist() || value.is_volatile() {
+            return None;
+        }
+        let high = value.get_high()?;
+        if fd.high_bank().get(high)?.kuna_global() {
+            return None;
+        }
+        let (_, _, _, _, declared) = self.rendered_local_decl(fd, arch, high);
+        let declared = declared?;
+        if !super::kuna_bytearrayc::byte_array(&declared)
+            || declared.get_size() != value.get_size()
+        {
+            return None;
+        }
+        let (name, offset, _) = self.emitted_high_symbol(fd, high)?;
+        (offset <= 0).then_some(name)
+    }
+
+    fn local_array_assignment(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+    ) -> Option<crate::p9_emit::kuna_stackassign::Assignment> {
+        let operation = fd.obank().get(op)?;
+        if !matches!(operation.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
+            return None;
+        }
+        let output = operation.get_out()?;
+        let name = self.local_byte_array_name(fd, arch, output)?;
+        let input = operation.get_in(0)?;
+        let size = fd.vbank().get(output)?.get_size();
+        if fd.vbank().get(input)?.get_size() != size {
+            return None;
+        }
+        let datatype = fd.vn_type_read_facing(input, op);
+        if datatype.get_metatype() != crate::dtype::type_metatype::TYPE_FLOAT
+            || datatype.get_size() != size
+        {
+            return None;
+        }
+        Some(crate::p9_emit::kuna_stackassign::Assignment {
+            output,
+            operand: Some(input),
+            raw_constant: false,
+            datatype,
+            size,
+            name,
+            offset: 0,
+            pointer_size: arch.manage().get_default_data_space()?.get_addr_size() as i32,
+        })
     }
 
     fn emit_storage_assignment_ir(
