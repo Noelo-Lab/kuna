@@ -324,7 +324,7 @@ int main(void){
         ]);
         assert_eq!(rc, 0, "{stderr}\n{printed}");
         let regenerated = dir.join(format!("regenerated-{sample_cc}.c"));
-        std::fs::write(&regenerated,format!("#include <stdbool.h>\ntypedef unsigned int undefined4;\n{declarations}\nextern unsigned char latest[];extern int last_count;\n#define latest_weather printed_latest_weather\n#define latest_count printed_latest_count\n{printed}")).unwrap();
+        std::fs::write(&regenerated,format!("#include <stdbool.h>\ntypedef unsigned int undefined4;typedef unsigned long long undefined8;\n{declarations}\nextern unsigned char latest[];extern int last_count;\n#define latest_weather printed_latest_weather\n#define latest_count printed_latest_count\n{printed}")).unwrap();
         for cc in &compilers {
             for opt in ["-O0", "-O2"] {
                 let exe = dir.join(format!("roundtrip-{sample_cc}-{cc}-{opt}"));
