@@ -3643,7 +3643,14 @@ value's own scalar type of that width, such as a float stored in half of a
 eight-byte access crossing byte elements or covering the whole array. Floating
 transfers to and from that storage reinterpret bits rather than numerically
 converting the value or attempting an array cast. This lookup uses the exact
-global container and offset. A `FLOAT_FLOAT2FLOAT` that writes such storage
+global container and offset. When the type this lookup or the merged variable
+declares for a transfer's input is unknown or a partial aggregate, as for a
+value merged into a byte-array backing, it does not say whether the bits are a
+pointer or a float; a pointer or float read-facing type of the input decides
+instead (`kuna_bitcast.rs (storage_transfer)`). A pointer stored through
+`*(void **)&storage[8]` and moved into a `double` therefore passes through the
+unsigned word of its width and is reinterpreted, rather than printing the
+invalid `(double)` conversion of a pointer. A `FLOAT_FLOAT2FLOAT` that writes such storage
 directly keeps its numeric precision conversion, cast to the float of its output
 width rather than to the unknown type of the storage, because partial access
 prints that destination as a float.
