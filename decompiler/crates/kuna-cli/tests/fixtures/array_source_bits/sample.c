@@ -8,7 +8,7 @@ __declspec(dllexport) unsigned int read_word(Packet *packet) {
     if(packet->tag!=7 || packet->context!=0)return 0;
     unsigned int first;__builtin_memcpy(&first,packet->payload,4);
 #if PAYLOAD_BYTES == 8
-    unsigned int second;__builtin_memcpy(&second,packet->payload+4,4);first^=second;
+    unsigned int second;__builtin_memcpy(&second,packet->payload+4,4);first=first*257U ^ second;
 #endif
     return first;
 }
