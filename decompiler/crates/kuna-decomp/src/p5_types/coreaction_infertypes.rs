@@ -75,9 +75,6 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
             .and_then(|v| data.vbank().get(v))
             .map(|v| v.get_offset())
             .unwrap_or(0);
-        // FIST/FISTP userops return signed integer bits even when their memory
-        // destination is subsequently read as a float. An unknown output lets
-        // that later use turn the storage transfer into a numeric conversion.
         let integer_width = arch.x87_integer_userops.iter()
             .find_map(|&(id, width)| (u64::from(id) == in0_off).then_some(width));
         if integer_width == Some(out_size) {

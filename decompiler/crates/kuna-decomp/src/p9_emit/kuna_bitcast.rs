@@ -16,6 +16,8 @@ pub(crate) struct Transfer {
 
 /// A same-width storage `CAST` between a float and integer or native pointer,
 /// judged by the types the printed C declares: a named variable or field, else the value's own type.
+/// A float-typed output whose declared view is an unresolved aggregate (a byte-array global)
+/// is judged by its own type, so the scalar float view it prints keeps the reinterpretation.
 pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Transfer> {
     let operation = fd.obank().get(op)?;
     if operation.code() != OpCode::CPUI_CAST {
@@ -36,9 +38,6 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
     let to_ty = crate::kuna_stackviews::access_type(fd, out, op, -1)
         .or_else(|| declared_member_type(fd, decl_high_type, out))
         .filter(|ty| {
-            // A byte-array-backed global can have an unresolved aggregate high
-            // type while this CAST prints a scalar floating storage view.
-            // Use that view rather than suppressing its bit reinterpretation.
             dst.get_type_def_facing().get_metatype() != type_metatype::TYPE_FLOAT
                 || !matches!(ty.get_metatype(), type_metatype::TYPE_UNKNOWN
                     | type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)

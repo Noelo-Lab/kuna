@@ -1644,9 +1644,6 @@ impl Funcdata {
             return self.cast_narrowed_call(op, float, false);
         }
         let tokenct = get_output_token(self, strat, op);
-        // A merged global can have an unknown high type while its emitted
-        // storage lvalue is floating. Preserve the signed userop result before
-        // that storage view: implicit C assignment would convert its value.
         let integer_userop_in_float_storage = self.obank().get(op).is_some_and(|operation| {
             operation.code() == OpCode::CPUI_CALLOTHER
                 && tokenct.get_metatype() == type_metatype::TYPE_INT
