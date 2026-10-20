@@ -7660,6 +7660,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "callwide"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P4"
+subphase = "output-prototype"
+strength = "HARD"
+rewind = "P4"
+issue = "callwide"
+summary = "Retain an eight-byte integer return in the ABI order only when a complete bounded sealed non-PIC MIPS32-BE executable proof finds a declared eight-byte consumer, both producer-written words at every return, and representable uses at every direct caller. A frozen whole-image verdict governs the producer, all callers and project declarations before rendering. ARM and other architectures, missing declaration provenance, returnable or indirect control, unsupported storage, incomplete bytes and exhausted bounds refuse promotion. Newly needed DWARF subregister returns also require the current narrowext policy to define their full return register (compiler for this MIPS ABI); the option never changes that policy. Requires bejoin evidence; off and the other bejoin modes preserve their existing behavior. Default off while validation is pending."
+use_when = "Enable for a big-endian register-pair producer whose untyped return loses a low word despite a caller forwarding both words unchanged to one declared eight-byte integer parameter. Check whole-image admission and emitted C/header agreement; this option does not infer width from ambiguous producer instructions or open caller sets."
+example = "option callwide on"
+source_decompiler = "kuna"
+inspiration = "GH-904: a MIPS producer loses its low return word even when a declared uint64 consumer receives the complete pair"
+change_kind = "new-caller-evidence"
+tier = "core"
+symptoms = "an untyped MIPS32 big-endian producer loses its low return word despite a declared 64-bit consumer|producer and caller disagree about a complete big-endian eight-byte integer return"
+live_field = "call_wide"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "bejoin"
 values = "off|evidence|on"
 default = "evidence"

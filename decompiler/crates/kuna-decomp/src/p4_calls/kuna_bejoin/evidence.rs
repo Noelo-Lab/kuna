@@ -361,7 +361,8 @@ pub fn missed_proven(arch: &mut Architecture, data: &Funcdata) -> bool {
 /// with none is not, and is noted for [`missed_proven`].
 pub fn proven(data: &Funcdata, entry: &Address) -> bool {
     let Some(sp) = entry.get_space() else { return false };
-    data.kuna_wide().is_some_and(|w| w.get((sp.get_index(), entry.get_offset())))
+    crate::p4_calls::kuna_callwide::proven(data, entry)
+        || data.kuna_wide().is_some_and(|w| w.get((sp.get_index(), entry.get_offset())))
 }
 
 /// The walk: does every RETURN of the function at `entry` hand back one
@@ -394,7 +395,7 @@ fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, ent
         entry: entry.clone(),
         ops: 0,
     };
-    let tracked = arch.with_context_db_mut(|db| db.get_tracked_set(entry).clone());
+    let tracked = arch.with_context_db(|db| db.get_tracked_set(entry).clone());
     let mut start = Path {
         at: entry.clone(),
         regs: Vec::new(),

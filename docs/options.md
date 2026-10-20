@@ -1242,6 +1242,8 @@ Three tiers:
 | a 16-byte struct return (JSValue, div_t, a fat pointer, a two-word value) is lost at the call site | [`callretpair`](#callretpair) |
 | a tag-and-payload pair is tested right after a call and the tag variable is never assigned | [`callretpair`](#callretpair) |
 | a caller that reads only the high word of a 64-bit callee result prints a bare `full(a0);` and an unassigned `// r1`, `// edx` or `// v1` local | [`callretpair`](#callretpair) |
+| an untyped MIPS32 big-endian producer loses its low return word despite a declared 64-bit consumer | [`callwide`](#callwide) |
+| producer and caller disagree about a complete big-endian eight-byte integer return | [`callwide`](#callwide) |
 | a long long return on a big-endian 32-bit target prints CONCAT44 with the low word first | [`bejoin`](#bejoin) |
 | a 64-bit product, sum or shift returned on PowerPC, MIPS, SPARC or ARM big-endian comes back with its halves swapped | [`bejoin`](#bejoin) |
 | an AVR function returning a 16-bit int prints a read of R25R24 nothing assigns | [`bejoin`](#bejoin) |
@@ -3794,6 +3796,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: it is the upstream behaviour of a branch kuna stubbed, and the alternative is a call with no output whose result is read through variables that have no definition anywhere in the program. 0/675 byte-identical on the datatest corpus. Keep it on whenever a call is followed by reads of a second return register -- on x86-64 the tell is a `// rdx` local that is declared and read but never assigned, next to a call rendered as a bare statement, while decompiling the callee on its own reports an `undefined16` return. That shape is what every 16-byte struct return looks like: a `JSValue`, a `div_t`, a Go or Rust two-word value, any `struct { void *; long; }`. The pair is rendered as a raw 16-byte container with `SUB168` extracting the halves until a later pass gives it an aggregate type, so the gain is that the payload EXISTS and is connected to its producer, not that it is spelled well. Set off to restore the stub -- worth trying when a call acquires a 16-byte output whose second half the disassembly shows is a clobber rather than a value (the callee-body veto only fires on a callee the bounded decode can read to every RETURN, so a callee containing a call cannot be refuted), or to bisect whether this arm rather than trial scoring changed a call's surroundings.
 - **Where / provenance:** P4/output-prototype · ghidra · correctness-fix · repipe-bytecode-reader-return-discarded
 - **Example:** `option callretpair off`
+
+### `callwide` -- on | off, default `off`
+
+- **Symptoms:** an untyped MIPS32 big-endian producer loses its low return word despite a declared 64-bit consumer; producer and caller disagree about a complete big-endian eight-byte integer return.
+- **What it does:** Retain an eight-byte integer return in the ABI order only when a complete bounded sealed non-PIC MIPS32-BE executable proof finds a declared eight-byte consumer, both producer-written words at every return, and representable uses at every direct caller. A frozen whole-image verdict governs the producer, all callers and project declarations before rendering. ARM and other architectures, missing declaration provenance, returnable or indirect control, unsupported storage, incomplete bytes and exhausted bounds refuse promotion. Newly needed DWARF subregister returns also require the current narrowext policy to define their full return register (compiler for this MIPS ABI); the option never changes that policy. Requires bejoin evidence; off and the other bejoin modes preserve their existing behavior. Default off while validation is pending.
+- **When to flip:** Enable for a big-endian register-pair producer whose untyped return loses a low word despite a caller forwarding both words unchanged to one declared eight-byte integer parameter. Check whole-image admission and emitted C/header agreement; this option does not infer width from ambiguous producer instructions or open caller sets.
+- **Where / provenance:** P4/output-prototype · kuna · new-caller-evidence · callwide
+- **Example:** `option callwide on`
 
 ### `bejoin` -- off | evidence | on, default `evidence`
 

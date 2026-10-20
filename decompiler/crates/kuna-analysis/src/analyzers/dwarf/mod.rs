@@ -118,6 +118,8 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, SymFact, Sym
 
 mod lines;
 pub use lines::DwarfLinesPass;
+mod callwide;
+pub use callwide::declarations as callwide_declarations;
 
 mod kuna_cppproto;
 mod kuna_dwarfbounds;

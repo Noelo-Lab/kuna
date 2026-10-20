@@ -697,6 +697,8 @@ pub struct Architecture {
     /// word in the first register where the ABI puts it there.  Read by
     /// [`crate::p4_calls::kuna_bejoin`] through the `ArchContext` handle.
     pub be_join: crate::kuna_bejoin::BeJoinMode,
+    /// Retain register-pair returns established by complete declared caller evidence.
+    pub call_wide: bool,
     /// (kuna) `option rustabi`: how hard to try to keep a rustc two-register
     /// (`ScalarPair`) return intact -- 0 off, 1 auto (only on a detected rustc
     /// image), 2 always.  Read by [`crate::kuna_rustabi`] through the
@@ -1560,6 +1562,8 @@ pub struct Architecture {
     /// function and every caller of it read the same one, and the instructions
     /// the walks decoded.
     pub kuna_wide: crate::kuna_bejoin::WideCache,
+    /// Immutable whole-image caller proof, published before any function renders.
+    pub kuna_callwide: crate::p4_calls::kuna_callwide::ProofSlot,
     /// (kuna `calleedeadarg`) Per-image cache of the callee entry-liveness probe
     /// ([`crate::kuna_calleedeadarg::probe_callee_entry_dead`]), keyed by the
     /// callee's `(space index, entry offset)`.  Each distinct function body is
@@ -2887,6 +2891,7 @@ impl Architecture {
             call_ret_pair: false, // (kuna) option callretpair; reset_defaults sets the shipped default
             multi_reg_args: false,
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
+            call_wide: false,
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
             source_is_rust: false, // (kuna) a load-time fact; set by the console's `load file`
             source_is_go: false, // (kuna) a load-time fact; set by the console's `load file`
@@ -3048,6 +3053,7 @@ impl Architecture {
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
             kuna_callee_write_cache: std::collections::HashMap::new(),
             kuna_wide: crate::kuna_bejoin::WideCache::default(),
+            kuna_callwide: crate::p4_calls::kuna_callwide::ProofSlot::default(),
             kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_callee_memory_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
@@ -3280,6 +3286,8 @@ impl Architecture {
         self.call_ret_pair = true; // (kuna) DIV-162 default-on: the multi-trial arm of `FuncCallSpecs::buildOutputFromTrials` (fspec.cc:5777) shipped as a stub, so a CALL whose cspec output rule asked for a register pair got NO output and both halves rendered as locals the function never assigns. Completing it is upstream behaviour and is not language-specific -- a 16-byte aggregate return in RAX:RDX is ordinary System V C. 0/675 byte-identical on the datatest corpus. Restore the stub with `option callretpair off`
         self.multi_reg_args = true;
         self.be_join = crate::kuna_bejoin::BeJoinMode::Evidence; // (kuna) option bejoin default `evidence` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart); `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
+        self.call_wide = false;
+        self.kuna_callwide.clear();
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
@@ -3689,6 +3697,7 @@ impl Architecture {
 
     /// Mutably borrow the disassembly engine.
     pub fn translate_mut(&mut self) -> &mut dyn EngineTranslate {
+        self.kuna_callwide.clear();
         &mut *self.translate
     }
 
@@ -4068,6 +4077,7 @@ impl Architecture {
         // (kuna) carry the big-endian pair-order gate so `kuna_bejoin` reaches
         // `option bejoin` via `glb`.
         ctx.be_join = self.be_join;
+        ctx.call_wide = self.call_wide;
         ctx.multi_reg_args = self.multi_reg_args;
         // (kuna) carry the Rust return-ABI gate and the detected source language
         // so `kuna_rustabi` reaches both via `glb`.
@@ -4411,7 +4421,7 @@ impl Architecture {
         // Snapshot the tracked-register database (C++ `glb->context`'s track base,
         // populated by `set track`) so `ActionConstbase` can query it for the
         // function entry address through the detached per-function skeleton.
-        ctx.tracked_sets = self.with_context_db_mut(|db| db.clone_trackbase());
+        ctx.tracked_sets = self.with_context_db(|db| db.clone_trackbase());
         if let Some(entry) = entry {
             if let Some(seeds) = self.loader_entry_tracks.get(entry) {
                 if let Some(stop) = entry.get_offset().checked_add(1) {
@@ -5250,6 +5260,7 @@ impl Architecture {
     /// `Sleigh::set_loader`, matching the C++ `restoreFromSpec` handing the
     /// loader to the translator.
     pub fn set_loader(&mut self, loader: Box<dyn kuna_sleigh::loadimage::LoadImage>) {
+        self.kuna_callwide.clear();
         self.translate.set_loader(loader);
     }
 
@@ -5277,6 +5288,7 @@ impl Architecture {
         &self,
         f: impl FnOnce(&mut dyn kuna_sleigh::globalcontext::ContextDatabase) -> R,
     ) -> R {
+        self.kuna_callwide.revoke();
         // The engine boundary exposes the object-safe `with_context_db_dyn` (a
         // `&mut dyn FnMut`, so it survives the `Box<dyn EngineTranslate>` trait
         // object); adapt the generic, value-returning closure over it.  The
@@ -5288,6 +5300,19 @@ impl Architecture {
             result = Some((f.take().expect("with_context_db_mut: closure runs once"))(db));
         });
         result.expect("with_context_db_mut: closure ran")
+    }
+
+    /// Read context without permitting a mutation of frozen evidence dependencies.
+    pub fn with_context_db<R>(
+        &self,
+        f: impl FnOnce(&dyn kuna_sleigh::globalcontext::ContextDatabase) -> R,
+    ) -> R {
+        let mut f = Some(f);
+        let mut result = None;
+        self.translate.with_context_db_dyn(&mut |db| {
+            result = Some((f.take().expect("with_context_db: closure runs once"))(db));
+        });
+        result.expect("with_context_db: closure ran")
     }
 
     /// Resolve a register by name to its storage (C++
@@ -5355,6 +5380,9 @@ impl Architecture {
     /// Record the calling convention `name` was declared under (see
     /// [`Self::declared_proto_models`]).
     pub fn set_function_prototype_model(&mut self, name: &str, model: Rc<ProtoModel>) {
+        if !self.declared_proto_models.get(name).is_some_and(|old| Rc::ptr_eq(old, &model)) {
+            self.kuna_callwide.clear();
+        }
         self.declared_proto_models.insert(name.to_string(), model);
     }
 
@@ -5367,18 +5395,29 @@ impl Architecture {
     /// (see [`Self::declared_proto_models_at`]).
     pub fn set_function_prototype_model_at(&mut self, addr: &Address, model: Rc<ProtoModel>) {
         if let Some(space) = addr.get_space() {
+            if !self.declared_proto_models_at.get(&(space.get_index(), addr.get_offset()))
+                .is_some_and(|old| Rc::ptr_eq(old, &model))
+            {
+                self.kuna_callwide.clear();
+            }
             self.declared_proto_models_at.insert((space.get_index(), addr.get_offset()), model);
         }
     }
 
     /// Register a prototype model under its name (C++ `protoModels[name] =`).
     pub fn register_model(&mut self, model: Rc<ProtoModel>) {
+        if !self.proto_models.get(model.get_name()).is_some_and(|old| Rc::ptr_eq(old, &model)) {
+            self.kuna_callwide.clear();
+        }
         self.proto_models.insert(model.get_name().to_string(), model);
     }
 
     /// Set the default prototype model (C++ `Architecture::setDefaultModel`,
     /// architecture.cc:222).
     pub fn set_default_model_rc(&mut self, model: Rc<ProtoModel>) {
+        if !self.defaultfp.as_ref().is_some_and(|old| Rc::ptr_eq(old, &model)) {
+            self.kuna_callwide.clear();
+        }
         self.defaultfp = Some(model);
     }
 
@@ -5628,6 +5667,7 @@ impl Architecture {
     /// alongside it.  Otherwise a name-only default model is registered so the
     /// engine still has a non-null `defaultfp`.
     pub fn build_default_proto(&mut self) {
+        self.kuna_callwide.clear();
         // One parse of the cspec document feeds all three readers below: the
         // top-level <returnaddress> (C++ `Architecture::decodeReturnAddress`,
         // architecture.cc:902), the <default_proto> model, and the named models.
@@ -5689,6 +5729,7 @@ impl Architecture {
     /// from `SleighArchitecture::build_spec_file`) and hands it here before
     /// [`init_post_engine`](Architecture::init_post_engine).
     pub fn set_cspec_xml(&mut self, xml: Vec<u8>) {
+        self.kuna_callwide.clear();
         self.cspec_xml = Some(xml);
     }
 
@@ -7041,6 +7082,9 @@ impl ArchOptionContext for Architecture {
         self.flowoptions
     }
     fn set_flow_options(&mut self, val: uint4) {
+        if self.flowoptions != val {
+            self.kuna_callwide.clear();
+        }
         self.flowoptions = val;
     }
 
@@ -7068,6 +7112,7 @@ impl ArchOptionContext for Architecture {
 
     // --- prototype models (C++ defaultfp / evalfp_current) -----------------
     fn set_default_extra_pop(&mut self, expop: int4) {
+        self.kuna_callwide.clear();
         // C++ `glb->defaultfp->setExtraPop(expop)` (+ eval-model spreads).
         // The registry holds the model behind `Rc`; mutate the shared model
         // (and keep the registry entry pointing at the same data via the same
@@ -7093,7 +7138,7 @@ impl ArchOptionContext for Architecture {
         // C++ `glb->setDefaultModel(getModel(p1))`.
         match self.proto_models.get(name).cloned() {
             Some(model) => {
-                self.defaultfp = Some(model);
+                self.set_default_model_rc(model);
                 self.share_proto_models();
                 Ok(())
             }
@@ -7104,6 +7149,9 @@ impl ArchOptionContext for Architecture {
         // C++ `glb->evalfp_current = getModel(p1)`.
         match self.proto_models.get(name).cloned() {
             Some(model) => {
+                if !self.evalfp_current.as_ref().is_some_and(|old| Rc::ptr_eq(old, &model)) {
+                    self.kuna_callwide.clear();
+                }
                 self.evalfp_current = Some(model);
                 Ok(())
             }
@@ -7117,12 +7165,14 @@ impl ArchOptionContext for Architecture {
         // The FunctionSymbol's lazily-built Funcdata/FuncProto is W5; the inline flag
         // is parked on the symbol (read back by FlowInfo::queryCall at flow time).
         let sid = self.query_global_function(name)?;
+        self.kuna_callwide.clear();
         self.symboltab.set_function_inline(sid, val);
         Ok(())
     }
     fn set_function_no_return(&mut self, name: &str, val: bool) -> KunaResult<()> {
         // C++ `OptionNoReturn::apply`: same shape as OptionInline, but setNoReturn.
         let sid = self.query_global_function(name)?;
+        self.kuna_callwide.clear();
         self.symboltab.set_function_no_return(sid, val);
         Ok(())
     }

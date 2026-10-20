@@ -3718,6 +3718,26 @@ The declarations survive worker serialization and streamed body removal, and
 remain roots when pruning synthesized types. Capture is implemented in
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`.
 
+With a live `callwide` verdict, a proved eight-byte result also needs a
+declaration when its producer was not selected for export. The declaration
+uses the actual call operands and finalized four-byte argument storage under
+the same model, including calls whose recovered prototype store is empty. It
+neither recovers nor regroups inputs. Canonical unknown eight-byte results use
+the C speller's existing unsigned representation; ignored results obtain only
+their proved width and physical pair. Unsupported storage, types or arity
+withhold that function's C with an export error. Private typed contracts survive
+workers and streamed body removal. A selected producer's exact definition may
+resolve signed versus unsigned four-byte input words, preserving their ABI
+bits; its output representation and arity must agree. External-only conflicts
+remain errors. Streams may retain conflicting records, in order and within
+fixed bounds, only for an exact producer in the complete preknown selection,
+then validate against its actual definition. An absent or incompatible
+definition fails the export. A conflicting definition or type-name collision
+cannot silently remove a required wide declaration. Ordinary locked-declaration
+conflicts retain the diagnostic behavior above. Capture remains after temporary
+C rendering and before publication. The proof and bounded contract checks belong to
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callwide.rs`.
+
 Format-specific call arities are not declarations of the callee. When a call
 has format-derived arguments, project declarations restore its parked formal
 variadic signature. Call-only type roots are gathered only for project headers;
