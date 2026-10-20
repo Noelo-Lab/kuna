@@ -29,6 +29,7 @@ use super::kuna_insnstore::InstructionStore;
 
 /// The accumulating maps the walk fills. Lifted into [`super::Listing`] by
 /// [`super::Listing::build`].
+#[derive(Clone)]
 pub(super) struct WalkState {
     /// Instruction model, keyed by VMA.
     pub insns: InstructionStore,
@@ -453,6 +454,7 @@ pub(super) fn walk(
     resumed: Option<WalkState>,
     tables: Option<&super::kuna_thumbswitch::HalfwordTables<'_>>,
     a32_tables: Option<&super::kuna_a32switch::A32Tables<'_>>,
+    x86_tables: Option<&super::kuna_x86listingswitch::X86Tables<'_>>,
     memo: Option<&super::kuna_decodememo::DecodeMemo>,
 ) -> WalkState {
     // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
@@ -472,11 +474,54 @@ pub(super) fn walk(
         translate, code_space, exec_ranges, local_entries, policy, detail, tables, a32_tables, memo,
     };
 
-    let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk, resumed);
+    let st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk, resumed);
+    let mut st = match x86_tables {
+        Some(tables) => super::kuna_x86listingswitch::reconcile(tables, &ctx, st),
+        None => st,
+    };
     if let Some(mode) = flow_mode {
         st.mode_runs.extend(super::kuna_flowmode::disagreeing_runs(&ctx, arch, mode));
     }
     st
+}
+
+/// Extend an isolated i386 candidate from instruction roots without claiming
+/// the roots as functions. CALL targets retain the ordinary claim rule.
+pub(super) fn extend_x86(
+    ctx: &StepCtx<'_>,
+    state: &mut WalkState,
+    edges: &BTreeMap<u64, Vec<u64>>,
+    mut within_budget: impl FnMut(&WalkState) -> bool,
+) -> bool {
+    let mut refs = RefCollector { want: ctx.detail.refs, edges: std::mem::take(&mut state.refs) };
+    let mut callbacks = CallbackEvidence::default();
+    for (&target, &source) in &state.stack_callback_refs {
+        callbacks.file(source, target);
+    }
+    let mut pending = Vec::new();
+    for (&from, targets) in edges {
+        for &target in targets {
+            pending.push(target);
+            refs.file(from, target, RefKind::Code);
+        }
+    }
+    let mut called = Vec::new();
+    let mut checked_at = state.insns.len();
+    loop {
+        let Some(at) = pending.pop().or_else(|| called.pop()) else { break };
+        let mut work = Worklists { insns: pending, funcs: &mut called };
+        step(ctx, at, &mut state.insns, &mut state.funcs, &mut refs, &mut callbacks, &mut work);
+        pending = work.insns;
+        if state.insns.len().saturating_sub(checked_at) >= 256 {
+            if !within_budget(state) {
+                return false;
+            }
+            checked_at = state.insns.len();
+        }
+    }
+    state.refs = refs.into_edges();
+    state.stack_callback_refs = callbacks.into_refs();
+    within_budget(state)
 }
 
 /// The serial or parallel walk, as [`walk`] runs it.

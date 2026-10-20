@@ -140,6 +140,11 @@ are inert off their target (`rtti` = PE, `objc`/`macho-arm64e` = Mach-O,
 and since DIV-93 the four ARM entry passes, which are inert off ARM). These are
 not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
 
+- **`x86listingswitch`** — bounded i386 table coverage can expose tail jumps
+  into independent functions before AIF discovers their entries. The measured
+  Wine corpus lost seven real starts; keep this discovery tradeoff explicit
+  with `--option x86listingswitch on` in every mode.
+
 - **`v850indirectbranch`** — its predicate (`kuna_is_v850_indirect_jmp`,
   `p2_lift/kuna_v850indbranch.rs`) matches **any** register-indirect `CALLIND`,
   so on x86-64/ARM it would reclassify every `call reg` into an indirect branch

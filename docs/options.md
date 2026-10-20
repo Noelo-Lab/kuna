@@ -751,6 +751,10 @@ Three tiers:
 | kuna functions reports a tbb or tbh function far smaller than its symbol | [`thumbswitch`](#thumbswitch) |
 | a function called only from a switch case is missing from a stripped firmware image | [`thumbswitch`](#thumbswitch) |
 | aif adds entries inside cortex-m switch statements | [`thumbswitch`](#thumbswitch) |
+| aif lists return-terminated i386 switch cases as functions | [`x86listingswitch`](#x86listingswitch) |
+| a direct callee reached only through an i386 switch case is missing from discovery | [`x86listingswitch`](#x86listingswitch) |
+| the discovery Listing stops at an absolute-pointer jump table | [`x86listingswitch`](#x86listingswitch) |
+| independent reference queries see case bodies absent from the initial instruction partition | [`x86listingswitch`](#x86listingswitch) |
 | kuna xrefs reports 0 references to a function called only from a switch case | [`switchreach`](#switchreach) |
 | a function called from a switch case body has no caller in decompile-graph | [`switchreach`](#switchreach) |
 | calleevote refuses a function because its recorded calls differ from the call graph | [`switchreach`](#switchreach) |
@@ -2842,6 +2846,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default). It only fires at a PC-relative tbb/tbh that a range check bounds, so it adds code the switch provably dispatches to: a stripped Cortex-M function list loses the sub_ entries that were switch cases, and the functions those cases call are found. Flip off to reproduce the GH-299 measurement exactly, or when a hand-written tbb/tbh whose table is not where the range check says makes the walk decode a case region that is not code.
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · GH-299
 - **Example:** `--option thumbswitch off`
+
+### `x86listingswitch` -- on | off, default `off`
+
+- **Symptoms:** aif lists return-terminated i386 switch cases as functions; a direct callee reached only through an i386 switch case is missing from discovery; the discovery Listing stops at an absolute-pointer jump table; independent reference queries see case bodies absent from the initial instruction partition.
+- **What it does:** Read a locally proved absolute-pointer switch table in the discovery Listing on linked i386 ELF and PE images. The unsigned range check must constrain the same whole-width index used by the jump, with no bypass, clobber, invalid slot, unproved address wrap, or established function conflict. Read exactly the proved count up to jumptablemax, then walk the cases as instruction successors and recover their direct callees. Independent functions and undefined gaps between case blocks are not claimed as a case span. Reconciliation runs after serial or parallel decoding over isolated shared snapshots for at most sixteen rounds; a late invalidated proof, extra round, or candidate memory-budget refusal retains the ordinary Listing. Resuming an expanded Listing rebuilds ordinary coverage from the new seed set before proving switches again.
+- **When to flip:** Enable to decode return-terminated i386 switch cases before AIF can mistake them for functions, especially with listing on and fast_funcdisc off. Default off: newly reached ordinary tail jumps can hide independent function starts from the gap walk (seven real starts lost in the measured Wine corpus). Already-established entries are preserved; fast_funcdisc can independently name table cases, so those conflicts are refused rather than withdrawn. Missing or ambiguous proof leaves the switch unresolved. This option changes only the discovery Listing; the independent xrefs table policy is unchanged.
+- **Where / provenance:** P1/code-data-partition · kuna · new-analysis · GH-299
+- **Example:** `--option listing on --option fast_funcdisc off --option aif on --option x86listingswitch on`
 
 ### `switchreach` -- on | off, default `on`
 

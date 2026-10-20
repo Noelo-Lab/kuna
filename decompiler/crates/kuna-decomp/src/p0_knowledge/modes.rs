@@ -573,6 +573,9 @@ mod tests {
         /// `callmechanisms` installs every compiler-spec prototype boundary
         /// payload, and the stock `ppc_64_le.cspec` one stores `r2Save` to the
         /// ELFv1 TOC slot `0x28(r1)`, which is a live local in an ELFv2 frame.
+        /// `x86listingswitch` reaches valid cases but ordinary tail jumps from
+        /// them can hide independent function entries from the AIF gap walk;
+        /// the i386 corpus lost seven true starts, so it remains explicit.
         ///
         /// `regsigned` declares a sign-extended register local at its narrow
         /// width. On decbench type_match it gained a few perfect functions on
@@ -583,7 +586,7 @@ mod tests {
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "callmechanisms", "regsigned"];
+              "armconstshift", "callmechanisms", "regsigned", "x86listingswitch"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open
