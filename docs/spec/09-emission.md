@@ -3642,6 +3642,11 @@ agrees with the local layout: the member has no scalar C assignment type, and
 copying a float must retain its representation instead of casting it to an array.
 Implied same-width CASTs to the byte-array view are peeled before selecting the
 scalar representation; numeric conversion opcodes remain part of the expression.
+A byte-array member receiving an implied nonvolatile memory read retains the
+source pointer and read context, even through same-width COPY/CAST wrappers.
+Numeric conversions and computed expressions remain scalar transfers. For
+byte-addressed source storage with matching endianness, `__builtin_memmove`
+retains the original load-before-store behavior when addresses may overlap.
 Integer bit patterns are printed as
 unsigned constants, while named pointer constants retain their address provenance.
 Equal-width signed, unsigned and unknown integer views remain compatible and

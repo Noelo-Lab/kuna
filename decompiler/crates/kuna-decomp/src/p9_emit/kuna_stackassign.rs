@@ -84,7 +84,15 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         fd.vbank().get(id).is_some_and(|value| value.is_constant())
             && !crate::kuna_stackviews::pointer_origin(fd, id)
     });
-    let datatype = if raw_constant {
+    let memory_source =
+        byte_member && operand.is_some_and(|input| loaded_bytes(fd, input).is_some());
+    let datatype = if memory_source {
+        // This is a raw representation, not a scalar C value. The array type
+        // selects memory-source emission without imposing the member's type.
+        factory
+            .get_type_array(size, factory.get_base(1, type_metatype::TYPE_UINT).ok()?)
+            .ok()?
+    } else if raw_constant {
         factory.get_base(size, type_metatype::TYPE_UINT).ok()?
     } else if let Some(input) = operand {
         let ty = if crate::kuna_stackviews::pointer_origin(fd, input) {
@@ -190,4 +198,42 @@ fn scalar(datatype: &Datatype) -> bool {
             | type_metatype::TYPE_FLOAT
             | type_metatype::TYPE_PTR
     )
+}
+
+/// Follow implied representation-only wrappers to the original memory read.
+/// Numeric conversions and computations must still be evaluated as scalars.
+pub(super) fn loaded_bytes(fd: &Funcdata, mut input: VarnodeId) -> Option<(VarnodeId, OpId, i32)> {
+    let size = fd.vbank().get(input)?.get_size();
+    for _ in 0..32 {
+        let value = fd.vbank().get(input)?;
+        if !value.is_implied() || value.is_volatile() || value.get_size() != size {
+            return None;
+        }
+        let definition = value.get_def()?;
+        let operation = fd.obank().get(definition)?;
+        match operation.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST => input = operation.get_in(0)?,
+            OpCode::CPUI_LOAD => {
+                let space_id = fd.vbank().get(operation.get_in(0)?)?;
+                if !space_id.is_constant() {
+                    return None;
+                }
+                let space = fd
+                    .get_arch()
+                    .manage()
+                    .get_space(i32::try_from(space_id.get_offset()).ok()?)?;
+                let stack = fd.get_arch().manage().get_stack_space()?;
+                if space.get_word_size() != 1 || space.is_big_endian() != stack.is_big_endian() {
+                    return None;
+                }
+                return Some((
+                    operation.get_in(1)?,
+                    definition,
+                    space.get_addr_size() as i32,
+                ));
+            }
+            _ => return None,
+        }
+    }
+    None
 }

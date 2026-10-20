@@ -13,6 +13,9 @@ mod argument_errors_cli;
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
 
+#[path = "array_source_bits.rs"]
+mod array_source_bits;
+
 #[path = "conditional_register_lifetimes.rs"]
 mod conditional_register_lifetimes;
 
