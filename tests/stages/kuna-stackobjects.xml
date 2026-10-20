@@ -34,6 +34,9 @@ on distinguishes contents at typed uses. Native tests preserve physical behavior
 <symbol space="ram" offset="0x4050c2" name="variant_read_parameter_handle"/>
 <symbol space="ram" offset="0x4050c8" name="param_multiple_interior"/>
 <symbol space="ram" offset="0x4050f7" name="param_word_partial"/>
+<bytechunk space="ram" offset="0x407000">534154415541564883ec284989fc4189f54189d60fb65c2450b80700000085db752944896c2450488d7424504c89e7e823000000418d450789442450488d7424504c89e7e80e00000031c04883c428415e415d415c5bc38b064c63074983f80673054a8944c708ff07c3</bytechunk>
+<symbol space="ram" offset="0x407000" name="parameter_dynamic_reuse"/>
+<symbol space="ram" offset="0x407057" name="parameter_dynamic_observe"/>
 </binaryimage>
 <script>
 <com>parse line struct LifetimePair { int4 x; int4 y; };</com>
@@ -147,6 +150,16 @@ on distinguishes contents at typed uses. Native tests preserve physical behavior
 <com>print C</com>
 <com>decompile</com>
 <com>print C</com>
+<com>parse line extern int4 parameter_dynamic_reuse(void *context,int4 b,int4 c,int4 d,int4 e,int4 f,bool carried);</com>
+<com>parse line extern int4 parameter_dynamic_observe(void *context,uint4 *key);</com>
+<com>option stackviews off</com>
+<com>lo fu parameter_dynamic_reuse</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option stackviews on</com>
+<com>lo fu parameter_dynamic_reuse</com>
+<com>decompile</com>
+<com>print C</com>
 <com>quit</com>
 </script>
 <stringmatch name="one identity for unchanged contents" min="1" max="1">^object_40101d_1 stack=-0x18 size=8 state=defined$</stringmatch>
@@ -171,7 +184,8 @@ on distinguishes contents at typed uses. Native tests preserve physical behavior
 <stringmatch name="locked layouts expose one pointer per logical view" min="1" max="1">LifetimePair \*repeat_pair_view;</stringmatch>
 <stringmatch name="logical pointers refer to the protected physical object" min="1" max="1">repeat_pair_view = (\(LifetimePair \*\))?&amp;protected_pair;</stringmatch>
 <stringmatch name="unchanged contents reuse one logical pointer at both calls" min="2" max="2">read_pair\(repeat_pair_view\)</stringmatch>
-<stringmatch name="option off still takes the incoming parameter address" min="2" max="2">read_key\(\(int4 \*\)&amp;prepare_only\)</stringmatch>
+<!-- Historical option-off labels below now forbid the old narrow parameter addresses. -->
+<stringmatch name="option off still takes the incoming parameter address" min="0" max="0">read_key\(\(int4 \*\)&amp;prepare_only\)</stringmatch>
 <stringmatch name="reused parameter bytes have complete native definitions" min="2" max="2">^object_4020(19|2d)_1 stack=0x8 size=4 state=defined$</stringmatch>
 <stringmatch name="input condition survives local rename and logical naming" min="6" max="6">if \(!prepare_only\)</stringmatch>
 <stringmatch name="wider local rename keeps both native key stores" min="4" max="4">key_storage = (10|0xb);</stringmatch>
@@ -181,15 +195,15 @@ on distinguishes contents at typed uses. Native tests preserve physical behavior
 <stringmatch name="fully overwritten aggregate parameter objects retain native definitions" min="2" max="2">^object_4030(20|38)_1 stack=0x8 size=8 state=defined$</stringmatch>
 <stringmatch name="partial parameter object retains its incoming family" min="1" max="1">^object_40305d_1 stack=0x8 size=8 state=uncertain$</stringmatch>
 <stringmatch name="synthetic initialization does not claim a native write" min="2" max="2">^  bytes 0..4 incoming$</stringmatch>
-<stringmatch name="backing initialization reads the actual ABI parameter" min="10" max="10">v[0-9]+\.view_bool = prepare_only;</stringmatch>
+<stringmatch name="backing initialization reads the actual ABI parameter" min="12" max="12">v[0-9]+\.view_bool = prepare_only;</stringmatch>
 <stringmatch name="narrow writes target the physical backing" min="1" max="1">v[0-9]+\.bytes\[0\] = 1;</stringmatch>
 <stringmatch name="narrow writes do not name the formal parameter as a union" min="0" max="0">prepare_only\.bytes</stringmatch>
 <stringmatch name="escaped addresses retain the shared backing" min="2" max="2">dat_404008 = &amp;v[0-9]+;</stringmatch>
 <stringmatch name="named incoming families retain the same backing at their use" min="2" max="2">parameter_read_incoming_pair\(&amp;\(\(stack_views_40304b_p8_[0-9]+ \*\)&amp;v[0-9]+\)-&gt;incoming_view\)</stringmatch>
 <stringmatch name="named replacement retains its exact backing symbol" min="1" max="1">parameter_read_handle\(&amp;\(\(stack_views_40304b_p8_[0-9]+ \*\)&amp;v[0-9]+\)-&gt;handle_view\)</stringmatch>
-<stringmatch name="option off scalar escape names the incoming value" min="1" max="1">dat_406000 = &amp;prepare_only;</stringmatch>
+<stringmatch name="option off scalar escape names the incoming value" min="0" max="0">dat_406000 = &amp;prepare_only;</stringmatch>
 <stringmatch name="option off equal-width reuse addresses the incoming float" min="1" max="1">variant_read_float_handle\(\(LifetimeHandle \*\)&amp;prepared_value\)</stringmatch>
-<stringmatch name="escaped scalar storage keeps one physical backing" min="3" max="3">dat_406000 = &amp;v[0-9]+;</stringmatch>
+<stringmatch name="escaped scalar storage keeps one physical backing" min="4" max="4">dat_406000 = &amp;v[0-9]+;</stringmatch>
 <stringmatch name="equal-width float initializes from its formal input" min="1" max="1">v[0-9]+\.view_float8 = prepared_value;</stringmatch>
 <stringmatch name="equal-width input has no uninitialized shadow local" min="0" max="0">float8 prepared_value_[0-9]+;</stringmatch>
 <stringmatch name="both interior formals initialize the shared extent" min="3" max="3">v[0-9]+\.view_int8_at8\.value = carried_value;</stringmatch>
@@ -204,4 +218,7 @@ on distinguishes contents at typed uses. Native tests preserve physical behavior
 <stringmatch name="formal rename survives consecutive rebuilds in the signature" min="2" max="2">bool source_flag\)</stringmatch>
 <stringmatch name="formal rename survives consecutive backing initializers" min="2" max="2">v[0-9]+\.view_bool = source_flag;</stringmatch>
 <stringmatch name="formal rename does not produce an uninitialized body shadow" min="0" max="0">bool source_flag;</stringmatch>
+<stringmatch name="dynamic first store survives before the first observer" min="2" max="2">v[0-9]+\.view_uint4 = b;</stringmatch>
+<stringmatch name="dynamic later store shares the backing" min="2" max="2">v[0-9]+\.view_(u)?int4 = b \+ 7;</stringmatch>
+<stringmatch name="dynamic observers never address the narrow input" min="0" max="0">parameter_dynamic_observe\(context,\(uint4 \*\)&amp;carried\)</stringmatch>
 </decompilertest>

@@ -41,7 +41,13 @@
 //!   MODEL leaves its extrapop unknown. A spec that states its own extrapop
 //!   (`x86gcc.cspec`'s `__cdecl extrapop="4"`, x86-64, every RISC spec) already
 //!   has the exact answer and is left alone — recomputing it from the parameter
-//!   list there would claim a `__cdecl` callee cleans its own arguments.
+//!   list there would claim a `__cdecl` callee cleans its own arguments. A
+//!   prototype the flow copied whole from the callee's symbol (a `prototype`
+//!   directive, `parse line`, a demangled or host-declared signature) is
+//!   resolved too, but only when its declaration NAMED the convention: one
+//!   that names none is laid out under the default model, which on x86 Windows
+//!   is `__stdcall`, and an MSVC `__cdecl` helper declared that way would
+//!   otherwise be credited with popping its own arguments.
 //! * **The reach.** Only for an input-locked, non-variadic prototype whose
 //!   extrapop is known by the rule above; only for a stack range wholly at or
 //!   above that extrapop in the CALLEE's frame (the return-address slot and the

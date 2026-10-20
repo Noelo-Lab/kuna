@@ -203,6 +203,9 @@ mod limits_cli;
 #[path = "local_name_batch.rs"]
 mod local_name_batch;
 
+#[path = "local_stack_views.rs"]
+mod local_stack_views;
+
 #[path = "library_names.rs"]
 mod library_names;
 
@@ -520,6 +523,27 @@ mod global_array_bit_transfers;
 
 #[path = "project_assertion_status.rs"]
 mod project_assertion_status;
+
+#[path = "x87_integer_conversions_native.rs"]
+mod x87_integer_conversions_native;
+
+#[path = "float_pointer_storage.rs"]
+mod float_pointer_storage;
+
+#[path = "dwarf_overlapping_locals.rs"]
+mod dwarf_overlapping_locals;
+
+#[path = "float_literal_width.rs"]
+mod float_literal_width;
+
+#[path = "project_call_declarations.rs"]
+mod project_call_declarations;
+
+#[path = "parameter_spill_reuse.rs"]
+mod parameter_spill_reuse;
+
+#[path = "declared_callee_pop.rs"]
+mod declared_callee_pop;
 
 #[path = "project_function_linkage.rs"]
 mod project_function_linkage;

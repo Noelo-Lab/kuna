@@ -479,7 +479,14 @@ region path is never *worse* than upstream.
 **The rest of the file.** The same module carries the structuring-adjacent
 actions from upstream: `blockaction.rs (ActionNodeJoin)` /
 `(ConditionalJoin)` rejoin a split conditional (two blocks computing the same
-branch condition merge into one decision point); `blockaction.rs
+branch condition merge into one decision point). Both merge discovery and
+exit-edge repair inspect every MULTIEQUAL in each exit block. Stack analysis
+can replace an earlier stack-pointer phi with an INT_ADD in place, leaving
+other live phis behind it. Rejoining two predecessor edges must still merge
+their two values and remove exactly one input from each later phi, preserving
+unrelated predecessors and their input order. Ordinary exit operations retain
+their operands and block; a phi that has only one input after the repair becomes
+a COPY. `blockaction.rs
 (ActionReturnSplit)` is upstream's goto-driven epilogue splitter — it
 duplicates a shared RETURN block only when structuring left a **goto** into
 it (the Ghidra analog of what angr calls `ReturnDuplicatorLow`; the gotoless

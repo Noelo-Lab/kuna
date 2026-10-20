@@ -102,7 +102,7 @@ mod tests {
     }
 
     fn variable(offset: i64, size: i64) -> VarInfo {
-        VarInfo { name: "local".into(), type_name: "int".into(), stack_offset: Some(offset), size, is_param: false, arg_index: None, line_numbers: vec![], addresses: vec![] }
+        VarInfo { name: "local".into(), type_name: "int".into(), stack_offset: Some(offset), size, is_param: false, arg_index: None, line_numbers: vec![], addresses: vec![], split_piece: false }
     }
 
     #[test]

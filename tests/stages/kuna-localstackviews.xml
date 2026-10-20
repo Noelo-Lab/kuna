@@ -1,0 +1,37 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- Native Pair/Handle reuse returns 67; native CLI tests also execute runtime 67/162 branches and escaped writes. -->
+<bytechunk space="ram" offset="0x401000">534883ec10c7042405000000c7442404070000004889e7e81d00000089c3488d05db0f0000488904244889e7e80e00000001d84883c4105bc38b07034704c3488b078b00c3</bytechunk>
+<bytechunk space="ram" offset="0x402000">37000000</bytechunk>
+<symbol space="ram" offset="0x401000" name="stack_reuse"/>
+<symbol space="ram" offset="0x401039" name="read_pair"/>
+<symbol space="ram" offset="0x40103f" name="read_handle"/>
+<bytechunk space="ram" offset="0x4011c9">4883ec18488925340e0000c7042403000000488b15260e0000c702070000008b04244883c418c3</bytechunk>
+<bytechunk space="ram" offset="0x402008">0000000000000000</bytechunk>
+<symbol space="ram" offset="0x4011c9" name="escaped_indirect_write"/>
+</binaryimage>
+<script>
+<com>parse line struct LifetimePair { int4 x; int4 y; };</com>
+<com>parse line struct LifetimeHandle { int4 *value; };</com>
+<com>parse line extern int4 stack_reuse(void);</com>
+<com>parse line extern int4 read_pair(LifetimePair *pair);</com>
+<com>parse line extern int4 read_handle(LifetimeHandle *handle);</com>
+<com>map addr r0x402000 int4 datum</com>
+<com>parse line extern int4 escaped_indirect_write(void);</com>
+<com>map addr r0x402008 int4 *escaped_pointer</com>
+<com>option stackviews off</com><com>option stackalias off</com>
+<com>lo fu stack_reuse</com><com>decompile</com><com>print C</com>
+<com>lo fu escaped_indirect_write</com><com>decompile</com><com>print C</com>
+<com>option localstackviews off</com>
+<com>lo fu stack_reuse</com><com>decompile</com><com>print C</com>
+<com>lo fu escaped_indirect_write</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="localstackviews off retains the incompatible pointer assignment" min="1" max="1">^  v2\[0\] = &amp;datum;$</stringmatch>
+<stringmatch name="default localstackviews uses the declared Pair view" min="1" max="1">read_pair\(&amp;v2.view_LifetimePair\)</stringmatch>
+<stringmatch name="localstackviews writes the pointer member of the same object" min="1" max="1">^  v2.value_[0-9]+ = &amp;datum;$</stringmatch>
+<stringmatch name="localstackviews uses the declared Handle view" min="1" max="1">read_handle\(&amp;v2.view_LifetimeHandle\)</stringmatch>
+<stringmatch name="localstackviews off folds the frame read across an escaped write" min="1" max="1">^  return 3;$</stringmatch>
+<stringmatch name="default localstackviews guards the frame read before heritage" min="1" max="1">^  return v1\[0\];$</stringmatch>
+<stringmatch name="both passes retain the indirect write" min="2" max="2">^  \*escaped_pointer = 7;$</stringmatch>
+</decompilertest>

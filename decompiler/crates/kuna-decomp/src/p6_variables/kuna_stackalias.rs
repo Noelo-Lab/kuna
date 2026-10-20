@@ -13,7 +13,9 @@ use std::collections::BTreeSet;
 
 /// Whether this Varnode is a physical write in this function's frame space.
 pub fn holds_store(fd: &Funcdata, id: VarnodeId) -> bool {
-    if !fd.get_arch().stack_alias_deadstore && !fd.get_arch().stack_views {
+    if crate::kuna_localstackviews::publication(fd, id) { return true; }
+    let full = fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views;
+    if !full && !crate::kuna_localstackviews::active(fd) && fd.stack_parameter_store_extents.values().all(|&width| width > 4) {
         return false;
     }
     let Some(scope) = fd.get_scope_local() else {
@@ -21,6 +23,8 @@ pub fn holds_store(fd: &Funcdata, id: VarnodeId) -> bool {
     };
     fd.vbank().get(id).is_some_and(|v| {
         v.is_stack_store()
+            && (full || crate::kuna_stackparamviews::preserves_range(fd, v.get_addr(), v.get_size())
+                || crate::kuna_localstackviews::preserves_range(fd, v.get_addr(), v.get_size()))
             && v.get_space().get_index() == scope.get_space_id().get_index()
             && !v.has_no_local_alias()
             && fd
@@ -33,7 +37,8 @@ pub fn holds_store(fd: &Funcdata, id: VarnodeId) -> bool {
 /// Compute once per dead-code pass. A later full overwrite before any memory
 /// observer kills only the earlier store's potentially aliased bytes.
 pub fn prepare(fd: &mut Funcdata) -> i32 {
-    if !fd.get_arch().stack_alias_deadstore && !fd.get_arch().stack_views {
+    let full = fd.get_arch().stack_alias_deadstore || fd.get_arch().stack_views;
+    if !full && !crate::kuna_localstackviews::active(fd) && fd.stack_parameter_store_extents.values().all(|&width| width > 4) {
         return 0;
     }
     let Some(space) = fd
@@ -48,7 +53,10 @@ pub fn prepare(fd: &mut Funcdata) -> i32 {
         let Some(v) = fd.vbank().get(id) else {
             continue;
         };
-        if !v.is_stack_store() || v.has_no_local_alias() {
+        if !v.is_stack_store() || v.has_no_local_alias()
+            || (!full && !crate::kuna_stackparamviews::preserves_range(fd, v.get_addr(), v.get_size())
+                && !crate::kuna_localstackviews::preserves_range(fd, v.get_addr(), v.get_size()))
+        {
             continue;
         }
         let size = v.get_size();

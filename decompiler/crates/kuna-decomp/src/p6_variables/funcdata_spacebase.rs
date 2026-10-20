@@ -366,7 +366,9 @@ impl Funcdata {
     ///    Varnode that is `isUnaffected`, every `CPUI_COPY` descendant whose output
     ///    lands in this scope's stack space (`isUnaffectedStorage`) is the slot the
     ///    saved value is stashed in — unmap it so it is not promoted to a spurious
-    ///    `undefined8 v//rsp` local.
+    ///    `undefined8 v//rsp` local.  (kuna) Skipped when the register overlaps a
+    ///    declared parameter of this function (directly or as a join piece): that
+    ///    copy is a parameter spill whose slot may escape or be reused.
     ///
     /// Transcribes the two C++ loops (no name/register/offset
     /// special-casing; the spacebase/join classification and the unaffected/COPY
@@ -459,6 +461,31 @@ impl Funcdata {
             .collect();
 
         for (sz, addr) in saved {
+            let overlaps_input = |input: &Address, size: int4| {
+                input.overlap(0, &addr, sz) >= 0 || addr.overlap(0, input, size) >= 0
+            };
+            let formal_input = self.get_func_proto().has_store()
+                && (0..self.get_func_proto().num_params()).any(|index| {
+                    let Some(parameter) = self.get_func_proto().get_param(index) else {
+                        return false;
+                    };
+                    let input = parameter.get_address();
+                    if input.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_JOIN) {
+                        let Ok(join) = self.get_arch().manage().find_join(input.get_offset()) else {
+                            return false;
+                        };
+                        return (0..join.num_pieces()).any(|piece| {
+                            let piece = join.get_piece(piece);
+                            piece.space.as_ref().is_some_and(|space| {
+                                overlaps_input(&Address::new(Rc::clone(space), piece.offset), piece.size as int4)
+                            })
+                        });
+                    }
+                    overlaps_input(&input, parameter.get_size())
+                });
+            if formal_input {
+                continue;
+            }
             let vn = match self.find_varnode_input(sz, &addr) {
                 Some(v) => v,
                 None => continue,
