@@ -1,0 +1,47 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!-- GH-299, P1, x86listingswitch off/on. The stripped i386 fixture is built
+     from x86listingswitch_i386.s beside it. Its native entry checks four cases,
+     defaults, and the marker written by the case-only void helper. Twenty-four
+     directly called XOR-prefix leaves activate AIF; fast_funcdisc is disabled
+     here to isolate AIF from its separate pointer-table entry inference.
+     The four return-terminated cases surround independent code and a gap.
+     A callback word after the four-entry table must not become a fifth case.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/x86listingswitch_i386</com>
+  <com>mode aggressive</com>
+  <com>option fast_funcdisc off</com>
+  <com>option listing on</com>
+  <com>option x86listingswitch off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function sub_100400</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/x86listingswitch_i386</com>
+  <com>mode aggressive</com>
+  <com>option fast_funcdisc off</com>
+  <com>option listing on</com>
+  <com>option x86listingswitch on</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function sub_100400</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>phase catalog x86listingswitch</com>
+</script>
+<stringmatch name="KUNA-X86LISTINGSWITCH #1: dispatcher remains an entry in both arms" min="2" max="2">0x100400 sub_100400</stringmatch>
+<stringmatch name="KUNA-X86LISTINGSWITCH #2: first case is an AIF entry only with the option off" min="1" max="1">0x100440 sub_100440</stringmatch>
+<stringmatch name="KUNA-X86LISTINGSWITCH #3: second case is an AIF entry only with the option off" min="1" max="1">0x100460 sub_100460</stringmatch>
+<stringmatch name="KUNA-X86LISTINGSWITCH #4: case after independent code is an AIF entry only with the option off" min="1" max="1">0x1004b0 sub_1004b0</stringmatch>
+<stringmatch name="KUNA-X86LISTINGSWITCH #5: last case is an AIF entry only with the option off" min="1" max="1">0x1004d0 sub_1004d0</stringmatch>
+<stringmatch name="KUNA-X86LISTINGSWITCH #6: independent code between cases stays discoverable" min="2" max="2">0x100480 sub_100480</stringmatch>
+<stringmatch name="KUNA-X86LISTINGSWITCH #7: direct case-only callee is discovered with the option on" min="1" max="1">0x100510 sub_100510</stringmatch>
+<stringmatch name="KUNA-X86LISTINGSWITCH #8: case-only helper call survives both decompilations" min="2" max="2">sub_100510\(\);</stringmatch>
+<stringmatch name="KUNA-X86LISTINGSWITCH #9: case result after the helper is explicit in both arms" min="2" max="2">return 0x21;</stringmatch>
+<stringmatch name="KUNA-X86LISTINGSWITCH #10: catalog reports the default-off P1 option and enabled current value" min="1" max="1">"option": "x86listingswitch", "values": \["on", "off"\], "default": "off", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
+</decompilertest>

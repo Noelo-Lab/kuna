@@ -277,12 +277,12 @@ pub struct Funcdata {
     /// Container of Varnode objects for \b this function (C++ `vbank`)
     vbank: VarnodeBank,
     /// Machine homes retained when equivalent values replace their Varnodes.
-    kuna_storage_sources: std::collections::HashMap<VarnodeId, Vec<crate::kuna_varsources::StorageSource>>,
+    kuna_storage_sources: crate::kuna_fasthash::FxHashMap<VarnodeId, Vec<crate::kuna_varsources::StorageSource>>,
     pub(crate) kuna_guarded_reads: crate::p3_dataflow::kuna_stackreadscope::ReadScopes,
-    kuna_call_transport: std::collections::HashSet<VarnodeId>,
-    kuna_call_transport_projections: std::collections::HashMap<VarnodeId, int4>,
-    kuna_denied_storage_writes: std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
-    kuna_meaningful_storage_writes: std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+    kuna_call_transport: crate::kuna_fasthash::FxHashSet<VarnodeId>,
+    kuna_call_transport_projections: crate::kuna_fasthash::FxHashMap<VarnodeId, int4>,
+    kuna_denied_storage_writes: crate::kuna_fasthash::FxHashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+    kuna_meaningful_storage_writes: crate::kuna_fasthash::FxHashMap<(int4, u64, int4), Vec<(u64, int4)>>,
     /// Container of PcodeOp objects for \b this function (C++ `obank`)
     obank: PcodeOpBank,
     /// Unstructured basic blocks (C++ `bblocks`)
@@ -351,6 +351,8 @@ pub struct Funcdata {
         crate::unionresolve::ResolvedUnion,
     >,
     pub(crate) stack_write_views: std::collections::BTreeMap<OpId, crate::kuna_stackviews::StorageView>,
+    pub(crate) local_stack_views: crate::kuna_localstackviews::LocalStackViews,
+    pub(crate) stack_parameter_store_extents: std::collections::BTreeMap<u64, i32>,
     pub(crate) stack_objects: Vec<crate::kuna_stackobjects::StackObject>,
     pub(crate) stack_object_assertions: Vec<crate::kuna_stackobjectasserts::ObjectAssertion>,
     pub(crate) stack_object_bound_uses: std::collections::BTreeSet<(crate::kuna_stackobjects::SourcePoint, i32)>,
@@ -387,6 +389,8 @@ pub struct Funcdata {
     pub(crate) kuna_regnarrow_runs: u8,
     /// (kuna `regnarrow`) The narrow values those passes created.
     pub(crate) kuna_regnarrow_values: std::collections::BTreeSet<VarnodeId>,
+    /// (kuna `regsigned`) The sign-extended narrow values those passes created.
+    pub(crate) kuna_regsigned_values: std::collections::BTreeSet<VarnodeId>,
     /// (kuna `regnarrow`) Seeds whose web the flow could not rebuild.
     pub(crate) kuna_regnarrow_failed: std::collections::BTreeSet<VarnodeId>,
     /// (kuna `calltargettype`) The function-pointer type each indirect call
@@ -462,6 +466,7 @@ pub struct Funcdata {
     /// about without one. Seeded by the driver
     /// ([`crate::kuna_bejoin::seed_wide_returns`]).
     kuna_wide: Option<crate::kuna_bejoin::WideView>,
+    kuna_callwide: Option<Rc<crate::p4_calls::kuna_callwide::Ledger>>,
     /// (kuna `calleedeadarg`) Per direct-call-target evidence about the registers
     /// the callee is *proven* never to read before writing, keyed by
     /// `(space index, entry offset)`.  Seeded by the driver after the flow build
@@ -721,6 +726,7 @@ impl Funcdata {
             kuna_global_array_anchor_passes: None,
             kuna_regnarrow_runs: 0,
             kuna_regnarrow_values: std::collections::BTreeSet::new(),
+            kuna_regsigned_values: std::collections::BTreeSet::new(),
             kuna_regnarrow_failed: std::collections::BTreeSet::new(),
             laned_map: std::collections::BTreeMap::new(),
             size: sz,
@@ -747,12 +753,12 @@ impl Funcdata {
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
             jumpvec: Vec::new(),
             vbank,
-            kuna_storage_sources: std::collections::HashMap::new(),
+            kuna_storage_sources: Default::default(),
             kuna_guarded_reads: Default::default(),
-            kuna_call_transport: std::collections::HashSet::new(),
-            kuna_call_transport_projections: std::collections::HashMap::new(),
-            kuna_denied_storage_writes: std::collections::HashMap::new(),
-            kuna_meaningful_storage_writes: std::collections::HashMap::new(),
+            kuna_call_transport: Default::default(),
+            kuna_call_transport_projections: Default::default(),
+            kuna_denied_storage_writes: Default::default(),
+            kuna_meaningful_storage_writes: Default::default(),
             obank: PcodeOpBank::new(),
             bblocks,
             sblocks,
@@ -764,6 +770,8 @@ impl Funcdata {
             localoverride: crate::overrides::Override::new(),
             union_map: std::collections::BTreeMap::new(),
             stack_write_views: std::collections::BTreeMap::new(),
+            local_stack_views: Default::default(),
+            stack_parameter_store_extents: std::collections::BTreeMap::new(),
             stack_objects: Vec::new(),
             stack_object_assertions: Vec::new(),
             stack_object_bound_uses: std::collections::BTreeSet::new(),
@@ -788,6 +796,7 @@ impl Funcdata {
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
             kuna_wide: None,
+            kuna_callwide: None,
             kuna_callee_entry_dead: std::collections::HashMap::new(),
             kuna_hiddenret_vetoed: std::collections::HashSet::new(),
             kuna_own_entry_dead: None,
@@ -1077,6 +1086,14 @@ impl Funcdata {
     /// when the driver took them.
     pub fn kuna_wide(&self) -> Option<&crate::kuna_bejoin::WideView> {
         self.kuna_wide.as_ref()
+    }
+
+    pub(crate) fn kuna_set_callwide(&mut self, proof: Option<Rc<crate::p4_calls::kuna_callwide::Ledger>>) {
+        self.kuna_callwide = proof;
+    }
+
+    pub(crate) fn kuna_callwide(&self) -> Option<&crate::p4_calls::kuna_callwide::Ledger> {
+        self.kuna_callwide.as_deref()
     }
 
     /// (kuna `libcnames`) The library names the naming pass gave numbered locals.
@@ -2191,6 +2208,12 @@ impl Funcdata {
     /// `funcdata.hh:239` — `heritage.getPass()`).
     pub fn get_heritage_pass(&self) -> int4 {
         self.heritage.get_pass()
+    }
+
+    /// (kuna `calleeprotostack`) Whether heritage saw the stack base captured
+    /// a second time by the same register.
+    pub(crate) fn rebound_frame_base_seen(&self) -> bool {
+        self.heritage.rebound_frame_base_seen()
     }
 
     /// Get the list of guarded LOADs (C++ `Funcdata::getLoadGuards`,
@@ -3341,7 +3364,7 @@ impl Funcdata {
     }
 
     fn kuna_storage_write_matches(
-        denied: &std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+        denied: &crate::kuna_fasthash::FxHashMap<(int4, u64, int4), Vec<(u64, int4)>>,
         source: &crate::kuna_varsources::StorageSource,
     ) -> bool {
         let Some(pc) = source.write_address.as_ref() else {
@@ -4045,6 +4068,7 @@ impl Funcdata {
         self.kuna_regnarrow_runs = 0;
         self.kuna_regnarrow_values.clear();
         self.kuna_regnarrow_failed.clear();
+        self.kuna_regsigned_values.clear();
 
         self.kuna_call_mechanisms = Default::default();
         self.kuna_fpu_trunc_views.clear();
@@ -4072,6 +4096,8 @@ impl Funcdata {
         // unionMap.clear() (funcdata.cc:90): drop the union-field resolution cache.
         self.union_map.clear();
         self.stack_write_views.clear();
+        self.local_stack_views = Default::default();
+        self.stack_parameter_store_extents.clear();
         self.stack_objects.clear();
         self.stack_object_bound_uses.clear();
         self.stack_alias_holds = None;

@@ -229,6 +229,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "sparcstructret" => on_off(conf.sparc_struct_return),
         "arraystride" => on_off(conf.recover_array_stride),
         "stackalias" => on_off(conf.stack_alias_deadstore),
+        "localstackviews" => on_off(conf.local_stack_views),
         "stackviews" => on_off(conf.stack_views),
         "dynamichashmax" => on_off(conf.dynamic_hash_maxdup_high),
         "stackprobeloop" => on_off(conf.model_stack_probe_loop),
@@ -299,6 +300,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
             else if conf.analysis_armframes_full { "on" } else { "inventory" },
         "unmappedentry" => on_off(conf.analysis_unmappedentry),
         "thumbswitch" => on_off(conf.analysis_thumbswitch),
+        "x86listingswitch" => on_off(conf.analysis_x86listingswitch),
         "switchreach" => on_off(conf.analysis_switchreach),
         "thunkentry" => on_off(conf.analysis_thunkentry),
         "addrtakenentry" => on_off(conf.analysis_addrtakenentry),
@@ -848,6 +850,7 @@ impl IfaceCommandAction for IfcKunaAssert {
                     .arch_mut()
                     .set_kuna_option(name, &tokens[0])
                     .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+                conf.callwide_changed();
                 let mut out = msg;
                 out.push('\n');
                 out.push_str(&applied_line);
@@ -1051,6 +1054,7 @@ impl IfaceCommandAction for IfcKunaMode {
             .arch_mut()
             .apply_mode(&name)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        prog.callwide_changed();
         status.out(&format!("{res}\n"));
         Ok(())
     }
@@ -1273,6 +1277,21 @@ impl IfaceCommandAction for IfcKunaRegionWalk {
 
 /// (kuna) `functions`: print the canonical executable function inventory.
 pub struct IfcKunaFunctions;
+
+pub struct IfcCallwidePrepare;
+
+impl IfaceCommandAction for IfcCallwidePrepare {
+    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+        let prog = dcp_mut(status)?.conf.as_mut()
+            .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        if !prog.arch().call_wide { return Ok(()); }
+        prog.commit_pending_analysis().map_err(|error| IfaceError::execution(error.explain().to_string()))?;
+        crate::kuna_callwide::prepare(prog);
+        Ok(())
+    }
+
+    fn module(&self) -> String { DECOMPILE_MODULE.to_string() }
+}
 
 impl IfaceCommandAction for IfcKunaFunctions {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
@@ -1551,6 +1570,7 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
     status.register_com(Box::new(IfcKunaMode), &["mode"]);
     status.register_com(Box::new(IfcKunaQuality), &["quality"]);
     status.register_com(Box::new(IfcKunaFunctions), &["functions"]);
+    status.register_com(Box::new(IfcCallwidePrepare), &["callwide", "prepare"]);
     status.register_com(Box::new(IfcKunaRegionTree), &["region", "tree"]);
     status.register_com(Box::new(IfcKunaRegionBlocks), &["region", "blocks"]);
     status.register_com(Box::new(IfcKunaRegionWalk), &["region", "walk"]);

@@ -135,3 +135,48 @@ fn truncating_control_words_become_c_conversions() {
     assert!(compilers > 0);
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn integer_conversion_results_keep_their_bits_in_float_storage() {
+    if process::optional_output(Command::new("clang").arg("--version")).is_none() {
+        return;
+    }
+    let directory = common::scratch_file("x87-integer-storage-views", "dir");
+    std::fs::create_dir_all(&directory).unwrap();
+    let binary = directory.join("sample.so");
+    let exported = directory.join("exported");
+    let source = directory.join("sample.s");
+    let helpers = directory.join("helpers.h");
+    let driver = directory.join("driver.c");
+    std::fs::write(&source, include_str!("fixtures/x87_integer_storage_views.s")).unwrap();
+    std::fs::write(&helpers, format!("{}\nextern unsigned char storage[32];\n", include_str!("fixtures/x87_integer_conversions_helpers.h"))).unwrap();
+    std::fs::write(&driver, include_str!("fixtures/x87_integer_storage_views_driver.c")).unwrap();
+    process::required_output(Command::new("clang").args(["-shared", "-fPIC", "-nostdlib", "-Wl,-Bsymbolic"])
+        .arg(&source).arg("-o").arg(&binary));
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .arg("decompile-project").arg(&binary)
+        .arg("--sleighpath").arg(root.join("specs"))
+        .args(["--assert-strict", "--assert", "prototype sample32 float sample32(float *input,unsigned short control)",
+            "--assert", "prototype sample64 double sample64(double *input,unsigned short control)",
+            "--assert", "prototype sample_both void sample_both(float *input,float *bits,double *numeric,unsigned short control)",
+            "--assert", "param sample_both::3 FPUControlWord unsigned short control",
+            "--assert", "param sample32::1 FPUControlWord unsigned short control",
+            "--assert", "param sample64::1 FPUControlWord unsigned short control",
+            "--assert", "data 0x3000 unsigned char storage[32]"])
+        .arg("-o").arg(&exported));
+    for compiler in ["gcc", "clang"] {
+        if process::optional_output(Command::new(compiler).arg("--version")).is_none() { continue; }
+        for optimization in ["-O0", "-O2"] {
+            let executable = directory.join(format!("{compiler}{optimization}"));
+            process::required_output(Command::new(compiler)
+                .args(["-std=gnu11", optimization, "-fno-fast-math", "-frounding-math", "-ffp-contract=off"])
+                .arg("-include").arg(&helpers)
+                .arg(exported.join("sample.so.c")).arg(&driver)
+                .args(["-ldl", "-lm", "-o"]).arg(&executable));
+            let output = process::required_output(Command::new(&executable).arg(&binary));
+            assert!(String::from_utf8_lossy(&output.stdout).contains("32768 native storage comparisons passed"));
+        }
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+}

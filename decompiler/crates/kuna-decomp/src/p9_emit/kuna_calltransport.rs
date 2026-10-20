@@ -1,6 +1,6 @@
 //! Distinguish outgoing argument shuffles from homes of local values.
 
-use std::collections::HashSet;
+use crate::kuna_fasthash::FxHashSet;
 
 use kuna_base::address::Address;
 use kuna_base::space::spacetype;
@@ -20,7 +20,7 @@ impl Funcdata {
         let carrier = value.get_addr().clone();
         let size = value.get_size();
         let mut pending = vec![first];
-        let mut visited = HashSet::new();
+        let mut visited = FxHashSet::default();
         while let Some(id) = pending.pop() {
             if !visited.insert(id) || visited.len() > 64 {
                 continue;
@@ -181,7 +181,7 @@ impl Funcdata {
         }
         let carrier = value.get_addr();
         let mut pending = vec![first];
-        let mut visited = HashSet::new();
+        let mut visited = FxHashSet::default();
         while let Some(id) = pending.pop() {
             if !visited.insert(id) || visited.len() > 64 {
                 continue;
@@ -261,7 +261,7 @@ impl Funcdata {
             return false;
         }
         let mut pending = vec![first];
-        let mut visited = HashSet::new();
+        let mut visited = FxHashSet::default();
         while let Some(id) = pending.pop() {
             if !visited.insert(id) {
                 continue;
@@ -320,7 +320,7 @@ impl Funcdata {
 
     fn kuna_materializes_computation(&self, first: VarnodeId, instruction: &Address) -> bool {
         let mut current = first;
-        let mut visited = HashSet::new();
+        let mut visited = FxHashSet::default();
         while visited.insert(current) && visited.len() <= 64 {
             let Some(value) = self.vbank().get(current) else {
                 return false;
@@ -360,7 +360,7 @@ impl Funcdata {
 
     fn kuna_only_argument_uses(&self, first: VarnodeId, carrier: &Address, size: int4) -> bool {
         let mut pending = vec![first];
-        let mut visited = HashSet::new();
+        let mut visited = FxHashSet::default();
         let mut saw_argument = false;
         while let Some(id) = pending.pop() {
             if !visited.insert(id) {

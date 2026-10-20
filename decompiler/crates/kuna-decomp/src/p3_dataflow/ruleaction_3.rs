@@ -642,6 +642,15 @@ impl Rule for RuleIndirectCollapse {
                 if o.is_indirect_creation() || o.no_indirect_collapse() {
                     return 0;
                 }
+                let output = data.vbank().get(op_out(data, op).expect("indirect output"))
+                    .expect("live indirect output");
+                if data.get_call_specs_index(indop).is_some_and(|index| {
+                    crate::kuna_calleeprotostack::declared_pointer_reaches(
+                        data, data.get_call_specs(index), output.get_addr(), output.get_size(),
+                    )
+                }) {
+                    return 0;
+                }
             } else if data.obank().get(indop).expect("RuleIndirectCollapse: stale indop").uses_spacebase_ptr()
             {
                 if op_code(data, indop) == OpCode::CPUI_STORE {
@@ -1853,6 +1862,11 @@ impl Rule for RulePropagateCopy {
             if !is_marker
                 && (crate::p3_dataflow::kuna_indexaliasguard::keeps_store_before_load(data, op, vn)
                     || crate::p3_dataflow::kuna_indexaliasguard::keeps_forced_self_copy(data, op, vn))
+            {
+                continue;
+            }
+            if is_marker && (crate::kuna_localstackviews::publication(data, vn)
+                || crate::kuna_localstackviews::native_store(data, vn))
             {
                 continue;
             }

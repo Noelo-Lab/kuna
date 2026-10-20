@@ -183,6 +183,7 @@ fn execute(code: &str) {
         "stack-parameter-lifetimes",
         &format!(
             "#include <stdbool.h>\ntypedef int int4; typedef unsigned int uint4;\n\
+             typedef unsigned char uint1; typedef unsigned short uint2;\n\
              __attribute__((noinline)) int4 read_key(const int4 *key) {{ return *key; }}\n\
              {code}\n\
              int main(void) {{ return param_reuse(1,2,3,4,5,6,false)!=21 || \
@@ -256,9 +257,13 @@ fn parameter_backing_preserves_equal_width_multiple_and_interior_values() {
     common::process::required_output(&mut Command::new(common::fixture(VARIANT_FIXTURE)));
     for (function, expected) in VARIANT_CASES {
         let before = query_for(VARIANT_FIXTURE, function, false, &[]);
-        assert!(before["stack_objects"]
-            .as_array()
-            .is_none_or(|objects| objects.is_empty()));
+        if function == "param_scalar_escaped" {
+            execute_variant(function, before["code"].as_str().unwrap());
+        } else {
+            assert!(before["stack_objects"]
+                .as_array()
+                .is_none_or(|objects| objects.is_empty()));
+        }
         let after = query_for(VARIANT_FIXTURE, function, true, &[]);
         let objects = after["stack_objects"].as_array().unwrap();
         assert_eq!(objects.len(), expected.len(), "{after}");
@@ -387,18 +392,15 @@ fn narrow_input_is_read_before_full_width_storage_reuse() {
     common::process::required_output(&mut Command::new(common::fixture(
         "lifetimes_parameter_x86_64",
     )));
-    let before = query(false, &[]);
-    assert!(
-        before["code"].as_str().unwrap().contains("&prepare_only"),
-        "{before}"
-    );
-    let after = query(true, &[]);
-    let objects = after["stack_objects"].as_array().unwrap();
-    assert_eq!(objects.len(), 2);
-    assert!(objects.iter().all(|object| object["defined"] == true
-        && object["stack_offset"] == 8
-        && object["size"] == 4));
-    execute(after["code"].as_str().unwrap());
+    for enabled in [false, true] {
+        let after = query(enabled, &[]);
+        let objects = after["stack_objects"].as_array().unwrap();
+        assert_eq!(objects.len(), 2);
+        assert!(objects.iter().all(|object| object["defined"] == true
+            && object["stack_offset"] == 8
+            && object["size"] == 4));
+        execute(after["code"].as_str().unwrap());
+    }
 }
 
 #[test]
@@ -437,7 +439,231 @@ fn names_and_types_survive_replay_without_replacing_the_input() {
 
 #[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn wider_stores_keep_their_width_in_narrow_parameter_slots() {
+    let Some(compiler) = ["gcc", "clang"].into_iter().find(|compiler| {
+        common::process::optional_output(Command::new(compiler).arg("--version")).is_some()
+    }) else {
+        eprintln!("no C compiler available; skipping native parameter-slot reuse");
+        return;
+    };
+    for windows in [false, true] {
+        for (datatype, bytes) in [("bool", 1), ("unsigned char", 1), ("short", 2), ("int", 4)] {
+            for keys in [
+                "constant", "register", "partial", "word", "wide", "saved", "alias",
+            ] {
+                if matches!(keys, "partial" | "word" | "alias") && bytes == 4 {
+                    continue;
+                }
+                let source = common::scratch_file("narrow-parameter-reuse", "c");
+                let object = source.with_extension("o");
+                let image = source.with_extension("elf");
+                let native = source.with_extension("native");
+                let params = if windows {
+                    "int b,int c,int d"
+                } else {
+                    "int b,int c,int d,int e,int f"
+                };
+                let args = if windows {
+                    "0x12345678,0x76543210,4"
+                } else {
+                    "0x12345678,0x76543210,4,5,6"
+                };
+                let (first_key, second_key) = match keys {
+                    "word" => ("0x5678ULL", "0x3210ULL"),
+                    "partial" => ("0x12345678ULL", "0x32105678ULL"),
+                    "wide" => ("0x1234567876543210ULL", "0x1234567812345678ULL"),
+                    _ => ("0x12345678ULL", "0x76543210ULL"),
+                };
+                let layout =
+                    "struct Context { int count; unsigned long long log[2]; intptr_t saved; };";
+                let key_type = match keys {
+                    "wide" => "unsigned long long",
+                    "word" => "unsigned short",
+                    _ => "unsigned int",
+                };
+                let expected_result = if keys == "alias" {
+                    "(flag ? 0 : 0x7654a510)"
+                } else if keys != "saved" {
+                    "0"
+                } else if bytes == 1 {
+                    "(unsigned char)flag"
+                } else if bytes == 2 {
+                    "(unsigned short)flag"
+                } else {
+                    "flag"
+                };
+                let incoming = match datatype {
+                    "bool" => "1",
+                    "unsigned char" => "0xa5",
+                    "short" => "-1234",
+                    _ => "-1234567",
+                };
+                let skip = if keys == "saved" { "0" } else { "flag" };
+                let abi = if windows {
+                    "__attribute__((ms_abi))"
+                } else {
+                    ""
+                };
+                let oracle = format!(
+                    "int main(void) {{ for (int sample=0; sample<2; ++sample) {{\n\
+                 int flag=sample ? {incoming} : 0;\n\
+                 struct Context context={{0,{{0,0}}}};\n\
+                 if (reuse(&context,{args},flag)!={expected_result}) return 1;\n\
+                 if ({skip} ? context.count!=0 : context.count!=2 ||\n\
+                     context.log[0]!={first_key} || context.log[1]!={second_key}) return 1;\n\
+                 }} return 0; }}\n"
+                );
+                let mut assemble = Command::new(compiler);
+                assemble
+                    .args(["-c", "-x", "assembler-with-cpp"])
+                    .arg(format!("-DPARAM_BYTES={bytes}"))
+                    .arg(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/tests/fixtures/narrow_parameter_reuse.S"
+                    ))
+                    .arg("-o")
+                    .arg(&object);
+                if windows {
+                    assemble.arg("-DWINDOWS_ABI");
+                }
+                if keys != "constant" {
+                    assemble.arg("-DREGISTER_KEYS");
+                }
+                if keys == "partial" {
+                    assemble.arg("-DPARTIAL_KEYS");
+                }
+                if keys == "wide" {
+                    assemble.arg("-DWIDE_KEYS");
+                }
+                if keys == "word" {
+                    assemble.arg("-DWORD_KEYS");
+                }
+                if keys == "saved" {
+                    assemble.arg("-DRETURN_ORIGINAL");
+                }
+                if keys == "alias" {
+                    assemble.arg("-DRAW_ALIAS");
+                }
+                common::process::required_output(&mut assemble);
+                common::process::required_output(
+                    Command::new(compiler)
+                        .args([
+                            "-nostdlib",
+                            "-no-pie",
+                            "-Wl,-Ttext=0x401000,-e,reuse,--build-id=none",
+                        ])
+                        .arg(&object)
+                        .arg("-o")
+                        .arg(&image),
+                );
+                std::fs::write(&source, format!(
+                "#include <stdbool.h>\n#include <stdint.h>\n{layout}\nextern {abi} int reuse(void *,{params},{datatype} flag);\n{oracle}"
+            )).unwrap();
+                common::process::required_output(
+                    Command::new(compiler)
+                        .args(["-O2", "-no-pie"])
+                        .arg(&source)
+                        .arg(&object)
+                        .arg("-o")
+                        .arg(&native),
+                );
+                common::process::required_output(&mut Command::new(&native));
+
+                for views in ["off", "on"] {
+                    let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+                    command
+                        .arg("decompile")
+                        .arg(&image)
+                        .args([
+                            "reuse",
+                            "--mode",
+                            "reliable",
+                            "--json",
+                            "--assert-strict",
+                            "--target",
+                            if windows {
+                                "x86:LE:64:default:windows"
+                            } else {
+                                "x86:LE:64:default:gcc"
+                            },
+                            "--option",
+                            "stackviews",
+                            views,
+                            "--option",
+                            "structdefs",
+                            "on",
+                            "--assert",
+                            &format!(
+                                "prototype reuse int reuse(void *context,{params},{datatype} flag)"
+                            ),
+                            "--assert",
+                            &format!("prototype observe int observe(void *context,const {key_type} *key)"),
+                            "--assert",
+                            "prototype capture void capture(void *context,unsigned int *key)",
+                            "--sleighpath",
+                        ])
+                        .arg(common::repo_root().join("specs"));
+                    let output = common::process::output_with_timeout(
+                        &mut command,
+                        Duration::from_secs(15),
+                        Duration::from_millis(25),
+                    )
+                    .expect("bounded narrow parameter decompilation");
+                    assert!(
+                        output.status.success(),
+                        "{}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+                    assert!(document["functions"][0]["error"].is_null(), "{document}");
+                    let code = document["functions"][0]["code"].as_str().unwrap();
+                    if keys == "wide" {
+                        assert_eq!(code.contains("union stack_views_"), views == "on", "{code}");
+                        continue;
+                    }
+                    assert!(
+                        views == "on"
+                            || !code.lines().any(|line| line.contains("__builtin_memcpy")
+                                && line.contains("context")),
+                        "default parameter backing copied unrelated memory:\n{code}"
+                    );
+                    execute_source(
+                        "narrow-parameter-width",
+                        &format!(
+                            "#include <stdbool.h>\n#include <stdint.h>\n\
+                     typedef int8_t int1; typedef uint8_t uint1;\n\
+                     typedef int16_t int2; typedef uint16_t uint2;\n\
+                     typedef int32_t int4; typedef uint32_t uint4;\n\
+                     typedef int64_t int8; typedef uint64_t uint8;\n\
+                     typedef uint8_t undefined1;\n\
+                     {layout}\n\
+                     __attribute__((noinline)) int observe(void *p,const {key_type} *key) {{\n\
+                     struct Context *context=p; context->log[context->count++]=*key; return (int)*key; }}\n\
+                     __attribute__((noinline)) void capture(void *p,unsigned int *key) {{\n\
+                     ((struct Context *)p)->saved=(intptr_t)key; }}\n\
+                     {code}\n{oracle}"
+                        ),
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn conditional_parameter_escapes_keep_wider_writes_in_shared_storage() {
+    check_conditional_parameter_escape(true);
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn eight_byte_parameter_escapes_keep_the_existing_default_policy() {
+    check_conditional_parameter_escape(false);
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn check_conditional_parameter_escape(stackviews: bool) {
     let compiler = ["gcc", "clang"].into_iter().find(|compiler| {
         common::process::optional_output(Command::new(compiler).arg("--version")).is_some()
     });
@@ -472,7 +698,8 @@ fn conditional_parameter_escapes_keep_wider_writes_in_shared_storage() {
             .arg(&image)
             .args([
                 function, "--mode", "reliable", "--json", "--assert-strict",
-                "--option", "stackviews", "on", "--option", "stackalias", "off",
+                "--option", "stackviews", if stackviews { "on" } else { "off" },
+                "--option", "stackalias", "off",
                 "--option", "structdefs", "on", "--sleighpath",
             ])
             .arg(common::repo_root().join("specs"));
@@ -488,6 +715,10 @@ fn conditional_parameter_escapes_keep_wider_writes_in_shared_storage() {
         assert!(result["error"].is_null(), "{result}");
         code.push_str(result["code"].as_str().unwrap());
         code.push('\n');
+    }
+    if !stackviews {
+        assert!(!code.contains("union stack_views_"), "{code}");
+        return;
     }
     execute_source("conditional-parameter-escape", &format!(
         "#include <stdint.h>\n\

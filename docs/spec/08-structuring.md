@@ -479,7 +479,14 @@ region path is never *worse* than upstream.
 **The rest of the file.** The same module carries the structuring-adjacent
 actions from upstream: `blockaction.rs (ActionNodeJoin)` /
 `(ConditionalJoin)` rejoin a split conditional (two blocks computing the same
-branch condition merge into one decision point); `blockaction.rs
+branch condition merge into one decision point). Both merge discovery and
+exit-edge repair inspect every MULTIEQUAL in each exit block. Stack analysis
+can replace an earlier stack-pointer phi with an INT_ADD in place, leaving
+other live phis behind it. Rejoining two predecessor edges must still merge
+their two values and remove exactly one input from each later phi, preserving
+unrelated predecessors and their input order. Ordinary exit operations retain
+their operands and block; a phi that has only one input after the repair becomes
+a COPY. `blockaction.rs
 (ActionReturnSplit)` is upstream's goto-driven epilogue splitter — it
 duplicates a shared RETURN block only when structuring left a **goto** into
 it (the Ghidra analog of what angr calls `ReturnDuplicatorLow`; the gotoless
@@ -490,6 +497,15 @@ the print-prep — for-loop rerolling, switch-case label assignment and
 sorting, the §8.3 `scopeBreak` hook, `mark_unstructured` (labelling every
 goto target so the printer emits `label_N:`), and `mark_label_bump_up` (a
 loop-head label is hoisted above the loop rather than into its condition).
+A for-loop header's initializer and iterator are each a statement moved out
+of the body or the pre-loop block into the header, so the move must not
+reorder them against a printed statement. When the PHI's input is a hidden
+COPY, the statement the header prints is the one feeding that COPY, not the
+COPY itself; `decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
+(Funcdata::while_test_terminal)` therefore requires that statement to move,
+respecting cover, up to the COPY as well. A call, or a statement whose result a
+printed statement between them reads (`n = v & 1;` ahead of a loop over
+`v = strtoul(...)`), keeps its place, and the header goes without it.
 `blockaction.rs (ActionNormalizeBranches)` remains a non-mutating compatibility
 action in the `jumptable` and `normalize` groups. It preserves its registration
 and initialized-root check, but does not traverse branches or allocate unused

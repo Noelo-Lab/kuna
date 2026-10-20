@@ -171,6 +171,8 @@ Three tiers:
 | an out-parameter local is passed as (int *)&v2 to waitpid or wait | [`castobject`](#castobject) |
 | a stack local is declared unsigned int where the callee that fills it declares int * | [`castobject`](#castobject) |
 | return (int)v1 >> 8 & 0xff; over an unsigned int status filled by waitpid | [`castobject`](#castobject) |
+| a reused local frame slot loses an observable native store | [`localstackviews`](#localstackviews) |
+| a saved pointer names an unrelated object after stack storage reuse | [`localstackviews`](#localstackviews) |
 | a reused stack slot is assigned a value of an incompatible type | [`stackviews`](#stackviews) |
 | two object views of one frame address become unrelated local variables | [`stackviews`](#stackviews) |
 | spurious uninitialized local (xStack_N) returned after storing through a pointer to a local | [`stackalias`](#stackalias) |
@@ -194,6 +196,9 @@ Three tiers:
 | a uint8_t loop counter prints as unsigned int v with v = v + 1 & 0xff | [`regnarrow`](#regnarrow) |
 | a byte loaded with ldrb is declared unsigned int and used as an index | [`regnarrow`](#regnarrow) |
 | an int local prints as unsigned long on x86-64 though every value is a zero-extended 32-bit result | [`regnarrow`](#regnarrow) |
+| a signed char loaded with ldrsb is declared int | [`regsigned`](#regsigned) |
+| a short counter prints as int with (int)(short) casts at every use | [`regsigned`](#regsigned) |
+| an int local prints as long on x86-64 though every value is a movsxd | [`regsigned`](#regsigned) |
 | a FILE * or char * the caller holds becomes long at the callee's parameter | [`protoorder`](#protoorder) |
 | a function that only hands a string on to a recursive function (quotearg_buffer_restyled, a tree walk, a pair of functions calling each other) keeps an integer parameter | [`protoorder`](#protoorder) |
 | an argument is typed at one call site of a callee and not at another | [`protoorder`](#protoorder) |
@@ -746,6 +751,10 @@ Three tiers:
 | kuna functions reports a tbb or tbh function far smaller than its symbol | [`thumbswitch`](#thumbswitch) |
 | a function called only from a switch case is missing from a stripped firmware image | [`thumbswitch`](#thumbswitch) |
 | aif adds entries inside cortex-m switch statements | [`thumbswitch`](#thumbswitch) |
+| aif lists return-terminated i386 switch cases as functions | [`x86listingswitch`](#x86listingswitch) |
+| a direct callee reached only through an i386 switch case is missing from discovery | [`x86listingswitch`](#x86listingswitch) |
+| the discovery Listing stops at an absolute-pointer jump table | [`x86listingswitch`](#x86listingswitch) |
+| independent reference queries see case bodies absent from the initial instruction partition | [`x86listingswitch`](#x86listingswitch) |
 | kuna xrefs reports 0 references to a function called only from a switch case | [`switchreach`](#switchreach) |
 | a function called from a switch case body has no caller in decompile-graph | [`switchreach`](#switchreach) |
 | calleevote refuses a function because its recorded calls differ from the call graph | [`switchreach`](#switchreach) |
@@ -1233,6 +1242,8 @@ Three tiers:
 | a 16-byte struct return (JSValue, div_t, a fat pointer, a two-word value) is lost at the call site | [`callretpair`](#callretpair) |
 | a tag-and-payload pair is tested right after a call and the tag variable is never assigned | [`callretpair`](#callretpair) |
 | a caller that reads only the high word of a 64-bit callee result prints a bare `full(a0);` and an unassigned `// r1`, `// edx` or `// v1` local | [`callretpair`](#callretpair) |
+| an untyped MIPS32 big-endian producer loses its low return word despite a declared 64-bit consumer | [`callwide`](#callwide) |
+| producer and caller disagree about a complete big-endian eight-byte integer return | [`callwide`](#callwide) |
 | a long long return on a big-endian 32-bit target prints CONCAT44 with the low word first | [`bejoin`](#bejoin) |
 | a 64-bit product, sum or shift returned on PowerPC, MIPS, SPARC or ARM big-endian comes back with its halves swapped | [`bejoin`](#bejoin) |
 | an AVR function returning a 16-bit int prints a read of R25R24 nothing assigns | [`bejoin`](#bejoin) |
@@ -1274,6 +1285,9 @@ Three tiers:
 | a call-written volatile stack local is read on the failure path | [`guardedreadtrim`](#guardedreadtrim) |
 | an overwritten register argument renders as a stale half of a previous wide value | [`multiregargs`](#multiregargs) |
 | a live entry argument disappears after a wide register read | [`multiregargs`](#multiregargs) |
+| large global initializer exhausts memory during heritage | [`globalcallranges`](#globalcallranges) |
+| tiny constructors cause a quadratic number of global call guards | [`globalcallranges`](#globalcallranges) |
+| a function with many global assignments uses gigabytes before emitting C | [`globalcallranges`](#globalcallranges) |
 
 ## Toggleable transforms
 
@@ -1615,6 +1629,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P6/stack-frame-layout · kuna · type-inference · kuna-castobject
 - **Example:** `option castobject on`
 
+### `localstackviews` -- on | off, default `on`
+
+- **Symptoms:** a reused local frame slot loses an observable native store; a saved pointer names an unrelated object after stack storage reuse.
+- **What it does:** Preserve bounded native local writes and typed publications before mapping shared object views.
+- **When to flip:** Default-on for a proved fixed local footprint published to a locked pointer receiver, or used through distinct complete equal-size aggregate pointer contracts. Preserves native writes and saved-pointer identity with shared backing. Explicit stackviews on takes precedence and uses the broader policy alone. Turn off to inspect the previous policy; formals, unknown or crossing effects, locked layouts and unsupported nominal names retain their prior mapping.
+- **Where / provenance:** P6/alias-facets · kuna · correctness-fix · #810
+- **Example:** `option localstackviews off`
+
 ### `stackviews` -- on | off, default `off`
 
 - **Symptoms:** a reused stack slot is assigned a value of an incompatible type; two object views of one frame address become unrelated local variables.
@@ -1686,6 +1708,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. The tell it fixes is a byte or halfword local printed `unsigned int` on ARM firmware (`v = v + 1 & 0xff`, `v = (unsigned int)*p` used as an index), or an `unsigned` counter printed `unsigned long` on x86-64 whose every value is a zero-extended 32-bit result. Set it off to get the register-wide declarations back, or when a local the source declares `int` or as an enum is only ever loaded from a byte field (an enum kept in a `uint8_t`, a `numRows` read from a `uint16_t`): the binary cannot tell the two apart. The p-code computes the same values either way. Measured with decbench's published type_match: 96 ARM firmware slices 3,232 -> 3,279 perfect functions (mean .3068 -> .3105; 492 functions better, 106 worse), the 96-binary nightly optimized sample 2,315 -> 2,337, the 444-slice x86-64 set 1,903 -> 1,905; the functions that lose a perfect score declare an enum or `int` the body only loads from a byte field.
 - **Where / provenance:** P3/simplification-quiescence · kuna · type-inference · ty17-narrow-register-locals
 - **Example:** `option regnarrow on`
+
+### `regsigned` -- on | off, default `off`
+
+- **Symptoms:** a signed char loaded with ldrsb is declared int; a short counter prints as int with (int)(short) casts at every use; an int local prints as long on x86-64 though every value is a movsxd.
+- **What it does:** Declare a register local whose every value is a sign extension at the narrow width those values are extended from. A `signed char` or `short` read with `ldrsb`/`ldrsh` or `movsx`, or an x86-64 `int` widened with `movsxd`, lives sign-extended in a whole register, so the web that becomes the variable keeps the register's width and prints as `int` or `long`. With `regnarrow` on, its pass also looks at the webs whose values the nonzero-bit masks cannot fit (their sign bits are set): when every value entering the web is a sign extension from at most 1, 2 or 4 bytes (one of them from exactly that width), a copy, a bitwise op of such values or a constant that is the sign extension of its low bytes, the web is rebuilt at that width with upstream's sign-extended `SubvariableFlow`, extended the way `regnarrow` extends the zero-extended one: a copy, a phi, a wider sign extension, a bitwise op, a constant arithmetic right shift, a truncation and a call argument whose parameter is no wider carry the narrow value, and every other reader that needs the register's width (arithmetic, a compare, an index, a call argument, a store) reads the sign extension of the narrow value, which is exactly the value it read before. A narrowed value nothing else types (or only a bitwise op's `uint`) is declared signed. A web that reaches a function input, a RETURN, an INDIRECT, a user-op operand or a switch is left alone, and so is one with a value whose definition is anything else (arithmetic, a load at the register's width, a call) or that was stored to a frame slot wider than the narrow width (the `-O0` spill of `int v = c;`), and so is a web with no phi that only widens function inputs.
+- **When to flip:** Off by default: on decbench type_match it gains only a few perfect functions (ARM firmware +4, x86-64 +0) and adds casts where a narrowed value is widened again (`(long)(int)v` on AArch64). Turn it on when a `signed char`/`short` local prints `int` on ARM firmware (`v = (int)*(char *)p`, a counter compared as `(int)(char)v`), or an x86-64 `int` prints `long` whose every value is a `movsxd`. The p-code computes the same values either way.
+- **Where / provenance:** P3/simplification-quiescence · kuna · type-inference · ty17-narrow-signed-register-locals
+- **Example:** `option regsigned on`
 
 ### `protoorder` -- off | types | cycles | lock, default `cycles`
 
@@ -2819,6 +2849,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · GH-299
 - **Example:** `--option thumbswitch off`
 
+### `x86listingswitch` -- on | off, default `off`
+
+- **Symptoms:** aif lists return-terminated i386 switch cases as functions; a direct callee reached only through an i386 switch case is missing from discovery; the discovery Listing stops at an absolute-pointer jump table; independent reference queries see case bodies absent from the initial instruction partition.
+- **What it does:** Read a locally proved absolute-pointer switch table in the discovery Listing on linked i386 ELF and PE images. The unsigned range check must constrain the same whole-width index used by the jump, with no bypass, clobber, invalid slot, unproved address wrap, or established function conflict. Read exactly the proved count up to jumptablemax, then walk the cases as instruction successors and recover their direct callees. Independent functions and undefined gaps between case blocks are not claimed as a case span. Reconciliation runs after serial or parallel decoding over isolated shared snapshots for at most sixteen rounds; a late invalidated proof, extra round, or candidate memory-budget refusal retains the ordinary Listing. Resuming an expanded Listing rebuilds ordinary coverage from the new seed set before proving switches again.
+- **When to flip:** Enable to decode return-terminated i386 switch cases before AIF can mistake them for functions, especially with listing on and fast_funcdisc off. Default off: newly reached ordinary tail jumps can hide independent function starts from the gap walk (seven real starts lost in the measured Wine corpus). Already-established entries are preserved; fast_funcdisc can independently name table cases, so those conflicts are refused rather than withdrawn. Missing or ambiguous proof leaves the switch unresolved. This option changes only the discovery Listing; the independent xrefs table policy is unchanged.
+- **Where / provenance:** P1/code-data-partition · kuna · new-analysis · GH-299
+- **Example:** `--option listing on --option fast_funcdisc off --option aif on --option x86listingswitch on`
+
 ### `switchreach` -- on | off, default `on`
 
 - **Symptoms:** kuna xrefs reports 0 references to a function called only from a switch case; a function called from a switch case body has no caller in decompile-graph; calleevote refuses a function because its recorded calls differ from the call graph; protoorder decompiles a caller before the callees its switch cases call; every call inside a switch is missing from a gcc -O0 binary; a recursive interpreter function loses its pointer parameter types in a whole-binary run.
@@ -3759,6 +3797,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P4/output-prototype · ghidra · correctness-fix · repipe-bytecode-reader-return-discarded
 - **Example:** `option callretpair off`
 
+### `callwide` -- on | off, default `off`
+
+- **Symptoms:** an untyped MIPS32 big-endian producer loses its low return word despite a declared 64-bit consumer; producer and caller disagree about a complete big-endian eight-byte integer return.
+- **What it does:** Retain an eight-byte integer return in the ABI order only when a complete bounded sealed non-PIC MIPS32-BE executable proof finds a declared eight-byte consumer, both producer-written words at every return, and representable uses at every direct caller. A frozen whole-image verdict governs the producer, all callers and project declarations before rendering. ARM and other architectures, missing declaration provenance, returnable or indirect control, unsupported storage, incomplete bytes and exhausted bounds refuse promotion. Newly needed DWARF subregister returns also require the current narrowext policy to define their full return register (compiler for this MIPS ABI); the option never changes that policy. Requires bejoin evidence; off and the other bejoin modes preserve their existing behavior. Default off while validation is pending.
+- **When to flip:** Enable for a big-endian register-pair producer whose untyped return loses a low word despite a caller forwarding both words unchanged to one declared eight-byte integer parameter. Check whole-image admission and emitted C/header agreement; this option does not infer width from ambiguous producer instructions or open caller sets.
+- **Where / provenance:** P4/output-prototype · kuna · new-caller-evidence · callwide
+- **Example:** `option callwide on`
+
 ### `bejoin` -- off | evidence | on, default `evidence`
 
 - **Symptoms:** a long long return on a big-endian 32-bit target prints CONCAT44 with the low word first; a 64-bit product, sum or shift returned on PowerPC, MIPS, SPARC or ARM big-endian comes back with its halves swapped; an AVR function returning a 16-bit int prints a read of R25R24 nothing assigns.
@@ -3787,7 +3833,7 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 
 - **Symptoms:** a double return becomes SUB84 or zero; an ARM hard-float function loses its d0 parameter; a caller reads an undefined floating result.
 - **What it does:** Recover complete scalar VFP return values and the double-width argument storage they use when an ARM ELF container states the VFP procedure-call standard.
-- **When to flip:** Turn on when ARM hard-float code truncates a double return to its low word or loses a double input. Requires consistent ELF ABI evidence; soft-float, missing metadata, and explicit prototypes keep their existing contracts. A double argument at a call needs the callee's declared or protoorder-recovered prototype, so it appears in a callee-first decompile-all, not in a single-function decompile.
+- **When to flip:** On in the aggressive preset, which auto selects for binaries under 500 KiB; off in the catalog, so the reliable and fast presets and the datatest corpus keep the truncated return. Turn on when ARM hard-float code truncates a double return to its low word or loses a double input. Requires consistent ELF ABI evidence; soft-float, softfp, missing metadata, and explicit prototypes keep their existing contracts, so on any other image the option changes nothing. A double argument at a call needs the callee's declared or protoorder-recovered prototype, so it appears in a callee-first decompile-all, not in a single-function decompile. A returned constant no float literal spells (a NaN payload) is returned bit-exact through a union; AEABI and libgcc soft-float helpers keep the base standard; a VFP register-bank save or restore is no parameter and no result.
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · arm-hard-float-return
 - **Example:** `option armfloatreturn on`
 
@@ -3811,7 +3857,7 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 
 - **Symptoms:** missing floating argument; double input split into two words; caller and callee disagree on mixed argument contract.
 - **What it does:** Recover scalar ARM hard-float inputs with their full floating widths and consistent caller/callee storage, on top of armfloatreturn. Uses positive VFP ABI evidence, preserves declared prototypes, keeps input widths independent of overlapping return storage, leaves the AAPCS-VFP back-fill slot out of recovered parameter lists, and gives a call the VFP inputs its callee's arity-sound contract states, a stated double held as two words passed whole; an unused trailing float an -O0 callee only spills is still passed though the callee's list omits it. Unknown cross-bank source order uses the model order; floating aggregates and vectors are recovered only as the scalar words or doubles their reads show, never as the source grouping.
-- **When to flip:** Turn on together with armfloatreturn (alone it changes nothing) when scalar ARM VFP inputs disappear, split into word parameters, or disagree with their callers. Unknown calls need a proven callee contract. Declared prototypes outrank recovery. Variadic format calls use base AAPCS storage. A double a callee reads only as integer words, as on single-precision FPUs, keeps what armfloatreturn recovers.
+- **When to flip:** On in the aggressive preset with armfloatreturn, which auto selects for binaries under 500 KiB; off in the catalog. Turn on together with armfloatreturn (alone it changes nothing) when scalar ARM VFP inputs disappear, split into word parameters, or disagree with their callers. Unknown calls need a proven callee contract. Declared prototypes outrank recovery. Variadic format calls use base AAPCS storage. A double a callee reads only as integer words, as on single-precision FPUs, keeps what armfloatreturn recovers.
 - **Where / provenance:** P4/input-prototype · kuna · correctness-fix · arm-mixed-vfp-arguments
 - **Example:** `option armfloatargs on`
 
@@ -3854,6 +3900,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Disable when comparing legacy argument recovery; enable when a wide register temporary hides a subsequently overwritten argument slot.
 - **Where / provenance:** P3/ssa-construction · kuna · correctness-fix · GH-1070
 - **Example:** `option multiregargs off`
+
+### `globalcallranges` -- on | off, default `on`
+
+- **Symptoms:** large global initializer exhausts memory during heritage; tiny constructors cause a quadratic number of global call guards; a function with many global assignments uses gigabytes before emitting C.
+- **What it does:** Avoid a call guard for a persistent global when a complete bounded callee-body summary proves that all of the callee's memory reads and writes target disjoint constant address intervals. Reuse the frame-memory body walker and its cache, but exclude absolute memory references, direct memory input or output varnodes in any processor space, nonreturn frame accesses, opaque operations and incomplete bodies from this proof. Resolve every memory-effect root through an exact full-width register parameter and a definite constant caller argument; unknown arguments, overlaps, explicit effect overrides and wrapping arithmetic retain the guard. Seed this proof for functions with at least 16 calls and 64 direct memory writes, where the global-range by call-site cross product is material. The option removes redundant IR allocations rather than stopping a function: the CrashLogger initializer's tiny constructors each touch one 16-byte object, not every global.
+- **When to flip:** On by default. Keep it on for initializers that write many globals and call small constructors at distinct constant destinations. Flip off to compare the original all-globals-at-every-call guard placement. Unknown callee bodies and unresolved or overlapping actual pointers retain their existing guards.
+- **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
+- **Example:** `option globalcallranges off`
 
 ## Programmatic use
 

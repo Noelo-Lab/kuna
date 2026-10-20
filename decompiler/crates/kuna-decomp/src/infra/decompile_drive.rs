@@ -67,7 +67,7 @@ impl FlowEnvironment for ArchFlowEnv {
         self.arch().translate()
     }
     fn arm_decode_mode(&self, addr: &Address) -> Option<crate::kuna_armflowcontext::ArmDecodeMode> {
-        self.arch().with_context_db_mut(|db| {
+        self.arch().with_context_db(|db| {
             let var = db.get_variable(b"TMode").ok()?;
             let word = var.get_word() as usize;
             let mask = var.get_mask() << var.get_shift();
@@ -752,6 +752,7 @@ pub fn build_and_follow_flow_with_override_and_protos(
     flow_overrides: &[(Address, kuna_base::types::uint4)],
     proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
 ) -> KunaResult<Funcdata> {
+    crate::kuna_armfloatreturn::park_float_library_prototypes(arch);
     let mut fd = arch.new_funcdata(name, entry, size)?;
     for (addr, ty) in flow_overrides {
         fd.get_override_mut().insert_flow_override(addr.clone(), *ty);
@@ -1013,6 +1014,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         crate::kuna_rustabi::seed_callee_return_writes(arch, fd);
         // (kuna `bejoin evidence`) And the wide-return verdicts.
         crate::kuna_bejoin::seed_wide_returns(arch, fd);
+        crate::p4_calls::kuna_callwide::seed(arch, fd);
         // (kuna `calleedeadarg`) Same story for the entry-liveness probe the
         // input-trial scoring seam consults.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
@@ -1235,6 +1237,7 @@ pub fn decompile_func_full_with_objects(
     prefollowed: Option<Funcdata>,
     object_assertions: &[crate::kuna_stackobjectasserts::ObjectAssertion],
 ) -> KunaResult<Funcdata> {
+    crate::kuna_armfloatreturn::park_float_library_prototypes(arch);
     // (kuna decompile-all watchdog) Arm the per-function deadline from the
     // driver-set budget (`kuna decompile-all --max-fn-seconds N` sets
     // `kuna_fn_budget`, `decomp_dbg --max-fn-seconds N` the process default;
@@ -1358,6 +1361,7 @@ pub fn decompile_func_full_with_objects(
             let declared_model = staged_proto_model
                 .clone()
                 .or_else(|| fd.get_arch().callee_proto_model(&entry_addr))
+                .or_else(|| crate::kuna_armfloatreturn::declared_helper_model(fd.get_arch(), &pieces.name))
                 .or_else(|| crate::kuna_typedcallabi::undeclared_model(fd.get_arch(), pieces));
             fd.apply_locked_prototype_with_model(pieces, declared_model)?;
         } else if let Some(rt) = elfmain {
@@ -1400,6 +1404,7 @@ pub fn decompile_func_full_with_objects(
         // the translator is reachable; inert unless the model joins its pair
         // high word first.
         crate::kuna_bejoin::seed_wide_returns(arch, &mut fd);
+        crate::p4_calls::kuna_callwide::seed(arch, &mut fd);
         // (kuna `calleedeadarg`) Take the callee entry-liveness probe the
         // input-trial scoring seam consults, for the same reason and at the same
         // point; inert unless `option calleedeadarg` is live.

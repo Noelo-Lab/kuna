@@ -1644,6 +1644,17 @@ impl Funcdata {
             return self.cast_narrowed_call(op, float, false);
         }
         let tokenct = get_output_token(self, strat, op);
+        let integer_userop_in_float_storage = self.obank().get(op).is_some_and(|operation| {
+            operation.code() == OpCode::CPUI_CALLOTHER
+                && tokenct.get_metatype() == type_metatype::TYPE_INT
+                && operation.get_out().and_then(|id| self.vbank().get(id)).is_some_and(|out| {
+                    out.get_type().get_metatype() == type_metatype::TYPE_FLOAT
+                        && out.get_size() == tokenct.get_size()
+                })
+        });
+        if integer_userop_in_float_storage {
+            return self.cast_narrowed_call(op, tokenct, false);
+        }
         self.cast_output_token(op, strat, tokenct)
     }
 

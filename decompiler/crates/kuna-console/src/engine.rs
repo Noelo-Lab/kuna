@@ -456,6 +456,7 @@ pub struct InsnFlow {
 /// keep them on the program so the console can resolve an option name to its
 /// element id and dispatch it against the real architecture.
 pub struct ConsoleProgram {
+    pub(crate) callwide: crate::kuna_callwide::State,
     /// The engine assembly (owns the `Architecture` god object).  Both the XML
     /// `<binaryimage>` frontend and the real-ELF frontend slice their leaf
     /// architecture back to this `SleighArchitecture` once the loader is opened
@@ -558,6 +559,7 @@ pub struct ConsoleProgram {
     /// objects — `optind`, `stdin`, `stdout`, `optarg` — live). Empty on the XML
     /// datatest path and for a relocatable object.
     loader_data_objects: Vec<(u64, String, u64)>,
+    data_name_aliases: HashMap<String, u64>,
     /// (kuna) **Caller-declared function extents**, entry VMA → byte size — what
     /// the console `function bounds <start> <end>` and the CLI
     /// `kuna --define-function <start>-<end>` assert, and the only place kuna
@@ -649,6 +651,16 @@ fn code_end_in_target_units(value: u64, word_size: u64) -> u64 {
 }
 
 impl ConsoleProgram {
+    pub fn callwide_changed(&mut self) {
+        self.callwide.changed();
+        self.arch_mut().kuna_callwide.clear();
+    }
+
+    pub fn callwide_unavailable(&mut self, reason: &'static str) {
+        self.callwide.unavailable(reason);
+        self.arch_mut().kuna_callwide.clear();
+    }
+
     /// Borrow the `Architecture` god object (C++ `dcp->conf`, viewed as the base).
     pub fn arch(&self) -> &Architecture {
         self.arch
@@ -1947,6 +1959,11 @@ impl ConsoleProgram {
             .collect()
     }
 
+    /// Resolve an imported data object's original spelling after identifier folding.
+    pub fn lookup_data_alias(&self, name: &str) -> Option<u64> {
+        self.data_name_aliases.get(name).copied()
+    }
+
     /// Global data symbols with their address-space identity retained.
     pub fn global_data_symbol_addresses(&self) -> Vec<(String, Address, i64)> {
         use kuna_decomp::dtype::type_metatype;
@@ -2037,6 +2054,7 @@ impl ConsoleProgram {
         &mut self,
         entries: &[(String, Address)],
     ) -> KunaResult<usize> {
+        self.callwide_changed();
         let taken: std::collections::HashSet<String> =
             self.symbols.iter().map(|s| s.name.clone()).collect();
         let mut seeded = 0usize;
@@ -2079,6 +2097,7 @@ impl ConsoleProgram {
     /// the table is skipped (the C++ `addFunction` no-ops on an existing match via
     /// `queryFunction`).
     pub fn read_loader_symbols(&mut self) -> KunaResult<()> {
+        self.callwide_changed();
         let type_code = self.arch().types().get_type_code()?;
         let min_size = self.arch().min_funcsymbol_size;
         let num_spaces = self.arch().manage().num_spaces();
@@ -2124,6 +2143,7 @@ impl ConsoleProgram {
     }
 
     fn register_symbol_record(&mut self, name: &str, addr: Address, sole: bool) {
+        self.callwide_changed();
         // (kuna `symbolnamebound`) Same bound as the loader stream above, so an
         // analysis-discovered or hand-mapped name agrees with the scope path the
         // symbol table nests it under.
@@ -2151,6 +2171,7 @@ impl ConsoleProgram {
     /// Record a caller-declared byte extent for the function entered at `vma`
     /// (`declared_extents`); `size <= 0` clears it back to unbounded.
     pub fn declare_extent(&mut self, vma: u64, size: int4) {
+        self.callwide_changed();
         if size > 0 {
             self.declared_extents.insert(vma, size);
         } else {
@@ -2191,6 +2212,13 @@ impl ConsoleProgram {
     /// directive so the report keeps the caller's own order however the
     /// directives are later dispatched.
     pub fn set_assertions(&mut self, directives: Vec<crate::assertions::Directive>) {
+        if directives.iter().any(|directive| matches!(directive.body,
+            crate::assertions::Body::Flow { .. }
+            | crate::assertions::Body::Param { func: None, .. }
+            | crate::assertions::Body::Return { func: None, .. }))
+        {
+            self.callwide_unavailable("selected function flow or storage assertions lack a full image proof");
+        }
         self.assertion_outcomes = vec![None; directives.len()];
         self.assertions = directives;
     }
@@ -2427,6 +2455,7 @@ impl ConsoleProgram {
     /// Add a successfully applied byte overlay to the deferred walk, clipped
     /// to executable mappings. Unwritten virtual tails remain outside its ranges.
     pub(crate) fn note_materialized_bytes(&mut self, addr: &Address, size: usize) {
+        self.callwide_unavailable("effective byte overlays require a new complete image proof");
         if self.pending_entry_thumb.is_none()
             || !self.analysis_code_space.as_ref().zip(addr.get_space())
                 .is_some_and(|(code, space)| Rc::ptr_eq(code, space))
@@ -3663,6 +3692,7 @@ fn empty_program(
     description: String,
 ) -> ConsoleProgram {
     ConsoleProgram {
+        callwide: Default::default(),
         arch,
         registry,
         symbols: SymbolStream::default(),
@@ -3680,6 +3710,7 @@ fn empty_program(
         analysis_image: None,
         arm_frames: None,
         loader_data_objects: Vec::new(),
+        data_name_aliases: HashMap::new(),
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
         declared_names: BTreeMap::new(),
@@ -4307,6 +4338,10 @@ pub fn bootstrap_from_object_with_isa(
     // by the CLI after `load file`, so it is built at the deferred commit
     // (`read symbols`) when the flag is known — not at load. `bytes` is moved
     // here (it is unused below this point).
+    prog.callwide = crate::kuna_callwide::State::object(&bytes);
+    if explicit_isa {
+        prog.callwide_unavailable("explicit decode mode requires a new complete image proof");
+    }
     prog.analysis_image = Some((path.to_string(), bytes));
     prog.loader_data_objects = loader_data_objects;
     prog.import_slots = import_slots;
@@ -4412,6 +4447,34 @@ fn commit_analysis_output(
     };
     let out = out;
 
+    // Keep lookup identities even when richer debug information wins the map;
+    // a spelling shared by several objects resolves to its lowest address.
+    let data_symbols_enabled = prog.arch().analysis_datasyms;
+    let aliases: Vec<(String, u64)> = prog
+        .loader_data_objects
+        .iter()
+        .filter(|_| data_symbols_enabled)
+        .map(|(address, name, _)| (name.clone(), *address))
+        .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
+        .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
+        .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| (d.name.clone(), d.addr)))
+        .collect();
+    for (name, address) in aliases {
+        let slot = prog.data_name_aliases.entry(name).or_insert(address);
+        *slot = (*slot).min(address);
+    }
+
+    let mut data_names = crate::kuna_dataidentifiers::Names::new(
+        prog.symbols.iter().map(|s| s.name.clone())
+            .chain(prog.loader_data_objects.iter().filter(|_| data_symbols_enabled).map(|(_,name,_)| name.clone()))
+            .chain(prog.global_data_symbols().into_iter().map(|(name,_,_)| name))
+            .chain(out.symbols.iter().map(|s| s.name.clone()))
+            .chain(out.data_objects.iter().map(|d| d.name.clone()))
+            .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| d.name.clone())),
+        kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode()
+            == kuna_decomp::kuna_symbolnamechars::NameChars::Ident,
+    );
+
     // 0b. (kuna `libctypes glibc`) The load-time target decision, carried to the
     //     one consumer that runs with the object file out of reach
     //     (`seed_declared_libc_prototype`). Set unconditionally so a second
@@ -4441,10 +4504,11 @@ fn commit_analysis_output(
                 prog.register_overload(&s.name, addr);
             }
             SymKind::Data => {
+                let name = data_names.name(&s.name, s.addr);
                 let arch = prog.arch_mut();
                 let (scope, base) = arch
                     .symboltab
-                    .find_create_scope_from_symbol_name(&s.name, "::", None, num_spaces)?;
+                    .find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
                 // Untyped data object (a typed string symbol carries its char[N]
                 // type through a dedicated fact added with the string pass).
                 let ct = arch.types().get_type_code()?;
@@ -4501,9 +4565,10 @@ fn commit_analysis_output(
                 d.size.clamp(1, int4::MAX as u32) as int4,
                 kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN,
             )?;
+        let name = data_names.name(&d.name, d.addr);
         let arch = prog.arch_mut();
         let (scope, base) =
-            arch.symboltab.find_create_scope_from_symbol_name(&d.name, "::", None, num_spaces)?;
+            arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
         let (sid, _) =
             arch.symboltab.add_symbol_mapped(scope, &base, ct, &addr, &Address::new_invalid())?;
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
@@ -4873,9 +4938,10 @@ fn commit_analysis_output(
         if occupied {
             continue;
         }
+        let name = data_names.name(&fact.name, fact.addr);
         let arch = prog.arch_mut();
         let (scope, base) = arch.symboltab.find_create_scope_from_symbol_name(
-            &fact.name,
+            &name,
             "::",
             None,
             num_spaces,
@@ -4950,9 +5016,10 @@ fn commit_analysis_output(
                 (*size).clamp(1, int4::MAX as u64) as int4,
                 kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN,
             )?;
+        let name = data_names.name(name, *sym_addr);
         let arch = prog.arch_mut();
         let (scope, base) =
-            arch.symboltab.find_create_scope_from_symbol_name(name, "::", None, num_spaces)?;
+            arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
         let (sid, _) =
             arch.symboltab.add_symbol_mapped(scope, &base, ct, &addr, &Address::new_invalid())?;
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
@@ -4992,6 +5059,12 @@ fn commit_analysis_output(
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
+    let held: Vec<_> = out
+        .arm_float_prototypes
+        .into_iter()
+        .map(|(at, pieces)| (at.map(|a| Address::new(Rc::clone(code_space), a)), pieces))
+        .collect();
+    prog.arch_mut().arm_float_library_prototypes.extend(held);
 
     // 5d. A C runtime import is `__cdecl` even where the image's default
     //     convention leaves the cleanup to each callee (`x86win.cspec`'s

@@ -106,6 +106,11 @@ build failure. The options it enables:
   the call states, so the call compiles as C),
   `libcnames` (a local takes the name of the library call it meets:
   `fd = open(a0,0);`, `n = read(fd,v1,0x200);`),
+  `armfloatreturn` and `armfloatargs` (an ARM hard-float function returns its
+  double whole in `d0` and takes its float and double parameters in their
+  `s` and `d` registers on both sides of a call; inert unless the ELF states
+  the VFP procedure-call standard, so soft-float and softfp images print
+  byte-identically),
   `cortexmpriv` (DIV-99 - fold the Cortex-M `isCurrentModePrivileged()` guard;
   ARM-Cortex-M-gated by construction, so it is a measured no-op everywhere else)
 - **analysis tier**: `listing` (the master gate that enables the
@@ -134,6 +139,11 @@ are inert off their target (`rtti` = PE, `objc`/`macho-arm64e` = Mach-O,
 `sparcstructret` = the SPARC `unimp`-trap idiom, which cannot occur off SPARC,
 and since DIV-93 the four ARM entry passes, which are inert off ARM). These are
 not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
+
+- **`x86listingswitch`** — bounded i386 table coverage can expose tail jumps
+  into independent functions before AIF discovers their entries. The measured
+  Wine corpus lost seven real starts; keep this discovery tradeoff explicit
+  with `--option x86listingswitch on` in every mode.
 
 - **`v850indirectbranch`** — its predicate (`kuna_is_v850_indirect_jmp`,
   `p2_lift/kuna_v850indbranch.rs`) matches **any** register-indirect `CALLIND`,
@@ -178,9 +188,17 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   `long long`, so with it on that correct `int` prints as a wrong `long long`
   (GH-904). In the preset it would be the default output under 500 KiB.
 
-All six therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
+- **`regsigned`** — it declares a register local whose every value is a sign
+  extension at the narrow width it is extended from (`short v` instead of
+  `int v` with a cast on every load). On decbench type_match it gained a few
+  perfect functions on ARM firmware and none on x86-64, and a narrowed value
+  that a wider reader takes back gains a cast (`(long)(int)v` on AArch64), so
+  the preset would make a near-neutral judgment call the default output under
+  500 KiB.
+
+These therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
 `--option dwarf_lines on`, `--option formatstring full`, `--option ifuncfpret on`,
-`--option msvcstrappend on`, `--option bejoin on`)
+`--option msvcstrappend on`, `--option bejoin on`, `--option regsigned on`)
 even under `--mode aggressive`; a named `--option` still wins over the preset by
 last-write precedence. For `formatstring` only the `full` loop above is excluded:
 its `static` default reads the same format constants out of the image at load, so

@@ -169,6 +169,7 @@ jobs:
           node integrations/web/test/decompile-learn.mjs
           node integrations/web/test/decompile-groups.mjs
           node integrations/web/test/decompile-strings.mjs
+          node integrations/web/test/decompile-data.mjs
           node integrations/web/test/decompile-base64.mjs
           node integrations/web/test/decompile-collab.mjs
           node integrations/web/test/decompile-collab-cases.mjs
