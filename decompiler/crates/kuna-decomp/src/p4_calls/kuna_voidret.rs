@@ -661,13 +661,19 @@ fn float_call_result(data: &Funcdata, node: &crate::varnode::Varnode) -> bool {
 /// for the bits of their float-register input is left as it is: withdrawn, it
 /// would lose the return its readers forced, and it returns what the callees
 /// return once they are withdrawn and it is decompiled again as their reader.
+///
+/// Where `armfloatreturn` applies, a function over
+/// [`crate::kuna_callrettype::AUDIT_MAX_OPS`] live ops keeps its float: NEON
+/// code that leaves a vector in `d0` was each decompiled twice for it.
 pub fn withdrawals(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
+    let vfp = crate::kuna_armfloatreturn::applies(arch);
     let ledger = &mut arch.kuna_voidret;
+    let bounded = |k: &(int4, uintb)| vfp && ledger.ops.get(k).is_some_and(|&n| n > crate::kuna_callrettype::AUDIT_MAX_OPS);
     let float = |k: &(int4, uintb)| ledger.returns.get(k) == Some(&Returns::Float);
     let refused: Vec<(int4, uintb)> = ledger
         .float_refused
         .iter()
-        .filter(|(k, readers)| !readers.is_empty() && float(k) && !ledger.displacing.contains(k))
+        .filter(|(k, readers)| !readers.is_empty() && float(k) && !ledger.displacing.contains(k) && !bounded(k))
         .map(|(k, _)| *k)
         .collect();
     let bits = |s: &(int4, uintb)| ledger.float_bits.contains(s) || ledger.bits_withdrawn.contains(s);
@@ -687,7 +693,7 @@ pub fn withdrawals(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
             continue;
         }
         let kept = |s: &(int4, uintb)| ledger.float_bits.contains(s) && ledger.own_float.contains(&k);
-        for s in ledger.float_sources.get(&k).into_iter().flatten().filter(|s| float(s) && !kept(s)) {
+        for s in ledger.float_sources.get(&k).into_iter().flatten().filter(|s| float(s) && !kept(s) && !bounded(s)) {
             if !ledger.withdrawn.contains(s) {
                 out.insert(*s);
             }
@@ -1074,7 +1080,9 @@ fn displaced(ledger: &Ledger, callee: &(int4, uintb), read: &(Address, int4)) ->
 /// something else, or a float it held from a callee whose float return was
 /// withdrawn. Its other stale text is a conversion the listing leaves out; a
 /// second decompile of sort -O2's `main` alone cost ten seconds, two thirds of
-/// the first.
+/// the first. Where `armfloatreturn` applies, a float result it held as
+/// something else does not count: the widened model makes many more callees
+/// return a float, and those redos were most of the option's cost.
 ///
 /// (kuna `floatbits`) A function whose bit-op float its withdrawal took back
 /// also takes back its float parameters, so every function that called it
@@ -1086,6 +1094,7 @@ pub fn stale_readers(
     stamp_of: &BTreeMap<(int4, uintb), usize>,
     changed: &BTreeMap<(int4, uintb), usize>,
 ) -> BTreeSet<(int4, uintb)> {
+    let vfp = crate::kuna_armfloatreturn::applies(arch);
     let mut out = BTreeSet::new();
     for (callee, &at) in changed {
         let float = arch.kuna_voidret.returns.get(callee) == Some(&Returns::Float);
@@ -1121,7 +1130,7 @@ pub fn stale_readers(
                 .get(&(*reader, *callee))
                 .is_some_and(|h| {
                     (scaled && !h.pointer && h.arithmetic)
-                        || (float && !h.float)
+                        || (float && !h.float && !(large && vfp))
                         || (withdrawn && h.float)
                         || (widened && h.signed)
                 });

@@ -7422,6 +7422,15 @@ else, or a float held from a callee whose float return was withdrawn. Its other 
 the same width, which the listing leaves unconverted: redoing every such reader
 cost bash -O2 30 seconds, one `execute_command_internal` alone ten.
 
+Where `armfloatreturn` applies, the widened model gives many more callees a
+float return, so a reader over `AUDIT_MAX_OPS` is not redone for a float result
+it held as something else, and a function over it keeps a float return its
+readers refuse rather than being withdrawn and decompiled again. On the armhf
+libraries measured, that was NEON code leaving a vector in `d0` (libpixman's
+composite routines, each decompiled twice, +7.7% of the run) and a large reader
+of a mis-decoded function (libtwolame, +7.5%); neither redo changed a printed
+signature.
+
 A float return a reader keeps as another type is withdrawn
 (`kuna_voidret.rs (withdrawals)`). No C declaration serves a reader that holds
 the result in an integer, `unsigned int v3 = clampf(..)` stored through an
