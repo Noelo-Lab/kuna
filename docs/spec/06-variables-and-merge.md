@@ -1523,7 +1523,14 @@ sentinel `endpoint` hint bounds the walk (`varmap.rs (MapState::initialize)`).
 Then a single sweep unions intersecting hints (`varmap.rs (RangeHint::merge)`)
 under a fixed conflict policy: can the two types *line up* (one is a
 component of the other at the right alignment —
-`varmap.rs (RangeHint::reconcile)`)? If yes, prefer the type-locked, then the
+`varmap.rs (RangeHint::reconcile)`)? The walk descends the larger type's
+single component path until the align size no longer exceeds the smaller
+hint's, and the types line up when the two align sizes then match. A union
+has no single component path, so it lines up when any member whose extent
+covers the smaller hint does, with the member's array/structure components
+followed down to a boundary that starts exactly at the hint's offset (a
+float at either element of a union's `float[2]` member lines up; one at a
+misaligned interior offset does not). If yes, prefer the type-locked, then the
 fixed-over-open, then the larger-fixed, then the more specific type
 (`varmap.rs (RangeHint::preferred)`). If no, and neither is locked, the merged
 range *concedes*: it becomes a fixed unknown-typed blob of the union size (or

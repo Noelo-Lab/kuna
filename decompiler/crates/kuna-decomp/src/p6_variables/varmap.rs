@@ -199,23 +199,9 @@ impl RangeHint {
             mod_ = mod_.wadd(align_a);
         }
 
-        // Walk down `a`'s subtypes until the align-size no longer exceeds `b`'s.
-        let mut sub: Option<Rc<Datatype>> = Some(Rc::clone(&a.type_));
         let b_align = b.type_.get_align_size();
-        while let Some(cur) = sub.clone() {
-            if cur.get_align_size() <= b_align {
-                break;
-            }
-            let (next, newmod) = cur.get_sub_type(mod_)?;
-            sub = next;
-            mod_ = newmod;
-        }
-
-        if let Some(sub) = sub.as_ref() {
-            if sub.get_align_size() == b.type_.get_align_size() {
-                return Ok(true);
-            }
-            // If we reach here, b overlaps multiple components of a
+        if component_aligns(&a.type_, mod_, b_align, false)? {
+            return Ok(true);
         }
 
         // Component sizes do not match. Check for data-types we want to protect more.
@@ -540,6 +526,35 @@ impl RangeHint {
     /// (C++ `compareRanges`, `varmap.hh:126`): `a->compare(*b) < 0`.
     pub fn compare_ranges(a: &RangeHint, b: &RangeHint) -> std::cmp::Ordering {
         a.compare(b).cmp(&0)
+    }
+}
+
+/// A union has several possible component paths; `get_sub_type` cannot choose
+/// one without an operation-specific field resolution. Layout reconciliation
+/// only needs a member whose component boundaries fit the smaller hint.
+/// Outside union alternatives, preserve the existing align-size comparison
+/// used for partial scalar and structure hints.
+fn component_aligns(ct: &Rc<Datatype>, offset: int8, align_size: int4, union_path: bool) -> KunaResult<bool> {
+    if ct.get_align_size() <= align_size {
+        return Ok(ct.get_align_size() == align_size && (!union_path || offset == 0));
+    }
+    if ct.get_metatype() == type_metatype::TYPE_UNION {
+        for i in 0..ct.num_depend() {
+            if let Some(member) = ct.get_depend(i) {
+                if offset >= 0
+                    && offset.wadd(align_size as int8) <= member.get_size() as int8
+                    && component_aligns(&member, offset, align_size, true)?
+                {
+                    return Ok(true);
+                }
+            }
+        }
+        return Ok(false);
+    }
+    let (next, offset) = ct.get_sub_type(offset)?;
+    match next {
+        Some(next) => component_aligns(&next, offset, align_size, union_path),
+        None => Ok(false),
     }
 }
 

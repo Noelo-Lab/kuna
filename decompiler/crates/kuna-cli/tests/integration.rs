@@ -535,6 +535,9 @@ mod x87_integer_conversions_native;
 #[path = "float_pointer_storage.rs"]
 mod float_pointer_storage;
 
+#[path = "stack_union_components.rs"]
+mod stack_union_components;
+
 #[path = "dwarf_overlapping_locals.rs"]
 mod dwarf_overlapping_locals;
 
