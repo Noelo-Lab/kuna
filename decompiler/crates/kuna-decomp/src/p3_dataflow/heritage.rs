@@ -867,6 +867,8 @@ pub struct Heritage {
     /// "can a pointer reach this stack slot?" with, gathered at most once per
     /// pass.  See [`crate::p4_calls::kuna_calleeprotostack`].
     protostack_alias: Option<Option<crate::varmap::AliasChecker>>,
+    /// Positive evidence of nested frame setup, retained across passes.
+    protostack_frame_reload: Option<bool>,
     global_call_ranges: super::kuna_globalcallranges::Calls,
     /// (kuna `stackstoreguard`) Whether this pass's frame has a stack access
     /// whose pointer does not resolve, decided at most once per pass.
@@ -921,6 +923,7 @@ impl Heritage {
             deadline: None,
             load_copy_ops: Vec::new(),
             protostack_alias: None,
+            protostack_frame_reload: None,
             global_call_ranges: Default::default(),
             store_frame_unresolved: None,
             store_frame_guarded: false,
@@ -1100,6 +1103,7 @@ impl Heritage {
         self.store_guard.clear();
         self.store_frame_unresolved = None;
         self.store_frame_guarded = false;
+        self.protostack_frame_reload = None;
         self.maxdepth = -1;
         self.pass = 0;
     }
@@ -1605,6 +1609,16 @@ impl Heritage {
         }
     }
 
+    pub(crate) fn rebound_frame_base_seen(&self) -> bool {
+        self.protostack_frame_reload == Some(true)
+    }
+
+    fn protostack_restored_frame_alias(&mut self, fd: &crate::funcdata::Funcdata) -> bool {
+        *self.protostack_frame_reload.get_or_insert_with(|| {
+            crate::kuna_calleeprotostack::rebound_frame_base(fd)
+        })
+    }
+
     /// (kuna `calleeprotostack`) Can a pointer in this function reach the stack
     /// slot at `offset`?
     ///
@@ -1754,6 +1768,10 @@ impl Heritage {
                         spc.get_addr_size() as int4,
                         floor,
                     ) && !self.protostack_is_aliased(fd, &spc, addr.get_offset(), size)
+                        && !(self.protostack_restored_frame_alias(fd)
+                            && crate::kuna_calleeprotostack::pointer_input_may_alias(
+                                fd, fc, addr.get_offset(), size,
+                            ))
                     {
                         effecttype = effect_type::UNAFFECTED;
                     }
@@ -5446,6 +5464,13 @@ impl Heritage {
         // (kuna `calleeprotostack`) The alias gather is only valid for the
         // data-flow as it stands, so it is dropped at every pass boundary.
         self.protostack_alias = None;
+        // Preserve positive raw-frame evidence before SSA simplification can
+        // remove the nested frame setup. Later prototype recovery may be the
+        // first time the caller-frame-floor rule becomes applicable.
+        self.protostack_frame_reload = Some(
+            self.protostack_frame_reload.unwrap_or(false)
+                || crate::kuna_calleeprotostack::rebound_frame_base(fd),
+        );
         self.global_call_ranges.clear();
         self.spill_stores.clear();
         self.spill_store_guards.clear();

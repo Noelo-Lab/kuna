@@ -559,6 +559,8 @@ mod declared_callee_pop;
 #[path = "declared_data_range.rs"]
 mod declared_data_range;
 
+#[path = "declared_pointer_frame_alias.rs"]
+mod declared_pointer_frame_alias;
 #[path = "project_function_linkage.rs"]
 mod project_function_linkage;
 
