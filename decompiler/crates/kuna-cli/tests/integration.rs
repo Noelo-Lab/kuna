@@ -561,3 +561,6 @@ mod aggregate_storage_cast;
 
 #[path = "x87_native_returns.rs"]
 mod x87_native_returns;
+
+#[path = "x86_bound_checks.rs"]
+mod x86_bound_checks;
