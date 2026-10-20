@@ -5962,6 +5962,10 @@ impl JumpTable {
         jbasic.label_rows = rows;
         jbasic.is_partial = self.partial_table;
         let basic_ok = jbasic.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?;
+        if crate::decompile_drive::deadline_passed_in("jump-table basic model") {
+            self.jmodel = None;
+            return Ok(());
+        }
         // Stash the basic model's path-meld for model 2's piggyback.
         let basic_path = jbasic.get_path_meld().clone();
         if basic_ok {
@@ -5977,6 +5981,10 @@ impl JumpTable {
         jbasic2.is_partial = self.partial_table;
         jbasic2.initialize_start(&basic_path);
         let m2_ok = jbasic2.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?;
+        if crate::decompile_drive::deadline_passed_in("jump-table default-path model") {
+            self.jmodel = None;
+            return Ok(());
+        }
         if m2_ok {
             self.jmodel = Some(Box::new(jbasic2));
             return Ok(());
@@ -6030,6 +6038,7 @@ impl JumpTable {
             self.addresstable = addresstable;
             self.loadpoints = loadpoints;
             r?;
+            crate::decompile_drive::deadline_passed_in("jump-table address emulation");
             let reached = self.loadpoints.clone();
             let bounded = self.flow_bounded_values(fd);
             self.sanity_check(fd, Some(&loadcounts))?;
@@ -6051,6 +6060,7 @@ impl JumpTable {
             );
             self.addresstable = addresstable;
             r?;
+            crate::decompile_drive::deadline_passed_in("jump-table address emulation");
             let bounded = self.flow_bounded_values(fd);
             self.sanity_check(fd, None)?;
             let cut = self.cut_rows_dispatched(fd, bounded, loadcounts.len());

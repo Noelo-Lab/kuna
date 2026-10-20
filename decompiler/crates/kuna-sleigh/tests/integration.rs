@@ -70,3 +70,6 @@ mod x86_maxlen_nop_regression;
 
 #[path = "x86_rdtsc_zero_extend.rs"]
 mod x86_rdtsc_zero_extend;
+
+#[path = "x87_integer_rounding.rs"]
+mod x87_integer_rounding;

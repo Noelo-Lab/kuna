@@ -17,7 +17,9 @@ float signed_component(int64_t bits) { float p[2]; memcpy(p,&bits,8); return p[0
 float numeric_component(uint64_t bits) { return (float)bits; }
 float loaded_pair(const unsigned char *buf) { uint64_t w; memcpy(&w,buf,8); float p[2]; memcpy(p,&w,8); return p[0] + p[1]; }
 "#).unwrap();
-    let output = Command::new("gcc").args(["-O2", "-g", "-fPIC", "-shared"])
+    // Pin the sample's codegen: a host gcc that vectorizes p[0]+p[1] (AVX shuffles)
+    // makes kuna emit vshufps_avx/SUB164 pseudo-ops, which cannot round-trip.
+    let output = Command::new("gcc").args(["-O2", "-g", "-fPIC", "-shared", "-march=x86-64", "-fno-tree-vectorize"])
         .arg(&source).arg("-o").arg(&binary).output().unwrap();
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     let mut rust_code = String::new();

@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "narrowargs",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callerargs_thumb",
+    "binary_sha256": "4bfbbf7f826e991f457b7f0bc5a711d1ef3e49b24994f90b4c5e69bd34b77bc0",
+    "binary_size": 1340,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callerargs_thumb",
+    "selector": "scale",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int scale\\(unsigned int a0,",
+      "int level\\(int a0\\)",
+      "int pick\\(int a0,"
+    ],
+    "stdout_absent": [
+      "scale\\(unsigned char a0",
+      "level\\(short a0\\)"
+    ]
+  },
+  "notes": "With narrowargs on (the body rule alone) the parameters the callers extend keep the register width: the AAPCS has the caller extend them, so the callee's body holds no evidence.",
+  "probe_id": "p-f681bb9c36b0"
+}

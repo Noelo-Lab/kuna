@@ -20,7 +20,7 @@
 //!     architecture's [`TypeFactory`].
 //!   * **subtask 3 (named, typed stack locals)** — each defined subprogram's
 //!     direct `DW_TAG_variable`/`DW_TAG_formal_parameter` children that carry a
-//!     single `DW_OP_fbreg` (frame-base-relative) stack location emit a
+//!     fixed `DW_OP_fbreg` (frame-base-relative) stack location emit a
 //!     [`crate::pass::LocalFact`] at stack offset `call_frame_cfa + fbreg`, typed
 //!     by the same DIE→[`Datatype`] mapper. The commit re-seeds each into the
 //!     function's `ScopeLocal` (the `map addr`/`seed_mapped_symbols` path) so the
@@ -64,8 +64,9 @@
 //!   constant ([`call_frame_cfa`], faithful to Ghidra's per-language `.dwarf`
 //!   `<call_frame_cfa>`). LOSS: only **direct** children (a lexical-block- or
 //!   inlined-subroutine-nested local is skipped, the same listing-cosmetic scope as
-//!   the labels/call-sites below), and only the **single-`DW_OP_fbreg`** location
-//!   form (a composite/register/multi-op location is left to the engine).
+//!   the labels/call-sites below), and only fixed frame-relative locations.
+//!   Unsigned constant displacements are supported; register, piece, value, and
+//!   dereference expressions are left outside the fixed-local mapping path.
 //! - We skip `DW_TAG_label`, `DW_TAG_call_site`, inlined-subroutine, lexical-block
 //!   comments, and source-info/plate comments — all listing cosmetics with zero
 //!   decompiler-output payoff (the same scope as the strings/demangle losses).
@@ -121,6 +122,7 @@ pub use lines::DwarfLinesPass;
 mod kuna_cppproto;
 mod kuna_dwarfbounds;
 mod kuna_dwarfbyref;
+mod kuna_dwarflocation;
 pub(crate) mod kuna_dwarfcomplex;
 
 mod kuna_typedepth;
@@ -252,11 +254,12 @@ struct DieSnap {
     has_location: bool,
     /// `DW_OP_addr` operand of a simple `DW_AT_location`, if that is its form.
     addr_location: Option<u64>,
-    /// The signed `DW_OP_fbreg <off>` operand of a single-op `DW_AT_location`, if
-    /// that is its form (a frame-base-relative stack local — subtask 3). `None`
-    /// for any other location form (`DW_OP_addr`, register, multi-op).
+    /// The resolved signed frame offset of `DW_OP_fbreg` with optional unsigned
+    /// constant displacements. Other location forms do not describe fixed locals
+    /// through this field.
     fbreg_location: Option<i64>,
     indirect_parameter: bool,
+    register_indirect_parameter: Option<kuna_dwarfbyref::HiddenValues>,
     /// Depth in the DIE tree (root unit DIE = 0).
     depth: isize,
     /// Offsets of this DIE's direct children, in order.
@@ -302,6 +305,7 @@ impl DieSnap {
             addr_location: None,
             fbreg_location: None,
             indirect_parameter: false,
+            register_indirect_parameter: None,
             depth,
             children: Vec::new(),
             origin_ref: None,
@@ -314,9 +318,18 @@ impl DieSnap {
 /// Snapshot every DIE in `unit` into an offset-keyed map (plus the ordered
 /// top-level offsets). Mirrors building Ghidra's `DebugInfoEntry` tree before
 /// `DWARFFunctionImporter.importFunctions()` walks it.
+#[cfg(test)]
 fn snapshot_unit(
     dwarf: &gimli::Dwarf<Reader<'_>>,
     unit: &gimli::Unit<Reader<'_>>,
+) -> BTreeMap<usize, DieSnap> {
+    snapshot_unit_for_abi(dwarf, unit, kuna_dwarfbyref::ArgumentAbi::default())
+}
+
+fn snapshot_unit_for_abi(
+    dwarf: &gimli::Dwarf<Reader<'_>>,
+    unit: &gimli::Unit<Reader<'_>>,
+    abi: kuna_dwarfbyref::ArgumentAbi,
 ) -> BTreeMap<usize, DieSnap> {
     let mut map: BTreeMap<usize, DieSnap> = BTreeMap::new();
     // Parent stack of (offset, depth) to attach children to their parent.
@@ -439,9 +452,22 @@ fn snapshot_unit(
             snap.has_location = true;
             snap.addr_location = simple_addr_location(&loc);
             snap.fbreg_location = simple_fbreg_location(&loc);
-            snap.indirect_parameter = snap.tag == gimli::DW_TAG_formal_parameter
-                && kuna_dwarfbyref::is_fortran(language)
-                && kuna_dwarfbyref::indirect_location(&loc);
+            if snap.tag == gimli::DW_TAG_formal_parameter && kuna_dwarfbyref::is_fortran(language) {
+                let entry = parent_off
+                    .and_then(|parent| map.get(&parent))
+                    .and_then(|parent| parent.low_pc);
+                if let Some(expression) = kuna_dwarfbyref::location_at_entry(dwarf, unit, &loc, entry) {
+                    snap.indirect_parameter = kuna_dwarfbyref::indirect_location(
+                        &gimli::AttributeValue::Exprloc(expression.clone()),
+                    );
+                    snap.register_indirect_parameter = kuna_dwarfbyref::memory_argument_register(
+                        &expression,
+                        unit.encoding(),
+                        abi.registers,
+                    )
+                    .then_some(abi.hidden);
+                }
+            }
         }
 
         map.insert(off, snap);
@@ -479,32 +505,16 @@ fn simple_addr_location(loc: &gimli::AttributeValue<Reader<'_>>) -> Option<u64> 
     }
 }
 
-/// Decode a `DW_AT_location` that is a single `DW_OP_fbreg <sleb128>` expression
-/// (the frame-base-relative stack-local form — subtask 3), returning the SIGNED
-/// frame-base offset. Anything else (`DW_OP_addr`, register, multi-op) returns
-/// `None`. The whole expression must be exactly the one opcode + its SLEB128
-/// operand (we deliberately do NOT handle composite/piece locations — a single
-/// `DW_OP_fbreg` is what `-O0`/`-g` emits for a plain stack slot, and is what
-/// Ghidra's `DWARFExpressionEvaluator` resolves to a stack varnode via the frame
-/// base set to the CFA, `DWARFExpressionEvaluator.java:403`).
+/// Resolve a frame-base-relative location with optional unsigned constant
+/// displacements. Dereferences, pieces, values, and other dynamic expressions
+/// remain outside this fixed-stack-object path.
 fn simple_fbreg_location(loc: &gimli::AttributeValue<Reader<'_>>) -> Option<i64> {
-    let expr = match loc {
-        gimli::AttributeValue::Exprloc(e) => e.clone(),
-        gimli::AttributeValue::Block(b) => gimli::Expression(b.clone()),
+    let bytes = match loc {
+        gimli::AttributeValue::Exprloc(expression) => expression.0.slice(),
+        gimli::AttributeValue::Block(block) => block.slice(),
         _ => return None,
     };
-    let bytes = expr.0.slice();
-    // DW_OP_fbreg == 0x91, followed by a single SLEB128 operand.
-    if bytes.first() != Some(&0x91) {
-        return None;
-    }
-    let (off, consumed) = read_sleb128(&bytes[1..])?;
-    // Reject any trailing opcodes (a composite/multi-op location is not a plain
-    // stack slot — leave it to the engine, faithful to the single-op case only).
-    if 1 + consumed != bytes.len() {
-        return None;
-    }
-    Some(off)
+    kuna_dwarflocation::frame_offset(bytes)
 }
 
 /// Decode a little-endian SLEB128 (DWARF signed LEB128) from `buf`, returning the
@@ -1110,7 +1120,11 @@ impl AnalysisPass for DwarfPass {
         let mut units = dwarf.units();
         while let Ok(Some(header)) = units.next() {
             let Ok(unit) = dwarf.unit(header) else { continue };
-            let mut dies = snapshot_unit(&dwarf, &unit);
+            let mut dies = snapshot_unit_for_abi(
+                &dwarf,
+                &unit,
+                kuna_dwarfbyref::argument_abi(ctx.file.format(), ctx.file.architecture()),
+            );
             if complex_max > 0 {
                 for die in dies.values_mut() {
                     die.complex_max_size = complex_max;

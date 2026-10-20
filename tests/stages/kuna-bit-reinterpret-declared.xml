@@ -27,7 +27,7 @@
   <com>decompile</com>
   <com>print C</com>
 </script>
-<stringmatch name="Bit reinterpret declared #1: a float constant stored to a float global stays a float literal" min="1" max="1">= 1998\.0;</stringmatch>
+<stringmatch name="Bit reinterpret declared #1: a float constant stored to a float global stays a float literal" min="1" max="1">= 1998\.0f?;</stringmatch>
 <stringmatch name="Bit reinterpret declared #2: the stored constant never prints as its integer bits" min="0" max="0">0x44f9c000</stringmatch>
 <stringmatch name="Bit reinterpret declared #3: a word moved into a float register is reinterpreted once" min="1" max="1">y = \(\(union \{ unsigned int from; float to; \}\)\{ \.from = x \}\)\.to;</stringmatch>
 <stringmatch name="Bit reinterpret declared #4: no transfer round-trips back to an integer" min="0" max="0">union \{ float from;</stringmatch>

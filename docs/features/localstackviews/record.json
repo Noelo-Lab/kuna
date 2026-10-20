@@ -1,0 +1,1039 @@
+{
+  "slug": "localstackviews",
+  "opportunity": "issue:810::bounded-local-stack-views",
+  "test_name": "issue810-local-stack-views",
+  "binary": "/home/mahaloz/kwt/issues1019/issue810-audit/final-repro/input-gcc.elf",
+  "selector": "t11_branch",
+  "func_addr": "0x401200",
+  "angr_version": null,
+  "reference": "native GCC/Clang execution and explicit stackviews-on control",
+  "option": "localstackviews",
+  "flag": "local_stack_views",
+  "element_id": null,
+  "phase": "P6",
+  "subphase": "alias-facets",
+  "rewind": "P2",
+  "tier": "transform",
+  "change_kind": "correctness-fix",
+  "source_decompiler": "kuna",
+  "inspiration": "Kuna #810, mgostIH PR #1162, and already-merged PR #1163",
+  "scope": "large",
+  "proposal": true,
+  "approval": "explicitly approved by the user",
+  "implementation_started": true,
+  "status": "validated-corrective-implementation",
+  "default_on": true,
+  "intended_default": "on",
+  "ablation_changed": 0,
+  "parity": "Final matching immutable27 trio: make test675/675 and make test-stages3135/3135 PARITYOK; independent matchingruntime26 datatests also675/675. Original OFF20 was675/675, so default ablation changes0/675 and docs/baseline.json is unchanged.",
+  "speed_status": "Final27 CPU24 quiet12-pair actualdefault vsfresh6d wholeimages and official31 OFF/ON pass5% budget; rawwall+childCPU samples and paired95% intervals pinned.",
+  "root_cause_class": "automatic backing admission without preserved native-write and pointer-use correspondence",
+  "owning_file": "decompiler/crates/kuna-decomp/src/p6_variables/kuna_localstackviews.rs",
+  "prepared_base": {
+    "commit": "6d7ab7fff8092b6f154f5aed3cdf2a98701d5d6a",
+    "tree": "7336b195792e070ba12a7b48e329d1278a311247",
+    "note": "Approved implementation is composed directly on this leased main base; earlier proposal/evidence bases are historical."
+  },
+  "contributor": {
+    "login": "mgostIH",
+    "email": "13892786+mgostIH@users.noreply.github.com",
+    "original_pr": "https://github.com/Noelo-Lab/kuna/pull/1162",
+    "original_head": "3a4ff3d73ef64d6ac6ee62d669b40d998a0ac482",
+    "original_body_sha256": "5a187f814e5899fb0801b869a11dc58ae33f9a24e468a2582ad5609bbc7d00f9",
+    "original_pr_unchanged": true,
+    "superseding_emitter_pr": 1163,
+    "superseding_emitter_commit": "10669c3e4f8718721c6b045d5aa152565b9af1b3"
+  },
+  "counterexamples": [
+    {
+      "selector": "t11_branch",
+      "source": "analysis.md runnable GCC -g -O2 separate-TU source",
+      "native_expected": {
+        "zero": 67,
+        "nonzero": 162
+      },
+      "failed_experiment": "uncommitted bounded-recognition prototype, not this proposal or contributor branch",
+      "failed_code_sha256": "204bc4a269f86fb2b9cd34dc2a7be07790b9ff0928081e3913809fddf40d0c82",
+      "native_write": "Op70 absent by final IR; full views retains stack_store/directwrite marked native COPY",
+      "surviving_reconstruction": "Op238 is hidden and unmarked; implied INT_ADD is rejected by existing byte projection",
+      "runtime_comparisons": {
+        "failed_default": 8,
+        "passed_full_views": 8
+      },
+      "observed_undefined_results": [
+        1094795647,
+        574
+      ]
+    },
+    {
+      "selector": "escaped_alias",
+      "native_expected": 7,
+      "default_failure": "effective stack writes absent; saved pointer reads an uninitialized frame slot",
+      "control": "full stackviews or stackalias retains physical COPY 7"
+    },
+    {
+      "selector": "escaped_object_reuse",
+      "native_expected": 122,
+      "strict_c_failure": "generated union pointer assigned to locked int4 pointer receiver",
+      "required_control": "saved address observes replacement bytes in the same object"
+    },
+    {
+      "selector": "simultaneous_views",
+      "native_expected": 56,
+      "required_control": "one physical object, pointer equality and simultaneous typed views"
+    }
+  ],
+  "decisions": [
+    "Large scope: preservation and use-contract state crosses existing Band B and mapping boundaries, rather than one Action/Rule-shaped pass.",
+    "Follow improvement-pipeline sections 2.4 and 4 plus standing requirement 5: design-only draft proposal and explicit user go/no-go before implementation.",
+    "The ordinary issue sweep is not the separately invoked RE-friction lane and does not inherit its captain approval authority.",
+    "Reuse #1122 hook shapes without broadening its narrow formal eligibility or putting local evidence into stack_parameter_store_extents.",
+    "Keep #1163 version/byte-transfer/read-timing guards; do not implement a printer bypass or mark arbitrary synthetic copies as physical writes.",
+    "Supersede the failed experiment's type-only automatic admission criterion while crediting and preserving the original contributor's shared-storage design.",
+    "Do not alter or close PR1162, and do not claim full issue closure before default escaped-pointer and strict typing controls pass.",
+    "If early footprint discovery needs a new reflow pass or unbounded provenance infrastructure, return for an explicit proposal amendment before implementing that extension."
+  ],
+  "implementation_base": {
+    "commit": "6d7ab7fff8092b6f154f5aed3cdf2a98701d5d6a",
+    "published_proposal_head": "caea4fdfe9c5ce1f1a712aed6162a7750a1b8840",
+    "preserved_ref": "refs/kuna/issue810/proposal-published",
+    "tree": "7336b195792e070ba12a7b48e329d1278a311247"
+  },
+  "implementation_path_claims": [
+    "decompiler/crates/kuna-base/src/xml.rs",
+    "decompiler/crates/kuna-cli/tests/fixtures/local_stack_views.c",
+    "decompiler/crates/kuna-cli/tests/fixtures/local_stack_views.h",
+    "decompiler/crates/kuna-cli/tests/fixtures/local_stack_views_helpers.c",
+    "decompiler/crates/kuna-cli/tests/fixtures/local_stack_views_ranges.S",
+    "decompiler/crates/kuna-cli/tests/integration.rs",
+    "decompiler/crates/kuna-cli/tests/local_stack_views.rs",
+    "decompiler/crates/kuna-cli/tests/stack_alias_preservation.rs",
+    "decompiler/crates/kuna-cli/tests/stack_object_lifetimes.rs",
+    "decompiler/crates/kuna-console/src/kuna_console.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_option_dispatch.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs",
+    "decompiler/crates/kuna-decomp/src/p2_lift/flow.rs",
+    "decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs",
+    "decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackeffects.rs",
+    "decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_3.rs",
+    "decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_4.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_localstackviews.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_localstackviews/tests.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackalias.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackobjects.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackviews.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/mod.rs",
+    "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+    "decompiler/crates/kuna-decomp/src/substrate/funcdata.rs",
+    "decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs",
+    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json",
+    "docs/baseline-stages.json",
+    "docs/features/localstackviews/analysis.md",
+    "docs/features/localstackviews/proposal.md",
+    "docs/features/localstackviews/record.json",
+    "docs/options.md",
+    "docs/spec/02-lift-and-flow.md",
+    "docs/spec/03-ssa-and-simplification.md",
+    "docs/spec/06-variables-and-merge.md",
+    "docs/spec/09-emission.md",
+    "tests/stages/kuna-catalog.xml",
+    "tests/stages/kuna-localstackviews.xml",
+    "tests/stages/kuna-stackviews.xml"
+  ],
+  "instrumented_boundaries": {
+    "branch": "STORE70 lower191; DCE214; copyprop225; earlyremoval230",
+    "publication": "COPY13 bypassed into INDIRECT151 at183; removed187; requiredmerge425",
+    "scalar_barrier": "STORElower63; heritage74; DCE82 too late",
+    "loop_publication": "COPY37 bypassed into MULTIEQUAL259/260; requiredmerge synthesizes copies267/270"
+  },
+  "implemented_policy": {
+    "native_evidence": "P2 captures bounded generational native STORE and persistent memory COPY identities, original widths/storage and source points; analysis reset discards them. A missing formal parameter store declines local evidence before formal access. Relevant fixed-frame aggregate contract names must already be stable ASCII C identifiers; an unsupported nominal name invalidates the entire first-window collection before preservation.",
+    "refusal": "Proven crossing, unavailable early evidence and overlapping locked layouts are distinct sticky refusals for every footprint. Later P6 facts cannot reopen a candidate.",
+    "status": "Correctedruntime26 with test-only27 fixture setup passes mandatoryoriginal40,branch8,priorformal192,nativeguard17 and GCC-SLP replay; allrepositorygates and corpus classifications pass.",
+    "physical_admission": "Every footprint, including nominal aggregates, is decided once in the first local STORE-lowering heritage window. All live STORE and LOAD hazards need contained/disjoint frame bounds or a raw saved-receiver chain proved by an uninterrupted same-block native publication. Crossing, unavailable evidence and locked layouts are distinct sticky refusals; P6 cannot reopen them. The chosen physical component must contain every overlapping validated declared candidate, including already-refused candidates; shifted or nested fragments cannot split a larger declared object.",
+    "scalar_construction": "Only one captured native 1/2/4/8-byte scalar component can enlarge a published scalar subrange; complete nominal aggregate contracts remain bounded to1..256 bytes. No adjacent-store coalescing.",
+    "receiver": "Original literal-address default-data-space STORE publications reuse the existing locked STORE slot2 contract before lowering. Exact native identity/source point/width/address are validated; later COPY queries revalidate original storage and type. Every known external frame-address publication must be present in the actual validated first-window pending map, or early admission declines.",
+    "lifetime": "Collect candidates/publications once in the first local STORE heritage window; later native extent recording is bounded to the captured identity set and duplicate records are idempotent. No late scan can discard already-applied preservation. Existing normal reflow clears Funcdata; jump-table partials are fresh Funcdata.",
+    "native_marker": "A live COPY from the exact captured native STORE declines propagation only into markers when SourcePoint, OpId, recorded output address/width, get_out identity, stack-store flag, architecture stack and whole-write containment in one admitted footprint match. OFF/FULL and synthetic/moved/partial-overlap writes decline this guard."
+  },
+  "corpus_sweep": {
+    "status": "Final27 complete; core and typed integrity checks clean, all hunks classified, all query/build/test/postprocess jobs drained.",
+    "scope": "Existing1071-image inventory plus whole authored/DWARF and asserted local-view native images",
+    "baseline": "fresh6d7ab7fff immutable CLI",
+    "candidate": "Final pinned default-ON CLI; explicit ON arm retained for matched before/after execution parameters.",
+    "method": "decompile-all jobs1 per image,8 image workers; input/CLI hashes; complete before/after JSON and C; each changed hunk manually classified; errors/discovery deltas separate",
+    "baseline_results": {
+      "images": 1071,
+      "function_records": 192504,
+      "clean_images": 1058,
+      "discovery_refusals": 6,
+      "function_errors": 19,
+      "watchdogs": 17,
+      "fixture_load_errors": 2,
+      "outer_timeouts": 0,
+      "memory_aborts": 0,
+      "parse_or_identity_errors": 0,
+      "status": "Fresh paired18 baseline completed under exact saved environment; final27 cache validates every input/execution/status/output hash."
+    },
+    "prior_cache_note": "Earlier1071 baseline preserved, but inherited-environment hash changed; cache preflight declined before queries. Authoritative paired comparison reruns both arms under one explicit pinned environment.",
+    "typed_review_blocker": "Resolved19: obj_global_shifted native Pair8@0 and Handle8@4 overlap; partial activation split char16 into char4+Handle8. Pre-preservation component coverage now refuses; independent full-image output exactly matches prior default for global and volatile controls.",
+    "qualified_name_blocker": "Resolved20: dwarfvariants_x86_64 fx::_start already has unsupported Rust-qualified type output; automatic views newly mismatched member references. Relevant nonidentifier aggregate contracts now decline the entire early collection. Original-fixture OFF/ON identity and lexical-name controls cover the refusal; no P9 identifier repair.",
+    "historical_baseline_only_results": {
+      "images": 1071,
+      "function_records": 192504,
+      "clean_images": 1055,
+      "discovery_refusals": 6,
+      "function_errors": 22,
+      "watchdogs": 20,
+      "outer_timeouts": 0,
+      "memory_aborts": 0,
+      "peak_ram_pct": 7.61,
+      "status": "Historical completed baseline-only run; rejected for reuse due environment mismatch. Superseded by fresh paired18 baseline."
+    },
+    "final_run_id": "666e6ae347b5247ac1bec4812478c1ff146d9b42c1b7f6963e9072cf56affd1e",
+    "final_source_tree": "57d2042a073209cbef13bacc74b81da0a35ce78e",
+    "previous_verified24": {
+      "core_images": 1071,
+      "core_functions_per_arm": 192504,
+      "core_C_changes": 0,
+      "core_hunks": 0,
+      "core_metadata_changes": 0,
+      "core_discovery_changes": 0,
+      "core_function_errors_per_arm": 19,
+      "core_watchdogs_per_arm": 17,
+      "typed_images": 50,
+      "typed_functions_per_arm": 724,
+      "typed_changed_functions": 56,
+      "typed_hunks": 68,
+      "typed_hunks_reviewed": 68,
+      "unclassified_hunks": 0,
+      "pinned_cp_mv_rounds": 2,
+      "retry_errors": 0,
+      "retry_full_output_identity": true,
+      "note": "These comparisons passed, but did not supersede the later concrete declared4/actual LOAD8 failure. Corrected25 final results are recorded separately."
+    },
+    "unknown_read_coverage_reduction": "Nine prior experimental changes revert to exact baseline:four equivalent returned-pointer spellings;four lsv_source repairs;one obj_global_reuse repair. Last case reads through globalHandle\u2192pointerfield\u2192datum without provable first-window disjointness. Existing uninitialized/invalid default C remains unsupported; mandatory original40 stillpass. No guard weakening.",
+    "final_results": {
+      "core_images": 1071,
+      "core_functions_per_arm": 192504,
+      "core_C_changes": 0,
+      "core_hunks": 0,
+      "core_metadata_changes": 0,
+      "core_discovery_changes": 0,
+      "core_function_errors_per_arm": 19,
+      "core_watchdogs_per_arm": 17,
+      "core_fixture_load_errors_per_arm": 2,
+      "core_error_diagnostic_changes": 13,
+      "core_error_diagnostic_review": "All13 retain the same20second watchdog failure identities; only stopping-pass diagnostic strings change. Root independently checked all19failedidentities.",
+      "typed_images": 50,
+      "typed_functions_per_arm": 724,
+      "typed_changed_functions": 48,
+      "typed_hunks": 60,
+      "typed_hunks_reviewed": 60,
+      "typed_metadata_changes": 55,
+      "typed_function_errors_per_arm": 2,
+      "typed_new_failure_identities": 0,
+      "new_reversals_exact_baseline": 9,
+      "reversal_lost_intended_repairs": 5,
+      "unclassified_hunks": 0,
+      "cp_mv_current_bulk_clean": true,
+      "cp_mv_full_raw_output_equals_baseline": true,
+      "new_targeted_retry_required": false,
+      "review_method": "All60hunks reviewed; priorclassifications transfer only on completebefore/afterC+hunkhashidentity. New60thhunk onlyremoves escaped_loop storageannotation, statementsidentical and4strictnativepass. All13watchdog diagnosticchangeschecked; no newfailureidentity. All12historicalreversal decisions retain exactcomplete-C pins.",
+      "typed_intended_hunks": 54,
+      "typed_equivalent_hunks": 6,
+      "historical_reversal_decisions_reviewed": 12,
+      "baseline_cache_status": "All1071input/execution/status/output hashes validated under the exact saved explicit environment; currentcandidate27source/runtime/CLI pins separate."
+    },
+    "handoff": "/home/mahaloz/kwt/issues1019/issue810-implementation-audit/corpus/candidate27-final-handoff.json",
+    "handoff_sha256": "848a467aeeed133d4ac96a1ce3792f008bd8595f47891acd854aa382c04b0ffb",
+    "typed_run_id": "a5fa2a5879179e0d09cc41802dd7c5c55d356ac40f0cbb9e091f75de0087fa37",
+    "core_integrity_sha256": "76e00fb34315e7428e5fd9bf716b406b54fce81c05587a2d66fef6597b1a2fb2",
+    "typed_integrity_sha256": "af4a124a93fccd4ead9012400d2b429df48b98abf046707b8ce768041143a10b"
+  },
+  "proposal_history": {
+    "base": {
+      "commit": "5fe62be4073e713d049425742bbc7c721efe04cf",
+      "tree": "d5fb1cb37cb66547e2c368f8cf328b99e7a9e83c",
+      "note": "Actual merged main; exact tree equivalent to reviewed memory-fix head used for causal traces. No engine implementation included.",
+      "reviewed_equivalent_head": "ac4883618d1255ab641528c247a06ba43a9e2262"
+    },
+    "published_head": "caea4fdfe9c5ce1f1a712aed6162a7750a1b8840",
+    "approved": true
+  },
+  "independent_native_acceptance": {
+    "source_tree": "b11957e13c5d4045c14991d8f3f2a7f93d201fd0",
+    "mandatory_original_strict_builds": 40,
+    "branch_strict_builds": 8,
+    "formal_regression_cells": 192,
+    "experimental_positive_cells": 168,
+    "supported_native_cells": 104,
+    "exact_prior_output_declines": 64,
+    "declined_shapes": [
+      "aggregate indirect8",
+      "scalar direct/replace16",
+      "mutable-source timing8",
+      "opaque-overlap24",
+      "source LOAD through unknown external pointer8"
+    ],
+    "crossing_code_pairs_exact_prior_output": 6,
+    "crossing_runtime_outcomes_equal": 24,
+    "note": "Correctedruntime26/27:104supported+72exactOFF,192formal,152FULLunchanged,152default==ON. All14panelrawCunchangedvs25. SupplementalpackedSLPdefault/FULL8strictcells pass62/60; OFF4preexistingcompilefailures retained. Boundaryloop4pass,onlystoragecommentchange; crossingLOAD8exactpriorOFFdecline.",
+    "full_stackviews_combination": {
+      "cells": 152,
+      "result": "All152 explicitfull C controls retainaccepted21 C through correctedruntime26/27; no priornativepass becomesfailure. Separateescaped_loop5arms native4/4 pass."
+    },
+    "all_unsupported_exact_prior_output_cells": 72,
+    "additional_callback_replacement_declines": 8,
+    "actual_default_equals_explicit_on_cells": 152,
+    "boundary_controls_exact_fresh_base": 9,
+    "classification": "/home/mahaloz/kwt/issues1019/scratch/localstackviews-review/root26-panel/comparison.json",
+    "raw_function_C_and_errors_checked": 276,
+    "raw_function_C_and_errors_equal_accepted21": 272,
+    "new_exact_off_read_decline_queries": 4
+  },
+  "abi_acceptance": {
+    "source_tree": "b11957e13c5d4045c14991d8f3f2a7f93d201fd0",
+    "targets": [
+      "ARM-BE32",
+      "MIPS-BE32"
+    ],
+    "untouched_on_project_cells": 4,
+    "native_extern_on_cells": 4,
+    "authoritative_off_on_cells": 8,
+    "seeds_per_cell": 7,
+    "on_header_preserves_original_scalar_pointer": true,
+    "preexisting_off_header_defect": "Pair pointer declaration remains unchanged; authoritative original scalar contract compiles and executes OFF/ON",
+    "note": "Finalcorrectedruntime26/27 bothARM/MIPSpositiveadmissions retainexact25/19C/header;16targetcells\u00d77vectorspass.27onlycorrectsprivatetestsetup, runtimebytesidentical.",
+    "acceptance": "/home/mahaloz/kwt/issues1019/scratch/810-cross-publication/candidate26-acceptance.json",
+    "acceptance_sha256": "fd9b93325a0f8209393ca388a00b50c9bbfd2f3ab9ce14639a9cbaec93dccab3"
+  },
+  "focused_validation": {
+    "source_tree": "57d2042a073209cbef13bacc74b81da0a35ce78e",
+    "private_tests_passed": 17,
+    "cli_native_tests_passed": 6,
+    "test_setup_note": "Standalone address-space fixture sets default code space before default data space. Receiver-reach STORE is inserted once from the normal dead state; first debug full run exposed invalid double-alive test setup.",
+    "qualified_name_controls": "Original Rust fixture exact OFF/ON C identity and lexical-name control pass in final debug/workspace tests.",
+    "private_debug_tests_passed": 17,
+    "new_full_precedence_test": "OFF/FULL native-store guard negatives and allprevious full-policy controls retained.",
+    "private_test_profile": "Focusedrelease17/17 and fulloptimized-test debugassertion workspace17/17 pass; CLI6 includes plainGCC/Clang plus explicitGCC-SLP input."
+  },
+  "primary_repro": {
+    "binary": "decompiler/crates/kuna-analysis/tests/fixtures/lifetimes_stack_x86_64",
+    "selector": "stack_reuse",
+    "func_addr": "0x401000"
+  },
+  "speed_target": {
+    "binary_sha256": "5f17f2b271fd3990bca2c5112b7c8cee812703ed16b4069605290a0b47832d42",
+    "source_rebuild": "analysis.md runnable native GCC -g -O2 branch source and separate helpers",
+    "source_tree": "57d2042a073209cbef13bacc74b81da0a35ce78e",
+    "cpu_affinity": [
+      24
+    ]
+  },
+  "speed_off_ms": 93.06,
+  "speed_on_ms": 93.15,
+  "speed_delta_pct": 0.1,
+  "speed_samples": 31,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_noise_note": "Historical unpinned14% healthy result was inconclusive during unrelated kernel compilation. The final27 results use drained jobs, inheritedCPU24 affinity, alternating paired arms, two warmups each, twelve whole-image pairs and separate31-repeat officialmeasurement. Earlier20/21/24/25raw evidence remains historical.",
+  "speed_default_confirmation": {
+    "healthy154": {
+      "repeat": 12,
+      "warmups_per_arm": 2,
+      "default_equals_explicit_on27": true,
+      "metrics": {
+        "wall_ms": {
+          "medians": {
+            "baseline": 960.3333181003109,
+            "default": 963.2610955741256
+          },
+          "paired_median_pct": 0.3186528113103715,
+          "paired_median95pct": [
+            0.0187701700102072,
+            0.48332129647367106
+          ],
+          "median_ratio_pct": 0.30487096705198447
+        },
+        "child_cpu_ms": {
+          "medians": {
+            "baseline": 958.2570000000014,
+            "default": 961.054499999999
+          },
+          "paired_median_pct": 0.30679418076670073,
+          "paired_median95pct": [
+            0.038324162798086814,
+            0.5048095243489925
+          ],
+          "median_ratio_pct": 0.2919362968387018
+        }
+      },
+      "historical20_code_changes": []
+    },
+    "dwarf23": {
+      "repeat": 12,
+      "warmups_per_arm": 2,
+      "default_equals_explicit_on27": true,
+      "metrics": {
+        "wall_ms": {
+          "medians": {
+            "baseline": 118.33646555896848,
+            "default": 118.4845354873687
+          },
+          "paired_median_pct": 0.185226344682754,
+          "paired_median95pct": [
+            -0.2479143778628734,
+            0.49318248259275776
+          ],
+          "median_ratio_pct": 0.12512620492830528
+        },
+        "child_cpu_ms": {
+          "medians": {
+            "baseline": 116.73599999999973,
+            "default": 116.78899999999959
+          },
+          "paired_median_pct": 0.13674197735805693,
+          "paired_median95pct": [
+            -0.2595621339278098,
+            0.42661986860733636
+          ],
+          "median_ratio_pct": 0.04540158991215293
+        }
+      },
+      "historical20_code_changes": []
+    }
+  },
+  "catalog_live_reader": "Console explicit live reader exposes local_stack_views alongside generated OptionValues; stage checks default and current on.",
+  "stage_isolation": "Existing kuna-stackviews.xml explicitly disables the bounded local option to preserve its original full-stackviews OFF/ON ablation; existing CLI helper OFF arms also disable it, while enabled/native arms retain actual local default. The new local stage exercises actual default before OFF.",
+  "stage_acceptance": {
+    "source_tree": "57d2042a073209cbef13bacc74b81da0a35ce78e",
+    "passing": 3135,
+    "total": 3135,
+    "previous_passing": 3127,
+    "preserved_originals": true,
+    "catalog_count_label_rename": "322 to 323",
+    "added_local_assertions": 7,
+    "added_catalog_default_assertions": 1,
+    "catalog_smoke": [
+      19,
+      19
+    ],
+    "full_stackviews_smoke": [
+      14,
+      14
+    ],
+    "local_default_smoke": [
+      7,
+      7
+    ],
+    "canonical_record_source_tree": "b16e7aabfbc06c6a4ca6f0d891a76ec6e981d13b",
+    "final_matching_parity": "3135/3135 PARITYOK"
+  },
+  "checks_so_far": {
+    "test_tools": "114 run:113 passed,1 optional skipped.",
+    "lint": "green",
+    "check_spec": "green",
+    "catalog": "green",
+    "counters": "323 options; tiers118/125/80; 577 total corpus files (83 datatests,494 stages)",
+    "merge_guard": "green against actual leased base6d7; zero rejects; original baseline unchanged",
+    "workspace": "Final27 fullworkspace9178passed,38ignored,0failed;66targets,CLI891,private17.",
+    "parity_gates": "Final matching immutable27 trio: make test675/675 and make test-stages3135/3135 PARITYOK; independent matchingruntime26 datatests also675/675. Original OFF20 was675/675, so default ablation changes0/675 and docs/baseline.json is unchanged."
+  },
+  "full_policy_composition": {
+    "failed_source_tree": "b16e7aabfbc06c6a4ca6f0d891a76ec6e981d13b",
+    "witness": "escaped_loop with stackviews on and local default on",
+    "failure": "Local scalar footprint seeded a full-policy group despite failing local backing eligibility, retyping the merged loop counter as a union; Clang O0 rejected emitted arithmetic.",
+    "correction": "Full stackviews takes precedence through one feature-local enabled predicate used by lift capture, native STORE recording and active consumers. No local evidence or preservation/publication/mapping facts coexist with full policy.",
+    "regression": "Existing enabled/native full-policy cohort retains local default; own scalar test adds exact full-policy OFF/ON C equality and strict compiler execution.",
+    "status": "Finalcorrected26/27 five-armfullCidentity, strictnative4/4 and workspace9178/38/0 pass.",
+    "failed_ablation": "Suppressing local group seeding alone in23 was ineffective because preserved publication contracts also enter the full policy ordinary alias-reference scan.",
+    "final_source_tree": "57d2042a073209cbef13bacc74b81da0a35ce78e"
+  },
+  "path_claims_count": 41,
+  "repository_gates": {
+    "source_tree": "57d2042a073209cbef13bacc74b81da0a35ce78e",
+    "make_test": [
+      675,
+      675
+    ],
+    "make_test_stages": [
+      3135,
+      3135
+    ],
+    "make_rust_test": {
+      "passed": 9178,
+      "failed": 0,
+      "ignored": 38,
+      "test_targets": 66,
+      "cli_integration_passed": 891,
+      "new_private_passed": 17,
+      "status": "make rust-test exit0",
+      "log_sha256": "25f4f146281645a96af973f131bf7dcf45039cdb9a91db9acbe461b67ce4cedd"
+    },
+    "make_check_spec": "green",
+    "make_test_tools": {
+      "run": 114,
+      "optional_skips": 1,
+      "status": "green",
+      "passed": 113
+    },
+    "make_lint": "green",
+    "catalog_check": "green",
+    "counter_check": "green",
+    "mergecheck_against": "6d7ab7fff8092b6f154f5aed3cdf2a98701d5d6a",
+    "mergecheck_rejects": 0,
+    "debug_cleanup": true,
+    "matching_binaries": "/home/mahaloz/kwt/issues1019/issue810-implementation-audit/candidate27/manifest.json",
+    "matching_parity_logs": [
+      {
+        "path": "/home/mahaloz/kwt/issues1019/issue810-implementation-audit/candidate27/matching-test.log",
+        "sha256": "764be2ac60c31c5865b7065361cee2b4f1939eb1222b02afb84ef55125f98c34",
+        "bytes": 256
+      },
+      {
+        "path": "/home/mahaloz/kwt/issues1019/issue810-implementation-audit/candidate27/matching-test-stages.log",
+        "sha256": "ef42b87fb05e9e92d5d53bcf95db706adc0a2a28891483ae2a41c82bd72c5d95",
+        "bytes": 298
+      }
+    ]
+  },
+  "speed_history": {
+    "explicit_on20_whole_binary": {
+      "source_tree": "16d5d8c87d11dd596a50972ffd7d95d45d7bc984",
+      "repeat": 24,
+      "cases": {
+        "healthy_whole154": {
+          "medians": {
+            "wall_ms": {
+              "baseline": 965.954088489525,
+              "off": 969.8268200736493,
+              "on": 970.5238851020113
+            },
+            "child_cpu_ms": {
+              "baseline": 958.7854999999972,
+              "off": 962.624999999992,
+              "on": 963.6329999999944
+            }
+          },
+          "pairwise": {
+            "wall_ms": {
+              "on_vs_baseline": {
+                "median_pct": 0.4850653185080378,
+                "bootstrap_median95pct": [
+                  0.27471423765697,
+                  0.681430550688944
+                ],
+                "ratio_of_medians_pct": 0.47308631610349927
+              },
+              "on_vs_off": {
+                "median_pct": 0.1156126724970008,
+                "bootstrap_median95pct": [
+                  -0.1854829803990765,
+                  0.33151749513191664
+                ],
+                "ratio_of_medians_pct": 0.07187520637024214
+              }
+            },
+            "child_cpu_ms": {
+              "on_vs_baseline": {
+                "median_pct": 0.49463355466375925,
+                "bootstrap_median95pct": [
+                  0.2313471780538645,
+                  0.6568767272142395
+                ],
+                "ratio_of_medians_pct": 0.505587537566754
+              },
+              "on_vs_off": {
+                "median_pct": 0.13795860687387806,
+                "bootstrap_median95pct": [
+                  -0.10267441413829292,
+                  0.20588473360716453
+                ],
+                "ratio_of_medians_pct": 0.10471367354913941
+              }
+            }
+          },
+          "binary": "/home/mahaloz/github/decbench-dataset/binaries/O0/coreutils/false",
+          "binary_sha256": "a07b85d599227cfe9497915dbac2ad5cf795032122b17e127c83cdc727bcef38",
+          "selector": null,
+          "repeat": 24,
+          "function_count": 154
+        },
+        "dwarf_whole23": {
+          "medians": {
+            "wall_ms": {
+              "baseline": 119.67989150434732,
+              "off": 119.60177938453853,
+              "on": 120.63999497331679
+            },
+            "child_cpu_ms": {
+              "baseline": 117.06950000000748,
+              "off": 117.05950000000165,
+              "on": 118.16199999999277
+            }
+          },
+          "pairwise": {
+            "wall_ms": {
+              "on_vs_baseline": {
+                "median_pct": 0.8404034388087012,
+                "bootstrap_median95pct": [
+                  0.6532487295184408,
+                  1.0545028090201969
+                ],
+                "ratio_of_medians_pct": 0.8022262193767116
+              },
+              "on_vs_off": {
+                "median_pct": 0.8121140083967249,
+                "bootstrap_median95pct": [
+                  0.5510961956809002,
+                  1.1238042413548088
+                ],
+                "ratio_of_medians_pct": 0.8680603199390902
+              }
+            },
+            "child_cpu_ms": {
+              "on_vs_baseline": {
+                "median_pct": 0.9683169864950658,
+                "bootstrap_median95pct": [
+                  0.7421287011214361,
+                  1.0980941320994697
+                ],
+                "ratio_of_medians_pct": 0.9332063432279325
+              },
+              "on_vs_off": {
+                "median_pct": 0.9312621241095442,
+                "bootstrap_median95pct": [
+                  0.7645269380337494,
+                  1.2146130455214177
+                ],
+                "ratio_of_medians_pct": 0.941828728117855
+              }
+            }
+          },
+          "binary": "/home/mahaloz/kwt/issues1019/issue810-audit/final-repro/input-gcc.elf",
+          "binary_sha256": "5f17f2b271fd3990bca2c5112b7c8cee812703ed16b4069605290a0b47832d42",
+          "selector": null,
+          "repeat": 24,
+          "function_count": 23
+        }
+      }
+    },
+    "default21_confirmation": {
+      "source_tree": "237bc2590701959631a1f4357c9381402da4dd2b",
+      "note": "Earlier actual-default confirmation retained before final full-policy composition fix.",
+      "healthy_wall_delta_pct": 0.1443565059562335,
+      "typed_wall_delta_pct": 1.331908097772161
+    }
+  },
+  "speed_default_confirmation_source_tree": "57d2042a073209cbef13bacc74b81da0a35ce78e",
+  "speed_default_confirmation_cli_sha256": "8c6fca9f5c72632e15bb3066083f9f634c63a0c4dadd3007fc1b230fb5bae8c6",
+  "read_boundary": {
+    "failed_source_tree": "d28029d291e971ad1303280100e7dcce2c0c7110",
+    "receiver": "locked uint4 pointer published to component+4",
+    "actual_access": "LOAD8 spans component+4..component+12 across two initialized native8 regions",
+    "native_expected": "0x5566778801020304",
+    "native_strict_cells": [
+      4,
+      4
+    ],
+    "default_strict_compiles": [
+      4,
+      4
+    ],
+    "default_wrong_runtime_cells": 4,
+    "off_status": "Preexisting invalid aggregate cast;4/4 compile failure, no runtime correctness claimed.",
+    "correction": "Existing early scan covers STORE+LOAD under one4096 budget, LOAD width from output; same extent/receiver/may_alias crossing refusals. Reads are negative evidence only; no new capture state, pass, layout widening or late scan.",
+    "persistent_controls": "Contained LOAD4 strict native positive and crossing LOAD8 exact OFF/default decline; full policy output must remain unchanged.",
+    "status": "Final25 exact original-input OFF/default C identity verified; native4/4 valid, both unsupported emitted arms preserve same invalid Pair cast. Contained LOAD4 strict native positive and crossing LOAD8 exact decline pass committed test.",
+    "corrected_source_tree": "0960fae01d7d0c525bcf334f38d09e75a93249c6"
+  },
+  "validation_history": {
+    "native24": {
+      "source_tree": "d28029d291e971ad1303280100e7dcce2c0c7110",
+      "mandatory_original_strict_builds": 40,
+      "branch_strict_builds": 8,
+      "formal_regression_cells": 192,
+      "experimental_positive_cells": 168,
+      "supported_native_cells": 112,
+      "exact_prior_output_declines": 56,
+      "declined_shapes": [
+        "aggregate indirect8",
+        "scalar direct/replace16",
+        "mutable-source timing8",
+        "opaque-overlap24"
+      ],
+      "crossing_code_pairs_exact_prior_output": 6,
+      "crossing_runtime_outcomes_equal": 24,
+      "note": "Final independent24 default panel preserves112 supported native cells and64 exact-OFF declines (56 experimental plus8 additional callback-crossing cells),192 formal cells,9 actual fresh-base boundary C/error controls and128 default/explicit-ON identities. Full-policy152 C controls remain unchanged; an already failing crossing FULL runtime cell varies SIGSEGV/timeout and is retained as unsupported, never counted as a pass.",
+      "full_stackviews_combination": {
+        "cells": 152,
+        "result": "All explicit full-stackviews C hashes unchanged between default-local-OFF17 and default-local-ON21; no prior native pass became a failure."
+      },
+      "all_unsupported_exact_prior_output_cells": 64,
+      "additional_callback_replacement_declines": 8,
+      "actual_default_equals_explicit_on_cells": 128,
+      "boundary_controls_exact_fresh_base": 9,
+      "raw_function_C_and_errors_equal_accepted21": 276
+    },
+    "repository_gates24": {
+      "source_tree": "d28029d291e971ad1303280100e7dcce2c0c7110",
+      "make_test": [
+        675,
+        675
+      ],
+      "make_test_stages": [
+        3135,
+        3135
+      ],
+      "make_rust_test": {
+        "passed": 9176,
+        "failed": 0,
+        "ignored": 38,
+        "test_targets": 66,
+        "cli_integration_passed": 891,
+        "new_private_passed": 15,
+        "status": "make rust-test exit0",
+        "log_sha256": "9f03872ea0111c15a460169dfe265903ac9e0893fa9585da12304e7770e709ec"
+      },
+      "make_check_spec": "green",
+      "make_test_tools": {
+        "run": 114,
+        "optional_skips": 1,
+        "status": "green",
+        "passed": 113
+      },
+      "make_lint": "green",
+      "catalog_check": "green",
+      "counter_check": "green",
+      "mergecheck_against": "6d7ab7fff8092b6f154f5aed3cdf2a98701d5d6a",
+      "mergecheck_rejects": 0,
+      "debug_cleanup": true
+    },
+    "default_speed24": {
+      "source_tree": "d28029d291e971ad1303280100e7dcce2c0c7110",
+      "official": {
+        "speed_off_ms": 94.23,
+        "speed_on_ms": 94.79,
+        "speed_delta_pct": 0.59,
+        "speed_samples": 31,
+        "speed_budget_pct": 5.0,
+        "speed_within_budget": true,
+        "speed_forced_off": false
+      },
+      "whole": {
+        "healthy154": {
+          "repeat": 12,
+          "default_equals_explicit_on20": true,
+          "metrics": {
+            "wall_ms": {
+              "medians": {
+                "baseline": 960.4782708920538,
+                "default": 959.6789364004508
+              },
+              "paired_median_pct": -0.09135348628043771,
+              "paired_median95pct": [
+                -0.16978611866915183,
+                0.0760036588691726
+              ],
+              "median_ratio_pct": -0.083222548164541
+            },
+            "child_cpu_ms": {
+              "medians": {
+                "baseline": 958.3594999999996,
+                "default": 957.5624999999997
+              },
+              "paired_median_pct": -0.0732318468663784,
+              "paired_median95pct": [
+                -0.1869939808915977,
+                0.09451825009367809
+              ],
+              "median_ratio_pct": -0.08316294668127
+            }
+          }
+        },
+        "dwarf23": {
+          "repeat": 12,
+          "default_equals_explicit_on20": true,
+          "metrics": {
+            "wall_ms": {
+              "medians": {
+                "baseline": 118.32762556150556,
+                "default": 119.36086509376764
+              },
+              "paired_median_pct": 0.8217284924462831,
+              "paired_median95pct": [
+                0.35993625175499977,
+                1.0961708311884921
+              ],
+              "median_ratio_pct": 0.8732022867517175
+            },
+            "child_cpu_ms": {
+              "medians": {
+                "baseline": 116.75449999999898,
+                "default": 117.76300000000228
+              },
+              "paired_median_pct": 0.8083797632499223,
+              "paired_median95pct": [
+                0.2867816466009532,
+                1.0482141541082846
+              ],
+              "median_ratio_pct": 0.8637782697911378
+            }
+          }
+        }
+      }
+    },
+    "before_ci25": {
+      "source_tree": "0960fae01d7d0c525bcf334f38d09e75a93249c6",
+      "gates": {
+        "source_tree": "0960fae01d7d0c525bcf334f38d09e75a93249c6",
+        "make_test": [
+          675,
+          675
+        ],
+        "make_test_stages": [
+          3135,
+          3135
+        ],
+        "make_rust_test": {
+          "passed": 9177,
+          "failed": 0,
+          "ignored": 38,
+          "test_targets": 66,
+          "cli_integration_passed": 891,
+          "new_private_passed": 16,
+          "status": "make rust-test exit0",
+          "log_sha256": "2c0d7fde674e7ccc921740436f328f105b4683c22880517b19e44f17bdac2804"
+        },
+        "make_check_spec": "green",
+        "make_test_tools": {
+          "run": 114,
+          "optional_skips": 1,
+          "status": "green",
+          "passed": 113
+        },
+        "make_lint": "green",
+        "catalog_check": "green",
+        "counter_check": "green",
+        "mergecheck_against": "6d7ab7fff8092b6f154f5aed3cdf2a98701d5d6a",
+        "mergecheck_rejects": 0,
+        "debug_cleanup": true
+      },
+      "corpus": {
+        "status": "Final25 complete:strict-cache core1071 and fresh typed50 comparisons; every changed hunk reviewed and all9reversals exactbaseline; no newfailureidentities or unclassified hunks.",
+        "scope": "Existing1071-image inventory plus whole authored/DWARF and asserted local-view native images",
+        "baseline": "fresh6d7ab7fff immutable CLI",
+        "candidate": "Final pinned default-ON CLI; explicit ON arm retained for matched before/after execution parameters.",
+        "method": "decompile-all jobs1 per image,8 image workers; input/CLI hashes; complete before/after JSON and C; each changed hunk manually classified; errors/discovery deltas separate",
+        "baseline_results": {
+          "images": 1071,
+          "function_records": 192504,
+          "clean_images": 1058,
+          "discovery_refusals": 6,
+          "function_errors": 19,
+          "watchdogs": 17,
+          "fixture_load_errors": 2,
+          "outer_timeouts": 0,
+          "memory_aborts": 0,
+          "parse_or_identity_errors": 0,
+          "status": "Fresh paired18 baseline completed under exact saved environment; final25 cache validates every input/execution/status/output hash."
+        },
+        "prior_cache_note": "Earlier1071 baseline preserved, but inherited-environment hash changed; cache preflight declined before queries. Authoritative paired comparison reruns both arms under one explicit pinned environment.",
+        "typed_review_blocker": "Resolved19: obj_global_shifted native Pair8@0 and Handle8@4 overlap; partial activation split char16 into char4+Handle8. Pre-preservation component coverage now refuses; independent full-image output exactly matches prior default for global and volatile controls.",
+        "qualified_name_blocker": "Resolved20: dwarfvariants_x86_64 fx::_start already has unsupported Rust-qualified type output; automatic views newly mismatched member references. Relevant nonidentifier aggregate contracts now decline the entire early collection. Original-fixture OFF/ON identity and lexical-name controls cover the refusal; no P9 identifier repair.",
+        "historical_baseline_only_results": {
+          "images": 1071,
+          "function_records": 192504,
+          "clean_images": 1055,
+          "discovery_refusals": 6,
+          "function_errors": 22,
+          "watchdogs": 20,
+          "outer_timeouts": 0,
+          "memory_aborts": 0,
+          "peak_ram_pct": 7.61,
+          "status": "Historical completed baseline-only run; rejected for reuse due environment mismatch. Superseded by fresh paired18 baseline."
+        },
+        "final_run_id": "f5d2cfa3424dc991375a3de1e81e51703785c9027846d780d0f5208f915bebae",
+        "final_source_tree": "0960fae01d7d0c525bcf334f38d09e75a93249c6",
+        "previous_verified24": {
+          "core_images": 1071,
+          "core_functions_per_arm": 192504,
+          "core_C_changes": 0,
+          "core_hunks": 0,
+          "core_metadata_changes": 0,
+          "core_discovery_changes": 0,
+          "core_function_errors_per_arm": 19,
+          "core_watchdogs_per_arm": 17,
+          "typed_images": 50,
+          "typed_functions_per_arm": 724,
+          "typed_changed_functions": 56,
+          "typed_hunks": 68,
+          "typed_hunks_reviewed": 68,
+          "unclassified_hunks": 0,
+          "pinned_cp_mv_rounds": 2,
+          "retry_errors": 0,
+          "retry_full_output_identity": true,
+          "note": "These comparisons passed, but did not supersede the later concrete declared4/actual LOAD8 failure. Corrected25 final results are recorded separately."
+        },
+        "unknown_read_coverage_reduction": "Nine prior experimental changes revert to exact baseline:four equivalent returned-pointer spellings;four lsv_source repairs;one obj_global_reuse repair. Last case reads through globalHandle\u2192pointerfield\u2192datum without provable first-window disjointness. Existing uninitialized/invalid default C remains unsupported; mandatory original40 stillpass. No guard weakening.",
+        "final_results": {
+          "core_images": 1071,
+          "core_functions_per_arm": 192504,
+          "core_C_changes": 0,
+          "core_hunks": 0,
+          "core_metadata_changes": 0,
+          "core_discovery_changes": 0,
+          "core_function_errors_per_arm": 19,
+          "core_watchdogs_per_arm": 17,
+          "core_fixture_load_errors_per_arm": 2,
+          "core_error_diagnostic_changes": 11,
+          "core_error_diagnostic_review": "All11 retain same20second watchdog failures; stopping-pass text only. No new failure identity.",
+          "typed_images": 50,
+          "typed_functions_per_arm": 724,
+          "typed_changed_functions": 47,
+          "typed_hunks": 59,
+          "typed_hunks_reviewed": 59,
+          "typed_metadata_changes": 55,
+          "typed_function_errors_per_arm": 2,
+          "typed_new_failure_identities": 0,
+          "new_reversals_exact_baseline": 9,
+          "reversal_lost_intended_repairs": 5,
+          "unclassified_hunks": 0,
+          "cp_mv_current_bulk_clean": true,
+          "cp_mv_full_raw_output_equals_baseline": true,
+          "new_targeted_retry_required": false,
+          "review_method": "Accepted classifications transfer only when complete beforeC,afterC and hunk hashes match; all9newreversals read in full and exactbaseline. Prior24 diagnostic retries remain historical.",
+          "typed_intended_hunks": 54,
+          "typed_equivalent_hunks": 5
+        },
+        "handoff": "/home/mahaloz/kwt/issues1019/issue810-implementation-audit/corpus/candidate25-final-handoff.json",
+        "handoff_sha256": "729b39f9df83c907830eabbf56b821453149b7a7be2acc31d4942809967cefda",
+        "typed_run_id": "527b967793c814380037dfec7bca7d29a5a2ea1a2630d844991612b97c18d726",
+        "core_handoff_sha256": "c0da387e20e159518cf1ee5eaaaaf4df3410bf932b234386709932dad159e3e5",
+        "typed_handoff_sha256": "f9bcecb3519d2d3999a26f406b8cb34067ecbc43f6e399e67030fbc468aee07c"
+      },
+      "speed_default_confirmation": {
+        "healthy154": {
+          "repeat": 12,
+          "default_equals_explicit_on20": true,
+          "metrics": {
+            "wall_ms": {
+              "medians": {
+                "baseline": 960.4598028818145,
+                "default": 956.0338904848322
+              },
+              "paired_median_pct": -0.5054545462428117,
+              "paired_median95pct": [
+                -0.718078334172928,
+                -0.11321670318699129
+              ],
+              "median_ratio_pct": -0.4608118303027986
+            },
+            "child_cpu_ms": {
+              "medians": {
+                "baseline": 958.2779999999987,
+                "default": 954.1310000000004
+              },
+              "paired_median_pct": -0.4799163192296396,
+              "paired_median95pct": [
+                -0.7143957066568563,
+                -0.1341889584012823
+              ],
+              "median_ratio_pct": -0.43275542170416736
+            }
+          }
+        },
+        "dwarf23": {
+          "repeat": 12,
+          "default_equals_explicit_on20": true,
+          "metrics": {
+            "wall_ms": {
+              "medians": {
+                "baseline": 118.4930264716968,
+                "default": 117.85731953568757
+              },
+              "paired_median_pct": -0.5206964038204642,
+              "paired_median95pct": [
+                -0.8494309060340655,
+                -0.12243995470971325
+              ],
+              "median_ratio_pct": -0.536493121104531
+            },
+            "child_cpu_ms": {
+              "medians": {
+                "baseline": 116.88749999999993,
+                "default": 116.1814999999975
+              },
+              "paired_median_pct": -0.5026569128638636,
+              "paired_median95pct": [
+                -0.8216711970592205,
+                -0.12931393076220377
+              ],
+              "median_ratio_pct": -0.6039995722403435
+            }
+          }
+        }
+      },
+      "speed_off_on": {
+        "speed_off_ms": 93.06,
+        "speed_on_ms": 93.32,
+        "speed_delta_pct": 0.28,
+        "speed_samples": 31
+      },
+      "later_rejection": "CIcompilerreadonlypoolcontextfailure, then explicitGCC-SLP native62\u219255 droppedinitializer despiteoriginalSTOREremaininglive."
+    }
+  },
+  "final_evidence": {
+    "runtime_source_tree": "b11957e13c5d4045c14991d8f3f2a7f93d201fd0",
+    "gate_log_pins": "/home/mahaloz/kwt/issues1019/issue810-implementation-audit/candidate27/gate-results.json",
+    "all_build_test_query_jobs_drained": true,
+    "debug_target_deleted": true,
+    "only_final_documentation_changes_after_runtime_freeze": true,
+    "test_source_tree": "57d2042a073209cbef13bacc74b81da0a35ce78e",
+    "gate_log_sha256": "3350c739460ae3e5a43f1b317eff807495b0a12eb9dc278c7c8a6c38473fbe83",
+    "corrective_published_parent": "172b18f67c2c7e8cb050f63ef369df79ad295bbb",
+    "only_five_correction_paths_before_documentation": true
+  },
+  "ci_portability": {
+    "ci_run": 39355124059,
+    "job": 118408102608,
+    "runner": "ubuntu26.04.1 image20261012.163.1",
+    "software": "OfficialimageincludesG++15.2.0,Clang20/21/22; invocationversionnotprinted. LocalGCC11SLP reproducesexactpoolload.",
+    "test_context_fix": "Deduplicated dat_hex globals receive actual ELF eight-byte ReadOnlyData definitions, little-endian checked and bounds fail closed; no body rewriting or optimization disable. Plain compiler inputs retained and explicit GCC-SLP arm added.",
+    "native_wrong_output": {
+      "function": "local_register",
+      "arguments": "3,4",
+      "expected": 62,
+      "actual": 55,
+      "failed_runtime_tree": "0960fae01d7d0c525bcf334f38d09e75a93249c6",
+      "native_event": "STORE25@4011d7\u2192COPY,sourcePIECE125@4011ca",
+      "extra_marker": "LOCALINDIRECT147firstread_pairCALL",
+      "root_cause": "COPYforwardingtomarkerletsuniontypeinfectexternalnumericPIECE;cleanuphidstheinitialization",
+      "ablation": "RestoreoriginalnativeCOPYmarkeredgebutkeeptheINDIRECT; exactFULLC,4strictnativepasses62/60."
+    },
+    "corrected_runtime_tree": "b11957e13c5d4045c14991d8f3f2a7f93d201fd0",
+    "corrected_test_tree": "57d2042a073209cbef13bacc74b81da0a35ce78e",
+    "test_only_delta": "Foursetup linespopulateSTOREspace/destination beforelowering; initialprivate26failurewasnullfixtureinput, runtimesame27.",
+    "causal_audit": "/home/mahaloz/kwt/issues1019/issue810-implementation-audit/store-trace/gcc-slp-register/audit.txt",
+    "ci_logs": "/home/mahaloz/kwt/issues1019/issue810-implementation-audit/ci1209-full.log",
+    "new_original_native_guard_contexts": 12,
+    "validation": "Full9178/38/0; focusedprivate17 and CLI6; independentSLPdefault/FULL8strictnativepasses; independent675and104supportednative/72exactOFFdeclines; ABI16cells\u00d77vectors. Correctedruntime26 and test27 haveidenticalproductionbytes.",
+    "status": "Corrected and fully revalidated; no engine edits afterruntime26 and test-only27 setup."
+  },
+  "speed_evidence": {
+    "whole": "/home/mahaloz/kwt/issues1019/issue810-implementation-audit/candidate27/default-speed-results.json",
+    "whole_sha256": "a0d78e7c02df7f1fb9e18e6e67d307bd04c41a72be518ce61556f6bd082a190f",
+    "official": "/home/mahaloz/kwt/issues1019/issue810-implementation-audit/candidate27/timeit.log",
+    "official_sha256": "894c1df761ee74fea3c1b9d5d06607bcbc867769b578ea517f91fb3719331830",
+    "protocol": "/home/mahaloz/kwt/issues1019/issue810-implementation-audit/candidate27/default_speed.py",
+    "cpu_affinity": [
+      24
+    ],
+    "arms": "fresh6d vsactualdefault27; default C must exactlymatch currentexplicitON27; historicalON20 differences are separately archived",
+    "quiet": "Owner/root/ABI/test/corpus jobs drained; child integrity hashing held throughout measurements. Alternating paired arms, two warmups each; allsame CPU inherited bychildren."
+  }
+}

@@ -8,7 +8,7 @@ use kuna_base::address::Address;
 use kuna_num::opcodes::OpCode;
 
 pub(crate) fn prepare(fd: &mut Funcdata) {
-    if !fd.get_arch().stack_views {
+    if !crate::kuna_stackviews::enabled(fd) {
         return;
     }
     let mut versions = HashSet::new();
