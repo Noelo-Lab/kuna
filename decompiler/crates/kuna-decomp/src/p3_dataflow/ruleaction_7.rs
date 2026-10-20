@@ -2155,8 +2155,6 @@ impl Rule for RuleFloatCast {
             data.op_set_opcode(op, typeop_for(OpCode::CPUI_FLOAT_INT2FLOAT));
             return 1;
         } else if opc2 == OpCode::CPUI_FLOAT_FLOAT2FLOAT && opc1 == OpCode::CPUI_FLOAT_TRUNC {
-            // Narrowing can round a value across an integer boundary before
-            // truncation. Only remove an exact widening or identity conversion.
             if insize1 < insize2 {
                 return 0;
             }

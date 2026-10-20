@@ -1885,6 +1885,13 @@ moves correct output: an x87 comparison of an int64 conversion stays in long
 double where the narrowed form happened to be exact. `off` is upstream's
 unconditional fold.
 
+`RuleFloatCast` removes a floating conversion ahead of `FLOAT_TRUNC` only
+when that conversion is exact: an identity or a widening. A narrowing keeps
+its rounding, because rounding to the narrower format can carry a value
+across an integer boundary before truncation: `(int)(float)0.99999999` is 1,
+while `(int)0.99999999` is 0. Upstream folds every such pair. This is a
+value-correctness repair with no option.
+
 `subflow.rs (SplitDatatype)` (triggers `RuleSplitCopy`/`RuleSplitLoad`/
 `RuleSplitStore`, cleanup pool) splits a whole-struct COPY/LOAD/STORE into
 per-field transfers using recovered types — described with the type system in
