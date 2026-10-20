@@ -7197,6 +7197,10 @@ impl PrintC {
             let offset = operation.get_in(1).and_then(|vn| fd.vbank().get(vn));
             if output.is_some_and(|value| value.get_size() == 1)
                 && offset.is_some_and(|value| value.is_constant())
+                // Keep opaque vector lanes under their own option. Only use
+                // byte subscripts for the floating transfer emitted here.
+                && fd.vbank().get(input).and_then(|value| value.get_def())
+                    .is_some_and(|definition| self.local_array_assignment(fd, arch, definition).is_some())
             {
                 if let Some(name) = self.local_byte_array_name(fd, arch, input) {
                     let byte = subpiece_byte_offset_for_composite(fd, op);

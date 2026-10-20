@@ -3639,8 +3639,9 @@ source representation; computed stores use the opcode's result type, including
 floating arithmetic and numeric conversions. A recovered standalone byte-array
 local that receives a same-width floating representation uses a byte-copy store
 from the scalar expression, including any preceding numeric conversion. One-byte
-SUBPIECE reads of that local use byte subscripts at the target's memory offset,
-rather than passing an array to an integer helper. Integer bit patterns are printed as
+SUBPIECE reads defined by that floating transfer use byte subscripts at the target's memory offset,
+rather than passing an array to an integer helper. Opaque vector lanes retain
+their separate option-controlled rendering. Integer bit patterns are printed as
 unsigned constants, while named pointer constants retain their address provenance.
 Equal-width signed, unsigned and unknown integer views remain compatible and
 keep ordinary scalar assignments; the fallback targets incompatible layouts or
