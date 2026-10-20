@@ -1823,6 +1823,148 @@ frame and marking those ranges not-mapped, and materializing recovered but
 unreferenced parameters as fresh Varnodes. For a locked varargs prototype the
 fixed arguments sort to the front first (`ParamActive::sort_fixed_position`).
 
+### Caller-proved big-endian pair returns
+
+The `callwide` option (`off|on`, default **off**) adds positive caller evidence
+to `bejoin evidence`. It is inert with `bejoin off` or `bejoin on`, and no mode
+preset enables it. A producer's own declared output takes precedence. The
+feature addresses a narrower ambiguity than instruction-shape recovery: the
+same big-endian machine instructions can compute a 64-bit result or only its
+high word. A declared eight-byte consumer parameter can distinguish those
+uses, provided the producer actually defines both words and every caller is
+accounted for. A consumer's type alone is insufficient.
+
+`kuna_callwide::publish_mips`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callwide.rs`) freezes one
+address/model ledger before rendering. Declaration ingestion records the
+origin of explicit assertions, parsed declarations and enabled DWARF; an
+inferred prototype lock is not positive evidence. The preflight uses the full
+image inventory, before selecting functions or worker chunks. Missing complete
+container facts, unresolved declarations or unsupported storage keep the
+ordinary result. Project bodies and headers use the same frozen facts.
+
+Declarations are staged until a producer is accepted. Only contracts used by
+accepted producers, their direct callers and typed sinks are then bound; failed
+candidate dependencies are discarded. A zero verdict parks nothing. Binding
+may revoke the first proof, so preflight performs at most one bounded replay
+and requires the identical producer/declaration sets and model before rendering.
+A new DWARF declaration narrower than the return register additionally requires
+the current `narrowext` rule to define its full four-byte return storage. On this
+MIPS ABI that requires the user's `narrowext compiler` policy. With `abi` or
+`off`, such candidates decline without publishing those DWARF contracts; the
+feature does not silently enable compiler-specific extension assumptions.
+New subregister input contracts likewise require the current extension rule to
+define their complete model word. Used integer contracts have only canonical
+one-, two-, four- or eight-byte widths, and a boolean occupies one byte.
+
+Prototype assignment for the proof uses a private JOIN table with the same
+physical spaces and models. Existing model JOIN addresses are resolved against
+their original table by address-space identity; newly assigned JOIN addresses
+use the private table. Neither virtual JOIN identities nor proof-local storage
+escape into the ledger. A rejected candidate cannot reorder later recovery by
+allocating entries in the drive's JOIN pool.
+
+Initial admission is restricted to fixed-address, non-PIC, legacy-delay-slot
+MIPS32 big-endian executables. ARM and other architectures decline unchanged:
+the existing ARM CLI caller scan does not establish this feature's complete
+executed transfer set or canonical return-token provenance, and remains
+unchanged. The bounded MIPS whole-image
+proof (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callwide/mips.rs
+(closed_image)`) covers every executable byte, including unowned gaps and
+delay words. Unowned words must be NOPs. Its sole external ELF entry is exactly
+one owned 16-byte `JAL known_coordinator; NOP; J self; NOP` stub: the self-jump
+at root+8 uses the machine's actual pseudo-direct PC rule, and all root bytes
+belong to one immutable region. No other transfer enters the root, and it
+never returns outside the image. The root is not a promotion candidate.
+Initializer/finalizer entrypoints, imports, exports, dynamic loading and other
+external communication refuse admission. Ordinary functions reject unknown,
+indirect, opaque, recursive and tail transfers. Each direct-call DAG function restores its entry
+return-address token, frame pointer, stack pointer and ABI-unaffected integer
+registers; stores are aligned words
+in one private frame, and loads require same-function initialized private cells.
+The effective return address after a JAL delay word must
+still be that call's link, and stack restoration is checked after the complete
+return bundle. Merely decoding `jr ra` as RETURN is not a return-token proof.
+This establishes the executed caller set. It does not claim that integer
+arithmetic cannot produce a code address: numeric values cannot become
+indirect transfers, external publications, external call arguments or an
+external root return. Returnable/open MIPS images decline. The native replay
+harness retains the same unused root and all matched function bytes, but its
+separate runtime entry is outside this proof.
+
+Only `kuna_callwide::publish_mips` can authorize the fixed-language JR-ra
+mode operation; it recomputes the entire sealed proof from immutable bytes and
+the complete observed call set. The raw walk matches native `03e00008`, the
+eight-byte bundle, named `setISAMode` index, exact `ISAModeSwitch`/ra/pc storage,
+and its mask/switch/PC dependency sequence. Every proved internal return link
+is aligned, so this mode is zero. It omits only that CALLOTHER, retaining all
+delay instructions and the final RETURN. ARM, unsealed images, other modes,
+extra opaque operations and malformed raw sequences have no such authority.
+
+Loader replacement, mutable translator access and the mutable Architecture
+context accessor revoke existing Funcdata views immediately. A separate read-only
+context adapter keeps ordinary per-drive and lazy-analysis reads from revoking
+a shared batch verdict. Direct writes through raw translator/loader interior
+handles are a trusted embedding responsibility: clear the proof or reload the
+image before reusing facts. Unsupported frontends receive no initial facts;
+this feature does not observe arbitrary external raw-handle mutations.
+
+The raw-pcode walk in
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callwide/proof.rs` requires both
+full return words to be producer-written at every return. Carry dependencies
+between those words are allowed; an entry leftover or partial word is not.
+At least one direct caller must forward both unchanged words, in ABI order,
+to one explicitly declared eight-byte integer formal with the exact model and
+storage. All other sites must satisfy that same forwarding contract, use only
+the supported first-register high piece, or prove the result ignored. An
+unknown boundary, unsupported low-word use or conflicting caller vetoes the
+whole producer. Sites are never sampled.
+
+Hard limits are 64 KiB and 16,384 aligned words for MIPS closure, 256 sites per
+producer, 32 instructions and 1,024 p-code operations per forwarding walk, and
+512 instructions and 20,000 operations per producer. An aggregate operation
+budget bounds all candidates. Exhaustion publishes no partial traversal prefix.
+Unique temporary facts expire at a complete machine-instruction bundle, so a
+delay word participates in its branch's bundle without leaking facts into the
+next instruction.
+
+Return recovery retains only the still-present exact pair at every live RETURN,
+after ordinary trial scoring and before deriving the output map. The same
+verdict controls existing big-endian pair ordering and high-piece extraction at
+calls. A restart copies frozen facts; it does not discover a positive after an
+artifact has rendered. Replacing or clearing the architecture ledger revokes
+already copied drive views. Byte, declaration, model, inventory and control-flow
+changes cannot reuse an older positive. Ordinary inference does not become new
+declaration evidence.
+
+Project export also carries the proved return into a named callee declaration
+when the ordinary complete locked-prototype path has none. It copies the live
+post-drive operands and finalized storage, even when the recovered call-prototype
+store is empty. Arguments must be exact four-byte integer model words, with no
+recovery, regrouping or input locking. Present results must match the proved pair
+and integer representation. A canonical eight-byte unknown uses the existing C
+speller's unsigned representation; an ignored result takes only its width and
+physical pair from the live proof. These checks construct a local prototype
+without parameter assignment or allocation in the drive's JOIN table.
+
+Private ABI descriptors survive worker transport and streaming. The selected
+producer's own prototype is authoritative: four-byte signed and unsigned input
+words have compatible ABI bits, while result signedness, entry and arity must
+agree. Without that selected definition, differing external declarations fail.
+A stream may defer a conflicting record only when the exact producer entry is
+in its complete preknown selection. It retains subsequent records in order,
+within fixed bounds, until the actual definition resolves the conflict; a
+missing or incompatible definition leaves an explicit failed export. Selection
+never creates proof facts. Unsupported live contracts, conflicting definitions
+or type-name collisions fail before publishing a body with an implicit wide
+call. Ordinary locked-prototype conflict handling is unchanged, and declaration
+capture retains its original position after temporary C rendering.
+
+This option covers one closed caller-evidence family. Missing proof preserves
+ordinary output; open/PIC/indirect consumers and ambiguous body-only inference
+remain outside it. Default-on requires unchanged upstream parity, sound
+cross-function C/header replay and the measured speed budget.
+
 ### `ActionActiveReturn` / `ActionReturnRecovery` — return values
 
 For each call with active output (`coreaction_protos.rs (ActionActiveReturn)`,

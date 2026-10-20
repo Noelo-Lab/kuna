@@ -692,6 +692,8 @@ fn run_parse_c(status: &mut IfaceStatus, content: &str) -> IfaceResult<()> {
                     .map_err(IfaceError::execution)?;
                 let model = crate::assertions::declared_model(prog, &model);
                 crate::assertions::park_prototype(prog, &target, &mut pieces, model.as_ref());
+                crate::kuna_callwide::target_declaration(prog, &target, &pieces, model,
+                    kuna_decomp::kuna_callwide::DeclarationSource::Parsed);
                 crate::kuna_qualifiedstorage::remember(
                     &mut dcp.pending_prototypes, &mut dcp.pending_prototype_entries,
                     &target, pieces,
@@ -875,6 +877,7 @@ pub(crate) fn bind_prototype(
         .map_err(IfaceError::execution)?;
     let model = crate::assertions::declared_model(prog, &model);
     crate::assertions::park_prototype(prog, &target, &mut pieces, model.as_ref());
+    crate::kuna_callwide::target_declaration(prog, &target, &pieces, model, kuna_decomp::kuna_callwide::DeclarationSource::Parsed);
     crate::kuna_qualifiedstorage::remember(&mut dcp.pending_prototypes, &mut dcp.pending_prototype_entries, &target, pieces);
     Ok(())
 }
@@ -983,6 +986,7 @@ decomp_command!(
                 .arch_mut()
                 .set_kuna_option(&optname, &p1)
                 .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            prog.callwide_changed();
             status.out(&format!("{res}\n"));
             return Ok(());
         }
@@ -1001,6 +1005,7 @@ decomp_command!(
         let res = options
             .set(prog.arch_mut(), id, &p1, &p2, &p3)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        prog.callwide_changed();
         status.out(&format!("{res}\n"));
         Ok(())
     }
@@ -1221,6 +1226,7 @@ decomp_command!(
         prog.commit_pending_analysis()
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         let selector = crate::engine::EntrySelector::parse(&funcname);
+        crate::kuna_callwide::prepare(prog);
         let selected = prog
             .resolve_body_entry(&selector)
             .map_err(|error| IfaceError::execution(error.to_string()))?;
@@ -1299,6 +1305,7 @@ decomp_command!(
         // a session reaches `load addr` without an explicit `read symbols`.
         prog.commit_pending_analysis()
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        crate::kuna_callwide::prepare(prog);
         // C++ Address offset = parse_machaddr(s,size,*dcp->conf->types) — the full
         // console address grammar over the engine spaces.
         let (requested, parsed_size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
@@ -1364,6 +1371,7 @@ decomp_command!(
             if inline_size > 0 { inline_size } else { prog.declared_extent(offset.get_offset()) };
         if inline_size > 0 {
             prog.declare_extent(offset.get_offset(), inline_size);
+            prog.callwide_unavailable("selected function inline extent is outside the complete inventory preflight");
         }
         let entry_stamp = offset.clone();
         let name_stamp = name.clone();
@@ -1623,6 +1631,7 @@ decomp_command!(
             .entry(fname)
             .or_default()
             .push((i, name, piece));
+        prog.callwide_unavailable("selected function parameter storage is outside the full declaration ledger");
         Ok(())
     }
 );
@@ -1701,6 +1710,7 @@ decomp_command!(
                 ..Default::default()
             }));
         entry.output_storage = Some(piece);
+        prog.callwide_unavailable("selected function return storage is outside the full declaration ledger");
         Ok(())
     }
 );
@@ -2188,6 +2198,10 @@ decomp_command!(
             .get(&name)
             .cloned()
             .unwrap_or_default();
+        if !flow_overrides.is_empty() || !mapped_params.is_empty() || !proto_overrides.is_empty() {
+            prog.callwide_unavailable("flow or call-site prototype overrides require a new complete image proof");
+        }
+        crate::kuna_callwide::prepare(&mut prog);
         if has_no_code {
             dcp_mut(status)?.conf = Some(prog);
             status.out(&format!("No code for {name}\n"));
@@ -2634,6 +2648,7 @@ decomp_command!(
             // No range indicates a default value: context->setVariableDefault.
             prog.arch().with_context_db_mut(|db| db.set_variable_default(name.as_bytes(), value))
                 .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            prog.callwide_unavailable("decode context was asserted after object loading");
             return Ok(());
         }
         // Otherwise parse the [begin,end) range.
@@ -2648,6 +2663,7 @@ decomp_command!(
         prog.arch()
             .with_context_db_mut(|db| db.set_variable_region(name.as_bytes(), &addr1, &addr2, value))
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        prog.callwide_unavailable("decode context was asserted after object loading");
         Ok(())
     }
 );
@@ -2686,6 +2702,7 @@ decomp_command!(
                 let track = db.get_tracked_default();
                 track.push(kuna_sleigh::globalcontext::TrackedContext { loc, val: value });
             });
+            prog.callwide_unavailable("tracked register assertions require a new complete image proof");
             return Ok(());
         }
         let (addr1, _s1) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
@@ -2703,6 +2720,7 @@ decomp_command!(
             *track = def;
             track.push(kuna_sleigh::globalcontext::TrackedContext { loc, val: value });
         });
+        prog.callwide_unavailable("tracked register assertions require a new complete image proof");
         Ok(())
     }
 );
@@ -3269,6 +3287,7 @@ decomp_command!(
             .expect("fd present")
             .get_override_mut()
             .insert_proto_override(callpoint, ov);
+        dcp.conf.as_mut().expect("conf present").callwide_unavailable("call-site prototype override requires a new complete image proof");
         status.out("Successfully added override\n");
         Ok(())
     }
@@ -3342,6 +3361,7 @@ decomp_command!(
             // `load function`/`decompile` (the kuna console rebuilds the Funcdata).
             dcp.pending_flow_overrides.entry(fname.clone()).or_default().push((site, type_));
         }
+        dcp.conf.as_mut().expect("conf present").callwide_unavailable("flow override requires a new complete image proof");
         status.out("Successfully added override\n");
         if !chained.is_empty() {
             status.out(&format!(
@@ -3819,6 +3839,7 @@ decomp_command!(
             .map_err(|_| IfaceError::execution(format!("Unknown function name: {func_name}")))?;
         // C++ fd->getFuncProto().setInjectId(injectid).
         prog.arch_mut().symboltab.set_function_inject_id(sid, injectid);
+        prog.callwide_unavailable("explicit callfixup changes the decoded call effects");
         status.out("Successfully applied callfixup\n");
         Ok(())
     }

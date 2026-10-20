@@ -699,6 +699,8 @@ fn apply_prototype(prog: &mut ConsoleProgram, func: &str, decl: &str) -> Result<
     let target = resolve_proto_target(prog, func)?;
     let model = declared_model(prog, &model);
     park_prototype(prog, &target, &mut pieces, model.as_ref());
+    crate::kuna_callwide::target_declaration(prog, &target, &pieces, model,
+        kuna_decomp::kuna_callwide::DeclarationSource::Assertion);
     prog.set_pending_prototype(target.name(), pieces);
     Ok(())
 }
@@ -859,6 +861,7 @@ fn apply_cross_function(
         let model = prog.arch().function_prototype_model(target.name()).cloned();
         lock_prototype_on_symbol(prog, &target, &pieces, model.as_ref());
     }
+    prog.callwide_unavailable("partial storage assertions are not complete declaration provenance");
     prog.set_pending_prototype(target.name(), pieces);
     Ok(())
 }

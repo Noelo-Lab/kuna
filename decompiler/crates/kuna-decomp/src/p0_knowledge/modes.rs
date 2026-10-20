@@ -571,12 +571,15 @@ mod tests {
         /// width. On decbench type_match it gained a few perfect functions on
         /// ARM firmware and none on x86-64, and a narrowed value that a wider
         /// reader takes back gains a cast (`(long)(int)v` on AArch64).
+        ///
+        /// `callwide` requires complete caller evidence and remains an explicit
+        /// opt-in until its default validation is complete.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "callmechanisms", "regsigned", "x86listingswitch"];
+              "armconstshift", "callmechanisms", "regsigned", "x86listingswitch", "callwide"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

@@ -67,7 +67,7 @@ impl FlowEnvironment for ArchFlowEnv {
         self.arch().translate()
     }
     fn arm_decode_mode(&self, addr: &Address) -> Option<crate::kuna_armflowcontext::ArmDecodeMode> {
-        self.arch().with_context_db_mut(|db| {
+        self.arch().with_context_db(|db| {
             let var = db.get_variable(b"TMode").ok()?;
             let word = var.get_word() as usize;
             let mask = var.get_mask() << var.get_shift();
@@ -1013,6 +1013,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         crate::kuna_rustabi::seed_callee_return_writes(arch, fd);
         // (kuna `bejoin evidence`) And the wide-return verdicts.
         crate::kuna_bejoin::seed_wide_returns(arch, fd);
+        crate::p4_calls::kuna_callwide::seed(arch, fd);
         // (kuna `calleedeadarg`) Same story for the entry-liveness probe the
         // input-trial scoring seam consults.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
@@ -1400,6 +1401,7 @@ pub fn decompile_func_full_with_objects(
         // the translator is reachable; inert unless the model joins its pair
         // high word first.
         crate::kuna_bejoin::seed_wide_returns(arch, &mut fd);
+        crate::p4_calls::kuna_callwide::seed(arch, &mut fd);
         // (kuna `calleedeadarg`) Take the callee entry-liveness probe the
         // input-trial scoring seam consults, for the same reason and at the same
         // point; inert unless `option calleedeadarg` is live.
