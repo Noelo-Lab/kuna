@@ -2161,8 +2161,10 @@ impl Database {
 
     /// Map caller-declared data, replacing analysis-derived data at the same
     /// address so the declaration's name, extent, and type are authoritative.
-    /// Contained inferred strings yield to the declaration; named data, explicit
-    /// declarations, and symbols with other storage mappings remain intact.
+    /// The declaration owns every byte of its span: an inferred string (type-locked
+    /// but not name-locked, singly mapped) that shares any byte with it yields, so
+    /// it cannot win the narrower-container query or overlap it in the header.
+    /// Named data, explicit declarations, and multiply mapped symbols remain.
     pub fn upsert_data_mapped(
         &mut self,
         scope: ScopeId,
@@ -2172,10 +2174,6 @@ impl Database {
         usepoint: &Address,
     ) -> KunaResult<(SymbolId, EntryRef)> {
         self.kuna_gen += 1;
-        // String discovery locks its guessed character-array type but not its
-        // synthetic name. A later declared object owns every byte in its span;
-        // a contained interior string must not win the narrower-container query.
-        // Keep named data and earlier user declarations, whose names are locked.
         if ct.get_size() > 0 {
             if let Some(space) = addr.get_space() {
                 let first = u128::from(addr.get_offset());
@@ -2190,8 +2188,9 @@ impl Database {
                         let entry = &record.entry;
                         let at = u128::from(entry.get_addr().get_offset());
                         let symbol = &self.symbols[entry.symbol];
-                        (first < at
-                            && at + entry.get_size().max(0) as u128 <= end
+                        (at != first
+                            && at < end
+                            && at + entry.get_size().max(0) as u128 > first
                             && symbol.is_type_locked()
                             && !symbol.is_name_locked()
                             && symbol.mapentry.len() == 1
@@ -5050,7 +5049,7 @@ mod tests {
     }
 
     #[test]
-    fn declared_data_displaces_only_contained_unnamed_character_arrays() {
+    fn declared_data_displaces_only_overlapping_unnamed_character_arrays() {
         let m = build_manager();
         let ram = space(&m, 2);
         let (mut db, g) = db_with_global(m.num_spaces());
@@ -5084,6 +5083,14 @@ mod tests {
             .add_symbol_mapped(g, "s_100c", string_type(4), &address(0x100c), &invalid)
             .unwrap();
         db.set_attribute(neighbor, varnode_flags::typelock);
+        let (before, _) = db
+            .add_symbol_mapped(g, "s_ffe", string_type(4), &address(0xffe), &invalid)
+            .unwrap();
+        db.set_attribute(before, varnode_flags::typelock);
+        let (after, _) = db
+            .add_symbol_mapped(g, "s_100b", string_type(3), &address(0x100b), &invalid)
+            .unwrap();
+        db.set_attribute(after, varnode_flags::typelock);
         let (number, _) = db
             .add_symbol_mapped(g, "interior_number", dt(1), &address(0x1009), &invalid)
             .unwrap();
@@ -5114,6 +5121,9 @@ mod tests {
         ] {
             let found = db.find_addr(g, &address(offset), &invalid).unwrap();
             assert_eq!(db.entry(g, found).symbol, expected);
+        }
+        for offset in [0xffe, 0x1002, 0x100b] {
+            assert!(db.find_addr(g, &address(offset), &invalid).is_none());
         }
     }
 

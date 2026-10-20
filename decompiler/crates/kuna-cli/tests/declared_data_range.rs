@@ -1,4 +1,5 @@
-//! A declared data range supersedes contained strings inferred from float bytes.
+//! A declared data range supersedes strings inferred from float bytes inside it,
+//! including one that starts inside the range and runs past its end.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 use crate::common;
 use std::process::{Command, Output};
@@ -25,13 +26,20 @@ fn an_asserted_float_table_displaces_an_inferred_interior_string() {
         eprintln!("Clang unavailable; skipping ELF fixture");
         return;
     }
+    let contained = include_str!("fixtures/declared_data_range/sample.s");
+    let straddling = contained.replace(
+        " .long 0x42640000,0x40414243,0x42700000\n",
+        " .long 0x42640000,0x40414243,0x44434241\n .byte 0\n",
+    );
+    assert_ne!(contained, straddling);
+    check_table(contained);
+    check_table(&straddling);
+}
+
+fn check_table(assembly: &str) {
     let root = common::scratch_file("declared-data-range", "dir");
     std::fs::create_dir_all(&root).unwrap();
-    std::fs::write(
-        root.join("sample.s"),
-        include_str!("fixtures/declared_data_range/sample.s"),
-    )
-    .unwrap();
+    std::fs::write(root.join("sample.s"), assembly).unwrap();
     std::fs::write(
         root.join("driver.c"),
         include_str!("fixtures/declared_data_range/driver.c"),
