@@ -206,6 +206,9 @@ mod verify_w10_spacebase_render;
 #[path = "verify_w10_stackslot_ssa.rs"]
 mod verify_w10_stackslot_ssa;
 
+#[path = "verify_w10_stackbyte_store.rs"]
+mod verify_w10_stackbyte_store;
+
 #[path = "verify_w10_struct_corpus.rs"]
 mod verify_w10_struct_corpus;
 

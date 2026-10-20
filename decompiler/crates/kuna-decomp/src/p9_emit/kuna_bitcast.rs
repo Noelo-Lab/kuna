@@ -11,10 +11,11 @@ pub(crate) struct Transfer {
     pub target: Rc<Datatype>,
     pub size: i32,
     pub to_float: bool,
+    pub source_pointer: bool,
 }
 
-/// A same-width `CAST` between an integer and a float, judged by the types the
-/// printed C declares: a named variable or field, else the value's own type.
+/// A same-width storage `CAST` between a float and integer or native pointer,
+/// judged by the types the printed C declares: a named variable or field, else the value's own type.
 pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Transfer> {
     let operation = fd.obank().get(op)?;
     if operation.code() != OpCode::CPUI_CAST {
@@ -46,8 +47,16 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
             type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
         )
     };
-    let to_float = to == type_metatype::TYPE_FLOAT && integer(from);
-    if !to_float && !(from == type_metatype::TYPE_FLOAT && integer(to)) {
+    let pointer = |ty: &Datatype| {
+        ty.get_metatype() == type_metatype::TYPE_PTR
+            && ty.get_word_size() == Some(1)
+            && fd.get_arch().types().is_some_and(|types| {
+                ty.get_size() == types.get_size_of_pointer()
+            })
+    };
+    let source_pointer = pointer(&from_ty);
+    let to_float = to == type_metatype::TYPE_FLOAT && (integer(from) || source_pointer);
+    if !to_float && !(from == type_metatype::TYPE_FLOAT && (integer(to) || pointer(&to_ty))) {
         return None;
     }
     Some(Transfer {
@@ -55,6 +64,7 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
         target: to_ty,
         size,
         to_float,
+        source_pointer,
     })
 }
 
@@ -110,6 +120,7 @@ pub(crate) fn truncated_float_storage(
         target,
         size,
         to_float: false,
+        source_pointer: false,
     }, result_type))
 }
 
@@ -191,6 +202,7 @@ pub(crate) fn stack_float_input(
             .ok()?,
         size: value.get_size(),
         to_float: true,
+        source_pointer: false,
     })
 }
 
@@ -263,6 +275,27 @@ fn declared_member_type(
     decl_high_type: bool,
     id: VarnodeId,
 ) -> Option<Rc<Datatype>> {
+    let value = fd.vbank().get(id)?;
+    if value.is_persist() && !value.is_implied() {
+        let usepoint = kuna_base::address::Address::new_invalid();
+        if let Some((_, offset, Some(ty))) = fd.get_arch().name_for_global_varnode(
+            value.get_addr(), value.get_size(), &usepoint,
+        ) {
+            if ty.get_metatype() == type_metatype::TYPE_ARRAY {
+                let types = fd.get_arch().types()?;
+                return crate::kuna_stackviews::scalar_piece(
+                    types, ty, offset.max(0), value.get_size(),
+                ).or_else(|| {
+                    crate::kuna_partialaccess::readable(value.get_type(), value.get_size())
+                        .then(|| Rc::clone(value.get_type()))
+                }).or_else(|| {
+                    matches!(value.get_size(), 4 | 8)
+                        .then(|| types.get_base(value.get_size(), type_metatype::TYPE_UNKNOWN).ok())
+                        .flatten()
+                });
+            }
+        }
+    }
     let declared = crate::printc::declared_variable_type(fd, decl_high_type, id)?;
     if !fd.get_arch().stack_views {
         return Some(declared);
@@ -291,4 +324,24 @@ fn declared_member_type(
         value.get_size(),
     )
     .or(Some(declared))
+}
+
+/// A floating precision conversion remains floating when a byte array covers it.
+pub(crate) fn array_float_conversion(fd: &Funcdata, op: OpId) -> Option<Rc<Datatype>> {
+    let operation = fd.obank().get(op)?;
+    if operation.code() != OpCode::CPUI_FLOAT_FLOAT2FLOAT {
+        return None;
+    }
+    let output = operation.get_out()?;
+    let value = fd.vbank().get(output)?;
+    if !value.is_persist() || !matches!(value.get_size(), 4 | 8) {
+        return None;
+    }
+    let (_, _, Some(ty)) = fd.get_arch().name_for_global_varnode(
+        value.get_addr(), value.get_size(), &kuna_base::address::Address::new_invalid(),
+    )? else { return None };
+    if ty.get_metatype() != type_metatype::TYPE_ARRAY {
+        return None;
+    }
+    fd.get_arch().types()?.get_base(value.get_size(), type_metatype::TYPE_FLOAT).ok()
 }

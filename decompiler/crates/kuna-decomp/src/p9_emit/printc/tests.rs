@@ -2302,7 +2302,7 @@ mod w10_printc_cast_render {
         printer.set_name("rust");
         printer.set_output_stream();
         printer.op_bit_transfer_ir(&fd, &bare_arch(), op, crate::kuna_bitcast::Transfer {
-            input, target: named("float", 4, type_metatype::TYPE_FLOAT), size: 4, to_float: true,
+            input, target: named("float", 4, type_metatype::TYPE_FLOAT), size: 4, to_float: true, source_pointer: false,
         });
         assert_eq!(printer.emit_mut().output_str(), "f32::from_bits(0x1u32)");
     }

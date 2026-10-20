@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-733a074152ca",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/castternary_clang_O0_x86_64",
+    "binary_sha256": "54ee5fdc0d0f500626fbed01e96dc587a15e2ba3d8300fe8f7fac8a2ae41cd23",
+    "binary_size": 17056,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/castternary_clang_O0_x86_64",
+    "selector": "keep_float",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\"name\": \"keep_float\",(?:(?!\"variables\":)[\\s\\S])*\"variables\": \\[(?:(?!\"code\":)[\\s\\S])*?\"name\": \"local_18\",\\s*\"type\": \"double\",\\s*\"kind\": \"stack\",\\s*\"arg_index\": null,\\s*\"stack_offset\": -24,\\s*\"size\": 8,"
+    ],
+    "stdout_absent": [
+      "\"name\": \"keep_float\",(?:(?!\"variables\":)[\\s\\S])*\"variables\": \\[(?:(?!\"code\":)[\\s\\S])*?\"name\": \"local_18\",\\s*\"type\": \"undefined12\",\\s*\"kind\": \"stack\",\\s*\"arg_index\": null,\\s*\"stack_offset\": -24,\\s*\"size\": 12,"
+    ]
+  },
+  "notes": "ON: clang -O0 keep_float spills double d to stack - 0x18, and the C declares double v1; // stack - 0x18 | stack - 0x28 | stack - 0x30 | xmm0_qa | xmm1_qa. The frame layout reports the 12-byte span local_18 undefined12 at -24; it is split at the declaration, so local_18 is reported as double, 8 bytes, at -24, and the remaining 4 bytes stay undefined4."
+}

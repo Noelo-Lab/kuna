@@ -52,7 +52,7 @@
 <com>quit</com>
 </script>
 <stringmatch name="CALLTARGETTYPE-ARMHF #1: on types a float call float (*)(float)" min="1" max="1">float \(\*v1\)\(float\); // pc \| r0</stringmatch>
-<stringmatch name="CALLTARGETTYPE-ARMHF #2: the float call itself prints as it did" min="2" max="2">return \(float\)\(\*v1\)\(a0 \+ a0\) \+ 1\.0;</stringmatch>
+<stringmatch name="CALLTARGETTYPE-ARMHF #2: the float call itself prints as it did" min="2" max="2">return \(float\)\(\*v1\)\(a0 \+ a0\) \+ 1\.0f?;</stringmatch>
 <stringmatch name="CALLTARGETTYPE-ARMHF #3: on types an integer call" min="1" max="1">int \(\*v1\)\(unsigned int,unsigned int\); // pc \| r3</stringmatch>
 <stringmatch name="CALLTARGETTYPE-ARMHF #4: a float held as an integer in s0 keeps the call untyped" min="2" max="2">unsigned int v2; // s0</stringmatch>
 <stringmatch name="CALLTARGETTYPE-ARMHF #5: that call prints as it did" min="2" max="2">a1\->field_0x0 = \(\*v1\)\(v2\);</stringmatch>

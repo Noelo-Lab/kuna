@@ -143,6 +143,218 @@ fn tree_range_members_use_the_pointer_type_of_each_native_access() {
     std::fs::remove_file(image).unwrap();
 }
 
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#[test]
+fn register_loaded_rgb_bytes_survive_a_writing_callee() {
+    use object::{Object, ObjectSymbol};
+
+    let compilers: Vec<_> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| common::process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    if compilers.is_empty() {
+        eprintln!("no C compiler available; skipping stack-byte execution");
+        return;
+    }
+
+    let assembly = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/issue_1123_rgb_stack.S");
+    let driver = common::scratch_file("issue-1123-rgb-native", "c");
+    std::fs::write(
+        &driver,
+        r#"
+#include <stdio.h>
+extern unsigned int build(void);
+extern unsigned int sink;
+int main(void) {
+    unsigned int value = build();
+    printf("result=0x%06x sink=0x%06x\n", value, sink);
+    return value != 0x332211 || sink != 0x332211;
+}
+"#,
+    )
+    .unwrap();
+    let image = common::scratch_file("issue-1123-rgb", "elf");
+    common::process::required_output(
+        Command::new(compilers[0])
+            .args([
+                "-O2",
+                "-no-pie",
+                "-fno-stack-protector",
+                "-fcf-protection=none",
+            ])
+            .arg(&driver)
+            .arg(&assembly)
+            .arg("-o")
+            .arg(&image),
+    );
+    let native = common::process::required_output(&mut Command::new(&image));
+    let native_output = String::from_utf8(native.stdout).unwrap();
+    assert_eq!(native_output, "result=0x332211 sink=0x332211\n");
+
+    let image_bytes = std::fs::read(&image).unwrap();
+    let object = object::File::parse(image_bytes.as_slice()).unwrap();
+    let symbol_address = |name: &str| {
+        object
+            .symbols()
+            .find(|symbol| symbol.name().ok() == Some(name))
+            .unwrap_or_else(|| panic!("missing ELF symbol {name}"))
+            .address()
+    };
+    let build_address = symbol_address("build");
+    let colors_address = symbol_address("colors");
+    let contracts = [
+        "typedef struct RGB { unsigned char red; unsigned char green; unsigned char blue; };"
+            .to_string(),
+        format!("prototype 0x{build_address:x} unsigned int build(void)"),
+        format!(
+            "prototype 0x{:x} unsigned int consume(const struct RGB *rgb)",
+            symbol_address("consume")
+        ),
+    ];
+
+    let prelude = r#"
+#include <stdint.h>
+#include <stdio.h>
+typedef int8_t int1; typedef uint8_t uint1; typedef int16_t int2; typedef uint16_t uint2;
+typedef int32_t int4; typedef uint32_t uint4; typedef int64_t int8; typedef uint64_t uint8;
+typedef uint8_t undefined1; typedef uint16_t undefined2; typedef uint32_t undefined4; typedef uint64_t undefined8;
+struct RGB;
+uint4 sink;
+static const uint1 colors[3] = {0x11, 0x22, 0x33};
+uint4 consume(const struct RGB *rgb) {
+    const uint1 *bytes = (const uint1 *)(const void *)rgb;
+    uint4 value = (uint4)bytes[0] | ((uint4)bytes[1] << 8) | ((uint4)bytes[2] << 16);
+    sink = value;
+    return value;
+}
+"#;
+
+    let color_references = regex::Regex::new(r"\bdat_([0-9a-fA-F]+)\b").unwrap();
+    for enabled in [false, true] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        command
+            .arg("decompile-all")
+            .arg(&image)
+            .args(["--addr", &format!("0x{build_address:x}"), "--jobs", "1"])
+            .args([
+                "--mode",
+                "reliable",
+                "--language",
+                "c",
+                "--target",
+                "x86:LE:64:default:gcc",
+                "--json",
+                "--assert-strict",
+                "--option",
+                "stackviews",
+                if enabled { "on" } else { "off" },
+                "--option",
+                "stackalias",
+                "off",
+                "--option",
+                "structdefs",
+                "on",
+                "--option",
+                "partialaccess",
+                "on",
+                "--sleighpath",
+            ])
+            .arg(common::repo_root().join("specs"));
+        for contract in &contracts {
+            command.args(["--assert", contract]);
+        }
+        let output = common::process::output_with_timeout(
+            &mut command,
+            Duration::from_secs(30),
+            Duration::from_millis(25),
+        )
+        .expect("bounded issue-1123 decompilation");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(
+            document["assertions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|row| row["status"] == "applied"),
+            "{document}"
+        );
+        let code = document["functions"][0]["code"].as_str().unwrap();
+        assert!(!code.contains("WARNING:"), "{code}");
+
+        let mut macros = String::new();
+        for capture in color_references.captures_iter(code) {
+            let address = u64::from_str_radix(&capture[1], 16).unwrap();
+            let offset = address
+                .checked_sub(colors_address)
+                .filter(|offset| *offset < 3)
+                .unwrap_or_else(|| panic!("unexpected global data address {address:#x}"));
+            macros.push_str(&format!(
+                "#define dat_{:x} (*(const uint1 *)(colors + {offset}))\n",
+                address
+            ));
+        }
+        let source = common::scratch_file(
+            if enabled {
+                "issue-1123-rgb-stackviews"
+            } else {
+                "issue-1123-rgb-plain"
+            },
+            "c",
+        );
+        let emitted_driver = r#"
+extern uint4 build(void);
+int main(void) {
+    uint4 value = build();
+    printf("result=0x%06x sink=0x%06x\n", value, sink);
+    return value != 0x332211 || sink != 0x332211;
+}
+"#;
+        std::fs::write(
+            &source,
+            format!("{prelude}\n{macros}\n{code}\n{emitted_driver}"),
+        )
+        .unwrap();
+        for compiler in &compilers {
+            for optimization in ["-O0", "-O2"] {
+                let executable = common::scratch_file("issue-1123-rgb-roundtrip", "elf");
+                common::process::required_output(
+                    Command::new(compiler)
+                        .args([
+                            "-std=c11",
+                            optimization,
+                            "-no-pie",
+                            "-fno-stack-protector",
+                            "-fstrict-aliasing",
+                            "-Werror=int-conversion",
+                            "-Werror=incompatible-pointer-types",
+                            "-Werror=implicit-function-declaration",
+                        ])
+                        .arg(&source)
+                        .arg("-o")
+                        .arg(&executable),
+                );
+                let emitted = common::process::required_output(&mut Command::new(&executable));
+                assert_eq!(
+                    emitted.stdout,
+                    native_output.as_bytes(),
+                    "stackviews={} compiler={compiler} optimization={optimization}; code:\n{code}",
+                    enabled
+                );
+                std::fs::remove_file(executable).unwrap();
+            }
+        }
+        std::fs::remove_file(source).unwrap();
+    }
+    std::fs::remove_file(image).unwrap();
+    std::fs::remove_file(driver).unwrap();
+}
+
 fn decompile(function: &str, enabled: bool) -> String {
     decompile_options(function, enabled, &[])
 }
@@ -223,6 +435,9 @@ fn decompile_surface(
             "--sleighpath",
         ])
         .arg(common::repo_root().join("specs"));
+    if !enabled {
+        command.args(["--option", "localstackviews", "off"]);
+    }
     if function == "rgb_reuse" {
         command.args(["--target", "x86:LE:64:default:windows"]);
     }

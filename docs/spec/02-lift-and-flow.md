@@ -1437,6 +1437,14 @@ shape is still reachable. Sharing is worth about 16% of the wall time of a
 two-table function, and on the interleaved shape `unrolledguard` was written for
 it recovers the same tables without any tolerance rule, because the shared
 partial's edge collection runs once while every sibling table is still empty.
+(kuna) Under a per-function budget (`00-overview.md`, *The watchdog*) the loop is bounded in
+time as well: `flow.rs (FlowInfo::recover_jump_tables)` asks the drive's
+deadline before each table and after its attempt, and `jumptable.rs
+(JumpTable::recover_model)` after the basic and the default-path model. A
+table reached once the deadline has passed is not attempted — its BRANCHIND is
+truncated like any unrecovered one, so the loop drains instead of staging more
+sub-decompilations — and the budget error names the step and the indirect
+jump's address. Without a budget each probe is one thread-local read.
 Two pre-checks bound the attempt:
 `funcdata_block.rs (Funcdata::early_jump_table_fail)` backtracks up to 8 ops
 through value-preserving arithmetic looking for a computation the recovery can
@@ -2525,3 +2533,28 @@ produce no value at all. The fix is in the RISC-V SLEIGH sources, so
 Exercised by `tests/stages/gh831-riscv-fpmove.xml` (RV64: a call result moved
 by `fmv.x.d` and `fmv.x.w`, and all four conversions) and
 `tests/stages/gh831-riscv32-fpmove.xml` (the RV32 forms).
+
+The x87 `FIST` and `FISTP` lifts preserve integer conversion as width-specific
+`x87_float_to_int16`, `x87_float_to_int32`, or `x87_float_to_int64` user operations.
+Each receives the full 80-bit operand and control word, retaining rounding-mode
+dependence and masked-invalid conversion behavior symbolically. A generic
+round-then-cast would incorrectly impose half-away rounding and discard the
+control word. `FISTP` retains its stack pop; `FIST` does not pop. `FISTTP` remains
+the separate truncating conversion. These operations do not add modeling of
+x87 status updates or unmasked exceptions that suppress writes and pops. When
+the control word provably selects round-toward-zero, as in compiled C
+conversions, `x87truncate` (§3.5) turns the operation back into `FLOAT_TRUNC`.
+That proof reads the control word's dataflow, so every instruction that
+replaces the control word defines it: `FLDCW`, `FLDENV`, `FRSTOR`,
+`FINIT`/`FNINIT`, and the reinitialization after `FSAVE`/`FNSAVE`. `FXRSTOR`
+loads it from the first word of its area. `XRSTOR` and `XRSTORS` load it the
+same way when `EAX` bit 0 and the area's `XSTATE_BV` bit 0 are set, reset it
+to `0x037f` when only `EAX` bit 0 is set, and leave it unchanged otherwise.
+
+With `localstackviews`, the `FlowEmit::dump` seam in
+`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs` records original STORE and
+persistent memory COPY identities for the bounded P6 policy. Register COPYs do
+not contribute. Generational operation identity and original receiver storage
+are retained separately from instruction-start flags, which clones can copy.
+The callback changes neither lifted P-code nor flow; it supplies provenance
+before optimization can create indistinguishable same-address reconstructions.

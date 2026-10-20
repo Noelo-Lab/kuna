@@ -2741,6 +2741,32 @@ impl Database {
         Some(EntryRef::Mapped { space_index, idx })
     }
 
+    /// Find an overlapping mapping satisfying a symbol predicate, including
+    /// entries beginning inside the requested interval.
+    pub(crate) fn find_overlap_matching(
+        &self,
+        scope: ScopeId,
+        addr: &Address,
+        size: int4,
+        mut predicate: impl FnMut(&Symbol) -> bool,
+    ) -> Option<EntryRef> {
+        if size <= 0 {
+            return None;
+        }
+        let space_index = addr.get_space()?.get_index() as usize;
+        let rangemap = self.scopes[scope].maptable.get(space_index)?.as_ref()?;
+        for (idx, record) in rangemap.records() {
+            let entry = &record.entry;
+            if predicate(&self.symbols[entry.symbol])
+                && (addr.overlap(0, entry.get_addr(), entry.get_size()) >= 0
+                    || entry.get_addr().overlap(0, addr, size) >= 0)
+            {
+                return Some(EntryRef::Mapped { space_index, idx });
+            }
+        }
+        None
+    }
+
     /// C++ `ScopeInternal::findFunction` (`database.cc:2349-2368`): the
     /// FunctionSymbol starting exactly at `addr` (forward walk).
     pub fn find_function(&self, scope: ScopeId, addr: &Address) -> Option<SymbolId> {
