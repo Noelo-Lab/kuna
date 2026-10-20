@@ -29,16 +29,50 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
     let output = operation.get_out()?;
     let value = fd.vbank().get(output)?;
     let stack = fd.get_arch().manage().get_stack_space()?;
-    if value.get_space().get_index() != stack.get_index() {
-        return None;
-    }
     let size = value.get_size();
     if !matches!(size, 1 | 2 | 4 | 8 | 16) {
         return None;
     }
     let scope = fd.get_scope_local()?;
-    let info =
-        scope.query_container_for_link_width(value.get_addr(), size, &Address::new_invalid())?;
+    let (address, linked_symbol) = if value.get_space().get_index() == stack.get_index() {
+        (value.get_addr().clone(), None)
+    } else {
+        // An explicit register or unique definition can render as a frame member.
+        // Resolve its local Symbol instead of treating the SSA address as storage.
+        let high = fd.high_bank().get(value.get_high()?)?;
+        let symbol = high.kuna_link_symbol()?;
+        if scope.database().symbol(symbol).scope != scope.scope_id() {
+            return None;
+        }
+        let offset = high.kuna_symbol_offset();
+        if offset < 0 {
+            return None;
+        }
+        let mut storage = scope
+            .symbol_storage(symbol)
+            .into_iter()
+            .filter(|(address, width)| {
+                address
+                    .get_space()
+                    .is_some_and(|space| space.get_index() == stack.get_index())
+                    && offset.checked_add(size).is_some_and(|end| end <= *width)
+            });
+        let (base, _) = storage.next()?;
+        if storage.next().is_some() {
+            return None;
+        }
+        (
+            Address::new(
+                Rc::clone(&stack),
+                stack.wrap_offset(base.get_offset().wrapping_add(offset as u64)),
+            ),
+            Some(symbol),
+        )
+    };
+    let info = scope.query_container_for_link_width(&address, size, &Address::new_invalid())?;
+    if linked_symbol.is_some_and(|symbol| symbol != info.symbol) {
+        return None;
+    }
     let root = info.sym_type.as_ref()?;
     let factory = fd.get_arch().types()?;
     let byte_member = factory
