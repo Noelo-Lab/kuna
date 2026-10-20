@@ -28,6 +28,7 @@ tempfile = "3.27"
 embed-specs = []
 
 [dev-dependencies]
+kuna-num.workspace = true
 object = { workspace = true, features = ["write"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
