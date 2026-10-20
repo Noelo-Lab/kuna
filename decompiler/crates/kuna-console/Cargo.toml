@@ -21,6 +21,7 @@ kuna-analysis.workspace = true
 # `object::File` to drive `Listing::build`.  Already in the workspace graph via
 # kuna-analysis, so this adds no new crate.
 object.workspace = true
+unicode-ident = "1"
 
 [dev-dependencies]
 object = { workspace = true, features = ["write"] }

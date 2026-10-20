@@ -539,9 +539,17 @@ impl AnalysisOutput {
             fix(&mut p.name);
             p.innames.iter_mut().for_each(fix);
         };
-        self.symbols.iter_mut().for_each(|s| fix(&mut s.name));
-        self.data_objects.iter_mut().for_each(|d| fix(&mut d.name));
-        self.typed_data.iter_mut().for_each(|d| fix(&mut d.name));
+        // Data identifiers are allocated together at commit, before folding can
+        // collapse distinct spellings such as counter.3 and counter_3.
+        let data_mode = if mode == NameChars::Ident { NameChars::Safe } else { mode };
+        let fix_data = |s: &mut String| {
+            if let std::borrow::Cow::Owned(v) = sanitize_symbol_name(s, data_mode) { *s = v; }
+        };
+        self.symbols.iter_mut().for_each(|s| {
+            if s.kind == SymKind::Data { fix_data(&mut s.name); } else { fix(&mut s.name); }
+        });
+        self.data_objects.iter_mut().for_each(|d| fix_data(&mut d.name));
+        self.typed_data.iter_mut().for_each(|d| fix_data(&mut d.name));
         self.entry_names.iter_mut().for_each(|(_, n)| fix(n));
         self.locals.iter_mut().for_each(|l| fix(&mut l.name));
         self.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
