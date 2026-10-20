@@ -28,10 +28,19 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
             type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION
         )
     };
-    let target = fd.vn_type_def_facing(output);
-    if !aggregate(&fd.vn_type_read_facing(input, op)) && !aggregate(&target) {
+    if !aggregate(&fd.vn_type_read_facing(input, op)) && !aggregate(&fd.vn_type_def_facing(output))
+    {
         return None;
     }
+    let target = fd
+        .vbank()
+        .get(output)
+        .filter(|value| !value.is_implied())
+        .and_then(|_| {
+            crate::kuna_stackviews::access_type(fd, output, op, -1)
+                .or_else(|| crate::kuna_bitcast::declared_member_type(fd, decl_high_type, output))
+        })
+        .unwrap_or_else(|| fd.vn_type_def_facing(output));
     let source = crate::kuna_stackviews::access_type(fd, input, op, operation.get_slot(input))
         .or_else(|| crate::kuna_bitcast::declared_member_type(fd, decl_high_type, input))
         .unwrap_or_else(|| fd.vn_type_read_facing(input, op));

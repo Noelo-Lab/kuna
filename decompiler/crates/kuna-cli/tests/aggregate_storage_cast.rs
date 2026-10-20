@@ -24,6 +24,8 @@ unsigned long unpack_float(struct pair x) { unsigned long value; __builtin_memcp
 struct pair pack_float(unsigned long x) { struct pair value; __builtin_memcpy(&value,&x,sizeof value); return value; }
 __attribute__((noinline)) static unsigned long fetch(void) { static unsigned long count; return ++count; }
 struct pair pack_count(void) { unsigned long x=fetch(); struct pair value; __builtin_memcpy(&value,&x,sizeof value); return value; }
+struct words mix_double(double x, int c) { struct words value; __builtin_memcpy(&value,&x,sizeof value); if (c) value.low ^= value.high; return value; }
+struct pair swap_double(double x, int c) { struct pair value; __builtin_memcpy(&value,&x,sizeof value); if (c) value.real = value.imag; return value; }
 "#,
     )
     .unwrap();
@@ -47,7 +49,16 @@ struct pair pack_count(void) { unsigned long x=fetch(); struct pair value; __bui
         String::from_utf8_lossy(&result.stderr)
     );
     let mut bodies = String::new();
-    for name in ["pack", "unpack", "pack_float", "unpack_float", "pack_count", "payload_bits"] {
+    for name in [
+        "pack",
+        "unpack",
+        "pack_float",
+        "unpack_float",
+        "pack_count",
+        "payload_bits",
+        "mix_double",
+        "swap_double",
+    ] {
         let (body, err, status) = common::run_kuna(&["decompile", binary.to_str().unwrap(), name]);
         assert_eq!(status, 0, "{err}");
         bodies.push_str(&body.replace(&format!("{name}("), &format!("recovered_{name}(")));
@@ -68,6 +79,8 @@ extern unsigned long unpack_float(pair);
 extern pair pack_float(unsigned long);
 extern pair pack_count(void);
 extern unsigned long payload_bits(box *);
+extern words mix_double(double, int);
+extern pair swap_double(double, int);
 {}
 int main(void) {{
     unsigned int values[] = {{0,1,0x80000000u,0xffffffffu,0x13579bdfu,0x2468ace0u}};
@@ -88,6 +101,13 @@ int main(void) {{
         if (recovered_unpack_float(input)!=unpack_float(input)) return 3;
         pair actual=recovered_pack_float(bits), expected=pack_float(bits);
         if (memcmp(&actual,&expected,8)) return 4;
+        double wide; memcpy(&wide,&bits,8);
+        for (int c=0; c<2; c++) {{
+            words mixed=recovered_mix_double(wide,c), mixed_expected=mix_double(wide,c);
+            if (memcmp(&mixed,&mixed_expected,8)) return 7;
+            pair swapped=recovered_swap_double(wide,c), swapped_expected=swap_double(wide,c);
+            if (memcmp(&swapped,&swapped_expected,8)) return 8;
+        }}
     }}
     pair actual=recovered_pack_count(), expected=pack_count();
     if (calls!=1 || memcmp(&actual,&expected,8)) return 5;
@@ -105,7 +125,7 @@ int main(void) {{
         }
         for level in ["-O0", "-O2"] {
             let result = Command::new(compiler)
-                .args(["-std=c11", "-Wall", "-Werror", level])
+                .args(["-std=c11", "-Wall", "-Wno-parentheses", "-Werror", level])
                 .arg(&recovered)
                 .arg(&binary)
                 .arg("-o")

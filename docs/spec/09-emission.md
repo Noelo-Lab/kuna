@@ -337,8 +337,11 @@ checks exclude padding, bitfields, and unions with shorter members; aggregate-ty
 constant inputs are also excluded.
 The operation's input-facing or definition-facing type must itself be an
 aggregate; a scalar access backed by an aggregate stack declaration does not
-establish a whole-object transfer. The destination is the CAST's definition-facing
-type, matching the C cast token rather than the surrounding storage declaration.
+establish a whole-object transfer. The destination is the type the printed
+destination has: the declared variable or field type when the CAST's output is an
+explicit variable, else the definition-facing type of the implied value. When an
+explicit scalar variable receives a scalar source the transfer is not an aggregate
+one and the scalar bit-transfer rules apply instead.
 
 **The pass.** `ActionSetCasts` (registry row P9/`cast-policy`, group `casts`)
 is scheduled near the very end of the pass tree — after `ActionNameVars` and
