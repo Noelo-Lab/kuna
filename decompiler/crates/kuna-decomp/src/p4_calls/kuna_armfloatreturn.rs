@@ -18,6 +18,35 @@ pub fn applies(arch: &Architecture) -> bool {
         && arch.translate().loader_rc().borrow().arm_vfp_args()
 }
 
+/// Park the library prototypes an ARM image's load held back for declaring a
+/// `float` or `double` ([`Architecture::arm_float_library_prototypes`]), once
+/// the option applies to the image: the widened model returns a `double` whole
+/// in `d0`, so `double strtod(const char *, char **)` is the contract its
+/// callers read on their first decompile instead of a recovered `void` the
+/// return-recovery redo would correct. A function that already carries a
+/// prototype from another source keeps it. Without the option the list is
+/// dropped, as the load-time pass drops it on every image that cannot return a
+/// `double` whole.
+pub fn park_float_library_prototypes(arch: &mut Architecture) {
+    if arch.arm_float_library_prototypes.is_empty() {
+        return;
+    }
+    let pending = std::mem::take(&mut arch.arm_float_library_prototypes);
+    if !applies(arch) {
+        return;
+    }
+    for (at, pieces) in pending {
+        let sid = match &at {
+            Some(addr) => arch.symboltab.find_function_across_scopes(addr).map(|(sid, _)| sid),
+            None => arch.query_global_function(&pieces.name).ok(),
+        };
+        let Some(sid) = sid else { continue };
+        if arch.symboltab.function_proto_pieces_of(sid).is_none() {
+            arch.symboltab.set_function_proto_pieces(sid, pieces);
+        }
+    }
+}
+
 /// Does `name` name a run-time helper that AAPCS keeps on the base (core-register)
 /// standard in every image: an `__aeabi_*` function, or a libgcc soft-float
 /// routine behind one (`__adddf3`, `__fixdfdi`, `__floatundidf`, `__ltdf2`, ...)?

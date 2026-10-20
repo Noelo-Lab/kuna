@@ -1720,14 +1720,23 @@ moves.
   (`nanf`, `sqrtf`, `fabsf`) stays out, and its import stub is recovered from what
   its callers read instead (chapter 04). These rows are seeded only on x86 and AArch64
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_typedcallabi.rs (returns_doubles_whole)`),
-  whose return recovery reads a `double` whole (`xmm0`, `ST0`, `d0`). ARM gets
-  none of them. Its default model lists only `s0`..`s7` among the outputs, so on
+  whose return recovery reads a `double` whole (`xmm0`, `ST0`, `d0`), and on a
+  hard-float ARM image once `armfloatreturn` applies (chapter 04). Otherwise ARM
+  gets none of them. Its default model lists only `s0`..`s7` among the outputs, so on
   a hard-float image a function returning what it computed from `strtod` was
   recovered as `unsigned int`, the low half of `d0`, where it had been `void`.
   A soft-float or `-mfloat-abi=softfp` image hands a `double` around in
   `r0:r1`, and its callers hold that as a 64-bit integer: the rows made such a
   function `double`, which those callers then converted by value, where it had
-  returned the right `unsigned long long`. An operator-declared name
+  returned the right `unsigned long long`. Because `armfloatreturn` is set after
+  the load, an ARM image holds these rows back
+  (`decompiler/crates/kuna-analysis/src/pass.rs (arm_float_prototypes)`) with a
+  second, ARM-only table of the C99 `<math.h>` functions and glibc's `sincos`
+  (`kuna_libcsigs.rs (LIBM_VFP)`: `double log(double)`, `float sinf(float)`,
+  `long lrint(double)`, `double ldexp(double,int)`, ...; each row checked against
+  `gcc -aux-info` over glibc's `<math.h>`, `double *` slots as `void *` as in
+  `modf`), and the first decompile parks them only when the option applies to
+  the image. An operator-declared name
   (`seed_declared_libc_prototype`) is refused on ARM the same way. The signatures
   themselves are reduced from the platform's own C declarations (`gcc -aux-info`
   over the standard headers, GCC's builtin types for the FORTIFY `_chk` entry

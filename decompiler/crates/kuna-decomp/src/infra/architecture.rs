@@ -888,6 +888,11 @@ pub struct Architecture {
     /// each was built from and whether it skips back-fill holes, so every
     /// function reuses one instead of rebuilding it.
     pub arm_widened_models: std::cell::RefCell<Vec<(Rc<crate::fspec::ProtoModel>, bool, Rc<crate::fspec::ProtoModel>)>>,
+    /// (kuna `armfloatreturn`) Library prototypes declaring a `float` or `double`
+    /// that an ARM image's load held back, by name or by entry address, until a
+    /// decompile shows whether the option applies. See
+    /// [`crate::p4_calls::kuna_armfloatreturn::park_float_library_prototypes`].
+    pub arm_float_library_prototypes: Vec<(Option<Address>, crate::fspec::PrototypePieces)>,
     /// (kuna) Extend a narrow integer argument or return value as the ABI states
     /// (option `narrowext`).  See [`crate::p4_calls::kuna_narrowext`].
     pub narrow_ext: crate::kuna_narrowext::NarrowExtMode,
@@ -2922,6 +2927,7 @@ impl Architecture {
             arg_clobber: true, // (kuna) option argclobber; reset_defaults sets the shipped default
             arm_float_args: false, // (kuna) option armfloatargs
             arm_widened_models: std::cell::RefCell::new(Vec::new()),
+            arm_float_library_prototypes: Vec::new(),
             arm_float_return: false, // (kuna) option armfloatreturn
             narrow_ext: crate::kuna_narrowext::NarrowExtMode::Off, // (kuna) option narrowext; reset_defaults sets the shipped default
             pass_through: true, // (kuna) option passthrough; reset_defaults sets the shipped default

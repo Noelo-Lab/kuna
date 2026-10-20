@@ -7038,6 +7038,19 @@ say `Tag_ABI_VFP_args=1` in `.ARM.attributes`. Soft-float, `softfp`,
 conflicting, malformed, section- or symbol-scoped attributes, a raw image and
 the Ghidra front-end all state nothing, and the option then changes nothing.
 
+On such an image the library prototypes that declare a `float` or `double`
+are parked before the first decompile
+(`kuna_armfloatreturn.rs (park_float_library_prototypes)`): the libc rows that
+x86 and AArch64 take at load, and the `<math.h>` table chapter 01 describes, on
+the names the image imports. A function that already carries a prototype from
+another source keeps it. Without them a PLT stub such as `log` or `strtod` was
+recovered `void`, its first reader decompiled reading `d0` after the call, and
+the return-recovery redo then decompiled the stub and every reader again
+(`voidret`): on libmpg123 that is its largest function a second time, +18% of
+the run. With them the readers see `double log(double)` the first time, which
+also types the arguments (`sincos` keeps libvorbis `mdct_init` from returning the
+`double` it leaves in `d0` for the next call).
+
 On such an image each function's copy of the default model gains an 8-byte
 float entry for every `d0`-`d7` register over its two s-register entries, on
 input, and one for `d0` on output; `d1`-`d3` are not return storage. A whole

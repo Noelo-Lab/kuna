@@ -5031,6 +5031,12 @@ fn commit_analysis_output(
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
+    let held: Vec<_> = out
+        .arm_float_prototypes
+        .into_iter()
+        .map(|(at, pieces)| (at.map(|a| Address::new(Rc::clone(code_space), a)), pieces))
+        .collect();
+    prog.arch_mut().arm_float_library_prototypes.extend(held);
 
     // 5d. A C runtime import is `__cdecl` even where the image's default
     //     convention leaves the cleanup to each callee (`x86win.cspec`'s

@@ -784,6 +784,7 @@ pub fn build_and_follow_flow_with_override_and_protos(
 /// clear, so the re-flow rebuilds the CALLIND straight as a direct CALL).
 #[allow(clippy::mutable_key_type)]
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+    crate::kuna_armfloatreturn::park_float_library_prototypes(arch);
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
     // extent restricts flow to it; size 0 keeps the unbounded default the whole
     // engine has used until now (`kuna_console::engine::UNBOUNDED_SIZE`), so this
@@ -1235,6 +1236,7 @@ pub fn decompile_func_full_with_objects(
     prefollowed: Option<Funcdata>,
     object_assertions: &[crate::kuna_stackobjectasserts::ObjectAssertion],
 ) -> KunaResult<Funcdata> {
+    crate::kuna_armfloatreturn::park_float_library_prototypes(arch);
     // (kuna decompile-all watchdog) Arm the per-function deadline from the
     // driver-set budget (`kuna decompile-all --max-fn-seconds N` sets
     // `kuna_fn_budget`, `decomp_dbg --max-fn-seconds N` the process default;

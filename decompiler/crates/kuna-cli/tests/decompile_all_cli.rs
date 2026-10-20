@@ -3780,10 +3780,10 @@ fn soft_float_imports_keep_their_core_register_values() {
 /// image printed `double sub_10224(..)` beside `rd`'s `unsigned long long v1 =
 /// sub_10224()`, which converts 2.25 to 2, where the rows' absence returns the
 /// right `CONCAT44(v2,v1)`; the hard image printed `unsigned int sub_101f0(..)`
-/// returning `SUB84(v1,0)`, the low half of `d0`. ARM gets none of the rows.
-/// The hard image is checked with `armfloatreturn` off; with the default
-/// preset's hard-float contract, `parse` and `clampd` return their doubles
-/// whole in `d0`.
+/// returning `SUB84(v1,0)`, the low half of `d0`. ARM gets none of the rows
+/// with `armfloatreturn` off. Under the default preset's hard-float contract
+/// the hard image takes `strtod`'s row, and `parse` and `clampd` return their
+/// doubles whole in `d0`.
 #[test]
 fn arm_images_get_no_double_libc_rows() {
     let sp = specs();
@@ -3805,7 +3805,7 @@ fn arm_images_get_no_double_libc_rows() {
         if name.ends_with("soft") {
             assert_eq!(preset, stdout, "{name}: the hard-float contract changed a soft-float image");
         } else {
-            for want in ["double sub_101e0(", "double sub_101f0(", "v1 = strtod(a0,0);"] {
+            for want in ["double strtod(char *a0,char **a1)", "double sub_101e0(char *a0)", "double sub_101f0(char *a0)", "v1 = strtod(a0,NULL);"] {
                 assert!(preset.contains(want), "{name}: missing `{want}`:\n{preset}");
             }
             assert!(!preset.contains("SUB84("), "{name}: a double return is cut to its low word:\n{preset}");

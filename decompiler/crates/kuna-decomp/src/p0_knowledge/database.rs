@@ -2893,6 +2893,15 @@ impl Database {
         }
     }
 
+    /// The prototype pieces parked on FunctionSymbol `sid`, or `None` when it
+    /// carries none or is not a function.
+    pub fn function_proto_pieces_of(&self, sid: SymbolId) -> Option<&crate::fspec::PrototypePieces> {
+        match &self.symbols[sid].kind {
+            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref(),
+            _ => None,
+        }
+    }
+
     /// The source-declared prototype pieces parked on the FunctionSymbol at `addr`
     /// (in `scope`), or `None` if no function symbol starts there or it carries no
     /// declared prototype.  Read by a caller's `ActionDefaultParams::apply` to
